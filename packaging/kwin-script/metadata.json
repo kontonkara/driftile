@@ -1,0 +1,20 @@
+{
+  "KPackageStructure": "KWin/Script",
+  "KPlugin": {
+    "Authors": [
+      {
+        "Name": "Nikita Konton"
+      }
+    ],
+    "Description": "A KWin extension for KDE Plasma providing scrollable tiling and dynamic workspaces.",
+    "EnabledByDefault": false,
+    "Icon": "preferences-system-windows",
+    "Id": "io.github.kontonkara.driftile",
+    "License": "GPL-3.0-or-later",
+    "Name": "Driftile",
+    "Version": "0.1.0",
+    "Website": "https://github.com/kontonkara/driftile"
+  },
+  "X-Plasma-API": "declarativescript",
+  "X-Plasma-MainScript": "ui/main.qml"
+}
