@@ -18,8 +18,10 @@ if (outputs.length !== 2) {
   throw new Error("the desktop-state probe requires two outputs");
 }
 
-if (desktops.length !== 2) {
-  throw new Error("the desktop-state probe requires two virtual desktops");
+if (desktops.length < 2) {
+  throw new Error(
+    "the desktop-state probe requires at least two virtual desktops",
+  );
 }
 
 if (

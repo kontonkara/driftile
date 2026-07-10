@@ -439,6 +439,90 @@ virtual_desktop_ids() {
     '
 }
 
+wait_for_desktop_sequence() {
+  local attempt
+  local index
+  local stable_samples=0
+  local -a actual_desktops=()
+  local -a expected_desktops=("$@")
+
+  for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
+    mapfile -t actual_desktops < <(virtual_desktop_ids)
+
+    if ((${#actual_desktops[@]} == ${#expected_desktops[@]})); then
+      for index in "${!expected_desktops[@]}"; do
+        if [[ "${actual_desktops[index]}" != "${expected_desktops[index]}" ]]; then
+          break
+        fi
+      done
+
+      if ((index == ${#expected_desktops[@]} - 1)) &&
+        [[ "${actual_desktops[index]}" == "${expected_desktops[index]}" ]]; then
+        stable_samples=$((stable_samples + 1))
+
+        if ((stable_samples >= stable_sample_count)); then
+          return 0
+        fi
+      else
+        stable_samples=0
+      fi
+    else
+      stable_samples=0
+    fi
+
+    sleep 0.05
+  done
+
+  return 1
+}
+
+wait_for_appended_desktop() {
+  local result_variable=$1
+  shift
+  local attempt
+  local candidate=""
+  local index
+  local stable_candidate=""
+  local stable_samples=0
+  local -a actual_desktops=()
+  local -a prefix_desktops=("$@")
+
+  for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
+    mapfile -t actual_desktops < <(virtual_desktop_ids)
+    candidate=""
+
+    if ((${#actual_desktops[@]} == ${#prefix_desktops[@]} + 1)); then
+      candidate=${actual_desktops[${#prefix_desktops[@]}]}
+
+      for index in "${!prefix_desktops[@]}"; do
+        if [[ "${actual_desktops[index]}" != "${prefix_desktops[index]}" ]]; then
+          candidate=""
+          break
+        fi
+      done
+    fi
+
+    if [[ -n "$candidate" && "$candidate" == "$stable_candidate" ]]; then
+      stable_samples=$((stable_samples + 1))
+    elif [[ -n "$candidate" ]]; then
+      stable_candidate=$candidate
+      stable_samples=1
+    else
+      stable_candidate=""
+      stable_samples=0
+    fi
+
+    if ((stable_samples >= stable_sample_count)); then
+      printf -v "$result_variable" '%s' "$stable_candidate"
+      return 0
+    fi
+
+    sleep 0.05
+  done
+
+  return 1
+}
+
 current_desktop_id() {
   busctl --user --json=short get-property \
     org.kde.KWin \
@@ -1381,11 +1465,17 @@ verify_desktop_transfer() {
   local baseline_variable=$5
   local destination_title="driftile-desktop-destination-${protocol}"
   local destination_pid
+  local first_trailing_desktop_id=""
+  local second_trailing_desktop_id=""
   local transferred_baseline
 
-  wait_for_shortcut "Driftile Move Window to Previous Desktop" || \
+  wait_for_shortcut "driftile_focus_previous_desktop" || \
+    fail "KGlobalAccel did not register the focus-previous-desktop shortcut"
+  wait_for_shortcut "driftile_focus_next_desktop" || \
+    fail "KGlobalAccel did not register the focus-next-desktop shortcut"
+  wait_for_shortcut "driftile_move_window_to_previous_desktop" || \
     fail "KGlobalAccel did not register the previous-desktop shortcut"
-  wait_for_shortcut "Driftile Move Window to Next Desktop" || \
+  wait_for_shortcut "driftile_move_window_to_next_desktop" || \
     fail "KGlobalAccel did not register the next-desktop shortcut"
 
   set_current_desktop "$secondary_desktop_id" || \
@@ -1399,6 +1489,11 @@ verify_desktop_transfer() {
     fail "KWin did not focus the $protocol destination seed window"
   wait_for_window_desktop "$destination_title" "$secondary_desktop_id" || \
     fail "KWin placed the $protocol destination seed on the wrong desktop"
+  wait_for_appended_desktop \
+    first_trailing_desktop_id \
+    "$primary_desktop_id" \
+    "$secondary_desktop_id" || \
+    fail "Driftile did not append an empty desktop after the occupied $protocol destination"
 
   set_current_desktop "$primary_desktop_id" || \
     fail "KWin could not restore the source desktop before $protocol transfer coverage"
@@ -1412,7 +1507,25 @@ verify_desktop_transfer() {
     "$third_title" "648,16,616,688" || \
     fail "Driftile did not restore the $protocol source stack before desktop transfer: $(describe_layout "$first_title" "$second_title" "$third_title")"
 
-  invoke_shortcut "Driftile Move Window to Previous Desktop" || \
+  invoke_shortcut "driftile_focus_next_desktop" || \
+    fail "KGlobalAccel could not focus the next $protocol desktop"
+  wait_for_current_desktop "$secondary_desktop_id" || \
+    fail "Driftile did not focus the next $protocol desktop"
+  invoke_shortcut "driftile_focus_previous_desktop" || \
+    fail "KGlobalAccel could not focus the previous $protocol desktop"
+  wait_for_current_desktop "$primary_desktop_id" || \
+    fail "Driftile did not focus the previous $protocol desktop"
+  wait_for_desktop_sequence \
+    "$primary_desktop_id" \
+    "$secondary_desktop_id" \
+    "$first_trailing_desktop_id" || \
+    fail "desktop focus changed the $protocol desktop lifecycle"
+  activate_window "$second_title" || \
+    fail "KWin could not restore $protocol focus after desktop navigation"
+  wait_for_active "$second_title" || \
+    fail "KWin did not restore $protocol focus after desktop navigation"
+
+  invoke_shortcut "driftile_move_window_to_previous_desktop" || \
     fail "KGlobalAccel could not invoke the previous-desktop boundary shortcut"
   wait_for_current_desktop "$primary_desktop_id" || \
     fail "Driftile wrapped the $protocol transfer before the first desktop"
@@ -1424,7 +1537,7 @@ verify_desktop_transfer() {
   wait_for_active "$second_title" || \
     fail "Driftile changed $protocol focus at the previous-desktop boundary"
 
-  invoke_shortcut "Driftile Move Window to Next Desktop" || \
+  invoke_shortcut "driftile_move_window_to_next_desktop" || \
     fail "KGlobalAccel could not transfer the $protocol stack member to the next desktop"
   wait_for_current_desktop "$secondary_desktop_id" || \
     fail "Driftile did not follow the $protocol window to the next desktop"
@@ -1441,19 +1554,46 @@ verify_desktop_transfer() {
   wait_for_window_desktop "$third_title" "$primary_desktop_id" || \
     fail "Driftile moved an unrelated $protocol source column"
 
-  invoke_shortcut "Driftile Move Window to Next Desktop" || \
-    fail "KGlobalAccel could not invoke the next-desktop boundary shortcut"
+  invoke_shortcut "driftile_move_window_to_next_desktop" || \
+    fail "KGlobalAccel could not transfer the $protocol window to the trailing desktop"
+  wait_for_current_desktop "$first_trailing_desktop_id" || \
+    fail "Driftile did not follow the $protocol window to the trailing desktop"
+  wait_for_window_desktop "$second_title" "$first_trailing_desktop_id" || \
+    fail "KWin did not move the $protocol window to the trailing desktop"
+  wait_for_geometries \
+    "$second_title" "16,16,616,688" || \
+    fail "Driftile did not seed the first dynamic $protocol desktop: $(describe_layout "$second_title")"
+  wait_for_active "$second_title" || \
+    fail "Driftile changed $protocol focus on the trailing desktop"
+  wait_for_appended_desktop \
+    second_trailing_desktop_id \
+    "$primary_desktop_id" \
+    "$secondary_desktop_id" \
+    "$first_trailing_desktop_id" || \
+    fail "Driftile did not replenish the trailing desktop for $protocol"
+  [[ "$second_trailing_desktop_id" != "$first_trailing_desktop_id" ]] || \
+    fail "Driftile reused an occupied $protocol desktop as the empty tail"
+
+  invoke_shortcut "driftile_move_window_to_previous_desktop" || \
+    fail "KGlobalAccel could not return the $protocol window from the dynamic desktop"
   wait_for_current_desktop "$secondary_desktop_id" || \
-    fail "Driftile wrapped the $protocol transfer after the last desktop"
+    fail "Driftile did not follow the $protocol window back to the destination desktop"
+  wait_for_window_desktop "$second_title" "$secondary_desktop_id" || \
+    fail "KWin did not return the $protocol window from the dynamic desktop"
+  wait_for_desktop_sequence \
+    "$primary_desktop_id" \
+    "$secondary_desktop_id" \
+    "$first_trailing_desktop_id" || \
+    fail "Driftile did not remove the redundant $protocol trailing desktop"
   wait_for_geometries \
     "$destination_title" "16,16,616,688" \
     "$second_title" "648,16,616,688" || \
-    fail "Driftile changed the $protocol layout at the next-desktop boundary: $(describe_layout "$destination_title" "$second_title")"
+    fail "Driftile did not restore the $protocol destination layout after dynamic cleanup: $(describe_layout "$destination_title" "$second_title")"
   wait_for_active "$second_title" || \
-    fail "Driftile changed $protocol focus at the next-desktop boundary"
+    fail "Driftile changed $protocol focus during dynamic cleanup"
 
-  invoke_shortcut "Driftile Move Window to Previous Desktop" || \
-    fail "KGlobalAccel could not return the $protocol window to the previous desktop"
+  invoke_shortcut "driftile_move_window_to_previous_desktop" || \
+    fail "KGlobalAccel could not return the $protocol window to the source desktop"
   wait_for_current_desktop "$primary_desktop_id" || \
     fail "Driftile did not follow the returning $protocol window"
   wait_for_geometries \
@@ -1469,7 +1609,7 @@ verify_desktop_transfer() {
     fail "the returned $protocol window restore baseline did not stabilize"
   printf -v "$baseline_variable" '%s' "$transferred_baseline"
 
-  invoke_shortcut "Driftile Move Window to Previous Desktop" || \
+  invoke_shortcut "driftile_move_window_to_previous_desktop" || \
     fail "KGlobalAccel could not recheck the previous-desktop boundary"
   wait_for_current_desktop "$primary_desktop_id" || \
     fail "Driftile wrapped the returned $protocol window before the first desktop"
@@ -1479,7 +1619,7 @@ verify_desktop_transfer() {
     "$third_title" "1280,16,616,688" || \
     fail "Driftile changed the returned $protocol layout at the desktop boundary: $(describe_layout "$first_title" "$second_title" "$third_title")"
 
-  invoke_shortcut "Driftile Move Window Left" || \
+  invoke_shortcut "driftile_move_window_left" || \
     fail "KGlobalAccel could not restore the $protocol source stack after desktop transfer"
   wait_for_geometries \
     "$first_title" "16,16,616,336" \
@@ -1492,6 +1632,8 @@ verify_desktop_transfer() {
   stop_client "$destination_pid"
   wait_for_window_gone "$destination_title" || \
     fail "the $protocol destination seed window did not close"
+  wait_for_desktop_sequence "$primary_desktop_id" "$secondary_desktop_id" || \
+    fail "Driftile did not restore the external $protocol desktop baseline"
 }
 
 verify_multi_output_desktop_transfer() {
@@ -1505,9 +1647,9 @@ verify_multi_output_desktop_transfer() {
   local left_destination_pid
   local right_destination_pid
 
-  wait_for_shortcut "Driftile Move Window to Previous Desktop" || \
+  wait_for_shortcut "driftile_move_window_to_previous_desktop" || \
     fail "KGlobalAccel did not register the multi-output previous-desktop shortcut"
-  wait_for_shortcut "Driftile Move Window to Next Desktop" || \
+  wait_for_shortcut "driftile_move_window_to_next_desktop" || \
     fail "KGlobalAccel did not register the multi-output next-desktop shortcut"
 
   activate_window "$left_first_title" || \
@@ -1554,7 +1696,7 @@ verify_multi_output_desktop_transfer() {
     "$right_second_title" "1928,16,616,688" || \
     fail "Driftile did not restore the multi-output $protocol source contexts before desktop transfer: $(describe_layout "$left_first_title" "$left_second_title" "$right_first_title" "$right_second_title")"
 
-  invoke_shortcut "Driftile Move Window to Next Desktop" || \
+  invoke_shortcut "driftile_move_window_to_next_desktop" || \
     fail "KGlobalAccel could not transfer the left $protocol stack member to the next desktop"
   wait_for_geometries \
     "$left_destination_title" "16,16,616,688" \
@@ -1576,7 +1718,7 @@ verify_multi_output_desktop_transfer() {
   verify_multi_output_desktop_state "$left_second_title" secondary || \
     fail "KWin did not expose the expected per-output $protocol desktop state"
 
-  invoke_shortcut "Driftile Move Window to Previous Desktop" || \
+  invoke_shortcut "driftile_move_window_to_previous_desktop" || \
     fail "KGlobalAccel could not return the left $protocol window to the source desktop"
   wait_for_geometries \
     "$left_first_title" "16,16,616,688" \
@@ -1591,7 +1733,7 @@ verify_multi_output_desktop_transfer() {
   verify_multi_output_desktop_state "$left_second_title" primary || \
     fail "KWin did not restore the expected per-output $protocol desktop state"
 
-  invoke_shortcut "Driftile Move Window Left" || \
+  invoke_shortcut "driftile_move_window_left" || \
     fail "KGlobalAccel could not restore the left $protocol stack after desktop transfer"
   wait_for_geometries \
     "$left_first_title" "16,16,616,336" \
@@ -1606,6 +1748,8 @@ verify_multi_output_desktop_transfer() {
     fail "the left multi-output $protocol destination seed did not close"
   wait_for_window_gone "$right_destination_title" || \
     fail "the right multi-output $protocol destination seed did not close"
+  wait_for_desktop_sequence "$primary_desktop_id" "$secondary_desktop_id" || \
+    fail "Driftile did not restore the multi-output $protocol desktop baseline"
 }
 
 verify_multi_output_output_transfer() {
@@ -1617,22 +1761,22 @@ verify_multi_output_output_transfer() {
   local destination_title="driftile-multi-output-${protocol}-right-output-destination"
   local destination_pid
 
-  wait_for_shortcut "Driftile Move Window to Output Left" || \
+  wait_for_shortcut "driftile_move_window_to_output_left" || \
     fail "KGlobalAccel did not register the multi-output move-to-output-left shortcut"
-  wait_for_shortcut "Driftile Move Window to Output Right" || \
+  wait_for_shortcut "driftile_move_window_to_output_right" || \
     fail "KGlobalAccel did not register the multi-output move-to-output-right shortcut"
-  wait_for_shortcut "Driftile Move Window to Output Up" || \
+  wait_for_shortcut "driftile_move_window_to_output_up" || \
     fail "KGlobalAccel did not register the multi-output move-to-output-up shortcut"
-  wait_for_shortcut "Driftile Move Window to Output Down" || \
+  wait_for_shortcut "driftile_move_window_to_output_down" || \
     fail "KGlobalAccel did not register the multi-output move-to-output-down shortcut"
-  wait_for_shortcut "Driftile Decrease Column Width" || \
+  wait_for_shortcut "driftile_decrease_column_width" || \
     fail "KGlobalAccel did not register the multi-output decrease-width shortcut"
-  wait_for_shortcut "Driftile Reset Column Width" || \
+  wait_for_shortcut "driftile_reset_column_width" || \
     fail "KGlobalAccel did not register the multi-output reset-width shortcut"
 
   activate_window "$left_second_title" || \
     fail "KWin could not focus the left $protocol stack member before output transfer"
-  invoke_shortcut "Driftile Decrease Column Width" || \
+  invoke_shortcut "driftile_decrease_column_width" || \
     fail "KGlobalAccel could not prepare a distinct $protocol transfer width"
   wait_for_geometries \
     "$left_first_title" "16,16,537,336" \
@@ -1666,7 +1810,7 @@ verify_multi_output_output_transfer() {
   wait_for_active "$left_second_title" || \
     fail "KWin did not focus the left $protocol stack member before output transfer"
 
-  invoke_shortcut "Driftile Move Window to Output Left" || \
+  invoke_shortcut "driftile_move_window_to_output_left" || \
     fail "KGlobalAccel could not invoke the left-output boundary shortcut"
   wait_for_geometries \
     "$left_first_title" "16,16,537,336" \
@@ -1676,7 +1820,7 @@ verify_multi_output_output_transfer() {
   wait_for_active "$left_second_title" || \
     fail "Driftile changed $protocol focus at the left-output boundary"
 
-  invoke_shortcut "Driftile Move Window to Output Up" || \
+  invoke_shortcut "driftile_move_window_to_output_up" || \
     fail "KGlobalAccel could not invoke the unavailable upper-output shortcut"
   wait_for_geometries \
     "$left_first_title" "16,16,537,336" \
@@ -1686,7 +1830,7 @@ verify_multi_output_output_transfer() {
   wait_for_active "$left_second_title" || \
     fail "Driftile changed $protocol focus without an upper output neighbor"
 
-  invoke_shortcut "Driftile Move Window to Output Down" || \
+  invoke_shortcut "driftile_move_window_to_output_down" || \
     fail "KGlobalAccel could not invoke the unavailable lower-output shortcut"
   wait_for_geometries \
     "$left_first_title" "16,16,537,336" \
@@ -1696,7 +1840,7 @@ verify_multi_output_output_transfer() {
   wait_for_active "$left_second_title" || \
     fail "Driftile changed $protocol focus without a lower output neighbor"
 
-  invoke_shortcut "Driftile Move Window to Output Right" || \
+  invoke_shortcut "driftile_move_window_to_output_right" || \
     fail "KGlobalAccel could not transfer the $protocol window to the right output"
   wait_for_geometries \
     "$left_first_title" "16,16,537,688" \
@@ -1726,7 +1870,7 @@ verify_multi_output_output_transfer() {
   wait_for_active "$left_second_title" || \
     fail "KWin did not restore $protocol focus after the right-output state probe"
 
-  invoke_shortcut "Driftile Move Window to Output Right" || \
+  invoke_shortcut "driftile_move_window_to_output_right" || \
     fail "KGlobalAccel could not invoke the right-output boundary shortcut"
   wait_for_geometries \
     "$left_first_title" "16,16,537,688" \
@@ -1736,7 +1880,7 @@ verify_multi_output_output_transfer() {
   wait_for_active "$left_second_title" || \
     fail "Driftile changed $protocol focus at the right-output boundary"
 
-  invoke_shortcut "Driftile Move Window to Output Left" || \
+  invoke_shortcut "driftile_move_window_to_output_left" || \
     fail "KGlobalAccel could not return the $protocol window to the left output"
   wait_for_geometries \
     "$left_first_title" "16,16,537,688" \
@@ -1764,7 +1908,7 @@ verify_multi_output_output_transfer() {
   wait_for_active "$left_second_title" || \
     fail "KWin did not restore $protocol focus after the left-output state probe"
 
-  invoke_shortcut "Driftile Move Window to Output Left" || \
+  invoke_shortcut "driftile_move_window_to_output_left" || \
     fail "KGlobalAccel could not recheck the left-output boundary"
   wait_for_geometries \
     "$left_first_title" "16,16,537,688" \
@@ -1774,14 +1918,14 @@ verify_multi_output_output_transfer() {
   wait_for_active "$left_second_title" || \
     fail "Driftile changed returned $protocol focus at the left-output boundary"
 
-  invoke_shortcut "Driftile Move Window Left" || \
+  invoke_shortcut "driftile_move_window_left" || \
     fail "KGlobalAccel could not restore the left $protocol stack after output transfer"
   wait_for_geometries \
     "$left_first_title" "16,16,537,336" \
     "$left_second_title" "16,368,537,336" \
     "$destination_title" "1296,16,616,688" || \
     fail "Driftile did not restore the narrowed left $protocol stack after output transfer: $(describe_layout "$left_first_title" "$left_second_title" "$destination_title")"
-  invoke_shortcut "Driftile Reset Column Width" || \
+  invoke_shortcut "driftile_reset_column_width" || \
     fail "KGlobalAccel could not restore the left $protocol stack width"
   wait_for_geometries \
     "$left_first_title" "16,16,616,336" \
@@ -1802,6 +1946,8 @@ verify_multi_output_output_transfer() {
     "$right_first_title" "1296,16,616,688" \
     "$right_second_title" "1928,16,616,688" || \
     fail "Driftile did not restore the two $protocol output contexts after output transfer: $(describe_layout "$left_first_title" "$left_second_title" "$right_first_title" "$right_second_title")"
+  wait_for_desktop_sequence "$primary_desktop_id" "$secondary_desktop_id" || \
+    fail "Driftile did not restore the output-transfer $protocol desktop baseline"
 }
 
 verify_automatic_floating_shortcut_no_op() {
@@ -1878,11 +2024,11 @@ verify_automatic_floating() {
   local shortcut
   local verification_index=0
   local -a no_op_shortcuts=(
-    "Driftile Focus Left"
-    "Driftile Move Window Left"
-    "Driftile Toggle Floating"
-    "Driftile Move Window to Next Desktop"
-    "Driftile Move Window to Output Right"
+    "driftile_focus_column_left"
+    "driftile_move_window_left"
+    "driftile_toggle_floating"
+    "driftile_move_window_to_next_desktop"
+    "driftile_move_window_to_output_right"
   )
 
   for shortcut in "${no_op_shortcuts[@]}"; do
@@ -2077,11 +2223,11 @@ run_scenario() {
     "$third_title" "664,16,616,688" || \
     fail "Driftile did not reveal the third $protocol window again: $(describe_layout "$first_title" "$second_title" "$third_title")"
 
-  wait_for_shortcut "Driftile Move Column Left" || \
+  wait_for_shortcut "driftile_move_column_left" || \
     fail "KGlobalAccel did not register the move-left shortcut"
-  wait_for_shortcut "Driftile Move Column Right" || \
+  wait_for_shortcut "driftile_move_column_right" || \
     fail "KGlobalAccel did not register the move-right shortcut"
-  invoke_shortcut "Driftile Move Column Left" || \
+  invoke_shortcut "driftile_move_column_left" || \
     fail "KGlobalAccel could not invoke the move-left shortcut"
   wait_for_layout \
     "$first_title" "-600,16,616,688" \
@@ -2089,7 +2235,7 @@ run_scenario() {
     "$third_title" "32,16,616,688" || \
     fail "Driftile did not move the active $protocol column left: $(describe_layout "$first_title" "$second_title" "$third_title")"
 
-  invoke_shortcut "Driftile Move Column Right" || \
+  invoke_shortcut "driftile_move_column_right" || \
     fail "KGlobalAccel could not invoke the move-right shortcut"
   wait_for_layout \
     "$first_title" "-600,16,616,688" \
@@ -2107,23 +2253,23 @@ run_scenario() {
     "$third_title" "664,16,616,688" || \
     fail "Driftile did not preserve the middle $protocol column before stack editing: $(describe_layout "$first_title" "$second_title" "$third_title")"
 
-  wait_for_shortcut "Driftile Focus Up" || \
+  wait_for_shortcut "driftile_focus_window_up" || \
     fail "KGlobalAccel did not register the focus-up shortcut"
-  wait_for_shortcut "Driftile Focus Down" || \
+  wait_for_shortcut "driftile_focus_window_down" || \
     fail "KGlobalAccel did not register the focus-down shortcut"
-  wait_for_shortcut "Driftile Move Window Left" || \
+  wait_for_shortcut "driftile_move_window_left" || \
     fail "KGlobalAccel did not register the move-window-left shortcut"
-  wait_for_shortcut "Driftile Move Window Right" || \
+  wait_for_shortcut "driftile_move_window_right" || \
     fail "KGlobalAccel did not register the move-window-right shortcut"
-  wait_for_shortcut "Driftile Move Window Up" || \
+  wait_for_shortcut "driftile_move_window_up" || \
     fail "KGlobalAccel did not register the move-window-up shortcut"
-  wait_for_shortcut "Driftile Move Window Down" || \
+  wait_for_shortcut "driftile_move_window_down" || \
     fail "KGlobalAccel did not register the move-window-down shortcut"
-  wait_for_shortcut "Driftile Insert Window into Stack Left" || \
+  wait_for_shortcut "driftile_insert_window_into_stack_left" || \
     fail "KGlobalAccel did not register the insert-into-stack-left shortcut"
-  wait_for_shortcut "Driftile Insert Window into Stack Right" || \
+  wait_for_shortcut "driftile_insert_window_into_stack_right" || \
     fail "KGlobalAccel did not register the insert-into-stack-right shortcut"
-  wait_for_shortcut "Driftile Toggle Floating" || \
+  wait_for_shortcut "driftile_toggle_floating" || \
     fail "KGlobalAccel did not register the floating-toggle shortcut"
 
   verify_automatic_floating \
@@ -2132,7 +2278,7 @@ run_scenario() {
     "$second_title" \
     "$third_title"
 
-  invoke_shortcut "Driftile Move Window Left" || \
+  invoke_shortcut "driftile_move_window_left" || \
     fail "KGlobalAccel could not invoke the move-window-left shortcut"
   wait_for_layout \
     "$first_title" "16,16,616,336" \
@@ -2142,7 +2288,7 @@ run_scenario() {
   wait_for_active "$second_title" || \
     fail "Driftile changed $protocol focus after merging the middle window left"
 
-  invoke_shortcut "Driftile Toggle Floating" || \
+  invoke_shortcut "driftile_toggle_floating" || \
     fail "KGlobalAccel could not float the lower $protocol stack member"
   wait_for_layout \
     "$first_title" "16,16,616,688" \
@@ -2152,7 +2298,7 @@ run_scenario() {
   wait_for_active "$second_title" || \
     fail "Driftile changed $protocol focus after floating the lower stack member"
 
-  invoke_shortcut "Driftile Toggle Floating" || \
+  invoke_shortcut "driftile_toggle_floating" || \
     fail "KGlobalAccel could not retile the lower $protocol stack member"
   wait_for_layout \
     "$first_title" "16,16,616,336" \
@@ -2194,7 +2340,7 @@ run_scenario() {
     "$fourth_title" "664,16,616,688" || \
     fail "Driftile did not prepare the direct $protocol stack insertion: $(describe_layout "$first_title" "$second_title" "$third_title" "$fourth_title")"
 
-  invoke_shortcut "Driftile Insert Window into Stack Left" || \
+  invoke_shortcut "driftile_insert_window_into_stack_left" || \
     fail "KGlobalAccel could not invoke the insert-into-stack-left shortcut"
   wait_for_geometries \
     "$first_title" "16,16,616,219" \
@@ -2205,7 +2351,7 @@ run_scenario() {
   wait_for_active "$fourth_title" || \
     fail "Driftile changed $protocol focus after direct stack insertion"
 
-  invoke_shortcut "Driftile Insert Window into Stack Right" || \
+  invoke_shortcut "driftile_insert_window_into_stack_right" || \
     fail "KGlobalAccel could not invoke the insert-into-stack-right shortcut"
   wait_for_geometries \
     "$first_title" "16,16,616,219" \
@@ -2229,7 +2375,7 @@ run_scenario() {
   wait_for_active "$second_title" || \
     fail "KWin did not restore the lower $protocol stack member focus"
 
-  invoke_shortcut "Driftile Focus Up" || \
+  invoke_shortcut "driftile_focus_window_up" || \
     fail "KGlobalAccel could not invoke the focus-up shortcut"
   wait_for_active "$first_title" || \
     fail "Driftile did not focus the upper $protocol stack member"
@@ -2239,7 +2385,7 @@ run_scenario() {
     "$third_title" "648,16,616,688" || \
     fail "Driftile changed the $protocol stack while focusing up: $(describe_layout "$first_title" "$second_title" "$third_title")"
 
-  invoke_shortcut "Driftile Focus Down" || \
+  invoke_shortcut "driftile_focus_window_down" || \
     fail "KGlobalAccel could not invoke the focus-down shortcut"
   wait_for_active "$second_title" || \
     fail "Driftile did not focus the lower $protocol stack member"
@@ -2249,7 +2395,7 @@ run_scenario() {
     "$third_title" "648,16,616,688" || \
     fail "Driftile changed the $protocol stack while focusing down: $(describe_layout "$first_title" "$second_title" "$third_title")"
 
-  invoke_shortcut "Driftile Move Window Up" || \
+  invoke_shortcut "driftile_move_window_up" || \
     fail "KGlobalAccel could not invoke the move-window-up shortcut"
   wait_for_layout \
     "$first_title" "16,368,616,336" \
@@ -2259,7 +2405,7 @@ run_scenario() {
   wait_for_active "$second_title" || \
     fail "Driftile changed $protocol focus after moving the stack member up"
 
-  invoke_shortcut "Driftile Move Window Down" || \
+  invoke_shortcut "driftile_move_window_down" || \
     fail "KGlobalAccel could not invoke the move-window-down shortcut"
   wait_for_layout \
     "$first_title" "16,16,616,336" \
@@ -2269,7 +2415,7 @@ run_scenario() {
   wait_for_active "$second_title" || \
     fail "Driftile changed $protocol focus after moving the stack member down"
 
-  invoke_shortcut "Driftile Focus Right" || \
+  invoke_shortcut "driftile_focus_column_right" || \
     fail "KGlobalAccel could not invoke the focus-right shortcut from the stack"
   wait_for_active "$third_title" || \
     fail "Driftile did not focus the right $protocol column from the stack"
@@ -2279,7 +2425,7 @@ run_scenario() {
     "$third_title" "648,16,616,688" || \
     fail "Driftile changed the $protocol stack while focusing right: $(describe_layout "$first_title" "$second_title" "$third_title")"
 
-  invoke_shortcut "Driftile Move Window Left" || \
+  invoke_shortcut "driftile_move_window_left" || \
     fail "KGlobalAccel could not merge the right $protocol window left"
   wait_for_layout \
     "$first_title" "16,16,616,219" \
@@ -2289,7 +2435,7 @@ run_scenario() {
   wait_for_active "$third_title" || \
     fail "Driftile changed $protocol focus after forming the three-window stack"
 
-  invoke_shortcut "Driftile Focus Up" || \
+  invoke_shortcut "driftile_focus_window_up" || \
     fail "KGlobalAccel could not focus up in the three-window $protocol stack"
   wait_for_active "$second_title" || \
     fail "Driftile did not focus the middle member of the three-window $protocol stack"
@@ -2299,7 +2445,7 @@ run_scenario() {
     "$third_title" "16,485,616,219" || \
     fail "Driftile changed the three-window $protocol stack while focusing up: $(describe_layout "$first_title" "$second_title" "$third_title")"
 
-  invoke_shortcut "Driftile Focus Down" || \
+  invoke_shortcut "driftile_focus_window_down" || \
     fail "KGlobalAccel could not focus down in the three-window $protocol stack"
   wait_for_active "$third_title" || \
     fail "Driftile did not restore focus to the lower three-window $protocol stack member"
@@ -2309,7 +2455,7 @@ run_scenario() {
     "$third_title" "16,485,616,219" || \
     fail "Driftile changed the three-window $protocol stack while focusing down: $(describe_layout "$first_title" "$second_title" "$third_title")"
 
-  invoke_shortcut "Driftile Move Window Right" || \
+  invoke_shortcut "driftile_move_window_right" || \
     fail "KGlobalAccel could not extract the lower $protocol stack member right"
   wait_for_layout \
     "$first_title" "16,16,616,336" \
@@ -2319,7 +2465,7 @@ run_scenario() {
   wait_for_active "$third_title" || \
     fail "Driftile changed $protocol focus after extracting the lower stack member"
 
-  invoke_shortcut "Driftile Focus Left" || \
+  invoke_shortcut "driftile_focus_column_left" || \
     fail "KGlobalAccel could not invoke the focus-left shortcut from the extracted window"
   wait_for_active "$first_title" || \
     fail "Driftile did not focus the first member of the left $protocol stack"
@@ -2329,7 +2475,7 @@ run_scenario() {
     "$third_title" "648,16,616,688" || \
     fail "Driftile changed the $protocol stack while focusing left: $(describe_layout "$first_title" "$second_title" "$third_title")"
 
-  invoke_shortcut "Driftile Focus Down" || \
+  invoke_shortcut "driftile_focus_window_down" || \
     fail "KGlobalAccel could not focus the lower member of the left $protocol stack"
   wait_for_active "$second_title" || \
     fail "Driftile did not focus the lower member of the left $protocol stack"
@@ -2339,7 +2485,7 @@ run_scenario() {
     "$third_title" "648,16,616,688" || \
     fail "Driftile changed the $protocol stack before extracting its lower member: $(describe_layout "$first_title" "$second_title" "$third_title")"
 
-  invoke_shortcut "Driftile Move Window Right" || \
+  invoke_shortcut "driftile_move_window_right" || \
     fail "KGlobalAccel could not extract the active $protocol stack member right"
   wait_for_layout \
     "$first_title" "16,16,616,688" \
@@ -2349,7 +2495,7 @@ run_scenario() {
   wait_for_active "$second_title" || \
     fail "Driftile changed $protocol focus after extracting the middle window"
 
-  invoke_shortcut "Driftile Move Window Right" || \
+  invoke_shortcut "driftile_move_window_right" || \
     fail "KGlobalAccel could not merge the active $protocol window right"
   wait_for_layout \
     "$first_title" "16,16,616,688" \
@@ -2359,7 +2505,7 @@ run_scenario() {
   wait_for_active "$second_title" || \
     fail "Driftile changed $protocol focus after merging the middle window right"
 
-  invoke_shortcut "Driftile Move Window Left" || \
+  invoke_shortcut "driftile_move_window_left" || \
     fail "KGlobalAccel could not extract the active $protocol stack member left"
   wait_for_layout \
     "$first_title" "16,16,616,688" \
@@ -2369,7 +2515,7 @@ run_scenario() {
   wait_for_active "$second_title" || \
     fail "Driftile changed $protocol focus after extracting the middle window left"
 
-  invoke_shortcut "Driftile Focus Right" || \
+  invoke_shortcut "driftile_focus_column_right" || \
     fail "KGlobalAccel could not focus the right $protocol column"
   wait_for_layout \
     "$first_title" "-600,16,616,688" \
@@ -2379,7 +2525,7 @@ run_scenario() {
   wait_for_active "$third_title" || \
     fail "Driftile did not focus the right $protocol column after stack editing"
 
-  invoke_shortcut "Driftile Focus Left" || \
+  invoke_shortcut "driftile_focus_column_left" || \
     fail "KGlobalAccel could not restore focus to the middle $protocol column"
   wait_for_layout \
     "$first_title" "-600,16,616,688" \
@@ -2389,7 +2535,7 @@ run_scenario() {
   wait_for_active "$second_title" || \
     fail "Driftile did not restore focus to the middle $protocol column"
 
-  invoke_shortcut "Driftile Toggle Floating" || \
+  invoke_shortcut "driftile_toggle_floating" || \
     fail "KGlobalAccel could not float the middle $protocol window"
   wait_for_layout \
     "$first_title" "16,16,616,688" \
@@ -2399,7 +2545,7 @@ run_scenario() {
   wait_for_active "$second_title" || \
     fail "Driftile changed $protocol focus after floating the middle window"
 
-  invoke_shortcut "Driftile Toggle Floating" || \
+  invoke_shortcut "driftile_toggle_floating" || \
     fail "KGlobalAccel could not retile the middle $protocol window"
   wait_for_layout \
     "$first_title" "-600,16,616,688" \
@@ -2409,14 +2555,14 @@ run_scenario() {
   wait_for_active "$second_title" || \
     fail "Driftile changed $protocol focus after retiling the middle window"
 
-  wait_for_shortcut "Driftile Decrease Column Width" || \
+  wait_for_shortcut "driftile_decrease_column_width" || \
     fail "KGlobalAccel did not register the decrease-width shortcut"
-  wait_for_shortcut "Driftile Increase Column Width" || \
+  wait_for_shortcut "driftile_increase_column_width" || \
     fail "KGlobalAccel did not register the increase-width shortcut"
-  wait_for_shortcut "Driftile Reset Column Width" || \
+  wait_for_shortcut "driftile_reset_column_width" || \
     fail "KGlobalAccel did not register the reset-width shortcut"
 
-  invoke_shortcut "Driftile Increase Column Width" || \
+  invoke_shortcut "driftile_increase_column_width" || \
     fail "KGlobalAccel could not invoke the increase-width shortcut"
   wait_for_layout \
     "$first_title" "-600,16,616,688" \
@@ -2426,7 +2572,7 @@ run_scenario() {
   wait_for_active "$second_title" || \
     fail "Driftile changed $protocol focus after increasing column width"
 
-  invoke_shortcut "Driftile Decrease Column Width" || \
+  invoke_shortcut "driftile_decrease_column_width" || \
     fail "KGlobalAccel could not invoke the decrease-width shortcut"
   wait_for_layout \
     "$first_title" "-600,16,616,688" \
@@ -2436,7 +2582,7 @@ run_scenario() {
   wait_for_active "$second_title" || \
     fail "Driftile changed $protocol focus after restoring column width"
 
-  invoke_shortcut "Driftile Decrease Column Width" || \
+  invoke_shortcut "driftile_decrease_column_width" || \
     fail "KGlobalAccel could not invoke the decrease-width shortcut"
   wait_for_layout \
     "$first_title" "-537,16,616,688" \
@@ -2446,7 +2592,7 @@ run_scenario() {
   wait_for_active "$second_title" || \
     fail "Driftile changed $protocol focus after decreasing column width"
 
-  invoke_shortcut "Driftile Reset Column Width" || \
+  invoke_shortcut "driftile_reset_column_width" || \
     fail "KGlobalAccel could not invoke the reset-width shortcut"
   wait_for_layout \
     "$first_title" "-537,16,616,688" \
@@ -2589,15 +2735,15 @@ run_multi_output_scenario() {
     "${titles[4]}" "1928,16,616,688" || \
     fail "Driftile did not create two isolated $protocol output contexts: $(describe_layout "${titles[0]}" "${titles[1]}" "${titles[3]}" "${titles[4]}")"
 
-  wait_for_shortcut "Driftile Insert Window into Stack Left" || \
+  wait_for_shortcut "driftile_insert_window_into_stack_left" || \
     fail "KGlobalAccel did not register the multi-output insert-into-stack-left shortcut"
-  wait_for_shortcut "Driftile Insert Window into Stack Right" || \
+  wait_for_shortcut "driftile_insert_window_into_stack_right" || \
     fail "KGlobalAccel did not register the multi-output insert-into-stack-right shortcut"
   activate_window "${titles[1]}" || \
     fail "KWin could not activate the left $protocol window for direct stack insertion"
   wait_for_active "${titles[1]}" || \
     fail "KWin did not focus the left $protocol window before preparing the stack"
-  invoke_shortcut "Driftile Move Window Left" || \
+  invoke_shortcut "driftile_move_window_left" || \
     fail "KGlobalAccel could not prepare the left multi-output $protocol stack"
   wait_for_geometries \
     "${titles[0]}" "16,16,616,336" \
@@ -2638,7 +2784,7 @@ run_multi_output_scenario() {
     "${titles[4]}" "1928,16,616,688" || \
     fail "Driftile did not admit the direct multi-output $protocol insertion window: $(describe_layout "${titles[0]}" "${titles[1]}" "${titles[2]}" "${titles[3]}" "${titles[4]}")"
 
-  invoke_shortcut "Driftile Insert Window into Stack Left" || \
+  invoke_shortcut "driftile_insert_window_into_stack_left" || \
     fail "KGlobalAccel could not invoke the multi-output insert-into-stack-left shortcut"
   wait_for_geometries \
     "${titles[0]}" "16,16,616,219" \
@@ -2650,7 +2796,7 @@ run_multi_output_scenario() {
   wait_for_active "${titles[2]}" || \
     fail "Driftile changed $protocol focus after the isolated stack insertion"
 
-  invoke_shortcut "Driftile Insert Window into Stack Right" || \
+  invoke_shortcut "driftile_insert_window_into_stack_right" || \
     fail "KGlobalAccel could not invoke the bounded multi-output stack search"
   wait_for_geometries \
     "${titles[0]}" "16,16,616,219" \
@@ -2669,7 +2815,7 @@ run_multi_output_scenario() {
     fail "KWin could not activate the lower left $protocol stack member"
   wait_for_active "${titles[1]}" || \
     fail "KWin did not focus the lower left $protocol stack member"
-  invoke_shortcut "Driftile Move Window Right" || \
+  invoke_shortcut "driftile_move_window_right" || \
     fail "KGlobalAccel could not restore the left multi-output $protocol columns"
   wait_for_geometries \
     "${titles[0]}" "16,16,616,688" \
@@ -2678,13 +2824,13 @@ run_multi_output_scenario() {
     "${titles[4]}" "1928,16,616,688" || \
     fail "Driftile did not restore the two $protocol output contexts after direct insertion: $(describe_layout "${titles[0]}" "${titles[1]}" "${titles[3]}" "${titles[4]}")"
 
-  wait_for_shortcut "Driftile Toggle Floating" || \
+  wait_for_shortcut "driftile_toggle_floating" || \
     fail "KGlobalAccel did not register the multi-output floating shortcut"
   activate_window "${titles[0]}" || \
     fail "KWin could not activate the left $protocol window for floating"
   wait_for_active "${titles[0]}" || \
     fail "KWin did not focus the left $protocol window before floating"
-  invoke_shortcut "Driftile Toggle Floating" || \
+  invoke_shortcut "driftile_toggle_floating" || \
     fail "KGlobalAccel could not float the left $protocol window"
   wait_for_geometries \
     "${titles[0]}" "${baselines[0]}" \
@@ -2695,7 +2841,7 @@ run_multi_output_scenario() {
   wait_for_active "${titles[0]}" || \
     fail "Driftile changed $protocol focus after the multi-output floating toggle"
 
-  invoke_shortcut "Driftile Toggle Floating" || \
+  invoke_shortcut "driftile_toggle_floating" || \
     fail "KGlobalAccel could not retile the left $protocol window"
   wait_for_geometries \
     "${titles[0]}" "16,16,616,688" \

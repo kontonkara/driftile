@@ -139,6 +139,86 @@ let
             '.data | sort_by(.[0]) | .[$index][1]'
       }
 
+      virtual_desktop_sequence() {
+        busctl --user --json=short get-property \
+          org.kde.KWin \
+          /VirtualDesktopManager \
+          org.kde.KWin.VirtualDesktopManager \
+          desktops 2>/dev/null \
+          | jq --exit-status --raw-output \
+            '.data | sort_by(.[0]) | map(.[1]) | join(" ")'
+      }
+
+      wait_for_desktop_sequence() {
+        local attempt
+        local expected="$*"
+        local stable_samples=0
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          if [[ "$(virtual_desktop_sequence 2>/dev/null || true)" == "$expected" ]]; then
+            stable_samples=$((stable_samples + 1))
+
+            if ((stable_samples >= 2)); then
+              return 0
+            fi
+          else
+            stable_samples=0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      wait_for_appended_desktop() {
+        local result_variable=$1
+        shift
+        local attempt
+        local candidate=""
+        local count
+        local expected_count
+        local prefix="$*"
+        local sequence
+        local stable_candidate=""
+        local stable_samples=0
+
+        expected_count=$(($# + 1))
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          count=$(virtual_desktop_count 2>/dev/null || true)
+          sequence=$(virtual_desktop_sequence 2>/dev/null || true)
+          candidate=""
+
+          if [[ "$count" == "$expected_count" && "$sequence" == "$prefix "* ]]; then
+            candidate=$(virtual_desktop_id "$#" 2>/dev/null || true)
+
+            if [[ "$sequence" != "$prefix $candidate" ]]; then
+              candidate=""
+            fi
+          fi
+
+          if [[ -n "$candidate" && "$candidate" == "$stable_candidate" ]]; then
+            stable_samples=$((stable_samples + 1))
+          elif [[ -n "$candidate" ]]; then
+            stable_candidate=$candidate
+            stable_samples=1
+          else
+            stable_candidate=""
+            stable_samples=0
+          fi
+
+          if ((stable_samples >= 2)); then
+            printf -v "$result_variable" '%s' "$stable_candidate"
+            return 0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
       current_desktop_id() {
         busctl --user --json=short get-property \
           org.kde.KWin \
@@ -246,28 +326,34 @@ let
             org.kde.kglobalaccel.Component \
             shortcutNames 2>/dev/null || true)
 
-          if [[ "$shortcuts" == *"Driftile Focus Left"* \
-            && "$shortcuts" == *"Driftile Focus Right"* \
-            && "$shortcuts" == *"Driftile Focus Up"* \
-            && "$shortcuts" == *"Driftile Focus Down"* \
-            && "$shortcuts" == *"Driftile Move Column Left"* \
-            && "$shortcuts" == *"Driftile Move Column Right"* \
-            && "$shortcuts" == *"Driftile Move Window Left"* \
-            && "$shortcuts" == *"Driftile Move Window Right"* \
-            && "$shortcuts" == *"Driftile Move Window Up"* \
-            && "$shortcuts" == *"Driftile Move Window Down"* \
-            && "$shortcuts" == *"Driftile Move Window to Previous Desktop"* \
-            && "$shortcuts" == *"Driftile Move Window to Next Desktop"* \
-            && "$shortcuts" == *"Driftile Move Window to Output Left"* \
-            && "$shortcuts" == *"Driftile Move Window to Output Right"* \
-            && "$shortcuts" == *"Driftile Move Window to Output Up"* \
-            && "$shortcuts" == *"Driftile Move Window to Output Down"* \
-            && "$shortcuts" == *"Driftile Insert Window into Stack Left"* \
-            && "$shortcuts" == *"Driftile Insert Window into Stack Right"* \
-            && "$shortcuts" == *"Driftile Toggle Floating"* \
-            && "$shortcuts" == *"Driftile Decrease Column Width"* \
-            && "$shortcuts" == *"Driftile Increase Column Width"* \
-            && "$shortcuts" == *"Driftile Reset Column Width"* ]]; then
+          if [[ "$shortcuts" == *"driftile_focus_column_left"* \
+            && "$shortcuts" == *"driftile_focus_column_right"* \
+            && "$shortcuts" == *"driftile_focus_window_up"* \
+            && "$shortcuts" == *"driftile_focus_window_down"* \
+            && "$shortcuts" == *"driftile_move_column_left"* \
+            && "$shortcuts" == *"driftile_move_column_right"* \
+            && "$shortcuts" == *"driftile_move_window_left"* \
+            && "$shortcuts" == *"driftile_move_window_right"* \
+            && "$shortcuts" == *"driftile_move_window_up"* \
+            && "$shortcuts" == *"driftile_move_window_down"* \
+            && "$shortcuts" == *"driftile_focus_previous_desktop"* \
+            && "$shortcuts" == *"driftile_focus_next_desktop"* \
+            && "$shortcuts" == *"driftile_focus_output_left"* \
+            && "$shortcuts" == *"driftile_focus_output_right"* \
+            && "$shortcuts" == *"driftile_focus_output_up"* \
+            && "$shortcuts" == *"driftile_focus_output_down"* \
+            && "$shortcuts" == *"driftile_move_window_to_previous_desktop"* \
+            && "$shortcuts" == *"driftile_move_window_to_next_desktop"* \
+            && "$shortcuts" == *"driftile_move_window_to_output_left"* \
+            && "$shortcuts" == *"driftile_move_window_to_output_right"* \
+            && "$shortcuts" == *"driftile_move_window_to_output_up"* \
+            && "$shortcuts" == *"driftile_move_window_to_output_down"* \
+            && "$shortcuts" == *"driftile_insert_window_into_stack_left"* \
+            && "$shortcuts" == *"driftile_insert_window_into_stack_right"* \
+            && "$shortcuts" == *"driftile_toggle_floating"* \
+            && "$shortcuts" == *"driftile_decrease_column_width"* \
+            && "$shortcuts" == *"driftile_increase_column_width"* \
+            && "$shortcuts" == *"driftile_reset_column_width"* ]]; then
             return 0
           fi
 
@@ -1330,7 +1416,7 @@ let
             org.kde.kglobalaccel.Component \
             shortcutNames 2>/dev/null \
             | grep -oE \
-              'Driftile (Focus (Left|Right|Up|Down)|Move Column (Left|Right)|Move Window ((Left|Right|Up|Down)|to ((Previous|Next) Desktop|Output (Left|Right|Up|Down)))|Insert Window into Stack (Left|Right)|Toggle Floating|(Decrease|Increase|Reset) Column Width)' \
+              'driftile_[a-z0-9_]+' \
             | sort -u \
             | tr '\n' ' ' || true
           printf '\nwindow A captions: '
@@ -1434,35 +1520,35 @@ let
             "$fixed_title" \
             "$fixed_frame" \
           && automatic_floating_shortcut_is_no_op \
-            "Driftile Focus Left" \
+            "driftile_focus_column_left" \
             "$fixed_title" \
             "$first_frame" \
             "$second_frame" \
             "$third_frame" \
             "$fixed_frame" \
           && automatic_floating_shortcut_is_no_op \
-            "Driftile Move Window Left" \
+            "driftile_move_window_left" \
             "$fixed_title" \
             "$first_frame" \
             "$second_frame" \
             "$third_frame" \
             "$fixed_frame" \
           && automatic_floating_shortcut_is_no_op \
-            "Driftile Toggle Floating" \
+            "driftile_toggle_floating" \
             "$fixed_title" \
             "$first_frame" \
             "$second_frame" \
             "$third_frame" \
             "$fixed_frame" \
           && automatic_floating_shortcut_is_no_op \
-            "Driftile Move Window to Next Desktop" \
+            "driftile_move_window_to_next_desktop" \
             "$fixed_title" \
             "$first_frame" \
             "$second_frame" \
             "$third_frame" \
             "$fixed_frame" \
           && automatic_floating_shortcut_is_no_op \
-            "Driftile Move Window to Output Right" \
+            "driftile_move_window_to_output_right" \
             "$fixed_title" \
             "$first_frame" \
             "$second_frame" \
@@ -1492,6 +1578,7 @@ let
         local desktop_source_width
         local desktop_window
         local direct_insert_verified
+        local first_trailing_desktop_id=""
         local floating_first_frame
         local floating_second_frame
         local floating_third_frame
@@ -1501,6 +1588,7 @@ let
         local singleton_first_frame
         local singleton_second_frame
         local singleton_third_frame
+        local second_trailing_desktop_id=""
 
         wait_for_window "$title_a" \
           && wait_for_window "$title_b" \
@@ -1532,25 +1620,25 @@ let
         record_focus_state "automatic-floating window preserved layout and focus"
 
         capture_stable_frames \
-          && invoke_shortcut "Driftile Move Window to Output Left" \
+          && invoke_shortcut "driftile_move_window_to_output_left" \
           && wait_for_frames \
             "$stable_first_frame" \
             "$stable_second_frame" \
             "$stable_third_frame" \
           && wait_for_active "$title_c" \
-          && invoke_shortcut "Driftile Move Window to Output Right" \
+          && invoke_shortcut "driftile_move_window_to_output_right" \
           && wait_for_frames \
             "$stable_first_frame" \
             "$stable_second_frame" \
             "$stable_third_frame" \
           && wait_for_active "$title_c" \
-          && invoke_shortcut "Driftile Move Window to Output Up" \
+          && invoke_shortcut "driftile_move_window_to_output_up" \
           && wait_for_frames \
             "$stable_first_frame" \
             "$stable_second_frame" \
             "$stable_third_frame" \
           && wait_for_active "$title_c" \
-          && invoke_shortcut "Driftile Move Window to Output Down" \
+          && invoke_shortcut "driftile_move_window_to_output_down" \
           && wait_for_frames \
             "$stable_first_frame" \
             "$stable_second_frame" \
@@ -1559,37 +1647,37 @@ let
           || return 1
         record_focus_state "single-output transfer boundaries preserved layout and focus"
 
-        invoke_shortcut "Driftile Move Column Left" \
+        invoke_shortcut "driftile_move_column_left" \
           && wait_for_active "$title_c" \
           && wait_for_layout -800 864 32 \
           || return 1
         record_focus_state "column C moved left"
 
-        invoke_shortcut "Driftile Move Column Right" \
+        invoke_shortcut "driftile_move_column_right" \
           && wait_for_active "$title_c" \
           && wait_for_layout -800 32 864 \
           || return 1
         record_focus_state "column C moved right"
 
-        invoke_shortcut "Driftile Focus Left" \
+        invoke_shortcut "driftile_focus_column_left" \
           && wait_for_active "$title_b" \
           && wait_for_layout -800 32 864 \
           || return 1
         record_focus_state "focus left to B invoked"
 
-        invoke_shortcut "Driftile Focus Left" \
+        invoke_shortcut "driftile_focus_column_left" \
           && wait_for_active "$title_a" \
           && wait_for_layout 0 832 1664 \
           || return 1
         record_focus_state "focus left to A invoked"
 
-        invoke_shortcut "Driftile Focus Right" \
+        invoke_shortcut "driftile_focus_column_right" \
           && wait_for_active "$title_b" \
           && wait_for_layout 0 832 1664 \
           || return 1
         record_focus_state "focus right to B invoked"
 
-        invoke_shortcut "Driftile Focus Right" \
+        invoke_shortcut "driftile_focus_column_right" \
           && wait_for_active "$title_c" \
           && wait_for_layout -800 32 864 \
           || return 1
@@ -1612,7 +1700,7 @@ let
 
         record_focus_state "window B activated for column resizing"
 
-        invoke_shortcut "Driftile Increase Column Width" \
+        invoke_shortcut "driftile_increase_column_width" \
           && wait_for_middle_width \
             greater \
             "$baseline_first_width" \
@@ -1622,7 +1710,7 @@ let
           || return 1
         record_focus_state "column B width increased"
 
-        invoke_shortcut "Driftile Decrease Column Width" \
+        invoke_shortcut "driftile_decrease_column_width" \
           && wait_for_middle_width \
             equal \
             "$baseline_first_width" \
@@ -1632,7 +1720,7 @@ let
           || return 1
         record_focus_state "column B width restored by decrease"
 
-        invoke_shortcut "Driftile Decrease Column Width" \
+        invoke_shortcut "driftile_decrease_column_width" \
           && wait_for_middle_width \
             less \
             "$baseline_first_width" \
@@ -1642,7 +1730,7 @@ let
           || return 1
         record_focus_state "column B width decreased"
 
-        invoke_shortcut "Driftile Reset Column Width" \
+        invoke_shortcut "driftile_reset_column_width" \
           && wait_for_middle_width \
             equal \
             "$baseline_first_width" \
@@ -1660,7 +1748,7 @@ let
         singleton_second_frame=$stable_second_frame
         singleton_third_frame=$stable_third_frame
 
-        invoke_shortcut "Driftile Toggle Floating" \
+        invoke_shortcut "driftile_toggle_floating" \
           && wait_for_floating_layout \
             "$singleton_first_frame" \
             "$singleton_second_frame" \
@@ -1672,7 +1760,7 @@ let
         floating_third_frame=$stable_third_frame
         record_focus_state "window B floated from its tiled column"
 
-        invoke_shortcut "Driftile Toggle Floating" \
+        invoke_shortcut "driftile_toggle_floating" \
           && wait_for_frames \
             "$singleton_first_frame" \
             "$singleton_second_frame" \
@@ -1681,7 +1769,7 @@ let
           || return 1
         record_focus_state "window B restored to its tiled column"
 
-        invoke_shortcut "Driftile Move Window Left" \
+        invoke_shortcut "driftile_move_window_left" \
           && wait_for_stack_layout \
             first-above-second \
             "$singleton_first_frame" \
@@ -1719,9 +1807,27 @@ let
             "$merged_second_frame" \
             "$merged_third_frame" \
           || return 1
+        wait_for_appended_desktop \
+          first_trailing_desktop_id \
+          "$primary_desktop_id" \
+          "$secondary_desktop_id" \
+          || return 1
         record_focus_state "desktop transfer destination seeded"
 
-        invoke_shortcut "Driftile Move Window to Previous Desktop" \
+        invoke_shortcut "driftile_focus_next_desktop" \
+          && wait_for_current_desktop "$secondary_desktop_id" \
+          && invoke_shortcut "driftile_focus_previous_desktop" \
+          && wait_for_current_desktop "$primary_desktop_id" \
+          && wait_for_desktop_sequence \
+            "$primary_desktop_id" \
+            "$secondary_desktop_id" \
+            "$first_trailing_desktop_id" \
+          && activate_window "$title_b" \
+          && wait_for_active "$title_b" \
+          || return 1
+        record_focus_state "desktop focus navigation preserved the trailing desktop"
+
+        invoke_shortcut "driftile_move_window_to_previous_desktop" \
           && wait_for_current_desktop "$primary_desktop_id" \
           && wait_for_window_desktop "$title_b" "$primary_desktop_id" \
           && wait_for_frames \
@@ -1732,7 +1838,7 @@ let
           || return 1
         record_focus_state "previous desktop boundary preserved the source stack"
 
-        invoke_shortcut "Driftile Move Window to Next Desktop" \
+        invoke_shortcut "driftile_move_window_to_next_desktop" \
           && wait_for_current_desktop "$secondary_desktop_id" \
           && wait_for_window_desktop "$title_b" "$secondary_desktop_id" \
           && wait_for_desktop_destination_layout \
@@ -1743,8 +1849,29 @@ let
           || return 1
         record_focus_state "window B moved to the next desktop"
 
-        invoke_shortcut "Driftile Move Window to Next Desktop" \
+        invoke_shortcut "driftile_move_window_to_next_desktop" \
+          && wait_for_current_desktop "$first_trailing_desktop_id" \
+          && wait_for_window_desktop \
+            "$title_b" \
+            "$first_trailing_desktop_id" \
+          && wait_for_active "$title_b" \
+          && wait_for_appended_desktop \
+            second_trailing_desktop_id \
+            "$primary_desktop_id" \
+            "$secondary_desktop_id" \
+            "$first_trailing_desktop_id" \
+          && [[ "$second_trailing_desktop_id" \
+            != "$first_trailing_desktop_id" ]] \
+          || return 1
+        record_focus_state "window B occupied the trailing desktop and replenished it"
+
+        invoke_shortcut "driftile_move_window_to_previous_desktop" \
           && wait_for_current_desktop "$secondary_desktop_id" \
+          && wait_for_window_desktop "$title_b" "$secondary_desktop_id" \
+          && wait_for_desktop_sequence \
+            "$primary_desktop_id" \
+            "$secondary_desktop_id" \
+            "$first_trailing_desktop_id" \
           && wait_for_desktop_destination_frames \
             "$desktop_destination_frame" \
             "$desktop_moved_frame" \
@@ -1752,9 +1879,9 @@ let
             "$desktop_detached_third_frame" \
           && wait_for_active "$title_b" \
           || return 1
-        record_focus_state "next desktop boundary preserved the destination layout"
+        record_focus_state "redundant trailing desktop removed"
 
-        invoke_shortcut "Driftile Move Window to Previous Desktop" \
+        invoke_shortcut "driftile_move_window_to_previous_desktop" \
           && wait_for_current_desktop "$primary_desktop_id" \
           && wait_for_window_desktop "$title_b" "$primary_desktop_id" \
           && wait_for_desktop_source_layout \
@@ -1764,7 +1891,7 @@ let
           || return 1
         record_focus_state "window B returned after the source active column"
 
-        invoke_shortcut "Driftile Move Window to Previous Desktop" \
+        invoke_shortcut "driftile_move_window_to_previous_desktop" \
           && wait_for_current_desktop "$primary_desktop_id" \
           && wait_for_frames \
             "$desktop_return_first_frame" \
@@ -1775,7 +1902,7 @@ let
         record_focus_state "returned window preserved the previous desktop boundary"
         floating_second_frame=$desktop_return_second_frame
 
-        invoke_shortcut "Driftile Move Window Left" \
+        invoke_shortcut "driftile_move_window_left" \
           && wait_for_frames \
             "$merged_first_frame" \
             "$merged_second_frame" \
@@ -1787,6 +1914,10 @@ let
         wait "$desktop_window" >/dev/null 2>&1 || true
         desktop_window=""
         wait_for_window_gone "$title_desktop_destination" || return 1
+        wait_for_desktop_sequence \
+          "$primary_desktop_id" \
+          "$secondary_desktop_id" \
+          || return 1
         record_focus_state "desktop transfer source layout restored"
 
         activate_window "$title_c" \
@@ -1806,10 +1937,10 @@ let
           && activate_window "$title_d" \
           && wait_for_active "$title_d" \
           && wait_for_direct_insertion_source \
-          && invoke_shortcut "Driftile Insert Window into Stack Left" \
+          && invoke_shortcut "driftile_insert_window_into_stack_left" \
           && wait_for_direct_stack_layout \
           && wait_for_active "$title_d" \
-          && invoke_shortcut "Driftile Insert Window into Stack Right" \
+          && invoke_shortcut "driftile_insert_window_into_stack_right" \
           && wait_for_four_frames \
             "$direct_first_frame" \
             "$direct_second_frame" \
@@ -1838,7 +1969,7 @@ let
 
         [[ "$direct_insert_verified" == true ]] || return 1
 
-        invoke_shortcut "Driftile Toggle Floating" \
+        invoke_shortcut "driftile_toggle_floating" \
           && wait_for_frames \
             "$floating_first_frame" \
             "$floating_second_frame" \
@@ -1847,7 +1978,7 @@ let
           || return 1
         record_focus_state "window B floated from the left stack"
 
-        invoke_shortcut "Driftile Toggle Floating" \
+        invoke_shortcut "driftile_toggle_floating" \
           && wait_for_frames \
             "$merged_first_frame" \
             "$merged_second_frame" \
@@ -1856,7 +1987,7 @@ let
           || return 1
         record_focus_state "window B restored to the left stack"
 
-        invoke_shortcut "Driftile Focus Up" \
+        invoke_shortcut "driftile_focus_window_up" \
           && wait_for_active "$title_a" \
           && wait_for_frames \
             "$merged_first_frame" \
@@ -1865,7 +1996,7 @@ let
           || return 1
         record_focus_state "focus moved up within the stack"
 
-        invoke_shortcut "Driftile Focus Down" \
+        invoke_shortcut "driftile_focus_window_down" \
           && wait_for_active "$title_b" \
           && wait_for_frames \
             "$merged_first_frame" \
@@ -1874,7 +2005,7 @@ let
           || return 1
         record_focus_state "focus moved down within the stack"
 
-        invoke_shortcut "Driftile Move Window Up" \
+        invoke_shortcut "driftile_move_window_up" \
           && wait_for_active "$title_b" \
           && wait_for_frames \
             "$merged_second_frame" \
@@ -1883,7 +2014,7 @@ let
           || return 1
         record_focus_state "window B moved up within the stack"
 
-        invoke_shortcut "Driftile Move Window Down" \
+        invoke_shortcut "driftile_move_window_down" \
           && wait_for_active "$title_b" \
           && wait_for_frames \
             "$merged_first_frame" \
@@ -1892,7 +2023,7 @@ let
           || return 1
         record_focus_state "window B moved down within the stack"
 
-        invoke_shortcut "Driftile Move Window Right" \
+        invoke_shortcut "driftile_move_window_right" \
           && wait_for_active "$title_b" \
           && wait_for_singleton_layout \
             "$singleton_first_frame" \
@@ -1941,10 +2072,10 @@ let
         desktops_ready=true
       fi
 
-      title_a="$status - window A - Meta+Ctrl+H"
+      title_a="$status - window A - Meta+H"
       title_b="$status - window B - middle column"
-      title_c="$status - window C - Meta+Ctrl+L"
-      title_d="$status - window D - Meta+Ctrl+Alt+Shift+H"
+      title_c="$status - window C - Meta+L"
+      title_d="$status - window D - direct insertion"
       title_desktop_destination="$status - desktop destination"
       fourth_window=""
       : > /tmp/shared/driftile-focus-diagnostics

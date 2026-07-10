@@ -36,6 +36,7 @@ import type {
   KWinWindow,
   KWinWorkspace,
 } from "./platform/kwin/api";
+import { DesktopLifecycle } from "./platform/kwin/desktop-lifecycle";
 import {
   frameSizeConstraintBounds,
   KWinGeometryAdapter,
@@ -276,6 +277,7 @@ export class RuntimeController {
   private readonly committedOutputRanks = new Map<OutputId, number>();
   private readonly contexts = new Map<string, RuntimeContext>();
   private readonly dirtyContexts = new Set<string>();
+  private readonly desktopLifecycle: DesktopLifecycle;
   private windowTransferOperation: WindowTransferOperation | null = null;
   private readonly floatingWindows = new Map<WindowId, FloatingWindow>();
   private readonly geometry: KWinGeometryAdapter;
@@ -355,6 +357,11 @@ export class RuntimeController {
     );
     this.width = { ...(options.columnWidth ?? DEFAULT_COLUMN_WIDTH) };
     this.workspace = workspace;
+    this.desktopLifecycle = new DesktopLifecycle(workspace, {
+      changed: () => {
+        this.scheduleWork();
+      },
+    });
     this.observer = new WindowObserver(workspace, {
       added: this.handleWindowAdded,
       changed: this.handleWindowChanged,
@@ -407,6 +414,14 @@ export class RuntimeController {
 
   focusDown(): boolean {
     return this.focusWithinActiveColumn("down");
+  }
+
+  focusPreviousDesktop(): boolean {
+    return this.focusDesktop(-1);
+  }
+
+  focusNextDesktop(): boolean {
+    return this.focusDesktop(1);
   }
 
   moveColumnLeft(): boolean {
@@ -542,6 +557,7 @@ export class RuntimeController {
       try {
         this.observer.start();
         this.topologyObserver.start();
+        this.desktopLifecycle.start();
         this.refreshCommittedOutputRanks();
 
         for (const [
@@ -562,6 +578,7 @@ export class RuntimeController {
         this.initializing = false;
       }
 
+      this.desktopLifecycle.reconcile(this.desktopLifecycleCanMutate());
       this.reconcile();
       return true;
     } catch (error) {
@@ -601,6 +618,7 @@ export class RuntimeController {
         this.handleCurrentDesktopChanged,
       );
       this.workspace.windowActivated.disconnect(this.handleWindowActivated);
+      this.desktopLifecycle.stop();
       this.topologyObserver.stop();
       this.observer.stop();
       this.layout = new LayoutEngine();
@@ -1014,6 +1032,37 @@ export class RuntimeController {
       }
     }
   };
+
+  private focusDesktop(direction: DesktopTransferDirection): boolean {
+    if (
+      !this.started ||
+      this.windowTransferOperation ||
+      this.hasTopologyBarrier()
+    ) {
+      return false;
+    }
+
+    const output = this.workspace.activeScreen;
+
+    if (!output || !this.workspace.screens.includes(output)) {
+      return false;
+    }
+
+    const current = currentDesktopForOutput(this.workspace, output);
+    const currentIndex = current
+      ? this.workspace.desktops.findIndex(
+          (desktop) => desktop.id === current.id,
+        )
+      : -1;
+    const target = this.workspace.desktops[currentIndex + direction];
+
+    if (currentIndex < 0 || !target) {
+      return false;
+    }
+
+    this.switchDesktop(target, output);
+    return true;
+  }
 
   private focusAdjacent(direction: HorizontalDirection): boolean {
     const activeWindow = this.workspace.activeWindow;
@@ -1543,7 +1592,8 @@ export class RuntimeController {
           return Boolean(context && this.isContextVisible(context));
         }) ||
         this.pendingAdmissionContexts.size > 0 ||
-        this.pendingWindowSyncs.size > 0
+        this.pendingWindowSyncs.size > 0 ||
+        this.desktopLifecycle.pendingWork
       ) {
         this.scheduleWork();
       }
@@ -2445,7 +2495,8 @@ export class RuntimeController {
           return Boolean(context && this.isContextVisible(context));
         }) ||
         this.pendingAdmissionContexts.size > 0 ||
-        this.pendingWindowSyncs.size > 0
+        this.pendingWindowSyncs.size > 0 ||
+        this.desktopLifecycle.pendingWork
       ) {
         this.scheduleWork();
       }
@@ -4359,6 +4410,15 @@ export class RuntimeController {
     );
   }
 
+  private desktopLifecycleCanMutate(): boolean {
+    return (
+      this.started &&
+      !this.initializing &&
+      !this.windowTransferOperation &&
+      !this.hasTopologyBarrier()
+    );
+  }
+
   private scheduleStartupStabilization(): void {
     if (!this.started || this.startupStabilizationRemaining <= 0) {
       return;
@@ -5273,6 +5333,8 @@ export class RuntimeController {
     if (this.topologyStabilizing || this.topologyRetryPending) {
       return;
     }
+
+    this.desktopLifecycle.reconcile(this.desktopLifecycleCanMutate());
 
     const admissionsPending =
       this.pendingWindowSyncs.size > 0 ||

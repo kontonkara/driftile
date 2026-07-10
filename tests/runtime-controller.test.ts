@@ -10050,6 +10050,129 @@ describe("RuntimeController", () => {
     expect(second.writeCount).toBe(1);
     expect(otherSecond.writeCount).toBe(1);
   });
+
+  it("focuses adjacent desktops on the active output without wrapping", () => {
+    const activeOutput = createOutput("DP-1", 0);
+    const otherOutput = createOutput("HDMI-A-1", 1000);
+    const desktops = [
+      { id: "desktop-1" },
+      { id: "desktop-2" },
+      { id: "desktop-3" },
+    ] as const;
+    const fixture = createWorkspace(
+      activeOutput,
+      desktops[1],
+      [activeOutput, otherOutput],
+      desktops,
+      [],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(controller.focusPreviousDesktop()).toBe(true);
+    expect(fixture.workspace.currentDesktopForScreen?.(activeOutput)?.id).toBe(
+      "desktop-1",
+    );
+    expect(fixture.workspace.currentDesktopForScreen?.(otherOutput)?.id).toBe(
+      "desktop-2",
+    );
+    expect(controller.focusPreviousDesktop()).toBe(false);
+    expect(controller.focusNextDesktop()).toBe(true);
+    expect(fixture.workspace.currentDesktopForScreen?.(activeOutput)?.id).toBe(
+      "desktop-2",
+    );
+  });
+
+  it("focuses adjacent desktops through the global fallback", () => {
+    const output = createOutput("DP-1", 0);
+    const desktops = [{ id: "desktop-1" }, { id: "desktop-2" }] as const;
+    const fixture = createWorkspace(
+      output,
+      desktops[0],
+      [output],
+      desktops,
+      [],
+      false,
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(controller.focusPreviousDesktop()).toBe(false);
+    expect(controller.focusNextDesktop()).toBe(true);
+    expect(fixture.workspace.currentDesktop?.id).toBe("desktop-2");
+    expect(controller.focusNextDesktop()).toBe(false);
+  });
+
+  it("maintains one shared trailing desktop through the lifecycle adapter", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const tracked = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [tracked.window],
+    );
+    const desktopsChanged = new Signal<[]>();
+    let desktops: KWinVirtualDesktop[] = [desktop];
+    let createCount = 0;
+    let removeCount = 0;
+    Object.defineProperties(fixture.workspace, {
+      createDesktop: {
+        configurable: true,
+        value: (position: number) => {
+          createCount += 1;
+          desktops.splice(position, 0, {
+            id: `created-${String(createCount)}`,
+          });
+          desktopsChanged.emit();
+        },
+      },
+      desktops: {
+        configurable: true,
+        get: () => desktops,
+      },
+      desktopsChanged: { configurable: true, value: desktopsChanged },
+      removeDesktop: {
+        configurable: true,
+        value: (removed: KWinVirtualDesktop) => {
+          removeCount += 1;
+          desktops = desktops.filter((candidate) => candidate !== removed);
+          desktopsChanged.emit();
+        },
+      },
+    });
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(desktops.map((candidate) => candidate.id)).toEqual([
+      "desktop-1",
+      "created-1",
+    ]);
+
+    expect(controller.moveWindowToNextDesktop()).toBe(true);
+    expect(desktops.map((candidate) => candidate.id)).toEqual([
+      "desktop-1",
+      "created-1",
+      "created-2",
+    ]);
+    expect(controller.moveWindowToPreviousDesktop()).toBe(true);
+    expect(desktops.map((candidate) => candidate.id)).toEqual([
+      "desktop-1",
+      "created-1",
+    ]);
+
+    fixture.windowRemoved.emit(tracked.window);
+    expect(desktops.map((candidate) => candidate.id)).toEqual(["desktop-1"]);
+    expect(removeCount).toBe(2);
+  });
 });
 
 describe("RuntimeController desktop transfers", () => {

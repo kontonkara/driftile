@@ -57,6 +57,14 @@ export function focusDown(): void {
   controller?.focusDown();
 }
 
+export function focusPreviousDesktop(): void {
+  controller?.focusPreviousDesktop();
+}
+
+export function focusNextDesktop(): void {
+  controller?.focusNextDesktop();
+}
+
 export function moveColumnLeft(): void {
   controller?.moveColumnLeft();
 }

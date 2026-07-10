@@ -86,6 +86,7 @@ export interface KWinWorkspace {
       output?: KWinOutput,
     ]
   >;
+  readonly desktopsChanged?: KWinSignal<[]>;
   readonly windowActivated: KWinSignal<[window: KWinWindow | null]>;
   readonly windowAdded: KWinSignal<[window: KWinWindow]>;
   readonly windowRemoved: KWinSignal<[window: KWinWindow]>;
@@ -95,7 +96,9 @@ export interface KWinWorkspace {
     output: KWinOutput,
     desktop: KWinVirtualDesktop,
   ): KWinRect;
+  createDesktop?(position: number, name: string): void;
   currentDesktopForScreen?(output: KWinOutput): KWinVirtualDesktop | null;
+  removeDesktop?(desktop: KWinVirtualDesktop): void;
   sendClientToScreen?(window: KWinWindow, output: KWinOutput): void;
   setCurrentDesktopForScreen?(
     desktop: KWinVirtualDesktop,
