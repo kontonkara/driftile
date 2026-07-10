@@ -105,6 +105,12 @@ QtObject {
         sequence: "Meta+Ctrl+Shift+J"
         onActivated: Runtime.DriftileRuntime.moveWindowDown()
     }
+    readonly property ShortcutHandler toggleFloatingShortcut: ShortcutHandler {
+        name: "Driftile Toggle Floating"
+        text: "Driftile: Toggle floating"
+        sequence: "Meta+Ctrl+Space"
+        onActivated: Runtime.DriftileRuntime.toggleFloating()
+    }
     readonly property ShortcutHandler decreaseColumnWidthShortcut: ShortcutHandler {
         name: "Driftile Decrease Column Width"
         text: "Driftile: Decrease column width"

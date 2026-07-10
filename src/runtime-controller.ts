@@ -17,6 +17,7 @@ import {
   LayoutEngine,
   previewColumnRestoration,
   type ColumnWidth,
+  type DetachedWindowPlacement,
   type HorizontalDirection,
   type LayoutColumnPlacement,
   type LayoutColumnSnapshot,
@@ -83,6 +84,22 @@ interface RestoreBaseline {
   readonly frame: KWinWindow["frameGeometry"];
 }
 
+interface FloatingWindow {
+  readonly placement: DetachedWindowPlacement;
+  readonly sourceContextKey: string;
+}
+
+interface ToggleGeometryTransition {
+  readonly contextKey: string;
+  readonly expectedFrame: Rect;
+  settlementArmed: boolean;
+}
+
+interface ToggleTransitionProbe {
+  completedAttempts: number;
+  pending: boolean;
+}
+
 interface AdmissionCandidate {
   readonly id: WindowId;
   readonly source: KWinWindow;
@@ -95,6 +112,14 @@ interface ActiveColumnCommand {
   readonly context: RuntimeContext;
   readonly contextGeometry: ContextGeometry;
   readonly sampledGeometries: ReadonlyMap<string, ContextGeometry>;
+}
+
+interface ActiveWindowCommand {
+  readonly activeId: WindowId;
+  readonly activeWindow: KWinWindow;
+  readonly context: ManagedContext;
+  readonly contextGeometry: ContextGeometry;
+  readonly contextKey: string;
 }
 
 interface ResumeSample {
@@ -199,6 +224,7 @@ export class RuntimeController {
   private readonly committedOutputRanks = new Map<OutputId, number>();
   private readonly contexts = new Map<string, RuntimeContext>();
   private readonly dirtyContexts = new Set<string>();
+  private readonly floatingWindows = new Map<WindowId, FloatingWindow>();
   private readonly geometry: KWinGeometryAdapter;
   private readonly gap: number;
   private initializing = false;
@@ -242,6 +268,14 @@ export class RuntimeController {
   private topologyStabilizing = false;
   private topologyWindowOrder: ReadonlyMap<WindowId, number> | null = null;
   private readonly topologyObserver: TopologyObserver;
+  private readonly toggleGeometryTransitions = new Map<
+    WindowId,
+    ToggleGeometryTransition
+  >();
+  private readonly toggleTransitionProbes = new Map<
+    string,
+    ToggleTransitionProbe
+  >();
   private readonly transientResumeProbes = new Map<
     WindowId,
     TransientResumeProbe
@@ -289,6 +323,10 @@ export class RuntimeController {
     return this.lastWrites;
   }
 
+  get floatingCount(): number {
+    return this.floatingWindows.size;
+  }
+
   get managedCount(): number {
     return this.managedWindows.size;
   }
@@ -333,6 +371,22 @@ export class RuntimeController {
     return this.moveActiveWindowVertically("down");
   }
 
+  toggleFloating(): boolean {
+    const command = this.prepareActiveWindowCommand();
+
+    if (!command) {
+      return false;
+    }
+
+    const floating = this.floatingWindows.get(command.activeId);
+
+    if (floating) {
+      return this.tileActiveWindow(command, floating);
+    }
+
+    return this.floatActiveWindow(command);
+  }
+
   decreaseColumnWidth(): boolean {
     return this.resizeActiveColumn("decrease");
   }
@@ -360,6 +414,7 @@ export class RuntimeController {
       return;
     }
 
+    this.probeToggleTransitions();
     this.sampleSettledVisibleContextGeometries();
   }
 
@@ -454,6 +509,7 @@ export class RuntimeController {
       this.knownOutputInstances.clear();
       this.contexts.clear();
       this.dirtyContexts.clear();
+      this.floatingWindows.clear();
       this.managedWindows.clear();
       this.pendingAdmissionContexts.clear();
       this.pendingWindowSyncs.clear();
@@ -487,6 +543,8 @@ export class RuntimeController {
       this.topologyAllowsOverflowAdmissions = false;
       this.topologyColumnByWindow.clear();
       this.topologyWindowOrder = null;
+      this.toggleGeometryTransitions.clear();
+      this.toggleTransitionProbes.clear();
       this.workScheduled = false;
       this.lastWrites = 0;
     }
@@ -588,6 +646,19 @@ export class RuntimeController {
 
   private readonly handleWindowChanged = (id: string): void => {
     const changedId = windowId(id);
+    const transition = this.toggleGeometryTransitions.get(changedId);
+
+    if (transition) {
+      const source = this.observer.source(id);
+      const observed = source ? normalizeWindow(source) : null;
+      const liveContext = observed ? managedContext(observed) : null;
+
+      if (!liveContext || contextKey(liveContext) !== transition.contextKey) {
+        this.toggleGeometryTransitions.delete(changedId);
+        this.finishCanceledToggleTransition(transition.contextKey);
+      }
+    }
+
     this.clearCapacityParkBackoffForWindow(changedId);
     this.pendingWindowSyncs.add(changedId);
     this.scheduleWork();
@@ -599,6 +670,13 @@ export class RuntimeController {
     this.clearCapacityParkBackoffForWindow(changedId);
 
     if (source && hasGeometryAuthorityBlocker(source)) {
+      const transition = this.toggleGeometryTransitions.get(changedId);
+
+      if (transition) {
+        this.toggleGeometryTransitions.delete(changedId);
+        this.finishCanceledToggleTransition(transition.contextKey);
+      }
+
       this.suspendGeometryLease(changedId);
     }
 
@@ -637,6 +715,12 @@ export class RuntimeController {
     }
 
     requests.add(request);
+    const transition = this.toggleGeometryTransitions.get(suspendedId);
+
+    if (transition) {
+      this.toggleGeometryTransitions.delete(suspendedId);
+      this.finishCanceledToggleTransition(transition.contextKey);
+    }
 
     if (request.endsWith("-settling")) {
       this.transientResumeProbes.delete(suspendedId);
@@ -649,6 +733,18 @@ export class RuntimeController {
 
   private readonly handleWindowRemoved = (id: string): void => {
     const managedId = windowId(id);
+    const affectedContextKeys = new Set<string>();
+    const floating = this.floatingWindows.get(managedId);
+    const transition = this.toggleGeometryTransitions.get(managedId);
+
+    if (floating) {
+      affectedContextKeys.add(floating.sourceContextKey);
+    }
+
+    if (transition) {
+      affectedContextKeys.add(transition.contextKey);
+    }
+
     this.clearCapacityParkBackoffForWindow(managedId);
     this.cancelCapacityParkForWindow(managedId, false);
     this.invalidateCapacityLeaseForWindow(managedId);
@@ -658,11 +754,16 @@ export class RuntimeController {
     this.resumeSamples.delete(managedId);
     this.suspendedWindows.delete(managedId);
     this.transientResumeProbes.delete(managedId);
+    this.floatingWindows.delete(managedId);
+    this.toggleGeometryTransitions.delete(managedId);
     const releasedContextKey = this.releaseWindow(managedId);
 
     if (releasedContextKey) {
-      this.pendingAdmissionContexts.add(releasedContextKey);
-      this.scheduleWork();
+      affectedContextKeys.add(releasedContextKey);
+    }
+
+    for (const key of affectedContextKeys) {
+      this.finishCanceledToggleTransition(key);
     }
   };
 
@@ -733,7 +834,9 @@ export class RuntimeController {
     const activeId = windowId(String(activeWindow.internalId));
 
     if (
+      !this.toggleGeometrySettled(activeId) ||
       this.suspendedWindows.has(activeId) ||
+      this.requestedSuspensions.has(activeId) ||
       !isGeometryWritable(activeWindow)
     ) {
       return false;
@@ -750,7 +853,8 @@ export class RuntimeController {
       !owner ||
       !context ||
       !activeContext ||
-      contextKey(activeContext) !== owner.contextKey
+      contextKey(activeContext) !== owner.contextKey ||
+      this.toggleTransitionPending(context.key)
     ) {
       return false;
     }
@@ -772,7 +876,9 @@ export class RuntimeController {
       !targetOwner ||
       targetOwner.contextKey !== owner.contextKey ||
       !target ||
+      !this.toggleGeometrySettled(targetId) ||
       this.suspendedWindows.has(targetId) ||
+      this.requestedSuspensions.has(targetId) ||
       !isGeometryWritable(target) ||
       !targetContext ||
       contextKey(targetContext) !== owner.contextKey
@@ -937,6 +1043,158 @@ export class RuntimeController {
         return edit !== null;
       },
       () => edit !== null && this.layout.rollbackStackEdit(edit.rollback),
+    );
+  }
+
+  private floatActiveWindow(command: ActiveWindowCommand): boolean {
+    const owner = this.managedWindows.get(command.activeId);
+    const context = owner ? this.contexts.get(owner.contextKey) : undefined;
+
+    if (
+      !owner ||
+      !context ||
+      owner.contextKey !== command.contextKey ||
+      this.hasStructuralCapacityState(command.contextKey)
+    ) {
+      return false;
+    }
+
+    const before = this.layout.snapshot(
+      command.context.outputId,
+      command.context.desktopId,
+    );
+    const preview = this.layout.previewWindowDetach(command.activeId);
+
+    if (!preview || before.activeColumnId !== preview.placement.columnId) {
+      return false;
+    }
+
+    const sourceColumn = before.columns.find(
+      (column) => column.id === preview.placement.columnId,
+    );
+
+    if (
+      !sourceColumn ||
+      !this.columnMembersBelongToContext(sourceColumn, context)
+    ) {
+      return false;
+    }
+
+    const safeBaseline =
+      owner.restoreBaseline?.fingerprint ===
+        command.contextGeometry.fingerprint &&
+      this.geometry.canApplyFrame(
+        command.activeId,
+        owner.restoreBaseline.frame,
+        command.context,
+      )
+        ? owner.restoreBaseline.frame
+        : command.activeWindow.frameGeometry;
+    const floatingTarget: WindowGeometry = {
+      columnId: preview.placement.columnId,
+      frame: { ...safeBaseline },
+      windowId: command.activeId,
+    };
+
+    return this.applyWindowOwnershipTransition(
+      command,
+      preview.layout,
+      [floatingTarget],
+      command.activeId,
+      () => this.layout.commitWindowDetach(preview),
+      () => {
+        this.managedWindows.delete(command.activeId);
+        context.windowIds.delete(command.activeId);
+        this.floatingWindows.set(command.activeId, {
+          placement: preview.placement,
+          sourceContextKey: command.contextKey,
+        });
+        this.capacityParkBackoffs.delete(command.contextKey);
+
+        if (context.windowIds.size === 0) {
+          this.contexts.delete(command.contextKey);
+          this.dirtyContexts.delete(command.contextKey);
+        }
+
+        if (this.waitingWindowIds.get(command.contextKey)?.size) {
+          this.pendingAdmissionContexts.add(command.contextKey);
+        }
+      },
+      "floating toggle",
+    );
+  }
+
+  private tileActiveWindow(
+    command: ActiveWindowCommand,
+    floating: FloatingWindow,
+  ): boolean {
+    if (
+      this.managedWindows.has(command.activeId) ||
+      this.hasStructuralCapacityState(command.contextKey)
+    ) {
+      return false;
+    }
+
+    const before = this.layout.snapshot(
+      command.context.outputId,
+      command.context.desktopId,
+    );
+    const placement =
+      floating.sourceContextKey === command.contextKey
+        ? floating.placement
+        : this.freshDetachedWindowPlacement(command, before);
+    const preview = this.layout.previewWindowAttach(placement);
+
+    if (!preview) {
+      return false;
+    }
+
+    const restoreBaseline: RestoreBaseline = {
+      fingerprint: command.contextGeometry.fingerprint,
+      frame: { ...command.activeWindow.frameGeometry },
+    };
+    const existingContext = this.contexts.get(command.contextKey);
+    const runtimeContext: RuntimeContext = existingContext ?? {
+      ...command.context,
+      geometryFingerprint: command.contextGeometry.fingerprint,
+      key: command.contextKey,
+      windowIds: new Set<WindowId>(),
+    };
+
+    return this.applyWindowOwnershipTransition(
+      command,
+      preview.layout,
+      [],
+      command.activeId,
+      (viewportOffset) => {
+        if (!this.layout.commitWindowAttach(preview)) {
+          return false;
+        }
+
+        this.layout.setViewportOffset(
+          command.context.outputId,
+          command.context.desktopId,
+          viewportOffset,
+        );
+        return true;
+      },
+      () => {
+        if (!existingContext) {
+          this.contexts.set(command.contextKey, runtimeContext);
+        }
+
+        runtimeContext.windowIds.add(command.activeId);
+        runtimeContext.geometryFingerprint =
+          command.contextGeometry.fingerprint;
+        this.managedWindows.set(command.activeId, {
+          contextKey: command.contextKey,
+          restoreBaseline,
+        });
+        this.floatingWindows.delete(command.activeId);
+        this.capacityParkBackoffs.delete(command.contextKey);
+        this.forgetWaitingWindow(command.activeId);
+      },
+      "tiling toggle",
     );
   }
 
@@ -1126,6 +1384,54 @@ export class RuntimeController {
     throw new Error("could not allocate an extracted column ID");
   }
 
+  private freshDetachedWindowPlacement(
+    command: ActiveWindowCommand,
+    context: LayoutContextSnapshot,
+  ): DetachedWindowPlacement {
+    const columnIds = new Set(context.columns.map((column) => column.id));
+    const canonical = columnId(`column:${String(command.activeId)}`);
+    let detachedColumnId = canonical;
+
+    if (columnIds.has(detachedColumnId)) {
+      const base = `column:floating:${String(command.activeId)}`;
+
+      for (let index = 0; index <= context.columns.length; index += 1) {
+        const candidate = columnId(
+          index === 0 ? base : `${base}:${String(index)}`,
+        );
+
+        if (!columnIds.has(candidate)) {
+          detachedColumnId = candidate;
+          break;
+        }
+      }
+    }
+
+    if (columnIds.has(detachedColumnId)) {
+      throw new Error("could not allocate a floating column ID");
+    }
+
+    const activeIndex = context.columns.findIndex(
+      (column) => column.id === context.activeColumnId,
+    );
+    const columnIndex =
+      activeIndex < 0 ? context.columns.length : activeIndex + 1;
+
+    return {
+      columnId: detachedColumnId,
+      columnIndex,
+      columnWidth: { ...this.width },
+      desktopId: command.context.desktopId,
+      memberIndex: 0,
+      nextColumnId: context.columns[columnIndex]?.id ?? null,
+      nextWindowId: null,
+      outputId: command.context.outputId,
+      previousColumnId: context.columns[columnIndex - 1]?.id ?? null,
+      previousWindowId: null,
+      windowId: command.activeId,
+    };
+  }
+
   private columnMembersBelongToContext(
     column: LayoutColumnSnapshot,
     context: RuntimeContext,
@@ -1142,6 +1448,250 @@ export class RuntimeController {
         contextKey(memberContext) === context.key
       );
     });
+  }
+
+  private prepareActiveWindowCommand(): ActiveWindowCommand | null {
+    if (
+      !this.started ||
+      this.startupStabilizationToken !== null ||
+      this.hasTopologyBarrier() ||
+      !this.sampleSettledVisibleContextGeometries() ||
+      !this.synchronizePendingWindows() ||
+      this.hasTopologyBarrier()
+    ) {
+      return null;
+    }
+
+    const activeWindow = this.workspace.activeWindow;
+
+    if (!activeWindow) {
+      return null;
+    }
+
+    const activeId = windowId(String(activeWindow.internalId));
+
+    if (
+      !this.toggleGeometrySettled(activeId) ||
+      this.suspendedWindows.has(activeId) ||
+      this.requestedSuspensions.has(activeId) ||
+      !isGeometryWritable(activeWindow)
+    ) {
+      return null;
+    }
+
+    const observed = normalizeWindow(activeWindow);
+    const context = observed ? managedContext(observed) : null;
+
+    if (!context) {
+      return null;
+    }
+
+    const key = contextKey(context);
+    let contextGeometry: ContextGeometry | null;
+
+    try {
+      contextGeometry = this.geometry.contextGeometry(
+        context.outputId,
+        context.desktopId,
+      );
+    } catch {
+      return null;
+    }
+
+    if (!contextGeometry) {
+      return null;
+    }
+
+    const runtimeContext = this.contexts.get(key);
+
+    if (
+      runtimeContext &&
+      runtimeContext.geometryFingerprint !== contextGeometry.fingerprint
+    ) {
+      this.handleTopologyChanged(String(context.outputId));
+      return null;
+    }
+
+    if (this.toggleTransitionPending(key)) {
+      return null;
+    }
+
+    return {
+      activeId,
+      activeWindow,
+      context,
+      contextGeometry,
+      contextKey: key,
+    };
+  }
+
+  private toggleGeometrySettled(id: WindowId): boolean {
+    const transition = this.toggleGeometryTransitions.get(id);
+
+    if (!transition) {
+      return true;
+    }
+
+    const source = this.observer.source(id);
+
+    if (!source) {
+      this.toggleGeometryTransitions.delete(id);
+      return true;
+    }
+
+    if (!transition.settlementArmed) {
+      return false;
+    }
+
+    if (!rectsEqual(source.frameGeometry, transition.expectedFrame)) {
+      return false;
+    }
+
+    this.toggleGeometryTransitions.delete(id);
+    return true;
+  }
+
+  private hasUnsettledToggleTransition(key: string): boolean {
+    for (const [id, transition] of this.toggleGeometryTransitions) {
+      if (transition.contextKey === key && !this.toggleGeometrySettled(id)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private toggleTransitionPending(key: string): boolean {
+    if (this.hasUnsettledToggleTransition(key)) {
+      return true;
+    }
+
+    if (!this.toggleTransitionProbes.delete(key)) {
+      return false;
+    }
+
+    if (this.dirtyContexts.has(key) || this.pendingAdmissionContexts.has(key)) {
+      this.scheduleWork();
+    }
+
+    return false;
+  }
+
+  private armToggleTransitionSettlement(key: string): void {
+    for (const transition of this.toggleGeometryTransitions.values()) {
+      if (transition.contextKey === key) {
+        transition.settlementArmed = true;
+      }
+    }
+  }
+
+  private finishCanceledToggleTransition(key: string): void {
+    if (this.waitingWindowIds.get(key)?.size) {
+      this.pendingAdmissionContexts.add(key);
+    }
+
+    const hasRemainingTransition = [
+      ...this.toggleGeometryTransitions.values(),
+    ].some((transition) => transition.contextKey === key);
+
+    if (hasRemainingTransition) {
+      const probe = this.toggleTransitionProbes.get(key);
+
+      if (probe && probe.completedAttempts >= MAX_TRANSIENT_RESUME_PROBES) {
+        probe.completedAttempts = MAX_TRANSIENT_RESUME_PROBES - 1;
+      }
+
+      this.scheduleToggleTransitionProbe(key);
+      return;
+    }
+
+    this.toggleTransitionProbes.delete(key);
+
+    if (this.dirtyContexts.has(key) || this.pendingAdmissionContexts.has(key)) {
+      this.scheduleWork();
+    }
+  }
+
+  private scheduleToggleTransitionProbe(key: string): void {
+    if (!this.started) {
+      return;
+    }
+
+    let probe = this.toggleTransitionProbes.get(key);
+
+    if (!probe) {
+      probe = { completedAttempts: 0, pending: false };
+      this.toggleTransitionProbes.set(key, probe);
+    }
+
+    if (
+      probe.pending ||
+      probe.completedAttempts >= MAX_TRANSIENT_RESUME_PROBES
+    ) {
+      return;
+    }
+
+    probe.pending = true;
+    const runGeneration = this.runGeneration;
+    let schedulerReturned = false;
+
+    this.scheduleResume(() => {
+      if (
+        !this.started ||
+        this.runGeneration !== runGeneration ||
+        this.toggleTransitionProbes.get(key) !== probe
+      ) {
+        return;
+      }
+
+      const synchronous = !schedulerReturned;
+
+      if (!synchronous) {
+        probe.pending = false;
+      }
+
+      probe.completedAttempts += 1;
+      const unsettled = this.hasUnsettledToggleTransition(key);
+      this.armToggleTransitionSettlement(key);
+
+      if (!unsettled) {
+        this.toggleTransitionProbes.delete(key);
+
+        if (
+          this.dirtyContexts.has(key) ||
+          this.pendingAdmissionContexts.has(key)
+        ) {
+          this.scheduleWork();
+        }
+      }
+
+      if (synchronous && this.toggleTransitionProbes.get(key) === probe) {
+        probe.pending = false;
+      }
+
+      if (unsettled) {
+        this.scheduleToggleTransitionProbe(key);
+      }
+    });
+    schedulerReturned = true;
+  }
+
+  private probeToggleTransitions(): void {
+    const keys = new Set(
+      [...this.toggleGeometryTransitions.values()].map(
+        (transition) => transition.contextKey,
+      ),
+    );
+
+    for (const key of keys) {
+      const probe = this.toggleTransitionProbes.get(key);
+
+      if (probe && probe.completedAttempts >= MAX_TRANSIENT_RESUME_PROBES) {
+        probe.completedAttempts = MAX_TRANSIENT_RESUME_PROBES - 1;
+      }
+
+      this.scheduleToggleTransitionProbe(key);
+    }
   }
 
   private prepareActiveColumnCommand(): ActiveColumnCommand | null {
@@ -1172,6 +1722,7 @@ export class RuntimeController {
     const activeId = windowId(String(activeWindow.internalId));
 
     if (
+      !this.toggleGeometrySettled(activeId) ||
       this.suspendedWindows.has(activeId) ||
       this.requestedSuspensions.has(activeId) ||
       !isGeometryWritable(activeWindow)
@@ -1190,7 +1741,8 @@ export class RuntimeController {
       !owner ||
       !context ||
       !activeContext ||
-      contextKey(activeContext) !== owner.contextKey
+      contextKey(activeContext) !== owner.contextKey ||
+      this.toggleTransitionPending(context.key)
     ) {
       return null;
     }
@@ -1366,6 +1918,216 @@ export class RuntimeController {
     if (forwardError !== null) {
       console.warn(
         `[driftile] ${label} rolled back context=${context.key} error=${forwardError}`,
+      );
+    }
+
+    return false;
+  }
+
+  private applyWindowOwnershipTransition(
+    command: ActiveWindowCommand,
+    nextContext: LayoutContextSnapshot,
+    additionalWindows: readonly WindowGeometry[],
+    transitionWindowId: WindowId,
+    commit: (viewportOffset: number) => boolean,
+    afterCommit: () => void,
+    label: string,
+  ): boolean {
+    let nextLayout: ReturnType<typeof solveStripGeometry>;
+
+    try {
+      nextLayout = solveStripGeometry({
+        context: nextContext,
+        devicePixelRatio: command.contextGeometry.devicePixelRatio,
+        gap: this.gap,
+        pixelGridOrigin: command.contextGeometry.pixelGridOrigin,
+        workArea: command.contextGeometry.workArea,
+      });
+    } catch (error) {
+      console.warn(
+        `[driftile] ${label} rejected context=${command.contextKey} error=${String(error)}`,
+      );
+      return false;
+    }
+
+    const writableLayout = nextLayout.windows.filter(
+      (window) =>
+        !this.suspendedWindows.has(window.windowId) &&
+        !this.requestedSuspensions.has(window.windowId),
+    );
+    const desiredIds = new Set(writableLayout.map((window) => window.windowId));
+
+    if (
+      additionalWindows.some((window) => {
+        if (desiredIds.has(window.windowId)) {
+          return true;
+        }
+
+        desiredIds.add(window.windowId);
+        return false;
+      }) ||
+      !this.canApplyLayout(nextLayout.maxViewportOffset) ||
+      nextLayout.windows.some((window) => {
+        const source = this.observer.source(window.windowId);
+        return !source || !respectsSizeConstraints(window.frame, source);
+      })
+    ) {
+      return false;
+    }
+
+    const desired = [...writableLayout, ...additionalWindows];
+    const transitionTarget = desired.find(
+      (window) => window.windowId === transitionWindowId,
+    );
+
+    if (
+      !transitionTarget ||
+      desired.some(
+        (window) =>
+          !this.geometry.canApplyFrame(
+            window.windowId,
+            window.frame,
+            command.context,
+          ),
+      )
+    ) {
+      return false;
+    }
+
+    const windowIds = desired.map((window) => window.windowId);
+    const observedBefore = this.geometry.observedFrames(
+      windowIds,
+      command.context,
+    );
+
+    if (observedBefore.size !== windowIds.length) {
+      return false;
+    }
+
+    const changes = diffWindowGeometries(desired, observedBefore);
+    const changedIds = new Set(changes.map((change) => change.windowId));
+    const rollbackTargets: WindowGeometry[] = [];
+
+    for (const window of desired) {
+      if (!changedIds.has(window.windowId)) {
+        continue;
+      }
+
+      const frame = observedBefore.get(window.windowId);
+
+      if (!frame) {
+        return false;
+      }
+
+      rollbackTargets.push({ ...window, frame });
+    }
+
+    const trackedTransitions = desired.filter((window) =>
+      changedIds.has(window.windowId),
+    );
+
+    for (const window of trackedTransitions) {
+      this.toggleGeometryTransitions.set(window.windowId, {
+        contextKey: command.contextKey,
+        expectedFrame: { ...window.frame },
+        settlementArmed: true,
+      });
+    }
+
+    const wasDirty = this.dirtyContexts.has(command.contextKey);
+    this.dirtyContexts.delete(command.contextKey);
+    let forwardWrites = 0;
+    let forwardError: string | null = null;
+
+    try {
+      forwardWrites = this.geometry.apply(
+        changes,
+        command.context,
+        () => !this.hasTopologyBarrier(),
+      );
+    } catch (error) {
+      forwardError = String(error);
+    }
+
+    const forwardComplete =
+      forwardError === null &&
+      forwardWrites === changes.length &&
+      !this.hasTopologyBarrier() &&
+      !this.dirtyContexts.has(command.contextKey);
+
+    if (forwardComplete && commit(nextLayout.viewportOffset)) {
+      this.lastWrites = forwardWrites;
+      afterCommit();
+      const unsettled =
+        trackedTransitions.length > 0 &&
+        this.toggleTransitionPending(command.contextKey);
+
+      if (unsettled) {
+        this.scheduleToggleTransitionProbe(command.contextKey);
+      } else if (this.pendingAdmissionContexts.has(command.contextKey)) {
+        this.scheduleWork();
+      }
+
+      return true;
+    }
+
+    for (const window of trackedTransitions) {
+      this.toggleGeometryTransitions.delete(window.windowId);
+    }
+
+    let compensationWrites = 0;
+    const runtimeContext = this.contexts.get(command.contextKey);
+    const floatingRollbackTargets = rollbackTargets.filter((window) =>
+      this.floatingWindows.has(window.windowId),
+    );
+    const compensationTargets = this.hasTopologyBarrier()
+      ? floatingRollbackTargets
+      : rollbackTargets;
+
+    for (const window of compensationTargets) {
+      this.toggleGeometryTransitions.set(window.windowId, {
+        contextKey: command.contextKey,
+        expectedFrame: { ...window.frame },
+        settlementArmed: false,
+      });
+    }
+
+    if (!this.hasTopologyBarrier()) {
+      this.dirtyContexts.delete(command.contextKey);
+      compensationWrites = this.geometry.apply(
+        rollbackTargets,
+        command.context,
+        () => !this.hasTopologyBarrier(),
+      );
+    } else if (floatingRollbackTargets.length > 0) {
+      compensationWrites = this.geometry.apply(
+        floatingRollbackTargets,
+        command.context,
+      );
+    }
+
+    if (
+      compensationTargets.length > 0 &&
+      this.toggleTransitionPending(command.contextKey)
+    ) {
+      this.scheduleToggleTransitionProbe(command.contextKey);
+    }
+
+    if (
+      runtimeContext &&
+      (this.hasTopologyBarrier() ||
+        compensationWrites !== rollbackTargets.length ||
+        wasDirty)
+    ) {
+      this.markContextDirty(runtimeContext);
+      this.scheduleWork();
+    }
+
+    this.lastWrites = forwardWrites + compensationWrites;
+
+    if (forwardError !== null) {
+      console.warn(
+        `[driftile] ${label} rolled back context=${command.contextKey} error=${forwardError}`,
       );
     }
 
@@ -1555,6 +2317,29 @@ export class RuntimeController {
   private readonly handleTopologyChanged = (outputName?: string): void => {
     if (!this.started) {
       return;
+    }
+
+    const canceledTransitionKeys = new Set<string>();
+
+    for (const [id, transition] of this.toggleGeometryTransitions) {
+      const context = managedContextFromKey(transition.contextKey);
+
+      if (!outputName || String(context?.outputId) === outputName) {
+        this.toggleGeometryTransitions.delete(id);
+        canceledTransitionKeys.add(transition.contextKey);
+      }
+    }
+
+    const remainingTransitionKeys = new Set(
+      [...this.toggleGeometryTransitions.values()].map(
+        (transition) => transition.contextKey,
+      ),
+    );
+
+    for (const key of canceledTransitionKeys) {
+      if (!remainingTransitionKeys.has(key)) {
+        this.toggleTransitionProbes.delete(key);
+      }
     }
 
     if (!outputName && this.topologyWindowOrder === null) {
@@ -2477,6 +3262,16 @@ export class RuntimeController {
         continue;
       }
 
+      if (this.floatingWindows.has(id)) {
+        this.forgetWaitingWindow(id);
+
+        if (capacityLease) {
+          this.invalidateCapacityLeaseForWindow(id);
+        }
+
+        continue;
+      }
+
       if (capacityLease && nextContext) {
         this.pendingAdmissionContexts.add(capacityLease.contextKey);
         continue;
@@ -2752,6 +3547,12 @@ export class RuntimeController {
 
     for (const source of sources) {
       const id = windowId(String(source.internalId));
+
+      if (this.floatingWindows.has(id)) {
+        this.forgetWaitingWindow(id);
+        continue;
+      }
+
       const suspended =
         this.suspendedWindows.has(id) ||
         this.requestedSuspensions.has(id) ||
@@ -2760,6 +3561,15 @@ export class RuntimeController {
     }
 
     if (candidates.length === 0) {
+      return 0;
+    }
+
+    if (this.toggleTransitionPending(key)) {
+      for (const candidate of candidates) {
+        this.deferWindow(candidate.id, key);
+      }
+
+      this.pendingAdmissionContexts.add(key);
       return 0;
     }
 
@@ -3011,6 +3821,12 @@ export class RuntimeController {
 
     for (const source of sources) {
       const id = windowId(String(source.internalId));
+
+      if (this.floatingWindows.has(id)) {
+        this.forgetWaitingWindow(id);
+        continue;
+      }
+
       const added = this.layout.manageWindow({
         columnId: columnId(`column:${String(id)}`),
         desktopId: context.desktopId,
@@ -3159,6 +3975,15 @@ export class RuntimeController {
     const observed = normalizeWindow(source);
     const capacityLease = this.capacityLeaseByWindow.get(id);
 
+    if (this.floatingWindows.has(id)) {
+      if (capacityLease) {
+        this.invalidateCapacityLeaseForWindow(id);
+      }
+
+      this.forgetWaitingWindow(id);
+      return false;
+    }
+
     if (!observed) {
       if (capacityLease) {
         this.invalidateCapacityLeaseForWindow(id);
@@ -3180,6 +4005,12 @@ export class RuntimeController {
     }
 
     const key = contextKey(context);
+
+    if (this.toggleTransitionPending(key)) {
+      this.deferWindow(id, key);
+      this.pendingAdmissionContexts.add(key);
+      return false;
+    }
 
     if (capacityLease) {
       if (capacityLease.contextKey === key) {
@@ -3423,6 +4254,11 @@ export class RuntimeController {
     let admitted = false;
 
     for (const key of contextKeys) {
+      if (this.toggleTransitionPending(key)) {
+        this.pendingAdmissionContexts.add(key);
+        continue;
+      }
+
       admitted = this.restoreCapacityLeases(key) || admitted;
       const windowIds = [...(this.waitingWindowIds.get(key) ?? [])];
 
@@ -3652,6 +4488,11 @@ export class RuntimeController {
     canContinueWriting?: () => boolean,
   ): number {
     if (!this.isContextVisible(context)) {
+      return 0;
+    }
+
+    if (this.toggleTransitionPending(context.key)) {
+      this.markContextDirty(context);
       return 0;
     }
 
@@ -4854,7 +5695,19 @@ export class RuntimeController {
         desired.map((window) => window.windowId),
         context,
       );
-      this.geometry.apply(diffWindowGeometries(desired, observed), context);
+      const changes = [...diffWindowGeometries(desired, observed)];
+      const changedIds = new Set(changes.map((change) => change.windowId));
+
+      for (const window of desired) {
+        if (
+          this.toggleGeometryTransitions.has(window.windowId) &&
+          !changedIds.has(window.windowId)
+        ) {
+          changes.push({ frame: window.frame, windowId: window.windowId });
+        }
+      }
+
+      this.geometry.apply(changes, context);
     }
   }
 }

@@ -81,6 +81,10 @@ export function moveWindowDown(): void {
   controller?.moveWindowDown();
 }
 
+export function toggleFloating(): void {
+  controller?.toggleFloating();
+}
+
 export function decreaseColumnWidth(): void {
   controller?.decreaseColumnWidth();
 }

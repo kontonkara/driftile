@@ -1055,6 +1055,1487 @@ describe("RuntimeController", () => {
     expect(fixture.activationCount).toBe(1);
   });
 
+  it("floats a singleton to its exact baseline and retiles it at its anchor", () => {
+    const output = createOutput("DP-1", 0);
+    const otherOutput = createOutput("HDMI-A-1", 1000);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop, {
+      frameGeometry: { height: 310, width: 280, x: 40, y: 50 },
+    });
+    const active = createTrackedWindow("window-2", output, desktop, {
+      frameGeometry: { height: 320, width: 290, x: 90, y: 60 },
+    });
+    const third = createTrackedWindow("window-3", output, desktop, {
+      frameGeometry: { height: 330, width: 300, x: 140, y: 70 },
+    });
+    const unrelated = createTrackedWindow("window-4", otherOutput, desktop, {
+      frameGeometry: { height: 340, width: 310, x: 1140, y: 80 },
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output, otherOutput],
+      [desktop],
+      [first.window, active.window, third.window, unrelated.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+    });
+
+    controller.start();
+    fixture.workspace.activeWindow = active.window;
+    const baseline = { height: 320, width: 290, x: 90, y: 60 };
+    const tiledFrame = { ...active.window.frameGeometry };
+    const activationCount = fixture.activationCount;
+    const unrelatedSnapshot = runtimeLayout(controller).snapshot(
+      outputId(otherOutput.name),
+      desktopId(desktop.id),
+    );
+    const unrelatedFrame = { ...unrelated.window.frameGeometry };
+    const unrelatedWrites = unrelated.writeCount;
+
+    expect(controller.toggleFloating()).toBe(true);
+    expect(controller.floatingCount).toBe(1);
+    expect(controller.managedCount).toBe(3);
+    expect(active.window.frameGeometry).toEqual(baseline);
+    expect(testLayoutColumns(controller, output, desktop)).toEqual([
+      { id: "column:window-1", windowIds: ["window-1"] },
+      { id: "column:window-3", windowIds: ["window-3"] },
+    ]);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+
+    expect(controller.toggleFloating()).toBe(true);
+    expect(controller.floatingCount).toBe(0);
+    expect(controller.managedCount).toBe(4);
+    expect(active.window.frameGeometry).toEqual(tiledFrame);
+    expect(testLayoutColumns(controller, output, desktop)).toEqual([
+      { id: "column:window-1", windowIds: ["window-1"] },
+      { id: "column:window-2", windowIds: ["window-2"] },
+      { id: "column:window-3", windowIds: ["window-3"] },
+    ]);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+    expect(fixture.activationCount).toBe(activationCount);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(otherOutput.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(unrelatedSnapshot);
+    expect(unrelated.window.frameGeometry).toEqual(unrelatedFrame);
+    expect(unrelated.writeCount).toBe(unrelatedWrites);
+  });
+
+  it("round-trips a stacked middle member into the current column width", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const active = createTrackedWindow("window-2", output, desktop);
+    const third = createTrackedWindow("window-3", output, desktop);
+    const other = createTrackedWindow("window-4", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window, active.window, third.window, other.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+    });
+
+    controller.start();
+    installTestLayout(controller, output, desktop, "column:stack", [
+      {
+        id: "column:stack",
+        width: { kind: "fixed", value: 300 },
+        windowIds: ["window-1", "window-2", "window-3"],
+      },
+      {
+        id: "column:other",
+        width: { kind: "fixed", value: 300 },
+        windowIds: ["window-4"],
+      },
+    ]);
+    fixture.workspace.activeWindow = active.window;
+
+    expect(controller.toggleFloating()).toBe(true);
+    expect(testLayoutColumns(controller, output, desktop)).toEqual([
+      {
+        id: "column:stack",
+        windowIds: ["window-1", "window-3"],
+      },
+      { id: "column:other", windowIds: ["window-4"] },
+    ]);
+
+    fixture.workspace.activeWindow = first.window;
+    expect(controller.increaseColumnWidth()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "fixed",
+      value: 364,
+    });
+    fixture.workspace.activeWindow = active.window;
+
+    expect(controller.toggleFloating()).toBe(true);
+    expect(testLayoutColumns(controller, output, desktop)).toEqual([
+      {
+        id: "column:stack",
+        windowIds: ["window-1", "window-2", "window-3"],
+      },
+      { id: "column:other", windowIds: ["window-4"] },
+    ]);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "fixed",
+      value: 364,
+    });
+    expect(active.window.frameGeometry).toMatchObject({
+      height: 254,
+      width: 364,
+      x: 10,
+      y: 273,
+    });
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+  });
+
+  it("keeps external floating geometry and uses it as the next baseline", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const active = createTrackedWindow("window-2", output, desktop, {
+      frameGeometry: { height: 280, width: 360, x: 80, y: 90 },
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window, active.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+
+    controller.start();
+    fixture.workspace.activeWindow = active.window;
+
+    while (scheduler.pendingCount > 0) {
+      scheduler.flush();
+    }
+
+    expect(controller.toggleFloating()).toBe(true);
+    expect(controller.focusLeft()).toBe(false);
+    const externalFrame = { height: 410, width: 470, x: 210, y: 170 };
+    active.setFrameGeometry(externalFrame);
+    (
+      controller as unknown as {
+        pendingWindowSyncs: Set<string>;
+      }
+    ).pendingWindowSyncs.add("window-2");
+    controller.reconcile();
+    const writesAfterExternalMove = active.writeCount;
+
+    expect(active.window.frameGeometry).toEqual(externalFrame);
+    expect(active.writeCount).toBe(writesAfterExternalMove);
+    expect(controller.floatingCount).toBe(1);
+
+    expect(controller.toggleFloating()).toBe(true);
+    expect(active.window.frameGeometry).not.toEqual(externalFrame);
+    expect(controller.toggleFloating()).toBe(true);
+    expect(active.window.frameGeometry).toEqual(externalFrame);
+    expect(controller.floatingCount).toBe(1);
+  });
+
+  it.each(["null", "stale"] as const)(
+    "does not write a %s restore baseline while floating out",
+    (baselineKind) => {
+      const output = createOutput("DP-1", 0);
+      const desktop = { id: "desktop-1" };
+      const first = createTrackedWindow("window-1", output, desktop);
+      const active = createTrackedWindow("window-2", output, desktop);
+      const fixture = createWorkspace(
+        output,
+        desktop,
+        [output],
+        [desktop],
+        [first.window, active.window],
+      );
+      const controller = new RuntimeController(fixture.workspace, {
+        clientAreaOption: 2,
+        columnWidth: { kind: "fixed", value: 300 },
+        gap: 10,
+      });
+
+      controller.start();
+      fixture.workspace.activeWindow = active.window;
+      const managedWindows = (
+        controller as unknown as {
+          managedWindows: Map<
+            string,
+            {
+              restoreBaseline: {
+                fingerprint: string;
+                frame: KWinWindow["frameGeometry"];
+              } | null;
+            }
+          >;
+        }
+      ).managedWindows;
+      const owner = managedWindows.get("window-2");
+
+      if (!owner) {
+        throw new Error("active window owner is missing");
+      }
+
+      owner.restoreBaseline =
+        baselineKind === "null"
+          ? null
+          : {
+              fingerprint: "stale-context",
+              frame: { height: 1, width: 1, x: 1, y: 1 },
+            };
+      const frame = { ...active.window.frameGeometry };
+      const writes = active.writeCount;
+
+      expect(controller.toggleFloating()).toBe(true);
+      expect(active.window.frameGeometry).toEqual(frame);
+      expect(active.writeCount).toBe(writes);
+      expect(controller.floatingCount).toBe(1);
+      expect(controller.managedCount).toBe(1);
+      expect(testLayoutColumns(controller, output, desktop)).toEqual([
+        { id: "column:window-1", windowIds: ["window-1"] },
+      ]);
+    },
+  );
+
+  it("keeps a floating override through sync, transfer, and suspension", () => {
+    const output = createOutput("DP-1", 0);
+    const otherOutput = createOutput("HDMI-A-1", 1000);
+    const desktop = { id: "desktop-1" };
+    const otherDesktop = { id: "desktop-2" };
+    const remaining = createTrackedWindow("window-1", output, desktop);
+    const active = createTrackedWindow("window-2", output, desktop, {
+      frameGeometry: { height: 280, width: 360, x: 80, y: 90 },
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output, otherOutput],
+      [desktop, otherDesktop],
+      [remaining.window, active.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+      schedule: scheduler.schedule,
+      scheduleResume: scheduler.schedule,
+    });
+
+    controller.start();
+    fixture.workspace.activeWindow = active.window;
+
+    while (scheduler.pendingCount > 0) {
+      scheduler.flush();
+    }
+
+    expect(controller.toggleFloating()).toBe(true);
+    const externalFrame = { height: 360, width: 440, x: 1210, y: 120 };
+    const priorFrame = { ...active.window.frameGeometry };
+    active.setFrameGeometry(externalFrame);
+    active.frameGeometryChanged.emit(priorFrame);
+    setWindowState("fullscreen", active, true);
+    setWindowState("minimized", active, true);
+    Object.defineProperties(active.window, {
+      desktops: { configurable: true, value: [otherDesktop] },
+      output: { configurable: true, value: otherOutput },
+    });
+    active.outputChanged.emit(output);
+    active.desktopsChanged.emit();
+
+    for (
+      let attempt = 0;
+      attempt < 12 && scheduler.pendingCount > 0;
+      attempt += 1
+    ) {
+      scheduler.flush();
+    }
+
+    expect(controller.floatingCount).toBe(1);
+    expect(controller.managedCount).toBe(1);
+    expect(active.window.frameGeometry).toEqual(externalFrame);
+    expect(testLayoutColumns(controller, otherOutput, otherDesktop)).toEqual(
+      [],
+    );
+
+    setWindowState("fullscreen", active, false);
+    setWindowState("minimized", active, false);
+
+    for (
+      let attempt = 0;
+      attempt < 24 && scheduler.pendingCount > 0;
+      attempt += 1
+    ) {
+      scheduler.flush();
+    }
+
+    expect(controller.floatingCount).toBe(1);
+    expect(controller.managedCount).toBe(1);
+    expect(active.window.frameGeometry).toEqual(externalFrame);
+    expect(testLayoutColumns(controller, otherOutput, otherDesktop)).toEqual(
+      [],
+    );
+  });
+
+  it("clears a closed floating override and never moves a floating window on stop", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop, {
+      frameGeometry: { height: 260, width: 340, x: 70, y: 80 },
+    });
+    const second = createTrackedWindow("window-2", output, desktop, {
+      frameGeometry: { height: 280, width: 360, x: 100, y: 110 },
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window, second.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+    });
+
+    controller.start();
+    fixture.workspace.activeWindow = second.window;
+    expect(controller.toggleFloating()).toBe(true);
+    expect(controller.floatingCount).toBe(1);
+    fixture.windowRemoved.emit(second.window);
+    expect(controller.floatingCount).toBe(0);
+
+    fixture.workspace.activeWindow = first.window;
+    expect(controller.toggleFloating()).toBe(true);
+    const floatingFrame = { ...first.window.frameGeometry };
+    const floatingWrites = first.writeCount;
+
+    controller.stop();
+    expect(controller.floatingCount).toBe(0);
+    expect(controller.managedCount).toBe(0);
+    expect(first.window.frameGeometry).toEqual(floatingFrame);
+    expect(first.writeCount).toBe(floatingWrites);
+  });
+
+  it.each([
+    { expected: true, name: "single-output", outputCount: 1 },
+    { expected: false, name: "multi-output", outputCount: 2 },
+  ])(
+    "$name overflow handling is atomic while retiling a floating window",
+    ({ expected, outputCount }) => {
+      const output = createOutput("DP-1", 0);
+      const otherOutput = createOutput("HDMI-A-1", 1000);
+      const desktop = { id: "desktop-1" };
+      const first = createTrackedWindow("window-1", output, desktop);
+      const active = createTrackedWindow("window-2", output, desktop, {
+        frameGeometry: { height: 300, width: 340, x: 90, y: 80 },
+      });
+      const third = createTrackedWindow("window-3", output, desktop);
+      const windows = [first, active, third];
+      const fixture = createWorkspace(
+        output,
+        desktop,
+        outputCount === 1 ? [output] : [output, otherOutput],
+        [desktop],
+        windows.map((window) => window.window),
+      );
+      const controller = new RuntimeController(fixture.workspace, {
+        clientAreaOption: 2,
+        columnWidth: { kind: "fixed", value: 300 },
+        gap: 10,
+      });
+
+      controller.start();
+      installTestLayout(controller, output, desktop, "column:active", [
+        {
+          id: "column:first",
+          width: { kind: "fixed", value: 400 },
+          windowIds: ["window-1"],
+        },
+        {
+          id: "column:active",
+          width: { kind: "fixed", value: 300 },
+          windowIds: ["window-2"],
+        },
+        {
+          id: "column:third",
+          width: { kind: "fixed", value: 240 },
+          windowIds: ["window-3"],
+        },
+      ]);
+      fixture.workspace.activeWindow = active.window;
+      expect(controller.toggleFloating()).toBe(true);
+
+      const layout = runtimeLayout(controller);
+      expect(layout.activateWindow(windowId("window-1"))).toBe(true);
+      expect(
+        layout.setActiveColumnWidth(windowId("window-1"), {
+          kind: "fixed",
+          value: 700,
+        }),
+      ).toEqual({ kind: "fixed", value: 400 });
+      controller.reconcile();
+      fixture.workspace.activeWindow = active.window;
+      const before = layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      );
+      const frames = windows.map((window) => ({
+        ...window.window.frameGeometry,
+      }));
+      const writes = windows.map((window) => window.writeCount);
+      const activationCount = fixture.activationCount;
+
+      expect(controller.toggleFloating()).toBe(expected);
+      expect(fixture.workspace.activeWindow).toBe(active.window);
+      expect(fixture.activationCount).toBe(activationCount);
+
+      if (expected) {
+        expect(controller.floatingCount).toBe(0);
+        expect(testLayoutColumns(controller, output, desktop)).toEqual([
+          { id: "column:first", windowIds: ["window-1"] },
+          { id: "column:active", windowIds: ["window-2"] },
+          { id: "column:third", windowIds: ["window-3"] },
+        ]);
+        expect(
+          layout.snapshot(outputId(output.name), desktopId(desktop.id))
+            .viewportOffset,
+        ).toBeGreaterThan(0);
+        expect(active.window.frameGeometry.x).toBeGreaterThanOrEqual(10);
+        expect(active.window.frameGeometry.x).toBeLessThan(1000);
+      } else {
+        expect(controller.floatingCount).toBe(1);
+        expect(
+          layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+        ).toEqual(before);
+        expect(windows.map((window) => window.window.frameGeometry)).toEqual(
+          frames,
+        );
+        expect(windows.map((window) => window.writeCount)).toEqual(writes);
+      }
+    },
+  );
+
+  it("retries a waiting admission after a singleton floats out", () => {
+    const output = createOutput("DP-1", 0);
+    const otherOutput = createOutput("HDMI-A-1", 1000);
+    const desktop = { id: "desktop-1" };
+    const windows = [
+      createTrackedWindow("window-1", output, desktop),
+      createTrackedWindow("window-2", output, desktop),
+      createTrackedWindow("window-3", output, desktop),
+    ];
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output, otherOutput],
+      [desktop],
+      windows.map((window) => window.window),
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 400 },
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+
+    controller.start();
+    expect(controller.managedCount).toBe(2);
+    fixture.workspace.activeWindow = windows[1]?.window ?? null;
+
+    while (scheduler.pendingCount > 0) {
+      scheduler.flush();
+    }
+
+    expect(controller.toggleFloating()).toBe(true);
+    expect(controller.floatingCount).toBe(1);
+    expect(controller.managedCount).toBe(1);
+    expect(scheduler.pendingCount).toBe(1);
+    scheduler.flush();
+
+    expect(controller.floatingCount).toBe(1);
+    expect(controller.managedCount).toBe(2);
+    expect(testLayoutColumns(controller, output, desktop)).toEqual([
+      { id: "column:window-1", windowIds: ["window-1"] },
+      { id: "column:window-3", windowIds: ["window-3"] },
+    ]);
+    expect(fixture.workspace.activeWindow).toBe(windows[1]?.window);
+  });
+
+  it.each([
+    {
+      block: (controller: RuntimeController, key: string) => {
+        (
+          controller as unknown as {
+            capacityParkOperations: Map<string, unknown>;
+          }
+        ).capacityParkOperations.set(key, {});
+      },
+      clear: (controller: RuntimeController) => {
+        (
+          controller as unknown as {
+            capacityParkOperations: Map<string, unknown>;
+          }
+        ).capacityParkOperations.clear();
+      },
+      name: "in-flight park",
+    },
+    {
+      block: (controller: RuntimeController, key: string) => {
+        (
+          controller as unknown as {
+            capacityCanceledParks: Map<string, unknown>;
+          }
+        ).capacityCanceledParks.set(key, {});
+      },
+      clear: (controller: RuntimeController) => {
+        (
+          controller as unknown as {
+            capacityCanceledParks: Map<string, unknown>;
+          }
+        ).capacityCanceledParks.clear();
+      },
+      name: "canceled park",
+    },
+    {
+      block: (controller: RuntimeController, key: string) => {
+        (
+          controller as unknown as {
+            capacityLeasesByContext: Map<string, Set<unknown>>;
+          }
+        ).capacityLeasesByContext.set(key, new Set([{}]));
+      },
+      clear: (controller: RuntimeController) => {
+        (
+          controller as unknown as {
+            capacityLeasesByContext: Map<string, Set<unknown>>;
+          }
+        ).capacityLeasesByContext.clear();
+      },
+      name: "stable capacity lease",
+    },
+  ])("blocks floating toggles during a $name", ({ block, clear }) => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const active = createTrackedWindow("window-2", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window, active.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+    });
+
+    controller.start();
+    fixture.workspace.activeWindow = active.window;
+    const key = `${output.name}\u0000${desktop.id}`;
+    block(controller, key);
+    const before = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const frames = [first, active].map((window) => ({
+      ...window.window.frameGeometry,
+    }));
+
+    expect(controller.toggleFloating()).toBe(false);
+    expect(controller.floatingCount).toBe(0);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(before);
+    expect(
+      [first, active].map((window) => window.window.frameGeometry),
+    ).toEqual(frames);
+
+    clear(controller);
+    expect(controller.toggleFloating()).toBe(true);
+    expect(controller.floatingCount).toBe(1);
+    expect(controller.focusLeft()).toBe(false);
+    block(controller, key);
+    const floatingLayout = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const floatingFrame = { ...active.window.frameGeometry };
+
+    expect(controller.toggleFloating()).toBe(false);
+    expect(controller.floatingCount).toBe(1);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(floatingLayout);
+    expect(active.window.frameGeometry).toEqual(floatingFrame);
+
+    clear(controller);
+    expect(controller.toggleFloating()).toBe(true);
+    expect(controller.floatingCount).toBe(0);
+  });
+
+  it("checks suspended sibling constraints before retiling", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const sibling = createTrackedWindow("window-1", output, desktop);
+    const active = createTrackedWindow("window-2", output, desktop);
+    const other = createTrackedWindow("window-3", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [sibling.window, active.window, other.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 360 },
+      gap: 10,
+      schedule: scheduler.schedule,
+      scheduleResume: scheduler.schedule,
+    });
+
+    controller.start();
+    installTestLayout(controller, output, desktop, "column:stack", [
+      {
+        id: "column:stack",
+        width: { kind: "fixed", value: 360 },
+        windowIds: ["window-1", "window-2"],
+      },
+      {
+        id: "column:other",
+        width: { kind: "fixed", value: 300 },
+        windowIds: ["window-3"],
+      },
+    ]);
+    fixture.workspace.activeWindow = active.window;
+    expect(controller.toggleFloating()).toBe(true);
+    setWindowState("fullscreen", sibling, true);
+    scheduler.flush();
+    const siblingFrame = { ...sibling.window.frameGeometry };
+    const siblingWrites = sibling.writeCount;
+    const constraints = sibling.window as unknown as {
+      maxSize: KWinWindow["maxSize"];
+    };
+
+    constraints.maxSize = { height: 10_000, width: 350 };
+    expect(controller.toggleFloating()).toBe(false);
+    expect(controller.floatingCount).toBe(1);
+    expect(testLayoutColumns(controller, output, desktop)).toEqual([
+      { id: "column:stack", windowIds: ["window-1"] },
+      { id: "column:other", windowIds: ["window-3"] },
+    ]);
+
+    constraints.maxSize = { height: 10_000, width: 380 };
+    expect(controller.toggleFloating()).toBe(true);
+    expect(controller.floatingCount).toBe(0);
+    expect(testLayoutColumns(controller, output, desktop)).toEqual([
+      {
+        id: "column:stack",
+        windowIds: ["window-1", "window-2"],
+      },
+      { id: "column:other", windowIds: ["window-3"] },
+    ]);
+    expect(sibling.window.frameGeometry).toEqual(siblingFrame);
+    expect(sibling.writeCount).toBe(siblingWrites);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+  });
+
+  it("rolls back a floating toggle after an asynchronous partial write", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const windows = [
+      createTrackedWindow("window-1", output, desktop),
+      createTrackedWindow("window-2", output, desktop, {
+        frameGeometry: { height: 300, width: 340, x: 90, y: 80 },
+      }),
+      createTrackedWindow("window-3", output, desktop),
+    ];
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map((window) => window.window),
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+    });
+    const queuedWrites: Array<{
+      readonly commit: () => void;
+      readonly frame: KWinWindow["frameGeometry"];
+    }> = [];
+    const warning = console.warn;
+
+    controller.start();
+    fixture.workspace.activeWindow = windows[1]?.window ?? null;
+    const before = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const frames = windows.map((window) => ({
+      ...window.window.frameGeometry,
+    }));
+    windows[2]?.setWriteBehavior((frame, commit) => {
+      queuedWrites.push({ commit, frame });
+    });
+    let rejectNextWrite = true;
+    windows[1]?.setWriteBehavior((_frame, commit) => {
+      if (rejectNextWrite) {
+        rejectNextWrite = false;
+        throw new Error("geometry rejected");
+      }
+
+      commit();
+    });
+    console.warn = () => undefined;
+
+    try {
+      expect(controller.toggleFloating()).toBe(false);
+    } finally {
+      console.warn = warning;
+      windows[1]?.setWriteBehavior(null);
+      windows[2]?.setWriteBehavior(null);
+    }
+
+    expect(queuedWrites).toHaveLength(2);
+    expect(queuedWrites[0]?.frame).not.toEqual(frames[2]);
+    expect(queuedWrites[1]?.frame).toEqual(frames[2]);
+
+    for (const write of queuedWrites) {
+      write.commit();
+    }
+
+    expect(controller.floatingCount).toBe(0);
+    expect(controller.managedCount).toBe(3);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(before);
+    expect(windows.map((window) => window.window.frameGeometry)).toEqual(
+      frames,
+    );
+    expect(fixture.workspace.activeWindow).toBe(windows[1]?.window);
+    expect(controller.toggleFloating()).toBe(true);
+  });
+
+  it("keeps an asynchronous floating rollback blocked until its probe", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const active = createTrackedWindow("window-2", output, desktop, {
+      frameGeometry: { height: 300, width: 340, x: 90, y: 80 },
+    });
+    const sibling = createTrackedWindow("window-3", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window, active.window, sibling.window],
+    );
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+    const siblingWrites: Array<{
+      readonly commit: () => void;
+      readonly frame: KWinWindow["frameGeometry"];
+    }> = [];
+    const warning = console.warn;
+
+    controller.start();
+    fixture.workspace.activeWindow = active.window;
+
+    while (workScheduler.pendingCount > 0) {
+      workScheduler.flush();
+    }
+
+    const before = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const frames = [first, active, sibling].map((window) => ({
+      ...window.window.frameGeometry,
+    }));
+    sibling.setWriteBehavior((frame, commit) => {
+      siblingWrites.push({ commit, frame });
+    });
+    let rejectNextWrite = true;
+    active.setWriteBehavior((_frame, commit) => {
+      if (rejectNextWrite) {
+        rejectNextWrite = false;
+        throw new Error("geometry rejected");
+      }
+
+      commit();
+    });
+    console.warn = () => undefined;
+
+    try {
+      expect(controller.toggleFloating()).toBe(false);
+    } finally {
+      console.warn = warning;
+      active.setWriteBehavior(null);
+    }
+
+    expect(siblingWrites).toHaveLength(2);
+    expect(siblingWrites[0]?.frame).not.toEqual(frames[2]);
+    expect(siblingWrites[1]?.frame).toEqual(frames[2]);
+    expect(sibling.window.frameGeometry).toEqual(frames[2]);
+    expect(controller.floatingCount).toBe(0);
+    expect(controller.managedCount).toBe(3);
+    expect(resumeScheduler.pendingCount).toBe(1);
+
+    expect(controller.toggleFloating()).toBe(false);
+    expect(controller.reconcile()).toBe(0);
+    expect(siblingWrites).toHaveLength(2);
+
+    siblingWrites[0]?.commit();
+    expect(sibling.window.frameGeometry).toEqual(siblingWrites[0]?.frame);
+    expect(controller.toggleFloating()).toBe(false);
+    expect(controller.reconcile()).toBe(0);
+    expect(siblingWrites).toHaveLength(2);
+
+    resumeScheduler.flush();
+
+    expect(resumeScheduler.pendingCount).toBe(1);
+    expect(controller.toggleFloating()).toBe(false);
+    expect(controller.reconcile()).toBe(0);
+    expect(siblingWrites).toHaveLength(2);
+
+    siblingWrites[1]?.commit();
+    sibling.setWriteBehavior(null);
+    expect(sibling.window.frameGeometry).toEqual(frames[2]);
+    expect(siblingWrites).toHaveLength(2);
+
+    resumeScheduler.flush();
+
+    expect(resumeScheduler.pendingCount).toBe(0);
+    expect(controller.toggleFloating()).toBe(true);
+    expect(controller.floatingCount).toBe(1);
+    expect(controller.managedCount).toBe(2);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ),
+    ).not.toEqual(before);
+  });
+
+  it("recovers the tiled layout when topology changes during a floating write", () => {
+    const output = createOutput("DP-1", 0);
+    const addedOutput = createOutput("HDMI-A-1", 1000);
+    const desktop = { id: "desktop-1" };
+    const windows = [
+      createTrackedWindow("window-1", output, desktop),
+      createTrackedWindow("window-2", output, desktop, {
+        frameGeometry: { height: 300, width: 340, x: 90, y: 80 },
+      }),
+      createTrackedWindow("window-3", output, desktop),
+    ];
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map((window) => window.window),
+    );
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    controller.start();
+    fixture.workspace.activeWindow = windows[1]?.window ?? null;
+
+    while (workScheduler.pendingCount > 0) {
+      workScheduler.flush();
+    }
+
+    const before = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const frames = windows.map((window) => ({
+      ...window.window.frameGeometry,
+    }));
+    const writes = windows.map((window) => window.writeCount);
+    let triggered = false;
+    windows[2]?.setWriteBehavior((_frame, commit) => {
+      commit();
+
+      if (!triggered) {
+        triggered = true;
+        fixture.setScreens([output, addedOutput]);
+        fixture.screensChanged.emit();
+      }
+    });
+
+    expect(controller.toggleFloating()).toBe(false);
+    expect(triggered).toBe(true);
+    expect(controller.floatingCount).toBe(0);
+    expect(controller.managedCount).toBe(3);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(before);
+    expect(windows[0]?.window.frameGeometry).toEqual(frames[0]);
+    expect(windows[1]?.window.frameGeometry).toEqual(frames[1]);
+    expect(windows[2]?.window.frameGeometry).not.toEqual(frames[2]);
+    expect(windows.map((window) => window.writeCount)).toEqual([
+      writes[0],
+      writes[1],
+      (writes[2] ?? 0) + 1,
+    ]);
+    expect(resumeScheduler.pendingCount).toBe(1);
+    expect(workScheduler.pendingCount).toBe(1);
+
+    windows[2]?.setWriteBehavior(null);
+    flushTopologyRecovery(resumeScheduler, workScheduler);
+
+    expect(controller.floatingCount).toBe(0);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(before);
+    expect(windows.map((window) => window.window.frameGeometry)).toEqual(
+      frames,
+    );
+    expect(fixture.workspace.activeWindow).toBe(windows[1]?.window);
+  });
+
+  it("keeps tile-in floating when its committed write starts a topology barrier", () => {
+    const output = createOutput("DP-1", 0);
+    const addedOutput = createOutput("HDMI-A-1", 1000);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const active = createTrackedWindow("window-2", output, desktop, {
+      frameGeometry: { height: 300, width: 340, x: 90, y: 80 },
+    });
+    const other = createTrackedWindow("window-3", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window, active.window, other.window],
+    );
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    controller.start();
+    installTestLayout(controller, output, desktop, "column:stack", [
+      {
+        id: "column:stack",
+        width: { kind: "fixed", value: 300 },
+        windowIds: ["window-1", "window-2"],
+      },
+      {
+        id: "column:other",
+        width: { kind: "fixed", value: 300 },
+        windowIds: ["window-3"],
+      },
+    ]);
+    fixture.workspace.activeWindow = active.window;
+
+    while (workScheduler.pendingCount > 0) {
+      workScheduler.flush();
+    }
+
+    expect(controller.toggleFloating()).toBe(true);
+    const floatingLayout = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const floatingFrame = { ...active.window.frameGeometry };
+    const siblingFrames = [first, other].map((window) => ({
+      ...window.window.frameGeometry,
+    }));
+    const queuedWrites: Array<{
+      readonly commit: () => void;
+      readonly frame: KWinWindow["frameGeometry"];
+    }> = [];
+    let triggered = false;
+    active.setWriteBehavior((frame, commit) => {
+      queuedWrites.push({ commit, frame });
+
+      if (!triggered) {
+        triggered = true;
+        commit();
+        fixture.setScreens([output, addedOutput]);
+        fixture.screensChanged.emit();
+      }
+    });
+
+    expect(controller.toggleFloating()).toBe(false);
+    expect(triggered).toBe(true);
+    expect(controller.floatingCount).toBe(1);
+    expect(controller.managedCount).toBe(2);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(floatingLayout);
+    expect(testLayoutColumns(controller, output, desktop)).toEqual([
+      { id: "column:stack", windowIds: ["window-1"] },
+      { id: "column:other", windowIds: ["window-3"] },
+    ]);
+    expect(queuedWrites).toHaveLength(2);
+    expect(queuedWrites[0]?.frame).not.toEqual(floatingFrame);
+    expect(queuedWrites[1]?.frame).toEqual(floatingFrame);
+    expect(active.window.frameGeometry).toEqual(queuedWrites[0]?.frame);
+    expect(first.window.frameGeometry).not.toEqual(siblingFrames[0]);
+    expect(other.window.frameGeometry).toEqual(siblingFrames[1]);
+
+    queuedWrites[1]?.commit();
+    active.setWriteBehavior(null);
+    expect(active.window.frameGeometry).toEqual(floatingFrame);
+
+    while (resumeScheduler.pendingCount > 0) {
+      resumeScheduler.flush();
+    }
+
+    while (workScheduler.pendingCount > 0) {
+      workScheduler.flush();
+    }
+
+    expect(controller.floatingCount).toBe(1);
+    expect(controller.managedCount).toBe(2);
+    expect(testLayoutColumns(controller, output, desktop)).toEqual([
+      { id: "column:stack", windowIds: ["window-1"] },
+      { id: "column:other", windowIds: ["window-3"] },
+    ]);
+    expect(active.window.frameGeometry).toEqual(floatingFrame);
+    expect([first, other].map((window) => window.window.frameGeometry)).toEqual(
+      siblingFrames,
+    );
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+  });
+
+  it("cancels a stale float transition when its output topology changes", () => {
+    const trackedOutput = createTrackedOutput("DP-1", 0);
+    const output = trackedOutput.output;
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const active = createTrackedWindow("window-2", output, desktop, {
+      frameGeometry: { height: 300, width: 340, x: 90, y: 80 },
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window, active.window],
+    );
+    let workAreaX = 0;
+    Object.defineProperty(fixture.workspace, "clientArea", {
+      configurable: true,
+      value: () => ({
+        height: 800,
+        width: 900,
+        x: workAreaX,
+        y: 0,
+      }),
+    });
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+    const delayedWrites: Array<{
+      readonly commit: () => void;
+      readonly frame: KWinWindow["frameGeometry"];
+    }> = [];
+
+    controller.start();
+    fixture.workspace.activeWindow = active.window;
+
+    while (workScheduler.pendingCount > 0) {
+      workScheduler.flush();
+    }
+
+    active.setWriteBehavior((frame, commit) => {
+      delayedWrites.push({ commit, frame });
+    });
+    expect(controller.toggleFloating()).toBe(true);
+    expect(delayedWrites).toHaveLength(1);
+    expect(controller.floatingCount).toBe(1);
+    expect(controller.managedCount).toBe(1);
+    expect(resumeScheduler.pendingCount).toBe(1);
+
+    workAreaX = 100;
+    trackedOutput.geometryChanged.emit();
+    active.setWriteBehavior(null);
+    let resumeCount = 0;
+
+    while (resumeScheduler.pendingCount > 0 && resumeCount < 20) {
+      resumeScheduler.flush();
+      resumeCount += 1;
+    }
+
+    while (workScheduler.pendingCount > 0) {
+      workScheduler.flush();
+    }
+
+    expect(resumeCount).toBeLessThan(20);
+    expect(resumeScheduler.pendingCount).toBe(0);
+    expect(controller.floatingCount).toBe(1);
+    expect(controller.managedCount).toBe(1);
+    expect(first.window.frameGeometry).toMatchObject({ x: 110 });
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+
+    expect(controller.toggleFloating()).toBe(true);
+    expect(controller.floatingCount).toBe(0);
+    expect(controller.managedCount).toBe(2);
+    expect(active.window.frameGeometry).toMatchObject({
+      height: 780,
+      width: 300,
+      x: 420,
+      y: 10,
+    });
+  });
+
+  it("waits for a pending toggle frame before reversing the transition", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const active = createTrackedWindow("window-2", output, desktop, {
+      frameGeometry: { height: 300, width: 340, x: 90, y: 80 },
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window, active.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+    });
+    const queuedWrites: Array<{
+      readonly commit: () => void;
+      readonly frame: KWinWindow["frameGeometry"];
+    }> = [];
+
+    controller.start();
+    fixture.workspace.activeWindow = active.window;
+    const tiledFrame = { ...active.window.frameGeometry };
+    active.setWriteBehavior((frame, commit) => {
+      queuedWrites.push({ commit, frame });
+    });
+
+    expect(controller.toggleFloating()).toBe(true);
+    expect(controller.floatingCount).toBe(1);
+    expect(queuedWrites).toHaveLength(1);
+    expect(active.window.frameGeometry).toEqual(tiledFrame);
+    expect(controller.toggleFloating()).toBe(false);
+    expect(controller.floatingCount).toBe(1);
+
+    queuedWrites[0]?.commit();
+    active.setWriteBehavior(null);
+    expect(active.window.frameGeometry).toEqual(queuedWrites[0]?.frame);
+    expect(controller.toggleFloating()).toBe(true);
+    expect(controller.floatingCount).toBe(0);
+    expect(active.window.frameGeometry).toEqual(tiledFrame);
+  });
+
+  it("defers waiting admission until bounded toggle settlement probes finish", () => {
+    const createDelayedToggle = () => {
+      const output = createOutput("DP-1", 0);
+      const otherOutput = createOutput("HDMI-A-1", 1000);
+      const desktop = { id: "desktop-1" };
+      const first = createTrackedWindow("window-1", output, desktop);
+      const second = createTrackedWindow("window-2", output, desktop);
+      const waiting = createTrackedWindow("window-3", output, desktop);
+      const fixture = createWorkspace(
+        output,
+        desktop,
+        [output, otherOutput],
+        [desktop],
+        [first.window, second.window, waiting.window],
+      );
+      const workScheduler = new ManualScheduler();
+      const resumeScheduler = new ManualScheduler();
+      const controller = new RuntimeController(fixture.workspace, {
+        clientAreaOption: 2,
+        columnWidth: { kind: "fixed", value: 400 },
+        gap: 10,
+        schedule: workScheduler.schedule,
+        scheduleResume: resumeScheduler.schedule,
+      });
+      const firstWrites: Array<{
+        readonly commit: () => void;
+        readonly frame: KWinWindow["frameGeometry"];
+      }> = [];
+      const secondWrites: Array<{
+        readonly commit: () => void;
+        readonly frame: KWinWindow["frameGeometry"];
+      }> = [];
+
+      controller.start();
+      fixture.workspace.activeWindow = first.window;
+
+      while (workScheduler.pendingCount > 0) {
+        workScheduler.flush();
+      }
+
+      first.setWriteBehavior((frame, commit) => {
+        firstWrites.push({ commit, frame });
+      });
+      second.setWriteBehavior((frame, commit) => {
+        secondWrites.push({ commit, frame });
+      });
+      expect(controller.toggleFloating()).toBe(true);
+      expect(firstWrites).toHaveLength(1);
+      expect(secondWrites).toHaveLength(1);
+      expect(controller.floatingCount).toBe(1);
+      expect(controller.managedCount).toBe(1);
+      expect(waiting.writeCount).toBe(0);
+      expect(resumeScheduler.pendingCount).toBe(1);
+      expect(workScheduler.pendingCount).toBe(0);
+
+      return {
+        controller,
+        desktop,
+        first,
+        firstWrites,
+        fixture,
+        output,
+        resumeScheduler,
+        secondWrites,
+        waiting,
+        workScheduler,
+      };
+    };
+    const settling = createDelayedToggle();
+
+    expect(settling.controller.reconcile()).toBe(0);
+    expect(settling.controller.managedCount).toBe(1);
+    expect(settling.waiting.writeCount).toBe(0);
+    settling.fixture.currentDesktopChanged.emit(
+      settling.desktop,
+      settling.desktop,
+      settling.output,
+    );
+    expect(settling.workScheduler.pendingCount).toBe(1);
+    settling.workScheduler.flush();
+    expect(settling.controller.managedCount).toBe(1);
+    expect(settling.waiting.writeCount).toBe(0);
+    expect(settling.resumeScheduler.pendingCount).toBe(1);
+
+    settling.firstWrites[0]?.commit();
+    settling.resumeScheduler.flush();
+    expect(settling.controller.managedCount).toBe(1);
+    expect(settling.waiting.writeCount).toBe(0);
+    expect(settling.workScheduler.pendingCount).toBe(0);
+    expect(settling.resumeScheduler.pendingCount).toBe(1);
+
+    settling.secondWrites[0]?.commit();
+    settling.resumeScheduler.flush();
+    expect(settling.resumeScheduler.pendingCount).toBe(0);
+    expect(settling.workScheduler.pendingCount).toBe(1);
+    expect(settling.controller.managedCount).toBe(1);
+    settling.workScheduler.flush();
+
+    expect(settling.controller.floatingCount).toBe(1);
+    expect(settling.controller.managedCount).toBe(2);
+    expect(settling.waiting.writeCount).toBe(1);
+    expect(
+      testLayoutColumns(settling.controller, settling.output, settling.desktop),
+    ).toEqual([
+      { id: "column:window-2", windowIds: ["window-2"] },
+      { id: "column:window-3", windowIds: ["window-3"] },
+    ]);
+    expect(settling.fixture.workspace.activeWindow).toBe(settling.first.window);
+
+    const bounded = createDelayedToggle();
+    let probeCount = 0;
+
+    while (bounded.resumeScheduler.pendingCount > 0 && probeCount < 100) {
+      bounded.resumeScheduler.flush();
+      probeCount += 1;
+    }
+
+    expect(probeCount).toBe(20);
+    expect(bounded.resumeScheduler.pendingCount).toBe(0);
+    expect(bounded.workScheduler.pendingCount).toBe(0);
+    expect(bounded.controller.floatingCount).toBe(1);
+    expect(bounded.controller.managedCount).toBe(1);
+    expect(bounded.waiting.writeCount).toBe(0);
+  });
+
+  it("admits a waiter when a removed floating window owned an exhausted probe", () => {
+    const output = createOutput("DP-1", 0);
+    const otherOutput = createOutput("HDMI-A-1", 1000);
+    const desktop = { id: "desktop-1" };
+    const active = createTrackedWindow("window-1", output, desktop);
+    const sibling = createTrackedWindow("window-2", output, desktop);
+    const waiting = createTrackedWindow("window-3", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output, otherOutput],
+      [desktop],
+      [active.window, sibling.window, waiting.window],
+    );
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 400 },
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+    const activeWrites: Array<{
+      readonly commit: () => void;
+      readonly frame: KWinWindow["frameGeometry"];
+    }> = [];
+    const siblingWrites: Array<{
+      readonly commit: () => void;
+      readonly frame: KWinWindow["frameGeometry"];
+    }> = [];
+
+    controller.start();
+    fixture.workspace.activeWindow = active.window;
+
+    while (workScheduler.pendingCount > 0) {
+      workScheduler.flush();
+    }
+
+    expect(controller.managedCount).toBe(2);
+    expect(waiting.writeCount).toBe(0);
+    active.setWriteBehavior((frame, commit) => {
+      activeWrites.push({ commit, frame });
+    });
+    sibling.setWriteBehavior((frame, commit) => {
+      siblingWrites.push({ commit, frame });
+    });
+    expect(controller.toggleFloating()).toBe(true);
+    expect(activeWrites).toHaveLength(1);
+    expect(siblingWrites).toHaveLength(1);
+    expect(controller.floatingCount).toBe(1);
+    expect(controller.managedCount).toBe(1);
+    expect(workScheduler.pendingCount).toBe(0);
+
+    for (let probe = 0; probe < 20; probe += 1) {
+      expect(resumeScheduler.pendingCount).toBe(1);
+      resumeScheduler.flush();
+      expect(controller.managedCount).toBe(1);
+      expect(waiting.writeCount).toBe(0);
+      expect(workScheduler.pendingCount).toBe(0);
+    }
+
+    expect(resumeScheduler.pendingCount).toBe(0);
+    const transitionState = controller as unknown as {
+      toggleGeometryTransitions: Map<string, unknown>;
+      toggleTransitionProbes: Map<string, unknown>;
+    };
+    expect(transitionState.toggleGeometryTransitions.size).toBe(2);
+    expect(transitionState.toggleTransitionProbes.size).toBe(1);
+
+    siblingWrites[0]?.commit();
+    sibling.setWriteBehavior(null);
+    expect(sibling.window.frameGeometry).toEqual(siblingWrites[0]?.frame);
+
+    fixture.windowRemoved.emit(active.window);
+
+    expect(controller.floatingCount).toBe(0);
+    expect(controller.managedCount).toBe(1);
+    expect(transitionState.toggleGeometryTransitions.size).toBe(1);
+    expect(transitionState.toggleTransitionProbes.size).toBe(1);
+    expect(resumeScheduler.pendingCount).toBe(1);
+    expect(workScheduler.pendingCount).toBe(0);
+    expect(waiting.writeCount).toBe(0);
+    resumeScheduler.flush();
+
+    expect(transitionState.toggleGeometryTransitions.size).toBe(0);
+    expect(transitionState.toggleTransitionProbes.size).toBe(0);
+    expect(resumeScheduler.pendingCount).toBe(0);
+    expect(workScheduler.pendingCount).toBe(1);
+    expect(controller.managedCount).toBe(1);
+    expect(waiting.writeCount).toBe(0);
+    workScheduler.flush();
+
+    expect(controller.floatingCount).toBe(0);
+    expect(controller.managedCount).toBe(2);
+    expect(testLayoutColumns(controller, output, desktop)).toEqual([
+      { id: "column:window-2", windowIds: ["window-2"] },
+      { id: "column:window-3", windowIds: ["window-3"] },
+    ]);
+    expect(waiting.window.frameGeometry).toMatchObject({
+      height: 780,
+      width: 400,
+      x: 420,
+      y: 10,
+    });
+    expect(waiting.writeCount).toBe(1);
+    expect(resumeScheduler.pendingCount).toBe(0);
+    expect(workScheduler.pendingCount).toBe(0);
+  });
+
   it("moves the active column while preserving focus and revealing it", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };

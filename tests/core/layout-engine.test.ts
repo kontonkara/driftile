@@ -3,7 +3,10 @@ import { describe, expect, it } from "vitest";
 import { columnId, desktopId, outputId, windowId } from "../../src/core/ids";
 import {
   LayoutEngine,
+  type DetachedWindowPlacement,
   type StackEditRollback,
+  type WindowAttachPreview,
+  type WindowDetachPreview,
 } from "../../src/core/layout-engine";
 
 const output = outputId("DP-1");
@@ -612,6 +615,760 @@ describe("LayoutEngine", () => {
     const stale = engine.snapshot(output, desktop);
     expect(edit && engine.rollbackStackEdit(edit.rollback)).toBe(false);
     expect(engine.snapshot(output, desktop)).toEqual(stale);
+  });
+
+  it("previews and commits a singleton window detachment without early mutation", () => {
+    const engine = new LayoutEngine();
+
+    engine.restoreColumns({
+      activeColumnId: columnId("column-2"),
+      columns: [
+        {
+          column: {
+            id: columnId("column-1"),
+            width: { kind: "fixed", value: 240 },
+            windowIds: [windowId("window-1")],
+          },
+          index: 0,
+        },
+        {
+          column: {
+            id: columnId("column-2"),
+            width: { kind: "proportion", value: 0.4 },
+            windowIds: [windowId("window-2")],
+          },
+          index: 1,
+        },
+        {
+          column: {
+            id: columnId("column-3"),
+            width: { kind: "fixed", value: 360 },
+            windowIds: [windowId("window-3")],
+          },
+          index: 2,
+        },
+      ],
+      desktopId: desktop,
+      outputId: output,
+      viewportOffset: 120,
+    });
+    const before = engine.snapshot(output, desktop);
+    const preview = engine.previewWindowDetach(windowId("window-2"));
+
+    if (!preview) {
+      throw new Error("expected a window detachment preview");
+    }
+
+    expect(preview.placement).toEqual({
+      columnId: "column-2",
+      columnIndex: 1,
+      columnWidth: { kind: "proportion", value: 0.4 },
+      desktopId: "desktop-1",
+      memberIndex: 0,
+      nextColumnId: "column-3",
+      nextWindowId: null,
+      outputId: "DP-1",
+      previousColumnId: "column-1",
+      previousWindowId: null,
+      windowId: "window-2",
+    });
+    expect(Object.isFrozen(preview)).toBe(true);
+    expect(Object.isFrozen(preview.layout)).toBe(true);
+    expect(Object.isFrozen(preview.layout.columns)).toBe(true);
+    expect(Object.isFrozen(preview.placement)).toBe(true);
+    expect(Object.isFrozen(preview.placement.columnWidth)).toBe(true);
+    expect(preview.layout).toEqual({
+      activeColumnId: "column-3",
+      columns: [
+        {
+          id: "column-1",
+          width: { kind: "fixed", value: 240 },
+          windowIds: ["window-1"],
+        },
+        {
+          id: "column-3",
+          width: { kind: "fixed", value: 360 },
+          windowIds: ["window-3"],
+        },
+      ],
+      desktopId: "desktop-1",
+      outputId: "DP-1",
+      viewportOffset: 120,
+    });
+    expect(engine.snapshot(output, desktop)).toEqual(before);
+    expect(engine.commitWindowDetach(preview)).toBe(true);
+    expect(engine.snapshot(output, desktop)).toEqual(preview.layout);
+    expect(engine.activateWindow(windowId("window-2"))).toBe(false);
+    expect(engine.commitWindowDetach(preview)).toBe(false);
+  });
+
+  it("records both member anchors when detaching a middle stack member", () => {
+    const engine = new LayoutEngine();
+
+    engine.restoreColumns({
+      activeColumnId: columnId("column-stack"),
+      columns: [
+        {
+          column: {
+            id: columnId("column-left"),
+            width: { kind: "fixed", value: 200 },
+            windowIds: [windowId("window-left")],
+          },
+          index: 0,
+        },
+        {
+          column: {
+            id: columnId("column-stack"),
+            width: { kind: "fixed", value: 420 },
+            windowIds: [
+              windowId("window-1"),
+              windowId("window-2"),
+              windowId("window-3"),
+            ],
+          },
+          index: 1,
+        },
+        {
+          column: {
+            id: columnId("column-right"),
+            width: { kind: "fixed", value: 300 },
+            windowIds: [windowId("window-right")],
+          },
+          index: 2,
+        },
+      ],
+      desktopId: desktop,
+      outputId: output,
+      viewportOffset: 70,
+    });
+    const before = engine.snapshot(output, desktop);
+    const preview = engine.previewWindowDetach(windowId("window-2"));
+
+    if (!preview) {
+      throw new Error("expected a stack member detachment preview");
+    }
+
+    expect(preview.placement).toMatchObject({
+      columnId: "column-stack",
+      columnIndex: 1,
+      memberIndex: 1,
+      nextColumnId: "column-right",
+      nextWindowId: "window-3",
+      previousColumnId: "column-left",
+      previousWindowId: "window-1",
+    });
+    expect(preview.layout).toMatchObject({
+      activeColumnId: "column-stack",
+      columns: [
+        { id: "column-left", windowIds: ["window-left"] },
+        { id: "column-stack", windowIds: ["window-1", "window-3"] },
+        { id: "column-right", windowIds: ["window-right"] },
+      ],
+      viewportOffset: 70,
+    });
+    expect(engine.snapshot(output, desktop)).toEqual(before);
+    expect(engine.commitWindowDetach(preview)).toBe(true);
+    expect(engine.snapshot(output, desktop)).toEqual(preview.layout);
+  });
+
+  it("reattaches into a surviving column by anchors and keeps live changes", () => {
+    const engine = new LayoutEngine();
+
+    engine.restoreColumns({
+      activeColumnId: columnId("column-stack"),
+      columns: [
+        {
+          column: {
+            id: columnId("column-left"),
+            width: { kind: "fixed", value: 200 },
+            windowIds: [windowId("window-left")],
+          },
+          index: 0,
+        },
+        {
+          column: {
+            id: columnId("column-stack"),
+            width: { kind: "fixed", value: 420 },
+            windowIds: [
+              windowId("window-a"),
+              windowId("window-b"),
+              windowId("window-c"),
+            ],
+          },
+          index: 1,
+        },
+        {
+          column: {
+            id: columnId("column-right"),
+            width: { kind: "fixed", value: 300 },
+            windowIds: [windowId("window-right")],
+          },
+          index: 2,
+        },
+      ],
+      desktopId: desktop,
+      outputId: output,
+      viewportOffset: 40,
+    });
+    const detached = engine.previewWindowDetach(windowId("window-b"));
+
+    if (!detached || !engine.commitWindowDetach(detached)) {
+      throw new Error("expected the stack member to detach");
+    }
+
+    expect(
+      engine.setActiveColumnWidth(windowId("window-a"), {
+        kind: "fixed",
+        value: 500,
+      }),
+    ).toEqual({ kind: "fixed", value: 420 });
+    expect(
+      engine.manageWindow({
+        columnId: columnId("column-new"),
+        desktopId: desktop,
+        outputId: output,
+        width: { kind: "fixed", value: 180 },
+        windowId: windowId("window-x"),
+      }),
+    ).toBe(true);
+    expect(engine.activateWindow(windowId("window-x"))).toBe(true);
+    expect(
+      engine.moveActiveWindow(windowId("window-x"), "left", columnId("unused"))
+        ?.kind,
+    ).toBe("merge");
+    expect(
+      engine.moveActiveWindowInColumn(windowId("window-x"), "up")?.kind,
+    ).toBe("reorder");
+    expect(engine.moveActiveColumn(windowId("window-x"), "right")).toBe(true);
+    expect(engine.activateWindow(windowId("window-right"))).toBe(true);
+    expect(
+      engine.setActiveColumnWidth(windowId("window-right"), {
+        kind: "fixed",
+        value: 440,
+      }),
+    ).toEqual({ kind: "fixed", value: 300 });
+    expect(engine.setViewportOffset(output, desktop, 170)).toBe(true);
+    const live = engine.snapshot(output, desktop);
+    const attached = engine.previewWindowAttach(detached.placement);
+
+    if (!attached) {
+      throw new Error("expected a window attachment preview");
+    }
+
+    expect(engine.snapshot(output, desktop)).toEqual(live);
+    expect(attached.layout).toEqual({
+      activeColumnId: "column-stack",
+      columns: [
+        {
+          id: "column-left",
+          width: { kind: "fixed", value: 200 },
+          windowIds: ["window-left"],
+        },
+        {
+          id: "column-right",
+          width: { kind: "fixed", value: 440 },
+          windowIds: ["window-right"],
+        },
+        {
+          id: "column-stack",
+          width: { kind: "fixed", value: 500 },
+          windowIds: ["window-a", "window-b", "window-x", "window-c"],
+        },
+      ],
+      desktopId: "desktop-1",
+      outputId: "DP-1",
+      viewportOffset: 170,
+    });
+    expect(engine.commitWindowAttach(attached)).toBe(true);
+    expect(engine.snapshot(output, desktop)).toEqual(attached.layout);
+    expect(engine.commitWindowAttach(attached)).toBe(false);
+  });
+
+  it("recreates a vanished singleton column by its live anchors and saved width", () => {
+    const engine = new LayoutEngine();
+
+    engine.restoreColumns({
+      activeColumnId: columnId("column-b"),
+      columns: [
+        {
+          column: {
+            id: columnId("column-a"),
+            width: { kind: "fixed", value: 240 },
+            windowIds: [windowId("window-a")],
+          },
+          index: 0,
+        },
+        {
+          column: {
+            id: columnId("column-b"),
+            width: { kind: "fixed", value: 333 },
+            windowIds: [windowId("window-b")],
+          },
+          index: 1,
+        },
+        {
+          column: {
+            id: columnId("column-c"),
+            width: { kind: "fixed", value: 360 },
+            windowIds: [windowId("window-c")],
+          },
+          index: 2,
+        },
+        {
+          column: {
+            id: columnId("column-d"),
+            width: { kind: "fixed", value: 280 },
+            windowIds: [windowId("window-d")],
+          },
+          index: 3,
+        },
+      ],
+      desktopId: desktop,
+      outputId: output,
+    });
+    const detached = engine.previewWindowDetach(windowId("window-b"));
+
+    if (!detached || !engine.commitWindowDetach(detached)) {
+      throw new Error("expected the singleton to detach");
+    }
+
+    expect(engine.activateWindow(windowId("window-a"))).toBe(true);
+    expect(
+      engine.setActiveColumnWidth(windowId("window-a"), {
+        kind: "fixed",
+        value: 260,
+      }),
+    ).toEqual({ kind: "fixed", value: 240 });
+    expect(engine.activateWindow(windowId("window-d"))).toBe(true);
+    expect(engine.moveActiveColumn(windowId("window-d"), "left")).toBe(true);
+    expect(engine.setViewportOffset(output, desktop, 90)).toBe(true);
+    const live = engine.snapshot(output, desktop);
+    const attached = engine.previewWindowAttach(detached.placement);
+
+    if (!attached) {
+      throw new Error("expected the singleton attachment preview");
+    }
+
+    expect(engine.snapshot(output, desktop)).toEqual(live);
+    expect(attached.layout).toEqual({
+      activeColumnId: "column-b",
+      columns: [
+        {
+          id: "column-a",
+          width: { kind: "fixed", value: 260 },
+          windowIds: ["window-a"],
+        },
+        {
+          id: "column-b",
+          width: { kind: "fixed", value: 333 },
+          windowIds: ["window-b"],
+        },
+        {
+          id: "column-d",
+          width: { kind: "fixed", value: 280 },
+          windowIds: ["window-d"],
+        },
+        {
+          id: "column-c",
+          width: { kind: "fixed", value: 360 },
+          windowIds: ["window-c"],
+        },
+      ],
+      desktopId: "desktop-1",
+      outputId: "DP-1",
+      viewportOffset: 90,
+    });
+    expect(engine.commitWindowAttach(attached)).toBe(true);
+  });
+
+  it("clamps restoration when saved column and member anchors vanish", () => {
+    const singletonEngine = new LayoutEngine();
+
+    singletonEngine.restoreColumns({
+      activeColumnId: columnId("column-b"),
+      columns: [
+        {
+          column: {
+            id: columnId("column-a"),
+            width: { kind: "fixed", value: 200 },
+            windowIds: [windowId("window-a")],
+          },
+          index: 0,
+        },
+        {
+          column: {
+            id: columnId("column-b"),
+            width: { kind: "fixed", value: 300 },
+            windowIds: [windowId("window-b")],
+          },
+          index: 1,
+        },
+        {
+          column: {
+            id: columnId("column-c"),
+            width: { kind: "fixed", value: 400 },
+            windowIds: [windowId("window-c")],
+          },
+          index: 2,
+        },
+        {
+          column: {
+            id: columnId("column-d"),
+            width: { kind: "fixed", value: 500 },
+            windowIds: [windowId("window-d")],
+          },
+          index: 3,
+        },
+      ],
+      desktopId: desktop,
+      outputId: output,
+    });
+    const singleton = singletonEngine.previewWindowDetach(windowId("window-b"));
+
+    if (!singleton || !singletonEngine.commitWindowDetach(singleton)) {
+      throw new Error("expected the singleton to detach");
+    }
+
+    expect(
+      singletonEngine.removeColumns({
+        columnIds: [columnId("column-a"), columnId("column-c")],
+        desktopId: desktop,
+        outputId: output,
+      }),
+    ).toBe(true);
+    const singletonAttach = singletonEngine.previewWindowAttach(
+      singleton.placement,
+    );
+
+    if (!singletonAttach) {
+      throw new Error("expected a clamped singleton attachment");
+    }
+
+    expect(singletonAttach.layout.columns.map((column) => column.id)).toEqual([
+      "column-d",
+      "column-b",
+    ]);
+    expect(singletonEngine.commitWindowAttach(singletonAttach)).toBe(true);
+
+    const stackEngine = new LayoutEngine();
+    stackEngine.restoreColumns({
+      activeColumnId: columnId("column-stack"),
+      columns: [
+        {
+          column: {
+            id: columnId("column-left"),
+            width: { kind: "fixed", value: 200 },
+            windowIds: [windowId("window-left")],
+          },
+          index: 0,
+        },
+        {
+          column: {
+            id: columnId("column-stack"),
+            width: { kind: "fixed", value: 420 },
+            windowIds: [
+              windowId("window-a"),
+              windowId("window-b"),
+              windowId("window-c"),
+            ],
+          },
+          index: 1,
+        },
+        {
+          column: {
+            id: columnId("column-right"),
+            width: { kind: "fixed", value: 300 },
+            windowIds: [windowId("window-right")],
+          },
+          index: 2,
+        },
+      ],
+      desktopId: desktop,
+      outputId: output,
+    });
+    const member = stackEngine.previewWindowDetach(windowId("window-b"));
+
+    if (!member || !stackEngine.commitWindowDetach(member)) {
+      throw new Error("expected the stack member to detach");
+    }
+
+    expect(stackEngine.unmanageWindow(windowId("window-a"))).toBe(true);
+    expect(stackEngine.unmanageWindow(windowId("window-c"))).toBe(true);
+    expect(
+      stackEngine.restoreColumns({
+        columns: [
+          {
+            column: {
+              id: columnId("column-stack"),
+              width: { kind: "fixed", value: 640 },
+              windowIds: [windowId("window-x")],
+            },
+            index: 1,
+          },
+        ],
+        desktopId: desktop,
+        outputId: output,
+      }),
+    ).toBe(true);
+    const memberAttach = stackEngine.previewWindowAttach(member.placement);
+
+    if (!memberAttach) {
+      throw new Error("expected a clamped stack attachment");
+    }
+
+    expect(memberAttach.layout.columns[1]).toEqual({
+      id: "column-stack",
+      width: { kind: "fixed", value: 640 },
+      windowIds: ["window-x", "window-b"],
+    });
+    expect(stackEngine.commitWindowAttach(memberAttach)).toBe(true);
+  });
+
+  it("detaches and reattaches the last window through an empty context", () => {
+    const engine = new LayoutEngine();
+
+    engine.manageWindow({
+      columnId: columnId("column-only"),
+      desktopId: desktop,
+      outputId: output,
+      width: { kind: "proportion", value: 0.6 },
+      windowId: windowId("window-only"),
+    });
+    engine.activateWindow(windowId("window-only"));
+    engine.setViewportOffset(output, desktop, 250);
+    const detached = engine.previewWindowDetach(windowId("window-only"));
+
+    if (!detached) {
+      throw new Error("expected the last window detachment preview");
+    }
+
+    expect(detached.layout).toEqual({
+      activeColumnId: null,
+      columns: [],
+      desktopId: "desktop-1",
+      outputId: "DP-1",
+      viewportOffset: 0,
+    });
+    expect(engine.commitWindowDetach(detached)).toBe(true);
+    expect(engine.snapshot(output, desktop)).toEqual(detached.layout);
+    const attached = engine.previewWindowAttach(detached.placement);
+
+    if (!attached) {
+      throw new Error("expected an empty-context attachment preview");
+    }
+
+    expect(attached.layout).toEqual({
+      activeColumnId: "column-only",
+      columns: [
+        {
+          id: "column-only",
+          width: { kind: "proportion", value: 0.6 },
+          windowIds: ["window-only"],
+        },
+      ],
+      desktopId: "desktop-1",
+      outputId: "DP-1",
+      viewportOffset: 0,
+    });
+    expect(engine.commitWindowAttach(attached)).toBe(true);
+    expect(engine.snapshot(output, desktop)).toEqual(attached.layout);
+  });
+
+  it("rejects stale and foreign detach and attach previews", () => {
+    const engine = new LayoutEngine();
+    const foreign = new LayoutEngine();
+
+    for (const index of [1, 2]) {
+      engine.manageWindow({
+        columnId: columnId(`column-${String(index)}`),
+        desktopId: desktop,
+        outputId: output,
+        width: { kind: "fixed", value: 300 },
+        windowId: windowId(`window-${String(index)}`),
+      });
+    }
+    engine.activateWindow(windowId("window-1"));
+    const staleDetach = engine.previewWindowDetach(windowId("window-1"));
+
+    if (!staleDetach) {
+      throw new Error("expected a detachment preview");
+    }
+
+    expect(foreign.commitWindowDetach(staleDetach)).toBe(false);
+    expect(engine.setViewportOffset(output, desktop, 20)).toBe(true);
+    const changed = engine.snapshot(output, desktop);
+    expect(engine.commitWindowDetach(staleDetach)).toBe(false);
+    expect(engine.snapshot(output, desktop)).toEqual(changed);
+    expect(engine.commitWindowDetach(staleDetach)).toBe(false);
+
+    const detached = engine.previewWindowDetach(windowId("window-1"));
+
+    if (!detached || !engine.commitWindowDetach(detached)) {
+      throw new Error("expected the window to detach");
+    }
+
+    const staleAttach = engine.previewWindowAttach(detached.placement);
+
+    if (!staleAttach) {
+      throw new Error("expected an attachment preview");
+    }
+
+    expect(foreign.commitWindowAttach(staleAttach)).toBe(false);
+    expect(engine.setViewportOffset(output, desktop, 40)).toBe(true);
+    const detachedLayout = engine.snapshot(output, desktop);
+    expect(engine.commitWindowAttach(staleAttach)).toBe(false);
+    expect(engine.snapshot(output, desktop)).toEqual(detachedLayout);
+    expect(engine.commitWindowAttach(staleAttach)).toBe(false);
+    expect(engine.commitWindowDetach({} as WindowDetachPreview)).toBe(false);
+    expect(engine.commitWindowAttach({} as WindowAttachPreview)).toBe(false);
+  });
+
+  it("rejects duplicate windows and invalid detached placement metadata", () => {
+    const engine = new LayoutEngine();
+    const otherOutput = outputId("HDMI-A-1");
+
+    engine.manageWindow({
+      columnId: columnId("column-1"),
+      desktopId: desktop,
+      outputId: output,
+      width: { kind: "fixed", value: 300 },
+      windowId: windowId("window-1"),
+    });
+    const detached = engine.previewWindowDetach(windowId("window-1"));
+
+    if (!detached || !engine.commitWindowDetach(detached)) {
+      throw new Error("expected the window to detach");
+    }
+
+    expect(
+      engine.manageWindow({
+        columnId: columnId("column-foreign"),
+        desktopId: desktop,
+        outputId: otherOutput,
+        width: { kind: "fixed", value: 200 },
+        windowId: windowId("window-1"),
+      }),
+    ).toBe(true);
+    expect(engine.previewWindowAttach(detached.placement)).toBeNull();
+    expect(engine.unmanageWindow(windowId("window-1"))).toBe(true);
+
+    const invalidPlacements: DetachedWindowPlacement[] = [
+      {} as DetachedWindowPlacement,
+      null as unknown as DetachedWindowPlacement,
+      { ...detached.placement, columnIndex: -1 },
+      { ...detached.placement, memberIndex: 0.5 },
+      {
+        ...detached.placement,
+        columnWidth: { kind: "fixed", value: Number.NaN },
+      },
+      {
+        ...detached.placement,
+        columnWidth: {
+          kind: "invalid",
+          value: 300,
+        } as unknown as DetachedWindowPlacement["columnWidth"],
+      },
+      {
+        ...detached.placement,
+        nextColumnId: columnId("duplicate-column-anchor"),
+        previousColumnId: columnId("duplicate-column-anchor"),
+      },
+      {
+        ...detached.placement,
+        nextWindowId: windowId("duplicate-window-anchor"),
+        previousWindowId: windowId("duplicate-window-anchor"),
+      },
+      {
+        ...detached.placement,
+        previousColumnId: detached.placement.columnId,
+      },
+      {
+        ...detached.placement,
+        nextWindowId: detached.placement.windowId,
+      },
+    ];
+    const before = engine.snapshot(output, desktop);
+
+    for (const placement of invalidPlacements) {
+      expect(engine.previewWindowAttach(placement)).toBeNull();
+    }
+
+    expect(engine.snapshot(output, desktop)).toEqual(before);
+  });
+
+  it("accepts a deterministic fresh placement for a different live context", () => {
+    const engine = new LayoutEngine();
+    const liveOutput = outputId("HDMI-A-1");
+    const liveDesktop = desktopId("desktop-2");
+
+    engine.manageWindow({
+      columnId: columnId("column-saved"),
+      desktopId: desktop,
+      outputId: output,
+      width: { kind: "fixed", value: 300 },
+      windowId: windowId("window-floating"),
+    });
+    const detached = engine.previewWindowDetach(windowId("window-floating"));
+
+    if (!detached || !engine.commitWindowDetach(detached)) {
+      throw new Error("expected the window to detach");
+    }
+
+    for (const index of [1, 2]) {
+      engine.manageWindow({
+        columnId: columnId(`column-live-${String(index)}`),
+        desktopId: liveDesktop,
+        outputId: liveOutput,
+        width: { kind: "fixed", value: 250 },
+        windowId: windowId(`window-live-${String(index)}`),
+      });
+    }
+    engine.setViewportOffset(liveOutput, liveDesktop, 60);
+    const freshPlacement: DetachedWindowPlacement = {
+      ...detached.placement,
+      columnId: columnId("column-fresh"),
+      columnIndex: 1,
+      columnWidth: { kind: "fixed", value: 480 },
+      desktopId: liveDesktop,
+      memberIndex: 0,
+      nextColumnId: columnId("column-live-2"),
+      nextWindowId: null,
+      outputId: liveOutput,
+      previousColumnId: columnId("column-live-1"),
+      previousWindowId: null,
+    };
+    const attached = engine.previewWindowAttach(freshPlacement);
+
+    if (!attached) {
+      throw new Error("expected a fresh-context attachment preview");
+    }
+
+    expect(attached.layout).toEqual({
+      activeColumnId: "column-fresh",
+      columns: [
+        {
+          id: "column-live-1",
+          width: { kind: "fixed", value: 250 },
+          windowIds: ["window-live-1"],
+        },
+        {
+          id: "column-fresh",
+          width: { kind: "fixed", value: 480 },
+          windowIds: ["window-floating"],
+        },
+        {
+          id: "column-live-2",
+          width: { kind: "fixed", value: 250 },
+          windowIds: ["window-live-2"],
+        },
+      ],
+      desktopId: "desktop-2",
+      outputId: "HDMI-A-1",
+      viewportOffset: 60,
+    });
+    expect(engine.commitWindowAttach(attached)).toBe(true);
+    expect(engine.snapshot(output, desktop).columns).toEqual([]);
+    expect(engine.snapshot(liveOutput, liveDesktop)).toEqual(attached.layout);
   });
 
   it("stores viewport offsets independently for each context", () => {
