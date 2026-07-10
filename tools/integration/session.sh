@@ -7,8 +7,6 @@ if [[ "${DRIFTILE_SMOKE_TRACE:-0}" == "1" ]]; then
 fi
 
 readonly plugin_id="io.github.kontonkara.driftile"
-readonly expected_left_frame="16,16,616,688"
-readonly expected_right_frame="648,16,616,688"
 readonly stable_sample_count=2
 readonly wait_attempts=200
 
@@ -46,7 +44,7 @@ fail() {
   exit 1
 }
 
-window_id() {
+window_match_id() {
   local window_title=$1
 
   busctl --user --json=short call \
@@ -58,8 +56,28 @@ window_id() {
       [.data[0][] | select(.[1] == $title)] as $matches
       | select($matches | length == 1)
       | $matches[0][0]
-      | sub("^[0-9]+_"; "")
     '
+}
+
+window_id() {
+  local match_id
+
+  match_id=$(window_match_id "$1") || return 1
+  printf '%s' "${match_id#*_}"
+}
+
+activate_window() {
+  local match_id
+
+  match_id=$(window_match_id "$1") || return 1
+
+  busctl --user call \
+    org.kde.KWin \
+    /WindowsRunner \
+    org.kde.krunner1 \
+    Run \
+    ss "$match_id" "" \
+    >/dev/null
 }
 
 window_frame_geometry() {
@@ -137,31 +155,31 @@ wait_for_window_gone() {
   return 1
 }
 
-wait_for_tiled_layout() {
+wait_for_layout() {
   local first_title=$1
-  local second_title=$2
+  local first_expected=$2
+  local second_title=$3
+  local second_expected=$4
+  local third_title=$5
+  local third_expected=$6
   local attempt
   local current_layout
-  local matches=0
+  local expected_layout="$first_expected|$second_expected|$third_expected"
   local first_frame
+  local matches=0
   local previous_layout=""
   local second_frame
+  local third_frame
 
   for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
     first_frame=$(window_frame_geometry "$first_title" 2>/dev/null || true)
     second_frame=$(window_frame_geometry "$second_title" 2>/dev/null || true)
+    third_frame=$(window_frame_geometry "$third_title" 2>/dev/null || true)
+    current_layout="$first_frame|$second_frame|$third_frame"
 
-    if [[ "$first_frame" == "$expected_left_frame" && "$second_frame" == "$expected_right_frame" ]]; then
-      current_layout=left-right
-    elif [[ "$first_frame" == "$expected_right_frame" && "$second_frame" == "$expected_left_frame" ]]; then
-      current_layout=right-left
-    else
-      current_layout=""
-    fi
-
-    if [[ -n "$current_layout" && "$current_layout" == "$previous_layout" ]]; then
+    if [[ "$current_layout" == "$expected_layout" && "$current_layout" == "$previous_layout" ]]; then
       ((matches += 1))
-    elif [[ -n "$current_layout" ]]; then
+    elif [[ "$current_layout" == "$expected_layout" ]]; then
       matches=1
     else
       matches=0
@@ -178,30 +196,14 @@ wait_for_tiled_layout() {
   return 1
 }
 
-wait_for_geometry() {
-  local window_title=$1
-  local expected=$2
-  local attempt
-  local current
-  local matches=0
+describe_layout() {
+  local window_title
+  local window_frame
 
-  for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
-    current=$(window_frame_geometry "$window_title" 2>/dev/null || true)
-
-    if [[ "$current" == "$expected" ]]; then
-      ((matches += 1))
-
-      if ((matches >= stable_sample_count)); then
-        return 0
-      fi
-    else
-      matches=0
-    fi
-
-    sleep 0.05
+  for window_title in "$@"; do
+    window_frame=$(window_frame_geometry "$window_title" 2>/dev/null || true)
+    printf '%s=%s ' "$window_title" "${window_frame:-missing}"
   done
-
-  return 1
 }
 
 wait_for_script_state() {
@@ -274,27 +276,57 @@ run_scenario() {
   local protocol=$1
   local first_title="driftile-smoke-${protocol}-a"
   local second_title="driftile-smoke-${protocol}-b"
+  local third_title="driftile-smoke-${protocol}-c"
   local first_baseline
   local second_baseline
+  local third_baseline
 
   start_client "$protocol" "$first_title"
+  capture_stable_geometry "$first_title" >/dev/null || fail "the first $protocol test window did not stabilize"
   start_client "$protocol" "$second_title"
+  capture_stable_geometry "$second_title" >/dev/null || fail "the second $protocol test window did not stabilize"
+  start_client "$protocol" "$third_title"
 
   first_baseline=$(capture_stable_geometry "$first_title") || fail "the first $protocol test window did not stabilize"
   second_baseline=$(capture_stable_geometry "$second_title") || fail "the second $protocol test window did not stabilize"
+  third_baseline=$(capture_stable_geometry "$third_title") || fail "the third $protocol test window did not stabilize"
+
+  activate_window "$third_title" || fail "KWin could not activate the third $protocol window"
 
   set_plugin_state true
   wait_for_script_state true || fail "KWin did not report Driftile as loaded"
-  wait_for_tiled_layout "$first_title" "$second_title" || fail "Driftile did not tile the $protocol windows"
+  wait_for_layout \
+    "$first_title" "-600,16,616,688" \
+    "$second_title" "32,16,616,688" \
+    "$third_title" "664,16,616,688" || \
+    fail "Driftile did not reveal the third $protocol window: $(describe_layout "$first_title" "$second_title" "$third_title")"
+
+  activate_window "$first_title" || fail "KWin could not activate the first $protocol window"
+  wait_for_layout \
+    "$first_title" "0,16,616,688" \
+    "$second_title" "632,16,616,688" \
+    "$third_title" "1264,16,616,688" || \
+    fail "Driftile did not reveal the first $protocol window: $(describe_layout "$first_title" "$second_title" "$third_title")"
+
+  activate_window "$third_title" || fail "KWin could not reactivate the third $protocol window"
+  wait_for_layout \
+    "$first_title" "-600,16,616,688" \
+    "$second_title" "32,16,616,688" \
+    "$third_title" "664,16,616,688" || \
+    fail "Driftile did not reveal the third $protocol window again: $(describe_layout "$first_title" "$second_title" "$third_title")"
 
   set_plugin_state false
   wait_for_script_state false || fail "KWin did not unload Driftile"
-  wait_for_geometry "$first_title" "$first_baseline" || fail "Driftile did not restore the first $protocol window"
-  wait_for_geometry "$second_title" "$second_baseline" || fail "Driftile did not restore the second $protocol window"
+  wait_for_layout \
+    "$first_title" "$first_baseline" \
+    "$second_title" "$second_baseline" \
+    "$third_title" "$third_baseline" || \
+    fail "Driftile did not restore the $protocol windows: $(describe_layout "$first_title" "$second_title" "$third_title")"
 
   stop_clients
   wait_for_window_gone "$first_title" || fail "the first $protocol test window did not close"
   wait_for_window_gone "$second_title" || fail "the second $protocol test window did not close"
+  wait_for_window_gone "$third_title" || fail "the third $protocol test window did not close"
 }
 
 trap cleanup EXIT

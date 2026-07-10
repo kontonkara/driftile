@@ -82,7 +82,6 @@ export class LayoutEngine {
       activeIndex < 0 ? context.columns.length : activeIndex + 1;
 
     context.columns.splice(insertionIndex, 0, column);
-    context.activeColumnId = column.id;
     this.placements.set(command.windowId, {
       columnId: column.id,
       contextKey: key,
@@ -101,6 +100,10 @@ export class LayoutEngine {
     const context = this.contexts.get(placement.contextKey);
 
     if (!context) {
+      return false;
+    }
+
+    if (context.activeColumnId === placement.columnId) {
       return false;
     }
 
@@ -219,6 +222,23 @@ export class LayoutEngine {
     };
   }
 
+  setViewportOffset(
+    outputId: OutputId,
+    desktopId: DesktopId,
+    viewportOffset: number,
+  ): boolean {
+    assertValidViewportOffset(viewportOffset);
+
+    const context = this.contexts.get(contextKey(outputId, desktopId));
+
+    if (!context) {
+      return false;
+    }
+
+    context.viewportOffset = viewportOffset === 0 ? 0 : viewportOffset;
+    return true;
+  }
+
   private getOrCreateContext(
     key: string,
     outputId: OutputId,
@@ -249,5 +269,11 @@ function contextKey(outputId: OutputId, desktopId: DesktopId): string {
 function assertValidWidth(width: ColumnWidth): void {
   if (!Number.isFinite(width.value) || width.value <= 0) {
     throw new RangeError("column width must be finite and greater than zero");
+  }
+}
+
+function assertValidViewportOffset(viewportOffset: number): void {
+  if (!Number.isFinite(viewportOffset) || viewportOffset < 0) {
+    throw new RangeError("viewport offset must be finite and non-negative");
   }
 }

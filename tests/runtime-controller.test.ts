@@ -194,6 +194,112 @@ describe("RuntimeController", () => {
     expect(fixture.activationCount).toBe(2);
   });
 
+  it("scrolls the viewport only when focus crosses a visible boundary", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const second = createTrackedWindow("window-2", output, desktop);
+    const third = createTrackedWindow("window-3", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window, second.window, third.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    controller.start();
+
+    expect(controller.managedCount).toBe(3);
+    expect(
+      [first, second, third].map(({ window }) => window.frameGeometry.x),
+    ).toEqual([-475, 20, 515]);
+
+    expect(controller.focusLeft()).toBe(true);
+    expect(controller.lastWriteCount).toBe(0);
+    expect(controller.focusLeft()).toBe(true);
+    expect(controller.lastWriteCount).toBe(3);
+    expect(
+      [first, second, third].map(({ window }) => window.frameGeometry.x),
+    ).toEqual([0, 495, 990]);
+
+    expect(controller.focusRight()).toBe(true);
+    expect(controller.lastWriteCount).toBe(0);
+    expect(controller.focusRight()).toBe(true);
+    expect(controller.lastWriteCount).toBe(3);
+    expect(
+      [first, second, third].map(({ window }) => window.frameGeometry.x),
+    ).toEqual([-475, 20, 515]);
+  });
+
+  it("keeps overflow windows unmanaged when more than one output exists", () => {
+    const output = createOutput("DP-1", 0);
+    const otherOutput = createOutput("HDMI-A-1", 1000);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const second = createTrackedWindow("window-2", output, desktop);
+    const third = createTrackedWindow("window-3", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output, otherOutput],
+      [desktop],
+      [first.window, second.window, third.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    controller.start();
+
+    expect(controller.managedCount).toBe(2);
+    expect(first.window.frameGeometry.x).toBe(10);
+    expect(second.window.frameGeometry.x).toBe(505);
+    expect(third.window.frameGeometry).toEqual({
+      height: 200,
+      width: 300,
+      x: 0,
+      y: 0,
+    });
+    expect(third.writeCount).toBe(0);
+  });
+
+  it("does not reveal a background window that did not take focus", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const second = createTrackedWindow("window-2", output, desktop);
+    const third = createTrackedWindow("window-3", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window, second.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+
+    controller.start();
+    fixture.windowAdded.emit(third.window);
+    scheduler.flush();
+
+    expect(fixture.workspace.activeWindow).toBe(second.window);
+    expect(controller.managedCount).toBe(3);
+    expect(
+      [first, second, third].map(({ window }) => window.frameGeometry.x),
+    ).toEqual([10, 505, 1000]);
+  });
+
   it("inserts a new column after the externally activated window", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
@@ -385,21 +491,23 @@ describe("RuntimeController", () => {
     const second = createTrackedWindow("window-2", output, desktop);
     const third = createTrackedWindow("window-3", output, desktop);
     fixture.windowAdded.emit(second.window);
+    fixture.workspace.activeWindow = second.window;
     fixture.windowAdded.emit(third.window);
+    fixture.workspace.activeWindow = third.window;
 
     expect(scheduler.pendingCount).toBe(1);
     scheduler.flush();
-    expect(controller.lastWriteCount).toBe(1);
-    expect(controller.managedCount).toBe(2);
-    expect(second.window.frameGeometry.x).toBe(505);
-    expect(third.window.frameGeometry.x).toBe(0);
-    expect(third.writeCount).toBe(0);
+    expect(controller.lastWriteCount).toBe(3);
+    expect(controller.managedCount).toBe(3);
+    expect(first.window.frameGeometry.x).toBe(-475);
+    expect(second.window.frameGeometry.x).toBe(20);
+    expect(third.window.frameGeometry.x).toBe(515);
 
     fixture.windowRemoved.emit(first.window);
     scheduler.flush();
-    expect(controller.lastWriteCount).toBe(1);
+    expect(controller.lastWriteCount).toBe(2);
     expect(second.window.frameGeometry.x).toBe(10);
-    expect(third.window.frameGeometry.x).toBe(0);
+    expect(third.window.frameGeometry.x).toBe(505);
   });
 
   it("does not write a window moved to another output before a flush", () => {

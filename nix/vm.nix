@@ -37,6 +37,13 @@ let
           '
       }
 
+      window_id() {
+        local match_id
+
+        match_id=$(window_match_id "$1") || return 1
+        printf '%s' "''${match_id#*_}"
+      }
+
       wait_for_window() {
         local attempt
         local title=$1
@@ -94,6 +101,41 @@ let
         return 1
       }
 
+      window_frame_x() {
+        local id
+
+        id=$(window_id "$1") || return 1
+        busctl --user --json=short call \
+          org.kde.KWin \
+          /KWin \
+          org.kde.KWin \
+          getWindowInfo \
+          s "$id" 2>/dev/null \
+          | jq --exit-status --raw-output \
+            '.data[0].x.data | select(type == "number") | round | tostring'
+      }
+
+      wait_for_layout() {
+        local attempt
+        local first_x
+        local second_x
+        local third_x
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          first_x=$(window_frame_x "$title_a" 2>/dev/null || true)
+          second_x=$(window_frame_x "$title_b" 2>/dev/null || true)
+          third_x=$(window_frame_x "$title_c" 2>/dev/null || true)
+
+          if [[ "$first_x" == "$1" && "$second_x" == "$2" && "$third_x" == "$3" ]]; then
+            return 0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
       invoke_shortcut() {
         busctl --user call \
           org.kde.kglobalaccel \
@@ -134,21 +176,57 @@ let
             Match \
             s "$title_b" 2>/dev/null \
             | jq --compact-output '[.data[0][] | .[1]]' || true
+          printf 'window C captions: '
+          busctl --user --json=short call \
+            org.kde.KWin \
+            /WindowsRunner \
+            org.kde.krunner1 \
+            Match \
+            s "$title_c" 2>/dev/null \
+            | jq --compact-output '[.data[0][] | .[1]]' || true
+          printf 'frame x positions: A=%s B=%s C=%s\n' \
+            "$(window_frame_x "$title_a" 2>/dev/null || printf missing)" \
+            "$(window_frame_x "$title_b" 2>/dev/null || printf missing)" \
+            "$(window_frame_x "$title_c" 2>/dev/null || printf missing)"
         } >> /tmp/shared/driftile-focus-diagnostics
       }
 
       verify_focus() {
-        wait_for_window "$title_a" && wait_for_window "$title_b" || return 1
+        wait_for_window "$title_a" \
+          && wait_for_window "$title_b" \
+          && wait_for_window "$title_c" \
+          || return 1
         record_focus_state "windows ready"
 
-        activate_window "$title_b" && wait_for_active "$title_b" || return 1
-        record_focus_state "window B activated"
+        activate_window "$title_c" \
+          && wait_for_active "$title_c" \
+          && wait_for_layout -800 32 864 \
+          || return 1
+        record_focus_state "window C activated"
 
-        invoke_shortcut "Driftile Focus Left" && wait_for_active "$title_a" || return 1
-        record_focus_state "focus left invoked"
+        invoke_shortcut "Driftile Focus Left" \
+          && wait_for_active "$title_b" \
+          && wait_for_layout -800 32 864 \
+          || return 1
+        record_focus_state "focus left to B invoked"
 
-        invoke_shortcut "Driftile Focus Right" && wait_for_active "$title_b" || return 1
-        record_focus_state "focus right invoked"
+        invoke_shortcut "Driftile Focus Left" \
+          && wait_for_active "$title_a" \
+          && wait_for_layout 0 832 1664 \
+          || return 1
+        record_focus_state "focus left to A invoked"
+
+        invoke_shortcut "Driftile Focus Right" \
+          && wait_for_active "$title_b" \
+          && wait_for_layout 0 832 1664 \
+          || return 1
+        record_focus_state "focus right to B invoked"
+
+        invoke_shortcut "Driftile Focus Right" \
+          && wait_for_active "$title_c" \
+          && wait_for_layout -800 32 864 \
+          || return 1
+        record_focus_state "focus right to C invoked"
       }
 
       loaded=false
@@ -183,7 +261,8 @@ let
       printf '%s\n' "$loaded" > /tmp/shared/driftile-loaded
 
       title_a="$status - window A - Meta+Ctrl+H"
-      title_b="$status - window B - Meta+Ctrl+L"
+      title_b="$status - window B - middle column"
+      title_c="$status - window C - Meta+Ctrl+L"
       : > /tmp/shared/driftile-focus-diagnostics
 
       qml -f ${demoClient} -- --mark-active "$title_a" &
@@ -197,6 +276,14 @@ let
       qml -f ${demoClient} -- --mark-active "$title_b" &
       second_window=$!
 
+      wait_for_window "$title_b" \
+        && activate_window "$title_b" \
+        && wait_for_active "$title_b" \
+        || true
+
+      qml -f ${demoClient} -- --mark-active "$title_c" &
+      third_window=$!
+
       focus_verified=false
 
       if [[ "$loaded" == true ]] && verify_focus; then
@@ -205,7 +292,7 @@ let
 
       printf '%s\n' "$focus_verified" > /tmp/shared/driftile-focus-verified
 
-      wait "$first_window" "$second_window"
+      wait "$first_window" "$second_window" "$third_window"
     '';
   };
   kwinConfig = pkgs.writeText "driftile-vm-kwinrc" ''

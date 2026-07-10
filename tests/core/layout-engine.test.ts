@@ -7,7 +7,7 @@ const output = outputId("DP-1");
 const desktop = desktopId("desktop-1");
 
 describe("LayoutEngine", () => {
-  it("inserts a new column after the active column", () => {
+  it("inserts a new column after the active column without activating it", () => {
     const engine = new LayoutEngine();
 
     engine.manageWindow({
@@ -17,6 +17,7 @@ describe("LayoutEngine", () => {
       width: { kind: "proportion", value: 0.5 },
       windowId: windowId("window-1"),
     });
+    engine.activateWindow(windowId("window-1"));
     engine.manageWindow({
       columnId: columnId("column-2"),
       desktopId: desktop,
@@ -26,7 +27,7 @@ describe("LayoutEngine", () => {
     });
 
     expect(engine.snapshot(output, desktop)).toMatchObject({
-      activeColumnId: "column-2",
+      activeColumnId: "column-1",
       columns: [
         { id: "column-1", windowIds: ["window-1"] },
         { id: "column-2", windowIds: ["window-2"] },
@@ -46,6 +47,7 @@ describe("LayoutEngine", () => {
         windowId: windowId(`window-${String(index)}`),
       });
     }
+    engine.activateWindow(windowId("window-2"));
 
     engine.unmanageWindow(windowId("window-2"));
 
@@ -69,6 +71,7 @@ describe("LayoutEngine", () => {
     }
 
     expect(engine.activateWindow(windowId("window-1"))).toBe(true);
+    expect(engine.activateWindow(windowId("window-1"))).toBe(false);
     expect(engine.activateWindow(windowId("unknown"))).toBe(false);
     engine.manageWindow({
       columnId: columnId("column-4"),
@@ -82,6 +85,49 @@ describe("LayoutEngine", () => {
       engine.snapshot(output, desktop).columns.map((column) => column.id),
     ).toEqual(["column-1", "column-4", "column-2", "column-3"]);
   });
+
+  it("stores viewport offsets independently for each context", () => {
+    const engine = new LayoutEngine();
+    const secondOutput = outputId("HDMI-A-1");
+
+    for (const [index, contextOutput] of [output, secondOutput].entries()) {
+      engine.manageWindow({
+        columnId: columnId(`column-${String(index + 1)}`),
+        desktopId: desktop,
+        outputId: contextOutput,
+        width: { kind: "proportion", value: 0.5 },
+        windowId: windowId(`window-${String(index + 1)}`),
+      });
+    }
+
+    expect(engine.setViewportOffset(output, desktop, 936)).toBe(true);
+
+    expect(engine.snapshot(output, desktop).viewportOffset).toBe(936);
+    expect(engine.snapshot(secondOutput, desktop).viewportOffset).toBe(0);
+    expect(engine.setViewportOffset(outputId("unknown"), desktop, 10)).toBe(
+      false,
+    );
+  });
+
+  it.each([-1, Number.NaN, Number.POSITIVE_INFINITY])(
+    "rejects an invalid viewport offset of %s",
+    (viewportOffset) => {
+      const engine = new LayoutEngine();
+
+      engine.manageWindow({
+        columnId: columnId("column-1"),
+        desktopId: desktop,
+        outputId: output,
+        width: { kind: "proportion", value: 0.5 },
+        windowId: windowId("window-1"),
+      });
+
+      expect(() =>
+        engine.setViewportOffset(output, desktop, viewportOffset),
+      ).toThrow(RangeError);
+      expect(engine.snapshot(output, desktop).viewportOffset).toBe(0);
+    },
+  );
 
   it("finds adjacent windows without crossing context boundaries", () => {
     const engine = new LayoutEngine();

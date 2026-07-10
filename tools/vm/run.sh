@@ -8,6 +8,7 @@ host_script_loaded=false
 readonly host_script_name="io.github.kontonkara.driftile.vm-window"
 status_monitor_pid=""
 
+# shellcheck disable=SC2329
 cleanup() {
   if [[ -n "$status_monitor_pid" ]]; then
     wait "$status_monitor_pid" >/dev/null 2>&1 || true
@@ -68,34 +69,42 @@ prepare_host_window() {
 monitor_guest() {
   local attempt
   local diagnostics_file="$temporary_directory/xchg/driftile-focus-diagnostics"
+  local failed=false
   local focus_file="$temporary_directory/xchg/driftile-focus-verified"
   local loaded_file="$temporary_directory/xchg/driftile-loaded"
 
-  for ((attempt = 0; attempt < 300; attempt += 1)); do
+  for ((attempt = 0; attempt < 600; attempt += 1)); do
     if [[ -f "$loaded_file" && -f "$focus_file" ]]; then
       if [[ "$(<"$loaded_file")" == true ]]; then
         printf 'The VM reports that Driftile loaded successfully.\n'
       else
         printf 'The VM reports that Driftile failed to load.\n' >&2
+        failed=true
       fi
 
       if [[ "$(<"$focus_file")" == true ]]; then
-        printf 'The VM verified left and right focus shortcuts.\n'
+        printf 'The VM verified focus shortcuts and viewport scrolling.\n'
       else
-        printf 'The VM failed to verify left and right focus shortcuts.\n' >&2
+        printf 'The VM failed to verify focus shortcuts and viewport scrolling.\n' >&2
+        failed=true
 
         if [[ -f "$diagnostics_file" ]]; then
           sed 's/^/  /' "$diagnostics_file" >&2
         fi
       fi
 
-      return
+      if [[ "$failed" == true ]]; then
+        return 1
+      fi
+
+      return 0
     fi
 
     sleep 0.2
   done
 
-  printf 'The VM did not report Driftile status within 60 seconds.\n' >&2
+  printf 'The VM did not report Driftile status within 120 seconds.\n' >&2
+  return 1
 }
 
 trap cleanup EXIT
@@ -115,5 +124,20 @@ fi
 monitor_guest &
 status_monitor_pid=$!
 
+vm_status=0
+
+set +e
 USE_TMPDIR=1 TMPDIR="$temporary_directory" \
   ./result/bin/run-driftile-vm-vm
+vm_status=$?
+wait "$status_monitor_pid"
+monitor_status=$?
+set -e
+
+status_monitor_pid=""
+
+if ((vm_status != 0)); then
+  exit "$vm_status"
+fi
+
+exit "$monitor_status"

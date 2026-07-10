@@ -22,7 +22,7 @@ Use `npm run test:integration -- wayland` or `npm run test:integration -- x11` t
 
 Without Nix, install Bash, Node.js and npm, KWin 6 for Wayland and X11, Xwayland, Xvfb, KPackage and KConfig tools, Qt QML tools with the Wayland and XCB platform plugins, D-Bus, `busctl` from systemd, GNU `timeout`, and `jq`. Then run the same npm command.
 
-The test uses temporary user and XDG directories, private D-Bus sessions, a virtual Wayland output, and an Xvfb display. It installs Driftile and verifies the enable, exact tiling, disable, geometry restoration, and package removal lifecycle with native Wayland, Xwayland, and native X11 windows. It does not connect to the current display or session bus.
+The test uses temporary user and XDG directories, private D-Bus sessions, a virtual Wayland output, and an Xvfb display. It installs Driftile and verifies three-window tiling, viewport reveal in both directions, exact geometry restoration, and package removal with native Wayland, Xwayland, and native X11 windows. It does not connect to the current display or session bus.
 
 This test does not cover Plasma panels, real GPUs, input, shortcuts, multi-output layouts, or output hot-plugging.
 
@@ -36,6 +36,6 @@ On NixOS, run the VM from a graphical session with KVM available:
 tools/vm/run.sh
 ```
 
-The script builds `nixosConfigurations.driftile-vm` through `nixos-rebuild build-vm` and asks host KWin for a centered `1440x900` QEMU window with a `1680x1050` guest display. Plasma starts a Wayland session, enables Driftile, and opens two labeled test windows. The launcher reports whether KWin loaded the extension and whether both horizontal focus shortcuts worked. Use `Meta+Ctrl+H` and `Meta+Ctrl+L` for manual verification.
+The script builds `nixosConfigurations.driftile-vm` through `nixos-rebuild build-vm` and asks host KWin for a centered `1440x900` QEMU window with a `1680x1050` guest display. Plasma starts a Wayland session, enables Driftile, and opens three labeled test windows. The launcher verifies extension loading, both horizontal focus shortcuts, and left-to-right viewport scrolling. Use `Meta+Ctrl+H` and `Meta+Ctrl+L` for manual verification.
 
 The VM is ephemeral, has restricted networking, and cannot be switched onto the host. The test account and password are both `driftile`. The X11 Plasma session remains available from the login screen; automated integration tests cover both KWin backends.

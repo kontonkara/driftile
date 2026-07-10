@@ -126,11 +126,11 @@ export class RuntimeController {
 
       try {
         this.observer.start();
+        this.handleWindowActivated(this.workspace.activeWindow);
       } finally {
         this.initializing = false;
       }
 
-      this.handleWindowActivated(this.workspace.activeWindow);
       this.reconcile();
       return true;
     } catch (error) {
@@ -181,11 +181,16 @@ export class RuntimeController {
       workArea: contextGeometry.workArea,
     });
 
-    if (layout.maxViewportOffset > 1e-6) {
+    if (!this.canApplyLayout(layout.maxViewportOffset)) {
       this.lastWrites = 0;
       return 0;
     }
 
+    this.layout.setViewportOffset(
+      context.outputId,
+      context.desktopId,
+      layout.viewportOffset,
+    );
     const windowIds = layout.windows.map((window) => window.windowId);
     const observed = this.geometry.observedFrames(windowIds, context);
     const changes = diffWindowGeometries(layout.windows, observed);
@@ -219,6 +224,13 @@ export class RuntimeController {
       return;
     }
 
+    const activeWindow = this.workspace.activeWindow;
+    const shouldActivate = Boolean(
+      !this.initializing &&
+      activeWindow &&
+      String(activeWindow.internalId) === window.id,
+    );
+
     const contextFingerprint = this.layoutContextFingerprint(context, id);
 
     if (!contextFingerprint) {
@@ -231,6 +243,10 @@ export class RuntimeController {
       frame: { ...source.frameGeometry },
     });
     this.managedWindows.add(id);
+
+    if (shouldActivate) {
+      this.layout.activateWindow(id);
+    }
 
     if (!this.initializing) {
       this.scheduleReconcile();
@@ -269,7 +285,11 @@ export class RuntimeController {
       belongsToContext(observed, context) &&
       this.managedWindows.has(id)
     ) {
-      this.layout.activateWindow(id);
+      const changed = this.layout.activateWindow(id);
+
+      if (changed && !this.initializing) {
+        this.scheduleReconcile();
+      }
     }
   };
 
@@ -308,6 +328,8 @@ export class RuntimeController {
       return false;
     }
 
+    this.layout.activateWindow(targetId);
+    this.reconcile();
     this.workspace.activeWindow = target;
     return true;
   }
@@ -351,11 +373,15 @@ export class RuntimeController {
       (window) => window.windowId === candidateId,
     );
     const fits = Boolean(
-      layout.maxViewportOffset <= 1e-6 &&
+      this.canApplyLayout(layout.maxViewportOffset) &&
       candidate &&
       this.geometry.canApplyFrame(candidateId, candidate.frame, context),
     );
     return fits ? contextGeometry.fingerprint : null;
+  }
+
+  private canApplyLayout(maxViewportOffset: number): boolean {
+    return maxViewportOffset <= 1e-6 || this.workspace.screens.length === 1;
   }
 
   private restoreOriginalFrames(): void {
