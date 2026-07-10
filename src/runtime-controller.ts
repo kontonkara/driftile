@@ -37,6 +37,7 @@ import type {
   KWinWorkspace,
 } from "./platform/kwin/api";
 import {
+  frameSizeConstraintBounds,
   KWinGeometryAdapter,
   hasGeometryAuthorityBlocker,
   isGeometryWritable,
@@ -58,6 +59,9 @@ const DEFAULT_COLUMN_WIDTH: ColumnWidth = {
 };
 const DEFAULT_GAP = 16;
 const FIXED_COLUMN_WIDTH_STEP = 64;
+const FIXED_SIZE_CONSTRAINTS = 1;
+const FLEXIBLE_SIZE_CONSTRAINTS = 0;
+const MALFORMED_SIZE_CONSTRAINTS = -1;
 const MAX_CAPACITY_PARK_ATTEMPTS = 20;
 const MAX_TOPOLOGY_SAMPLE_ATTEMPTS = 20;
 const MAX_TRANSIENT_RESUME_PROBES = 20;
@@ -250,6 +254,7 @@ export interface RuntimeControllerOptions {
 }
 
 export class RuntimeController {
+  private readonly automaticFloatingWindows = new Set<WindowId>();
   private readonly capacityCanceledParks = new Map<
     string,
     CapacityParkOperation
@@ -276,6 +281,8 @@ export class RuntimeController {
   private readonly geometry: KWinGeometryAdapter;
   private readonly gap: number;
   private initializing = false;
+  private ownershipFollowUpRequired = false;
+  private ownershipRefreshInProgress = false;
   private readonly knownOutputInstances = new Map<string, number>();
   private lastOutputCount = 0;
   private lastWrites = 0;
@@ -361,6 +368,9 @@ export class RuntimeController {
       this.observer,
       options.clientAreaOption,
       options.createRect,
+      (id, source) =>
+        !this.automaticFloatingWindows.has(id) &&
+        !this.automaticallyFloats(source),
     );
     this.topologyObserver = new TopologyObserver(workspace, {
       changed: this.handleTopologyChanged,
@@ -373,6 +383,10 @@ export class RuntimeController {
 
   get floatingCount(): number {
     return this.floatingWindows.size;
+  }
+
+  get automaticFloatingCount(): number {
+    return this.automaticFloatingWindows.size;
   }
 
   get managedCount(): number {
@@ -594,10 +608,13 @@ export class RuntimeController {
       this.contexts.clear();
       this.windowTransferOperation = null;
       this.dirtyContexts.clear();
+      this.automaticFloatingWindows.clear();
       this.floatingWindows.clear();
       this.managedWindows.clear();
       this.pendingAdmissionContexts.clear();
       this.pendingWindowSyncs.clear();
+      this.ownershipFollowUpRequired = false;
+      this.ownershipRefreshInProgress = false;
       this.requestedSuspensions.clear();
       this.resumeSamples.clear();
       this.suspendedWindows.clear();
@@ -645,14 +662,27 @@ export class RuntimeController {
       return 0;
     }
 
-    const sampledGeometries = this.sampleSettledVisibleContextGeometries();
+    const ownershipChanged = this.refreshLiveWindowOwnership();
+    const admissionsPending =
+      this.pendingWindowSyncs.size > 0 ||
+      this.pendingAdmissionContexts.size > 0;
+    const preliminaryGeometries = this.sampleSettledVisibleContextGeometries();
 
-    if (!sampledGeometries) {
+    if (!preliminaryGeometries) {
       return 0;
     }
 
     this.synchronizePendingWindows();
     this.retryPendingAdmissions();
+    const sampledGeometries =
+      ownershipChanged || admissionsPending
+        ? this.sampleSettledVisibleContextGeometries()
+        : preliminaryGeometries;
+
+    if (!sampledGeometries) {
+      return 0;
+    }
+
     this.dirtyContexts.clear();
 
     let writeCount = 0;
@@ -661,7 +691,17 @@ export class RuntimeController {
       writeCount += this.reconcileContext(context, sampledGeometries);
     }
 
+    if (this.refreshAutomaticFloatingAdmissionQueue()) {
+      this.ownershipFollowUpRequired = true;
+    }
+
     this.lastWrites = writeCount;
+
+    if (this.ownershipFollowUpRequired) {
+      this.ownershipFollowUpRequired = false;
+      this.scheduleWork();
+    }
+
     return writeCount;
   }
 
@@ -717,6 +757,11 @@ export class RuntimeController {
   private readonly handleWindowAdded = (window: ObservedWindow): void => {
     const addedId = windowId(window.id);
     const source = this.observer.source(window.id);
+
+    if (this.synchronizeAutomaticFloatingWindow(addedId, source)) {
+      return;
+    }
+
     const addedContext = managedContext(window);
 
     if (addedContext) {
@@ -741,15 +786,28 @@ export class RuntimeController {
 
   private readonly handleWindowChanged = (id: string): void => {
     const changedId = windowId(id);
+    const source = this.observer.source(id);
 
-    if (this.windowTransferOperation?.activeId === changedId) {
+    if (this.windowTransferOperation) {
+      if (
+        changedId !== this.windowTransferOperation.activeId ||
+        (source &&
+          (this.automaticFloatingWindows.has(changedId) ||
+            this.automaticallyFloats(source)))
+      ) {
+        this.pendingWindowSyncs.add(changedId);
+      }
+
+      return;
+    }
+
+    if (this.synchronizeAutomaticFloatingWindow(changedId, source)) {
       return;
     }
 
     const transition = this.toggleGeometryTransitions.get(changedId);
 
     if (transition) {
-      const source = this.observer.source(id);
       const observed = source ? normalizeWindow(source) : null;
       const liveContext = observed ? managedContext(observed) : null;
 
@@ -767,6 +825,24 @@ export class RuntimeController {
   private readonly handleWindowStateChanged = (id: string): void => {
     const changedId = windowId(id);
     const source = this.observer.source(id);
+
+    if (this.windowTransferOperation) {
+      if (
+        changedId !== this.windowTransferOperation.activeId ||
+        (source &&
+          (this.automaticFloatingWindows.has(changedId) ||
+            this.automaticallyFloats(source)))
+      ) {
+        this.pendingWindowSyncs.add(changedId);
+      }
+
+      return;
+    }
+
+    if (this.synchronizeAutomaticFloatingWindow(changedId, source)) {
+      return;
+    }
+
     this.clearCapacityParkBackoffForWindow(changedId);
 
     if (source && hasGeometryAuthorityBlocker(source)) {
@@ -789,6 +865,16 @@ export class RuntimeController {
     request: WindowSuspensionRequest,
   ): void => {
     const settledId = windowId(id);
+
+    if (
+      this.synchronizeAutomaticFloatingWindow(
+        settledId,
+        this.observer.source(id),
+      )
+    ) {
+      return;
+    }
+
     this.clearCapacityParkBackoffForWindow(settledId);
 
     if (
@@ -806,6 +892,16 @@ export class RuntimeController {
     request: WindowSuspensionRequest,
   ): void => {
     const suspendedId = windowId(id);
+
+    if (
+      this.synchronizeAutomaticFloatingWindow(
+        suspendedId,
+        this.observer.source(id),
+      )
+    ) {
+      return;
+    }
+
     this.clearCapacityParkBackoffForWindow(suspendedId);
     let requests = this.requestedSuspensions.get(suspendedId);
 
@@ -847,15 +943,19 @@ export class RuntimeController {
 
     this.clearCapacityParkBackoffForWindow(managedId);
     this.cancelCapacityParkForWindow(managedId, false);
+    this.dropCanceledCapacityParkForWindow(managedId);
     this.invalidateCapacityLeaseForWindow(managedId);
+    this.capacitySupersededParkWindows.delete(managedId);
     this.pendingWindowSyncs.delete(managedId);
     this.forgetWaitingWindow(managedId);
     this.requestedSuspensions.delete(managedId);
     this.resumeSamples.delete(managedId);
     this.suspendedWindows.delete(managedId);
     this.transientResumeProbes.delete(managedId);
+    this.automaticFloatingWindows.delete(managedId);
     this.floatingWindows.delete(managedId);
     this.toggleGeometryTransitions.delete(managedId);
+    this.topologyColumnByWindow.delete(managedId);
     const releasedContextKey = this.releaseWindow(managedId);
 
     if (releasedContextKey) {
@@ -883,8 +983,10 @@ export class RuntimeController {
     const id = windowId(String(window.internalId));
 
     if (
-      !allowSuspended &&
-      (this.suspendedWindows.has(id) || !isGeometryWritable(window))
+      this.automaticallyFloats(window) ||
+      this.automaticFloatingWindows.has(id) ||
+      (!allowSuspended &&
+        (this.suspendedWindows.has(id) || !isGeometryWritable(window)))
     ) {
       return;
     }
@@ -914,11 +1016,15 @@ export class RuntimeController {
   };
 
   private focusAdjacent(direction: HorizontalDirection): boolean {
+    const activeWindow = this.workspace.activeWindow;
+
     if (
       !this.started ||
       this.windowTransferOperation ||
       this.topologyStabilizing ||
-      this.topologyRetryPending
+      this.topologyRetryPending ||
+      !activeWindow ||
+      this.automaticallyFloats(activeWindow)
     ) {
       return false;
     }
@@ -930,12 +1036,6 @@ export class RuntimeController {
     }
 
     this.synchronizePendingWindows();
-
-    const activeWindow = this.workspace.activeWindow;
-
-    if (!activeWindow) {
-      return false;
-    }
 
     const activeId = windowId(String(activeWindow.internalId));
 
@@ -960,6 +1060,7 @@ export class RuntimeController {
       !context ||
       !activeContext ||
       contextKey(activeContext) !== owner.contextKey ||
+      this.refreshContextAutomaticFloatingOwnership(context) ||
       this.toggleTransitionPending(context.key)
     ) {
       return false;
@@ -982,6 +1083,8 @@ export class RuntimeController {
       !targetOwner ||
       targetOwner.contextKey !== owner.contextKey ||
       !target ||
+      this.automaticallyFloats(target) ||
+      this.automaticFloatingWindows.has(targetId) ||
       !this.toggleGeometrySettled(targetId) ||
       this.suspendedWindows.has(targetId) ||
       this.requestedSuspensions.has(targetId) ||
@@ -1037,6 +1140,8 @@ export class RuntimeController {
     if (
       targetOwner?.contextKey !== command.context.key ||
       !target ||
+      this.automaticallyFloats(target) ||
+      this.automaticFloatingWindows.has(targetId) ||
       this.suspendedWindows.has(targetId) ||
       this.requestedSuspensions.has(targetId) ||
       !isGeometryWritable(target) ||
@@ -1420,6 +1525,16 @@ export class RuntimeController {
         this.windowTransferOperation = null;
       }
 
+      for (const key of [active.contextKey, targetContextKey]) {
+        const context = this.contexts.get(key);
+
+        if (context) {
+          this.refreshContextAutomaticFloatingOwnership(context);
+        }
+      }
+
+      this.refreshAutomaticFloatingAdmissionQueue();
+
       this.handleWindowActivated(this.workspace.activeWindow);
 
       if (
@@ -1494,6 +1609,8 @@ export class RuntimeController {
         !this.waitingWindowContexts.has(window.windowId) &&
         !this.suspendedWindows.has(window.windowId) &&
         !this.requestedSuspensions.has(window.windowId) &&
+        !this.automaticFloatingWindows.has(window.windowId) &&
+        !this.automaticallyFloats(source) &&
         (!transition ||
           (transition.contextKey === allowedTransitionContextKey &&
             rectsEqual(transition.expectedFrame, window.frame))) &&
@@ -1503,6 +1620,28 @@ export class RuntimeController {
           this.geometry.canApplyFrame(window.windowId, window.frame, context)),
       );
     });
+  }
+
+  private transferLayoutsOwnershipIsCurrent(
+    sourceLayout: ReturnType<typeof solveStripGeometry>,
+    targetLayout: ReturnType<typeof solveStripGeometry>,
+  ): boolean {
+    return (
+      this.transferLayoutOwnershipIsCurrent(sourceLayout) &&
+      this.transferLayoutOwnershipIsCurrent(targetLayout)
+    );
+  }
+
+  private transferLayoutOwnershipIsCurrent(
+    layout: ReturnType<typeof solveStripGeometry>,
+  ): boolean {
+    for (const window of layout.windows) {
+      if (!this.windowOwnershipClassificationIsCurrent(window.windowId)) {
+        return false;
+      }
+    }
+
+    return true;
   }
 
   private applyDesktopTransfer(
@@ -1525,9 +1664,16 @@ export class RuntimeController {
     let failure: string;
 
     try {
+      if (!this.transferLayoutsOwnershipIsCurrent(sourceLayout, targetLayout)) {
+        throw new Error("desktop transfer ownership changed");
+      }
+
       command.activeWindow.desktops = [command.targetDesktop];
 
-      if (!windowIsOnDesktop(command.activeWindow, command.targetDesktop)) {
+      if (
+        !windowIsOnDesktop(command.activeWindow, command.targetDesktop) ||
+        !this.transferLayoutsOwnershipIsCurrent(sourceLayout, targetLayout)
+      ) {
         throw new Error("window desktop assignment was rejected");
       }
 
@@ -1535,7 +1681,8 @@ export class RuntimeController {
 
       if (
         currentDesktopForOutput(this.workspace, command.output)?.id !==
-        command.targetDesktop.id
+          command.targetDesktop.id ||
+        !this.transferLayoutsOwnershipIsCurrent(sourceLayout, targetLayout)
       ) {
         throw new Error("desktop switch was rejected");
       }
@@ -1546,6 +1693,10 @@ export class RuntimeController {
 
       if (this.workspace.activeWindow !== command.activeWindow) {
         throw new Error("window focus was rejected");
+      }
+
+      if (!this.transferLayoutsOwnershipIsCurrent(sourceLayout, targetLayout)) {
+        throw new Error("desktop transfer ownership changed");
       }
 
       destinationBaseline = {
@@ -1616,7 +1767,8 @@ export class RuntimeController {
             command,
             operation,
             topologyRevision,
-          )
+          ) ||
+          !this.windowOwnershipClassificationIsCurrent(change.windowId)
         ) {
           break;
         }
@@ -1625,12 +1777,12 @@ export class RuntimeController {
         const applied = this.geometry.apply(
           [change],
           command.targetContext,
-          () =>
+          (current) =>
             this.desktopTransferOperationIsCurrent(
               command,
               operation,
               topologyRevision,
-            ),
+            ) && this.windowOwnershipClassificationIsCurrent(current.windowId),
         );
 
         if (applied !== 1) {
@@ -1650,6 +1802,7 @@ export class RuntimeController {
           operation,
           topologyRevision,
         ) ||
+        !this.transferLayoutsOwnershipIsCurrent(sourceLayout, targetLayout) ||
         !this.desktopTransferFingerprintsMatch(command) ||
         !this.desktopTransferFinalStateIsSafe(
           command,
@@ -1825,6 +1978,8 @@ export class RuntimeController {
         if (
           !source ||
           !forwardFrame ||
+          this.automaticFloatingWindows.has(target.windowId) ||
+          this.automaticallyFloats(source) ||
           (!rectsEqual(source.frameGeometry, forwardFrame) &&
             !rectsEqual(source.frameGeometry, target.frame))
         ) {
@@ -1839,7 +1994,8 @@ export class RuntimeController {
             this.windowTransferOperation === operation &&
             this.topologyRevision === topologyRevision &&
             !this.hasTopologyBarrier() &&
-            this.desktopTransferMechanismAtTarget(command),
+            this.desktopTransferMechanismAtTarget(command) &&
+            !this.automaticallyFloats(source),
         );
 
         if (applied !== 1) {
@@ -1890,6 +2046,8 @@ export class RuntimeController {
       !this.hasTopologyBarrier() &&
       this.observer.source(command.activeId) === command.activeWindow &&
       !command.activeWindow.deleted &&
+      !this.automaticFloatingWindows.has(command.activeId) &&
+      !this.automaticallyFloats(command.activeWindow) &&
       this.workspace.screens.includes(command.output) &&
       this.desktopTransferFingerprintsMatch(command) &&
       windowIsOnDesktop(command.activeWindow, command.sourceDesktop) &&
@@ -1960,6 +2118,8 @@ export class RuntimeController {
       !this.hasTopologyBarrier() &&
       this.observer.source(command.activeId) === command.activeWindow &&
       !command.activeWindow.deleted &&
+      !this.automaticFloatingWindows.has(command.activeId) &&
+      !this.automaticallyFloats(command.activeWindow) &&
       this.workspace.screens.includes(command.output) &&
       this.workspace.desktops.some(
         (desktop) => desktop.id === command.sourceDesktop.id,
@@ -1975,6 +2135,10 @@ export class RuntimeController {
     command: DesktopTransferCommand,
     originalActiveWindow: KWinWindow | null,
   ): void {
+    if (this.automaticallyFloats(command.activeWindow)) {
+      return;
+    }
+
     if (windowIsOnDesktop(command.activeWindow, command.targetDesktop)) {
       try {
         command.activeWindow.desktops = [command.sourceDesktop];
@@ -1983,6 +2147,10 @@ export class RuntimeController {
           `[driftile] window desktop restore failed window=${String(command.activeId)} error=${String(error)}`,
         );
       }
+    }
+
+    if (this.automaticallyFloats(command.activeWindow)) {
+      return;
     }
 
     if (
@@ -1996,6 +2164,10 @@ export class RuntimeController {
           `[driftile] desktop restore failed output=${command.output.name} error=${String(error)}`,
         );
       }
+    }
+
+    if (this.automaticallyFloats(command.activeWindow)) {
+      return;
     }
 
     if (
@@ -2251,6 +2423,16 @@ export class RuntimeController {
         this.windowTransferOperation = null;
       }
 
+      for (const key of [active.contextKey, targetContextKey]) {
+        const context = this.contexts.get(key);
+
+        if (context) {
+          this.refreshContextAutomaticFloatingOwnership(context);
+        }
+      }
+
+      this.refreshAutomaticFloatingAdmissionQueue();
+
       if (operation.desktopChangeSuppressed) {
         this.markVisibleDesktopContextsDirty();
       }
@@ -2291,10 +2473,17 @@ export class RuntimeController {
     let failure: string;
 
     try {
+      if (!this.transferLayoutsOwnershipIsCurrent(sourceLayout, targetLayout)) {
+        throw new Error("output transfer ownership changed");
+      }
+
       if (command.sourceDesktop.id !== command.targetDesktop.id) {
         command.activeWindow.desktops = [command.targetDesktop];
 
-        if (!windowIsOnDesktop(command.activeWindow, command.targetDesktop)) {
+        if (
+          !windowIsOnDesktop(command.activeWindow, command.targetDesktop) ||
+          !this.transferLayoutsOwnershipIsCurrent(sourceLayout, targetLayout)
+        ) {
           throw new Error("window desktop assignment was rejected");
         }
       }
@@ -2304,7 +2493,10 @@ export class RuntimeController {
         command.targetOutput,
       );
 
-      if (command.activeWindow.output?.name !== command.targetOutput.name) {
+      if (
+        command.activeWindow.output?.name !== command.targetOutput.name ||
+        !this.transferLayoutsOwnershipIsCurrent(sourceLayout, targetLayout)
+      ) {
         throw new Error("window output assignment was rejected");
       }
 
@@ -2314,6 +2506,10 @@ export class RuntimeController {
 
       if (this.workspace.activeWindow !== command.activeWindow) {
         throw new Error("window focus was rejected");
+      }
+
+      if (!this.transferLayoutsOwnershipIsCurrent(sourceLayout, targetLayout)) {
+        throw new Error("output transfer ownership changed");
       }
 
       destinationBaseline = {
@@ -2403,18 +2599,22 @@ export class RuntimeController {
             command,
             operation,
             topologyRevision,
-          )
+          ) ||
+          !this.windowOwnershipClassificationIsCurrent(change.windowId)
         ) {
           break;
         }
 
         attemptedChanges.push(change);
-        const applied = this.geometry.apply([change], change.context, () =>
-          this.outputTransferOperationIsCurrent(
-            command,
-            operation,
-            topologyRevision,
-          ),
+        const applied = this.geometry.apply(
+          [change],
+          change.context,
+          (current) =>
+            this.outputTransferOperationIsCurrent(
+              command,
+              operation,
+              topologyRevision,
+            ) && this.windowOwnershipClassificationIsCurrent(current.windowId),
         );
 
         if (applied !== 1) {
@@ -2433,6 +2633,7 @@ export class RuntimeController {
           operation,
           topologyRevision,
         ) ||
+        !this.transferLayoutsOwnershipIsCurrent(sourceLayout, targetLayout) ||
         !this.outputTransferFingerprintsMatch(command) ||
         !this.outputTransferFinalStateIsSafe(
           command,
@@ -2651,6 +2852,8 @@ export class RuntimeController {
         if (
           source &&
           forwardFrame &&
+          !this.automaticFloatingWindows.has(target.windowId) &&
+          !this.automaticallyFloats(source) &&
           (rectsEqual(source.frameGeometry, forwardFrame) ||
             rectsEqual(source.frameGeometry, target.frame))
         ) {
@@ -2661,7 +2864,8 @@ export class RuntimeController {
               this.windowTransferOperation === operation &&
               this.topologyRevision === topologyRevision &&
               !this.hasTopologyBarrier() &&
-              this.outputTransferMechanismAtTarget(command),
+              this.outputTransferMechanismAtTarget(command) &&
+              !this.automaticallyFloats(source),
           );
           compensationWrites += applied;
           restored = applied === 1;
@@ -2734,6 +2938,8 @@ export class RuntimeController {
       !this.hasTopologyBarrier() &&
       this.observer.source(command.activeId) === command.activeWindow &&
       !command.activeWindow.deleted &&
+      !this.automaticFloatingWindows.has(command.activeId) &&
+      !this.automaticallyFloats(command.activeWindow) &&
       this.workspace.screens.includes(command.sourceOutput) &&
       this.workspace.screens.includes(command.targetOutput) &&
       this.outputTransferFingerprintsMatch(command) &&
@@ -2808,6 +3014,8 @@ export class RuntimeController {
       !this.hasTopologyBarrier() &&
       this.observer.source(command.activeId) === command.activeWindow &&
       !command.activeWindow.deleted &&
+      !this.automaticFloatingWindows.has(command.activeId) &&
+      !this.automaticallyFloats(command.activeWindow) &&
       this.workspace.screens.includes(command.sourceOutput) &&
       this.workspace.screens.includes(command.targetOutput) &&
       this.workspace.desktops.some(
@@ -2824,6 +3032,10 @@ export class RuntimeController {
     command: OutputTransferCommand,
     originalActiveWindow: KWinWindow | null,
   ): void {
+    if (this.automaticallyFloats(command.activeWindow)) {
+      return;
+    }
+
     if (
       command.activeWindow.output?.name === command.targetOutput.name &&
       typeof this.workspace.sendClientToScreen === "function"
@@ -2840,6 +3052,10 @@ export class RuntimeController {
       }
     }
 
+    if (this.automaticallyFloats(command.activeWindow)) {
+      return;
+    }
+
     if (
       command.sourceDesktop.id !== command.targetDesktop.id &&
       windowIsOnDesktop(command.activeWindow, command.targetDesktop)
@@ -2851,6 +3067,10 @@ export class RuntimeController {
           `[driftile] window desktop restore failed window=${String(command.activeId)} error=${String(error)}`,
         );
       }
+    }
+
+    if (this.automaticallyFloats(command.activeWindow)) {
+      return;
     }
 
     if (
@@ -3131,12 +3351,18 @@ export class RuntimeController {
     for (const id of command.activeColumn.windowIds) {
       const source = this.observer.source(id);
 
-      if (!source) {
+      if (!source || this.automaticallyFloats(source)) {
         return null;
       }
 
-      const minimumWidth = source.minSize.width;
-      const maximumWidth = source.maxSize.width;
+      const bounds = frameSizeConstraintBounds(source);
+
+      if (!bounds) {
+        return null;
+      }
+
+      const minimumWidth = bounds.minimumWidth;
+      const maximumWidth = bounds.maximumWidth;
 
       if (Number.isFinite(minimumWidth) && minimumWidth > 0) {
         minimum = Math.max(minimum, minimumWidth);
@@ -3320,6 +3546,8 @@ export class RuntimeController {
       return (
         owner?.contextKey === context.key &&
         source !== undefined &&
+        !this.automaticallyFloats(source) &&
+        !this.automaticFloatingWindows.has(id) &&
         memberContext !== null &&
         contextKey(memberContext) === context.key
       );
@@ -3327,21 +3555,19 @@ export class RuntimeController {
   }
 
   private prepareActiveWindowCommand(): ActiveWindowCommand | null {
+    const activeWindow = this.workspace.activeWindow;
+
     if (
       !this.started ||
       this.windowTransferOperation ||
       this.startupStabilizationToken !== null ||
       this.hasTopologyBarrier() ||
+      !activeWindow ||
+      this.automaticallyFloats(activeWindow) ||
       !this.sampleSettledVisibleContextGeometries() ||
       !this.synchronizePendingWindows() ||
       this.hasTopologyBarrier()
     ) {
-      return null;
-    }
-
-    const activeWindow = this.workspace.activeWindow;
-
-    if (!activeWindow) {
       return null;
     }
 
@@ -3380,6 +3606,13 @@ export class RuntimeController {
     }
 
     const runtimeContext = this.contexts.get(key);
+
+    if (
+      runtimeContext &&
+      this.refreshContextAutomaticFloatingOwnership(runtimeContext)
+    ) {
+      return null;
+    }
 
     if (
       runtimeContext &&
@@ -3462,7 +3695,10 @@ export class RuntimeController {
     }
   }
 
-  private finishCanceledToggleTransition(key: string): void {
+  private finishCanceledToggleTransition(
+    key: string,
+    scheduleFollowUp = true,
+  ): void {
     if (this.waitingWindowIds.get(key)?.size) {
       this.pendingAdmissionContexts.add(key);
     }
@@ -3478,13 +3714,19 @@ export class RuntimeController {
         probe.completedAttempts = MAX_TRANSIENT_RESUME_PROBES - 1;
       }
 
-      this.scheduleToggleTransitionProbe(key);
+      if (scheduleFollowUp) {
+        this.scheduleToggleTransitionProbe(key);
+      }
+
       return;
     }
 
     this.toggleTransitionProbes.delete(key);
 
-    if (this.dirtyContexts.has(key) || this.pendingAdmissionContexts.has(key)) {
+    if (
+      scheduleFollowUp &&
+      (this.dirtyContexts.has(key) || this.pendingAdmissionContexts.has(key))
+    ) {
       this.scheduleWork();
     }
   }
@@ -3572,11 +3814,15 @@ export class RuntimeController {
   }
 
   private prepareActiveColumnCommand(): ActiveColumnCommand | null {
+    const activeWindow = this.workspace.activeWindow;
+
     if (
       !this.started ||
       this.windowTransferOperation ||
       this.startupStabilizationToken !== null ||
-      this.hasTopologyBarrier()
+      this.hasTopologyBarrier() ||
+      !activeWindow ||
+      this.automaticallyFloats(activeWindow)
     ) {
       return null;
     }
@@ -3588,12 +3834,6 @@ export class RuntimeController {
     }
 
     if (this.hasTopologyBarrier()) {
-      return null;
-    }
-
-    const activeWindow = this.workspace.activeWindow;
-
-    if (!activeWindow) {
       return null;
     }
 
@@ -3620,6 +3860,7 @@ export class RuntimeController {
       !context ||
       !activeContext ||
       contextKey(activeContext) !== owner.contextKey ||
+      this.refreshContextAutomaticFloatingOwnership(context) ||
       this.toggleTransitionPending(context.key)
     ) {
       return null;
@@ -3666,7 +3907,10 @@ export class RuntimeController {
 
     const { before, context, contextGeometry, sampledGeometries } = command;
     const restoreLayout = (): boolean => {
-      if (!rollback()) {
+      const restored = rollback();
+      this.pruneAutomaticFloatingLayoutSlots(before);
+
+      if (!restored) {
         return false;
       }
 
@@ -3765,22 +4009,34 @@ export class RuntimeController {
     }
 
     const restored = restoreLayout();
+    const ownershipChangedDuringMutation =
+      this.snapshotContainsAutomaticFloatingWindow(before);
 
     if (restored && this.topologyWindowOrder !== null) {
       this.captureTopologyWindowOrder();
     }
 
     let compensationWrites = 0;
+    const dirtyBeforeCompensation = this.dirtyContexts.has(context.key);
 
     if (restored && !this.hasTopologyBarrier()) {
+      const compensationTargets = rollbackTargets.filter((window) =>
+        this.windowOwnershipClassificationIsCurrent(window.windowId),
+      );
       this.dirtyContexts.delete(context.key);
       compensationWrites = this.geometry.apply(
-        rollbackTargets,
+        compensationTargets,
         context,
-        () => !this.hasTopologyBarrier(),
+        (change) =>
+          !this.hasTopologyBarrier() &&
+          this.windowOwnershipClassificationIsCurrent(change.windowId),
       );
 
-      if (compensationWrites !== rollbackTargets.length || wasDirty) {
+      if (
+        compensationWrites !== rollbackTargets.length ||
+        (dirtyBeforeCompensation && ownershipChangedDuringMutation) ||
+        wasDirty
+      ) {
         this.markContextDirty(context);
       }
     } else {
@@ -3797,6 +4053,42 @@ export class RuntimeController {
       console.warn(
         `[driftile] ${label} rolled back context=${context.key} error=${forwardError}`,
       );
+    }
+
+    return false;
+  }
+
+  private pruneAutomaticFloatingLayoutSlots(
+    snapshot: LayoutContextSnapshot,
+  ): void {
+    for (const column of snapshot.columns) {
+      for (const id of column.windowIds) {
+        const source = this.observer.source(id);
+
+        if (
+          this.automaticFloatingWindows.has(id) ||
+          (source && this.automaticallyFloats(source))
+        ) {
+          this.layout.unmanageWindow(id);
+        }
+      }
+    }
+  }
+
+  private snapshotContainsAutomaticFloatingWindow(
+    snapshot: LayoutContextSnapshot,
+  ): boolean {
+    for (const column of snapshot.columns) {
+      for (const id of column.windowIds) {
+        const source = this.observer.source(id);
+
+        if (
+          this.automaticFloatingWindows.has(id) ||
+          (source && this.automaticallyFloats(source))
+        ) {
+          return true;
+        }
+      }
     }
 
     return false;
@@ -3921,15 +4213,24 @@ export class RuntimeController {
       forwardWrites = this.geometry.apply(
         changes,
         command.context,
-        () => !this.hasTopologyBarrier(),
+        (change) =>
+          !this.hasTopologyBarrier() &&
+          this.windowOwnershipClassificationIsCurrent(change.windowId),
       );
     } catch (error) {
       forwardError = String(error);
     }
 
+    const ownershipChanged =
+      this.refreshWindowTargetsAutomaticFloatingOwnership(desired);
+    const desiredOwnershipCurrent = desired.every((window) =>
+      this.windowOwnershipClassificationIsCurrent(window.windowId),
+    );
     const forwardComplete =
       forwardError === null &&
       forwardWrites === changes.length &&
+      !ownershipChanged &&
+      desiredOwnershipCurrent &&
       !this.hasTopologyBarrier() &&
       !this.dirtyContexts.has(command.contextKey);
 
@@ -3955,12 +4256,17 @@ export class RuntimeController {
 
     let compensationWrites = 0;
     const runtimeContext = this.contexts.get(command.contextKey);
-    const floatingRollbackTargets = rollbackTargets.filter((window) =>
-      this.floatingWindows.has(window.windowId),
+    const dirtyBeforeCompensation = this.dirtyContexts.has(command.contextKey);
+    const floatingRollbackTargets = rollbackTargets.filter(
+      (window) =>
+        this.floatingWindows.has(window.windowId) &&
+        this.windowOwnershipClassificationIsCurrent(window.windowId),
     );
-    const compensationTargets = this.hasTopologyBarrier()
-      ? floatingRollbackTargets
-      : rollbackTargets;
+    const compensationTargets = (
+      this.hasTopologyBarrier() ? floatingRollbackTargets : rollbackTargets
+    ).filter((window) =>
+      this.windowOwnershipClassificationIsCurrent(window.windowId),
+    );
 
     for (const window of compensationTargets) {
       this.toggleGeometryTransitions.set(window.windowId, {
@@ -3973,16 +4279,24 @@ export class RuntimeController {
     if (!this.hasTopologyBarrier()) {
       this.dirtyContexts.delete(command.contextKey);
       compensationWrites = this.geometry.apply(
-        rollbackTargets,
+        compensationTargets,
         command.context,
-        () => !this.hasTopologyBarrier(),
+        (change) =>
+          !this.hasTopologyBarrier() &&
+          this.windowOwnershipClassificationIsCurrent(change.windowId),
       );
     } else if (floatingRollbackTargets.length > 0) {
       compensationWrites = this.geometry.apply(
         floatingRollbackTargets,
         command.context,
+        (change) =>
+          this.windowOwnershipClassificationIsCurrent(change.windowId),
       );
     }
+
+    this.refreshWindowTargetsAutomaticFloatingOwnership(compensationTargets);
+    const ownershipDirtyBeforeCompensation =
+      dirtyBeforeCompensation && !desiredOwnershipCurrent;
 
     if (
       compensationTargets.length > 0 &&
@@ -3995,6 +4309,9 @@ export class RuntimeController {
       runtimeContext &&
       (this.hasTopologyBarrier() ||
         compensationWrites !== rollbackTargets.length ||
+        ownershipChanged ||
+        ownershipDirtyBeforeCompensation ||
+        this.dirtyContexts.has(command.contextKey) ||
         wasDirty)
     ) {
       this.markContextDirty(runtimeContext);
@@ -4944,6 +5261,9 @@ export class RuntimeController {
   }
 
   private flushScheduledWork(): void {
+    const ownershipChanged = this.refreshLiveWindowOwnership(
+      !this.topologyRecoveryPending && this.topologyWindowOrder === null,
+    );
     let topologyRecovered = false;
 
     if (this.topologyRecoveryPending) {
@@ -4954,9 +5274,12 @@ export class RuntimeController {
       return;
     }
 
-    const sampledGeometries = this.sampleSettledVisibleContextGeometries();
+    const admissionsPending =
+      this.pendingWindowSyncs.size > 0 ||
+      this.pendingAdmissionContexts.size > 0;
+    const preliminaryGeometries = this.sampleSettledVisibleContextGeometries();
 
-    if (!sampledGeometries) {
+    if (!preliminaryGeometries) {
       return;
     }
 
@@ -4972,6 +5295,17 @@ export class RuntimeController {
     }
 
     this.retryPendingAdmissions();
+    const sampledGeometries =
+      ownershipChanged ||
+      admissionsPending ||
+      topologyRecovered ||
+      topologyBatchPending
+        ? this.sampleSettledVisibleContextGeometries()
+        : preliminaryGeometries;
+
+    if (!sampledGeometries) {
+      return;
+    }
 
     if (topologyRecovered || (topologyBatchPending && topologyBatchConsumed)) {
       this.initializing = true;
@@ -5002,7 +5336,16 @@ export class RuntimeController {
       }
     }
 
+    if (this.refreshAutomaticFloatingAdmissionQueue()) {
+      this.ownershipFollowUpRequired = true;
+    }
+
     this.lastWrites = writeCount;
+
+    if (this.ownershipFollowUpRequired) {
+      this.ownershipFollowUpRequired = false;
+      this.scheduleWork();
+    }
   }
 
   private synchronizePendingWindows(allowOverflowAdmissions = false): boolean {
@@ -5018,7 +5361,16 @@ export class RuntimeController {
       return true;
     }
 
-    const pendingIds = [...this.pendingWindowSyncs];
+    const pendingIds: WindowId[] = [];
+
+    for (const id of this.pendingWindowSyncs) {
+      const source = this.observer.source(id);
+
+      if (!this.synchronizeAutomaticFloatingWindow(id, source)) {
+        pendingIds.push(id);
+      }
+    }
+
     const admissionCandidates: KWinWindow[] = [];
     const preservedRestoreBaselines = new Map<
       WindowId,
@@ -5026,6 +5378,10 @@ export class RuntimeController {
     >();
     const releasedContextKeys = new Set<string>();
     this.pendingWindowSyncs.clear();
+
+    if (pendingIds.length === 0) {
+      return true;
+    }
 
     if (allowOverflowAdmissions) {
       this.prepareTopologyCapacityLeases(pendingIds, preservedRestoreBaselines);
@@ -5342,7 +5698,13 @@ export class RuntimeController {
       const observed = normalizeWindow(source);
       const context = observed ? managedContext(observed) : null;
 
-      if (!observed || !context || this.managedWindows.has(id)) {
+      if (
+        !observed ||
+        !context ||
+        this.automaticallyFloats(source) ||
+        this.automaticFloatingWindows.has(id) ||
+        this.managedWindows.has(id)
+      ) {
         this.forgetWaitingWindow(id);
         continue;
       }
@@ -5386,7 +5748,13 @@ export class RuntimeController {
       const observed = normalizeWindow(source);
       const context = observed ? managedContext(observed) : null;
 
-      if (!context || this.managedWindows.has(id)) {
+      if (
+        !context ||
+        this.automaticallyFloats(source) ||
+        this.automaticFloatingWindows.has(id) ||
+        this.managedWindows.has(id)
+      ) {
+        this.forgetWaitingWindow(id);
         continue;
       }
 
@@ -5426,7 +5794,11 @@ export class RuntimeController {
     for (const source of sources) {
       const id = windowId(String(source.internalId));
 
-      if (this.floatingWindows.has(id)) {
+      if (
+        this.floatingWindows.has(id) ||
+        this.automaticFloatingWindows.has(id) ||
+        this.automaticallyFloats(source)
+      ) {
         this.forgetWaitingWindow(id);
         continue;
       }
@@ -5700,7 +6072,11 @@ export class RuntimeController {
     for (const source of sources) {
       const id = windowId(String(source.internalId));
 
-      if (this.floatingWindows.has(id)) {
+      if (
+        this.floatingWindows.has(id) ||
+        this.automaticFloatingWindows.has(id) ||
+        this.automaticallyFloats(source)
+      ) {
         this.forgetWaitingWindow(id);
         continue;
       }
@@ -5853,7 +6229,11 @@ export class RuntimeController {
     const observed = normalizeWindow(source);
     const capacityLease = this.capacityLeaseByWindow.get(id);
 
-    if (this.floatingWindows.has(id)) {
+    if (
+      this.floatingWindows.has(id) ||
+      this.automaticFloatingWindows.has(id) ||
+      this.automaticallyFloats(source)
+    ) {
       if (capacityLease) {
         this.invalidateCapacityLeaseForWindow(id);
       }
@@ -6001,6 +6381,299 @@ export class RuntimeController {
 
     this.capacityParkBackoffs.delete(key);
     this.markContextDirty(runtimeContext);
+    return true;
+  }
+
+  private automaticallyFloats(source: KWinWindow): boolean {
+    if (
+      source.dialog ||
+      source.modal ||
+      source.transient ||
+      Boolean(source.transientFor)
+    ) {
+      return true;
+    }
+
+    if (!source.normalWindow) {
+      return false;
+    }
+
+    const geometryBlocked = hasGeometryAuthorityBlocker(source);
+
+    if (!source.resizeable && !geometryBlocked) {
+      return true;
+    }
+
+    const constraintState = fixedFrameSizeConstraintState(source);
+
+    if (constraintState === MALFORMED_SIZE_CONSTRAINTS) {
+      return !geometryBlocked;
+    }
+
+    return constraintState === FIXED_SIZE_CONSTRAINTS;
+  }
+
+  private refreshLiveWindowOwnership(relevantContextsOnly = false): boolean {
+    if (this.ownershipRefreshInProgress) {
+      return false;
+    }
+
+    this.ownershipRefreshInProgress = true;
+    let changed = false;
+
+    try {
+      changed = this.refreshAutomaticFloatingAdmissions() || changed;
+
+      for (const context of this.contexts.values()) {
+        if (
+          relevantContextsOnly &&
+          !this.dirtyContexts.has(context.key) &&
+          !this.isContextVisible(context)
+        ) {
+          continue;
+        }
+
+        changed =
+          this.refreshContextAutomaticFloatingOwnershipUnsafe(context) ||
+          changed;
+      }
+    } finally {
+      this.ownershipRefreshInProgress = false;
+    }
+
+    return changed;
+  }
+
+  private refreshContextAutomaticFloatingOwnership(
+    context: RuntimeContext,
+  ): boolean {
+    if (this.ownershipRefreshInProgress) {
+      return false;
+    }
+
+    this.ownershipRefreshInProgress = true;
+
+    try {
+      return this.refreshContextAutomaticFloatingOwnershipUnsafe(context);
+    } finally {
+      this.ownershipRefreshInProgress = false;
+    }
+  }
+
+  private refreshAutomaticFloatingAdmissionQueue(): boolean {
+    if (this.ownershipRefreshInProgress) {
+      return false;
+    }
+
+    this.ownershipRefreshInProgress = true;
+
+    try {
+      return this.refreshAutomaticFloatingAdmissions();
+    } finally {
+      this.ownershipRefreshInProgress = false;
+    }
+  }
+
+  private refreshWindowTargetsAutomaticFloatingOwnership(
+    windows: readonly { readonly windowId: WindowId }[],
+  ): boolean {
+    if (this.ownershipRefreshInProgress) {
+      return false;
+    }
+
+    this.ownershipRefreshInProgress = true;
+    let changed = false;
+
+    try {
+      for (const window of windows) {
+        const source = this.observer.source(window.windowId);
+
+        if (
+          source &&
+          this.automaticallyFloats(source) &&
+          this.synchronizeAutomaticFloatingWindow(
+            window.windowId,
+            source,
+            false,
+          )
+        ) {
+          changed = true;
+        }
+      }
+    } finally {
+      this.ownershipRefreshInProgress = false;
+    }
+
+    return changed;
+  }
+
+  private refreshAutomaticFloatingAdmissions(): boolean {
+    let changed = false;
+
+    for (const id of this.automaticFloatingWindows) {
+      const source = this.observer.source(id);
+
+      if (!source) {
+        this.automaticFloatingWindows.delete(id);
+        changed = true;
+        continue;
+      }
+
+      if (this.automaticFloatingOwnershipApplies(id, source)) {
+        continue;
+      }
+
+      this.automaticFloatingWindows.delete(id);
+      this.pendingWindowSyncs.add(id);
+      changed = true;
+    }
+
+    return changed;
+  }
+
+  private refreshContextAutomaticFloatingOwnershipUnsafe(
+    context: RuntimeContext,
+  ): boolean {
+    let changed = false;
+
+    for (const id of context.windowIds) {
+      const source = this.observer.source(id);
+
+      if (
+        source &&
+        this.automaticallyFloats(source) &&
+        this.synchronizeAutomaticFloatingWindow(id, source, false)
+      ) {
+        changed = true;
+      }
+    }
+
+    return changed;
+  }
+
+  private windowOwnershipClassificationIsCurrent(id: WindowId): boolean {
+    const source = this.observer.source(id);
+    return Boolean(
+      source &&
+      !this.automaticFloatingWindows.has(id) &&
+      !this.automaticallyFloats(source),
+    );
+  }
+
+  private automaticFloatingOwnershipApplies(
+    id: WindowId,
+    source: KWinWindow,
+  ): boolean {
+    return (
+      this.automaticallyFloats(source) ||
+      (this.automaticFloatingWindows.has(id) &&
+        hasGeometryAuthorityBlocker(source))
+    );
+  }
+
+  private synchronizeAutomaticFloatingWindow(
+    id: WindowId,
+    source: KWinWindow | undefined,
+    scheduleFollowUp = true,
+  ): boolean {
+    if (!source || !this.automaticFloatingOwnershipApplies(id, source)) {
+      this.automaticFloatingWindows.delete(id);
+      return false;
+    }
+
+    this.automaticFloatingWindows.add(id);
+    const affectedContextKeys = new Set<string>();
+    const floating = this.floatingWindows.get(id);
+    const transition = this.toggleGeometryTransitions.get(id);
+
+    if (floating) {
+      affectedContextKeys.add(floating.sourceContextKey);
+    }
+
+    if (transition) {
+      affectedContextKeys.add(transition.contextKey);
+    }
+
+    for (const operation of [...this.capacityParkOperations.values()]) {
+      if (!operation.windows.some((window) => window.windowId === id)) {
+        continue;
+      }
+
+      this.capacityParkOperations.delete(operation.contextKey);
+      operation.probePending = false;
+      this.forgetCanceledCapacityPark(operation.contextKey);
+      affectedContextKeys.add(operation.contextKey);
+
+      for (const window of operation.windows) {
+        if (window.windowId !== id) {
+          this.pendingWindowSyncs.add(window.windowId);
+        }
+      }
+    }
+
+    for (const [key, operation] of [...this.capacityCanceledParks]) {
+      if (!operation.windows.some((window) => window.windowId === id)) {
+        continue;
+      }
+
+      affectedContextKeys.add(key);
+
+      for (const window of operation.windows) {
+        if (window.windowId !== id) {
+          this.pendingWindowSyncs.add(window.windowId);
+        }
+      }
+
+      this.forgetCanceledCapacityPark(key);
+    }
+
+    const lease = this.capacityLeaseByWindow.get(id);
+
+    if (lease) {
+      affectedContextKeys.add(lease.contextKey);
+      this.invalidateCapacityLease(lease);
+
+      for (const window of lease.windows) {
+        if (window.windowId !== id) {
+          this.pendingWindowSyncs.add(window.windowId);
+        }
+      }
+    }
+
+    this.clearCapacityParkBackoffForWindow(id);
+    this.capacitySupersededParkWindows.delete(id);
+    this.pendingWindowSyncs.delete(id);
+    this.forgetWaitingWindow(id);
+    this.requestedSuspensions.delete(id);
+    this.resumeSamples.delete(id);
+    this.suspendedWindows.delete(id);
+    this.transientResumeProbes.delete(id);
+    this.floatingWindows.delete(id);
+    this.toggleGeometryTransitions.delete(id);
+    this.topologyColumnByWindow.delete(id);
+    const releasedContextKey = this.releaseWindow(id);
+
+    if (releasedContextKey) {
+      affectedContextKeys.add(releasedContextKey);
+    }
+
+    for (const key of affectedContextKeys) {
+      const context = this.contexts.get(key);
+
+      if (context) {
+        this.markContextDirty(context);
+      }
+
+      this.finishCanceledToggleTransition(key, scheduleFollowUp);
+    }
+
+    if (
+      scheduleFollowUp &&
+      (affectedContextKeys.size > 0 || this.pendingWindowSyncs.size > 0)
+    ) {
+      this.scheduleWork();
+    }
+
     return true;
   }
 
@@ -6293,6 +6966,22 @@ export class RuntimeController {
     }
   }
 
+  private dropCanceledCapacityParkForWindow(id: WindowId): void {
+    for (const [key, operation] of [...this.capacityCanceledParks]) {
+      if (!operation.windows.some((window) => window.windowId === id)) {
+        continue;
+      }
+
+      this.forgetCanceledCapacityPark(key);
+
+      for (const window of operation.windows) {
+        if (window.windowId !== id) {
+          this.pendingWindowSyncs.add(window.windowId);
+        }
+      }
+    }
+  }
+
   private supersedeCanceledCapacityPark(
     context: RuntimeContext,
     layout: readonly WindowGeometry[],
@@ -6365,6 +7054,11 @@ export class RuntimeController {
     sampledGeometries?: ReadonlyMap<string, ContextGeometry>,
     canContinueWriting?: () => boolean,
   ): number {
+    if (this.refreshContextAutomaticFloatingOwnership(context)) {
+      this.ownershipFollowUpRequired = true;
+      return 0;
+    }
+
     if (!this.isContextVisible(context)) {
       return 0;
     }
@@ -6444,13 +7138,30 @@ export class RuntimeController {
     }
 
     const changes = diffWindowGeometries(writableLayout, observed);
-    const applied = this.geometry.apply(changes, context, canContinueWriting);
+    const applied = this.geometry.apply(
+      changes,
+      context,
+      (change) =>
+        this.windowOwnershipClassificationIsCurrent(change.windowId) &&
+        (canContinueWriting?.() ?? true),
+    );
     writeCount += applied;
 
-    if (applied === changes.length) {
+    const ownershipChanged =
+      this.refreshContextAutomaticFloatingOwnership(context);
+
+    if (ownershipChanged) {
+      this.ownershipFollowUpRequired = true;
+    }
+
+    if (!ownershipChanged && applied === changes.length) {
       context.geometryFingerprint = contextGeometry.fingerprint;
     } else {
-      this.markContextDirty(context);
+      const liveContext = this.contexts.get(context.key);
+
+      if (liveContext) {
+        this.markContextDirty(liveContext);
+      }
     }
 
     return writeCount;
@@ -7651,6 +8362,87 @@ function rectsEqual(left: Rect, right: Rect): boolean {
     Math.abs(left.width - right.width) <= 1e-6 &&
     Math.abs(left.height - right.height) <= 1e-6
   );
+}
+
+function nearlyEqual(left: number, right: number): boolean {
+  return Math.abs(left - right) <= 1e-6;
+}
+
+function fixedFrameSizeConstraintState(
+  window: KWinWindow,
+):
+  | typeof FIXED_SIZE_CONSTRAINTS
+  | typeof FLEXIBLE_SIZE_CONSTRAINTS
+  | typeof MALFORMED_SIZE_CONSTRAINTS {
+  const frame = window.frameGeometry;
+  const client = window.clientGeometry;
+  const horizontalDecoration = validDecorationExtent(frame.width, client.width);
+  const verticalDecoration = validDecorationExtent(frame.height, client.height);
+
+  if (horizontalDecoration === null || verticalDecoration === null) {
+    return MALFORMED_SIZE_CONSTRAINTS;
+  }
+
+  const minimumWidth = window.minSize.width;
+  const minimumHeight = window.minSize.height;
+
+  if (
+    !Number.isFinite(minimumWidth) ||
+    minimumWidth < 0 ||
+    !Number.isFinite(minimumHeight) ||
+    minimumHeight < 0 ||
+    !Number.isFinite(minimumWidth + horizontalDecoration) ||
+    !Number.isFinite(minimumHeight + verticalDecoration)
+  ) {
+    return MALFORMED_SIZE_CONSTRAINTS;
+  }
+
+  const maximumWidth = window.maxSize.width;
+  const maximumHeight = window.maxSize.height;
+
+  if (
+    !Number.isFinite(maximumWidth) ||
+    maximumWidth <= 0 ||
+    !Number.isFinite(maximumHeight) ||
+    maximumHeight <= 0 ||
+    !Number.isFinite(maximumWidth + horizontalDecoration) ||
+    !Number.isFinite(maximumHeight + verticalDecoration)
+  ) {
+    return FLEXIBLE_SIZE_CONSTRAINTS;
+  }
+
+  return nearlyEqual(
+    minimumWidth + horizontalDecoration,
+    maximumWidth + horizontalDecoration,
+  ) &&
+    nearlyEqual(
+      minimumHeight + verticalDecoration,
+      maximumHeight + verticalDecoration,
+    )
+    ? FIXED_SIZE_CONSTRAINTS
+    : FLEXIBLE_SIZE_CONSTRAINTS;
+}
+
+function validDecorationExtent(
+  frameSize: number,
+  clientSize: number,
+): number | null {
+  if (
+    !Number.isFinite(frameSize) ||
+    frameSize < 0 ||
+    !Number.isFinite(clientSize) ||
+    clientSize < 0
+  ) {
+    return null;
+  }
+
+  const extent = frameSize - clientSize;
+
+  if (extent < -1e-6) {
+    return null;
+  }
+
+  return extent > 0 ? extent : 0;
 }
 
 function contextKey(context: ManagedContext): string {

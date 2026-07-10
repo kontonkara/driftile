@@ -28,6 +28,7 @@ export interface KWinOutput {
 }
 
 export interface KWinWindow {
+  readonly clientGeometry: KWinRect;
   readonly deleted: boolean;
   desktops: readonly KWinVirtualDesktop[];
   readonly desktopsChanged?: KWinSignal<[]>;
@@ -43,12 +44,15 @@ export interface KWinWindow {
   readonly interactiveMoveResizeFinished?: KWinSignal<[]>;
   readonly managed: boolean;
   readonly maximizedAboutToChange?: KWinSignal<[mode: number]>;
+  readonly maximizeableChanged?: KWinSignal<[maximizeable: boolean]>;
   readonly maximizedChanged?: KWinSignal<[]>;
   readonly maxSize: KWinSize;
   readonly maximizeMode: number;
   readonly minSize: KWinSize;
   readonly minimized: boolean;
   readonly minimizedChanged?: KWinSignal<[]>;
+  readonly modal: boolean;
+  readonly modalChanged?: KWinSignal<[]>;
   readonly move: boolean;
   readonly moveable: boolean;
   readonly moveResizedChanged?: KWinSignal<[]>;
@@ -62,6 +66,9 @@ export interface KWinWindow {
   readonly specialWindow: boolean;
   readonly tile: object | null;
   readonly tileChanged?: KWinSignal<[tile: object | null]>;
+  readonly transient: boolean;
+  readonly transientChanged?: KWinSignal<[]>;
+  readonly transientFor: KWinWindow | null;
 }
 
 export interface KWinWorkspace {

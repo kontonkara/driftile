@@ -15,9 +15,23 @@ export interface WindowContext {
   readonly outputId: OutputId;
 }
 
+export interface FrameSizeConstraintBounds {
+  readonly maximumHeight: number;
+  readonly maximumWidth: number;
+  readonly minimumHeight: number;
+  readonly minimumWidth: number;
+}
+
+const GEOMETRY_EPSILON = 1e-6;
+
 export interface KWinWindowLookup {
   source(windowId: string): KWinWindow | undefined;
 }
+
+export type KWinWriteAuthority = (
+  windowId: WindowId,
+  window: KWinWindow,
+) => boolean;
 
 export type KWinRectFactory = (
   x: number,
@@ -29,6 +43,7 @@ export type KWinRectFactory = (
 export class KWinGeometryAdapter {
   private readonly clientAreaOption: number;
   private readonly createRect: KWinRectFactory;
+  private readonly hasWriteAuthority: KWinWriteAuthority;
   private readonly windows: KWinWindowLookup;
   private readonly workspace: KWinWorkspace;
 
@@ -37,9 +52,11 @@ export class KWinGeometryAdapter {
     windows: KWinWindowLookup,
     clientAreaOption: number,
     createRect: KWinRectFactory = defaultRectFactory,
+    hasWriteAuthority: KWinWriteAuthority = allowWrite,
   ) {
     this.clientAreaOption = clientAreaOption;
     this.createRect = createRect;
+    this.hasWriteAuthority = hasWriteAuthority;
     this.windows = windows;
     this.workspace = workspace;
   }
@@ -88,6 +105,7 @@ export class KWinGeometryAdapter {
 
       if (
         window &&
+        this.hasWriteAuthority(windowId, window) &&
         isWindowInContext(window, context) &&
         isGeometryWritable(window)
       ) {
@@ -104,24 +122,32 @@ export class KWinGeometryAdapter {
     context: WindowContext,
   ): boolean {
     const window = this.windows.source(windowId);
-    return Boolean(window && canApplyToWindow(window, frame, context));
+    return Boolean(
+      window &&
+      this.hasWriteAuthority(windowId, window) &&
+      canApplyToWindow(window, frame, context),
+    );
   }
 
   apply(
     changes: readonly GeometryChange[],
     context: WindowContext,
-    canContinue?: () => boolean,
+    canContinue?: (change: GeometryChange) => boolean,
   ): number {
     let writeCount = 0;
 
     for (const change of changes) {
-      if (canContinue && !canContinue()) {
+      if (canContinue && !canContinue(change)) {
         break;
       }
 
       const window = this.windows.source(change.windowId);
 
-      if (!window || !canApplyToWindow(window, change.frame, context)) {
+      if (
+        !window ||
+        !this.hasWriteAuthority(change.windowId, window) ||
+        !canApplyToWindow(window, change.frame, context)
+      ) {
         continue;
       }
 
@@ -190,12 +216,97 @@ export function respectsSizeConstraints(
   frame: Rect,
   window: KWinWindow,
 ): boolean {
-  return (
-    minimumAllows(frame.width, window.minSize.width) &&
-    minimumAllows(frame.height, window.minSize.height) &&
-    maximumAllows(frame.width, window.maxSize.width) &&
-    maximumAllows(frame.height, window.maxSize.height)
+  const frameGeometry = window.frameGeometry;
+  const clientGeometry = window.clientGeometry;
+  const horizontalDecoration = decorationExtent(
+    frameGeometry.width,
+    clientGeometry.width,
   );
+  const verticalDecoration = decorationExtent(
+    frameGeometry.height,
+    clientGeometry.height,
+  );
+
+  if (horizontalDecoration === null || verticalDecoration === null) {
+    return false;
+  }
+
+  const minimumSize = window.minSize;
+  const minimumWidth = minimumFrameBound(
+    minimumSize.width,
+    horizontalDecoration,
+  );
+  const minimumHeight = minimumFrameBound(
+    minimumSize.height,
+    verticalDecoration,
+  );
+
+  if (minimumWidth === null || minimumHeight === null) {
+    return false;
+  }
+
+  const maximumSize = window.maxSize;
+  const maximumWidth = maximumFrameBound(
+    maximumSize.width,
+    horizontalDecoration,
+  );
+  const maximumHeight = maximumFrameBound(
+    maximumSize.height,
+    verticalDecoration,
+  );
+
+  return (
+    Number.isFinite(frame.width) &&
+    frame.width >= 0 &&
+    Number.isFinite(frame.height) &&
+    frame.height >= 0 &&
+    minimumAllows(frame.width, minimumWidth) &&
+    minimumAllows(frame.height, minimumHeight) &&
+    maximumAllows(frame.width, maximumWidth) &&
+    maximumAllows(frame.height, maximumHeight)
+  );
+}
+
+export function frameSizeConstraintBounds(
+  window: KWinWindow,
+): FrameSizeConstraintBounds | null {
+  const frameGeometry = window.frameGeometry;
+  const clientGeometry = window.clientGeometry;
+  const horizontalDecoration = decorationExtent(
+    frameGeometry.width,
+    clientGeometry.width,
+  );
+  const verticalDecoration = decorationExtent(
+    frameGeometry.height,
+    clientGeometry.height,
+  );
+
+  if (horizontalDecoration === null || verticalDecoration === null) {
+    return null;
+  }
+
+  const minimumSize = window.minSize;
+  const minimumWidth = minimumFrameBound(
+    minimumSize.width,
+    horizontalDecoration,
+  );
+  const minimumHeight = minimumFrameBound(
+    minimumSize.height,
+    verticalDecoration,
+  );
+
+  if (minimumWidth === null || minimumHeight === null) {
+    return null;
+  }
+
+  const maximumSize = window.maxSize;
+
+  return {
+    maximumHeight: maximumFrameBound(maximumSize.height, verticalDecoration),
+    maximumWidth: maximumFrameBound(maximumSize.width, horizontalDecoration),
+    minimumHeight,
+    minimumWidth,
+  };
 }
 
 function canApplyToWindow(
@@ -211,11 +322,56 @@ function canApplyToWindow(
 }
 
 function minimumAllows(value: number, minimum: number): boolean {
-  return Number.isFinite(minimum) && value + 1e-6 >= minimum;
+  return Number.isFinite(minimum) && value + GEOMETRY_EPSILON >= minimum;
 }
 
 function maximumAllows(value: number, maximum: number): boolean {
-  return !Number.isFinite(maximum) || maximum <= 0 || value <= maximum + 1e-6;
+  return (
+    !Number.isFinite(maximum) ||
+    maximum <= 0 ||
+    value <= maximum + GEOMETRY_EPSILON
+  );
+}
+
+function decorationExtent(
+  frameSize: number,
+  clientSize: number,
+): number | null {
+  if (
+    !Number.isFinite(frameSize) ||
+    frameSize < 0 ||
+    !Number.isFinite(clientSize) ||
+    clientSize < 0
+  ) {
+    return null;
+  }
+
+  const extent = frameSize - clientSize;
+
+  // Clamp only sub-pixel rounding noise; larger negative extents are invalid.
+  if (extent < -GEOMETRY_EPSILON) {
+    return null;
+  }
+
+  return extent > 0 ? extent : 0;
+}
+
+function minimumFrameBound(minimum: number, extent: number): number | null {
+  if (!Number.isFinite(minimum) || minimum < 0) {
+    return null;
+  }
+
+  const bound = minimum + extent;
+  return Number.isFinite(bound) ? bound : null;
+}
+
+function maximumFrameBound(maximum: number, extent: number): number {
+  if (!Number.isFinite(maximum) || maximum <= 0) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  const bound = maximum + extent;
+  return Number.isFinite(bound) ? bound : Number.POSITIVE_INFINITY;
 }
 
 function toRect(rect: Rect): Rect {
@@ -234,6 +390,10 @@ function defaultRectFactory(
   height: number,
 ): Rect {
   return { height, width, x, y };
+}
+
+function allowWrite(): boolean {
+  return true;
 }
 
 function createContextFingerprint(

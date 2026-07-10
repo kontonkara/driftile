@@ -1,6 +1,6 @@
 import type { KWinOutput, KWinWindow, KWinWorkspace } from "./api";
 
-export type ObservedWindowKind = "dialog" | "normal";
+export type ObservedWindowKind = "dialog" | "normal" | "other";
 export type WindowSuspensionRequest =
   | "maximized-requested"
   | "maximized-settling"
@@ -31,6 +31,7 @@ export interface WindowObserverEvents {
 }
 
 interface WindowEntry {
+  readonly handleAutomaticFloatingChanged: () => void;
   readonly handleDesktopsChanged: () => void;
   readonly handleMaximizedAboutToChange: (mode: number) => void;
   readonly handleMaximizedChanged: () => void;
@@ -136,10 +137,14 @@ export class WindowObserver {
     const refreshState = (): void => {
       this.refreshState(id, window);
     };
+    const refreshAutomaticFloating = (): void => {
+      this.refresh(id, window, true);
+    };
     let committedTile: object | null | undefined;
     let maximizeRequested = window.maximizeMode !== 0;
     let tileRequested = window.tile !== null;
     const entry: WindowEntry = {
+      handleAutomaticFloatingChanged: refreshAutomaticFloating,
       handleDesktopsChanged: refresh,
       handleMaximizedAboutToChange: (mode) => {
         if (mode !== 0) {
@@ -227,19 +232,26 @@ export class WindowObserver {
     window.fullScreenChanged?.connect(entry.handleStateChanged);
     window.interactiveMoveResizeFinished?.connect(entry.handleStateChanged);
     window.maximizedAboutToChange?.connect(entry.handleMaximizedAboutToChange);
+    window.maximizeableChanged?.connect(entry.handleAutomaticFloatingChanged);
     window.maximizedChanged?.connect(entry.handleMaximizedChanged);
     window.minimizedChanged?.connect(entry.handleStateChanged);
+    window.modalChanged?.connect(entry.handleAutomaticFloatingChanged);
     window.moveResizedChanged?.connect(entry.handleStateChanged);
     window.outputChanged?.connect(entry.handleOutputChanged);
     window.requestedTileChanged?.connect(entry.handleRequestedTileChanged);
     window.tileChanged?.connect(entry.handleTileChanged);
+    window.transientChanged?.connect(entry.handleAutomaticFloatingChanged);
 
     if (observedWindow) {
       this.events.added?.(observedWindow);
     }
   }
 
-  private refresh(id: string, source: KWinWindow): void {
+  private refresh(
+    id: string,
+    source: KWinWindow,
+    forceNotification = false,
+  ): void {
     const entry = this.windows.get(id);
 
     if (!entry || entry.source !== source) {
@@ -248,7 +260,7 @@ export class WindowObserver {
 
     const observed = normalizeWindow(source);
 
-    if (sameObservedWindow(entry.observed, observed)) {
+    if (!forceNotification && sameObservedWindow(entry.observed, observed)) {
       return;
     }
 
@@ -266,6 +278,8 @@ export class WindowObserver {
 }
 
 export function normalizeWindow(window: KWinWindow): ObservedWindow | null {
+  const automaticFloatingRole = hasAutomaticFloatingRole(window);
+
   if (
     window.specialWindow ||
     window.deleted ||
@@ -274,7 +288,7 @@ export function normalizeWindow(window: KWinWindow): ObservedWindow | null {
     window.dock ||
     window.onAllDesktops ||
     window.desktops.length === 0 ||
-    (!window.normalWindow && !window.dialog) ||
+    (!window.normalWindow && !automaticFloatingRole) ||
     !window.output
   ) {
     return null;
@@ -283,7 +297,7 @@ export function normalizeWindow(window: KWinWindow): ObservedWindow | null {
   return {
     desktopIds: window.desktops.map((desktop) => desktop.id),
     id: windowId(window),
-    kind: window.dialog ? "dialog" : "normal",
+    kind: window.dialog ? "dialog" : window.normalWindow ? "normal" : "other",
     outputId: window.output.name,
   };
 }
@@ -295,7 +309,13 @@ function isTrackableWindow(window: KWinWindow): boolean {
     window.managed &&
     !window.desktopWindow &&
     !window.dock &&
-    (window.normalWindow || window.dialog)
+    (window.normalWindow || hasAutomaticFloatingRole(window))
+  );
+}
+
+function hasAutomaticFloatingRole(window: KWinWindow): boolean {
+  return Boolean(
+    window.dialog || window.modal || window.transient || window.transientFor,
   );
 }
 
@@ -312,14 +332,21 @@ function disconnectWindowSignals(entry: WindowEntry): void {
   entry.source.maximizedAboutToChange?.disconnect(
     entry.handleMaximizedAboutToChange,
   );
+  entry.source.maximizeableChanged?.disconnect(
+    entry.handleAutomaticFloatingChanged,
+  );
   entry.source.maximizedChanged?.disconnect(entry.handleMaximizedChanged);
   entry.source.minimizedChanged?.disconnect(entry.handleStateChanged);
+  entry.source.modalChanged?.disconnect(entry.handleAutomaticFloatingChanged);
   entry.source.moveResizedChanged?.disconnect(entry.handleStateChanged);
   entry.source.outputChanged?.disconnect(entry.handleOutputChanged);
   entry.source.requestedTileChanged?.disconnect(
     entry.handleRequestedTileChanged,
   );
   entry.source.tileChanged?.disconnect(entry.handleTileChanged);
+  entry.source.transientChanged?.disconnect(
+    entry.handleAutomaticFloatingChanged,
+  );
 }
 
 function sameObservedWindow(

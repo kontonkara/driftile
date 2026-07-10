@@ -104,6 +104,7 @@ function createWindow(
   const minimizedChanged = new Signal<[]>();
   const outputChanged = new Signal<[oldOutput?: KWinOutput | null]>();
   const source: KWinWindow = {
+    clientGeometry: { height: 600, width: 800, x: 0, y: 0 },
     deleted: false,
     desktops: [desktop],
     desktopsChanged,
@@ -120,6 +121,7 @@ function createWindow(
     minSize: { height: 1, width: 1 },
     minimized: false,
     minimizedChanged,
+    modal: false,
     move: false,
     moveable: true,
     normalWindow: true,
@@ -130,6 +132,8 @@ function createWindow(
     resizeable: true,
     specialWindow: false,
     tile: null,
+    transient: false,
+    transientFor: null,
     ...overrides,
     hiddenChanged,
   };

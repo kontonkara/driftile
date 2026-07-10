@@ -42,6 +42,7 @@ function createWindow(overrides: Partial<KWinWindow> = {}): KWinWindow {
   const desktop: KWinVirtualDesktop = { id: "desktop-1" };
 
   return {
+    clientGeometry: { height: 600, width: 800, x: 0, y: 0 },
     deleted: false,
     desktops: [desktop],
     desktopsChanged: new Signal<[]>(),
@@ -56,11 +57,14 @@ function createWindow(overrides: Partial<KWinWindow> = {}): KWinWindow {
     managed: true,
     maxSize: { height: 10_000, width: 10_000 },
     maximizedAboutToChange: new Signal<[mode: number]>(),
+    maximizeableChanged: new Signal<[maximizeable: boolean]>(),
     maximizedChanged: new Signal<[]>(),
     maximizeMode: 0,
     minSize: { height: 1, width: 1 },
     minimized: false,
     minimizedChanged: new Signal<[]>(),
+    modal: false,
+    modalChanged: new Signal<[]>(),
     move: false,
     moveable: true,
     moveResizedChanged: new Signal<[]>(),
@@ -74,6 +78,9 @@ function createWindow(overrides: Partial<KWinWindow> = {}): KWinWindow {
     specialWindow: false,
     tile: null,
     tileChanged: new Signal<[tile: object | null]>(),
+    transient: false,
+    transientChanged: new Signal<[]>(),
+    transientFor: null,
     ...overrides,
   };
 }
@@ -127,6 +134,17 @@ describe("normalizeWindow", () => {
       normalizeWindow(createWindow({ dialog: true, normalWindow: false }))
         ?.kind,
     ).toBe("dialog");
+  });
+
+  it("keeps non-normal transient roles observable", () => {
+    expect(
+      normalizeWindow(
+        createWindow({
+          normalWindow: false,
+          transient: true,
+        }),
+      )?.kind,
+    ).toBe("other");
   });
 
   it("ignores special windows", () => {
@@ -325,6 +343,34 @@ describe("WindowObserver", () => {
     desktopsChanged.emit();
 
     expect(changed).toEqual([]);
+  });
+
+  it("publishes constraint, transient, and modal ownership changes", () => {
+    const source = createWindow();
+    const maximizeableChanged = source.maximizeableChanged as Signal<
+      [maximizeable: boolean]
+    >;
+    const transientChanged = source.transientChanged as Signal<[]>;
+    const modalChanged = source.modalChanged as Signal<[]>;
+    const changed: string[] = [];
+    const observer = new WindowObserver(createWorkspace([source]), {
+      changed: (windowId) => changed.push(windowId),
+    });
+
+    observer.start();
+    maximizeableChanged.emit(false);
+    Object.defineProperty(source, "transient", {
+      configurable: true,
+      value: true,
+    });
+    transientChanged.emit();
+    Object.defineProperty(source, "modal", {
+      configurable: true,
+      value: true,
+    });
+    modalChanged.emit();
+
+    expect(changed).toEqual(["window-1", "window-1", "window-1"]);
   });
 
   it("publishes geometry ownership state changes", () => {
@@ -536,9 +582,14 @@ describe("WindowObserver", () => {
     const stoppedOutput = stoppedSource.outputChanged as Signal<
       [oldOutput?: KWinOutput | null]
     >;
+    const stoppedModal = stoppedSource.modalChanged as Signal<[]>;
+    const stoppedMaximizeable = stoppedSource.maximizeableChanged as Signal<
+      [maximizeable: boolean]
+    >;
     const stoppedTile = stoppedSource.tileChanged as Signal<
       [tile: object | null]
     >;
+    const stoppedTransient = stoppedSource.transientChanged as Signal<[]>;
     const changed: string[] = [];
     const observer = new WindowObserver(
       createWorkspace(
@@ -559,7 +610,10 @@ describe("WindowObserver", () => {
       stoppedMoveResize.size,
       stoppedOutput.size,
       stoppedTile.size,
-    ]).toEqual([1, 1, 1, 1, 1, 1, 1, 1]);
+      stoppedModal.size,
+      stoppedMaximizeable.size,
+      stoppedTransient.size,
+    ]).toEqual([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
 
     windowRemoved.emit(removedSource);
     expect([
@@ -575,7 +629,10 @@ describe("WindowObserver", () => {
       stoppedMoveResize.size,
       stoppedOutput.size,
       stoppedTile.size,
-    ]).toEqual([0, 0, 0, 0]);
+      stoppedModal.size,
+      stoppedMaximizeable.size,
+      stoppedTransient.size,
+    ]).toEqual([0, 0, 0, 0, 0, 0, 0]);
 
     removedDesktops.emit();
     removedFullScreen.emit();
@@ -585,6 +642,9 @@ describe("WindowObserver", () => {
     stoppedMoveResize.emit();
     stoppedOutput.emit();
     stoppedTile.emit(null);
+    stoppedModal.emit();
+    stoppedMaximizeable.emit(true);
+    stoppedTransient.emit();
     expect(changed).toEqual([]);
   });
 });

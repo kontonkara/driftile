@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { columnId, desktopId, outputId, windowId } from "../src/core/ids";
+import {
+  columnId,
+  desktopId,
+  outputId,
+  windowId,
+  type WindowId,
+} from "../src/core/ids";
 import { LayoutEngine } from "../src/core/layout-engine";
 import type {
   KWinOutput,
@@ -60,8 +66,10 @@ interface TrackedWindow {
   readonly hiddenChanged: Signal<[]>;
   readonly interactiveMoveResizeFinished: Signal<[]>;
   readonly maximizedAboutToChange: Signal<[mode: number]>;
+  readonly maximizeableChanged: Signal<[maximizeable: boolean]>;
   readonly maximizedChanged: Signal<[]>;
   readonly minimizedChanged: Signal<[]>;
+  readonly modalChanged: Signal<[]>;
   readonly moveResizedChanged: Signal<[]>;
   readonly outputChanged: Signal<[oldOutput?: KWinOutput | null]>;
   readonly requestedTileChanged: Signal<[]>;
@@ -77,6 +85,7 @@ interface TrackedWindow {
       ((frame: KWinWindow["frameGeometry"], commit: () => void) => void) | null,
   ): void;
   readonly tileChanged: Signal<[tile: object | null]>;
+  readonly transientChanged: Signal<[]>;
   readonly window: KWinWindow;
   readonly writeCount: number;
 }
@@ -93,31 +102,43 @@ function createTrackedWindow(
   >();
   const fullScreenChanged = new Signal<[]>();
   const hiddenChanged = new Signal<[]>();
-  let frameGeometry = { height: 200, width: 300, x: 0, y: 0 };
+  const initialFrameGeometry = overrides.frameGeometry ?? {
+    height: 200,
+    width: 300,
+    x: 0,
+    y: 0,
+  };
+  const initialClientGeometry =
+    overrides.clientGeometry ?? initialFrameGeometry;
+  let frameGeometry = initialFrameGeometry;
   let desktopWriteCount = 0;
   let desktopWriteBehavior:
     | ((desktops: readonly KWinVirtualDesktop[], commit: () => void) => void)
     | null = null;
   const interactiveMoveResizeFinished = new Signal<[]>();
   const maximizedAboutToChange = new Signal<[mode: number]>();
+  const maximizeableChanged = new Signal<[maximizeable: boolean]>();
   const maximizedChanged = new Signal<[]>();
   const minimizedChanged = new Signal<[]>();
+  const modalChanged = new Signal<[]>();
   const moveResizedChanged = new Signal<[]>();
   const outputChanged = new Signal<[oldOutput?: KWinOutput | null]>();
   const requestedTileChanged = new Signal<[]>();
   const tileChanged = new Signal<[tile: object | null]>();
+  const transientChanged = new Signal<[]>();
   let writeCount = 0;
   let writeBehavior:
     ((frame: KWinWindow["frameGeometry"], commit: () => void) => void) | null =
     null;
   const window: KWinWindow = {
+    clientGeometry: initialClientGeometry,
     deleted: false,
     desktops: [desktop],
     desktopsChanged,
     desktopWindow: false,
     dialog: false,
     dock: false,
-    frameGeometry,
+    frameGeometry: initialFrameGeometry,
     frameGeometryChanged,
     fullScreen: false,
     fullScreenChanged,
@@ -127,11 +148,14 @@ function createTrackedWindow(
     managed: true,
     maxSize: { height: 10_000, width: 10_000 },
     maximizedAboutToChange,
+    maximizeableChanged,
     maximizedChanged,
     maximizeMode: 0,
     minSize: { height: 1, width: 1 },
     minimized: false,
     minimizedChanged,
+    modal: false,
+    modalChanged,
     move: false,
     moveable: true,
     moveResizedChanged,
@@ -145,10 +169,29 @@ function createTrackedWindow(
     specialWindow: false,
     tile: null,
     tileChanged,
+    transient: false,
+    transientChanged,
+    transientFor: null,
     ...overrides,
   };
   frameGeometry = window.frameGeometry;
+  const clientOffsetX = initialClientGeometry.x - frameGeometry.x;
+  const clientOffsetY = initialClientGeometry.y - frameGeometry.y;
+  const horizontalDecoration =
+    frameGeometry.width - initialClientGeometry.width;
+  const verticalDecoration =
+    frameGeometry.height - initialClientGeometry.height;
   let windowDesktops = window.desktops;
+  Object.defineProperty(window, "clientGeometry", {
+    configurable: true,
+    enumerable: true,
+    get: () => ({
+      height: frameGeometry.height - verticalDecoration,
+      width: frameGeometry.width - horizontalDecoration,
+      x: frameGeometry.x + clientOffsetX,
+      y: frameGeometry.y + clientOffsetY,
+    }),
+  });
   Object.defineProperty(window, "desktops", {
     configurable: true,
     enumerable: true,
@@ -197,8 +240,10 @@ function createTrackedWindow(
     hiddenChanged,
     interactiveMoveResizeFinished,
     maximizedAboutToChange,
+    maximizeableChanged,
     maximizedChanged,
     minimizedChanged,
+    modalChanged,
     moveResizedChanged,
     outputChanged,
     requestedTileChanged,
@@ -221,6 +266,7 @@ function createTrackedWindow(
       writeBehavior = behavior;
     },
     tileChanged,
+    transientChanged,
     window,
   };
 }
@@ -530,6 +576,625 @@ function setWindowState(
 }
 
 describe("RuntimeController", () => {
+  it("leaves automatic-floating window classes exclusively to KWin", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const regular = createTrackedWindow("regular", output, desktop);
+    const transientParent = createTrackedWindow("parent", output, desktop);
+    const dialog = createTrackedWindow("dialog", output, desktop, {
+      dialog: true,
+      normalWindow: false,
+    });
+    const transient = createTrackedWindow("transient", output, desktop, {
+      transient: true,
+    });
+    const transientFor = createTrackedWindow("transient-for", output, desktop, {
+      transientFor: transientParent.window,
+    });
+    const modal = createTrackedWindow("modal", output, desktop, {
+      modal: true,
+    });
+    const nonResizeable = createTrackedWindow(
+      "non-resizeable",
+      output,
+      desktop,
+      { resizeable: false },
+    );
+    const fixed = createTrackedWindow("fixed", output, desktop, {
+      clientGeometry: { height: 180, width: 280, x: 10, y: 10 },
+      frameGeometry: { height: 200, width: 300, x: 0, y: 0 },
+      maxSize: { height: 180, width: 280 },
+      minSize: { height: 180, width: 280 },
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [
+        regular.window,
+        transientParent.window,
+        dialog.window,
+        transient.window,
+        transientFor.window,
+        modal.window,
+        nonResizeable.window,
+        fixed.window,
+      ],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+    });
+    const automatic = [
+      dialog,
+      transient,
+      transientFor,
+      modal,
+      nonResizeable,
+      fixed,
+    ];
+    const originalFrames = automatic.map(({ window }) => ({
+      ...window.frameGeometry,
+    }));
+
+    expect(controller.start()).toBe(true);
+    expect(controller.managedCount).toBe(2);
+    expect(controller.floatingCount).toBe(0);
+    expect(controller.automaticFloatingCount).toBe(6);
+    expect(automatic.map(({ writeCount }) => writeCount)).toEqual(
+      automatic.map(() => 0),
+    );
+    expect(automatic.map(({ window }) => window.frameGeometry)).toEqual(
+      originalFrames,
+    );
+
+    const activationCount = fixture.activationCount;
+    const desktopSwitchCount = fixture.desktopSwitchCount;
+    const outputTransferCount = fixture.outputTransferCount;
+    const desktopWriteCount = fixed.desktopWriteCount;
+    const commands = [
+      () => controller.focusLeft(),
+      () => controller.focusRight(),
+      () => controller.focusUp(),
+      () => controller.focusDown(),
+      () => controller.moveColumnLeft(),
+      () => controller.moveColumnRight(),
+      () => controller.moveWindowLeft(),
+      () => controller.moveWindowRight(),
+      () => controller.moveWindowUp(),
+      () => controller.moveWindowDown(),
+      () => controller.insertWindowIntoStackLeft(),
+      () => controller.insertWindowIntoStackRight(),
+      () => controller.toggleFloating(),
+      () => controller.moveWindowToPreviousDesktop(),
+      () => controller.moveWindowToNextDesktop(),
+      () => controller.moveWindowToOutputLeft(),
+      () => controller.moveWindowToOutputRight(),
+      () => controller.moveWindowToOutputUp(),
+      () => controller.moveWindowToOutputDown(),
+      () => controller.decreaseColumnWidth(),
+      () => controller.increaseColumnWidth(),
+      () => controller.resetColumnWidth(),
+    ];
+
+    expect(commands.map((command) => command())).toEqual(
+      commands.map(() => false),
+    );
+    expect(fixture.activationCount).toBe(activationCount);
+    expect(fixture.desktopSwitchCount).toBe(desktopSwitchCount);
+    expect(fixture.outputTransferCount).toBe(outputTransferCount);
+    expect(fixed.desktopWriteCount).toBe(desktopWriteCount);
+    expect(automatic.map(({ writeCount }) => writeCount)).toEqual(
+      automatic.map(() => 0),
+    );
+  });
+
+  it("releases a late transient without restoring its stale baseline", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const windows = Array.from({ length: 4 }, (_, index) =>
+      createTrackedWindow(`window-${String(index + 1)}`, output, desktop),
+    );
+    const becomingTransient = windows[1];
+
+    if (!becomingTransient) {
+      throw new Error("missing transient fixture");
+    }
+
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map(({ window }) => window),
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 400 },
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+
+    controller.start();
+    const layout = runtimeLayout(controller);
+    fixture.workspace.activeWindow = becomingTransient.window;
+    layout.setViewportOffset(outputId(output.name), desktopId(desktop.id), 100);
+    scheduler.flush();
+    const tiledFrame = { ...becomingTransient.window.frameGeometry };
+    const tiledWrites = becomingTransient.writeCount;
+    Object.defineProperty(becomingTransient.window, "transient", {
+      configurable: true,
+      value: true,
+    });
+    becomingTransient.transientChanged.emit();
+
+    expect(controller.automaticFloatingCount).toBe(1);
+    expect(controller.managedCount).toBe(3);
+    expect(controller.floatingCount).toBe(0);
+    expect(becomingTransient.window.frameGeometry).toEqual(tiledFrame);
+    expect(becomingTransient.writeCount).toBe(tiledWrites);
+    expect(
+      layout
+        .snapshot(outputId(output.name), desktopId(desktop.id))
+        .columns.map((column) => [column.width, column.windowIds]),
+    ).toEqual([
+      [{ kind: "fixed", value: 400 }, [windowId("window-1")]],
+      [{ kind: "fixed", value: 400 }, [windowId("window-3")]],
+      [{ kind: "fixed", value: 400 }, [windowId("window-4")]],
+    ]);
+    expect(
+      layout.snapshot(outputId(output.name), desktopId(desktop.id))
+        .viewportOffset,
+    ).toBe(100);
+
+    fixture.workspace.activeWindow = becomingTransient.window;
+    const layoutBeforeCommands = layout.snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    expect(controller.focusLeft()).toBe(false);
+    expect(controller.moveWindowRight()).toBe(false);
+    expect(controller.toggleFloating()).toBe(false);
+    expect(controller.increaseColumnWidth()).toBe(false);
+    expect(
+      layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+    ).toEqual(layoutBeforeCommands);
+    expect(becomingTransient.writeCount).toBe(tiledWrites);
+
+    while (scheduler.pendingCount > 0) {
+      scheduler.flush();
+    }
+
+    expect(becomingTransient.writeCount).toBe(tiledWrites);
+    Object.defineProperty(becomingTransient.window, "transient", {
+      configurable: true,
+      value: false,
+    });
+    becomingTransient.transientChanged.emit();
+    expect(controller.automaticFloatingCount).toBe(0);
+
+    while (scheduler.pendingCount > 0) {
+      scheduler.flush();
+    }
+
+    expect(controller.managedCount).toBe(4);
+    expect(controller.floatingCount).toBe(0);
+    const readmittedId = windowId("window-2");
+    const state = controller as unknown as {
+      readonly capacityCanceledParks: ReadonlyMap<string, unknown>;
+      readonly capacityLeaseByWindow: ReadonlyMap<WindowId, unknown>;
+      readonly capacityParkOperations: ReadonlyMap<string, unknown>;
+      readonly capacitySupersededParkWindows: ReadonlySet<WindowId>;
+      readonly pendingWindowSyncs: ReadonlySet<WindowId>;
+      readonly requestedSuspensions: ReadonlyMap<WindowId, unknown>;
+      readonly resumeSamples: ReadonlyMap<WindowId, unknown>;
+      readonly suspendedWindows: ReadonlySet<WindowId>;
+      readonly transientResumeProbes: ReadonlyMap<WindowId, unknown>;
+      readonly waitingWindowContexts: ReadonlyMap<WindowId, string>;
+    };
+    expect(state.capacityCanceledParks.size).toBe(0);
+    expect(state.capacityLeaseByWindow.has(readmittedId)).toBe(false);
+    expect(state.capacityParkOperations.size).toBe(0);
+    expect(state.capacitySupersededParkWindows.has(readmittedId)).toBe(false);
+    expect(state.pendingWindowSyncs.has(readmittedId)).toBe(false);
+    expect(state.requestedSuspensions.has(readmittedId)).toBe(false);
+    expect(state.resumeSamples.has(readmittedId)).toBe(false);
+    expect(state.suspendedWindows.has(readmittedId)).toBe(false);
+    expect(state.transientResumeProbes.has(readmittedId)).toBe(false);
+    expect(state.waitingWindowContexts.has(readmittedId)).toBe(false);
+  });
+
+  it("drops manual-floating ownership when a window becomes modal", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const window = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [window.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+    });
+
+    controller.start();
+    expect(controller.toggleFloating()).toBe(true);
+    expect(controller.floatingCount).toBe(1);
+    const floatingFrame = { ...window.window.frameGeometry };
+    const floatingWrites = window.writeCount;
+    Object.defineProperty(window.window, "modal", {
+      configurable: true,
+      value: true,
+    });
+    window.modalChanged.emit();
+
+    expect(controller.automaticFloatingCount).toBe(1);
+    expect(controller.floatingCount).toBe(0);
+    expect(controller.managedCount).toBe(0);
+    expect(window.window.frameGeometry).toEqual(floatingFrame);
+    expect(window.writeCount).toBe(floatingWrites);
+    expect(controller.toggleFloating()).toBe(false);
+  });
+
+  it("never creates suspension or bounded retry state for automatic floating", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const automatic = createTrackedWindow("window-1", output, desktop, {
+      resizeable: false,
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [automatic.window],
+    );
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+    const state = controller as unknown as {
+      readonly capacityCanceledParks: ReadonlyMap<string, unknown>;
+      readonly capacityLeaseByWindow: ReadonlyMap<WindowId, unknown>;
+      readonly capacityParkOperations: ReadonlyMap<string, unknown>;
+      readonly capacitySupersededParkWindows: ReadonlySet<WindowId>;
+      readonly pendingWindowSyncs: ReadonlySet<WindowId>;
+      readonly requestedSuspensions: ReadonlyMap<WindowId, ReadonlySet<string>>;
+      readonly resumeSamples: ReadonlyMap<WindowId, unknown>;
+      readonly suspendedWindows: ReadonlySet<WindowId>;
+      readonly transientResumeProbes: ReadonlyMap<WindowId, unknown>;
+      readonly waitingWindowContexts: ReadonlyMap<WindowId, string>;
+    };
+    const id = windowId("window-1");
+
+    controller.start();
+    setWindowState("maximized", automatic, true);
+    setWindowState("maximized", automatic, false);
+    setWindowState("native tiled", automatic, true);
+    setWindowState("native tiled", automatic, false);
+    automatic.desktopsChanged.emit();
+    automatic.outputChanged.emit();
+
+    expect(controller.automaticFloatingCount).toBe(1);
+    expect(controller.managedCount).toBe(0);
+    expect(state.capacityCanceledParks.size).toBe(0);
+    expect(state.capacityLeaseByWindow.has(id)).toBe(false);
+    expect(state.capacityParkOperations.size).toBe(0);
+    expect(state.capacitySupersededParkWindows.has(id)).toBe(false);
+    expect(state.pendingWindowSyncs.has(id)).toBe(false);
+    expect(state.requestedSuspensions.has(id)).toBe(false);
+    expect(state.resumeSamples.has(id)).toBe(false);
+    expect(state.suspendedWindows.has(id)).toBe(false);
+    expect(state.transientResumeProbes.has(id)).toBe(false);
+    expect(state.waitingWindowContexts.has(id)).toBe(false);
+    expect(workScheduler.pendingCount).toBe(0);
+    expect(resumeScheduler.pendingCount).toBe(0);
+    expect(automatic.writeCount).toBe(0);
+
+    fixture.windowRemoved.emit(automatic.window);
+    expect(controller.automaticFloatingCount).toBe(0);
+    expect(state.capacityCanceledParks.size).toBe(0);
+    expect(state.capacityLeaseByWindow.has(id)).toBe(false);
+    expect(state.capacityParkOperations.size).toBe(0);
+    expect(state.capacitySupersededParkWindows.has(id)).toBe(false);
+    expect(state.pendingWindowSyncs.has(id)).toBe(false);
+    expect(state.requestedSuspensions.has(id)).toBe(false);
+    expect(state.resumeSamples.has(id)).toBe(false);
+    expect(state.suspendedWindows.has(id)).toBe(false);
+    expect(state.transientResumeProbes.has(id)).toBe(false);
+    expect(state.waitingWindowContexts.has(id)).toBe(false);
+    expect(workScheduler.pendingCount).toBe(0);
+    expect(resumeScheduler.pendingCount).toBe(0);
+  });
+
+  it("reclassifies fixed-size constraints on notification and safely reads them back", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const changing = createTrackedWindow("window-2", output, desktop);
+    const third = createTrackedWindow("window-3", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window, changing.window, third.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+    const id = windowId("window-2");
+
+    controller.start();
+    const tiledFrame = { ...changing.window.frameGeometry };
+    const tiledWrites = changing.writeCount;
+    const client = changing.window.clientGeometry;
+    Object.defineProperties(changing.window, {
+      maxSize: {
+        configurable: true,
+        value: { height: client.height, width: client.width },
+      },
+      minSize: {
+        configurable: true,
+        value: { height: client.height, width: client.width },
+      },
+    });
+    changing.maximizeableChanged.emit(false);
+
+    expect(controller.automaticFloatingCount).toBe(1);
+    expect(controller.managedCount).toBe(2);
+    expect(changing.window.frameGeometry).toEqual(tiledFrame);
+    expect(changing.writeCount).toBe(tiledWrites);
+
+    while (scheduler.pendingCount > 0) {
+      scheduler.flush();
+    }
+
+    expect(changing.writeCount).toBe(tiledWrites);
+    Object.defineProperties(changing.window, {
+      maxSize: {
+        configurable: true,
+        value: { height: 10_000, width: 10_000 },
+      },
+      minSize: {
+        configurable: true,
+        value: { height: 1, width: 1 },
+      },
+    });
+    changing.maximizeableChanged.emit(true);
+    expect(controller.automaticFloatingCount).toBe(0);
+    expect(controller.managedCount).toBe(2);
+
+    while (scheduler.pendingCount > 0) {
+      scheduler.flush();
+    }
+
+    expect(controller.managedCount).toBe(3);
+    expect(controller.floatingCount).toBe(0);
+    expectAutomaticOwnershipBookkeepingClear(controller, id);
+  });
+
+  it("fails closed on silent resizeability changes at reconcile boundaries", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const changing = createTrackedWindow("window-2", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window, changing.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+    });
+
+    controller.start();
+    const tiledFrame = { ...changing.window.frameGeometry };
+    const tiledWrites = changing.writeCount;
+    Object.defineProperty(changing.window, "resizeable", {
+      configurable: true,
+      value: false,
+    });
+
+    controller.reconcile();
+    expect(controller.automaticFloatingCount).toBe(1);
+    expect(controller.managedCount).toBe(1);
+    expect(changing.window.frameGeometry).toEqual(tiledFrame);
+    expect(changing.writeCount).toBe(tiledWrites);
+
+    Object.defineProperty(changing.window, "resizeable", {
+      configurable: true,
+      value: true,
+    });
+    controller.reconcile();
+
+    expect(controller.automaticFloatingCount).toBe(0);
+    expect(controller.managedCount).toBe(2);
+    expect(controller.floatingCount).toBe(0);
+    expectAutomaticOwnershipBookkeepingClear(controller, windowId("window-2"));
+  });
+
+  it.each([
+    {
+      enter: (window: TrackedWindow) => {
+        Object.defineProperty(window.window, "fullScreen", {
+          configurable: true,
+          value: true,
+        });
+        window.fullScreenChanged.emit();
+      },
+      exit: (window: TrackedWindow) => {
+        Object.defineProperty(window.window, "fullScreen", {
+          configurable: true,
+          value: false,
+        });
+        window.fullScreenChanged.emit();
+      },
+      name: "fullscreen",
+    },
+    {
+      enter: (window: TrackedWindow) => {
+        Object.defineProperty(window.window, "maximizeMode", {
+          configurable: true,
+          value: 3,
+        });
+        window.maximizedChanged.emit();
+      },
+      exit: (window: TrackedWindow) => {
+        Object.defineProperty(window.window, "maximizeMode", {
+          configurable: true,
+          value: 0,
+        });
+        window.maximizedChanged.emit();
+      },
+      name: "maximized",
+    },
+    {
+      enter: (window: TrackedWindow) => {
+        Object.defineProperty(window.window, "tile", {
+          configurable: true,
+          value: {},
+        });
+        window.tileChanged.emit(window.window.tile);
+      },
+      exit: (window: TrackedWindow) => {
+        Object.defineProperty(window.window, "tile", {
+          configurable: true,
+          value: null,
+        });
+        window.tileChanged.emit(null);
+      },
+      name: "native tiled",
+    },
+    {
+      enter: (window: TrackedWindow) => {
+        Object.defineProperty(window.window, "move", {
+          configurable: true,
+          value: true,
+        });
+        window.moveResizedChanged.emit();
+      },
+      exit: (window: TrackedWindow) => {
+        Object.defineProperty(window.window, "move", {
+          configurable: true,
+          value: false,
+        });
+        window.moveResizedChanged.emit();
+      },
+      name: "interactive move",
+    },
+    {
+      enter: (window: TrackedWindow) => {
+        Object.defineProperty(window.window, "resize", {
+          configurable: true,
+          value: true,
+        });
+        window.moveResizedChanged.emit();
+      },
+      exit: (window: TrackedWindow) => {
+        Object.defineProperty(window.window, "resize", {
+          configurable: true,
+          value: false,
+        });
+        window.moveResizedChanged.emit();
+      },
+      name: "interactive resize",
+    },
+  ])(
+    "preserves the managed slot when $name temporarily disables resizing",
+    ({ enter, exit, name }) => {
+      const output = createOutput("DP-1", 0);
+      const desktop = { id: "desktop-1" };
+      const first = createTrackedWindow("window-1", output, desktop);
+      const blocked = createTrackedWindow("window-2", output, desktop);
+      const third = createTrackedWindow("window-3", output, desktop);
+      const fixture = createWorkspace(
+        output,
+        desktop,
+        [output],
+        [desktop],
+        [first.window, blocked.window, third.window],
+      );
+      const scheduler = new ManualScheduler();
+      const controller = new RuntimeController(fixture.workspace, {
+        clientAreaOption: 2,
+        columnWidth: { kind: "fixed", value: 300 },
+        gap: 10,
+        schedule: scheduler.schedule,
+        scheduleResume: scheduler.schedule,
+      });
+
+      controller.start();
+      const before = testLayoutColumns(controller, output, desktop);
+      Object.defineProperty(blocked.window, "resizeable", {
+        configurable: true,
+        value: false,
+      });
+      enter(blocked);
+
+      if (name === "fullscreen") {
+        Object.defineProperty(blocked.window, "clientGeometry", {
+          configurable: true,
+          get: () => ({
+            ...blocked.window.frameGeometry,
+            width: blocked.window.frameGeometry.width + 10,
+          }),
+        });
+      }
+
+      blocked.maximizeableChanged.emit(false);
+      expect(controller.automaticFloatingCount).toBe(0);
+      expect(controller.managedCount).toBe(3);
+      expect(testLayoutColumns(controller, output, desktop)).toEqual(before);
+
+      if (name === "fullscreen") {
+        Object.defineProperty(blocked.window, "clientGeometry", {
+          configurable: true,
+          get: () => ({ ...blocked.window.frameGeometry }),
+        });
+      }
+
+      Object.defineProperty(blocked.window, "resizeable", {
+        configurable: true,
+        value: true,
+      });
+      exit(blocked);
+      blocked.maximizeableChanged.emit(true);
+
+      for (
+        let attempt = 0;
+        attempt < 50 && scheduler.pendingCount > 0;
+        attempt += 1
+      ) {
+        scheduler.flush();
+      }
+
+      expect(scheduler.pendingCount).toBe(0);
+      expect(controller.automaticFloatingCount).toBe(0);
+      expect(controller.managedCount).toBe(3);
+      expect(testLayoutColumns(controller, output, desktop)).toEqual(before);
+    },
+  );
+
   it("focuses adjacent managed columns and stops at their boundaries", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
@@ -3539,6 +4204,320 @@ describe("RuntimeController", () => {
     expect(fixture.activationCount).toBe(0);
   });
 
+  it("resizes columns with client constraints translated to frame bounds", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const active = createTrackedWindow("window-1", output, desktop, {
+      clientGeometry: { height: 180, width: 280, x: 10, y: 10 },
+      frameGeometry: { height: 200, width: 300, x: 0, y: 0 },
+      maxSize: { height: 10_000, width: 350 },
+      minSize: { height: 1, width: 250 },
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [active.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+    });
+
+    controller.start();
+    expect(controller.increaseColumnWidth()).toBe(true);
+    expect(active.window.frameGeometry.width).toBe(364);
+    expect(controller.increaseColumnWidth()).toBe(true);
+    expect(active.window.frameGeometry.width).toBe(370);
+    expect(controller.increaseColumnWidth()).toBe(false);
+
+    expect(controller.decreaseColumnWidth()).toBe(true);
+    expect(active.window.frameGeometry.width).toBe(306);
+    expect(controller.decreaseColumnWidth()).toBe(true);
+    expect(active.window.frameGeometry.width).toBe(270);
+    expect(controller.decreaseColumnWidth()).toBe(false);
+  });
+
+  it("never restores an automatically released slot after a column write", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const second = createTrackedWindow("window-2", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window, second.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+
+    controller.start();
+    fixture.workspace.activeWindow = first.window;
+
+    while (scheduler.pendingCount > 0) {
+      scheduler.flush();
+    }
+
+    const secondWrites = second.writeCount;
+    first.setWriteBehavior((_frame, commit) => {
+      first.setWriteBehavior(null);
+      commit();
+      Object.defineProperty(second.window, "transient", {
+        configurable: true,
+        value: true,
+      });
+      second.transientChanged.emit();
+    });
+
+    expect(controller.increaseColumnWidth()).toBe(false);
+
+    while (scheduler.pendingCount > 0) {
+      scheduler.flush();
+    }
+
+    expect(second.writeCount).toBe(secondWrites);
+    expect(controller.automaticFloatingCount).toBe(1);
+    expect(controller.managedCount).toBe(1);
+    expect(controller.floatingCount).toBe(0);
+    expect(
+      runtimeLayout(controller)
+        .snapshot(outputId(output.name), desktopId(desktop.id))
+        .columns.flatMap((column) => column.windowIds),
+    ).toEqual([windowId("window-1")]);
+    expectAutomaticOwnershipBookkeepingClear(controller, windowId("window-2"));
+  });
+
+  it("filters automatic ownership from floating transition compensation", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const second = createTrackedWindow("window-2", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window, second.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+
+    controller.start();
+    const layout = new LayoutEngine();
+    layout.restoreColumns({
+      activeColumnId: columnId("column:stack"),
+      columns: [
+        {
+          column: {
+            id: columnId("column:stack"),
+            width: { kind: "fixed", value: 300 },
+            windowIds: [windowId("window-1"), windowId("window-2")],
+          },
+          index: 0,
+        },
+      ],
+      desktopId: desktopId(desktop.id),
+      outputId: outputId(output.name),
+    });
+    (
+      controller as unknown as {
+        layout: LayoutEngine;
+      }
+    ).layout = layout;
+    controller.reconcile();
+    const secondWrites = second.writeCount;
+    first.setWriteBehavior((_frame, commit) => {
+      first.setWriteBehavior(null);
+      commit();
+      Object.defineProperty(second.window, "transient", {
+        configurable: true,
+        value: true,
+      });
+      second.transientChanged.emit();
+    });
+
+    expect(controller.toggleFloating()).toBe(false);
+
+    while (scheduler.pendingCount > 0) {
+      scheduler.flush();
+    }
+
+    expect(second.writeCount).toBe(secondWrites);
+    expect(controller.automaticFloatingCount).toBe(1);
+    expect(controller.managedCount).toBe(1);
+    expect(controller.floatingCount).toBe(0);
+    expect(
+      layout
+        .snapshot(outputId(output.name), desktopId(desktop.id))
+        .columns.flatMap((column) => column.windowIds),
+    ).toEqual([windowId("window-1")]);
+    expectAutomaticOwnershipBookkeepingClear(controller, windowId("window-2"));
+  });
+
+  it("reflows after a column write releases an unchanged middle window", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const windows = Array.from({ length: 3 }, (_, index) =>
+      createTrackedWindow(`window-${String(index + 1)}`, output, desktop),
+    );
+    const [first, released, active] = windows;
+
+    if (!first || !released || !active) {
+      throw new Error("missing column reflow fixture");
+    }
+
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map(({ window }) => window),
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+
+    controller.start();
+    const releasedWrites = released.writeCount;
+    const activeX = active.window.frameGeometry.x;
+    active.setWriteBehavior((_frame, commit) => {
+      active.setWriteBehavior(null);
+      commit();
+      Object.defineProperty(released.window, "transient", {
+        configurable: true,
+        value: true,
+      });
+      released.transientChanged.emit();
+    });
+
+    expect(controller.increaseColumnWidth()).toBe(false);
+
+    while (scheduler.pendingCount > 0) {
+      scheduler.flush();
+    }
+
+    expect(released.writeCount).toBe(releasedWrites);
+    expect(active.window.frameGeometry.x).toBeLessThan(activeX);
+    expect(controller.automaticFloatingCount).toBe(1);
+    expect(
+      runtimeLayout(controller)
+        .snapshot(outputId(output.name), desktopId(desktop.id))
+        .columns.flatMap((column) => column.windowIds),
+    ).toEqual([windowId("window-1"), windowId("window-3")]);
+  });
+
+  it("reflows after a floating write releases an unchanged adjacent window", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const released = createTrackedWindow("window-3", output, desktop);
+    const trailing = createTrackedWindow("window-4", output, desktop);
+    const active = createTrackedWindow("window-2", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window, released.window, trailing.window, active.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+
+    controller.start();
+    const layout = new LayoutEngine();
+    layout.restoreColumns({
+      activeColumnId: columnId("column:stack"),
+      columns: [
+        {
+          column: {
+            id: columnId("column:stack"),
+            width: { kind: "fixed", value: 300 },
+            windowIds: [windowId("window-1"), windowId("window-2")],
+          },
+          index: 0,
+        },
+        {
+          column: {
+            id: columnId("column:released"),
+            width: { kind: "fixed", value: 300 },
+            windowIds: [windowId("window-3")],
+          },
+          index: 1,
+        },
+        {
+          column: {
+            id: columnId("column:trailing"),
+            width: { kind: "fixed", value: 300 },
+            windowIds: [windowId("window-4")],
+          },
+          index: 2,
+        },
+      ],
+      desktopId: desktopId(desktop.id),
+      outputId: outputId(output.name),
+    });
+    (
+      controller as unknown as {
+        layout: LayoutEngine;
+      }
+    ).layout = layout;
+    controller.reconcile();
+    const releasedWrites = released.writeCount;
+    const trailingX = trailing.window.frameGeometry.x;
+    first.setWriteBehavior((_frame, commit) => {
+      first.setWriteBehavior(null);
+      commit();
+      Object.defineProperty(released.window, "transient", {
+        configurable: true,
+        value: true,
+      });
+      released.transientChanged.emit();
+    });
+
+    expect(controller.toggleFloating()).toBe(false);
+
+    while (scheduler.pendingCount > 0) {
+      scheduler.flush();
+    }
+
+    expect(released.writeCount).toBe(releasedWrites);
+    expect(trailing.window.frameGeometry.x).toBeLessThan(trailingX);
+    expect(controller.automaticFloatingCount).toBe(1);
+    expect(controller.floatingCount).toBe(0);
+    expect(
+      layout
+        .snapshot(outputId(output.name), desktopId(desktop.id))
+        .columns.flatMap((column) => column.windowIds),
+    ).toEqual([
+      windowId("window-1"),
+      windowId("window-2"),
+      windowId("window-4"),
+    ]);
+  });
+
   it("aligns width constraints to physical pixels at fractional scale", () => {
     const trackedOutput = createTrackedOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
@@ -4269,6 +5248,53 @@ describe("RuntimeController", () => {
     expect(geometryLookupCount).toBe(2);
   });
 
+  it("keeps live ownership classification linear during reconcile writes", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const windowCount = 96;
+    let classificationReads = 0;
+    const windows = Array.from({ length: windowCount }, (_, index) => {
+      const tracked = createTrackedWindow(
+        `window-${String(index)}`,
+        output,
+        desktop,
+      );
+      Object.defineProperty(tracked.window, "transient", {
+        configurable: true,
+        get: () => {
+          classificationReads += 1;
+          return false;
+        },
+      });
+      return tracked;
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map(({ window }) => window),
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    controller.start();
+    classificationReads = 0;
+
+    for (const window of windows) {
+      window.setFrameGeometry({
+        ...window.window.frameGeometry,
+        x: window.window.frameGeometry.x + 1,
+      });
+    }
+
+    expect(controller.reconcile()).toBe(windowCount);
+    expect(classificationReads).toBeGreaterThanOrEqual(windowCount);
+    expect(classificationReads).toBeLessThanOrEqual(windowCount * 8);
+  });
+
   it("queues windows added during startup stabilization", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
@@ -4787,7 +5813,6 @@ describe("RuntimeController", () => {
     const desktop = { id: "desktop-1" };
     const first = createTrackedWindow("window-1", output, desktop, {
       moveable: false,
-      resizeable: false,
     });
     const fixture = createWorkspace(
       output,
@@ -4830,7 +5855,6 @@ describe("RuntimeController", () => {
     const desktop = { id: "desktop-1" };
     const first = createTrackedWindow("window-1", output, desktop, {
       moveable: false,
-      resizeable: false,
     });
     const fixture = createWorkspace(
       output,
@@ -4862,7 +5886,6 @@ describe("RuntimeController", () => {
     const desktop = { id: "desktop-1" };
     const first = createTrackedWindow("window-1", output, desktop, {
       moveable: false,
-      resizeable: false,
     });
     const fixture = createWorkspace(
       output,
@@ -4905,7 +5928,6 @@ describe("RuntimeController", () => {
     const desktop = { id: "desktop-1" };
     const first = createTrackedWindow("window-1", output, desktop, {
       moveable: false,
-      resizeable: false,
     });
     const fixture = createWorkspace(
       output,
@@ -4933,7 +5955,6 @@ describe("RuntimeController", () => {
 
     Object.defineProperties(first.window, {
       moveable: { configurable: true, value: false },
-      resizeable: { configurable: true, value: false },
     });
     first.minimizedChanged.emit();
     workScheduler.flush();
@@ -4960,7 +5981,6 @@ describe("RuntimeController", () => {
     const desktop = { id: "desktop-1" };
     const first = createTrackedWindow("window-1", output, desktop, {
       moveable: false,
-      resizeable: false,
     });
     const fixture = createWorkspace(
       output,
@@ -9795,6 +10815,103 @@ describe("RuntimeController output transfers", () => {
     expect(transfer.moved.window.output).toBe(transfer.sourceOutput);
   });
 
+  it("stops transfer writes when the mover becomes automatic mid-transaction", () => {
+    const transfer = createOutputTransferFixture();
+    const writesBefore = transfer.moved.writeCount;
+    transfer.fixture.setOutputTransferBehavior((_window, _output, commit) => {
+      commit();
+      Object.defineProperty(transfer.moved.window, "resizeable", {
+        configurable: true,
+        value: false,
+      });
+      transfer.moved.maximizeableChanged.emit(false);
+    });
+
+    expect(transfer.controller.moveWindowToOutputRight()).toBe(false);
+    expect(transfer.fixture.outputTransferCount).toBe(1);
+    expect(transfer.moved.window.output).toBe(transfer.targetOutput);
+    expect(transfer.moved.writeCount).toBe(writesBefore);
+    expect(transfer.controller.automaticFloatingCount).toBe(1);
+    expect(transfer.controller.floatingCount).toBe(0);
+
+    Object.defineProperty(transfer.moved.window, "resizeable", {
+      configurable: true,
+      value: true,
+    });
+    transfer.controller.reconcile();
+    expect(transfer.controller.automaticFloatingCount).toBe(0);
+    expect(transfer.controller.managedCount).toBe(3);
+    expectAutomaticOwnershipBookkeepingClear(
+      transfer.controller,
+      windowId("moved"),
+    );
+  });
+
+  it("replays unrelated context and blocker events after a transfer exits", () => {
+    const scheduler = new ManualScheduler();
+    const transfer = createOutputTransferFixture({
+      differentDesktop: true,
+      scheduler,
+    });
+
+    while (scheduler.pendingCount > 0) {
+      scheduler.flush();
+    }
+
+    const destination = transfer.destinations[0];
+
+    if (!destination) {
+      throw new Error("missing destination fixture");
+    }
+
+    const destinationFrame = { ...destination.window.frameGeometry };
+    const destinationWrites = destination.writeCount;
+    transfer.fixture.setOutputTransferBehavior((_window, _output, commit) => {
+      commit();
+      transfer.source.window.desktops = [transfer.targetDesktop];
+      transfer.source.setOutput(transfer.targetOutput);
+      Object.defineProperties(destination.window, {
+        fullScreen: { configurable: true, value: true },
+        resizeable: { configurable: true, value: false },
+      });
+      destination.fullScreenChanged.emit();
+    });
+
+    expect(transfer.controller.moveWindowToOutputRight()).toBe(false);
+    expect(transfer.fixture.outputTransferCount).toBe(2);
+    expect(transfer.moved.window.output).toBe(transfer.sourceOutput);
+
+    while (scheduler.pendingCount > 0) {
+      scheduler.flush();
+    }
+
+    const state = transfer.controller as unknown as {
+      readonly suspendedWindows: ReadonlySet<WindowId>;
+    };
+    expect(transfer.source.window.output).toBe(transfer.targetOutput);
+    expect(transfer.source.window.desktops).toEqual([transfer.targetDesktop]);
+    expect(state.suspendedWindows.has(windowId("destination"))).toBe(true);
+    expect(destination.window.frameGeometry).toEqual(destinationFrame);
+    expect(destination.writeCount).toBe(destinationWrites);
+    expect(
+      testLayoutColumns(
+        transfer.controller,
+        transfer.sourceOutput,
+        transfer.sourceDesktop,
+      ),
+    ).toEqual([{ id: "column:moved", windowIds: ["moved"] }]);
+    expect(
+      testLayoutColumns(
+        transfer.controller,
+        transfer.targetOutput,
+        transfer.targetDesktop,
+      ),
+    ).toEqual([
+      { id: "column:destination", windowIds: ["destination"] },
+      { id: "column:source", windowIds: ["source"] },
+    ]);
+  });
+
   it("rejects capacity and size-constraint violations before moving the window", () => {
     const capacity = createOutputTransferFixture({ destinationCount: 2 });
     expect(capacity.controller.moveWindowToOutputRight()).toBe(false);
@@ -10559,6 +11676,29 @@ function flushCapacityParking(
   resumeScheduler.flush();
   resumeScheduler.flush();
   workScheduler.flush();
+}
+
+function expectAutomaticOwnershipBookkeepingClear(
+  controller: RuntimeController,
+  id: WindowId,
+): void {
+  const state = controller as unknown as {
+    readonly capacityLeaseByWindow: ReadonlyMap<WindowId, unknown>;
+    readonly pendingWindowSyncs: ReadonlySet<WindowId>;
+    readonly requestedSuspensions: ReadonlyMap<WindowId, unknown>;
+    readonly resumeSamples: ReadonlyMap<WindowId, unknown>;
+    readonly suspendedWindows: ReadonlySet<WindowId>;
+    readonly transientResumeProbes: ReadonlyMap<WindowId, unknown>;
+    readonly waitingWindowContexts: ReadonlyMap<WindowId, string>;
+  };
+
+  expect(state.capacityLeaseByWindow.has(id)).toBe(false);
+  expect(state.pendingWindowSyncs.has(id)).toBe(false);
+  expect(state.requestedSuspensions.has(id)).toBe(false);
+  expect(state.resumeSamples.has(id)).toBe(false);
+  expect(state.suspendedWindows.has(id)).toBe(false);
+  expect(state.transientResumeProbes.has(id)).toBe(false);
+  expect(state.waitingWindowContexts.has(id)).toBe(false);
 }
 
 function runtimeLayout(controller: RuntimeController): LayoutEngine {
