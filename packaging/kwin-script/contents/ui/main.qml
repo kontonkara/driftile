@@ -57,6 +57,18 @@ QtObject {
         sequence: "Meta+Ctrl+L"
         onActivated: Runtime.DriftileRuntime.focusRight()
     }
+    readonly property ShortcutHandler moveColumnLeftShortcut: ShortcutHandler {
+        name: "Driftile Move Column Left"
+        text: "Driftile: Move column left"
+        sequence: "Meta+Ctrl+Shift+H"
+        onActivated: Runtime.DriftileRuntime.moveColumnLeft()
+    }
+    readonly property ShortcutHandler moveColumnRightShortcut: ShortcutHandler {
+        name: "Driftile Move Column Right"
+        text: "Driftile: Move column right"
+        sequence: "Meta+Ctrl+Shift+L"
+        onActivated: Runtime.DriftileRuntime.moveColumnRight()
+    }
 
     function createRect(x, y, width, height) {
         return Qt.rect(x, y, width, height);

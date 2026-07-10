@@ -191,6 +191,105 @@ describe("LayoutEngine", () => {
     ).toEqual(["column-1", "column-4", "column-2", "column-3"]);
   });
 
+  it("moves a whole column without changing its active state or width", () => {
+    const engine = new LayoutEngine();
+    const otherOutput = outputId("HDMI-A-1");
+
+    engine.restoreColumns({
+      activeColumnId: columnId("column-2"),
+      columns: [
+        {
+          column: {
+            id: columnId("column-1"),
+            width: { kind: "fixed", value: 240 },
+            windowIds: [windowId("window-1")],
+          },
+          index: 0,
+        },
+        {
+          column: {
+            id: columnId("column-2"),
+            width: { kind: "proportion", value: 0.4 },
+            windowIds: [windowId("window-2"), windowId("window-3")],
+          },
+          index: 1,
+        },
+        {
+          column: {
+            id: columnId("column-3"),
+            width: { kind: "fixed", value: 360 },
+            windowIds: [windowId("window-4")],
+          },
+          index: 2,
+        },
+      ],
+      desktopId: desktop,
+      outputId: output,
+      viewportOffset: 120,
+    });
+    engine.manageWindow({
+      columnId: columnId("other-column"),
+      desktopId: desktop,
+      outputId: otherOutput,
+      width: { kind: "fixed", value: 300 },
+      windowId: windowId("other-window"),
+    });
+    const otherBefore = engine.snapshot(otherOutput, desktop);
+
+    expect(engine.moveActiveColumn(windowId("window-3"), "left")).toBe(true);
+    expect(engine.snapshot(output, desktop)).toEqual({
+      activeColumnId: "column-2",
+      columns: [
+        {
+          id: "column-2",
+          width: { kind: "proportion", value: 0.4 },
+          windowIds: ["window-2", "window-3"],
+        },
+        {
+          id: "column-1",
+          width: { kind: "fixed", value: 240 },
+          windowIds: ["window-1"],
+        },
+        {
+          id: "column-3",
+          width: { kind: "fixed", value: 360 },
+          windowIds: ["window-4"],
+        },
+      ],
+      desktopId: "desktop-1",
+      outputId: "DP-1",
+      viewportOffset: 120,
+    });
+    expect(engine.snapshot(otherOutput, desktop)).toEqual(otherBefore);
+
+    expect(engine.moveActiveColumn(windowId("window-2"), "right")).toBe(true);
+    expect(
+      engine.snapshot(output, desktop).columns.map((column) => column.id),
+    ).toEqual(["column-1", "column-2", "column-3"]);
+  });
+
+  it("does not move a column past a context boundary", () => {
+    const engine = new LayoutEngine();
+
+    for (const index of [1, 2]) {
+      engine.manageWindow({
+        columnId: columnId(`column-${String(index)}`),
+        desktopId: desktop,
+        outputId: output,
+        width: { kind: "fixed", value: 300 },
+        windowId: windowId(`window-${String(index)}`),
+      });
+    }
+    engine.activateWindow(windowId("window-1"));
+
+    const before = engine.snapshot(output, desktop);
+    expect(engine.moveActiveColumn(windowId("window-1"), "left")).toBe(false);
+    expect(engine.moveActiveColumn(windowId("window-2"), "left")).toBe(false);
+    expect(engine.moveActiveColumn(windowId("window-2"), "right")).toBe(false);
+    expect(engine.moveActiveColumn(windowId("missing"), "left")).toBe(false);
+    expect(engine.snapshot(output, desktop)).toEqual(before);
+  });
+
   it("stores viewport offsets independently for each context", () => {
     const engine = new LayoutEngine();
     const secondOutput = outputId("HDMI-A-1");

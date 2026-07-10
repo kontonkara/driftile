@@ -177,6 +177,39 @@ export class LayoutEngine {
     return context.columns[targetIndex]?.windowIds[0] ?? null;
   }
 
+  moveActiveColumn(
+    windowId: WindowId,
+    direction: HorizontalDirection,
+  ): boolean {
+    const placement = this.placements.get(windowId);
+
+    if (!placement) {
+      return false;
+    }
+
+    const context = this.contexts.get(placement.contextKey);
+
+    if (!context || context.activeColumnId !== placement.columnId) {
+      return false;
+    }
+
+    const columnIndex = context.columns.findIndex(
+      (column) => column.id === placement.columnId,
+    );
+    const targetIndex =
+      direction === "left" ? columnIndex - 1 : columnIndex + 1;
+    const column = context.columns[columnIndex];
+    const target = context.columns[targetIndex];
+
+    if (columnIndex < 0 || !column || !target) {
+      return false;
+    }
+
+    context.columns[columnIndex] = target;
+    context.columns[targetIndex] = column;
+    return true;
+  }
+
   unmanageWindow(windowId: WindowId): boolean {
     const placement = this.placements.get(windowId);
 

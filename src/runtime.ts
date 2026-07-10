@@ -49,6 +49,14 @@ export function focusRight(): void {
   controller?.focusRight();
 }
 
+export function moveColumnLeft(): void {
+  controller?.moveColumnLeft();
+}
+
+export function moveColumnRight(): void {
+  controller?.moveColumnRight();
+}
+
 export function probeTopology(): void {
   controller?.probeTopology();
 }

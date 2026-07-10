@@ -418,6 +418,258 @@ describe("RuntimeController", () => {
     expect(fixture.activationCount).toBe(2);
   });
 
+  it("moves the active column while preserving focus and revealing it", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const windows = [
+      createTrackedWindow("window-1", output, desktop),
+      createTrackedWindow("window-2", output, desktop),
+      createTrackedWindow("window-3", output, desktop),
+    ];
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map((window) => window.window),
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+    const positions = () =>
+      windows.map((window) => window.window.frameGeometry.x);
+
+    controller.start();
+    expect(positions()).toEqual([-475, 20, 515]);
+    expect(controller.moveColumnLeft()).toBe(true);
+    expect(positions()).toEqual([-475, 515, 20]);
+    expect(controller.moveColumnLeft()).toBe(true);
+    expect(positions()).toEqual([495, 990, 0]);
+    const writesAtBoundary = windows.map((window) => window.writeCount);
+    expect(controller.moveColumnLeft()).toBe(false);
+    expect(windows.map((window) => window.writeCount)).toEqual(
+      writesAtBoundary,
+    );
+
+    expect(controller.moveColumnRight()).toBe(true);
+    expect(positions()).toEqual([0, 990, 495]);
+    expect(controller.moveColumnRight()).toBe(true);
+    expect(positions()).toEqual([-475, 20, 515]);
+    expect(controller.moveColumnRight()).toBe(false);
+    expect(fixture.workspace.activeWindow).toBe(windows[2]?.window);
+    expect(fixture.activationCount).toBe(0);
+
+    controller.stop();
+    expect(positions()).toEqual([0, 0, 0]);
+  });
+
+  it("rolls back a column move after a partial geometry failure", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const windows = [
+      createTrackedWindow("window-1", output, desktop),
+      createTrackedWindow("window-2", output, desktop),
+      createTrackedWindow("window-3", output, desktop),
+    ];
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map((window) => window.window),
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+    const warning = console.warn;
+
+    controller.start();
+    const before = windows.map((window) => ({
+      ...window.window.frameGeometry,
+    }));
+    windows[1]?.setWriteBehavior(() => {
+      throw new Error("geometry rejected");
+    });
+    console.warn = () => undefined;
+
+    try {
+      expect(controller.moveColumnLeft()).toBe(false);
+    } finally {
+      console.warn = warning;
+      windows[1]?.setWriteBehavior(null);
+    }
+
+    expect(windows.map((window) => window.window.frameGeometry)).toEqual(
+      before,
+    );
+    expect(fixture.workspace.activeWindow).toBe(windows[2]?.window);
+    expect(scheduler.pendingCount).toBe(0);
+    expect(controller.moveColumnLeft()).toBe(true);
+    expect(windows.map((window) => window.window.frameGeometry.x)).toEqual([
+      -475, 515, 20,
+    ]);
+  });
+
+  it("does not move a suspended active column", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const active = createTrackedWindow("window-2", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window, active.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+
+    controller.start();
+    setWindowState("fullscreen", active, true);
+    scheduler.flush();
+    const frames = [
+      { ...first.window.frameGeometry },
+      { ...active.window.frameGeometry },
+    ];
+    const writes = [first.writeCount, active.writeCount];
+
+    expect(controller.moveColumnLeft()).toBe(false);
+    expect([first.window.frameGeometry, active.window.frameGeometry]).toEqual(
+      frames,
+    );
+    expect([first.writeCount, active.writeCount]).toEqual(writes);
+  });
+
+  it("moves a grouped column without writing its suspended sibling", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const sibling = createTrackedWindow("window-1", output, desktop);
+    const active = createTrackedWindow("window-2", output, desktop);
+    const other = createTrackedWindow("window-3", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [sibling.window, active.window, other.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+      scheduleResume: scheduler.schedule,
+    });
+
+    controller.start();
+    const layout = new LayoutEngine();
+    layout.restoreColumns({
+      activeColumnId: columnId("column:group"),
+      columns: [
+        {
+          column: {
+            id: columnId("column:other"),
+            width: { kind: "proportion", value: 0.5 },
+            windowIds: [windowId("window-3")],
+          },
+          index: 0,
+        },
+        {
+          column: {
+            id: columnId("column:group"),
+            width: { kind: "proportion", value: 0.5 },
+            windowIds: [windowId("window-1"), windowId("window-2")],
+          },
+          index: 1,
+        },
+      ],
+      desktopId: desktopId(desktop.id),
+      outputId: outputId(output.name),
+    });
+    (
+      controller as unknown as {
+        layout: LayoutEngine;
+      }
+    ).layout = layout;
+    fixture.workspace.activeWindow = active.window;
+    controller.reconcile();
+    setWindowState("fullscreen", sibling, true);
+    scheduler.flush();
+    const suspendedFrame = { ...sibling.window.frameGeometry };
+    const suspendedWrites = sibling.writeCount;
+
+    expect(controller.moveColumnLeft()).toBe(true);
+    expect(
+      layout
+        .snapshot(outputId(output.name), desktopId(desktop.id))
+        .columns.map((column) => column.id),
+    ).toEqual(["column:group", "column:other"]);
+    expect(sibling.window.frameGeometry).toEqual(suspendedFrame);
+    expect(sibling.writeCount).toBe(suspendedWrites);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+
+    setWindowState("fullscreen", sibling, false);
+
+    for (
+      let attempt = 0;
+      attempt < 6 && scheduler.pendingCount > 0;
+      attempt += 1
+    ) {
+      scheduler.flush();
+    }
+
+    expect(sibling.window.frameGeometry.x).toBe(active.window.frameGeometry.x);
+    expect(sibling.window.frameGeometry).not.toEqual(suspendedFrame);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+  });
+
+  it("does not move a column while a topology barrier is unsettled", () => {
+    const output = createTrackedOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const windows = [
+      createTrackedWindow("window-1", output.output, desktop),
+      createTrackedWindow("window-2", output.output, desktop),
+      createTrackedWindow("window-3", output.output, desktop),
+    ];
+    const fixture = createWorkspace(
+      output.output,
+      desktop,
+      [output.output],
+      [desktop],
+      windows.map((window) => window.window),
+    );
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    controller.start();
+    const frames = windows.map((window) => ({
+      ...window.window.frameGeometry,
+    }));
+    const writes = windows.map((window) => window.writeCount);
+    output.geometryChanged.emit();
+
+    expect(controller.moveColumnLeft()).toBe(false);
+    expect(windows.map((window) => window.window.frameGeometry)).toEqual(
+      frames,
+    );
+    expect(windows.map((window) => window.writeCount)).toEqual(writes);
+  });
+
   it("plans a large startup context with constant geometry lookups", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
@@ -1506,6 +1758,18 @@ describe("RuntimeController", () => {
     expect(controller.managedCount).toBe(2);
     expect(first.window.frameGeometry.x).toBe(10);
     expect(second.window.frameGeometry.x).toBe(505);
+    expect(third.window.frameGeometry).toEqual({
+      height: 200,
+      width: 300,
+      x: 0,
+      y: 0,
+    });
+    expect(third.writeCount).toBe(0);
+
+    fixture.workspace.activeWindow = second.window;
+    expect(controller.moveColumnLeft()).toBe(true);
+    expect(first.window.frameGeometry.x).toBe(505);
+    expect(second.window.frameGeometry.x).toBe(10);
     expect(third.window.frameGeometry).toEqual({
       height: 200,
       width: 300,
@@ -3740,6 +4004,37 @@ describe("RuntimeController", () => {
 
     setup.controller.stop();
     expect(first?.window.frameGeometry).toEqual(externalFrame);
+  });
+
+  it("does not reorder resident columns while a capacity lease is parked", () => {
+    const setup = createCapacityFixture();
+
+    setup.controller.start();
+    setup.fixture.setScreens([setup.output.output, setup.addedOutput.output]);
+    setup.fixture.screensChanged.emit();
+    flushTopologyRecovery(setup.resumeScheduler, setup.workScheduler);
+    flushCapacityParking(setup.resumeScheduler, setup.workScheduler);
+    expect(setup.controller.managedCount).toBe(2);
+
+    const layout = (
+      setup.controller as unknown as {
+        layout: LayoutEngine;
+      }
+    ).layout;
+    const before = layout.snapshot(
+      outputId(setup.output.output.name),
+      desktopId(setup.desktop.id),
+    );
+    const writes = setup.windows.map((window) => window.writeCount);
+
+    expect(setup.controller.moveColumnLeft()).toBe(false);
+    expect(
+      layout.snapshot(
+        outputId(setup.output.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(before);
+    expect(setup.windows.map((window) => window.writeCount)).toEqual(writes);
   });
 
   it("restores an untouched committed parking lease when stopped", () => {

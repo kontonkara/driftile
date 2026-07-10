@@ -284,6 +284,14 @@ export class RuntimeController {
     return this.focusAdjacent("right");
   }
 
+  moveColumnLeft(): boolean {
+    return this.moveActiveColumn("left");
+  }
+
+  moveColumnRight(): boolean {
+    return this.moveActiveColumn("right");
+  }
+
   probeTopology(): void {
     if (!this.started || this.topologyStabilizing) {
       return;
@@ -736,6 +744,204 @@ export class RuntimeController {
 
     this.workspace.activeWindow = target;
     return true;
+  }
+
+  private moveActiveColumn(direction: HorizontalDirection): boolean {
+    if (
+      !this.started ||
+      this.startupStabilizationToken !== null ||
+      this.hasTopologyBarrier()
+    ) {
+      return false;
+    }
+
+    const sampledGeometries = this.sampleSettledVisibleContextGeometries();
+
+    if (!sampledGeometries || !this.synchronizePendingWindows()) {
+      return false;
+    }
+
+    if (this.hasTopologyBarrier()) {
+      return false;
+    }
+
+    const activeWindow = this.workspace.activeWindow;
+
+    if (!activeWindow) {
+      return false;
+    }
+
+    const activeId = windowId(String(activeWindow.internalId));
+
+    if (
+      this.suspendedWindows.has(activeId) ||
+      this.requestedSuspensions.has(activeId) ||
+      !isGeometryWritable(activeWindow)
+    ) {
+      return false;
+    }
+
+    const owner = this.managedWindows.get(activeId);
+    const context = owner ? this.contexts.get(owner.contextKey) : undefined;
+    const observedActive = normalizeWindow(activeWindow);
+    const activeContext = observedActive
+      ? managedContext(observedActive)
+      : null;
+
+    if (
+      !owner ||
+      !context ||
+      !activeContext ||
+      contextKey(activeContext) !== owner.contextKey ||
+      this.hasPendingCapacityState(context.key)
+    ) {
+      return false;
+    }
+
+    const before = this.layout.snapshot(context.outputId, context.desktopId);
+    const activeColumn = before.columns.find((column) =>
+      column.windowIds.includes(activeId),
+    );
+
+    if (
+      !activeColumn ||
+      activeColumn.windowIds.some((id) => {
+        const memberOwner = this.managedWindows.get(id);
+        const source = this.observer.source(id);
+        const observed = source ? normalizeWindow(source) : null;
+        const memberContext = observed ? managedContext(observed) : null;
+        return (
+          memberOwner?.contextKey !== context.key ||
+          !source ||
+          !memberContext ||
+          contextKey(memberContext) !== context.key
+        );
+      })
+    ) {
+      return false;
+    }
+
+    const contextGeometry = sampledGeometries.get(context.key);
+
+    if (
+      !contextGeometry ||
+      !this.layout.moveActiveColumn(activeId, direction)
+    ) {
+      return false;
+    }
+
+    const oppositeDirection: HorizontalDirection =
+      direction === "left" ? "right" : "left";
+    const restoreLayout = (): boolean => {
+      if (!this.layout.moveActiveColumn(activeId, oppositeDirection)) {
+        return false;
+      }
+
+      this.layout.setViewportOffset(
+        context.outputId,
+        context.desktopId,
+        before.viewportOffset,
+      );
+      return true;
+    };
+    let movedLayout: ReturnType<typeof solveStripGeometry>;
+
+    try {
+      movedLayout = solveStripGeometry({
+        context: this.layout.snapshot(context.outputId, context.desktopId),
+        devicePixelRatio: contextGeometry.devicePixelRatio,
+        gap: this.gap,
+        pixelGridOrigin: contextGeometry.pixelGridOrigin,
+        workArea: contextGeometry.workArea,
+      });
+    } catch (error) {
+      restoreLayout();
+      console.warn(
+        `[driftile] column move rejected context=${context.key} error=${String(error)}`,
+      );
+      return false;
+    }
+
+    const writableLayout = movedLayout.windows.filter(
+      (window) => !this.suspendedWindows.has(window.windowId),
+    );
+
+    if (
+      !this.canApplyLayout(movedLayout.maxViewportOffset) ||
+      writableLayout.some(
+        (window) =>
+          !this.geometry.canApplyFrame(window.windowId, window.frame, context),
+      )
+    ) {
+      restoreLayout();
+      return false;
+    }
+
+    this.dirtyContexts.delete(context.key);
+    let forwardWrites = 0;
+    let forwardError: string | null = null;
+
+    try {
+      forwardWrites = this.reconcileContext(context, sampledGeometries);
+    } catch (error) {
+      forwardError = String(error);
+    }
+
+    if (
+      forwardError === null &&
+      !this.hasTopologyBarrier() &&
+      !this.dirtyContexts.has(context.key)
+    ) {
+      this.lastWrites = forwardWrites;
+      return true;
+    }
+
+    const restored = restoreLayout();
+    let compensationWrites = 0;
+
+    if (restored && !this.hasTopologyBarrier()) {
+      this.dirtyContexts.delete(context.key);
+
+      try {
+        compensationWrites = this.reconcileContext(context, sampledGeometries);
+      } catch (error) {
+        forwardError ??= String(error);
+        this.markContextDirty(context);
+      }
+    } else {
+      this.markContextDirty(context);
+    }
+
+    this.lastWrites = forwardWrites + compensationWrites;
+
+    if (this.dirtyContexts.has(context.key)) {
+      this.scheduleWork();
+    }
+
+    if (forwardError !== null) {
+      console.warn(
+        `[driftile] column move rolled back context=${context.key} error=${forwardError}`,
+      );
+    }
+
+    return false;
+  }
+
+  private hasPendingCapacityState(key: string): boolean {
+    return Boolean(
+      this.capacityParkOperations.has(key) ||
+      this.capacityCanceledParks.has(key) ||
+      this.capacityLeasesByContext.get(key)?.size ||
+      this.capacityParkBackoffs.has(key),
+    );
+  }
+
+  private hasTopologyBarrier(): boolean {
+    return (
+      this.topologyStabilizing ||
+      this.topologyRetryPending ||
+      this.topologyWindowOrder !== null
+    );
   }
 
   private scheduleStartupStabilization(): void {
