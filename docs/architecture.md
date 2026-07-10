@@ -34,6 +34,7 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Reorders the active whole column inside one settled context and keeps focus unchanged.
 - Resizes the active whole column within grouped window constraints and retries waiting capacity after a successful shrink.
 - Focuses vertical stack members; reorders, merges, and extracts them while preserving KWin focus.
+- Resolves directional output neighbors from logical output geometry and transfers the active tiled window between both visible contexts.
 - Releases explicitly floating windows from geometry ownership and restores their anchored layout slots on return.
 - Owns startup, reconfiguration, and shutdown sequencing.
 
@@ -85,6 +86,7 @@ RuntimeState
 - Apply stack edits with compare-and-swap model rollback and exact compensating frame writes after partial failure.
 - Resolve direct stack insertion inside the active context, skipping singleton columns without wrapping and preserving every intermediate column.
 - Transfer a tiled window between existing desktops through an immutable two-context preview, then commit both contexts only after KWin accepts the desktop switch and destination geometry.
+- Transfer a tiled window between outputs through the same two-context preview, then commit only after KWin accepts the output and desktop mechanism plus both visible layouts.
 - Apply floating transitions from immutable previews, commit ownership only after every geometry request succeeds, and defer later context writes until asynchronous frames settle.
 - Allow horizontal overflow and viewport scrolling when KWin reports one output.
 - Queue a candidate window unmanaged if it would introduce overflow with multiple outputs, then retry it when that context gains capacity.
@@ -117,5 +119,6 @@ RuntimeState
 - Verify vertical focus, member reorder, contextual merge and extraction, suspended members, and structural rollback.
 - Verify the settled topology barrier, output replacement and removal, dock and silent work-area invalidations, sticky restore invalidation, and deterministic capacity recovery.
 - Verify independent contexts with native Wayland and Xwayland windows on two virtual outputs.
+- Verify directional output transfers, no-wrap boundaries, per-output desktop selection, and exact two-context compensation.
 - Exercise live output reconfiguration against an isolated real KWin session.
 - Run integration smoke tests in an isolated KWin session or NixOS VM.
