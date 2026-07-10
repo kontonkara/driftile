@@ -16,7 +16,7 @@ The current prototype tiles eligible normal windows only in the output and deskt
 
 ## Development
 
-Requirements: Node.js 22 or newer, npm, and KDE Frameworks 6 KPackage tools.
+Requirements: Node.js 22 or newer, npm, ShellCheck, and KDE Frameworks 6 KPackage tools.
 
 ```bash
 npm ci
@@ -28,11 +28,14 @@ On systems with Nix, `nix develop` provides the complete development toolchain.
 
 The generated KWin package is written to `dist/driftile.kwinscript`.
 
+Run `npm run test:integration` for an isolated virtual-KWin lifecycle test. See [Testing](docs/testing.md) for coverage and requirements.
+
 ## Documentation
 
 - [Product scope](docs/product-scope.md)
 - [Architecture](docs/architecture.md)
 - [Roadmap](docs/roadmap.md)
+- [Testing](docs/testing.md)
 
 ## License
 

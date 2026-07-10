@@ -21,7 +21,7 @@ export async function buildProject() {
     legalComments: "none",
     outfile: runtimeOutput,
     platform: "neutral",
-    target: "es2020",
+    target: "es2017",
     treeShaking: true,
   });
 }

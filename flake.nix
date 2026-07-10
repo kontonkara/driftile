@@ -20,11 +20,20 @@
         {
           default = pkgs.mkShell {
             packages = with pkgs; [
+              dbus
               gh
+              kdePackages.kconfig
               kdePackages.kpackage
+              kdePackages.kwin
               kdePackages.qtdeclarative
               nodejs_24
               reuse
+              shellcheck
+              systemd
+              xterm
+              xwininfo
+              xprop
+              xwayland
               zip
             ];
           };
