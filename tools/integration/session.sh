@@ -93,7 +93,10 @@ window_match_id() {
     org.kde.krunner1 \
     Match \
     s "$window_title" | jq --exit-status --raw-output --arg title "$window_title" '
-      [.data[0][] | select(.[1] == $title)] as $matches
+      [
+        .data[0][]
+        | select(.[1] == $title or .[1] == ($title + " [active]"))
+      ] as $matches
       | select($matches | length == 1)
       | $matches[0][0]
     '
@@ -140,7 +143,10 @@ window_action_match_id() {
     org.kde.krunner1 \
     Match \
     s "$window_title $action" | jq --exit-status --raw-output --arg title "$window_title" '
-      [.data[0][] | select(.[1] == $title)] as $matches
+      [
+        .data[0][]
+        | select(.[1] == $title or .[1] == ($title + " [active]"))
+      ] as $matches
       | select($matches | length == 1)
       | $matches[0][0]
     '
@@ -207,6 +213,35 @@ activate_window() {
     Run \
     ss "$match_id" "" \
     >/dev/null
+}
+
+window_is_active() {
+  local window_title=$1
+
+  busctl --user --json=short call \
+    org.kde.KWin \
+    /WindowsRunner \
+    org.kde.krunner1 \
+    Match \
+    s "$window_title" 2>/dev/null \
+    | jq --exit-status --arg active_title "$window_title [active]" \
+      '[.data[0][] | select(.[1] == $active_title)] | length == 1' \
+      >/dev/null
+}
+
+wait_for_active() {
+  local window_title=$1
+  local attempt
+
+  for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
+    if window_is_active "$window_title"; then
+      return 0
+    fi
+
+    sleep 0.05
+  done
+
+  return 1
 }
 
 window_frame_geometry() {
@@ -726,19 +761,25 @@ set_plugin_state() {
 start_client() {
   local protocol=$1
   local window_title=$2
+  local mark_active=${3:-false}
+  local -a client_arguments=("$window_title")
+
+  if [[ "$mark_active" == true ]]; then
+    client_arguments=(--mark-active "$window_title")
+  fi
 
   case "$protocol" in
     wayland)
       QT_QPA_PLATFORM=wayland qml \
         "${qml_options[@]}" \
         -f "$DRIFTILE_SMOKE_CLIENT" \
-        -- "$window_title" &
+        -- "${client_arguments[@]}" &
       ;;
     x11 | xwayland)
       QT_QPA_PLATFORM=xcb qml \
         "${qml_options[@]}" \
         -f "$DRIFTILE_SMOKE_CLIENT" \
-        -- "$window_title" &
+        -- "${client_arguments[@]}" &
       ;;
     *)
       fail "unsupported client protocol: $protocol"
@@ -926,7 +967,7 @@ run_scenario() {
 
   start_client "$protocol" "$first_title"
   capture_stable_geometry "$first_title" >/dev/null || fail "the first $protocol test window did not stabilize"
-  start_client "$protocol" "$second_title"
+  start_client "$protocol" "$second_title" true
   capture_stable_geometry "$second_title" >/dev/null || fail "the second $protocol test window did not stabilize"
   start_client "$protocol" "$third_title"
 
@@ -977,6 +1018,63 @@ run_scenario() {
     "$second_title" "32,16,616,688" \
     "$third_title" "664,16,616,688" || \
     fail "Driftile did not move the active $protocol column right: $(describe_layout "$first_title" "$second_title" "$third_title")"
+
+  activate_window "$second_title" || \
+    fail "KWin could not activate the middle $protocol window for column resizing"
+  wait_for_active "$second_title" || \
+    fail "KWin did not focus the middle $protocol window before column resizing"
+  wait_for_layout \
+    "$first_title" "-600,16,616,688" \
+    "$second_title" "32,16,616,688" \
+    "$third_title" "664,16,616,688" || \
+    fail "Driftile did not preserve the middle $protocol column before resizing: $(describe_layout "$first_title" "$second_title" "$third_title")"
+
+  wait_for_shortcut "Driftile Decrease Column Width" || \
+    fail "KGlobalAccel did not register the decrease-width shortcut"
+  wait_for_shortcut "Driftile Increase Column Width" || \
+    fail "KGlobalAccel did not register the increase-width shortcut"
+  wait_for_shortcut "Driftile Reset Column Width" || \
+    fail "KGlobalAccel did not register the reset-width shortcut"
+
+  invoke_shortcut "Driftile Increase Column Width" || \
+    fail "KGlobalAccel could not invoke the increase-width shortcut"
+  wait_for_layout \
+    "$first_title" "-600,16,616,688" \
+    "$second_title" "32,16,695,688" \
+    "$third_title" "743,16,616,688" || \
+    fail "Driftile did not increase the active $protocol column width: $(describe_layout "$first_title" "$second_title" "$third_title")"
+  wait_for_active "$second_title" || \
+    fail "Driftile changed $protocol focus after increasing column width"
+
+  invoke_shortcut "Driftile Decrease Column Width" || \
+    fail "KGlobalAccel could not invoke the decrease-width shortcut"
+  wait_for_layout \
+    "$first_title" "-600,16,616,688" \
+    "$second_title" "32,16,616,688" \
+    "$third_title" "664,16,616,688" || \
+    fail "Driftile did not restore the active $protocol column width after decreasing: $(describe_layout "$first_title" "$second_title" "$third_title")"
+  wait_for_active "$second_title" || \
+    fail "Driftile changed $protocol focus after restoring column width"
+
+  invoke_shortcut "Driftile Decrease Column Width" || \
+    fail "KGlobalAccel could not invoke the decrease-width shortcut"
+  wait_for_layout \
+    "$first_title" "-537,16,616,688" \
+    "$second_title" "95,16,537,688" \
+    "$third_title" "648,16,616,688" || \
+    fail "Driftile did not decrease the active $protocol column width: $(describe_layout "$first_title" "$second_title" "$third_title")"
+  wait_for_active "$second_title" || \
+    fail "Driftile changed $protocol focus after decreasing column width"
+
+  invoke_shortcut "Driftile Reset Column Width" || \
+    fail "KGlobalAccel could not invoke the reset-width shortcut"
+  wait_for_layout \
+    "$first_title" "-537,16,616,688" \
+    "$second_title" "95,16,616,688" \
+    "$third_title" "727,16,616,688" || \
+    fail "Driftile did not reset the active $protocol column width: $(describe_layout "$first_title" "$second_title" "$third_title")"
+  wait_for_active "$second_title" || \
+    fail "Driftile changed $protocol focus after resetting column width"
 
   set_plugin_state false
   wait_for_script_state false || fail "KWin did not unload Driftile"

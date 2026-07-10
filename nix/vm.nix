@@ -101,6 +101,33 @@ let
         return 1
       }
 
+      wait_for_shortcuts() {
+        local attempt
+        local shortcuts
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          shortcuts=$(busctl --user call \
+            org.kde.kglobalaccel \
+            /component/kwin \
+            org.kde.kglobalaccel.Component \
+            shortcutNames 2>/dev/null || true)
+
+          if [[ "$shortcuts" == *"Driftile Focus Left"* \
+            && "$shortcuts" == *"Driftile Focus Right"* \
+            && "$shortcuts" == *"Driftile Move Column Left"* \
+            && "$shortcuts" == *"Driftile Move Column Right"* \
+            && "$shortcuts" == *"Driftile Decrease Column Width"* \
+            && "$shortcuts" == *"Driftile Increase Column Width"* \
+            && "$shortcuts" == *"Driftile Reset Column Width"* ]]; then
+            return 0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
       window_frame_x() {
         local id
 
@@ -113,6 +140,20 @@ let
           s "$id" 2>/dev/null \
           | jq --exit-status --raw-output \
             '.data[0].x.data | select(type == "number") | round | tostring'
+      }
+
+      window_frame_width() {
+        local id
+
+        id=$(window_id "$1") || return 1
+        busctl --user --json=short call \
+          org.kde.KWin \
+          /KWin \
+          org.kde.KWin \
+          getWindowInfo \
+          s "$id" 2>/dev/null \
+          | jq --exit-status --raw-output \
+            '.data[0].width.data | select(type == "number") | round | tostring'
       }
 
       wait_for_layout() {
@@ -128,6 +169,60 @@ let
 
           if [[ "$first_x" == "$1" && "$second_x" == "$2" && "$third_x" == "$3" ]]; then
             return 0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      wait_for_middle_width() {
+        local attempt
+        local comparison=$1
+        local expected_first=$2
+        local reference_second=$3
+        local expected_third=$4
+        local first_width
+        local matches
+        local second_width
+        local stable_samples=0
+        local third_width
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          first_width=$(window_frame_width "$title_a" 2>/dev/null || true)
+          second_width=$(window_frame_width "$title_b" 2>/dev/null || true)
+          third_width=$(window_frame_width "$title_c" 2>/dev/null || true)
+          matches=false
+
+          if [[ "$first_width" =~ ^[0-9]+$ \
+            && "$second_width" =~ ^[0-9]+$ \
+            && "$third_width" =~ ^[0-9]+$ ]] \
+            && ((first_width == expected_first && third_width == expected_third)); then
+            case "$comparison" in
+              equal)
+                ((second_width == reference_second)) && matches=true
+                ;;
+              greater)
+                ((second_width > reference_second)) && matches=true
+                ;;
+              less)
+                ((second_width < reference_second)) && matches=true
+                ;;
+              *)
+                return 1
+                ;;
+            esac
+          fi
+
+          if [[ "$matches" == true ]]; then
+            stable_samples=$((stable_samples + 1))
+
+            if ((stable_samples >= 2)); then
+              return 0
+            fi
+          else
+            stable_samples=0
           fi
 
           sleep 0.1
@@ -157,7 +252,8 @@ let
             /component/kwin \
             org.kde.kglobalaccel.Component \
             shortcutNames 2>/dev/null \
-            | grep -o 'Driftile \(Focus\|Move Column\) \(Left\|Right\)' \
+            | grep -oE \
+              'Driftile (Focus (Left|Right)|Move Column (Left|Right)|(Decrease|Increase|Reset) Column Width)' \
             | sort -u \
             | tr '\n' ' ' || true
           printf '\nwindow A captions: '
@@ -188,14 +284,28 @@ let
             "$(window_frame_x "$title_a" 2>/dev/null || printf missing)" \
             "$(window_frame_x "$title_b" 2>/dev/null || printf missing)" \
             "$(window_frame_x "$title_c" 2>/dev/null || printf missing)"
+          printf 'frame widths: A=%s B=%s C=%s\n' \
+            "$(window_frame_width "$title_a" 2>/dev/null || printf missing)" \
+            "$(window_frame_width "$title_b" 2>/dev/null || printf missing)" \
+            "$(window_frame_width "$title_c" 2>/dev/null || printf missing)"
         } >> /tmp/shared/driftile-focus-diagnostics
       }
 
       verify_focus() {
+        local baseline_first_width
+        local baseline_second_width
+        local baseline_third_width
+
         wait_for_window "$title_a" \
           && wait_for_window "$title_b" \
           && wait_for_window "$title_c" \
           || return 1
+
+        if ! wait_for_shortcuts; then
+          record_focus_state "shortcut registration failed"
+          return 1
+        fi
+
         record_focus_state "windows ready"
 
         activate_window "$title_c" \
@@ -239,6 +349,62 @@ let
           && wait_for_layout -800 32 864 \
           || return 1
         record_focus_state "focus right to C invoked"
+
+        activate_window "$title_b" \
+          && wait_for_active "$title_b" \
+          || return 1
+
+        baseline_first_width=$(window_frame_width "$title_a") || return 1
+        baseline_second_width=$(window_frame_width "$title_b") || return 1
+        baseline_third_width=$(window_frame_width "$title_c") || return 1
+
+        if [[ ! "$baseline_first_width" =~ ^[0-9]+$ \
+          || ! "$baseline_second_width" =~ ^[0-9]+$ \
+          || ! "$baseline_third_width" =~ ^[0-9]+$ ]]; then
+          return 1
+        fi
+
+        record_focus_state "window B activated for column resizing"
+
+        invoke_shortcut "Driftile Increase Column Width" \
+          && wait_for_middle_width \
+            greater \
+            "$baseline_first_width" \
+            "$baseline_second_width" \
+            "$baseline_third_width" \
+          && wait_for_active "$title_b" \
+          || return 1
+        record_focus_state "column B width increased"
+
+        invoke_shortcut "Driftile Decrease Column Width" \
+          && wait_for_middle_width \
+            equal \
+            "$baseline_first_width" \
+            "$baseline_second_width" \
+            "$baseline_third_width" \
+          && wait_for_active "$title_b" \
+          || return 1
+        record_focus_state "column B width restored by decrease"
+
+        invoke_shortcut "Driftile Decrease Column Width" \
+          && wait_for_middle_width \
+            less \
+            "$baseline_first_width" \
+            "$baseline_second_width" \
+            "$baseline_third_width" \
+          && wait_for_active "$title_b" \
+          || return 1
+        record_focus_state "column B width decreased"
+
+        invoke_shortcut "Driftile Reset Column Width" \
+          && wait_for_middle_width \
+            equal \
+            "$baseline_first_width" \
+            "$baseline_second_width" \
+            "$baseline_third_width" \
+          && wait_for_active "$title_b" \
+          || return 1
+        record_focus_state "column B width reset"
       }
 
       loaded=false
