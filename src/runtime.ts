@@ -48,3 +48,7 @@ export function focusLeft(): void {
 export function focusRight(): void {
   controller?.focusRight();
 }
+
+export function probeTopology(): void {
+  controller?.probeTopology();
+}

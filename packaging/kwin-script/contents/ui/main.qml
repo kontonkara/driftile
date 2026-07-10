@@ -38,6 +38,13 @@ QtObject {
         }
     }
 
+    readonly property Timer topologyTimer: Timer {
+        interval: 2000
+        repeat: true
+        running: true
+        onTriggered: Runtime.DriftileRuntime.probeTopology()
+    }
+
     readonly property ShortcutHandler focusLeftShortcut: ShortcutHandler {
         name: "Driftile Focus Left"
         text: "Driftile: Focus left"

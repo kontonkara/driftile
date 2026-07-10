@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { columnId, desktopId, outputId, windowId } from "../src/core/ids";
+import { LayoutEngine } from "../src/core/layout-engine";
 import type {
   KWinOutput,
   KWinSignal,
@@ -50,7 +52,11 @@ class ManualScheduler {
 
 interface TrackedWindow {
   readonly desktopsChanged: Signal<[]>;
+  readonly frameGeometryChanged: Signal<
+    [oldGeometry: KWinWindow["frameGeometry"]]
+  >;
   readonly fullScreenChanged: Signal<[]>;
+  readonly hiddenChanged: Signal<[]>;
   readonly interactiveMoveResizeFinished: Signal<[]>;
   readonly maximizedAboutToChange: Signal<[mode: number]>;
   readonly maximizedChanged: Signal<[]>;
@@ -58,6 +64,11 @@ interface TrackedWindow {
   readonly moveResizedChanged: Signal<[]>;
   readonly outputChanged: Signal<[oldOutput?: KWinOutput | null]>;
   readonly requestedTileChanged: Signal<[]>;
+  setFrameGeometry(frame: KWinWindow["frameGeometry"]): void;
+  setWriteBehavior(
+    behavior:
+      ((frame: KWinWindow["frameGeometry"], commit: () => void) => void) | null,
+  ): void;
   readonly tileChanged: Signal<[tile: object | null]>;
   readonly window: KWinWindow;
   readonly writeCount: number;
@@ -70,7 +81,11 @@ function createTrackedWindow(
   overrides: Partial<KWinWindow> = {},
 ): TrackedWindow {
   const desktopsChanged = new Signal<[]>();
+  const frameGeometryChanged = new Signal<
+    [oldGeometry: KWinWindow["frameGeometry"]]
+  >();
   const fullScreenChanged = new Signal<[]>();
+  const hiddenChanged = new Signal<[]>();
   let frameGeometry = { height: 200, width: 300, x: 0, y: 0 };
   const interactiveMoveResizeFinished = new Signal<[]>();
   const maximizedAboutToChange = new Signal<[mode: number]>();
@@ -81,6 +96,9 @@ function createTrackedWindow(
   const requestedTileChanged = new Signal<[]>();
   const tileChanged = new Signal<[tile: object | null]>();
   let writeCount = 0;
+  let writeBehavior:
+    ((frame: KWinWindow["frameGeometry"], commit: () => void) => void) | null =
+    null;
   const window: KWinWindow = {
     deleted: false,
     desktops: [desktop],
@@ -89,8 +107,10 @@ function createTrackedWindow(
     dialog: false,
     dock: false,
     frameGeometry,
+    frameGeometryChanged,
     fullScreen: false,
     fullScreenChanged,
+    hiddenChanged,
     internalId: id,
     interactiveMoveResizeFinished,
     managed: true,
@@ -122,17 +142,26 @@ function createTrackedWindow(
     enumerable: true,
     get: () => frameGeometry,
     set: (value: KWinWindow["frameGeometry"]) => {
-      frameGeometry = value;
       writeCount += 1;
+
+      if (writeBehavior) {
+        writeBehavior(value, () => {
+          frameGeometry = value;
+        });
+      } else {
+        frameGeometry = value;
+      }
     },
   });
 
   return {
     desktopsChanged,
+    frameGeometryChanged,
     get writeCount() {
       return writeCount;
     },
     fullScreenChanged,
+    hiddenChanged,
     interactiveMoveResizeFinished,
     maximizedAboutToChange,
     maximizedChanged,
@@ -140,6 +169,12 @@ function createTrackedWindow(
     moveResizedChanged,
     outputChanged,
     requestedTileChanged,
+    setFrameGeometry: (frame) => {
+      frameGeometry = frame;
+    },
+    setWriteBehavior: (behavior) => {
+      writeBehavior = behavior;
+    },
     tileChanged,
     window,
   };
@@ -154,7 +189,10 @@ interface WorkspaceFixture {
       output?: KWinOutput,
     ]
   >;
+  readonly screensChanged: Signal<[]>;
   setCurrentDesktop(output: KWinOutput, desktop: KWinVirtualDesktop): void;
+  setScreens(outputs: readonly KWinOutput[]): void;
+  readonly virtualScreenGeometryChanged: Signal<[]>;
   readonly windowActivated: Signal<[window: KWinWindow | null]>;
   readonly windowAdded: Signal<[window: KWinWindow]>;
   readonly windowRemoved: Signal<[window: KWinWindow]>;
@@ -176,12 +214,15 @@ function createWorkspace(
       output?: KWinOutput,
     ]
   >();
+  const screensChanged = new Signal<[]>();
+  const virtualScreenGeometryChanged = new Signal<[]>();
   const windowActivated = new Signal<[window: KWinWindow | null]>();
   const windowAdded = new Signal<[window: KWinWindow]>();
   const windowRemoved = new Signal<[window: KWinWindow]>();
   let activationCount = 0;
   let activeWindow = windows[windows.length - 1] ?? null;
   let currentDesktop = activeDesktop;
+  let currentOutputs = [...outputs];
   const currentDesktops = new Map(
     outputs.map((output) => [output.name, activeDesktop]),
   );
@@ -203,11 +244,13 @@ function createWorkspace(
     currentDesktop,
     currentDesktopChanged,
     desktops,
-    screens: outputs,
+    screens: currentOutputs,
+    screensChanged,
     stackingOrder: windows,
     windowActivated,
     windowAdded,
     windowRemoved,
+    virtualScreenGeometryChanged,
     ...desktopResolver,
   };
   Object.defineProperty(workspace, "activeWindow", {
@@ -225,12 +268,18 @@ function createWorkspace(
     enumerable: true,
     get: () => currentDesktop,
   });
+  Object.defineProperty(workspace, "screens", {
+    configurable: true,
+    enumerable: true,
+    get: () => currentOutputs,
+  });
 
   return {
     get activationCount() {
       return activationCount;
     },
     currentDesktopChanged,
+    screensChanged,
     setCurrentDesktop: (output, desktop) => {
       const previous = perOutputDesktops
         ? (currentDesktops.get(output.name) ?? null)
@@ -241,7 +290,7 @@ function createWorkspace(
       } else {
         currentDesktop = desktop;
 
-        for (const candidate of outputs) {
+        for (const candidate of currentOutputs) {
           currentDesktops.set(candidate.name, desktop);
         }
       }
@@ -256,6 +305,16 @@ function createWorkspace(
         currentDesktopChanged.emit(previous);
       }
     },
+    setScreens: (nextOutputs) => {
+      currentOutputs = [...nextOutputs];
+
+      for (const output of currentOutputs) {
+        if (!currentDesktops.has(output.name)) {
+          currentDesktops.set(output.name, currentDesktop);
+        }
+      }
+    },
+    virtualScreenGeometryChanged,
     windowActivated,
     windowAdded,
     windowRemoved,
@@ -476,6 +535,84 @@ describe("RuntimeController", () => {
 
     expect(controller.managedCount).toBe(1);
     expect(first.window.frameGeometry.x).toBe(10);
+  });
+
+  it("replays an active suspended column after startup topology recovery", () => {
+    const leftOutput = createTrackedOutput("DP-1", 0);
+    const rightOutput = createTrackedOutput("HDMI-A-1", 1000);
+    const desktop = { id: "desktop-1" };
+    const windows = [
+      createTrackedWindow("left-a", leftOutput.output, desktop),
+      createTrackedWindow("left-active", leftOutput.output, desktop),
+      createTrackedWindow("right-a", rightOutput.output, desktop),
+      createTrackedWindow("right-b", rightOutput.output, desktop),
+    ];
+    const active = windows[1];
+
+    if (!active) {
+      throw new Error("missing active startup window");
+    }
+
+    const fixture = createWorkspace(
+      rightOutput.output,
+      desktop,
+      [leftOutput.output, rightOutput.output],
+      [desktop],
+      windows.map((window) => window.window),
+    );
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+      startupStabilizationProbes: 3,
+    });
+
+    controller.start();
+    fixture.workspace.activeWindow = active.window;
+    setWindowState("fullscreen", active, true);
+
+    for (const transferred of windows.slice(0, 2)) {
+      Object.defineProperty(transferred.window, "output", {
+        configurable: true,
+        value: rightOutput.output,
+      });
+      transferred.outputChanged.emit(leftOutput.output);
+    }
+
+    fixture.setScreens([rightOutput.output]);
+    fixture.screensChanged.emit();
+
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      if (resumeScheduler.pendingCount > 0) {
+        resumeScheduler.flush();
+      }
+
+      while (workScheduler.pendingCount > 0) {
+        workScheduler.flush();
+      }
+
+      if (
+        resumeScheduler.pendingCount === 0 &&
+        workScheduler.pendingCount === 0
+      ) {
+        break;
+      }
+    }
+
+    const layout = (
+      controller as unknown as {
+        layout: LayoutEngine;
+      }
+    ).layout;
+    expect(
+      layout.snapshot(outputId(rightOutput.output.name), desktopId(desktop.id))
+        .activeColumnId,
+    ).toBe("column:left-active");
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+    expect(active.writeCount).toBe(0);
   });
 
   it("rolls back layout focus when geometry is temporarily unavailable", () => {
@@ -2296,7 +2433,7 @@ describe("RuntimeController", () => {
     expect(waiting.writeCount).toBe(1);
   });
 
-  it("continues other dirty contexts after a scheduled reconcile error", () => {
+  it("quiesces dirty contexts until client-area sampling recovers", () => {
     const output = createOutput("DP-1", 0);
     const otherOutput = createOutput("HDMI-A-1", 1000);
     const desktop = { id: "desktop-1" };
@@ -2311,7 +2448,8 @@ describe("RuntimeController", () => {
       [desktop],
       [first.window, other.window],
     );
-    const scheduler = new ManualScheduler();
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
     let failFirstOutput = false;
     Object.defineProperty(fixture.workspace, "clientArea", {
       configurable: true,
@@ -2331,7 +2469,8 @@ describe("RuntimeController", () => {
     const controller = new RuntimeController(fixture.workspace, {
       clientAreaOption: 2,
       gap: 10,
-      schedule: scheduler.schedule,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
     });
 
     controller.start();
@@ -2344,16 +2483,16 @@ describe("RuntimeController", () => {
     failFirstOutput = true;
     fixture.currentDesktopChanged.emit(desktop, desktop, output);
     fixture.currentDesktopChanged.emit(desktop, desktop, otherOutput);
-    expect(scheduler.pendingCount).toBe(1);
-    scheduler.flush();
+    expect(workScheduler.pendingCount).toBe(1);
+    workScheduler.flush();
 
-    expect(controller.lastWriteCount).toBe(1);
-    expect(other.window.frameGeometry.x).toBe(1010);
+    expect(other.window.frameGeometry.x).toBe(1800);
+    expect(resumeScheduler.pendingCount).toBe(1);
 
     failFirstOutput = false;
-    fixture.currentDesktopChanged.emit(desktop, desktop, output);
-    scheduler.flush();
-    expect(controller.lastWriteCount).toBe(0);
+    flushTopologyRecovery(resumeScheduler, workScheduler);
+    expect(controller.lastWriteCount).toBe(1);
+    expect(other.window.frameGeometry.x).toBe(1010);
   });
 
   it("quiesces pending transfers and stale callbacks when stopped", () => {
@@ -2456,13 +2595,1710 @@ describe("RuntimeController", () => {
     expect(second.window.frameGeometry.x).toBe(505);
   });
 
-  it("restores unaffected contexts after another output topology changes", () => {
-    const output = createOutput("DP-1", 0);
-    const otherOutput = createOutput("HDMI-A-1", 1000);
+  it("waits for two stable topology samples before reflowing", () => {
+    const trackedOutput = createTrackedOutput("DP-1", 0);
+    const output = trackedOutput.output;
+    const desktop = { id: "desktop-1" };
+    const window = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [window.window],
+    );
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    controller.start();
+    expect(window.window.frameGeometry.x).toBe(10);
+    expect(window.writeCount).toBe(1);
+
+    trackedOutput.setGeometry({
+      height: 800,
+      width: 1000,
+      x: 200,
+      y: 0,
+    });
+    trackedOutput.geometryChanged.emit();
+    trackedOutput.setScale(1.25);
+    trackedOutput.scaleChanged.emit();
+
+    expect(window.writeCount).toBe(1);
+    expect(resumeScheduler.pendingCount).toBe(1);
+    expect(workScheduler.pendingCount).toBe(0);
+
+    resumeScheduler.flush();
+    expect(window.writeCount).toBe(1);
+    expect(resumeScheduler.pendingCount).toBe(1);
+    expect(workScheduler.pendingCount).toBe(0);
+
+    resumeScheduler.flush();
+    expect(window.writeCount).toBe(1);
+    expect(resumeScheduler.pendingCount).toBe(0);
+    expect(workScheduler.pendingCount).toBe(1);
+
+    workScheduler.flush();
+    expect(window.window.frameGeometry.x).toBeCloseTo(210.4, 6);
+    expect(window.writeCount).toBe(2);
+    expect(controller.lastWriteCount).toBe(1);
+  });
+
+  it("cancels a pending recovery when a newer topology event arrives", () => {
+    const trackedOutput = createTrackedOutput("DP-1", 0);
+    const output = trackedOutput.output;
+    const desktop = { id: "desktop-1" };
+    const window = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [window.window],
+    );
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    controller.start();
+    trackedOutput.setGeometry({
+      height: 800,
+      width: 1000,
+      x: 100,
+      y: 0,
+    });
+    trackedOutput.geometryChanged.emit();
+    resumeScheduler.flush();
+    resumeScheduler.flush();
+    expect(workScheduler.pendingCount).toBe(1);
+
+    trackedOutput.setGeometry({
+      height: 800,
+      width: 1000,
+      x: 200,
+      y: 0,
+    });
+    trackedOutput.geometryChanged.emit();
+    workScheduler.flush();
+
+    expect(window.window.frameGeometry.x).toBe(10);
+    expect(window.writeCount).toBe(1);
+    flushTopologyRecovery(resumeScheduler, workScheduler);
+    expect(window.window.frameGeometry.x).toBe(210);
+    expect(window.writeCount).toBe(2);
+  });
+
+  it("replays activation received while topology is settling", () => {
+    const trackedOutput = createTrackedOutput("DP-1", 0);
+    const output = trackedOutput.output;
     const desktop = { id: "desktop-1" };
     const first = createTrackedWindow("window-1", output, desktop);
+    const second = createTrackedWindow("window-2", output, desktop);
+    const third = createTrackedWindow("window-3", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window, second.window, third.window],
+    );
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    controller.start();
+    trackedOutput.setGeometry({
+      height: 800,
+      width: 1000,
+      x: 200,
+      y: 0,
+    });
+    trackedOutput.geometryChanged.emit();
+    fixture.workspace.activeWindow = first.window;
+    flushTopologyRecovery(resumeScheduler, workScheduler);
+
+    expect(fixture.workspace.activeWindow).toBe(first.window);
+    expect(first.window.frameGeometry.x).toBe(200);
+    expect(second.window.frameGeometry.x).toBe(695);
+    expect(third.window.frameGeometry.x).toBe(1190);
+  });
+
+  it("starts the topology barrier before focus can use a silent work-area change", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const second = createTrackedWindow("window-2", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window, second.window],
+    );
+    let workAreaWidth = 1000;
+    Object.defineProperty(fixture.workspace, "clientArea", {
+      configurable: true,
+      value: () => ({
+        height: 800,
+        width: workAreaWidth,
+        x: 0,
+        y: 0,
+      }),
+    });
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    controller.start();
+    const firstWrites = first.writeCount;
+    const secondWrites = second.writeCount;
+    workAreaWidth = 800;
+
+    expect(controller.focusLeft()).toBe(false);
+    expect(fixture.workspace.activeWindow).toBe(second.window);
+    expect(first.writeCount).toBe(firstWrites);
+    expect(second.writeCount).toBe(secondWrites);
+    flushTopologyRecovery(resumeScheduler, workScheduler);
+
+    expect(first.window.frameGeometry.width).toBe(385);
+    expect(second.window.frameGeometry.width).toBe(385);
+    expect(controller.focusLeft()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(first.window);
+  });
+
+  it("coalesces an output burst and restarts stable topology sampling", () => {
+    const trackedOutput = createTrackedOutput("DP-1", 0);
+    const output = trackedOutput.output;
+    const addedOutput = createTrackedOutput("HDMI-A-1", 1000).output;
+    const desktop = { id: "desktop-1" };
+    const window = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [window.window],
+    );
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    controller.start();
+    trackedOutput.setGeometry({
+      height: 800,
+      width: 1000,
+      x: 100,
+      y: 0,
+    });
+    trackedOutput.geometryChanged.emit();
+    resumeScheduler.flush();
+    expect(resumeScheduler.pendingCount).toBe(1);
+
+    trackedOutput.setGeometry({
+      height: 800,
+      width: 1000,
+      x: 200,
+      y: 0,
+    });
+    trackedOutput.geometryChanged.emit();
+    trackedOutput.setScale(1.25);
+    trackedOutput.scaleChanged.emit();
+    fixture.setScreens([output, addedOutput]);
+    fixture.screensChanged.emit();
+
+    expect(resumeScheduler.pendingCount).toBe(1);
+    expect(workScheduler.pendingCount).toBe(0);
+    expect(window.writeCount).toBe(1);
+
+    resumeScheduler.flush();
+    expect(resumeScheduler.pendingCount).toBe(1);
+    expect(workScheduler.pendingCount).toBe(0);
+    expect(window.writeCount).toBe(1);
+    resumeScheduler.flush();
+    expect(workScheduler.pendingCount).toBe(1);
+    expect(window.writeCount).toBe(1);
+
+    workScheduler.flush();
+    expect(window.window.frameGeometry.x).toBeCloseTo(210.4, 6);
+    expect(window.writeCount).toBe(2);
+  });
+
+  it("preserves a suspended slot while its sibling follows topology", () => {
+    const trackedOutput = createTrackedOutput("DP-1", 0);
+    const output = trackedOutput.output;
+    const desktop = { id: "desktop-1" };
+    const suspended = createTrackedWindow("window-1", output, desktop);
+    const sibling = createTrackedWindow("window-2", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [suspended.window, sibling.window],
+    );
+    let workAreaWidth = 1000;
+    Object.defineProperty(fixture.workspace, "clientArea", {
+      configurable: true,
+      value: () => ({
+        height: 800,
+        width: workAreaWidth,
+        x: 0,
+        y: 0,
+      }),
+    });
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    controller.start();
+    const suspendedFrame = { ...suspended.window.frameGeometry };
+    setWindowState("minimized", suspended, true);
+    workScheduler.flush();
+    const suspendedWrites = suspended.writeCount;
+    const siblingWrites = sibling.writeCount;
+
+    workAreaWidth = 800;
+    trackedOutput.geometryChanged.emit();
+    flushTopologyRecovery(resumeScheduler, workScheduler);
+
+    expect(controller.managedCount).toBe(2);
+    expect(suspended.window.frameGeometry).toEqual(suspendedFrame);
+    expect(suspended.writeCount).toBe(suspendedWrites);
+    expect(sibling.window.frameGeometry).toEqual({
+      height: 780,
+      width: 385,
+      x: 405,
+      y: 10,
+    });
+    expect(sibling.writeCount).toBe(siblingWrites + 1);
+  });
+
+  it("keeps the topology barrier until client area sampling recovers", () => {
+    const trackedOutput = createTrackedOutput("DP-1", 0);
+    const output = trackedOutput.output;
+    const desktop = { id: "desktop-1" };
+    const window = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [window.window],
+    );
+    let clientAreaAvailable = true;
+    Object.defineProperty(fixture.workspace, "clientArea", {
+      configurable: true,
+      value: (_option: number, candidate: KWinOutput) => {
+        if (!clientAreaAvailable) {
+          throw new Error("client area unavailable");
+        }
+
+        return {
+          height: 800,
+          width: 1000,
+          x: candidate.geometry.x,
+          y: candidate.geometry.y,
+        };
+      },
+    });
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    controller.start();
+    trackedOutput.setGeometry({
+      height: 800,
+      width: 1000,
+      x: 200,
+      y: 0,
+    });
+    clientAreaAvailable = false;
+    trackedOutput.geometryChanged.emit();
+
+    resumeScheduler.flush();
+    resumeScheduler.flush();
+    expect(resumeScheduler.pendingCount).toBe(1);
+    expect(workScheduler.pendingCount).toBe(0);
+    expect(window.writeCount).toBe(1);
+
+    clientAreaAvailable = true;
+    resumeScheduler.flush();
+    expect(resumeScheduler.pendingCount).toBe(1);
+    expect(workScheduler.pendingCount).toBe(0);
+    resumeScheduler.flush();
+    expect(workScheduler.pendingCount).toBe(1);
+    expect(window.writeCount).toBe(1);
+
+    workScheduler.flush();
+    expect(window.window.frameGeometry.x).toBe(210);
+    expect(window.writeCount).toBe(2);
+  });
+
+  it("bounds unstable topology sampling and retries on the next probe", () => {
+    const trackedOutput = createTrackedOutput("DP-1", 0);
+    const output = trackedOutput.output;
+    const desktop = { id: "desktop-1" };
+    const window = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [window.window],
+    );
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    controller.start();
+    trackedOutput.geometryChanged.emit();
+
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      trackedOutput.setGeometry({
+        height: 800,
+        width: 1000,
+        x: attempt + 1,
+        y: 0,
+      });
+      resumeScheduler.flush();
+    }
+
+    expect(resumeScheduler.pendingCount).toBe(0);
+    expect(workScheduler.pendingCount).toBe(0);
+    expect(window.writeCount).toBe(1);
+
+    trackedOutput.setGeometry({
+      height: 800,
+      width: 1000,
+      x: 200,
+      y: 0,
+    });
+    controller.probeTopology();
+    flushTopologyRecovery(resumeScheduler, workScheduler);
+
+    expect(window.window.frameGeometry.x).toBe(210);
+    expect(window.writeCount).toBe(2);
+  });
+
+  it("reflows a work area after a dock geometry event settles", () => {
+    const trackedOutput = createTrackedOutput("DP-1", 0);
+    const output = trackedOutput.output;
+    const desktop = { id: "desktop-1" };
+    const window = createTrackedWindow("window-1", output, desktop);
+    const dock = createTrackedWindow("dock-1", output, desktop, {
+      dock: true,
+      normalWindow: false,
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [window.window, dock.window],
+    );
+    let workAreaWidth = 1000;
+    Object.defineProperty(fixture.workspace, "clientArea", {
+      configurable: true,
+      value: () => ({
+        height: 800,
+        width: workAreaWidth,
+        x: 0,
+        y: 0,
+      }),
+    });
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    controller.start();
+    expect(window.window.frameGeometry.width).toBe(485);
+
+    workAreaWidth = 800;
+    dock.frameGeometryChanged.emit(dock.window.frameGeometry);
+    expect(window.writeCount).toBe(1);
+
+    flushTopologyRecovery(resumeScheduler, workScheduler);
+    expect(window.window.frameGeometry.width).toBe(385);
+    expect(window.writeCount).toBe(2);
+    expect(dock.writeCount).toBe(0);
+  });
+
+  it("detects a silent visible work-area change when topology is probed", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const window = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [window.window],
+    );
+    let workAreaWidth = 1000;
+    Object.defineProperty(fixture.workspace, "clientArea", {
+      configurable: true,
+      value: () => ({
+        height: 800,
+        width: workAreaWidth,
+        x: 0,
+        y: 0,
+      }),
+    });
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    controller.start();
+    workAreaWidth = 700;
+    controller.probeTopology();
+
+    expect(window.writeCount).toBe(1);
+    expect(resumeScheduler.pendingCount).toBe(1);
+    flushTopologyRecovery(resumeScheduler, workScheduler);
+
+    expect(window.window.frameGeometry.width).toBe(335);
+    expect(window.writeCount).toBe(2);
+  });
+
+  it("defers topology reflow for an invisible desktop", () => {
+    const trackedOutput = createTrackedOutput("DP-1", 0);
+    const output = trackedOutput.output;
+    const desktop = { id: "desktop-1" };
+    const hiddenDesktop = { id: "desktop-2" };
+    const visible = createTrackedWindow("window-1", output, desktop);
+    const hidden = createTrackedWindow("window-2", output, hiddenDesktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop, hiddenDesktop],
+      [visible.window, hidden.window],
+    );
+    let hiddenWorkAreaWidth = 1000;
+    Object.defineProperty(fixture.workspace, "clientArea", {
+      configurable: true,
+      value: (
+        _option: number,
+        _candidate: KWinOutput,
+        candidateDesktop: KWinVirtualDesktop,
+      ) => ({
+        height: 800,
+        width:
+          candidateDesktop.id === hiddenDesktop.id ? hiddenWorkAreaWidth : 1000,
+        x: 0,
+        y: 0,
+      }),
+    });
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    controller.start();
+    expect(visible.writeCount).toBe(1);
+    expect(hidden.writeCount).toBe(0);
+
+    hiddenWorkAreaWidth = 800;
+    trackedOutput.geometryChanged.emit();
+    flushTopologyRecovery(resumeScheduler, workScheduler);
+    expect(hidden.writeCount).toBe(0);
+
+    fixture.setCurrentDesktop(output, hiddenDesktop);
+    expect(workScheduler.pendingCount).toBe(1);
+    workScheduler.flush();
+    expect(hidden.window.frameGeometry.width).toBe(385);
+    expect(hidden.writeCount).toBe(1);
+  });
+
+  it("invalidates a silent hidden-context restore baseline when it becomes visible", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const hiddenDesktop = { id: "desktop-2" };
+    const visible = createTrackedWindow("window-1", output, desktop);
+    const hidden = createTrackedWindow("window-2", output, hiddenDesktop, {
+      frameGeometry: { height: 200, width: 300, x: 100, y: 100 },
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop, hiddenDesktop],
+      [visible.window, hidden.window],
+    );
+    let hiddenWorkAreaWidth = 1000;
+    Object.defineProperty(fixture.workspace, "clientArea", {
+      configurable: true,
+      value: (
+        _option: number,
+        _candidate: KWinOutput,
+        candidateDesktop: KWinVirtualDesktop,
+      ) => ({
+        height: 800,
+        width:
+          candidateDesktop.id === hiddenDesktop.id ? hiddenWorkAreaWidth : 1000,
+        x: 0,
+        y: 0,
+      }),
+    });
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    controller.start();
+    hiddenWorkAreaWidth = 800;
+    fixture.setCurrentDesktop(output, hiddenDesktop);
+    workScheduler.flush();
+    expect(hidden.window.frameGeometry.width).toBe(300);
+    flushTopologyRecovery(resumeScheduler, workScheduler);
+    expect(hidden.window.frameGeometry.width).toBe(385);
+
+    fixture.setCurrentDesktop(output, desktop);
+    workScheduler.flush();
+    hiddenWorkAreaWidth = 1000;
+    fixture.setCurrentDesktop(output, hiddenDesktop);
+    workScheduler.flush();
+    flushTopologyRecovery(resumeScheduler, workScheduler);
+    controller.stop();
+
+    expect(hidden.window.frameGeometry).toEqual({
+      height: 780,
+      width: 485,
+      x: 10,
+      y: 10,
+    });
+  });
+
+  it("captures the relocated frame after an output is removed", () => {
+    const output = createTrackedOutput("DP-1", 0).output;
+    const removedOutput = createTrackedOutput("HDMI-A-1", 1000).output;
+    const desktop = { id: "desktop-1" };
+    const window = createTrackedWindow("window-1", removedOutput, desktop, {
+      frameGeometry: { height: 200, width: 300, x: 1100, y: 100 },
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output, removedOutput],
+      [desktop],
+      [window.window],
+    );
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    controller.start();
+    window.setFrameGeometry({ height: 220, width: 320, x: 200, y: 120 });
+    Object.defineProperty(window.window, "output", { value: output });
+    fixture.setScreens([output]);
+    fixture.screensChanged.emit();
+
+    expect(window.window.frameGeometry.x).toBe(200);
+    expect(controller.managedCount).toBe(1);
+    flushTopologyRecovery(resumeScheduler, workScheduler);
+    expect(window.window.frameGeometry.x).toBe(10);
+    expect(controller.managedCount).toBe(1);
+
+    controller.stop();
+    expect(window.window.frameGeometry).toEqual({
+      height: 220,
+      width: 320,
+      x: 200,
+      y: 120,
+    });
+  });
+
+  it("invalidates restore ownership when an output instance is replaced", () => {
+    const originalOutput = createTrackedOutput("DP-1", 0).output;
+    const replacementOutput = createTrackedOutput("DP-1", 0).output;
+    const desktop = { id: "desktop-1" };
+    const window = createTrackedWindow("window-1", originalOutput, desktop, {
+      frameGeometry: { height: 200, width: 300, x: 100, y: 100 },
+    });
+    const fixture = createWorkspace(
+      originalOutput,
+      desktop,
+      [originalOutput],
+      [desktop],
+      [window.window],
+    );
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    controller.start();
+    Object.defineProperty(window.window, "output", {
+      value: replacementOutput,
+    });
+    fixture.setScreens([replacementOutput]);
+    fixture.screensChanged.emit();
+    flushTopologyRecovery(resumeScheduler, workScheduler);
+    controller.stop();
+
+    expect(window.window.frameGeometry).toEqual({
+      height: 780,
+      width: 485,
+      x: 10,
+      y: 10,
+    });
+  });
+
+  it("keeps unrelated restore ownership after a same-name replacement", () => {
+    const originalOutput = createTrackedOutput("DP-1", 0).output;
+    const replacementOutput = createTrackedOutput("DP-1", 0).output;
+    const otherOutput = createOutput("HDMI-A-1", 1000);
+    const desktop = { id: "desktop-1" };
+    const replaced = createTrackedWindow("window-1", originalOutput, desktop, {
+      frameGeometry: { height: 200, width: 300, x: 100, y: 100 },
+    });
+    const unaffected = createTrackedWindow("window-2", otherOutput, desktop, {
+      frameGeometry: { height: 220, width: 320, x: 1120, y: 120 },
+    });
+    const fixture = createWorkspace(
+      originalOutput,
+      desktop,
+      [originalOutput, otherOutput],
+      [desktop],
+      [replaced.window, unaffected.window],
+    );
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    controller.start();
+    Object.defineProperty(replaced.window, "output", {
+      configurable: true,
+      value: replacementOutput,
+    });
+    fixture.setScreens([replacementOutput, otherOutput]);
+    fixture.screensChanged.emit();
+    flushTopologyRecovery(resumeScheduler, workScheduler);
+    controller.stop();
+
+    expect(replaced.window.frameGeometry).toEqual({
+      height: 780,
+      width: 485,
+      x: 10,
+      y: 10,
+    });
+    expect(unaffected.window.frameGeometry).toEqual({
+      height: 220,
+      width: 320,
+      x: 1120,
+      y: 120,
+    });
+  });
+
+  it("revalidates overflow when output count changes", () => {
+    const output = createTrackedOutput("DP-1", 0).output;
+    const addedOutput = createTrackedOutput("HDMI-A-1", 1000).output;
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const second = createTrackedWindow("window-2", output, desktop);
+    const active = createTrackedWindow("window-3", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window, second.window, active.window],
+    );
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    controller.start();
+    expect(controller.managedCount).toBe(3);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+
+    fixture.setScreens([output, addedOutput]);
+    fixture.screensChanged.emit();
+    flushTopologyRecovery(resumeScheduler, workScheduler);
+    flushCapacityParking(resumeScheduler, workScheduler);
+
+    expect(controller.managedCount).toBe(2);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+    expect(controller.focusLeft()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(second.window);
+    const writesAfterEviction = first.writeCount;
+
+    fixture.setScreens([output]);
+    fixture.screensChanged.emit();
+    flushTopologyRecovery(resumeScheduler, workScheduler);
+
+    expect(controller.managedCount).toBe(3);
+    expect(first.writeCount).toBeGreaterThan(writesAfterEviction);
+  });
+
+  it("keeps column ownership until a capacity park is observed twice", () => {
+    const setup = createCapacityFixture();
+    const first = setup.windows[0];
+    const writes: Array<{
+      commit: () => void;
+      frame: KWinWindow["frameGeometry"];
+    }> = [];
+
+    expect(first).toBeDefined();
+    setup.controller.start();
+    first?.setWriteBehavior((frame, commit) => {
+      writes.push({ commit, frame });
+    });
+    setup.fixture.setScreens([setup.output.output, setup.addedOutput.output]);
+    setup.fixture.screensChanged.emit();
+    flushTopologyRecovery(setup.resumeScheduler, setup.workScheduler);
+
+    expect(writes).toHaveLength(1);
+    expect(setup.controller.managedCount).toBe(3);
+    setup.resumeScheduler.flush();
+    expect(writes).toHaveLength(2);
+    expect(setup.controller.managedCount).toBe(3);
+
+    writes[0]?.commit();
+    setup.resumeScheduler.flush();
+    expect(setup.controller.managedCount).toBe(3);
+    setup.resumeScheduler.flush();
+    expect(setup.controller.managedCount).toBe(2);
+    setup.workScheduler.flush();
+  });
+
+  it("retries a partial whole-column park without releasing any column early", () => {
+    const setup = createCapacityFixture(4);
+    const first = setup.windows[0];
+    const second = setup.windows[1];
+    let rejectSecondWrite = true;
+    const warning = console.warn;
+    console.warn = () => undefined;
+
+    try {
+      setup.controller.start();
+      first?.setWriteBehavior((_frame, commit) => {
+        commit();
+      });
+      second?.setWriteBehavior((_frame, commit) => {
+        if (rejectSecondWrite) {
+          rejectSecondWrite = false;
+          throw new Error("delayed configure rejection");
+        }
+
+        commit();
+      });
+      setup.fixture.setScreens([setup.output.output, setup.addedOutput.output]);
+      setup.fixture.screensChanged.emit();
+      flushTopologyRecovery(setup.resumeScheduler, setup.workScheduler);
+
+      expect(setup.controller.managedCount).toBe(4);
+      setup.resumeScheduler.flush();
+      expect(setup.controller.managedCount).toBe(4);
+      setup.resumeScheduler.flush();
+      expect(setup.controller.managedCount).toBe(4);
+      setup.resumeScheduler.flush();
+      expect(setup.controller.managedCount).toBe(2);
+      setup.workScheduler.flush();
+    } finally {
+      console.warn = warning;
+    }
+  });
+
+  it("cancels a pending park when its window is suspended", () => {
+    const setup = createCapacityFixture();
+    const first = setup.windows[0];
+
+    setup.controller.start();
+    first?.setWriteBehavior(() => undefined);
+    setup.fixture.setScreens([setup.output.output, setup.addedOutput.output]);
+    setup.fixture.screensChanged.emit();
+    flushTopologyRecovery(setup.resumeScheduler, setup.workScheduler);
+    expect(setup.controller.managedCount).toBe(3);
+
+    if (first) {
+      setWindowState("fullscreen", first, true);
+    }
+
+    setup.workScheduler.flush();
+    setup.resumeScheduler.flush();
+    expect(setup.controller.managedCount).toBe(3);
+  });
+
+  it("does not commit a pending park after a transfer or removal", () => {
+    const transferred = createCapacityFixture();
+    const transferWindow = transferred.windows[0];
+
+    transferred.controller.start();
+    transferWindow?.setWriteBehavior(() => undefined);
+    transferred.fixture.setScreens([
+      transferred.output.output,
+      transferred.addedOutput.output,
+    ]);
+    transferred.fixture.screensChanged.emit();
+    flushTopologyRecovery(
+      transferred.resumeScheduler,
+      transferred.workScheduler,
+    );
+
+    if (transferWindow) {
+      Object.defineProperty(transferWindow.window, "output", {
+        configurable: true,
+        value: transferred.addedOutput.output,
+      });
+      transferWindow.outputChanged.emit(transferred.output.output);
+    }
+
+    transferred.workScheduler.flush();
+    transferred.resumeScheduler.flush();
+    expect(transferred.controller.managedCount).toBe(3);
+
+    const removed = createCapacityFixture();
+    const removedWindow = removed.windows[0];
+    removed.controller.start();
+    removedWindow?.setWriteBehavior(() => undefined);
+    removed.fixture.setScreens([
+      removed.output.output,
+      removed.addedOutput.output,
+    ]);
+    removed.fixture.screensChanged.emit();
+    flushTopologyRecovery(removed.resumeScheduler, removed.workScheduler);
+
+    if (removedWindow) {
+      removed.fixture.windowRemoved.emit(removedWindow.window);
+    }
+
+    removed.resumeScheduler.flush();
+    expect(removed.controller.managedCount).toBe(2);
+  });
+
+  it("ignores a pending capacity callback from an older topology revision", () => {
+    const setup = createCapacityFixture();
+    const first = setup.windows[0];
+
+    setup.controller.start();
+    first?.setWriteBehavior(() => undefined);
+    setup.fixture.setScreens([setup.output.output, setup.addedOutput.output]);
+    setup.fixture.screensChanged.emit();
+    flushTopologyRecovery(setup.resumeScheduler, setup.workScheduler);
+    expect(setup.controller.managedCount).toBe(3);
+
+    setup.output.geometryChanged.emit();
+    setup.resumeScheduler.flush();
+    expect(setup.controller.managedCount).toBe(3);
+  });
+
+  it("supersedes an unobserved park request when stopped", () => {
+    const setup = createCapacityFixture();
+    const first = setup.windows[0];
+    const originalFrame = first ? { ...first.window.frameGeometry } : null;
+    const writes: Array<{
+      commit: () => void;
+      frame: KWinWindow["frameGeometry"];
+    }> = [];
+
+    setup.controller.start();
+    first?.setWriteBehavior((frame, commit) => {
+      writes.push({ commit, frame });
+    });
+    setup.fixture.setScreens([setup.output.output, setup.addedOutput.output]);
+    setup.fixture.screensChanged.emit();
+    flushTopologyRecovery(setup.resumeScheduler, setup.workScheduler);
+    expect(writes).toHaveLength(1);
+
+    setup.controller.stop();
+    expect(writes.length).toBeGreaterThanOrEqual(2);
+    expect(writes[writes.length - 1]?.frame).toEqual(originalFrame);
+
+    for (const write of writes) {
+      write.commit();
+    }
+
+    expect(first?.window.frameGeometry).toEqual(originalFrame);
+  });
+
+  it("supersedes a pending park without stale rollback during a local barrier", () => {
+    const setup = createCapacityFixture();
+    const first = setup.windows[0];
+    const externalFrame = { height: 260, width: 340, x: 240, y: 180 };
+    const writes: Array<{
+      commit: () => void;
+      frame: KWinWindow["frameGeometry"];
+    }> = [];
+
+    setup.controller.start();
+    first?.setWriteBehavior((frame, commit) => {
+      writes.push({ commit, frame });
+    });
+    setup.fixture.setScreens([setup.output.output, setup.addedOutput.output]);
+    setup.fixture.screensChanged.emit();
+    flushTopologyRecovery(setup.resumeScheduler, setup.workScheduler);
+    expect(writes).toHaveLength(1);
+
+    first?.setFrameGeometry(externalFrame);
+    setup.output.geometryChanged.emit();
+    setup.controller.stop();
+    expect(writes[writes.length - 1]?.frame).toEqual(externalFrame);
+
+    for (const write of writes) {
+      write.commit();
+    }
+
+    expect(first?.window.frameGeometry).toEqual(externalFrame);
+  });
+
+  it("supersedes a pending park when the work area is unavailable", () => {
+    const setup = createCapacityFixture();
+    const first = setup.windows[0];
+    const externalFrame = { height: 260, width: 340, x: 240, y: 180 };
+    const writes: Array<{
+      commit: () => void;
+      frame: KWinWindow["frameGeometry"];
+    }> = [];
+
+    setup.controller.start();
+    first?.setWriteBehavior((frame, commit) => {
+      writes.push({ commit, frame });
+    });
+    setup.fixture.setScreens([setup.output.output, setup.addedOutput.output]);
+    setup.fixture.screensChanged.emit();
+    flushTopologyRecovery(setup.resumeScheduler, setup.workScheduler);
+    expect(writes).toHaveLength(1);
+
+    first?.setFrameGeometry(externalFrame);
+    Object.defineProperty(setup.fixture.workspace, "clientArea", {
+      configurable: true,
+      value: () => {
+        throw new Error("work area unavailable");
+      },
+    });
+    setup.output.geometryChanged.emit();
+    setup.controller.stop();
+    expect(writes[writes.length - 1]?.frame).toEqual(externalFrame);
+
+    for (const write of writes) {
+      write.commit();
+    }
+
+    expect(first?.window.frameGeometry).toEqual(externalFrame);
+  });
+
+  it("restores exact parked order and original baselines after a count round trip", () => {
+    const setup = createCapacityFixture();
+    const originals = setup.windows.map((window) => ({
+      ...window.window.frameGeometry,
+    }));
+
+    setup.controller.start();
+    const active = setup.windows[2];
+    expect(setup.fixture.workspace.activeWindow).toBe(active?.window);
+    setup.fixture.setScreens([setup.output.output, setup.addedOutput.output]);
+    setup.fixture.screensChanged.emit();
+    flushTopologyRecovery(setup.resumeScheduler, setup.workScheduler);
+    flushCapacityParking(setup.resumeScheduler, setup.workScheduler);
+    expect(setup.controller.managedCount).toBe(2);
+
+    setup.fixture.setScreens([setup.output.output]);
+    setup.fixture.screensChanged.emit();
+    flushTopologyRecovery(setup.resumeScheduler, setup.workScheduler);
+    expect(setup.controller.managedCount).toBe(3);
+    expect(setup.fixture.workspace.activeWindow).toBe(active?.window);
+    expect(setup.controller.focusLeft()).toBe(true);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.windows[1]?.window);
+    expect(setup.controller.focusLeft()).toBe(true);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.windows[0]?.window);
+
+    setup.controller.stop();
+
+    for (const [index, window] of setup.windows.entries()) {
+      expect(window.window.frameGeometry).toEqual(originals[index]);
+    }
+  });
+
+  it("keeps logical column indices across successive capacity parks", () => {
+    const setup = createCapacityFixture(4, { kind: "fixed", value: 300 });
+    let workAreaWidth = 1000;
+    Object.defineProperty(setup.fixture.workspace, "clientArea", {
+      configurable: true,
+      value: (_option: number, output: KWinOutput) => ({
+        height: 800,
+        width: workAreaWidth,
+        x: output.geometry.x,
+        y: output.geometry.y,
+      }),
+    });
+
+    setup.controller.start();
+    setup.fixture.setScreens([setup.output.output, setup.addedOutput.output]);
+    setup.fixture.screensChanged.emit();
+    flushTopologyRecovery(setup.resumeScheduler, setup.workScheduler);
+    flushCapacityParking(setup.resumeScheduler, setup.workScheduler);
+    expect(setup.controller.managedCount).toBe(3);
+
+    workAreaWidth = 700;
+    setup.output.geometryChanged.emit();
+    flushTopologyRecovery(setup.resumeScheduler, setup.workScheduler);
+    flushCapacityParking(setup.resumeScheduler, setup.workScheduler);
+    expect(setup.controller.managedCount).toBe(2);
+
+    setup.fixture.setScreens([setup.output.output]);
+    setup.fixture.screensChanged.emit();
+    flushTopologyRecovery(setup.resumeScheduler, setup.workScheduler);
+    expect(setup.controller.managedCount).toBe(4);
+    expect(setup.controller.focusLeft()).toBe(true);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.windows[2]?.window);
+    expect(setup.controller.focusLeft()).toBe(true);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.windows[1]?.window);
+    expect(setup.controller.focusLeft()).toBe(true);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.windows[0]?.window);
+  });
+
+  it("does not overwrite an externally moved committed parking lease", () => {
+    const setup = createCapacityFixture();
+    const first = setup.windows[0];
+    const externalFrame = { height: 260, width: 340, x: 300, y: 200 };
+
+    setup.controller.start();
+    setup.fixture.setScreens([setup.output.output, setup.addedOutput.output]);
+    setup.fixture.screensChanged.emit();
+    flushTopologyRecovery(setup.resumeScheduler, setup.workScheduler);
+    flushCapacityParking(setup.resumeScheduler, setup.workScheduler);
+    first?.setFrameGeometry(externalFrame);
+
+    setup.controller.stop();
+    expect(first?.window.frameGeometry).toEqual(externalFrame);
+  });
+
+  it("restores an untouched committed parking lease when stopped", () => {
+    const setup = createCapacityFixture();
+    const first = setup.windows[0];
+    const originalFrame = first ? { ...first.window.frameGeometry } : null;
+
+    setup.controller.start();
+    setup.fixture.setScreens([setup.output.output, setup.addedOutput.output]);
+    setup.fixture.screensChanged.emit();
+    flushTopologyRecovery(setup.resumeScheduler, setup.workScheduler);
+    flushCapacityParking(setup.resumeScheduler, setup.workScheduler);
+    expect(setup.controller.managedCount).toBe(2);
+
+    setup.controller.stop();
+    expect(first?.window.frameGeometry).toEqual(originalFrame);
+  });
+
+  it("keeps a committed parking lease during an unsettled local barrier", () => {
+    const setup = createCapacityFixture();
+    const first = setup.windows[0];
+
+    setup.controller.start();
+    setup.fixture.setScreens([setup.output.output, setup.addedOutput.output]);
+    setup.fixture.screensChanged.emit();
+    flushTopologyRecovery(setup.resumeScheduler, setup.workScheduler);
+    flushCapacityParking(setup.resumeScheduler, setup.workScheduler);
+    expect(setup.controller.managedCount).toBe(2);
+
+    const parkedFrame = first ? { ...first.window.frameGeometry } : null;
+    setup.output.geometryChanged.emit();
+    setup.controller.stop();
+
+    expect(first?.window.frameGeometry).toEqual(parkedFrame);
+  });
+
+  it("invalidates a committed lease after transfer and captures its destination frame", () => {
+    const setup = createCapacityFixture();
+    const first = setup.windows[0];
+    const destinationFrame = {
+      height: 260,
+      width: 340,
+      x: 1200,
+      y: 180,
+    };
+
+    setup.controller.start();
+    setup.fixture.setScreens([setup.output.output, setup.addedOutput.output]);
+    setup.fixture.screensChanged.emit();
+    flushTopologyRecovery(setup.resumeScheduler, setup.workScheduler);
+    flushCapacityParking(setup.resumeScheduler, setup.workScheduler);
+    expect(setup.controller.managedCount).toBe(2);
+
+    if (first) {
+      first.setFrameGeometry(destinationFrame);
+      Object.defineProperty(first.window, "output", {
+        configurable: true,
+        value: setup.addedOutput.output,
+      });
+      first.outputChanged.emit(setup.output.output);
+    }
+
+    setup.workScheduler.flush();
+    expect(setup.controller.managedCount).toBe(3);
+    setup.controller.stop();
+    expect(first?.window.frameGeometry).toEqual(destinationFrame);
+  });
+
+  it("parks the active column only as the last safe capacity option", () => {
+    const setup = createCapacityFixture();
+    const first = setup.windows[0];
+    const second = setup.windows[1];
+    const active = setup.windows[2];
+
+    setup.controller.start();
+
+    if (first && second) {
+      setWindowState("fullscreen", first, true);
+      setWindowState("fullscreen", second, true);
+    }
+
+    setup.workScheduler.flush();
+    setup.fixture.setScreens([setup.output.output, setup.addedOutput.output]);
+    setup.fixture.screensChanged.emit();
+    flushTopologyRecovery(setup.resumeScheduler, setup.workScheduler);
+    flushCapacityParking(setup.resumeScheduler, setup.workScheduler);
+
+    expect(setup.controller.managedCount).toBe(2);
+    expect(setup.fixture.workspace.activeWindow).toBe(active?.window);
+  });
+
+  it("keeps ownership and performs no park write when no column is safe", () => {
+    const setup = createCapacityFixture();
+
+    setup.controller.start();
+
+    for (const window of setup.windows) {
+      setWindowState("fullscreen", window, true);
+    }
+
+    setup.workScheduler.flush();
+    const writesBeforeTopology = setup.windows.map(
+      (window) => window.writeCount,
+    );
+    setup.fixture.setScreens([setup.output.output, setup.addedOutput.output]);
+    setup.fixture.screensChanged.emit();
+    flushTopologyRecovery(setup.resumeScheduler, setup.workScheduler);
+
+    expect(setup.controller.managedCount).toBe(3);
+    expect(setup.windows.map((window) => window.writeCount)).toEqual(
+      writesBeforeTopology,
+    );
+  });
+
+  it("backs off after bounded capacity failures until an output event", () => {
+    const setup = createCapacityFixture();
+    const first = setup.windows[0];
+    const warning = console.warn;
+    console.warn = () => undefined;
+
+    try {
+      setup.controller.start();
+      first?.setWriteBehavior(() => {
+        throw new Error("persistent geometry rejection");
+      });
+      setup.fixture.setScreens([setup.output.output, setup.addedOutput.output]);
+      setup.fixture.screensChanged.emit();
+      flushTopologyRecovery(setup.resumeScheduler, setup.workScheduler);
+
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        setup.resumeScheduler.flush();
+      }
+
+      expect(setup.resumeScheduler.pendingCount).toBe(0);
+      const writesAtBackoff = first?.writeCount;
+      setup.workScheduler.flush();
+      expect(setup.resumeScheduler.pendingCount).toBe(0);
+      expect(first?.writeCount).toBe(writesAtBackoff);
+
+      setup.output.geometryChanged.emit();
+      flushTopologyRecovery(setup.resumeScheduler, setup.workScheduler);
+      expect(setup.resumeScheduler.pendingCount).toBe(1);
+      expect(first?.writeCount).toBeGreaterThan(writesAtBackoff ?? 0);
+    } finally {
+      console.warn = warning;
+    }
+  });
+
+  it("supersedes a canceled park conservatively during a local barrier", () => {
+    const setup = createCapacityFixture();
+    const first = setup.windows[0];
+    const writes: Array<{
+      commit: () => void;
+      frame: KWinWindow["frameGeometry"];
+    }> = [];
+
+    setup.controller.start();
+    first?.setWriteBehavior((frame, commit) => {
+      writes.push({ commit, frame });
+    });
+    setup.fixture.setScreens([setup.output.output, setup.addedOutput.output]);
+    setup.fixture.screensChanged.emit();
+    flushTopologyRecovery(setup.resumeScheduler, setup.workScheduler);
+    expect(writes).toHaveLength(1);
+    const currentFrame = first ? { ...first.window.frameGeometry } : null;
+
+    setup.output.geometryChanged.emit();
+    setup.controller.stop();
+    expect(writes.length).toBeGreaterThanOrEqual(2);
+    expect(writes[writes.length - 1]?.frame).toEqual(currentFrame);
+
+    for (const write of writes) {
+      write.commit();
+    }
+
+    expect(first?.window.frameGeometry).toEqual(currentFrame);
+  });
+
+  it("supersedes a canceled park after its window changes context", () => {
+    const output = createTrackedOutput("DP-1", 0);
+    const otherOutput = createOutput("HDMI-A-1", 1000);
+    const desktop = { id: "desktop-1" };
+    const window = createTrackedWindow("window-1", output.output, desktop);
+    const fixture = createWorkspace(
+      output.output,
+      desktop,
+      [output.output, otherOutput],
+      [desktop],
+      [window.window],
+    );
+    const workScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+    });
+
+    controller.start();
+    const canceledParks = (
+      controller as unknown as {
+        capacityCanceledParks: Map<string, unknown>;
+      }
+    ).capacityCanceledParks;
+    canceledParks.set("DP-1\u0000desktop-1", {
+      windows: [
+        {
+          columnId: columnId("column:window-1"),
+          restoreBaseline: null,
+          rollbackFrame: { ...window.window.frameGeometry },
+          targetFrame: { ...window.window.frameGeometry, x: 300 },
+          windowId: windowId("window-1"),
+        },
+      ],
+    });
+    const destinationFrame = {
+      height: 780,
+      width: 485,
+      x: 1010,
+      y: 10,
+    };
+    window.setFrameGeometry(destinationFrame);
+    const writesBeforeTransfer = window.writeCount;
+    Object.defineProperty(window.window, "output", {
+      configurable: true,
+      value: otherOutput,
+    });
+    window.outputChanged.emit(output.output);
+    workScheduler.flush();
+
+    expect(window.writeCount).toBe(writesBeforeTransfer + 1);
+    expect(window.window.frameGeometry).toEqual(destinationFrame);
+    expect(canceledParks.size).toBe(0);
+  });
+
+  it("rebases a parked right column after an intervening column closes", () => {
+    const setup = createCapacityFixture();
+    const first = setup.windows[0];
+    const middle = setup.windows[1];
+    const parked = setup.windows[2];
+
+    setup.controller.start();
+    setup.fixture.workspace.activeWindow = first?.window ?? null;
+    setup.workScheduler.flush();
+    setup.fixture.setScreens([setup.output.output, setup.addedOutput.output]);
+    setup.fixture.screensChanged.emit();
+    flushTopologyRecovery(setup.resumeScheduler, setup.workScheduler);
+    flushCapacityParking(setup.resumeScheduler, setup.workScheduler);
+    expect(setup.controller.managedCount).toBe(2);
+
+    if (middle) {
+      Object.defineProperty(middle.window, "deleted", {
+        configurable: true,
+        value: true,
+      });
+      setup.fixture.windowRemoved.emit(middle.window);
+    }
+
+    setup.workScheduler.flush();
+    setup.fixture.setScreens([setup.output.output]);
+    setup.fixture.screensChanged.emit();
+    flushTopologyRecovery(setup.resumeScheduler, setup.workScheduler);
+
+    expect(setup.controller.managedCount).toBe(2);
+    expect(setup.controller.focusRight()).toBe(true);
+    expect(setup.fixture.workspace.activeWindow).toBe(parked?.window);
+  });
+
+  it("invalidates a parked-only baseline across a geometry round trip", () => {
+    const setup = createCapacityFixture(1, { kind: "fixed", value: 1200 });
+    const parked = setup.windows[0];
+    const originalFrame = parked ? { ...parked.window.frameGeometry } : null;
+
+    setup.controller.start();
+    setup.fixture.setScreens([setup.output.output, setup.addedOutput.output]);
+    setup.fixture.screensChanged.emit();
+    flushTopologyRecovery(setup.resumeScheduler, setup.workScheduler);
+    flushCapacityParking(setup.resumeScheduler, setup.workScheduler);
+    expect(setup.controller.managedCount).toBe(0);
+
+    setup.output.setGeometry({
+      height: 800,
+      width: 1000,
+      x: 200,
+      y: 0,
+    });
+    setup.output.geometryChanged.emit();
+    setup.output.setGeometry({
+      height: 800,
+      width: 1000,
+      x: 0,
+      y: 0,
+    });
+    setup.output.geometryChanged.emit();
+    flushTopologyRecovery(setup.resumeScheduler, setup.workScheduler);
+    setup.controller.stop();
+
+    expect(parked?.window.frameGeometry).not.toEqual(originalFrame);
+    expect(parked?.window.frameGeometry.width).toBe(1200);
+  });
+
+  it("queues every sibling when a grouped capacity lease is invalidated", () => {
+    const setup = createCapacityFixture();
+    const first = setup.windows[0];
+    const sibling = setup.windows[1];
+    const active = setup.windows[2];
+    const groupedLayout = new LayoutEngine();
+
+    setup.controller.start();
+    groupedLayout.restoreColumns({
+      activeColumnId: columnId("column:active"),
+      columns: [
+        {
+          column: {
+            id: columnId("column:group"),
+            width: { kind: "fixed", value: 700 },
+            windowIds: [windowId("window-1"), windowId("window-2")],
+          },
+          index: 0,
+        },
+        {
+          column: {
+            id: columnId("column:active"),
+            width: { kind: "fixed", value: 300 },
+            windowIds: [windowId("window-3")],
+          },
+          index: 1,
+        },
+      ],
+      desktopId: desktopId(setup.desktop.id),
+      outputId: outputId(setup.output.output.name),
+    });
+    (
+      setup.controller as unknown as {
+        layout: LayoutEngine;
+      }
+    ).layout = groupedLayout;
+    setup.controller.reconcile();
+    expect(setup.fixture.workspace.activeWindow).toBe(active?.window);
+
+    setup.fixture.setScreens([setup.output.output, setup.addedOutput.output]);
+    setup.fixture.screensChanged.emit();
+    flushTopologyRecovery(setup.resumeScheduler, setup.workScheduler);
+    flushCapacityParking(setup.resumeScheduler, setup.workScheduler);
+    expect(setup.controller.managedCount).toBe(1);
+
+    if (first) {
+      first.setFrameGeometry({ height: 240, width: 320, x: 1200, y: 100 });
+      Object.defineProperty(first.window, "output", {
+        configurable: true,
+        value: setup.addedOutput.output,
+      });
+      first.outputChanged.emit(setup.output.output);
+    }
+
+    setup.workScheduler.flush();
+    expect(setup.controller.managedCount).toBe(2);
+    setup.workScheduler.flush();
+    expect(setup.controller.managedCount).toBe(3);
+    expect(sibling?.writeCount).toBeGreaterThan(1);
+  });
+
+  it("preserves every grouped lease baseline through a structural round trip", () => {
+    const setup = createCapacityFixture();
+    const originals = setup.windows.map((window) => ({
+      ...window.window.frameGeometry,
+    }));
+
+    setup.controller.start();
+    const layout = installGroupedCapacityLayout(
+      setup.controller,
+      setup.output.output,
+      setup.desktop,
+    );
+    setup.controller.reconcile();
+    setup.fixture.setScreens([setup.output.output, setup.addedOutput.output]);
+    setup.fixture.screensChanged.emit();
+    flushTopologyRecovery(setup.resumeScheduler, setup.workScheduler);
+    flushCapacityParking(setup.resumeScheduler, setup.workScheduler);
+    expect(setup.controller.managedCount).toBe(1);
+
+    setup.fixture.setScreens([setup.output.output]);
+    setup.fixture.screensChanged.emit();
+    flushTopologyRecovery(setup.resumeScheduler, setup.workScheduler);
+
+    expect(setup.controller.managedCount).toBe(3);
+    expect(
+      layout.snapshot(
+        outputId(setup.output.output.name),
+        desktopId(setup.desktop.id),
+      ).columns,
+    ).toEqual([
+      {
+        id: "column:group",
+        width: { kind: "fixed", value: 700 },
+        windowIds: ["window-1", "window-2"],
+      },
+      {
+        id: "column:active",
+        width: { kind: "fixed", value: 300 },
+        windowIds: ["window-3"],
+      },
+    ]);
+
+    setup.controller.stop();
+
+    for (const [index, window] of setup.windows.entries()) {
+      expect(window.window.frameGeometry).toEqual(originals[index]);
+    }
+  });
+
+  it("preserves grouped topology across a same-name output replacement", () => {
+    const setup = createCapacityFixture(3, { kind: "fixed", value: 100 });
+    let workAreaWidth = 1000;
+    Object.defineProperty(setup.fixture.workspace, "clientArea", {
+      configurable: true,
+      value: (_option: number, output: KWinOutput) => ({
+        height: 800,
+        width: output.name === setup.output.output.name ? workAreaWidth : 1000,
+        x: output.geometry.x,
+        y: output.geometry.y,
+      }),
+    });
+
+    setup.controller.start();
+    const layout = installGroupedCapacityLayout(
+      setup.controller,
+      setup.output.output,
+      setup.desktop,
+    );
+    setup.controller.reconcile();
+    setup.fixture.setScreens([setup.output.output, setup.addedOutput.output]);
+    setup.fixture.screensChanged.emit();
+    flushTopologyRecovery(setup.resumeScheduler, setup.workScheduler);
+    flushCapacityParking(setup.resumeScheduler, setup.workScheduler);
+    expect(setup.controller.managedCount).toBe(1);
+
+    const replacement = createTrackedOutput(setup.output.output.name, 0);
+    workAreaWidth = 1100;
+
+    for (const window of setup.windows) {
+      Object.defineProperty(window.window, "output", {
+        configurable: true,
+        value: replacement.output,
+      });
+    }
+
+    Object.defineProperty(setup.fixture.workspace, "activeScreen", {
+      configurable: true,
+      value: replacement.output,
+    });
+    setup.fixture.setScreens([replacement.output, setup.addedOutput.output]);
+    setup.fixture.screensChanged.emit();
+    flushTopologyRecovery(setup.resumeScheduler, setup.workScheduler);
+
+    expect(setup.controller.managedCount).toBe(3);
+    expect(
+      layout.snapshot(
+        outputId(replacement.output.name),
+        desktopId(setup.desktop.id),
+      ).columns,
+    ).toEqual([
+      {
+        id: "column:group",
+        width: { kind: "fixed", value: 700 },
+        windowIds: ["window-1", "window-2"],
+      },
+      {
+        id: "column:active",
+        width: { kind: "fixed", value: 300 },
+        windowIds: ["window-3"],
+      },
+    ]);
+    const tiledFrames = setup.windows.map((window) => ({
+      ...window.window.frameGeometry,
+    }));
+
+    setup.controller.stop();
+
+    for (const [index, window] of setup.windows.entries()) {
+      expect(window.window.frameGeometry).toEqual(tiledFrames[index]);
+    }
+  });
+
+  it("ignores stale topology samples after a stop and restart", () => {
+    const trackedOutput = createTrackedOutput("DP-1", 0);
+    const output = trackedOutput.output;
+    const desktop = { id: "desktop-1" };
+    const window = createTrackedWindow("window-1", output, desktop, {
+      frameGeometry: { height: 200, width: 300, x: 100, y: 100 },
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [window.window],
+    );
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    controller.start();
+    trackedOutput.setGeometry({
+      height: 800,
+      width: 1000,
+      x: 200,
+      y: 0,
+    });
+    window.setFrameGeometry({ height: 220, width: 320, x: 220, y: 120 });
+    trackedOutput.geometryChanged.emit();
+    expect(resumeScheduler.pendingCount).toBe(1);
+    const writesBeforeStop = window.writeCount;
+    controller.stop();
+
+    expect(window.window.frameGeometry).toEqual({
+      height: 220,
+      width: 320,
+      x: 220,
+      y: 120,
+    });
+    expect(window.writeCount).toBe(writesBeforeStop);
+    expect(controller.start()).toBe(true);
+    expect(window.window.frameGeometry.x).toBe(210);
+    const writesAfterRestart = window.writeCount;
+
+    trackedOutput.setGeometry({
+      height: 800,
+      width: 1000,
+      x: 300,
+      y: 0,
+    });
+    trackedOutput.geometryChanged.emit();
+    expect(resumeScheduler.pendingCount).toBe(2);
+
+    resumeScheduler.flush();
+    expect(resumeScheduler.pendingCount).toBe(1);
+    expect(workScheduler.pendingCount).toBe(0);
+    expect(window.window.frameGeometry.x).toBe(210);
+    expect(window.writeCount).toBe(writesAfterRestart);
+    flushTopologyRecovery(resumeScheduler, workScheduler);
+    expect(window.window.frameGeometry.x).toBe(310);
+    expect(window.writeCount).toBe(writesAfterRestart + 1);
+  });
+
+  it("keeps invalidated restore ownership sticky and restores other outputs", () => {
+    const trackedOutput = createTrackedOutput("DP-1", 0);
+    const output = trackedOutput.output;
+    const otherOutput = createOutput("HDMI-A-1", 1000);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop, {
+      frameGeometry: { height: 200, width: 300, x: 100, y: 100 },
+    });
     const second = createTrackedWindow("window-2", otherOutput, desktop, {
-      frameGeometry: { height: 200, width: 300, x: 1100, y: 0 },
+      frameGeometry: { height: 200, width: 300, x: 1100, y: 100 },
     });
     const fixture = createWorkspace(
       output,
@@ -2471,18 +4307,36 @@ describe("RuntimeController", () => {
       [desktop],
       [first.window, second.window],
     );
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
     const controller = new RuntimeController(fixture.workspace, {
       clientAreaOption: 2,
       gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
     });
 
     controller.start();
-    Object.defineProperty(output, "geometry", {
-      value: { height: 800, width: 1000, x: 2000, y: 0 },
+    trackedOutput.setGeometry({
+      height: 800,
+      width: 1000,
+      x: 200,
+      y: 0,
     });
+    trackedOutput.geometryChanged.emit();
+    flushTopologyRecovery(resumeScheduler, workScheduler);
+    expect(first.window.frameGeometry.x).toBe(210);
+
+    trackedOutput.setGeometry({
+      height: 800,
+      width: 1000,
+      x: 0,
+      y: 0,
+    });
+    trackedOutput.geometryChanged.emit();
+    flushTopologyRecovery(resumeScheduler, workScheduler);
     controller.stop();
 
-    expect(first.writeCount).toBe(1);
     expect(first.window.frameGeometry).toEqual({
       height: 780,
       width: 485,
@@ -2494,8 +4348,787 @@ describe("RuntimeController", () => {
       height: 200,
       width: 300,
       x: 1100,
+      y: 100,
+    });
+  });
+
+  it("keeps restore invalidation sticky across a topology round trip in one barrier", () => {
+    const trackedOutput = createTrackedOutput("DP-1", 0);
+    const output = trackedOutput.output;
+    const desktop = { id: "desktop-1" };
+    const window = createTrackedWindow("window-1", output, desktop, {
+      frameGeometry: { height: 200, width: 300, x: 100, y: 100 },
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [window.window],
+    );
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    controller.start();
+    trackedOutput.setGeometry({
+      height: 800,
+      width: 1000,
+      x: 200,
       y: 0,
     });
+    trackedOutput.geometryChanged.emit();
+    resumeScheduler.flush();
+
+    trackedOutput.setGeometry({
+      height: 800,
+      width: 1000,
+      x: 0,
+      y: 0,
+    });
+    trackedOutput.geometryChanged.emit();
+    flushTopologyRecovery(resumeScheduler, workScheduler);
+    controller.stop();
+
+    expect(window.window.frameGeometry).toEqual({
+      height: 780,
+      width: 485,
+      x: 10,
+      y: 10,
+    });
+  });
+
+  it("detects silent capacity changes in a visible waiting-only context", () => {
+    const trackedOutput = createTrackedOutput("DP-1", 0);
+    const otherOutput = createOutput("HDMI-A-1", 1000);
+    const desktop = { id: "desktop-1" };
+    const window = createTrackedWindow(
+      "window-1",
+      trackedOutput.output,
+      desktop,
+    );
+    const fixture = createWorkspace(
+      trackedOutput.output,
+      desktop,
+      [trackedOutput.output, otherOutput],
+      [desktop],
+      [window.window],
+    );
+    let workAreaWidth = 1000;
+    Object.defineProperty(fixture.workspace, "clientArea", {
+      configurable: true,
+      value: (_option: number, output: KWinOutput) => ({
+        height: 800,
+        width: output.name === trackedOutput.output.name ? workAreaWidth : 1000,
+        x: output.geometry.x,
+        y: output.geometry.y,
+      }),
+    });
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 1200 },
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    controller.start();
+    expect(controller.managedCount).toBe(0);
+    workAreaWidth = 1400;
+    controller.probeTopology();
+    flushTopologyRecovery(resumeScheduler, workScheduler);
+
+    expect(controller.managedCount).toBe(1);
+    expect(window.window.frameGeometry).toEqual({
+      height: 780,
+      width: 1200,
+      x: 10,
+      y: 10,
+    });
+  });
+
+  it("settles a waiting context when client area first becomes available", () => {
+    const output = createTrackedOutput("DP-1", 0);
+    const otherOutput = createOutput("HDMI-A-1", 1000);
+    const desktop = { id: "desktop-1" };
+    const fixture = createWorkspace(
+      output.output,
+      desktop,
+      [output.output, otherOutput],
+      [desktop],
+      [],
+    );
+    let clientAreaAvailable = true;
+    Object.defineProperty(fixture.workspace, "clientArea", {
+      configurable: true,
+      value: (_option: number, candidate: KWinOutput) => {
+        if (!clientAreaAvailable) {
+          throw new Error("client area unavailable");
+        }
+
+        return {
+          height: 800,
+          width: 1400,
+          x: candidate.geometry.x,
+          y: candidate.geometry.y,
+        };
+      },
+    });
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 1200 },
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    controller.start();
+    clientAreaAvailable = false;
+    const window = createTrackedWindow("window-1", output.output, desktop);
+    fixture.windowAdded.emit(window.window);
+    expect(controller.managedCount).toBe(0);
+
+    clientAreaAvailable = true;
+    controller.probeTopology();
+    expect(resumeScheduler.pendingCount).toBe(1);
+    expect(workScheduler.pendingCount).toBe(0);
+    flushTopologyRecovery(resumeScheduler, workScheduler);
+    expect(controller.managedCount).toBe(1);
+  });
+
+  it("waits for a waiting-only client area to settle", () => {
+    const trackedOutput = createTrackedOutput("DP-1", 0);
+    const otherOutput = createOutput("HDMI-A-1", 1000);
+    const desktop = { id: "desktop-1" };
+    const window = createTrackedWindow(
+      "window-1",
+      trackedOutput.output,
+      desktop,
+    );
+    const fixture = createWorkspace(
+      trackedOutput.output,
+      desktop,
+      [trackedOutput.output, otherOutput],
+      [desktop],
+      [window.window],
+    );
+    let workAreaWidth = 1000;
+    Object.defineProperty(fixture.workspace, "clientArea", {
+      configurable: true,
+      value: () => ({ height: 800, width: workAreaWidth, x: 0, y: 0 }),
+    });
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 1200 },
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    controller.start();
+    trackedOutput.geometryChanged.emit();
+    resumeScheduler.flush();
+    workAreaWidth = 1400;
+    resumeScheduler.flush();
+
+    expect(workScheduler.pendingCount).toBe(0);
+    expect(resumeScheduler.pendingCount).toBe(1);
+    resumeScheduler.flush();
+    expect(workScheduler.pendingCount).toBe(1);
+    workScheduler.flush();
+    expect(controller.managedCount).toBe(1);
+  });
+
+  it("ignores unrelated output geometry jitter during a local barrier", () => {
+    const trackedOutput = createTrackedOutput("DP-1", 0);
+    const otherOutput = createTrackedOutput("HDMI-A-1", 1000);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow(
+      "window-1",
+      trackedOutput.output,
+      desktop,
+    );
+    const second = createTrackedWindow("window-2", otherOutput.output, desktop);
+    const fixture = createWorkspace(
+      trackedOutput.output,
+      desktop,
+      [trackedOutput.output, otherOutput.output],
+      [desktop],
+      [first.window, second.window],
+    );
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    controller.start();
+    trackedOutput.geometryChanged.emit();
+    resumeScheduler.flush();
+    otherOutput.setGeometry({
+      height: 800,
+      width: 1000,
+      x: 1200,
+      y: 0,
+    });
+    resumeScheduler.flush();
+
+    expect(resumeScheduler.pendingCount).toBe(0);
+    expect(workScheduler.pendingCount).toBe(1);
+    workScheduler.flush();
+    expect(first.writeCount).toBe(1);
+    expect(second.writeCount).toBe(1);
+  });
+
+  it("keeps a transferred owner in the affected topology signature", () => {
+    const trackedOutput = createTrackedOutput("DP-1", 0);
+    const otherOutput = createOutput("HDMI-A-1", 1000);
+    const desktop = { id: "desktop-1" };
+    const window = createTrackedWindow(
+      "window-1",
+      trackedOutput.output,
+      desktop,
+    );
+    const fixture = createWorkspace(
+      trackedOutput.output,
+      desktop,
+      [trackedOutput.output, otherOutput],
+      [desktop],
+      [window.window],
+    );
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    controller.start();
+    trackedOutput.geometryChanged.emit();
+    Object.defineProperty(window.window, "output", {
+      configurable: true,
+      value: otherOutput,
+    });
+    window.outputChanged.emit(trackedOutput.output);
+    resumeScheduler.flush();
+    window.setFrameGeometry({ height: 220, width: 320, x: 1100, y: 120 });
+    resumeScheduler.flush();
+
+    expect(resumeScheduler.pendingCount).toBe(1);
+
+    while (workScheduler.pendingCount > 0) {
+      workScheduler.flush();
+    }
+
+    resumeScheduler.flush();
+    expect(workScheduler.pendingCount).toBe(1);
+  });
+
+  it("retains a newer invalidation raised during topology preflight", () => {
+    const trackedOutput = createTrackedOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const window = createTrackedWindow(
+      "window-1",
+      trackedOutput.output,
+      desktop,
+    );
+    const fixture = createWorkspace(
+      trackedOutput.output,
+      desktop,
+      [trackedOutput.output],
+      [desktop],
+      [window.window],
+    );
+    let clientAreaCalls = 0;
+    let invalidateOnCall = Number.MAX_SAFE_INTEGER;
+    Object.defineProperty(fixture.workspace, "clientArea", {
+      configurable: true,
+      value: () => {
+        clientAreaCalls += 1;
+
+        if (clientAreaCalls === invalidateOnCall) {
+          trackedOutput.geometryChanged.emit();
+        }
+
+        return {
+          height: 800,
+          width: 1000,
+          x: trackedOutput.output.geometry.x,
+          y: 0,
+        };
+      },
+    });
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    controller.start();
+    trackedOutput.setGeometry({
+      height: 800,
+      width: 1000,
+      x: 100,
+      y: 0,
+    });
+    trackedOutput.geometryChanged.emit();
+    resumeScheduler.flush();
+    resumeScheduler.flush();
+    invalidateOnCall = clientAreaCalls + 3;
+    workScheduler.flush();
+
+    expect(window.writeCount).toBe(1);
+    expect(resumeScheduler.pendingCount).toBe(1);
+    invalidateOnCall = Number.MAX_SAFE_INTEGER;
+    flushTopologyRecovery(resumeScheduler, workScheduler);
+    expect(window.window.frameGeometry.x).toBe(110);
+    expect(window.writeCount).toBe(2);
+  });
+
+  it("restores unrelated outputs when stopped during a local barrier", () => {
+    const trackedOutput = createTrackedOutput("DP-1", 0);
+    const otherOutput = createOutput("HDMI-A-1", 1000);
+    const desktop = { id: "desktop-1" };
+    const affected = createTrackedWindow(
+      "window-1",
+      trackedOutput.output,
+      desktop,
+      { frameGeometry: { height: 200, width: 300, x: 100, y: 100 } },
+    );
+    const unaffected = createTrackedWindow("window-2", otherOutput, desktop, {
+      frameGeometry: { height: 220, width: 320, x: 1120, y: 120 },
+    });
+    const fixture = createWorkspace(
+      trackedOutput.output,
+      desktop,
+      [trackedOutput.output, otherOutput],
+      [desktop],
+      [affected.window, unaffected.window],
+    );
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    controller.start();
+    const affectedLayout = { ...affected.window.frameGeometry };
+    trackedOutput.geometryChanged.emit();
+    controller.stop();
+
+    expect(affected.window.frameGeometry).toEqual(affectedLayout);
+    expect(unaffected.window.frameGeometry).toEqual({
+      height: 220,
+      width: 320,
+      x: 1120,
+      y: 120,
+    });
+  });
+
+  it("does not restore any output when stopped during a structural barrier", () => {
+    const output = createTrackedOutput("DP-1", 0);
+    const otherOutput = createOutput("HDMI-A-1", 1000);
+    const addedOutput = createOutput("USB-C-1", 2000);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output.output, desktop, {
+      frameGeometry: { height: 200, width: 300, x: 100, y: 100 },
+    });
+    const second = createTrackedWindow("window-2", otherOutput, desktop, {
+      frameGeometry: { height: 220, width: 320, x: 1120, y: 120 },
+    });
+    const fixture = createWorkspace(
+      output.output,
+      desktop,
+      [output.output, otherOutput],
+      [desktop],
+      [first.window, second.window],
+    );
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    controller.start();
+    const firstLayout = { ...first.window.frameGeometry };
+    const secondLayout = { ...second.window.frameGeometry };
+    fixture.setScreens([output.output, otherOutput, addedOutput]);
+    fixture.screensChanged.emit();
+    controller.stop();
+
+    expect(first.window.frameGeometry).toEqual(firstLayout);
+    expect(second.window.frameGeometry).toEqual(secondLayout);
+  });
+
+  it("merges structural topology in layout order and preserves active capacity", () => {
+    const createMergedFixture = (transferOrder: readonly number[]) => {
+      const leftOutput = createTrackedOutput("DP-1", 0);
+      const rightOutput = createTrackedOutput("HDMI-A-1", 1000);
+      const desktop = { id: "desktop-1" };
+      const windows = [
+        createTrackedWindow("left-a", leftOutput.output, desktop),
+        createTrackedWindow("left-b", leftOutput.output, desktop),
+        createTrackedWindow("left-c", leftOutput.output, desktop),
+        createTrackedWindow("right-a", rightOutput.output, desktop),
+        createTrackedWindow("right-b", rightOutput.output, desktop),
+        createTrackedWindow("right-c", rightOutput.output, desktop),
+      ];
+      const fixture = createWorkspace(
+        leftOutput.output,
+        desktop,
+        [leftOutput.output, rightOutput.output],
+        [desktop],
+        windows.map((window) => window.window),
+      );
+      const workScheduler = new ManualScheduler();
+      const resumeScheduler = new ManualScheduler();
+      const controller = new RuntimeController(fixture.workspace, {
+        clientAreaOption: 2,
+        gap: 10,
+        schedule: workScheduler.schedule,
+        scheduleResume: resumeScheduler.schedule,
+      });
+
+      controller.start();
+      fixture.workspace.activeWindow = windows[0]?.window ?? null;
+      fixture.workspace.activeWindow = windows[5]?.window ?? null;
+
+      for (const index of transferOrder) {
+        const transferred = windows[index + 3];
+
+        if (!transferred) {
+          throw new Error("invalid topology transfer order");
+        }
+
+        Object.defineProperty(transferred.window, "output", {
+          configurable: true,
+          value: leftOutput.output,
+        });
+        transferred.outputChanged.emit(rightOutput.output);
+      }
+
+      fixture.setScreens([leftOutput.output]);
+      fixture.screensChanged.emit();
+      flushTopologyRecovery(resumeScheduler, workScheduler);
+
+      return {
+        controller,
+        fixture,
+        leftOutput,
+        resumeScheduler,
+        rightOutput,
+        windows,
+        workScheduler,
+      };
+    };
+    const first = createMergedFixture([0, 1, 2]);
+    const second = createMergedFixture([2, 0, 1]);
+    const frames = (windows: readonly TrackedWindow[]) =>
+      windows.map((window) => window.window.frameGeometry);
+    const mergedFrames = [
+      { height: 780, width: 485, x: -1960, y: 10 },
+      { height: 780, width: 485, x: -1465, y: 10 },
+      { height: 780, width: 485, x: -970, y: 10 },
+      { height: 780, width: 485, x: -475, y: 10 },
+      { height: 780, width: 485, x: 20, y: 10 },
+      { height: 780, width: 485, x: 515, y: 10 },
+    ];
+
+    expect(frames(first.windows)).toEqual(mergedFrames);
+    expect(frames(second.windows)).toEqual(mergedFrames);
+    expect(first.controller.managedCount).toBe(6);
+    expect(first.fixture.workspace.activeWindow).toBe(first.windows[5]?.window);
+
+    for (const index of [3, 4, 5]) {
+      const transferred = first.windows[index];
+
+      if (!transferred) {
+        throw new Error("missing topology transfer window");
+      }
+
+      Object.defineProperty(transferred.window, "output", {
+        configurable: true,
+        value: first.rightOutput.output,
+      });
+      transferred.outputChanged.emit(first.leftOutput.output);
+    }
+
+    first.fixture.setScreens([
+      first.leftOutput.output,
+      first.rightOutput.output,
+    ]);
+    first.fixture.screensChanged.emit();
+    flushTopologyRecovery(first.resumeScheduler, first.workScheduler);
+
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      first.resumeScheduler.flush();
+    }
+
+    while (first.workScheduler.pendingCount > 0) {
+      first.workScheduler.flush();
+    }
+
+    expect(first.controller.managedCount).toBe(4);
+    expect(first.fixture.workspace.activeWindow).toBe(first.windows[5]?.window);
+    expect(first.windows[1]?.window.frameGeometry).toEqual({
+      height: 780,
+      width: 485,
+      x: 10,
+      y: 10,
+    });
+    expect(first.windows[2]?.window.frameGeometry).toEqual({
+      height: 780,
+      width: 485,
+      x: 505,
+      y: 10,
+    });
+    expect(first.windows[4]?.window.frameGeometry).toEqual({
+      height: 780,
+      width: 485,
+      x: 1010,
+      y: 10,
+    });
+    expect(first.windows[5]?.window.frameGeometry).toEqual({
+      height: 780,
+      width: 485,
+      x: 1505,
+      y: 10,
+    });
+  });
+
+  it("preserves global layout order when the earlier output is removed", () => {
+    const leftOutput = createTrackedOutput("DP-1", 0);
+    const rightOutput = createTrackedOutput("HDMI-A-1", 1000);
+    const desktop = { id: "desktop-1" };
+    const windows = [
+      createTrackedWindow("left-a", leftOutput.output, desktop),
+      createTrackedWindow("left-b", leftOutput.output, desktop),
+      createTrackedWindow("right-a", rightOutput.output, desktop),
+      createTrackedWindow("right-b", rightOutput.output, desktop),
+    ];
+    const fixture = createWorkspace(
+      rightOutput.output,
+      desktop,
+      [leftOutput.output, rightOutput.output],
+      [desktop],
+      windows.map((window) => window.window),
+    );
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    controller.start();
+
+    for (const index of [1, 0]) {
+      const transferred = windows[index];
+
+      if (!transferred) {
+        throw new Error("missing left-output window");
+      }
+
+      Object.defineProperty(transferred.window, "output", {
+        configurable: true,
+        value: rightOutput.output,
+      });
+      transferred.outputChanged.emit(leftOutput.output);
+    }
+
+    fixture.setScreens([rightOutput.output]);
+    fixture.screensChanged.emit();
+    flushTopologyRecovery(resumeScheduler, workScheduler);
+
+    expect(windows.map((window) => window.window.frameGeometry.x)).toEqual([
+      30, 525, 1020, 1515,
+    ]);
+  });
+
+  it("retains a structural batch when post-recovery sampling restarts the barrier", () => {
+    const leftOutput = createTrackedOutput("DP-1", 0);
+    const rightOutput = createTrackedOutput("HDMI-A-1", 1000);
+    const desktop = { id: "desktop-1" };
+    const windows = [
+      createTrackedWindow("left-a", leftOutput.output, desktop),
+      createTrackedWindow("left-b", leftOutput.output, desktop),
+      createTrackedWindow("right-a", rightOutput.output, desktop),
+      createTrackedWindow("right-b", rightOutput.output, desktop),
+    ];
+    const fixture = createWorkspace(
+      rightOutput.output,
+      desktop,
+      [leftOutput.output, rightOutput.output],
+      [desktop],
+      windows.map((window) => window.window),
+    );
+    let armPostRecoveryChange = false;
+    let controller: RuntimeController | null = null;
+    let workAreaWidth = 1000;
+    Object.defineProperty(fixture.workspace, "clientArea", {
+      configurable: true,
+      value: (_option: number, output: KWinOutput) => {
+        const runtimeState = controller as unknown as {
+          topologyStabilizing: boolean;
+        } | null;
+
+        if (
+          armPostRecoveryChange &&
+          runtimeState &&
+          !runtimeState.topologyStabilizing
+        ) {
+          armPostRecoveryChange = false;
+          workAreaWidth = 900;
+        }
+
+        return {
+          height: 800,
+          width: workAreaWidth,
+          x: output.geometry.x,
+          y: output.geometry.y,
+        };
+      },
+    });
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+    controller.start();
+    const layout = (
+      controller as unknown as {
+        layout: LayoutEngine;
+      }
+    ).layout;
+    const unmanageWindows = layout.unmanageWindows.bind(layout);
+    const unmanageWindow = layout.unmanageWindow.bind(layout);
+    let batchReleaseCount = 0;
+    let singleReleaseCount = 0;
+    layout.unmanageWindows = (command) => {
+      batchReleaseCount += 1;
+      return unmanageWindows(command);
+    };
+    layout.unmanageWindow = (id) => {
+      singleReleaseCount += 1;
+      return unmanageWindow(id);
+    };
+
+    for (const index of [1, 0]) {
+      const transferred = windows[index];
+
+      if (!transferred) {
+        throw new Error("missing structural transfer window");
+      }
+
+      Object.defineProperty(transferred.window, "output", {
+        configurable: true,
+        value: rightOutput.output,
+      });
+      transferred.outputChanged.emit(leftOutput.output);
+    }
+
+    fixture.setScreens([rightOutput.output]);
+    fixture.screensChanged.emit();
+    resumeScheduler.flush();
+    resumeScheduler.flush();
+    armPostRecoveryChange = true;
+    workScheduler.flush();
+
+    expect(resumeScheduler.pendingCount).toBe(1);
+    expect(batchReleaseCount).toBe(0);
+    flushTopologyRecovery(resumeScheduler, workScheduler);
+
+    expect(
+      layout
+        .snapshot(outputId(rightOutput.output.name), desktopId(desktop.id))
+        .columns.map((column) => column.windowIds[0]),
+    ).toEqual(["left-a", "left-b", "right-a", "right-b"]);
+    expect(batchReleaseCount).toBe(2);
+    expect(singleReleaseCount).toBe(0);
+    expect(fixture.workspace.activeWindow).toBe(windows[3]?.window);
+  });
+
+  it("moves an active suspended slot during structural recovery", () => {
+    const leftOutput = createTrackedOutput("DP-1", 0);
+    const rightOutput = createTrackedOutput("HDMI-A-1", 1000);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", leftOutput.output, desktop);
+    const suspended = createTrackedWindow(
+      "window-2",
+      rightOutput.output,
+      desktop,
+      { frameGeometry: { height: 200, width: 300, x: 1100, y: 100 } },
+    );
+    const fixture = createWorkspace(
+      rightOutput.output,
+      desktop,
+      [leftOutput.output, rightOutput.output],
+      [desktop],
+      [first.window, suspended.window],
+    );
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    controller.start();
+    setWindowState("fullscreen", suspended, true);
+    workScheduler.flush();
+    const suspendedFrame = { ...suspended.window.frameGeometry };
+    const suspendedWrites = suspended.writeCount;
+    Object.defineProperty(suspended.window, "output", {
+      configurable: true,
+      value: leftOutput.output,
+    });
+    suspended.outputChanged.emit(rightOutput.output);
+    fixture.setScreens([leftOutput.output]);
+    fixture.screensChanged.emit();
+    flushTopologyRecovery(resumeScheduler, workScheduler);
+
+    expect(controller.managedCount).toBe(2);
+    expect(fixture.workspace.activeWindow).toBe(suspended.window);
+    expect(suspended.window.frameGeometry).toEqual(suspendedFrame);
+    expect(suspended.writeCount).toBe(suspendedWrites);
+
+    setWindowState("fullscreen", suspended, false);
+    workScheduler.flush();
+    resumeScheduler.flush();
+    workScheduler.flush();
+
+    expect(first.window.frameGeometry.x).toBe(10);
+    expect(suspended.window.frameGeometry.x).toBe(505);
+    expect(controller.focusLeft()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(first.window);
   });
 
   it("falls back to the global current desktop on X11", () => {
@@ -2550,4 +5183,160 @@ function createOutput(name: string, x: number): KWinOutput {
     geometry: { height: 800, width: 1000, x, y: 0 },
     name,
   };
+}
+
+interface TrackedOutput {
+  readonly geometryChanged: Signal<[]>;
+  readonly output: KWinOutput;
+  readonly scaleChanged: Signal<[]>;
+  setGeometry(geometry: KWinOutput["geometry"]): void;
+  setScale(scale: number): void;
+}
+
+function createTrackedOutput(name: string, x: number): TrackedOutput {
+  const geometryChanged = new Signal<[]>();
+  const scaleChanged = new Signal<[]>();
+  let geometry: KWinOutput["geometry"] = {
+    height: 800,
+    width: 1000,
+    x,
+    y: 0,
+  };
+  let scale = 1;
+  const output: KWinOutput = {
+    devicePixelRatio: scale,
+    geometry,
+    geometryChanged,
+    name,
+    scaleChanged,
+  };
+  Object.defineProperties(output, {
+    devicePixelRatio: {
+      configurable: true,
+      enumerable: true,
+      get: () => scale,
+    },
+    geometry: {
+      configurable: true,
+      enumerable: true,
+      get: () => geometry,
+    },
+  });
+
+  return {
+    geometryChanged,
+    output,
+    scaleChanged,
+    setGeometry: (nextGeometry) => {
+      geometry = nextGeometry;
+    },
+    setScale: (nextScale) => {
+      scale = nextScale;
+    },
+  };
+}
+
+function flushTopologyRecovery(
+  resumeScheduler: ManualScheduler,
+  workScheduler: ManualScheduler,
+): void {
+  resumeScheduler.flush();
+  resumeScheduler.flush();
+  workScheduler.flush();
+}
+
+function flushCapacityParking(
+  resumeScheduler: ManualScheduler,
+  workScheduler: ManualScheduler,
+): void {
+  resumeScheduler.flush();
+  resumeScheduler.flush();
+  workScheduler.flush();
+}
+
+function createCapacityFixture(
+  windowCount = 3,
+  columnWidth?: {
+    readonly kind: "fixed" | "proportion";
+    readonly value: number;
+  },
+) {
+  const output = createTrackedOutput("DP-1", 0);
+  const addedOutput = createTrackedOutput("HDMI-A-1", 1000);
+  const desktop = { id: "desktop-1" };
+  const windows = Array.from({ length: windowCount }, (_value, index) =>
+    createTrackedWindow(`window-${String(index + 1)}`, output.output, desktop, {
+      frameGeometry: {
+        height: 200 + index,
+        width: 300 + index,
+        x: 40 + index * 80,
+        y: 50 + index * 30,
+      },
+    }),
+  );
+  const fixture = createWorkspace(
+    output.output,
+    desktop,
+    [output.output],
+    [desktop],
+    windows.map((window) => window.window),
+  );
+  const workScheduler = new ManualScheduler();
+  const resumeScheduler = new ManualScheduler();
+  const controller = new RuntimeController(fixture.workspace, {
+    clientAreaOption: 2,
+    ...(columnWidth ? { columnWidth } : {}),
+    gap: 10,
+    schedule: workScheduler.schedule,
+    scheduleResume: resumeScheduler.schedule,
+  });
+
+  return {
+    addedOutput,
+    controller,
+    desktop,
+    fixture,
+    output,
+    resumeScheduler,
+    windows,
+    workScheduler,
+  };
+}
+
+function installGroupedCapacityLayout(
+  controller: RuntimeController,
+  output: KWinOutput,
+  desktop: KWinVirtualDesktop,
+): LayoutEngine {
+  const layout = new LayoutEngine();
+
+  layout.restoreColumns({
+    activeColumnId: columnId("column:active"),
+    columns: [
+      {
+        column: {
+          id: columnId("column:group"),
+          width: { kind: "fixed", value: 700 },
+          windowIds: [windowId("window-1"), windowId("window-2")],
+        },
+        index: 0,
+      },
+      {
+        column: {
+          id: columnId("column:active"),
+          width: { kind: "fixed", value: 300 },
+          windowIds: [windowId("window-3")],
+        },
+        index: 1,
+      },
+    ],
+    desktopId: desktopId(desktop.id),
+    outputId: outputId(output.name),
+  });
+  (
+    controller as unknown as {
+      layout: LayoutEngine;
+    }
+  ).layout = layout;
+  return layout;
 }

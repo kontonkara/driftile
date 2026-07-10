@@ -57,6 +57,111 @@ describe("LayoutEngine", () => {
     });
   });
 
+  it("unmanages windows atomically across full and partial columns", () => {
+    const engine = new LayoutEngine();
+
+    engine.restoreColumns({
+      activeColumnId: columnId("column-2"),
+      columns: [
+        {
+          column: {
+            id: columnId("column-1"),
+            width: { kind: "fixed", value: 400 },
+            windowIds: [windowId("window-1"), windowId("window-2")],
+          },
+          index: 0,
+        },
+        {
+          column: {
+            id: columnId("column-2"),
+            width: { kind: "fixed", value: 300 },
+            windowIds: [windowId("window-3")],
+          },
+          index: 1,
+        },
+        {
+          column: {
+            id: columnId("column-3"),
+            width: { kind: "proportion", value: 0.5 },
+            windowIds: [windowId("window-4"), windowId("window-5")],
+          },
+          index: 2,
+        },
+      ],
+      desktopId: desktop,
+      outputId: output,
+    });
+
+    expect(
+      engine.unmanageWindows({
+        desktopId: desktop,
+        outputId: output,
+        windowIds: [
+          windowId("window-2"),
+          windowId("window-3"),
+          windowId("window-5"),
+        ],
+      }),
+    ).toEqual({
+      removedColumns: [{ id: "column-2", index: 1 }],
+    });
+    expect(engine.snapshot(output, desktop)).toEqual({
+      activeColumnId: "column-3",
+      columns: [
+        {
+          id: "column-1",
+          width: { kind: "fixed", value: 400 },
+          windowIds: ["window-1"],
+        },
+        {
+          id: "column-3",
+          width: { kind: "proportion", value: 0.5 },
+          windowIds: ["window-4"],
+        },
+      ],
+      desktopId: "desktop-1",
+      outputId: "DP-1",
+      viewportOffset: 0,
+    });
+  });
+
+  it("rejects an invalid batch unmanage without mutation", () => {
+    const engine = new LayoutEngine();
+    const otherOutput = outputId("HDMI-A-1");
+
+    engine.manageWindow({
+      columnId: columnId("column-1"),
+      desktopId: desktop,
+      outputId: output,
+      width: { kind: "fixed", value: 300 },
+      windowId: windowId("window-1"),
+    });
+    engine.manageWindow({
+      columnId: columnId("column-2"),
+      desktopId: desktop,
+      outputId: otherOutput,
+      width: { kind: "fixed", value: 300 },
+      windowId: windowId("window-2"),
+    });
+    const before = engine.snapshot(output, desktop);
+
+    expect(
+      engine.unmanageWindows({
+        desktopId: desktop,
+        outputId: output,
+        windowIds: [windowId("window-1"), windowId("window-2")],
+      }),
+    ).toBeNull();
+    expect(
+      engine.unmanageWindows({
+        desktopId: desktop,
+        outputId: output,
+        windowIds: [windowId("window-1"), windowId("window-1")],
+      }),
+    ).toBeNull();
+    expect(engine.snapshot(output, desktop)).toEqual(before);
+  });
+
   it("tracks activation for deterministic insertion", () => {
     const engine = new LayoutEngine();
 
@@ -251,5 +356,145 @@ describe("LayoutEngine", () => {
         },
       ),
     );
+  });
+
+  it("removes and restores whole columns at their exact positions", () => {
+    const engine = new LayoutEngine();
+
+    expect(
+      engine.restoreColumns({
+        activeColumnId: columnId("column-3"),
+        columns: [
+          {
+            column: {
+              id: columnId("column-1"),
+              width: { kind: "fixed", value: 240 },
+              windowIds: [windowId("window-1"), windowId("window-2")],
+            },
+            index: 0,
+          },
+          {
+            column: {
+              id: columnId("column-2"),
+              width: { kind: "proportion", value: 0.4 },
+              windowIds: [windowId("window-3")],
+            },
+            index: 1,
+          },
+          {
+            column: {
+              id: columnId("column-3"),
+              width: { kind: "fixed", value: 360 },
+              windowIds: [windowId("window-4")],
+            },
+            index: 2,
+          },
+        ],
+        desktopId: desktop,
+        outputId: output,
+        viewportOffset: 120,
+      }),
+    ).toBe(true);
+
+    expect(
+      engine.removeColumns({
+        columnIds: [columnId("column-1"), columnId("column-3")],
+        desktopId: desktop,
+        outputId: output,
+      }),
+    ).toBe(true);
+    expect(engine.snapshot(output, desktop)).toMatchObject({
+      activeColumnId: "column-2",
+      columns: [{ id: "column-2", windowIds: ["window-3"] }],
+    });
+
+    expect(
+      engine.restoreColumns({
+        activeColumnId: columnId("column-3"),
+        columns: [
+          {
+            column: {
+              id: columnId("column-1"),
+              width: { kind: "fixed", value: 240 },
+              windowIds: [windowId("window-1"), windowId("window-2")],
+            },
+            index: 0,
+          },
+          {
+            column: {
+              id: columnId("column-3"),
+              width: { kind: "fixed", value: 360 },
+              windowIds: [windowId("window-4")],
+            },
+            index: 2,
+          },
+        ],
+        desktopId: desktop,
+        outputId: output,
+        viewportOffset: 120,
+      }),
+    ).toBe(true);
+    expect(engine.snapshot(output, desktop)).toEqual({
+      activeColumnId: "column-3",
+      columns: [
+        {
+          id: "column-1",
+          width: { kind: "fixed", value: 240 },
+          windowIds: ["window-1", "window-2"],
+        },
+        {
+          id: "column-2",
+          width: { kind: "proportion", value: 0.4 },
+          windowIds: ["window-3"],
+        },
+        {
+          id: "column-3",
+          width: { kind: "fixed", value: 360 },
+          windowIds: ["window-4"],
+        },
+      ],
+      desktopId: "desktop-1",
+      outputId: "DP-1",
+      viewportOffset: 120,
+    });
+  });
+
+  it("does not mutate layout when an exact column restoration is invalid", () => {
+    const engine = new LayoutEngine();
+
+    engine.manageWindow({
+      columnId: columnId("column-2"),
+      desktopId: desktop,
+      outputId: output,
+      width: { kind: "proportion", value: 0.5 },
+      windowId: windowId("window-2"),
+    });
+    const before = engine.snapshot(output, desktop);
+
+    expect(
+      engine.restoreColumns({
+        columns: [
+          {
+            column: {
+              id: columnId("column-1"),
+              width: { kind: "proportion", value: 0.5 },
+              windowIds: [windowId("window-1")],
+            },
+            index: 0,
+          },
+          {
+            column: {
+              id: columnId("column-3"),
+              width: { kind: "proportion", value: 0.5 },
+              windowIds: [windowId("window-3")],
+            },
+            index: 0,
+          },
+        ],
+        desktopId: desktop,
+        outputId: output,
+      }),
+    ).toBe(false);
+    expect(engine.snapshot(output, desktop)).toEqual(before);
   });
 });

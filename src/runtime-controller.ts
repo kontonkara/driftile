@@ -1,17 +1,26 @@
-import { solveStripGeometry } from "./core/geometry";
+import {
+  solveStripGeometry,
+  type Rect,
+  type WindowGeometry,
+} from "./core/geometry";
 import {
   columnId,
   desktopId,
   outputId,
   windowId,
+  type ColumnId,
   type DesktopId,
   type OutputId,
   type WindowId,
 } from "./core/ids";
 import {
   LayoutEngine,
+  previewColumnRestoration,
   type ColumnWidth,
   type HorizontalDirection,
+  type LayoutColumnPlacement,
+  type LayoutColumnSnapshot,
+  type LayoutContextSnapshot,
 } from "./core/layout-engine";
 import { diffWindowGeometries } from "./core/reconcile";
 import type {
@@ -33,13 +42,17 @@ import {
   type ObservedWindow,
   type WindowSuspensionRequest,
 } from "./platform/kwin/window-observer";
+import { TopologyObserver } from "./platform/kwin/topology-observer";
 
 const DEFAULT_COLUMN_WIDTH: ColumnWidth = {
   kind: "proportion",
   value: 0.5,
 };
 const DEFAULT_GAP = 16;
+const MAX_CAPACITY_PARK_ATTEMPTS = 20;
+const MAX_TOPOLOGY_SAMPLE_ATTEMPTS = 20;
 const MAX_TRANSIENT_RESUME_PROBES = 20;
+const REQUIRED_CAPACITY_PARK_SAMPLES = 2;
 
 interface ManagedContext {
   readonly desktopId: DesktopId;
@@ -47,14 +60,19 @@ interface ManagedContext {
 }
 
 interface RuntimeContext extends ManagedContext {
+  geometryFingerprint: string;
   readonly key: string;
   readonly windowIds: Set<WindowId>;
 }
 
 interface ManagedWindow {
-  readonly contextFingerprint: string;
   readonly contextKey: string;
-  readonly originalFrame: KWinWindow["frameGeometry"];
+  restoreBaseline: RestoreBaseline | null;
+}
+
+interface RestoreBaseline {
+  readonly fingerprint: string;
+  readonly frame: KWinWindow["frameGeometry"];
 }
 
 interface AdmissionCandidate {
@@ -72,9 +90,65 @@ interface TransientResumeProbe {
   pending: boolean;
 }
 
+interface TopologySample {
+  readonly revision: number;
+  readonly signature: string;
+}
+
+interface TopologyColumnMetadata {
+  readonly column: LayoutColumnSnapshot;
+  readonly sourceContextKey: string;
+}
+
+interface CapacityRecoveryPlan {
+  readonly activeColumnId: ColumnId | null;
+  readonly columns: readonly CapacityParkColumn[];
+  readonly contextFingerprint: string;
+  readonly desktopId: DesktopId;
+  readonly outputId: OutputId;
+  readonly outputInstanceId: number | undefined;
+  readonly viewportOffset: number;
+  readonly windows: readonly CapacityParkWindow[];
+}
+
+interface CapacityParkColumn extends Omit<LayoutColumnPlacement, "index"> {
+  index: number;
+}
+
+interface CapacityParkWindow {
+  readonly columnId: ColumnId;
+  restoreBaseline: RestoreBaseline | null;
+  readonly rollbackFrame: Rect;
+  readonly targetFrame: Rect;
+  readonly windowId: WindowId;
+}
+
+interface CapacityParkOperation extends CapacityRecoveryPlan {
+  attempts: number;
+  readonly contextKey: string;
+  readonly generation: number;
+  probePending: boolean;
+  stableSamples: number;
+  readonly token: object;
+  readonly topologyRevision: number;
+}
+
+interface CapacityParkingLease {
+  readonly activeColumnId: ColumnId | null;
+  readonly column: CapacityParkColumn;
+  readonly contextFingerprint: string;
+  readonly contextKey: string;
+  readonly desktopId: DesktopId;
+  readonly outputId: OutputId;
+  readonly outputInstanceId: number | undefined;
+  readonly viewportOffset: number;
+  readonly windows: readonly CapacityParkWindow[];
+}
+
 type AdmissionDecision =
   | { readonly fingerprint: string; readonly kind: "accepted" }
-  | { readonly kind: "deferred" | "rejected" };
+  | { readonly fingerprint?: string; readonly kind: "deferred" }
+  | { readonly kind: "rejected" };
 
 export interface RuntimeControllerOptions {
   readonly clientAreaOption: number;
@@ -87,11 +161,32 @@ export interface RuntimeControllerOptions {
 }
 
 export class RuntimeController {
+  private readonly capacityCanceledParks = new Map<
+    string,
+    CapacityParkOperation
+  >();
+  private readonly capacitySupersededParkWindows = new Set<WindowId>();
+  private readonly capacityLeasesByContext = new Map<
+    string,
+    Set<CapacityParkingLease>
+  >();
+  private readonly capacityLeaseByWindow = new Map<
+    WindowId,
+    CapacityParkingLease
+  >();
+  private readonly capacityParkOperations = new Map<
+    string,
+    CapacityParkOperation
+  >();
+  private readonly capacityParkBackoffs = new Set<string>();
+  private readonly committedOutputRanks = new Map<OutputId, number>();
   private readonly contexts = new Map<string, RuntimeContext>();
   private readonly dirtyContexts = new Set<string>();
   private readonly geometry: KWinGeometryAdapter;
   private readonly gap: number;
   private initializing = false;
+  private readonly knownOutputInstances = new Map<string, number>();
+  private lastOutputCount = 0;
   private lastWrites = 0;
   private layout = new LayoutEngine();
   private readonly managedWindows = new Map<WindowId, ManagedWindow>();
@@ -112,11 +207,30 @@ export class RuntimeController {
     Set<WindowSuspensionRequest>
   >();
   private readonly suspendedWindows = new Set<WindowId>();
+  private topologyAllOutputs = false;
+  private topologyAllowsOverflowAdmissions = false;
+  private readonly topologyColumnByWindow = new Map<
+    WindowId,
+    TopologyColumnMetadata
+  >();
+  private topologyInvalidateAllBaselines = false;
+  private readonly topologyInvalidatedOutputs = new Set<OutputId>();
+  private readonly topologyOutputs = new Set<OutputId>();
+  private topologyRecoveryPending = false;
+  private topologyRevision = 0;
+  private topologySample: TopologySample | null = null;
+  private topologySampleAttempts = 0;
+  private topologySampleToken: object | null = null;
+  private topologyRetryPending = false;
+  private topologyStabilizing = false;
+  private topologyWindowOrder: ReadonlyMap<WindowId, number> | null = null;
+  private readonly topologyObserver: TopologyObserver;
   private readonly transientResumeProbes = new Map<
     WindowId,
     TransientResumeProbe
   >();
   private readonly waitingWindowContexts = new Map<WindowId, string>();
+  private readonly waitingContextFingerprints = new Map<string, string>();
   private readonly waitingWindowIds = new Map<string, Set<WindowId>>();
   private workScheduled = false;
   private readonly workspace: KWinWorkspace;
@@ -149,6 +263,9 @@ export class RuntimeController {
       options.clientAreaOption,
       options.createRect,
     );
+    this.topologyObserver = new TopologyObserver(workspace, {
+      changed: this.handleTopologyChanged,
+    });
   }
 
   get lastWriteCount(): number {
@@ -167,6 +284,24 @@ export class RuntimeController {
     return this.focusAdjacent("right");
   }
 
+  probeTopology(): void {
+    if (!this.started || this.topologyStabilizing) {
+      return;
+    }
+
+    if (this.topologyRetryPending) {
+      this.topologyRetryPending = false;
+      this.topologyRevision += 1;
+      this.topologySample = null;
+      this.topologySampleAttempts = 0;
+      this.topologyStabilizing = true;
+      this.scheduleTopologySample();
+      return;
+    }
+
+    this.sampleSettledVisibleContextGeometries();
+  }
+
   start(): boolean {
     if (this.started) {
       return true;
@@ -182,6 +317,8 @@ export class RuntimeController {
     try {
       this.runGeneration += 1;
       this.started = true;
+      this.lastOutputCount = this.workspace.screens.length;
+      this.knownOutputInstances.clear();
       this.workspace.currentDesktopChanged.connect(
         this.handleCurrentDesktopChanged,
       );
@@ -190,6 +327,15 @@ export class RuntimeController {
 
       try {
         this.observer.start();
+        this.topologyObserver.start();
+        this.refreshCommittedOutputRanks();
+
+        for (const [
+          name,
+          instanceId,
+        ] of this.topologyObserver.outputInstances()) {
+          this.knownOutputInstances.set(name, instanceId);
+        }
 
         if (this.startupStabilizationProbes > 0) {
           this.startupStabilizationRemaining = this.startupStabilizationProbes;
@@ -229,6 +375,7 @@ export class RuntimeController {
       }
 
       try {
+        this.restoreCapacityParkingFrames();
         this.restoreOriginalFrames();
       } catch (error) {
         console.warn(
@@ -240,8 +387,10 @@ export class RuntimeController {
         this.handleCurrentDesktopChanged,
       );
       this.workspace.windowActivated.disconnect(this.handleWindowActivated);
+      this.topologyObserver.stop();
       this.observer.stop();
       this.layout = new LayoutEngine();
+      this.knownOutputInstances.clear();
       this.contexts.clear();
       this.dirtyContexts.clear();
       this.managedWindows.clear();
@@ -252,16 +401,48 @@ export class RuntimeController {
       this.suspendedWindows.clear();
       this.startupStabilizationRemaining = 0;
       this.startupStabilizationToken = null;
+      this.topologyAllOutputs = false;
+      this.topologyInvalidateAllBaselines = false;
+      this.topologyInvalidatedOutputs.clear();
+      this.topologyOutputs.clear();
+      this.topologyRecoveryPending = false;
+      this.topologyRevision = 0;
+      this.topologySample = null;
+      this.topologySampleAttempts = 0;
+      this.topologySampleToken = null;
+      this.topologyRetryPending = false;
+      this.topologyStabilizing = false;
       this.transientResumeProbes.clear();
+      this.capacityCanceledParks.clear();
+      this.capacitySupersededParkWindows.clear();
+      this.capacityLeasesByContext.clear();
+      this.capacityLeaseByWindow.clear();
+      this.capacityParkBackoffs.clear();
+      this.capacityParkOperations.clear();
+      this.committedOutputRanks.clear();
       this.waitingWindowContexts.clear();
+      this.waitingContextFingerprints.clear();
       this.waitingWindowIds.clear();
+      this.topologyAllowsOverflowAdmissions = false;
+      this.topologyColumnByWindow.clear();
+      this.topologyWindowOrder = null;
       this.workScheduled = false;
       this.lastWrites = 0;
     }
   }
 
   reconcile(): number {
-    if (!this.started) {
+    if (
+      !this.started ||
+      this.topologyStabilizing ||
+      this.topologyRetryPending
+    ) {
+      return 0;
+    }
+
+    const sampledGeometries = this.sampleSettledVisibleContextGeometries();
+
+    if (!sampledGeometries) {
       return 0;
     }
 
@@ -272,7 +453,7 @@ export class RuntimeController {
     let writeCount = 0;
 
     for (const context of this.contexts.values()) {
-      writeCount += this.reconcileContext(context);
+      writeCount += this.reconcileContext(context, sampledGeometries);
     }
 
     this.lastWrites = writeCount;
@@ -323,8 +504,18 @@ export class RuntimeController {
   private readonly handleWindowAdded = (window: ObservedWindow): void => {
     const addedId = windowId(window.id);
     const source = this.observer.source(window.id);
+    const addedContext = managedContext(window);
 
-    if (this.initializing || this.startupStabilizationToken !== null) {
+    if (addedContext) {
+      this.capacityParkBackoffs.delete(contextKey(addedContext));
+    }
+
+    if (
+      this.initializing ||
+      this.startupStabilizationToken !== null ||
+      this.topologyStabilizing ||
+      this.topologyRetryPending
+    ) {
       this.pendingWindowSyncs.add(addedId);
       return;
     }
@@ -335,13 +526,16 @@ export class RuntimeController {
   };
 
   private readonly handleWindowChanged = (id: string): void => {
-    this.pendingWindowSyncs.add(windowId(id));
+    const changedId = windowId(id);
+    this.clearCapacityParkBackoffForWindow(changedId);
+    this.pendingWindowSyncs.add(changedId);
     this.scheduleWork();
   };
 
   private readonly handleWindowStateChanged = (id: string): void => {
     const changedId = windowId(id);
     const source = this.observer.source(id);
+    this.clearCapacityParkBackoffForWindow(changedId);
 
     if (source && hasGeometryAuthorityBlocker(source)) {
       this.suspendGeometryLease(changedId);
@@ -356,6 +550,7 @@ export class RuntimeController {
     request: WindowSuspensionRequest,
   ): void => {
     const settledId = windowId(id);
+    this.clearCapacityParkBackoffForWindow(settledId);
 
     if (
       request.endsWith("-settling") &&
@@ -372,6 +567,7 @@ export class RuntimeController {
     request: WindowSuspensionRequest,
   ): void => {
     const suspendedId = windowId(id);
+    this.clearCapacityParkBackoffForWindow(suspendedId);
     let requests = this.requestedSuspensions.get(suspendedId);
 
     if (!requests) {
@@ -392,6 +588,9 @@ export class RuntimeController {
 
   private readonly handleWindowRemoved = (id: string): void => {
     const managedId = windowId(id);
+    this.clearCapacityParkBackoffForWindow(managedId);
+    this.cancelCapacityParkForWindow(managedId, false);
+    this.invalidateCapacityLeaseForWindow(managedId);
     this.pendingWindowSyncs.delete(managedId);
     this.forgetWaitingWindow(managedId);
     this.requestedSuspensions.delete(managedId);
@@ -408,14 +607,18 @@ export class RuntimeController {
 
   private readonly handleWindowActivated = (
     window: KWinWindow | null,
+    allowSuspended = false,
   ): void => {
-    if (!window) {
+    if (!window || this.topologyStabilizing || this.topologyRetryPending) {
       return;
     }
 
     const id = windowId(String(window.internalId));
 
-    if (this.suspendedWindows.has(id) || !isGeometryWritable(window)) {
+    if (
+      !allowSuspended &&
+      (this.suspendedWindows.has(id) || !isGeometryWritable(window))
+    ) {
       return;
     }
 
@@ -444,7 +647,17 @@ export class RuntimeController {
   };
 
   private focusAdjacent(direction: HorizontalDirection): boolean {
-    if (!this.started) {
+    if (
+      !this.started ||
+      this.topologyStabilizing ||
+      this.topologyRetryPending
+    ) {
+      return false;
+    }
+
+    const sampledGeometries = this.sampleSettledVisibleContextGeometries();
+
+    if (!sampledGeometries) {
       return false;
     }
 
@@ -510,7 +723,7 @@ export class RuntimeController {
     this.dirtyContexts.delete(context.key);
 
     try {
-      this.lastWrites = this.reconcileContext(context);
+      this.lastWrites = this.reconcileContext(context, sampledGeometries);
     } catch (error) {
       this.layout.activateWindow(activeId);
       this.markContextDirty(context);
@@ -557,8 +770,21 @@ export class RuntimeController {
 
       try {
         this.initializing = true;
-        this.synchronizePendingWindows();
-        this.handleWindowActivated(this.workspace.activeWindow);
+        const topologyBatchPending = this.topologyWindowOrder !== null;
+        const topologyBatchConsumed = this.synchronizePendingWindows(
+          topologyBatchPending && this.topologyAllowsOverflowAdmissions,
+        );
+
+        if (topologyBatchPending && topologyBatchConsumed) {
+          this.topologyColumnByWindow.clear();
+          this.topologyAllowsOverflowAdmissions = false;
+          this.topologyWindowOrder = null;
+        }
+
+        this.handleWindowActivated(
+          this.workspace.activeWindow,
+          topologyBatchPending && topologyBatchConsumed,
+        );
         this.initializing = false;
         this.flushScheduledWork();
       } catch (error) {
@@ -571,6 +797,803 @@ export class RuntimeController {
         this.initializing = false;
       }
     });
+  }
+
+  private refreshCommittedOutputRanks(): void {
+    const outputs = [...this.workspace.screens].sort(
+      (left, right) =>
+        left.geometry.x - right.geometry.x ||
+        left.geometry.y - right.geometry.y ||
+        left.name.localeCompare(right.name),
+    );
+    this.committedOutputRanks.clear();
+
+    for (const [rank, output] of outputs.entries()) {
+      this.committedOutputRanks.set(outputId(output.name), rank);
+    }
+  }
+
+  private captureTopologyWindowOrder(): void {
+    const keys = new Set<string>([
+      ...this.contexts.keys(),
+      ...this.waitingWindowIds.keys(),
+    ]);
+    const orderedKeys = [...keys].sort((left, right) => {
+      const leftContext = managedContextFromKey(left);
+      const rightContext = managedContextFromKey(right);
+      const leftRank = leftContext
+        ? (this.committedOutputRanks.get(leftContext.outputId) ??
+          Number.MAX_SAFE_INTEGER)
+        : Number.MAX_SAFE_INTEGER;
+      const rightRank = rightContext
+        ? (this.committedOutputRanks.get(rightContext.outputId) ??
+          Number.MAX_SAFE_INTEGER)
+        : Number.MAX_SAFE_INTEGER;
+
+      return leftRank - rightRank || left.localeCompare(right);
+    });
+    const order = new Map<WindowId, number>();
+    this.topologyColumnByWindow.clear();
+    let rank = 0;
+    const append = (id: WindowId): void => {
+      if (!order.has(id)) {
+        order.set(id, rank);
+        rank += 1;
+      }
+    };
+
+    for (const key of orderedKeys) {
+      const context = this.contexts.get(key);
+      const parsed = context ?? managedContextFromKey(key);
+
+      if (!parsed) {
+        continue;
+      }
+
+      const snapshot = this.layout.snapshot(parsed.outputId, parsed.desktopId);
+      const leases = [...(this.capacityLeasesByContext.get(key) ?? [])];
+      const logical =
+        leases.length === 0
+          ? snapshot
+          : previewColumnRestoration(
+              snapshot,
+              leases.map((lease) => lease.column),
+            );
+
+      for (const column of (logical ?? snapshot).columns) {
+        const metadata: TopologyColumnMetadata = {
+          column: {
+            id: column.id,
+            width: { ...column.width },
+            windowIds: [...column.windowIds],
+          },
+          sourceContextKey: key,
+        };
+
+        for (const id of column.windowIds) {
+          append(id);
+          this.topologyColumnByWindow.set(id, metadata);
+        }
+      }
+
+      for (const id of this.waitingWindowIds.get(key) ?? []) {
+        append(id);
+      }
+    }
+
+    for (const source of this.workspace.stackingOrder) {
+      append(windowId(String(source.internalId)));
+    }
+
+    this.topologyWindowOrder = order;
+  }
+
+  private readonly handleTopologyChanged = (outputName?: string): void => {
+    if (!this.started) {
+      return;
+    }
+
+    if (!outputName && this.topologyWindowOrder === null) {
+      this.captureTopologyWindowOrder();
+      this.topologyAllowsOverflowAdmissions = false;
+    }
+
+    this.recordCapacityTopologyBaselineInvalidation(outputName);
+    this.clearCapacityParkBackoffsForTopology(outputName);
+
+    if (outputName) {
+      const changedOutputId = outputId(outputName);
+      this.topologyOutputs.add(changedOutputId);
+      this.recordTopologyBaselineInvalidation(changedOutputId);
+    } else {
+      this.topologyAllOutputs = true;
+      this.topologyInvalidateAllBaselines = true;
+    }
+
+    this.topologyRevision += 1;
+    this.topologyRecoveryPending = false;
+    this.topologySample = null;
+    this.topologySampleAttempts = 0;
+    this.topologyRetryPending = false;
+    this.topologyStabilizing = true;
+    this.cancelCapacityParkOperations(false);
+    this.scheduleTopologySample();
+  };
+
+  private clearCapacityParkBackoffForWindow(id: WindowId): void {
+    const owner = this.managedWindows.get(id);
+    const lease = this.capacityLeaseByWindow.get(id);
+    const waitingContext = this.waitingWindowContexts.get(id);
+
+    if (owner) {
+      this.capacityParkBackoffs.delete(owner.contextKey);
+    }
+
+    if (lease) {
+      this.capacityParkBackoffs.delete(lease.contextKey);
+    }
+
+    if (waitingContext) {
+      this.capacityParkBackoffs.delete(waitingContext);
+    }
+  }
+
+  private clearCapacityParkBackoffsForTopology(outputName?: string): void {
+    if (!outputName) {
+      const currentInstances = this.topologyObserver.outputInstances();
+
+      for (const key of [...this.capacityParkBackoffs]) {
+        const context = managedContextFromKey(key);
+
+        if (
+          !context ||
+          this.knownOutputInstances.get(String(context.outputId)) ===
+            currentInstances.get(String(context.outputId))
+        ) {
+          continue;
+        }
+
+        this.capacityParkBackoffs.delete(key);
+        const runtime = this.contexts.get(key);
+
+        if (runtime) {
+          this.markContextDirty(runtime);
+        }
+      }
+
+      return;
+    }
+
+    for (const key of [...this.capacityParkBackoffs]) {
+      if (key.slice(0, key.indexOf("\u0000")) === outputName) {
+        this.capacityParkBackoffs.delete(key);
+        const context = this.contexts.get(key);
+
+        if (context) {
+          this.markContextDirty(context);
+        }
+      }
+    }
+  }
+
+  private recordCapacityTopologyBaselineInvalidation(
+    outputName?: string,
+  ): void {
+    const invalidate = (
+      output: OutputId,
+      desktop: DesktopId,
+      fingerprint: string,
+      outputInstanceId: number | undefined,
+      windows: readonly CapacityParkWindow[],
+    ): void => {
+      if (outputName && String(output) !== outputName) {
+        return;
+      }
+
+      let changed: boolean;
+      const currentInstance = this.topologyObserver
+        .outputInstances()
+        .get(String(output));
+
+      if (currentInstance !== outputInstanceId) {
+        changed = true;
+      } else {
+        try {
+          changed =
+            this.geometry.contextGeometry(output, desktop)?.fingerprint !==
+            fingerprint;
+        } catch {
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        for (const window of windows) {
+          window.restoreBaseline = null;
+        }
+      }
+    };
+    const operations = new Set<CapacityParkOperation>([
+      ...this.capacityParkOperations.values(),
+      ...this.capacityCanceledParks.values(),
+    ]);
+
+    for (const operation of operations) {
+      invalidate(
+        operation.outputId,
+        operation.desktopId,
+        operation.contextFingerprint,
+        operation.outputInstanceId,
+        operation.windows,
+      );
+    }
+
+    for (const leases of this.capacityLeasesByContext.values()) {
+      for (const lease of leases) {
+        invalidate(
+          lease.outputId,
+          lease.desktopId,
+          lease.contextFingerprint,
+          lease.outputInstanceId,
+          lease.windows,
+        );
+      }
+    }
+  }
+
+  private recordTopologyBaselineInvalidation(changedOutputId: OutputId): void {
+    const currentInstance = this.topologyObserver
+      .outputInstances()
+      .get(String(changedOutputId));
+
+    if (
+      this.knownOutputInstances.get(String(changedOutputId)) !== currentInstance
+    ) {
+      this.topologyInvalidatedOutputs.add(changedOutputId);
+      return;
+    }
+
+    for (const context of this.contexts.values()) {
+      if (context.outputId !== changedOutputId) {
+        continue;
+      }
+
+      try {
+        const current = this.geometry.contextGeometry(
+          context.outputId,
+          context.desktopId,
+        );
+
+        if (!current || current.fingerprint !== context.geometryFingerprint) {
+          this.topologyInvalidatedOutputs.add(changedOutputId);
+          return;
+        }
+      } catch {
+        this.topologyInvalidatedOutputs.add(changedOutputId);
+        return;
+      }
+    }
+
+    for (const [key, fingerprint] of this.waitingContextFingerprints) {
+      if (this.contexts.has(key)) {
+        continue;
+      }
+
+      const context = managedContextFromKey(key);
+
+      if (!context || context.outputId !== changedOutputId) {
+        continue;
+      }
+
+      try {
+        const current = this.geometry.contextGeometry(
+          context.outputId,
+          context.desktopId,
+        );
+
+        if (!current || current.fingerprint !== fingerprint) {
+          this.topologyInvalidatedOutputs.add(changedOutputId);
+          return;
+        }
+      } catch {
+        this.topologyInvalidatedOutputs.add(changedOutputId);
+        return;
+      }
+    }
+  }
+
+  private sampleSettledVisibleContextGeometries(): ReadonlyMap<
+    string,
+    ContextGeometry
+  > | null {
+    const geometries = new Map<string, ContextGeometry>();
+    const outputNames = new Set<string>();
+    const keys = new Set<string>([
+      ...this.contexts.keys(),
+      ...this.waitingWindowIds.keys(),
+    ]);
+
+    for (const key of keys) {
+      const runtimeContext = this.contexts.get(key);
+      const context = runtimeContext ?? managedContextFromKey(key);
+
+      if (!context) {
+        continue;
+      }
+
+      if (!this.isContextVisible(context)) {
+        continue;
+      }
+
+      let current: ContextGeometry | null;
+
+      try {
+        current = this.geometry.contextGeometry(
+          context.outputId,
+          context.desktopId,
+        );
+      } catch (error) {
+        console.warn(
+          `[driftile] topology probe deferred context=${key} error=${String(error)}`,
+        );
+        outputNames.add(String(context.outputId));
+        continue;
+      }
+
+      const fingerprint =
+        runtimeContext?.geometryFingerprint ??
+        this.waitingContextFingerprints.get(key);
+
+      if (!current) {
+        outputNames.add(String(context.outputId));
+      } else if (fingerprint === undefined) {
+        this.waitingContextFingerprints.set(key, current.fingerprint);
+        outputNames.add(String(context.outputId));
+      } else if (current.fingerprint !== fingerprint) {
+        outputNames.add(String(context.outputId));
+      } else {
+        geometries.set(key, current);
+      }
+    }
+
+    for (const outputName of outputNames) {
+      this.handleTopologyChanged(outputName);
+    }
+
+    return outputNames.size > 0 ? null : geometries;
+  }
+
+  private scheduleTopologySample(): void {
+    if (!this.started || this.topologySampleToken) {
+      return;
+    }
+
+    const token = {};
+    const runGeneration = this.runGeneration;
+    this.topologySampleToken = token;
+
+    this.scheduleResume(() => {
+      if (
+        !this.started ||
+        this.runGeneration !== runGeneration ||
+        this.topologySampleToken !== token
+      ) {
+        return;
+      }
+
+      this.topologySampleToken = null;
+      this.topologySampleAttempts += 1;
+
+      for (const changedOutputId of this.topologyOutputs) {
+        this.recordTopologyBaselineInvalidation(changedOutputId);
+      }
+
+      const signature = this.createTopologySignature();
+
+      if (signature === null) {
+        if (this.topologySampleAttempts >= MAX_TOPOLOGY_SAMPLE_ATTEMPTS) {
+          this.deferTopologyRecovery();
+          return;
+        }
+
+        this.scheduleTopologySample();
+        return;
+      }
+
+      const sample: TopologySample = {
+        revision: this.topologyRevision,
+        signature,
+      };
+
+      if (
+        !this.topologySample ||
+        this.topologySample.revision !== sample.revision ||
+        this.topologySample.signature !== sample.signature
+      ) {
+        this.topologySample = sample;
+
+        if (this.topologySampleAttempts >= MAX_TOPOLOGY_SAMPLE_ATTEMPTS) {
+          this.deferTopologyRecovery();
+          return;
+        }
+
+        this.scheduleTopologySample();
+        return;
+      }
+
+      this.topologySample = sample;
+      this.topologyRecoveryPending = true;
+      this.scheduleWork();
+    });
+  }
+
+  private deferTopologyRecovery(): void {
+    console.warn("[driftile] topology stabilization deferred");
+    this.topologyRecoveryPending = false;
+    this.topologyRetryPending = true;
+    this.topologySample = null;
+    this.topologySampleAttempts = 0;
+    this.topologySampleToken = null;
+    this.topologyStabilizing = false;
+  }
+
+  private createTopologySignature(): string | null {
+    try {
+      const outputInstances = this.topologyObserver.outputInstances();
+      const outputMembership = this.workspace.screens
+        .map((output) => [
+          output.name,
+          outputInstances.get(output.name) ?? null,
+        ])
+        .sort((left, right) => String(left[0]).localeCompare(String(right[0])));
+      const outputDetails = this.workspace.screens
+        .filter(
+          (output) =>
+            this.topologyAllOutputs ||
+            this.topologyOutputs.has(outputId(output.name)),
+        )
+        .map((output) => [
+          output.name,
+          output.geometry.x,
+          output.geometry.y,
+          output.geometry.width,
+          output.geometry.height,
+          output.devicePixelRatio,
+        ])
+        .sort((left, right) => String(left[0]).localeCompare(String(right[0])));
+      const contextKeys = new Set<string>([
+        ...this.contexts.keys(),
+        ...this.waitingWindowIds.keys(),
+      ]);
+      const contexts: unknown[][] = [];
+
+      for (const key of contextKeys) {
+        const context = this.contexts.get(key) ?? managedContextFromKey(key);
+
+        if (
+          !context ||
+          (!this.topologyAllOutputs &&
+            !this.topologyOutputs.has(context.outputId))
+        ) {
+          continue;
+        }
+
+        contexts.push([
+          key,
+          this.geometry.contextGeometry(context.outputId, context.desktopId)
+            ?.fingerprint ?? null,
+        ]);
+      }
+
+      contexts.sort((left, right) =>
+        String(left[0]).localeCompare(String(right[0])),
+      );
+      const windows: unknown[][] = [];
+
+      for (const source of this.workspace.stackingOrder) {
+        const id = windowId(String(source.internalId));
+        const observed = normalizeWindow(source);
+        const liveOutputId = source.output
+          ? outputId(source.output.name)
+          : observed
+            ? outputId(observed.outputId)
+            : null;
+        const ownerKey =
+          this.managedWindows.get(id)?.contextKey ??
+          this.waitingWindowContexts.get(id);
+        const ownerOutputId = ownerKey
+          ? managedContextFromKey(ownerKey)?.outputId
+          : undefined;
+        const affected =
+          this.topologyAllOutputs ||
+          (liveOutputId !== null && this.topologyOutputs.has(liveOutputId)) ||
+          (ownerOutputId !== undefined &&
+            this.topologyOutputs.has(ownerOutputId));
+
+        if (!affected) {
+          continue;
+        }
+
+        windows.push([
+          String(id),
+          source.output?.name ?? null,
+          source.desktops.map((desktop) => desktop.id).join("\u0001"),
+          source.onAllDesktops,
+          source.frameGeometry.x,
+          source.frameGeometry.y,
+          source.frameGeometry.width,
+          source.frameGeometry.height,
+        ]);
+      }
+
+      windows.sort((left, right) =>
+        String(left[0]).localeCompare(String(right[0])),
+      );
+
+      return JSON.stringify({
+        contexts,
+        outputDetails,
+        outputMembership,
+        windows,
+      });
+    } catch (error) {
+      if (this.topologySampleAttempts === 1) {
+        console.warn(
+          `[driftile] topology sample unavailable error=${String(error)}`,
+        );
+      }
+
+      return null;
+    }
+  }
+
+  private synchronizeTopologyRecovery(): boolean {
+    const committingRevision = this.topologyRevision;
+    const settledSample = this.topologySample;
+    this.topologySampleAttempts += 1;
+
+    for (const changedOutputId of this.topologyOutputs) {
+      this.recordTopologyBaselineInvalidation(changedOutputId);
+    }
+
+    const liveSignature = this.createTopologySignature();
+
+    if (
+      !settledSample ||
+      settledSample.revision !== this.topologyRevision ||
+      liveSignature !== settledSample.signature
+    ) {
+      this.topologyRecoveryPending = false;
+
+      if (this.topologySampleAttempts >= MAX_TOPOLOGY_SAMPLE_ATTEMPTS) {
+        this.deferTopologyRecovery();
+        return false;
+      }
+
+      this.topologySample =
+        liveSignature === null
+          ? null
+          : { revision: this.topologyRevision, signature: liveSignature };
+      this.scheduleTopologySample();
+      return false;
+    }
+
+    const currentOutputInstances = this.topologyObserver.outputInstances();
+    const outputCountChanged =
+      this.lastOutputCount !== this.workspace.screens.length;
+    const outputMembershipChanged =
+      currentOutputInstances.size !== this.knownOutputInstances.size ||
+      [...currentOutputInstances.keys()].some(
+        (name) => !this.knownOutputInstances.has(name),
+      );
+    const replacedOutputs = new Set<OutputId>();
+
+    for (const [name, instanceId] of this.knownOutputInstances) {
+      if (currentOutputInstances.get(name) !== instanceId) {
+        replacedOutputs.add(outputId(name));
+      }
+    }
+
+    for (const [name, instanceId] of currentOutputInstances) {
+      if (this.knownOutputInstances.get(name) !== instanceId) {
+        replacedOutputs.add(outputId(name));
+      }
+    }
+
+    const fullResync =
+      this.topologyAllOutputs || outputCountChanged || outputMembershipChanged;
+    const affectedContexts = new Map<
+      string,
+      {
+        readonly context: ManagedContext;
+        readonly current: ContextGeometry | null;
+        readonly runtime: RuntimeContext | undefined;
+      }
+    >();
+
+    for (const key of new Set<string>([
+      ...this.contexts.keys(),
+      ...this.waitingWindowIds.keys(),
+    ])) {
+      const runtime = this.contexts.get(key);
+      const context = runtime ?? managedContextFromKey(key);
+
+      if (
+        !context ||
+        (!fullResync &&
+          !this.topologyOutputs.has(context.outputId) &&
+          !replacedOutputs.has(context.outputId))
+      ) {
+        continue;
+      }
+
+      let current: ContextGeometry | null = null;
+
+      try {
+        current = this.geometry.contextGeometry(
+          context.outputId,
+          context.desktopId,
+        );
+      } catch (error) {
+        console.warn(
+          `[driftile] topology context deferred context=${key} error=${String(error)}`,
+        );
+      }
+
+      affectedContexts.set(key, { context, current, runtime });
+    }
+
+    if (this.topologyRevision !== committingRevision) {
+      return false;
+    }
+
+    for (const leases of [...this.capacityLeasesByContext.values()]) {
+      for (const lease of [...leases]) {
+        if (!replacedOutputs.has(lease.outputId)) {
+          continue;
+        }
+
+        for (const window of lease.windows) {
+          this.pendingWindowSyncs.add(window.windowId);
+        }
+      }
+    }
+
+    if (fullResync) {
+      for (const id of this.managedWindows.keys()) {
+        this.pendingWindowSyncs.add(id);
+      }
+
+      for (const source of this.workspace.stackingOrder) {
+        const observed = normalizeWindow(source);
+
+        if (observed) {
+          this.pendingWindowSyncs.add(windowId(observed.id));
+        }
+      }
+
+      for (const id of this.waitingWindowContexts.keys()) {
+        this.pendingWindowSyncs.add(id);
+      }
+    }
+
+    for (const [key, { context, current, runtime }] of affectedContexts) {
+      if (!runtime) {
+        if (current) {
+          this.waitingContextFingerprints.set(key, current.fingerprint);
+        }
+
+        continue;
+      }
+
+      const geometryChanged =
+        !current ||
+        current.fingerprint !== runtime.geometryFingerprint ||
+        replacedOutputs.has(context.outputId);
+      const restoreInvalidated =
+        geometryChanged ||
+        this.topologyInvalidatedOutputs.has(context.outputId);
+
+      if (restoreInvalidated) {
+        this.invalidateRestoreBaselines(runtime);
+      }
+
+      if (geometryChanged || outputMembershipChanged) {
+        this.markContextDirty(runtime);
+      }
+
+      if (current) {
+        runtime.geometryFingerprint = current.fingerprint;
+      }
+    }
+
+    if (!fullResync) {
+      for (const [id, key] of this.waitingWindowContexts) {
+        const ownerOutput = key.slice(0, key.indexOf("\u0000"));
+
+        if (this.topologyOutputs.has(outputId(ownerOutput))) {
+          this.pendingWindowSyncs.add(id);
+        }
+      }
+    }
+
+    this.orderPendingWindowSyncs();
+
+    this.knownOutputInstances.clear();
+
+    for (const [name, instanceId] of currentOutputInstances) {
+      this.knownOutputInstances.set(name, instanceId);
+    }
+
+    this.lastOutputCount = this.workspace.screens.length;
+    this.refreshCommittedOutputRanks();
+    this.topologyAllowsOverflowAdmissions ||=
+      outputMembershipChanged || replacedOutputs.size > 0;
+    this.topologyRecoveryPending = false;
+    this.topologyRetryPending = false;
+    this.topologyStabilizing = false;
+    this.topologySample = null;
+    this.topologySampleAttempts = 0;
+    this.topologySampleToken = null;
+    this.topologyAllOutputs = false;
+    this.topologyInvalidateAllBaselines = false;
+    this.topologyInvalidatedOutputs.clear();
+    this.topologyOutputs.clear();
+    return true;
+  }
+
+  private orderPendingWindowSyncs(): void {
+    if (this.pendingWindowSyncs.size < 2) {
+      return;
+    }
+
+    const liveOrder = new Map<WindowId, number>();
+
+    for (const [index, source] of this.workspace.stackingOrder.entries()) {
+      liveOrder.set(windowId(String(source.internalId)), index);
+    }
+
+    const ordered = [...this.pendingWindowSyncs].sort((left, right) => {
+      const leftTopologyRank =
+        this.topologyWindowOrder?.get(left) ?? Number.MAX_SAFE_INTEGER;
+      const rightTopologyRank =
+        this.topologyWindowOrder?.get(right) ?? Number.MAX_SAFE_INTEGER;
+      const leftLiveRank = liveOrder.get(left) ?? Number.MAX_SAFE_INTEGER;
+      const rightLiveRank = liveOrder.get(right) ?? Number.MAX_SAFE_INTEGER;
+
+      return (
+        leftTopologyRank - rightTopologyRank ||
+        leftLiveRank - rightLiveRank ||
+        String(left).localeCompare(String(right))
+      );
+    });
+    this.pendingWindowSyncs.clear();
+
+    for (const id of ordered) {
+      this.pendingWindowSyncs.add(id);
+    }
+  }
+
+  private invalidateRestoreBaselines(context: RuntimeContext): void {
+    for (const id of context.windowIds) {
+      const owner = this.managedWindows.get(id);
+
+      if (owner?.contextKey === context.key) {
+        owner.restoreBaseline = null;
+      }
+    }
+
+    const operation = this.capacityParkOperations.get(context.key);
+
+    for (const window of operation?.windows ?? []) {
+      window.restoreBaseline = null;
+    }
+
+    for (const lease of this.capacityLeasesByContext.get(context.key) ?? []) {
+      for (const window of lease.windows) {
+        window.restoreBaseline = null;
+      }
+    }
   }
 
   private scheduleWork(): void {
@@ -594,8 +1617,44 @@ export class RuntimeController {
   }
 
   private flushScheduledWork(): void {
-    this.synchronizePendingWindows();
+    let topologyRecovered = false;
+
+    if (this.topologyRecoveryPending) {
+      topologyRecovered = this.synchronizeTopologyRecovery();
+    }
+
+    if (this.topologyStabilizing || this.topologyRetryPending) {
+      return;
+    }
+
+    const sampledGeometries = this.sampleSettledVisibleContextGeometries();
+
+    if (!sampledGeometries) {
+      return;
+    }
+
+    const topologyBatchPending = this.topologyWindowOrder !== null;
+    const topologyBatchConsumed = this.synchronizePendingWindows(
+      topologyBatchPending && this.topologyAllowsOverflowAdmissions,
+    );
+
+    if (topologyBatchPending && topologyBatchConsumed) {
+      this.topologyColumnByWindow.clear();
+      this.topologyAllowsOverflowAdmissions = false;
+      this.topologyWindowOrder = null;
+    }
+
     this.retryPendingAdmissions();
+
+    if (topologyRecovered || (topologyBatchPending && topologyBatchConsumed)) {
+      this.initializing = true;
+
+      try {
+        this.handleWindowActivated(this.workspace.activeWindow, true);
+      } finally {
+        this.initializing = false;
+      }
+    }
 
     const dirtyContextKeys = [...this.dirtyContexts];
     this.dirtyContexts.clear();
@@ -606,7 +1665,7 @@ export class RuntimeController {
 
       if (context) {
         try {
-          writeCount += this.reconcileContext(context);
+          writeCount += this.reconcileContext(context, sampledGeometries);
         } catch (error) {
           this.dirtyContexts.add(key);
           console.warn(
@@ -619,28 +1678,82 @@ export class RuntimeController {
     this.lastWrites = writeCount;
   }
 
-  private synchronizePendingWindows(): void {
+  private synchronizePendingWindows(allowOverflowAdmissions = false): boolean {
     if (
       this.startupStabilizationToken !== null ||
-      this.pendingWindowSyncs.size === 0
+      this.topologyStabilizing ||
+      this.topologyRetryPending
     ) {
-      return;
+      return false;
+    }
+
+    if (this.pendingWindowSyncs.size === 0) {
+      return true;
     }
 
     const pendingIds = [...this.pendingWindowSyncs];
     const admissionCandidates: KWinWindow[] = [];
+    const preservedRestoreBaselines = new Map<
+      WindowId,
+      RestoreBaseline | null
+    >();
     const releasedContextKeys = new Set<string>();
     this.pendingWindowSyncs.clear();
 
+    if (allowOverflowAdmissions) {
+      this.prepareTopologyCapacityLeases(pendingIds, preservedRestoreBaselines);
+      this.releaseTopologyManagedWindows(
+        pendingIds,
+        preservedRestoreBaselines,
+        releasedContextKeys,
+      );
+    }
+
     for (const id of pendingIds) {
-      this.forgetWaitingWindow(id);
       const source = this.observer.source(id);
       const observed = source ? normalizeWindow(source) : null;
       const nextContext = observed ? managedContext(observed) : null;
       const owner = this.managedWindows.get(id);
+      let capacityLease = this.capacityLeaseByWindow.get(id);
+
+      if (
+        capacityLease &&
+        (!nextContext || contextKey(nextContext) !== capacityLease.contextKey)
+      ) {
+        this.invalidateCapacityLeaseForWindow(id);
+        capacityLease = undefined;
+      }
+
+      if (allowOverflowAdmissions && capacityLease) {
+        this.invalidateCapacityLeaseForWindow(id);
+        capacityLease = undefined;
+      }
+
+      if (!capacityLease) {
+        this.forgetWaitingWindow(id);
+      }
+
       let resumed = false;
 
       const requests = this.requestedSuspensions.get(id);
+      const changedContext = Boolean(
+        owner && (!nextContext || contextKey(nextContext) !== owner.contextKey),
+      );
+      const geometryBlocked = Boolean(
+        this.suspendedWindows.has(id) ||
+        requests ||
+        (source && hasGeometryAuthorityBlocker(source)),
+      );
+
+      if (allowOverflowAdmissions && source && nextContext) {
+        if (geometryBlocked) {
+          this.suspendGeometryLease(id);
+        }
+
+        admissionCandidates.push(source);
+        continue;
+      }
+
       const maximizeSettling = Boolean(
         source?.maximizeMode === 0 && requests?.has("maximized-settling"),
       );
@@ -700,9 +1813,10 @@ export class RuntimeController {
         continue;
       }
 
-      const changedContext = Boolean(
-        owner && (!nextContext || contextKey(nextContext) !== owner.contextKey),
-      );
+      if (capacityLease && nextContext) {
+        this.pendingAdmissionContexts.add(capacityLease.contextKey);
+        continue;
+      }
 
       if (changedContext) {
         const releasedContextKey = this.releaseWindow(id);
@@ -730,12 +1844,143 @@ export class RuntimeController {
       }
     }
 
-    this.admitWindows(admissionCandidates);
+    this.admitWindows(
+      admissionCandidates,
+      allowOverflowAdmissions,
+      preservedRestoreBaselines,
+    );
 
     this.retryWaitingWindows(releasedContextKeys);
+    return true;
   }
 
-  private admitWindows(sources: readonly KWinWindow[]): number {
+  private prepareTopologyCapacityLeases(
+    pendingIds: readonly WindowId[],
+    preservedRestoreBaselines: Map<WindowId, RestoreBaseline | null>,
+  ): void {
+    const leases = new Set<CapacityParkingLease>();
+
+    for (const id of pendingIds) {
+      const lease = this.capacityLeaseByWindow.get(id);
+
+      if (lease) {
+        leases.add(lease);
+      }
+    }
+
+    for (const lease of leases) {
+      for (const window of lease.windows) {
+        const source = this.observer.source(window.windowId);
+        const observed = source ? normalizeWindow(source) : null;
+        const context = observed ? managedContext(observed) : null;
+
+        if (context && contextKey(context) === lease.contextKey) {
+          preservedRestoreBaselines.set(
+            window.windowId,
+            cloneRestoreBaseline(window.restoreBaseline),
+          );
+        }
+      }
+    }
+
+    this.invalidateCapacityLeases(leases);
+  }
+
+  private releaseTopologyManagedWindows(
+    pendingIds: readonly WindowId[],
+    preservedRestoreBaselines: Map<WindowId, RestoreBaseline | null>,
+    releasedContextKeys: Set<string>,
+  ): void {
+    const releases = new Map<
+      string,
+      { readonly context: RuntimeContext; readonly ids: WindowId[] }
+    >();
+
+    for (const id of pendingIds) {
+      const owner = this.managedWindows.get(id);
+      const source = this.observer.source(id);
+      const observed = source ? normalizeWindow(source) : null;
+      const nextContext = observed ? managedContext(observed) : null;
+
+      if (!owner || !source || !nextContext) {
+        continue;
+      }
+
+      if (owner.contextKey === contextKey(nextContext)) {
+        preservedRestoreBaselines.set(
+          id,
+          cloneRestoreBaseline(owner.restoreBaseline),
+        );
+      }
+
+      const runtimeContext = this.contexts.get(owner.contextKey);
+
+      if (!runtimeContext) {
+        continue;
+      }
+
+      const release = releases.get(owner.contextKey);
+
+      if (release) {
+        release.ids.push(id);
+      } else {
+        releases.set(owner.contextKey, {
+          context: runtimeContext,
+          ids: [id],
+        });
+      }
+    }
+
+    for (const [key, release] of releases) {
+      const removed = this.layout.unmanageWindows({
+        desktopId: release.context.desktopId,
+        outputId: release.context.outputId,
+        windowIds: release.ids,
+      });
+
+      if (!removed) {
+        console.warn(
+          `[driftile] topology batch release fell back context=${key}`,
+        );
+
+        for (const id of release.ids) {
+          if (this.releaseWindow(id)) {
+            releasedContextKeys.add(key);
+          }
+        }
+
+        continue;
+      }
+
+      for (const id of release.ids) {
+        this.managedWindows.delete(id);
+        release.context.windowIds.delete(id);
+      }
+
+      this.capacityParkBackoffs.delete(key);
+      releasedContextKeys.add(key);
+
+      if (release.context.windowIds.size === 0) {
+        this.contexts.delete(key);
+        this.dirtyContexts.delete(key);
+      } else {
+        this.markContextDirty(release.context);
+      }
+    }
+  }
+
+  private admitWindows(
+    sources: readonly KWinWindow[],
+    allowOverflow = false,
+    preservedRestoreBaselines: ReadonlyMap<
+      WindowId,
+      RestoreBaseline | null
+    > = new Map(),
+  ): number {
+    if (allowOverflow) {
+      return this.admitTopologyWindowGroups(sources, preservedRestoreBaselines);
+    }
+
     if (
       !this.initializing ||
       sources.length < 2 ||
@@ -788,6 +2033,309 @@ export class RuntimeController {
     }
 
     return admitted;
+  }
+
+  private admitTopologyWindowGroups(
+    sources: readonly KWinWindow[],
+    preservedRestoreBaselines: ReadonlyMap<WindowId, RestoreBaseline | null>,
+  ): number {
+    const groups = new Map<
+      string,
+      { readonly context: ManagedContext; readonly sources: KWinWindow[] }
+    >();
+
+    for (const source of sources) {
+      const id = windowId(String(source.internalId));
+      const observed = normalizeWindow(source);
+      const context = observed ? managedContext(observed) : null;
+
+      if (!context || this.managedWindows.has(id)) {
+        continue;
+      }
+
+      const key = contextKey(context);
+      const group = groups.get(key);
+
+      if (group) {
+        group.sources.push(source);
+      } else {
+        groups.set(key, { context, sources: [source] });
+      }
+    }
+
+    let admitted = 0;
+
+    for (const group of groups.values()) {
+      admitted += this.admitTopologyWindowGroup(
+        group.context,
+        group.sources,
+        preservedRestoreBaselines,
+      );
+    }
+
+    return admitted;
+  }
+
+  private admitTopologyWindowGroup(
+    context: ManagedContext,
+    sources: readonly KWinWindow[],
+    preservedRestoreBaselines: ReadonlyMap<WindowId, RestoreBaseline | null>,
+  ): number {
+    const key = contextKey(context);
+    const candidates: Array<
+      AdmissionCandidate & { readonly suspended: boolean }
+    > = [];
+
+    for (const source of sources) {
+      const id = windowId(String(source.internalId));
+      const suspended =
+        this.suspendedWindows.has(id) ||
+        this.requestedSuspensions.has(id) ||
+        hasGeometryAuthorityBlocker(source);
+      candidates.push({ id, source, suspended });
+    }
+
+    if (candidates.length === 0) {
+      return 0;
+    }
+
+    let contextGeometry: ContextGeometry | null;
+
+    try {
+      contextGeometry = this.geometry.contextGeometry(
+        context.outputId,
+        context.desktopId,
+      );
+    } catch (error) {
+      for (const candidate of candidates) {
+        this.deferWindow(candidate.id, key);
+      }
+
+      console.warn(
+        `[driftile] topology admission deferred context=${key} error=${String(error)}`,
+      );
+      return 0;
+    }
+
+    if (!contextGeometry) {
+      for (const candidate of candidates) {
+        this.deferWindow(candidate.id, key);
+      }
+
+      return 0;
+    }
+
+    const existingContext = this.contexts.get(key);
+
+    if (
+      existingContext &&
+      existingContext.geometryFingerprint !== contextGeometry.fingerprint
+    ) {
+      for (const candidate of candidates) {
+        this.deferWindow(candidate.id, key, contextGeometry.fingerprint);
+      }
+
+      this.handleTopologyChanged(String(context.outputId));
+      return 0;
+    }
+
+    const before = this.layout.snapshot(context.outputId, context.desktopId);
+    const usedColumnIds = new Set(before.columns.map((column) => column.id));
+    const plannedByKey = new Map<
+      string,
+      {
+        readonly candidates: Array<
+          AdmissionCandidate & { readonly suspended: boolean }
+        >;
+        readonly column: {
+          id: ColumnId;
+          width: ColumnWidth;
+          windowIds: WindowId[];
+        };
+      }
+    >();
+
+    for (const candidate of candidates) {
+      const metadata = this.topologyColumnByWindow.get(candidate.id);
+      const columnKey = metadata
+        ? `${metadata.sourceContextKey}\u0001${String(metadata.column.id)}`
+        : String(candidate.id);
+      let planned = plannedByKey.get(columnKey);
+
+      if (!planned) {
+        let plannedColumnId =
+          metadata?.column.id ?? columnId(`column:${String(candidate.id)}`);
+
+        if (usedColumnIds.has(plannedColumnId)) {
+          plannedColumnId = columnId(`column:${String(candidate.id)}`);
+        }
+
+        usedColumnIds.add(plannedColumnId);
+        planned = {
+          candidates: [],
+          column: {
+            id: plannedColumnId,
+            width: { ...(metadata?.column.width ?? this.width) },
+            windowIds: [],
+          },
+        };
+        plannedByKey.set(columnKey, planned);
+      }
+
+      planned.candidates.push(candidate);
+      planned.column.windowIds.push(candidate.id);
+    }
+
+    let plannedColumns = [...plannedByKey.values()];
+    const preview = (columns: typeof plannedColumns) => {
+      const placements = columns.map((planned, index) => ({
+        column: planned.column,
+        index: before.columns.length + index,
+      }));
+      const snapshot = previewColumnRestoration(before, placements);
+
+      if (!snapshot) {
+        return null;
+      }
+
+      return {
+        layout: solveStripGeometry({
+          context: snapshot,
+          devicePixelRatio: contextGeometry.devicePixelRatio,
+          gap: this.gap,
+          pixelGridOrigin: contextGeometry.pixelGridOrigin,
+          workArea: contextGeometry.workArea,
+        }),
+        placements,
+      };
+    };
+    let plannedPreview = preview(plannedColumns);
+
+    if (!plannedPreview) {
+      for (const candidate of candidates) {
+        this.deferWindow(candidate.id, key, contextGeometry.fingerprint);
+      }
+
+      return 0;
+    }
+
+    const frames = new Map(
+      plannedPreview.layout.windows.map((window) => [
+        window.windowId,
+        window.frame,
+      ]),
+    );
+    const rejectedColumns = new Set(
+      plannedColumns
+        .filter((planned) =>
+          planned.candidates.some((candidate) => {
+            if (candidate.suspended) {
+              return false;
+            }
+
+            const frame = frames.get(candidate.id);
+            return !(
+              frame && this.geometry.canApplyFrame(candidate.id, frame, context)
+            );
+          }),
+        )
+        .map((planned) => planned.column.id),
+    );
+
+    if (rejectedColumns.size > 0) {
+      for (const planned of plannedColumns) {
+        if (!rejectedColumns.has(planned.column.id)) {
+          continue;
+        }
+
+        for (const candidate of planned.candidates) {
+          this.forgetWaitingWindow(candidate.id);
+        }
+      }
+
+      plannedColumns = plannedColumns.filter(
+        (planned) => !rejectedColumns.has(planned.column.id),
+      );
+      plannedPreview = preview(plannedColumns);
+    }
+
+    if (plannedColumns.length === 0) {
+      return 0;
+    }
+
+    if (
+      !plannedPreview ||
+      !this.layout.restoreColumns({
+        columns: plannedPreview.placements,
+        desktopId: context.desktopId,
+        outputId: context.outputId,
+      })
+    ) {
+      for (const planned of plannedColumns) {
+        for (const candidate of planned.candidates) {
+          this.deferWindow(candidate.id, key, contextGeometry.fingerprint);
+        }
+      }
+
+      return 0;
+    }
+
+    const admittedCandidates = plannedColumns.reduce<
+      Array<AdmissionCandidate & { readonly suspended: boolean }>
+    >((admitted, planned) => {
+      admitted.push(...planned.candidates);
+      return admitted;
+    }, []);
+
+    let runtimeContext = existingContext;
+
+    if (!runtimeContext) {
+      runtimeContext = {
+        ...context,
+        geometryFingerprint: contextGeometry.fingerprint,
+        key,
+        windowIds: new Set<WindowId>(),
+      };
+      this.contexts.set(key, runtimeContext);
+    }
+
+    for (const candidate of admittedCandidates) {
+      const preserved = preservedRestoreBaselines.has(candidate.id)
+        ? cloneRestoreBaseline(
+            preservedRestoreBaselines.get(candidate.id) ?? null,
+          )
+        : undefined;
+      const restoreBaseline =
+        preserved !== undefined
+          ? preserved
+          : candidate.suspended
+            ? null
+            : {
+                fingerprint: contextGeometry.fingerprint,
+                frame: { ...candidate.source.frameGeometry },
+              };
+
+      runtimeContext.windowIds.add(candidate.id);
+      this.managedWindows.set(candidate.id, {
+        contextKey: key,
+        restoreBaseline,
+      });
+      this.forgetWaitingWindow(candidate.id);
+
+      if (candidate.suspended) {
+        this.suspendGeometryLease(candidate.id);
+      } else {
+        this.resumeSamples.delete(candidate.id);
+        this.suspendedWindows.delete(candidate.id);
+        this.transientResumeProbes.delete(candidate.id);
+      }
+
+      this.layout.activateWindow(candidate.id);
+    }
+
+    this.capacityParkBackoffs.delete(key);
+    this.markContextDirty(runtimeContext);
+    return admittedCandidates.length;
   }
 
   private admitWindowGroup(
@@ -843,6 +2391,17 @@ export class RuntimeController {
       return 0;
     }
 
+    const existingContext = this.contexts.get(key);
+
+    if (
+      existingContext &&
+      existingContext.geometryFingerprint !== contextGeometry.fingerprint
+    ) {
+      this.rollbackAdmissionGroup(candidates, key);
+      this.handleTopologyChanged(String(context.outputId));
+      return 0;
+    }
+
     let admittedCandidates = candidates;
 
     while (admittedCandidates.length > 0) {
@@ -890,6 +2449,7 @@ export class RuntimeController {
     if (!runtimeContext) {
       runtimeContext = {
         ...context,
+        geometryFingerprint: contextGeometry.fingerprint,
         key,
         windowIds: new Set<WindowId>(),
       };
@@ -899,9 +2459,11 @@ export class RuntimeController {
     for (const candidate of admittedCandidates) {
       runtimeContext.windowIds.add(candidate.id);
       this.managedWindows.set(candidate.id, {
-        contextFingerprint: contextGeometry.fingerprint,
         contextKey: key,
-        originalFrame: { ...candidate.source.frameGeometry },
+        restoreBaseline: {
+          fingerprint: contextGeometry.fingerprint,
+          frame: { ...candidate.source.frameGeometry },
+        },
       });
       this.forgetWaitingWindow(candidate.id);
 
@@ -913,6 +2475,7 @@ export class RuntimeController {
       }
     }
 
+    this.capacityParkBackoffs.delete(key);
     this.markContextDirty(runtimeContext);
     return admittedCandidates.length;
   }
@@ -930,8 +2493,13 @@ export class RuntimeController {
   private tryAdmitWindow(source: KWinWindow): boolean {
     const id = windowId(String(source.internalId));
     const observed = normalizeWindow(source);
+    const capacityLease = this.capacityLeaseByWindow.get(id);
 
     if (!observed) {
+      if (capacityLease) {
+        this.invalidateCapacityLeaseForWindow(id);
+      }
+
       this.forgetWaitingWindow(id);
       return false;
     }
@@ -939,8 +2507,24 @@ export class RuntimeController {
     const context = managedContext(observed);
 
     if (!context) {
+      if (capacityLease) {
+        this.invalidateCapacityLeaseForWindow(id);
+      }
+
       this.forgetWaitingWindow(id);
       return false;
+    }
+
+    const key = contextKey(context);
+
+    if (capacityLease) {
+      if (capacityLease.contextKey === key) {
+        this.pendingAdmissionContexts.add(key);
+        return false;
+      }
+
+      this.invalidateCapacityLeaseForWindow(id);
+      this.forgetWaitingWindow(id);
     }
 
     if (!isGeometryWritable(source)) {
@@ -956,7 +2540,6 @@ export class RuntimeController {
       return false;
     }
 
-    const key = contextKey(context);
     const added = this.layout.manageWindow({
       columnId: columnId(`column:${observed.id}`),
       desktopId: context.desktopId,
@@ -992,7 +2575,7 @@ export class RuntimeController {
       this.layout.unmanageWindow(id);
 
       if (decision.kind === "deferred") {
-        this.deferWindow(id, key);
+        this.deferWindow(id, key, decision.fingerprint);
       } else {
         this.forgetWaitingWindow(id);
       }
@@ -1000,12 +2583,24 @@ export class RuntimeController {
       return false;
     }
 
-    this.forgetWaitingWindow(id);
     let runtimeContext = this.contexts.get(key);
+
+    if (
+      runtimeContext &&
+      runtimeContext.geometryFingerprint !== decision.fingerprint
+    ) {
+      this.layout.unmanageWindow(id);
+      this.deferWindow(id, key, decision.fingerprint);
+      this.handleTopologyChanged(String(context.outputId));
+      return false;
+    }
+
+    this.forgetWaitingWindow(id);
 
     if (!runtimeContext) {
       runtimeContext = {
         ...context,
+        geometryFingerprint: decision.fingerprint,
         key,
         windowIds: new Set<WindowId>(),
       };
@@ -1014,9 +2609,11 @@ export class RuntimeController {
 
     runtimeContext.windowIds.add(id);
     this.managedWindows.set(id, {
-      contextFingerprint: decision.fingerprint,
       contextKey: key,
-      originalFrame: { ...source.frameGeometry },
+      restoreBaseline: {
+        fingerprint: decision.fingerprint,
+        frame: { ...source.frameGeometry },
+      },
     });
     this.resumeSamples.delete(id);
     this.suspendedWindows.delete(id);
@@ -1029,21 +2626,53 @@ export class RuntimeController {
       this.layout.activateWindow(id);
     }
 
+    this.capacityParkBackoffs.delete(key);
     this.markContextDirty(runtimeContext);
     return true;
   }
 
   private releaseWindow(id: WindowId): string | null {
+    this.cancelCapacityParkForWindow(id, true);
+    this.invalidateCapacityLeaseForWindow(id);
     const owner = this.managedWindows.get(id);
 
     if (!owner) {
       return null;
     }
 
+    const ownedContext = this.contexts.get(owner.contextKey);
+    const before = ownedContext
+      ? this.layout.snapshot(ownedContext.outputId, ownedContext.desktopId)
+      : null;
+    const removedColumn = before?.columns.find((column) =>
+      column.windowIds.includes(id),
+    );
+    const removedColumnIndex =
+      ownedContext && before && removedColumn
+        ? this.capacityLogicalColumnIndices(owner.contextKey, before).get(
+            removedColumn.id,
+          )
+        : undefined;
     this.managedWindows.delete(id);
     this.layout.unmanageWindow(id);
 
-    const context = this.contexts.get(owner.contextKey);
+    if (ownedContext && removedColumn && removedColumnIndex !== undefined) {
+      const after = this.layout.snapshot(
+        ownedContext.outputId,
+        ownedContext.desktopId,
+      );
+
+      if (!after.columns.some((column) => column.id === removedColumn.id)) {
+        this.rebaseCapacityLeasesAfterColumnRemoval(
+          owner.contextKey,
+          removedColumnIndex,
+        );
+      }
+    }
+
+    this.capacityParkBackoffs.delete(owner.contextKey);
+
+    const context = ownedContext;
 
     if (!context) {
       return owner.contextKey;
@@ -1061,10 +2690,18 @@ export class RuntimeController {
     return owner.contextKey;
   }
 
-  private deferWindow(id: WindowId, contextKey: string): void {
+  private deferWindow(
+    id: WindowId,
+    contextKey: string,
+    fingerprint?: string,
+  ): void {
     const previousContextKey = this.waitingWindowContexts.get(id);
 
     if (previousContextKey === contextKey) {
+      if (fingerprint !== undefined) {
+        this.waitingContextFingerprints.set(contextKey, fingerprint);
+      }
+
       return;
     }
 
@@ -1079,6 +2716,10 @@ export class RuntimeController {
     }
 
     windowIds.add(id);
+
+    if (fingerprint !== undefined) {
+      this.waitingContextFingerprints.set(contextKey, fingerprint);
+    }
   }
 
   private forgetWaitingWindow(id: WindowId): void {
@@ -1099,6 +2740,7 @@ export class RuntimeController {
 
     if (windowIds.size === 0) {
       this.waitingWindowIds.delete(key);
+      this.waitingContextFingerprints.delete(key);
       this.pendingAdmissionContexts.delete(key);
     }
   }
@@ -1117,9 +2759,14 @@ export class RuntimeController {
     let admitted = false;
 
     for (const key of contextKeys) {
+      admitted = this.restoreCapacityLeases(key) || admitted;
       const windowIds = [...(this.waitingWindowIds.get(key) ?? [])];
 
       for (const id of windowIds) {
+        if (this.capacityLeaseByWindow.has(id)) {
+          continue;
+        }
+
         const source = this.observer.source(id);
 
         if (!source) {
@@ -1148,6 +2795,7 @@ export class RuntimeController {
   }
 
   private suspendGeometryLease(id: WindowId): void {
+    this.cancelCapacityParkForWindow(id, true);
     const wasSuspended = this.suspendedWindows.has(id);
 
     this.suspendedWindows.add(id);
@@ -1253,17 +2901,105 @@ export class RuntimeController {
     this.dirtyContexts.add(context.key);
   }
 
-  private reconcileContext(context: RuntimeContext): number {
+  private forgetCanceledCapacityPark(key: string): void {
+    const operation = this.capacityCanceledParks.get(key);
+
+    if (!operation) {
+      return;
+    }
+
+    this.capacityCanceledParks.delete(key);
+
+    for (const window of operation.windows) {
+      this.capacitySupersededParkWindows.delete(window.windowId);
+    }
+  }
+
+  private supersedeCanceledCapacityPark(
+    context: RuntimeContext,
+    layout: readonly WindowGeometry[],
+  ): number {
+    const desired = new Map(
+      layout.map((window) => [window.windowId, window.frame]),
+    );
+    let writeCount = 0;
+
+    for (const [key, canceled] of [...this.capacityCanceledParks]) {
+      const changes: Array<{ frame: Rect; windowId: WindowId }> = [];
+
+      for (const window of canceled.windows) {
+        if (this.capacitySupersededParkWindows.has(window.windowId)) {
+          continue;
+        }
+
+        const owner = this.managedWindows.get(window.windowId);
+        const source = this.observer.source(window.windowId);
+        const observed = source ? normalizeWindow(source) : null;
+        const liveContext = observed ? managedContext(observed) : null;
+
+        if (
+          owner?.contextKey !== context.key ||
+          !source ||
+          !liveContext ||
+          contextKey(liveContext) !== context.key
+        ) {
+          continue;
+        }
+
+        const frame = desired.get(window.windowId);
+
+        if (
+          !frame ||
+          this.suspendedWindows.has(window.windowId) ||
+          !this.geometry.canApplyFrame(window.windowId, frame, context)
+        ) {
+          continue;
+        }
+
+        changes.push({ frame, windowId: window.windowId });
+      }
+
+      const applied = this.geometry.apply(changes, context);
+      writeCount += applied;
+
+      if (applied === changes.length) {
+        for (const change of changes) {
+          this.capacitySupersededParkWindows.add(change.windowId);
+        }
+      }
+
+      if (
+        canceled.windows.every(
+          (window) =>
+            this.capacitySupersededParkWindows.has(window.windowId) ||
+            !this.observer.source(window.windowId),
+        )
+      ) {
+        this.forgetCanceledCapacityPark(key);
+      }
+    }
+
+    return writeCount;
+  }
+
+  private reconcileContext(
+    context: RuntimeContext,
+    sampledGeometries?: ReadonlyMap<string, ContextGeometry>,
+  ): number {
     if (!this.isContextVisible(context)) {
       return 0;
     }
 
-    const contextGeometry = this.geometry.contextGeometry(
-      context.outputId,
-      context.desktopId,
-    );
+    const contextGeometry =
+      sampledGeometries?.get(context.key) ??
+      this.geometry.contextGeometry(context.outputId, context.desktopId);
 
     if (!contextGeometry) {
+      return 0;
+    }
+
+    if (contextGeometry.fingerprint !== context.geometryFingerprint) {
+      this.handleTopologyChanged(String(context.outputId));
       return 0;
     }
 
@@ -1274,23 +3010,1067 @@ export class RuntimeController {
       pixelGridOrigin: contextGeometry.pixelGridOrigin,
       workArea: contextGeometry.workArea,
     });
+    let writeCount = 0;
 
     if (!this.canApplyLayout(layout.maxViewportOffset)) {
-      return 0;
+      if (
+        this.capacityParkOperations.has(context.key) ||
+        this.capacityParkBackoffs.has(context.key)
+      ) {
+        return 0;
+      }
+
+      const plan = this.planCapacityRecovery(context, contextGeometry);
+
+      if (!plan) {
+        return 0;
+      }
+
+      writeCount += this.beginCapacityPark(context, plan);
+      return writeCount;
     }
+
+    const writableLayout = layout.windows.filter(
+      (window) => !this.suspendedWindows.has(window.windowId),
+    );
+
+    if (
+      writableLayout.some(
+        (window) =>
+          !this.geometry.canApplyFrame(window.windowId, window.frame, context),
+      )
+    ) {
+      this.markContextDirty(context);
+      return writeCount;
+    }
+
+    writeCount += this.supersedeCanceledCapacityPark(context, writableLayout);
 
     this.layout.setViewportOffset(
       context.outputId,
       context.desktopId,
       layout.viewportOffset,
     );
-    const writableLayout = layout.windows.filter(
-      (window) => !this.suspendedWindows.has(window.windowId),
-    );
     const windowIds = writableLayout.map((window) => window.windowId);
     const observed = this.geometry.observedFrames(windowIds, context);
+
+    if (observed.size !== windowIds.length) {
+      this.markContextDirty(context);
+      return writeCount;
+    }
+
     const changes = diffWindowGeometries(writableLayout, observed);
-    return this.geometry.apply(changes, context);
+    const applied = this.geometry.apply(changes, context);
+    writeCount += applied;
+
+    if (applied === changes.length) {
+      context.geometryFingerprint = contextGeometry.fingerprint;
+    } else {
+      this.markContextDirty(context);
+    }
+
+    return writeCount;
+  }
+
+  private planCapacityRecovery(
+    context: RuntimeContext,
+    contextGeometry: ContextGeometry,
+  ): CapacityRecoveryPlan | null {
+    const snapshot = this.layout.snapshot(context.outputId, context.desktopId);
+    const logicalColumnIndices = this.capacityLogicalColumnIndices(
+      context.key,
+      snapshot,
+    );
+    const activeIndex = snapshot.columns.findIndex(
+      (column) => column.id === snapshot.activeColumnId,
+    );
+    const nonActiveCandidates = snapshot.columns
+      .map((column, index) => {
+        if (column.id === snapshot.activeColumnId) {
+          return null;
+        }
+
+        const windows = this.planColumnParking(
+          column,
+          context,
+          contextGeometry.workArea,
+        );
+        return windows
+          ? {
+              column,
+              index: logicalColumnIndices.get(column.id) ?? index,
+              layoutIndex: index,
+              windows,
+            }
+          : null;
+      })
+      .filter(
+        (
+          candidate,
+        ): candidate is {
+          column: LayoutColumnSnapshot;
+          index: number;
+          layoutIndex: number;
+          windows: readonly CapacityParkWindow[];
+        } => candidate !== null,
+      )
+      .sort((left, right) => {
+        const leftDistance =
+          activeIndex < 0
+            ? left.layoutIndex
+            : Math.abs(left.layoutIndex - activeIndex);
+        const rightDistance =
+          activeIndex < 0
+            ? right.layoutIndex
+            : Math.abs(right.layoutIndex - activeIndex);
+
+        return (
+          rightDistance - leftDistance || right.layoutIndex - left.layoutIndex
+        );
+      });
+    const activeColumn =
+      activeIndex < 0 ? undefined : snapshot.columns[activeIndex];
+    const activeWindows = activeColumn
+      ? this.planColumnParking(activeColumn, context, contextGeometry.workArea)
+      : null;
+    const candidates =
+      activeColumn && activeWindows
+        ? [
+            ...nonActiveCandidates,
+            {
+              column: activeColumn,
+              index: logicalColumnIndices.get(activeColumn.id) ?? activeIndex,
+              layoutIndex: activeIndex,
+              windows: activeWindows,
+            },
+          ]
+        : nonActiveCandidates;
+
+    if (candidates.length === 0) {
+      return null;
+    }
+
+    const layoutAfterEvictions = (count: number) => {
+      const removed = new Set(
+        candidates.slice(0, count).map((candidate) => candidate.column.id),
+      );
+      const simulated: LayoutContextSnapshot = {
+        ...snapshot,
+        columns: snapshot.columns.filter((column) => !removed.has(column.id)),
+      };
+
+      return solveStripGeometry({
+        context: simulated,
+        devicePixelRatio: contextGeometry.devicePixelRatio,
+        gap: this.gap,
+        pixelGridOrigin: contextGeometry.pixelGridOrigin,
+        workArea: contextGeometry.workArea,
+      });
+    };
+    let lower = 1;
+    let required = -1;
+    let upper = candidates.length;
+
+    while (lower <= upper) {
+      const midpoint = Math.trunc((lower + upper) / 2);
+
+      if (
+        this.canApplyLayout(layoutAfterEvictions(midpoint).maxViewportOffset)
+      ) {
+        required = midpoint;
+        upper = midpoint - 1;
+      } else {
+        lower = midpoint + 1;
+      }
+    }
+
+    if (required < 0) {
+      return null;
+    }
+
+    const selected = candidates.slice(0, required);
+    const retainedLayout = layoutAfterEvictions(required);
+
+    if (
+      retainedLayout.windows
+        .filter((window) => !this.suspendedWindows.has(window.windowId))
+        .some(
+          (window) =>
+            !this.geometry.canApplyFrame(
+              window.windowId,
+              window.frame,
+              context,
+            ),
+        )
+    ) {
+      return null;
+    }
+
+    const windows: CapacityParkWindow[] = [];
+
+    for (const candidate of selected) {
+      windows.push(...candidate.windows);
+    }
+
+    return {
+      activeColumnId: snapshot.activeColumnId,
+      columns: selected.map((candidate) => ({
+        column: candidate.column,
+        index: candidate.index,
+      })),
+      contextFingerprint: contextGeometry.fingerprint,
+      desktopId: context.desktopId,
+      outputId: context.outputId,
+      outputInstanceId: this.topologyObserver
+        .outputInstances()
+        .get(String(context.outputId)),
+      viewportOffset: snapshot.viewportOffset,
+      windows,
+    };
+  }
+
+  private capacityLogicalColumnIndices(
+    key: string,
+    snapshot: LayoutContextSnapshot,
+  ): ReadonlyMap<ColumnId, number> {
+    const leases = [...(this.capacityLeasesByContext.get(key) ?? [])];
+    const logical =
+      leases.length === 0
+        ? snapshot
+        : previewColumnRestoration(
+            snapshot,
+            leases.map((lease) => lease.column),
+          );
+    const indices = new Map<ColumnId, number>();
+
+    for (const [index, column] of (logical ?? snapshot).columns.entries()) {
+      indices.set(column.id, index);
+    }
+
+    return indices;
+  }
+
+  private planColumnParking(
+    column: LayoutColumnSnapshot,
+    context: RuntimeContext,
+    workArea: Rect,
+  ): readonly CapacityParkWindow[] | null {
+    const windows: CapacityParkWindow[] = [];
+
+    for (const id of column.windowIds) {
+      const owner = this.managedWindows.get(id);
+      const source = this.observer.source(id);
+
+      if (
+        !owner ||
+        owner.contextKey !== context.key ||
+        !source ||
+        this.suspendedWindows.has(id)
+      ) {
+        return null;
+      }
+
+      const targetFrame = clampFrameToWorkArea(source.frameGeometry, workArea);
+
+      if (!this.geometry.canApplyFrame(id, targetFrame, context)) {
+        return null;
+      }
+
+      windows.push({
+        columnId: column.id,
+        restoreBaseline: cloneRestoreBaseline(owner.restoreBaseline),
+        rollbackFrame: { ...source.frameGeometry },
+        targetFrame,
+        windowId: id,
+      });
+    }
+
+    return windows;
+  }
+
+  private beginCapacityPark(
+    context: RuntimeContext,
+    plan: CapacityRecoveryPlan,
+  ): number {
+    this.forgetCanceledCapacityPark(context.key);
+    const operation: CapacityParkOperation = {
+      ...plan,
+      attempts: 0,
+      contextKey: context.key,
+      generation: this.runGeneration,
+      probePending: false,
+      stableSamples: 0,
+      token: {},
+      topologyRevision: this.topologyRevision,
+    };
+    this.capacityParkOperations.set(context.key, operation);
+    const windowIds = plan.windows.map((window) => window.windowId);
+    const observed = this.geometry.observedFrames(windowIds, context);
+
+    if (observed.size !== windowIds.length) {
+      this.capacityParkOperations.delete(context.key);
+      this.markContextDirty(context);
+      return 0;
+    }
+
+    const changes = diffWindowGeometries(
+      capacityParkTargets(plan.windows),
+      observed,
+    );
+    const writes = this.geometry.apply(changes, context);
+
+    if (this.capacityParkOperations.get(context.key) === operation) {
+      this.scheduleCapacityParkProbe(operation);
+    }
+
+    return writes;
+  }
+
+  private scheduleCapacityParkProbe(operation: CapacityParkOperation): void {
+    if (
+      operation.probePending ||
+      this.capacityParkOperations.get(operation.contextKey) !== operation
+    ) {
+      return;
+    }
+
+    operation.probePending = true;
+    const token = operation.token;
+    this.scheduleResume(() => {
+      if (
+        this.capacityParkOperations.get(operation.contextKey) !== operation ||
+        operation.token !== token
+      ) {
+        return;
+      }
+
+      operation.probePending = false;
+
+      if (
+        !this.started ||
+        this.runGeneration !== operation.generation ||
+        this.topologyRevision !== operation.topologyRevision ||
+        this.topologyStabilizing ||
+        this.topologyRetryPending
+      ) {
+        this.cancelCapacityPark(operation, false);
+        return;
+      }
+
+      const context = this.contexts.get(operation.contextKey);
+
+      if (
+        !context ||
+        !this.capacityParkSourcesRemainValid(operation, context)
+      ) {
+        this.cancelCapacityPark(operation, true);
+        return;
+      }
+
+      const windowIds = operation.windows.map((window) => window.windowId);
+      const observed = this.geometry.observedFrames(windowIds, context);
+
+      if (observed.size !== windowIds.length) {
+        this.cancelCapacityPark(operation, true);
+        return;
+      }
+
+      operation.attempts += 1;
+      const targets = capacityParkTargets(operation.windows);
+      const pendingChanges = diffWindowGeometries(targets, observed);
+
+      if (pendingChanges.length === 0) {
+        operation.stableSamples += 1;
+
+        if (operation.stableSamples >= REQUIRED_CAPACITY_PARK_SAMPLES) {
+          this.commitCapacityPark(operation, context);
+          return;
+        }
+      } else {
+        operation.stableSamples = 0;
+        this.geometry.apply(pendingChanges, context);
+      }
+
+      if (operation.attempts >= MAX_CAPACITY_PARK_ATTEMPTS) {
+        this.capacityParkBackoffs.add(operation.contextKey);
+        this.cancelCapacityPark(operation, true);
+        return;
+      }
+
+      this.scheduleCapacityParkProbe(operation);
+    });
+  }
+
+  private capacityParkSourcesRemainValid(
+    operation: CapacityParkOperation,
+    context: RuntimeContext,
+  ): boolean {
+    if (
+      context.geometryFingerprint !== operation.contextFingerprint ||
+      this.topologyObserver.outputInstances().get(String(context.outputId)) !==
+        operation.outputInstanceId
+    ) {
+      return false;
+    }
+
+    for (const window of operation.windows) {
+      const owner = this.managedWindows.get(window.windowId);
+      const source = this.observer.source(window.windowId);
+      const observed = source ? normalizeWindow(source) : null;
+      const liveContext = observed ? managedContext(observed) : null;
+
+      if (
+        !owner ||
+        owner.contextKey !== operation.contextKey ||
+        !source ||
+        !liveContext ||
+        contextKey(liveContext) !== operation.contextKey ||
+        this.suspendedWindows.has(window.windowId) ||
+        !this.geometry.canApplyFrame(
+          window.windowId,
+          window.targetFrame,
+          context,
+        )
+      ) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  private commitCapacityPark(
+    operation: CapacityParkOperation,
+    context: RuntimeContext,
+  ): void {
+    if (
+      this.capacityParkOperations.get(operation.contextKey) !== operation ||
+      !this.capacityParkSourcesRemainValid(operation, context)
+    ) {
+      this.cancelCapacityPark(operation, true);
+      return;
+    }
+
+    const windowsByColumn = new Map<ColumnId, CapacityParkWindow[]>();
+
+    for (const window of operation.windows) {
+      let windows = windowsByColumn.get(window.columnId);
+
+      if (!windows) {
+        windows = [];
+        windowsByColumn.set(window.columnId, windows);
+      }
+
+      windows.push(window);
+    }
+
+    const leases = operation.columns.map((column) => ({
+      activeColumnId: operation.activeColumnId,
+      column,
+      contextFingerprint: operation.contextFingerprint,
+      contextKey: operation.contextKey,
+      desktopId: context.desktopId,
+      outputId: context.outputId,
+      outputInstanceId: operation.outputInstanceId,
+      viewportOffset: operation.viewportOffset,
+      windows: windowsByColumn.get(column.column.id) ?? [],
+    }));
+    const removed = this.layout.removeColumns({
+      columnIds: operation.columns.map((column) => column.column.id),
+      desktopId: context.desktopId,
+      outputId: context.outputId,
+    });
+
+    if (!removed) {
+      this.cancelCapacityPark(operation, true);
+      return;
+    }
+
+    this.capacityParkOperations.delete(operation.contextKey);
+    this.capacityParkBackoffs.delete(operation.contextKey);
+
+    for (const lease of leases) {
+      this.registerCapacityLease(lease);
+
+      for (const window of lease.windows) {
+        this.managedWindows.delete(window.windowId);
+        context.windowIds.delete(window.windowId);
+        this.deferWindow(
+          window.windowId,
+          context.key,
+          operation.contextFingerprint,
+        );
+      }
+    }
+
+    if (context.windowIds.size === 0) {
+      this.contexts.delete(context.key);
+      this.dirtyContexts.delete(context.key);
+    } else {
+      this.markContextDirty(context);
+    }
+
+    this.scheduleWork();
+  }
+
+  private cancelCapacityPark(
+    operation: CapacityParkOperation,
+    restoreFrames: boolean,
+  ): void {
+    if (this.capacityParkOperations.get(operation.contextKey) !== operation) {
+      return;
+    }
+
+    this.capacityParkOperations.delete(operation.contextKey);
+    operation.probePending = false;
+
+    if (restoreFrames) {
+      this.forgetCanceledCapacityPark(operation.contextKey);
+      this.forceRestorePendingCapacityPark(operation);
+    } else {
+      this.forgetCanceledCapacityPark(operation.contextKey);
+      this.capacityCanceledParks.set(operation.contextKey, operation);
+    }
+
+    const context = this.contexts.get(operation.contextKey);
+
+    if (context) {
+      this.markContextDirty(context);
+    }
+
+    for (const window of operation.windows) {
+      this.pendingWindowSyncs.add(window.windowId);
+    }
+
+    this.scheduleWork();
+  }
+
+  private cancelCapacityParkForWindow(
+    id: WindowId,
+    restoreFrames: boolean,
+  ): void {
+    for (const operation of this.capacityParkOperations.values()) {
+      if (operation.windows.some((window) => window.windowId === id)) {
+        this.cancelCapacityPark(operation, restoreFrames);
+        return;
+      }
+    }
+  }
+
+  private cancelCapacityParkOperations(restoreFrames: boolean): void {
+    for (const operation of [...this.capacityParkOperations.values()]) {
+      this.cancelCapacityPark(operation, restoreFrames);
+    }
+  }
+
+  private forceRestorePendingCapacityPark(
+    operation: CapacityParkOperation,
+  ): void {
+    const context: ManagedContext = {
+      desktopId: operation.desktopId,
+      outputId: operation.outputId,
+    };
+
+    let currentGeometry: ContextGeometry | null;
+
+    try {
+      currentGeometry = this.geometry.contextGeometry(
+        operation.outputId,
+        operation.desktopId,
+      );
+    } catch {
+      currentGeometry = null;
+    }
+
+    const restoreGeometry =
+      !this.topologyAllOutputs &&
+      !this.topologyInvalidateAllBaselines &&
+      !this.topologyOutputs.has(operation.outputId) &&
+      !this.topologyInvalidatedOutputs.has(operation.outputId) &&
+      currentGeometry &&
+      this.topologyObserver
+        .outputInstances()
+        .get(String(operation.outputId)) === operation.outputInstanceId
+        ? currentGeometry
+        : null;
+
+    const changes: Array<{ frame: Rect; windowId: WindowId }> = [];
+
+    for (const window of operation.windows) {
+      const owner = this.managedWindows.get(window.windowId);
+      const source = this.observer.source(window.windowId);
+      const observed = source ? normalizeWindow(source) : null;
+      const liveContext = observed ? managedContext(observed) : null;
+
+      if (
+        owner?.contextKey !== operation.contextKey ||
+        !source ||
+        !liveContext ||
+        contextKey(liveContext) !== operation.contextKey ||
+        !isGeometryWritable(source)
+      ) {
+        continue;
+      }
+
+      changes.push({
+        frame: restoreGeometry
+          ? window.restoreBaseline?.fingerprint === restoreGeometry.fingerprint
+            ? window.restoreBaseline.frame
+            : clampFrameToWorkArea(
+                window.rollbackFrame,
+                restoreGeometry.workArea,
+              )
+          : { ...source.frameGeometry },
+        windowId: window.windowId,
+      });
+    }
+
+    this.geometry.apply(changes, context);
+  }
+
+  private registerCapacityLease(lease: CapacityParkingLease): void {
+    let leases = this.capacityLeasesByContext.get(lease.contextKey);
+
+    if (!leases) {
+      leases = new Set<CapacityParkingLease>();
+      this.capacityLeasesByContext.set(lease.contextKey, leases);
+    }
+
+    leases.add(lease);
+
+    for (const window of lease.windows) {
+      this.capacityLeaseByWindow.set(window.windowId, lease);
+    }
+  }
+
+  private invalidateCapacityLease(
+    lease: CapacityParkingLease,
+    columnRemoved = true,
+  ): void {
+    const leases = this.capacityLeasesByContext.get(lease.contextKey);
+    leases?.delete(lease);
+
+    if (leases?.size === 0) {
+      this.capacityLeasesByContext.delete(lease.contextKey);
+    }
+
+    for (const window of lease.windows) {
+      if (this.capacityLeaseByWindow.get(window.windowId) === lease) {
+        this.capacityLeaseByWindow.delete(window.windowId);
+      }
+    }
+
+    if (columnRemoved) {
+      this.rebaseCapacityLeasesAfterColumnRemoval(
+        lease.contextKey,
+        lease.column.index,
+      );
+      this.capacityParkBackoffs.delete(lease.contextKey);
+    }
+  }
+
+  private invalidateCapacityLeases(
+    leases: ReadonlySet<CapacityParkingLease>,
+  ): void {
+    const leasesByContext = new Map<string, CapacityParkingLease[]>();
+
+    for (const lease of leases) {
+      const contextLeases = leasesByContext.get(lease.contextKey);
+
+      if (contextLeases) {
+        contextLeases.push(lease);
+      } else {
+        leasesByContext.set(lease.contextKey, [lease]);
+      }
+    }
+
+    for (const [key, invalidated] of leasesByContext) {
+      const registered = this.capacityLeasesByContext.get(key);
+      const removedIndices = new Set<number>();
+
+      for (const lease of invalidated) {
+        if (registered?.delete(lease)) {
+          removedIndices.add(lease.column.index);
+        }
+
+        for (const window of lease.windows) {
+          if (this.capacityLeaseByWindow.get(window.windowId) === lease) {
+            this.capacityLeaseByWindow.delete(window.windowId);
+          }
+        }
+      }
+
+      if (!registered || registered.size === 0) {
+        this.capacityLeasesByContext.delete(key);
+      } else if (removedIndices.size > 0) {
+        const indices = [...removedIndices].sort((left, right) => left - right);
+        const survivors = [...registered].sort(
+          (left, right) => left.column.index - right.column.index,
+        );
+        let removedBefore = 0;
+
+        for (const lease of survivors) {
+          const originalIndex = lease.column.index;
+
+          while (
+            removedBefore < indices.length &&
+            (indices[removedBefore] ?? Number.MAX_SAFE_INTEGER) < originalIndex
+          ) {
+            removedBefore += 1;
+          }
+
+          lease.column.index = originalIndex - removedBefore;
+        }
+      }
+
+      this.capacityParkBackoffs.delete(key);
+    }
+  }
+
+  private rebaseCapacityLeasesAfterColumnRemoval(
+    key: string,
+    removedIndex: number,
+  ): void {
+    for (const lease of this.capacityLeasesByContext.get(key) ?? []) {
+      if (lease.column.index > removedIndex) {
+        lease.column.index -= 1;
+      }
+    }
+  }
+
+  private invalidateCapacityLeaseForWindow(id: WindowId): void {
+    const lease = this.capacityLeaseByWindow.get(id);
+
+    if (!lease) {
+      return;
+    }
+
+    this.invalidateCapacityLease(lease);
+
+    for (const window of lease.windows) {
+      if (window.windowId !== id) {
+        this.pendingWindowSyncs.add(window.windowId);
+      }
+    }
+
+    this.scheduleWork();
+  }
+
+  private restoreCapacityLeases(key: string): boolean {
+    const leases = [...(this.capacityLeasesByContext.get(key) ?? [])];
+
+    if (leases.length === 0) {
+      return false;
+    }
+
+    const firstLease = leases[0];
+
+    if (!firstLease) {
+      return false;
+    }
+
+    let contextGeometry: ContextGeometry | null;
+
+    try {
+      contextGeometry = this.geometry.contextGeometry(
+        firstLease.outputId,
+        firstLease.desktopId,
+      );
+    } catch {
+      return false;
+    }
+
+    if (!contextGeometry) {
+      return false;
+    }
+
+    const outputInstanceId = this.topologyObserver
+      .outputInstances()
+      .get(String(firstLease.outputId));
+    const placements: CapacityParkColumn[] = [];
+
+    for (const lease of leases) {
+      if (
+        lease.outputId !== firstLease.outputId ||
+        lease.desktopId !== firstLease.desktopId ||
+        lease.outputInstanceId !== outputInstanceId
+      ) {
+        this.invalidateCapacityLease(lease);
+
+        for (const window of lease.windows) {
+          this.pendingWindowSyncs.add(window.windowId);
+        }
+
+        return false;
+      }
+
+      placements.push(lease.column);
+
+      for (const window of lease.windows) {
+        const source = this.observer.source(window.windowId);
+        const observed = source ? normalizeWindow(source) : null;
+        const liveContext = observed ? managedContext(observed) : null;
+
+        if (
+          this.waitingWindowContexts.get(window.windowId) !== key ||
+          this.capacityLeaseByWindow.get(window.windowId) !== lease ||
+          !source ||
+          !liveContext ||
+          contextKey(liveContext) !== key ||
+          this.suspendedWindows.has(window.windowId) ||
+          !isGeometryWritable(source)
+        ) {
+          return false;
+        }
+      }
+    }
+
+    const snapshot = this.layout.snapshot(
+      firstLease.outputId,
+      firstLease.desktopId,
+    );
+    const activeWindowId = this.workspace.activeWindow
+      ? windowId(String(this.workspace.activeWindow.internalId))
+      : null;
+    const activeLease = activeWindowId
+      ? this.capacityLeaseByWindow.get(activeWindowId)
+      : undefined;
+    const activeColumnId =
+      activeLease?.column.column.id ?? snapshot.activeColumnId;
+    const preview = previewColumnRestoration(snapshot, placements, {
+      activeColumnId,
+      viewportOffset: firstLease.viewportOffset,
+    });
+
+    if (!preview) {
+      return false;
+    }
+
+    const layout = solveStripGeometry({
+      context: preview,
+      devicePixelRatio: contextGeometry.devicePixelRatio,
+      gap: this.gap,
+      pixelGridOrigin: contextGeometry.pixelGridOrigin,
+      workArea: contextGeometry.workArea,
+    });
+
+    if (!this.canApplyLayout(layout.maxViewportOffset)) {
+      return false;
+    }
+
+    const restoredIds = new Set(
+      leases.reduce<WindowId[]>((ids, lease) => {
+        for (const window of lease.windows) {
+          ids.push(window.windowId);
+        }
+
+        return ids;
+      }, []),
+    );
+
+    if (
+      layout.windows
+        .filter((window) => restoredIds.has(window.windowId))
+        .some(
+          (window) =>
+            !this.geometry.canApplyFrame(
+              window.windowId,
+              window.frame,
+              firstLease,
+            ),
+        )
+    ) {
+      return false;
+    }
+
+    if (
+      !this.layout.restoreColumns({
+        activeColumnId,
+        columns: placements,
+        desktopId: firstLease.desktopId,
+        outputId: firstLease.outputId,
+        viewportOffset: firstLease.viewportOffset,
+      })
+    ) {
+      return false;
+    }
+
+    let runtimeContext = this.contexts.get(key);
+
+    if (!runtimeContext) {
+      runtimeContext = {
+        desktopId: firstLease.desktopId,
+        geometryFingerprint: contextGeometry.fingerprint,
+        key,
+        outputId: firstLease.outputId,
+        windowIds: new Set<WindowId>(),
+      };
+      this.contexts.set(key, runtimeContext);
+    }
+
+    for (const lease of leases) {
+      for (const window of lease.windows) {
+        const source = this.observer.source(window.windowId);
+
+        if (!source) {
+          throw new Error("capacity lease source disappeared after preflight");
+        }
+
+        const parkUntouched = rectsEqual(
+          source.frameGeometry,
+          window.targetFrame,
+        );
+        const priorBaselineSafe =
+          parkUntouched &&
+          lease.contextFingerprint === contextGeometry.fingerprint &&
+          window.restoreBaseline?.fingerprint === contextGeometry.fingerprint;
+        const restoreBaseline = priorBaselineSafe
+          ? cloneRestoreBaseline(window.restoreBaseline)
+          : parkUntouched
+            ? null
+            : {
+                fingerprint: contextGeometry.fingerprint,
+                frame: { ...source.frameGeometry },
+              };
+        this.managedWindows.set(window.windowId, {
+          contextKey: key,
+          restoreBaseline,
+        });
+        runtimeContext.windowIds.add(window.windowId);
+        this.forgetWaitingWindow(window.windowId);
+      }
+
+      this.invalidateCapacityLease(lease, false);
+    }
+
+    if (activeWindowId && restoredIds.has(activeWindowId)) {
+      this.layout.activateWindow(activeWindowId);
+    }
+
+    this.capacityParkBackoffs.delete(key);
+    this.markContextDirty(runtimeContext);
+    return true;
+  }
+
+  private restoreCapacityParkingFrames(): void {
+    for (const operation of [...this.capacityParkOperations.values()]) {
+      this.forceRestorePendingCapacityPark(operation);
+      this.capacityParkOperations.delete(operation.contextKey);
+    }
+
+    for (const operation of this.capacityCanceledParks.values()) {
+      this.forceRestorePendingCapacityPark(operation);
+      this.forceSupersedeTransferredCapacityPark(operation);
+    }
+
+    for (const leases of this.capacityLeasesByContext.values()) {
+      for (const lease of leases) {
+        this.restoreCommittedCapacityLease(lease);
+      }
+    }
+  }
+
+  private forceSupersedeTransferredCapacityPark(
+    operation: CapacityParkOperation,
+  ): void {
+    const groups = new Map<
+      string,
+      {
+        readonly changes: Array<{ frame: Rect; windowId: WindowId }>;
+        readonly context: ManagedContext;
+      }
+    >();
+
+    for (const window of operation.windows) {
+      const owner = this.managedWindows.get(window.windowId);
+      const source = this.observer.source(window.windowId);
+      const observed = source ? normalizeWindow(source) : null;
+      const liveContext = observed ? managedContext(observed) : null;
+
+      if (
+        !owner ||
+        owner.contextKey === operation.contextKey ||
+        !source ||
+        !liveContext ||
+        contextKey(liveContext) !== owner.contextKey ||
+        !isGeometryWritable(source)
+      ) {
+        continue;
+      }
+
+      let group = groups.get(owner.contextKey);
+
+      if (!group) {
+        group = { changes: [], context: liveContext };
+        groups.set(owner.contextKey, group);
+      }
+
+      group.changes.push({
+        frame: { ...source.frameGeometry },
+        windowId: window.windowId,
+      });
+    }
+
+    for (const group of groups.values()) {
+      this.geometry.apply(group.changes, group.context);
+    }
+  }
+
+  private restoreCommittedCapacityLease(lease: CapacityParkingLease): void {
+    if (
+      this.topologyAllOutputs ||
+      this.topologyInvalidateAllBaselines ||
+      this.topologyOutputs.has(lease.outputId) ||
+      this.topologyInvalidatedOutputs.has(lease.outputId)
+    ) {
+      return;
+    }
+
+    let currentGeometry: ContextGeometry | null;
+
+    try {
+      currentGeometry = this.geometry.contextGeometry(
+        lease.outputId,
+        lease.desktopId,
+      );
+    } catch {
+      return;
+    }
+
+    if (
+      !currentGeometry ||
+      currentGeometry.fingerprint !== lease.contextFingerprint ||
+      this.topologyObserver.outputInstances().get(String(lease.outputId)) !==
+        lease.outputInstanceId
+    ) {
+      return;
+    }
+
+    const changes = lease.windows
+      .filter((window) => {
+        const source = this.observer.source(window.windowId);
+        const observed = source ? normalizeWindow(source) : null;
+        const liveContext = observed ? managedContext(observed) : null;
+        return Boolean(
+          source &&
+          liveContext &&
+          contextKey(liveContext) === lease.contextKey &&
+          isGeometryWritable(source) &&
+          rectsEqual(source.frameGeometry, window.targetFrame),
+        );
+      })
+      .map((window) => ({
+        frame:
+          window.restoreBaseline?.fingerprint === currentGeometry.fingerprint
+            ? window.restoreBaseline.frame
+            : clampFrameToWorkArea(
+                window.rollbackFrame,
+                currentGeometry.workArea,
+              ),
+        windowId: window.windowId,
+      }));
+
+    this.geometry.apply(changes, lease);
   }
 
   private layoutAdmissionDecision(
@@ -1317,7 +4097,7 @@ export class RuntimeController {
       (window) => window.windowId === candidateId,
     );
     if (!this.canApplyLayout(layout.maxViewportOffset)) {
-      return { kind: "deferred" };
+      return { fingerprint: contextGeometry.fingerprint, kind: "deferred" };
     }
 
     if (
@@ -1349,7 +4129,20 @@ export class RuntimeController {
   }
 
   private restoreOriginalFrames(): void {
+    const outputInstances = this.topologyObserver.outputInstances();
+
     for (const context of this.contexts.values()) {
+      if (
+        this.topologyAllOutputs ||
+        this.topologyInvalidateAllBaselines ||
+        this.topologyOutputs.has(context.outputId) ||
+        this.topologyInvalidatedOutputs.has(context.outputId) ||
+        this.knownOutputInstances.get(String(context.outputId)) !==
+          outputInstances.get(String(context.outputId))
+      ) {
+        continue;
+      }
+
       let currentContext: ContextGeometry | null;
 
       try {
@@ -1368,20 +4161,25 @@ export class RuntimeController {
         continue;
       }
 
-      const desired = [...context.windowIds]
-        .filter((id) => !this.suspendedWindows.has(id))
-        .map((id) => ({ id, owner: this.managedWindows.get(id) }))
-        .filter((entry): entry is { id: WindowId; owner: ManagedWindow } =>
-          Boolean(
-            entry.owner &&
-            entry.owner.contextFingerprint === currentContext.fingerprint,
-          ),
-        )
-        .map(({ id, owner }) => ({
+      const desired: WindowGeometry[] = [];
+
+      for (const id of context.windowIds) {
+        if (this.suspendedWindows.has(id)) {
+          continue;
+        }
+
+        const baseline = this.managedWindows.get(id)?.restoreBaseline;
+
+        if (!baseline || baseline.fingerprint !== currentContext.fingerprint) {
+          continue;
+        }
+
+        desired.push({
           columnId: columnId(`column:${String(id)}`),
-          frame: owner.originalFrame,
+          frame: baseline.frame,
           windowId: id,
-        }));
+        });
+      }
 
       if (desired.length === 0) {
         continue;
@@ -1409,6 +4207,19 @@ function managedContext(window: ObservedWindow): ManagedContext | null {
   };
 }
 
+function managedContextFromKey(key: string): ManagedContext | null {
+  const separator = key.indexOf("\u0000");
+
+  if (separator <= 0 || separator >= key.length - 1) {
+    return null;
+  }
+
+  return {
+    desktopId: desktopId(key.slice(separator + 1)),
+    outputId: outputId(key.slice(0, separator)),
+  };
+}
+
 function sameResumeSample(left: ResumeSample, right: ResumeSample): boolean {
   return (
     left.contextKey === right.contextKey &&
@@ -1416,6 +4227,33 @@ function sameResumeSample(left: ResumeSample, right: ResumeSample): boolean {
     Math.abs(left.frame.y - right.frame.y) <= 1e-6 &&
     Math.abs(left.frame.width - right.frame.width) <= 1e-6 &&
     Math.abs(left.frame.height - right.frame.height) <= 1e-6
+  );
+}
+
+function capacityParkTargets(
+  windows: readonly CapacityParkWindow[],
+): readonly WindowGeometry[] {
+  return windows.map((window) => ({
+    columnId: window.columnId,
+    frame: window.targetFrame,
+    windowId: window.windowId,
+  }));
+}
+
+function cloneRestoreBaseline(
+  baseline: RestoreBaseline | null,
+): RestoreBaseline | null {
+  return baseline
+    ? { fingerprint: baseline.fingerprint, frame: { ...baseline.frame } }
+    : null;
+}
+
+function rectsEqual(left: Rect, right: Rect): boolean {
+  return (
+    Math.abs(left.x - right.x) <= 1e-6 &&
+    Math.abs(left.y - right.y) <= 1e-6 &&
+    Math.abs(left.width - right.width) <= 1e-6 &&
+    Math.abs(left.height - right.height) <= 1e-6
   );
 }
 
@@ -1427,4 +4265,26 @@ function currentDesktopForOutput(workspace: KWinWorkspace, output: KWinOutput) {
   return typeof workspace.currentDesktopForScreen === "function"
     ? workspace.currentDesktopForScreen(output)
     : workspace.currentDesktop;
+}
+
+function clampFrameToWorkArea(frame: Rect, workArea: Rect): Rect {
+  const maximumX = Math.max(
+    workArea.x,
+    workArea.x + workArea.width - frame.width,
+  );
+  const maximumY = Math.max(
+    workArea.y,
+    workArea.y + workArea.height - frame.height,
+  );
+
+  return {
+    height: frame.height,
+    width: frame.width,
+    x: clamp(frame.x, workArea.x, maximumX),
+    y: clamp(frame.y, workArea.y, maximumY),
+  };
+}
+
+function clamp(value: number, minimum: number, maximum: number): number {
+  return Math.min(maximum, Math.max(minimum, value));
 }

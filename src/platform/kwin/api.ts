@@ -22,7 +22,9 @@ export interface KWinSize {
 export interface KWinOutput {
   readonly devicePixelRatio: number;
   readonly geometry: KWinRect;
+  readonly geometryChanged?: KWinSignal<[]>;
   readonly name: string;
+  readonly scaleChanged?: KWinSignal<[]>;
 }
 
 export interface KWinWindow {
@@ -33,8 +35,10 @@ export interface KWinWindow {
   readonly dialog: boolean;
   readonly dock: boolean;
   frameGeometry: KWinRect;
+  readonly frameGeometryChanged?: KWinSignal<[oldGeometry: KWinRect]>;
   readonly fullScreen: boolean;
   readonly fullScreenChanged?: KWinSignal<[]>;
+  readonly hiddenChanged?: KWinSignal<[]>;
   readonly internalId: string | { toString(): string };
   readonly interactiveMoveResizeFinished?: KWinSignal<[]>;
   readonly managed: boolean;
@@ -66,6 +70,7 @@ export interface KWinWorkspace {
   readonly currentDesktop: KWinVirtualDesktop | null;
   readonly desktops: readonly KWinVirtualDesktop[];
   readonly screens: readonly KWinOutput[];
+  readonly screensChanged?: KWinSignal<[]>;
   readonly stackingOrder: readonly KWinWindow[];
   readonly currentDesktopChanged: KWinSignal<
     [
@@ -77,6 +82,7 @@ export interface KWinWorkspace {
   readonly windowActivated: KWinSignal<[window: KWinWindow | null]>;
   readonly windowAdded: KWinSignal<[window: KWinWindow]>;
   readonly windowRemoved: KWinSignal<[window: KWinWindow]>;
+  readonly virtualScreenGeometryChanged?: KWinSignal<[]>;
   clientArea(
     option: number,
     output: KWinOutput,
