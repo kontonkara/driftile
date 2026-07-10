@@ -59,6 +59,21 @@ let
         return 1
       }
 
+      wait_for_window_gone() {
+        local attempt
+        local title=$1
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          if ! window_match_id "$title" >/dev/null 2>&1; then
+            return 0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
       activate_window() {
         local match_id
 
@@ -122,6 +137,8 @@ let
             && "$shortcuts" == *"Driftile Move Window Right"* \
             && "$shortcuts" == *"Driftile Move Window Up"* \
             && "$shortcuts" == *"Driftile Move Window Down"* \
+            && "$shortcuts" == *"Driftile Insert Window into Stack Left"* \
+            && "$shortcuts" == *"Driftile Insert Window into Stack Right"* \
             && "$shortcuts" == *"Driftile Toggle Floating"* \
             && "$shortcuts" == *"Driftile Decrease Column Width"* \
             && "$shortcuts" == *"Driftile Increase Column Width"* \
@@ -265,6 +282,215 @@ let
             fi
           else
             stable_samples=0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      wait_for_four_frames() {
+        local attempt
+        local current_first
+        local current_fourth
+        local current_second
+        local current_third
+        local stable_samples=0
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          current_first=$(window_frame "$title_a" 2>/dev/null || true)
+          current_second=$(window_frame "$title_b" 2>/dev/null || true)
+          current_third=$(window_frame "$title_c" 2>/dev/null || true)
+          current_fourth=$(window_frame "$title_d" 2>/dev/null || true)
+
+          if [[ "$current_first" == "$1" \
+            && "$current_second" == "$2" \
+            && "$current_third" == "$3" \
+            && "$current_fourth" == "$4" ]]; then
+            stable_samples=$((stable_samples + 1))
+
+            if ((stable_samples >= 2)); then
+              return 0
+            fi
+          else
+            stable_samples=0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      wait_for_direct_insertion_source() {
+        local attempt
+        local current_first
+        local current_fourth
+        local current_layout
+        local current_second
+        local current_third
+        local first_height
+        local first_width
+        local first_x
+        local first_y
+        local fourth_height
+        local fourth_width
+        local fourth_x
+        local fourth_y
+        local matches
+        local previous_layout=""
+        local second_height
+        local second_width
+        local second_x
+        local second_y
+        local stable_samples=0
+        local third_height
+        local third_width
+        local third_x
+        local third_y
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          current_first=$(window_frame "$title_a" 2>/dev/null || true)
+          current_second=$(window_frame "$title_b" 2>/dev/null || true)
+          current_third=$(window_frame "$title_c" 2>/dev/null || true)
+          current_fourth=$(window_frame "$title_d" 2>/dev/null || true)
+          current_layout="$current_first|$current_second|$current_third|$current_fourth"
+          matches=false
+
+          if frame_is_valid "$current_first" \
+            && frame_is_valid "$current_second" \
+            && frame_is_valid "$current_third" \
+            && frame_is_valid "$current_fourth"; then
+            IFS=, read -r first_x first_y first_width first_height \
+              <<< "$current_first"
+            IFS=, read -r second_x second_y second_width second_height \
+              <<< "$current_second"
+            IFS=, read -r third_x third_y third_width third_height \
+              <<< "$current_third"
+            IFS=, read -r fourth_x fourth_y fourth_width fourth_height \
+              <<< "$current_fourth"
+
+            if ((first_x == second_x \
+              && first_width == second_width \
+              && first_y == third_y \
+              && third_y == fourth_y \
+              && second_y + second_height == third_y + third_height \
+              && third_width == fourth_width \
+              && third_height == fourth_height \
+              && first_y + first_height < second_y \
+              && first_x + first_width < third_x \
+              && third_x + third_width < fourth_x)); then
+              matches=true
+            fi
+          fi
+
+          if [[ "$matches" == true && "$current_layout" == "$previous_layout" ]]; then
+            stable_samples=$((stable_samples + 1))
+          elif [[ "$matches" == true ]]; then
+            stable_samples=1
+          else
+            stable_samples=0
+          fi
+
+          previous_layout=$current_layout
+
+          if ((stable_samples >= 2)); then
+            direct_target_width=$first_width
+            direct_reference_y=$third_y
+            direct_reference_width=$third_width
+            direct_reference_height=$third_height
+            return 0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      wait_for_direct_stack_layout() {
+        local attempt
+        local current_first
+        local current_fourth
+        local current_layout
+        local current_second
+        local current_third
+        local first_height
+        local first_width
+        local first_x
+        local first_y
+        local fourth_height
+        local fourth_width
+        local fourth_x
+        local fourth_y
+        local matches
+        local previous_layout=""
+        local second_height
+        local second_width
+        local second_x
+        local second_y
+        local stable_samples=0
+        local third_height
+        local third_width
+        local third_x
+        local third_y
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          current_first=$(window_frame "$title_a" 2>/dev/null || true)
+          current_second=$(window_frame "$title_b" 2>/dev/null || true)
+          current_third=$(window_frame "$title_c" 2>/dev/null || true)
+          current_fourth=$(window_frame "$title_d" 2>/dev/null || true)
+          current_layout="$current_first|$current_second|$current_third|$current_fourth"
+          matches=false
+
+          if frame_is_valid "$current_first" \
+            && frame_is_valid "$current_second" \
+            && frame_is_valid "$current_third" \
+            && frame_is_valid "$current_fourth"; then
+            IFS=, read -r first_x first_y first_width first_height \
+              <<< "$current_first"
+            IFS=, read -r second_x second_y second_width second_height \
+              <<< "$current_second"
+            IFS=, read -r third_x third_y third_width third_height \
+              <<< "$current_third"
+            IFS=, read -r fourth_x fourth_y fourth_width fourth_height \
+              <<< "$current_fourth"
+
+            if ((first_x == second_x \
+              && second_x == fourth_x \
+              && first_width == direct_target_width \
+              && second_width == direct_target_width \
+              && fourth_width == direct_target_width \
+              && first_y == direct_reference_y \
+              && fourth_y + fourth_height \
+                == direct_reference_y + direct_reference_height \
+              && first_y + first_height < second_y \
+              && second_y + second_height < fourth_y \
+              && first_x + first_width < third_x \
+              && third_y == direct_reference_y \
+              && third_width == direct_reference_width \
+              && third_height == direct_reference_height)); then
+              matches=true
+            fi
+          fi
+
+          if [[ "$matches" == true && "$current_layout" == "$previous_layout" ]]; then
+            stable_samples=$((stable_samples + 1))
+          elif [[ "$matches" == true ]]; then
+            stable_samples=1
+          else
+            stable_samples=0
+          fi
+
+          previous_layout=$current_layout
+
+          if ((stable_samples >= 2)); then
+            direct_first_frame=$current_first
+            direct_second_frame=$current_second
+            direct_third_frame=$current_third
+            direct_fourth_frame=$current_fourth
+            return 0
           fi
 
           sleep 0.1
@@ -698,7 +924,7 @@ let
             org.kde.kglobalaccel.Component \
             shortcutNames 2>/dev/null \
             | grep -oE \
-              'Driftile (Focus (Left|Right|Up|Down)|Move Column (Left|Right)|Move Window (Left|Right|Up|Down)|Toggle Floating|(Decrease|Increase|Reset) Column Width)' \
+              'Driftile (Focus (Left|Right|Up|Down)|Move Column (Left|Right)|Move Window (Left|Right|Up|Down)|Insert Window into Stack (Left|Right)|Toggle Floating|(Decrease|Increase|Reset) Column Width)' \
             | sort -u \
             | tr '\n' ' ' || true
           printf '\nwindow A captions: '
@@ -725,18 +951,29 @@ let
             Match \
             s "$title_c" 2>/dev/null \
             | jq --compact-output '[.data[0][] | .[1]]' || true
-          printf 'frame x positions: A=%s B=%s C=%s\n' \
+          printf 'window D captions: '
+          busctl --user --json=short call \
+            org.kde.KWin \
+            /WindowsRunner \
+            org.kde.krunner1 \
+            Match \
+            s "$title_d" 2>/dev/null \
+            | jq --compact-output '[.data[0][] | .[1]]' || true
+          printf 'frame x positions: A=%s B=%s C=%s D=%s\n' \
             "$(window_frame_x "$title_a" 2>/dev/null || printf missing)" \
             "$(window_frame_x "$title_b" 2>/dev/null || printf missing)" \
-            "$(window_frame_x "$title_c" 2>/dev/null || printf missing)"
-          printf 'frame widths: A=%s B=%s C=%s\n' \
+            "$(window_frame_x "$title_c" 2>/dev/null || printf missing)" \
+            "$(window_frame_x "$title_d" 2>/dev/null || printf missing)"
+          printf 'frame widths: A=%s B=%s C=%s D=%s\n' \
             "$(window_frame_width "$title_a" 2>/dev/null || printf missing)" \
             "$(window_frame_width "$title_b" 2>/dev/null || printf missing)" \
-            "$(window_frame_width "$title_c" 2>/dev/null || printf missing)"
-          printf 'full frames (x,y,width,height): A=%s B=%s C=%s\n' \
+            "$(window_frame_width "$title_c" 2>/dev/null || printf missing)" \
+            "$(window_frame_width "$title_d" 2>/dev/null || printf missing)"
+          printf 'full frames (x,y,width,height): A=%s B=%s C=%s D=%s\n' \
             "$(window_frame "$title_a" 2>/dev/null || printf missing)" \
             "$(window_frame "$title_b" 2>/dev/null || printf missing)" \
-            "$(window_frame "$title_c" 2>/dev/null || printf missing)"
+            "$(window_frame "$title_c" 2>/dev/null || printf missing)" \
+            "$(window_frame "$title_d" 2>/dev/null || printf missing)"
         } >> /tmp/shared/driftile-focus-diagnostics
       }
 
@@ -744,6 +981,7 @@ let
         local baseline_first_width
         local baseline_second_width
         local baseline_third_width
+        local direct_insert_verified
         local floating_first_frame
         local floating_second_frame
         local floating_third_frame
@@ -913,6 +1151,55 @@ let
         merged_second_frame=$stable_second_frame
         merged_third_frame=$stable_third_frame
 
+        activate_window "$title_c" \
+          && wait_for_active "$title_c" \
+          && wait_for_frames \
+            "$merged_first_frame" \
+            "$merged_second_frame" \
+            "$merged_third_frame" \
+          || return 1
+        record_focus_state "window C activated before direct insertion"
+
+        qml -f ${demoClient} -- --mark-active "$title_d" &
+        fourth_window=$!
+        direct_insert_verified=false
+
+        if wait_for_window "$title_d" \
+          && activate_window "$title_d" \
+          && wait_for_active "$title_d" \
+          && wait_for_direct_insertion_source \
+          && invoke_shortcut "Driftile Insert Window into Stack Left" \
+          && wait_for_direct_stack_layout \
+          && wait_for_active "$title_d" \
+          && invoke_shortcut "Driftile Insert Window into Stack Right" \
+          && wait_for_four_frames \
+            "$direct_first_frame" \
+            "$direct_second_frame" \
+            "$direct_third_frame" \
+            "$direct_fourth_frame" \
+          && wait_for_active "$title_d"; then
+          direct_insert_verified=true
+          record_focus_state "window D inserted directly into the left stack"
+        else
+          record_focus_state "direct stack insertion failed"
+        fi
+
+        kill "$fourth_window" >/dev/null 2>&1 || true
+        wait "$fourth_window" >/dev/null 2>&1 || true
+        fourth_window=""
+
+        wait_for_window_gone "$title_d" \
+          && activate_window "$title_b" \
+          && wait_for_active "$title_b" \
+          && wait_for_frames \
+            "$merged_first_frame" \
+            "$merged_second_frame" \
+            "$merged_third_frame" \
+          || return 1
+        record_focus_state "three-window layout restored after direct insertion"
+
+        [[ "$direct_insert_verified" == true ]] || return 1
+
         invoke_shortcut "Driftile Toggle Floating" \
           && wait_for_frames \
             "$floating_first_frame" \
@@ -1011,6 +1298,8 @@ let
       title_a="$status - window A - Meta+Ctrl+H"
       title_b="$status - window B - middle column"
       title_c="$status - window C - Meta+Ctrl+L"
+      title_d="$status - window D - Meta+Ctrl+Alt+Shift+H"
+      fourth_window=""
       : > /tmp/shared/driftile-focus-diagnostics
 
       qml -f ${demoClient} -- --mark-active "$title_a" &

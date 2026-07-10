@@ -32,6 +32,23 @@ stop_clients() {
   client_pids=()
 }
 
+stop_client() {
+  local pid
+  local target_pid=$1
+  local -a remaining_pids=()
+
+  kill "$target_pid" >/dev/null 2>&1 || true
+  wait "$target_pid" >/dev/null 2>&1 || true
+
+  for pid in "${client_pids[@]}"; do
+    if [[ "$pid" != "$target_pid" ]]; then
+      remaining_pids+=("$pid")
+    fi
+  done
+
+  client_pids=("${remaining_pids[@]}")
+}
+
 stop_work_area_panel() {
   if [[ -z "$work_area_panel_pid" ]]; then
     return
@@ -956,9 +973,11 @@ run_scenario() {
   local first_title="driftile-smoke-${protocol}-a"
   local second_title="driftile-state-target-${protocol}"
   local third_title="driftile-smoke-${protocol}-c"
+  local fourth_title="driftile-direct-stack-${protocol}-d"
   local first_baseline
   local second_baseline
   local third_baseline
+  local fourth_pid
   local state_window_id
   local reserved_frame="16,16,616,688"
   local state_frame="648,16,616,688"
@@ -1046,6 +1065,10 @@ run_scenario() {
     fail "KGlobalAccel did not register the move-window-up shortcut"
   wait_for_shortcut "Driftile Move Window Down" || \
     fail "KGlobalAccel did not register the move-window-down shortcut"
+  wait_for_shortcut "Driftile Insert Window into Stack Left" || \
+    fail "KGlobalAccel did not register the insert-into-stack-left shortcut"
+  wait_for_shortcut "Driftile Insert Window into Stack Right" || \
+    fail "KGlobalAccel did not register the insert-into-stack-right shortcut"
   wait_for_shortcut "Driftile Toggle Floating" || \
     fail "KGlobalAccel did not register the floating-toggle shortcut"
 
@@ -1078,6 +1101,66 @@ run_scenario() {
     fail "Driftile did not restore the lower $protocol stack member: $(describe_layout "$first_title" "$second_title" "$third_title")"
   wait_for_active "$second_title" || \
     fail "Driftile changed $protocol focus after restoring the lower stack member"
+
+  activate_window "$third_title" || \
+    fail "KWin could not activate the singleton before direct $protocol stack insertion"
+  wait_for_active "$third_title" || \
+    fail "KWin did not focus the singleton before direct $protocol stack insertion"
+  wait_for_layout \
+    "$first_title" "16,16,616,336" \
+    "$second_title" "16,368,616,336" \
+    "$third_title" "648,16,616,688" || \
+    fail "Driftile changed the $protocol stack before direct insertion: $(describe_layout "$first_title" "$second_title" "$third_title")"
+
+  start_client "$protocol" "$fourth_title" true
+  fourth_pid=${client_pids[${#client_pids[@]}-1]}
+  capture_stable_geometry "$fourth_title" >/dev/null || \
+    fail "the direct $protocol stack insertion window did not stabilize"
+  activate_window "$fourth_title" || \
+    fail "KWin could not activate the direct $protocol stack insertion window"
+  wait_for_active "$fourth_title" || \
+    fail "KWin did not focus the direct $protocol stack insertion window"
+  wait_for_geometries \
+    "$first_title" "-600,16,616,336" \
+    "$second_title" "-600,368,616,336" \
+    "$third_title" "32,16,616,688" \
+    "$fourth_title" "664,16,616,688" || \
+    fail "Driftile did not prepare the direct $protocol stack insertion: $(describe_layout "$first_title" "$second_title" "$third_title" "$fourth_title")"
+
+  invoke_shortcut "Driftile Insert Window into Stack Left" || \
+    fail "KGlobalAccel could not invoke the insert-into-stack-left shortcut"
+  wait_for_geometries \
+    "$first_title" "16,16,616,219" \
+    "$second_title" "16,251,616,218" \
+    "$third_title" "648,16,616,688" \
+    "$fourth_title" "16,485,616,219" || \
+    fail "Driftile did not skip the singleton and append the active $protocol window to the left stack: $(describe_layout "$first_title" "$second_title" "$third_title" "$fourth_title")"
+  wait_for_active "$fourth_title" || \
+    fail "Driftile changed $protocol focus after direct stack insertion"
+
+  invoke_shortcut "Driftile Insert Window into Stack Right" || \
+    fail "KGlobalAccel could not invoke the insert-into-stack-right shortcut"
+  wait_for_geometries \
+    "$first_title" "16,16,616,219" \
+    "$second_title" "16,251,616,218" \
+    "$third_title" "648,16,616,688" \
+    "$fourth_title" "16,485,616,219" || \
+    fail "Driftile wrapped the direct $protocol stack search past the right boundary: $(describe_layout "$first_title" "$second_title" "$third_title" "$fourth_title")"
+  wait_for_active "$fourth_title" || \
+    fail "Driftile changed $protocol focus after the bounded stack search"
+
+  stop_client "$fourth_pid"
+  wait_for_window_gone "$fourth_title" || \
+    fail "the direct $protocol stack insertion window did not close"
+  activate_window "$second_title" || \
+    fail "KWin could not restore focus after direct $protocol stack insertion"
+  wait_for_layout \
+    "$first_title" "16,16,616,336" \
+    "$second_title" "16,368,616,336" \
+    "$third_title" "648,16,616,688" || \
+    fail "Driftile did not restore the $protocol stack after direct insertion: $(describe_layout "$first_title" "$second_title" "$third_title")"
+  wait_for_active "$second_title" || \
+    fail "KWin did not restore the lower $protocol stack member focus"
 
   invoke_shortcut "Driftile Focus Up" || \
     fail "KGlobalAccel could not invoke the focus-up shortcut"
@@ -1381,6 +1464,7 @@ run_multi_output_scenario() {
   local scaled_left_first="16,16,402.666667,448"
   local scaled_left_second="434.666667,16,402.666667,448"
   local side
+  local temporary_left_pid
   local -a baselines=("" "" "" "" "" "")
   local -a titles=(
     "driftile-multi-output-${protocol}-left-a"
@@ -1437,6 +1521,81 @@ run_multi_output_scenario() {
     "${titles[3]}" "1296,16,616,688" \
     "${titles[4]}" "1928,16,616,688" || \
     fail "Driftile did not create two isolated $protocol output contexts: $(describe_layout "${titles[0]}" "${titles[1]}" "${titles[3]}" "${titles[4]}")"
+
+  wait_for_shortcut "Driftile Insert Window into Stack Left" || \
+    fail "KGlobalAccel did not register the multi-output insert-into-stack-left shortcut"
+  wait_for_shortcut "Driftile Insert Window into Stack Right" || \
+    fail "KGlobalAccel did not register the multi-output insert-into-stack-right shortcut"
+  activate_window "${titles[1]}" || \
+    fail "KWin could not activate the left $protocol window for direct stack insertion"
+  wait_for_active "${titles[1]}" || \
+    fail "KWin did not focus the left $protocol window before preparing the stack"
+  invoke_shortcut "Driftile Move Window Left" || \
+    fail "KGlobalAccel could not prepare the left multi-output $protocol stack"
+  wait_for_geometries \
+    "${titles[0]}" "16,16,616,336" \
+    "${titles[1]}" "16,368,616,336" \
+    "${titles[3]}" "1296,16,616,688" \
+    "${titles[4]}" "1928,16,616,688" || \
+    fail "Driftile did not prepare the isolated left $protocol stack: $(describe_layout "${titles[0]}" "${titles[1]}" "${titles[3]}" "${titles[4]}")"
+
+  start_client "$protocol" "${titles[2]}" true
+  temporary_left_pid=${client_pids[${#client_pids[@]}-1]}
+  capture_stable_geometry "${titles[2]}" >/dev/null || \
+    fail "the direct multi-output $protocol insertion window did not stabilize"
+  window_is_on_output_side "${titles[2]}" left || \
+    fail "the output router did not place the direct $protocol insertion window on the left output"
+  activate_window "${titles[2]}" || \
+    fail "KWin could not activate the direct multi-output $protocol insertion window"
+  wait_for_active "${titles[2]}" || \
+    fail "KWin did not focus the direct multi-output $protocol insertion window"
+  wait_for_geometries \
+    "${titles[0]}" "16,16,616,336" \
+    "${titles[1]}" "16,368,616,336" \
+    "${titles[2]}" "648,16,616,688" \
+    "${titles[3]}" "1296,16,616,688" \
+    "${titles[4]}" "1928,16,616,688" || \
+    fail "Driftile did not admit the direct multi-output $protocol insertion window: $(describe_layout "${titles[0]}" "${titles[1]}" "${titles[2]}" "${titles[3]}" "${titles[4]}")"
+
+  invoke_shortcut "Driftile Insert Window into Stack Left" || \
+    fail "KGlobalAccel could not invoke the multi-output insert-into-stack-left shortcut"
+  wait_for_geometries \
+    "${titles[0]}" "16,16,616,219" \
+    "${titles[1]}" "16,251,616,218" \
+    "${titles[2]}" "16,485,616,219" \
+    "${titles[3]}" "1296,16,616,688" \
+    "${titles[4]}" "1928,16,616,688" || \
+    fail "Driftile did not isolate the direct multi-output $protocol stack insertion: $(describe_layout "${titles[0]}" "${titles[1]}" "${titles[2]}" "${titles[3]}" "${titles[4]}")"
+  wait_for_active "${titles[2]}" || \
+    fail "Driftile changed $protocol focus after the isolated stack insertion"
+
+  invoke_shortcut "Driftile Insert Window into Stack Right" || \
+    fail "KGlobalAccel could not invoke the bounded multi-output stack search"
+  wait_for_geometries \
+    "${titles[0]}" "16,16,616,219" \
+    "${titles[1]}" "16,251,616,218" \
+    "${titles[2]}" "16,485,616,219" \
+    "${titles[3]}" "1296,16,616,688" \
+    "${titles[4]}" "1928,16,616,688" || \
+    fail "Driftile crossed an output boundary during the $protocol stack search: $(describe_layout "${titles[0]}" "${titles[1]}" "${titles[2]}" "${titles[3]}" "${titles[4]}")"
+  wait_for_active "${titles[2]}" || \
+    fail "Driftile changed $protocol focus after the bounded multi-output stack search"
+
+  stop_client "$temporary_left_pid"
+  wait_for_window_gone "${titles[2]}" || \
+    fail "the temporary multi-output $protocol insertion window did not close"
+  activate_window "${titles[1]}" || \
+    fail "KWin could not activate the lower left $protocol stack member"
+  wait_for_active "${titles[1]}" || \
+    fail "KWin did not focus the lower left $protocol stack member"
+  invoke_shortcut "Driftile Move Window Right" || \
+    fail "KGlobalAccel could not restore the left multi-output $protocol columns"
+  wait_for_geometries \
+    "${titles[0]}" "16,16,616,688" \
+    "${titles[1]}" "648,16,616,688" \
+    "${titles[3]}" "1296,16,616,688" \
+    "${titles[4]}" "1928,16,616,688" || \
+    fail "Driftile did not restore the two $protocol output contexts after direct insertion: $(describe_layout "${titles[0]}" "${titles[1]}" "${titles[3]}" "${titles[4]}")"
 
   wait_for_shortcut "Driftile Toggle Floating" || \
     fail "KGlobalAccel did not register the multi-output floating shortcut"
