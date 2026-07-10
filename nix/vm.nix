@@ -434,10 +434,14 @@ let
 
           if [[ "$shortcuts" == *"driftile_focus_column_left"* \
             && "$shortcuts" == *"driftile_focus_column_right"* \
+            && "$shortcuts" == *"driftile_focus_column_first"* \
+            && "$shortcuts" == *"driftile_focus_column_last"* \
             && "$shortcuts" == *"driftile_focus_window_up"* \
             && "$shortcuts" == *"driftile_focus_window_down"* \
             && "$shortcuts" == *"driftile_move_column_left"* \
             && "$shortcuts" == *"driftile_move_column_right"* \
+            && "$shortcuts" == *"driftile_move_column_to_first"* \
+            && "$shortcuts" == *"driftile_move_column_to_last"* \
             && "$shortcuts" == *"driftile_move_window_left"* \
             && "$shortcuts" == *"driftile_move_window_right"* \
             && "$shortcuts" == *"driftile_move_window_up"* \
@@ -2193,6 +2197,12 @@ let
           || return 1
         record_focus_state "window C activated"
 
+        if ! verify_physical_edge_shortcuts; then
+          record_focus_state "physical edge shortcuts failed"
+          return 1
+        fi
+        record_focus_state "physical edge shortcuts preserved order and focus"
+
         if ! verify_automatic_floating; then
           record_focus_state "automatic-floating acceptance failed"
           return 1
@@ -2617,7 +2627,7 @@ let
         record_focus_state "window B extracted into the right column"
       }
 
-      request_physical_width_shortcut() {
+      request_physical_shortcut() {
         local attempt
         local key_name=$1
         local ready_file="/tmp/shared/driftile-key-test-$key_name-ready"
@@ -2634,6 +2644,32 @@ let
         return 1
       }
 
+      verify_physical_edge_shortcuts() {
+        request_physical_shortcut home \
+          && wait_for_active "$title_a" \
+          && wait_for_layout 0 832 1664 \
+          || return 1
+        record_focus_state "physical Meta+Home focused the first column"
+
+        request_physical_shortcut end \
+          && wait_for_active "$title_c" \
+          && wait_for_layout -800 32 864 \
+          || return 1
+        record_focus_state "physical Meta+End focused the last column"
+
+        request_physical_shortcut ctrl-home \
+          && wait_for_active "$title_c" \
+          && wait_for_layout 832 1664 0 \
+          || return 1
+        record_focus_state "physical Meta+Ctrl+Home moved the column first"
+
+        request_physical_shortcut ctrl-end \
+          && wait_for_active "$title_c" \
+          && wait_for_layout -800 32 864 \
+          || return 1
+        record_focus_state "physical Meta+Ctrl+End moved the column last"
+      }
+
       verify_physical_width_shortcuts() {
         local after_width
         local attempt
@@ -2648,7 +2684,7 @@ let
         decreased_width=$before_width
         equal_width=$before_width
 
-        request_physical_width_shortcut minus || return 1
+        request_physical_shortcut minus || return 1
 
         for ((attempt = 0; attempt < 100; attempt += 1)); do
           after_width=$(window_frame_width "$title_c") || return 1
@@ -2667,7 +2703,7 @@ let
           return 1
         fi
 
-        request_physical_width_shortcut equal || return 1
+        request_physical_shortcut equal || return 1
 
         for ((attempt = 0; attempt < 100; attempt += 1)); do
           after_width=$(window_frame_width "$title_c") || return 1
@@ -2686,7 +2722,7 @@ let
           return 1
         fi
 
-        request_physical_width_shortcut plus || return 1
+        request_physical_shortcut plus || return 1
 
         for ((attempt = 0; attempt < 100; attempt += 1)); do
           after_width=$(window_frame_width "$title_c") || return 1

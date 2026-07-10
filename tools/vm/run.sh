@@ -77,21 +77,25 @@ monitor_guest() {
   local key_sent_file
   local loaded_file="$temporary_directory/xchg/driftile-loaded"
   local -A keys_sent=(
+    [ctrl-end]=false
+    [ctrl-home]=false
+    [end]=false
     [equal]=false
+    [home]=false
     [minus]=false
     [plus]=false
   )
 
   for ((attempt = 0; attempt < 1200; attempt += 1)); do
-    for key_name in minus equal plus; do
+    for key_name in home end ctrl-home ctrl-end minus equal plus; do
       key_ready_file="$temporary_directory/xchg/driftile-key-test-$key_name-ready"
       key_sent_file="$temporary_directory/xchg/driftile-key-test-$key_name-sent"
 
       if [[ "${keys_sent[$key_name]}" == false && -f "$key_ready_file" ]]; then
-        if send_width_shortcut "$key_name"; then
-          printf 'The VM received the physical width shortcut: %s.\n' "$key_name"
+        if send_physical_shortcut "$key_name"; then
+          printf 'The VM received the physical shortcut: %s.\n' "$key_name"
         else
-          printf 'Could not send the physical width shortcut: %s.\n' "$key_name" >&2
+          printf 'Could not send the physical shortcut: %s.\n' "$key_name" >&2
         fi
 
         : > "$key_sent_file"
@@ -135,12 +139,24 @@ monitor_guest() {
   return 1
 }
 
-send_width_shortcut() {
+send_physical_shortcut() {
   local key_name=$1
   local capabilities='{"execute":"qmp_capabilities"}'
   local input
 
   case "$key_name" in
+    home)
+      input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"home"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"home"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
+      ;;
+    end)
+      input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"end"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"end"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
+      ;;
+    ctrl-home)
+      input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"ctrl"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"home"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"home"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"ctrl"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
+      ;;
+    ctrl-end)
+      input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"ctrl"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"end"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"end"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"ctrl"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
+      ;;
     minus)
       input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"minus"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"minus"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
       ;;
