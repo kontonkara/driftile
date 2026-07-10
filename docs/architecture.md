@@ -35,6 +35,8 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Resizes the active whole column within grouped window constraints and retries waiting capacity after a successful shrink.
 - Focuses vertical stack members; reorders, merges, and extracts them while preserving KWin focus.
 - Resolves directional output neighbors from logical output geometry and transfers the active tiled window between both visible contexts.
+- Maintains one shared trailing empty desktop through a guarded KWin lifecycle adapter.
+- Focuses adjacent desktops on the active output, with a global fallback and no wrapping.
 - Releases explicitly floating windows from geometry ownership and restores their anchored layout slots on return.
 - Keeps dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows entirely KWin-owned in state separate from manual floating.
 - Releases a managed window that gains an automatic-floating role without restoring its old frame, then readmits it when the role clears and it remains eligible.
@@ -74,6 +76,7 @@ RuntimeState
   requestedSuspensions: Map<WindowId, Set<StateReason>>
   suspendedWindows: Set<WindowId>
   toggleGeometryTransitions: Map<WindowId, { contextKey, expectedFrame, settlementArmed }>
+  desktopLifecycle: { ownedDesktopIds, pendingMutation }
   topologyBarrier: { revision, affectedOutputs, stableSample }
 ```
 
@@ -104,10 +107,13 @@ RuntimeState
 - Treat output-list, output-geometry, output-scale, and dock changes as topology invalidations.
 - Permanently clear a context's original-frame restore baselines for the current run when its geometry fingerprint changes or its output object is replaced. Returning to the old geometry does not revive them.
 - Treat external focus and window output or desktop changes as authoritative events.
+- Create a desktop only after two matching occupancy snapshots show the shared tail is occupied.
+- Remove only a current-run-owned tail after two matching snapshots show it and its predecessor are empty and no output selects it.
 
 ## Engineering constraints
 
 - No workspace-wide polling. Lifecycle is signal-driven, with one bounded startup grace, bounded per-window state and floating-transition probes, and a two-second client-area fingerprint check limited to visible tracked contexts because KWin exposes no complete client-area change signal.
+- Desktop lifecycle snapshots scan observed windows only after relevant signals; they never run on a timer.
 - Structural output recovery performs one bounded workspace resynchronization after the topology settles.
 - Coalesce each event burst into at most one reconcile pass per dirty context.
 - Reflow affected visible contexts only; defer hidden desktops until they become visible.
@@ -132,5 +138,6 @@ RuntimeState
 - Verify the settled topology barrier, output replacement and removal, dock and silent work-area invalidations, sticky restore invalidation, and deterministic capacity recovery.
 - Verify independent contexts with native Wayland and Xwayland windows on two virtual outputs.
 - Verify directional output transfers, no-wrap boundaries, per-output desktop selection, and exact two-context compensation.
+- Verify shared trailing-desktop creation, guarded removal, silent mutation rejection, and preservation of external desktops.
 - Exercise live output reconfiguration against an isolated real KWin session.
 - Run integration smoke tests in an isolated KWin session or NixOS VM.

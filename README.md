@@ -4,20 +4,24 @@ A KWin extension for KDE Plasma aiming to provide scrollable tiling and dynamic 
 
 > Driftile is in early development and has no usable release yet.
 
-The current prototype models eligible normal windows in every existing `(output, desktop)` context and applies geometry only to the desktop visible on each output. Focus navigation stays within its context. `Meta+Ctrl+H/J/K/L` focuses adjacent windows, `Meta+Ctrl+Shift+H/L` moves a whole column, and `Meta+Ctrl+Shift+J/K` reorders a member inside its stack. `Meta+Ctrl+Alt+H/L` merges a single-window column with its neighbor or extracts a stacked window in that direction. `Meta+Ctrl+Alt+Shift+H/L` inserts the active window into the nearest existing stack in that direction, skipping singleton columns. `Meta+Ctrl+Alt+K/J` moves the active tiled window to the previous or next existing desktop, while `Meta+Ctrl+Alt+Shift+Arrow` moves it to an adjacent output. Transfers follow the window and do not wrap. `Meta+Ctrl+Space` toggles the active window between tiled and floating states, while `Meta+Ctrl+-/=/0` changes or resets the active column width. Structural commands keep focus unchanged, and horizontal focus reveals its target with the smallest required scroll.
+The current prototype models eligible normal windows in independent `(output, desktop)` contexts. It supports scrollable columns, vertical stacks, focus and reorder commands, manual floating, column resizing, and window transfers between desktops and outputs. Structural commands preserve focus, transfers do not wrap, and horizontal focus reveals its target with the smallest required scroll.
+
+Driftile keeps one shared trailing virtual desktop empty. It appends a desktop when the tail becomes occupied and removes only a redundant, unselected tail created by the current run. KDE owns the global desktop list; current-desktop selection remains output-local where KWin supports it.
+
+The default controls use compact `Meta` combinations with `H/J/K/L` and arrow aliases. See [Shortcuts](docs/shortcuts.md).
 
 Dialogs, modal or transient windows, non-resizable normal windows, and normal windows fixed on both axes remain fully KWin-owned. Driftile does not admit them to a layout or write their geometry, desktop, output, or focus; layout commands are no-ops while one is active. This automatic state is separate from manual floating. A managed window that becomes transient leaves its layout without restoring an old frame and can be admitted again after the transient role clears. Client size limits for other windows are translated to decorated frame limits before layout writes and column resizing.
 
 Live output-list, geometry, scale, and work-area changes recover after two delayed topology snapshots agree. Output and dock signals trigger normal recovery; a two-second watchdog checks visible contexts for client-area changes that KWin does not signal. Reconfigured contexts discard stale original-frame restore baselines for the rest of the run. If a multi-output context no longer fits, Driftile parks whole columns with a reachable anchor inside the work area, preferring non-active columns, and retries them when capacity returns.
 
-Dynamic workspace creation and persistence are not implemented yet.
+Layout and workspace persistence are not implemented yet.
 
 ## Goals
 
 - Independent scrollable window strips for every output and virtual desktop.
 - Horizontal columns with optional vertical window stacks.
 - Keyboard-first navigation and window management.
-- Dynamic per-output workspaces built on KWin virtual desktops.
+- Dynamic workspace lifecycle with output-local selection where supported.
 - Portable installation through the standard KWin package format.
 
 ## Development
@@ -39,6 +43,7 @@ Run `npm run test:integration` for isolated KWin lifecycle tests. A visible NixO
 ## Documentation
 
 - [Product scope](docs/product-scope.md)
+- [Shortcuts](docs/shortcuts.md)
 - [Architecture](docs/architecture.md)
 - [Roadmap](docs/roadmap.md)
 - [Testing](docs/testing.md)
@@ -49,4 +54,4 @@ Driftile is licensed under GPL-3.0-or-later. See [LICENSE](LICENSE).
 
 ## Acknowledgements
 
-The window-management model was inspired by the niri compositor.
+The window-management model was inspired by the [niri compositor](https://github.com/YaLTeR/niri).

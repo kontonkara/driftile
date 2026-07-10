@@ -20,7 +20,7 @@ The ownership rule is strict:
 - Work-area, size-constraint, fullscreen, minimized, dialog, and hot-plug handling.
 - Settled recovery for output-list, geometry, scale, and work-area changes.
 - Deterministic multi-output capacity eviction with reachable waiting windows and automatic retry.
-- One trailing empty workspace per output, with conservative creation and removal.
+- One shared trailing empty virtual desktop, with output-local selection where supported and conservative creation and removal.
 - Event-driven, incremental reconciliation; only visible context geometry is checked periodically, while a settled structural output change permits one bounded workspace resynchronization.
 
 ## Later
@@ -68,6 +68,8 @@ Driftile must integrate with, not duplicate:
 - Output transfer selects a deterministic adjacent output without wrapping, preserves the source width, and inserts the active tiled window after the visible destination context's active column.
 - Output transfer never changes an output's current desktop; the moving window adopts the destination output's visible desktop when needed.
 - Desktop switching follows KWin's global or per-output virtual-desktop mode while layout ownership remains output-local.
+- If the shared trailing desktop becomes occupied, Driftile appends another through KWin.
+- Driftile removes only a redundant, empty, unselected tail created by its current run; externally created desktops are never removed.
 - A manually floating window has no Driftile geometry owner and returns only through the explicit toggle.
 - Retiling a manually floating window restores a surviving anchored slot when possible and captures the latest floating frame as the next safe restore baseline.
 - An automatically KWin-owned window has no layout slot, manual-floating anchor, waiting entry, suspension, or retry state. Driftile layout commands are no-ops while it is active.
