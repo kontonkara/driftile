@@ -84,6 +84,7 @@ RuntimeState
 - Apply active-column width changes transactionally, preserving focus, grouping, and the prior width on failure.
 - Apply stack edits with compare-and-swap model rollback and exact compensating frame writes after partial failure.
 - Resolve direct stack insertion inside the active context, skipping singleton columns without wrapping and preserving every intermediate column.
+- Transfer a tiled window between existing desktops through an immutable two-context preview, then commit both contexts only after KWin accepts the desktop switch and destination geometry.
 - Apply floating transitions from immutable previews, commit ownership only after every geometry request succeeds, and defer later context writes until asynchronous frames settle.
 - Allow horizontal overflow and viewport scrolling when KWin reports one output.
 - Queue a candidate window unmanaged if it would introduce overflow with multiple outputs, then retry it when that context gains capacity.

@@ -63,6 +63,8 @@ Driftile must integrate with, not duplicate:
 - Merge preserves the destination width; extraction copies the source width; both preserve focus and member order.
 - Direct insertion appends the active window to the nearest existing stack in its direction, skips singleton columns without wrapping, and preserves the target width.
 - Vertical focus and member reorder stop at stack boundaries without wrapping.
+- Desktop transfer follows the active tiled window without wrapping, preserves its source width, and inserts it after the destination context's active column.
+- Desktop switching follows KWin's global or per-output virtual-desktop mode while layout ownership remains output-local.
 - A floating window has no Driftile geometry owner and cannot be admitted automatically.
 - Retiling restores a surviving anchored slot when possible and captures the latest floating frame as the next safe restore baseline.
 - Unrelated window order, widths, and viewport offsets remain stable.
