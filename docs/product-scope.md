@@ -64,9 +64,10 @@ Driftile must integrate with, not duplicate:
 - Merge preserves the destination width; extraction copies the source width; both preserve focus and member order.
 - Direct insertion appends the active window to the nearest existing stack in its direction, skips singleton columns without wrapping, and preserves the target width.
 - Vertical focus and member reorder stop at stack boundaries without wrapping.
-- Desktop transfer follows the active tiled window without wrapping, preserves its source width, and inserts it after the destination context's active column.
-- Output transfer selects a deterministic adjacent output without wrapping, preserves the source width, and inserts the active tiled window after the visible destination context's active column.
+- Secondary desktop transfer follows the active tiled window without wrapping, preserves its source width, and inserts it after the destination context's active column.
+- Secondary output transfer selects a deterministic adjacent output without wrapping, preserves the source width, and inserts the active tiled window after the visible destination context's active column.
 - Output transfer never changes an output's current desktop; the moving window adopts the destination output's visible desktop when needed.
+- Default transfer commands never split a stacked column; they accept singleton columns until atomic whole-column transfer is available.
 - Desktop switching follows KWin's global or per-output virtual-desktop mode while layout ownership remains output-local.
 - If the shared trailing desktop becomes occupied, Driftile appends another through KWin.
 - Driftile removes only a redundant, empty, unselected tail created by its current run; externally created desktops are never removed.

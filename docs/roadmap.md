@@ -43,10 +43,12 @@ The current runtime already:
 - Parks deterministic whole columns when a new multi-output capacity limit no longer fits, preferring non-active columns, then retries waiting windows.
 - Reorders the active whole column left or right with context-local shortcuts and transactional geometry rollback.
 - Decreases, increases, or resets the active whole column width with grouped constraints and transactional rollback.
+- Cycles preset widths in both directions, adjusts width by 10%, toggles full width, and centers the active column.
 - Focuses and reorders vertical stack members, contextually merges or extracts the active window, and inserts it directly into the nearest stack across singleton columns.
 - Toggles the active normal window between tiled and floating states with anchored reinsertion and safe geometry ownership.
 - Moves the active tiled window between adjacent existing desktops with follow-focus and atomic two-context ownership.
 - Moves the active tiled window to an adjacent output with deterministic spatial routing and atomic visible-context reflow.
+- Refuses default transfer commands for stacked columns instead of silently splitting them.
 - Keeps one shared trailing desktop empty and removes only redundant tails created by the current run.
 - Registers compact default shortcuts with `H/J/K/L`, arrow, and Page Up/Down aliases.
 - Provides a reversible development helper for claiming shortcuts already used
@@ -61,6 +63,12 @@ The automatic-floating base is complete. Size increments, aspect ratios, live co
 Complete the daily keyboard-driven workflow.
 
 - Manage every output and desktop independently.
+- Make default desktop and output transfers move the whole active column; keep single-window transfers as unbound secondary actions.
+- Add first/last column navigation and movement.
+- Add window-height adjustment, automatic reset, and preset cycling.
+- Add fill-available-width and center-visible-column commands.
+- Add fullscreen, native maximize, floating-layer focus, and minimized-window semantics without taking KWin's mechanism ownership.
+- Add virtual-desktop reordering within KDE's global desktop model.
 - Define size-increment and aspect-ratio behavior, and expand live constraint-change coverage across toolkits.
 - Harden the existing topology recovery for rotation, rapid physical hot-plug sequences, and more hardware configurations.
 - Add essential layout settings.
@@ -68,6 +76,7 @@ Complete the daily keyboard-driven workflow.
 Exit criteria:
 
 - Commands affect only their target context.
+- Default transfer shortcuts preserve every member and the width of the active column.
 - Opening, closing, moving, and resizing windows preserves unrelated layout state.
 - Fullscreen and minimized windows return to their previous layout position.
 - Hot-plug recovery leaves every window reachable.
@@ -81,6 +90,7 @@ Harden recovery and finish user-facing integration.
 - Persist logical order, widths, viewport offsets, and floating overrides.
 - Restore layouts across script reloads, sessions, and known output topologies.
 - Add mouse-driven reinsertion and rearrangement.
+- Add tabbed column presentation and matching pointer navigation.
 - Add Driftile-specific application overrides and a complete settings UI.
 - Add optional visual transitions and concise diagnostics.
 - Publish compatibility, migration, troubleshooting, and performance guidance.

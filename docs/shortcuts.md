@@ -12,15 +12,20 @@ arrow keys are interchangeable unless noted otherwise.
 | Move column left or right                        | `Meta+Ctrl+H/L` or `Meta+Ctrl+Left/Right`            |
 | Move window down or up in a column               | `Meta+Ctrl+J/K` or `Meta+Ctrl+Down/Up`               |
 | Consume or expel the active window left or right | `Meta+[` or `Meta+]`                                 |
-| Move active window to next or previous desktop   | `Meta+Ctrl+U/I` or `Meta+Ctrl+Page Down/Page Up`     |
-| Move active window to another output             | `Meta+Ctrl+Shift+H/J/K/L` or `Meta+Ctrl+Shift+Arrow` |
+| Move active column to next or previous desktop   | `Meta+Ctrl+U/I` or `Meta+Ctrl+Page Down/Page Up`     |
+| Move active column to another output             | `Meta+Ctrl+Shift+H/J/K/L` or `Meta+Ctrl+Shift+Arrow` |
 | Toggle floating                                  | `Meta+V`                                             |
-| Decrease or increase column width                | `Meta+-`, `Meta+=`, or `Meta++`                      |
+| Cycle preset column width forward or back        | `Meta+R` or `Meta+Shift+R`                           |
+| Toggle full-width column                         | `Meta+F`                                             |
+| Center active column                             | `Meta+C`                                             |
+| Decrease or increase column width by 10%         | `Meta+-`, `Meta+=`, or `Meta++`                      |
 
-Direct insertion into the nearest existing stack and resetting a column width
-are registered without default keys because their behavior has no matching
-default gesture. Assign them in **System Settings > Keyboard > Shortcuts** if
-needed.
+Single-window desktop/output transfer, direct insertion into the nearest
+existing stack, and resetting a column width are registered without default
+keys. Assign them in **System Settings > Keyboard > Shortcuts** if needed.
+
+Column transfers currently accept singleton columns only. A stacked column is
+left unchanged until atomic whole-column transfer is complete.
 
 Plasma already owns some listed sequences. During development, enable Driftile
 and claim the complete profile explicitly:
@@ -39,6 +44,8 @@ npm run shortcuts:release
 ```
 
 `npm run uninstall:dev` releases a saved profile before removing the package.
+`npm run upgrade:dev` releases the old profile before installing an updated
+package; claim the current profile again after enabling the script.
 Release it manually before disabling Driftile or uninstalling through another
 tool. Use `-- --force` with a claim or release only when replacing later manual
 edits is intentional.

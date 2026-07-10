@@ -34,9 +34,10 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Replays structural output changes in a stable layout order independent of KWin window-signal order.
 - Invalidates stale restore ownership and revalidates multi-output capacity after topology changes.
 - Reorders the active whole column inside one settled context and keeps focus unchanged.
-- Resizes the active whole column within grouped window constraints and retries waiting capacity after a successful shrink.
+- Resizes the active whole column within grouped window constraints, cycles presets, toggles full width, centers it, and retries waiting capacity after a successful shrink.
 - Focuses vertical stack members; reorders, merges, and extracts them while preserving KWin focus.
-- Resolves directional output neighbors from logical output geometry and transfers the active tiled window between both visible contexts.
+- Resolves directional output neighbors from logical output geometry and transfers an explicitly selected tiled window between both visible contexts.
+- Rejects default desktop and output transfer commands for stacked columns until a batch transaction can preserve the column atomically.
 - Maintains one shared trailing empty desktop through a guarded KWin lifecycle adapter.
 - Focuses adjacent desktops on the active output, with a global fallback and no wrapping.
 - Releases explicitly floating windows from geometry ownership and restores their anchored layout slots on return.
@@ -93,8 +94,8 @@ RuntimeState
 - Apply active-column width changes transactionally, preserving focus, grouping, and the prior width on failure.
 - Apply stack edits with compare-and-swap model rollback and exact compensating frame writes after partial failure.
 - Resolve direct stack insertion inside the active context, skipping singleton columns without wrapping and preserving every intermediate column.
-- Transfer a tiled window between existing desktops through an immutable two-context preview, then commit both contexts only after KWin accepts the desktop switch and destination geometry.
-- Transfer a tiled window between outputs through the same two-context preview, then commit only after KWin accepts the output and desktop mechanism plus both visible layouts.
+- Transfer a secondary single-window action between existing desktops through an immutable two-context preview, then commit both contexts only after KWin accepts the desktop switch and destination geometry.
+- Transfer a secondary single-window action between outputs through the same two-context preview, then commit only after KWin accepts the output and desktop mechanism plus both visible layouts.
 - Apply floating transitions from immutable previews, commit ownership only after every geometry request succeeds, and defer later context writes until asynchronous frames settle.
 - Leave dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows fully KWin-owned. Driftile layout commands are no-ops when one is active.
 - If a managed window gains an automatic-floating role, remove its slot without writing a stale restore frame or disturbing unrelated order, widths, or viewport state. Re-admit it through normal admission after the role clears.
@@ -133,13 +134,13 @@ RuntimeState
 - Test reconcile output for minimality and idempotence.
 - Replay window lifecycle and output or desktop transfer sequences.
 - Verify window-state ownership, cancellation races, stable resumption, and slot reservation.
-- Verify active-column reorder and resizing, including constraint bounds and transactional rollback.
+- Verify active-column reorder, 10% adjustments, preset cycling, full width, centering, constraint bounds, and transactional rollback.
 - Verify decorated client-to-frame constraint translation and conservative handling of malformed bounds.
 - Verify automatic KWin ownership, command no-ops, late role changes, manual-floating separation, and safe readmission.
 - Verify vertical focus, member reorder, contextual merge and extraction, suspended members, and structural rollback.
 - Verify the settled topology barrier, output replacement and removal, dock and silent work-area invalidations, sticky restore invalidation, and deterministic capacity recovery.
 - Verify independent contexts with native Wayland and Xwayland windows on two virtual outputs.
-- Verify directional output transfers, no-wrap boundaries, per-output desktop selection, and exact two-context compensation.
+- Verify secondary directional output transfers, no-wrap boundaries, per-output desktop selection, exact two-context compensation, and non-destructive default handling of stacks.
 - Verify shared trailing-desktop creation, guarded removal, silent mutation rejection, and preservation of external desktops.
 - Exercise live output reconfiguration against an isolated real KWin session.
 - Run integration smoke tests in an isolated KWin session or NixOS VM.

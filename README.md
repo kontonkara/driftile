@@ -4,7 +4,7 @@ A KWin extension for KDE Plasma aiming to provide scrollable tiling and dynamic 
 
 > Driftile is in early development and has no usable release yet.
 
-The current prototype models eligible normal windows in independent `(output, desktop)` contexts. It supports scrollable columns, vertical stacks, focus and reorder commands, manual floating, column resizing, and window transfers between desktops and outputs. Structural commands preserve focus, transfers do not wrap, and horizontal focus reveals its target with the smallest required scroll.
+The current prototype models eligible normal windows in independent `(output, desktop)` contexts. It supports scrollable columns, vertical stacks, focus and reorder commands, manual floating, preset and incremental column sizing, centering, and single-window transfers between desktops and outputs. Structural commands preserve focus, transfers do not wrap, and horizontal focus reveals its target with the smallest required scroll. Default transfer shortcuts leave stacked columns intact until atomic whole-column transfer is complete.
 
 Driftile keeps one shared trailing virtual desktop empty. It appends a desktop when the tail becomes occupied and removes only a redundant, unselected tail created by the current run. KDE owns the global desktop list; current-desktop selection remains output-local where KWin supports it.
 
@@ -51,6 +51,7 @@ Run `npm run test:integration` for isolated KWin lifecycle tests. A visible NixO
 ## Documentation
 
 - [Product scope](docs/product-scope.md)
+- [Interaction model](docs/interaction-model.md)
 - [Shortcuts](docs/shortcuts.md)
 - [Architecture](docs/architecture.md)
 - [Roadmap](docs/roadmap.md)
