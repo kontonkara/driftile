@@ -16,8 +16,8 @@ Driftile uses one keyboard grammar and does not wrap at layout boundaries:
 | Column view          | Cycle `1/3`, `1/2`, and `2/3` widths in both directions; adjust by 10%; toggle full width; center        | Available |
 | Advanced column view | Fill available width and center all visible columns                                                      | MVP       |
 | Window height        | Adjust by 10%, reset to automatic, and cycle height presets                                              | MVP       |
-| Virtual desktops     | Focus adjacent desktops, transfer the whole column, and reorder desktops                                 | MVP       |
-| Outputs              | Focus an adjacent output and transfer the whole column                                                   | MVP       |
+| Virtual desktops     | Focus adjacent desktops and transfer the whole active column                                             | Available |
+| Outputs              | Focus an adjacent output and transfer the whole active column                                            | Available |
 | Window state         | Preserve layout participation through fullscreen and maximize; define a separate minimized-window policy | MVP       |
 | Floating layer       | Toggle tiled/floating state and switch focus between both layers                                         | MVP       |
 | Tabbed columns       | Toggle a column between stacked and tabbed presentation without changing navigation                      | v1        |

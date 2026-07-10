@@ -24,8 +24,9 @@ Single-window desktop/output transfer, direct insertion into the nearest
 existing stack, and resetting a column width are registered without default
 keys. Assign them in **System Settings > Keyboard > Shortcuts** if needed.
 
-Column transfers currently accept singleton columns only. A stacked column is
-left unchanged until atomic whole-column transfer is complete.
+Default desktop and output transfers move the whole active column atomically.
+They preserve member order, column width, and the active member; a rejected
+KWin mechanism or geometry write leaves both contexts unchanged.
 
 Plasma already owns some listed sequences. During development, enable Driftile
 and claim the complete profile explicitly:

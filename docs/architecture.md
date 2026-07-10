@@ -36,13 +36,14 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Reorders the active whole column inside one settled context and keeps focus unchanged.
 - Resizes the active whole column within grouped window constraints, cycles presets, toggles full width, centers it, and retries waiting capacity after a successful shrink.
 - Focuses vertical stack members; reorders, merges, and extracts them while preserving KWin focus.
-- Resolves directional output neighbors from logical output geometry and transfers an explicitly selected tiled window between both visible contexts.
-- Rejects default desktop and output transfer commands for stacked columns until a batch transaction can preserve the column atomically.
+- Resolves directional output neighbors from logical output geometry and transfers the active column atomically between contexts; secondary actions transfer one tiled window.
+- Applies desktop and output mechanisms member-by-member with the active member last, keeps it visible through cross-desktop output moves, commits both core contexts together, and compensates every owned field and frame on failure.
 - Maintains one shared trailing empty desktop through a guarded KWin lifecycle adapter.
 - Focuses adjacent desktops on the active output, with a global fallback and no wrapping.
 - Releases explicitly floating windows from geometry ownership and restores their anchored layout slots on return.
-- Keeps dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows entirely KWin-owned in state separate from manual floating.
+- Keeps dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows outside layout ownership in state separate from manual floating.
 - Releases a managed window that gains an automatic-floating role without restoring its old frame, then readmits it when the role clears and it remains eligible.
+- Optionally claims borderless state for application windows independently of layout ownership, reasserts owned state after policy changes, and restores only decoration state that it owns.
 - Owns startup, reconfiguration, and shutdown sequencing.
 
 ### Core
@@ -76,6 +77,7 @@ RuntimeState
   waitingWindowIds: Map<ContextKey, Set<WindowId>>
   floatingWindows: Map<WindowId, { placement, sourceContextKey }>
   automaticFloatingWindows: Set<WindowId>
+  windowBorderRestore: Map<WindowId, { noBorder, clientFrame, frame }>
   requestedSuspensions: Map<WindowId, Set<StateReason>>
   suspendedWindows: Set<WindowId>
   toggleGeometryTransitions: Map<WindowId, { contextKey, expectedFrame, settlementArmed }>
@@ -83,7 +85,7 @@ RuntimeState
   topologyBarrier: { revision, affectedOutputs, stableSample }
 ```
 
-`LayoutContext` owns columns, viewport offset, and the last applied geometry fingerprint. A managed window owns an optional original-frame restore baseline. A manually floating window remains observed but has no layout or geometry owner; its detached placement records stable anchors for reinsertion. An automatically floating window has no layout slot, floating anchor, waiting entry, suspension, or retry state. A suspended window keeps its layout slot, but reconcile excludes it until KWin releases geometry authority. Waiting windows have no layout owner. KWin objects never enter core state.
+`LayoutContext` owns columns, viewport offset, and the last applied geometry fingerprint. A managed window owns an optional decoration-independent client restore baseline plus the exact frame observed at capture time. A manually floating window remains observed but has no layout or geometry owner; its detached placement records stable anchors for reinsertion. An automatically floating window has no layout slot, floating anchor, waiting entry, suspension, or retry state. A suspended window keeps its layout slot, but reconcile excludes it until KWin releases geometry authority. Waiting windows have no layout owner. KWin objects never enter core state.
 
 ## Reconciliation rules
 
@@ -94,10 +96,11 @@ RuntimeState
 - Apply active-column width changes transactionally, preserving focus, grouping, and the prior width on failure.
 - Apply stack edits with compare-and-swap model rollback and exact compensating frame writes after partial failure.
 - Resolve direct stack insertion inside the active context, skipping singleton columns without wrapping and preserving every intermediate column.
-- Transfer a secondary single-window action between existing desktops through an immutable two-context preview, then commit both contexts only after KWin accepts the desktop switch and destination geometry.
-- Transfer a secondary single-window action between outputs through the same two-context preview, then commit only after KWin accepts the output and desktop mechanism plus both visible layouts.
+- Transfer either the active column or one secondary window between existing desktops through an immutable two-context preview, then commit only after KWin accepts every desktop mechanism, focus, and destination geometry.
+- Transfer either the active column or one secondary window between outputs through the same preview, then commit only after KWin accepts every output and desktop mechanism plus both visible layouts.
+- Preserve whole-column member order and width, apply the active member last, and restore all owned mechanisms and frames if any batch step fails.
 - Apply floating transitions from immutable previews, commit ownership only after every geometry request succeeds, and defer later context writes until asynchronous frames settle.
-- Leave dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows fully KWin-owned. Driftile layout commands are no-ops when one is active.
+- Leave dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows outside layout ownership. Driftile layout commands are no-ops when one is active.
 - If a managed window gains an automatic-floating role, remove its slot without writing a stale restore frame or disturbing unrelated order, widths, or viewport state. Re-admit it through normal admission after the role clears.
 - Allow horizontal overflow and viewport scrolling when KWin reports one output.
 - Queue a candidate window unmanaged if it would introduce overflow with multiple outputs, then retry it when that context gains capacity.
@@ -140,7 +143,8 @@ RuntimeState
 - Verify vertical focus, member reorder, contextual merge and extraction, suspended members, and structural rollback.
 - Verify the settled topology barrier, output replacement and removal, dock and silent work-area invalidations, sticky restore invalidation, and deterministic capacity recovery.
 - Verify independent contexts with native Wayland and Xwayland windows on two virtual outputs.
-- Verify secondary directional output transfers, no-wrap boundaries, per-output desktop selection, exact two-context compensation, and non-destructive default handling of stacks.
+- Verify whole-column and secondary directional transfers, no-wrap boundaries, per-output desktop selection, focus preservation, and exact two-context compensation.
+- Verify optional borderless ownership across tiled and floating windows, policy reassertion, live reconfigure handling, and unload restoration.
 - Verify shared trailing-desktop creation, guarded removal, silent mutation rejection, and preservation of external desktops.
 - Exercise live output reconfiguration against an isolated real KWin session.
 - Run integration smoke tests in an isolated KWin session or NixOS VM.

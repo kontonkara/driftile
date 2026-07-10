@@ -46,14 +46,14 @@ The current runtime already:
 - Cycles preset widths in both directions, adjusts width by 10%, toggles full width, and centers the active column.
 - Focuses and reorders vertical stack members, contextually merges or extracts the active window, and inserts it directly into the nearest stack across singleton columns.
 - Toggles the active normal window between tiled and floating states with anchored reinsertion and safe geometry ownership.
-- Moves the active tiled window between adjacent existing desktops with follow-focus and atomic two-context ownership.
-- Moves the active tiled window to an adjacent output with deterministic spatial routing and atomic visible-context reflow.
-- Refuses default transfer commands for stacked columns instead of silently splitting them.
+- Moves the whole active column between adjacent existing desktops with follow-focus, atomic two-context ownership, and exact rollback; single-window transfer remains secondary.
+- Moves the whole active column to an adjacent output with deterministic spatial routing and atomic visible-context reflow; single-window transfer remains secondary.
+- Optionally removes application-window decorations independently of layout ownership while preserving pre-existing borderless state, reasserting owned policy, and restoring owned state on disable.
 - Keeps one shared trailing desktop empty and removes only redundant tails created by the current run.
 - Registers compact default shortcuts with `H/J/K/L`, arrow, and Page Up/Down aliases.
 - Provides a reversible development helper for claiming shortcuts already used
   by Plasma; a release UI without a Node.js dependency remains future work.
-- Leaves dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows entirely KWin-owned, separate from manual floating.
+- Leaves dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows outside layout ownership, separate from manual floating.
 - Translates client minimum and maximum sizes to decorated frame bounds for layout validation and column resizing.
 
 The automatic-floating base is complete. Size increments, aspect ratios, live constraint changes across more toolkits, physical connector hot-plug, and a wider rotation matrix remain MVP hardening work.
@@ -63,7 +63,6 @@ The automatic-floating base is complete. Size increments, aspect ratios, live co
 Complete the daily keyboard-driven workflow.
 
 - Manage every output and desktop independently.
-- Make default desktop and output transfers move the whole active column; keep single-window transfers as unbound secondary actions.
 - Add first/last column navigation and movement.
 - Add window-height adjustment, automatic reset, and preset cycling.
 - Add fill-available-width and center-visible-column commands.
@@ -71,7 +70,7 @@ Complete the daily keyboard-driven workflow.
 - Add virtual-desktop reordering within KDE's global desktop model.
 - Define size-increment and aspect-ratio behavior, and expand live constraint-change coverage across toolkits.
 - Harden the existing topology recovery for rotation, rapid physical hot-plug sequences, and more hardware configurations.
-- Add essential layout settings.
+- Add the remaining essential layout settings.
 
 Exit criteria:
 
