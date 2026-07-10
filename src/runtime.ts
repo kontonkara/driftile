@@ -57,6 +57,18 @@ export function moveColumnRight(): void {
   controller?.moveColumnRight();
 }
 
+export function decreaseColumnWidth(): void {
+  controller?.decreaseColumnWidth();
+}
+
+export function increaseColumnWidth(): void {
+  controller?.increaseColumnWidth();
+}
+
+export function resetColumnWidth(): void {
+  controller?.resetColumnWidth();
+}
+
 export function probeTopology(): void {
   controller?.probeTopology();
 }

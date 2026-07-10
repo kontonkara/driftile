@@ -290,6 +290,85 @@ describe("LayoutEngine", () => {
     expect(engine.snapshot(output, desktop)).toEqual(before);
   });
 
+  it("sets the active whole column width and returns an exact rollback value", () => {
+    const engine = new LayoutEngine();
+    const nextWidth: { kind: "fixed"; value: number } = {
+      kind: "fixed",
+      value: 420,
+    };
+
+    engine.restoreColumns({
+      activeColumnId: columnId("column-2"),
+      columns: [
+        {
+          column: {
+            id: columnId("column-1"),
+            width: { kind: "fixed", value: 300 },
+            windowIds: [windowId("window-1")],
+          },
+          index: 0,
+        },
+        {
+          column: {
+            id: columnId("column-2"),
+            width: { kind: "proportion", value: 0.5 },
+            windowIds: [windowId("window-2"), windowId("window-3")],
+          },
+          index: 1,
+        },
+      ],
+      desktopId: desktop,
+      outputId: output,
+      viewportOffset: 80,
+    });
+
+    const previousWidth = engine.setActiveColumnWidth(
+      windowId("window-3"),
+      nextWidth,
+    );
+
+    expect(previousWidth).toEqual({ kind: "proportion", value: 0.5 });
+    nextWidth.value = 900;
+    expect(engine.snapshot(output, desktop)).toMatchObject({
+      activeColumnId: "column-2",
+      columns: [
+        { id: "column-1", width: { kind: "fixed", value: 300 } },
+        { id: "column-2", width: { kind: "fixed", value: 420 } },
+      ],
+      viewportOffset: 80,
+    });
+    expect(
+      previousWidth &&
+        engine.setActiveColumnWidth(windowId("window-2"), previousWidth),
+    ).toEqual({ kind: "fixed", value: 420 });
+    expect(engine.snapshot(output, desktop).columns[1]?.width).toEqual({
+      kind: "proportion",
+      value: 0.5,
+    });
+    expect(
+      engine.setActiveColumnWidth(windowId("window-1"), {
+        kind: "fixed",
+        value: 500,
+      }),
+    ).toBeNull();
+    expect(
+      engine.setActiveColumnWidth(windowId("window-2"), {
+        kind: "proportion",
+        value: 0.5,
+      }),
+    ).toBeNull();
+    expect(() =>
+      engine.setActiveColumnWidth(windowId("window-2"), {
+        kind: "fixed",
+        value: 0,
+      }),
+    ).toThrow("column width must be finite and greater than zero");
+    expect(engine.snapshot(output, desktop).columns[1]?.width).toEqual({
+      kind: "proportion",
+      value: 0.5,
+    });
+  });
+
   it("stores viewport offsets independently for each context", () => {
     const engine = new LayoutEngine();
     const secondOutput = outputId("HDMI-A-1");

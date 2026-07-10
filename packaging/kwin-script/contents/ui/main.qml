@@ -69,6 +69,24 @@ QtObject {
         sequence: "Meta+Ctrl+Shift+L"
         onActivated: Runtime.DriftileRuntime.moveColumnRight()
     }
+    readonly property ShortcutHandler decreaseColumnWidthShortcut: ShortcutHandler {
+        name: "Driftile Decrease Column Width"
+        text: "Driftile: Decrease column width"
+        sequence: "Meta+Ctrl+-"
+        onActivated: Runtime.DriftileRuntime.decreaseColumnWidth()
+    }
+    readonly property ShortcutHandler increaseColumnWidthShortcut: ShortcutHandler {
+        name: "Driftile Increase Column Width"
+        text: "Driftile: Increase column width"
+        sequence: "Meta+Ctrl+="
+        onActivated: Runtime.DriftileRuntime.increaseColumnWidth()
+    }
+    readonly property ShortcutHandler resetColumnWidthShortcut: ShortcutHandler {
+        name: "Driftile Reset Column Width"
+        text: "Driftile: Reset column width"
+        sequence: "Meta+Ctrl+0"
+        onActivated: Runtime.DriftileRuntime.resetColumnWidth()
+    }
 
     function createRect(x, y, width, height) {
         return Qt.rect(x, y, width, height);

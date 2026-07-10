@@ -210,6 +210,40 @@ export class LayoutEngine {
     return true;
   }
 
+  setActiveColumnWidth(
+    windowId: WindowId,
+    width: ColumnWidth,
+  ): ColumnWidth | null {
+    assertValidWidth(width);
+    const placement = this.placements.get(windowId);
+
+    if (!placement) {
+      return null;
+    }
+
+    const context = this.contexts.get(placement.contextKey);
+
+    if (!context || context.activeColumnId !== placement.columnId) {
+      return null;
+    }
+
+    const columnIndex = context.columns.findIndex(
+      (candidate) => candidate.id === placement.columnId,
+    );
+    const column = context.columns[columnIndex];
+
+    if (
+      !column ||
+      (column.width.kind === width.kind && column.width.value === width.value)
+    ) {
+      return null;
+    }
+
+    const previous = { ...column.width };
+    context.columns[columnIndex] = { ...column, width: { ...width } };
+    return previous;
+  }
+
   unmanageWindow(windowId: WindowId): boolean {
     const placement = this.placements.get(windowId);
 

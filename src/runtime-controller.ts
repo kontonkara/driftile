@@ -49,10 +49,15 @@ const DEFAULT_COLUMN_WIDTH: ColumnWidth = {
   value: 0.5,
 };
 const DEFAULT_GAP = 16;
+const FIXED_COLUMN_WIDTH_STEP = 64;
 const MAX_CAPACITY_PARK_ATTEMPTS = 20;
 const MAX_TOPOLOGY_SAMPLE_ATTEMPTS = 20;
 const MAX_TRANSIENT_RESUME_PROBES = 20;
+const MINIMUM_COLUMN_WIDTH = 64;
+const PROPORTIONAL_COLUMN_WIDTH_STEP = 1 / 16;
 const REQUIRED_CAPACITY_PARK_SAMPLES = 2;
+
+type ColumnResizeAction = "decrease" | "increase" | "reset";
 
 interface ManagedContext {
   readonly desktopId: DesktopId;
@@ -78,6 +83,15 @@ interface RestoreBaseline {
 interface AdmissionCandidate {
   readonly id: WindowId;
   readonly source: KWinWindow;
+}
+
+interface ActiveColumnCommand {
+  readonly activeColumn: LayoutColumnSnapshot;
+  readonly activeId: WindowId;
+  readonly before: LayoutContextSnapshot;
+  readonly context: RuntimeContext;
+  readonly contextGeometry: ContextGeometry;
+  readonly sampledGeometries: ReadonlyMap<string, ContextGeometry>;
 }
 
 interface ResumeSample {
@@ -290,6 +304,18 @@ export class RuntimeController {
 
   moveColumnRight(): boolean {
     return this.moveActiveColumn("right");
+  }
+
+  decreaseColumnWidth(): boolean {
+    return this.resizeActiveColumn("decrease");
+  }
+
+  increaseColumnWidth(): boolean {
+    return this.resizeActiveColumn("increase");
+  }
+
+  resetColumnWidth(): boolean {
+    return this.resizeActiveColumn("reset");
   }
 
   probeTopology(): void {
@@ -747,28 +773,210 @@ export class RuntimeController {
   }
 
   private moveActiveColumn(direction: HorizontalDirection): boolean {
+    const command = this.prepareActiveColumnCommand();
+
+    if (!command || this.hasPendingCapacityState(command.context.key)) {
+      return false;
+    }
+
+    const oppositeDirection: HorizontalDirection =
+      direction === "left" ? "right" : "left";
+    return this.applyActiveColumnMutation(
+      command,
+      "column move",
+      () => this.layout.moveActiveColumn(command.activeId, direction),
+      () => this.layout.moveActiveColumn(command.activeId, oppositeDirection),
+    );
+  }
+
+  private resizeActiveColumn(action: ColumnResizeAction): boolean {
+    const command = this.prepareActiveColumnCommand();
+
+    if (
+      !command ||
+      this.capacityParkOperations.has(command.context.key) ||
+      this.capacityCanceledParks.has(command.context.key)
+    ) {
+      return false;
+    }
+
+    const width = this.resizedColumnWidth(command, action);
+
+    if (!width) {
+      return false;
+    }
+
+    let previousWidth: ColumnWidth | null = null;
+    const resized = this.applyActiveColumnMutation(
+      command,
+      "column resize",
+      () => {
+        previousWidth = this.layout.setActiveColumnWidth(
+          command.activeId,
+          width,
+        );
+        return previousWidth !== null;
+      },
+      () =>
+        previousWidth !== null &&
+        this.layout.setActiveColumnWidth(command.activeId, previousWidth) !==
+          null,
+    );
+
+    if (!resized) {
+      return false;
+    }
+
+    this.capacityParkBackoffs.delete(command.context.key);
+
+    if (
+      this.capacityLeasesByContext.get(command.context.key)?.size ||
+      this.waitingWindowIds.get(command.context.key)?.size
+    ) {
+      this.pendingAdmissionContexts.add(command.context.key);
+      this.scheduleWork();
+    }
+
+    return true;
+  }
+
+  private resizedColumnWidth(
+    command: ActiveColumnCommand,
+    action: ColumnResizeAction,
+  ): ColumnWidth | null {
+    let minimum = MINIMUM_COLUMN_WIDTH;
+    let maximum = Number.POSITIVE_INFINITY;
+
+    for (const id of command.activeColumn.windowIds) {
+      const source = this.observer.source(id);
+
+      if (!source) {
+        return null;
+      }
+
+      const minimumWidth = source.minSize.width;
+      const maximumWidth = source.maxSize.width;
+
+      if (Number.isFinite(minimumWidth) && minimumWidth > 0) {
+        minimum = Math.max(minimum, minimumWidth);
+      }
+
+      if (Number.isFinite(maximumWidth) && maximumWidth > 0) {
+        maximum = Math.min(maximum, maximumWidth);
+      }
+    }
+
+    const devicePixelRatio = command.contextGeometry.devicePixelRatio;
+
+    if (!Number.isFinite(devicePixelRatio) || devicePixelRatio <= 0) {
+      return null;
+    }
+
+    minimum = ceilToPhysicalPixel(minimum, devicePixelRatio);
+
+    if (Number.isFinite(maximum)) {
+      maximum = floorToPhysicalPixel(maximum, devicePixelRatio);
+    }
+
+    if (maximum < minimum) {
+      return null;
+    }
+
+    const current = command.activeColumn.width;
+    let candidate: ColumnWidth;
+
+    if (action === "reset") {
+      candidate = { ...this.width };
+    } else {
+      const step =
+        current.kind === "fixed"
+          ? FIXED_COLUMN_WIDTH_STEP
+          : PROPORTIONAL_COLUMN_WIDTH_STEP;
+      const direction = action === "increase" ? 1 : -1;
+      candidate = {
+        kind: current.kind,
+        value: this.steppedWidthValue(current, step, direction),
+      };
+    }
+
+    if (candidate.kind === "fixed") {
+      candidate = {
+        kind: "fixed",
+        value: clamp(candidate.value, minimum, maximum),
+      };
+    } else {
+      const denominator = command.contextGeometry.workArea.width - this.gap;
+
+      if (!Number.isFinite(denominator) || denominator <= 0) {
+        return null;
+      }
+
+      const minimumProportion = (minimum + this.gap) / denominator;
+      const maximumProportion = (maximum + this.gap) / denominator;
+      candidate = {
+        kind: "proportion",
+        value: clamp(candidate.value, minimumProportion, maximumProportion),
+      };
+    }
+
+    if (
+      (action === "increase" && candidate.value <= current.value) ||
+      (action === "decrease" && candidate.value >= current.value)
+    ) {
+      return null;
+    }
+
+    return current.kind === candidate.kind && current.value === candidate.value
+      ? null
+      : candidate;
+  }
+
+  private steppedWidthValue(
+    current: ColumnWidth,
+    step: number,
+    direction: -1 | 1,
+  ): number {
+    if (current.kind !== this.width.kind) {
+      return current.value + direction * step;
+    }
+
+    const latticeOffset = (current.value - this.width.value) / step;
+    const latticeIndex = Math.round(latticeOffset);
+    const latticeValue = this.width.value + latticeIndex * step;
+
+    if (
+      Math.abs(current.value - latticeValue) <=
+      floatingPointTolerance(current.value, this.width.value, latticeValue)
+    ) {
+      return this.width.value + (latticeIndex + direction) * step;
+    }
+
+    return current.value + direction * step;
+  }
+
+  private prepareActiveColumnCommand(): ActiveColumnCommand | null {
     if (
       !this.started ||
       this.startupStabilizationToken !== null ||
       this.hasTopologyBarrier()
     ) {
-      return false;
+      return null;
     }
 
     const sampledGeometries = this.sampleSettledVisibleContextGeometries();
 
     if (!sampledGeometries || !this.synchronizePendingWindows()) {
-      return false;
+      return null;
     }
 
     if (this.hasTopologyBarrier()) {
-      return false;
+      return null;
     }
 
     const activeWindow = this.workspace.activeWindow;
 
     if (!activeWindow) {
-      return false;
+      return null;
     }
 
     const activeId = windowId(String(activeWindow.internalId));
@@ -778,7 +986,7 @@ export class RuntimeController {
       this.requestedSuspensions.has(activeId) ||
       !isGeometryWritable(activeWindow)
     ) {
-      return false;
+      return null;
     }
 
     const owner = this.managedWindows.get(activeId);
@@ -792,10 +1000,9 @@ export class RuntimeController {
       !owner ||
       !context ||
       !activeContext ||
-      contextKey(activeContext) !== owner.contextKey ||
-      this.hasPendingCapacityState(context.key)
+      contextKey(activeContext) !== owner.contextKey
     ) {
-      return false;
+      return null;
     }
 
     const before = this.layout.snapshot(context.outputId, context.desktopId);
@@ -805,6 +1012,7 @@ export class RuntimeController {
 
     if (
       !activeColumn ||
+      before.activeColumnId !== activeColumn.id ||
       activeColumn.windowIds.some((id) => {
         const memberOwner = this.managedWindows.get(id);
         const source = this.observer.source(id);
@@ -818,22 +1026,38 @@ export class RuntimeController {
         );
       })
     ) {
-      return false;
+      return null;
     }
 
     const contextGeometry = sampledGeometries.get(context.key);
 
-    if (
-      !contextGeometry ||
-      !this.layout.moveActiveColumn(activeId, direction)
-    ) {
+    if (!contextGeometry) {
+      return null;
+    }
+
+    return {
+      activeColumn,
+      activeId,
+      before,
+      context,
+      contextGeometry,
+      sampledGeometries,
+    };
+  }
+
+  private applyActiveColumnMutation(
+    command: ActiveColumnCommand,
+    label: string,
+    mutate: () => boolean,
+    rollback: () => boolean,
+  ): boolean {
+    if (!mutate()) {
       return false;
     }
 
-    const oppositeDirection: HorizontalDirection =
-      direction === "left" ? "right" : "left";
+    const { before, context, contextGeometry, sampledGeometries } = command;
     const restoreLayout = (): boolean => {
-      if (!this.layout.moveActiveColumn(activeId, oppositeDirection)) {
+      if (!rollback()) {
         return false;
       }
 
@@ -844,10 +1068,10 @@ export class RuntimeController {
       );
       return true;
     };
-    let movedLayout: ReturnType<typeof solveStripGeometry>;
+    let nextLayout: ReturnType<typeof solveStripGeometry>;
 
     try {
-      movedLayout = solveStripGeometry({
+      nextLayout = solveStripGeometry({
         context: this.layout.snapshot(context.outputId, context.desktopId),
         devicePixelRatio: contextGeometry.devicePixelRatio,
         gap: this.gap,
@@ -857,17 +1081,17 @@ export class RuntimeController {
     } catch (error) {
       restoreLayout();
       console.warn(
-        `[driftile] column move rejected context=${context.key} error=${String(error)}`,
+        `[driftile] ${label} rejected context=${context.key} error=${String(error)}`,
       );
       return false;
     }
 
-    const writableLayout = movedLayout.windows.filter(
+    const writableLayout = nextLayout.windows.filter(
       (window) => !this.suspendedWindows.has(window.windowId),
     );
 
     if (
-      !this.canApplyLayout(movedLayout.maxViewportOffset) ||
+      !this.canApplyLayout(nextLayout.maxViewportOffset) ||
       writableLayout.some(
         (window) =>
           !this.geometry.canApplyFrame(window.windowId, window.frame, context),
@@ -877,6 +1101,33 @@ export class RuntimeController {
       return false;
     }
 
+    const rollbackWindowIds = writableLayout.map((window) => window.windowId);
+    const observedBefore = this.geometry.observedFrames(
+      rollbackWindowIds,
+      context,
+    );
+    const rollbackLayout: WindowGeometry[] = [];
+
+    for (const window of writableLayout) {
+      const frame = observedBefore.get(window.windowId);
+
+      if (!frame) {
+        restoreLayout();
+        return false;
+      }
+
+      rollbackLayout.push({ ...window, frame });
+    }
+
+    const forwardWindowIds = new Set(
+      diffWindowGeometries(writableLayout, observedBefore).map(
+        (change) => change.windowId,
+      ),
+    );
+    const rollbackTargets = rollbackLayout.filter((window) =>
+      forwardWindowIds.has(window.windowId),
+    );
+    const wasDirty = this.dirtyContexts.has(context.key);
     this.dirtyContexts.delete(context.key);
     let forwardWrites = 0;
     let forwardError: string | null = null;
@@ -901,11 +1152,9 @@ export class RuntimeController {
 
     if (restored && !this.hasTopologyBarrier()) {
       this.dirtyContexts.delete(context.key);
+      compensationWrites = this.geometry.apply(rollbackTargets, context);
 
-      try {
-        compensationWrites = this.reconcileContext(context, sampledGeometries);
-      } catch (error) {
-        forwardError ??= String(error);
+      if (compensationWrites !== rollbackTargets.length || wasDirty) {
         this.markContextDirty(context);
       }
     } else {
@@ -920,7 +1169,7 @@ export class RuntimeController {
 
     if (forwardError !== null) {
       console.warn(
-        `[driftile] column move rolled back context=${context.key} error=${forwardError}`,
+        `[driftile] ${label} rolled back context=${context.key} error=${forwardError}`,
       );
     }
 
@@ -4493,4 +4742,30 @@ function clampFrameToWorkArea(frame: Rect, workArea: Rect): Rect {
 
 function clamp(value: number, minimum: number, maximum: number): number {
   return Math.min(maximum, Math.max(minimum, value));
+}
+
+function ceilToPhysicalPixel(value: number, devicePixelRatio: number): number {
+  const physicalValue = value * devicePixelRatio;
+  return (
+    Math.ceil(physicalValue - floatingPointTolerance(physicalValue)) /
+    devicePixelRatio
+  );
+}
+
+function floorToPhysicalPixel(value: number, devicePixelRatio: number): number {
+  const physicalValue = value * devicePixelRatio;
+  return (
+    Math.floor(physicalValue + floatingPointTolerance(physicalValue)) /
+    devicePixelRatio
+  );
+}
+
+function floatingPointTolerance(...values: readonly number[]): number {
+  let magnitude = 1;
+
+  for (const value of values) {
+    magnitude = Math.max(magnitude, Math.abs(value));
+  }
+
+  return magnitude * Number.EPSILON * 16;
 }
