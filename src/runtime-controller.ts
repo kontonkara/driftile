@@ -25,6 +25,10 @@ import {
   type StackEditResult,
   type VerticalDirection,
 } from "./core/layout-engine";
+import {
+  findAdjacentOutput,
+  type OutputDirection,
+} from "./core/output-navigation";
 import { diffWindowGeometries } from "./core/reconcile";
 import type {
   KWinOutput,
@@ -90,8 +94,10 @@ interface FloatingWindow {
   readonly sourceContextKey: string;
 }
 
-interface DesktopTransferOperation {
+interface WindowTransferOperation {
   readonly activeId: WindowId;
+  desktopChangeSuppressed: boolean;
+  readonly kind: "desktop" | "output";
   readonly sourceContextKey: string;
   readonly targetContextKey: string;
 }
@@ -105,6 +111,25 @@ interface DesktopTransferCommand extends ActiveWindowCommand {
   readonly targetContextKey: string;
   readonly targetDesktop: KWinVirtualDesktop;
   readonly targetRuntimeContext: RuntimeContext | undefined;
+}
+
+interface OutputTransferCommand extends ActiveWindowCommand {
+  readonly sourceDesktop: KWinVirtualDesktop;
+  readonly sourceOutput: KWinOutput;
+  readonly sourceRuntimeContext: RuntimeContext;
+  readonly targetContext: ManagedContext;
+  readonly targetContextGeometry: ContextGeometry;
+  readonly targetContextKey: string;
+  readonly targetDesktop: KWinVirtualDesktop;
+  readonly targetOutput: KWinOutput;
+  readonly targetRuntimeContext: RuntimeContext | undefined;
+}
+
+interface TransferGeometryChange {
+  readonly context: ManagedContext;
+  readonly contextKey: string;
+  readonly frame: Rect;
+  readonly windowId: WindowId;
 }
 
 type WindowTransferPreview = NonNullable<
@@ -246,7 +271,7 @@ export class RuntimeController {
   private readonly committedOutputRanks = new Map<OutputId, number>();
   private readonly contexts = new Map<string, RuntimeContext>();
   private readonly dirtyContexts = new Set<string>();
-  private desktopTransferOperation: DesktopTransferOperation | null = null;
+  private windowTransferOperation: WindowTransferOperation | null = null;
   private readonly floatingWindows = new Map<WindowId, FloatingWindow>();
   private readonly geometry: KWinGeometryAdapter;
   private readonly gap: number;
@@ -426,6 +451,22 @@ export class RuntimeController {
     return this.moveActiveWindowToDesktop(1);
   }
 
+  moveWindowToOutputLeft(): boolean {
+    return this.moveActiveWindowToOutput("left");
+  }
+
+  moveWindowToOutputRight(): boolean {
+    return this.moveActiveWindowToOutput("right");
+  }
+
+  moveWindowToOutputUp(): boolean {
+    return this.moveActiveWindowToOutput("up");
+  }
+
+  moveWindowToOutputDown(): boolean {
+    return this.moveActiveWindowToOutput("down");
+  }
+
   decreaseColumnWidth(): boolean {
     return this.resizeActiveColumn("decrease");
   }
@@ -439,7 +480,11 @@ export class RuntimeController {
   }
 
   probeTopology(): void {
-    if (!this.started || this.topologyStabilizing) {
+    if (
+      !this.started ||
+      this.windowTransferOperation ||
+      this.topologyStabilizing
+    ) {
       return;
     }
 
@@ -547,7 +592,7 @@ export class RuntimeController {
       this.layout = new LayoutEngine();
       this.knownOutputInstances.clear();
       this.contexts.clear();
-      this.desktopTransferOperation = null;
+      this.windowTransferOperation = null;
       this.dirtyContexts.clear();
       this.floatingWindows.clear();
       this.managedWindows.clear();
@@ -593,6 +638,7 @@ export class RuntimeController {
   reconcile(): number {
     if (
       !this.started ||
+      this.windowTransferOperation ||
       this.topologyStabilizing ||
       this.topologyRetryPending
     ) {
@@ -624,7 +670,11 @@ export class RuntimeController {
     current?: KWinVirtualDesktop | null,
     output?: KWinOutput,
   ): void => {
-    if (this.desktopTransferOperation) {
+    if (this.windowTransferOperation) {
+      if (this.windowTransferOperation.kind === "output") {
+        this.windowTransferOperation.desktopChangeSuppressed = true;
+      }
+
       return;
     }
 
@@ -675,7 +725,7 @@ export class RuntimeController {
 
     if (
       this.initializing ||
-      this.desktopTransferOperation ||
+      this.windowTransferOperation ||
       this.startupStabilizationToken !== null ||
       this.topologyStabilizing ||
       this.topologyRetryPending
@@ -692,7 +742,7 @@ export class RuntimeController {
   private readonly handleWindowChanged = (id: string): void => {
     const changedId = windowId(id);
 
-    if (this.desktopTransferOperation?.activeId === changedId) {
+    if (this.windowTransferOperation?.activeId === changedId) {
       return;
     }
 
@@ -823,7 +873,7 @@ export class RuntimeController {
   ): void => {
     if (
       !window ||
-      this.desktopTransferOperation ||
+      this.windowTransferOperation ||
       this.topologyStabilizing ||
       this.topologyRetryPending
     ) {
@@ -866,6 +916,7 @@ export class RuntimeController {
   private focusAdjacent(direction: HorizontalDirection): boolean {
     if (
       !this.started ||
+      this.windowTransferOperation ||
       this.topologyStabilizing ||
       this.topologyRetryPending
     ) {
@@ -1327,13 +1378,13 @@ export class RuntimeController {
     };
 
     if (
-      !this.desktopTransferLayoutIsSafe(
+      !this.transferLayoutIsSafe(
         sourceLayout,
         active.context,
         active.contextKey,
         active.activeId,
       ) ||
-      !this.desktopTransferLayoutIsSafe(
+      !this.transferLayoutIsSafe(
         targetLayout,
         targetContext,
         targetContextKey,
@@ -1345,12 +1396,14 @@ export class RuntimeController {
       return false;
     }
 
-    const operation: DesktopTransferOperation = {
+    const operation: WindowTransferOperation = {
       activeId: active.activeId,
+      desktopChangeSuppressed: false,
+      kind: "desktop",
       sourceContextKey: active.contextKey,
       targetContextKey,
     };
-    this.desktopTransferOperation = operation;
+    this.windowTransferOperation = operation;
 
     try {
       return this.applyDesktopTransfer(
@@ -1363,9 +1416,11 @@ export class RuntimeController {
     } finally {
       this.layout.discardWindowTransfer(preview);
 
-      if (this.desktopTransferOperation === operation) {
-        this.desktopTransferOperation = null;
+      if (this.windowTransferOperation === operation) {
+        this.windowTransferOperation = null;
       }
+
+      this.handleWindowActivated(this.workspace.activeWindow);
 
       if (
         [...this.dirtyContexts].some((key) => {
@@ -1391,7 +1446,7 @@ export class RuntimeController {
       return canonical;
     }
 
-    const base = `column:desktop:${String(id)}`;
+    const base = `column:transfer:${String(id)}`;
 
     for (let index = 0; index <= target.columns.length; index += 1) {
       const candidate = columnId(
@@ -1403,10 +1458,10 @@ export class RuntimeController {
       }
     }
 
-    throw new Error("could not allocate a desktop transfer column ID");
+    throw new Error("could not allocate a transfer column ID");
   }
 
-  private desktopTransferLayoutIsSafe(
+  private transferLayoutIsSafe(
     layout: ReturnType<typeof solveStripGeometry>,
     context: ManagedContext,
     ownerContextKey: string,
@@ -1455,13 +1510,14 @@ export class RuntimeController {
     preview: WindowTransferPreview,
     sourceLayout: ReturnType<typeof solveStripGeometry>,
     targetLayout: ReturnType<typeof solveStripGeometry>,
-    operation: DesktopTransferOperation,
+    operation: WindowTransferOperation,
   ): boolean {
     const topologyRevision = this.topologyRevision;
     const sourceFrame = { ...command.activeWindow.frameGeometry };
     const originalActiveWindow = this.workspace.activeWindow;
     const targetWasDirty = this.dirtyContexts.has(command.targetContextKey);
     const trackedWindowIds: WindowId[] = [];
+    const attemptedChanges: Array<{ frame: Rect; windowId: WindowId }> = [];
     const appliedChanges: Array<{ frame: Rect; windowId: WindowId }> = [];
     const rollbackTargets: Array<{ frame: Rect; windowId: WindowId }> = [];
     let destinationBaseline: RestoreBaseline | undefined;
@@ -1532,6 +1588,9 @@ export class RuntimeController {
         targetLayout.windows,
         observedBefore,
       );
+      const changedWindowIds = new Set(
+        changes.map((change) => change.windowId),
+      );
 
       for (const change of changes) {
         const frame = observedBefore.get(change.windowId);
@@ -1562,6 +1621,7 @@ export class RuntimeController {
           break;
         }
 
+        attemptedChanges.push(change);
         const applied = this.geometry.apply(
           [change],
           command.targetContext,
@@ -1583,6 +1643,8 @@ export class RuntimeController {
 
       if (
         appliedChanges.length !== changes.length ||
+        !this.transferChangedFramesAreOwned(changes, rollbackTargets) ||
+        !this.transferUnchangedFramesMatch(targetLayout, changedWindowIds) ||
         !this.desktopTransferOperationIsCurrent(
           command,
           operation,
@@ -1626,7 +1688,7 @@ export class RuntimeController {
 
     const compensationWrites = this.rollbackDesktopTransfer(
       command,
-      appliedChanges,
+      attemptedChanges,
       rollbackTargets,
       sourceFrame,
       destinationBaseline?.frame,
@@ -1646,11 +1708,11 @@ export class RuntimeController {
 
   private desktopTransferOperationIsCurrent(
     command: DesktopTransferCommand,
-    operation: DesktopTransferOperation,
+    operation: WindowTransferOperation,
     topologyRevision: number,
   ): boolean {
     return (
-      this.desktopTransferOperation === operation &&
+      this.windowTransferOperation === operation &&
       this.topologyRevision === topologyRevision &&
       !this.hasTopologyBarrier() &&
       this.desktopTransferMechanismAtTarget(command) &&
@@ -1699,13 +1761,13 @@ export class RuntimeController {
       !this.hasPendingCapacityState(command.targetContextKey) &&
       !this.waitingWindowIds.has(command.contextKey) &&
       !this.waitingWindowIds.has(command.targetContextKey) &&
-      this.desktopTransferLayoutIsSafe(
+      this.transferLayoutIsSafe(
         sourceLayout,
         command.context,
         command.contextKey,
         command.activeId,
       ) &&
-      this.desktopTransferLayoutIsSafe(
+      this.transferLayoutIsSafe(
         targetLayout,
         command.targetContext,
         command.targetContextKey,
@@ -1728,18 +1790,18 @@ export class RuntimeController {
 
   private rollbackDesktopTransfer(
     command: DesktopTransferCommand,
-    appliedChanges: readonly { frame: Rect; windowId: WindowId }[],
+    forwardChanges: readonly { frame: Rect; windowId: WindowId }[],
     rollbackTargets: readonly { frame: Rect; windowId: WindowId }[],
     sourceFrame: Rect,
     destinationFrame: Rect | undefined,
     originalActiveWindow: KWinWindow | null,
-    operation: DesktopTransferOperation,
+    operation: WindowTransferOperation,
     topologyRevision: number,
     targetWasDirty: boolean,
   ): number {
-    const appliedIds = new Set(appliedChanges.map((change) => change.windowId));
+    const appliedIds = new Set(forwardChanges.map((change) => change.windowId));
     const forwardFrames = new Map(
-      appliedChanges.map((change) => [change.windowId, change.frame]),
+      forwardChanges.map((change) => [change.windowId, change.frame]),
     );
     const compensationTargets = rollbackTargets.filter((window) =>
       appliedIds.has(window.windowId),
@@ -1748,7 +1810,7 @@ export class RuntimeController {
     let destinationRestored = compensationTargets.length === 0;
 
     if (
-      this.desktopTransferOperation === operation &&
+      this.windowTransferOperation === operation &&
       this.topologyRevision === topologyRevision &&
       !this.hasTopologyBarrier() &&
       this.desktopTransferMechanismAtTarget(command) &&
@@ -1774,7 +1836,7 @@ export class RuntimeController {
           [target],
           command.targetContext,
           () =>
-            this.desktopTransferOperation === operation &&
+            this.windowTransferOperation === operation &&
             this.topologyRevision === topologyRevision &&
             !this.hasTopologyBarrier() &&
             this.desktopTransferMechanismAtTarget(command),
@@ -1797,7 +1859,17 @@ export class RuntimeController {
       }
     }
 
-    this.restoreDesktopTransferMechanism(command, originalActiveWindow);
+    const mechanismRestoreAllowed = this.canRestoreDesktopTransferMechanism(
+      command,
+      operation,
+      topologyRevision,
+    );
+
+    if (mechanismRestoreAllowed) {
+      this.restoreDesktopTransferMechanism(command, originalActiveWindow);
+    } else {
+      this.pendingWindowSyncs.add(command.activeId);
+    }
 
     const sourceLiveFrame = command.activeWindow.frameGeometry;
     const activeForwardFrame = forwardFrames.get(command.activeId);
@@ -1812,9 +1884,14 @@ export class RuntimeController {
     ].some((frame) => frame && rectsEqual(sourceLiveFrame, frame));
 
     if (
-      this.desktopTransferOperation === operation &&
+      mechanismRestoreAllowed &&
+      this.windowTransferOperation === operation &&
       this.topologyRevision === topologyRevision &&
       !this.hasTopologyBarrier() &&
+      this.observer.source(command.activeId) === command.activeWindow &&
+      !command.activeWindow.deleted &&
+      this.workspace.screens.includes(command.output) &&
+      this.desktopTransferFingerprintsMatch(command) &&
       windowIsOnDesktop(command.activeWindow, command.sourceDesktop) &&
       currentDesktopForOutput(this.workspace, command.output)?.id ===
         command.sourceDesktop.id &&
@@ -1872,6 +1949,28 @@ export class RuntimeController {
     return compensationWrites;
   }
 
+  private canRestoreDesktopTransferMechanism(
+    command: DesktopTransferCommand,
+    operation: WindowTransferOperation,
+    topologyRevision: number,
+  ): boolean {
+    return (
+      this.windowTransferOperation === operation &&
+      this.topologyRevision === topologyRevision &&
+      !this.hasTopologyBarrier() &&
+      this.observer.source(command.activeId) === command.activeWindow &&
+      !command.activeWindow.deleted &&
+      this.workspace.screens.includes(command.output) &&
+      this.workspace.desktops.some(
+        (desktop) => desktop.id === command.sourceDesktop.id,
+      ) &&
+      this.workspace.desktops.some(
+        (desktop) => desktop.id === command.targetDesktop.id,
+      ) &&
+      this.desktopTransferFingerprintsMatch(command)
+    );
+  }
+
   private restoreDesktopTransferMechanism(
     command: DesktopTransferCommand,
     originalActiveWindow: KWinWindow | null,
@@ -1925,6 +2024,862 @@ export class RuntimeController {
       this.dirtyContexts.delete(source.key);
     } else {
       this.markContextDirty(source);
+    }
+
+    let target = command.targetRuntimeContext;
+
+    if (!target) {
+      target = {
+        ...command.targetContext,
+        geometryFingerprint: command.targetContextGeometry.fingerprint,
+        key: command.targetContextKey,
+        windowIds: new Set<WindowId>(),
+      };
+      this.contexts.set(target.key, target);
+    }
+
+    target.geometryFingerprint = command.targetContextGeometry.fingerprint;
+    target.windowIds.add(command.activeId);
+    this.managedWindows.set(command.activeId, {
+      contextKey: command.targetContextKey,
+      restoreBaseline: destinationBaseline,
+    });
+    this.dirtyContexts.delete(command.targetContextKey);
+    this.capacityParkBackoffs.delete(command.contextKey);
+    this.capacityParkBackoffs.delete(command.targetContextKey);
+    this.forgetWaitingWindow(command.activeId);
+  }
+
+  private moveActiveWindowToOutput(direction: OutputDirection): boolean {
+    const active = this.prepareActiveWindowCommand();
+
+    if (!active || typeof this.workspace.sendClientToScreen !== "function") {
+      return false;
+    }
+
+    const owner = this.managedWindows.get(active.activeId);
+    const sourceRuntimeContext = owner
+      ? this.contexts.get(owner.contextKey)
+      : undefined;
+
+    if (
+      !owner ||
+      !sourceRuntimeContext ||
+      owner.contextKey !== active.contextKey ||
+      this.floatingWindows.has(active.activeId) ||
+      this.waitingWindowContexts.has(active.activeId)
+    ) {
+      return false;
+    }
+
+    const sourceOutput = this.workspace.screens.find(
+      (candidate) => candidate.name === active.context.outputId,
+    );
+    const targetOutputId = sourceOutput
+      ? findAdjacentOutput(
+          active.context.outputId,
+          this.workspace.screens.map((output) => ({
+            id: outputId(output.name),
+            rect: output.geometry,
+          })),
+          direction,
+        )
+      : null;
+    const targetOutput = targetOutputId
+      ? this.workspace.screens.find(
+          (candidate) => candidate.name === targetOutputId,
+        )
+      : undefined;
+    const sourceDesktop = sourceOutput
+      ? currentDesktopForOutput(this.workspace, sourceOutput)
+      : null;
+    const targetDesktop = targetOutput
+      ? currentDesktopForOutput(this.workspace, targetOutput)
+      : null;
+
+    if (
+      !sourceOutput ||
+      !targetOutput ||
+      !sourceDesktop ||
+      !targetDesktop ||
+      sourceOutput.name === targetOutput.name ||
+      sourceDesktop.id !== active.context.desktopId
+    ) {
+      return false;
+    }
+
+    const targetContext: ManagedContext = {
+      desktopId: desktopId(targetDesktop.id),
+      outputId: outputId(targetOutput.name),
+    };
+    const targetContextKey = contextKey(targetContext);
+
+    if (
+      targetContextKey === active.contextKey ||
+      this.hasPendingCapacityState(active.contextKey) ||
+      this.hasPendingCapacityState(targetContextKey) ||
+      this.waitingWindowIds.has(active.contextKey) ||
+      this.waitingWindowIds.has(targetContextKey) ||
+      this.toggleTransitionPending(active.contextKey) ||
+      this.toggleTransitionPending(targetContextKey)
+    ) {
+      return false;
+    }
+
+    let targetContextGeometry: ContextGeometry | null;
+
+    try {
+      targetContextGeometry = this.geometry.contextGeometry(
+        targetContext.outputId,
+        targetContext.desktopId,
+      );
+    } catch {
+      return false;
+    }
+
+    if (!targetContextGeometry) {
+      return false;
+    }
+
+    const targetRuntimeContext = this.contexts.get(targetContextKey);
+
+    if (
+      sourceRuntimeContext.geometryFingerprint !==
+        active.contextGeometry.fingerprint ||
+      (targetRuntimeContext &&
+        targetRuntimeContext.geometryFingerprint !==
+          targetContextGeometry.fingerprint)
+    ) {
+      this.handleTopologyChanged(String(targetContext.outputId));
+      return false;
+    }
+
+    const targetBefore = this.layout.snapshot(
+      targetContext.outputId,
+      targetContext.desktopId,
+    );
+    const preview = this.layout.previewWindowTransfer(active.activeId, {
+      columnId: this.freshTransferColumnId(active.activeId, targetBefore),
+      desktopId: targetContext.desktopId,
+      outputId: targetContext.outputId,
+    });
+
+    if (!preview) {
+      return false;
+    }
+
+    let sourceLayout: ReturnType<typeof solveStripGeometry>;
+    let targetLayout: ReturnType<typeof solveStripGeometry>;
+
+    try {
+      sourceLayout = solveStripGeometry({
+        context: preview.sourceLayout,
+        devicePixelRatio: active.contextGeometry.devicePixelRatio,
+        gap: this.gap,
+        pixelGridOrigin: active.contextGeometry.pixelGridOrigin,
+        workArea: active.contextGeometry.workArea,
+      });
+      targetLayout = solveStripGeometry({
+        context: preview.targetLayout,
+        devicePixelRatio: targetContextGeometry.devicePixelRatio,
+        gap: this.gap,
+        pixelGridOrigin: targetContextGeometry.pixelGridOrigin,
+        workArea: targetContextGeometry.workArea,
+      });
+    } catch (error) {
+      this.layout.discardWindowTransfer(preview);
+      console.warn(
+        `[driftile] output transfer rejected window=${String(active.activeId)} error=${String(error)}`,
+      );
+      return false;
+    }
+
+    const command: OutputTransferCommand = {
+      ...active,
+      sourceDesktop,
+      sourceOutput,
+      sourceRuntimeContext,
+      targetContext,
+      targetContextGeometry,
+      targetContextKey,
+      targetDesktop,
+      targetOutput,
+      targetRuntimeContext,
+    };
+
+    if (
+      !this.transferLayoutIsSafe(
+        sourceLayout,
+        active.context,
+        active.contextKey,
+        active.activeId,
+      ) ||
+      !this.transferLayoutIsSafe(
+        targetLayout,
+        targetContext,
+        targetContextKey,
+        active.activeId,
+        active.contextKey,
+        active.contextKey,
+      )
+    ) {
+      this.layout.discardWindowTransfer(preview);
+      return false;
+    }
+
+    const operation: WindowTransferOperation = {
+      activeId: active.activeId,
+      desktopChangeSuppressed: false,
+      kind: "output",
+      sourceContextKey: active.contextKey,
+      targetContextKey,
+    };
+    this.windowTransferOperation = operation;
+
+    try {
+      return this.applyOutputTransfer(
+        command,
+        preview,
+        sourceLayout,
+        targetLayout,
+        operation,
+      );
+    } finally {
+      this.layout.discardWindowTransfer(preview);
+
+      if (this.windowTransferOperation === operation) {
+        this.windowTransferOperation = null;
+      }
+
+      if (operation.desktopChangeSuppressed) {
+        this.markVisibleDesktopContextsDirty();
+      }
+
+      this.handleWindowActivated(this.workspace.activeWindow);
+
+      if (
+        [...this.dirtyContexts].some((key) => {
+          const context = this.contexts.get(key);
+          return Boolean(context && this.isContextVisible(context));
+        }) ||
+        this.pendingAdmissionContexts.size > 0 ||
+        this.pendingWindowSyncs.size > 0
+      ) {
+        this.scheduleWork();
+      }
+    }
+  }
+
+  private applyOutputTransfer(
+    command: OutputTransferCommand,
+    preview: WindowTransferPreview,
+    sourceLayout: ReturnType<typeof solveStripGeometry>,
+    targetLayout: ReturnType<typeof solveStripGeometry>,
+    operation: WindowTransferOperation,
+  ): boolean {
+    const topologyRevision = this.topologyRevision;
+    const sourceFrame = { ...command.activeWindow.frameGeometry };
+    const originalActiveWindow = this.workspace.activeWindow;
+    const sourceWasDirty = this.dirtyContexts.has(command.contextKey);
+    const targetWasDirty = this.dirtyContexts.has(command.targetContextKey);
+    const trackedWindowIds = new Set<WindowId>();
+    const attemptedChanges: TransferGeometryChange[] = [];
+    const appliedChanges: TransferGeometryChange[] = [];
+    const rollbackTargets: TransferGeometryChange[] = [];
+    let destinationBaseline: RestoreBaseline | undefined;
+    let forwardWrites = 0;
+    let failure: string;
+
+    try {
+      if (command.sourceDesktop.id !== command.targetDesktop.id) {
+        command.activeWindow.desktops = [command.targetDesktop];
+
+        if (!windowIsOnDesktop(command.activeWindow, command.targetDesktop)) {
+          throw new Error("window desktop assignment was rejected");
+        }
+      }
+
+      this.workspace.sendClientToScreen?.(
+        command.activeWindow,
+        command.targetOutput,
+      );
+
+      if (command.activeWindow.output?.name !== command.targetOutput.name) {
+        throw new Error("window output assignment was rejected");
+      }
+
+      if (this.workspace.activeWindow !== command.activeWindow) {
+        this.workspace.activeWindow = command.activeWindow;
+      }
+
+      if (this.workspace.activeWindow !== command.activeWindow) {
+        throw new Error("window focus was rejected");
+      }
+
+      destinationBaseline = {
+        fingerprint: command.targetContextGeometry.fingerprint,
+        frame: { ...command.activeWindow.frameGeometry },
+      };
+
+      if (
+        !this.outputTransferOperationIsCurrent(
+          command,
+          operation,
+          topologyRevision,
+        ) ||
+        !this.outputTransferFingerprintsMatch(command)
+      ) {
+        throw new Error("output transfer context changed");
+      }
+
+      const plans = [
+        {
+          context: command.context,
+          contextKey: command.contextKey,
+          layout: sourceLayout,
+        },
+        {
+          context: command.targetContext,
+          contextKey: command.targetContextKey,
+          layout: targetLayout,
+        },
+      ] as const;
+      const changes: TransferGeometryChange[] = [];
+
+      for (const plan of plans) {
+        const windowIds = plan.layout.windows.map((window) => window.windowId);
+        const observedBefore = this.geometry.observedFrames(
+          windowIds,
+          plan.context,
+        );
+
+        if (
+          observedBefore.size !== windowIds.length ||
+          plan.layout.windows.some(
+            (window) =>
+              !this.geometry.canApplyFrame(
+                window.windowId,
+                window.frame,
+                plan.context,
+              ),
+          )
+        ) {
+          throw new Error("transfer geometry was rejected");
+        }
+
+        for (const change of diffWindowGeometries(
+          plan.layout.windows,
+          observedBefore,
+        )) {
+          const frame = observedBefore.get(change.windowId);
+
+          if (!frame) {
+            throw new Error("transfer rollback frame is unavailable");
+          }
+
+          const forward: TransferGeometryChange = {
+            ...change,
+            context: plan.context,
+            contextKey: plan.contextKey,
+          };
+          const rollback = { ...forward, frame };
+          changes.push(forward);
+          rollbackTargets.push(rollback);
+          trackedWindowIds.add(change.windowId);
+          this.toggleGeometryTransitions.set(change.windowId, {
+            contextKey: plan.contextKey,
+            expectedFrame: { ...change.frame },
+            settlementArmed: true,
+          });
+        }
+      }
+
+      this.dirtyContexts.delete(command.contextKey);
+      this.dirtyContexts.delete(command.targetContextKey);
+
+      for (const change of changes) {
+        if (
+          !this.outputTransferOperationIsCurrent(
+            command,
+            operation,
+            topologyRevision,
+          )
+        ) {
+          break;
+        }
+
+        attemptedChanges.push(change);
+        const applied = this.geometry.apply([change], change.context, () =>
+          this.outputTransferOperationIsCurrent(
+            command,
+            operation,
+            topologyRevision,
+          ),
+        );
+
+        if (applied !== 1) {
+          break;
+        }
+
+        appliedChanges.push(change);
+        forwardWrites += 1;
+      }
+
+      if (
+        appliedChanges.length !== changes.length ||
+        !this.transferChangedFramesAreOwned(changes, rollbackTargets) ||
+        !this.outputTransferOperationIsCurrent(
+          command,
+          operation,
+          topologyRevision,
+        ) ||
+        !this.outputTransferFingerprintsMatch(command) ||
+        !this.outputTransferFinalStateIsSafe(
+          command,
+          sourceLayout,
+          targetLayout,
+          trackedWindowIds,
+        ) ||
+        !this.layout.commitWindowTransfer(preview)
+      ) {
+        throw new Error("output transfer transaction was not accepted");
+      }
+
+      this.layout.setViewportOffset(
+        command.context.outputId,
+        command.context.desktopId,
+        sourceLayout.viewportOffset,
+      );
+      this.layout.setViewportOffset(
+        command.targetContext.outputId,
+        command.targetContext.desktopId,
+        targetLayout.viewportOffset,
+      );
+      this.commitOutputTransferRuntime(command, destinationBaseline);
+      this.lastWrites = forwardWrites;
+
+      for (const key of [command.contextKey, command.targetContextKey]) {
+        if (this.toggleTransitionPending(key)) {
+          this.scheduleToggleTransitionProbe(key);
+        }
+      }
+
+      return true;
+    } catch (error) {
+      failure = String(error);
+    }
+
+    for (const id of trackedWindowIds) {
+      this.toggleGeometryTransitions.delete(id);
+    }
+
+    const compensationWrites = this.rollbackOutputTransfer(
+      command,
+      attemptedChanges,
+      rollbackTargets,
+      sourceFrame,
+      destinationBaseline?.frame,
+      originalActiveWindow,
+      operation,
+      topologyRevision,
+      sourceWasDirty,
+      targetWasDirty,
+    );
+    this.lastWrites = forwardWrites + compensationWrites;
+
+    console.warn(
+      `[driftile] output transfer rolled back window=${String(command.activeId)} error=${failure}`,
+    );
+    return false;
+  }
+
+  private transferChangedFramesAreOwned(
+    changes: readonly { readonly frame: Rect; readonly windowId: WindowId }[],
+    rollbackTargets: readonly {
+      readonly frame: Rect;
+      readonly windowId: WindowId;
+    }[],
+  ): boolean {
+    const rollbackFrames = new Map(
+      rollbackTargets.map((target) => [target.windowId, target.frame]),
+    );
+
+    return changes.every((change) => {
+      const source = this.observer.source(change.windowId);
+      const rollbackFrame = rollbackFrames.get(change.windowId);
+      return Boolean(
+        source &&
+        rollbackFrame &&
+        (rectsEqual(source.frameGeometry, change.frame) ||
+          rectsEqual(source.frameGeometry, rollbackFrame)),
+      );
+    });
+  }
+
+  private outputTransferOperationIsCurrent(
+    command: OutputTransferCommand,
+    operation: WindowTransferOperation,
+    topologyRevision: number,
+  ): boolean {
+    return (
+      this.windowTransferOperation === operation &&
+      this.topologyRevision === topologyRevision &&
+      !this.hasTopologyBarrier() &&
+      this.outputTransferMechanismAtTarget(command) &&
+      this.workspace.activeWindow === command.activeWindow
+    );
+  }
+
+  private outputTransferMechanismAtTarget(
+    command: OutputTransferCommand,
+  ): boolean {
+    return (
+      this.observer.source(command.activeId) === command.activeWindow &&
+      command.activeWindow.output?.name === command.targetOutput.name &&
+      windowIsOnDesktop(command.activeWindow, command.targetDesktop) &&
+      currentDesktopForOutput(this.workspace, command.sourceOutput)?.id ===
+        command.sourceDesktop.id &&
+      currentDesktopForOutput(this.workspace, command.targetOutput)?.id ===
+        command.targetDesktop.id
+    );
+  }
+
+  private outputTransferFingerprintsMatch(
+    command: OutputTransferCommand,
+  ): boolean {
+    try {
+      return (
+        this.geometry.contextGeometry(
+          command.context.outputId,
+          command.context.desktopId,
+        )?.fingerprint === command.contextGeometry.fingerprint &&
+        this.geometry.contextGeometry(
+          command.targetContext.outputId,
+          command.targetContext.desktopId,
+        )?.fingerprint === command.targetContextGeometry.fingerprint
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  private outputTransferFinalStateIsSafe(
+    command: OutputTransferCommand,
+    sourceLayout: ReturnType<typeof solveStripGeometry>,
+    targetLayout: ReturnType<typeof solveStripGeometry>,
+    changedWindowIds: ReadonlySet<WindowId>,
+  ): boolean {
+    return (
+      !this.hasPendingCapacityState(command.contextKey) &&
+      !this.hasPendingCapacityState(command.targetContextKey) &&
+      !this.waitingWindowIds.has(command.contextKey) &&
+      !this.waitingWindowIds.has(command.targetContextKey) &&
+      this.transferUnchangedFramesMatch(sourceLayout, changedWindowIds) &&
+      this.transferUnchangedFramesMatch(targetLayout, changedWindowIds) &&
+      this.transferLayoutIsSafe(
+        sourceLayout,
+        command.context,
+        command.contextKey,
+        command.activeId,
+        command.contextKey,
+        command.targetContextKey,
+        command.contextKey,
+      ) &&
+      this.transferLayoutIsSafe(
+        targetLayout,
+        command.targetContext,
+        command.targetContextKey,
+        command.activeId,
+        command.contextKey,
+        command.targetContextKey,
+        command.targetContextKey,
+      )
+    );
+  }
+
+  private transferUnchangedFramesMatch(
+    layout: ReturnType<typeof solveStripGeometry>,
+    changedWindowIds: ReadonlySet<WindowId>,
+  ): boolean {
+    return layout.windows.every((window) => {
+      if (changedWindowIds.has(window.windowId)) {
+        return true;
+      }
+
+      const source = this.observer.source(window.windowId);
+      return Boolean(source && rectsEqual(source.frameGeometry, window.frame));
+    });
+  }
+
+  private rollbackOutputTransfer(
+    command: OutputTransferCommand,
+    forwardChanges: readonly TransferGeometryChange[],
+    rollbackTargets: readonly TransferGeometryChange[],
+    sourceFrame: Rect,
+    destinationFrame: Rect | undefined,
+    originalActiveWindow: KWinWindow | null,
+    operation: WindowTransferOperation,
+    topologyRevision: number,
+    sourceWasDirty: boolean,
+    targetWasDirty: boolean,
+  ): number {
+    const attemptedIds = new Set(
+      forwardChanges.map((change) => change.windowId),
+    );
+    const forwardFrames = new Map(
+      forwardChanges.map((change) => [change.windowId, change.frame]),
+    );
+    const compensationTargets = rollbackTargets.filter((window) =>
+      attemptedIds.has(window.windowId),
+    );
+    let compensationWrites = 0;
+    let sourceRestored = true;
+    let targetRestored = true;
+
+    if (
+      this.windowTransferOperation === operation &&
+      this.topologyRevision === topologyRevision &&
+      !this.hasTopologyBarrier() &&
+      this.outputTransferMechanismAtTarget(command) &&
+      this.outputTransferFingerprintsMatch(command)
+    ) {
+      for (const target of compensationTargets) {
+        const source = this.observer.source(target.windowId);
+        const forwardFrame = forwardFrames.get(target.windowId);
+        let restored = false;
+
+        if (
+          source &&
+          forwardFrame &&
+          (rectsEqual(source.frameGeometry, forwardFrame) ||
+            rectsEqual(source.frameGeometry, target.frame))
+        ) {
+          const applied = this.geometry.apply(
+            [target],
+            target.context,
+            () =>
+              this.windowTransferOperation === operation &&
+              this.topologyRevision === topologyRevision &&
+              !this.hasTopologyBarrier() &&
+              this.outputTransferMechanismAtTarget(command),
+          );
+          compensationWrites += applied;
+          restored = applied === 1;
+
+          if (restored) {
+            this.toggleGeometryTransitions.set(target.windowId, {
+              contextKey: target.contextKey,
+              expectedFrame: { ...target.frame },
+              settlementArmed: false,
+            });
+          }
+        }
+
+        if (!restored) {
+          if (target.contextKey === command.contextKey) {
+            sourceRestored = false;
+          } else {
+            targetRestored = false;
+          }
+        }
+      }
+    } else if (compensationTargets.length > 0) {
+      sourceRestored = !compensationTargets.some(
+        (target) => target.contextKey === command.contextKey,
+      );
+      targetRestored = !compensationTargets.some(
+        (target) => target.contextKey === command.targetContextKey,
+      );
+    }
+
+    const activeForwardFrame = forwardFrames.get(command.activeId);
+    const activeRollbackFrame = rollbackTargets.find(
+      (target) => target.windowId === command.activeId,
+    )?.frame;
+    const ownedActiveFrames = [
+      sourceFrame,
+      destinationFrame,
+      activeForwardFrame,
+      activeRollbackFrame,
+    ];
+    const sourceFrameOwnedBeforeMechanism = ownedActiveFrames.some(
+      (frame) => frame && rectsEqual(command.activeWindow.frameGeometry, frame),
+    );
+
+    const mechanismRestoreAllowed = this.canRestoreOutputTransferMechanism(
+      command,
+      operation,
+      topologyRevision,
+    );
+
+    if (mechanismRestoreAllowed) {
+      this.restoreOutputTransferMechanism(command, originalActiveWindow);
+    } else {
+      this.pendingWindowSyncs.add(command.activeId);
+      sourceRestored = false;
+      targetRestored = false;
+    }
+
+    const sourceLiveFrame = command.activeWindow.frameGeometry;
+    const sourceFrameOwnedByTransaction =
+      sourceFrameOwnedBeforeMechanism ||
+      ownedActiveFrames.some(
+        (frame) => frame && rectsEqual(sourceLiveFrame, frame),
+      );
+
+    if (
+      mechanismRestoreAllowed &&
+      this.windowTransferOperation === operation &&
+      this.topologyRevision === topologyRevision &&
+      !this.hasTopologyBarrier() &&
+      this.observer.source(command.activeId) === command.activeWindow &&
+      !command.activeWindow.deleted &&
+      this.workspace.screens.includes(command.sourceOutput) &&
+      this.workspace.screens.includes(command.targetOutput) &&
+      this.outputTransferFingerprintsMatch(command) &&
+      command.activeWindow.output?.name === command.sourceOutput.name &&
+      windowIsOnDesktop(command.activeWindow, command.sourceDesktop) &&
+      currentDesktopForOutput(this.workspace, command.sourceOutput)?.id ===
+        command.sourceDesktop.id &&
+      currentDesktopForOutput(this.workspace, command.targetOutput)?.id ===
+        command.targetDesktop.id &&
+      sourceFrameOwnedByTransaction &&
+      this.geometry.canApplyFrame(
+        command.activeId,
+        sourceFrame,
+        command.context,
+      )
+    ) {
+      const restored = this.geometry.apply(
+        [{ frame: sourceFrame, windowId: command.activeId }],
+        command.context,
+      );
+      compensationWrites += restored;
+
+      if (restored === 1) {
+        this.toggleGeometryTransitions.set(command.activeId, {
+          contextKey: command.contextKey,
+          expectedFrame: { ...sourceFrame },
+          settlementArmed: false,
+        });
+      } else {
+        sourceRestored = false;
+      }
+    } else if (!rectsEqual(command.activeWindow.frameGeometry, sourceFrame)) {
+      sourceRestored = false;
+    }
+
+    const observed = normalizeWindow(command.activeWindow);
+    const liveContext = observed ? managedContext(observed) : null;
+
+    if (!liveContext || contextKey(liveContext) !== command.contextKey) {
+      this.pendingWindowSyncs.add(command.activeId);
+      sourceRestored = false;
+    }
+
+    const sourceRuntime = this.contexts.get(command.contextKey);
+    const targetRuntime = this.contexts.get(command.targetContextKey);
+
+    if ((sourceWasDirty || !sourceRestored) && sourceRuntime) {
+      this.markContextDirty(sourceRuntime);
+    }
+
+    if ((targetWasDirty || !targetRestored) && targetRuntime) {
+      this.markContextDirty(targetRuntime);
+    }
+
+    for (const key of [command.contextKey, command.targetContextKey]) {
+      if (this.toggleTransitionPending(key)) {
+        this.scheduleToggleTransitionProbe(key);
+      }
+    }
+
+    return compensationWrites;
+  }
+
+  private canRestoreOutputTransferMechanism(
+    command: OutputTransferCommand,
+    operation: WindowTransferOperation,
+    topologyRevision: number,
+  ): boolean {
+    return (
+      this.windowTransferOperation === operation &&
+      this.topologyRevision === topologyRevision &&
+      !this.hasTopologyBarrier() &&
+      this.observer.source(command.activeId) === command.activeWindow &&
+      !command.activeWindow.deleted &&
+      this.workspace.screens.includes(command.sourceOutput) &&
+      this.workspace.screens.includes(command.targetOutput) &&
+      this.workspace.desktops.some(
+        (desktop) => desktop.id === command.sourceDesktop.id,
+      ) &&
+      this.workspace.desktops.some(
+        (desktop) => desktop.id === command.targetDesktop.id,
+      ) &&
+      this.outputTransferFingerprintsMatch(command)
+    );
+  }
+
+  private restoreOutputTransferMechanism(
+    command: OutputTransferCommand,
+    originalActiveWindow: KWinWindow | null,
+  ): void {
+    if (
+      command.activeWindow.output?.name === command.targetOutput.name &&
+      typeof this.workspace.sendClientToScreen === "function"
+    ) {
+      try {
+        this.workspace.sendClientToScreen(
+          command.activeWindow,
+          command.sourceOutput,
+        );
+      } catch (error) {
+        console.warn(
+          `[driftile] window output restore failed window=${String(command.activeId)} error=${String(error)}`,
+        );
+      }
+    }
+
+    if (
+      command.sourceDesktop.id !== command.targetDesktop.id &&
+      windowIsOnDesktop(command.activeWindow, command.targetDesktop)
+    ) {
+      try {
+        command.activeWindow.desktops = [command.sourceDesktop];
+      } catch (error) {
+        console.warn(
+          `[driftile] window desktop restore failed window=${String(command.activeId)} error=${String(error)}`,
+        );
+      }
+    }
+
+    if (
+      this.workspace.activeWindow === command.activeWindow ||
+      this.workspace.activeWindow === null
+    ) {
+      try {
+        this.workspace.activeWindow = originalActiveWindow;
+      } catch (error) {
+        console.warn(
+          `[driftile] focus restore failed window=${String(command.activeId)} error=${String(error)}`,
+        );
+      }
+    }
+  }
+
+  private commitOutputTransferRuntime(
+    command: OutputTransferCommand,
+    destinationBaseline: RestoreBaseline,
+  ): void {
+    const source = command.sourceRuntimeContext;
+    source.windowIds.delete(command.activeId);
+
+    if (source.windowIds.size === 0) {
+      this.contexts.delete(source.key);
+      this.dirtyContexts.delete(source.key);
+    } else {
+      source.geometryFingerprint = command.contextGeometry.fingerprint;
+      this.dirtyContexts.delete(source.key);
     }
 
     let target = command.targetRuntimeContext;
@@ -2374,6 +3329,7 @@ export class RuntimeController {
   private prepareActiveWindowCommand(): ActiveWindowCommand | null {
     if (
       !this.started ||
+      this.windowTransferOperation ||
       this.startupStabilizationToken !== null ||
       this.hasTopologyBarrier() ||
       !this.sampleSettledVisibleContextGeometries() ||
@@ -2618,6 +3574,7 @@ export class RuntimeController {
   private prepareActiveColumnCommand(): ActiveColumnCommand | null {
     if (
       !this.started ||
+      this.windowTransferOperation ||
       this.startupStabilizationToken !== null ||
       this.hasTopologyBarrier()
     ) {

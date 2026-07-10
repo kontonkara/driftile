@@ -89,6 +89,7 @@ export interface KWinWorkspace {
     desktop: KWinVirtualDesktop,
   ): KWinRect;
   currentDesktopForScreen?(output: KWinOutput): KWinVirtualDesktop | null;
+  sendClientToScreen?(window: KWinWindow, output: KWinOutput): void;
   setCurrentDesktopForScreen?(
     desktop: KWinVirtualDesktop,
     output: KWinOutput,

@@ -135,6 +135,30 @@ QtObject {
         sequence: "Meta+Ctrl+Alt+J"
         onActivated: Runtime.DriftileRuntime.moveWindowToNextDesktop()
     }
+    readonly property ShortcutHandler moveWindowToOutputLeftShortcut: ShortcutHandler {
+        name: "Driftile Move Window to Output Left"
+        text: "Driftile: Move window to output left"
+        sequence: "Meta+Ctrl+Alt+Shift+Left"
+        onActivated: Runtime.DriftileRuntime.moveWindowToOutputLeft()
+    }
+    readonly property ShortcutHandler moveWindowToOutputRightShortcut: ShortcutHandler {
+        name: "Driftile Move Window to Output Right"
+        text: "Driftile: Move window to output right"
+        sequence: "Meta+Ctrl+Alt+Shift+Right"
+        onActivated: Runtime.DriftileRuntime.moveWindowToOutputRight()
+    }
+    readonly property ShortcutHandler moveWindowToOutputUpShortcut: ShortcutHandler {
+        name: "Driftile Move Window to Output Up"
+        text: "Driftile: Move window to output up"
+        sequence: "Meta+Ctrl+Alt+Shift+Up"
+        onActivated: Runtime.DriftileRuntime.moveWindowToOutputUp()
+    }
+    readonly property ShortcutHandler moveWindowToOutputDownShortcut: ShortcutHandler {
+        name: "Driftile Move Window to Output Down"
+        text: "Driftile: Move window to output down"
+        sequence: "Meta+Ctrl+Alt+Shift+Down"
+        onActivated: Runtime.DriftileRuntime.moveWindowToOutputDown()
+    }
     readonly property ShortcutHandler decreaseColumnWidthShortcut: ShortcutHandler {
         name: "Driftile Decrease Column Width"
         text: "Driftile: Decrease column width"

@@ -101,6 +101,22 @@ export function moveWindowToNextDesktop(): void {
   controller?.moveWindowToNextDesktop();
 }
 
+export function moveWindowToOutputLeft(): void {
+  controller?.moveWindowToOutputLeft();
+}
+
+export function moveWindowToOutputRight(): void {
+  controller?.moveWindowToOutputRight();
+}
+
+export function moveWindowToOutputUp(): void {
+  controller?.moveWindowToOutputUp();
+}
+
+export function moveWindowToOutputDown(): void {
+  controller?.moveWindowToOutputDown();
+}
+
 export function decreaseColumnWidth(): void {
   controller?.decreaseColumnWidth();
 }

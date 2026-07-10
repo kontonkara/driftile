@@ -66,6 +66,7 @@ interface TrackedWindow {
   readonly outputChanged: Signal<[oldOutput?: KWinOutput | null]>;
   readonly requestedTileChanged: Signal<[]>;
   setFrameGeometry(frame: KWinWindow["frameGeometry"]): void;
+  setOutput(output: KWinOutput): void;
   setDesktopWriteBehavior(
     behavior:
       | ((desktops: readonly KWinVirtualDesktop[], commit: () => void) => void)
@@ -207,6 +208,15 @@ function createTrackedWindow(
     setFrameGeometry: (frame) => {
       frameGeometry = frame;
     },
+    setOutput: (output) => {
+      const previous = window.output;
+      Object.defineProperty(window, "output", {
+        configurable: true,
+        enumerable: true,
+        value: output,
+      });
+      outputChanged.emit(previous);
+    },
     setWriteBehavior: (behavior) => {
       writeBehavior = behavior;
     },
@@ -225,6 +235,7 @@ interface WorkspaceFixture {
     ]
   >;
   readonly desktopSwitchCount: number;
+  readonly outputTransferCount: number;
   readonly screensChanged: Signal<[]>;
   setCurrentDesktop(output: KWinOutput, desktop: KWinVirtualDesktop): void;
   setDesktopSwitchBehavior(
@@ -234,6 +245,11 @@ interface WorkspaceFixture {
           output: KWinOutput,
           commit: () => void,
         ) => void)
+      | null,
+  ): void;
+  setOutputTransferBehavior(
+    behavior:
+      | ((window: KWinWindow, output: KWinOutput, commit: () => void) => void)
       | null,
   ): void;
   setScreens(outputs: readonly KWinOutput[]): void;
@@ -266,12 +282,16 @@ function createWorkspace(
   const windowRemoved = new Signal<[window: KWinWindow]>();
   let activationCount = 0;
   let desktopSwitchCount = 0;
+  let outputTransferCount = 0;
   let desktopSwitchBehavior:
     | ((
         desktop: KWinVirtualDesktop,
         output: KWinOutput,
         commit: () => void,
       ) => void)
+    | null = null;
+  let outputTransferBehavior:
+    | ((window: KWinWindow, output: KWinOutput, commit: () => void) => void)
     | null = null;
   let activeWindow = windows[windows.length - 1] ?? null;
   let currentDesktop = activeDesktop;
@@ -336,6 +356,27 @@ function createWorkspace(
         },
       }
     : {};
+  const sendClientToScreen = (window: KWinWindow, output: KWinOutput): void => {
+    outputTransferCount += 1;
+    const commit = (): void => {
+      const previous = window.output;
+      Object.defineProperty(window, "output", {
+        configurable: true,
+        enumerable: true,
+        value: output,
+      });
+
+      if (window.outputChanged instanceof Signal) {
+        window.outputChanged.emit(previous);
+      }
+    };
+
+    if (outputTransferBehavior) {
+      outputTransferBehavior(window, output, commit);
+    } else {
+      commit();
+    }
+  };
   const workspace: KWinWorkspace = {
     activeWindow,
     activeScreen: activeOutput,
@@ -350,6 +391,7 @@ function createWorkspace(
     desktops,
     screens: currentOutputs,
     screensChanged,
+    sendClientToScreen,
     stackingOrder: windows,
     windowActivated,
     windowAdded,
@@ -391,12 +433,18 @@ function createWorkspace(
     get desktopSwitchCount() {
       return desktopSwitchCount;
     },
+    get outputTransferCount() {
+      return outputTransferCount;
+    },
     screensChanged,
     setCurrentDesktop: (output, desktop) => {
       commitDesktop(output, desktop, perOutputDesktops);
     },
     setDesktopSwitchBehavior: (behavior) => {
       desktopSwitchBehavior = behavior;
+    },
+    setOutputTransferBehavior: (behavior) => {
+      outputTransferBehavior = behavior;
     },
     setScreens: (nextOutputs) => {
       currentOutputs = [...nextOutputs];
@@ -9489,6 +9537,68 @@ describe("RuntimeController desktop transfers", () => {
     ).toEqual(targetSnapshot);
   });
 
+  it("compensates a desktop geometry setter that mutates before throwing", () => {
+    const { controller, desktops, moved, output } =
+      createDesktopTransferFixture();
+    const sourceFrame = { ...moved.window.frameGeometry };
+    const sourceSnapshot = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktops[0].id),
+    );
+    const targetSnapshot = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktops[1].id),
+    );
+    let rejected = false;
+    moved.setDesktopWriteBehavior((next, commit) => {
+      commit();
+
+      if (next[0]?.id === desktops[1].id) {
+        moved.setFrameGeometry({ height: 310, width: 410, x: 220, y: 140 });
+      }
+    });
+    moved.setWriteBehavior((_frame, commit) => {
+      commit();
+
+      if (!rejected && moved.window.desktops[0]?.id === desktops[1].id) {
+        rejected = true;
+        throw new Error("destination write failed after mutation");
+      }
+    });
+
+    expect(controller.moveWindowToNextDesktop()).toBe(false);
+    expect(moved.window.desktops).toEqual([desktops[0]]);
+    expect(moved.window.frameGeometry).toEqual(sourceFrame);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktops[0].id),
+      ),
+    ).toEqual(sourceSnapshot);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktops[1].id),
+      ),
+    ).toEqual(targetSnapshot);
+  });
+
+  it("does not restore a removed mover through a stale desktop handle", () => {
+    const { controller, desktops, fixture, moved } =
+      createDesktopTransferFixture();
+    moved.setDesktopWriteBehavior((next, commit) => {
+      commit();
+
+      if (next[0]?.id === desktops[1].id) {
+        fixture.windowRemoved.emit(moved.window);
+      }
+    });
+
+    expect(controller.moveWindowToNextDesktop()).toBe(false);
+    expect(moved.desktopWriteCount).toBe(1);
+    expect(moved.window.desktops).toEqual([desktops[1]]);
+  });
+
   it("keeps the post-KWin frame as the destination stop baseline and cleans up close", () => {
     const baseline = { height: 360, width: 460, x: 120, y: 130 };
     const first = createDesktopTransferFixture();
@@ -9513,6 +9623,759 @@ describe("RuntimeController desktop transfers", () => {
     ).toEqual([{ id: "column:destination", windowIds: ["destination"] }]);
   });
 });
+
+describe("RuntimeController output transfers", () => {
+  it.each([
+    {
+      direction: "left",
+      move: (controller: RuntimeController) =>
+        controller.moveWindowToOutputLeft(),
+      target: { x: -1000, y: 0 },
+    },
+    {
+      direction: "right",
+      move: (controller: RuntimeController) =>
+        controller.moveWindowToOutputRight(),
+      target: { x: 1000, y: 0 },
+    },
+    {
+      direction: "up",
+      move: (controller: RuntimeController) =>
+        controller.moveWindowToOutputUp(),
+      target: { x: 0, y: -800 },
+    },
+    {
+      direction: "down",
+      move: (controller: RuntimeController) =>
+        controller.moveWindowToOutputDown(),
+      target: { x: 0, y: 800 },
+    },
+  ])(
+    "moves to the adjacent output $direction and stops at its boundary",
+    ({ move, target }) => {
+      const transfer = createOutputTransferFixture({ target });
+      const sourceFrame = { ...transfer.source.window.frameGeometry };
+
+      expect(move(transfer.controller)).toBe(true);
+      expect(transfer.moved.window.output).toBe(transfer.targetOutput);
+      expect(transfer.moved.window.desktops).toEqual([transfer.sourceDesktop]);
+      expect(transfer.fixture.outputTransferCount).toBe(1);
+      expect(transfer.fixture.desktopSwitchCount).toBe(0);
+      expect(transfer.fixture.workspace.activeWindow).toBe(
+        transfer.moved.window,
+      );
+      expect(
+        testLayoutColumns(
+          transfer.controller,
+          transfer.sourceOutput,
+          transfer.sourceDesktop,
+        ),
+      ).toEqual([{ id: "column:source", windowIds: ["source"] }]);
+      expect(
+        testLayoutColumns(
+          transfer.controller,
+          transfer.targetOutput,
+          transfer.targetDesktop,
+        ),
+      ).toEqual([
+        { id: "column:destination", windowIds: ["destination"] },
+        { id: "column:moved", windowIds: ["moved"] },
+      ]);
+      expect(transfer.source.window.frameGeometry).toEqual(sourceFrame);
+      expect(transfer.controller.reconcile()).toBe(0);
+
+      expect(move(transfer.controller)).toBe(false);
+      expect(transfer.fixture.outputTransferCount).toBe(1);
+    },
+  );
+
+  it("uses the target output's visible desktop without switching either output", () => {
+    const transfer = createOutputTransferFixture({ differentDesktop: true });
+
+    expect(transfer.controller.moveWindowToOutputRight()).toBe(true);
+    expect(transfer.moved.window.output).toBe(transfer.targetOutput);
+    expect(transfer.moved.window.desktops).toEqual([transfer.targetDesktop]);
+    expect(transfer.moved.desktopWriteCount).toBe(1);
+    expect(transfer.fixture.desktopSwitchCount).toBe(0);
+    expect(
+      transfer.fixture.workspace.currentDesktopForScreen?.(
+        transfer.sourceOutput,
+      ),
+    ).toBe(transfer.sourceDesktop);
+    expect(
+      transfer.fixture.workspace.currentDesktopForScreen?.(
+        transfer.targetOutput,
+      ),
+    ).toBe(transfer.targetDesktop);
+    expect(
+      testLayoutColumns(
+        transfer.controller,
+        transfer.targetOutput,
+        transfer.targetDesktop,
+      ),
+    ).toEqual([
+      { id: "column:destination", windowIds: ["destination"] },
+      { id: "column:moved", windowIds: ["moved"] },
+    ]);
+  });
+
+  it("uses the global desktop fallback without desktop writes", () => {
+    const transfer = createOutputTransferFixture({
+      perOutputDesktops: false,
+    });
+
+    expect(typeof transfer.fixture.workspace.currentDesktopForScreen).toBe(
+      "undefined",
+    );
+    expect(transfer.controller.moveWindowToOutputRight()).toBe(true);
+    expect(transfer.moved.window.output).toBe(transfer.targetOutput);
+    expect(transfer.moved.window.desktops).toEqual([transfer.sourceDesktop]);
+    expect(transfer.moved.desktopWriteCount).toBe(0);
+    expect(transfer.fixture.desktopSwitchCount).toBe(0);
+  });
+
+  it("preserves width and inserts after the target active column", () => {
+    const transfer = createOutputTransferFixture({
+      destinationCount: 2,
+      movedWidth: 0.3,
+      targetColumnWidth: 0.3,
+    });
+
+    expect(transfer.controller.moveWindowToOutputRight()).toBe(true);
+    const target = runtimeLayout(transfer.controller).snapshot(
+      outputId(transfer.targetOutput.name),
+      desktopId(transfer.targetDesktop.id),
+    );
+    expect(target.columns.map((column) => String(column.id))).toEqual([
+      "column:destination",
+      "column:moved",
+      "column:destination-2",
+    ]);
+    expect(target.columns[1]?.width).toEqual({
+      kind: "proportion",
+      value: 0.3,
+    });
+    expect(target.activeColumnId).toBe(columnId("column:moved"));
+  });
+
+  it("creates an empty target context and removes an emptied source", () => {
+    const transfer = createOutputTransferFixture({
+      destinationCount: 0,
+      sourceOnly: true,
+    });
+
+    expect(transfer.controller.moveWindowToOutputRight()).toBe(true);
+    expect(transfer.controller.managedCount).toBe(1);
+    expect(
+      testLayoutColumns(
+        transfer.controller,
+        transfer.sourceOutput,
+        transfer.sourceDesktop,
+      ),
+    ).toEqual([]);
+    expect(
+      testLayoutColumns(
+        transfer.controller,
+        transfer.targetOutput,
+        transfer.targetDesktop,
+      ),
+    ).toEqual([{ id: "column:moved", windowIds: ["moved"] }]);
+    expect(transfer.controller.reconcile()).toBe(0);
+  });
+
+  it("fails closed when KWin does not expose output transfer", () => {
+    const transfer = createOutputTransferFixture();
+    Object.defineProperty(transfer.fixture.workspace, "sendClientToScreen", {
+      configurable: true,
+      value: undefined,
+    });
+
+    expect(transfer.controller.moveWindowToOutputRight()).toBe(false);
+    expect(transfer.fixture.outputTransferCount).toBe(0);
+    expect(transfer.moved.window.output).toBe(transfer.sourceOutput);
+  });
+
+  it("rejects capacity and size-constraint violations before moving the window", () => {
+    const capacity = createOutputTransferFixture({ destinationCount: 2 });
+    expect(capacity.controller.moveWindowToOutputRight()).toBe(false);
+    expect(capacity.fixture.outputTransferCount).toBe(0);
+
+    const constrained = createOutputTransferFixture();
+    Object.defineProperty(constrained.moved.window, "minSize", {
+      configurable: true,
+      value: { height: 1, width: 900 },
+    });
+    expect(constrained.controller.moveWindowToOutputRight()).toBe(false);
+    expect(constrained.fixture.outputTransferCount).toBe(0);
+  });
+
+  it("rejects floating and suspended windows before invoking KWin", () => {
+    const floating = createOutputTransferFixture();
+    expect(floating.controller.toggleFloating()).toBe(true);
+    expect(floating.controller.moveWindowToOutputRight()).toBe(false);
+    expect(floating.fixture.outputTransferCount).toBe(0);
+
+    const suspended = createOutputTransferFixture({
+      movedOverrides: { fullScreen: true },
+    });
+    expect(suspended.controller.moveWindowToOutputRight()).toBe(false);
+    expect(suspended.fixture.outputTransferCount).toBe(0);
+  });
+
+  it("restores the desktop when KWin rejects the output assignment", () => {
+    const transfer = createOutputTransferFixture({ differentDesktop: true });
+    const sourceSnapshot = runtimeLayout(transfer.controller).snapshot(
+      outputId(transfer.sourceOutput.name),
+      desktopId(transfer.sourceDesktop.id),
+    );
+    const targetSnapshot = runtimeLayout(transfer.controller).snapshot(
+      outputId(transfer.targetOutput.name),
+      desktopId(transfer.targetDesktop.id),
+    );
+    transfer.fixture.setOutputTransferBehavior(() => undefined);
+
+    expect(transfer.controller.moveWindowToOutputRight()).toBe(false);
+    expect(transfer.moved.window.output).toBe(transfer.sourceOutput);
+    expect(transfer.moved.window.desktops).toEqual([transfer.sourceDesktop]);
+    expect(transfer.moved.desktopWriteCount).toBe(2);
+    expect(transfer.fixture.desktopSwitchCount).toBe(0);
+    expect(
+      runtimeLayout(transfer.controller).snapshot(
+        outputId(transfer.sourceOutput.name),
+        desktopId(transfer.sourceDesktop.id),
+      ),
+    ).toEqual(sourceSnapshot);
+    expect(
+      runtimeLayout(transfer.controller).snapshot(
+        outputId(transfer.targetOutput.name),
+        desktopId(transfer.targetDesktop.id),
+      ),
+    ).toEqual(targetSnapshot);
+  });
+
+  it("does not invoke output transfer when a desktop rule rejects assignment", () => {
+    const transfer = createOutputTransferFixture({ differentDesktop: true });
+    transfer.moved.setDesktopWriteBehavior(() => undefined);
+
+    expect(transfer.controller.moveWindowToOutputRight()).toBe(false);
+    expect(transfer.fixture.outputTransferCount).toBe(0);
+    expect(transfer.moved.window.output).toBe(transfer.sourceOutput);
+    expect(transfer.moved.window.desktops).toEqual([transfer.sourceDesktop]);
+  });
+
+  it("compensates source geometry after a partial destination failure", () => {
+    const transfer = createOutputTransferFixture({ sourceStack: true });
+    const sourceFrame = { ...transfer.source.window.frameGeometry };
+    const movedFrame = { ...transfer.moved.window.frameGeometry };
+    const sourceWrites = transfer.source.writeCount;
+    transfer.moved.setWriteBehavior(() => {
+      if (transfer.moved.window.output?.name === transfer.targetOutput.name) {
+        throw new Error("destination write rejected");
+      }
+    });
+
+    expect(transfer.controller.moveWindowToOutputRight()).toBe(false);
+    expect(transfer.source.window.frameGeometry).toEqual(sourceFrame);
+    expect(transfer.moved.window.frameGeometry).toEqual(movedFrame);
+    expect(transfer.source.writeCount - sourceWrites).toBe(2);
+    expect(transfer.fixture.outputTransferCount).toBe(2);
+    expect(transfer.moved.window.output).toBe(transfer.sourceOutput);
+    expect(
+      testLayoutColumns(
+        transfer.controller,
+        transfer.sourceOutput,
+        transfer.sourceDesktop,
+      ),
+    ).toEqual([
+      {
+        id: "column:source",
+        windowIds: ["source", "moved"],
+      },
+    ]);
+  });
+
+  it("compensates a geometry setter that mutates before throwing", () => {
+    const transfer = createOutputTransferFixture({ sourceStack: true });
+    const sourceFrame = { ...transfer.source.window.frameGeometry };
+    const movedFrame = { ...transfer.moved.window.frameGeometry };
+    let rejected = false;
+    transfer.moved.setWriteBehavior((_frame, commit) => {
+      commit();
+
+      if (!rejected && transfer.moved.window.output === transfer.targetOutput) {
+        rejected = true;
+        throw new Error("destination write failed after mutation");
+      }
+    });
+
+    expect(transfer.controller.moveWindowToOutputRight()).toBe(false);
+    expect(transfer.source.window.frameGeometry).toEqual(sourceFrame);
+    expect(transfer.moved.window.frameGeometry).toEqual(movedFrame);
+    expect(transfer.moved.window.output).toBe(transfer.sourceOutput);
+  });
+
+  it("commits while a successful destination frame write is still queued", () => {
+    const controllerScheduler = new ManualScheduler();
+    const transfer = createOutputTransferFixture({
+      scheduler: controllerScheduler,
+    });
+    const before = { ...transfer.moved.window.frameGeometry };
+    const queuedWrites = new ManualScheduler();
+    let queuedFrame: KWinWindow["frameGeometry"] | undefined;
+    transfer.moved.setWriteBehavior((frame, commit) => {
+      queuedFrame = { ...frame };
+      queuedWrites.schedule(commit);
+    });
+
+    expect(transfer.controller.moveWindowToOutputRight()).toBe(true);
+    expect(queuedWrites.pendingCount).toBe(1);
+    expect(transfer.moved.window.frameGeometry).toEqual(before);
+    expect(queuedFrame).toBeDefined();
+
+    queuedWrites.flush();
+    expect(transfer.moved.window.frameGeometry).toEqual(queuedFrame);
+  });
+
+  it("queues rollback after a pending forward write and settles to the old frame", () => {
+    const controllerScheduler = new ManualScheduler();
+    const transfer = createOutputTransferFixture({
+      scheduler: controllerScheduler,
+      sourceStack: true,
+    });
+    const sourceBefore = { ...transfer.source.window.frameGeometry };
+    const queuedSourceWrites = new ManualScheduler();
+    transfer.source.setWriteBehavior((_frame, commit) => {
+      queuedSourceWrites.schedule(commit);
+    });
+    transfer.moved.setWriteBehavior((_frame, commit) => {
+      if (transfer.moved.window.output === transfer.targetOutput) {
+        throw new Error("destination write rejected");
+      }
+
+      commit();
+    });
+
+    expect(transfer.controller.moveWindowToOutputRight()).toBe(false);
+    expect(queuedSourceWrites.pendingCount).toBe(2);
+    expect(transfer.source.window.frameGeometry).toEqual(sourceBefore);
+
+    queuedSourceWrites.flush();
+    expect(transfer.source.window.frameGeometry).not.toEqual(sourceBefore);
+    queuedSourceWrites.flush();
+    expect(transfer.source.window.frameGeometry).toEqual(sourceBefore);
+  });
+
+  it("restores the source frame when both output sends relocate the mover", () => {
+    const transfer = createOutputTransferFixture();
+    const sourceFrame = { ...transfer.moved.window.frameGeometry };
+    const targetMechanismFrame = { height: 310, width: 410, x: 1210, y: 90 };
+    const sourceMechanismFrame = { height: 320, width: 420, x: 120, y: 100 };
+    transfer.fixture.setOutputTransferBehavior((_window, output, commit) => {
+      commit();
+      transfer.moved.setFrameGeometry(
+        output === transfer.targetOutput
+          ? targetMechanismFrame
+          : sourceMechanismFrame,
+      );
+    });
+    let rejected = false;
+    transfer.moved.setWriteBehavior((_frame, commit) => {
+      if (!rejected && transfer.moved.window.output === transfer.targetOutput) {
+        rejected = true;
+        throw new Error("destination write rejected");
+      }
+
+      commit();
+    });
+
+    expect(transfer.controller.moveWindowToOutputRight()).toBe(false);
+    expect(transfer.fixture.outputTransferCount).toBe(2);
+    expect(transfer.moved.window.output).toBe(transfer.sourceOutput);
+    expect(transfer.moved.window.frameGeometry).toEqual(sourceFrame);
+  });
+
+  it("preserves an external source frame raised during forward reflow", () => {
+    const transfer = createOutputTransferFixture({ sourceStack: true });
+    const externalFrame = { height: 333, width: 444, x: 77, y: 88 };
+    transfer.source.setWriteBehavior((_frame, commit) => {
+      commit();
+      transfer.source.setFrameGeometry(externalFrame);
+    });
+
+    expect(transfer.controller.moveWindowToOutputRight()).toBe(false);
+    expect(transfer.source.window.frameGeometry).toEqual(externalFrame);
+    expect(transfer.moved.window.output).toBe(transfer.sourceOutput);
+  });
+
+  it("preserves an external unchanged destination frame before commit", () => {
+    const transfer = createOutputTransferFixture();
+    const destination = transfer.destinations[0];
+
+    if (!destination) {
+      throw new Error("output transfer fixture needs a destination window");
+    }
+
+    const externalFrame = { height: 333, width: 444, x: 1077, y: 88 };
+    transfer.moved.setWriteBehavior((_frame, commit) => {
+      commit();
+      destination.setFrameGeometry(externalFrame);
+    });
+
+    expect(transfer.controller.moveWindowToOutputRight()).toBe(false);
+    expect(destination.window.frameGeometry).toEqual(externalFrame);
+    expect(transfer.moved.window.output).toBe(transfer.sourceOutput);
+  });
+
+  it("preserves an external output mutation and restores only owned fields", () => {
+    const transfer = createOutputTransferFixture({ differentDesktop: true });
+    const externalOutput = createOutput("EXTERNAL", 3000);
+    transfer.fixture.setOutputTransferBehavior((_window, _output, commit) => {
+      commit();
+      transfer.moved.setOutput(externalOutput);
+    });
+
+    expect(transfer.controller.moveWindowToOutputRight()).toBe(false);
+    expect(transfer.moved.window.output).toBe(externalOutput);
+    expect(transfer.moved.window.desktops).toEqual([transfer.sourceDesktop]);
+  });
+
+  it("blocks reentrant commands and defers window admission until commit", () => {
+    const transfer = createOutputTransferFixture();
+    const added = createTrackedWindow(
+      "added",
+      transfer.sourceOutput,
+      transfer.sourceDesktop,
+    );
+    let reentrant: boolean | undefined;
+    let managedDuringTransfer = -1;
+    transfer.fixture.setOutputTransferBehavior((_window, _output, commit) => {
+      commit();
+      reentrant = transfer.controller.moveWindowLeft();
+      transfer.fixture.windowAdded.emit(added.window);
+      managedDuringTransfer = transfer.controller.managedCount;
+    });
+
+    expect(transfer.controller.moveWindowToOutputRight()).toBe(true);
+    expect(reentrant).toBe(false);
+    expect(managedDuringTransfer).toBe(3);
+    expect(transfer.controller.managedCount).toBe(4);
+  });
+
+  it("replays an external activation after rollback", () => {
+    const transfer = createOutputTransferFixture();
+    transfer.moved.setWriteBehavior((_frame, commit) => {
+      commit();
+      transfer.fixture.workspace.activeWindow = transfer.source.window;
+    });
+
+    expect(transfer.controller.moveWindowToOutputRight()).toBe(false);
+    expect(transfer.fixture.workspace.activeWindow).toBe(
+      transfer.source.window,
+    );
+    expect(
+      runtimeLayout(transfer.controller).snapshot(
+        outputId(transfer.sourceOutput.name),
+        desktopId(transfer.sourceDesktop.id),
+      ).activeColumnId,
+    ).toBe(columnId("column:source"));
+  });
+
+  it("does not restore a removed mover through a stale KWin handle", () => {
+    const transfer = createOutputTransferFixture();
+    transfer.fixture.setOutputTransferBehavior((_window, _output, commit) => {
+      commit();
+      transfer.fixture.windowRemoved.emit(transfer.moved.window);
+    });
+
+    expect(transfer.controller.moveWindowToOutputRight()).toBe(false);
+    expect(transfer.fixture.outputTransferCount).toBe(1);
+    expect(transfer.moved.window.output).toBe(transfer.targetOutput);
+  });
+
+  it("rolls back when the layout CAS changes during geometry writes", () => {
+    const transfer = createOutputTransferFixture();
+    transfer.moved.setWriteBehavior((_frame, commit) => {
+      commit();
+      runtimeLayout(transfer.controller).setViewportOffset(
+        outputId(transfer.sourceOutput.name),
+        desktopId(transfer.sourceDesktop.id),
+        1,
+      );
+    });
+
+    expect(transfer.controller.moveWindowToOutputRight()).toBe(false);
+    expect(transfer.moved.window.output).toBe(transfer.sourceOutput);
+    expect(
+      runtimeLayout(transfer.controller).snapshot(
+        outputId(transfer.sourceOutput.name),
+        desktopId(transfer.sourceDesktop.id),
+      ).viewportOffset,
+    ).toBe(1);
+  });
+
+  it("aborts when a visible desktop changes and never switches it back", () => {
+    const transfer = createOutputTransferFixture({ differentDesktop: true });
+    let changed = false;
+    transfer.moved.setWriteBehavior((_frame, commit) => {
+      commit();
+
+      if (changed) {
+        return;
+      }
+
+      changed = true;
+      transfer.fixture.workspace.setCurrentDesktopForScreen?.(
+        transfer.sourceDesktop,
+        transfer.targetOutput,
+      );
+    });
+
+    expect(transfer.controller.moveWindowToOutputRight()).toBe(false);
+    expect(
+      transfer.fixture.workspace.currentDesktopForScreen?.(
+        transfer.targetOutput,
+      ),
+    ).toBe(transfer.sourceDesktop);
+    expect(transfer.fixture.desktopSwitchCount).toBe(1);
+    expect(transfer.moved.window.output).toBe(transfer.sourceOutput);
+    expect(transfer.moved.window.desktops).toEqual([transfer.sourceDesktop]);
+  });
+
+  it("replays a suppressed desktop change for newly visible contexts", () => {
+    const transfer = createOutputTransferFixture({ differentDesktop: true });
+    const newlyVisible = createTrackedWindow(
+      "newly-visible",
+      transfer.targetOutput,
+      transfer.sourceDesktop,
+    );
+    transfer.fixture.windowAdded.emit(newlyVisible.window);
+    expect(transfer.controller.managedCount).toBe(4);
+    newlyVisible.setFrameGeometry({
+      height: 123,
+      width: 234,
+      x: 1777,
+      y: 222,
+    });
+    const writesBefore = newlyVisible.writeCount;
+    transfer.fixture.setOutputTransferBehavior((_window, _output, commit) => {
+      commit();
+      transfer.fixture.workspace.setCurrentDesktopForScreen?.(
+        transfer.sourceDesktop,
+        transfer.targetOutput,
+      );
+    });
+
+    expect(transfer.controller.moveWindowToOutputRight()).toBe(false);
+    expect(newlyVisible.writeCount).toBeGreaterThan(writesBefore);
+  });
+
+  it("does not use captured outputs after topology changes mid-transaction", () => {
+    const scheduler = new ManualScheduler();
+    const transfer = createOutputTransferFixture({ scheduler });
+    transfer.moved.setWriteBehavior((_frame, commit) => {
+      commit();
+      transfer.fixture.setScreens([
+        transfer.sourceOutput,
+        createPositionedOutput("TARGET", 1000, 0),
+      ]);
+      transfer.fixture.screensChanged.emit();
+    });
+
+    expect(transfer.controller.moveWindowToOutputRight()).toBe(false);
+    expect(transfer.fixture.outputTransferCount).toBe(1);
+    expect(transfer.moved.window.output).toBe(transfer.targetOutput);
+    expect(scheduler.pendingCount).toBeGreaterThan(0);
+  });
+
+  it("uses the post-KWin destination frame as the stop baseline", () => {
+    const transfer = createOutputTransferFixture();
+    const destinationBaseline = { height: 360, width: 460, x: 1120, y: 130 };
+    transfer.fixture.setOutputTransferBehavior((_window, _output, commit) => {
+      commit();
+      transfer.moved.setFrameGeometry(destinationBaseline);
+    });
+
+    expect(transfer.controller.moveWindowToOutputRight()).toBe(true);
+    transfer.controller.stop();
+    expect(transfer.moved.window.frameGeometry).toEqual(destinationBaseline);
+  });
+});
+
+function createOutputTransferFixture(
+  options: {
+    readonly destinationCount?: number;
+    readonly differentDesktop?: boolean;
+    readonly movedOverrides?: Partial<KWinWindow>;
+    readonly movedWidth?: number;
+    readonly perOutputDesktops?: boolean;
+    readonly scheduler?: ManualScheduler;
+    readonly sourceOnly?: boolean;
+    readonly sourceStack?: boolean;
+    readonly target?: { readonly x: number; readonly y: number };
+    readonly targetColumnWidth?: number;
+  } = {},
+) {
+  const sourceOutput = createPositionedOutput("SOURCE", 0, 0);
+  const targetOutput = createPositionedOutput(
+    "TARGET",
+    options.target?.x ?? 1000,
+    options.target?.y ?? 0,
+  );
+  const desktops = [{ id: "desktop-1" }, { id: "desktop-2" }] as const;
+  const sourceDesktop = desktops[0];
+  const targetDesktop = options.differentDesktop ? desktops[1] : desktops[0];
+  const source = createTrackedWindow("source", sourceOutput, sourceDesktop);
+  const moved = createTrackedWindow(
+    "moved",
+    sourceOutput,
+    sourceDesktop,
+    options.movedOverrides,
+  );
+  const destinations = Array.from(
+    { length: options.destinationCount ?? 1 },
+    (_value, index) =>
+      createTrackedWindow(
+        index === 0 ? "destination" : `destination-${String(index + 1)}`,
+        targetOutput,
+        targetDesktop,
+      ),
+  );
+  const fixture = createWorkspace(
+    sourceOutput,
+    sourceDesktop,
+    [sourceOutput, targetOutput],
+    desktops,
+    [
+      ...(options.sourceOnly ? [] : [source.window]),
+      moved.window,
+      ...destinations.map((window) => window.window),
+    ],
+    options.perOutputDesktops ?? true,
+  );
+
+  if (targetDesktop.id !== sourceDesktop.id) {
+    fixture.setCurrentDesktop(targetOutput, targetDesktop);
+  }
+
+  const controller = new RuntimeController(fixture.workspace, {
+    clientAreaOption: 2,
+    gap: 10,
+    ...(options.scheduler ? { schedule: options.scheduler.schedule } : {}),
+  });
+  controller.start();
+  const layout = new LayoutEngine();
+  layout.restoreColumns({
+    activeColumnId: columnId(
+      options.sourceStack && !options.sourceOnly
+        ? "column:source"
+        : "column:moved",
+    ),
+    columns: options.sourceOnly
+      ? [
+          {
+            column: {
+              id: columnId("column:moved"),
+              width: {
+                kind: "proportion",
+                value: options.movedWidth ?? 0.5,
+              },
+              windowIds: [windowId("moved")],
+            },
+            index: 0,
+          },
+        ]
+      : options.sourceStack
+        ? [
+            {
+              column: {
+                id: columnId("column:source"),
+                width: {
+                  kind: "proportion",
+                  value: options.movedWidth ?? 0.5,
+                },
+                windowIds: [windowId("source"), windowId("moved")],
+              },
+              index: 0,
+            },
+          ]
+        : [
+            {
+              column: {
+                id: columnId("column:source"),
+                width: { kind: "proportion", value: 0.5 },
+                windowIds: [windowId("source")],
+              },
+              index: 0,
+            },
+            {
+              column: {
+                id: columnId("column:moved"),
+                width: {
+                  kind: "proportion",
+                  value: options.movedWidth ?? 0.5,
+                },
+                windowIds: [windowId("moved")],
+              },
+              index: 1,
+            },
+          ],
+    desktopId: desktopId(sourceDesktop.id),
+    outputId: outputId(sourceOutput.name),
+  });
+  layout.restoreColumns({
+    activeColumnId:
+      destinations.length === 0 ? null : columnId("column:destination"),
+    columns: destinations.map((window, index) => ({
+      column: {
+        id: columnId(
+          index === 0
+            ? "column:destination"
+            : `column:destination-${String(index + 1)}`,
+        ),
+        width: {
+          kind: "proportion" as const,
+          value: options.targetColumnWidth ?? 0.5,
+        },
+        windowIds: [windowId(String(window.window.internalId))],
+      },
+      index,
+    })),
+    desktopId: desktopId(targetDesktop.id),
+    outputId: outputId(targetOutput.name),
+  });
+  (
+    controller as unknown as {
+      layout: LayoutEngine;
+    }
+  ).layout = layout;
+  fixture.workspace.activeWindow = moved.window;
+  controller.reconcile();
+
+  return {
+    controller,
+    desktops,
+    destinations,
+    fixture,
+    moved,
+    source,
+    sourceDesktop,
+    sourceOutput,
+    targetDesktop,
+    targetOutput,
+  };
+}
+
+function createPositionedOutput(
+  name: string,
+  x: number,
+  y: number,
+): KWinOutput {
+  return {
+    devicePixelRatio: 1,
+    geometry: { height: 800, width: 1000, x, y },
+    name,
+  };
+}
 
 function createDesktopTransferFixture(
   options: {
