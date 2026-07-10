@@ -49,12 +49,36 @@ export function focusRight(): void {
   controller?.focusRight();
 }
 
+export function focusUp(): void {
+  controller?.focusUp();
+}
+
+export function focusDown(): void {
+  controller?.focusDown();
+}
+
 export function moveColumnLeft(): void {
   controller?.moveColumnLeft();
 }
 
 export function moveColumnRight(): void {
   controller?.moveColumnRight();
+}
+
+export function moveWindowLeft(): void {
+  controller?.moveWindowLeft();
+}
+
+export function moveWindowRight(): void {
+  controller?.moveWindowRight();
+}
+
+export function moveWindowUp(): void {
+  controller?.moveWindowUp();
+}
+
+export function moveWindowDown(): void {
+  controller?.moveWindowDown();
 }
 
 export function decreaseColumnWidth(): void {

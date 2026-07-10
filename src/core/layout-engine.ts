@@ -60,6 +60,18 @@ export interface ManageWindowCommand {
 }
 
 export type HorizontalDirection = "left" | "right";
+export type VerticalDirection = "down" | "up";
+
+declare const stackEditRollbackBrand: unique symbol;
+
+export interface StackEditRollback {
+  readonly [stackEditRollbackBrand]: true;
+}
+
+export interface StackEditResult {
+  readonly kind: "extract" | "merge" | "reorder";
+  readonly rollback: StackEditRollback;
+}
 
 interface LayoutColumn {
   readonly id: ColumnId;
@@ -81,8 +93,17 @@ interface WindowPlacement {
   readonly contextKey: string;
 }
 
+interface StackEditSnapshots {
+  readonly after: LayoutContextSnapshot;
+  readonly before: LayoutContextSnapshot;
+}
+
 export class LayoutEngine {
   private readonly contexts = new Map<string, LayoutContext>();
+  private readonly stackEditRollbacks = new WeakMap<
+    StackEditRollback,
+    StackEditSnapshots
+  >();
   private readonly placements = new Map<WindowId, WindowPlacement>();
 
   manageWindow(command: ManageWindowCommand): boolean {
@@ -175,6 +196,210 @@ export class LayoutEngine {
     const targetIndex =
       direction === "left" ? columnIndex - 1 : columnIndex + 1;
     return context.columns[targetIndex]?.windowIds[0] ?? null;
+  }
+
+  adjacentWindowInColumn(
+    windowId: WindowId,
+    direction: VerticalDirection,
+  ): WindowId | null {
+    const placement = this.placements.get(windowId);
+
+    if (!placement) {
+      return null;
+    }
+
+    const context = this.contexts.get(placement.contextKey);
+    const column = context?.columns.find(
+      (candidate) => candidate.id === placement.columnId,
+    );
+
+    if (!column) {
+      return null;
+    }
+
+    const windowIndex = column.windowIds.indexOf(windowId);
+
+    if (windowIndex < 0) {
+      return null;
+    }
+
+    const targetIndex = direction === "up" ? windowIndex - 1 : windowIndex + 1;
+    return column.windowIds[targetIndex] ?? null;
+  }
+
+  moveActiveWindow(
+    windowId: WindowId,
+    direction: HorizontalDirection,
+    newColumnId: ColumnId,
+  ): StackEditResult | null {
+    const placement = this.placements.get(windowId);
+
+    if (!placement) {
+      return null;
+    }
+
+    const context = this.contexts.get(placement.contextKey);
+
+    if (!context || context.activeColumnId !== placement.columnId) {
+      return null;
+    }
+
+    const sourceIndex = context.columns.findIndex(
+      (column) => column.id === placement.columnId,
+    );
+    const source = context.columns[sourceIndex];
+    const windowIndex = source?.windowIds.indexOf(windowId) ?? -1;
+
+    if (!source || windowIndex < 0) {
+      return null;
+    }
+
+    const before = this.snapshot(context.outputId, context.desktopId);
+    let kind: StackEditResult["kind"];
+
+    if (source.windowIds.length === 1) {
+      const targetIndex =
+        direction === "left" ? sourceIndex - 1 : sourceIndex + 1;
+      const target = context.columns[targetIndex];
+
+      if (!target) {
+        return null;
+      }
+
+      target.windowIds.push(windowId);
+      context.columns.splice(sourceIndex, 1);
+      context.columnIds.delete(source.id);
+      this.placements.set(windowId, {
+        columnId: target.id,
+        contextKey: placement.contextKey,
+      });
+      context.activeColumnId = target.id;
+      kind = "merge";
+    } else {
+      if (context.columnIds.has(newColumnId)) {
+        return null;
+      }
+
+      source.windowIds.splice(windowIndex, 1);
+      const column: LayoutColumn = {
+        id: newColumnId,
+        width: { ...source.width },
+        windowIds: [windowId],
+      };
+      const insertionIndex =
+        direction === "left" ? sourceIndex : sourceIndex + 1;
+      context.columns.splice(insertionIndex, 0, column);
+      context.columnIds.add(column.id);
+      this.placements.set(windowId, {
+        columnId: column.id,
+        contextKey: placement.contextKey,
+      });
+      context.activeColumnId = column.id;
+      kind = "extract";
+    }
+
+    return this.createStackEditResult(
+      kind,
+      before,
+      this.snapshot(context.outputId, context.desktopId),
+    );
+  }
+
+  moveActiveWindowInColumn(
+    windowId: WindowId,
+    direction: VerticalDirection,
+  ): StackEditResult | null {
+    const placement = this.placements.get(windowId);
+
+    if (!placement) {
+      return null;
+    }
+
+    const context = this.contexts.get(placement.contextKey);
+
+    if (!context || context.activeColumnId !== placement.columnId) {
+      return null;
+    }
+
+    const column = context.columns.find(
+      (candidate) => candidate.id === placement.columnId,
+    );
+
+    if (!column) {
+      return null;
+    }
+
+    const windowIndex = column.windowIds.indexOf(windowId);
+    const targetIndex = direction === "up" ? windowIndex - 1 : windowIndex + 1;
+    const target = column.windowIds[targetIndex];
+
+    if (windowIndex < 0 || !target) {
+      return null;
+    }
+
+    const before = this.snapshot(context.outputId, context.desktopId);
+    column.windowIds[windowIndex] = target;
+    column.windowIds[targetIndex] = windowId;
+    return this.createStackEditResult(
+      "reorder",
+      before,
+      this.snapshot(context.outputId, context.desktopId),
+    );
+  }
+
+  rollbackStackEdit(rollback: StackEditRollback): boolean {
+    const snapshots = this.stackEditRollbacks.get(rollback);
+
+    if (!snapshots) {
+      return false;
+    }
+
+    this.stackEditRollbacks.delete(rollback);
+    const { after, before } = snapshots;
+
+    if (
+      before.outputId !== after.outputId ||
+      before.desktopId !== after.desktopId ||
+      !sameContextStructure(
+        this.snapshot(after.outputId, after.desktopId),
+        after,
+      ) ||
+      !sameWindowSet(before, after)
+    ) {
+      return false;
+    }
+
+    const context = this.contexts.get(
+      contextKey(before.outputId, before.desktopId),
+    );
+
+    if (!context || !validContextSnapshot(before)) {
+      return false;
+    }
+
+    context.columns.length = 0;
+    context.columnIds.clear();
+
+    for (const snapshot of before.columns) {
+      const column: LayoutColumn = {
+        id: snapshot.id,
+        width: { ...snapshot.width },
+        windowIds: [...snapshot.windowIds],
+      };
+      context.columns.push(column);
+      context.columnIds.add(column.id);
+
+      for (const id of column.windowIds) {
+        this.placements.set(id, {
+          columnId: column.id,
+          contextKey: contextKey(context.outputId, context.desktopId),
+        });
+      }
+    }
+
+    context.activeColumnId = before.activeColumnId;
+    context.viewportOffset = before.viewportOffset;
+    return true;
   }
 
   moveActiveColumn(
@@ -576,6 +801,16 @@ export class LayoutEngine {
     return true;
   }
 
+  private createStackEditResult(
+    kind: StackEditResult["kind"],
+    before: LayoutContextSnapshot,
+    after: LayoutContextSnapshot,
+  ): StackEditResult {
+    const rollback = {} as StackEditRollback;
+    this.stackEditRollbacks.set(rollback, { after, before });
+    return { kind, rollback };
+  }
+
   private getOrCreateContext(
     key: string,
     outputId: OutputId,
@@ -706,6 +941,85 @@ export function previewColumnRestoration(
 
 function contextKey(outputId: OutputId, desktopId: DesktopId): string {
   return `${outputId}\u0000${desktopId}`;
+}
+
+function sameContextStructure(
+  left: LayoutContextSnapshot,
+  right: LayoutContextSnapshot,
+): boolean {
+  return (
+    left.outputId === right.outputId &&
+    left.desktopId === right.desktopId &&
+    left.activeColumnId === right.activeColumnId &&
+    left.columns.length === right.columns.length &&
+    left.columns.every((column, index) => {
+      const candidate = right.columns[index];
+      return (
+        candidate !== undefined &&
+        column.id === candidate.id &&
+        column.width.kind === candidate.width.kind &&
+        column.width.value === candidate.width.value &&
+        column.windowIds.length === candidate.windowIds.length &&
+        column.windowIds.every(
+          (window, windowIndex) => window === candidate.windowIds[windowIndex],
+        )
+      );
+    })
+  );
+}
+
+function sameWindowSet(
+  left: LayoutContextSnapshot,
+  right: LayoutContextSnapshot,
+): boolean {
+  const leftWindows = left.columns.flatMap((column) => column.windowIds);
+  const rightWindows = right.columns.flatMap((column) => column.windowIds);
+  const leftSet = new Set(leftWindows);
+  const rightSet = new Set(rightWindows);
+  return (
+    leftWindows.length === rightWindows.length &&
+    leftSet.size === leftWindows.length &&
+    rightSet.size === rightWindows.length &&
+    leftWindows.every((window) => rightSet.has(window))
+  );
+}
+
+function validContextSnapshot(snapshot: LayoutContextSnapshot): boolean {
+  if (
+    snapshot.columns.length === 0 ||
+    !Number.isFinite(snapshot.viewportOffset) ||
+    snapshot.viewportOffset < 0
+  ) {
+    return false;
+  }
+
+  const columnIds = new Set<ColumnId>();
+  const windowIds = new Set<WindowId>();
+
+  for (const column of snapshot.columns) {
+    if (
+      columnIds.has(column.id) ||
+      column.windowIds.length === 0 ||
+      !Number.isFinite(column.width.value) ||
+      column.width.value <= 0
+    ) {
+      return false;
+    }
+
+    columnIds.add(column.id);
+
+    for (const window of column.windowIds) {
+      if (windowIds.has(window)) {
+        return false;
+      }
+
+      windowIds.add(window);
+    }
+  }
+
+  return (
+    snapshot.activeColumnId === null || columnIds.has(snapshot.activeColumnId)
+  );
 }
 
 function assertValidWidth(width: ColumnWidth): void {

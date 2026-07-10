@@ -1,7 +1,10 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { columnId, desktopId, outputId, windowId } from "../../src/core/ids";
-import { LayoutEngine } from "../../src/core/layout-engine";
+import {
+  LayoutEngine,
+  type StackEditRollback,
+} from "../../src/core/layout-engine";
 
 const output = outputId("DP-1");
 const desktop = desktopId("desktop-1");
@@ -367,6 +370,248 @@ describe("LayoutEngine", () => {
       kind: "proportion",
       value: 0.5,
     });
+  });
+
+  it("moves a singleton into an adjacent stack and rolls back exactly", () => {
+    const engine = new LayoutEngine();
+
+    engine.restoreColumns({
+      activeColumnId: columnId("column-2"),
+      columns: [
+        {
+          column: {
+            id: columnId("column-1"),
+            width: { kind: "fixed", value: 240 },
+            windowIds: [windowId("window-1")],
+          },
+          index: 0,
+        },
+        {
+          column: {
+            id: columnId("column-2"),
+            width: { kind: "proportion", value: 0.4 },
+            windowIds: [windowId("window-2")],
+          },
+          index: 1,
+        },
+        {
+          column: {
+            id: columnId("column-3"),
+            width: { kind: "fixed", value: 360 },
+            windowIds: [windowId("window-3")],
+          },
+          index: 2,
+        },
+      ],
+      desktopId: desktop,
+      outputId: output,
+      viewportOffset: 120,
+    });
+    const before = engine.snapshot(output, desktop);
+    const edit = engine.moveActiveWindow(
+      windowId("window-2"),
+      "left",
+      columnId("unused"),
+    );
+
+    expect(edit?.kind).toBe("merge");
+    expect(engine.snapshot(output, desktop)).toEqual({
+      activeColumnId: "column-1",
+      columns: [
+        {
+          id: "column-1",
+          width: { kind: "fixed", value: 240 },
+          windowIds: ["window-1", "window-2"],
+        },
+        {
+          id: "column-3",
+          width: { kind: "fixed", value: 360 },
+          windowIds: ["window-3"],
+        },
+      ],
+      desktopId: "desktop-1",
+      outputId: "DP-1",
+      viewportOffset: 120,
+    });
+    expect(edit && engine.rollbackStackEdit(edit.rollback)).toBe(true);
+    expect(engine.snapshot(output, desktop)).toEqual(before);
+    expect(edit && engine.rollbackStackEdit(edit.rollback)).toBe(false);
+  });
+
+  it("extracts an active stack member beside its source and rolls back", () => {
+    const engine = new LayoutEngine();
+
+    engine.restoreColumns({
+      activeColumnId: columnId("column-1"),
+      columns: [
+        {
+          column: {
+            id: columnId("column-1"),
+            width: { kind: "proportion", value: 0.4 },
+            windowIds: [
+              windowId("window-1"),
+              windowId("window-2"),
+              windowId("window-3"),
+            ],
+          },
+          index: 0,
+        },
+        {
+          column: {
+            id: columnId("column-2"),
+            width: { kind: "fixed", value: 320 },
+            windowIds: [windowId("window-4")],
+          },
+          index: 1,
+        },
+      ],
+      desktopId: desktop,
+      outputId: output,
+      viewportOffset: 40,
+    });
+    const before = engine.snapshot(output, desktop);
+    const edit = engine.moveActiveWindow(
+      windowId("window-2"),
+      "right",
+      columnId("column:split:window-2"),
+    );
+
+    expect(edit?.kind).toBe("extract");
+    expect(engine.snapshot(output, desktop)).toEqual({
+      activeColumnId: "column:split:window-2",
+      columns: [
+        {
+          id: "column-1",
+          width: { kind: "proportion", value: 0.4 },
+          windowIds: ["window-1", "window-3"],
+        },
+        {
+          id: "column:split:window-2",
+          width: { kind: "proportion", value: 0.4 },
+          windowIds: ["window-2"],
+        },
+        {
+          id: "column-2",
+          width: { kind: "fixed", value: 320 },
+          windowIds: ["window-4"],
+        },
+      ],
+      desktopId: "desktop-1",
+      outputId: "DP-1",
+      viewportOffset: 40,
+    });
+    expect(edit && engine.rollbackStackEdit(edit.rollback)).toBe(true);
+    expect(engine.snapshot(output, desktop)).toEqual(before);
+  });
+
+  it("navigates and reorders members inside the active stack", () => {
+    const engine = new LayoutEngine();
+
+    engine.restoreColumns({
+      activeColumnId: columnId("column-1"),
+      columns: [
+        {
+          column: {
+            id: columnId("column-1"),
+            width: { kind: "fixed", value: 300 },
+            windowIds: [
+              windowId("window-1"),
+              windowId("window-2"),
+              windowId("window-3"),
+            ],
+          },
+          index: 0,
+        },
+      ],
+      desktopId: desktop,
+      outputId: output,
+    });
+    const before = engine.snapshot(output, desktop);
+
+    expect(engine.adjacentWindowInColumn(windowId("window-2"), "up")).toBe(
+      "window-1",
+    );
+    expect(engine.adjacentWindowInColumn(windowId("window-2"), "down")).toBe(
+      "window-3",
+    );
+    expect(
+      engine.adjacentWindowInColumn(windowId("window-1"), "up"),
+    ).toBeNull();
+    const edit = engine.moveActiveWindowInColumn(windowId("window-2"), "up");
+    expect(edit?.kind).toBe("reorder");
+    expect(engine.snapshot(output, desktop).columns[0]?.windowIds).toEqual([
+      "window-2",
+      "window-1",
+      "window-3",
+    ]);
+    expect(edit && engine.rollbackStackEdit(edit.rollback)).toBe(true);
+    expect(engine.snapshot(output, desktop)).toEqual(before);
+  });
+
+  it("rejects invalid and stale stack edits without mutation", () => {
+    const engine = new LayoutEngine();
+
+    engine.restoreColumns({
+      activeColumnId: columnId("column-1"),
+      columns: [
+        {
+          column: {
+            id: columnId("column-1"),
+            width: { kind: "fixed", value: 300 },
+            windowIds: [windowId("window-1"), windowId("window-2")],
+          },
+          index: 0,
+        },
+        {
+          column: {
+            id: columnId("column-2"),
+            width: { kind: "fixed", value: 300 },
+            windowIds: [windowId("window-3")],
+          },
+          index: 1,
+        },
+      ],
+      desktopId: desktop,
+      outputId: output,
+    });
+    const before = engine.snapshot(output, desktop);
+
+    expect(
+      engine.moveActiveWindow(
+        windowId("window-1"),
+        "left",
+        columnId("column-2"),
+      ),
+    ).toBeNull();
+    expect(
+      engine.moveActiveWindow(windowId("window-3"), "left", columnId("new")),
+    ).toBeNull();
+    expect(
+      engine.moveActiveWindowInColumn(windowId("window-1"), "up"),
+    ).toBeNull();
+    expect(engine.rollbackStackEdit({} as StackEditRollback)).toBe(false);
+    expect(engine.snapshot(output, desktop)).toEqual(before);
+
+    expect(engine.activateWindow(windowId("window-3"))).toBe(true);
+    const boundary = engine.snapshot(output, desktop);
+    expect(
+      engine.moveActiveWindow(windowId("window-3"), "right", columnId("new")),
+    ).toBeNull();
+    expect(engine.snapshot(output, desktop)).toEqual(boundary);
+    expect(engine.activateWindow(windowId("window-1"))).toBe(true);
+
+    const edit = engine.moveActiveWindowInColumn(windowId("window-1"), "down");
+    expect(edit).not.toBeNull();
+    engine.manageWindow({
+      columnId: columnId("column-3"),
+      desktopId: desktop,
+      outputId: output,
+      width: { kind: "fixed", value: 300 },
+      windowId: windowId("window-4"),
+    });
+    const stale = engine.snapshot(output, desktop);
+    expect(edit && engine.rollbackStackEdit(edit.rollback)).toBe(false);
+    expect(engine.snapshot(output, desktop)).toEqual(stale);
   });
 
   it("stores viewport offsets independently for each context", () => {

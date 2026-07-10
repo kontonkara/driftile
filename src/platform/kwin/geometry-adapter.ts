@@ -107,10 +107,18 @@ export class KWinGeometryAdapter {
     return Boolean(window && canApplyToWindow(window, frame, context));
   }
 
-  apply(changes: readonly GeometryChange[], context: WindowContext): number {
+  apply(
+    changes: readonly GeometryChange[],
+    context: WindowContext,
+    canContinue?: () => boolean,
+  ): number {
     let writeCount = 0;
 
     for (const change of changes) {
+      if (canContinue && !canContinue()) {
+        break;
+      }
+
       const window = this.windows.source(change.windowId);
 
       if (!window || !canApplyToWindow(window, change.frame, context)) {

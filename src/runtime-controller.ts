@@ -21,6 +21,8 @@ import {
   type LayoutColumnPlacement,
   type LayoutColumnSnapshot,
   type LayoutContextSnapshot,
+  type StackEditResult,
+  type VerticalDirection,
 } from "./core/layout-engine";
 import { diffWindowGeometries } from "./core/reconcile";
 import type {
@@ -33,6 +35,7 @@ import {
   KWinGeometryAdapter,
   hasGeometryAuthorityBlocker,
   isGeometryWritable,
+  respectsSizeConstraints,
   type ContextGeometry,
   type KWinRectFactory,
 } from "./platform/kwin/geometry-adapter";
@@ -298,12 +301,36 @@ export class RuntimeController {
     return this.focusAdjacent("right");
   }
 
+  focusUp(): boolean {
+    return this.focusWithinActiveColumn("up");
+  }
+
+  focusDown(): boolean {
+    return this.focusWithinActiveColumn("down");
+  }
+
   moveColumnLeft(): boolean {
     return this.moveActiveColumn("left");
   }
 
   moveColumnRight(): boolean {
     return this.moveActiveColumn("right");
+  }
+
+  moveWindowLeft(): boolean {
+    return this.moveActiveWindowHorizontally("left");
+  }
+
+  moveWindowRight(): boolean {
+    return this.moveActiveWindowHorizontally("right");
+  }
+
+  moveWindowUp(): boolean {
+    return this.moveActiveWindowVertically("up");
+  }
+
+  moveWindowDown(): boolean {
+    return this.moveActiveWindowVertically("down");
   }
 
   decreaseColumnWidth(): boolean {
@@ -772,6 +799,46 @@ export class RuntimeController {
     return true;
   }
 
+  private focusWithinActiveColumn(direction: VerticalDirection): boolean {
+    const command = this.prepareActiveColumnCommand();
+
+    if (!command) {
+      return false;
+    }
+
+    const targetId = this.layout.adjacentWindowInColumn(
+      command.activeId,
+      direction,
+    );
+
+    if (!targetId) {
+      return false;
+    }
+
+    const targetOwner = this.managedWindows.get(targetId);
+    const target = this.observer.source(targetId);
+    const observedTarget = target ? normalizeWindow(target) : null;
+    const targetContext = observedTarget
+      ? managedContext(observedTarget)
+      : null;
+
+    if (
+      targetOwner?.contextKey !== command.context.key ||
+      !target ||
+      this.suspendedWindows.has(targetId) ||
+      this.requestedSuspensions.has(targetId) ||
+      !isGeometryWritable(target) ||
+      !targetContext ||
+      contextKey(targetContext) !== command.context.key
+    ) {
+      return false;
+    }
+
+    this.lastWrites = 0;
+    this.workspace.activeWindow = target;
+    return true;
+  }
+
   private moveActiveColumn(direction: HorizontalDirection): boolean {
     const command = this.prepareActiveColumnCommand();
 
@@ -789,14 +856,94 @@ export class RuntimeController {
     );
   }
 
+  private moveActiveWindowHorizontally(
+    direction: HorizontalDirection,
+  ): boolean {
+    const command = this.prepareActiveColumnCommand();
+
+    if (!command || this.hasStructuralCapacityState(command.context.key)) {
+      return false;
+    }
+
+    if (command.activeColumn.windowIds.length === 1) {
+      const sourceIndex = command.before.columns.findIndex(
+        (column) => column.id === command.activeColumn.id,
+      );
+      const targetIndex =
+        direction === "left" ? sourceIndex - 1 : sourceIndex + 1;
+      const target = command.before.columns[targetIndex];
+
+      if (
+        sourceIndex < 0 ||
+        !target ||
+        !this.columnMembersBelongToContext(target, command.context)
+      ) {
+        return false;
+      }
+    }
+
+    const newColumnId = this.extractedColumnId(command);
+    const editState: { value: StackEditResult | null } = { value: null };
+    const moved = this.applyActiveColumnMutation(
+      command,
+      "window move",
+      () => {
+        editState.value = this.layout.moveActiveWindow(
+          command.activeId,
+          direction,
+          newColumnId,
+        );
+        return editState.value !== null;
+      },
+      () =>
+        editState.value !== null &&
+        this.layout.rollbackStackEdit(editState.value.rollback),
+    );
+    const edit = editState.value;
+
+    if (!moved || !edit) {
+      return false;
+    }
+
+    this.capacityParkBackoffs.delete(command.context.key);
+
+    if (
+      edit.kind === "merge" &&
+      this.waitingWindowIds.get(command.context.key)?.size
+    ) {
+      this.pendingAdmissionContexts.add(command.context.key);
+      this.scheduleWork();
+    }
+
+    return true;
+  }
+
+  private moveActiveWindowVertically(direction: VerticalDirection): boolean {
+    const command = this.prepareActiveColumnCommand();
+
+    if (!command || this.hasCapacityMutationInFlight(command.context.key)) {
+      return false;
+    }
+
+    let edit: StackEditResult | null = null;
+    return this.applyActiveColumnMutation(
+      command,
+      "stack reorder",
+      () => {
+        edit = this.layout.moveActiveWindowInColumn(
+          command.activeId,
+          direction,
+        );
+        return edit !== null;
+      },
+      () => edit !== null && this.layout.rollbackStackEdit(edit.rollback),
+    );
+  }
+
   private resizeActiveColumn(action: ColumnResizeAction): boolean {
     const command = this.prepareActiveColumnCommand();
 
-    if (
-      !command ||
-      this.capacityParkOperations.has(command.context.key) ||
-      this.capacityCanceledParks.has(command.context.key)
-    ) {
+    if (!command || this.hasCapacityMutationInFlight(command.context.key)) {
       return false;
     }
 
@@ -954,6 +1101,49 @@ export class RuntimeController {
     return current.value + direction * step;
   }
 
+  private extractedColumnId(command: ActiveColumnCommand): ColumnId {
+    const columnIds = new Set(
+      command.before.columns.map((column) => column.id),
+    );
+    const canonical = columnId(`column:${String(command.activeId)}`);
+
+    if (!columnIds.has(canonical)) {
+      return canonical;
+    }
+
+    const base = `column:split:${String(command.activeId)}`;
+
+    for (let index = 0; index <= command.before.columns.length; index += 1) {
+      const candidate = columnId(
+        index === 0 ? base : `${base}:${String(index)}`,
+      );
+
+      if (!columnIds.has(candidate)) {
+        return candidate;
+      }
+    }
+
+    throw new Error("could not allocate an extracted column ID");
+  }
+
+  private columnMembersBelongToContext(
+    column: LayoutColumnSnapshot,
+    context: RuntimeContext,
+  ): boolean {
+    return column.windowIds.every((id) => {
+      const owner = this.managedWindows.get(id);
+      const source = this.observer.source(id);
+      const observed = source ? normalizeWindow(source) : null;
+      const memberContext = observed ? managedContext(observed) : null;
+      return (
+        owner?.contextKey === context.key &&
+        source !== undefined &&
+        memberContext !== null &&
+        contextKey(memberContext) === context.key
+      );
+    });
+  }
+
   private prepareActiveColumnCommand(): ActiveColumnCommand | null {
     if (
       !this.started ||
@@ -1013,18 +1203,7 @@ export class RuntimeController {
     if (
       !activeColumn ||
       before.activeColumnId !== activeColumn.id ||
-      activeColumn.windowIds.some((id) => {
-        const memberOwner = this.managedWindows.get(id);
-        const source = this.observer.source(id);
-        const observed = source ? normalizeWindow(source) : null;
-        const memberContext = observed ? managedContext(observed) : null;
-        return (
-          memberOwner?.contextKey !== context.key ||
-          !source ||
-          !memberContext ||
-          contextKey(memberContext) !== context.key
-        );
-      })
+      !this.columnMembersBelongToContext(activeColumn, context)
     ) {
       return null;
     }
@@ -1092,6 +1271,10 @@ export class RuntimeController {
 
     if (
       !this.canApplyLayout(nextLayout.maxViewportOffset) ||
+      nextLayout.windows.some((window) => {
+        const source = this.observer.source(window.windowId);
+        return !source || !respectsSizeConstraints(window.frame, source);
+      }) ||
       writableLayout.some(
         (window) =>
           !this.geometry.canApplyFrame(window.windowId, window.frame, context),
@@ -1133,7 +1316,11 @@ export class RuntimeController {
     let forwardError: string | null = null;
 
     try {
-      forwardWrites = this.reconcileContext(context, sampledGeometries);
+      forwardWrites = this.reconcileContext(
+        context,
+        sampledGeometries,
+        () => !this.hasTopologyBarrier(),
+      );
     } catch (error) {
       forwardError = String(error);
     }
@@ -1148,11 +1335,20 @@ export class RuntimeController {
     }
 
     const restored = restoreLayout();
+
+    if (restored && this.topologyWindowOrder !== null) {
+      this.captureTopologyWindowOrder();
+    }
+
     let compensationWrites = 0;
 
     if (restored && !this.hasTopologyBarrier()) {
       this.dirtyContexts.delete(context.key);
-      compensationWrites = this.geometry.apply(rollbackTargets, context);
+      compensationWrites = this.geometry.apply(
+        rollbackTargets,
+        context,
+        () => !this.hasTopologyBarrier(),
+      );
 
       if (compensationWrites !== rollbackTargets.length || wasDirty) {
         this.markContextDirty(context);
@@ -1178,10 +1374,23 @@ export class RuntimeController {
 
   private hasPendingCapacityState(key: string): boolean {
     return Boolean(
-      this.capacityParkOperations.has(key) ||
-      this.capacityCanceledParks.has(key) ||
+      this.hasCapacityMutationInFlight(key) ||
       this.capacityLeasesByContext.get(key)?.size ||
       this.capacityParkBackoffs.has(key),
+    );
+  }
+
+  private hasCapacityMutationInFlight(key: string): boolean {
+    return (
+      this.capacityParkOperations.has(key) ||
+      this.capacityCanceledParks.has(key)
+    );
+  }
+
+  private hasStructuralCapacityState(key: string): boolean {
+    return Boolean(
+      this.hasCapacityMutationInFlight(key) ||
+      this.capacityLeasesByContext.get(key)?.size,
     );
   }
 
@@ -3440,6 +3649,7 @@ export class RuntimeController {
   private reconcileContext(
     context: RuntimeContext,
     sampledGeometries?: ReadonlyMap<string, ContextGeometry>,
+    canContinueWriting?: () => boolean,
   ): number {
     if (!this.isContextVisible(context)) {
       return 0;
@@ -3515,7 +3725,7 @@ export class RuntimeController {
     }
 
     const changes = diffWindowGeometries(writableLayout, observed);
-    const applied = this.geometry.apply(changes, context);
+    const applied = this.geometry.apply(changes, context, canContinueWriting);
     writeCount += applied;
 
     if (applied === changes.length) {

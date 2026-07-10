@@ -57,6 +57,18 @@ QtObject {
         sequence: "Meta+Ctrl+L"
         onActivated: Runtime.DriftileRuntime.focusRight()
     }
+    readonly property ShortcutHandler focusUpShortcut: ShortcutHandler {
+        name: "Driftile Focus Up"
+        text: "Driftile: Focus up"
+        sequence: "Meta+Ctrl+K"
+        onActivated: Runtime.DriftileRuntime.focusUp()
+    }
+    readonly property ShortcutHandler focusDownShortcut: ShortcutHandler {
+        name: "Driftile Focus Down"
+        text: "Driftile: Focus down"
+        sequence: "Meta+Ctrl+J"
+        onActivated: Runtime.DriftileRuntime.focusDown()
+    }
     readonly property ShortcutHandler moveColumnLeftShortcut: ShortcutHandler {
         name: "Driftile Move Column Left"
         text: "Driftile: Move column left"
@@ -68,6 +80,30 @@ QtObject {
         text: "Driftile: Move column right"
         sequence: "Meta+Ctrl+Shift+L"
         onActivated: Runtime.DriftileRuntime.moveColumnRight()
+    }
+    readonly property ShortcutHandler moveWindowLeftShortcut: ShortcutHandler {
+        name: "Driftile Move Window Left"
+        text: "Driftile: Move window left"
+        sequence: "Meta+Ctrl+Alt+H"
+        onActivated: Runtime.DriftileRuntime.moveWindowLeft()
+    }
+    readonly property ShortcutHandler moveWindowRightShortcut: ShortcutHandler {
+        name: "Driftile Move Window Right"
+        text: "Driftile: Move window right"
+        sequence: "Meta+Ctrl+Alt+L"
+        onActivated: Runtime.DriftileRuntime.moveWindowRight()
+    }
+    readonly property ShortcutHandler moveWindowUpShortcut: ShortcutHandler {
+        name: "Driftile Move Window Up"
+        text: "Driftile: Move window up"
+        sequence: "Meta+Ctrl+Shift+K"
+        onActivated: Runtime.DriftileRuntime.moveWindowUp()
+    }
+    readonly property ShortcutHandler moveWindowDownShortcut: ShortcutHandler {
+        name: "Driftile Move Window Down"
+        text: "Driftile: Move window down"
+        sequence: "Meta+Ctrl+Shift+J"
+        onActivated: Runtime.DriftileRuntime.moveWindowDown()
     }
     readonly property ShortcutHandler decreaseColumnWidthShortcut: ShortcutHandler {
         name: "Driftile Decrease Column Width"
