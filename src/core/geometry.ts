@@ -126,7 +126,7 @@ function extendMaxViewportOffset(
 ): number {
   const terminalWidth = columnWidths[columnWidths.length - 1];
 
-  if (initialOffset === 0 || terminalWidth === undefined) {
+  if (terminalWidth === undefined) {
     return initialOffset;
   }
 

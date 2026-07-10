@@ -301,6 +301,28 @@ describe("solveStripGeometry", () => {
     expect(result.viewportOffset).toBe(0);
   });
 
+  it("extends a raw-fitting strip when its terminal edge snaps outward", () => {
+    const context = createContext([
+      { kind: "fixed", value: 161 },
+      { kind: "fixed", value: 161 },
+    ]);
+    const result = solveStripGeometry({
+      context,
+      devicePixelRatio: 1.25,
+      gap: 0,
+      pixelGridOrigin: { x: 100, y: 50 },
+      workArea: { height: 1080, width: 322, x: 100, y: 50 },
+    });
+    const target = result.windows[1];
+
+    expect(result.maxViewportOffset).toBe(0.8);
+    expect(result.viewportOffset).toBe(0.8);
+    expect(target?.frame.x).toBeGreaterThanOrEqual(100);
+    expect(
+      (target?.frame.x ?? 0) + (target?.frame.width ?? 0),
+    ).toBeLessThanOrEqual(422 + floatingPointTolerance);
+  });
+
   it("reveals fitting columns across variable widths and gaps", () => {
     for (const devicePixelRatio of [1, 1.25, 1.5, 1.75, 2, 2.5]) {
       fc.assert(
