@@ -41,7 +41,7 @@ The current runtime already:
 - Preserves a deterministic layout order across structural output changes.
 - Invalidates stale restore baselines without reviving them when old geometry returns.
 - Parks deterministic whole columns when a new multi-output capacity limit no longer fits, preferring non-active columns, then retries waiting windows.
-- Reorders the active whole column left or right with context-local shortcuts and transactional geometry rollback.
+- Focuses adjacent and edge columns, and reorders the active whole column left, right, first, or last with context-local shortcuts and transactional geometry rollback.
 - Decreases, increases, or resets the active whole column width with grouped constraints and transactional rollback.
 - Cycles preset widths in both directions, adjusts width by 10%, toggles full width, and centers the active column.
 - Focuses and reorders vertical stack members, contextually merges or extracts the active window, and inserts it directly into the nearest stack across singleton columns.
@@ -50,7 +50,7 @@ The current runtime already:
 - Moves the whole active column to an adjacent output with deterministic spatial routing and atomic visible-context reflow; single-window transfer remains secondary.
 - Optionally removes application-window decorations independently of layout ownership while preserving pre-existing borderless state, reasserting owned policy, and restoring owned state on disable.
 - Keeps one shared trailing desktop empty and removes only redundant tails created by the current run.
-- Registers compact default shortcuts with `H/J/K/L`, arrow, and Page Up/Down aliases.
+- Registers compact default shortcuts with `H/J/K/L`, arrow, Home/End, and Page Up/Down aliases.
 - Provides a reversible development helper for claiming shortcuts already used
   by Plasma; a release UI without a Node.js dependency remains future work.
 - Leaves dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows outside layout ownership, separate from manual floating.
@@ -63,7 +63,6 @@ The automatic-floating base is complete. Size increments, aspect ratios, live co
 Complete the daily keyboard-driven workflow.
 
 - Manage every output and desktop independently.
-- Add first/last column navigation and movement.
 - Add window-height adjustment, automatic reset, and preset cycling.
 - Add fill-available-width and center-visible-column commands.
 - Add fullscreen, native maximize, floating-layer focus, and minimized-window semantics without taking KWin's mechanism ownership.

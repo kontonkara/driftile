@@ -33,7 +33,8 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Detects otherwise silent client-area changes by fingerprinting visible contexts only.
 - Replays structural output changes in a stable layout order independent of KWin window-signal order.
 - Invalidates stale restore ownership and revalidates multi-output capacity after topology changes.
-- Reorders the active whole column inside one settled context and keeps focus unchanged.
+- Focuses the first or last column directly with transactional reveal.
+- Reorders the active whole column left, right, first, or last inside one settled context while keeping focus unchanged.
 - Resizes the active whole column within grouped window constraints, cycles presets, toggles full width, centers it, and retries waiting capacity after a successful shrink.
 - Focuses vertical stack members; reorders, merges, and extracts them while preserving KWin focus.
 - Resolves directional output neighbors from logical output geometry and transfers the active column atomically between contexts; secondary actions transfer one tiled window.
@@ -92,7 +93,7 @@ RuntimeState
 - Read usable geometry from KWin work areas; never infer panel bounds.
 - Apply a context only when its desktop is visible on its output.
 - Keep focus commands inside the active window's context.
-- Keep column-reorder commands inside the active context and roll back the model if geometry application cannot complete.
+- Keep adjacent and direct-edge column reorders inside the active context and roll back the exact model order if geometry application cannot complete.
 - Apply active-column width changes transactionally, preserving focus, grouping, and the prior width on failure.
 - Apply stack edits with compare-and-swap model rollback and exact compensating frame writes after partial failure.
 - Resolve direct stack insertion inside the active context, skipping singleton columns without wrapping and preserving every intermediate column.
@@ -137,7 +138,7 @@ RuntimeState
 - Test reconcile output for minimality and idempotence.
 - Replay window lifecycle and output or desktop transfer sequences.
 - Verify window-state ownership, cancellation races, stable resumption, and slot reservation.
-- Verify active-column reorder, 10% adjustments, preset cycling, full width, centering, constraint bounds, and transactional rollback.
+- Verify adjacent and direct-edge active-column reorder, 10% adjustments, preset cycling, full width, centering, constraint bounds, and transactional rollback.
 - Verify decorated client-to-frame constraint translation and conservative handling of malformed bounds.
 - Verify automatic KWin ownership, command no-ops, late role changes, manual-floating separation, and safe readmission.
 - Verify vertical focus, member reorder, contextual merge and extraction, suspended members, and structural rollback.

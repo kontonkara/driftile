@@ -59,7 +59,7 @@ Driftile must integrate with, not duplicate:
 - A command cannot mutate an unrelated context.
 - No layout write occurs while a topology snapshot is unsettled.
 - Focusing a managed window makes it fully visible with the smallest required scroll.
-- Reordering moves one whole active column inside its context without changing focus or widths.
+- Reordering moves one whole active column left, right, first, or last inside its context without changing focus or widths.
 - Resizing changes one whole active column, translates client limits to decorated frame bounds, respects every member's width constraints, and preserves focus and grouping.
 - Horizontal window movement merges a singleton into its neighbor or extracts a stacked member into a new adjacent singleton column.
 - Merge preserves the destination width; extraction copies the source width; both preserve focus and member order.

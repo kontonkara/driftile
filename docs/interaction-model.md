@@ -5,13 +5,14 @@ Driftile uses one keyboard grammar and does not wrap at layout boundaries:
 - `Meta` focuses in a direction.
 - Adding `Ctrl` moves the focused window or column in that direction.
 - Adding `Shift` to a monitor direction targets another output.
+- `Home/End` focus the first or last column; adding `Ctrl` moves the active column to that edge.
 - `U/I` address the next and previous virtual desktop.
 
 ## Delivery contract
 
 | Area                 | Required behavior                                                                                        | Target    |
 | -------------------- | -------------------------------------------------------------------------------------------------------- | --------- |
-| Horizontal strip     | Focus and reorder columns; focus or move to first and last; reveal with minimal scrolling                | MVP       |
+| Horizontal strip     | Focus and reorder columns; focus or move to first and last; reveal with minimal scrolling                | Available |
 | Vertical column      | Focus and reorder members; consume or expel a member on either side                                      | Available |
 | Column view          | Cycle `1/3`, `1/2`, and `2/3` widths in both directions; adjust by 10%; toggle full width; center        | Available |
 | Advanced column view | Fill available width and center all visible columns                                                      | MVP       |
