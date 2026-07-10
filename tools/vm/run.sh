@@ -82,7 +82,7 @@ monitor_guest() {
     [plus]=false
   )
 
-  for ((attempt = 0; attempt < 600; attempt += 1)); do
+  for ((attempt = 0; attempt < 1200; attempt += 1)); do
     for key_name in minus equal plus; do
       key_ready_file="$temporary_directory/xchg/driftile-key-test-$key_name-ready"
       key_sent_file="$temporary_directory/xchg/driftile-key-test-$key_name-sent"
@@ -108,9 +108,9 @@ monitor_guest() {
       fi
 
       if [[ "$(<"$focus_file")" == true ]]; then
-        printf 'The VM verified physical shortcut routing, dynamic desktop lifecycle, desktop and output transfers, automatic and manual floating, focus, direct stack insertion, stack editing, column resizing, and viewport scrolling.\n'
+        printf 'The VM verified physical shortcut routing, borderless ownership, dynamic desktops, transfers, floating, focus, stack editing, sizing, scrolling, and Firefox, KDE Calculator, and XWayland xterm lifecycles.\n'
       else
-        printf 'The VM failed to verify physical shortcut routing, dynamic desktop lifecycle, desktop and output transfers, automatic and manual floating, focus, direct stack insertion, stack editing, column resizing, and viewport scrolling.\n' >&2
+        printf 'The VM failed to verify physical shortcut routing, borderless ownership, dynamic desktops, transfers, floating, focus, stack editing, sizing, scrolling, or the real-application lifecycle pool.\n' >&2
         failed=true
 
         if [[ -f "$diagnostics_file" ]]; then
@@ -130,7 +130,7 @@ monitor_guest() {
     sleep 0.2
   done
 
-  printf 'The VM did not report Driftile status within 120 seconds.\n' >&2
+  printf 'The VM did not report Driftile status within 240 seconds.\n' >&2
   stop_vm || true
   return 1
 }

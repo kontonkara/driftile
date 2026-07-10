@@ -8,6 +8,34 @@ let
   pluginId = "io.github.kontonkara.driftile";
   demoClient = ../tools/integration/client.qml;
   fixedSizeClient = ../tools/integration/fixed-size-client.qml;
+  firefoxPage = pkgs.writeText "driftile-vm-firefox.html" ''
+    <!doctype html>
+    <html lang="en">
+      <head>
+        <meta charset="utf-8">
+        <title>Driftile VM Firefox</title>
+      </head>
+      <body>
+        <h1>Driftile Firefox acceptance window</h1>
+      </body>
+    </html>
+  '';
+  firefoxPreferences = pkgs.writeText "driftile-vm-firefox-user.js" ''
+    user_pref("app.normandy.enabled", false);
+    user_pref("app.shield.optoutstudies.enabled", false);
+    user_pref("app.update.auto", false);
+    user_pref("browser.newtabpage.enabled", false);
+    user_pref("browser.shell.checkDefaultBrowser", false);
+    user_pref("browser.startup.firstrunSkipsHomepage", true);
+    user_pref("browser.startup.homepage_override.mstone", "ignore");
+    user_pref("browser.startup.page", 0);
+    user_pref("datareporting.healthreport.uploadEnabled", false);
+    user_pref("datareporting.policy.dataSubmissionEnabled", false);
+    user_pref("extensions.update.enabled", false);
+    user_pref("network.captive-portal-service.enabled", false);
+    user_pref("network.connectivity-service.enabled", false);
+    user_pref("toolkit.telemetry.reportingpolicy.firstRun", false);
+  '';
   demo = pkgs.writeShellApplication {
     name = "driftile-demo";
     runtimeInputs = [
@@ -17,6 +45,7 @@ let
       pkgs.kdePackages.libkscreen
       pkgs.kdePackages.qtdeclarative
       pkgs.systemd
+      pkgs.xprop
     ];
     text = ''
       window_match_id() {
@@ -108,6 +137,83 @@ let
 
         for ((attempt = 0; attempt < 100; attempt += 1)); do
           if window_is_active "$title"; then
+            return 0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      window_match_id_contains() {
+        local needle=$1
+
+        busctl --user --json=short call \
+          org.kde.KWin \
+          /WindowsRunner \
+          org.kde.krunner1 \
+          Match \
+          s "$needle" 2>/dev/null \
+          | jq --exit-status --raw-output --arg needle "$needle" '
+            [
+              .data[0][]
+              | select(
+                  (.[1] | sub(" \\[active\\]$"; ""))
+                  | contains($needle)
+                )
+            ]
+            | unique_by(.[0])
+            | select(length == 1)
+            | .[0][0]
+          '
+      }
+
+      window_id_contains() {
+        local match_id
+
+        match_id=$(window_match_id_contains "$1") || return 1
+        printf '%s' "''${match_id#*_}"
+      }
+
+      window_info_contains() {
+        local id
+
+        id=$(window_id_contains "$1") || return 1
+        busctl --user --json=short call \
+          org.kde.KWin \
+          /KWin \
+          org.kde.KWin \
+          getWindowInfo \
+          s "$id" 2>/dev/null
+      }
+
+      wait_for_window_query() {
+        local result_variable=$1
+        shift
+        local attempt
+        local query
+
+        for ((attempt = 0; attempt < 200; attempt += 1)); do
+          for query in "$@"; do
+            if window_match_id_contains "$query" >/dev/null; then
+              printf -v "$result_variable" '%s' "$query"
+              return 0
+            fi
+          done
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      wait_for_window_gone_contains() {
+        local attempt
+        local query=$1
+
+        for ((attempt = 0; attempt < 200; attempt += 1)); do
+          if ! window_match_id_contains "$query" >/dev/null 2>&1; then
             return 0
           fi
 
@@ -422,8 +528,153 @@ let
               ]
             | select(map(type == "number") | all)
             | map(round | tostring)
+              | join(",")
+          '
+      }
+
+      window_frame_contains() {
+        window_info_contains "$1" \
+          | jq --exit-status --raw-output '
+            .data[0] as $window
+            | [
+                $window.x.data,
+                $window.y.data,
+                $window.width.data,
+                $window.height.data
+              ]
+            | select(map(type == "number") | all)
+            | map(round | tostring)
             | join(",")
           '
+      }
+
+      window_frame_width_contains() {
+        window_info_contains "$1" \
+          | jq --exit-status --raw-output \
+            '.data[0].width.data | select(type == "number") | round | tostring'
+      }
+
+      real_window_identity_matches() {
+        local expected=$2
+
+        window_info_contains "$1" \
+          | jq --exit-status --arg expected "$expected" '
+            .data[0] as $window
+            | [
+                $window.resourceClass.data?,
+                $window.resourceName.data?,
+                $window.desktopFile.data?
+              ]
+            | map(select(type == "string") | ascii_downcase)
+            | if length == 0 then
+                true
+              else
+                any(.[]; contains($expected))
+              end
+          ' >/dev/null
+      }
+
+      real_window_is_normal() {
+        window_info_contains "$1" \
+          | jq --exit-status '.data[0].type.data == 0' >/dev/null
+      }
+
+      x11_window_match_count() {
+        local client_list
+        local display="''${DISPLAY:-:0}"
+        local expected_identity=$2
+        local id
+        local matches=0
+        local class_properties
+        local query=$1
+        local title_properties
+
+        client_list=$(
+          xprop -display "$display" -root _NET_CLIENT_LIST 2>/dev/null
+        ) || return 1
+
+        while IFS= read -r id; do
+          [[ -n "$id" ]] || continue
+          title_properties=$(
+            xprop -display "$display" -id "$id" \
+              _NET_WM_NAME WM_NAME 2>/dev/null \
+              || true
+          )
+          class_properties=$(
+            xprop -display "$display" -id "$id" WM_CLASS 2>/dev/null \
+              || true
+          )
+
+          if [[ "$title_properties" == *"$query"* ]] \
+            && grep --fixed-strings --ignore-case --quiet \
+              -- "$expected_identity" <<< "$class_properties"; then
+            matches=$((matches + 1))
+          fi
+        done < <(
+          grep --only-matching --extended-regexp \
+            '0x[0-9a-fA-F]+' <<< "$client_list" \
+            || true
+        )
+
+        printf '%s' "$matches"
+      }
+
+      real_window_protocol_matches() {
+        local attempt
+        local expected_x11=$3
+        local matches
+        local stable_samples=0
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          matches=$(x11_window_match_count "$1" "$2") || return 1
+
+          if { [[ "$expected_x11" == true ]] && ((matches == 1)); } \
+            || { [[ "$expected_x11" == false ]] && ((matches == 0)); }; then
+            stable_samples=$((stable_samples + 1))
+          else
+            stable_samples=0
+          fi
+
+          if ((stable_samples >= 3)); then
+            return 0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      real_window_border_state() {
+        window_info_contains "$1" \
+          | jq --exit-status --raw-output '
+            .data[0].noBorder.data? as $noBorder
+            | if ($noBorder | type) == "boolean" then
+                ($noBorder | tostring)
+              else
+                "unavailable"
+              end
+          '
+      }
+
+      wait_for_real_window_borderless() {
+        local attempt
+        local state
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          state=$(real_window_border_state "$1" 2>/dev/null) || {
+            sleep 0.1
+            continue
+          }
+
+          if [[ "$state" == true ]]; then
+            return 0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
       }
 
       window_frame_respects_fixed_client() {
@@ -465,6 +716,37 @@ let
 
         for ((attempt = 0; attempt < 100; attempt += 1)); do
           current=$(window_frame "$1" 2>/dev/null || true)
+
+          if frame_is_valid "$current" && [[ "$current" == "$previous" ]]; then
+            stable_samples=$((stable_samples + 1))
+          elif frame_is_valid "$current"; then
+            stable_samples=1
+          else
+            stable_samples=0
+          fi
+
+          previous=$current
+
+          if ((stable_samples >= 2)); then
+            printf '%s' "$current"
+            return 0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      capture_stable_window_frame_contains() {
+        local attempt
+        local current
+        local previous=""
+        local query=$1
+        local stable_samples=0
+
+        for ((attempt = 0; attempt < 200; attempt += 1)); do
+          current=$(window_frame_contains "$query" 2>/dev/null || true)
 
           if frame_is_valid "$current" && [[ "$current" == "$previous" ]]; then
             stable_samples=$((stable_samples + 1))
@@ -1415,6 +1697,271 @@ let
           >/dev/null
       }
 
+      wait_for_real_window_width() {
+        local attempt
+        local comparison=$2
+        local current
+        local query=$1
+        local reference=$3
+        local stable_samples=0
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          current=$(window_frame_width_contains "$query" 2>/dev/null || true)
+
+          if [[ "$current" =~ ^[1-9][0-9]*$ ]]; then
+            case "$comparison" in
+              equal)
+                ((current == reference)) && stable_samples=$((stable_samples + 1)) \
+                  || stable_samples=0
+                ;;
+              less)
+                ((current < reference)) && stable_samples=$((stable_samples + 1)) \
+                  || stable_samples=0
+                ;;
+              *)
+                return 1
+                ;;
+            esac
+          else
+            stable_samples=0
+          fi
+
+          if ((stable_samples >= 2)); then
+            return 0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      record_real_application_state() {
+        local border_state
+        local label=$1
+        local query=$2
+
+        border_state=$(real_window_border_state "$query" 2>/dev/null || printf unavailable)
+
+        {
+          printf '\n[%s]\n' "$label"
+          printf 'query: %s\n' "$query"
+          printf 'frame: %s\n' \
+            "$(window_frame_contains "$query" 2>/dev/null || printf missing)"
+          printf 'borderless: %s\n' "$border_state"
+          printf 'window info: '
+          window_info_contains "$query" 2>/dev/null \
+            | jq --compact-output '
+                .data[0] as $window
+                | {
+                    caption: $window.caption.data?,
+                    desktopFile: $window.desktopFile.data?,
+                    noBorder: $window.noBorder.data?,
+                    resourceClass: $window.resourceClass.data?,
+                    resourceName: $window.resourceName.data?,
+                    type: $window.type.data?,
+                    x11Client: $window.x11Client.data?,
+                    xwayland: $window.xwayland.data?
+                  }
+              ' || true
+        } >> /tmp/shared/driftile-focus-diagnostics
+      }
+
+      record_real_application_failure() {
+        local expected_identity=$4
+        local expected_x11=$5
+        local label=$1
+        local query=$2
+        local step=$3
+        local x11_matches
+
+        x11_matches=$(
+          x11_window_match_count "$query" "$expected_identity" 2>/dev/null \
+            || printf unavailable
+        )
+
+        {
+          printf '\n[%s acceptance failed]\n' "$label"
+          printf 'step: %s\n' "$step"
+          printf 'expected identity: %s\n' "$expected_identity"
+          printf 'expected X11: %s\n' "$expected_x11"
+          printf 'matching X11 windows: %s\n' "$x11_matches"
+        } >> /tmp/shared/driftile-focus-diagnostics
+        record_real_application_state "$label acceptance state" "$query"
+      }
+
+      verify_real_application_window() {
+        local expected_identity=$3
+        local expected_x11=$4
+        local frame
+        local initial_width
+        local label=$1
+        local query=$2
+
+        if ! invoke_shortcut "driftile_focus_column_right"; then
+          record_real_application_failure \
+            "$label" "$query" "initial focus-right shortcut" \
+            "$expected_identity" "$expected_x11"
+          return 1
+        fi
+
+        if ! real_window_is_normal "$query"; then
+          record_real_application_failure \
+            "$label" "$query" "normal-window classification" \
+            "$expected_identity" "$expected_x11"
+          return 1
+        fi
+
+        if ! real_window_identity_matches "$query" "$expected_identity"; then
+          record_real_application_failure \
+            "$label" "$query" identity "$expected_identity" "$expected_x11"
+          return 1
+        fi
+
+        if ! real_window_protocol_matches \
+          "$query" "$expected_identity" "$expected_x11"; then
+          record_real_application_failure \
+            "$label" "$query" protocol "$expected_identity" "$expected_x11"
+          return 1
+        fi
+
+        if ! wait_for_real_window_borderless "$query"; then
+          record_real_application_failure \
+            "$label" "$query" "borderless state" "$expected_identity" "$expected_x11"
+          return 1
+        fi
+
+        if ! frame=$(capture_stable_window_frame_contains "$query"); then
+          record_real_application_failure \
+            "$label" "$query" "stable frame" "$expected_identity" "$expected_x11"
+          return 1
+        fi
+        IFS=, read -r _ _ initial_width _ <<< "$frame"
+        if [[ ! "$initial_width" =~ ^[1-9][0-9]*$ ]]; then
+          record_real_application_failure \
+            "$label" "$query" "initial width" "$expected_identity" "$expected_x11"
+          return 1
+        fi
+
+        if ! invoke_shortcut "driftile_decrease_column_width"; then
+          record_real_application_failure \
+            "$label" "$query" "decrease-width shortcut" \
+            "$expected_identity" "$expected_x11"
+          return 1
+        fi
+
+        if ! wait_for_real_window_width "$query" less "$initial_width"; then
+          record_real_application_failure \
+            "$label" "$query" "decreased width" "$expected_identity" "$expected_x11"
+          return 1
+        fi
+
+        if ! invoke_shortcut "driftile_reset_column_width"; then
+          record_real_application_failure \
+            "$label" "$query" "reset-width shortcut" \
+            "$expected_identity" "$expected_x11"
+          return 1
+        fi
+
+        if ! wait_for_real_window_width "$query" equal "$initial_width"; then
+          record_real_application_failure \
+            "$label" "$query" "reset width" "$expected_identity" "$expected_x11"
+          return 1
+        fi
+
+        if ! invoke_shortcut "driftile_focus_column_left"; then
+          record_real_application_failure \
+            "$label" "$query" "focus-left shortcut" \
+            "$expected_identity" "$expected_x11"
+          return 1
+        fi
+
+        if ! wait_for_active "$title_c"; then
+          record_real_application_failure \
+            "$label" "$query" "left focus target" "$expected_identity" "$expected_x11"
+          return 1
+        fi
+
+        if ! invoke_shortcut "driftile_focus_column_right"; then
+          record_real_application_failure \
+            "$label" "$query" "focus-right shortcut" \
+            "$expected_identity" "$expected_x11"
+          return 1
+        fi
+
+        if ! invoke_shortcut "driftile_decrease_column_width"; then
+          record_real_application_failure \
+            "$label" "$query" "right-target resize shortcut" \
+            "$expected_identity" "$expected_x11"
+          return 1
+        fi
+
+        if ! wait_for_real_window_width "$query" less "$initial_width"; then
+          record_real_application_failure \
+            "$label" "$query" "right focus target" "$expected_identity" "$expected_x11"
+          return 1
+        fi
+
+        if ! invoke_shortcut "driftile_reset_column_width"; then
+          record_real_application_failure \
+            "$label" "$query" "final reset-width shortcut" \
+            "$expected_identity" "$expected_x11"
+          return 1
+        fi
+
+        if ! wait_for_real_window_width "$query" equal "$initial_width"; then
+          record_real_application_failure \
+            "$label" "$query" "final reset width" "$expected_identity" "$expected_x11"
+          return 1
+        fi
+
+        record_real_application_state "$label tiled, focused, and resized" "$query"
+      }
+
+      terminate_process() {
+        local attempt
+        local pid=$1
+        local status
+
+        kill "$pid" >/dev/null 2>&1 || true
+
+        for ((attempt = 0; attempt < 50; attempt += 1)); do
+          if [[ -r "/proc/$pid/stat" ]]; then
+            status=$(<"/proc/$pid/stat")
+          else
+            status=""
+          fi
+
+          if ! kill -0 "$pid" >/dev/null 2>&1 || [[ "$status" == *") Z "* ]]; then
+            wait "$pid" >/dev/null 2>&1 || true
+            return 0
+          fi
+
+          sleep 0.1
+        done
+
+        kill -KILL "$pid" >/dev/null 2>&1 || true
+        wait "$pid" >/dev/null 2>&1 || true
+      }
+
+      close_real_application_and_restore() {
+        local baseline_first=$3
+        local baseline_second=$4
+        local baseline_third=$5
+        local pid=$2
+        local query=$1
+
+        terminate_process "$pid"
+
+        wait_for_window_gone_contains "$query" \
+          && activate_window "$title_c" \
+          && wait_for_active "$title_c" \
+          && wait_for_frames \
+            "$baseline_first" \
+            "$baseline_second" \
+            "$baseline_third"
+      }
+
       record_focus_state() {
         local label=$1
 
@@ -1516,12 +2063,13 @@ let
         second_frame=$stable_second_frame
         third_frame=$stable_third_frame
 
-        qml -f ${fixedSizeClient} -- "$fixed_title" &
+        qml ${fixedSizeClient} -- "$fixed_title" &
         fixed_window=$!
 
         if wait_for_window "$fixed_title" \
           && activate_window "$fixed_title" \
           && wait_for_active "$fixed_title" \
+          && wait_for_real_window_borderless "$fixed_title" \
           && fixed_frame=$(capture_stable_window_frame "$fixed_title") \
           && window_frame_respects_fixed_client "$fixed_title" 360 240 \
           && wait_for_automatic_floating_frames \
@@ -1586,6 +2134,7 @@ let
         local baseline_first_width
         local baseline_second_width
         local baseline_third_width
+        local border_query
         local desktop_source_width
         local desktop_window
         local direct_insert_verified
@@ -1626,6 +2175,15 @@ let
           record_focus_state "initial topology did not settle"
           return 1
         fi
+
+        for border_query in "$title_a" "$title_b" "$title_c"; do
+          if ! wait_for_real_window_borderless "$border_query"; then
+            record_real_application_state \
+              "Initial application borderless check failed" \
+              "$border_query"
+            return 1
+          fi
+        done
 
         record_focus_state "windows ready"
 
@@ -1775,6 +2333,7 @@ let
             "$singleton_first_frame" \
             "$singleton_second_frame" \
             "$singleton_third_frame" \
+          && wait_for_real_window_borderless "$title_b" \
           && wait_for_active "$title_b" \
           || return 1
         floating_first_frame=$stable_first_frame
@@ -1787,6 +2346,7 @@ let
             "$singleton_first_frame" \
             "$singleton_second_frame" \
             "$singleton_third_frame" \
+          && wait_for_real_window_borderless "$title_b" \
           && wait_for_active "$title_b" \
           || return 1
         record_focus_state "window B restored to its tiled column"
@@ -1812,7 +2372,7 @@ let
         fi
 
         set_current_desktop "$secondary_desktop_id" || return 1
-        qml -f ${demoClient} -- --mark-active "$title_desktop_destination" &
+        qml ${demoClient} -- --mark-active "$title_desktop_destination" &
         desktop_window=$!
 
         wait_for_window "$title_desktop_destination" \
@@ -1951,7 +2511,7 @@ let
           || return 1
         record_focus_state "window C activated before direct insertion"
 
-        qml -f ${demoClient} -- --mark-active "$title_d" &
+        qml ${demoClient} -- --mark-active "$title_d" &
         fourth_window=$!
         direct_insert_verified=false
 
@@ -1996,6 +2556,7 @@ let
             "$floating_first_frame" \
             "$floating_second_frame" \
             "$floating_third_frame" \
+          && wait_for_real_window_borderless "$title_b" \
           && wait_for_active "$title_b" \
           || return 1
         record_focus_state "window B floated from the left stack"
@@ -2005,6 +2566,7 @@ let
             "$merged_first_frame" \
             "$merged_second_frame" \
             "$merged_third_frame" \
+          && wait_for_real_window_borderless "$title_b" \
           && wait_for_active "$title_b" \
           || return 1
         record_focus_state "window B restored to the left stack"
@@ -2142,6 +2704,177 @@ let
         return 1
       }
 
+      verify_real_applications() {
+        local baseline_first
+        local baseline_second
+        local baseline_third
+        local calculator_pid
+        local calculator_query=""
+        local calculator_title="Driftile VM KDE Calculator"
+        local firefox_pid
+        local firefox_profile
+        local firefox_query=""
+        local firefox_title="Driftile VM Firefox"
+        local xterm_pid
+        local xterm_query=""
+        local xterm_title="Driftile VM XWayland Terminal"
+
+        activate_window "$title_c" \
+          && wait_for_active "$title_c" \
+          && capture_stable_frames \
+          || return 1
+        baseline_first=$stable_first_frame
+        baseline_second=$stable_second_frame
+        baseline_third=$stable_third_frame
+        firefox_profile=$(mktemp -d -t driftile-firefox.XXXXXXXXXX) || return 1
+        cp ${firefoxPreferences} "$firefox_profile/user.js" || return 1
+
+        env \
+          MOZ_CRASHREPORTER_DISABLE=1 \
+          MOZ_DATA_REPORTING=0 \
+          MOZ_ENABLE_WAYLAND=1 \
+          ${pkgs.firefox}/bin/firefox \
+          --new-instance \
+          --no-remote \
+          --profile "$firefox_profile" \
+          --new-window "file://${firefoxPage}" \
+          >/tmp/driftile-vm-firefox.log 2>&1 &
+        firefox_pid=$!
+
+        if ! wait_for_window_query firefox_query "$firefox_title"; then
+          terminate_process "$firefox_pid"
+          rm -rf "$firefox_profile"
+          record_focus_state "Firefox window discovery failed"
+          return 1
+        fi
+
+        if ! verify_real_application_window \
+          "Firefox" \
+          "$firefox_query" \
+          firefox \
+          false; then
+          record_real_application_state "Firefox acceptance failed" "$firefox_query"
+          close_real_application_and_restore \
+            "$firefox_query" \
+            "$firefox_pid" \
+            "$baseline_first" \
+            "$baseline_second" \
+            "$baseline_third" \
+            || true
+          rm -rf "$firefox_profile"
+          return 1
+        fi
+
+        close_real_application_and_restore \
+          "$firefox_query" \
+          "$firefox_pid" \
+          "$baseline_first" \
+          "$baseline_second" \
+          "$baseline_third" \
+          || return 1
+        rm -rf "$firefox_profile"
+        record_focus_state "Firefox closed and the tiled layout reflowed"
+
+        activate_window "$title_c" \
+          && wait_for_active "$title_c" \
+          && capture_stable_frames \
+          || return 1
+        baseline_first=$stable_first_frame
+        baseline_second=$stable_second_frame
+        baseline_third=$stable_third_frame
+
+        env QT_QPA_PLATFORM=wayland \
+          ${pkgs.kdePackages.kcalc}/bin/kcalc \
+          --qwindowtitle "$calculator_title" \
+          >/tmp/driftile-vm-kcalc.log 2>&1 &
+        calculator_pid=$!
+
+        if ! wait_for_window_query \
+          calculator_query \
+          "$calculator_title" \
+          KCalc; then
+          terminate_process "$calculator_pid"
+          record_focus_state "KDE Calculator window discovery failed"
+          return 1
+        fi
+
+        if ! verify_real_application_window \
+          "KDE Calculator" \
+          "$calculator_query" \
+          kcalc \
+          false; then
+          record_real_application_state \
+            "KDE Calculator acceptance failed" \
+            "$calculator_query"
+          close_real_application_and_restore \
+            "$calculator_query" \
+            "$calculator_pid" \
+            "$baseline_first" \
+            "$baseline_second" \
+            "$baseline_third" \
+            || true
+          return 1
+        fi
+
+        close_real_application_and_restore \
+          "$calculator_query" \
+          "$calculator_pid" \
+          "$baseline_first" \
+          "$baseline_second" \
+          "$baseline_third" \
+          || return 1
+        record_focus_state "KDE Calculator closed and the tiled layout reflowed"
+
+        activate_window "$title_c" \
+          && wait_for_active "$title_c" \
+          && capture_stable_frames \
+          || return 1
+        baseline_first=$stable_first_frame
+        baseline_second=$stable_second_frame
+        baseline_third=$stable_third_frame
+
+        DISPLAY="''${DISPLAY:-:0}" \
+          ${pkgs.xterm}/bin/xterm \
+          -T "$xterm_title" \
+          -class DriftileXTerm \
+          -e ${pkgs.coreutils}/bin/sleep 300 \
+          >/tmp/driftile-vm-xterm.log 2>&1 &
+        xterm_pid=$!
+
+        if ! wait_for_window_query xterm_query "$xterm_title"; then
+          terminate_process "$xterm_pid"
+          record_focus_state "XWayland terminal window discovery failed"
+          return 1
+        fi
+
+        if ! verify_real_application_window \
+          "XWayland terminal" \
+          "$xterm_query" \
+          xterm \
+          true; then
+          record_real_application_state \
+            "XWayland terminal acceptance failed" \
+            "$xterm_query"
+          close_real_application_and_restore \
+            "$xterm_query" \
+            "$xterm_pid" \
+            "$baseline_first" \
+            "$baseline_second" \
+            "$baseline_third" \
+            || true
+          return 1
+        fi
+
+        close_real_application_and_restore \
+          "$xterm_query" \
+          "$xterm_pid" \
+          "$baseline_first" \
+          "$baseline_second" \
+          "$baseline_third" \
+          || return 1
+        record_focus_state "XWayland terminal closed and the tiled layout reflowed"
+      }
+
       loaded=false
 
       for _ in $(seq 1 200); do
@@ -2189,7 +2922,7 @@ let
       fourth_window=""
       : > /tmp/shared/driftile-focus-diagnostics
 
-      qml -f ${demoClient} -- --mark-active "$title_a" &
+      qml ${demoClient} -- --mark-active "$title_a" &
       first_window=$!
 
       wait_for_window "$title_a" \
@@ -2197,7 +2930,7 @@ let
         && wait_for_active "$title_a" \
         || true
 
-      qml -f ${demoClient} -- --mark-active "$title_b" &
+      qml ${demoClient} -- --mark-active "$title_b" &
       second_window=$!
 
       wait_for_window "$title_b" \
@@ -2205,14 +2938,15 @@ let
         && wait_for_active "$title_b" \
         || true
 
-      qml -f ${demoClient} -- --mark-active "$title_c" &
+      qml ${demoClient} -- --mark-active "$title_c" &
       third_window=$!
 
       focus_verified=false
 
       if [[ "$loaded" == true && "$desktops_ready" == true ]] \
         && verify_focus \
-        && verify_physical_width_shortcuts; then
+        && verify_physical_width_shortcuts \
+        && verify_real_applications; then
         focus_verified=true
       fi
 
