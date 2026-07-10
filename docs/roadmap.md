@@ -41,6 +41,7 @@ The current runtime already:
 - Preserves a deterministic layout order across structural output changes.
 - Invalidates stale restore baselines without reviving them when old geometry returns.
 - Parks deterministic whole columns when a new multi-output capacity limit no longer fits, preferring non-active columns, then retries waiting windows.
+- Reorders the active whole column left or right with context-local shortcuts and transactional geometry rollback.
 
 Physical connector hot-plug and a wider rotation matrix remain MVP hardening work.
 
@@ -49,7 +50,7 @@ Physical connector hot-plug and a wider rotation matrix remain MVP hardening wor
 Complete the daily keyboard-driven workflow.
 
 - Manage every output and desktop independently.
-- Add vertical stacks, movement, column resizing, and floating toggles.
+- Add vertical stack editing, window movement between stacks, column resizing, and floating toggles.
 - Support explicit transfers between outputs and desktops.
 - Integrate dialogs, floating windows, and remaining size constraints.
 - Harden the existing topology recovery for rotation, rapid physical hot-plug sequences, and more hardware configurations.

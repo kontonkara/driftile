@@ -57,6 +57,7 @@ Driftile must integrate with, not duplicate:
 - A command cannot mutate an unrelated context.
 - No layout write occurs while a topology snapshot is unsettled.
 - Focusing a managed window makes it fully visible with the smallest required scroll.
+- Reordering moves one whole active column inside its context without changing focus or widths.
 - Unrelated window order, widths, and viewport offsets remain stable.
 - A changed context never restores an original frame captured under stale output geometry.
 - Capacity eviction keeps windows reachable and preserves the active column when a writable alternative exists.

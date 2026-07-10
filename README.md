@@ -4,11 +4,11 @@ A KWin extension for KDE Plasma providing scrollable tiling and dynamic workspac
 
 > Driftile is in early development and has no usable release yet.
 
-The current prototype models eligible normal windows in every existing `(output, desktop)` context and applies geometry only to the desktop visible on each output. Focus navigation stays within its context. On single-output setups, `Meta+Ctrl+H` and `Meta+Ctrl+L` reveal adjacent columns with the smallest required scroll. Fullscreen, minimized, maximized, and native-tiled windows keep their layout slot while KWin controls their geometry.
+The current prototype models eligible normal windows in every existing `(output, desktop)` context and applies geometry only to the desktop visible on each output. Focus navigation stays within its context. On single-output setups, `Meta+Ctrl+H` and `Meta+Ctrl+L` reveal adjacent columns with the smallest required scroll. `Meta+Ctrl+Shift+H` and `Meta+Ctrl+Shift+L` move the active whole column without changing focus. Fullscreen, minimized, maximized, and native-tiled windows keep their layout slot while KWin controls their geometry.
 
 Live output-list, geometry, scale, and work-area changes recover after two delayed topology snapshots agree. Output and dock signals trigger normal recovery; a two-second watchdog checks visible contexts for client-area changes that KWin does not signal. Reconfigured contexts discard stale original-frame restore baselines for the rest of the run. If a multi-output context no longer fits, Driftile parks whole columns with a reachable anchor inside the work area, preferring non-active columns, and retries them when capacity returns.
 
-Interactive layout editing, dynamic workspace creation, and persistence are not implemented yet.
+Vertical stack editing, column resizing, floating toggles, dynamic workspace creation, and persistence are not implemented yet.
 
 ## Goals
 

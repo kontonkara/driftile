@@ -31,6 +31,7 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Detects otherwise silent client-area changes by fingerprinting visible contexts only.
 - Replays structural output changes in a stable layout order independent of KWin window-signal order.
 - Invalidates stale restore ownership and revalidates multi-output capacity after topology changes.
+- Reorders the active whole column inside one settled context and keeps focus unchanged.
 - Owns startup, reconfiguration, and shutdown sequencing.
 
 ### Core
@@ -74,6 +75,7 @@ RuntimeState
 - Read usable geometry from KWin work areas; never infer panel bounds.
 - Apply a context only when its desktop is visible on its output.
 - Keep focus commands inside the active window's context.
+- Keep column-reorder commands inside the active context and roll back the model if geometry application cannot complete.
 - Allow horizontal overflow and viewport scrolling when KWin reports one output.
 - Queue a candidate window unmanaged if it would introduce overflow with multiple outputs, then retry it when that context gains capacity.
 - When a topology change invalidates existing multi-output capacity, park whole writable columns with a reachable anchor inside the work area and release them to the waiting queue. Preserve the active column when possible; choose the farthest non-active column first and the rightmost on a tie.
