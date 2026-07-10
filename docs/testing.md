@@ -18,13 +18,19 @@ npm ci
 npm run test:integration
 ```
 
-Use `npm run test:integration -- wayland` or `npm run test:integration -- x11` to select a KWin backend. The Wayland selection runs separate single-output and two-output sessions.
+Use `npm run test:integration -- wayland`, `npm run test:integration -- wayland-multi-output`, or `npm run test:integration -- x11` to select a scenario. The Wayland selection runs separate single-output and two-output sessions.
 
-Without Nix, install Bash, Node.js and npm, KWin 6.7 or newer for Wayland and X11, Xwayland, Xvfb, KPackage and KConfig tools, Qt QML tools with the Wayland and XCB platform plugins, D-Bus, `busctl` from systemd, GNU `timeout`, and `jq`. Then run the same npm command.
+Without Nix, install Bash, Node.js and npm, KWin 6.7 or newer for Wayland and X11, KScreen tools, LayerShellQt QML, Xwayland, Xvfb, `xrandr`, `xprop`, KPackage and KConfig tools, Qt QML tools with the Wayland and XCB platform plugins, D-Bus, `busctl` from systemd, GNU `timeout`, and `jq`. If LayerShellQt is outside Qt's standard import path, set `DRIFTILE_SMOKE_LAYER_SHELL_QML_IMPORT` to the directory containing `org/kde/layershell`. Then run the same npm command.
 
-The test uses temporary user and XDG directories, private D-Bus sessions, virtual Wayland outputs, and an Xvfb display. Its single-output sessions verify three-window tiling, viewport reveal, exact restoration, package removal, and slot preservation through fullscreen, minimize, and maximize transitions with native Wayland, Xwayland, and native X11 windows. Native tiling is also covered on Wayland and Xwayland. A separate two-output Wayland session verifies independent contexts, exact output-local geometry, overflow rejection, and restoration.
+The test uses temporary user and XDG directories, private D-Bus sessions, virtual Wayland outputs, and an Xvfb display. Its single-output sessions verify three-window tiling, viewport reveal, exact restoration, package removal, and slot preservation through fullscreen, minimize, and maximize transitions with native Wayland, Xwayland, and native X11 windows. Native tiling is also covered on Wayland and Xwayland. A separate two-output Wayland session verifies independent contexts, exact output-local geometry, overflow rejection, and safe unload ownership.
 
-This test does not cover Plasma panels, real GPUs, input, shortcuts, output hot-plugging, or native X11 multi-output layouts.
+The unit suite covers the two-sample topology barrier, output and dock invalidations, waiting-only and hidden contexts, deterministic structural merges, sticky restore invalidation, capacity eviction and retry, and stale callback cancellation.
+
+The isolated two-output Wayland scenario uses KScreen to verify scale and position changes, output disable and re-enable recovery, and stable reachable frames for native Wayland and Xwayland windows. A native layer-shell panel verifies work-area recovery.
+
+The isolated X11 scenario verifies live RandR mode changes and work-area recovery from a real EWMH dock strut.
+
+The tests do not cover Plasma's own panels, real GPUs, input, shortcuts, physical connector hot-plugging, or native X11 multi-output layouts.
 
 Set `DRIFTILE_KEEP_SMOKE_SANDBOX=1` to retain the temporary files after a run.
 

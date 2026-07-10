@@ -31,6 +31,19 @@ Exit criteria:
 - Other outputs and desktops remain untouched.
 - The runtime performs no workspace-wide periodic scans.
 
+## Recovery base
+
+The current runtime already:
+
+- Settles output and work-area event bursts behind two matching delayed snapshots.
+- Observes output-list, geometry, scale, and dock invalidations.
+- Checks visible client areas every two seconds to cover the missing complete KWin signal.
+- Preserves a deterministic layout order across structural output changes.
+- Invalidates stale restore baselines without reviving them when old geometry returns.
+- Parks deterministic whole columns when a new multi-output capacity limit no longer fits, preferring non-active columns, then retries waiting windows.
+
+Physical connector hot-plug and a wider rotation matrix remain MVP hardening work.
+
 ## MVP
 
 Complete the daily keyboard-driven workflow.
@@ -38,8 +51,8 @@ Complete the daily keyboard-driven workflow.
 - Manage every output and desktop independently.
 - Add vertical stacks, movement, column resizing, and floating toggles.
 - Support explicit transfers between outputs and desktops.
-- Integrate dialogs, floating windows, remaining size constraints, and work-area changes.
-- Recover safely from output connection, removal, scaling, and rotation.
+- Integrate dialogs, floating windows, and remaining size constraints.
+- Harden the existing topology recovery for rotation, rapid physical hot-plug sequences, and more hardware configurations.
 - Maintain a trailing empty desktop with guarded removal.
 - Register configurable shortcuts and essential layout settings.
 

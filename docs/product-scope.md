@@ -18,8 +18,10 @@ The ownership rule is strict:
 - Managed, floating, and ignored window states.
 - Output-local commands unless a transfer is explicit.
 - Work-area, size-constraint, fullscreen, minimized, dialog, and hot-plug handling.
+- Settled recovery for output-list, geometry, scale, and work-area changes.
+- Deterministic multi-output capacity eviction with reachable waiting windows and automatic retry.
 - One trailing empty workspace per output, with conservative creation and removal.
-- Event-driven, incremental reconciliation with no workspace-wide scans.
+- Event-driven, incremental reconciliation; only visible context geometry is checked periodically, while a settled structural output change permits one bounded workspace resynchronization.
 
 ## Later
 
@@ -53,7 +55,10 @@ Driftile must integrate with, not duplicate:
 
 - A managed window has exactly one layout context and one geometry owner.
 - A command cannot mutate an unrelated context.
+- No layout write occurs while a topology snapshot is unsettled.
 - Focusing a managed window makes it fully visible with the smallest required scroll.
 - Unrelated window order, widths, and viewport offsets remain stable.
+- A changed context never restores an original frame captured under stale output geometry.
+- Capacity eviction keeps windows reachable and preserves the active column when a writable alternative exists.
 - Occupied or visible virtual desktops are never removed.
 - Special and all-desktop windows are never tiled.
