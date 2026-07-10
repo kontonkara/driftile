@@ -8,7 +8,11 @@ import {
   type OutputId,
   type WindowId,
 } from "./core/ids";
-import { LayoutEngine, type ColumnWidth } from "./core/layout-engine";
+import {
+  LayoutEngine,
+  type ColumnWidth,
+  type HorizontalDirection,
+} from "./core/layout-engine";
 import { diffWindowGeometries } from "./core/reconcile";
 import type {
   KWinOutput,
@@ -22,6 +26,7 @@ import {
   type KWinRectFactory,
 } from "./platform/kwin/geometry-adapter";
 import {
+  normalizeWindow,
   WindowObserver,
   type ObservedWindow,
 } from "./platform/kwin/window-observer";
@@ -95,6 +100,14 @@ export class RuntimeController {
     return this.managedWindows.size;
   }
 
+  focusLeft(): boolean {
+    return this.focusAdjacent("left");
+  }
+
+  focusRight(): boolean {
+    return this.focusAdjacent("right");
+  }
+
   start(): boolean {
     if (this.started) {
       return true;
@@ -108,6 +121,7 @@ export class RuntimeController {
 
     try {
       this.started = true;
+      this.workspace.windowActivated.connect(this.handleWindowActivated);
       this.initializing = true;
 
       try {
@@ -116,6 +130,7 @@ export class RuntimeController {
         this.initializing = false;
       }
 
+      this.handleWindowActivated(this.workspace.activeWindow);
       this.reconcile();
       return true;
     } catch (error) {
@@ -132,6 +147,7 @@ export class RuntimeController {
     this.restoreOriginalFrames();
     this.started = false;
     this.reconcileScheduled = false;
+    this.workspace.windowActivated.disconnect(this.handleWindowActivated);
     this.observer.stop();
     this.layout = new LayoutEngine();
     this.managedWindows.clear();
@@ -235,6 +251,66 @@ export class RuntimeController {
       this.scheduleReconcile();
     }
   };
+
+  private readonly handleWindowActivated = (
+    window: KWinWindow | null,
+  ): void => {
+    const context = this.context;
+
+    if (!window || !context) {
+      return;
+    }
+
+    const id = windowId(String(window.internalId));
+    const observed = normalizeWindow(window);
+
+    if (
+      observed &&
+      belongsToContext(observed, context) &&
+      this.managedWindows.has(id)
+    ) {
+      this.layout.activateWindow(id);
+    }
+  };
+
+  private focusAdjacent(direction: HorizontalDirection): boolean {
+    const activeWindow = this.workspace.activeWindow;
+    const context = this.context;
+
+    if (!this.started || !context || !activeWindow) {
+      return false;
+    }
+
+    const observedActive = normalizeWindow(activeWindow);
+
+    if (!observedActive || !belongsToContext(observedActive, context)) {
+      return false;
+    }
+
+    const targetId = this.layout.adjacentWindow(
+      windowId(String(activeWindow.internalId)),
+      direction,
+    );
+
+    if (!targetId) {
+      return false;
+    }
+
+    const target = this.observer.source(targetId);
+    const observedTarget = target ? normalizeWindow(target) : null;
+
+    if (
+      !target ||
+      !observedTarget ||
+      !belongsToContext(observedTarget, context) ||
+      !this.managedWindows.has(targetId)
+    ) {
+      return false;
+    }
+
+    this.workspace.activeWindow = target;
+    return true;
+  }
 
   private scheduleReconcile(): void {
     if (this.reconcileScheduled) {

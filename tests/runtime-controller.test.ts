@@ -106,6 +106,8 @@ function createTrackedWindow(
 }
 
 interface WorkspaceFixture {
+  readonly activationCount: number;
+  readonly windowActivated: Signal<[window: KWinWindow | null]>;
   readonly windowAdded: Signal<[window: KWinWindow]>;
   readonly windowRemoved: Signal<[window: KWinWindow]>;
   readonly workspace: KWinWorkspace;
@@ -119,27 +121,164 @@ function createWorkspace(
   windows: readonly KWinWindow[],
   perOutputDesktops = true,
 ): WorkspaceFixture {
+  const windowActivated = new Signal<[window: KWinWindow | null]>();
   const windowAdded = new Signal<[window: KWinWindow]>();
   const windowRemoved = new Signal<[window: KWinWindow]>();
+  let activationCount = 0;
+  let activeWindow = windows[windows.length - 1] ?? null;
   const desktopResolver = perOutputDesktops
     ? { currentDesktopForScreen: () => activeDesktop }
     : {};
   const workspace: KWinWorkspace = {
+    activeWindow,
     activeScreen: activeOutput,
     clientArea: () => ({ height: 800, width: 1000, x: 0, y: 0 }),
     currentDesktop: activeDesktop,
     desktops,
     screens: outputs,
     stackingOrder: windows,
+    windowActivated,
     windowAdded,
     windowRemoved,
     ...desktopResolver,
   };
+  Object.defineProperty(workspace, "activeWindow", {
+    configurable: true,
+    enumerable: true,
+    get: () => activeWindow,
+    set: (window: KWinWindow | null) => {
+      activeWindow = window;
+      activationCount += 1;
+      windowActivated.emit(window);
+    },
+  });
 
-  return { windowAdded, windowRemoved, workspace };
+  return {
+    get activationCount() {
+      return activationCount;
+    },
+    windowActivated,
+    windowAdded,
+    windowRemoved,
+    workspace,
+  };
 }
 
 describe("RuntimeController", () => {
+  it("focuses adjacent managed columns and stops at their boundaries", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const second = createTrackedWindow("window-2", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window, second.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    controller.start();
+
+    expect(fixture.workspace.activeWindow).toBe(second.window);
+    expect(controller.focusLeft()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(first.window);
+    expect(controller.focusLeft()).toBe(false);
+    expect(controller.focusRight()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(second.window);
+    expect(controller.focusRight()).toBe(false);
+    expect(fixture.activationCount).toBe(2);
+  });
+
+  it("inserts a new column after the externally activated window", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const second = createTrackedWindow("window-2", output, desktop);
+    const third = createTrackedWindow("window-3", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window, second.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "proportion", value: 0.3 },
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+
+    controller.start();
+    fixture.workspace.activeWindow = first.window;
+    fixture.windowAdded.emit(third.window);
+    scheduler.flush();
+
+    expect(controller.managedCount).toBe(3);
+    expect(controller.focusRight()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(third.window);
+  });
+
+  it("does not focus from an unmanaged active window", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const managed = createTrackedWindow("window-1", output, desktop);
+    const dialog = createTrackedWindow("dialog-1", output, desktop, {
+      dialog: true,
+      normalWindow: false,
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [managed.window, dialog.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    controller.start();
+
+    expect(controller.focusLeft()).toBe(false);
+    expect(controller.focusRight()).toBe(false);
+    expect(fixture.workspace.activeWindow).toBe(dialog.window);
+    expect(fixture.activationCount).toBe(0);
+  });
+
+  it("does not focus a managed window after it moves to another output", () => {
+    const output = createOutput("DP-1", 0);
+    const otherOutput = createOutput("HDMI-A-1", 1000);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const second = createTrackedWindow("window-2", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output, otherOutput],
+      [desktop],
+      [first.window, second.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    controller.start();
+    Object.defineProperty(first.window, "output", { value: otherOutput });
+
+    expect(controller.focusLeft()).toBe(false);
+    expect(fixture.workspace.activeWindow).toBe(second.window);
+    expect(fixture.activationCount).toBe(0);
+  });
+
   it("tiles only normal windows in the initial active context", () => {
     const output = createOutput("DP-1", 0);
     const otherOutput = createOutput("HDMI-A-1", 1000);

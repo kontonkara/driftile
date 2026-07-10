@@ -55,6 +55,58 @@ describe("LayoutEngine", () => {
     });
   });
 
+  it("tracks activation for deterministic insertion", () => {
+    const engine = new LayoutEngine();
+
+    for (const index of [1, 2, 3]) {
+      engine.manageWindow({
+        columnId: columnId(`column-${String(index)}`),
+        desktopId: desktop,
+        outputId: output,
+        width: { kind: "proportion", value: 0.25 },
+        windowId: windowId(`window-${String(index)}`),
+      });
+    }
+
+    expect(engine.activateWindow(windowId("window-1"))).toBe(true);
+    expect(engine.activateWindow(windowId("unknown"))).toBe(false);
+    engine.manageWindow({
+      columnId: columnId("column-4"),
+      desktopId: desktop,
+      outputId: output,
+      width: { kind: "proportion", value: 0.25 },
+      windowId: windowId("window-4"),
+    });
+
+    expect(
+      engine.snapshot(output, desktop).columns.map((column) => column.id),
+    ).toEqual(["column-1", "column-4", "column-2", "column-3"]);
+  });
+
+  it("finds adjacent windows without crossing context boundaries", () => {
+    const engine = new LayoutEngine();
+
+    for (const index of [1, 2, 3]) {
+      engine.manageWindow({
+        columnId: columnId(`column-${String(index)}`),
+        desktopId: desktop,
+        outputId: output,
+        width: { kind: "proportion", value: 0.33 },
+        windowId: windowId(`window-${String(index)}`),
+      });
+    }
+
+    expect(engine.adjacentWindow(windowId("window-2"), "left")).toBe(
+      "window-1",
+    );
+    expect(engine.adjacentWindow(windowId("window-2"), "right")).toBe(
+      "window-3",
+    );
+    expect(engine.adjacentWindow(windowId("window-1"), "left")).toBeNull();
+    expect(engine.adjacentWindow(windowId("window-3"), "right")).toBeNull();
+    expect(engine.adjacentWindow(windowId("unknown"), "right")).toBeNull();
+  });
+
   it("rejects duplicate window and column identifiers", () => {
     const engine = new LayoutEngine();
     const baseCommand = {

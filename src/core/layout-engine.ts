@@ -27,6 +27,8 @@ export interface ManageWindowCommand {
   readonly windowId: WindowId;
 }
 
+export type HorizontalDirection = "left" | "right";
+
 interface LayoutColumn {
   readonly id: ColumnId;
   readonly width: ColumnWidth;
@@ -87,6 +89,52 @@ export class LayoutEngine {
     });
 
     return true;
+  }
+
+  activateWindow(windowId: WindowId): boolean {
+    const placement = this.placements.get(windowId);
+
+    if (!placement) {
+      return false;
+    }
+
+    const context = this.contexts.get(placement.contextKey);
+
+    if (!context) {
+      return false;
+    }
+
+    context.activeColumnId = placement.columnId;
+    return true;
+  }
+
+  adjacentWindow(
+    windowId: WindowId,
+    direction: HorizontalDirection,
+  ): WindowId | null {
+    const placement = this.placements.get(windowId);
+
+    if (!placement) {
+      return null;
+    }
+
+    const context = this.contexts.get(placement.contextKey);
+
+    if (!context) {
+      return null;
+    }
+
+    const columnIndex = context.columns.findIndex(
+      (column) => column.id === placement.columnId,
+    );
+
+    if (columnIndex < 0) {
+      return null;
+    }
+
+    const targetIndex =
+      direction === "left" ? columnIndex - 1 : columnIndex + 1;
+    return context.columns[targetIndex]?.windowIds[0] ?? null;
   }
 
   unmanageWindow(windowId: WindowId): boolean {

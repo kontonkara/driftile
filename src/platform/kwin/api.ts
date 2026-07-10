@@ -51,11 +51,13 @@ export interface KWinWindow {
 }
 
 export interface KWinWorkspace {
+  activeWindow: KWinWindow | null;
   readonly activeScreen: KWinOutput | null;
   readonly currentDesktop: KWinVirtualDesktop | null;
   readonly desktops: readonly KWinVirtualDesktop[];
   readonly screens: readonly KWinOutput[];
   readonly stackingOrder: readonly KWinWindow[];
+  readonly windowActivated: KWinSignal<[window: KWinWindow | null]>;
   readonly windowAdded: KWinSignal<[window: KWinWindow]>;
   readonly windowRemoved: KWinSignal<[window: KWinWindow]>;
   clientArea(

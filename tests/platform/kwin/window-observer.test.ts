@@ -77,6 +77,7 @@ function createWorkspace(
   }
 
   return {
+    activeWindow: stackingOrder[stackingOrder.length - 1] ?? null,
     activeScreen: output,
     clientArea: () => ({ height: 1080, width: 1920, x: 0, y: 0 }),
     currentDesktop: desktop,
@@ -84,6 +85,7 @@ function createWorkspace(
     desktops: [desktop],
     screens: [output],
     stackingOrder,
+    windowActivated: new Signal<[window: KWinWindow | null]>(),
     windowAdded,
     windowRemoved,
   };

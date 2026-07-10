@@ -35,3 +35,11 @@ export function destroy(): void {
   controller?.stop();
   controller = undefined;
 }
+
+export function focusLeft(): void {
+  controller?.focusLeft();
+}
+
+export function focusRight(): void {
+  controller?.focusRight();
+}
