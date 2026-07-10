@@ -60,6 +60,7 @@ RuntimeState
 ## Reconciliation rules
 
 - Read usable geometry from KWin work areas; never infer panel bounds.
+- Never move overflow columns into another output's global coordinate space.
 - Respect minimum and maximum window sizes before emitting geometry.
 - Never let native tiling and Driftile write geometry for the same window.
 - Treat external focus, fullscreen, minimize, desktop, and output changes as authoritative events.

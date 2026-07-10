@@ -9,12 +9,24 @@ export interface ObservedWindow {
   readonly outputId: string;
 }
 
+export interface WindowObserverEvents {
+  readonly added?: (window: ObservedWindow) => void;
+  readonly removed?: (windowId: string) => void;
+}
+
+interface WindowEntry {
+  readonly observed: ObservedWindow;
+  readonly source: KWinWindow;
+}
+
 export class WindowObserver {
-  private readonly windows = new Map<string, ObservedWindow>();
+  private readonly events: WindowObserverEvents;
+  private readonly windows = new Map<string, WindowEntry>();
   private readonly workspace: KWinWorkspace;
   private started = false;
 
-  constructor(workspace: KWinWorkspace) {
+  constructor(workspace: KWinWorkspace, events: WindowObserverEvents = {}) {
+    this.events = events;
     this.workspace = workspace;
   }
 
@@ -48,7 +60,11 @@ export class WindowObserver {
   }
 
   snapshot(): readonly ObservedWindow[] {
-    return [...this.windows.values()];
+    return [...this.windows.values()].map((entry) => entry.observed);
+  }
+
+  source(windowId: string): KWinWindow | undefined {
+    return this.windows.get(windowId)?.source;
   }
 
   private readonly handleWindowAdded = (window: KWinWindow): void => {
@@ -56,14 +72,26 @@ export class WindowObserver {
   };
 
   private readonly handleWindowRemoved = (window: KWinWindow): void => {
-    this.windows.delete(windowId(window));
+    const id = windowId(window);
+
+    if (this.windows.delete(id)) {
+      this.events.removed?.(id);
+    }
   };
 
   private add(window: KWinWindow): void {
     const observedWindow = normalizeWindow(window);
 
     if (observedWindow) {
-      this.windows.set(observedWindow.id, observedWindow);
+      const isNew = !this.windows.has(observedWindow.id);
+      this.windows.set(observedWindow.id, {
+        observed: observedWindow,
+        source: window,
+      });
+
+      if (isNew) {
+        this.events.added?.(observedWindow);
+      }
     }
   }
 }
@@ -71,8 +99,12 @@ export class WindowObserver {
 export function normalizeWindow(window: KWinWindow): ObservedWindow | null {
   if (
     window.specialWindow ||
+    window.deleted ||
+    !window.managed ||
     window.desktopWindow ||
     window.dock ||
+    window.onAllDesktops ||
+    window.desktops.length === 0 ||
     (!window.normalWindow && !window.dialog) ||
     !window.output
   ) {

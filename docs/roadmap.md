@@ -18,7 +18,7 @@ Build one complete path through every layer.
 
 - Package and load the QML bridge and compiled TypeScript runtime.
 - Snapshot outputs, desktops, and eligible windows.
-- Model one `(output, desktop)` context with fixed-width columns.
+- Model one `(output, desktop)` context with stable per-column widths.
 - Handle add, remove, activate, focus-left, and focus-right events.
 - Produce minimal geometry updates through reconcile.
 - Add core and reconcile tests plus structured diagnostics.

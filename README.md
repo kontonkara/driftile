@@ -4,6 +4,8 @@ A KWin extension for KDE Plasma providing scrollable tiling and dynamic workspac
 
 > Driftile is in early development and has no usable release yet.
 
+The current prototype tiles eligible normal windows only in the output and desktop that are active when the script starts. It restores their original frames when stopped if the output topology is unchanged. Overflow windows remain unmanaged until a safe clipping strategy is implemented. Navigation, state transitions, recovery, and persistence are not implemented yet. Test development builds in an isolated Plasma session.
+
 ## Goals
 
 - Independent scrollable window strips for every output and virtual desktop.
