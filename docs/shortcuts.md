@@ -15,12 +15,36 @@ arrow keys are interchangeable unless noted otherwise.
 | Move active window to next or previous desktop   | `Meta+Ctrl+U/I` or `Meta+Ctrl+Page Down/Page Up`     |
 | Move active window to another output             | `Meta+Ctrl+Shift+H/J/K/L` or `Meta+Ctrl+Shift+Arrow` |
 | Toggle floating                                  | `Meta+V`                                             |
-| Decrease or increase column width                | `Meta+-` or `Meta+=`                                 |
+| Decrease or increase column width                | `Meta+-`, `Meta+=`, or `Meta++`                      |
 
 Direct insertion into the nearest existing stack and resetting a column width
 are registered without default keys because their behavior has no matching
 default gesture. Assign them in **System Settings > Keyboard > Shortcuts** if
 needed.
 
-Plasma may already own some listed sequences. Driftile never rewrites another
-component's shortcuts; resolve any conflict in the same settings page.
+Plasma already owns some listed sequences. During development, enable Driftile
+and claim the complete profile explicitly:
+
+```bash
+npm run shortcuts:claim
+npm run shortcuts:check
+```
+
+Claiming saves every displaced active assignment under `$XDG_STATE_HOME` before
+changing KGlobalAccel. Release restores unchanged assignments and preserves
+shortcuts edited after the claim:
+
+```bash
+npm run shortcuts:release
+```
+
+`npm run uninstall:dev` releases a saved profile before removing the package.
+Release it manually before disabling Driftile or uninstalling through another
+tool. Use `-- --force` with a claim or release only when replacing later manual
+edits is intentional.
+
+Release before removing the Nix package because its recovery command is shipped
+with that package.
+
+If the current source no longer builds, run the last built recovery helper
+directly: `node dist/bin/driftile-shortcuts.mjs release`.

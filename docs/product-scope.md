@@ -47,7 +47,7 @@ Driftile must integrate with, not duplicate:
 - Output discovery, scaling, work areas, configuration, and window transfer.
 - Virtual-desktop objects, per-screen selection, names, grid settings, and switching.
 - Window Rules and general application matching.
-- Global shortcut registration and editing.
+- Global shortcut registration plus explicit, reversible conflict resolution.
 - Fullscreen, maximize, minimize, decorations, and interactive move/resize behavior.
 - Dialogs, modal or transient windows, non-resizable normal windows, and normal windows fixed on both axes.
 - Overview, Pager, Task Switcher, desktop OSD, and session restoration.

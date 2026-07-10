@@ -8,7 +8,7 @@ The current prototype models eligible normal windows in independent `(output, de
 
 Driftile keeps one shared trailing virtual desktop empty. It appends a desktop when the tail becomes occupied and removes only a redundant, unselected tail created by the current run. KDE owns the global desktop list; current-desktop selection remains output-local where KWin supports it.
 
-The default controls use compact `Meta` combinations with `H/J/K/L` and arrow aliases. See [Shortcuts](docs/shortcuts.md).
+The default controls use compact `Meta` combinations with `H/J/K/L` and arrow aliases. Plasma reserves some of them, so Driftile provides a reversible shortcut-claim command. See [Shortcuts](docs/shortcuts.md).
 
 Dialogs, modal or transient windows, non-resizable normal windows, and normal windows fixed on both axes remain fully KWin-owned. Driftile does not admit them to a layout or write their geometry, desktop, output, or focus; layout commands are no-ops while one is active. This automatic state is separate from manual floating. A managed window that becomes transient leaves its layout without restoring an old frame and can be admitted again after the transient role clears. Client size limits for other windows are translated to decorated frame limits before layout writes and column resizing.
 
@@ -26,12 +26,20 @@ Layout and workspace persistence are not implemented yet.
 
 ## Development
 
-Requirements: Node.js 22 or newer, npm, ShellCheck, and KDE Frameworks 6 KPackage tools.
+Requirements: Node.js 22 or newer, npm, ShellCheck, `busctl`, `flock`, and KDE Frameworks 6 KPackage tools.
 
 ```bash
 npm ci
 npm run check
 npm run package
+```
+
+For a development install, enable the script in System Settings and claim its
+shortcut profile:
+
+```bash
+npm run install:dev
+npm run shortcuts:claim
 ```
 
 On systems with Nix, `nix develop` provides the source toolchain, and `nix build` builds the KWin package. Use `nix develop .#integration` for the isolated KWin tests.

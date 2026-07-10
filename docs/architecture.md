@@ -15,6 +15,8 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Loads the compiled runtime in the KWin script environment.
 - Passes the KWin workspace object to the runtime.
 - Hosts QML-only shortcut handlers.
+- Ships a separate setup helper that transactionally claims KGlobalAccel keys
+  and restores displaced assignments; it is not part of the KWin runtime.
 - Provides event-loop and minimum-delay schedulers for batched work and transition stabilization.
 - Runs a two-second topology watchdog for visible contexts.
 - Contains no layout policy or durable state.

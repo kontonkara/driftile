@@ -49,6 +49,8 @@ The current runtime already:
 - Moves the active tiled window to an adjacent output with deterministic spatial routing and atomic visible-context reflow.
 - Keeps one shared trailing desktop empty and removes only redundant tails created by the current run.
 - Registers compact default shortcuts with `H/J/K/L`, arrow, and Page Up/Down aliases.
+- Provides a reversible development helper for claiming shortcuts already used
+  by Plasma; a release UI without a Node.js dependency remains future work.
 - Leaves dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows entirely KWin-owned, separate from manual floating.
 - Translates client minimum and maximum sizes to decorated frame bounds for layout validation and column resizing.
 
