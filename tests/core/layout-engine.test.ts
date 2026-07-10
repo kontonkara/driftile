@@ -298,6 +298,72 @@ describe("LayoutEngine", () => {
     expect(engine.snapshot(output, desktop)).toEqual(before);
   });
 
+  it("resolves edge columns and reorders the active column with exact rollback", () => {
+    const engine = new LayoutEngine();
+
+    engine.restoreColumns({
+      activeColumnId: columnId("column-2"),
+      columns: [
+        {
+          column: {
+            id: columnId("column-1"),
+            width: { kind: "fixed", value: 240 },
+            windowIds: [windowId("window-1")],
+          },
+          index: 0,
+        },
+        {
+          column: {
+            id: columnId("column-2"),
+            width: { kind: "proportion", value: 0.4 },
+            windowIds: [windowId("window-2"), windowId("window-3")],
+          },
+          index: 1,
+        },
+        {
+          column: {
+            id: columnId("column-3"),
+            width: { kind: "fixed", value: 360 },
+            windowIds: [windowId("window-4")],
+          },
+          index: 2,
+        },
+      ],
+      desktopId: desktop,
+      outputId: output,
+      viewportOffset: 120,
+    });
+    const before = engine.snapshot(output, desktop);
+
+    expect(engine.edgeWindow(windowId("window-3"), "first")).toBe("window-1");
+    expect(engine.edgeWindow(windowId("window-3"), "last")).toBe("window-4");
+    expect(engine.edgeWindow(windowId("window-1"), "first")).toBeNull();
+    expect(engine.edgeWindow(windowId("missing"), "last")).toBeNull();
+
+    const first = engine.moveActiveColumnToEdge(windowId("window-3"), "first");
+    expect(first?.kind).toBe("reorder");
+    expect(
+      engine.snapshot(output, desktop).columns.map((column) => column.id),
+    ).toEqual(["column-2", "column-1", "column-3"]);
+    expect(first && engine.rollbackStackEdit(first.rollback)).toBe(true);
+    expect(engine.snapshot(output, desktop)).toEqual(before);
+
+    const last = engine.moveActiveColumnToEdge(windowId("window-2"), "last");
+    expect(last?.kind).toBe("reorder");
+    expect(engine.snapshot(output, desktop)).toEqual({
+      ...before,
+      columns: [before.columns[0], before.columns[2], before.columns[1]],
+    });
+    expect(last && engine.discardStackEditRollback(last.rollback)).toBe(true);
+    expect(last && engine.rollbackStackEdit(last.rollback)).toBe(false);
+    expect(
+      engine.moveActiveColumnToEdge(windowId("window-2"), "last"),
+    ).toBeNull();
+    expect(
+      engine.moveActiveColumnToEdge(windowId("window-1"), "first"),
+    ).toBeNull();
+  });
+
   it("sets the active whole column width and returns an exact rollback value", () => {
     const engine = new LayoutEngine();
     const nextWidth: { kind: "fixed"; value: number } = {

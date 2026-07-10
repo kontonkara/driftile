@@ -117,6 +117,7 @@ export interface WindowTransferPreview {
 }
 
 export type HorizontalDirection = "left" | "right";
+export type HorizontalEdge = "first" | "last";
 export type VerticalDirection = "down" | "up";
 
 declare const stackEditRollbackBrand: unique symbol;
@@ -297,6 +298,29 @@ export class LayoutEngine {
     const targetIndex =
       direction === "left" ? columnIndex - 1 : columnIndex + 1;
     return context.columns[targetIndex]?.windowIds[0] ?? null;
+  }
+
+  edgeWindow(windowId: WindowId, edge: HorizontalEdge): WindowId | null {
+    const placement = this.placements.get(windowId);
+
+    if (!placement) {
+      return null;
+    }
+
+    const context = this.contexts.get(placement.contextKey);
+
+    if (!context) {
+      return null;
+    }
+
+    const target =
+      context.columns[edge === "first" ? 0 : context.columns.length - 1];
+
+    if (!target || target.id === placement.columnId) {
+      return null;
+    }
+
+    return target.windowIds[0] ?? null;
   }
 
   adjacentWindowInColumn(
@@ -601,6 +625,46 @@ export class LayoutEngine {
     context.columns[columnIndex] = target;
     context.columns[targetIndex] = column;
     return true;
+  }
+
+  moveActiveColumnToEdge(
+    windowId: WindowId,
+    edge: HorizontalEdge,
+  ): StackEditResult | null {
+    const placement = this.placements.get(windowId);
+
+    if (!placement) {
+      return null;
+    }
+
+    const context = this.contexts.get(placement.contextKey);
+
+    if (!context || context.activeColumnId !== placement.columnId) {
+      return null;
+    }
+
+    const columnIndex = context.columns.findIndex(
+      (column) => column.id === placement.columnId,
+    );
+    const targetIndex = edge === "first" ? 0 : context.columns.length - 1;
+
+    if (columnIndex < 0 || columnIndex === targetIndex) {
+      return null;
+    }
+
+    const before = this.snapshot(context.outputId, context.desktopId);
+    const [column] = context.columns.splice(columnIndex, 1);
+
+    if (!column) {
+      return null;
+    }
+
+    context.columns.splice(targetIndex, 0, column);
+    return this.createStackEditResult(
+      "reorder",
+      before,
+      this.snapshot(context.outputId, context.desktopId),
+    );
   }
 
   setActiveColumnWidth(

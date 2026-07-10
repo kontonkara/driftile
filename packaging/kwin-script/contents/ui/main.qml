@@ -78,6 +78,18 @@ QtObject {
         sequence: "Meta+Right"
         onActivated: Runtime.DriftileRuntime.focusRight()
     }
+    readonly property ShortcutHandler focusFirstColumnShortcut: ShortcutHandler {
+        name: "driftile_focus_column_first"
+        text: "Driftile: Focus first column"
+        sequence: "Meta+Home"
+        onActivated: Runtime.DriftileRuntime.focusFirstColumn()
+    }
+    readonly property ShortcutHandler focusLastColumnShortcut: ShortcutHandler {
+        name: "driftile_focus_column_last"
+        text: "Driftile: Focus last column"
+        sequence: "Meta+End"
+        onActivated: Runtime.DriftileRuntime.focusLastColumn()
+    }
     readonly property ShortcutHandler focusUpShortcut: ShortcutHandler {
         name: "driftile_focus_window_up"
         text: "Driftile: Focus up"
@@ -125,6 +137,18 @@ QtObject {
         text: "Driftile: Move column right (arrow)"
         sequence: "Meta+Ctrl+Right"
         onActivated: Runtime.DriftileRuntime.moveColumnRight()
+    }
+    readonly property ShortcutHandler moveColumnToFirstShortcut: ShortcutHandler {
+        name: "driftile_move_column_to_first"
+        text: "Driftile: Move column to first"
+        sequence: "Meta+Ctrl+Home"
+        onActivated: Runtime.DriftileRuntime.moveColumnToFirst()
+    }
+    readonly property ShortcutHandler moveColumnToLastShortcut: ShortcutHandler {
+        name: "driftile_move_column_to_last"
+        text: "Driftile: Move column to last"
+        sequence: "Meta+Ctrl+End"
+        onActivated: Runtime.DriftileRuntime.moveColumnToLast()
     }
     readonly property ShortcutHandler moveWindowLeftShortcut: ShortcutHandler {
         name: "driftile_move_window_left"

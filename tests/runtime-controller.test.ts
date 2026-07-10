@@ -1594,6 +1594,105 @@ describe("RuntimeController", () => {
     expect(fixture.activationCount).toBe(2);
   });
 
+  it("focuses the first and last columns without wrapping", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const windows = [
+      createTrackedWindow("window-1", output, desktop),
+      createTrackedWindow("window-2", output, desktop),
+      createTrackedWindow("window-3", output, desktop),
+    ];
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map((window) => window.window),
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    controller.start();
+    expect(fixture.workspace.activeWindow).toBe(windows[2]?.window);
+    expect(controller.focusFirstColumn()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(windows[0]?.window);
+    expect(windows.map((window) => window.window.frameGeometry.x)).toEqual([
+      0, 495, 990,
+    ]);
+    expect(controller.focusFirstColumn()).toBe(false);
+
+    expect(controller.focusLastColumn()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(windows[2]?.window);
+    expect(windows.map((window) => window.window.frameGeometry.x)).toEqual([
+      -475, 20, 515,
+    ]);
+    expect(controller.focusLastColumn()).toBe(false);
+    expect(fixture.activationCount).toBe(2);
+  });
+
+  it("keeps focus and geometry after a partial edge-focus failure", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const windows = [
+      createTrackedWindow("window-1", output, desktop),
+      createTrackedWindow("window-2", output, desktop),
+      createTrackedWindow("window-3", output, desktop),
+    ];
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map((window) => window.window),
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+    const warning = console.warn;
+
+    controller.start();
+    const beforeLayout = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const beforeFrames = windows.map((window) => ({
+      ...window.window.frameGeometry,
+    }));
+    windows[1]?.setWriteBehavior(() => {
+      throw new Error("geometry rejected");
+    });
+    console.warn = () => undefined;
+
+    try {
+      expect(controller.focusFirstColumn()).toBe(false);
+    } finally {
+      console.warn = warning;
+      windows[1]?.setWriteBehavior(null);
+    }
+
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(beforeLayout);
+    expect(windows.map((window) => window.window.frameGeometry)).toEqual(
+      beforeFrames,
+    );
+    expect(fixture.workspace.activeWindow).toBe(windows[2]?.window);
+    expect(fixture.activationCount).toBe(0);
+    expect(scheduler.pendingCount).toBe(1);
+    scheduler.flush();
+    expect(scheduler.pendingCount).toBe(0);
+    expect(controller.focusFirstColumn()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(windows[0]?.window);
+  });
+
   it("merges and extracts the active window in both directions within its context", () => {
     const output = createOutput("DP-1", 0);
     const otherOutput = createOutput("HDMI-A-1", 1000);
@@ -4367,6 +4466,103 @@ describe("RuntimeController", () => {
 
     controller.stop();
     expect(positions()).toEqual([0, 0, 0]);
+  });
+
+  it("moves the active column directly to both strip edges", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const windows = [
+      createTrackedWindow("window-1", output, desktop),
+      createTrackedWindow("window-2", output, desktop),
+      createTrackedWindow("window-3", output, desktop),
+    ];
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map((window) => window.window),
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+    const positions = () =>
+      windows.map((window) => window.window.frameGeometry.x);
+
+    controller.start();
+    expect(controller.moveColumnToFirst()).toBe(true);
+    expect(positions()).toEqual([495, 990, 0]);
+    expect(testLayoutColumns(controller, output, desktop)).toEqual([
+      { id: "column:window-3", windowIds: ["window-3"] },
+      { id: "column:window-1", windowIds: ["window-1"] },
+      { id: "column:window-2", windowIds: ["window-2"] },
+    ]);
+    expect(controller.moveColumnToFirst()).toBe(false);
+
+    expect(controller.moveColumnToLast()).toBe(true);
+    expect(positions()).toEqual([-475, 20, 515]);
+    expect(testLayoutColumns(controller, output, desktop)).toEqual([
+      { id: "column:window-1", windowIds: ["window-1"] },
+      { id: "column:window-2", windowIds: ["window-2"] },
+      { id: "column:window-3", windowIds: ["window-3"] },
+    ]);
+    expect(controller.moveColumnToLast()).toBe(false);
+    expect(fixture.workspace.activeWindow).toBe(windows[2]?.window);
+    expect(fixture.activationCount).toBe(0);
+  });
+
+  it("rolls back a direct edge move after a partial geometry failure", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const windows = [
+      createTrackedWindow("window-1", output, desktop),
+      createTrackedWindow("window-2", output, desktop),
+      createTrackedWindow("window-3", output, desktop),
+    ];
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map((window) => window.window),
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+    const warning = console.warn;
+
+    controller.start();
+    const beforeLayout = testLayoutColumns(controller, output, desktop);
+    const beforeFrames = windows.map((window) => ({
+      ...window.window.frameGeometry,
+    }));
+    windows[1]?.setWriteBehavior(() => {
+      throw new Error("geometry rejected");
+    });
+    console.warn = () => undefined;
+
+    try {
+      expect(controller.moveColumnToFirst()).toBe(false);
+    } finally {
+      console.warn = warning;
+      windows[1]?.setWriteBehavior(null);
+    }
+
+    expect(testLayoutColumns(controller, output, desktop)).toEqual(
+      beforeLayout,
+    );
+    expect(windows.map((window) => window.window.frameGeometry)).toEqual(
+      beforeFrames,
+    );
+    expect(fixture.workspace.activeWindow).toBe(windows[2]?.window);
+    expect(scheduler.pendingCount).toBe(1);
+    scheduler.flush();
+    expect(scheduler.pendingCount).toBe(0);
+    expect(controller.moveColumnToFirst()).toBe(true);
   });
 
   it("rolls back a column move after a partial geometry failure", () => {

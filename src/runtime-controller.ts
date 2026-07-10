@@ -19,6 +19,7 @@ import {
   type ColumnWidth,
   type DetachedWindowPlacement,
   type HorizontalDirection,
+  type HorizontalEdge,
   type LayoutColumnPlacement,
   type LayoutColumnSnapshot,
   type LayoutContextSnapshot,
@@ -483,11 +484,19 @@ export class RuntimeController {
   }
 
   focusLeft(): boolean {
-    return this.focusAdjacent("left");
+    return this.focusHorizontal("left");
   }
 
   focusRight(): boolean {
-    return this.focusAdjacent("right");
+    return this.focusHorizontal("right");
+  }
+
+  focusFirstColumn(): boolean {
+    return this.focusHorizontal("first");
+  }
+
+  focusLastColumn(): boolean {
+    return this.focusHorizontal("last");
   }
 
   focusUp(): boolean {
@@ -512,6 +521,14 @@ export class RuntimeController {
 
   moveColumnRight(): boolean {
     return this.moveActiveColumn("right");
+  }
+
+  moveColumnToFirst(): boolean {
+    return this.moveActiveColumnToEdge("first");
+  }
+
+  moveColumnToLast(): boolean {
+    return this.moveActiveColumnToEdge("last");
   }
 
   moveWindowLeft(): boolean {
@@ -1319,58 +1336,19 @@ export class RuntimeController {
     return true;
   }
 
-  private focusAdjacent(direction: HorizontalDirection): boolean {
-    const activeWindow = this.workspace.activeWindow;
+  private focusHorizontal(
+    destination: HorizontalDirection | HorizontalEdge,
+  ): boolean {
+    const command = this.prepareActiveColumnCommand();
 
-    if (
-      !this.started ||
-      this.windowTransferOperation ||
-      this.topologyStabilizing ||
-      this.topologyRetryPending ||
-      !activeWindow ||
-      this.automaticallyFloats(activeWindow)
-    ) {
+    if (!command) {
       return false;
     }
 
-    const sampledGeometries = this.sampleSettledVisibleContextGeometries();
-
-    if (!sampledGeometries) {
-      return false;
-    }
-
-    this.synchronizePendingWindows();
-
-    const activeId = windowId(String(activeWindow.internalId));
-
-    if (
-      !this.toggleGeometrySettled(activeId) ||
-      this.suspendedWindows.has(activeId) ||
-      this.requestedSuspensions.has(activeId) ||
-      !isGeometryWritable(activeWindow)
-    ) {
-      return false;
-    }
-
-    const owner = this.managedWindows.get(activeId);
-    const context = owner ? this.contexts.get(owner.contextKey) : undefined;
-    const observedActive = normalizeWindow(activeWindow);
-    const activeContext = observedActive
-      ? managedContext(observedActive)
-      : null;
-
-    if (
-      !owner ||
-      !context ||
-      !activeContext ||
-      contextKey(activeContext) !== owner.contextKey ||
-      this.refreshContextAutomaticFloatingOwnership(context) ||
-      this.toggleTransitionPending(context.key)
-    ) {
-      return false;
-    }
-
-    const targetId = this.layout.adjacentWindow(activeId, direction);
+    const targetId =
+      destination === "left" || destination === "right"
+        ? this.layout.adjacentWindow(command.activeId, destination)
+        : this.layout.edgeWindow(command.activeId, destination);
 
     if (!targetId) {
       return false;
@@ -1384,8 +1362,7 @@ export class RuntimeController {
       : null;
 
     if (
-      !targetOwner ||
-      targetOwner.contextKey !== owner.contextKey ||
+      targetOwner?.contextKey !== command.context.key ||
       !target ||
       this.automaticallyFloats(target) ||
       this.automaticFloatingWindows.has(targetId) ||
@@ -1394,23 +1371,19 @@ export class RuntimeController {
       this.requestedSuspensions.has(targetId) ||
       !isGeometryWritable(target) ||
       !targetContext ||
-      contextKey(targetContext) !== owner.contextKey
+      contextKey(targetContext) !== command.context.key
     ) {
       return false;
     }
 
-    this.layout.activateWindow(targetId);
-    this.dirtyContexts.delete(context.key);
-
-    try {
-      this.lastWrites = this.reconcileContext(context, sampledGeometries);
-    } catch (error) {
-      this.layout.activateWindow(activeId);
-      this.markContextDirty(context);
-      this.scheduleWork();
-      console.warn(
-        `[driftile] focus deferred context=${context.key} error=${String(error)}`,
-      );
+    if (
+      !this.applyActiveColumnMutation(
+        command,
+        "column focus",
+        () => this.layout.activateWindow(targetId),
+        () => this.layout.activateWindow(command.activeId),
+      )
+    ) {
       return false;
     }
 
@@ -1475,6 +1448,38 @@ export class RuntimeController {
       () => this.layout.moveActiveColumn(command.activeId, direction),
       () => this.layout.moveActiveColumn(command.activeId, oppositeDirection),
     );
+  }
+
+  private moveActiveColumnToEdge(edge: HorizontalEdge): boolean {
+    const command = this.prepareActiveColumnCommand();
+
+    if (!command || this.hasPendingCapacityState(command.context.key)) {
+      return false;
+    }
+
+    const editState: { value: StackEditResult | null } = { value: null };
+    const moved = this.applyActiveColumnMutation(
+      command,
+      "column edge move",
+      () => {
+        editState.value = this.layout.moveActiveColumnToEdge(
+          command.activeId,
+          edge,
+        );
+        return editState.value !== null;
+      },
+      () =>
+        editState.value !== null &&
+        this.layout.rollbackStackEdit(editState.value.rollback),
+    );
+    const edit = editState.value;
+
+    if (!moved || !edit) {
+      return false;
+    }
+
+    this.layout.discardStackEditRollback(edit.rollback);
+    return true;
   }
 
   private moveActiveWindowHorizontally(

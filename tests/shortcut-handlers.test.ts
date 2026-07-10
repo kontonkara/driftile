@@ -49,6 +49,14 @@ const expectedHandlers: Readonly<
     activated: "Runtime.DriftileRuntime.focusLeft()",
     sequence: "Meta+Left",
   },
+  driftile_focus_column_first: {
+    activated: "Runtime.DriftileRuntime.focusFirstColumn()",
+    sequence: "Meta+Home",
+  },
+  driftile_focus_column_last: {
+    activated: "Runtime.DriftileRuntime.focusLastColumn()",
+    sequence: "Meta+End",
+  },
   driftile_focus_column_right: {
     activated: "Runtime.DriftileRuntime.focusRight()",
     sequence: "Meta+L",
@@ -154,6 +162,14 @@ const expectedHandlers: Readonly<
   driftile_move_column_right_arrow: {
     activated: "Runtime.DriftileRuntime.moveColumnRight()",
     sequence: "Meta+Ctrl+Right",
+  },
+  driftile_move_column_to_first: {
+    activated: "Runtime.DriftileRuntime.moveColumnToFirst()",
+    sequence: "Meta+Ctrl+Home",
+  },
+  driftile_move_column_to_last: {
+    activated: "Runtime.DriftileRuntime.moveColumnToLast()",
+    sequence: "Meta+Ctrl+End",
   },
   driftile_move_column_to_next_desktop: {
     activated: "Runtime.DriftileRuntime.moveColumnToNextDesktop()",

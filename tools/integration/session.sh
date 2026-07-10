@@ -2398,6 +2398,55 @@ run_scenario() {
     "$third_title" "664,16,616,688" || \
     fail "Driftile changed the $protocol layout while removing decorations: $(describe_layout "$first_title" "$second_title" "$third_title")"
 
+  wait_for_shortcut "driftile_focus_column_first" || \
+    fail "KGlobalAccel did not register the focus-first shortcut"
+  wait_for_shortcut "driftile_focus_column_last" || \
+    fail "KGlobalAccel did not register the focus-last shortcut"
+  wait_for_shortcut "driftile_move_column_to_first" || \
+    fail "KGlobalAccel did not register the move-to-first shortcut"
+  wait_for_shortcut "driftile_move_column_to_last" || \
+    fail "KGlobalAccel did not register the move-to-last shortcut"
+
+  invoke_shortcut "driftile_focus_column_first" || \
+    fail "KGlobalAccel could not invoke the focus-first shortcut"
+  wait_for_active "$first_title" || \
+    fail "Driftile did not focus the first $protocol column"
+  wait_for_layout \
+    "$first_title" "0,16,616,688" \
+    "$second_title" "632,16,616,688" \
+    "$third_title" "1264,16,616,688" || \
+    fail "Driftile did not reveal the first $protocol column: $(describe_layout "$first_title" "$second_title" "$third_title")"
+
+  invoke_shortcut "driftile_focus_column_last" || \
+    fail "KGlobalAccel could not invoke the focus-last shortcut"
+  wait_for_active "$third_title" || \
+    fail "Driftile did not focus the last $protocol column"
+  wait_for_layout \
+    "$first_title" "-600,16,616,688" \
+    "$second_title" "32,16,616,688" \
+    "$third_title" "664,16,616,688" || \
+    fail "Driftile did not reveal the last $protocol column: $(describe_layout "$first_title" "$second_title" "$third_title")"
+
+  invoke_shortcut "driftile_move_column_to_first" || \
+    fail "KGlobalAccel could not invoke the move-to-first shortcut"
+  wait_for_active "$third_title" || \
+    fail "Driftile changed focus while moving the $protocol column first"
+  wait_for_layout \
+    "$first_title" "632,16,616,688" \
+    "$second_title" "1264,16,616,688" \
+    "$third_title" "0,16,616,688" || \
+    fail "Driftile did not move the active $protocol column first: $(describe_layout "$first_title" "$second_title" "$third_title")"
+
+  invoke_shortcut "driftile_move_column_to_last" || \
+    fail "KGlobalAccel could not invoke the move-to-last shortcut"
+  wait_for_active "$third_title" || \
+    fail "Driftile changed focus while moving the $protocol column last"
+  wait_for_layout \
+    "$first_title" "-600,16,616,688" \
+    "$second_title" "32,16,616,688" \
+    "$third_title" "664,16,616,688" || \
+    fail "Driftile did not move the active $protocol column last: $(describe_layout "$first_title" "$second_title" "$third_title")"
+
   activate_window "$first_title" || fail "KWin could not activate the first $protocol window"
   wait_for_layout \
     "$first_title" "0,16,616,688" \

@@ -25,6 +25,8 @@ const modifierCodes = new Map<string, number>([
 
 const namedKeyCodes = new Map<string, number>([
   ["Down", 0x01000015],
+  ["End", 0x01000011],
+  ["Home", 0x01000010],
   ["Left", 0x01000012],
   ["PgDown", 0x01000017],
   ["PgUp", 0x01000016],
@@ -52,6 +54,16 @@ const definitions: readonly ShortcutDefinition[] = [
     name: "driftile_focus_column_right_arrow",
     text: "Driftile: Focus right (arrow)",
     sequence: "Meta+Right",
+  },
+  {
+    name: "driftile_focus_column_first",
+    text: "Driftile: Focus first column",
+    sequence: "Meta+Home",
+  },
+  {
+    name: "driftile_focus_column_last",
+    text: "Driftile: Focus last column",
+    sequence: "Meta+End",
   },
   {
     name: "driftile_focus_window_up",
@@ -92,6 +104,16 @@ const definitions: readonly ShortcutDefinition[] = [
     name: "driftile_move_column_right_arrow",
     text: "Driftile: Move column right (arrow)",
     sequence: "Meta+Ctrl+Right",
+  },
+  {
+    name: "driftile_move_column_to_first",
+    text: "Driftile: Move column to first",
+    sequence: "Meta+Ctrl+Home",
+  },
+  {
+    name: "driftile_move_column_to_last",
+    text: "Driftile: Move column to last",
+    sequence: "Meta+Ctrl+End",
   },
   {
     name: "driftile_move_window_left",

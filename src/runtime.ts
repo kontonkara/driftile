@@ -55,6 +55,14 @@ export function focusRight(): void {
   controller?.focusRight();
 }
 
+export function focusFirstColumn(): void {
+  controller?.focusFirstColumn();
+}
+
+export function focusLastColumn(): void {
+  controller?.focusLastColumn();
+}
+
 export function focusUp(): void {
   controller?.focusUp();
 }
@@ -77,6 +85,14 @@ export function moveColumnLeft(): void {
 
 export function moveColumnRight(): void {
   controller?.moveColumnRight();
+}
+
+export function moveColumnToFirst(): void {
+  controller?.moveColumnToFirst();
+}
+
+export function moveColumnToLast(): void {
+  controller?.moveColumnToLast();
 }
 
 export function moveWindowLeft(): void {
