@@ -72,22 +72,32 @@ monitor_guest() {
   local diagnostics_file="$temporary_directory/xchg/driftile-focus-diagnostics"
   local failed=false
   local focus_file="$temporary_directory/xchg/driftile-focus-verified"
-  local key_ready_file="$temporary_directory/xchg/driftile-key-test-ready"
-  local key_sent=false
-  local key_sent_file="$temporary_directory/xchg/driftile-key-test-sent"
+  local key_name
+  local key_ready_file
+  local key_sent_file
   local loaded_file="$temporary_directory/xchg/driftile-loaded"
+  local -A keys_sent=(
+    [equal]=false
+    [minus]=false
+    [plus]=false
+  )
 
   for ((attempt = 0; attempt < 600; attempt += 1)); do
-    if [[ "$key_sent" == false && -f "$key_ready_file" ]]; then
-      if send_width_shortcut; then
-        printf 'The VM received a physical Meta+- test input.\n'
-      else
-        printf 'Could not send the physical Meta+- test input to the VM.\n' >&2
-      fi
+    for key_name in minus equal plus; do
+      key_ready_file="$temporary_directory/xchg/driftile-key-test-$key_name-ready"
+      key_sent_file="$temporary_directory/xchg/driftile-key-test-$key_name-sent"
 
-      : > "$key_sent_file"
-      key_sent=true
-    fi
+      if [[ "${keys_sent[$key_name]}" == false && -f "$key_ready_file" ]]; then
+        if send_width_shortcut "$key_name"; then
+          printf 'The VM received the physical width shortcut: %s.\n' "$key_name"
+        else
+          printf 'Could not send the physical width shortcut: %s.\n' "$key_name" >&2
+        fi
+
+        : > "$key_sent_file"
+        keys_sent[$key_name]=true
+      fi
+    done
 
     if [[ -f "$loaded_file" && -f "$focus_file" ]]; then
       if [[ "$(<"$loaded_file")" == true ]]; then
@@ -109,9 +119,11 @@ monitor_guest() {
       fi
 
       if [[ "$failed" == true ]]; then
+        stop_vm || true
         return 1
       fi
 
+      stop_vm || true
       return 0
     fi
 
@@ -119,17 +131,44 @@ monitor_guest() {
   done
 
   printf 'The VM did not report Driftile status within 120 seconds.\n' >&2
+  stop_vm || true
   return 1
 }
 
 send_width_shortcut() {
+  local key_name=$1
   local capabilities='{"execute":"qmp_capabilities"}'
-  local input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"minus"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"minus"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
+  local input
+
+  case "$key_name" in
+    minus)
+      input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"minus"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"minus"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
+      ;;
+    equal)
+      input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"equal"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"equal"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
+      ;;
+    plus)
+      input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"shift"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"equal"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"equal"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"shift"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
+      ;;
+    *)
+      return 1
+      ;;
+  esac
 
   [[ -S "$qmp_socket" ]] || return 1
   printf '%s\n%s\n' "$capabilities" "$input" \
     | nix develop .#integration -c socat -t 2 - "UNIX-CONNECT:$qmp_socket" \
       >/dev/null
+}
+
+stop_vm() {
+  local capabilities='{"execute":"qmp_capabilities"}'
+  local quit='{"execute":"quit"}'
+
+  [[ -S "$qmp_socket" ]] || return 1
+  printf '%s\n%s\n' "$capabilities" "$quit" \
+    | nix develop .#integration -c socat -t 2 - "UNIX-CONNECT:$qmp_socket" \
+      >/dev/null 2>&1
 }
 
 trap cleanup EXIT
