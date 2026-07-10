@@ -12,12 +12,14 @@ export function init(
   createRect: KWinRectFactory,
   schedule: (callback: () => void) => void,
   scheduleResume: (callback: () => void) => void,
+  borderlessWindows: boolean,
 ): void {
   if (controller) {
     return;
   }
 
   const nextController = new RuntimeController(workspace, {
+    borderlessWindows,
     clientAreaOption,
     createRect,
     schedule,
@@ -39,6 +41,10 @@ export function init(
 export function destroy(): void {
   controller?.stop();
   controller = undefined;
+}
+
+export function setBorderlessWindows(enabled: boolean): void {
+  controller?.setBorderlessWindows(enabled);
 }
 
 export function focusLeft(): void {

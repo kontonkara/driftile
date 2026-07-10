@@ -15,6 +15,7 @@
     "Version": "0.1.0",
     "Website": "https://github.com/kontonkara/driftile"
   },
+  "X-KDE-ConfigModule": "kwin/effects/configs/kcm_kwin4_genericscripted",
   "X-Plasma-API": "declarativescript",
   "X-Plasma-MainScript": "ui/main.qml"
 }

@@ -28,10 +28,12 @@ export interface WindowObserverEvents {
     windowId: string,
     request: WindowSuspensionRequest,
   ) => void;
+  readonly tracked?: (windowId: string) => void;
 }
 
 interface WindowEntry {
   readonly handleAutomaticFloatingChanged: () => void;
+  readonly handleDecorationPolicyChanged: () => void;
   readonly handleDesktopsChanged: () => void;
   readonly handleMaximizedAboutToChange: (mode: number) => void;
   readonly handleMaximizedChanged: () => void;
@@ -145,6 +147,7 @@ export class WindowObserver {
     let tileRequested = window.tile !== null;
     const entry: WindowEntry = {
       handleAutomaticFloatingChanged: refreshAutomaticFloating,
+      handleDecorationPolicyChanged: refreshState,
       handleDesktopsChanged: refresh,
       handleMaximizedAboutToChange: (mode) => {
         if (mode !== 0) {
@@ -241,6 +244,12 @@ export class WindowObserver {
     window.requestedTileChanged?.connect(entry.handleRequestedTileChanged);
     window.tileChanged?.connect(entry.handleTileChanged);
     window.transientChanged?.connect(entry.handleAutomaticFloatingChanged);
+    this.events.tracked?.(id);
+    window.decorationChanged?.connect(entry.handleDecorationPolicyChanged);
+    window.decorationPolicyChanged?.connect(
+      entry.handleDecorationPolicyChanged,
+    );
+    window.noBorderChanged?.connect(entry.handleDecorationPolicyChanged);
 
     if (observedWindow) {
       this.events.added?.(observedWindow);
@@ -304,12 +313,7 @@ export function normalizeWindow(window: KWinWindow): ObservedWindow | null {
 
 function isTrackableWindow(window: KWinWindow): boolean {
   return (
-    !window.specialWindow &&
-    !window.deleted &&
-    window.managed &&
-    !window.desktopWindow &&
-    !window.dock &&
-    (window.normalWindow || hasAutomaticFloatingRole(window))
+    !window.deleted && window.managed && !window.desktopWindow && !window.dock
   );
 }
 
@@ -324,6 +328,13 @@ function windowId(window: KWinWindow): string {
 }
 
 function disconnectWindowSignals(entry: WindowEntry): void {
+  entry.source.decorationChanged?.disconnect(
+    entry.handleDecorationPolicyChanged,
+  );
+  entry.source.decorationPolicyChanged?.disconnect(
+    entry.handleDecorationPolicyChanged,
+  );
+  entry.source.noBorderChanged?.disconnect(entry.handleDecorationPolicyChanged);
   entry.source.desktopsChanged?.disconnect(entry.handleDesktopsChanged);
   entry.source.fullScreenChanged?.disconnect(entry.handleStateChanged);
   entry.source.interactiveMoveResizeFinished?.disconnect(

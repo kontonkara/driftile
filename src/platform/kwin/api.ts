@@ -29,6 +29,8 @@ export interface KWinOutput {
 
 export interface KWinWindow {
   readonly clientGeometry: KWinRect;
+  readonly decorationChanged?: KWinSignal<[]>;
+  readonly decorationPolicyChanged?: KWinSignal<[]>;
   readonly deleted: boolean;
   desktops: readonly KWinVirtualDesktop[];
   readonly desktopsChanged?: KWinSignal<[]>;
@@ -56,6 +58,8 @@ export interface KWinWindow {
   readonly move: boolean;
   readonly moveable: boolean;
   readonly moveResizedChanged?: KWinSignal<[]>;
+  noBorder?: boolean;
+  readonly noBorderChanged?: KWinSignal<[]>;
   readonly normalWindow: boolean;
   readonly onAllDesktops: boolean;
   readonly output: KWinOutput | null;

@@ -38,6 +38,15 @@ QtObject {
         }
     }
 
+    readonly property Connections configurationConnection: Connections {
+        target: Options
+
+        function onConfigChanged() {
+            Runtime.DriftileRuntime.setBorderlessWindows(
+                KWin.readConfig("BorderlessWindows", true))
+        }
+    }
+
     readonly property Timer topologyTimer: Timer {
         interval: 2000
         repeat: true
@@ -441,6 +450,7 @@ QtObject {
 
     Component.onCompleted: Runtime.DriftileRuntime.init(Workspace, Workspace.MaximizeArea,
                                                         root.createRect, root.schedule,
-                                                        root.scheduleResume)
+                                                        root.scheduleResume,
+                                                        KWin.readConfig("BorderlessWindows", true))
     Component.onDestruction: Runtime.DriftileRuntime.destroy()
 }

@@ -91,6 +91,7 @@ function captureWindow(window) {
     id: windowId(window),
     caption: baseCaption(window),
     frame: copyFrame(window),
+    noBorder: window.noBorder,
     output: window.output.name,
     desktops: desktopIds(window),
   };
@@ -180,6 +181,7 @@ function windowSnapshotsEqual(left, right) {
     left.id === right.id &&
     left.caption === right.caption &&
     framesEqual(left.frame, right.frame) &&
+    left.noBorder === right.noBorder &&
     left.output === right.output &&
     desktopIdsEqual(left.desktops, right.desktops)
   );
@@ -232,6 +234,11 @@ function captureActiveDialog() {
   var candidate = captureDialogWindow(dialogWindow);
 
   if (candidate === null) {
+    pendingSnapshot = null;
+    return;
+  }
+
+  if (!candidate.dialog.noBorder || !candidate.parent.noBorder) {
     pendingSnapshot = null;
     return;
   }

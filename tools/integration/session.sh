@@ -388,6 +388,38 @@ window_frame_respects_fixed_client() {
       ' >/dev/null
 }
 
+window_border_state() {
+  local id
+
+  id=$(window_id "$1") || return 1
+  busctl --user --json=short call \
+    org.kde.KWin \
+    /KWin \
+    org.kde.KWin \
+    getWindowInfo \
+    s "$id" 2>/dev/null | jq --exit-status --raw-output '
+      .data[0].noBorder.data
+      | select(type == "boolean")
+      | tostring
+    '
+}
+
+wait_for_window_border_state() {
+  local attempt
+  local expected=$2
+  local title=$1
+
+  for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
+    if [[ "$(window_border_state "$title" 2>/dev/null || true)" == "$expected" ]]; then
+      return 0
+    fi
+
+    sleep 0.05
+  done
+
+  return 1
+}
+
 window_state_matches() {
   local id=$1
   local state=$2
@@ -1277,6 +1309,22 @@ set_plugin_state() {
     >/dev/null
 }
 
+set_borderless_windows() {
+  kwriteconfig6 \
+    --file "$XDG_CONFIG_HOME/kwinrc" \
+    --group "Script-${plugin_id}" \
+    --key BorderlessWindows \
+    --type bool \
+    "$1"
+
+  busctl --user call \
+    org.kde.KWin \
+    /KWin \
+    org.kde.KWin \
+    reconfigure \
+    >/dev/null
+}
+
 start_qml_client() {
   local protocol=$1
   local client=$2
@@ -1287,13 +1335,13 @@ start_qml_client() {
     wayland)
       QT_QPA_PLATFORM=wayland qml \
         "${qml_options[@]}" \
-        -f "$client" \
+        "$client" \
         -- "$@" &
       ;;
     x11 | xwayland)
       QT_QPA_PLATFORM=xcb qml \
         "${qml_options[@]}" \
-        -f "$client" \
+        "$client" \
         -- "$@" &
       ;;
     *)
@@ -1340,7 +1388,7 @@ start_x11_work_area_dock() {
 
   QT_QPA_PLATFORM=xcb qml \
     "${qml_options[@]}" \
-    -f "$DRIFTILE_SMOKE_CLIENT" \
+    "$DRIFTILE_SMOKE_CLIENT" \
     -- "$window_title" &
   x11_work_area_dock_pid=$!
 }
@@ -1487,10 +1535,12 @@ verify_desktop_transfer() {
   local first_title=$2
   local second_title=$3
   local third_title=$4
-  local baseline_variable=$5
+  local first_baseline_variable=$5
+  local second_baseline_variable=$6
   local destination_title="driftile-desktop-destination-${protocol}"
   local destination_pid
   local first_trailing_desktop_id=""
+  local first_transfer_baseline
   local second_trailing_desktop_id=""
   local transferred_baseline
 
@@ -1502,6 +1552,8 @@ verify_desktop_transfer() {
     fail "KGlobalAccel did not register the previous-desktop shortcut"
   wait_for_shortcut "driftile_move_window_to_next_desktop" || \
     fail "KGlobalAccel did not register the next-desktop shortcut"
+  wait_for_shortcut "driftile_move_column_to_previous_desktop" || \
+    fail "KGlobalAccel did not register the default previous-desktop shortcut"
   wait_for_shortcut "driftile_move_column_to_next_desktop" || \
     fail "KGlobalAccel did not register the default next-desktop shortcut"
 
@@ -1554,13 +1606,39 @@ verify_desktop_transfer() {
 
   invoke_shortcut "driftile_move_column_to_next_desktop" || \
     fail "KGlobalAccel could not invoke the default $protocol column transfer"
+  wait_for_current_desktop "$secondary_desktop_id" || \
+    fail "Driftile did not follow the stacked $protocol column"
+  wait_for_geometries \
+    "$destination_title" "16,16,616,688" \
+    "$first_title" "648,16,616,336" \
+    "$second_title" "648,368,616,336" || \
+    fail "Driftile did not preserve the stacked $protocol column during its default transfer: $(describe_layout "$destination_title" "$first_title" "$second_title")"
+  wait_for_window_desktop "$first_title" "$secondary_desktop_id" || \
+    fail "KWin did not transfer the upper $protocol stack member"
+  wait_for_window_desktop "$second_title" "$secondary_desktop_id" || \
+    fail "KWin did not transfer the lower $protocol stack member"
+  wait_for_active "$second_title" || \
+    fail "Driftile changed $protocol focus during the whole-column transfer"
+  first_transfer_baseline=$(capture_stable_geometry "$first_title") || \
+    fail "the transferred upper $protocol stack baseline did not stabilize"
+
+  invoke_shortcut "driftile_move_column_to_previous_desktop" || \
+    fail "KGlobalAccel could not return the stacked $protocol column"
   wait_for_current_desktop "$primary_desktop_id" || \
-    fail "Driftile partially moved a stacked $protocol column"
+    fail "Driftile did not follow the returning stacked $protocol column"
+  wait_for_geometries \
+    "$third_title" "16,16,616,688" \
+    "$first_title" "648,16,616,336" \
+    "$second_title" "648,368,616,336" || \
+    fail "Driftile did not preserve the returning stacked $protocol column: $(describe_layout "$third_title" "$first_title" "$second_title")"
+  invoke_shortcut "driftile_move_column_left" || \
+    fail "KGlobalAccel could not restore the source $protocol column order"
   wait_for_geometries \
     "$first_title" "16,16,616,336" \
     "$second_title" "16,368,616,336" \
     "$third_title" "648,16,616,688" || \
-    fail "Driftile split the stacked $protocol column through a default transfer: $(describe_layout "$first_title" "$second_title" "$third_title")"
+    fail "Driftile did not restore the $protocol column order after the round trip: $(describe_layout "$first_title" "$second_title" "$third_title")"
+  printf -v "$first_baseline_variable" '%s' "$first_transfer_baseline"
 
   invoke_shortcut "driftile_move_window_to_previous_desktop" || \
     fail "KGlobalAccel could not invoke the previous-desktop boundary shortcut"
@@ -1644,7 +1722,7 @@ verify_desktop_transfer() {
     fail "KWin did not return the $protocol window to the source desktop"
   transferred_baseline=$(capture_stable_geometry "$second_title") || \
     fail "the returned $protocol window restore baseline did not stabilize"
-  printf -v "$baseline_variable" '%s' "$transferred_baseline"
+  printf -v "$second_baseline_variable" '%s' "$transferred_baseline"
 
   invoke_shortcut "driftile_move_window_to_previous_desktop" || \
     fail "KGlobalAccel could not recheck the previous-desktop boundary"
@@ -1806,6 +1884,8 @@ verify_multi_output_output_transfer() {
     fail "KGlobalAccel did not register the multi-output move-to-output-up shortcut"
   wait_for_shortcut "driftile_move_window_to_output_down" || \
     fail "KGlobalAccel did not register the multi-output move-to-output-down shortcut"
+  wait_for_shortcut "driftile_move_column_to_output_left" || \
+    fail "KGlobalAccel did not register the default move-to-output-left shortcut"
   wait_for_shortcut "driftile_move_column_to_output_right" || \
     fail "KGlobalAccel did not register the default move-to-output-right shortcut"
   wait_for_shortcut "driftile_decrease_column_width" || \
@@ -1852,10 +1932,34 @@ verify_multi_output_output_transfer() {
   invoke_shortcut "driftile_move_column_to_output_right" || \
     fail "KGlobalAccel could not invoke the default $protocol output transfer"
   wait_for_geometries \
+    "$destination_title" "1296,16,616,688" \
+    "$left_first_title" "1928,16,490,336" \
+    "$left_second_title" "1928,368,490,336" || \
+    fail "Driftile did not preserve the stacked $protocol column through the default output transfer: $(describe_layout "$destination_title" "$left_first_title" "$left_second_title")"
+  wait_for_window_desktop "$left_first_title" "$secondary_desktop_id" || \
+    fail "Driftile did not adopt the target desktop for the upper $protocol stack member"
+  wait_for_window_desktop "$left_second_title" "$secondary_desktop_id" || \
+    fail "Driftile did not adopt the target desktop for the lower $protocol stack member"
+  window_is_on_output_side "$left_first_title" right || \
+    fail "KWin did not move the upper $protocol stack member to the right output"
+  window_is_on_output_side "$left_second_title" right || \
+    fail "KWin did not move the lower $protocol stack member to the right output"
+  wait_for_active "$left_second_title" || \
+    fail "Driftile changed $protocol focus during the whole-column output transfer"
+
+  invoke_shortcut "driftile_move_column_to_output_left" || \
+    fail "KGlobalAccel could not return the default $protocol column transfer"
+  wait_for_geometries \
     "$left_first_title" "16,16,490,336" \
     "$left_second_title" "16,368,490,336" \
     "$destination_title" "1296,16,616,688" || \
-    fail "Driftile split the stacked $protocol column through a default output transfer: $(describe_layout "$left_first_title" "$left_second_title" "$destination_title")"
+    fail "Driftile did not preserve the returning stacked $protocol column: $(describe_layout "$left_first_title" "$left_second_title" "$destination_title")"
+  wait_for_window_desktop "$left_first_title" "$primary_desktop_id" || \
+    fail "Driftile did not restore the upper $protocol stack member desktop"
+  wait_for_window_desktop "$left_second_title" "$primary_desktop_id" || \
+    fail "Driftile did not restore the lower $protocol stack member desktop"
+  wait_for_active "$left_second_title" || \
+    fail "Driftile changed $protocol focus while returning the whole column"
 
   invoke_shortcut "driftile_move_window_to_output_left" || \
     fail "KGlobalAccel could not invoke the left-output boundary shortcut"
@@ -2181,6 +2285,8 @@ verify_automatic_floating() {
     fail "KWin did not focus the fixed-size normal $protocol window"
   fixed_frame=$(capture_stable_geometry "$fixed_title") || \
     fail "the fixed-size normal $protocol window did not stabilize"
+  wait_for_window_border_state "$fixed_title" true || \
+    fail "Driftile did not remove the fixed-size normal $protocol decoration"
   window_frame_respects_fixed_client "$fixed_title" 360 240 || \
     fail "KWin did not preserve the fixed client bounds and frame extents for $protocol"
   wait_for_geometries \
@@ -2223,9 +2329,11 @@ run_scenario() {
   local fourth_title="driftile-direct-stack-${protocol}-d"
   local first_baseline
   local second_baseline
+  local second_floating_baseline
   local third_baseline
   local fourth_pid
   local state_window_id
+  local title
   local reserved_frame="16,16,616,688"
   local state_frame="648,16,616,688"
   local full_output_frame="0,0,1280,720"
@@ -2256,6 +2364,39 @@ run_scenario() {
     "$second_title" "32,16,616,688" \
     "$third_title" "664,16,616,688" || \
     fail "Driftile did not reveal the third $protocol window: $(describe_layout "$first_title" "$second_title" "$third_title")"
+
+  for title in "$first_title" "$second_title" "$third_title"; do
+    wait_for_window_border_state "$title" true || \
+      fail "Driftile did not remove the managed $protocol window decoration"
+  done
+
+  set_borderless_windows false || \
+    fail "KWin could not disable borderless $protocol windows"
+
+  for title in "$first_title" "$second_title" "$third_title"; do
+    wait_for_window_border_state "$title" false || \
+      fail "Driftile did not restore the managed $protocol window decoration"
+  done
+
+  wait_for_layout \
+    "$first_title" "-600,16,616,688" \
+    "$second_title" "32,16,616,688" \
+    "$third_title" "664,16,616,688" || \
+    fail "Driftile changed the $protocol layout while restoring decorations: $(describe_layout "$first_title" "$second_title" "$third_title")"
+
+  set_borderless_windows true || \
+    fail "KWin could not enable borderless $protocol windows"
+
+  for title in "$first_title" "$second_title" "$third_title"; do
+    wait_for_window_border_state "$title" true || \
+      fail "Driftile did not reapply the managed $protocol borderless setting"
+  done
+
+  wait_for_layout \
+    "$first_title" "-600,16,616,688" \
+    "$second_title" "32,16,616,688" \
+    "$third_title" "664,16,616,688" || \
+    fail "Driftile changed the $protocol layout while removing decorations: $(describe_layout "$first_title" "$second_title" "$third_title")"
 
   activate_window "$first_title" || fail "KWin could not activate the first $protocol window"
   wait_for_layout \
@@ -2338,9 +2479,13 @@ run_scenario() {
 
   invoke_shortcut "driftile_toggle_floating" || \
     fail "KGlobalAccel could not float the lower $protocol stack member"
+  second_floating_baseline=$(capture_stable_geometry "$second_title") || \
+    fail "the floating lower $protocol stack member did not stabilize"
+  [[ "$second_floating_baseline" =~ ^[^,]+,[^,]+,360,240$ ]] || \
+    fail "Driftile did not preserve the lower $protocol client size while floating: $second_floating_baseline"
   wait_for_layout \
     "$first_title" "16,16,616,688" \
-    "$second_title" "$second_baseline" \
+    "$second_title" "$second_floating_baseline" \
     "$third_title" "648,16,616,688" || \
     fail "Driftile did not float the lower $protocol stack member: $(describe_layout "$first_title" "$second_title" "$third_title")"
   wait_for_active "$second_title" || \
@@ -2361,6 +2506,7 @@ run_scenario() {
     "$first_title" \
     "$second_title" \
     "$third_title" \
+    first_baseline \
     second_baseline
 
   activate_window "$third_title" || \
@@ -2707,7 +2853,7 @@ run_scenario() {
     "$first_title" "$first_baseline" \
     "$second_title" "$second_baseline" \
     "$third_title" "$third_baseline" || \
-    fail "Driftile did not restore the $protocol windows: $(describe_layout "$first_title" "$second_title" "$third_title")"
+    fail "Driftile did not restore the $protocol windows: expected $first_title=$first_baseline $second_title=$second_baseline $third_title=$third_baseline; actual $(describe_layout "$first_title" "$second_title" "$third_title")"
 
   run_window_action "$third_title" close || fail "KWin could not close the third $protocol window"
   wait_for_window_gone "$third_title" || fail "the third $protocol test window did not close"
@@ -2865,6 +3011,9 @@ run_multi_output_scenario() {
     "${titles[1]}" \
     "${titles[3]}" \
     "${titles[4]}"
+
+  # A transferred window adopts KWin's returned mechanism frame as its safe baseline.
+  baselines[0]="648,16,490,336"
 
   start_client "$protocol" "${titles[2]}" true
   temporary_left_pid=${client_pids[${#client_pids[@]}-1]}

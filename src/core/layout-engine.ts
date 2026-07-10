@@ -94,6 +94,20 @@ export interface WindowTransferTarget {
   readonly outputId: OutputId;
 }
 
+export interface ColumnTransferTarget {
+  readonly columnId: ColumnId;
+  readonly desktopId: DesktopId;
+  readonly outputId: OutputId;
+}
+
+declare const columnTransferPreviewBrand: unique symbol;
+
+export interface ColumnTransferPreview {
+  readonly [columnTransferPreviewBrand]: true;
+  readonly sourceLayout: LayoutContextSnapshot;
+  readonly targetLayout: LayoutContextSnapshot;
+}
+
 declare const windowTransferPreviewBrand: unique symbol;
 
 export interface WindowTransferPreview {
@@ -161,7 +175,19 @@ interface WindowTransferPreviewState {
   readonly windowId: WindowId;
 }
 
+interface ColumnTransferPreviewState {
+  readonly sourceAfter: LayoutContextSnapshot;
+  readonly sourceBefore: LayoutContextSnapshot;
+  readonly targetAfter: LayoutContextSnapshot;
+  readonly targetBefore: LayoutContextSnapshot;
+  readonly windowId: WindowId;
+}
+
 export class LayoutEngine {
+  private readonly columnTransferPreviews = new Map<
+    ColumnTransferPreview,
+    ColumnTransferPreviewState
+  >();
   private readonly contexts = new Map<string, LayoutContext>();
   private readonly stackEditRollbacks = new Map<
     StackEditRollback,
@@ -609,6 +635,172 @@ export class LayoutEngine {
     const previous = { ...column.width };
     context.columns[columnIndex] = { ...column, width: { ...width } };
     return previous;
+  }
+
+  previewColumnTransfer(
+    windowId: WindowId,
+    target: ColumnTransferTarget,
+  ): ColumnTransferPreview | null {
+    if (!validColumnTransferTarget(target)) {
+      return null;
+    }
+
+    const managedPlacement = this.placements.get(windowId);
+
+    if (!managedPlacement) {
+      return null;
+    }
+
+    const source = this.contexts.get(managedPlacement.contextKey);
+    const targetKey = contextKey(target.outputId, target.desktopId);
+
+    if (
+      !source ||
+      managedPlacement.contextKey === targetKey ||
+      source.activeColumnId !== managedPlacement.columnId
+    ) {
+      return null;
+    }
+
+    const sourceColumnIndex = source.columns.findIndex(
+      (column) => column.id === managedPlacement.columnId,
+    );
+    const sourceColumn = source.columns[sourceColumnIndex];
+
+    if (!sourceColumn || !sourceColumn.windowIds.includes(windowId)) {
+      return null;
+    }
+
+    const sourceBefore = immutableContextSnapshot(
+      this.snapshot(source.outputId, source.desktopId),
+    );
+    const transferredColumn = sourceBefore.columns[sourceColumnIndex];
+    const targetBefore = immutableContextSnapshot(
+      this.snapshot(target.outputId, target.desktopId),
+    );
+
+    if (!transferredColumn) {
+      return null;
+    }
+
+    const transferredWindowIds = new Set(transferredColumn.windowIds);
+    let targetActiveIndex = -1;
+
+    for (const [index, column] of targetBefore.columns.entries()) {
+      if (
+        column.id === target.columnId ||
+        column.windowIds.some((id) => transferredWindowIds.has(id))
+      ) {
+        return null;
+      }
+
+      if (column.id === targetBefore.activeColumnId) {
+        targetActiveIndex = index;
+      }
+    }
+
+    if (targetBefore.columns.length > 0 && targetActiveIndex < 0) {
+      return null;
+    }
+
+    const sourceColumns = sourceBefore.columns.filter(
+      (_column, index) => index !== sourceColumnIndex,
+    );
+    const sourceAfter = immutableContextSnapshot({
+      activeColumnId:
+        sourceBefore.columns[sourceColumnIndex + 1]?.id ??
+        sourceBefore.columns[sourceColumnIndex - 1]?.id ??
+        null,
+      columns: sourceColumns,
+      desktopId: sourceBefore.desktopId,
+      outputId: sourceBefore.outputId,
+      viewportOffset:
+        sourceColumns.length === 0 ? 0 : sourceBefore.viewportOffset,
+    });
+    const targetColumns = [...targetBefore.columns];
+    const targetInsertionIndex =
+      targetActiveIndex < 0 ? targetColumns.length : targetActiveIndex + 1;
+    targetColumns.splice(targetInsertionIndex, 0, {
+      id: target.columnId,
+      width: transferredColumn.width,
+      windowIds: transferredColumn.windowIds,
+    });
+    const targetAfter = immutableContextSnapshot({
+      activeColumnId: target.columnId,
+      columns: targetColumns,
+      desktopId: targetBefore.desktopId,
+      outputId: targetBefore.outputId,
+      viewportOffset: targetBefore.viewportOffset,
+    });
+    const preview = Object.freeze({
+      sourceLayout: sourceAfter,
+      targetLayout: targetAfter,
+    }) as ColumnTransferPreview;
+    this.columnTransferPreviews.set(preview, {
+      sourceAfter,
+      sourceBefore,
+      targetAfter,
+      targetBefore,
+      windowId,
+    });
+    return preview;
+  }
+
+  commitColumnTransfer(preview: ColumnTransferPreview): boolean {
+    const state = this.columnTransferPreviews.get(preview);
+
+    if (!state) {
+      return false;
+    }
+
+    this.columnTransferPreviews.delete(preview);
+    const sourceKey = contextKey(
+      state.sourceBefore.outputId,
+      state.sourceBefore.desktopId,
+    );
+    const targetKey = contextKey(
+      state.targetBefore.outputId,
+      state.targetBefore.desktopId,
+    );
+
+    if (
+      sourceKey === targetKey ||
+      this.placements.get(state.windowId)?.contextKey !== sourceKey ||
+      !sameContextSnapshot(
+        this.snapshot(
+          state.sourceBefore.outputId,
+          state.sourceBefore.desktopId,
+        ),
+        state.sourceBefore,
+      ) ||
+      !sameContextSnapshot(
+        this.snapshot(
+          state.targetBefore.outputId,
+          state.targetBefore.desktopId,
+        ),
+        state.targetBefore,
+      ) ||
+      !sameWindowSetAcrossContexts(
+        state.sourceBefore,
+        state.targetBefore,
+        state.sourceAfter,
+        state.targetAfter,
+      ) ||
+      !validTransferContextSnapshot(state.sourceAfter) ||
+      !validTransferContextSnapshot(state.targetAfter) ||
+      !this.placementsMatchSnapshot(state.sourceBefore) ||
+      !this.placementsMatchSnapshot(state.targetBefore)
+    ) {
+      return false;
+    }
+
+    this.replaceContext(state.sourceAfter);
+    this.replaceContext(state.targetAfter);
+    return true;
+  }
+
+  discardColumnTransfer(preview: ColumnTransferPreview): boolean {
+    return this.columnTransferPreviews.delete(preview);
   }
 
   previewWindowTransfer(
@@ -1554,6 +1746,12 @@ function validDetachedWindowPlacement(
     nextWindowId !== windowId &&
     (previousWindowId === null || previousWindowId !== nextWindowId)
   );
+}
+
+function validColumnTransferTarget(
+  target: unknown,
+): target is ColumnTransferTarget {
+  return validWindowTransferTarget(target);
 }
 
 function validWindowTransferTarget(

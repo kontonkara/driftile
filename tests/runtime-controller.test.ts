@@ -57,6 +57,7 @@ class ManualScheduler {
 }
 
 interface TrackedWindow {
+  readonly decorationPolicyChanged: Signal<[]>;
   readonly desktopWriteCount: number;
   readonly desktopsChanged: Signal<[]>;
   readonly frameGeometryChanged: Signal<
@@ -96,6 +97,7 @@ function createTrackedWindow(
   desktop: KWinVirtualDesktop,
   overrides: Partial<KWinWindow> = {},
 ): TrackedWindow {
+  const decorationPolicyChanged = new Signal<[]>();
   const desktopsChanged = new Signal<[]>();
   const frameGeometryChanged = new Signal<
     [oldGeometry: KWinWindow["frameGeometry"]]
@@ -132,6 +134,7 @@ function createTrackedWindow(
     null;
   const window: KWinWindow = {
     clientGeometry: initialClientGeometry,
+    decorationPolicyChanged,
     deleted: false,
     desktops: [desktop],
     desktopsChanged,
@@ -227,7 +230,22 @@ function createTrackedWindow(
     },
   });
 
+  if (typeof window.noBorder === "boolean") {
+    let noBorder = window.noBorder;
+
+    Object.defineProperty(window, "noBorder", {
+      configurable: true,
+      enumerable: true,
+      get: () => noBorder,
+      set: (value: boolean) => {
+        noBorder = value;
+        decorationPolicyChanged.emit();
+      },
+    });
+  }
+
   return {
+    decorationPolicyChanged,
     get desktopWriteCount() {
       return desktopWriteCount;
     },
@@ -576,6 +594,339 @@ function setWindowState(
 }
 
 describe("RuntimeController", () => {
+  it("applies optional borderless windows and restores owned decoration state", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const decorated = createTrackedWindow("decorated", output, desktop, {
+      noBorder: false,
+    });
+    const borderless = createTrackedWindow("borderless", output, desktop, {
+      noBorder: true,
+    });
+    const dialog = createTrackedWindow("dialog", output, desktop, {
+      dialog: true,
+      noBorder: false,
+      normalWindow: false,
+    });
+    const fixed = createTrackedWindow("fixed", output, desktop, {
+      noBorder: false,
+      resizeable: false,
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [decorated.window, borderless.window, dialog.window, fixed.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      borderlessWindows: true,
+      clientAreaOption: 2,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(decorated.window.noBorder).toBe(true);
+    expect(borderless.window.noBorder).toBe(true);
+    expect(dialog.window.noBorder).toBe(true);
+    expect(fixed.window.noBorder).toBe(true);
+
+    controller.stop();
+    expect(decorated.window.noBorder).toBe(false);
+    expect(borderless.window.noBorder).toBe(true);
+    expect(dialog.window.noBorder).toBe(false);
+    expect(fixed.window.noBorder).toBe(false);
+  });
+
+  it("keeps decorations when borderless windows are disabled", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const decorated = createTrackedWindow("decorated", output, desktop, {
+      noBorder: false,
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [decorated.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      borderlessWindows: false,
+      clientAreaOption: 2,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(decorated.window.noBorder).toBe(false);
+  });
+
+  it("reconfigures owned window decorations without claiming existing borderless state", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const decorated = createTrackedWindow("decorated", output, desktop, {
+      noBorder: false,
+    });
+    const borderless = createTrackedWindow("borderless", output, desktop, {
+      noBorder: true,
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [decorated.window, borderless.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      borderlessWindows: false,
+      clientAreaOption: 2,
+    });
+
+    expect(controller.start()).toBe(true);
+    controller.setBorderlessWindows(true);
+    expect(decorated.window.noBorder).toBe(true);
+    expect(borderless.window.noBorder).toBe(true);
+
+    controller.setBorderlessWindows(false);
+    expect(decorated.window.noBorder).toBe(false);
+    expect(borderless.window.noBorder).toBe(true);
+  });
+
+  it("keeps owned decorations hidden while floating", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const decorated = createTrackedWindow("decorated", output, desktop, {
+      noBorder: false,
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [decorated.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      borderlessWindows: true,
+      clientAreaOption: 2,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(decorated.window.noBorder).toBe(true);
+    expect(controller.toggleFloating()).toBe(true);
+    expect(decorated.window.noBorder).toBe(true);
+    expect(controller.toggleFloating()).toBe(true);
+    expect(decorated.window.noBorder).toBe(true);
+
+    controller.stop();
+    expect(decorated.window.noBorder).toBe(false);
+  });
+
+  it("reasserts owned borderless state after an external policy change", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const decorated = createTrackedWindow("decorated", output, desktop, {
+      noBorder: false,
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [decorated.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      borderlessWindows: true,
+      clientAreaOption: 2,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(decorated.window.noBorder).toBe(true);
+
+    decorated.window.noBorder = false;
+    expect(decorated.window.noBorder).toBe(true);
+
+    controller.setBorderlessWindows(false);
+    expect(decorated.window.noBorder).toBe(false);
+  });
+
+  it("retries borderless state while a new window decoration settles", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const decorated = createTrackedWindow("decorated", output, desktop, {
+      noBorder: false,
+    });
+    const scheduler = new ManualScheduler();
+    let acceptsBorderless = false;
+    let noBorder = false;
+
+    Object.defineProperty(decorated.window, "noBorder", {
+      configurable: true,
+      get: () => noBorder,
+      set: (value: boolean) => {
+        if (value && !acceptsBorderless) {
+          return;
+        }
+
+        noBorder = value;
+        decorated.decorationPolicyChanged.emit();
+      },
+    });
+
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [decorated.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      borderlessWindows: true,
+      clientAreaOption: 2,
+      scheduleResume: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(decorated.window.noBorder).toBe(false);
+    expect(scheduler.pendingCount).toBe(1);
+
+    acceptsBorderless = true;
+    scheduler.flush();
+    expect(decorated.window.noBorder).toBe(true);
+
+    controller.stop();
+    expect(decorated.window.noBorder).toBe(false);
+  });
+
+  it("restores the pre-claim frame after synchronous decoration changes", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const originalFrame = { height: 290, width: 380, x: 100, y: 80 };
+    const decorated = createTrackedWindow("decorated", output, desktop, {
+      clientGeometry: { height: 254, width: 368, x: 106, y: 110 },
+      frameGeometry: originalFrame,
+      noBorder: false,
+    });
+    let noBorder = false;
+
+    Object.defineProperty(decorated.window, "noBorder", {
+      configurable: true,
+      get: () => noBorder,
+      set: (value: boolean) => {
+        if (noBorder === value) {
+          return;
+        }
+
+        noBorder = value;
+        const frame = decorated.window.frameGeometry;
+        decorated.setFrameGeometry(
+          value
+            ? { height: 254, width: 368, x: 106, y: 110 }
+            : {
+                height: frame.height + 36,
+                width: frame.width + 12,
+                x: frame.x - 6,
+                y: frame.y - 30,
+              },
+        );
+        decorated.decorationPolicyChanged.emit();
+      },
+    });
+
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [decorated.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      borderlessWindows: true,
+      clientAreaOption: 2,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(decorated.window.noBorder).toBe(true);
+
+    controller.stop();
+    expect(decorated.window.noBorder).toBe(false);
+    expect(decorated.window.frameGeometry).toEqual(originalFrame);
+  });
+
+  it("preserves client geometry while floating across decoration reconfiguration", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const originalClient = { height: 254, width: 368, x: 106, y: 110 };
+    const originalFrame = { height: 290, width: 380, x: 100, y: 80 };
+    const decorated = createTrackedWindow("decorated", output, desktop, {
+      clientGeometry: originalClient,
+      frameGeometry: originalFrame,
+      noBorder: false,
+    });
+    let noBorder = false;
+
+    Object.defineProperty(decorated.window, "clientGeometry", {
+      configurable: true,
+      get: () => {
+        const frame = decorated.window.frameGeometry;
+        return noBorder
+          ? { ...frame }
+          : {
+              height: frame.height - 36,
+              width: frame.width - 12,
+              x: frame.x + 6,
+              y: frame.y + 30,
+            };
+      },
+    });
+    Object.defineProperty(decorated.window, "noBorder", {
+      configurable: true,
+      get: () => noBorder,
+      set: (value: boolean) => {
+        if (noBorder === value) {
+          return;
+        }
+
+        const client = decorated.window.clientGeometry;
+        noBorder = value;
+        decorated.setFrameGeometry(
+          value
+            ? client
+            : {
+                height: client.height + 36,
+                width: client.width + 12,
+                x: client.x - 6,
+                y: client.y - 30,
+              },
+        );
+        decorated.decorationPolicyChanged.emit();
+      },
+    });
+
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [decorated.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      borderlessWindows: false,
+      clientAreaOption: 2,
+    });
+
+    expect(controller.start()).toBe(true);
+    controller.setBorderlessWindows(true);
+    expect(controller.toggleFloating()).toBe(true);
+    expect(decorated.window.frameGeometry).toEqual(originalClient);
+    expect(controller.toggleFloating()).toBe(true);
+
+    controller.setBorderlessWindows(false);
+    expect(controller.toggleFloating()).toBe(true);
+    expect(decorated.window.frameGeometry).toEqual(originalFrame);
+    expect(controller.toggleFloating()).toBe(true);
+
+    controller.stop();
+    expect(decorated.window.frameGeometry).toEqual(originalFrame);
+  });
+
   it("leaves automatic-floating window classes exclusively to KWin", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
@@ -713,6 +1064,12 @@ describe("RuntimeController", () => {
       throw new Error("missing transient fixture");
     }
 
+    Object.defineProperty(becomingTransient.window, "noBorder", {
+      configurable: true,
+      value: false,
+      writable: true,
+    });
+
     const fixture = createWorkspace(
       output,
       desktop,
@@ -722,6 +1079,7 @@ describe("RuntimeController", () => {
     );
     const scheduler = new ManualScheduler();
     const controller = new RuntimeController(fixture.workspace, {
+      borderlessWindows: true,
       clientAreaOption: 2,
       columnWidth: { kind: "fixed", value: 400 },
       gap: 10,
@@ -729,6 +1087,7 @@ describe("RuntimeController", () => {
     });
 
     controller.start();
+    expect(becomingTransient.window.noBorder).toBe(true);
     const layout = runtimeLayout(controller);
     fixture.workspace.activeWindow = becomingTransient.window;
     layout.setViewportOffset(outputId(output.name), desktopId(desktop.id), 100);
@@ -741,6 +1100,7 @@ describe("RuntimeController", () => {
     });
     becomingTransient.transientChanged.emit();
 
+    expect(becomingTransient.window.noBorder).toBe(true);
     expect(controller.automaticFloatingCount).toBe(1);
     expect(controller.managedCount).toBe(3);
     expect(controller.floatingCount).toBe(0);
@@ -2701,8 +3061,11 @@ describe("RuntimeController", () => {
             string,
             {
               restoreBaseline: {
+                clientFrame: KWinWindow["clientGeometry"];
                 fingerprint: string;
                 frame: KWinWindow["frameGeometry"];
+                kind: "client" | "frame";
+                noBorder: boolean | undefined;
               } | null;
             }
           >;
@@ -2718,8 +3081,11 @@ describe("RuntimeController", () => {
         baselineKind === "null"
           ? null
           : {
+              clientFrame: { height: 1, width: 1, x: 1, y: 1 },
               fingerprint: "stale-context",
               frame: { height: 1, width: 1, x: 1, y: 1 },
+              kind: "frame",
+              noBorder: false,
             };
       const frame = { ...active.window.frameGeometry };
       const writes = active.writeCount;
@@ -7205,11 +7571,15 @@ describe("RuntimeController", () => {
     expect(waiting.writeCount).toBe(0);
   });
 
-  it("releases an all-desktop window and admits it again when it returns", () => {
+  it("keeps an all-desktop application borderless while layout ownership changes", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
-    const first = createTrackedWindow("window-1", output, desktop);
-    const second = createTrackedWindow("window-2", output, desktop);
+    const first = createTrackedWindow("window-1", output, desktop, {
+      noBorder: false,
+    });
+    const second = createTrackedWindow("window-2", output, desktop, {
+      noBorder: false,
+    });
     const fixture = createWorkspace(
       output,
       desktop,
@@ -7219,12 +7589,15 @@ describe("RuntimeController", () => {
     );
     const scheduler = new ManualScheduler();
     const controller = new RuntimeController(fixture.workspace, {
+      borderlessWindows: true,
       clientAreaOption: 2,
       gap: 10,
       schedule: scheduler.schedule,
     });
 
     controller.start();
+    expect(first.window.noBorder).toBe(true);
+    expect(second.window.noBorder).toBe(true);
     Object.defineProperties(first.window, {
       desktops: { configurable: true, value: [] },
       onAllDesktops: { configurable: true, value: true },
@@ -7233,6 +7606,8 @@ describe("RuntimeController", () => {
     scheduler.flush();
 
     expect(controller.managedCount).toBe(1);
+    expect(first.window.noBorder).toBe(true);
+    expect(second.window.noBorder).toBe(true);
     expect(second.window.frameGeometry.x).toBe(10);
 
     Object.defineProperties(first.window, {
@@ -7243,6 +7618,7 @@ describe("RuntimeController", () => {
     scheduler.flush();
 
     expect(controller.managedCount).toBe(2);
+    expect(first.window.noBorder).toBe(true);
     expect(second.window.frameGeometry.x).toBe(10);
     expect(first.window.frameGeometry.x).toBe(505);
   });
@@ -10545,7 +10921,7 @@ describe("RuntimeController desktop transfers", () => {
     ).toEqual({ kind: "proportion", value: 0.5 });
   });
 
-  it("extracts a stack member and returns it after the surviving active column", () => {
+  it("moves a whole stack by default and keeps single-window transfer secondary", () => {
     const {
       controller,
       destination,
@@ -10605,19 +10981,42 @@ describe("RuntimeController desktop transfers", () => {
     fixture.workspace.activeWindow = moved.window;
     controller.reconcile();
 
-    const sourceBefore = runtimeLayout(controller).snapshot(
-      outputId(output.name),
-      desktopId(desktops[0].id),
-    );
-    expect(controller.moveColumnToNextDesktop()).toBe(false);
+    expect(controller.moveColumnToNextDesktop()).toBe(true);
+    expect(testLayoutColumns(controller, output, desktops[0])).toEqual([
+      {
+        id: "column:trailing",
+        windowIds: [String(trailing.window.internalId)],
+      },
+    ]);
     expect(
-      runtimeLayout(controller).snapshot(
-        outputId(output.name),
-        desktopId(desktops[0].id),
-      ),
-    ).toEqual(sourceBefore);
-    expect(moved.desktopWriteCount).toBe(0);
-    expect(fixture.desktopSwitchCount).toBe(0);
+      runtimeLayout(controller)
+        .snapshot(outputId(output.name), desktopId(desktops[1].id))
+        .columns.map((column) => [column.width, column.windowIds]),
+    ).toEqual([
+      [{ kind: "fixed", value: 280 }, [destination.window.internalId]],
+      [
+        { kind: "fixed", value: 620 },
+        [source.window.internalId, moved.window.internalId],
+      ],
+    ]);
+    expect(source.window.desktops).toEqual([desktops[1]]);
+    expect(moved.window.desktops).toEqual([desktops[1]]);
+    expect(fixture.workspace.activeWindow).toBe(moved.window);
+
+    expect(controller.moveColumnToPreviousDesktop()).toBe(true);
+    expect(testLayoutColumns(controller, output, desktops[0])).toEqual([
+      {
+        id: "column:trailing",
+        windowIds: [String(trailing.window.internalId)],
+      },
+      {
+        id: "column:stack",
+        windowIds: [
+          String(source.window.internalId),
+          String(moved.window.internalId),
+        ],
+      },
+    ]);
 
     expect(controller.moveWindowToNextDesktop()).toBe(true);
     expect(
@@ -10630,13 +11029,103 @@ describe("RuntimeController desktop transfers", () => {
     ]);
     expect(controller.moveWindowToPreviousDesktop()).toBe(true);
     expect(testLayoutColumns(controller, output, desktops[0])).toEqual([
-      { id: "column:stack", windowIds: [String(source.window.internalId)] },
-      { id: "column:moved", windowIds: [String(moved.window.internalId)] },
       {
         id: "column:trailing",
         windowIds: [String(trailing.window.internalId)],
       },
+      { id: "column:stack", windowIds: [String(source.window.internalId)] },
+      { id: "column:moved", windowIds: [String(moved.window.internalId)] },
     ]);
+  });
+
+  it("rolls back every member when a stacked desktop assignment fails", () => {
+    const transfer = createDesktopTransferFixture({ sourceStack: true });
+    const sourceFrame = { ...transfer.source.window.frameGeometry };
+    const movedFrame = { ...transfer.moved.window.frameGeometry };
+    const sourceLayout = runtimeLayout(transfer.controller).snapshot(
+      outputId(transfer.output.name),
+      desktopId(transfer.desktops[0].id),
+    );
+    const targetLayout = runtimeLayout(transfer.controller).snapshot(
+      outputId(transfer.output.name),
+      desktopId(transfer.desktops[1].id),
+    );
+    transfer.source.setDesktopWriteBehavior((next, commit) => {
+      commit();
+
+      if (next[0]?.id === transfer.desktops[1].id) {
+        transfer.source.setFrameGeometry({
+          height: 310,
+          width: 410,
+          x: 210,
+          y: 120,
+        });
+      }
+    });
+    transfer.moved.setDesktopWriteBehavior((next, commit) => {
+      if (next[0]?.id === transfer.desktops[1].id) {
+        commit();
+        transfer.moved.setFrameGeometry({
+          height: 320,
+          width: 420,
+          x: 220,
+          y: 130,
+        });
+        throw new Error("stack member desktop rejected");
+      }
+
+      commit();
+    });
+
+    expect(transfer.controller.moveColumnToNextDesktop()).toBe(false);
+    expect(transfer.source.window.desktops).toEqual([transfer.desktops[0]]);
+    expect(transfer.moved.window.desktops).toEqual([transfer.desktops[0]]);
+    expect(transfer.source.window.frameGeometry).toEqual(sourceFrame);
+    expect(transfer.moved.window.frameGeometry).toEqual(movedFrame);
+    expect(transfer.source.desktopWriteCount).toBe(2);
+    expect(transfer.moved.desktopWriteCount).toBe(2);
+    expect(transfer.fixture.desktopSwitchCount).toBe(0);
+    expect(
+      runtimeLayout(transfer.controller).snapshot(
+        outputId(transfer.output.name),
+        desktopId(transfer.desktops[0].id),
+      ),
+    ).toEqual(sourceLayout);
+    expect(
+      runtimeLayout(transfer.controller).snapshot(
+        outputId(transfer.output.name),
+        desktopId(transfer.desktops[1].id),
+      ),
+    ).toEqual(targetLayout);
+  });
+
+  it("migrates full-width restore state with a renamed stacked column", () => {
+    const transfer = createDesktopTransferFixture({
+      sourceStack: true,
+      targetColumnId: "column:source",
+    });
+
+    expect(transfer.controller.maximizeColumn()).toBe(true);
+    expect(transfer.controller.moveColumnToNextDesktop()).toBe(true);
+    expect(
+      testLayoutColumns(
+        transfer.controller,
+        transfer.output,
+        transfer.desktops[1],
+      ),
+    ).toEqual([
+      { id: "column:source", windowIds: ["destination"] },
+      { id: "column:moved", windowIds: ["source", "moved"] },
+    ]);
+
+    expect(transfer.controller.maximizeColumn()).toBe(true);
+    expect(
+      activeColumnWidth(
+        transfer.controller,
+        transfer.output,
+        transfer.desktops[1],
+      ),
+    ).toEqual({ kind: "proportion", value: 0.5 });
   });
 
   it("commits the solved destination viewport when insertion needs reveal", () => {
@@ -11158,41 +11647,149 @@ describe("RuntimeController output transfers", () => {
     },
   );
 
-  it("never splits a stacked column through a default output transfer", () => {
+  it("moves every stacked member through a default output transfer", () => {
     const transfer = createOutputTransferFixture({ sourceStack: true });
-    const sourceBefore = runtimeLayout(transfer.controller).snapshot(
+
+    expect(transfer.controller.moveColumnToOutputRight()).toBe(true);
+    expect(transfer.fixture.outputTransferCount).toBe(2);
+    expect(transfer.moved.desktopWriteCount).toBe(0);
+    expect(transfer.source.window.output).toBe(transfer.targetOutput);
+    expect(transfer.moved.window.output).toBe(transfer.targetOutput);
+    expect(
+      testLayoutColumns(
+        transfer.controller,
+        transfer.sourceOutput,
+        transfer.sourceDesktop,
+      ),
+    ).toEqual([]);
+    expect(
+      testLayoutColumns(
+        transfer.controller,
+        transfer.targetOutput,
+        transfer.targetDesktop,
+      ),
+    ).toEqual([
+      { id: "column:destination", windowIds: ["destination"] },
+      { id: "column:source", windowIds: ["source", "moved"] },
+    ]);
+    expect(transfer.fixture.workspace.activeWindow).toBe(transfer.moved.window);
+    expect(transfer.controller.moveColumnToOutputRight()).toBe(false);
+    expect(transfer.fixture.outputTransferCount).toBe(2);
+  });
+
+  it("rolls back every member when a stacked output assignment fails", () => {
+    const transfer = createOutputTransferFixture({ sourceStack: true });
+    const sourceFrame = { ...transfer.source.window.frameGeometry };
+    const movedFrame = { ...transfer.moved.window.frameGeometry };
+    const sourceLayout = runtimeLayout(transfer.controller).snapshot(
       outputId(transfer.sourceOutput.name),
       desktopId(transfer.sourceDesktop.id),
     );
-    const targetBefore = runtimeLayout(transfer.controller).snapshot(
+    const targetLayout = runtimeLayout(transfer.controller).snapshot(
       outputId(transfer.targetOutput.name),
       desktopId(transfer.targetDesktop.id),
     );
+    transfer.fixture.setOutputTransferBehavior((window, output, commit) => {
+      commit();
+
+      if (
+        window === transfer.source.window &&
+        output === transfer.targetOutput
+      ) {
+        transfer.source.setFrameGeometry({
+          height: 310,
+          width: 410,
+          x: 1210,
+          y: 120,
+        });
+      } else if (
+        window === transfer.moved.window &&
+        output === transfer.targetOutput
+      ) {
+        transfer.moved.setFrameGeometry({
+          height: 320,
+          width: 420,
+          x: 1220,
+          y: 130,
+        });
+        throw new Error("stack member output rejected");
+      }
+    });
 
     expect(transfer.controller.moveColumnToOutputRight()).toBe(false);
-    expect(transfer.fixture.outputTransferCount).toBe(0);
-    expect(transfer.moved.desktopWriteCount).toBe(0);
+    expect(transfer.source.window.output).toBe(transfer.sourceOutput);
+    expect(transfer.moved.window.output).toBe(transfer.sourceOutput);
+    expect(transfer.source.window.frameGeometry).toEqual(sourceFrame);
+    expect(transfer.moved.window.frameGeometry).toEqual(movedFrame);
+    expect(transfer.fixture.outputTransferCount).toBe(4);
     expect(
       runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.sourceOutput.name),
         desktopId(transfer.sourceDesktop.id),
       ),
-    ).toEqual(sourceBefore);
+    ).toEqual(sourceLayout);
     expect(
       runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.targetOutput.name),
         desktopId(transfer.targetDesktop.id),
       ),
-    ).toEqual(targetBefore);
+    ).toEqual(targetLayout);
+  });
+
+  it("migrates full-width restore state with a renamed output stack", () => {
+    const transfer = createOutputTransferFixture({
+      movedWidth: 0.3,
+      sourceStack: true,
+      targetColumnId: "column:source",
+      targetColumnWidth: 0.3,
+    });
+
+    expect(transfer.controller.maximizeColumn()).toBe(true);
+    expect(
+      runtimeLayout(transfer.controller).setActiveColumnWidth(
+        windowId(String(transfer.moved.window.internalId)),
+        { kind: "proportion", value: 0.3 },
+      ),
+    ).toEqual({ kind: "proportion", value: 1 });
+    transfer.controller.reconcile();
+    expect(transfer.controller.moveColumnToOutputRight()).toBe(true);
+    expect(
+      testLayoutColumns(
+        transfer.controller,
+        transfer.targetOutput,
+        transfer.targetDesktop,
+      ),
+    ).toEqual([
+      { id: "column:source", windowIds: ["destination"] },
+      { id: "column:moved", windowIds: ["source", "moved"] },
+    ]);
+
+    expect(transfer.controller.maximizeColumn()).toBe(true);
+    expect(
+      activeColumnWidth(
+        transfer.controller,
+        transfer.targetOutput,
+        transfer.targetDesktop,
+      ),
+    ).toEqual({ kind: "proportion", value: 0.3 });
   });
 
   it("uses the target output's visible desktop without switching either output", () => {
     const transfer = createOutputTransferFixture({ differentDesktop: true });
+    const desktopAssignments: string[][] = [];
+    transfer.moved.setDesktopWriteBehavior((desktops, commit) => {
+      desktopAssignments.push(desktops.map((desktop) => desktop.id));
+      commit();
+    });
 
     expect(transfer.controller.moveWindowToOutputRight()).toBe(true);
     expect(transfer.moved.window.output).toBe(transfer.targetOutput);
     expect(transfer.moved.window.desktops).toEqual([transfer.targetDesktop]);
-    expect(transfer.moved.desktopWriteCount).toBe(1);
+    expect(transfer.moved.desktopWriteCount).toBe(2);
+    expect(desktopAssignments).toEqual([
+      [transfer.sourceDesktop.id, transfer.targetDesktop.id],
+      [transfer.targetDesktop.id],
+    ]);
     expect(transfer.fixture.desktopSwitchCount).toBe(0);
     expect(
       transfer.fixture.workspace.currentDesktopForScreen?.(
@@ -11671,6 +12268,25 @@ describe("RuntimeController output transfers", () => {
     expect(transfer.moved.window.desktops).toEqual([transfer.sourceDesktop]);
   });
 
+  it("preserves external multi-desktop membership during output rollback", () => {
+    const transfer = createOutputTransferFixture({ differentDesktop: true });
+    const externalDesktop = { id: "desktop-external" };
+    transfer.fixture.setOutputTransferBehavior((_window, _output, commit) => {
+      commit();
+      Object.defineProperty(transfer.moved.window, "desktops", {
+        configurable: true,
+        value: [transfer.targetDesktop, externalDesktop],
+      });
+    });
+
+    expect(transfer.controller.moveWindowToOutputRight()).toBe(false);
+    expect(transfer.moved.window.output).toBe(transfer.sourceOutput);
+    expect(transfer.moved.window.desktops).toEqual([
+      transfer.targetDesktop,
+      externalDesktop,
+    ]);
+  });
+
   it("blocks reentrant commands and defers window admission until commit", () => {
     const transfer = createOutputTransferFixture();
     const added = createTrackedWindow(
@@ -12016,6 +12632,7 @@ function createDesktopTransferFixture(
   options: {
     readonly destinationCount?: number;
     readonly movedOverrides?: Partial<KWinWindow>;
+    readonly sourceStack?: boolean;
     readonly targetColumnId?: string;
     readonly trackedOutput?: boolean;
   } = {},
@@ -12060,25 +12677,38 @@ function createDesktopTransferFixture(
   controller.start();
   const layout = new LayoutEngine();
   layout.restoreColumns({
-    activeColumnId: columnId("column:source"),
-    columns: [
-      {
-        column: {
-          id: columnId("column:source"),
-          width: { kind: "proportion", value: 0.5 },
-          windowIds: [windowId("source")],
-        },
-        index: 0,
-      },
-      {
-        column: {
-          id: columnId("column:moved"),
-          width: { kind: "proportion", value: 0.5 },
-          windowIds: [windowId("moved")],
-        },
-        index: 1,
-      },
-    ],
+    activeColumnId: columnId(
+      options.sourceStack ? "column:source" : "column:moved",
+    ),
+    columns: options.sourceStack
+      ? [
+          {
+            column: {
+              id: columnId("column:source"),
+              width: { kind: "proportion", value: 0.5 },
+              windowIds: [windowId("source"), windowId("moved")],
+            },
+            index: 0,
+          },
+        ]
+      : [
+          {
+            column: {
+              id: columnId("column:source"),
+              width: { kind: "proportion", value: 0.5 },
+              windowIds: [windowId("source")],
+            },
+            index: 0,
+          },
+          {
+            column: {
+              id: columnId("column:moved"),
+              width: { kind: "proportion", value: 0.5 },
+              windowIds: [windowId("moved")],
+            },
+            index: 1,
+          },
+        ],
     desktopId: desktopId(desktops[0].id),
     outputId: outputId(output.name),
   });

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { columnId, desktopId, outputId, windowId } from "../../src/core/ids";
 import {
   LayoutEngine,
+  type ColumnTransferPreview,
   type DetachedWindowPlacement,
   type StackEditRollback,
   type WindowAttachPreview,
@@ -1952,6 +1953,393 @@ describe("LayoutEngine", () => {
       }),
     ).toBe(false);
     expect(engine.snapshot(output, desktop)).toEqual(before);
+  });
+
+  it("previews and atomically transfers the whole active column", () => {
+    const engine = new LayoutEngine();
+    const targetOutput = outputId("HDMI-A-1");
+
+    engine.restoreColumns({
+      activeColumnId: columnId("source-stack"),
+      columns: [
+        {
+          column: {
+            id: columnId("source-a"),
+            width: { kind: "fixed", value: 240 },
+            windowIds: [windowId("window-a")],
+          },
+          index: 0,
+        },
+        {
+          column: {
+            id: columnId("source-stack"),
+            width: { kind: "proportion", value: 0.4 },
+            windowIds: [
+              windowId("window-b1"),
+              windowId("window-b2"),
+              windowId("window-b3"),
+            ],
+          },
+          index: 1,
+        },
+        {
+          column: {
+            id: columnId("source-c"),
+            width: { kind: "fixed", value: 360 },
+            windowIds: [windowId("window-c")],
+          },
+          index: 2,
+        },
+      ],
+      desktopId: desktop,
+      outputId: output,
+      viewportOffset: 120,
+    });
+    engine.restoreColumns({
+      activeColumnId: columnId("target-a"),
+      columns: [
+        {
+          column: {
+            id: columnId("target-a"),
+            width: { kind: "fixed", value: 280 },
+            windowIds: [windowId("window-target-a")],
+          },
+          index: 0,
+        },
+        {
+          column: {
+            id: columnId("target-b"),
+            width: { kind: "fixed", value: 420 },
+            windowIds: [windowId("window-target-b")],
+          },
+          index: 1,
+        },
+      ],
+      desktopId: desktop,
+      outputId: targetOutput,
+      viewportOffset: 75,
+    });
+    const sourceBefore = engine.snapshot(output, desktop);
+    const targetBefore = engine.snapshot(targetOutput, desktop);
+    const preview = engine.previewColumnTransfer(windowId("window-b2"), {
+      columnId: columnId("transferred"),
+      desktopId: desktop,
+      outputId: targetOutput,
+    });
+
+    if (!preview) {
+      throw new Error("expected a column transfer preview");
+    }
+
+    expect(engine.snapshot(output, desktop)).toEqual(sourceBefore);
+    expect(engine.snapshot(targetOutput, desktop)).toEqual(targetBefore);
+    expect(preview.sourceLayout).toEqual({
+      activeColumnId: "source-c",
+      columns: [
+        {
+          id: "source-a",
+          width: { kind: "fixed", value: 240 },
+          windowIds: ["window-a"],
+        },
+        {
+          id: "source-c",
+          width: { kind: "fixed", value: 360 },
+          windowIds: ["window-c"],
+        },
+      ],
+      desktopId: "desktop-1",
+      outputId: "DP-1",
+      viewportOffset: 120,
+    });
+    expect(preview.targetLayout).toEqual({
+      activeColumnId: "transferred",
+      columns: [
+        {
+          id: "target-a",
+          width: { kind: "fixed", value: 280 },
+          windowIds: ["window-target-a"],
+        },
+        {
+          id: "transferred",
+          width: { kind: "proportion", value: 0.4 },
+          windowIds: ["window-b1", "window-b2", "window-b3"],
+        },
+        {
+          id: "target-b",
+          width: { kind: "fixed", value: 420 },
+          windowIds: ["window-target-b"],
+        },
+      ],
+      desktopId: "desktop-1",
+      outputId: "HDMI-A-1",
+      viewportOffset: 75,
+    });
+    expect(Object.isFrozen(preview)).toBe(true);
+    expect(Object.isFrozen(preview.sourceLayout)).toBe(true);
+    expect(Object.isFrozen(preview.sourceLayout.columns)).toBe(true);
+    expect(Object.isFrozen(preview.targetLayout)).toBe(true);
+    expect(Object.isFrozen(preview.targetLayout.columns)).toBe(true);
+    expect(Object.isFrozen(preview.targetLayout.columns[1])).toBe(true);
+    expect(Object.isFrozen(preview.targetLayout.columns[1]?.width)).toBe(true);
+    expect(Object.isFrozen(preview.targetLayout.columns[1]?.windowIds)).toBe(
+      true,
+    );
+    expect(engine.commitColumnTransfer(preview)).toBe(true);
+    expect(engine.snapshot(output, desktop)).toEqual(preview.sourceLayout);
+    expect(engine.snapshot(targetOutput, desktop)).toEqual(
+      preview.targetLayout,
+    );
+    expect(engine.commitColumnTransfer(preview)).toBe(false);
+  });
+
+  it("transfers the last active column into an empty context", () => {
+    const engine = new LayoutEngine();
+    const targetDesktop = desktopId("desktop-2");
+
+    engine.restoreColumns({
+      activeColumnId: columnId("source-only"),
+      columns: [
+        {
+          column: {
+            id: columnId("source-only"),
+            width: { kind: "fixed", value: 515 },
+            windowIds: [windowId("window-a"), windowId("window-b")],
+          },
+          index: 0,
+        },
+      ],
+      desktopId: desktop,
+      outputId: output,
+      viewportOffset: 44,
+    });
+    const preview = engine.previewColumnTransfer(windowId("window-b"), {
+      columnId: columnId("target-only"),
+      desktopId: targetDesktop,
+      outputId: output,
+    });
+
+    if (!preview) {
+      throw new Error("expected a last-column transfer preview");
+    }
+
+    expect(preview.sourceLayout).toEqual({
+      activeColumnId: null,
+      columns: [],
+      desktopId: "desktop-1",
+      outputId: "DP-1",
+      viewportOffset: 0,
+    });
+    expect(preview.targetLayout).toEqual({
+      activeColumnId: "target-only",
+      columns: [
+        {
+          id: "target-only",
+          width: { kind: "fixed", value: 515 },
+          windowIds: ["window-a", "window-b"],
+        },
+      ],
+      desktopId: "desktop-2",
+      outputId: "DP-1",
+      viewportOffset: 0,
+    });
+    expect(engine.commitColumnTransfer(preview)).toBe(true);
+    expect(engine.snapshot(output, desktop)).toEqual(preview.sourceLayout);
+    expect(engine.snapshot(output, targetDesktop)).toEqual(
+      preview.targetLayout,
+    );
+  });
+
+  it("rejects invalid whole-column transfer preconditions without mutation", () => {
+    const engine = new LayoutEngine();
+    const targetOutput = outputId("HDMI-A-1");
+
+    engine.restoreColumns({
+      activeColumnId: columnId("source-active"),
+      columns: [
+        {
+          column: {
+            id: columnId("source-active"),
+            width: { kind: "fixed", value: 300 },
+            windowIds: [
+              windowId("window-active-a"),
+              windowId("window-active-b"),
+            ],
+          },
+          index: 0,
+        },
+        {
+          column: {
+            id: columnId("source-inactive"),
+            width: { kind: "fixed", value: 320 },
+            windowIds: [windowId("window-inactive")],
+          },
+          index: 1,
+        },
+      ],
+      desktopId: desktop,
+      outputId: output,
+    });
+    engine.restoreColumns({
+      activeColumnId: columnId("target-collision"),
+      columns: [
+        {
+          column: {
+            id: columnId("target-collision"),
+            width: { kind: "fixed", value: 340 },
+            windowIds: [windowId("window-target")],
+          },
+          index: 0,
+        },
+      ],
+      desktopId: desktop,
+      outputId: targetOutput,
+    });
+    const sourceBefore = engine.snapshot(output, desktop);
+    const targetBefore = engine.snapshot(targetOutput, desktop);
+
+    expect(
+      engine.previewColumnTransfer(windowId("unknown"), {
+        columnId: columnId("fresh"),
+        desktopId: desktop,
+        outputId: targetOutput,
+      }),
+    ).toBeNull();
+    expect(
+      engine.previewColumnTransfer(windowId("window-inactive"), {
+        columnId: columnId("fresh"),
+        desktopId: desktop,
+        outputId: targetOutput,
+      }),
+    ).toBeNull();
+    expect(
+      engine.previewColumnTransfer(windowId("window-active-a"), {
+        columnId: columnId("fresh"),
+        desktopId: desktop,
+        outputId: output,
+      }),
+    ).toBeNull();
+    expect(
+      engine.previewColumnTransfer(windowId("window-active-b"), {
+        columnId: columnId("target-collision"),
+        desktopId: desktop,
+        outputId: targetOutput,
+      }),
+    ).toBeNull();
+    expect(
+      engine.previewColumnTransfer(
+        windowId("window-active-a"),
+        null as unknown as Parameters<LayoutEngine["previewColumnTransfer"]>[1],
+      ),
+    ).toBeNull();
+    expect(engine.snapshot(output, desktop)).toEqual(sourceBefore);
+    expect(engine.snapshot(targetOutput, desktop)).toEqual(targetBefore);
+  });
+
+  it("rejects forged, foreign, discarded, and reused column transfer previews", () => {
+    const engine = new LayoutEngine();
+    const foreign = new LayoutEngine();
+    const targetOutput = outputId("HDMI-A-1");
+
+    engine.manageWindow({
+      columnId: columnId("source"),
+      desktopId: desktop,
+      outputId: output,
+      width: { kind: "fixed", value: 300 },
+      windowId: windowId("window-1"),
+    });
+    engine.activateWindow(windowId("window-1"));
+    const discarded = engine.previewColumnTransfer(windowId("window-1"), {
+      columnId: columnId("target"),
+      desktopId: desktop,
+      outputId: targetOutput,
+    });
+
+    if (!discarded) {
+      throw new Error("expected an owned column transfer preview");
+    }
+
+    expect(engine.commitColumnTransfer({} as ColumnTransferPreview)).toBe(
+      false,
+    );
+    expect(foreign.commitColumnTransfer(discarded)).toBe(false);
+    expect(engine.discardColumnTransfer(discarded)).toBe(true);
+    expect(engine.discardColumnTransfer(discarded)).toBe(false);
+    expect(engine.commitColumnTransfer(discarded)).toBe(false);
+
+    const committed = engine.previewColumnTransfer(windowId("window-1"), {
+      columnId: columnId("target"),
+      desktopId: desktop,
+      outputId: targetOutput,
+    });
+
+    if (!committed) {
+      throw new Error("expected a second column transfer preview");
+    }
+
+    expect(engine.commitColumnTransfer(committed)).toBe(true);
+    expect(engine.commitColumnTransfer(committed)).toBe(false);
+  });
+
+  it("consumes a column transfer preview when either context becomes stale", () => {
+    const engine = new LayoutEngine();
+    const targetOutput = outputId("HDMI-A-1");
+
+    engine.manageWindow({
+      columnId: columnId("source"),
+      desktopId: desktop,
+      outputId: output,
+      width: { kind: "fixed", value: 300 },
+      windowId: windowId("window-source"),
+    });
+    engine.activateWindow(windowId("window-source"));
+    engine.manageWindow({
+      columnId: columnId("target-existing"),
+      desktopId: desktop,
+      outputId: targetOutput,
+      width: { kind: "fixed", value: 450 },
+      windowId: windowId("window-target"),
+    });
+    engine.activateWindow(windowId("window-target"));
+    const targetStale = engine.previewColumnTransfer(
+      windowId("window-source"),
+      {
+        columnId: columnId("target-new"),
+        desktopId: desktop,
+        outputId: targetOutput,
+      },
+    );
+
+    if (!targetStale) {
+      throw new Error("expected a target-staleness preview");
+    }
+
+    expect(engine.setViewportOffset(targetOutput, desktop, 65)).toBe(true);
+    const sourceBefore = engine.snapshot(output, desktop);
+    const targetChanged = engine.snapshot(targetOutput, desktop);
+    expect(engine.commitColumnTransfer(targetStale)).toBe(false);
+    expect(engine.commitColumnTransfer(targetStale)).toBe(false);
+    expect(engine.snapshot(output, desktop)).toEqual(sourceBefore);
+    expect(engine.snapshot(targetOutput, desktop)).toEqual(targetChanged);
+
+    const sourceStale = engine.previewColumnTransfer(
+      windowId("window-source"),
+      {
+        columnId: columnId("target-new"),
+        desktopId: desktop,
+        outputId: targetOutput,
+      },
+    );
+
+    if (!sourceStale) {
+      throw new Error("expected a source-staleness preview");
+    }
+
+    expect(engine.setViewportOffset(output, desktop, 35)).toBe(true);
+    const sourceChanged = engine.snapshot(output, desktop);
+    expect(engine.commitColumnTransfer(sourceStale)).toBe(false);
+    expect(engine.commitColumnTransfer(sourceStale)).toBe(false);
+    expect(engine.snapshot(output, desktop)).toEqual(sourceChanged);
+    expect(engine.snapshot(targetOutput, desktop)).toEqual(targetChanged);
   });
 
   it("previews and atomically transfers an active singleton after the target active column", () => {

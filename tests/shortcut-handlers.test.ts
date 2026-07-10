@@ -12,6 +12,20 @@ const qml = readFileSync(
   new URL("../packaging/kwin-script/contents/ui/main.qml", import.meta.url),
   "utf8",
 );
+const configuration = readFileSync(
+  new URL("../packaging/kwin-script/contents/config/main.xml", import.meta.url),
+  "utf8",
+);
+const configurationUi = readFileSync(
+  new URL("../packaging/kwin-script/contents/ui/config.ui", import.meta.url),
+  "utf8",
+);
+const metadata = JSON.parse(
+  readFileSync(
+    new URL("../packaging/kwin-script/metadata.json", import.meta.url),
+    "utf8",
+  ),
+) as Readonly<Record<string, unknown>>;
 const packageMetadata = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf8"),
 ) as { readonly scripts?: Readonly<Record<string, string>> };
@@ -337,6 +351,19 @@ describe("KWin shortcut handlers", () => {
     expect(packageMetadata.scripts?.["upgrade:dev"]).toBe(
       "npm run shortcuts:release && node tools/install.mjs upgrade",
     );
+  });
+
+  it("exposes borderless windows as a user setting", () => {
+    expect(metadata["X-KDE-ConfigModule"]).toBe(
+      "kwin/effects/configs/kcm_kwin4_genericscripted",
+    );
+    expect(configuration).toContain('name="BorderlessWindows"');
+    expect(configuration).toContain('<group name="">');
+    expect(configuration).toContain("<default>true</default>");
+    expect(configurationUi).toContain('name="kcfg_BorderlessWindows"');
+    expect(qml).toContain('KWin.readConfig("BorderlessWindows", true)');
+    expect(qml).toContain("function onConfigChanged()");
+    expect(qml).toContain("setBorderlessWindows(");
   });
 });
 
