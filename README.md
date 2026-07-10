@@ -24,7 +24,7 @@ npm run check
 npm run package
 ```
 
-On systems with Nix, `nix develop` provides the complete development toolchain.
+On systems with Nix, `nix develop` provides the source toolchain. Use `nix develop .#integration` for the isolated KWin tests.
 
 The generated KWin package is written to `dist/driftile.kwinscript`.
 

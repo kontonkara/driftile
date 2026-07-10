@@ -2,13 +2,33 @@
 
 set -euo pipefail
 
+if [[ "${DRIFTILE_SMOKE_TRACE:-0}" == "1" ]]; then
+  set -x
+fi
+
 readonly plugin_id="io.github.kontonkara.driftile"
-readonly first_window_title="driftile-smoke-window-a"
-readonly second_window_title="driftile-smoke-window-b"
 readonly expected_left_frame="16,16,616,688"
 readonly expected_right_frame="648,16,616,688"
+readonly stable_sample_count=2
+readonly wait_attempts=200
 
-xterm_pids=()
+client_pids=()
+qml_options=(--software)
+
+if [[ -n "${DRIFTILE_SMOKE_QML_IMPORT:-}" ]]; then
+  qml_options+=(-I "$DRIFTILE_SMOKE_QML_IMPORT")
+fi
+
+stop_clients() {
+  local pid
+
+  for pid in "${client_pids[@]}"; do
+    kill "$pid" >/dev/null 2>&1 || true
+    wait "$pid" >/dev/null 2>&1 || true
+  done
+
+  client_pids=()
+}
 
 cleanup() {
   busctl --user call \
@@ -18,13 +38,7 @@ cleanup() {
     unloadScript \
     s "$plugin_id" \
     >/dev/null 2>&1 || true
-
-  local pid
-
-  for pid in "${xterm_pids[@]}"; do
-    kill "$pid" >/dev/null 2>&1 || true
-    wait "$pid" >/dev/null 2>&1 || true
-  done
+  stop_clients
 }
 
 fail() {
@@ -32,56 +46,52 @@ fail() {
   exit 1
 }
 
-window_geometry() {
+window_id() {
   local window_title=$1
 
-  xwininfo -name "$window_title" 2>/dev/null | awk '
-    /Absolute upper-left X:/ { x = $NF }
-    /Absolute upper-left Y:/ { y = $NF }
-    /^[[:space:]]+Width:/ { width = $NF }
-    /^[[:space:]]+Height:/ { height = $NF }
-    END {
-      if (x == "" || y == "" || width == "" || height == "") {
-        exit 1
-      }
-
-      printf "%s,%s,%s,%s", x, y, width, height
-    }
-  '
+  busctl --user --json=short call \
+    org.kde.KWin \
+    /WindowsRunner \
+    org.kde.krunner1 \
+    Match \
+    s "$window_title" | jq --exit-status --raw-output --arg title "$window_title" '
+      [.data[0][] | select(.[1] == $title)] as $matches
+      | select($matches | length == 1)
+      | $matches[0][0]
+      | sub("^[0-9]+_"; "")
+    '
 }
 
 window_frame_geometry() {
   local window_title=$1
-  local client_geometry
-  local frame_extents
-  local client_x client_y client_width client_height
-  local left right top bottom
+  local id
 
-  client_geometry=$(window_geometry "$window_title")
-  frame_extents=$(xprop -name "$window_title" _NET_FRAME_EXTENTS 2>/dev/null | awk -F '= ' '
-    NF == 2 {
-      gsub(",", "", $2)
-      print $2
-    }
-  ')
+  id=$(window_id "$window_title") || return 1
 
-  [[ -n "$frame_extents" ]] || return 1
-
-  IFS=, read -r client_x client_y client_width client_height <<<"$client_geometry"
-  read -r left right top bottom <<<"$frame_extents"
-
-  printf '%s,%s,%s,%s' \
-    "$((client_x - left))" \
-    "$((client_y - top))" \
-    "$((client_width + left + right))" \
-    "$((client_height + top + bottom))"
+  busctl --user --json=short call \
+    org.kde.KWin \
+    /KWin \
+    org.kde.KWin \
+    getWindowInfo \
+    s "$id" | jq --exit-status --raw-output '
+      [
+        .data[0].x.data,
+        .data[0].y.data,
+        .data[0].width.data,
+        .data[0].height.data
+      ]
+      | select(all(.[]; type == "number"))
+      | map((((. * 1000000) | round) / 1000000) | tostring)
+      | join(",")
+    '
 }
 
 wait_for_dbus() {
   local attempt
 
-  for ((attempt = 0; attempt < 100; attempt += 1)); do
-    if busctl --user introspect org.kde.KWin /Scripting >/dev/null 2>&1; then
+  for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
+    if busctl --user introspect org.kde.KWin /Scripting >/dev/null 2>&1 &&
+      busctl --user introspect org.kde.KWin /WindowsRunner >/dev/null 2>&1; then
       return 0
     fi
 
@@ -91,12 +101,33 @@ wait_for_dbus() {
   return 1
 }
 
-wait_for_window() {
+capture_stable_geometry() {
+  local window_title=$1
+  local attempt
+  local current
+  local previous=""
+
+  for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
+    current=$(window_frame_geometry "$window_title" 2>/dev/null || true)
+
+    if [[ -n "$current" && "$current" == "$previous" ]]; then
+      printf '%s' "$current"
+      return 0
+    fi
+
+    previous=$current
+    sleep 0.05
+  done
+
+  return 1
+}
+
+wait_for_window_gone() {
   local window_title=$1
   local attempt
 
-  for ((attempt = 0; attempt < 100; attempt += 1)); do
-    if window_frame_geometry "$window_title" >/dev/null; then
+  for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
+    if ! window_id "$window_title" >/dev/null 2>&1; then
       return 0
     fi
 
@@ -107,23 +138,40 @@ wait_for_window() {
 }
 
 wait_for_tiled_layout() {
+  local first_title=$1
+  local second_title=$2
   local attempt
+  local current_layout
+  local matches=0
   local first_frame
+  local previous_layout=""
   local second_frame
 
-  for ((attempt = 0; attempt < 100; attempt += 1)); do
-    first_frame=$(window_frame_geometry "$first_window_title" || true)
-    second_frame=$(window_frame_geometry "$second_window_title" || true)
+  for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
+    first_frame=$(window_frame_geometry "$first_title" 2>/dev/null || true)
+    second_frame=$(window_frame_geometry "$second_title" 2>/dev/null || true)
 
-    if [[ \
-      "$first_frame" == "$expected_left_frame" && \
-        "$second_frame" == "$expected_right_frame" || \
-      "$first_frame" == "$expected_right_frame" && \
-        "$second_frame" == "$expected_left_frame" \
-    ]]; then
+    if [[ "$first_frame" == "$expected_left_frame" && "$second_frame" == "$expected_right_frame" ]]; then
+      current_layout=left-right
+    elif [[ "$first_frame" == "$expected_right_frame" && "$second_frame" == "$expected_left_frame" ]]; then
+      current_layout=right-left
+    else
+      current_layout=""
+    fi
+
+    if [[ -n "$current_layout" && "$current_layout" == "$previous_layout" ]]; then
+      ((matches += 1))
+    elif [[ -n "$current_layout" ]]; then
+      matches=1
+    else
+      matches=0
+    fi
+
+    if ((matches >= stable_sample_count)); then
       return 0
     fi
 
+    previous_layout=$current_layout
     sleep 0.05
   done
 
@@ -135,12 +183,19 @@ wait_for_geometry() {
   local expected=$2
   local attempt
   local current
+  local matches=0
 
-  for ((attempt = 0; attempt < 100; attempt += 1)); do
-    current=$(window_frame_geometry "$window_title" || true)
+  for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
+    current=$(window_frame_geometry "$window_title" 2>/dev/null || true)
 
     if [[ "$current" == "$expected" ]]; then
-      return 0
+      ((matches += 1))
+
+      if ((matches >= stable_sample_count)); then
+        return 0
+      fi
+    else
+      matches=0
     fi
 
     sleep 0.05
@@ -154,13 +209,13 @@ wait_for_script_state() {
   local attempt
   local state
 
-  for ((attempt = 0; attempt < 100; attempt += 1)); do
+  for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
     state=$(busctl --user call \
       org.kde.KWin \
       /Scripting \
       org.kde.kwin.Scripting \
       isScriptLoaded \
-      s "$plugin_id")
+      s "$plugin_id" 2>/dev/null || true)
 
     if [[ "$state" == "b $expected" ]]; then
       return 0
@@ -172,62 +227,82 @@ wait_for_script_state() {
   return 1
 }
 
+set_plugin_state() {
+  local enabled=$1
+
+  kwriteconfig6 \
+    --file "$XDG_CONFIG_HOME/kwinrc" \
+    --group Plugins \
+    --key "${plugin_id}Enabled" \
+    --type bool \
+    "$enabled"
+
+  busctl --user call \
+    org.kde.KWin \
+    /KWin \
+    org.kde.KWin \
+    reconfigure \
+    >/dev/null
+}
+
+start_client() {
+  local protocol=$1
+  local window_title=$2
+
+  case "$protocol" in
+    wayland)
+      QT_QPA_PLATFORM=wayland qml \
+        "${qml_options[@]}" \
+        -f "$DRIFTILE_SMOKE_CLIENT" \
+        -- "$window_title" &
+      ;;
+    x11 | xwayland)
+      QT_QPA_PLATFORM=xcb qml \
+        "${qml_options[@]}" \
+        -f "$DRIFTILE_SMOKE_CLIENT" \
+        -- "$window_title" &
+      ;;
+    *)
+      fail "unsupported client protocol: $protocol"
+      ;;
+  esac
+
+  client_pids+=("$!")
+}
+
+run_scenario() {
+  local protocol=$1
+  local first_title="driftile-smoke-${protocol}-a"
+  local second_title="driftile-smoke-${protocol}-b"
+  local first_baseline
+  local second_baseline
+
+  start_client "$protocol" "$first_title"
+  start_client "$protocol" "$second_title"
+
+  first_baseline=$(capture_stable_geometry "$first_title") || fail "the first $protocol test window did not stabilize"
+  second_baseline=$(capture_stable_geometry "$second_title") || fail "the second $protocol test window did not stabilize"
+
+  set_plugin_state true
+  wait_for_script_state true || fail "KWin did not report Driftile as loaded"
+  wait_for_tiled_layout "$first_title" "$second_title" || fail "Driftile did not tile the $protocol windows"
+
+  set_plugin_state false
+  wait_for_script_state false || fail "KWin did not unload Driftile"
+  wait_for_geometry "$first_title" "$first_baseline" || fail "Driftile did not restore the first $protocol window"
+  wait_for_geometry "$second_title" "$second_baseline" || fail "Driftile did not restore the second $protocol window"
+
+  stop_clients
+  wait_for_window_gone "$first_title" || fail "the first $protocol test window did not close"
+  wait_for_window_gone "$second_title" || fail "the second $protocol test window did not close"
+}
+
 trap cleanup EXIT
 
-wait_for_dbus || fail "KWin scripting D-Bus API did not appear"
+wait_for_dbus || fail "the required KWin D-Bus APIs did not appear"
 
-xterm \
-  -T "$first_window_title" \
-  -geometry 60x15+160+120 \
-  -e tail -f /dev/null \
-  >/dev/null 2>&1 &
-xterm_pids+=("$!")
-
-xterm \
-  -T "$second_window_title" \
-  -geometry 72x18+520+280 \
-  -e tail -f /dev/null \
-  >/dev/null 2>&1 &
-xterm_pids+=("$!")
-
-wait_for_window "$first_window_title" || fail "the first Xwayland test window did not appear"
-wait_for_window "$second_window_title" || fail "the second Xwayland test window did not appear"
-first_baseline=$(window_frame_geometry "$first_window_title")
-second_baseline=$(window_frame_geometry "$second_window_title")
-
-kwriteconfig6 \
-  --file "$XDG_CONFIG_HOME/kwinrc" \
-  --group Plugins \
-  --key "${plugin_id}Enabled" \
-  --type bool \
-  true
-
-busctl --user call \
-  org.kde.KWin \
-  /KWin \
-  org.kde.KWin \
-  reconfigure \
-  >/dev/null
-
-wait_for_script_state true || fail "KWin did not report the script as loaded"
-wait_for_tiled_layout || fail "Driftile did not produce the expected two-column layout"
-
-kwriteconfig6 \
-  --file "$XDG_CONFIG_HOME/kwinrc" \
-  --group Plugins \
-  --key "${plugin_id}Enabled" \
-  --type bool \
-  false
-
-busctl --user call \
-  org.kde.KWin \
-  /KWin \
-  org.kde.KWin \
-  reconfigure \
-  >/dev/null
-
-wait_for_script_state false || fail "KWin did not unload the script"
-wait_for_geometry "$first_window_title" "$first_baseline" || fail "Driftile did not restore the first window"
-wait_for_geometry "$second_window_title" "$second_baseline" || fail "Driftile did not restore the second window"
+for protocol in $DRIFTILE_SMOKE_PROTOCOLS; do
+  run_scenario "$protocol"
+done
 
 touch "$DRIFTILE_SMOKE_RESULT"

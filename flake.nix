@@ -3,7 +3,8 @@
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
-  outputs = { nixpkgs, ... }:
+  outputs =
+    { nixpkgs, ... }:
     let
       systems = [
         "aarch64-linux"
@@ -16,26 +17,36 @@
         system:
         let
           pkgs = import nixpkgs { inherit system; };
+          developmentPackages = with pkgs; [
+            gh
+            kdePackages.kconfig
+            kdePackages.kpackage
+            kdePackages.qtdeclarative
+            nodejs_24
+            reuse
+            shellcheck
+            zip
+          ];
+          integrationPackages =
+            developmentPackages
+            ++ (with pkgs; [
+              dbus
+              kdePackages.kwin
+              kdePackages.kwin-x11
+              kdePackages.qtwayland
+              jq
+              systemd
+              xorg-server
+              xwayland
+            ]);
         in
         {
           default = pkgs.mkShell {
-            packages = with pkgs; [
-              dbus
-              gh
-              kdePackages.kconfig
-              kdePackages.kpackage
-              kdePackages.kwin
-              kdePackages.qtdeclarative
-              nodejs_24
-              reuse
-              shellcheck
-              systemd
-              xterm
-              xwininfo
-              xprop
-              xwayland
-              zip
-            ];
+            packages = developmentPackages;
+          };
+
+          integration = pkgs.mkShell {
+            packages = integrationPackages;
           };
         }
       );

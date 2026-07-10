@@ -13,15 +13,17 @@ npm run package
 With Nix:
 
 ```bash
-nix develop
+nix develop .#integration
 npm ci
 npm run test:integration
 ```
 
-Without Nix, install Bash, Node.js and npm, KWin 6, Xwayland, KPackage and KConfig tools, D-Bus, `busctl` from systemd, GNU `timeout`, `xterm`, `xwininfo`, and `xprop`. Then run the same npm command.
+Use `npm run test:integration -- wayland` or `npm run test:integration -- x11` to run one KWin backend.
 
-The smoke test uses temporary user and XDG directories plus a private D-Bus session. It starts a headless virtual KWin, installs and enables Driftile there, tiles two Xwayland windows, disables Driftile, verifies exact geometry restoration, and removes the package. It does not connect to the current display or session bus.
+Without Nix, install Bash, Node.js and npm, KWin 6 for Wayland and X11, Xwayland, Xvfb, KPackage and KConfig tools, Qt QML tools with the Wayland and XCB platform plugins, D-Bus, `busctl` from systemd, GNU `timeout`, and `jq`. Then run the same npm command.
 
-This test does not cover a native KWin X11 session, native Wayland clients, Plasma panels, input, shortcuts, or output hot-plugging.
+The test uses temporary user and XDG directories, private D-Bus sessions, a virtual Wayland output, and an Xvfb display. It installs Driftile and verifies the enable, exact tiling, disable, geometry restoration, and package removal lifecycle with native Wayland, Xwayland, and native X11 windows. It does not connect to the current display or session bus.
+
+This test does not cover Plasma panels, real GPUs, input, shortcuts, multi-output layouts, or output hot-plugging.
 
 Set `DRIFTILE_KEEP_SMOKE_SANDBOX=1` to retain the temporary files after a run.
