@@ -51,6 +51,7 @@ class ManualScheduler {
 }
 
 interface TrackedWindow {
+  readonly desktopWriteCount: number;
   readonly desktopsChanged: Signal<[]>;
   readonly frameGeometryChanged: Signal<
     [oldGeometry: KWinWindow["frameGeometry"]]
@@ -65,6 +66,11 @@ interface TrackedWindow {
   readonly outputChanged: Signal<[oldOutput?: KWinOutput | null]>;
   readonly requestedTileChanged: Signal<[]>;
   setFrameGeometry(frame: KWinWindow["frameGeometry"]): void;
+  setDesktopWriteBehavior(
+    behavior:
+      | ((desktops: readonly KWinVirtualDesktop[], commit: () => void) => void)
+      | null,
+  ): void;
   setWriteBehavior(
     behavior:
       ((frame: KWinWindow["frameGeometry"], commit: () => void) => void) | null,
@@ -87,6 +93,10 @@ function createTrackedWindow(
   const fullScreenChanged = new Signal<[]>();
   const hiddenChanged = new Signal<[]>();
   let frameGeometry = { height: 200, width: 300, x: 0, y: 0 };
+  let desktopWriteCount = 0;
+  let desktopWriteBehavior:
+    | ((desktops: readonly KWinVirtualDesktop[], commit: () => void) => void)
+    | null = null;
   const interactiveMoveResizeFinished = new Signal<[]>();
   const maximizedAboutToChange = new Signal<[mode: number]>();
   const maximizedChanged = new Signal<[]>();
@@ -137,6 +147,25 @@ function createTrackedWindow(
     ...overrides,
   };
   frameGeometry = window.frameGeometry;
+  let windowDesktops = window.desktops;
+  Object.defineProperty(window, "desktops", {
+    configurable: true,
+    enumerable: true,
+    get: () => windowDesktops,
+    set: (value: readonly KWinVirtualDesktop[]) => {
+      desktopWriteCount += 1;
+      const commit = (): void => {
+        windowDesktops = value;
+        desktopsChanged.emit();
+      };
+
+      if (desktopWriteBehavior) {
+        desktopWriteBehavior(value, commit);
+      } else {
+        commit();
+      }
+    },
+  });
   Object.defineProperty(window, "frameGeometry", {
     configurable: true,
     enumerable: true,
@@ -155,6 +184,9 @@ function createTrackedWindow(
   });
 
   return {
+    get desktopWriteCount() {
+      return desktopWriteCount;
+    },
     desktopsChanged,
     frameGeometryChanged,
     get writeCount() {
@@ -169,6 +201,9 @@ function createTrackedWindow(
     moveResizedChanged,
     outputChanged,
     requestedTileChanged,
+    setDesktopWriteBehavior: (behavior) => {
+      desktopWriteBehavior = behavior;
+    },
     setFrameGeometry: (frame) => {
       frameGeometry = frame;
     },
@@ -189,8 +224,18 @@ interface WorkspaceFixture {
       output?: KWinOutput,
     ]
   >;
+  readonly desktopSwitchCount: number;
   readonly screensChanged: Signal<[]>;
   setCurrentDesktop(output: KWinOutput, desktop: KWinVirtualDesktop): void;
+  setDesktopSwitchBehavior(
+    behavior:
+      | ((
+          desktop: KWinVirtualDesktop,
+          output: KWinOutput,
+          commit: () => void,
+        ) => void)
+      | null,
+  ): void;
   setScreens(outputs: readonly KWinOutput[]): void;
   readonly virtualScreenGeometryChanged: Signal<[]>;
   readonly windowActivated: Signal<[window: KWinWindow | null]>;
@@ -220,16 +265,75 @@ function createWorkspace(
   const windowAdded = new Signal<[window: KWinWindow]>();
   const windowRemoved = new Signal<[window: KWinWindow]>();
   let activationCount = 0;
+  let desktopSwitchCount = 0;
+  let desktopSwitchBehavior:
+    | ((
+        desktop: KWinVirtualDesktop,
+        output: KWinOutput,
+        commit: () => void,
+      ) => void)
+    | null = null;
   let activeWindow = windows[windows.length - 1] ?? null;
   let currentDesktop = activeDesktop;
   let currentOutputs = [...outputs];
   const currentDesktops = new Map(
     outputs.map((output) => [output.name, activeDesktop]),
   );
+  const commitDesktop = (
+    output: KWinOutput,
+    desktop: KWinVirtualDesktop,
+    perOutput: boolean,
+  ): void => {
+    const previous = perOutput
+      ? (currentDesktops.get(output.name) ?? null)
+      : currentDesktop;
+
+    if (perOutput) {
+      currentDesktops.set(output.name, desktop);
+    } else {
+      currentDesktop = desktop;
+
+      for (const candidate of currentOutputs) {
+        currentDesktops.set(candidate.name, desktop);
+      }
+    }
+
+    if (output.name === activeOutput.name) {
+      currentDesktop = desktop;
+    }
+
+    if (perOutput) {
+      currentDesktopChanged.emit(previous, desktop, output);
+    } else {
+      currentDesktopChanged.emit(previous);
+    }
+  };
+  const requestDesktopSwitch = (
+    desktop: KWinVirtualDesktop,
+    output: KWinOutput,
+    perOutput: boolean,
+  ): void => {
+    desktopSwitchCount += 1;
+    const commit = (): void => {
+      commitDesktop(output, desktop, perOutput);
+    };
+
+    if (desktopSwitchBehavior) {
+      desktopSwitchBehavior(desktop, output, commit);
+    } else {
+      commit();
+    }
+  };
   const desktopResolver = perOutputDesktops
     ? {
         currentDesktopForScreen: (output: KWinOutput) =>
           currentDesktops.get(output.name) ?? null,
+        setCurrentDesktopForScreen: (
+          desktop: KWinVirtualDesktop,
+          output: KWinOutput,
+        ) => {
+          requestDesktopSwitch(desktop, output, true);
+        },
       }
     : {};
   const workspace: KWinWorkspace = {
@@ -267,6 +371,11 @@ function createWorkspace(
     configurable: true,
     enumerable: true,
     get: () => currentDesktop,
+    set: (desktop: KWinVirtualDesktop | null) => {
+      if (desktop) {
+        requestDesktopSwitch(desktop, activeOutput, false);
+      }
+    },
   });
   Object.defineProperty(workspace, "screens", {
     configurable: true,
@@ -279,31 +388,15 @@ function createWorkspace(
       return activationCount;
     },
     currentDesktopChanged,
+    get desktopSwitchCount() {
+      return desktopSwitchCount;
+    },
     screensChanged,
     setCurrentDesktop: (output, desktop) => {
-      const previous = perOutputDesktops
-        ? (currentDesktops.get(output.name) ?? null)
-        : currentDesktop;
-
-      if (perOutputDesktops) {
-        currentDesktops.set(output.name, desktop);
-      } else {
-        currentDesktop = desktop;
-
-        for (const candidate of currentOutputs) {
-          currentDesktops.set(candidate.name, desktop);
-        }
-      }
-
-      if (output.name === activeOutput.name) {
-        currentDesktop = desktop;
-      }
-
-      if (perOutputDesktops) {
-        currentDesktopChanged.emit(previous, desktop, output);
-      } else {
-        currentDesktopChanged.emit(previous);
-      }
+      commitDesktop(output, desktop, perOutputDesktops);
+    },
+    setDesktopSwitchBehavior: (behavior) => {
+      desktopSwitchBehavior = behavior;
     },
     setScreens: (nextOutputs) => {
       currentOutputs = [...nextOutputs];
@@ -8890,6 +8983,643 @@ describe("RuntimeController", () => {
     expect(otherSecond.writeCount).toBe(1);
   });
 });
+
+describe("RuntimeController desktop transfers", () => {
+  it("creates an empty destination context without writing the hidden source", () => {
+    const output = createOutput("DP-1", 0);
+    const desktops = [{ id: "desktop-1" }, { id: "desktop-2" }] as const;
+    const source = createTrackedWindow("source", output, desktops[0]);
+    const moved = createTrackedWindow("moved", output, desktops[0]);
+    const fixture = createWorkspace(output, desktops[0], [output], desktops, [
+      source.window,
+      moved.window,
+    ]);
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    controller.start();
+    const sourceWrites = source.writeCount;
+    expect(controller.moveWindowToNextDesktop()).toBe(true);
+    expect(source.writeCount).toBe(sourceWrites);
+    expect(testLayoutColumns(controller, output, desktops[0])).toEqual([
+      { id: "column:source", windowIds: ["source"] },
+    ]);
+    expect(testLayoutColumns(controller, output, desktops[1])).toEqual([
+      { id: "column:moved", windowIds: ["moved"] },
+    ]);
+    expect(controller.managedCount).toBe(2);
+  });
+
+  it("moves in both directions without wrapping and follows the window", () => {
+    const { controller, desktops, fixture, moved, output } =
+      createDesktopTransferFixture();
+
+    expect(controller.moveWindowToPreviousDesktop()).toBe(false);
+    expect(controller.moveWindowToNextDesktop()).toBe(true);
+    expect(moved.window.desktops).toEqual([desktops[1]]);
+    expect(fixture.workspace.currentDesktopForScreen?.(output)).toBe(
+      desktops[1],
+    );
+    expect(fixture.workspace.activeWindow).toBe(moved.window);
+    expect(testLayoutColumns(controller, output, desktops[0])).toEqual([
+      { id: "column:source", windowIds: ["source"] },
+    ]);
+    expect(testLayoutColumns(controller, output, desktops[1])).toEqual([
+      { id: "column:destination", windowIds: ["destination"] },
+      { id: "column:moved", windowIds: ["moved"] },
+    ]);
+    expect(controller.moveWindowToNextDesktop()).toBe(false);
+    expect(controller.moveWindowToPreviousDesktop()).toBe(true);
+    expect(moved.window.desktops).toEqual([desktops[0]]);
+    expect(fixture.workspace.currentDesktopForScreen?.(output)).toBe(
+      desktops[0],
+    );
+    expect(testLayoutColumns(controller, output, desktops[0])).toEqual([
+      { id: "column:source", windowIds: ["source"] },
+      { id: "column:moved", windowIds: ["moved"] },
+    ]);
+  });
+
+  it("extracts a stack member and returns it after the surviving active column", () => {
+    const {
+      controller,
+      destination,
+      desktops,
+      fixture,
+      moved,
+      output,
+      source,
+    } = createDesktopTransferFixture();
+    const trailing = createTrackedWindow("trailing", output, desktops[0]);
+    fixture.windowAdded.emit(trailing.window);
+    const layout = new LayoutEngine();
+
+    layout.restoreColumns({
+      activeColumnId: columnId("column:stack"),
+      columns: [
+        {
+          column: {
+            id: columnId("column:stack"),
+            width: { kind: "fixed", value: 620 },
+            windowIds: [windowId("source"), windowId("moved")],
+          },
+          index: 0,
+        },
+        {
+          column: {
+            id: columnId("column:trailing"),
+            width: { kind: "fixed", value: 300 },
+            windowIds: [windowId("trailing")],
+          },
+          index: 1,
+        },
+      ],
+      desktopId: desktopId(desktops[0].id),
+      outputId: outputId(output.name),
+    });
+    layout.restoreColumns({
+      activeColumnId: columnId("column:destination"),
+      columns: [
+        {
+          column: {
+            id: columnId("column:destination"),
+            width: { kind: "fixed", value: 280 },
+            windowIds: [windowId("destination")],
+          },
+          index: 0,
+        },
+      ],
+      desktopId: desktopId(desktops[1].id),
+      outputId: outputId(output.name),
+    });
+    (
+      controller as unknown as {
+        layout: LayoutEngine;
+      }
+    ).layout = layout;
+    fixture.workspace.activeWindow = moved.window;
+    controller.reconcile();
+
+    expect(controller.moveWindowToNextDesktop()).toBe(true);
+    expect(
+      runtimeLayout(controller)
+        .snapshot(outputId(output.name), desktopId(desktops[1].id))
+        .columns.map((column) => [column.width, column.windowIds]),
+    ).toEqual([
+      [{ kind: "fixed", value: 280 }, [destination.window.internalId]],
+      [{ kind: "fixed", value: 620 }, [moved.window.internalId]],
+    ]);
+    expect(controller.moveWindowToPreviousDesktop()).toBe(true);
+    expect(testLayoutColumns(controller, output, desktops[0])).toEqual([
+      { id: "column:stack", windowIds: [String(source.window.internalId)] },
+      { id: "column:moved", windowIds: [String(moved.window.internalId)] },
+      {
+        id: "column:trailing",
+        windowIds: [String(trailing.window.internalId)],
+      },
+    ]);
+  });
+
+  it("commits the solved destination viewport when insertion needs reveal", () => {
+    const transfer = createDesktopTransferFixture({ destinationCount: 3 });
+    const layout = runtimeLayout(transfer.controller);
+    layout.activateWindow(windowId("destination-3"));
+
+    expect(transfer.controller.moveWindowToNextDesktop()).toBe(true);
+    const target = layout.snapshot(
+      outputId(transfer.output.name),
+      desktopId(transfer.desktops[1].id),
+    );
+    expect(target.viewportOffset).toBeGreaterThan(0);
+    expect(target.columns.map((column) => column.windowIds[0])).toEqual([
+      "destination",
+      "destination-2",
+      "destination-3",
+      "moved",
+    ]);
+    expect(transfer.moved.window.frameGeometry.x).toBeGreaterThanOrEqual(0);
+    expect(
+      transfer.moved.window.frameGeometry.x +
+        transfer.moved.window.frameGeometry.width,
+    ).toBeLessThanOrEqual(1000);
+  });
+
+  it("switches only the active output when the per-output API is available", () => {
+    const { controller, desktops, fixture, output } =
+      createDesktopTransferFixture();
+    const otherOutput = createOutput("HDMI-A-1", 1000);
+    fixture.setScreens([output, otherOutput]);
+    fixture.setCurrentDesktop(otherOutput, desktops[0]);
+
+    expect(controller.moveWindowToNextDesktop()).toBe(true);
+    expect(fixture.workspace.currentDesktopForScreen?.(output)).toBe(
+      desktops[1],
+    );
+    expect(fixture.workspace.currentDesktopForScreen?.(otherOutput)).toBe(
+      desktops[0],
+    );
+    expect(fixture.desktopSwitchCount).toBe(1);
+  });
+
+  it("uses the global desktop fallback and leaves unrelated layouts intact", () => {
+    const output = createOutput("DP-1", 0);
+    const otherOutput = createOutput("HDMI-A-1", 1000);
+    const desktops = [{ id: "desktop-1" }, { id: "desktop-2" }] as const;
+    const source = createTrackedWindow("source", output, desktops[0]);
+    const moved = createTrackedWindow("moved", output, desktops[0]);
+    const unrelated = createTrackedWindow(
+      "unrelated",
+      otherOutput,
+      desktops[1],
+      { frameGeometry: { height: 220, width: 320, x: 1120, y: 120 } },
+    );
+    const fixture = createWorkspace(
+      output,
+      desktops[0],
+      [output, otherOutput],
+      desktops,
+      [source.window, unrelated.window, moved.window],
+      false,
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    controller.start();
+    const unrelatedColumns = testLayoutColumns(
+      controller,
+      otherOutput,
+      desktops[1],
+    );
+    expect(controller.moveWindowToNextDesktop()).toBe(true);
+    expect(fixture.workspace.currentDesktop).toBe(desktops[1]);
+    expect(fixture.desktopSwitchCount).toBe(1);
+    expect(testLayoutColumns(controller, otherOutput, desktops[1])).toEqual(
+      unrelatedColumns,
+    );
+  });
+
+  it("rejects destination constraints and multi-output overflow before KWin writes", () => {
+    const constrained = createDesktopTransferFixture();
+    Object.defineProperty(constrained.moved.window, "minSize", {
+      configurable: true,
+      value: { height: 1, width: 700 },
+    });
+
+    expect(constrained.controller.moveWindowToNextDesktop()).toBe(false);
+    expect(constrained.moved.desktopWriteCount).toBe(0);
+    expect(constrained.fixture.desktopSwitchCount).toBe(0);
+
+    const capacity = createDesktopTransferFixture({ destinationCount: 2 });
+    const secondOutput = createOutput("HDMI-A-1", 1000);
+    capacity.fixture.setScreens([capacity.output, secondOutput]);
+
+    expect(capacity.controller.moveWindowToNextDesktop()).toBe(false);
+    expect(capacity.moved.desktopWriteCount).toBe(0);
+    expect(capacity.fixture.desktopSwitchCount).toBe(0);
+  });
+
+  it("rejects suspension, floating, topology, capacity, and waiting barriers", () => {
+    const suspended = createDesktopTransferFixture();
+    setWindowState("fullscreen", suspended.destination, true);
+    expect(suspended.controller.moveWindowToNextDesktop()).toBe(false);
+
+    const floating = createDesktopTransferFixture();
+    expect(floating.controller.toggleFloating()).toBe(true);
+    expect(floating.controller.moveWindowToNextDesktop()).toBe(false);
+
+    const topology = createDesktopTransferFixture({ trackedOutput: true });
+    (
+      topology.controller as unknown as {
+        topologyStabilizing: boolean;
+      }
+    ).topologyStabilizing = true;
+    expect(topology.controller.moveWindowToNextDesktop()).toBe(false);
+
+    const capacity = createDesktopTransferFixture();
+    const targetKey = `${capacity.output.name}\u0000${capacity.desktops[1].id}`;
+    (
+      capacity.controller as unknown as {
+        capacityParkBackoffs: Set<string>;
+      }
+    ).capacityParkBackoffs.add(targetKey);
+    expect(capacity.controller.moveWindowToNextDesktop()).toBe(false);
+
+    const waiting = createDesktopTransferFixture();
+    (
+      waiting.controller as unknown as {
+        waitingWindowIds: Map<string, Set<string>>;
+      }
+    ).waitingWindowIds.set(targetKey, new Set(["waiting"]));
+    expect(waiting.controller.moveWindowToNextDesktop()).toBe(false);
+  });
+
+  it("rolls back window assignment when a desktop switch is rejected", () => {
+    const { controller, desktops, fixture, moved, output } =
+      createDesktopTransferFixture();
+    fixture.setDesktopSwitchBehavior(() => undefined);
+    const before = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktops[0].id),
+    );
+
+    expect(controller.moveWindowToNextDesktop()).toBe(false);
+    expect(moved.window.desktops).toEqual([desktops[0]]);
+    expect(fixture.workspace.currentDesktopForScreen?.(output)).toBe(
+      desktops[0],
+    );
+    expect(fixture.workspace.activeWindow).toBe(moved.window);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktops[0].id),
+      ),
+    ).toEqual(before);
+    expect(moved.desktopWriteCount).toBe(2);
+  });
+
+  it("rejects a desktop rule and tolerates reentrant desktop and activation signals", () => {
+    const rejected = createDesktopTransferFixture();
+    rejected.moved.setDesktopWriteBehavior(() => undefined);
+    expect(rejected.controller.moveWindowToNextDesktop()).toBe(false);
+    expect(rejected.fixture.desktopSwitchCount).toBe(0);
+
+    const reentrant = createDesktopTransferFixture();
+    reentrant.fixture.setDesktopSwitchBehavior((_desktop, _output, commit) => {
+      reentrant.fixture.workspace.activeWindow = reentrant.destination.window;
+      commit();
+    });
+    expect(reentrant.controller.moveWindowToNextDesktop()).toBe(true);
+    expect(reentrant.fixture.workspace.activeWindow).toBe(
+      reentrant.moved.window,
+    );
+    expect(
+      testLayoutColumns(
+        reentrant.controller,
+        reentrant.output,
+        reentrant.desktops[1],
+      ),
+    ).toEqual([
+      { id: "column:destination", windowIds: ["destination"] },
+      { id: "column:moved", windowIds: ["moved"] },
+    ]);
+  });
+
+  it("defers a reentrant window addition until the transfer commits", () => {
+    const transfer = createDesktopTransferFixture();
+    const added = createTrackedWindow(
+      "added",
+      transfer.output,
+      transfer.desktops[1],
+    );
+    let managedDuringSwitch = -1;
+    transfer.fixture.setDesktopSwitchBehavior((_desktop, _output, commit) => {
+      transfer.fixture.windowAdded.emit(added.window);
+      managedDuringSwitch = transfer.controller.managedCount;
+      commit();
+    });
+
+    expect(transfer.controller.moveWindowToNextDesktop()).toBe(true);
+    expect(managedDuringSwitch).toBe(3);
+    expect(transfer.controller.managedCount).toBe(4);
+    expect(
+      testLayoutColumns(
+        transfer.controller,
+        transfer.output,
+        transfer.desktops[1],
+      ),
+    ).toEqual([
+      { id: "column:destination", windowIds: ["destination"] },
+      { id: "column:moved", windowIds: ["moved"] },
+      { id: "column:added", windowIds: ["added"] },
+    ]);
+    expect(transfer.fixture.workspace.activeWindow).toBe(transfer.moved.window);
+  });
+
+  it("compensates accepted destination writes in FIFO order after a partial failure", () => {
+    const { controller, destination, desktops, moved, output } =
+      createDesktopTransferFixture();
+    const destinationFrames: KWinWindow["frameGeometry"][] = [];
+    destination.setWriteBehavior((frame, commit) => {
+      destinationFrames.push({ ...frame });
+      commit();
+    });
+    moved.setDesktopWriteBehavior((next, commit) => {
+      commit();
+
+      if (next[0]?.id === desktops[1].id) {
+        moved.setFrameGeometry({ height: 310, width: 410, x: 220, y: 140 });
+      }
+    });
+    moved.setWriteBehavior((_frame, commit) => {
+      if (moved.window.desktops[0]?.id === desktops[1].id) {
+        throw new Error("destination write rejected");
+      }
+
+      commit();
+    });
+    const destinationBefore = { ...destination.window.frameGeometry };
+    const sourceSnapshot = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktops[0].id),
+    );
+    const targetSnapshot = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktops[1].id),
+    );
+
+    expect(controller.moveWindowToNextDesktop()).toBe(false);
+    expect(destinationFrames).toHaveLength(2);
+    expect(destinationFrames[1]).toEqual(destinationBefore);
+    expect(destination.window.frameGeometry).toEqual(destinationBefore);
+    expect(moved.window.desktops).toEqual([desktops[0]]);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktops[0].id),
+      ),
+    ).toEqual(sourceSnapshot);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktops[1].id),
+      ),
+    ).toEqual(targetSnapshot);
+  });
+
+  it("preserves an external destination frame during partial rollback", () => {
+    const { controller, destination, desktops, moved } =
+      createDesktopTransferFixture();
+    const externalFrame = { height: 333, width: 444, x: 77, y: 88 };
+    let destinationWrites = 0;
+    destination.setWriteBehavior((_frame, commit) => {
+      destinationWrites += 1;
+      commit();
+      destination.setFrameGeometry(externalFrame);
+    });
+    moved.setDesktopWriteBehavior((next, commit) => {
+      commit();
+
+      if (next[0]?.id === desktops[1].id) {
+        moved.setFrameGeometry({ height: 310, width: 410, x: 220, y: 140 });
+      }
+    });
+    moved.setWriteBehavior((_frame, commit) => {
+      if (moved.window.desktops[0]?.id === desktops[1].id) {
+        throw new Error("destination write rejected");
+      }
+
+      commit();
+    });
+
+    expect(controller.moveWindowToNextDesktop()).toBe(false);
+    expect(destinationWrites).toBe(1);
+    expect(destination.window.frameGeometry).toEqual(externalFrame);
+    expect(moved.window.desktops).toEqual([desktops[0]]);
+  });
+
+  it("preserves an external source frame raised during desktop restoration", () => {
+    const { controller, desktops, moved } = createDesktopTransferFixture();
+    const externalFrame = { height: 355, width: 455, x: 91, y: 92 };
+    moved.setDesktopWriteBehavior((next, commit) => {
+      commit();
+
+      if (next[0]?.id === desktops[1].id) {
+        moved.setFrameGeometry({ height: 310, width: 410, x: 220, y: 140 });
+      } else {
+        moved.setFrameGeometry(externalFrame);
+      }
+    });
+    moved.setWriteBehavior((_frame, commit) => {
+      if (moved.window.desktops[0]?.id === desktops[1].id) {
+        throw new Error("destination write rejected");
+      }
+
+      commit();
+    });
+
+    expect(controller.moveWindowToNextDesktop()).toBe(false);
+    expect(moved.window.desktops).toEqual([desktops[0]]);
+    expect(moved.window.frameGeometry).toEqual(externalFrame);
+  });
+
+  it("rolls back when a synchronous authority change follows the final write", () => {
+    const { controller, desktops, moved, output } =
+      createDesktopTransferFixture();
+    moved.setDesktopWriteBehavior((next, commit) => {
+      commit();
+
+      if (next[0]?.id === desktops[1].id) {
+        moved.setFrameGeometry({ height: 310, width: 410, x: 220, y: 140 });
+      }
+    });
+    moved.setWriteBehavior((_frame, commit) => {
+      commit();
+      Object.defineProperty(moved.window, "fullScreen", {
+        configurable: true,
+        value: true,
+      });
+      moved.fullScreenChanged.emit();
+    });
+    const sourceSnapshot = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktops[0].id),
+    );
+    const targetSnapshot = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktops[1].id),
+    );
+
+    expect(controller.moveWindowToNextDesktop()).toBe(false);
+    expect(moved.window.desktops).toEqual([desktops[0]]);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktops[0].id),
+      ),
+    ).toEqual(sourceSnapshot);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktops[1].id),
+      ),
+    ).toEqual(targetSnapshot);
+  });
+
+  it("keeps the post-KWin frame as the destination stop baseline and cleans up close", () => {
+    const baseline = { height: 360, width: 460, x: 120, y: 130 };
+    const first = createDesktopTransferFixture();
+    first.moved.setDesktopWriteBehavior((next, commit) => {
+      commit();
+
+      if (next[0]?.id === first.desktops[1].id) {
+        first.moved.setFrameGeometry(baseline);
+      }
+    });
+
+    expect(first.controller.moveWindowToNextDesktop()).toBe(true);
+    first.controller.stop();
+    expect(first.moved.window.frameGeometry).toEqual(baseline);
+
+    const second = createDesktopTransferFixture();
+    expect(second.controller.moveWindowToNextDesktop()).toBe(true);
+    second.fixture.windowRemoved.emit(second.moved.window);
+    expect(second.controller.managedCount).toBe(2);
+    expect(
+      testLayoutColumns(second.controller, second.output, second.desktops[1]),
+    ).toEqual([{ id: "column:destination", windowIds: ["destination"] }]);
+  });
+});
+
+function createDesktopTransferFixture(
+  options: {
+    readonly destinationCount?: number;
+    readonly movedOverrides?: Partial<KWinWindow>;
+    readonly trackedOutput?: boolean;
+  } = {},
+) {
+  const trackedOutput = options.trackedOutput
+    ? createTrackedOutput("DP-1", 0)
+    : null;
+  const output = trackedOutput?.output ?? createOutput("DP-1", 0);
+  const desktops = [{ id: "desktop-1" }, { id: "desktop-2" }] as const;
+  const source = createTrackedWindow("source", output, desktops[0]);
+  const destinations = Array.from(
+    { length: options.destinationCount ?? 1 },
+    (_value, index) =>
+      createTrackedWindow(
+        index === 0 ? "destination" : `destination-${String(index + 1)}`,
+        output,
+        desktops[1],
+      ),
+  );
+  const destination = destinations[0];
+
+  if (!destination) {
+    throw new Error("desktop transfer fixture needs a destination window");
+  }
+
+  const moved = createTrackedWindow(
+    "moved",
+    output,
+    desktops[0],
+    options.movedOverrides,
+  );
+  const fixture = createWorkspace(output, desktops[0], [output], desktops, [
+    source.window,
+    ...destinations.map((window) => window.window),
+    moved.window,
+  ]);
+  const controller = new RuntimeController(fixture.workspace, {
+    clientAreaOption: 2,
+    gap: 10,
+  });
+
+  controller.start();
+  const layout = new LayoutEngine();
+  layout.restoreColumns({
+    activeColumnId: columnId("column:source"),
+    columns: [
+      {
+        column: {
+          id: columnId("column:source"),
+          width: { kind: "proportion", value: 0.5 },
+          windowIds: [windowId("source")],
+        },
+        index: 0,
+      },
+      {
+        column: {
+          id: columnId("column:moved"),
+          width: { kind: "proportion", value: 0.5 },
+          windowIds: [windowId("moved")],
+        },
+        index: 1,
+      },
+    ],
+    desktopId: desktopId(desktops[0].id),
+    outputId: outputId(output.name),
+  });
+  layout.restoreColumns({
+    activeColumnId: columnId("column:destination"),
+    columns: destinations.map((window, index) => ({
+      column: {
+        id: columnId(
+          index === 0
+            ? "column:destination"
+            : `column:destination-${String(index + 1)}`,
+        ),
+        width: { kind: "proportion" as const, value: 0.5 },
+        windowIds: [windowId(String(window.window.internalId))],
+      },
+      index,
+    })),
+    desktopId: desktopId(desktops[1].id),
+    outputId: outputId(output.name),
+  });
+  (
+    controller as unknown as {
+      layout: LayoutEngine;
+    }
+  ).layout = layout;
+  fixture.workspace.activeWindow = moved.window;
+  controller.reconcile();
+
+  return {
+    controller,
+    destination,
+    destinations,
+    desktops,
+    fixture,
+    moved,
+    output,
+    source,
+    trackedOutput,
+  };
+}
 
 function createOutput(name: string, x: number): KWinOutput {
   return {

@@ -123,6 +123,18 @@ QtObject {
         sequence: "Meta+Ctrl+Space"
         onActivated: Runtime.DriftileRuntime.toggleFloating()
     }
+    readonly property ShortcutHandler moveWindowToPreviousDesktopShortcut: ShortcutHandler {
+        name: "Driftile Move Window to Previous Desktop"
+        text: "Driftile: Move window to previous desktop"
+        sequence: "Meta+Ctrl+Alt+K"
+        onActivated: Runtime.DriftileRuntime.moveWindowToPreviousDesktop()
+    }
+    readonly property ShortcutHandler moveWindowToNextDesktopShortcut: ShortcutHandler {
+        name: "Driftile Move Window to Next Desktop"
+        text: "Driftile: Move window to next desktop"
+        sequence: "Meta+Ctrl+Alt+J"
+        onActivated: Runtime.DriftileRuntime.moveWindowToNextDesktop()
+    }
     readonly property ShortcutHandler decreaseColumnWidthShortcut: ShortcutHandler {
         name: "Driftile Decrease Column Width"
         text: "Driftile: Decrease column width"

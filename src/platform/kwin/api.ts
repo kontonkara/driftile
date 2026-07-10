@@ -29,7 +29,7 @@ export interface KWinOutput {
 
 export interface KWinWindow {
   readonly deleted: boolean;
-  readonly desktops: readonly KWinVirtualDesktop[];
+  desktops: readonly KWinVirtualDesktop[];
   readonly desktopsChanged?: KWinSignal<[]>;
   readonly desktopWindow: boolean;
   readonly dialog: boolean;
@@ -67,7 +67,7 @@ export interface KWinWindow {
 export interface KWinWorkspace {
   activeWindow: KWinWindow | null;
   readonly activeScreen: KWinOutput | null;
-  readonly currentDesktop: KWinVirtualDesktop | null;
+  currentDesktop: KWinVirtualDesktop | null;
   readonly desktops: readonly KWinVirtualDesktop[];
   readonly screens: readonly KWinOutput[];
   readonly screensChanged?: KWinSignal<[]>;
@@ -89,4 +89,8 @@ export interface KWinWorkspace {
     desktop: KWinVirtualDesktop,
   ): KWinRect;
   currentDesktopForScreen?(output: KWinOutput): KWinVirtualDesktop | null;
+  setCurrentDesktopForScreen?(
+    desktop: KWinVirtualDesktop,
+    output: KWinOutput,
+  ): void;
 }

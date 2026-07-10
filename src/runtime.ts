@@ -93,6 +93,14 @@ export function toggleFloating(): void {
   controller?.toggleFloating();
 }
 
+export function moveWindowToPreviousDesktop(): void {
+  controller?.moveWindowToPreviousDesktop();
+}
+
+export function moveWindowToNextDesktop(): void {
+  controller?.moveWindowToNextDesktop();
+}
+
 export function decreaseColumnWidth(): void {
   controller?.decreaseColumnWidth();
 }
