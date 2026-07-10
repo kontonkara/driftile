@@ -28,12 +28,14 @@ export interface KWinOutput {
 export interface KWinWindow {
   readonly deleted: boolean;
   readonly desktops: readonly KWinVirtualDesktop[];
+  readonly desktopsChanged?: KWinSignal<[]>;
   readonly desktopWindow: boolean;
   readonly dialog: boolean;
   readonly dock: boolean;
   frameGeometry: KWinRect;
   readonly fullScreen: boolean;
   readonly internalId: string | { toString(): string };
+  readonly interactiveMoveResizeFinished?: KWinSignal<[]>;
   readonly managed: boolean;
   readonly maxSize: KWinSize;
   readonly maximizeMode: number;
@@ -41,9 +43,11 @@ export interface KWinWindow {
   readonly minimized: boolean;
   readonly move: boolean;
   readonly moveable: boolean;
+  readonly moveResizedChanged?: KWinSignal<[]>;
   readonly normalWindow: boolean;
   readonly onAllDesktops: boolean;
   readonly output: KWinOutput | null;
+  readonly outputChanged?: KWinSignal<[oldOutput?: KWinOutput | null]>;
   readonly resize: boolean;
   readonly resizeable: boolean;
   readonly specialWindow: boolean;
@@ -57,6 +61,13 @@ export interface KWinWorkspace {
   readonly desktops: readonly KWinVirtualDesktop[];
   readonly screens: readonly KWinOutput[];
   readonly stackingOrder: readonly KWinWindow[];
+  readonly currentDesktopChanged: KWinSignal<
+    [
+      previous: KWinVirtualDesktop | null,
+      current?: KWinVirtualDesktop | null,
+      output?: KWinOutput,
+    ]
+  >;
   readonly windowActivated: KWinSignal<[window: KWinWindow | null]>;
   readonly windowAdded: KWinSignal<[window: KWinWindow]>;
   readonly windowRemoved: KWinSignal<[window: KWinWindow]>;

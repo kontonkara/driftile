@@ -7,6 +7,7 @@ if [[ "${DRIFTILE_SMOKE_TRACE:-0}" == "1" ]]; then
 fi
 
 readonly plugin_id="io.github.kontonkara.driftile"
+readonly output_router_plugin_id="io.github.kontonkara.driftile.integration-output-router"
 readonly stable_sample_count=2
 readonly wait_attempts=200
 
@@ -35,6 +36,13 @@ cleanup() {
     org.kde.kwin.Scripting \
     unloadScript \
     s "$plugin_id" \
+    >/dev/null 2>&1 || true
+  busctl --user call \
+    org.kde.KWin \
+    /Scripting \
+    org.kde.kwin.Scripting \
+    unloadScript \
+    s "$output_router_plugin_id" \
     >/dev/null 2>&1 || true
   stop_clients
 }
@@ -104,6 +112,28 @@ window_frame_geometry() {
     '
 }
 
+window_is_on_output_side() {
+  local window_title=$1
+  local side=$2
+  local id
+
+  id=$(window_id "$window_title") || return 1
+
+  busctl --user --json=short call \
+    org.kde.KWin \
+    /KWin \
+    org.kde.KWin \
+    getWindowInfo \
+    s "$id" | jq --exit-status --arg side "$side" '
+      (.data[0].x.data + (.data[0].width.data / 2)) as $center
+      | if $side == "left" then
+          $center >= 0 and $center < 1280
+        else
+          $center >= 1280 and $center < 2560
+        end
+    ' >/dev/null
+}
+
 wait_for_dbus() {
   local attempt
 
@@ -156,26 +186,36 @@ wait_for_window_gone() {
 }
 
 wait_for_layout() {
-  local first_title=$1
-  local first_expected=$2
-  local second_title=$3
-  local second_expected=$4
-  local third_title=$5
-  local third_expected=$6
+  wait_for_geometries "$@"
+}
+
+wait_for_geometries() {
+  local -a window_titles=()
   local attempt
+  local current_frame
   local current_layout
-  local expected_layout="$first_expected|$second_expected|$third_expected"
-  local first_frame
+  local expected_layout=""
+  local index
   local matches=0
   local previous_layout=""
-  local second_frame
-  local third_frame
+
+  if ((($# == 0) || ($# % 2 != 0))); then
+    return 2
+  fi
+
+  while (($# > 0)); do
+    window_titles+=("$1")
+    expected_layout+="${expected_layout:+|}$2"
+    shift 2
+  done
 
   for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
-    first_frame=$(window_frame_geometry "$first_title" 2>/dev/null || true)
-    second_frame=$(window_frame_geometry "$second_title" 2>/dev/null || true)
-    third_frame=$(window_frame_geometry "$third_title" 2>/dev/null || true)
-    current_layout="$first_frame|$second_frame|$third_frame"
+    current_layout=""
+
+    for index in "${!window_titles[@]}"; do
+      current_frame=$(window_frame_geometry "${window_titles[index]}" 2>/dev/null || true)
+      current_layout+="${current_layout:+|}$current_frame"
+    done
 
     if [[ "$current_layout" == "$expected_layout" && "$current_layout" == "$previous_layout" ]]; then
       ((matches += 1))
@@ -207,7 +247,12 @@ describe_layout() {
 }
 
 wait_for_script_state() {
-  local expected=$1
+  wait_for_named_script_state "$plugin_id" "$1"
+}
+
+wait_for_named_script_state() {
+  local name=$1
+  local expected=$2
   local attempt
   local state
 
@@ -217,7 +262,7 @@ wait_for_script_state() {
       /Scripting \
       org.kde.kwin.Scripting \
       isScriptLoaded \
-      s "$plugin_id" 2>/dev/null || true)
+      s "$name" 2>/dev/null || true)
 
     if [[ "$state" == "b $expected" ]]; then
       return 0
@@ -227,6 +272,44 @@ wait_for_script_state() {
   done
 
   return 1
+}
+
+load_output_router() {
+  local load_result
+  local script_id
+
+  load_result=$(busctl --user call \
+    org.kde.KWin \
+    /Scripting \
+    org.kde.kwin.Scripting \
+    loadScript \
+    ss "$DRIFTILE_SMOKE_OUTPUT_ROUTER" "$output_router_plugin_id") || return 1
+  script_id=${load_result#i }
+
+  if [[ ! "$script_id" =~ ^[0-9]+$ ]]; then
+    return 1
+  fi
+
+  busctl --user call \
+    org.kde.KWin \
+    "/Scripting/Script${script_id}" \
+    org.kde.kwin.Script \
+    run \
+    >/dev/null || return 1
+
+  wait_for_named_script_state "$output_router_plugin_id" true
+}
+
+unload_output_router() {
+  busctl --user call \
+    org.kde.KWin \
+    /Scripting \
+    org.kde.kwin.Scripting \
+    unloadScript \
+    s "$output_router_plugin_id" \
+    >/dev/null || return 1
+
+  wait_for_named_script_state "$output_router_plugin_id" false
 }
 
 set_plugin_state() {
@@ -329,12 +412,94 @@ run_scenario() {
   wait_for_window_gone "$third_title" || fail "the third $protocol test window did not close"
 }
 
+run_multi_output_scenario() {
+  local protocol=$1
+  local baseline
+  local index
+  local side
+  local -a baselines=()
+  local -a titles=(
+    "driftile-multi-output-${protocol}-left-a"
+    "driftile-multi-output-${protocol}-left-b"
+    "driftile-multi-output-${protocol}-left-c"
+    "driftile-multi-output-${protocol}-right-a"
+    "driftile-multi-output-${protocol}-right-b"
+    "driftile-multi-output-${protocol}-right-c"
+  )
+
+  for index in "${!titles[@]}"; do
+    start_client "$protocol" "${titles[index]}"
+
+    if ! baseline=$(capture_stable_geometry "${titles[index]}"); then
+      fail "the multi-output $protocol window ${titles[index]} did not stabilize"
+    fi
+
+    baselines+=("$baseline")
+
+    if ((index < 3)); then
+      side=left
+    else
+      side=right
+    fi
+
+    window_is_on_output_side "${titles[index]}" "$side" || \
+      fail "the output router did not place ${titles[index]} on the $side output"
+  done
+
+  activate_window "${titles[5]}" || fail "KWin could not activate the final multi-output $protocol window"
+
+  set_plugin_state true
+  wait_for_script_state true || fail "KWin did not report Driftile as loaded"
+  wait_for_geometries \
+    "${titles[0]}" "16,16,616,688" \
+    "${titles[1]}" "648,16,616,688" \
+    "${titles[2]}" "${baselines[2]}" \
+    "${titles[3]}" "1296,16,616,688" \
+    "${titles[4]}" "1928,16,616,688" \
+    "${titles[5]}" "${baselines[5]}" || \
+    fail "Driftile did not preserve two isolated $protocol output contexts: $(describe_layout "${titles[@]}")"
+
+  set_plugin_state false
+  wait_for_script_state false || fail "KWin did not unload Driftile"
+  wait_for_geometries \
+    "${titles[0]}" "${baselines[0]}" \
+    "${titles[1]}" "${baselines[1]}" \
+    "${titles[2]}" "${baselines[2]}" \
+    "${titles[3]}" "${baselines[3]}" \
+    "${titles[4]}" "${baselines[4]}" \
+    "${titles[5]}" "${baselines[5]}" || \
+    fail "Driftile did not restore the multi-output $protocol windows: $(describe_layout "${titles[@]}")"
+
+  stop_clients
+
+  for index in "${!titles[@]}"; do
+    wait_for_window_gone "${titles[index]}" || \
+      fail "the multi-output $protocol window ${titles[index]} did not close"
+  done
+}
+
 trap cleanup EXIT
 
 wait_for_dbus || fail "the required KWin D-Bus APIs did not appear"
 
-for protocol in $DRIFTILE_SMOKE_PROTOCOLS; do
-  run_scenario "$protocol"
-done
+case "${DRIFTILE_SMOKE_SCENARIO:-single-output}" in
+  multi-output)
+    load_output_router || fail "KWin could not load the integration output router"
+
+    for protocol in $DRIFTILE_SMOKE_PROTOCOLS; do
+      run_multi_output_scenario "$protocol"
+    done
+
+    unload_output_router || fail "KWin could not unload the integration output router"
+    ;;
+  single-output)
+    for protocol in $DRIFTILE_SMOKE_PROTOCOLS; do
+      run_scenario "$protocol"
+    done
+    ;;
+  *)
+    fail "unsupported smoke-test scenario: $DRIFTILE_SMOKE_SCENARIO"
+    ;;
+esac
 
 touch "$DRIFTILE_SMOKE_RESULT"

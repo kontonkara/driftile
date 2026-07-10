@@ -37,6 +37,7 @@ interface LayoutColumn {
 
 interface LayoutContext {
   activeColumnId: ColumnId | null;
+  readonly columnIds: Set<ColumnId>;
   readonly columns: LayoutColumn[];
   readonly desktopId: DesktopId;
   readonly outputId: OutputId;
@@ -66,7 +67,7 @@ export class LayoutEngine {
       command.desktopId,
     );
 
-    if (context.columns.some((column) => column.id === command.columnId)) {
+    if (context.columnIds.has(command.columnId)) {
       return false;
     }
 
@@ -75,13 +76,17 @@ export class LayoutEngine {
       width: { ...command.width },
       windowIds: [command.windowId],
     };
-    const activeIndex = context.columns.findIndex(
-      (candidate) => candidate.id === context.activeColumnId,
-    );
+    const activeIndex =
+      context.activeColumnId === null
+        ? -1
+        : context.columns.findIndex(
+            (candidate) => candidate.id === context.activeColumnId,
+          );
     const insertionIndex =
       activeIndex < 0 ? context.columns.length : activeIndex + 1;
 
     context.columns.splice(insertionIndex, 0, column);
+    context.columnIds.add(column.id);
     this.placements.set(command.windowId, {
       columnId: column.id,
       contextKey: key,
@@ -181,6 +186,7 @@ export class LayoutEngine {
 
     if (column.windowIds.length === 0) {
       context.columns.splice(columnIndex, 1);
+      context.columnIds.delete(column.id);
 
       if (context.activeColumnId === column.id) {
         const nextColumn =
@@ -252,6 +258,7 @@ export class LayoutEngine {
 
     const context: LayoutContext = {
       activeColumnId: null,
+      columnIds: new Set<ColumnId>(),
       columns: [],
       desktopId,
       outputId,

@@ -172,6 +172,14 @@ describe("LayoutEngine", () => {
       }),
     ).toBe(false);
     expect(engine.snapshot(output, desktop).columns).toHaveLength(1);
+
+    expect(engine.unmanageWindow(baseCommand.windowId)).toBe(true);
+    expect(
+      engine.manageWindow({
+        ...baseCommand,
+        windowId: windowId("window-2"),
+      }),
+    ).toBe(true);
   });
 
   it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])(

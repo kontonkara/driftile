@@ -21,7 +21,7 @@ export function init(
   });
 
   if (!nextController.start()) {
-    console.warn("[driftile] no active output and desktop context");
+    console.warn("[driftile] no output or virtual desktop available");
     return;
   }
 

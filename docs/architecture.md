@@ -19,10 +19,11 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 
 ### TypeScript runtime
 
-- Takes the initial workspace snapshot.
+- Models eligible windows from every existing output and desktop context.
 - Normalizes QML/KWin objects into stable IDs and plain data.
-- Serializes events and commands, batches bursts, and marks dirty contexts.
-- Owns startup, reconfiguration, recovery, and shutdown sequencing.
+- Batches event bursts, marks dirty contexts, and reconciles only visible desktops.
+- Defers external output and desktop transfers, then re-owns each window in its destination context.
+- Owns startup, reconfiguration, and shutdown sequencing.
 
 ### Core
 
@@ -34,8 +35,8 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 ### Reconcile
 
 - Compares desired state with the latest observed KWin state.
-- Emits the smallest valid set of focus, geometry, transfer, and desktop operations.
-- Reflows dirty contexts only and ignores self-generated geometry signals.
+- Emits the smallest valid set of geometry operations.
+- Reflows dirty, visible contexts only.
 - Is idempotent: the same observed and desired state produces no further work.
 
 ### KWin
@@ -48,11 +49,10 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 
 ```text
 RuntimeState
-  windows: Map<WindowId, WindowState>
+  windows: Map<WindowId, ManagedWindow>
   contexts: Map<ContextKey, LayoutContext>
-  outputs: Map<OutputId, OutputState>
-  desktops: ordered VirtualDesktopId[]
-  workspacePolicy: DynamicWorkspaceState
+  dirtyContexts: Set<ContextKey>
+  pendingWindowSyncs: Set<WindowId>
 ```
 
 `LayoutContext` owns columns and viewport offset. A column owns ordered window IDs and width. KWin objects never enter core state.
@@ -60,13 +60,14 @@ RuntimeState
 ## Reconciliation rules
 
 - Read usable geometry from KWin work areas; never infer panel bounds.
-- Never move overflow columns into another output's global coordinate space.
-- Admit geometry-based overflow only when KWin reports one output until output-local clipping exists.
+- Apply a context only when its desktop is visible on its output.
+- Keep focus commands inside the active window's context.
+- Allow horizontal overflow and viewport scrolling when KWin reports one output.
+- Queue a candidate window unmanaged if it would introduce overflow with multiple outputs, then retry it when that context gains capacity.
+- Release externally transferred windows from their old context before admitting them to the destination context.
 - Respect minimum and maximum window sizes before emitting geometry.
 - Never let native tiling and Driftile write geometry for the same window.
-- Treat external focus, fullscreen, minimize, desktop, and output changes as authoritative events.
-- Re-resolve outputs and windows after topology changes instead of retaining stale objects.
-- Remove only a Driftile-owned, empty, trailing desktop that is not visible on any output.
+- Treat external focus and window output or desktop changes as authoritative events.
 
 ## Engineering constraints
 
@@ -79,5 +80,6 @@ RuntimeState
 
 - Unit-test core policies with plain fixtures.
 - Test reconcile output for minimality and idempotence.
-- Replay event sequences for window lifecycle, desktop changes, and hot-plug recovery.
+- Replay window lifecycle and output or desktop transfer sequences.
+- Verify independent contexts with native Wayland and Xwayland windows on two virtual outputs.
 - Run integration smoke tests in an isolated KWin session or NixOS VM.

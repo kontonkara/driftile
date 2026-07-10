@@ -62,6 +62,9 @@ run_backend() (
   local xvfb_log=""
   local xvfb_pid=""
   local package_installed=0
+  local output_count
+  local scenario
+  local socket_name
 
   sandbox=$(mktemp -d "${TMPDIR:-/tmp}/driftile-${backend}-smoke.XXXXXX")
   log_file="$sandbox/kwin.log"
@@ -126,6 +129,7 @@ run_backend() (
   chmod 0700 "$sandbox/runtime"
 
   export DRIFTILE_SMOKE_CLIENT="$project_root/tools/integration/client.qml"
+  export DRIFTILE_SMOKE_OUTPUT_ROUTER="$project_root/tools/integration/output-router.js"
   export DRIFTILE_SMOKE_QML_IMPORT="$qml_import_path"
   export DRIFTILE_SMOKE_RESULT="$result_file"
   export HOME="$sandbox/home"
@@ -160,21 +164,33 @@ run_backend() (
   package_installed=1
 
   case "$backend" in
-    wayland)
+    wayland | wayland-multi-output)
       require_command kwin_wayland || exit 1
       require_command Xwayland || exit 1
       export DRIFTILE_SMOKE_PROTOCOLS="xwayland wayland"
       export KWIN_COMPOSE=Q
+
+      if [[ "$backend" == "wayland-multi-output" ]]; then
+        output_count=2
+        scenario=multi-output
+        socket_name=driftile-multi-output-smoke-0
+      else
+        output_count=1
+        scenario=single-output
+        socket_name=driftile-smoke-0
+      fi
+
+      export DRIFTILE_SMOKE_SCENARIO="$scenario"
 
       if ! timeout --kill-after=5s 90s dbus-run-session -- \
         kwin_wayland \
         --virtual \
         --width 1280 \
         --height 720 \
-        --output-count 1 \
+        --output-count "$output_count" \
         --scale 1 \
         --xwayland \
-        --socket driftile-smoke-0 \
+        --socket "$socket_name" \
         --no-global-shortcuts \
         --no-kactivities \
         --no-lockscreen \
@@ -187,6 +203,7 @@ run_backend() (
       require_command kwin_x11 || exit 1
       require_command Xvfb || exit 1
       export DRIFTILE_SMOKE_PROTOCOLS=x11
+      export DRIFTILE_SMOKE_SCENARIO=single-output
       xvfb_log="$sandbox/xvfb.log"
 
       Xvfb \
@@ -253,6 +270,7 @@ npm --prefix "$project_root" run build >/dev/null
 
 if [[ "$selection" == "all" || "$selection" == "wayland" ]]; then
   run_backend wayland
+  run_backend wayland-multi-output
 fi
 
 if [[ "$selection" == "all" || "$selection" == "x11" ]]; then
