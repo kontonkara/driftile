@@ -43,7 +43,7 @@ The current runtime already:
 - Parks deterministic whole columns when a new multi-output capacity limit no longer fits, preferring non-active columns, then retries waiting windows.
 - Reorders the active whole column left or right with context-local shortcuts and transactional geometry rollback.
 - Decreases, increases, or resets the active whole column width with grouped constraints and transactional rollback.
-- Focuses and reorders vertical stack members, and contextually merges or extracts the active window left or right.
+- Focuses and reorders vertical stack members, contextually merges or extracts the active window, and inserts it directly into the nearest stack across singleton columns.
 - Toggles the active normal window between tiled and floating states with anchored reinsertion and safe geometry ownership.
 
 Physical connector hot-plug and a wider rotation matrix remain MVP hardening work.
@@ -53,7 +53,6 @@ Physical connector hot-plug and a wider rotation matrix remain MVP hardening wor
 Complete the daily keyboard-driven workflow.
 
 - Manage every output and desktop independently.
-- Add direct insertion into non-adjacent stacks.
 - Support explicit transfers between outputs and desktops.
 - Integrate dialogs and remaining size-constraint behavior.
 - Harden the existing topology recovery for rotation, rapid physical hot-plug sequences, and more hardware configurations.
