@@ -83,9 +83,9 @@ monitor_guest() {
       fi
 
       if [[ "$(<"$focus_file")" == true ]]; then
-        printf 'The VM verified focus, column movement, column resizing, and viewport scrolling.\n'
+        printf 'The VM verified focus, column movement, stack merge/extract, stack reordering, column resizing, and viewport scrolling.\n'
       else
-        printf 'The VM failed to verify focus, column movement, column resizing, and viewport scrolling.\n' >&2
+        printf 'The VM failed to verify focus, column movement, stack merge/extract, stack reordering, column resizing, and viewport scrolling.\n' >&2
         failed=true
 
         if [[ -f "$diagnostics_file" ]]; then

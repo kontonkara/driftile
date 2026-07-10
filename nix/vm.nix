@@ -114,8 +114,14 @@ let
 
           if [[ "$shortcuts" == *"Driftile Focus Left"* \
             && "$shortcuts" == *"Driftile Focus Right"* \
+            && "$shortcuts" == *"Driftile Focus Up"* \
+            && "$shortcuts" == *"Driftile Focus Down"* \
             && "$shortcuts" == *"Driftile Move Column Left"* \
             && "$shortcuts" == *"Driftile Move Column Right"* \
+            && "$shortcuts" == *"Driftile Move Window Left"* \
+            && "$shortcuts" == *"Driftile Move Window Right"* \
+            && "$shortcuts" == *"Driftile Move Window Up"* \
+            && "$shortcuts" == *"Driftile Move Window Down"* \
             && "$shortcuts" == *"Driftile Decrease Column Width"* \
             && "$shortcuts" == *"Driftile Increase Column Width"* \
             && "$shortcuts" == *"Driftile Reset Column Width"* ]]; then
@@ -154,6 +160,329 @@ let
           s "$id" 2>/dev/null \
           | jq --exit-status --raw-output \
             '.data[0].width.data | select(type == "number") | round | tostring'
+      }
+
+      window_frame() {
+        local id
+
+        id=$(window_id "$1") || return 1
+        busctl --user --json=short call \
+          org.kde.KWin \
+          /KWin \
+          org.kde.KWin \
+          getWindowInfo \
+          s "$id" 2>/dev/null \
+          | jq --exit-status --raw-output '
+            .data[0] as $window
+            | [
+                $window.x.data,
+                $window.y.data,
+                $window.width.data,
+                $window.height.data
+              ]
+            | select(map(type == "number") | all)
+            | map(round | tostring)
+            | join(",")
+          '
+      }
+
+      frame_is_valid() {
+        [[ "$1" =~ ^-?[0-9]+,-?[0-9]+,[1-9][0-9]*,[1-9][0-9]*$ ]]
+      }
+
+      capture_stable_frames() {
+        local attempt
+        local current_first
+        local current_second
+        local current_third
+        local previous_first=""
+        local previous_second=""
+        local previous_third=""
+        local required_samples=''${1:-2}
+        local stable_samples=0
+
+        [[ "$required_samples" =~ ^[1-9][0-9]*$ ]] || return 1
+
+        for ((attempt = 0; attempt < 200; attempt += 1)); do
+          current_first=$(window_frame "$title_a" 2>/dev/null || true)
+          current_second=$(window_frame "$title_b" 2>/dev/null || true)
+          current_third=$(window_frame "$title_c" 2>/dev/null || true)
+
+          if frame_is_valid "$current_first" \
+            && frame_is_valid "$current_second" \
+            && frame_is_valid "$current_third"; then
+            if [[ "$current_first" == "$previous_first" \
+              && "$current_second" == "$previous_second" \
+              && "$current_third" == "$previous_third" ]]; then
+              stable_samples=$((stable_samples + 1))
+            else
+              stable_samples=1
+            fi
+
+            previous_first=$current_first
+            previous_second=$current_second
+            previous_third=$current_third
+
+            if ((stable_samples >= required_samples)); then
+              stable_first_frame=$current_first
+              stable_second_frame=$current_second
+              stable_third_frame=$current_third
+              return 0
+            fi
+          else
+            stable_samples=0
+            previous_first=""
+            previous_second=""
+            previous_third=""
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      wait_for_frames() {
+        local attempt
+        local current_first
+        local current_second
+        local current_third
+        local stable_samples=0
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          current_first=$(window_frame "$title_a" 2>/dev/null || true)
+          current_second=$(window_frame "$title_b" 2>/dev/null || true)
+          current_third=$(window_frame "$title_c" 2>/dev/null || true)
+
+          if [[ "$current_first" == "$1" \
+            && "$current_second" == "$2" \
+            && "$current_third" == "$3" ]]; then
+            stable_samples=$((stable_samples + 1))
+
+            if ((stable_samples >= 2)); then
+              return 0
+            fi
+          else
+            stable_samples=0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      wait_for_stack_layout() {
+        local attempt
+        local baseline_first=$2
+        local baseline_third=$3
+        local baseline_first_height
+        local baseline_first_width
+        local baseline_first_y
+        local baseline_third_height
+        local baseline_third_width
+        local baseline_third_y
+        local current_first
+        local current_second
+        local current_third
+        local first_height
+        local first_width
+        local first_x
+        local first_y
+        local matches
+        local second_height
+        local second_width
+        local second_x
+        local second_y
+        local stable_samples=0
+        local third_height
+        local third_width
+        local third_x
+        local third_y
+
+        frame_is_valid "$baseline_first" \
+          && frame_is_valid "$baseline_third" \
+          || return 1
+        IFS=, read -r \
+          _ \
+          baseline_first_y \
+          baseline_first_width \
+          baseline_first_height \
+          <<< "$baseline_first"
+        IFS=, read -r \
+          _ \
+          baseline_third_y \
+          baseline_third_width \
+          baseline_third_height \
+          <<< "$baseline_third"
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          current_first=$(window_frame "$title_a" 2>/dev/null || true)
+          current_second=$(window_frame "$title_b" 2>/dev/null || true)
+          current_third=$(window_frame "$title_c" 2>/dev/null || true)
+          matches=false
+
+          if frame_is_valid "$current_first" \
+            && frame_is_valid "$current_second" \
+            && frame_is_valid "$current_third"; then
+            IFS=, read -r first_x first_y first_width first_height \
+              <<< "$current_first"
+            IFS=, read -r second_x second_y second_width second_height \
+              <<< "$current_second"
+            IFS=, read -r third_x third_y third_width third_height \
+              <<< "$current_third"
+
+            if ((first_x == second_x \
+              && first_width == baseline_first_width \
+              && second_width == baseline_first_width \
+              && first_x + first_width < third_x \
+              && third_y == baseline_third_y \
+              && third_width == baseline_third_width \
+              && third_height == baseline_third_height)); then
+              case "$1" in
+                first-above-second)
+                  ((first_y == baseline_first_y \
+                    && first_y + first_height < second_y \
+                    && second_y + second_height \
+                      == baseline_first_y + baseline_first_height)) \
+                    && matches=true
+                  ;;
+                second-above-first)
+                  ((second_y == baseline_first_y \
+                    && second_y + second_height < first_y \
+                    && first_y + first_height \
+                      == baseline_first_y + baseline_first_height)) \
+                    && matches=true
+                  ;;
+                *)
+                  return 1
+                  ;;
+              esac
+            fi
+          fi
+
+          if [[ "$matches" == true ]]; then
+            stable_samples=$((stable_samples + 1))
+
+            if ((stable_samples >= 2)); then
+              return 0
+            fi
+          else
+            stable_samples=0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      wait_for_singleton_layout() {
+        local attempt
+        local current_first
+        local current_second
+        local current_third
+        local expected_first_height
+        local expected_first_width
+        local expected_first_y
+        local expected_second_height
+        local expected_second_width
+        local expected_second_y
+        local expected_third_height
+        local expected_third_width
+        local expected_third_y
+        local first_height
+        local first_width
+        local first_x
+        local first_y
+        local first_gap
+        local gap_difference
+        local matches
+        local second_height
+        local second_width
+        local second_x
+        local second_y
+        local second_gap
+        local stable_samples=0
+        local third_height
+        local third_width
+        local third_x
+        local third_y
+
+        frame_is_valid "$1" && frame_is_valid "$2" && frame_is_valid "$3" \
+          || return 1
+        IFS=, read -r \
+          _ \
+          expected_first_y \
+          expected_first_width \
+          expected_first_height \
+          <<< "$1"
+        IFS=, read -r \
+          _ \
+          expected_second_y \
+          expected_second_width \
+          expected_second_height \
+          <<< "$2"
+        IFS=, read -r \
+          _ \
+          expected_third_y \
+          expected_third_width \
+          expected_third_height \
+          <<< "$3"
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          current_first=$(window_frame "$title_a" 2>/dev/null || true)
+          current_second=$(window_frame "$title_b" 2>/dev/null || true)
+          current_third=$(window_frame "$title_c" 2>/dev/null || true)
+          matches=false
+
+          if frame_is_valid "$current_first" \
+            && frame_is_valid "$current_second" \
+            && frame_is_valid "$current_third"; then
+            IFS=, read -r first_x first_y first_width first_height \
+              <<< "$current_first"
+            IFS=, read -r second_x second_y second_width second_height \
+              <<< "$current_second"
+            IFS=, read -r third_x third_y third_width third_height \
+              <<< "$current_third"
+            first_gap=$((second_x - first_x - first_width))
+            second_gap=$((third_x - second_x - second_width))
+            gap_difference=$((first_gap - second_gap))
+
+            if ((gap_difference < 0)); then
+              gap_difference=$((-gap_difference))
+            fi
+
+            if ((first_y == expected_first_y \
+              && first_width == expected_first_width \
+              && first_height == expected_first_height \
+              && second_y == expected_second_y \
+              && second_width == expected_second_width \
+              && second_height == expected_second_height \
+              && third_y == expected_third_y \
+              && third_width == expected_third_width \
+              && third_height == expected_third_height \
+              && first_gap > 0 \
+              && second_gap > 0 \
+              && gap_difference <= 1)); then
+              matches=true
+            fi
+          fi
+
+          if [[ "$matches" == true ]]; then
+            stable_samples=$((stable_samples + 1))
+
+            if ((stable_samples >= 2)); then
+              return 0
+            fi
+          else
+            stable_samples=0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
       }
 
       wait_for_layout() {
@@ -253,7 +582,7 @@ let
             org.kde.kglobalaccel.Component \
             shortcutNames 2>/dev/null \
             | grep -oE \
-              'Driftile (Focus (Left|Right)|Move Column (Left|Right)|(Decrease|Increase|Reset) Column Width)' \
+              'Driftile (Focus (Left|Right|Up|Down)|Move Column (Left|Right)|Move Window (Left|Right|Up|Down)|(Decrease|Increase|Reset) Column Width)' \
             | sort -u \
             | tr '\n' ' ' || true
           printf '\nwindow A captions: '
@@ -288,6 +617,10 @@ let
             "$(window_frame_width "$title_a" 2>/dev/null || printf missing)" \
             "$(window_frame_width "$title_b" 2>/dev/null || printf missing)" \
             "$(window_frame_width "$title_c" 2>/dev/null || printf missing)"
+          printf 'full frames (x,y,width,height): A=%s B=%s C=%s\n' \
+            "$(window_frame "$title_a" 2>/dev/null || printf missing)" \
+            "$(window_frame "$title_b" 2>/dev/null || printf missing)" \
+            "$(window_frame "$title_c" 2>/dev/null || printf missing)"
         } >> /tmp/shared/driftile-focus-diagnostics
       }
 
@@ -295,6 +628,12 @@ let
         local baseline_first_width
         local baseline_second_width
         local baseline_third_width
+        local merged_first_frame
+        local merged_second_frame
+        local merged_third_frame
+        local singleton_first_frame
+        local singleton_second_frame
+        local singleton_third_frame
 
         wait_for_window "$title_a" \
           && wait_for_window "$title_b" \
@@ -303,6 +642,11 @@ let
 
         if ! wait_for_shortcuts; then
           record_focus_state "shortcut registration failed"
+          return 1
+        fi
+
+        if ! capture_stable_frames 30; then
+          record_focus_state "initial topology did not settle"
           return 1
         fi
 
@@ -352,11 +696,12 @@ let
 
         activate_window "$title_b" \
           && wait_for_active "$title_b" \
+          && capture_stable_frames \
           || return 1
 
-        baseline_first_width=$(window_frame_width "$title_a") || return 1
-        baseline_second_width=$(window_frame_width "$title_b") || return 1
-        baseline_third_width=$(window_frame_width "$title_c") || return 1
+        IFS=, read -r _ _ baseline_first_width _ <<< "$stable_first_frame"
+        IFS=, read -r _ _ baseline_second_width _ <<< "$stable_second_frame"
+        IFS=, read -r _ _ baseline_third_width _ <<< "$stable_third_frame"
 
         if [[ ! "$baseline_first_width" =~ ^[0-9]+$ \
           || ! "$baseline_second_width" =~ ^[0-9]+$ \
@@ -405,6 +750,70 @@ let
           && wait_for_active "$title_b" \
           || return 1
         record_focus_state "column B width reset"
+
+        capture_stable_frames || return 1
+        singleton_first_frame=$stable_first_frame
+        singleton_second_frame=$stable_second_frame
+        singleton_third_frame=$stable_third_frame
+
+        invoke_shortcut "Driftile Move Window Left" \
+          && wait_for_stack_layout \
+            first-above-second \
+            "$singleton_first_frame" \
+            "$singleton_third_frame" \
+          && wait_for_active "$title_b" \
+          || return 1
+        record_focus_state "window B merged into the left stack"
+
+        capture_stable_frames || return 1
+        merged_first_frame=$stable_first_frame
+        merged_second_frame=$stable_second_frame
+        merged_third_frame=$stable_third_frame
+
+        invoke_shortcut "Driftile Focus Up" \
+          && wait_for_active "$title_a" \
+          && wait_for_frames \
+            "$merged_first_frame" \
+            "$merged_second_frame" \
+            "$merged_third_frame" \
+          || return 1
+        record_focus_state "focus moved up within the stack"
+
+        invoke_shortcut "Driftile Focus Down" \
+          && wait_for_active "$title_b" \
+          && wait_for_frames \
+            "$merged_first_frame" \
+            "$merged_second_frame" \
+            "$merged_third_frame" \
+          || return 1
+        record_focus_state "focus moved down within the stack"
+
+        invoke_shortcut "Driftile Move Window Up" \
+          && wait_for_active "$title_b" \
+          && wait_for_frames \
+            "$merged_second_frame" \
+            "$merged_first_frame" \
+            "$merged_third_frame" \
+          || return 1
+        record_focus_state "window B moved up within the stack"
+
+        invoke_shortcut "Driftile Move Window Down" \
+          && wait_for_active "$title_b" \
+          && wait_for_frames \
+            "$merged_first_frame" \
+            "$merged_second_frame" \
+            "$merged_third_frame" \
+          || return 1
+        record_focus_state "window B moved down within the stack"
+
+        invoke_shortcut "Driftile Move Window Right" \
+          && wait_for_active "$title_b" \
+          && wait_for_singleton_layout \
+            "$singleton_first_frame" \
+            "$singleton_second_frame" \
+            "$singleton_third_frame" \
+          || return 1
+        record_focus_state "window B extracted into the right column"
       }
 
       loaded=false

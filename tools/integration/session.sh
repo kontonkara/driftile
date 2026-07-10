@@ -965,11 +965,11 @@ run_scenario() {
   local full_output_frame="0,0,1280,720"
   local native_tile_frame="4,4,314,712"
 
-  start_client "$protocol" "$first_title"
+  start_client "$protocol" "$first_title" true
   capture_stable_geometry "$first_title" >/dev/null || fail "the first $protocol test window did not stabilize"
   start_client "$protocol" "$second_title" true
   capture_stable_geometry "$second_title" >/dev/null || fail "the second $protocol test window did not stabilize"
-  start_client "$protocol" "$third_title"
+  start_client "$protocol" "$third_title" true
 
   first_baseline=$(capture_stable_geometry "$first_title") || fail "the first $protocol test window did not stabilize"
   second_baseline=$(capture_stable_geometry "$second_title") || fail "the second $protocol test window did not stabilize"
@@ -1020,14 +1020,197 @@ run_scenario() {
     fail "Driftile did not move the active $protocol column right: $(describe_layout "$first_title" "$second_title" "$third_title")"
 
   activate_window "$second_title" || \
-    fail "KWin could not activate the middle $protocol window for column resizing"
+    fail "KWin could not activate the middle $protocol window for stack editing"
   wait_for_active "$second_title" || \
-    fail "KWin did not focus the middle $protocol window before column resizing"
+    fail "KWin did not focus the middle $protocol window before stack editing"
   wait_for_layout \
     "$first_title" "-600,16,616,688" \
     "$second_title" "32,16,616,688" \
     "$third_title" "664,16,616,688" || \
-    fail "Driftile did not preserve the middle $protocol column before resizing: $(describe_layout "$first_title" "$second_title" "$third_title")"
+    fail "Driftile did not preserve the middle $protocol column before stack editing: $(describe_layout "$first_title" "$second_title" "$third_title")"
+
+  wait_for_shortcut "Driftile Focus Up" || \
+    fail "KGlobalAccel did not register the focus-up shortcut"
+  wait_for_shortcut "Driftile Focus Down" || \
+    fail "KGlobalAccel did not register the focus-down shortcut"
+  wait_for_shortcut "Driftile Move Window Left" || \
+    fail "KGlobalAccel did not register the move-window-left shortcut"
+  wait_for_shortcut "Driftile Move Window Right" || \
+    fail "KGlobalAccel did not register the move-window-right shortcut"
+  wait_for_shortcut "Driftile Move Window Up" || \
+    fail "KGlobalAccel did not register the move-window-up shortcut"
+  wait_for_shortcut "Driftile Move Window Down" || \
+    fail "KGlobalAccel did not register the move-window-down shortcut"
+
+  invoke_shortcut "Driftile Move Window Left" || \
+    fail "KGlobalAccel could not invoke the move-window-left shortcut"
+  wait_for_layout \
+    "$first_title" "16,16,616,336" \
+    "$second_title" "16,368,616,336" \
+    "$third_title" "648,16,616,688" || \
+    fail "Driftile did not merge the active $protocol window left: $(describe_layout "$first_title" "$second_title" "$third_title")"
+  wait_for_active "$second_title" || \
+    fail "Driftile changed $protocol focus after merging the middle window left"
+
+  invoke_shortcut "Driftile Focus Up" || \
+    fail "KGlobalAccel could not invoke the focus-up shortcut"
+  wait_for_active "$first_title" || \
+    fail "Driftile did not focus the upper $protocol stack member"
+  wait_for_layout \
+    "$first_title" "16,16,616,336" \
+    "$second_title" "16,368,616,336" \
+    "$third_title" "648,16,616,688" || \
+    fail "Driftile changed the $protocol stack while focusing up: $(describe_layout "$first_title" "$second_title" "$third_title")"
+
+  invoke_shortcut "Driftile Focus Down" || \
+    fail "KGlobalAccel could not invoke the focus-down shortcut"
+  wait_for_active "$second_title" || \
+    fail "Driftile did not focus the lower $protocol stack member"
+  wait_for_layout \
+    "$first_title" "16,16,616,336" \
+    "$second_title" "16,368,616,336" \
+    "$third_title" "648,16,616,688" || \
+    fail "Driftile changed the $protocol stack while focusing down: $(describe_layout "$first_title" "$second_title" "$third_title")"
+
+  invoke_shortcut "Driftile Move Window Up" || \
+    fail "KGlobalAccel could not invoke the move-window-up shortcut"
+  wait_for_layout \
+    "$first_title" "16,368,616,336" \
+    "$second_title" "16,16,616,336" \
+    "$third_title" "648,16,616,688" || \
+    fail "Driftile did not move the active $protocol stack member up: $(describe_layout "$first_title" "$second_title" "$third_title")"
+  wait_for_active "$second_title" || \
+    fail "Driftile changed $protocol focus after moving the stack member up"
+
+  invoke_shortcut "Driftile Move Window Down" || \
+    fail "KGlobalAccel could not invoke the move-window-down shortcut"
+  wait_for_layout \
+    "$first_title" "16,16,616,336" \
+    "$second_title" "16,368,616,336" \
+    "$third_title" "648,16,616,688" || \
+    fail "Driftile did not move the active $protocol stack member down: $(describe_layout "$first_title" "$second_title" "$third_title")"
+  wait_for_active "$second_title" || \
+    fail "Driftile changed $protocol focus after moving the stack member down"
+
+  invoke_shortcut "Driftile Focus Right" || \
+    fail "KGlobalAccel could not invoke the focus-right shortcut from the stack"
+  wait_for_active "$third_title" || \
+    fail "Driftile did not focus the right $protocol column from the stack"
+  wait_for_layout \
+    "$first_title" "16,16,616,336" \
+    "$second_title" "16,368,616,336" \
+    "$third_title" "648,16,616,688" || \
+    fail "Driftile changed the $protocol stack while focusing right: $(describe_layout "$first_title" "$second_title" "$third_title")"
+
+  invoke_shortcut "Driftile Move Window Left" || \
+    fail "KGlobalAccel could not merge the right $protocol window left"
+  wait_for_layout \
+    "$first_title" "16,16,616,219" \
+    "$second_title" "16,251,616,218" \
+    "$third_title" "16,485,616,219" || \
+    fail "Driftile did not form the three-window $protocol stack: $(describe_layout "$first_title" "$second_title" "$third_title")"
+  wait_for_active "$third_title" || \
+    fail "Driftile changed $protocol focus after forming the three-window stack"
+
+  invoke_shortcut "Driftile Focus Up" || \
+    fail "KGlobalAccel could not focus up in the three-window $protocol stack"
+  wait_for_active "$second_title" || \
+    fail "Driftile did not focus the middle member of the three-window $protocol stack"
+  wait_for_layout \
+    "$first_title" "16,16,616,219" \
+    "$second_title" "16,251,616,218" \
+    "$third_title" "16,485,616,219" || \
+    fail "Driftile changed the three-window $protocol stack while focusing up: $(describe_layout "$first_title" "$second_title" "$third_title")"
+
+  invoke_shortcut "Driftile Focus Down" || \
+    fail "KGlobalAccel could not focus down in the three-window $protocol stack"
+  wait_for_active "$third_title" || \
+    fail "Driftile did not restore focus to the lower three-window $protocol stack member"
+  wait_for_layout \
+    "$first_title" "16,16,616,219" \
+    "$second_title" "16,251,616,218" \
+    "$third_title" "16,485,616,219" || \
+    fail "Driftile changed the three-window $protocol stack while focusing down: $(describe_layout "$first_title" "$second_title" "$third_title")"
+
+  invoke_shortcut "Driftile Move Window Right" || \
+    fail "KGlobalAccel could not extract the lower $protocol stack member right"
+  wait_for_layout \
+    "$first_title" "16,16,616,336" \
+    "$second_title" "16,368,616,336" \
+    "$third_title" "648,16,616,688" || \
+    fail "Driftile did not extract the lower $protocol stack member right: $(describe_layout "$first_title" "$second_title" "$third_title")"
+  wait_for_active "$third_title" || \
+    fail "Driftile changed $protocol focus after extracting the lower stack member"
+
+  invoke_shortcut "Driftile Focus Left" || \
+    fail "KGlobalAccel could not invoke the focus-left shortcut from the extracted window"
+  wait_for_active "$first_title" || \
+    fail "Driftile did not focus the first member of the left $protocol stack"
+  wait_for_layout \
+    "$first_title" "16,16,616,336" \
+    "$second_title" "16,368,616,336" \
+    "$third_title" "648,16,616,688" || \
+    fail "Driftile changed the $protocol stack while focusing left: $(describe_layout "$first_title" "$second_title" "$third_title")"
+
+  invoke_shortcut "Driftile Focus Down" || \
+    fail "KGlobalAccel could not focus the lower member of the left $protocol stack"
+  wait_for_active "$second_title" || \
+    fail "Driftile did not focus the lower member of the left $protocol stack"
+  wait_for_layout \
+    "$first_title" "16,16,616,336" \
+    "$second_title" "16,368,616,336" \
+    "$third_title" "648,16,616,688" || \
+    fail "Driftile changed the $protocol stack before extracting its lower member: $(describe_layout "$first_title" "$second_title" "$third_title")"
+
+  invoke_shortcut "Driftile Move Window Right" || \
+    fail "KGlobalAccel could not extract the active $protocol stack member right"
+  wait_for_layout \
+    "$first_title" "16,16,616,688" \
+    "$second_title" "648,16,616,688" \
+    "$third_title" "1280,16,616,688" || \
+    fail "Driftile did not extract the active $protocol stack member right: $(describe_layout "$first_title" "$second_title" "$third_title")"
+  wait_for_active "$second_title" || \
+    fail "Driftile changed $protocol focus after extracting the middle window"
+
+  invoke_shortcut "Driftile Move Window Right" || \
+    fail "KGlobalAccel could not merge the active $protocol window right"
+  wait_for_layout \
+    "$first_title" "16,16,616,688" \
+    "$second_title" "648,368,616,336" \
+    "$third_title" "648,16,616,336" || \
+    fail "Driftile did not merge the active $protocol window right: $(describe_layout "$first_title" "$second_title" "$third_title")"
+  wait_for_active "$second_title" || \
+    fail "Driftile changed $protocol focus after merging the middle window right"
+
+  invoke_shortcut "Driftile Move Window Left" || \
+    fail "KGlobalAccel could not extract the active $protocol stack member left"
+  wait_for_layout \
+    "$first_title" "16,16,616,688" \
+    "$second_title" "648,16,616,688" \
+    "$third_title" "1280,16,616,688" || \
+    fail "Driftile did not extract the active $protocol stack member left: $(describe_layout "$first_title" "$second_title" "$third_title")"
+  wait_for_active "$second_title" || \
+    fail "Driftile changed $protocol focus after extracting the middle window left"
+
+  invoke_shortcut "Driftile Focus Right" || \
+    fail "KGlobalAccel could not focus the right $protocol column"
+  wait_for_layout \
+    "$first_title" "-600,16,616,688" \
+    "$second_title" "32,16,616,688" \
+    "$third_title" "664,16,616,688" || \
+    fail "Driftile did not reveal the right $protocol column after stack editing: $(describe_layout "$first_title" "$second_title" "$third_title")"
+  wait_for_active "$third_title" || \
+    fail "Driftile did not focus the right $protocol column after stack editing"
+
+  invoke_shortcut "Driftile Focus Left" || \
+    fail "KGlobalAccel could not restore focus to the middle $protocol column"
+  wait_for_layout \
+    "$first_title" "-600,16,616,688" \
+    "$second_title" "32,16,616,688" \
+    "$third_title" "664,16,616,688" || \
+    fail "Driftile changed the restored three-column $protocol layout: $(describe_layout "$first_title" "$second_title" "$third_title")"
+  wait_for_active "$second_title" || \
+    fail "Driftile did not restore focus to the middle $protocol column"
 
   wait_for_shortcut "Driftile Decrease Column Width" || \
     fail "KGlobalAccel did not register the decrease-width shortcut"
