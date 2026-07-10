@@ -38,4 +38,4 @@ tools/vm/run.sh
 
 The script builds `nixosConfigurations.driftile-vm` through `nixos-rebuild build-vm` and asks host KWin for a centered `1440x900` QEMU window with a `1680x1050` guest display. Plasma starts a Wayland session, enables Driftile, and opens three labeled test windows. The launcher verifies extension loading, both horizontal focus shortcuts, and left-to-right viewport scrolling. Use `Meta+Ctrl+H` and `Meta+Ctrl+L` for manual verification.
 
-The VM is ephemeral, has restricted networking, and cannot be switched onto the host. The test account and password are both `driftile`. The X11 Plasma session remains available from the login screen; automated integration tests cover both KWin backends.
+The VM is ephemeral, has restricted networking, and cannot be switched onto the host. The passwordless `driftile` account signs in automatically. Screen locking, display power saving, and system sleep are disabled inside the guest so the visible session stays available for observation. The X11 Plasma session remains available from the login screen; automated integration tests cover both KWin backends.

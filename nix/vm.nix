@@ -299,6 +299,45 @@ let
     [Plugins]
     ${pluginId}Enabled=true
   '';
+  screenLockerConfig = pkgs.writeText "driftile-vm-kscreenlockerrc" ''
+    [Daemon]
+    Autolock=false
+    LockOnResume=false
+    LockOnStart=false
+    RequirePassword=false
+    Timeout=0
+  '';
+  powerDevilConfig = pkgs.writeText "driftile-vm-powerdevilrc" ''
+    [AC][Display]
+    DimDisplayIdleTimeoutSec=-1
+    DimDisplayWhenIdle=false
+    TurnOffDisplayIdleTimeoutSec=-1
+    TurnOffDisplayWhenIdle=false
+
+    [AC][SuspendAndShutdown]
+    AutoSuspendAction=0
+    AutoSuspendIdleTimeoutSec=-1
+
+    [Battery][Display]
+    DimDisplayIdleTimeoutSec=-1
+    DimDisplayWhenIdle=false
+    TurnOffDisplayIdleTimeoutSec=-1
+    TurnOffDisplayWhenIdle=false
+
+    [Battery][SuspendAndShutdown]
+    AutoSuspendAction=0
+    AutoSuspendIdleTimeoutSec=-1
+
+    [LowBattery][Display]
+    DimDisplayIdleTimeoutSec=-1
+    DimDisplayWhenIdle=false
+    TurnOffDisplayIdleTimeoutSec=-1
+    TurnOffDisplayWhenIdle=false
+
+    [LowBattery][SuspendAndShutdown]
+    AutoSuspendAction=0
+    AutoSuspendIdleTimeoutSec=-1
+  '';
 in
 {
   networking.hostName = "driftile-vm";
@@ -311,14 +350,30 @@ in
     fsType = "ext4";
   };
 
+  users.allowNoPasswordLogin = true;
+  users.mutableUsers = false;
   users.users.driftile = {
     createHome = true;
     extraGroups = [
       "input"
       "video"
     ];
-    initialPassword = "driftile";
+    initialHashedPassword = "";
     isNormalUser = true;
+  };
+
+  services.logind.settings.Login = {
+    HandleHibernateKey = "ignore";
+    HandleLidSwitch = "ignore";
+    HandleSuspendKey = "ignore";
+    IdleAction = "ignore";
+  };
+
+  systemd.sleep.settings.Sleep = {
+    AllowHibernation = false;
+    AllowHybridSleep = false;
+    AllowSuspend = false;
+    AllowSuspendThenHibernate = false;
   };
 
   services.xserver.enable = true;
@@ -337,7 +392,7 @@ in
     self.packages.${pkgs.stdenv.hostPlatform.system}.driftile
   ];
 
-  system.activationScripts.driftileVmKwinrc = {
+  system.activationScripts.driftileVmUserConfig = {
     deps = [ "users" ];
     text = ''
       ${pkgs.coreutils}/bin/install \
@@ -347,6 +402,14 @@ in
         -m 0600 -o driftile -g users \
         ${kwinConfig} \
         /home/driftile/.config/kwinrc
+      ${pkgs.coreutils}/bin/install \
+        -m 0600 -o driftile -g users \
+        ${screenLockerConfig} \
+        /home/driftile/.config/kscreenlockerrc
+      ${pkgs.coreutils}/bin/install \
+        -m 0600 -o driftile -g users \
+        ${powerDevilConfig} \
+        /home/driftile/.config/powerdevilrc
     '';
   };
 
