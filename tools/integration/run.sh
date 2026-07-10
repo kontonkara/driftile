@@ -135,6 +135,7 @@ run_backend() (
   export DRIFTILE_SMOKE_LAYER_SHELL_QML_IMPORT="$layer_shell_qml_import"
   export DRIFTILE_SMOKE_NATIVE_TILE_TOGGLE="$project_root/tools/integration/native-tile-toggle.js"
   export DRIFTILE_SMOKE_OUTPUT_ROUTER="$project_root/tools/integration/output-router.js"
+  export DRIFTILE_SMOKE_OUTPUT_TRANSFER_STATE_PROBE="$project_root/tools/integration/output-transfer-state-probe.js"
   export DRIFTILE_SMOKE_QML_IMPORT="$qml_import_path"
   export DRIFTILE_SMOKE_RESULT="$result_file"
   export DRIFTILE_SMOKE_WORK_AREA_PANEL="$project_root/tools/integration/work-area-panel.qml"

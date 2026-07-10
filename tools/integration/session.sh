@@ -11,6 +11,8 @@ readonly desktop_state_probe_plugin_id="io.github.kontonkara.driftile.integratio
 readonly desktop_state_verified_shortcut_prefix="Driftile Integration Desktop State Verified"
 readonly native_tile_toggle_plugin_id="io.github.kontonkara.driftile.integration-native-tile-toggle"
 readonly output_router_plugin_id="io.github.kontonkara.driftile.integration-output-router"
+readonly output_transfer_state_probe_plugin_id="io.github.kontonkara.driftile.integration-output-transfer-state-probe"
+readonly output_transfer_state_verified_shortcut_prefix="Driftile Integration Output Transfer State Verified"
 readonly stable_sample_count=2
 readonly wait_attempts=200
 
@@ -907,6 +909,46 @@ verify_multi_output_desktop_state() {
   [[ "$verified" == true ]]
 }
 
+verify_multi_output_output_transfer_state() {
+  local state_label=$2
+  local load_result
+  local script_id
+  local verified=false
+  local verified_shortcut="$output_transfer_state_verified_shortcut_prefix $1 $state_label"
+
+  wait_for_shortcut_absent "$verified_shortcut" || return 1
+  load_result=$(busctl --user call \
+    org.kde.KWin \
+    /Scripting \
+    org.kde.kwin.Scripting \
+    loadScript \
+    ss "$DRIFTILE_SMOKE_OUTPUT_TRANSFER_STATE_PROBE" "$output_transfer_state_probe_plugin_id") || return 1
+  script_id=${load_result#i }
+
+  if [[ "$script_id" =~ ^[0-9]+$ ]]; then
+    if busctl --user call \
+      org.kde.KWin \
+      "/Scripting/Script${script_id}" \
+      org.kde.kwin.Script \
+      run \
+      >/dev/null && \
+      wait_for_shortcut "$verified_shortcut"; then
+      verified=true
+    fi
+  fi
+
+  busctl --user call \
+    org.kde.KWin \
+    /Scripting \
+    org.kde.kwin.Scripting \
+    unloadScript \
+    s "$output_transfer_state_probe_plugin_id" \
+    >/dev/null 2>&1 || true
+
+  wait_for_named_script_state "$output_transfer_state_probe_plugin_id" false || verified=false
+  [[ "$verified" == true ]]
+}
+
 load_output_router() {
   local load_result
   local script_id
@@ -1389,6 +1431,206 @@ verify_multi_output_desktop_transfer() {
     fail "the left multi-output $protocol destination seed did not close"
   wait_for_window_gone "$right_destination_title" || \
     fail "the right multi-output $protocol destination seed did not close"
+}
+
+verify_multi_output_output_transfer() {
+  local protocol=$1
+  local left_first_title=$2
+  local left_second_title=$3
+  local right_first_title=$4
+  local right_second_title=$5
+  local destination_title="driftile-multi-output-${protocol}-right-output-destination"
+  local destination_pid
+
+  wait_for_shortcut "Driftile Move Window to Output Left" || \
+    fail "KGlobalAccel did not register the multi-output move-to-output-left shortcut"
+  wait_for_shortcut "Driftile Move Window to Output Right" || \
+    fail "KGlobalAccel did not register the multi-output move-to-output-right shortcut"
+  wait_for_shortcut "Driftile Move Window to Output Up" || \
+    fail "KGlobalAccel did not register the multi-output move-to-output-up shortcut"
+  wait_for_shortcut "Driftile Move Window to Output Down" || \
+    fail "KGlobalAccel did not register the multi-output move-to-output-down shortcut"
+  wait_for_shortcut "Driftile Decrease Column Width" || \
+    fail "KGlobalAccel did not register the multi-output decrease-width shortcut"
+  wait_for_shortcut "Driftile Reset Column Width" || \
+    fail "KGlobalAccel did not register the multi-output reset-width shortcut"
+
+  activate_window "$left_second_title" || \
+    fail "KWin could not focus the left $protocol stack member before output transfer"
+  invoke_shortcut "Driftile Decrease Column Width" || \
+    fail "KGlobalAccel could not prepare a distinct $protocol transfer width"
+  wait_for_geometries \
+    "$left_first_title" "16,16,537,336" \
+    "$left_second_title" "16,368,537,336" \
+    "$right_first_title" "1296,16,616,688" \
+    "$right_second_title" "1928,16,616,688" || \
+    fail "Driftile did not prepare the distinct $protocol transfer width: $(describe_layout "$left_first_title" "$left_second_title" "$right_first_title" "$right_second_title")"
+
+  activate_window "$right_first_title" || \
+    fail "KWin could not select the right $protocol output before destination setup"
+  set_current_desktop "$secondary_desktop_id" || \
+    fail "KWin could not select the right $protocol destination desktop"
+  start_client "$protocol" "$destination_title" true
+  destination_pid=${client_pids[${#client_pids[@]}-1]}
+  capture_stable_geometry "$destination_title" >/dev/null || \
+    fail "the right output-transfer $protocol destination did not stabilize"
+  wait_for_geometries \
+    "$left_first_title" "16,16,537,336" \
+    "$left_second_title" "16,368,537,336" \
+    "$destination_title" "1296,16,616,688" || \
+    fail "Driftile did not isolate the output-transfer destination desktop: $(describe_layout "$left_first_title" "$left_second_title" "$destination_title")"
+  wait_for_window_desktop "$destination_title" "$secondary_desktop_id" || \
+    fail "the output router did not place the $protocol destination on the visible desktop"
+  wait_for_window_desktop "$right_first_title" "$primary_desktop_id" || \
+    fail "Driftile changed an unrelated right-output $protocol window desktop"
+  wait_for_window_desktop "$right_second_title" "$primary_desktop_id" || \
+    fail "Driftile changed an unrelated right-output $protocol window desktop"
+
+  activate_window "$left_second_title" || \
+    fail "KWin could not focus the left $protocol stack member before output transfer"
+  wait_for_active "$left_second_title" || \
+    fail "KWin did not focus the left $protocol stack member before output transfer"
+
+  invoke_shortcut "Driftile Move Window to Output Left" || \
+    fail "KGlobalAccel could not invoke the left-output boundary shortcut"
+  wait_for_geometries \
+    "$left_first_title" "16,16,537,336" \
+    "$left_second_title" "16,368,537,336" \
+    "$destination_title" "1296,16,616,688" || \
+    fail "Driftile changed the $protocol layout at the left-output boundary: $(describe_layout "$left_first_title" "$left_second_title" "$destination_title")"
+  wait_for_active "$left_second_title" || \
+    fail "Driftile changed $protocol focus at the left-output boundary"
+
+  invoke_shortcut "Driftile Move Window to Output Up" || \
+    fail "KGlobalAccel could not invoke the unavailable upper-output shortcut"
+  wait_for_geometries \
+    "$left_first_title" "16,16,537,336" \
+    "$left_second_title" "16,368,537,336" \
+    "$destination_title" "1296,16,616,688" || \
+    fail "Driftile changed the $protocol layout without an upper output neighbor: $(describe_layout "$left_first_title" "$left_second_title" "$destination_title")"
+  wait_for_active "$left_second_title" || \
+    fail "Driftile changed $protocol focus without an upper output neighbor"
+
+  invoke_shortcut "Driftile Move Window to Output Down" || \
+    fail "KGlobalAccel could not invoke the unavailable lower-output shortcut"
+  wait_for_geometries \
+    "$left_first_title" "16,16,537,336" \
+    "$left_second_title" "16,368,537,336" \
+    "$destination_title" "1296,16,616,688" || \
+    fail "Driftile changed the $protocol layout without a lower output neighbor: $(describe_layout "$left_first_title" "$left_second_title" "$destination_title")"
+  wait_for_active "$left_second_title" || \
+    fail "Driftile changed $protocol focus without a lower output neighbor"
+
+  invoke_shortcut "Driftile Move Window to Output Right" || \
+    fail "KGlobalAccel could not transfer the $protocol window to the right output"
+  wait_for_geometries \
+    "$left_first_title" "16,16,537,688" \
+    "$destination_title" "1296,16,616,688" \
+    "$left_second_title" "1928,16,537,688" || \
+    fail "Driftile did not preserve source order, target order, and width during the right-output transfer: $(describe_layout "$left_first_title" "$destination_title" "$left_second_title")"
+  wait_for_active "$left_second_title" || \
+    fail "Driftile changed $protocol focus during the right-output transfer"
+  window_is_on_output_side "$left_first_title" left || \
+    fail "Driftile moved an unrelated left-output $protocol window"
+  window_is_on_output_side "$left_second_title" right || \
+    fail "KWin did not move the $protocol window to the right output"
+  window_is_on_output_side "$destination_title" right || \
+    fail "Driftile moved the $protocol destination off the right output"
+  window_is_on_output_side "$right_first_title" right || \
+    fail "Driftile moved an unrelated right-output $protocol window"
+  window_is_on_output_side "$right_second_title" right || \
+    fail "Driftile moved an unrelated right-output $protocol window"
+  wait_for_window_desktop "$left_second_title" "$secondary_desktop_id" || \
+    fail "Driftile did not adopt the right output's visible $protocol desktop"
+  wait_for_window_desktop "$right_first_title" "$primary_desktop_id" || \
+    fail "Driftile changed an unrelated right-output $protocol window desktop"
+  wait_for_window_desktop "$right_second_title" "$primary_desktop_id" || \
+    fail "Driftile changed an unrelated right-output $protocol window desktop"
+  verify_multi_output_output_transfer_state "$left_second_title" right-secondary || \
+    fail "KWin changed an output desktop during the right-output $protocol transfer"
+  activate_window "$left_second_title" || \
+    fail "KWin could not restore $protocol focus after the right-output state probe"
+  wait_for_active "$left_second_title" || \
+    fail "KWin did not restore $protocol focus after the right-output state probe"
+
+  invoke_shortcut "Driftile Move Window to Output Right" || \
+    fail "KGlobalAccel could not invoke the right-output boundary shortcut"
+  wait_for_geometries \
+    "$left_first_title" "16,16,537,688" \
+    "$destination_title" "1296,16,616,688" \
+    "$left_second_title" "1928,16,537,688" || \
+    fail "Driftile changed the $protocol layout at the right-output boundary: $(describe_layout "$left_first_title" "$destination_title" "$left_second_title")"
+  wait_for_active "$left_second_title" || \
+    fail "Driftile changed $protocol focus at the right-output boundary"
+
+  invoke_shortcut "Driftile Move Window to Output Left" || \
+    fail "KGlobalAccel could not return the $protocol window to the left output"
+  wait_for_geometries \
+    "$left_first_title" "16,16,537,688" \
+    "$left_second_title" "569,16,537,688" \
+    "$destination_title" "1296,16,616,688" || \
+    fail "Driftile did not preserve source order, target order, and width during the left-output transfer: $(describe_layout "$left_first_title" "$left_second_title" "$destination_title")"
+  wait_for_active "$left_second_title" || \
+    fail "Driftile changed $protocol focus during the left-output transfer"
+  window_is_on_output_side "$left_first_title" left || \
+    fail "Driftile moved an unrelated left-output $protocol window while returning"
+  window_is_on_output_side "$left_second_title" left || \
+    fail "KWin did not return the $protocol window to the left output"
+  window_is_on_output_side "$right_first_title" right || \
+    fail "Driftile moved an unrelated right-output $protocol window while returning"
+  window_is_on_output_side "$right_second_title" right || \
+    fail "Driftile moved an unrelated right-output $protocol window while returning"
+  wait_for_window_desktop "$left_second_title" "$primary_desktop_id" || \
+    fail "Driftile moved the returning $protocol window off the target output's visible desktop"
+  wait_for_window_desktop "$right_first_title" "$primary_desktop_id" || \
+    fail "Driftile changed an unrelated right-output $protocol window desktop while returning"
+  wait_for_window_desktop "$right_second_title" "$primary_desktop_id" || \
+    fail "Driftile changed an unrelated right-output $protocol window desktop while returning"
+  verify_multi_output_output_transfer_state "$left_second_title" left-primary || \
+    fail "KWin changed an output desktop during the left-output $protocol transfer"
+  activate_window "$left_second_title" || \
+    fail "KWin could not restore $protocol focus after the left-output state probe"
+  wait_for_active "$left_second_title" || \
+    fail "KWin did not restore $protocol focus after the left-output state probe"
+
+  invoke_shortcut "Driftile Move Window to Output Left" || \
+    fail "KGlobalAccel could not recheck the left-output boundary"
+  wait_for_geometries \
+    "$left_first_title" "16,16,537,688" \
+    "$left_second_title" "569,16,537,688" \
+    "$destination_title" "1296,16,616,688" || \
+    fail "Driftile changed the returned $protocol layout at the left-output boundary: $(describe_layout "$left_first_title" "$left_second_title" "$destination_title")"
+  wait_for_active "$left_second_title" || \
+    fail "Driftile changed returned $protocol focus at the left-output boundary"
+
+  invoke_shortcut "Driftile Move Window Left" || \
+    fail "KGlobalAccel could not restore the left $protocol stack after output transfer"
+  wait_for_geometries \
+    "$left_first_title" "16,16,537,336" \
+    "$left_second_title" "16,368,537,336" \
+    "$destination_title" "1296,16,616,688" || \
+    fail "Driftile did not restore the narrowed left $protocol stack after output transfer: $(describe_layout "$left_first_title" "$left_second_title" "$destination_title")"
+  invoke_shortcut "Driftile Reset Column Width" || \
+    fail "KGlobalAccel could not restore the left $protocol stack width"
+  wait_for_geometries \
+    "$left_first_title" "16,16,616,336" \
+    "$left_second_title" "16,368,616,336" \
+    "$destination_title" "1296,16,616,688" || \
+    fail "Driftile did not restore the left $protocol stack width: $(describe_layout "$left_first_title" "$left_second_title" "$destination_title")"
+
+  activate_window "$destination_title" || \
+    fail "KWin could not select the right $protocol output for cleanup"
+  set_current_desktop "$primary_desktop_id" || \
+    fail "KWin could not restore the right $protocol source desktop"
+  stop_client "$destination_pid"
+  wait_for_window_gone "$destination_title" || \
+    fail "the right output-transfer $protocol destination did not close"
+  wait_for_geometries \
+    "$left_first_title" "16,16,616,336" \
+    "$left_second_title" "16,368,616,336" \
+    "$right_first_title" "1296,16,616,688" \
+    "$right_second_title" "1928,16,616,688" || \
+    fail "Driftile did not restore the two $protocol output contexts after output transfer: $(describe_layout "$left_first_title" "$left_second_title" "$right_first_title" "$right_second_title")"
 }
 
 run_scenario() {
@@ -1970,6 +2212,13 @@ run_multi_output_scenario() {
     fail "Driftile did not prepare the isolated left $protocol stack: $(describe_layout "${titles[0]}" "${titles[1]}" "${titles[3]}" "${titles[4]}")"
 
   verify_multi_output_desktop_transfer \
+    "$protocol" \
+    "${titles[0]}" \
+    "${titles[1]}" \
+    "${titles[3]}" \
+    "${titles[4]}"
+
+  verify_multi_output_output_transfer \
     "$protocol" \
     "${titles[0]}" \
     "${titles[1]}" \

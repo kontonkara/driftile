@@ -257,6 +257,10 @@ let
             && "$shortcuts" == *"Driftile Move Window Down"* \
             && "$shortcuts" == *"Driftile Move Window to Previous Desktop"* \
             && "$shortcuts" == *"Driftile Move Window to Next Desktop"* \
+            && "$shortcuts" == *"Driftile Move Window to Output Left"* \
+            && "$shortcuts" == *"Driftile Move Window to Output Right"* \
+            && "$shortcuts" == *"Driftile Move Window to Output Up"* \
+            && "$shortcuts" == *"Driftile Move Window to Output Down"* \
             && "$shortcuts" == *"Driftile Insert Window into Stack Left"* \
             && "$shortcuts" == *"Driftile Insert Window into Stack Right"* \
             && "$shortcuts" == *"Driftile Toggle Floating"* \
@@ -1265,7 +1269,7 @@ let
             org.kde.kglobalaccel.Component \
             shortcutNames 2>/dev/null \
             | grep -oE \
-              'Driftile (Focus (Left|Right|Up|Down)|Move Column (Left|Right)|Move Window ((Left|Right|Up|Down)|to (Previous|Next) Desktop)|Insert Window into Stack (Left|Right)|Toggle Floating|(Decrease|Increase|Reset) Column Width)' \
+              'Driftile (Focus (Left|Right|Up|Down)|Move Column (Left|Right)|Move Window ((Left|Right|Up|Down)|to ((Previous|Next) Desktop|Output (Left|Right|Up|Down)))|Insert Window into Stack (Left|Right)|Toggle Floating|(Decrease|Increase|Reset) Column Width)' \
             | sort -u \
             | tr '\n' ' ' || true
           printf '\nwindow A captions: '
@@ -1370,6 +1374,34 @@ let
           && wait_for_layout -800 32 864 \
           || return 1
         record_focus_state "window C activated"
+
+        capture_stable_frames \
+          && invoke_shortcut "Driftile Move Window to Output Left" \
+          && wait_for_frames \
+            "$stable_first_frame" \
+            "$stable_second_frame" \
+            "$stable_third_frame" \
+          && wait_for_active "$title_c" \
+          && invoke_shortcut "Driftile Move Window to Output Right" \
+          && wait_for_frames \
+            "$stable_first_frame" \
+            "$stable_second_frame" \
+            "$stable_third_frame" \
+          && wait_for_active "$title_c" \
+          && invoke_shortcut "Driftile Move Window to Output Up" \
+          && wait_for_frames \
+            "$stable_first_frame" \
+            "$stable_second_frame" \
+            "$stable_third_frame" \
+          && wait_for_active "$title_c" \
+          && invoke_shortcut "Driftile Move Window to Output Down" \
+          && wait_for_frames \
+            "$stable_first_frame" \
+            "$stable_second_frame" \
+            "$stable_third_frame" \
+          && wait_for_active "$title_c" \
+          || return 1
+        record_focus_state "single-output transfer boundaries preserved layout and focus"
 
         invoke_shortcut "Driftile Move Column Left" \
           && wait_for_active "$title_c" \
