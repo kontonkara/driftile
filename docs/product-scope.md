@@ -59,6 +59,9 @@ Driftile must integrate with, not duplicate:
 - Focusing a managed window makes it fully visible with the smallest required scroll.
 - Reordering moves one whole active column inside its context without changing focus or widths.
 - Resizing changes one whole active column, respects every member's width constraints, and preserves focus and grouping.
+- Horizontal window movement merges a singleton into its neighbor or extracts a stacked member into a new adjacent singleton column.
+- Merge preserves the destination width; extraction copies the source width; both preserve focus and member order.
+- Vertical focus and member reorder stop at stack boundaries without wrapping.
 - Unrelated window order, widths, and viewport offsets remain stable.
 - A changed context never restores an original frame captured under stale output geometry.
 - Capacity eviction keeps windows reachable and preserves the active column when a writable alternative exists.
