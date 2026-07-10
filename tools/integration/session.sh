@@ -14,6 +14,8 @@ readonly wait_attempts=200
 
 client_pids=()
 qml_options=(--software)
+work_area_panel_pid=""
+x11_work_area_dock_pid=""
 
 if [[ -n "${DRIFTILE_SMOKE_QML_IMPORT:-}" ]]; then
   qml_options+=(-I "$DRIFTILE_SMOKE_QML_IMPORT")
@@ -30,7 +32,29 @@ stop_clients() {
   client_pids=()
 }
 
+stop_work_area_panel() {
+  if [[ -z "$work_area_panel_pid" ]]; then
+    return
+  fi
+
+  kill "$work_area_panel_pid" >/dev/null 2>&1 || true
+  wait "$work_area_panel_pid" >/dev/null 2>&1 || true
+  work_area_panel_pid=""
+}
+
+stop_x11_work_area_dock() {
+  if [[ -z "$x11_work_area_dock_pid" ]]; then
+    return
+  fi
+
+  kill "$x11_work_area_dock_pid" >/dev/null 2>&1 || true
+  wait "$x11_work_area_dock_pid" >/dev/null 2>&1 || true
+  x11_work_area_dock_pid=""
+}
+
 cleanup() {
+  stop_work_area_panel
+  stop_x11_work_area_dock
   busctl --user call \
     org.kde.KWin \
     /Scripting \
@@ -80,6 +104,30 @@ window_id() {
 
   match_id=$(window_match_id "$1") || return 1
   printf '%s' "${match_id#*_}"
+}
+
+x11_window_id() {
+  local window_title=$1
+  local candidate
+  local candidate_title
+
+  for candidate in $(
+    xprop -root -notype _NET_CLIENT_LIST 2>/dev/null |
+      sed -n 's/^_NET_CLIENT_LIST[^#]*# //p' |
+      tr ',' '\n'
+  ); do
+    candidate_title=$(
+      xprop -id "$candidate" -notype _NET_WM_NAME 2>/dev/null |
+        sed -n 's/^_NET_WM_NAME = "\(.*\)"$/\1/p'
+    )
+
+    if [[ "$candidate_title" == "$window_title" ]]; then
+      printf '%s' "$candidate"
+      return 0
+    fi
+  done
+
+  return 1
 }
 
 window_action_match_id() {
@@ -241,6 +289,149 @@ wait_for_window_gone() {
 
   for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
     if ! window_id "$window_title" >/dev/null 2>&1; then
+      return 0
+    fi
+
+    sleep 0.05
+  done
+
+  return 1
+}
+
+x11_screen_size_matches() {
+  local width=$1
+  local height=$2
+
+  xrandr --current 2>/dev/null |
+    grep -F "current $width x $height," >/dev/null
+}
+
+wait_for_x11_screen_size() {
+  local width=$1
+  local height=$2
+  local attempt
+
+  for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
+    if x11_screen_size_matches "$width" "$height"; then
+      return 0
+    fi
+
+    sleep 0.05
+  done
+
+  return 1
+}
+
+x11_work_area_matches() {
+  local expected=$1
+  local actual
+
+  actual=$(
+    xprop -root -notype _NET_WORKAREA 2>/dev/null |
+      sed -n 's/^_NET_WORKAREA = //p' |
+      cut -d, -f1-4 |
+      tr -d ' '
+  )
+
+  [[ "$actual" == "$expected" ]]
+}
+
+wait_for_x11_work_area() {
+  local expected=$1
+  local attempt
+
+  for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
+    if x11_work_area_matches "$expected"; then
+      return 0
+    fi
+
+    sleep 0.05
+  done
+
+  return 1
+}
+
+wait_for_x11_window() {
+  local window_title=$1
+  local attempt
+
+  for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
+    if x11_window_id "$window_title" >/dev/null 2>&1; then
+      return 0
+    fi
+
+    sleep 0.05
+  done
+
+  return 1
+}
+
+output_enabled_matches() {
+  local output_name=$1
+  local expected=$2
+
+  kscreen-doctor -j 2>/dev/null | jq --exit-status \
+    --arg outputName "$output_name" \
+    --argjson expected "$expected" '
+      .outputs[]
+      | select(.name == $outputName)
+      | .enabled == $expected
+    ' >/dev/null
+}
+
+output_configuration_matches() {
+  local output_name=$1
+  local x=$2
+  local y=$3
+  local width=$4
+  local height=$5
+  local scale=$6
+
+  kscreen-doctor -j 2>/dev/null | jq --exit-status \
+    --arg outputName "$output_name" \
+    --argjson x "$x" \
+    --argjson y "$y" \
+    --argjson width "$width" \
+    --argjson height "$height" \
+    --argjson scale "$scale" '
+      .outputs[]
+      | select(.name == $outputName)
+      | .enabled
+      and .pos.x == $x
+      and .pos.y == $y
+      and .size.width == $width
+      and .size.height == $height
+      and .scale == $scale
+    ' >/dev/null
+}
+
+wait_for_output_enabled() {
+  local output_name=$1
+  local expected=$2
+  local attempt
+
+  for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
+    if output_enabled_matches "$output_name" "$expected"; then
+      return 0
+    fi
+
+    sleep 0.05
+  done
+
+  return 1
+}
+
+wait_for_output_configuration() {
+  local output_name=$1
+  local x=$2
+  local y=$3
+  local width=$4
+  local height=$5
+  local scale=$6
+  local attempt
+
+  for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
+    if output_configuration_matches "$output_name" "$x" "$y" "$width" "$height" "$scale"; then
       return 0
     fi
 
@@ -522,6 +713,52 @@ start_client() {
   client_pids+=("$!")
 }
 
+start_work_area_panel() {
+  local -a panel_qml_options=("${qml_options[@]}")
+
+  if [[ -n "${DRIFTILE_SMOKE_LAYER_SHELL_QML_IMPORT:-}" ]]; then
+    panel_qml_options+=(
+      -I "$DRIFTILE_SMOKE_LAYER_SHELL_QML_IMPORT"
+    )
+  fi
+
+  QT_QPA_PLATFORM=wayland qml \
+    "${panel_qml_options[@]}" \
+    -f "$DRIFTILE_SMOKE_WORK_AREA_PANEL" &
+  work_area_panel_pid=$!
+}
+
+start_x11_work_area_dock() {
+  local window_title=$1
+
+  QT_QPA_PLATFORM=xcb qml \
+    "${qml_options[@]}" \
+    -f "$DRIFTILE_SMOKE_CLIENT" \
+    -- "$window_title" &
+  x11_work_area_dock_pid=$!
+}
+
+set_x11_work_area_strut() {
+  local window=$1
+
+  xprop \
+    -id "$window" \
+    -f _NET_WM_WINDOW_TYPE 32a \
+    -set _NET_WM_WINDOW_TYPE _NET_WM_WINDOW_TYPE_DOCK \
+    >/dev/null
+  xprop \
+    -id "$window" \
+    -f _NET_WM_STRUT_PARTIAL 32c \
+    -set _NET_WM_STRUT_PARTIAL '0, 0, 64, 0, 0, 0, 0, 0, 0, 1279, 0, 0' \
+    >/dev/null
+}
+
+clear_x11_work_area_strut() {
+  local window=$1
+
+  xprop -id "$window" -remove _NET_WM_STRUT_PARTIAL >/dev/null
+}
+
 verify_window_action_transition() {
   local protocol=$1
   local action=$2
@@ -548,6 +785,94 @@ verify_window_action_transition() {
     "$reserved_title" "$reserved_frame" \
     "$target_title" "$restored_frame" || \
     fail "Driftile did not restore the $protocol state window after $action: $(describe_layout "$reserved_title" "$target_title")"
+}
+
+verify_x11_topology_recovery() {
+  local first_title=$1
+  local second_title=$2
+  local dock_title="driftile-x11-work-area-dock"
+  local dock_window
+  local normal_first="16,16,616,688"
+  local normal_second="648,16,616,688"
+  local reserved_first="16,80,616,624"
+  local reserved_second="648,80,616,624"
+
+  set_plugin_state true
+  wait_for_script_state true || fail "KWin did not reload Driftile for X11 topology recovery"
+  wait_for_geometries \
+    "$first_title" "$normal_first" \
+    "$second_title" "$normal_second" || \
+    fail "Driftile did not establish the X11 topology layout: $(describe_layout "$first_title" "$second_title")"
+
+  xrandr --output screen --mode 1024x600 >/dev/null || \
+    fail "RandR could not apply the 1024x600 X11 mode"
+  wait_for_x11_screen_size 1024 600 || \
+    fail "RandR did not publish the 1024x600 X11 screen size"
+  wait_for_geometries \
+    "$first_title" "16,16,488,568" \
+    "$second_title" "520,16,488,568" || \
+    fail "Driftile did not recover the 1024x600 X11 layout: $(describe_layout "$first_title" "$second_title")"
+
+  xrandr --output screen --mode 1280x720 >/dev/null || \
+    fail "RandR could not restore the 1280x720 X11 mode"
+  wait_for_x11_screen_size 1280 720 || \
+    fail "RandR did not publish the restored 1280x720 X11 screen size"
+  wait_for_geometries \
+    "$first_title" "$normal_first" \
+    "$second_title" "$normal_second" || \
+    fail "Driftile did not recover the restored X11 mode: $(describe_layout "$first_title" "$second_title")"
+
+  set_plugin_state false
+  wait_for_script_state false || \
+    fail "KWin did not unload Driftile before the X11 work-area test"
+
+  start_x11_work_area_dock "$dock_title"
+  wait_for_x11_window "$dock_title" || fail "the X11 work-area dock did not appear"
+  dock_window=$(x11_window_id "$dock_title") || \
+    fail "X11 did not expose the work-area dock id"
+  set_x11_work_area_strut "$dock_window" || \
+    fail "X11 could not configure the work-area dock strut"
+  wait_for_x11_work_area "0,64,1280,656" || \
+    fail "KWin did not reserve the X11 dock work area"
+
+  set_plugin_state true
+  wait_for_script_state true || \
+    fail "KWin did not reload Driftile for the X11 work-area test"
+  wait_for_geometries \
+    "$first_title" "$reserved_first" \
+    "$second_title" "$reserved_second" || \
+    fail "Driftile did not use the X11 dock work area: $(describe_layout "$first_title" "$second_title")"
+
+  clear_x11_work_area_strut "$dock_window" || \
+    fail "X11 could not remove the work-area dock strut"
+  wait_for_x11_work_area "0,0,1280,720" || \
+    fail "KWin did not restore the X11 work area after strut removal"
+  wait_for_geometries \
+    "$first_title" "$normal_first" \
+    "$second_title" "$normal_second" || \
+    fail "Driftile did not recover after X11 strut removal: $(describe_layout "$first_title" "$second_title")"
+
+  set_x11_work_area_strut "$dock_window" || \
+    fail "X11 could not restore the work-area dock strut"
+  wait_for_x11_work_area "0,64,1280,656" || \
+    fail "KWin did not restore the X11 dock work area"
+  wait_for_geometries \
+    "$first_title" "$reserved_first" \
+    "$second_title" "$reserved_second" || \
+    fail "Driftile did not recover the restored X11 strut: $(describe_layout "$first_title" "$second_title")"
+
+  stop_x11_work_area_dock
+  wait_for_window_gone "$dock_title" || fail "the X11 work-area dock did not close"
+  wait_for_x11_work_area "0,0,1280,720" || \
+    fail "KWin did not restore the X11 work area after the dock closed"
+  wait_for_geometries \
+    "$first_title" "$normal_first" \
+    "$second_title" "$normal_second" || \
+    fail "Driftile did not recover after the X11 dock closed: $(describe_layout "$first_title" "$second_title")"
+
+  set_plugin_state false
+  wait_for_script_state false || \
+    fail "KWin did not unload Driftile after X11 topology recovery"
 }
 
 run_scenario() {
@@ -656,6 +981,10 @@ run_scenario() {
     "$second_title" "$second_baseline" || \
     fail "Driftile did not restore the post-transition $protocol windows: $(describe_layout "$first_title" "$second_title")"
 
+  if [[ "$protocol" == "x11" ]]; then
+    verify_x11_topology_recovery "$first_title" "$second_title"
+  fi
+
   stop_clients
   wait_for_window_gone "$first_title" || fail "the first $protocol test window did not close"
   wait_for_window_gone "$second_title" || fail "the second $protocol test window did not close"
@@ -666,6 +995,8 @@ run_multi_output_scenario() {
   local protocol=$1
   local baseline
   local index
+  local scaled_left_first="16,16,402.666667,448"
+  local scaled_left_second="434.666667,16,402.666667,448"
   local side
   local -a baselines=()
   local -a titles=(
@@ -676,6 +1007,11 @@ run_multi_output_scenario() {
     "driftile-multi-output-${protocol}-right-b"
     "driftile-multi-output-${protocol}-right-c"
   )
+
+  if [[ "$protocol" == "wayland" ]]; then
+    scaled_left_first="16,16,403.333333,448"
+    scaled_left_second="434.666667,16,403.333333,448"
+  fi
 
   for index in "${!titles[@]}"; do
     start_client "$protocol" "${titles[index]}"
@@ -709,16 +1045,105 @@ run_multi_output_scenario() {
     "${titles[5]}" "${baselines[5]}" || \
     fail "Driftile did not preserve two isolated $protocol output contexts: $(describe_layout "${titles[@]}")"
 
+  if [[ "$protocol" == "wayland" ]]; then
+    activate_window "${titles[0]}" || \
+      fail "KWin could not activate the left $protocol window for the work-area panel"
+    start_work_area_panel
+    wait_for_geometries \
+      "${titles[0]}" "80,16,584,688" \
+      "${titles[1]}" "680,16,584,688" \
+      "${titles[3]}" "1296,16,616,688" \
+      "${titles[4]}" "1928,16,616,688" || \
+      fail "Driftile did not recover the $protocol work area after a layer-shell panel appeared: $(describe_layout "${titles[@]}")"
+
+    stop_work_area_panel
+    wait_for_geometries \
+      "${titles[0]}" "16,16,616,688" \
+      "${titles[1]}" "648,16,616,688" \
+      "${titles[3]}" "1296,16,616,688" \
+      "${titles[4]}" "1928,16,616,688" || \
+      fail "Driftile did not recover the $protocol work area after the layer-shell panel disappeared: $(describe_layout "${titles[@]}")"
+
+    activate_window "${titles[5]}" || \
+      fail "KWin could not reactivate the final multi-output $protocol window"
+  fi
+
+  kscreen-doctor \
+    output.Virtual-0.scale.1.5 \
+    output.Virtual-0.position.0,0 \
+    output.Virtual-1.position.854,0 \
+    >/dev/null || fail "KScreen could not scale and reposition the virtual outputs"
+  wait_for_output_configuration Virtual-0 0 0 1280 720 1.5 || \
+    fail "KScreen did not apply the scaled Virtual-0 configuration"
+  wait_for_output_configuration Virtual-1 854 0 1280 720 1 || \
+    fail "KScreen did not reposition Virtual-1 after scaling Virtual-0"
+  wait_for_geometries \
+    "${titles[0]}" "$scaled_left_first" \
+    "${titles[1]}" "$scaled_left_second" \
+    "${titles[3]}" "870,16,616,688" \
+    "${titles[4]}" "1502,16,616,688" || \
+    fail "Driftile did not recover the scaled $protocol output contexts: $(describe_layout "${titles[@]}")"
+
+  kscreen-doctor \
+    output.Virtual-0.scale.1 \
+    output.Virtual-0.position.0,0 \
+    output.Virtual-1.position.1280,0 \
+    >/dev/null || fail "KScreen could not restore the virtual output scale and positions"
+  wait_for_output_configuration Virtual-0 0 0 1280 720 1 || \
+    fail "KScreen did not restore the Virtual-0 configuration"
+  wait_for_output_configuration Virtual-1 1280 0 1280 720 1 || \
+    fail "KScreen did not restore the Virtual-1 position"
+  wait_for_geometries \
+    "${titles[0]}" "16,16,616,688" \
+    "${titles[1]}" "648,16,616,688" \
+    "${titles[3]}" "1296,16,616,688" \
+    "${titles[4]}" "1928,16,616,688" || \
+    fail "Driftile did not recover the restored $protocol output scale: $(describe_layout "${titles[@]}")"
+
+  kscreen-doctor output.Virtual-1.disable >/dev/null || \
+    fail "KScreen could not disable Virtual-1"
+  wait_for_output_enabled Virtual-1 false || \
+    fail "KScreen did not disable Virtual-1"
+
+  wait_for_geometries \
+    "${titles[0]}" "-2496,16,616,688" \
+    "${titles[1]}" "-1864,16,616,688" \
+    "${titles[2]}" "-1232,16,616,688" \
+    "${titles[3]}" "-600,16,616,688" \
+    "${titles[4]}" "32,16,616,688" \
+    "${titles[5]}" "664,16,616,688" || \
+    fail "Driftile did not merge the $protocol windows onto the remaining output: $(describe_layout "${titles[@]}")"
+
+  kscreen-doctor \
+    output.Virtual-1.enable \
+    output.Virtual-1.scale.1 \
+    output.Virtual-1.position.1280,0 \
+    >/dev/null || fail "KScreen could not re-enable Virtual-1"
+  wait_for_output_configuration Virtual-1 1280 0 1280 720 1 || \
+    fail "KScreen did not restore the Virtual-1 configuration"
+  wait_for_geometries \
+    "${titles[1]}" "16,16,616,688" \
+    "${titles[2]}" "648,16,616,688" \
+    "${titles[4]}" "1296,16,616,688" \
+    "${titles[5]}" "1928,16,616,688" || \
+    fail "Driftile did not recover after Virtual-1 was re-enabled: $(describe_layout "${titles[@]}")"
+
   set_plugin_state false
   wait_for_script_state false || fail "KWin did not unload Driftile"
-  wait_for_geometries \
-    "${titles[0]}" "${baselines[0]}" \
-    "${titles[1]}" "${baselines[1]}" \
-    "${titles[2]}" "${baselines[2]}" \
-    "${titles[3]}" "${baselines[3]}" \
-    "${titles[4]}" "${baselines[4]}" \
-    "${titles[5]}" "${baselines[5]}" || \
-    fail "Driftile did not restore the multi-output $protocol windows: $(describe_layout "${titles[@]}")"
+
+  for index in "${!titles[@]}"; do
+    capture_stable_geometry "${titles[index]}" >/dev/null || \
+      fail "the unloaded multi-output $protocol window ${titles[index]} did not stabilize"
+
+    if ((index < 3)); then
+      side=left
+    else
+      side=right
+    fi
+
+    window_is_on_output_side "${titles[index]}" "$side" || \
+      fail "Driftile made a stale restore jump while unloading ${titles[index]} after $protocol topology recovery"
+  done
 
   stop_clients
 

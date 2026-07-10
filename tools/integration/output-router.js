@@ -1,25 +1,25 @@
-var leftOutput = null;
-var rightOutput = null;
+var leftOutput;
+var rightOutput;
 
-for (var index = 0; index < workspace.screens.length; index += 1) {
-  var output = workspace.screens[index];
+function refreshOutputs() {
+  leftOutput = null;
+  rightOutput = null;
 
-  if (leftOutput === null || output.geometry.x < leftOutput.geometry.x) {
-    leftOutput = output;
+  for (var index = 0; index < workspace.screens.length; index += 1) {
+    var output = workspace.screens[index];
+
+    if (leftOutput === null || output.geometry.x < leftOutput.geometry.x) {
+      leftOutput = output;
+    }
+
+    if (rightOutput === null || output.geometry.x > rightOutput.geometry.x) {
+      rightOutput = output;
+    }
   }
 
-  if (rightOutput === null || output.geometry.x > rightOutput.geometry.x) {
-    rightOutput = output;
+  if (leftOutput === rightOutput) {
+    rightOutput = null;
   }
-}
-
-if (
-  workspace.screens.length !== 2 ||
-  leftOutput === null ||
-  rightOutput === null ||
-  leftOutput === rightOutput
-) {
-  throw new Error("the integration output router requires two outputs");
 }
 
 function routeWindow(window) {
@@ -29,19 +29,32 @@ function routeWindow(window) {
     return;
   }
 
-  if (title.indexOf("-left-") !== -1) {
+  if (title.indexOf("-left-") !== -1 && leftOutput !== null) {
     workspace.sendClientToScreen(window, leftOutput);
-  } else if (title.indexOf("-right-") !== -1) {
+  } else if (title.indexOf("-right-") !== -1 && rightOutput !== null) {
     workspace.sendClientToScreen(window, rightOutput);
   }
 }
 
-workspace.windowAdded.connect(routeWindow);
-
-for (
-  var windowIndex = 0;
-  windowIndex < workspace.stackingOrder.length;
-  windowIndex += 1
-) {
-  routeWindow(workspace.stackingOrder[windowIndex]);
+function routeWindows() {
+  for (
+    var windowIndex = 0;
+    windowIndex < workspace.stackingOrder.length;
+    windowIndex += 1
+  ) {
+    routeWindow(workspace.stackingOrder[windowIndex]);
+  }
 }
+
+refreshOutputs();
+
+if (leftOutput === null || rightOutput === null) {
+  throw new Error("the integration output router requires two outputs");
+}
+
+workspace.windowAdded.connect(routeWindow);
+workspace.screensChanged.connect(function () {
+  refreshOutputs();
+  routeWindows();
+});
+routeWindows();

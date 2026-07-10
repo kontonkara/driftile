@@ -71,12 +71,16 @@
             developmentPackages
             ++ (with pkgs; [
               dbus
+              kdePackages.layer-shell-qt
+              kdePackages.libkscreen
               kdePackages.kwin
               kdePackages.kwin-x11
               kdePackages.qtwayland
               jq
               systemd
               xorg-server
+              xprop
+              xrandr
               xwayland
             ]);
         in
@@ -87,6 +91,8 @@
 
           integration = pkgs.mkShell {
             packages = integrationPackages;
+            DRIFTILE_SMOKE_LAYER_SHELL_QML_IMPORT =
+              "${pkgs.kdePackages.layer-shell-qt}/lib/qt-6/qml";
           };
         }
       );

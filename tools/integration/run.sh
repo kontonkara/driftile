@@ -54,6 +54,7 @@ run_backend() (
   local candidate
   local sandbox
   local log_file
+  local layer_shell_qml_import="${DRIFTILE_SMOKE_LAYER_SHELL_QML_IMPORT:-}"
   local result_file
   local display_number
   local qml_binary
@@ -129,10 +130,12 @@ run_backend() (
   chmod 0700 "$sandbox/runtime"
 
   export DRIFTILE_SMOKE_CLIENT="$project_root/tools/integration/client.qml"
+  export DRIFTILE_SMOKE_LAYER_SHELL_QML_IMPORT="$layer_shell_qml_import"
   export DRIFTILE_SMOKE_NATIVE_TILE_TOGGLE="$project_root/tools/integration/native-tile-toggle.js"
   export DRIFTILE_SMOKE_OUTPUT_ROUTER="$project_root/tools/integration/output-router.js"
   export DRIFTILE_SMOKE_QML_IMPORT="$qml_import_path"
   export DRIFTILE_SMOKE_RESULT="$result_file"
+  export DRIFTILE_SMOKE_WORK_AREA_PANEL="$project_root/tools/integration/work-area-panel.qml"
   export HOME="$sandbox/home"
   export LC_ALL=C.UTF-8
   export QT_FORCE_STDERR_LOGGING=1
@@ -172,6 +175,15 @@ run_backend() (
       export KWIN_COMPOSE=Q
 
       if [[ "$backend" == "wayland-multi-output" ]]; then
+        require_command kscreen-doctor || exit 1
+
+        if [[
+          -n "$layer_shell_qml_import" &&
+            ! -d "$layer_shell_qml_import/org/kde/layershell"
+        ]]; then
+          fail "The exact LayerShellQt QML import is unavailable in the integration shell."
+        fi
+
         output_count=2
         scenario=multi-output
         socket_name=driftile-multi-output-smoke-0
@@ -203,6 +215,8 @@ run_backend() (
     x11)
       require_command kwin_x11 || exit 1
       require_command Xvfb || exit 1
+      require_command xprop || exit 1
+      require_command xrandr || exit 1
       export DRIFTILE_SMOKE_PROTOCOLS=x11
       export DRIFTILE_SMOKE_SCENARIO=single-output
       xvfb_log="$sandbox/xvfb.log"
@@ -259,9 +273,9 @@ run_backend() (
 selection=${1:-all}
 
 case "$selection" in
-  all | wayland | x11) ;;
+  all | wayland | wayland-multi-output | x11) ;;
   *)
-    printf 'Expected one of: all, wayland, x11\n' >&2
+    printf 'Expected one of: all, wayland, wayland-multi-output, x11\n' >&2
     exit 2
     ;;
 esac
@@ -271,6 +285,13 @@ npm --prefix "$project_root" run build >/dev/null
 
 if [[ "$selection" == "all" || "$selection" == "wayland" ]]; then
   run_backend wayland
+fi
+
+if [[
+  "$selection" == "all" ||
+    "$selection" == "wayland" ||
+    "$selection" == "wayland-multi-output"
+]]; then
   run_backend wayland-multi-output
 fi
 

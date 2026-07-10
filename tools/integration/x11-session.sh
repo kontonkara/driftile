@@ -13,6 +13,14 @@ cleanup() {
 
 trap cleanup EXIT
 
+xrandr --newmode \
+  1024x600 \
+  49.00 \
+  1024 1072 1168 1312 \
+  600 603 613 624 \
+  -hsync +vsync
+xrandr --addmode screen 1024x600
+
 QT_QPA_PLATFORM=xcb LIBGL_ALWAYS_SOFTWARE=1 kwin_x11 --no-kactivities &
 kwin_pid=$!
 
