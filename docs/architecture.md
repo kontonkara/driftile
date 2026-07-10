@@ -32,6 +32,7 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Replays structural output changes in a stable layout order independent of KWin window-signal order.
 - Invalidates stale restore ownership and revalidates multi-output capacity after topology changes.
 - Reorders the active whole column inside one settled context and keeps focus unchanged.
+- Resizes the active whole column within grouped window constraints and retries waiting capacity after a successful shrink.
 - Owns startup, reconfiguration, and shutdown sequencing.
 
 ### Core
@@ -76,6 +77,7 @@ RuntimeState
 - Apply a context only when its desktop is visible on its output.
 - Keep focus commands inside the active window's context.
 - Keep column-reorder commands inside the active context and roll back the model if geometry application cannot complete.
+- Apply active-column width changes transactionally, preserving focus, grouping, and the prior width on failure.
 - Allow horizontal overflow and viewport scrolling when KWin reports one output.
 - Queue a candidate window unmanaged if it would introduce overflow with multiple outputs, then retry it when that context gains capacity.
 - When a topology change invalidates existing multi-output capacity, park whole writable columns with a reachable anchor inside the work area and release them to the waiting queue. Preserve the active column when possible; choose the farthest non-active column first and the rightmost on a tie.
@@ -103,6 +105,7 @@ RuntimeState
 - Test reconcile output for minimality and idempotence.
 - Replay window lifecycle and output or desktop transfer sequences.
 - Verify window-state ownership, cancellation races, stable resumption, and slot reservation.
+- Verify active-column reorder and resizing, including constraint bounds and transactional rollback.
 - Verify the settled topology barrier, output replacement and removal, dock and silent work-area invalidations, sticky restore invalidation, and deterministic capacity recovery.
 - Verify independent contexts with native Wayland and Xwayland windows on two virtual outputs.
 - Exercise live output reconfiguration against an isolated real KWin session.
