@@ -7,6 +7,7 @@ if [[ "${DRIFTILE_SMOKE_TRACE:-0}" == "1" ]]; then
 fi
 
 readonly plugin_id="io.github.kontonkara.driftile"
+readonly native_tile_toggle_plugin_id="io.github.kontonkara.driftile.integration-native-tile-toggle"
 readonly output_router_plugin_id="io.github.kontonkara.driftile.integration-output-router"
 readonly stable_sample_count=2
 readonly wait_attempts=200
@@ -36,6 +37,13 @@ cleanup() {
     org.kde.kwin.Scripting \
     unloadScript \
     s "$plugin_id" \
+    >/dev/null 2>&1 || true
+  busctl --user call \
+    org.kde.KWin \
+    /Scripting \
+    org.kde.kwin.Scripting \
+    unloadScript \
+    s "$native_tile_toggle_plugin_id" \
     >/dev/null 2>&1 || true
   busctl --user call \
     org.kde.KWin \
@@ -74,6 +82,36 @@ window_id() {
   printf '%s' "${match_id#*_}"
 }
 
+window_action_match_id() {
+  local window_title=$1
+  local action=$2
+
+  busctl --user --json=short call \
+    org.kde.KWin \
+    /WindowsRunner \
+    org.kde.krunner1 \
+    Match \
+    s "$window_title $action" | jq --exit-status --raw-output --arg title "$window_title" '
+      [.data[0][] | select(.[1] == $title)] as $matches
+      | select($matches | length == 1)
+      | $matches[0][0]
+    '
+}
+
+run_window_action() {
+  local match_id
+
+  match_id=$(window_action_match_id "$1" "$2") || return 1
+
+  busctl --user call \
+    org.kde.KWin \
+    /WindowsRunner \
+    org.kde.krunner1 \
+    Run \
+    ss "$match_id" "" \
+    >/dev/null
+}
+
 activate_window() {
   local match_id
 
@@ -110,6 +148,33 @@ window_frame_geometry() {
       | map((((. * 1000000) | round) / 1000000) | tostring)
       | join(",")
     '
+}
+
+window_state_matches() {
+  local id=$1
+  local state=$2
+  local expected=$3
+
+  busctl --user --json=short call \
+    org.kde.KWin \
+    /KWin \
+    org.kde.KWin \
+    getWindowInfo \
+    s "$id" | jq --exit-status \
+      --arg state "$state" \
+      --argjson expected "$expected" '
+        if $state == "maximized" then
+          if $expected then
+            (.data[0].maximizeHorizontal.data != 0) and
+            (.data[0].maximizeVertical.data != 0)
+          else
+            (.data[0].maximizeHorizontal.data == 0) and
+            (.data[0].maximizeVertical.data == 0)
+          end
+        else
+          (.data[0][$state].data == $expected)
+        end
+      ' >/dev/null
 }
 
 window_is_on_output_side() {
@@ -236,6 +301,65 @@ wait_for_geometries() {
   return 1
 }
 
+wait_for_state_and_geometries() {
+  local id=$1
+  local state=$2
+  local expected=$3
+  local -a window_titles=()
+  local attempt
+  local current_frame
+  local current_layout
+  local expected_layout=""
+  local index
+  local matches=0
+  local previous_layout=""
+  local state_ready
+
+  shift 3
+
+  if ((($# == 0) || ($# % 2 != 0))); then
+    return 2
+  fi
+
+  while (($# > 0)); do
+    window_titles+=("$1")
+    expected_layout+="${expected_layout:+|}$2"
+    shift 2
+  done
+
+  for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
+    current_layout=""
+    state_ready=0
+
+    for index in "${!window_titles[@]}"; do
+      current_frame=$(window_frame_geometry "${window_titles[index]}" 2>/dev/null || true)
+      current_layout+="${current_layout:+|}$current_frame"
+    done
+
+    if window_state_matches "$id" "$state" "$expected" 2>/dev/null; then
+      state_ready=1
+    fi
+
+    if ((state_ready == 1)) &&
+      [[ "$current_layout" == "$expected_layout" && "$current_layout" == "$previous_layout" ]]; then
+      ((matches += 1))
+    elif ((state_ready == 1)) && [[ "$current_layout" == "$expected_layout" ]]; then
+      matches=1
+    else
+      matches=0
+    fi
+
+    if ((matches >= stable_sample_count)); then
+      return 0
+    fi
+
+    previous_layout=$current_layout
+    sleep 0.05
+  done
+
+  return 1
+}
+
 describe_layout() {
   local window_title
   local window_frame
@@ -272,6 +396,49 @@ wait_for_named_script_state() {
   done
 
   return 1
+}
+
+run_one_shot_script() {
+  local script_path=$1
+  local name=$2
+  local load_result
+  local script_id
+  local unload_result
+
+  load_result=$(busctl --user call \
+    org.kde.KWin \
+    /Scripting \
+    org.kde.kwin.Scripting \
+    loadScript \
+    ss "$script_path" "$name") || return 1
+  script_id=${load_result#i }
+
+  if [[ ! "$script_id" =~ ^[0-9]+$ ]]; then
+    return 1
+  fi
+
+  busctl --user call \
+    org.kde.KWin \
+    "/Scripting/Script${script_id}" \
+    org.kde.kwin.Script \
+    run \
+    >/dev/null || return 1
+
+  unload_result=$(busctl --user call \
+    org.kde.KWin \
+    /Scripting \
+    org.kde.kwin.Scripting \
+    unloadScript \
+    s "$name") || return 1
+
+  [[ "$unload_result" == "b true" ]] || return 1
+  wait_for_named_script_state "$name" false
+}
+
+toggle_native_tile() {
+  run_one_shot_script \
+    "$DRIFTILE_SMOKE_NATIVE_TILE_TOGGLE" \
+    "$native_tile_toggle_plugin_id"
 }
 
 load_output_router() {
@@ -355,14 +522,47 @@ start_client() {
   client_pids+=("$!")
 }
 
+verify_window_action_transition() {
+  local protocol=$1
+  local action=$2
+  local state=$3
+  local id=$4
+  local reserved_title=$5
+  local target_title=$6
+  local reserved_frame=$7
+  local active_frame=$8
+  local restored_frame=$9
+
+  run_window_action "$target_title" "$action" || \
+    fail "KWin could not enter $action for the $protocol state window"
+  wait_for_state_and_geometries \
+    "$id" "$state" true \
+    "$reserved_title" "$reserved_frame" \
+    "$target_title" "$active_frame" || \
+    fail "Driftile fought the $protocol $action transition: $(describe_layout "$reserved_title" "$target_title")"
+
+  run_window_action "$target_title" "$action" || \
+    fail "KWin could not leave $action for the $protocol state window"
+  wait_for_state_and_geometries \
+    "$id" "$state" false \
+    "$reserved_title" "$reserved_frame" \
+    "$target_title" "$restored_frame" || \
+    fail "Driftile did not restore the $protocol state window after $action: $(describe_layout "$reserved_title" "$target_title")"
+}
+
 run_scenario() {
   local protocol=$1
   local first_title="driftile-smoke-${protocol}-a"
-  local second_title="driftile-smoke-${protocol}-b"
+  local second_title="driftile-state-target-${protocol}"
   local third_title="driftile-smoke-${protocol}-c"
   local first_baseline
   local second_baseline
   local third_baseline
+  local state_window_id
+  local reserved_frame="16,16,616,688"
+  local state_frame="648,16,616,688"
+  local full_output_frame="0,0,1280,720"
+  local native_tile_frame="4,4,314,712"
 
   start_client "$protocol" "$first_title"
   capture_stable_geometry "$first_title" >/dev/null || fail "the first $protocol test window did not stabilize"
@@ -405,6 +605,56 @@ run_scenario() {
     "$second_title" "$second_baseline" \
     "$third_title" "$third_baseline" || \
     fail "Driftile did not restore the $protocol windows: $(describe_layout "$first_title" "$second_title" "$third_title")"
+
+  run_window_action "$third_title" close || fail "KWin could not close the third $protocol window"
+  wait_for_window_gone "$third_title" || fail "the third $protocol test window did not close"
+
+  activate_window "$second_title" || fail "KWin could not activate the $protocol state window"
+  set_plugin_state true
+  wait_for_script_state true || fail "KWin did not reload Driftile for $protocol state transitions"
+  wait_for_geometries \
+    "$first_title" "$reserved_frame" \
+    "$second_title" "$state_frame" || \
+    fail "Driftile did not reserve the $protocol state layout: $(describe_layout "$first_title" "$second_title")"
+
+  state_window_id=$(window_id "$second_title") || fail "KWin did not expose the $protocol state window id"
+
+  verify_window_action_transition \
+    "$protocol" fullscreen fullscreen "$state_window_id" \
+    "$first_title" "$second_title" \
+    "$reserved_frame" "$full_output_frame" "$state_frame"
+  verify_window_action_transition \
+    "$protocol" minimize minimized "$state_window_id" \
+    "$first_title" "$second_title" \
+    "$reserved_frame" "$state_frame" "$state_frame"
+  verify_window_action_transition \
+    "$protocol" maximize maximized "$state_window_id" \
+    "$first_title" "$second_title" \
+    "$reserved_frame" "$full_output_frame" "$state_frame"
+
+  # Standalone KWin X11 6.7 does not expose workspace.rootTile to scripts.
+  if [[ "$protocol" != "x11" ]]; then
+    toggle_native_tile || fail "KWin could not attach the $protocol state window to a native tile"
+    wait_for_state_and_geometries \
+      "$state_window_id" keepAbove true \
+      "$first_title" "$reserved_frame" \
+      "$second_title" "$native_tile_frame" || \
+      fail "Driftile fought the $protocol native tile: $(describe_layout "$first_title" "$second_title")"
+
+    toggle_native_tile || fail "KWin could not release the $protocol state window from its native tile"
+    wait_for_state_and_geometries \
+      "$state_window_id" keepAbove false \
+      "$first_title" "$reserved_frame" \
+      "$second_title" "$state_frame" || \
+      fail "Driftile did not restore the $protocol state window after native tiling: $(describe_layout "$first_title" "$second_title")"
+  fi
+
+  set_plugin_state false
+  wait_for_script_state false || fail "KWin did not unload Driftile after $protocol state transitions"
+  wait_for_geometries \
+    "$first_title" "$first_baseline" \
+    "$second_title" "$second_baseline" || \
+    fail "Driftile did not restore the post-transition $protocol windows: $(describe_layout "$first_title" "$second_title")"
 
   stop_clients
   wait_for_window_gone "$first_title" || fail "the first $protocol test window did not close"

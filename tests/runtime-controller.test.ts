@@ -50,9 +50,15 @@ class ManualScheduler {
 
 interface TrackedWindow {
   readonly desktopsChanged: Signal<[]>;
+  readonly fullScreenChanged: Signal<[]>;
   readonly interactiveMoveResizeFinished: Signal<[]>;
+  readonly maximizedAboutToChange: Signal<[mode: number]>;
+  readonly maximizedChanged: Signal<[]>;
+  readonly minimizedChanged: Signal<[]>;
   readonly moveResizedChanged: Signal<[]>;
   readonly outputChanged: Signal<[oldOutput?: KWinOutput | null]>;
+  readonly requestedTileChanged: Signal<[]>;
+  readonly tileChanged: Signal<[tile: object | null]>;
   readonly window: KWinWindow;
   readonly writeCount: number;
 }
@@ -64,10 +70,16 @@ function createTrackedWindow(
   overrides: Partial<KWinWindow> = {},
 ): TrackedWindow {
   const desktopsChanged = new Signal<[]>();
+  const fullScreenChanged = new Signal<[]>();
   let frameGeometry = { height: 200, width: 300, x: 0, y: 0 };
   const interactiveMoveResizeFinished = new Signal<[]>();
+  const maximizedAboutToChange = new Signal<[mode: number]>();
+  const maximizedChanged = new Signal<[]>();
+  const minimizedChanged = new Signal<[]>();
   const moveResizedChanged = new Signal<[]>();
   const outputChanged = new Signal<[oldOutput?: KWinOutput | null]>();
+  const requestedTileChanged = new Signal<[]>();
+  const tileChanged = new Signal<[tile: object | null]>();
   let writeCount = 0;
   const window: KWinWindow = {
     deleted: false,
@@ -78,13 +90,17 @@ function createTrackedWindow(
     dock: false,
     frameGeometry,
     fullScreen: false,
+    fullScreenChanged,
     internalId: id,
     interactiveMoveResizeFinished,
     managed: true,
     maxSize: { height: 10_000, width: 10_000 },
+    maximizedAboutToChange,
+    maximizedChanged,
     maximizeMode: 0,
     minSize: { height: 1, width: 1 },
     minimized: false,
+    minimizedChanged,
     move: false,
     moveable: true,
     moveResizedChanged,
@@ -92,10 +108,12 @@ function createTrackedWindow(
     onAllDesktops: false,
     output,
     outputChanged,
+    requestedTileChanged,
     resize: false,
     resizeable: true,
     specialWindow: false,
     tile: null,
+    tileChanged,
     ...overrides,
   };
   frameGeometry = window.frameGeometry;
@@ -114,9 +132,15 @@ function createTrackedWindow(
     get writeCount() {
       return writeCount;
     },
+    fullScreenChanged,
     interactiveMoveResizeFinished,
+    maximizedAboutToChange,
+    maximizedChanged,
+    minimizedChanged,
     moveResizedChanged,
     outputChanged,
+    requestedTileChanged,
+    tileChanged,
     window,
   };
 }
@@ -239,6 +263,72 @@ function createWorkspace(
   };
 }
 
+interface WindowStateTransition {
+  readonly name: string;
+  readonly set: (tracked: TrackedWindow, enabled: boolean) => void;
+}
+
+const WINDOW_STATE_TRANSITIONS: readonly WindowStateTransition[] = [
+  {
+    name: "fullscreen",
+    set: (tracked, enabled) => {
+      Object.defineProperty(tracked.window, "fullScreen", {
+        configurable: true,
+        value: enabled,
+      });
+      tracked.fullScreenChanged.emit();
+    },
+  },
+  {
+    name: "minimized",
+    set: (tracked, enabled) => {
+      Object.defineProperty(tracked.window, "minimized", {
+        configurable: true,
+        value: enabled,
+      });
+      tracked.minimizedChanged.emit();
+    },
+  },
+  {
+    name: "maximized",
+    set: (tracked, enabled) => {
+      tracked.maximizedAboutToChange.emit(enabled ? 3 : 0);
+      Object.defineProperty(tracked.window, "maximizeMode", {
+        configurable: true,
+        value: enabled ? 3 : 0,
+      });
+      tracked.maximizedChanged.emit();
+    },
+  },
+  {
+    name: "native tiled",
+    set: (tracked, enabled) => {
+      Object.defineProperty(tracked.window, "tile", {
+        configurable: true,
+        value: enabled ? {} : null,
+      });
+      tracked.requestedTileChanged.emit();
+      tracked.tileChanged.emit(tracked.window.tile);
+    },
+  },
+];
+
+function setWindowState(
+  name: string,
+  tracked: TrackedWindow,
+  enabled: boolean,
+): void {
+  const transition = WINDOW_STATE_TRANSITIONS.find(
+    (candidate) => candidate.name === name,
+  );
+
+  if (!transition) {
+    throw new Error(`unknown window state transition: ${name}`);
+  }
+
+  transition.set(tracked, enabled);
+}
+
 describe("RuntimeController", () => {
   it("focuses adjacent managed columns and stops at their boundaries", () => {
     const output = createOutput("DP-1", 0);
@@ -290,16 +380,102 @@ describe("RuntimeController", () => {
         return { height: 800, width: 1000, x: 0, y: 0 };
       },
     });
+    const scheduler = new ManualScheduler();
     const controller = new RuntimeController(fixture.workspace, {
       clientAreaOption: 2,
       gap: 10,
+      scheduleResume: scheduler.schedule,
+      startupStabilizationProbes: 2,
     });
 
     controller.start();
+    expect(controller.managedCount).toBe(0);
+    scheduler.flush();
+    scheduler.flush();
 
     expect(controller.managedCount).toBe(1000);
     expect(controller.lastWriteCount).toBe(1000);
     expect(geometryLookupCount).toBe(2);
+  });
+
+  it("queues windows added during startup stabilization", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const second = createTrackedWindow("window-2", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window, second.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      scheduleResume: scheduler.schedule,
+      startupStabilizationProbes: 2,
+    });
+    const third = createTrackedWindow("window-3", output, desktop);
+
+    controller.start();
+    fixture.windowAdded.emit(third.window);
+    expect(controller.managedCount).toBe(0);
+    expect(third.writeCount).toBe(0);
+
+    scheduler.flush();
+    scheduler.flush();
+
+    expect(controller.managedCount).toBe(3);
+    expect(
+      [first, second, third].map(({ window }) => window.frameGeometry.x),
+    ).toEqual([10, 505, 1000]);
+  });
+
+  it("observes a maximize commit during startup stabilization", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window],
+    );
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+      startupStabilizationProbes: 2,
+    });
+
+    controller.start();
+    resumeScheduler.flush();
+    Object.defineProperty(first.window, "maximizeMode", {
+      configurable: true,
+      value: 3,
+    });
+    resumeScheduler.flush();
+
+    expect(controller.managedCount).toBe(0);
+    expect(first.writeCount).toBe(0);
+
+    Object.defineProperty(first.window, "maximizeMode", {
+      configurable: true,
+      value: 0,
+    });
+    first.maximizedChanged.emit();
+    workScheduler.flush();
+    resumeScheduler.flush();
+    workScheduler.flush();
+
+    expect(controller.managedCount).toBe(1);
+    expect(first.window.frameGeometry.x).toBe(10);
   });
 
   it("rolls back layout focus when geometry is temporarily unavailable", () => {
@@ -347,6 +523,749 @@ describe("RuntimeController", () => {
     expect(
       [first, second, third].map(({ window }) => window.frameGeometry.x),
     ).toEqual([-475, 20, 515]);
+  });
+
+  it.each(WINDOW_STATE_TRANSITIONS)(
+    "reserves layout ownership while a window is $name",
+    ({ set }) => {
+      const output = createOutput("DP-1", 0);
+      const desktop = { id: "desktop-1" };
+      const first = createTrackedWindow("window-1", output, desktop);
+      const second = createTrackedWindow("window-2", output, desktop);
+      const fixture = createWorkspace(
+        output,
+        desktop,
+        [output],
+        [desktop],
+        [first.window, second.window],
+      );
+      const scheduler = new ManualScheduler();
+      const controller = new RuntimeController(fixture.workspace, {
+        clientAreaOption: 2,
+        gap: 10,
+        schedule: scheduler.schedule,
+      });
+
+      controller.start();
+      set(first, true);
+      expect(scheduler.pendingCount).toBe(1);
+      scheduler.flush();
+
+      expect(controller.managedCount).toBe(2);
+      expect(first.window.frameGeometry.x).toBe(10);
+      expect(second.window.frameGeometry.x).toBe(505);
+      expect(controller.focusLeft()).toBe(false);
+      expect(fixture.workspace.activeWindow).toBe(second.window);
+
+      set(first, false);
+      scheduler.flush();
+      expect(scheduler.pendingCount).toBe(1);
+      scheduler.flush();
+      scheduler.flush();
+
+      expect(controller.managedCount).toBe(2);
+      expect(first.window.frameGeometry.x).toBe(10);
+      expect(second.window.frameGeometry.x).toBe(505);
+      expect(controller.focusLeft()).toBe(true);
+      expect(fixture.workspace.activeWindow).toBe(first.window);
+
+      controller.stop();
+      expect(first.window.frameGeometry.x).toBe(0);
+      expect(second.window.frameGeometry.x).toBe(0);
+    },
+  );
+
+  it("replays activation received while a window is suspended", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const second = createTrackedWindow("window-2", output, desktop);
+    const third = createTrackedWindow("window-3", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window, second.window, third.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+
+    controller.start();
+    setWindowState("fullscreen", first, true);
+    scheduler.flush();
+    fixture.workspace.activeWindow = first.window;
+    setWindowState("fullscreen", first, false);
+    scheduler.flush();
+    scheduler.flush();
+    scheduler.flush();
+
+    expect(fixture.workspace.activeWindow).toBe(first.window);
+    expect(
+      [first, second, third].map(({ window }) => window.frameGeometry.x),
+    ).toEqual([0, 495, 990]);
+  });
+
+  it("blocks geometry immediately when maximize is requested", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+
+    controller.start();
+    first.window.frameGeometry = {
+      height: 700,
+      width: 900,
+      x: 50,
+      y: 40,
+    };
+    fixture.currentDesktopChanged.emit(desktop, desktop, output);
+    first.maximizedAboutToChange.emit(3);
+    first.minimizedChanged.emit();
+    expect(scheduler.pendingCount).toBe(1);
+    scheduler.flush();
+
+    expect(first.window.frameGeometry).toEqual({
+      height: 700,
+      width: 900,
+      x: 50,
+      y: 40,
+    });
+    controller.stop();
+    expect(first.window.frameGeometry.x).toBe(50);
+  });
+
+  it("resumes after an unapplied maximize request is canceled", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+
+    controller.start();
+    first.maximizedAboutToChange.emit(3);
+    first.maximizedAboutToChange.emit(0);
+    scheduler.flush();
+
+    for (let callback = 0; callback < 40; callback += 1) {
+      scheduler.flush();
+    }
+
+    scheduler.flush();
+    scheduler.flush();
+
+    expect(controller.managedCount).toBe(1);
+    expect(first.window.frameGeometry.x).toBe(10);
+    controller.stop();
+    expect(first.window.frameGeometry.x).toBe(0);
+  });
+
+  it("waits for a superseded native-tile commit before resuming", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+    const nativeTile = {};
+
+    controller.start();
+    Object.defineProperty(first.window, "tile", {
+      configurable: true,
+      value: nativeTile,
+    });
+    first.requestedTileChanged.emit();
+    Object.defineProperty(first.window, "tile", {
+      configurable: true,
+      value: null,
+    });
+    first.requestedTileChanged.emit();
+    first.tileChanged.emit(nativeTile);
+    scheduler.flush();
+
+    first.window.frameGeometry = {
+      height: 700,
+      width: 300,
+      x: 4,
+      y: 4,
+    };
+    fixture.currentDesktopChanged.emit(desktop, desktop, output);
+    scheduler.flush();
+    expect(first.window.frameGeometry.x).toBe(4);
+
+    first.tileChanged.emit(null);
+    scheduler.flush();
+    scheduler.flush();
+    scheduler.flush();
+    expect(first.window.frameGeometry.x).toBe(10);
+  });
+
+  it("waits for restored geometry to stabilize before resuming writes", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+
+    controller.start();
+    setWindowState("fullscreen", first, true);
+    scheduler.flush();
+    first.window.frameGeometry = {
+      height: 720,
+      width: 900,
+      x: 40,
+      y: 30,
+    };
+    setWindowState("fullscreen", first, false);
+    scheduler.flush();
+
+    first.window.frameGeometry = {
+      height: 700,
+      width: 880,
+      x: 60,
+      y: 50,
+    };
+    scheduler.flush();
+    expect(first.window.frameGeometry.x).toBe(60);
+    expect(scheduler.pendingCount).toBe(1);
+
+    scheduler.flush();
+    scheduler.flush();
+    scheduler.flush();
+    expect(first.window.frameGeometry).toEqual({
+      height: 780,
+      width: 485,
+      x: 10,
+      y: 10,
+    });
+  });
+
+  it("captures the restore baseline only after an initial state clears", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop, {
+      frameGeometry: { height: 800, width: 1000, x: 0, y: 0 },
+      fullScreen: true,
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+
+    controller.start();
+    expect(controller.managedCount).toBe(0);
+    first.window.frameGeometry = {
+      height: 500,
+      width: 700,
+      x: 100,
+      y: 80,
+    };
+    setWindowState("fullscreen", first, false);
+    scheduler.flush();
+    scheduler.flush();
+    scheduler.flush();
+
+    expect(controller.managedCount).toBe(1);
+    expect(first.window.frameGeometry.x).toBe(10);
+    controller.stop();
+    expect(first.window.frameGeometry).toEqual({
+      height: 500,
+      width: 700,
+      x: 100,
+      y: 80,
+    });
+  });
+
+  it("recovers when an initial geometry request is canceled silently", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop, {
+      moveable: false,
+      resizeable: false,
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+
+    controller.start();
+    expect(controller.managedCount).toBe(0);
+    expect(scheduler.pendingCount).toBe(1);
+
+    Object.defineProperties(first.window, {
+      moveable: { configurable: true, value: true },
+      resizeable: { configurable: true, value: true },
+    });
+    scheduler.flush();
+    scheduler.flush();
+    scheduler.flush();
+    scheduler.flush();
+
+    expect(controller.managedCount).toBe(1);
+    expect(first.window.frameGeometry).toEqual({
+      height: 780,
+      width: 485,
+      x: 10,
+      y: 10,
+    });
+  });
+
+  it("bounds retries for a permanently non-writable window", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop, {
+      moveable: false,
+      resizeable: false,
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+
+    controller.start();
+
+    for (let callback = 0; callback < 40; callback += 1) {
+      expect(scheduler.pendingCount).toBe(1);
+      scheduler.flush();
+    }
+
+    expect(scheduler.pendingCount).toBe(0);
+    expect(controller.managedCount).toBe(0);
+  });
+
+  it("coalesces transient retries before the delayed probe runs", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop, {
+      moveable: false,
+      resizeable: false,
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window],
+    );
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    controller.start();
+
+    for (let event = 0; event < 20; event += 1) {
+      first.minimizedChanged.emit();
+      controller.reconcile();
+    }
+
+    expect(resumeScheduler.pendingCount).toBe(1);
+    Object.defineProperties(first.window, {
+      moveable: { configurable: true, value: true },
+      resizeable: { configurable: true, value: true },
+    });
+    resumeScheduler.flush();
+    workScheduler.flush();
+    resumeScheduler.flush();
+    workScheduler.flush();
+
+    expect(controller.managedCount).toBe(1);
+  });
+
+  it("invalidates a transient probe token within the same run", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop, {
+      moveable: false,
+      resizeable: false,
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window],
+    );
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    controller.start();
+    Object.defineProperties(first.window, {
+      moveable: { configurable: true, value: true },
+      resizeable: { configurable: true, value: true },
+    });
+    first.minimizedChanged.emit();
+    workScheduler.flush();
+
+    Object.defineProperties(first.window, {
+      moveable: { configurable: true, value: false },
+      resizeable: { configurable: true, value: false },
+    });
+    first.minimizedChanged.emit();
+    workScheduler.flush();
+    expect(resumeScheduler.pendingCount).toBe(3);
+
+    resumeScheduler.flush();
+    expect(resumeScheduler.pendingCount).toBe(2);
+    resumeScheduler.flush();
+    expect(resumeScheduler.pendingCount).toBe(1);
+
+    Object.defineProperties(first.window, {
+      moveable: { configurable: true, value: true },
+      resizeable: { configurable: true, value: true },
+    });
+    resumeScheduler.flush();
+    workScheduler.flush();
+    resumeScheduler.flush();
+    workScheduler.flush();
+    expect(controller.managedCount).toBe(1);
+  });
+
+  it("ignores an old startup probe after restarting the same window", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop, {
+      moveable: false,
+      resizeable: false,
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+
+    controller.start();
+    controller.stop();
+    controller.start();
+    expect(scheduler.pendingCount).toBe(2);
+
+    Object.defineProperties(first.window, {
+      moveable: { configurable: true, value: true },
+      resizeable: { configurable: true, value: true },
+    });
+    scheduler.flush();
+    expect(controller.managedCount).toBe(0);
+    scheduler.flush();
+    scheduler.flush();
+    scheduler.flush();
+    scheduler.flush();
+
+    expect(controller.managedCount).toBe(1);
+    expect(first.window.frameGeometry.x).toBe(10);
+  });
+
+  it("recovers when an initial native-tile request is canceled", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop, {
+      tile: {},
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window],
+    );
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    controller.start();
+    expect(controller.managedCount).toBe(0);
+    expect(resumeScheduler.pendingCount).toBe(0);
+
+    Object.defineProperty(first.window, "tile", {
+      configurable: true,
+      value: null,
+    });
+    first.requestedTileChanged.emit();
+    workScheduler.flush();
+    expect(resumeScheduler.pendingCount).toBe(1);
+
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      expect(controller.managedCount).toBe(0);
+      resumeScheduler.flush();
+      workScheduler.flush();
+    }
+
+    expect(controller.managedCount).toBe(0);
+    expect(resumeScheduler.pendingCount).toBe(1);
+    resumeScheduler.flush();
+    workScheduler.flush();
+    expect(controller.managedCount).toBe(1);
+    expect(first.window.frameGeometry.x).toBe(10);
+  });
+
+  it("waits for a committed initial native tile to clear", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const tile = {};
+    const first = createTrackedWindow("window-1", output, desktop, { tile });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window],
+    );
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    controller.start();
+    Object.defineProperty(first.window, "tile", {
+      configurable: true,
+      value: null,
+    });
+    first.requestedTileChanged.emit();
+    workScheduler.flush();
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      resumeScheduler.flush();
+      workScheduler.flush();
+      expect(controller.managedCount).toBe(0);
+    }
+
+    first.tileChanged.emit(null);
+    workScheduler.flush();
+    resumeScheduler.flush();
+    expect(controller.managedCount).toBe(0);
+    resumeScheduler.flush();
+    workScheduler.flush();
+
+    expect(controller.managedCount).toBe(1);
+    expect(first.window.frameGeometry.x).toBe(10);
+  });
+
+  it("resumes only after overlapping state blockers are all clear", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const second = createTrackedWindow("window-2", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window, second.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+
+    controller.start();
+    setWindowState("fullscreen", first, true);
+    setWindowState("maximized", first, true);
+    scheduler.flush();
+    setWindowState("fullscreen", first, false);
+    scheduler.flush();
+
+    expect(scheduler.pendingCount).toBe(0);
+    expect(controller.focusLeft()).toBe(false);
+
+    setWindowState("maximized", first, false);
+    scheduler.flush();
+    scheduler.flush();
+
+    expect(controller.focusLeft()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(first.window);
+  });
+
+  it("does not give a suspended window reservation to an overflow waiter", () => {
+    const output = createOutput("DP-1", 0);
+    const otherOutput = createOutput("HDMI-A-1", 1000);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const second = createTrackedWindow("window-2", output, desktop);
+    const waiting = createTrackedWindow("window-3", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output, otherOutput],
+      [desktop],
+      [first.window, second.window, waiting.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+
+    controller.start();
+    setWindowState("minimized", first, true);
+    scheduler.flush();
+
+    expect(controller.managedCount).toBe(2);
+    expect(first.window.frameGeometry.x).toBe(10);
+    expect(second.window.frameGeometry.x).toBe(505);
+    expect(waiting.writeCount).toBe(0);
+
+    setWindowState("minimized", first, false);
+    scheduler.flush();
+    scheduler.flush();
+
+    expect(controller.managedCount).toBe(2);
+    expect(first.window.frameGeometry.x).toBe(10);
+    expect(second.window.frameGeometry.x).toBe(505);
+    expect(waiting.writeCount).toBe(0);
+  });
+
+  it("rebases a context transfer only after suspended state settles", () => {
+    const output = createOutput("DP-1", 0);
+    const otherOutput = createOutput("HDMI-A-1", 1000);
+    const desktop = { id: "desktop-1" };
+    const transferred = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output, otherOutput],
+      [desktop],
+      [transferred.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+
+    controller.start();
+    setWindowState("fullscreen", transferred, true);
+    scheduler.flush();
+    transferred.window.frameGeometry = {
+      height: 200,
+      width: 300,
+      x: 1200,
+      y: 0,
+    };
+    Object.defineProperty(transferred.window, "output", {
+      configurable: true,
+      value: otherOutput,
+    });
+    transferred.outputChanged.emit();
+    scheduler.flush();
+
+    expect(controller.managedCount).toBe(1);
+    expect(transferred.window.frameGeometry.x).toBe(1200);
+
+    setWindowState("fullscreen", transferred, false);
+    scheduler.flush();
+    expect(transferred.window.frameGeometry.x).toBe(1200);
+    scheduler.flush();
+    scheduler.flush();
+
+    expect(controller.managedCount).toBe(1);
+    expect(transferred.window.frameGeometry.x).toBe(1010);
+    controller.stop();
+    expect(transferred.window.frameGeometry.x).toBe(1200);
   });
 
   it("routes focus through the active window context", () => {
@@ -965,6 +1884,9 @@ describe("RuntimeController", () => {
     transferred.interactiveMoveResizeFinished.emit();
     expect(scheduler.pendingCount).toBe(1);
     scheduler.flush();
+    expect(scheduler.pendingCount).toBe(1);
+    scheduler.flush();
+    scheduler.flush();
 
     expect(controller.managedCount).toBe(1);
     expect(transferred.window.frameGeometry.x).toBe(1010);
@@ -1009,6 +1931,7 @@ describe("RuntimeController", () => {
     });
     dragged.outputChanged.emit();
     dragged.interactiveMoveResizeFinished.emit();
+    scheduler.flush();
     scheduler.flush();
 
     expect(controller.managedCount).toBe(2);
@@ -1255,6 +2178,50 @@ describe("RuntimeController", () => {
     expect(window.writeCount).toBe(1);
   });
 
+  it("cleans up a failed delayed start and can be started again", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const window = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [window.window],
+    );
+    const scheduler = new ManualScheduler();
+    let shouldFail = true;
+    Object.defineProperty(fixture.workspace, "clientArea", {
+      configurable: true,
+      value: () => {
+        if (shouldFail) {
+          throw new Error("client area unavailable");
+        }
+
+        return { height: 800, width: 1000, x: 0, y: 0 };
+      },
+    });
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      scheduleResume: scheduler.schedule,
+      startupStabilizationProbes: 1,
+    });
+
+    controller.start();
+    expect(() => {
+      scheduler.flush();
+    }).not.toThrow();
+    expect(controller.managedCount).toBe(0);
+
+    shouldFail = false;
+    expect(controller.start()).toBe(true);
+    scheduler.flush();
+
+    expect(controller.managedCount).toBe(1);
+    expect(window.writeCount).toBe(1);
+  });
+
   it("rolls back and retries a live admission after geometry recovers", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
@@ -1450,6 +2417,43 @@ describe("RuntimeController", () => {
 
     scheduler.flush();
     expect(controller.lastWriteCount).toBe(1);
+  });
+
+  it("does not let a pending state resume block work after restart", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+
+    controller.start();
+    setWindowState("fullscreen", first, true);
+    scheduler.flush();
+    setWindowState("fullscreen", first, false);
+    expect(scheduler.pendingCount).toBe(1);
+
+    controller.stop();
+    expect(controller.start()).toBe(true);
+    const second = createTrackedWindow("window-2", output, desktop);
+    fixture.windowAdded.emit(second.window);
+    expect(scheduler.pendingCount).toBe(2);
+
+    scheduler.flush();
+    expect(scheduler.pendingCount).toBe(1);
+    scheduler.flush();
+    expect(controller.managedCount).toBe(2);
+    expect(second.window.frameGeometry.x).toBe(505);
   });
 
   it("restores unaffected contexts after another output topology changes", () => {

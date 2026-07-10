@@ -146,14 +146,20 @@ export function isGeometryWritable(window: KWinWindow): boolean {
   return (
     window.managed &&
     !window.deleted &&
-    !window.fullScreen &&
-    !window.minimized &&
-    !window.move &&
-    !window.resize &&
+    !hasGeometryAuthorityBlocker(window) &&
     window.moveable &&
-    window.resizeable &&
-    window.maximizeMode === 0 &&
-    window.tile === null
+    window.resizeable
+  );
+}
+
+export function hasGeometryAuthorityBlocker(window: KWinWindow): boolean {
+  return (
+    window.fullScreen ||
+    window.minimized ||
+    window.maximizeMode !== 0 ||
+    window.move ||
+    window.resize ||
+    window.tile !== null
   );
 }
 

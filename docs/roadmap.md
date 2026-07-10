@@ -29,7 +29,7 @@ Exit criteria:
 - Directional focus reveals the target window.
 - Repeating reconcile without a state change performs no writes.
 - Other outputs and desktops remain untouched.
-- The runtime performs no polling.
+- The runtime performs no workspace-wide periodic scans.
 
 ## MVP
 
@@ -38,7 +38,7 @@ Complete the daily keyboard-driven workflow.
 - Manage every output and desktop independently.
 - Add vertical stacks, movement, column resizing, and floating toggles.
 - Support explicit transfers between outputs and desktops.
-- Integrate dialogs, fullscreen, minimize, size constraints, and work-area changes.
+- Integrate dialogs, floating windows, remaining size constraints, and work-area changes.
 - Recover safely from output connection, removal, scaling, and rotation.
 - Maintain a trailing empty desktop with guarded removal.
 - Register configurable shortcuts and essential layout settings.

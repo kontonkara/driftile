@@ -19,7 +19,7 @@ The ownership rule is strict:
 - Output-local commands unless a transfer is explicit.
 - Work-area, size-constraint, fullscreen, minimized, dialog, and hot-plug handling.
 - One trailing empty workspace per output, with conservative creation and removal.
-- Event-driven, incremental reconciliation with no polling.
+- Event-driven, incremental reconciliation with no workspace-wide scans.
 
 ## Later
 

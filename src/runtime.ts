@@ -2,6 +2,8 @@ import type { KWinWorkspace } from "./platform/kwin/api";
 import type { KWinRectFactory } from "./platform/kwin/geometry-adapter";
 import { RuntimeController } from "./runtime-controller";
 
+const STARTUP_STABILIZATION_PROBES = 20;
+
 let controller: RuntimeController | undefined;
 
 export function init(
@@ -9,6 +11,7 @@ export function init(
   clientAreaOption: number,
   createRect: KWinRectFactory,
   schedule: (callback: () => void) => void,
+  scheduleResume: (callback: () => void) => void,
 ): void {
   if (controller) {
     return;
@@ -18,6 +21,8 @@ export function init(
     clientAreaOption,
     createRect,
     schedule,
+    scheduleResume,
+    startupStabilizationProbes: STARTUP_STABILIZATION_PROBES,
   });
 
   if (!nextController.start()) {

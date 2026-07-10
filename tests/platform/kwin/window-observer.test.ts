@@ -50,13 +50,17 @@ function createWindow(overrides: Partial<KWinWindow> = {}): KWinWindow {
     dock: false,
     frameGeometry: { height: 600, width: 800, x: 0, y: 0 },
     fullScreen: false,
+    fullScreenChanged: new Signal<[]>(),
     internalId: "window-1",
     interactiveMoveResizeFinished: new Signal<[]>(),
     managed: true,
     maxSize: { height: 10_000, width: 10_000 },
+    maximizedAboutToChange: new Signal<[mode: number]>(),
+    maximizedChanged: new Signal<[]>(),
     maximizeMode: 0,
     minSize: { height: 1, width: 1 },
     minimized: false,
+    minimizedChanged: new Signal<[]>(),
     move: false,
     moveable: true,
     moveResizedChanged: new Signal<[]>(),
@@ -64,10 +68,12 @@ function createWindow(overrides: Partial<KWinWindow> = {}): KWinWindow {
     onAllDesktops: false,
     output,
     outputChanged: new Signal<[oldOutput?: KWinOutput | null]>(),
+    requestedTileChanged: new Signal<[]>(),
     resize: false,
     resizeable: true,
     specialWindow: false,
     tile: null,
+    tileChanged: new Signal<[tile: object | null]>(),
     ...overrides,
   };
 }
@@ -321,20 +327,197 @@ describe("WindowObserver", () => {
     expect(changed).toEqual([]);
   });
 
-  it("publishes interactive move and resize lifecycle changes", () => {
+  it("publishes geometry ownership state changes", () => {
     const source = createWindow();
     const finished = source.interactiveMoveResizeFinished as Signal<[]>;
-    const stateChanged = source.moveResizedChanged as Signal<[]>;
+    const fullScreenChanged = source.fullScreenChanged as Signal<[]>;
+    const maximizedChanged = source.maximizedChanged as Signal<[]>;
+    const minimizedChanged = source.minimizedChanged as Signal<[]>;
+    const moveStateChanged = source.moveResizedChanged as Signal<[]>;
+    const tileChanged = source.tileChanged as Signal<[tile: object | null]>;
     const changed: string[] = [];
     const observer = new WindowObserver(createWorkspace([source]), {
-      changed: (windowId) => changed.push(windowId),
+      stateChanged: (windowId) => changed.push(windowId),
     });
 
     observer.start();
-    stateChanged.emit();
+    moveStateChanged.emit();
     finished.emit();
+    fullScreenChanged.emit();
+    maximizedChanged.emit();
+    minimizedChanged.emit();
+    tileChanged.emit({});
 
-    expect(changed).toEqual(["window-1", "window-1"]);
+    expect(changed).toEqual(Array.from({ length: 6 }, () => "window-1"));
+  });
+
+  it("publishes early maximize and native-tile suspension requests", () => {
+    const source = createWindow();
+    const maximizedAboutToChange = source.maximizedAboutToChange as Signal<
+      [mode: number]
+    >;
+    const requestedTileChanged = source.requestedTileChanged as Signal<[]>;
+    const events: string[] = [];
+    const observer = new WindowObserver(createWorkspace([source]), {
+      suspensionSettled: (windowId, request) =>
+        events.push(`settled:${windowId}:${request}`),
+      suspending: (windowId, request) =>
+        events.push(`suspending:${windowId}:${request}`),
+    });
+
+    observer.start();
+    maximizedAboutToChange.emit(3);
+    maximizedAboutToChange.emit(0);
+    Object.defineProperty(source, "tile", {
+      configurable: true,
+      value: {},
+    });
+    requestedTileChanged.emit();
+    Object.defineProperty(source, "tile", {
+      configurable: true,
+      value: null,
+    });
+    requestedTileChanged.emit();
+
+    expect(events).toEqual([
+      "settled:window-1:maximized-settling",
+      "suspending:window-1:maximized-requested",
+      "settled:window-1:maximized-requested",
+      "suspending:window-1:maximized-settling",
+      "settled:window-1:native-tile-settling",
+      "suspending:window-1:native-tile-requested",
+      "settled:window-1:native-tile-requested",
+      "suspending:window-1:native-tile-settling",
+    ]);
+  });
+
+  it("keeps native-tile suspension until committed state is clear", () => {
+    const source = createWindow();
+    const requestedTileChanged = source.requestedTileChanged as Signal<[]>;
+    const tileChanged = source.tileChanged as Signal<[tile: object | null]>;
+    const events: string[] = [];
+    const observer = new WindowObserver(createWorkspace([source]), {
+      suspensionSettled: (_windowId, request) =>
+        events.push(`settled:${request}`),
+      suspending: (_windowId, request) => events.push(`suspending:${request}`),
+    });
+    const tile = {};
+
+    observer.start();
+    Object.defineProperty(source, "tile", {
+      configurable: true,
+      value: tile,
+    });
+    requestedTileChanged.emit();
+    tileChanged.emit(tile);
+    Object.defineProperty(source, "tile", {
+      configurable: true,
+      value: null,
+    });
+    requestedTileChanged.emit();
+
+    expect(events).toEqual([
+      "settled:native-tile-settling",
+      "suspending:native-tile-requested",
+      "suspending:native-tile-committed",
+      "settled:native-tile-requested",
+      "settled:native-tile-requested",
+      "suspending:native-tile-settling",
+    ]);
+
+    tileChanged.emit(null);
+    expect(events.slice(-3)).toEqual([
+      "settled:native-tile-committed",
+      "settled:native-tile-settling",
+      "settled:native-tile-requested",
+    ]);
+  });
+
+  it("keeps the latest maximize request through a stale commit", () => {
+    const source = createWindow();
+    const maximizedAboutToChange = source.maximizedAboutToChange as Signal<
+      [mode: number]
+    >;
+    const maximizedChanged = source.maximizedChanged as Signal<[]>;
+    const events: string[] = [];
+    const observer = new WindowObserver(createWorkspace([source]), {
+      suspensionSettled: (_windowId, request) =>
+        events.push(`settled:${request}`),
+      suspending: (_windowId, request) => events.push(`suspending:${request}`),
+    });
+
+    observer.start();
+    maximizedAboutToChange.emit(3);
+    maximizedAboutToChange.emit(0);
+    maximizedAboutToChange.emit(3);
+    Object.defineProperty(source, "maximizeMode", {
+      configurable: true,
+      value: 0,
+    });
+    maximizedChanged.emit();
+
+    expect(events[events.length - 1]).toBe("suspending:maximized-requested");
+
+    Object.defineProperty(source, "maximizeMode", {
+      configurable: true,
+      value: 3,
+    });
+    maximizedChanged.emit();
+    expect(events[events.length - 1]).toBe("settled:maximized-requested");
+  });
+
+  it("handles native-tile commits that precede request signals", () => {
+    const source = createWindow();
+    const requestedTileChanged = source.requestedTileChanged as Signal<[]>;
+    const tileChanged = source.tileChanged as Signal<[tile: object | null]>;
+    const events: string[] = [];
+    const observer = new WindowObserver(createWorkspace([source]), {
+      suspensionSettled: (_windowId, request) =>
+        events.push(`settled:${request}`),
+      suspending: (_windowId, request) => events.push(`suspending:${request}`),
+    });
+    const tile = {};
+
+    observer.start();
+    Object.defineProperty(source, "tile", {
+      configurable: true,
+      value: tile,
+    });
+    tileChanged.emit(tile);
+    requestedTileChanged.emit();
+    Object.defineProperty(source, "tile", {
+      configurable: true,
+      value: null,
+    });
+    tileChanged.emit(null);
+    requestedTileChanged.emit();
+
+    expect(events.filter((event) => event.startsWith("suspending:"))).toEqual([
+      "suspending:native-tile-committed",
+    ]);
+    expect(events).toContain("settled:native-tile-committed");
+  });
+
+  it("refreshes state when an initial tile request is canceled", () => {
+    const initialTile = {};
+    const source = createWindow({ tile: initialTile });
+    const requestedTileChanged = source.requestedTileChanged as Signal<[]>;
+    const changed: string[] = [];
+    const settled: string[] = [];
+    const observer = new WindowObserver(createWorkspace([source]), {
+      stateChanged: (windowId) => changed.push(windowId),
+      suspensionSettled: (_windowId, request) => settled.push(request),
+    });
+
+    observer.start();
+    Object.defineProperty(source, "tile", {
+      configurable: true,
+      value: null,
+    });
+    requestedTileChanged.emit();
+
+    expect(changed).toEqual(["window-1"]);
+    expect(settled).toEqual(["native-tile-requested"]);
   });
 
   it("disconnects per-window handlers on removal and stop", () => {
@@ -342,6 +525,7 @@ describe("WindowObserver", () => {
     const removedSource = createWindow();
     const stoppedSource = createWindow({ internalId: "window-2" });
     const removedDesktops = removedSource.desktopsChanged as Signal<[]>;
+    const removedFullScreen = removedSource.fullScreenChanged as Signal<[]>;
     const removedMoveResize = removedSource.moveResizedChanged as Signal<[]>;
     const removedOutput = removedSource.outputChanged as Signal<
       [oldOutput?: KWinOutput | null]
@@ -351,6 +535,9 @@ describe("WindowObserver", () => {
       stoppedSource.interactiveMoveResizeFinished as Signal<[]>;
     const stoppedOutput = stoppedSource.outputChanged as Signal<
       [oldOutput?: KWinOutput | null]
+    >;
+    const stoppedTile = stoppedSource.tileChanged as Signal<
+      [tile: object | null]
     >;
     const changed: string[] = [];
     const observer = new WindowObserver(
@@ -365,33 +552,39 @@ describe("WindowObserver", () => {
     observer.start();
     expect([
       removedDesktops.size,
+      removedFullScreen.size,
       removedMoveResize.size,
       removedOutput.size,
       stoppedDesktops.size,
       stoppedMoveResize.size,
       stoppedOutput.size,
-    ]).toEqual([1, 1, 1, 1, 1, 1]);
+      stoppedTile.size,
+    ]).toEqual([1, 1, 1, 1, 1, 1, 1, 1]);
 
     windowRemoved.emit(removedSource);
     expect([
       removedDesktops.size,
+      removedFullScreen.size,
       removedMoveResize.size,
       removedOutput.size,
-    ]).toEqual([0, 0, 0]);
+    ]).toEqual([0, 0, 0, 0]);
 
     observer.stop();
     expect([
       stoppedDesktops.size,
       stoppedMoveResize.size,
       stoppedOutput.size,
-    ]).toEqual([0, 0, 0]);
+      stoppedTile.size,
+    ]).toEqual([0, 0, 0, 0]);
 
     removedDesktops.emit();
+    removedFullScreen.emit();
     removedMoveResize.emit();
     removedOutput.emit();
     stoppedDesktops.emit();
     stoppedMoveResize.emit();
     stoppedOutput.emit();
+    stoppedTile.emit(null);
     expect(changed).toEqual([]);
   });
 });

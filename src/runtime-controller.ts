@@ -22,6 +22,7 @@ import type {
 } from "./platform/kwin/api";
 import {
   KWinGeometryAdapter,
+  hasGeometryAuthorityBlocker,
   isGeometryWritable,
   type ContextGeometry,
   type KWinRectFactory,
@@ -30,6 +31,7 @@ import {
   normalizeWindow,
   WindowObserver,
   type ObservedWindow,
+  type WindowSuspensionRequest,
 } from "./platform/kwin/window-observer";
 
 const DEFAULT_COLUMN_WIDTH: ColumnWidth = {
@@ -37,6 +39,7 @@ const DEFAULT_COLUMN_WIDTH: ColumnWidth = {
   value: 0.5,
 };
 const DEFAULT_GAP = 16;
+const MAX_TRANSIENT_RESUME_PROBES = 20;
 
 interface ManagedContext {
   readonly desktopId: DesktopId;
@@ -59,6 +62,16 @@ interface AdmissionCandidate {
   readonly source: KWinWindow;
 }
 
+interface ResumeSample {
+  readonly contextKey: string | null;
+  readonly frame: KWinWindow["frameGeometry"];
+}
+
+interface TransientResumeProbe {
+  completedAttempts: number;
+  pending: boolean;
+}
+
 type AdmissionDecision =
   | { readonly fingerprint: string; readonly kind: "accepted" }
   | { readonly kind: "deferred" | "rejected" };
@@ -69,6 +82,8 @@ export interface RuntimeControllerOptions {
   readonly createRect?: KWinRectFactory;
   readonly gap?: number;
   readonly schedule?: (callback: () => void) => void;
+  readonly scheduleResume?: (callback: () => void) => void;
+  readonly startupStabilizationProbes?: number;
 }
 
 export class RuntimeController {
@@ -83,10 +98,24 @@ export class RuntimeController {
   private readonly observer: WindowObserver;
   private readonly pendingAdmissionContexts = new Set<string>();
   private readonly pendingWindowSyncs = new Set<WindowId>();
+  private readonly resumeSamples = new Map<WindowId, ResumeSample>();
   private readonly schedule: (callback: () => void) => void;
+  private readonly scheduleResume: (callback: () => void) => void;
   private runGeneration = 0;
+  private readonly startupStabilizationProbes: number;
+  private startupStabilizationRemaining = 0;
+  private startupStabilizationToken: object | null = null;
   private started = false;
   private readonly width: ColumnWidth;
+  private readonly requestedSuspensions = new Map<
+    WindowId,
+    Set<WindowSuspensionRequest>
+  >();
+  private readonly suspendedWindows = new Set<WindowId>();
+  private readonly transientResumeProbes = new Map<
+    WindowId,
+    TransientResumeProbe
+  >();
   private readonly waitingWindowContexts = new Map<WindowId, string>();
   private readonly waitingWindowIds = new Map<string, Set<WindowId>>();
   private workScheduled = false;
@@ -99,12 +128,20 @@ export class RuntimeController {
       ((callback) => {
         callback();
       });
+    this.scheduleResume = options.scheduleResume ?? this.schedule;
+    this.startupStabilizationProbes = Math.max(
+      0,
+      Math.trunc(options.startupStabilizationProbes ?? 0),
+    );
     this.width = { ...(options.columnWidth ?? DEFAULT_COLUMN_WIDTH) };
     this.workspace = workspace;
     this.observer = new WindowObserver(workspace, {
       added: this.handleWindowAdded,
       changed: this.handleWindowChanged,
       removed: this.handleWindowRemoved,
+      stateChanged: this.handleWindowStateChanged,
+      suspensionSettled: this.handleWindowSuspensionSettled,
+      suspending: this.handleWindowSuspending,
     });
     this.geometry = new KWinGeometryAdapter(
       workspace,
@@ -153,8 +190,14 @@ export class RuntimeController {
 
       try {
         this.observer.start();
-        this.synchronizePendingWindows();
-        this.handleWindowActivated(this.workspace.activeWindow);
+
+        if (this.startupStabilizationProbes > 0) {
+          this.startupStabilizationRemaining = this.startupStabilizationProbes;
+          this.scheduleStartupStabilization();
+        } else {
+          this.synchronizePendingWindows();
+          this.handleWindowActivated(this.workspace.activeWindow);
+        }
       } finally {
         this.initializing = false;
       }
@@ -204,8 +247,15 @@ export class RuntimeController {
       this.managedWindows.clear();
       this.pendingAdmissionContexts.clear();
       this.pendingWindowSyncs.clear();
+      this.requestedSuspensions.clear();
+      this.resumeSamples.clear();
+      this.suspendedWindows.clear();
+      this.startupStabilizationRemaining = 0;
+      this.startupStabilizationToken = null;
+      this.transientResumeProbes.clear();
       this.waitingWindowContexts.clear();
       this.waitingWindowIds.clear();
+      this.workScheduled = false;
       this.lastWrites = 0;
     }
   }
@@ -271,12 +321,13 @@ export class RuntimeController {
   };
 
   private readonly handleWindowAdded = (window: ObservedWindow): void => {
-    if (this.initializing) {
-      this.pendingWindowSyncs.add(windowId(window.id));
+    const addedId = windowId(window.id);
+    const source = this.observer.source(window.id);
+
+    if (this.initializing || this.startupStabilizationToken !== null) {
+      this.pendingWindowSyncs.add(addedId);
       return;
     }
-
-    const source = this.observer.source(window.id);
 
     if (source && this.tryAdmitWindow(source)) {
       this.scheduleWork();
@@ -288,10 +339,65 @@ export class RuntimeController {
     this.scheduleWork();
   };
 
+  private readonly handleWindowStateChanged = (id: string): void => {
+    const changedId = windowId(id);
+    const source = this.observer.source(id);
+
+    if (source && hasGeometryAuthorityBlocker(source)) {
+      this.suspendGeometryLease(changedId);
+    }
+
+    this.pendingWindowSyncs.add(changedId);
+    this.scheduleWork();
+  };
+
+  private readonly handleWindowSuspensionSettled = (
+    id: string,
+    request: WindowSuspensionRequest,
+  ): void => {
+    const settledId = windowId(id);
+
+    if (
+      request.endsWith("-settling") &&
+      this.requestedSuspensions.get(settledId)?.has(request)
+    ) {
+      this.transientResumeProbes.delete(settledId);
+    }
+
+    this.clearSuspensionRequest(settledId, request);
+  };
+
+  private readonly handleWindowSuspending = (
+    id: string,
+    request: WindowSuspensionRequest,
+  ): void => {
+    const suspendedId = windowId(id);
+    let requests = this.requestedSuspensions.get(suspendedId);
+
+    if (!requests) {
+      requests = new Set<WindowSuspensionRequest>();
+      this.requestedSuspensions.set(suspendedId, requests);
+    }
+
+    requests.add(request);
+
+    if (request.endsWith("-settling")) {
+      this.transientResumeProbes.delete(suspendedId);
+    }
+
+    this.suspendGeometryLease(suspendedId);
+    this.pendingWindowSyncs.add(suspendedId);
+    this.scheduleWork();
+  };
+
   private readonly handleWindowRemoved = (id: string): void => {
     const managedId = windowId(id);
     this.pendingWindowSyncs.delete(managedId);
     this.forgetWaitingWindow(managedId);
+    this.requestedSuspensions.delete(managedId);
+    this.resumeSamples.delete(managedId);
+    this.suspendedWindows.delete(managedId);
+    this.transientResumeProbes.delete(managedId);
     const releasedContextKey = this.releaseWindow(managedId);
 
     if (releasedContextKey) {
@@ -308,6 +414,11 @@ export class RuntimeController {
     }
 
     const id = windowId(String(window.internalId));
+
+    if (this.suspendedWindows.has(id) || !isGeometryWritable(window)) {
+      return;
+    }
+
     const owner = this.managedWindows.get(id);
     const observed = normalizeWindow(window);
     const liveContext = observed ? managedContext(observed) : null;
@@ -346,6 +457,14 @@ export class RuntimeController {
     }
 
     const activeId = windowId(String(activeWindow.internalId));
+
+    if (
+      this.suspendedWindows.has(activeId) ||
+      !isGeometryWritable(activeWindow)
+    ) {
+      return false;
+    }
+
     const owner = this.managedWindows.get(activeId);
     const context = owner ? this.contexts.get(owner.contextKey) : undefined;
     const observedActive = normalizeWindow(activeWindow);
@@ -379,6 +498,8 @@ export class RuntimeController {
       !targetOwner ||
       targetOwner.contextKey !== owner.contextKey ||
       !target ||
+      this.suspendedWindows.has(targetId) ||
+      !isGeometryWritable(target) ||
       !targetContext ||
       contextKey(targetContext) !== owner.contextKey
     ) {
@@ -404,8 +525,56 @@ export class RuntimeController {
     return true;
   }
 
+  private scheduleStartupStabilization(): void {
+    if (!this.started || this.startupStabilizationRemaining <= 0) {
+      return;
+    }
+
+    if (!this.startupStabilizationToken) {
+      this.startupStabilizationToken = {};
+    }
+
+    const runGeneration = this.runGeneration;
+    const token = this.startupStabilizationToken;
+
+    this.scheduleResume(() => {
+      if (
+        !this.started ||
+        this.runGeneration !== runGeneration ||
+        this.startupStabilizationToken !== token
+      ) {
+        return;
+      }
+
+      this.startupStabilizationRemaining -= 1;
+
+      if (this.startupStabilizationRemaining > 0) {
+        this.scheduleStartupStabilization();
+        return;
+      }
+
+      this.startupStabilizationToken = null;
+
+      try {
+        this.initializing = true;
+        this.synchronizePendingWindows();
+        this.handleWindowActivated(this.workspace.activeWindow);
+        this.initializing = false;
+        this.flushScheduledWork();
+      } catch (error) {
+        console.warn(
+          `[driftile] delayed startup failed error=${String(error)}`,
+        );
+        this.initializing = false;
+        this.stop();
+      } finally {
+        this.initializing = false;
+      }
+    });
+  }
+
   private scheduleWork(): void {
-    if (this.initializing || this.workScheduled) {
+    if (!this.started || this.initializing || this.workScheduled) {
       return;
     }
 
@@ -451,7 +620,10 @@ export class RuntimeController {
   }
 
   private synchronizePendingWindows(): void {
-    if (this.pendingWindowSyncs.size === 0) {
+    if (
+      this.startupStabilizationToken !== null ||
+      this.pendingWindowSyncs.size === 0
+    ) {
       return;
     }
 
@@ -466,8 +638,65 @@ export class RuntimeController {
       const observed = source ? normalizeWindow(source) : null;
       const nextContext = observed ? managedContext(observed) : null;
       const owner = this.managedWindows.get(id);
+      let resumed = false;
 
-      if (owner && source && (source.move || source.resize)) {
+      const requests = this.requestedSuspensions.get(id);
+      const maximizeSettling = Boolean(
+        source?.maximizeMode === 0 && requests?.has("maximized-settling"),
+      );
+      const nativeTileSettling = Boolean(
+        source?.tile === null && requests?.has("native-tile-settling"),
+      );
+
+      if (maximizeSettling || nativeTileSettling) {
+        this.suspendGeometryLease(id);
+        const probe = this.transientResumeProbes.get(id);
+
+        if (!probe || probe.completedAttempts < MAX_TRANSIENT_RESUME_PROBES) {
+          this.scheduleTransientResumeProbe(id);
+          continue;
+        }
+
+        this.transientResumeProbes.delete(id);
+
+        if (maximizeSettling) {
+          this.clearSuspensionRequest(id, "maximized-settling");
+        }
+
+        if (nativeTileSettling) {
+          this.clearSuspensionRequest(id, "native-tile-settling");
+        }
+      }
+
+      if (this.requestedSuspensions.has(id)) {
+        this.suspendGeometryLease(id);
+        continue;
+      }
+
+      if (source && hasGeometryAuthorityBlocker(source)) {
+        this.suspendGeometryLease(id);
+        continue;
+      }
+
+      if (this.suspendedWindows.has(id)) {
+        if (!source) {
+          continue;
+        }
+
+        if (!isGeometryWritable(source)) {
+          this.suspendGeometryLease(id);
+          this.scheduleTransientResumeProbe(id);
+          continue;
+        }
+
+        if (!this.resumeGeometryLease(id, source, nextContext)) {
+          continue;
+        }
+
+        resumed = true;
+      }
+
+      if (!source) {
         continue;
       }
 
@@ -483,12 +712,19 @@ export class RuntimeController {
         }
       }
 
-      if (source && nextContext && (!owner || changedContext)) {
+      if (nextContext && (!owner || changedContext)) {
         admissionCandidates.push(source);
-      } else if (owner && source && nextContext && isGeometryWritable(source)) {
+      } else if (owner && nextContext && isGeometryWritable(source)) {
         const context = this.contexts.get(owner.contextKey);
 
         if (context) {
+          if (
+            resumed &&
+            String(this.workspace.activeWindow?.internalId) === String(id)
+          ) {
+            this.layout.activateWindow(id);
+          }
+
           this.markContextDirty(context);
         }
       }
@@ -524,13 +760,14 @@ export class RuntimeController {
       const observed = normalizeWindow(source);
       const context = observed ? managedContext(observed) : null;
 
-      if (
-        !observed ||
-        !context ||
-        !isGeometryWritable(source) ||
-        this.managedWindows.has(id)
-      ) {
+      if (!observed || !context || this.managedWindows.has(id)) {
         this.forgetWaitingWindow(id);
+        continue;
+      }
+
+      if (!isGeometryWritable(source)) {
+        this.suspendGeometryLease(id);
+        this.scheduleTransientResumeProbe(id);
         continue;
       }
 
@@ -707,11 +944,9 @@ export class RuntimeController {
     }
 
     if (!isGeometryWritable(source)) {
-      if (source.move || source.resize) {
-        this.deferWindow(id, contextKey(context));
-      } else {
-        this.forgetWaitingWindow(id);
-      }
+      this.forgetWaitingWindow(id);
+      this.suspendGeometryLease(id);
+      this.scheduleTransientResumeProbe(id);
 
       return false;
     }
@@ -721,6 +956,7 @@ export class RuntimeController {
       return false;
     }
 
+    const key = contextKey(context);
     const added = this.layout.manageWindow({
       columnId: columnId(`column:${observed.id}`),
       desktopId: context.desktopId,
@@ -734,7 +970,6 @@ export class RuntimeController {
       return false;
     }
 
-    const key = contextKey(context);
     let decision: AdmissionDecision;
 
     try {
@@ -783,6 +1018,9 @@ export class RuntimeController {
       contextKey: key,
       originalFrame: { ...source.frameGeometry },
     });
+    this.resumeSamples.delete(id);
+    this.suspendedWindows.delete(id);
+    this.transientResumeProbes.delete(id);
 
     if (
       !this.initializing &&
@@ -896,6 +1134,121 @@ export class RuntimeController {
     return admitted;
   }
 
+  private clearSuspensionRequest(
+    id: WindowId,
+    request: WindowSuspensionRequest,
+  ): void {
+    const requests = this.requestedSuspensions.get(id);
+
+    requests?.delete(request);
+
+    if (requests?.size === 0) {
+      this.requestedSuspensions.delete(id);
+    }
+  }
+
+  private suspendGeometryLease(id: WindowId): void {
+    const wasSuspended = this.suspendedWindows.has(id);
+
+    this.suspendedWindows.add(id);
+    this.resumeSamples.delete(id);
+
+    if (!wasSuspended) {
+      this.transientResumeProbes.delete(id);
+    }
+  }
+
+  private resumeGeometryLease(
+    id: WindowId,
+    source: KWinWindow,
+    context: ManagedContext | null,
+  ): boolean {
+    if (!this.started) {
+      return false;
+    }
+
+    const sample: ResumeSample = {
+      contextKey: context ? contextKey(context) : null,
+      frame: { ...source.frameGeometry },
+    };
+    const previous = this.resumeSamples.get(id);
+
+    if (!previous || !sameResumeSample(previous, sample)) {
+      this.resumeSamples.set(id, sample);
+      this.transientResumeProbes.delete(id);
+      const runGeneration = this.runGeneration;
+
+      this.scheduleResume(() => {
+        if (
+          !this.started ||
+          this.runGeneration !== runGeneration ||
+          this.resumeSamples.get(id) !== sample
+        ) {
+          return;
+        }
+
+        this.pendingWindowSyncs.add(id);
+        this.scheduleWork();
+      });
+      return false;
+    }
+
+    this.resumeSamples.delete(id);
+    this.suspendedWindows.delete(id);
+    this.transientResumeProbes.delete(id);
+    return true;
+  }
+
+  private scheduleTransientResumeProbe(id: WindowId): void {
+    if (!this.started) {
+      return;
+    }
+
+    let probe = this.transientResumeProbes.get(id);
+
+    if (!probe) {
+      probe = { completedAttempts: 0, pending: false };
+      this.transientResumeProbes.set(id, probe);
+    }
+
+    if (
+      probe.pending ||
+      probe.completedAttempts >= MAX_TRANSIENT_RESUME_PROBES
+    ) {
+      return;
+    }
+
+    probe.pending = true;
+    const runGeneration = this.runGeneration;
+    let schedulerReturned = false;
+
+    this.scheduleResume(() => {
+      if (
+        !this.started ||
+        this.runGeneration !== runGeneration ||
+        this.transientResumeProbes.get(id) !== probe ||
+        !this.suspendedWindows.has(id)
+      ) {
+        return;
+      }
+
+      const synchronous = !schedulerReturned;
+
+      if (!synchronous) {
+        probe.pending = false;
+      }
+
+      probe.completedAttempts += 1;
+      this.pendingWindowSyncs.add(id);
+      this.scheduleWork();
+
+      if (synchronous && this.transientResumeProbes.get(id) === probe) {
+        probe.pending = false;
+      }
+    });
+    schedulerReturned = true;
+  }
+
   private markContextDirty(context: RuntimeContext): void {
     this.dirtyContexts.add(context.key);
   }
@@ -931,9 +1284,12 @@ export class RuntimeController {
       context.desktopId,
       layout.viewportOffset,
     );
-    const windowIds = layout.windows.map((window) => window.windowId);
+    const writableLayout = layout.windows.filter(
+      (window) => !this.suspendedWindows.has(window.windowId),
+    );
+    const windowIds = writableLayout.map((window) => window.windowId);
     const observed = this.geometry.observedFrames(windowIds, context);
-    const changes = diffWindowGeometries(layout.windows, observed);
+    const changes = diffWindowGeometries(writableLayout, observed);
     return this.geometry.apply(changes, context);
   }
 
@@ -1013,6 +1369,7 @@ export class RuntimeController {
       }
 
       const desired = [...context.windowIds]
+        .filter((id) => !this.suspendedWindows.has(id))
         .map((id) => ({ id, owner: this.managedWindows.get(id) }))
         .filter((entry): entry is { id: WindowId; owner: ManagedWindow } =>
           Boolean(
@@ -1050,6 +1407,16 @@ function managedContext(window: ObservedWindow): ManagedContext | null {
     desktopId: desktopId(desktop),
     outputId: outputId(window.outputId),
   };
+}
+
+function sameResumeSample(left: ResumeSample, right: ResumeSample): boolean {
+  return (
+    left.contextKey === right.contextKey &&
+    Math.abs(left.frame.x - right.frame.x) <= 1e-6 &&
+    Math.abs(left.frame.y - right.frame.y) <= 1e-6 &&
+    Math.abs(left.frame.width - right.frame.width) <= 1e-6 &&
+    Math.abs(left.frame.height - right.frame.height) <= 1e-6
+  );
 }
 
 function contextKey(context: ManagedContext): string {

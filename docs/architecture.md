@@ -15,6 +15,7 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Loads the compiled runtime in the KWin script environment.
 - Passes the KWin workspace object to the runtime.
 - Hosts QML-only shortcut handlers.
+- Provides event-loop and minimum-delay schedulers for batched work and transition stabilization.
 - Contains no layout policy or durable state.
 
 ### TypeScript runtime
@@ -22,7 +23,9 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Models eligible windows from every existing output and desktop context.
 - Normalizes QML/KWin objects into stable IDs and plain data.
 - Batches event bursts, marks dirty contexts, and reconciles only visible desktops.
+- Holds initial admission through a one-second signal grace, then plans existing windows as one batch.
 - Defers external output and desktop transfers, then re-owns each window in its destination context.
+- Suspends geometry writes while KWin owns a window-state transition and resumes after its restored frame stabilizes.
 - Owns startup, reconfiguration, and shutdown sequencing.
 
 ### Core
@@ -53,9 +56,11 @@ RuntimeState
   contexts: Map<ContextKey, LayoutContext>
   dirtyContexts: Set<ContextKey>
   pendingWindowSyncs: Set<WindowId>
+  requestedSuspensions: Map<WindowId, Set<StateReason>>
+  suspendedWindows: Set<WindowId>
 ```
 
-`LayoutContext` owns columns and viewport offset. A column owns ordered window IDs and width. KWin objects never enter core state.
+`LayoutContext` owns columns and viewport offset. A column owns ordered window IDs and width. A suspended window keeps that ownership, but reconcile excludes it until KWin releases geometry authority. KWin objects never enter core state.
 
 ## Reconciliation rules
 
@@ -66,12 +71,13 @@ RuntimeState
 - Queue a candidate window unmanaged if it would introduce overflow with multiple outputs, then retry it when that context gains capacity.
 - Release externally transferred windows from their old context before admitting them to the destination context.
 - Respect minimum and maximum window sizes before emitting geometry.
-- Never let native tiling and Driftile write geometry for the same window.
+- Preserve a window's slot through fullscreen, minimize, maximize, native tiling, and interactive move or resize transitions.
+- Require a stable restored frame before resuming writes or rebasing a transferred window.
 - Treat external focus and window output or desktop changes as authoritative events.
 
 ## Engineering constraints
 
-- No periodic scans; lifecycle is signal-driven.
+- No workspace-wide polling; lifecycle is signal-driven, with one bounded startup grace and bounded per-window transition probes.
 - Coalesce each event burst into at most one reconcile pass per dirty context.
 - Do not write unchanged properties.
 - Keep core operations linear in the affected context, not the whole workspace.
@@ -81,5 +87,6 @@ RuntimeState
 - Unit-test core policies with plain fixtures.
 - Test reconcile output for minimality and idempotence.
 - Replay window lifecycle and output or desktop transfer sequences.
+- Verify window-state ownership, cancellation races, stable resumption, and slot reservation.
 - Verify independent contexts with native Wayland and Xwayland windows on two virtual outputs.
 - Run integration smoke tests in an isolated KWin session or NixOS VM.

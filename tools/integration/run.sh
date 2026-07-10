@@ -129,6 +129,7 @@ run_backend() (
   chmod 0700 "$sandbox/runtime"
 
   export DRIFTILE_SMOKE_CLIENT="$project_root/tools/integration/client.qml"
+  export DRIFTILE_SMOKE_NATIVE_TILE_TOGGLE="$project_root/tools/integration/native-tile-toggle.js"
   export DRIFTILE_SMOKE_OUTPUT_ROUTER="$project_root/tools/integration/output-router.js"
   export DRIFTILE_SMOKE_QML_IMPORT="$qml_import_path"
   export DRIFTILE_SMOKE_RESULT="$result_file"

@@ -20,9 +20,9 @@ npm run test:integration
 
 Use `npm run test:integration -- wayland` or `npm run test:integration -- x11` to select a KWin backend. The Wayland selection runs separate single-output and two-output sessions.
 
-Without Nix, install Bash, Node.js and npm, KWin 6 for Wayland and X11, Xwayland, Xvfb, KPackage and KConfig tools, Qt QML tools with the Wayland and XCB platform plugins, D-Bus, `busctl` from systemd, GNU `timeout`, and `jq`. Then run the same npm command.
+Without Nix, install Bash, Node.js and npm, KWin 6.7 or newer for Wayland and X11, Xwayland, Xvfb, KPackage and KConfig tools, Qt QML tools with the Wayland and XCB platform plugins, D-Bus, `busctl` from systemd, GNU `timeout`, and `jq`. Then run the same npm command.
 
-The test uses temporary user and XDG directories, private D-Bus sessions, virtual Wayland outputs, and an Xvfb display. Its single-output sessions verify three-window tiling, viewport reveal in both directions, exact geometry restoration, and package removal with native Wayland, Xwayland, and native X11 windows. A separate two-output Wayland session verifies independent native Wayland and Xwayland contexts, exact output-local geometry, rejection of a third overflow window on each output, and exact restoration.
+The test uses temporary user and XDG directories, private D-Bus sessions, virtual Wayland outputs, and an Xvfb display. Its single-output sessions verify three-window tiling, viewport reveal, exact restoration, package removal, and slot preservation through fullscreen, minimize, and maximize transitions with native Wayland, Xwayland, and native X11 windows. Native tiling is also covered on Wayland and Xwayland. A separate two-output Wayland session verifies independent contexts, exact output-local geometry, overflow rejection, and restoration.
 
 This test does not cover Plasma panels, real GPUs, input, shortcuts, output hot-plugging, or native X11 multi-output layouts.
 

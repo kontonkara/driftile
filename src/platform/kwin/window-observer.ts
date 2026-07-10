@@ -1,6 +1,12 @@
 import type { KWinOutput, KWinWindow, KWinWorkspace } from "./api";
 
 export type ObservedWindowKind = "dialog" | "normal";
+export type WindowSuspensionRequest =
+  | "maximized-requested"
+  | "maximized-settling"
+  | "native-tile-committed"
+  | "native-tile-requested"
+  | "native-tile-settling";
 
 export interface ObservedWindow {
   readonly desktopIds: readonly string[];
@@ -13,12 +19,25 @@ export interface WindowObserverEvents {
   readonly added?: (window: ObservedWindow) => void;
   readonly changed?: (windowId: string) => void;
   readonly removed?: (windowId: string) => void;
+  readonly suspensionSettled?: (
+    windowId: string,
+    request: WindowSuspensionRequest,
+  ) => void;
+  readonly stateChanged?: (windowId: string) => void;
+  readonly suspending?: (
+    windowId: string,
+    request: WindowSuspensionRequest,
+  ) => void;
 }
 
 interface WindowEntry {
   readonly handleDesktopsChanged: () => void;
-  readonly handleMoveResizeChanged: () => void;
+  readonly handleMaximizedAboutToChange: (mode: number) => void;
+  readonly handleMaximizedChanged: () => void;
   readonly handleOutputChanged: (oldOutput?: KWinOutput | null) => void;
+  readonly handleRequestedTileChanged: () => void;
+  readonly handleStateChanged: () => void;
+  readonly handleTileChanged: (tile: object | null) => void;
   observed: ObservedWindow | null;
   readonly source: KWinWindow;
 }
@@ -114,24 +133,106 @@ export class WindowObserver {
     const refresh = (): void => {
       this.refresh(id, window);
     };
-    const refreshMoveResize = (): void => {
-      this.refreshMoveResize(id, window);
+    const refreshState = (): void => {
+      this.refreshState(id, window);
     };
+    let committedTile: object | null | undefined;
+    let maximizeRequested = window.maximizeMode !== 0;
+    let tileRequested = window.tile !== null;
     const entry: WindowEntry = {
       handleDesktopsChanged: refresh,
-      handleMoveResizeChanged: refreshMoveResize,
+      handleMaximizedAboutToChange: (mode) => {
+        if (mode !== 0) {
+          this.events.suspensionSettled?.(id, "maximized-settling");
+          this.events.suspending?.(id, "maximized-requested");
+          maximizeRequested = true;
+        } else {
+          this.events.suspensionSettled?.(id, "maximized-requested");
+
+          if (maximizeRequested) {
+            this.events.suspending?.(id, "maximized-settling");
+          }
+
+          maximizeRequested = false;
+        }
+
+        refreshState();
+      },
+      handleMaximizedChanged: () => {
+        const maximized = window.maximizeMode !== 0;
+
+        if (maximized === maximizeRequested) {
+          this.events.suspensionSettled?.(id, "maximized-requested");
+
+          if (!maximized) {
+            this.events.suspensionSettled?.(id, "maximized-settling");
+          }
+        }
+
+        refreshState();
+      },
       handleOutputChanged: refresh,
+      handleRequestedTileChanged: () => {
+        if (window.tile !== null) {
+          this.events.suspensionSettled?.(id, "native-tile-settling");
+
+          if (committedTile === window.tile) {
+            this.events.suspensionSettled?.(id, "native-tile-requested");
+          } else {
+            this.events.suspending?.(id, "native-tile-requested");
+          }
+
+          tileRequested = true;
+        } else {
+          this.events.suspensionSettled?.(id, "native-tile-requested");
+
+          if (committedTile === null) {
+            this.events.suspensionSettled?.(id, "native-tile-settling");
+          } else if (tileRequested) {
+            this.events.suspending?.(id, "native-tile-settling");
+          }
+
+          tileRequested = false;
+        }
+
+        refreshState();
+      },
+      handleStateChanged: refreshState,
+      handleTileChanged: (tile) => {
+        committedTile = tile;
+
+        if (tile !== null) {
+          this.events.suspending?.(id, "native-tile-committed");
+
+          if (window.tile === tile) {
+            this.events.suspensionSettled?.(id, "native-tile-requested");
+          }
+        } else {
+          this.events.suspensionSettled?.(id, "native-tile-committed");
+          this.events.suspensionSettled?.(id, "native-tile-settling");
+
+          if (window.tile === null) {
+            this.events.suspensionSettled?.(id, "native-tile-requested");
+          }
+        }
+
+        refreshState();
+      },
       observed: observedWindow,
       source: window,
     };
 
     this.windows.set(id, entry);
     window.desktopsChanged?.connect(entry.handleDesktopsChanged);
-    window.interactiveMoveResizeFinished?.connect(
-      entry.handleMoveResizeChanged,
-    );
-    window.moveResizedChanged?.connect(entry.handleMoveResizeChanged);
+    window.fullScreenChanged?.connect(entry.handleStateChanged);
+    window.interactiveMoveResizeFinished?.connect(entry.handleStateChanged);
+    window.maximizedAboutToChange?.connect(entry.handleMaximizedAboutToChange);
+    window.maximizedChanged?.connect(entry.handleMaximizedChanged);
+    window.minimizedChanged?.connect(entry.handleStateChanged);
+    window.moveResizedChanged?.connect(entry.handleStateChanged);
     window.outputChanged?.connect(entry.handleOutputChanged);
+    window.requestedTileChanged?.connect(entry.handleRequestedTileChanged);
+    window.tileChanged?.connect(entry.handleTileChanged);
 
     if (observedWindow) {
       this.events.added?.(observedWindow);
@@ -155,11 +256,11 @@ export class WindowObserver {
     this.events.changed?.(id);
   }
 
-  private refreshMoveResize(id: string, source: KWinWindow): void {
+  private refreshState(id: string, source: KWinWindow): void {
     const entry = this.windows.get(id);
 
     if (entry?.source === source) {
-      this.events.changed?.(id);
+      this.events.stateChanged?.(id);
     }
   }
 }
@@ -204,11 +305,21 @@ function windowId(window: KWinWindow): string {
 
 function disconnectWindowSignals(entry: WindowEntry): void {
   entry.source.desktopsChanged?.disconnect(entry.handleDesktopsChanged);
+  entry.source.fullScreenChanged?.disconnect(entry.handleStateChanged);
   entry.source.interactiveMoveResizeFinished?.disconnect(
-    entry.handleMoveResizeChanged,
+    entry.handleStateChanged,
   );
-  entry.source.moveResizedChanged?.disconnect(entry.handleMoveResizeChanged);
+  entry.source.maximizedAboutToChange?.disconnect(
+    entry.handleMaximizedAboutToChange,
+  );
+  entry.source.maximizedChanged?.disconnect(entry.handleMaximizedChanged);
+  entry.source.minimizedChanged?.disconnect(entry.handleStateChanged);
+  entry.source.moveResizedChanged?.disconnect(entry.handleStateChanged);
   entry.source.outputChanged?.disconnect(entry.handleOutputChanged);
+  entry.source.requestedTileChanged?.disconnect(
+    entry.handleRequestedTileChanged,
+  );
+  entry.source.tileChanged?.disconnect(entry.handleTileChanged);
 }
 
 function sameObservedWindow(

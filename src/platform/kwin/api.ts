@@ -34,13 +34,17 @@ export interface KWinWindow {
   readonly dock: boolean;
   frameGeometry: KWinRect;
   readonly fullScreen: boolean;
+  readonly fullScreenChanged?: KWinSignal<[]>;
   readonly internalId: string | { toString(): string };
   readonly interactiveMoveResizeFinished?: KWinSignal<[]>;
   readonly managed: boolean;
+  readonly maximizedAboutToChange?: KWinSignal<[mode: number]>;
+  readonly maximizedChanged?: KWinSignal<[]>;
   readonly maxSize: KWinSize;
   readonly maximizeMode: number;
   readonly minSize: KWinSize;
   readonly minimized: boolean;
+  readonly minimizedChanged?: KWinSignal<[]>;
   readonly move: boolean;
   readonly moveable: boolean;
   readonly moveResizedChanged?: KWinSignal<[]>;
@@ -48,10 +52,12 @@ export interface KWinWindow {
   readonly onAllDesktops: boolean;
   readonly output: KWinOutput | null;
   readonly outputChanged?: KWinSignal<[oldOutput?: KWinOutput | null]>;
+  readonly requestedTileChanged?: KWinSignal<[]>;
   readonly resize: boolean;
   readonly resizeable: boolean;
   readonly specialWindow: boolean;
   readonly tile: object | null;
+  readonly tileChanged?: KWinSignal<[tile: object | null]>;
 }
 
 export interface KWinWorkspace {
