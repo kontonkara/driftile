@@ -14,7 +14,7 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 
 - Loads the compiled runtime in the KWin script environment.
 - Passes the KWin workspace object to the runtime.
-- Hosts QML-only input handlers when they are introduced.
+- Hosts QML-only shortcut handlers.
 - Contains no layout policy or durable state.
 
 ### TypeScript runtime

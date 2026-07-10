@@ -4,7 +4,7 @@ A KWin extension for KDE Plasma providing scrollable tiling and dynamic workspac
 
 > Driftile is in early development and has no usable release yet.
 
-The current prototype tiles eligible normal windows only in the output and desktop that are active when the script starts. It restores their original frames when stopped if the output topology is unchanged. Overflow windows remain unmanaged until a safe clipping strategy is implemented. Navigation, state transitions, recovery, and persistence are not implemented yet. Test development builds in an isolated Plasma session.
+The current prototype tiles eligible normal windows only in the output and desktop that are active when the script starts. `Meta+Ctrl+H` and `Meta+Ctrl+L` focus adjacent managed columns. It restores original frames when stopped if the output topology is unchanged. Overflow windows remain unmanaged until a safe clipping strategy is implemented. Movement, viewport scrolling, state transitions, recovery, and persistence are not implemented yet. Test development builds in an isolated Plasma session.
 
 ## Goals
 
@@ -24,11 +24,11 @@ npm run check
 npm run package
 ```
 
-On systems with Nix, `nix develop` provides the source toolchain. Use `nix develop .#integration` for the isolated KWin tests.
+On systems with Nix, `nix develop` provides the source toolchain, and `nix build` builds the KWin package. Use `nix develop .#integration` for the isolated KWin tests.
 
 The generated KWin package is written to `dist/driftile.kwinscript`.
 
-Run `npm run test:integration` for an isolated virtual-KWin lifecycle test. See [Testing](docs/testing.md) for coverage and requirements.
+Run `npm run test:integration` for isolated KWin lifecycle tests. A visible NixOS Plasma VM is also available. See [Testing](docs/testing.md) for coverage and commands.
 
 ## Documentation
 
