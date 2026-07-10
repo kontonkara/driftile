@@ -4,15 +4,55 @@
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
   outputs =
-    { nixpkgs, ... }:
+    { self, nixpkgs, ... }:
     let
       systems = [
         "aarch64-linux"
         "x86_64-linux"
       ];
       forAllSystems = nixpkgs.lib.genAttrs systems;
+      packageFor =
+        pkgs:
+        pkgs.buildNpmPackage {
+          pname = "driftile";
+          version = "0.1.0";
+          src = self;
+
+          nodejs = pkgs.nodejs_24;
+          npmDepsHash = "sha256-J6WPqqPh/Q3X4kii/sZaWAY4gOPf2F7Yz5c3f+RdSPg=";
+          npmBuildScript = "build";
+
+          installPhase = ''
+            runHook preInstall
+
+            install -d "$out/share/kwin/scripts/io.github.kontonkara.driftile"
+            cp -r dist/kwin-script/. \
+              "$out/share/kwin/scripts/io.github.kontonkara.driftile/"
+
+            runHook postInstall
+          '';
+
+          meta = {
+            description = "A KWin extension for KDE Plasma providing scrollable tiling and dynamic workspaces.";
+            homepage = "https://github.com/kontonkara/driftile";
+            license = pkgs.lib.licenses.gpl3Plus;
+            platforms = pkgs.lib.platforms.linux;
+          };
+        };
     in
     {
+      packages = forAllSystems (
+        system:
+        let
+          pkgs = import nixpkgs { inherit system; };
+          driftile = packageFor pkgs;
+        in
+        {
+          inherit driftile;
+          default = driftile;
+        }
+      );
+
       devShells = forAllSystems (
         system:
         let
@@ -50,5 +90,11 @@
           };
         }
       );
+
+      nixosConfigurations.driftile-vm = nixpkgs.lib.nixosSystem {
+        system = "x86_64-linux";
+        specialArgs = { inherit self; };
+        modules = [ ./nix/vm.nix ];
+      };
     };
 }

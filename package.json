@@ -14,7 +14,7 @@
     "format:check": "prettier --check .",
     "install:dev": "node tools/install.mjs install",
     "lint": "eslint src tests vitest.config.ts",
-    "lint:shell": "shellcheck tools/integration/*.sh",
+    "lint:shell": "shellcheck tools/**/*.sh",
     "package": "node tools/package.mjs",
     "test": "vitest run",
     "test:integration": "bash tools/integration/run.sh",
