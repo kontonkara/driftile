@@ -44,6 +44,7 @@ The current runtime already:
 - Reorders the active whole column left or right with context-local shortcuts and transactional geometry rollback.
 - Decreases, increases, or resets the active whole column width with grouped constraints and transactional rollback.
 - Focuses and reorders vertical stack members, and contextually merges or extracts the active window left or right.
+- Toggles the active normal window between tiled and floating states with anchored reinsertion and safe geometry ownership.
 
 Physical connector hot-plug and a wider rotation matrix remain MVP hardening work.
 
@@ -52,9 +53,9 @@ Physical connector hot-plug and a wider rotation matrix remain MVP hardening wor
 Complete the daily keyboard-driven workflow.
 
 - Manage every output and desktop independently.
-- Add floating toggles and direct insertion into non-adjacent stacks.
+- Add direct insertion into non-adjacent stacks.
 - Support explicit transfers between outputs and desktops.
-- Integrate dialogs, floating windows, and remaining size constraints.
+- Integrate dialogs and remaining size-constraint behavior.
 - Harden the existing topology recovery for rotation, rapid physical hot-plug sequences, and more hardware configurations.
 - Maintain a trailing empty desktop with guarded removal.
 - Register configurable shortcuts and essential layout settings.

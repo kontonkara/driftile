@@ -34,6 +34,7 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Reorders the active whole column inside one settled context and keeps focus unchanged.
 - Resizes the active whole column within grouped window constraints and retries waiting capacity after a successful shrink.
 - Focuses vertical stack members; reorders, merges, and extracts them while preserving KWin focus.
+- Releases explicitly floating windows from geometry ownership and restores their anchored layout slots on return.
 - Owns startup, reconfiguration, and shutdown sequencing.
 
 ### Core
@@ -65,12 +66,14 @@ RuntimeState
   dirtyContexts: Set<ContextKey>
   pendingWindowSyncs: Set<WindowId>
   waitingWindowIds: Map<ContextKey, Set<WindowId>>
+  floatingWindows: Map<WindowId, { placement, sourceContextKey }>
   requestedSuspensions: Map<WindowId, Set<StateReason>>
   suspendedWindows: Set<WindowId>
+  toggleGeometryTransitions: Map<WindowId, { contextKey, expectedFrame, settlementArmed }>
   topologyBarrier: { revision, affectedOutputs, stableSample }
 ```
 
-`LayoutContext` owns columns, viewport offset, and the last applied geometry fingerprint. A managed window owns an optional original-frame restore baseline. A suspended window keeps its layout slot, but reconcile excludes it until KWin releases geometry authority. Waiting windows have no layout owner. KWin objects never enter core state.
+`LayoutContext` owns columns, viewport offset, and the last applied geometry fingerprint. A managed window owns an optional original-frame restore baseline. A floating window remains observed but has no layout or geometry owner; its detached placement records stable anchors for reinsertion. A suspended window keeps its layout slot, but reconcile excludes it until KWin releases geometry authority. Waiting windows have no layout owner. KWin objects never enter core state.
 
 ## Reconciliation rules
 
@@ -80,6 +83,7 @@ RuntimeState
 - Keep column-reorder commands inside the active context and roll back the model if geometry application cannot complete.
 - Apply active-column width changes transactionally, preserving focus, grouping, and the prior width on failure.
 - Apply stack edits with compare-and-swap model rollback and exact compensating frame writes after partial failure.
+- Apply floating transitions from immutable previews, commit ownership only after every geometry request succeeds, and defer later context writes until asynchronous frames settle.
 - Allow horizontal overflow and viewport scrolling when KWin reports one output.
 - Queue a candidate window unmanaged if it would introduce overflow with multiple outputs, then retry it when that context gains capacity.
 - When a topology change invalidates existing multi-output capacity, park whole writable columns with a reachable anchor inside the work area and release them to the waiting queue. Preserve the active column when possible; choose the farthest non-active column first and the rightmost on a tie.
@@ -94,7 +98,7 @@ RuntimeState
 
 ## Engineering constraints
 
-- No workspace-wide polling. Lifecycle is signal-driven, with one bounded startup grace, bounded per-window transition probes, and a two-second client-area fingerprint check limited to visible tracked contexts because KWin exposes no complete client-area change signal.
+- No workspace-wide polling. Lifecycle is signal-driven, with one bounded startup grace, bounded per-window state and floating-transition probes, and a two-second client-area fingerprint check limited to visible tracked contexts because KWin exposes no complete client-area change signal.
 - Structural output recovery performs one bounded workspace resynchronization after the topology settles.
 - Coalesce each event burst into at most one reconcile pass per dirty context.
 - Reflow affected visible contexts only; defer hidden desktops until they become visible.

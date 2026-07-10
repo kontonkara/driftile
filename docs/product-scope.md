@@ -62,6 +62,8 @@ Driftile must integrate with, not duplicate:
 - Horizontal window movement merges a singleton into its neighbor or extracts a stacked member into a new adjacent singleton column.
 - Merge preserves the destination width; extraction copies the source width; both preserve focus and member order.
 - Vertical focus and member reorder stop at stack boundaries without wrapping.
+- A floating window has no Driftile geometry owner and cannot be admitted automatically.
+- Retiling restores a surviving anchored slot when possible and captures the latest floating frame as the next safe restore baseline.
 - Unrelated window order, widths, and viewport offsets remain stable.
 - A changed context never restores an original frame captured under stale output geometry.
 - Capacity eviction keeps windows reachable and preserves the active column when a writable alternative exists.

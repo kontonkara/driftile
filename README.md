@@ -4,11 +4,11 @@ A KWin extension for KDE Plasma aiming to provide scrollable tiling and dynamic 
 
 > Driftile is in early development and has no usable release yet.
 
-The current prototype models eligible normal windows in every existing `(output, desktop)` context and applies geometry only to the desktop visible on each output. Focus navigation stays within its context. `Meta+Ctrl+H/J/K/L` focuses adjacent windows, `Meta+Ctrl+Shift+H/L` moves a whole column, and `Meta+Ctrl+Shift+J/K` reorders a member inside its stack. `Meta+Ctrl+Alt+H/L` merges a single-window column with its neighbor or extracts a stacked window in that direction. `Meta+Ctrl+-/=/0` changes or resets the active column width. Structural commands keep focus unchanged, and horizontal focus reveals its target with the smallest required scroll.
+The current prototype models eligible normal windows in every existing `(output, desktop)` context and applies geometry only to the desktop visible on each output. Focus navigation stays within its context. `Meta+Ctrl+H/J/K/L` focuses adjacent windows, `Meta+Ctrl+Shift+H/L` moves a whole column, and `Meta+Ctrl+Shift+J/K` reorders a member inside its stack. `Meta+Ctrl+Alt+H/L` merges a single-window column with its neighbor or extracts a stacked window in that direction. `Meta+Ctrl+Space` toggles the active window between tiled and floating states, while `Meta+Ctrl+-/=/0` changes or resets the active column width. Structural commands keep focus unchanged, and horizontal focus reveals its target with the smallest required scroll.
 
 Live output-list, geometry, scale, and work-area changes recover after two delayed topology snapshots agree. Output and dock signals trigger normal recovery; a two-second watchdog checks visible contexts for client-area changes that KWin does not signal. Reconfigured contexts discard stale original-frame restore baselines for the rest of the run. If a multi-output context no longer fits, Driftile parks whole columns with a reachable anchor inside the work area, preferring non-active columns, and retries them when capacity returns.
 
-Floating toggles, dynamic workspace creation, and persistence are not implemented yet.
+Dynamic workspace creation and persistence are not implemented yet.
 
 ## Goals
 
