@@ -974,6 +974,11 @@ run_scenario() {
   first_baseline=$(capture_stable_geometry "$first_title") || fail "the first $protocol test window did not stabilize"
   second_baseline=$(capture_stable_geometry "$second_title") || fail "the second $protocol test window did not stabilize"
   third_baseline=$(capture_stable_geometry "$third_title") || fail "the third $protocol test window did not stabilize"
+  wait_for_geometries \
+    "$first_title" "$first_baseline" \
+    "$second_title" "$second_baseline" \
+    "$third_title" "$third_baseline" || \
+    fail "the pre-tiling $protocol baselines did not stabilize together: $(describe_layout "$first_title" "$second_title" "$third_title")"
 
   activate_window "$third_title" || fail "KWin could not activate the third $protocol window"
 
@@ -1041,6 +1046,8 @@ run_scenario() {
     fail "KGlobalAccel did not register the move-window-up shortcut"
   wait_for_shortcut "Driftile Move Window Down" || \
     fail "KGlobalAccel did not register the move-window-down shortcut"
+  wait_for_shortcut "Driftile Toggle Floating" || \
+    fail "KGlobalAccel did not register the floating-toggle shortcut"
 
   invoke_shortcut "Driftile Move Window Left" || \
     fail "KGlobalAccel could not invoke the move-window-left shortcut"
@@ -1051,6 +1058,26 @@ run_scenario() {
     fail "Driftile did not merge the active $protocol window left: $(describe_layout "$first_title" "$second_title" "$third_title")"
   wait_for_active "$second_title" || \
     fail "Driftile changed $protocol focus after merging the middle window left"
+
+  invoke_shortcut "Driftile Toggle Floating" || \
+    fail "KGlobalAccel could not float the lower $protocol stack member"
+  wait_for_layout \
+    "$first_title" "16,16,616,688" \
+    "$second_title" "$second_baseline" \
+    "$third_title" "648,16,616,688" || \
+    fail "Driftile did not float the lower $protocol stack member: $(describe_layout "$first_title" "$second_title" "$third_title")"
+  wait_for_active "$second_title" || \
+    fail "Driftile changed $protocol focus after floating the lower stack member"
+
+  invoke_shortcut "Driftile Toggle Floating" || \
+    fail "KGlobalAccel could not retile the lower $protocol stack member"
+  wait_for_layout \
+    "$first_title" "16,16,616,336" \
+    "$second_title" "16,368,616,336" \
+    "$third_title" "648,16,616,688" || \
+    fail "Driftile did not restore the lower $protocol stack member: $(describe_layout "$first_title" "$second_title" "$third_title")"
+  wait_for_active "$second_title" || \
+    fail "Driftile changed $protocol focus after restoring the lower stack member"
 
   invoke_shortcut "Driftile Focus Up" || \
     fail "KGlobalAccel could not invoke the focus-up shortcut"
@@ -1212,6 +1239,26 @@ run_scenario() {
   wait_for_active "$second_title" || \
     fail "Driftile did not restore focus to the middle $protocol column"
 
+  invoke_shortcut "Driftile Toggle Floating" || \
+    fail "KGlobalAccel could not float the middle $protocol window"
+  wait_for_layout \
+    "$first_title" "16,16,616,688" \
+    "$second_title" "$second_baseline" \
+    "$third_title" "648,16,616,688" || \
+    fail "Driftile did not reflow around the floating middle $protocol window: $(describe_layout "$first_title" "$second_title" "$third_title")"
+  wait_for_active "$second_title" || \
+    fail "Driftile changed $protocol focus after floating the middle window"
+
+  invoke_shortcut "Driftile Toggle Floating" || \
+    fail "KGlobalAccel could not retile the middle $protocol window"
+  wait_for_layout \
+    "$first_title" "-600,16,616,688" \
+    "$second_title" "32,16,616,688" \
+    "$third_title" "664,16,616,688" || \
+    fail "Driftile did not restore the middle $protocol window to its original slot: $(describe_layout "$first_title" "$second_title" "$third_title")"
+  wait_for_active "$second_title" || \
+    fail "Driftile changed $protocol focus after retiling the middle window"
+
   wait_for_shortcut "Driftile Decrease Column Width" || \
     fail "KGlobalAccel did not register the decrease-width shortcut"
   wait_for_shortcut "Driftile Increase Column Width" || \
@@ -1334,7 +1381,7 @@ run_multi_output_scenario() {
   local scaled_left_first="16,16,402.666667,448"
   local scaled_left_second="434.666667,16,402.666667,448"
   local side
-  local -a baselines=()
+  local -a baselines=("" "" "" "" "" "")
   local -a titles=(
     "driftile-multi-output-${protocol}-left-a"
     "driftile-multi-output-${protocol}-left-b"
@@ -1349,14 +1396,14 @@ run_multi_output_scenario() {
     scaled_left_second="434.666667,16,403.333333,448"
   fi
 
-  for index in "${!titles[@]}"; do
-    start_client "$protocol" "${titles[index]}"
+  for index in 0 1 3 4; do
+    start_client "$protocol" "${titles[index]}" true
 
     if ! baseline=$(capture_stable_geometry "${titles[index]}"); then
       fail "the multi-output $protocol window ${titles[index]} did not stabilize"
     fi
 
-    baselines+=("$baseline")
+    baselines[index]=$baseline
 
     if ((index < 3)); then
       side=left
@@ -1368,10 +1415,78 @@ run_multi_output_scenario() {
       fail "the output router did not place ${titles[index]} on the $side output"
   done
 
-  activate_window "${titles[5]}" || fail "KWin could not activate the final multi-output $protocol window"
+  for index in 0 1 3 4; do
+    baselines[index]=$(capture_stable_geometry "${titles[index]}") || \
+      fail "the initial multi-output $protocol baseline for ${titles[index]} did not stabilize"
+  done
+  wait_for_geometries \
+    "${titles[0]}" "${baselines[0]}" \
+    "${titles[1]}" "${baselines[1]}" \
+    "${titles[3]}" "${baselines[3]}" \
+    "${titles[4]}" "${baselines[4]}" || \
+    fail "the initial multi-output $protocol baselines did not stabilize together"
+
+  activate_window "${titles[4]}" || \
+    fail "KWin could not activate the final initial multi-output $protocol window"
 
   set_plugin_state true
   wait_for_script_state true || fail "KWin did not report Driftile as loaded"
+  wait_for_geometries \
+    "${titles[0]}" "16,16,616,688" \
+    "${titles[1]}" "648,16,616,688" \
+    "${titles[3]}" "1296,16,616,688" \
+    "${titles[4]}" "1928,16,616,688" || \
+    fail "Driftile did not create two isolated $protocol output contexts: $(describe_layout "${titles[0]}" "${titles[1]}" "${titles[3]}" "${titles[4]}")"
+
+  wait_for_shortcut "Driftile Toggle Floating" || \
+    fail "KGlobalAccel did not register the multi-output floating shortcut"
+  activate_window "${titles[0]}" || \
+    fail "KWin could not activate the left $protocol window for floating"
+  wait_for_active "${titles[0]}" || \
+    fail "KWin did not focus the left $protocol window before floating"
+  invoke_shortcut "Driftile Toggle Floating" || \
+    fail "KGlobalAccel could not float the left $protocol window"
+  wait_for_geometries \
+    "${titles[0]}" "${baselines[0]}" \
+    "${titles[1]}" "16,16,616,688" \
+    "${titles[3]}" "1296,16,616,688" \
+    "${titles[4]}" "1928,16,616,688" || \
+    fail "Driftile did not isolate the multi-output $protocol floating reflow: $(describe_layout "${titles[0]}" "${titles[1]}" "${titles[3]}" "${titles[4]}")"
+  wait_for_active "${titles[0]}" || \
+    fail "Driftile changed $protocol focus after the multi-output floating toggle"
+
+  invoke_shortcut "Driftile Toggle Floating" || \
+    fail "KGlobalAccel could not retile the left $protocol window"
+  wait_for_geometries \
+    "${titles[0]}" "16,16,616,688" \
+    "${titles[1]}" "648,16,616,688" \
+    "${titles[3]}" "1296,16,616,688" \
+    "${titles[4]}" "1928,16,616,688" || \
+    fail "Driftile did not restore the multi-output $protocol floating window: $(describe_layout "${titles[0]}" "${titles[1]}" "${titles[3]}" "${titles[4]}")"
+  wait_for_active "${titles[0]}" || \
+    fail "Driftile changed $protocol focus after the multi-output retile"
+
+  for index in 2 5; do
+    start_client "$protocol" "${titles[index]}" true
+
+    if ! baseline=$(capture_stable_geometry "${titles[index]}"); then
+      fail "the multi-output $protocol window ${titles[index]} did not stabilize"
+    fi
+
+    baselines[index]=$baseline
+
+    if ((index < 3)); then
+      side=left
+    else
+      side=right
+    fi
+
+    window_is_on_output_side "${titles[index]}" "$side" || \
+      fail "the output router did not place ${titles[index]} on the $side output"
+  done
+
+  activate_window "${titles[5]}" || \
+    fail "KWin could not activate the final multi-output $protocol window"
   wait_for_geometries \
     "${titles[0]}" "16,16,616,688" \
     "${titles[1]}" "648,16,616,688" \

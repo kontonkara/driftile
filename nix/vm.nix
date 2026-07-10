@@ -122,6 +122,7 @@ let
             && "$shortcuts" == *"Driftile Move Window Right"* \
             && "$shortcuts" == *"Driftile Move Window Up"* \
             && "$shortcuts" == *"Driftile Move Window Down"* \
+            && "$shortcuts" == *"Driftile Toggle Floating"* \
             && "$shortcuts" == *"Driftile Decrease Column Width"* \
             && "$shortcuts" == *"Driftile Increase Column Width"* \
             && "$shortcuts" == *"Driftile Reset Column Width"* ]]; then
@@ -485,6 +486,121 @@ let
         return 1
       }
 
+      wait_for_floating_layout() {
+        local attempt
+        local current_first
+        local current_second
+        local current_third
+        local first_height
+        local first_width
+        local first_x
+        local first_y
+        local matches
+        local previous_first=""
+        local previous_second=""
+        local previous_third=""
+        local second_height
+        local second_width
+        local second_x
+        local second_y
+        local stable_samples=0
+        local third_height
+        local third_width
+        local third_x
+        local third_y
+        local tiled_first=$1
+        local tiled_first_height
+        local tiled_first_width
+        local tiled_first_y
+        local tiled_second=$2
+        local tiled_third=$3
+        local tiled_third_height
+        local tiled_third_width
+        local tiled_third_y
+
+        frame_is_valid "$tiled_first" \
+          && frame_is_valid "$tiled_second" \
+          && frame_is_valid "$tiled_third" \
+          || return 1
+        IFS=, read -r \
+          _ \
+          tiled_first_y \
+          tiled_first_width \
+          tiled_first_height \
+          <<< "$tiled_first"
+        IFS=, read -r \
+          _ \
+          tiled_third_y \
+          tiled_third_width \
+          tiled_third_height \
+          <<< "$tiled_third"
+
+        for ((attempt = 0; attempt < 200; attempt += 1)); do
+          current_first=$(window_frame "$title_a" 2>/dev/null || true)
+          current_second=$(window_frame "$title_b" 2>/dev/null || true)
+          current_third=$(window_frame "$title_c" 2>/dev/null || true)
+          matches=false
+
+          if frame_is_valid "$current_first" \
+            && frame_is_valid "$current_second" \
+            && frame_is_valid "$current_third"; then
+            IFS=, read -r first_x first_y first_width first_height \
+              <<< "$current_first"
+            IFS=, read -r second_x second_y second_width second_height \
+              <<< "$current_second"
+            IFS=, read -r third_x third_y third_width third_height \
+              <<< "$current_third"
+
+            if ((first_y == tiled_first_y \
+              && first_width == tiled_first_width \
+              && first_height == tiled_first_height \
+              && third_y == tiled_third_y \
+              && third_width == tiled_third_width \
+              && third_height == tiled_third_height \
+              && first_y == third_y \
+              && first_width == third_width \
+              && first_height == third_height \
+              && first_x + first_width < third_x)) \
+              && [[ "$current_first" != "$tiled_first" \
+                && "$current_third" != "$tiled_third" ]] \
+              && [[ "$current_second" != "$current_first" \
+                && "$current_second" != "$current_third" ]]; then
+              matches=true
+            fi
+          fi
+
+          if [[ "$matches" == true ]]; then
+            if [[ "$current_first" == "$previous_first" \
+              && "$current_second" == "$previous_second" \
+              && "$current_third" == "$previous_third" ]]; then
+              stable_samples=$((stable_samples + 1))
+            else
+              stable_samples=1
+            fi
+
+            previous_first=$current_first
+            previous_second=$current_second
+            previous_third=$current_third
+
+            if ((stable_samples >= 2)); then
+              stable_first_frame=$current_first
+              stable_second_frame=$current_second
+              stable_third_frame=$current_third
+              return 0
+            fi
+          else
+            stable_samples=0
+            previous_first=""
+            previous_second=""
+            previous_third=""
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
       wait_for_layout() {
         local attempt
         local first_x
@@ -582,7 +698,7 @@ let
             org.kde.kglobalaccel.Component \
             shortcutNames 2>/dev/null \
             | grep -oE \
-              'Driftile (Focus (Left|Right|Up|Down)|Move Column (Left|Right)|Move Window (Left|Right|Up|Down)|(Decrease|Increase|Reset) Column Width)' \
+              'Driftile (Focus (Left|Right|Up|Down)|Move Column (Left|Right)|Move Window (Left|Right|Up|Down)|Toggle Floating|(Decrease|Increase|Reset) Column Width)' \
             | sort -u \
             | tr '\n' ' ' || true
           printf '\nwindow A captions: '
@@ -628,6 +744,9 @@ let
         local baseline_first_width
         local baseline_second_width
         local baseline_third_width
+        local floating_first_frame
+        local floating_second_frame
+        local floating_third_frame
         local merged_first_frame
         local merged_second_frame
         local merged_third_frame
@@ -751,10 +870,34 @@ let
           || return 1
         record_focus_state "column B width reset"
 
-        capture_stable_frames || return 1
+        activate_window "$title_b" \
+          && wait_for_active "$title_b" \
+          && capture_stable_frames \
+          || return 1
         singleton_first_frame=$stable_first_frame
         singleton_second_frame=$stable_second_frame
         singleton_third_frame=$stable_third_frame
+
+        invoke_shortcut "Driftile Toggle Floating" \
+          && wait_for_floating_layout \
+            "$singleton_first_frame" \
+            "$singleton_second_frame" \
+            "$singleton_third_frame" \
+          && wait_for_active "$title_b" \
+          || return 1
+        floating_first_frame=$stable_first_frame
+        floating_second_frame=$stable_second_frame
+        floating_third_frame=$stable_third_frame
+        record_focus_state "window B floated from its tiled column"
+
+        invoke_shortcut "Driftile Toggle Floating" \
+          && wait_for_frames \
+            "$singleton_first_frame" \
+            "$singleton_second_frame" \
+            "$singleton_third_frame" \
+          && wait_for_active "$title_b" \
+          || return 1
+        record_focus_state "window B restored to its tiled column"
 
         invoke_shortcut "Driftile Move Window Left" \
           && wait_for_stack_layout \
@@ -769,6 +912,24 @@ let
         merged_first_frame=$stable_first_frame
         merged_second_frame=$stable_second_frame
         merged_third_frame=$stable_third_frame
+
+        invoke_shortcut "Driftile Toggle Floating" \
+          && wait_for_frames \
+            "$floating_first_frame" \
+            "$floating_second_frame" \
+            "$floating_third_frame" \
+          && wait_for_active "$title_b" \
+          || return 1
+        record_focus_state "window B floated from the left stack"
+
+        invoke_shortcut "Driftile Toggle Floating" \
+          && wait_for_frames \
+            "$merged_first_frame" \
+            "$merged_second_frame" \
+            "$merged_third_frame" \
+          && wait_for_active "$title_b" \
+          || return 1
+        record_focus_state "window B restored to the left stack"
 
         invoke_shortcut "Driftile Focus Up" \
           && wait_for_active "$title_a" \
