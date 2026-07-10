@@ -353,6 +353,7 @@ let
             && "$shortcuts" == *"driftile_toggle_floating"* \
             && "$shortcuts" == *"driftile_decrease_column_width"* \
             && "$shortcuts" == *"driftile_increase_column_width"* \
+            && "$shortcuts" == *"driftile_increase_column_width_plus"* \
             && "$shortcuts" == *"driftile_reset_column_width"* ]]; then
             return 0
           fi
@@ -1600,6 +1601,17 @@ let
           return 1
         fi
 
+        if ! driftile-shortcuts claim; then
+          record_focus_state "shortcut profile claim failed"
+          return 1
+        fi
+
+        if ! driftile-shortcuts check; then
+          record_focus_state "shortcut ownership verification failed"
+          return 1
+        fi
+        record_focus_state "physical shortcut profile claimed"
+
         if ! capture_stable_frames 30; then
           record_focus_state "initial topology did not settle"
           return 1
@@ -2033,6 +2045,46 @@ let
         record_focus_state "window B extracted into the right column"
       }
 
+      verify_physical_width_shortcut() {
+        local after_width
+        local attempt
+        local before_width
+
+        activate_window "$title_c" \
+          && wait_for_active "$title_c" \
+          || return 1
+        before_width=$(window_frame_width "$title_c") || return 1
+        rm -f \
+          /tmp/shared/driftile-key-test-ready \
+          /tmp/shared/driftile-key-test-sent
+        : > /tmp/shared/driftile-key-test-ready
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          if [[ -f /tmp/shared/driftile-key-test-sent ]]; then
+            break
+          fi
+
+          sleep 0.1
+        done
+
+        [[ -f /tmp/shared/driftile-key-test-sent ]] || return 1
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          after_width=$(window_frame_width "$title_c") || return 1
+
+          if ((after_width < before_width)); then
+            record_focus_state "physical Meta+- decreased the active column width"
+            invoke_shortcut "driftile_reset_column_width" || true
+            return 0
+          fi
+
+          sleep 0.1
+        done
+
+        record_focus_state "physical Meta+- did not reach Driftile"
+        return 1
+      }
+
       loaded=false
 
       for _ in $(seq 1 200); do
@@ -2101,7 +2153,9 @@ let
 
       focus_verified=false
 
-      if [[ "$loaded" == true && "$desktops_ready" == true ]] && verify_focus; then
+      if [[ "$loaded" == true && "$desktops_ready" == true ]] \
+        && verify_focus \
+        && verify_physical_width_shortcut; then
         focus_verified=true
       fi
 

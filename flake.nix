@@ -21,6 +21,7 @@
           nodejs = pkgs.nodejs_24;
           npmDepsHash = "sha256-J6WPqqPh/Q3X4kii/sZaWAY4gOPf2F7Yz5c3f+RdSPg=";
           npmBuildScript = "build";
+          nativeBuildInputs = [ pkgs.makeWrapper ];
 
           installPhase = ''
             runHook preInstall
@@ -28,6 +29,14 @@
             install -d "$out/share/kwin/scripts/io.github.kontonkara.driftile"
             cp -r dist/kwin-script/. \
               "$out/share/kwin/scripts/io.github.kontonkara.driftile/"
+            install -Dm644 \
+              dist/bin/driftile-shortcuts.mjs \
+              "$out/libexec/driftile/driftile-shortcuts.mjs"
+            makeWrapper \
+              ${pkgs.nodejs_24}/bin/node \
+              "$out/bin/driftile-shortcuts" \
+              --add-flags "$out/libexec/driftile/driftile-shortcuts.mjs" \
+              --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.systemd pkgs.util-linux ]}
 
             runHook postInstall
           '';
@@ -65,6 +74,7 @@
             nodejs_24
             reuse
             shellcheck
+            util-linux
             zip
           ];
           integrationPackages =
@@ -78,6 +88,7 @@
               kdePackages.kwin-x11
               kdePackages.qtwayland
               jq
+              socat
               systemd
               xorg-server
               xprop

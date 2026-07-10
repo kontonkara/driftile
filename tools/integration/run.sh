@@ -141,6 +141,7 @@ run_backend() (
   export DRIFTILE_SMOKE_OUTPUT_TRANSFER_STATE_PROBE="$project_root/tools/integration/output-transfer-state-probe.js"
   export DRIFTILE_SMOKE_QML_IMPORT="$qml_import_path"
   export DRIFTILE_SMOKE_RESULT="$result_file"
+  export DRIFTILE_SMOKE_SHORTCUT_TOOL="$project_root/dist/bin/driftile-shortcuts.mjs"
   export DRIFTILE_SMOKE_WORK_AREA_PANEL="$project_root/tools/integration/work-area-panel.qml"
   export HOME="$sandbox/home"
   export LC_ALL=C.UTF-8

@@ -268,6 +268,31 @@ invoke_shortcut() {
     >/dev/null
 }
 
+claim_shortcut_profile() {
+  node "$DRIFTILE_SMOKE_SHORTCUT_TOOL" claim || \
+    fail "Driftile could not claim the physical shortcut profile"
+  node "$DRIFTILE_SMOKE_SHORTCUT_TOOL" check || \
+    fail "Driftile does not own every physical shortcut after claiming"
+}
+
+release_shortcut_profile() {
+  node "$DRIFTILE_SMOKE_SHORTCUT_TOOL" release || \
+    fail "Driftile could not restore the previous shortcut assignments"
+
+  busctl --user --json=short call \
+    org.kde.kglobalaccel \
+    /kglobalaccel \
+    org.kde.KGlobalAccel \
+    globalShortcutsByKey \
+    '(ai)(i)' \
+    4 285212690 0 0 0 \
+    0 \
+    | jq --exit-status \
+      '.data[0] | any(.[0] == "Window Quick Tile Left" and .[2] == "kwin")' \
+      >/dev/null \
+    || fail "Driftile did not restore the Meta+Left KWin assignment"
+}
+
 activate_window() {
   local match_id
 
@@ -2203,6 +2228,7 @@ run_scenario() {
 
   set_plugin_state true
   wait_for_script_state true || fail "KWin did not report Driftile as loaded"
+  claim_shortcut_profile
   wait_for_layout \
     "$first_title" "-600,16,616,688" \
     "$second_title" "32,16,616,688" \
@@ -2728,6 +2754,7 @@ run_multi_output_scenario() {
 
   set_plugin_state true
   wait_for_script_state true || fail "KWin did not report Driftile as loaded"
+  claim_shortcut_profile
   wait_for_geometries \
     "${titles[0]}" "16,16,616,688" \
     "${titles[1]}" "648,16,616,688" \
@@ -3018,4 +3045,5 @@ case "${DRIFTILE_SMOKE_SCENARIO:-single-output}" in
     ;;
 esac
 
+release_shortcut_profile
 touch "$DRIFTILE_SMOKE_RESULT"

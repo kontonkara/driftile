@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { shortcutBindings } from "../src/shortcut-profile";
 
 interface ShortcutHandler {
   readonly activated: string;
@@ -102,6 +103,10 @@ const expectedHandlers: Readonly<
   driftile_increase_column_width: {
     activated: "Runtime.DriftileRuntime.increaseColumnWidth()",
     sequence: "Meta+=",
+  },
+  driftile_increase_column_width_plus: {
+    activated: "Runtime.DriftileRuntime.increaseColumnWidth()",
+    sequence: "Meta++",
   },
   driftile_insert_window_into_stack_left: {
     activated: "Runtime.DriftileRuntime.insertWindowIntoStackLeft()",
@@ -231,6 +236,23 @@ describe("KWin shortcut handlers", () => {
     }
   });
 
+  it("keeps the claimable profile synchronized with QML", () => {
+    const claimableHandlers = handlers.flatMap((handler) =>
+      handler.sequence
+        ? [{ name: handler.name, sequence: handler.sequence }]
+        : [],
+    );
+
+    expect(claimableHandlers).toEqual(
+      shortcutBindings.map(({ name, sequence }) => ({ name, sequence })),
+    );
+
+    for (const binding of shortcutBindings) {
+      const block = shortcutHandlerBlock(qml, binding.name);
+      expect(stringProperty(block, "text")).toBe(binding.text);
+    }
+  });
+
   it("leaves operations without an equivalent default unbound", () => {
     expect(
       handlers
@@ -273,6 +295,21 @@ function parseShortcutHandlers(source: string): ShortcutHandler[] {
   }
 
   return handlers;
+}
+
+function shortcutHandlerBlock(source: string, name: string): string {
+  const blockPattern =
+    /^\s*readonly property ShortcutHandler \w+: ShortcutHandler \{([\s\S]*?)^\s{4}\}/gm;
+
+  for (const match of source.matchAll(blockPattern)) {
+    const block = match[1];
+
+    if (block && stringProperty(block, "name") === name) {
+      return block;
+    }
+  }
+
+  throw new Error(`ShortcutHandler not found: ${name}`);
 }
 
 function stringProperty(

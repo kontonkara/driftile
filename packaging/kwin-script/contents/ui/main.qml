@@ -325,6 +325,12 @@ QtObject {
         sequence: "Meta+="
         onActivated: Runtime.DriftileRuntime.increaseColumnWidth()
     }
+    readonly property ShortcutHandler increaseColumnWidthPlusShortcut: ShortcutHandler {
+        name: "driftile_increase_column_width_plus"
+        text: "Driftile: Increase column width (plus)"
+        sequence: "Meta++"
+        onActivated: Runtime.DriftileRuntime.increaseColumnWidth()
+    }
     readonly property ShortcutHandler resetColumnWidthShortcut: ShortcutHandler {
         name: "driftile_reset_column_width"
         text: "Driftile: Reset column width"

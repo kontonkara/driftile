@@ -1,7 +1,8 @@
 import { dirname, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
+import { access } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { buildProject } from "./build.mjs";
+import { buildProject, buildShortcutTool } from "./build.mjs";
 
 const actions = {
   install: "--install",
@@ -17,9 +18,30 @@ if (!(action in actions)) {
 
 const rootDirectory = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const packageDirectory = resolve(rootDirectory, "dist/kwin-script");
+const shortcutTool = resolve(rootDirectory, "dist/bin/driftile-shortcuts.mjs");
 const pluginId = "io.github.kontonkara.driftile";
 
-if (action !== "remove") {
+if (action === "remove") {
+  try {
+    await access(shortcutTool);
+  } catch {
+    await buildShortcutTool();
+  }
+
+  const release = spawnSync(process.execPath, [shortcutTool, "release"], {
+    stdio: "inherit",
+  });
+
+  if (release.error) {
+    throw release.error;
+  }
+
+  if (release.status !== 0) {
+    throw new Error(
+      `shortcut release exited with status ${String(release.status)}`,
+    );
+  }
+} else {
   await buildProject();
 }
 
@@ -36,4 +58,8 @@ if (result.error) {
 
 if (result.status !== 0) {
   throw new Error(`kpackagetool6 exited with status ${String(result.status)}`);
+}
+
+if (action !== "remove") {
+  console.log("Enable Driftile, then run: npm run shortcuts:claim");
 }

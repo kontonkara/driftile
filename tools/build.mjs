@@ -7,21 +7,42 @@ const rootDirectory = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const packageSource = resolve(rootDirectory, "packaging/kwin-script");
 const packageOutput = resolve(rootDirectory, "dist/kwin-script");
 const runtimeOutput = resolve(packageOutput, "contents/code/main.js");
+const shortcutToolOutput = resolve(
+  rootDirectory,
+  "dist/bin/driftile-shortcuts.mjs",
+);
 
 export async function buildProject() {
   await rm(packageOutput, { force: true, recursive: true });
   await cp(packageSource, packageOutput, { recursive: true });
   await mkdir(dirname(runtimeOutput), { recursive: true });
 
+  await Promise.all([
+    build({
+      bundle: true,
+      entryPoints: [resolve(rootDirectory, "src/runtime.ts")],
+      format: "iife",
+      globalName: "DriftileRuntime",
+      legalComments: "none",
+      outfile: runtimeOutput,
+      platform: "neutral",
+      target: "es2017",
+      treeShaking: true,
+    }),
+    buildShortcutTool(),
+  ]);
+}
+
+export async function buildShortcutTool() {
+  await mkdir(dirname(shortcutToolOutput), { recursive: true });
   await build({
     bundle: true,
-    entryPoints: [resolve(rootDirectory, "src/runtime.ts")],
-    format: "iife",
-    globalName: "DriftileRuntime",
+    entryPoints: [resolve(rootDirectory, "src/shortcut-cli.ts")],
+    format: "esm",
     legalComments: "none",
-    outfile: runtimeOutput,
-    platform: "neutral",
-    target: "es2017",
+    outfile: shortcutToolOutput,
+    platform: "node",
+    target: "node22",
     treeShaking: true,
   });
 }
