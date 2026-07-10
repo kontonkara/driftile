@@ -371,6 +371,14 @@ export class RuntimeController {
     return this.moveActiveWindowVertically("down");
   }
 
+  insertWindowIntoStackLeft(): boolean {
+    return this.insertActiveWindowIntoStack("left");
+  }
+
+  insertWindowIntoStackRight(): boolean {
+    return this.insertActiveWindowIntoStack("right");
+  }
+
   toggleFloating(): boolean {
     const command = this.prepareActiveWindowCommand();
 
@@ -1044,6 +1052,78 @@ export class RuntimeController {
       },
       () => edit !== null && this.layout.rollbackStackEdit(edit.rollback),
     );
+  }
+
+  private insertActiveWindowIntoStack(direction: HorizontalDirection): boolean {
+    const command = this.prepareActiveColumnCommand();
+
+    if (!command || this.hasStructuralCapacityState(command.context.key)) {
+      return false;
+    }
+
+    const sourceIndex = command.before.columns.findIndex(
+      (column) => column.id === command.activeColumn.id,
+    );
+
+    if (sourceIndex < 0) {
+      return false;
+    }
+
+    const step = direction === "left" ? -1 : 1;
+    let target: LayoutColumnSnapshot | undefined;
+
+    for (
+      let index = sourceIndex + step;
+      index >= 0 && index < command.before.columns.length;
+      index += step
+    ) {
+      const candidate = command.before.columns[index];
+
+      if (candidate && candidate.windowIds.length >= 2) {
+        target = candidate;
+        break;
+      }
+    }
+
+    if (
+      !target ||
+      !this.columnMembersBelongToContext(target, command.context)
+    ) {
+      return false;
+    }
+
+    const editState: { value: StackEditResult | null } = { value: null };
+    const inserted = this.applyActiveColumnMutation(
+      command,
+      "stack insertion",
+      () => {
+        editState.value = this.layout.insertActiveWindowIntoColumn(
+          command.activeId,
+          target.id,
+        );
+        return editState.value !== null;
+      },
+      () =>
+        editState.value !== null &&
+        this.layout.rollbackStackEdit(editState.value.rollback),
+    );
+    const edit = editState.value;
+
+    if (!inserted || !edit) {
+      return false;
+    }
+
+    this.capacityParkBackoffs.delete(command.context.key);
+
+    if (
+      edit.kind === "merge" &&
+      this.waitingWindowIds.get(command.context.key)?.size
+    ) {
+      this.pendingAdmissionContexts.add(command.context.key);
+      this.scheduleWork();
+    }
+
+    return true;
   }
 
   private floatActiveWindow(command: ActiveWindowCommand): boolean {

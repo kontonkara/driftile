@@ -105,6 +105,18 @@ QtObject {
         sequence: "Meta+Ctrl+Shift+J"
         onActivated: Runtime.DriftileRuntime.moveWindowDown()
     }
+    readonly property ShortcutHandler insertWindowIntoStackLeftShortcut: ShortcutHandler {
+        name: "Driftile Insert Window into Stack Left"
+        text: "Driftile: Insert window into stack left"
+        sequence: "Meta+Ctrl+Alt+Shift+H"
+        onActivated: Runtime.DriftileRuntime.insertWindowIntoStackLeft()
+    }
+    readonly property ShortcutHandler insertWindowIntoStackRightShortcut: ShortcutHandler {
+        name: "Driftile Insert Window into Stack Right"
+        text: "Driftile: Insert window into stack right"
+        sequence: "Meta+Ctrl+Alt+Shift+L"
+        onActivated: Runtime.DriftileRuntime.insertWindowIntoStackRight()
+    }
     readonly property ShortcutHandler toggleFloatingShortcut: ShortcutHandler {
         name: "Driftile Toggle Floating"
         text: "Driftile: Toggle floating"

@@ -98,7 +98,7 @@ export interface StackEditRollback {
 }
 
 export interface StackEditResult {
-  readonly kind: "extract" | "merge" | "reorder";
+  readonly kind: "extract" | "insert" | "merge" | "reorder";
   readonly rollback: StackEditRollback;
 }
 
@@ -349,6 +349,69 @@ export class LayoutEngine {
 
     return this.createStackEditResult(
       kind,
+      before,
+      this.snapshot(context.outputId, context.desktopId),
+    );
+  }
+
+  insertActiveWindowIntoColumn(
+    windowId: WindowId,
+    targetColumnId: ColumnId,
+  ): StackEditResult | null {
+    const placement = this.placements.get(windowId);
+
+    if (!placement || placement.columnId === targetColumnId) {
+      return null;
+    }
+
+    const context = this.contexts.get(placement.contextKey);
+
+    if (!context || context.activeColumnId !== placement.columnId) {
+      return null;
+    }
+
+    let source: LayoutColumn | undefined;
+    let sourceIndex = -1;
+    let target: LayoutColumn | undefined;
+
+    for (const [index, column] of context.columns.entries()) {
+      if (column.id === placement.columnId) {
+        source = column;
+        sourceIndex = index;
+      } else if (column.id === targetColumnId) {
+        target = column;
+      }
+    }
+
+    const windowIndex = source?.windowIds.indexOf(windowId) ?? -1;
+
+    if (
+      !source ||
+      sourceIndex < 0 ||
+      windowIndex < 0 ||
+      !target ||
+      target.windowIds.length < 2
+    ) {
+      return null;
+    }
+
+    const before = this.snapshot(context.outputId, context.desktopId);
+    const sourceDisappears = source.windowIds.length === 1;
+    source.windowIds.splice(windowIndex, 1);
+    target.windowIds.push(windowId);
+
+    if (sourceDisappears) {
+      context.columns.splice(sourceIndex, 1);
+      context.columnIds.delete(source.id);
+    }
+
+    this.placements.set(windowId, {
+      columnId: target.id,
+      contextKey: placement.contextKey,
+    });
+    context.activeColumnId = target.id;
+    return this.createStackEditResult(
+      sourceDisappears ? "merge" : "insert",
       before,
       this.snapshot(context.outputId, context.desktopId),
     );

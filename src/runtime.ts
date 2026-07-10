@@ -81,6 +81,14 @@ export function moveWindowDown(): void {
   controller?.moveWindowDown();
 }
 
+export function insertWindowIntoStackLeft(): void {
+  controller?.insertWindowIntoStackLeft();
+}
+
+export function insertWindowIntoStackRight(): void {
+  controller?.insertWindowIntoStackRight();
+}
+
 export function toggleFloating(): void {
   controller?.toggleFloating();
 }

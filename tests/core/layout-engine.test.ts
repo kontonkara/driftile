@@ -507,6 +507,250 @@ describe("LayoutEngine", () => {
     expect(engine.snapshot(output, desktop)).toEqual(before);
   });
 
+  it("inserts a singleton active window into a far-right stack and rolls back once", () => {
+    const engine = new LayoutEngine();
+
+    engine.restoreColumns({
+      activeColumnId: columnId("column-source"),
+      columns: [
+        {
+          column: {
+            id: columnId("column-source"),
+            width: { kind: "fixed", value: 180 },
+            windowIds: [windowId("window-source")],
+          },
+          index: 0,
+        },
+        {
+          column: {
+            id: columnId("column-middle"),
+            width: { kind: "fixed", value: 260 },
+            windowIds: [windowId("window-middle")],
+          },
+          index: 1,
+        },
+        {
+          column: {
+            id: columnId("column-target"),
+            width: { kind: "proportion", value: 0.6 },
+            windowIds: [
+              windowId("window-target-1"),
+              windowId("window-target-2"),
+            ],
+          },
+          index: 2,
+        },
+      ],
+      desktopId: desktop,
+      outputId: output,
+      viewportOffset: 145,
+    });
+    const before = engine.snapshot(output, desktop);
+    const edit = engine.insertActiveWindowIntoColumn(
+      windowId("window-source"),
+      columnId("column-target"),
+    );
+
+    expect(edit?.kind).toBe("merge");
+    expect(engine.snapshot(output, desktop)).toEqual({
+      activeColumnId: "column-target",
+      columns: [
+        {
+          id: "column-middle",
+          width: { kind: "fixed", value: 260 },
+          windowIds: ["window-middle"],
+        },
+        {
+          id: "column-target",
+          width: { kind: "proportion", value: 0.6 },
+          windowIds: ["window-target-1", "window-target-2", "window-source"],
+        },
+      ],
+      desktopId: "desktop-1",
+      outputId: "DP-1",
+      viewportOffset: 145,
+    });
+    expect(edit && engine.rollbackStackEdit(edit.rollback)).toBe(true);
+    expect(engine.snapshot(output, desktop)).toEqual(before);
+    expect(edit && engine.rollbackStackEdit(edit.rollback)).toBe(false);
+  });
+
+  it("inserts a middle active stack member into a far-left stack", () => {
+    const engine = new LayoutEngine();
+
+    engine.restoreColumns({
+      activeColumnId: columnId("column-source"),
+      columns: [
+        {
+          column: {
+            id: columnId("column-target"),
+            width: { kind: "fixed", value: 480 },
+            windowIds: [
+              windowId("window-target-1"),
+              windowId("window-target-2"),
+            ],
+          },
+          index: 0,
+        },
+        {
+          column: {
+            id: columnId("column-middle"),
+            width: { kind: "proportion", value: 0.25 },
+            windowIds: [windowId("window-middle")],
+          },
+          index: 1,
+        },
+        {
+          column: {
+            id: columnId("column-source"),
+            width: { kind: "fixed", value: 320 },
+            windowIds: [
+              windowId("window-source-1"),
+              windowId("window-source-2"),
+              windowId("window-source-3"),
+            ],
+          },
+          index: 2,
+        },
+      ],
+      desktopId: desktop,
+      outputId: output,
+      viewportOffset: 75,
+    });
+    const edit = engine.insertActiveWindowIntoColumn(
+      windowId("window-source-2"),
+      columnId("column-target"),
+    );
+
+    expect(edit?.kind).toBe("insert");
+    expect(engine.snapshot(output, desktop)).toEqual({
+      activeColumnId: "column-target",
+      columns: [
+        {
+          id: "column-target",
+          width: { kind: "fixed", value: 480 },
+          windowIds: ["window-target-1", "window-target-2", "window-source-2"],
+        },
+        {
+          id: "column-middle",
+          width: { kind: "proportion", value: 0.25 },
+          windowIds: ["window-middle"],
+        },
+        {
+          id: "column-source",
+          width: { kind: "fixed", value: 320 },
+          windowIds: ["window-source-1", "window-source-3"],
+        },
+      ],
+      desktopId: "desktop-1",
+      outputId: "DP-1",
+      viewportOffset: 75,
+    });
+  });
+
+  it("rejects invalid direct stack insertions without mutation", () => {
+    const engine = new LayoutEngine();
+    const otherOutput = outputId("HDMI-A-1");
+
+    engine.restoreColumns({
+      activeColumnId: columnId("column-source"),
+      columns: [
+        {
+          column: {
+            id: columnId("column-target"),
+            width: { kind: "fixed", value: 420 },
+            windowIds: [
+              windowId("window-target-1"),
+              windowId("window-target-2"),
+            ],
+          },
+          index: 0,
+        },
+        {
+          column: {
+            id: columnId("column-source"),
+            width: { kind: "fixed", value: 300 },
+            windowIds: [
+              windowId("window-source-1"),
+              windowId("window-source-2"),
+            ],
+          },
+          index: 1,
+        },
+        {
+          column: {
+            id: columnId("column-singleton"),
+            width: { kind: "fixed", value: 240 },
+            windowIds: [windowId("window-singleton")],
+          },
+          index: 2,
+        },
+      ],
+      desktopId: desktop,
+      outputId: output,
+      viewportOffset: 55,
+    });
+    engine.restoreColumns({
+      activeColumnId: columnId("column-foreign"),
+      columns: [
+        {
+          column: {
+            id: columnId("column-foreign"),
+            width: { kind: "fixed", value: 360 },
+            windowIds: [
+              windowId("window-foreign-1"),
+              windowId("window-foreign-2"),
+            ],
+          },
+          index: 0,
+        },
+      ],
+      desktopId: desktop,
+      outputId: otherOutput,
+    });
+    const before = engine.snapshot(output, desktop);
+    const foreignBefore = engine.snapshot(otherOutput, desktop);
+
+    expect(
+      engine.insertActiveWindowIntoColumn(
+        windowId("window-missing"),
+        columnId("column-target"),
+      ),
+    ).toBeNull();
+    expect(
+      engine.insertActiveWindowIntoColumn(
+        windowId("window-source-1"),
+        columnId("column-source"),
+      ),
+    ).toBeNull();
+    expect(
+      engine.insertActiveWindowIntoColumn(
+        windowId("window-source-1"),
+        columnId("column-missing"),
+      ),
+    ).toBeNull();
+    expect(
+      engine.insertActiveWindowIntoColumn(
+        windowId("window-source-1"),
+        columnId("column-singleton"),
+      ),
+    ).toBeNull();
+    expect(
+      engine.insertActiveWindowIntoColumn(
+        windowId("window-source-1"),
+        columnId("column-foreign"),
+      ),
+    ).toBeNull();
+    expect(
+      engine.insertActiveWindowIntoColumn(
+        windowId("window-singleton"),
+        columnId("column-target"),
+      ),
+    ).toBeNull();
+    expect(engine.snapshot(output, desktop)).toEqual(before);
+    expect(engine.snapshot(otherOutput, desktop)).toEqual(foreignBefore);
+  });
+
   it("navigates and reorders members inside the active stack", () => {
     const engine = new LayoutEngine();
 
