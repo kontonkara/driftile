@@ -109,6 +109,14 @@ export function moveWindowToNextDesktop(): void {
   controller?.moveWindowToNextDesktop();
 }
 
+export function moveColumnToPreviousDesktop(): void {
+  controller?.moveColumnToPreviousDesktop();
+}
+
+export function moveColumnToNextDesktop(): void {
+  controller?.moveColumnToNextDesktop();
+}
+
 export function moveWindowToOutputLeft(): void {
   controller?.moveWindowToOutputLeft();
 }
@@ -125,6 +133,22 @@ export function moveWindowToOutputDown(): void {
   controller?.moveWindowToOutputDown();
 }
 
+export function moveColumnToOutputLeft(): void {
+  controller?.moveColumnToOutputLeft();
+}
+
+export function moveColumnToOutputRight(): void {
+  controller?.moveColumnToOutputRight();
+}
+
+export function moveColumnToOutputUp(): void {
+  controller?.moveColumnToOutputUp();
+}
+
+export function moveColumnToOutputDown(): void {
+  controller?.moveColumnToOutputDown();
+}
+
 export function decreaseColumnWidth(): void {
   controller?.decreaseColumnWidth();
 }
@@ -135,6 +159,22 @@ export function increaseColumnWidth(): void {
 
 export function resetColumnWidth(): void {
   controller?.resetColumnWidth();
+}
+
+export function switchPresetColumnWidth(): void {
+  controller?.switchPresetColumnWidth();
+}
+
+export function switchPresetColumnWidthBack(): void {
+  controller?.switchPresetColumnWidthBack();
+}
+
+export function maximizeColumn(): void {
+  controller?.maximizeColumn();
+}
+
+export function centerColumn(): void {
+  controller?.centerColumn();
 }
 
 export function probeTopology(): void {

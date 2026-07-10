@@ -1502,6 +1502,8 @@ verify_desktop_transfer() {
     fail "KGlobalAccel did not register the previous-desktop shortcut"
   wait_for_shortcut "driftile_move_window_to_next_desktop" || \
     fail "KGlobalAccel did not register the next-desktop shortcut"
+  wait_for_shortcut "driftile_move_column_to_next_desktop" || \
+    fail "KGlobalAccel did not register the default next-desktop shortcut"
 
   set_current_desktop "$secondary_desktop_id" || \
     fail "KWin could not select the destination desktop for $protocol transfer coverage"
@@ -1549,6 +1551,16 @@ verify_desktop_transfer() {
     fail "KWin could not restore $protocol focus after desktop navigation"
   wait_for_active "$second_title" || \
     fail "KWin did not restore $protocol focus after desktop navigation"
+
+  invoke_shortcut "driftile_move_column_to_next_desktop" || \
+    fail "KGlobalAccel could not invoke the default $protocol column transfer"
+  wait_for_current_desktop "$primary_desktop_id" || \
+    fail "Driftile partially moved a stacked $protocol column"
+  wait_for_geometries \
+    "$first_title" "16,16,616,336" \
+    "$second_title" "16,368,616,336" \
+    "$third_title" "648,16,616,688" || \
+    fail "Driftile split the stacked $protocol column through a default transfer: $(describe_layout "$first_title" "$second_title" "$third_title")"
 
   invoke_shortcut "driftile_move_window_to_previous_desktop" || \
     fail "KGlobalAccel could not invoke the previous-desktop boundary shortcut"
@@ -1794,6 +1806,8 @@ verify_multi_output_output_transfer() {
     fail "KGlobalAccel did not register the multi-output move-to-output-up shortcut"
   wait_for_shortcut "driftile_move_window_to_output_down" || \
     fail "KGlobalAccel did not register the multi-output move-to-output-down shortcut"
+  wait_for_shortcut "driftile_move_column_to_output_right" || \
+    fail "KGlobalAccel did not register the default move-to-output-right shortcut"
   wait_for_shortcut "driftile_decrease_column_width" || \
     fail "KGlobalAccel did not register the multi-output decrease-width shortcut"
   wait_for_shortcut "driftile_reset_column_width" || \
@@ -1804,8 +1818,8 @@ verify_multi_output_output_transfer() {
   invoke_shortcut "driftile_decrease_column_width" || \
     fail "KGlobalAccel could not prepare a distinct $protocol transfer width"
   wait_for_geometries \
-    "$left_first_title" "16,16,537,336" \
-    "$left_second_title" "16,368,537,336" \
+    "$left_first_title" "16,16,490,336" \
+    "$left_second_title" "16,368,490,336" \
     "$right_first_title" "1296,16,616,688" \
     "$right_second_title" "1928,16,616,688" || \
     fail "Driftile did not prepare the distinct $protocol transfer width: $(describe_layout "$left_first_title" "$left_second_title" "$right_first_title" "$right_second_title")"
@@ -1819,8 +1833,8 @@ verify_multi_output_output_transfer() {
   capture_stable_geometry "$destination_title" >/dev/null || \
     fail "the right output-transfer $protocol destination did not stabilize"
   wait_for_geometries \
-    "$left_first_title" "16,16,537,336" \
-    "$left_second_title" "16,368,537,336" \
+    "$left_first_title" "16,16,490,336" \
+    "$left_second_title" "16,368,490,336" \
     "$destination_title" "1296,16,616,688" || \
     fail "Driftile did not isolate the output-transfer destination desktop: $(describe_layout "$left_first_title" "$left_second_title" "$destination_title")"
   wait_for_window_desktop "$destination_title" "$secondary_desktop_id" || \
@@ -1835,11 +1849,19 @@ verify_multi_output_output_transfer() {
   wait_for_active "$left_second_title" || \
     fail "KWin did not focus the left $protocol stack member before output transfer"
 
+  invoke_shortcut "driftile_move_column_to_output_right" || \
+    fail "KGlobalAccel could not invoke the default $protocol output transfer"
+  wait_for_geometries \
+    "$left_first_title" "16,16,490,336" \
+    "$left_second_title" "16,368,490,336" \
+    "$destination_title" "1296,16,616,688" || \
+    fail "Driftile split the stacked $protocol column through a default output transfer: $(describe_layout "$left_first_title" "$left_second_title" "$destination_title")"
+
   invoke_shortcut "driftile_move_window_to_output_left" || \
     fail "KGlobalAccel could not invoke the left-output boundary shortcut"
   wait_for_geometries \
-    "$left_first_title" "16,16,537,336" \
-    "$left_second_title" "16,368,537,336" \
+    "$left_first_title" "16,16,490,336" \
+    "$left_second_title" "16,368,490,336" \
     "$destination_title" "1296,16,616,688" || \
     fail "Driftile changed the $protocol layout at the left-output boundary: $(describe_layout "$left_first_title" "$left_second_title" "$destination_title")"
   wait_for_active "$left_second_title" || \
@@ -1848,8 +1870,8 @@ verify_multi_output_output_transfer() {
   invoke_shortcut "driftile_move_window_to_output_up" || \
     fail "KGlobalAccel could not invoke the unavailable upper-output shortcut"
   wait_for_geometries \
-    "$left_first_title" "16,16,537,336" \
-    "$left_second_title" "16,368,537,336" \
+    "$left_first_title" "16,16,490,336" \
+    "$left_second_title" "16,368,490,336" \
     "$destination_title" "1296,16,616,688" || \
     fail "Driftile changed the $protocol layout without an upper output neighbor: $(describe_layout "$left_first_title" "$left_second_title" "$destination_title")"
   wait_for_active "$left_second_title" || \
@@ -1858,8 +1880,8 @@ verify_multi_output_output_transfer() {
   invoke_shortcut "driftile_move_window_to_output_down" || \
     fail "KGlobalAccel could not invoke the unavailable lower-output shortcut"
   wait_for_geometries \
-    "$left_first_title" "16,16,537,336" \
-    "$left_second_title" "16,368,537,336" \
+    "$left_first_title" "16,16,490,336" \
+    "$left_second_title" "16,368,490,336" \
     "$destination_title" "1296,16,616,688" || \
     fail "Driftile changed the $protocol layout without a lower output neighbor: $(describe_layout "$left_first_title" "$left_second_title" "$destination_title")"
   wait_for_active "$left_second_title" || \
@@ -1868,9 +1890,9 @@ verify_multi_output_output_transfer() {
   invoke_shortcut "driftile_move_window_to_output_right" || \
     fail "KGlobalAccel could not transfer the $protocol window to the right output"
   wait_for_geometries \
-    "$left_first_title" "16,16,537,688" \
+    "$left_first_title" "16,16,490,688" \
     "$destination_title" "1296,16,616,688" \
-    "$left_second_title" "1928,16,537,688" || \
+    "$left_second_title" "1928,16,490,688" || \
     fail "Driftile did not preserve source order, target order, and width during the right-output transfer: $(describe_layout "$left_first_title" "$destination_title" "$left_second_title")"
   window_is_on_output_side "$left_first_title" left || \
     fail "Driftile moved an unrelated left-output $protocol window"
@@ -1898,9 +1920,9 @@ verify_multi_output_output_transfer() {
   invoke_shortcut "driftile_move_window_to_output_right" || \
     fail "KGlobalAccel could not invoke the right-output boundary shortcut"
   wait_for_geometries \
-    "$left_first_title" "16,16,537,688" \
+    "$left_first_title" "16,16,490,688" \
     "$destination_title" "1296,16,616,688" \
-    "$left_second_title" "1928,16,537,688" || \
+    "$left_second_title" "1928,16,490,688" || \
     fail "Driftile changed the $protocol layout at the right-output boundary: $(describe_layout "$left_first_title" "$destination_title" "$left_second_title")"
   wait_for_active "$left_second_title" || \
     fail "Driftile changed $protocol focus at the right-output boundary"
@@ -1908,10 +1930,10 @@ verify_multi_output_output_transfer() {
   invoke_shortcut "driftile_move_window_to_output_left" || \
     fail "KGlobalAccel could not return the $protocol window to the left output"
   wait_for_geometries \
-    "$left_first_title" "16,16,537,688" \
-    "$left_second_title" "569,16,537,688" \
+    "$left_first_title" "16,16,490,688" \
+    "$left_second_title" "522,16,489,688" \
     "$destination_title" "1296,16,616,688" || \
-    fail "Driftile did not preserve source order, target order, and width during the left-output transfer: $(describe_layout "$left_first_title" "$left_second_title" "$destination_title")"
+    fail "Driftile did not preserve source order, target order, and logical width during the left-output transfer: $(describe_layout "$left_first_title" "$left_second_title" "$destination_title")"
   window_is_on_output_side "$left_first_title" left || \
     fail "Driftile moved an unrelated left-output $protocol window while returning"
   window_is_on_output_side "$left_second_title" left || \
@@ -1936,8 +1958,8 @@ verify_multi_output_output_transfer() {
   invoke_shortcut "driftile_move_window_to_output_left" || \
     fail "KGlobalAccel could not recheck the left-output boundary"
   wait_for_geometries \
-    "$left_first_title" "16,16,537,688" \
-    "$left_second_title" "569,16,537,688" \
+    "$left_first_title" "16,16,490,688" \
+    "$left_second_title" "522,16,489,688" \
     "$destination_title" "1296,16,616,688" || \
     fail "Driftile changed the returned $protocol layout at the left-output boundary: $(describe_layout "$left_first_title" "$left_second_title" "$destination_title")"
   wait_for_active "$left_second_title" || \
@@ -1946,8 +1968,8 @@ verify_multi_output_output_transfer() {
   invoke_shortcut "driftile_move_window_left" || \
     fail "KGlobalAccel could not restore the left $protocol stack after output transfer"
   wait_for_geometries \
-    "$left_first_title" "16,16,537,336" \
-    "$left_second_title" "16,368,537,336" \
+    "$left_first_title" "16,16,490,336" \
+    "$left_second_title" "16,368,490,336" \
     "$destination_title" "1296,16,616,688" || \
     fail "Driftile did not restore the narrowed left $protocol stack after output transfer: $(describe_layout "$left_first_title" "$left_second_title" "$destination_title")"
   invoke_shortcut "driftile_reset_column_width" || \
@@ -2052,8 +2074,8 @@ verify_automatic_floating() {
     "driftile_focus_column_left"
     "driftile_move_window_left"
     "driftile_toggle_floating"
-    "driftile_move_window_to_next_desktop"
-    "driftile_move_window_to_output_right"
+    "driftile_move_column_to_next_desktop"
+    "driftile_move_column_to_output_right"
   )
 
   for shortcut in "${no_op_shortcuts[@]}"; do
@@ -2587,13 +2609,21 @@ run_scenario() {
     fail "KGlobalAccel did not register the increase-width shortcut"
   wait_for_shortcut "driftile_reset_column_width" || \
     fail "KGlobalAccel did not register the reset-width shortcut"
+  wait_for_shortcut "driftile_switch_preset_column_width" || \
+    fail "KGlobalAccel did not register the preset-width shortcut"
+  wait_for_shortcut "driftile_switch_preset_column_width_back" || \
+    fail "KGlobalAccel did not register the reverse preset-width shortcut"
+  wait_for_shortcut "driftile_maximize_column" || \
+    fail "KGlobalAccel did not register the maximize-column shortcut"
+  wait_for_shortcut "driftile_center_column" || \
+    fail "KGlobalAccel did not register the center-column shortcut"
 
   invoke_shortcut "driftile_increase_column_width" || \
     fail "KGlobalAccel could not invoke the increase-width shortcut"
   wait_for_layout \
     "$first_title" "-600,16,616,688" \
-    "$second_title" "32,16,695,688" \
-    "$third_title" "743,16,616,688" || \
+    "$second_title" "32,16,742,688" \
+    "$third_title" "790,16,616,688" || \
     fail "Driftile did not increase the active $protocol column width: $(describe_layout "$first_title" "$second_title" "$third_title")"
   wait_for_active "$second_title" || \
     fail "Driftile changed $protocol focus after increasing column width"
@@ -2611,8 +2641,8 @@ run_scenario() {
   invoke_shortcut "driftile_decrease_column_width" || \
     fail "KGlobalAccel could not invoke the decrease-width shortcut"
   wait_for_layout \
-    "$first_title" "-537,16,616,688" \
-    "$second_title" "95,16,537,688" \
+    "$first_title" "-490,16,616,688" \
+    "$second_title" "142,16,490,688" \
     "$third_title" "648,16,616,688" || \
     fail "Driftile did not decrease the active $protocol column width: $(describe_layout "$first_title" "$second_title" "$third_title")"
   wait_for_active "$second_title" || \
@@ -2621,12 +2651,55 @@ run_scenario() {
   invoke_shortcut "driftile_reset_column_width" || \
     fail "KGlobalAccel could not invoke the reset-width shortcut"
   wait_for_layout \
-    "$first_title" "-537,16,616,688" \
-    "$second_title" "95,16,616,688" \
-    "$third_title" "727,16,616,688" || \
+    "$first_title" "-490,16,616,688" \
+    "$second_title" "142,16,616,688" \
+    "$third_title" "774,16,616,688" || \
     fail "Driftile did not reset the active $protocol column width: $(describe_layout "$first_title" "$second_title" "$third_title")"
   wait_for_active "$second_title" || \
     fail "Driftile changed $protocol focus after resetting column width"
+
+  invoke_shortcut "driftile_switch_preset_column_width" || \
+    fail "KGlobalAccel could not invoke the preset-width shortcut"
+  wait_for_layout \
+    "$first_title" "-490,16,616,688" \
+    "$second_title" "142,16,827,688" \
+    "$third_title" "985,16,616,688" || \
+    fail "Driftile did not select the next $protocol preset width: $(describe_layout "$first_title" "$second_title" "$third_title")"
+  wait_for_active "$second_title" || \
+    fail "Driftile changed $protocol focus after selecting a preset width"
+
+  invoke_shortcut "driftile_switch_preset_column_width_back" || \
+    fail "KGlobalAccel could not invoke the reverse preset-width shortcut"
+  wait_for_layout \
+    "$first_title" "-490,16,616,688" \
+    "$second_title" "142,16,616,688" \
+    "$third_title" "774,16,616,688" || \
+    fail "Driftile did not restore the previous $protocol preset width: $(describe_layout "$first_title" "$second_title" "$third_title")"
+
+  invoke_shortcut "driftile_maximize_column" || \
+    fail "KGlobalAccel could not invoke the maximize-column shortcut"
+  wait_for_layout \
+    "$first_title" "-600,16,616,688" \
+    "$second_title" "32,16,1248,688" \
+    "$third_title" "1296,16,616,688" || \
+    fail "Driftile did not maximize the active $protocol column: $(describe_layout "$first_title" "$second_title" "$third_title")"
+  invoke_shortcut "driftile_maximize_column" || \
+    fail "KGlobalAccel could not restore the maximized column"
+  wait_for_layout \
+    "$first_title" "-600,16,616,688" \
+    "$second_title" "32,16,616,688" \
+    "$third_title" "664,16,616,688" || \
+    fail "Driftile did not restore the maximized $protocol column width: $(describe_layout "$first_title" "$second_title" "$third_title")"
+
+  invoke_shortcut "driftile_center_column" || \
+    fail "KGlobalAccel could not invoke the center-column shortcut"
+  wait_for_layout \
+    "$first_title" "-300,16,616,688" \
+    "$second_title" "332,16,616,688" \
+    "$third_title" "964,16,616,688" || \
+    fail "Driftile did not center the active $protocol column: $(describe_layout "$first_title" "$second_title" "$third_title")"
+  wait_for_active "$second_title" || \
+    fail "Driftile changed $protocol focus after centering the column"
 
   set_plugin_state false
   wait_for_script_state false || fail "KWin did not unload Driftile"

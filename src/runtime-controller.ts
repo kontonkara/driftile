@@ -58,8 +58,12 @@ const DEFAULT_COLUMN_WIDTH: ColumnWidth = {
   kind: "proportion",
   value: 0.5,
 };
+const DEFAULT_COLUMN_WIDTH_PRESETS: readonly ColumnWidth[] = [
+  { kind: "proportion", value: 1 / 3 },
+  { kind: "proportion", value: 0.5 },
+  { kind: "proportion", value: 2 / 3 },
+];
 const DEFAULT_GAP = 16;
-const FIXED_COLUMN_WIDTH_STEP = 64;
 const FIXED_SIZE_CONSTRAINTS = 1;
 const FLEXIBLE_SIZE_CONSTRAINTS = 0;
 const MALFORMED_SIZE_CONSTRAINTS = -1;
@@ -67,10 +71,11 @@ const MAX_CAPACITY_PARK_ATTEMPTS = 20;
 const MAX_TOPOLOGY_SAMPLE_ATTEMPTS = 20;
 const MAX_TRANSIENT_RESUME_PROBES = 20;
 const MINIMUM_COLUMN_WIDTH = 64;
-const PROPORTIONAL_COLUMN_WIDTH_STEP = 1 / 16;
+const PROPORTIONAL_COLUMN_WIDTH_STEP = 0.1;
 const REQUIRED_CAPACITY_PARK_SAMPLES = 2;
 
-type ColumnResizeAction = "decrease" | "increase" | "reset";
+type ColumnResizeAction =
+  "decrease" | "increase" | "preset-next" | "preset-previous" | "reset";
 type DesktopTransferDirection = -1 | 1;
 
 interface ManagedContext {
@@ -247,6 +252,7 @@ type AdmissionDecision =
 export interface RuntimeControllerOptions {
   readonly clientAreaOption: number;
   readonly columnWidth?: ColumnWidth;
+  readonly columnWidthPresets?: readonly ColumnWidth[];
   readonly createRect?: KWinRectFactory;
   readonly gap?: number;
   readonly schedule?: (callback: () => void) => void;
@@ -275,6 +281,11 @@ export class RuntimeController {
   >();
   private readonly capacityParkBackoffs = new Set<string>();
   private readonly committedOutputRanks = new Map<OutputId, number>();
+  private readonly columnFullWidthRestore = new Map<
+    string,
+    Map<ColumnId, ColumnWidth>
+  >();
+  private readonly columnWidthPresets: readonly ColumnWidth[];
   private readonly contexts = new Map<string, RuntimeContext>();
   private readonly dirtyContexts = new Set<string>();
   private readonly desktopLifecycle: DesktopLifecycle;
@@ -356,6 +367,9 @@ export class RuntimeController {
       Math.trunc(options.startupStabilizationProbes ?? 0),
     );
     this.width = { ...(options.columnWidth ?? DEFAULT_COLUMN_WIDTH) };
+    this.columnWidthPresets = (
+      options.columnWidthPresets ?? DEFAULT_COLUMN_WIDTH_PRESETS
+    ).map((width) => ({ ...width }));
     this.workspace = workspace;
     this.desktopLifecycle = new DesktopLifecycle(workspace, {
       changed: () => {
@@ -480,6 +494,14 @@ export class RuntimeController {
     return this.moveActiveWindowToDesktop(1);
   }
 
+  moveColumnToPreviousDesktop(): boolean {
+    return this.moveActiveWindowToDesktop(-1, true);
+  }
+
+  moveColumnToNextDesktop(): boolean {
+    return this.moveActiveWindowToDesktop(1, true);
+  }
+
   moveWindowToOutputLeft(): boolean {
     return this.moveActiveWindowToOutput("left");
   }
@@ -496,6 +518,22 @@ export class RuntimeController {
     return this.moveActiveWindowToOutput("down");
   }
 
+  moveColumnToOutputLeft(): boolean {
+    return this.moveActiveWindowToOutput("left", true);
+  }
+
+  moveColumnToOutputRight(): boolean {
+    return this.moveActiveWindowToOutput("right", true);
+  }
+
+  moveColumnToOutputUp(): boolean {
+    return this.moveActiveWindowToOutput("up", true);
+  }
+
+  moveColumnToOutputDown(): boolean {
+    return this.moveActiveWindowToOutput("down", true);
+  }
+
   decreaseColumnWidth(): boolean {
     return this.resizeActiveColumn("decrease");
   }
@@ -506,6 +544,138 @@ export class RuntimeController {
 
   resetColumnWidth(): boolean {
     return this.resizeActiveColumn("reset");
+  }
+
+  switchPresetColumnWidth(): boolean {
+    return this.resizeActiveColumn("preset-next");
+  }
+
+  switchPresetColumnWidthBack(): boolean {
+    return this.resizeActiveColumn("preset-previous");
+  }
+
+  maximizeColumn(): boolean {
+    const command = this.prepareActiveColumnCommand();
+
+    if (!command || this.hasCapacityMutationInFlight(command.context.key)) {
+      return false;
+    }
+
+    const restore = this.columnFullWidthRestoreWidth(
+      command.context.key,
+      command.activeColumn.id,
+    );
+    const target = restore ?? { kind: "proportion", value: 1 };
+
+    if (sameColumnWidth(command.activeColumn.width, target)) {
+      if (restore) {
+        this.deleteColumnFullWidthRestore(
+          command.context.key,
+          command.activeColumn.id,
+        );
+      } else {
+        this.setColumnFullWidthRestore(
+          command.context.key,
+          command.activeColumn.id,
+          command.activeColumn.width,
+        );
+      }
+
+      return true;
+    }
+
+    const resized = this.applyColumnWidth(command, target, "column maximize");
+
+    if (!resized) {
+      return false;
+    }
+
+    if (restore) {
+      this.deleteColumnFullWidthRestore(
+        command.context.key,
+        command.activeColumn.id,
+      );
+    } else {
+      this.setColumnFullWidthRestore(
+        command.context.key,
+        command.activeColumn.id,
+        command.activeColumn.width,
+      );
+    }
+
+    this.finishColumnWidthChange(command.context.key);
+    return true;
+  }
+
+  centerColumn(): boolean {
+    const command = this.prepareActiveColumnCommand();
+
+    if (!command || this.hasCapacityMutationInFlight(command.context.key)) {
+      return false;
+    }
+
+    let currentLayout: ReturnType<typeof solveStripGeometry>;
+
+    try {
+      currentLayout = solveStripGeometry({
+        context: command.before,
+        devicePixelRatio: command.contextGeometry.devicePixelRatio,
+        gap: this.gap,
+        pixelGridOrigin: command.contextGeometry.pixelGridOrigin,
+        workArea: command.contextGeometry.workArea,
+      });
+    } catch {
+      return false;
+    }
+
+    const active = currentLayout.windows.find(
+      (window) => window.windowId === command.activeId,
+    );
+
+    if (!active) {
+      return false;
+    }
+
+    const workArea = command.contextGeometry.workArea;
+    const desiredOffset = clamp(
+      roundToPhysicalPixel(
+        currentLayout.viewportOffset +
+          active.frame.x +
+          active.frame.width / 2 -
+          (workArea.x + workArea.width / 2),
+        command.contextGeometry.devicePixelRatio,
+      ),
+      0,
+      currentLayout.maxViewportOffset,
+    );
+
+    if (
+      Math.abs(desiredOffset - currentLayout.viewportOffset) <=
+      floatingPointTolerance(
+        desiredOffset,
+        currentLayout.viewportOffset,
+        workArea.width,
+      )
+    ) {
+      return false;
+    }
+
+    return this.applyActiveColumnMutation(
+      command,
+      "column center",
+      () =>
+        this.layout.setViewportOffset(
+          command.context.outputId,
+          command.context.desktopId,
+          desiredOffset,
+        ),
+      () =>
+        this.layout.setViewportOffset(
+          command.context.outputId,
+          command.context.desktopId,
+          command.before.viewportOffset,
+        ),
+    );
   }
 
   probeTopology(): void {
@@ -656,6 +826,7 @@ export class RuntimeController {
       this.capacityLeaseByWindow.clear();
       this.capacityParkBackoffs.clear();
       this.capacityParkOperations.clear();
+      this.columnFullWidthRestore.clear();
       this.committedOutputRanks.clear();
       this.waitingWindowContexts.clear();
       this.waitingContextFingerprints.clear();
@@ -1272,6 +1443,11 @@ export class RuntimeController {
     }
 
     this.layout.discardStackEditRollback(edit.rollback);
+    this.reconcileColumnFullWidthRestore(
+      command.context.key,
+      command.before,
+      this.layout.snapshot(command.context.outputId, command.context.desktopId),
+    );
     this.capacityParkBackoffs.delete(command.context.key);
 
     if (
@@ -1376,6 +1552,11 @@ export class RuntimeController {
     }
 
     this.layout.discardStackEditRollback(edit.rollback);
+    this.reconcileColumnFullWidthRestore(
+      command.context.key,
+      command.before,
+      this.layout.snapshot(command.context.outputId, command.context.desktopId),
+    );
     this.capacityParkBackoffs.delete(command.context.key);
 
     if (
@@ -1391,6 +1572,7 @@ export class RuntimeController {
 
   private moveActiveWindowToDesktop(
     direction: DesktopTransferDirection,
+    singletonColumnRequired = false,
   ): boolean {
     const active = this.prepareActiveWindowCommand();
 
@@ -1408,7 +1590,12 @@ export class RuntimeController {
       !sourceRuntimeContext ||
       owner.contextKey !== active.contextKey ||
       this.floatingWindows.has(active.activeId) ||
-      this.waitingWindowContexts.has(active.activeId)
+      this.waitingWindowContexts.has(active.activeId) ||
+      (singletonColumnRequired &&
+        !this.activeWindowColumnIsSingleton(
+          active.activeId,
+          sourceRuntimeContext,
+        ))
     ) {
       return false;
     }
@@ -1479,6 +1666,10 @@ export class RuntimeController {
       return false;
     }
 
+    const sourceBefore = this.layout.snapshot(
+      active.context.outputId,
+      active.context.desktopId,
+    );
     const targetBefore = this.layout.snapshot(
       targetContext.outputId,
       targetContext.desktopId,
@@ -1560,13 +1751,27 @@ export class RuntimeController {
     this.windowTransferOperation = operation;
 
     try {
-      return this.applyDesktopTransfer(
+      const transferred = this.applyDesktopTransfer(
         command,
         preview,
         sourceLayout,
         targetLayout,
         operation,
       );
+
+      if (transferred) {
+        this.reconcileTransferredColumnFullWidthRestore(
+          active.activeId,
+          active.contextKey,
+          targetContextKey,
+          sourceBefore,
+          targetBefore,
+          preview.sourceLayout,
+          preview.targetLayout,
+        );
+      }
+
+      return transferred;
     } finally {
       this.layout.discardWindowTransfer(preview);
 
@@ -2272,7 +2477,10 @@ export class RuntimeController {
     this.forgetWaitingWindow(command.activeId);
   }
 
-  private moveActiveWindowToOutput(direction: OutputDirection): boolean {
+  private moveActiveWindowToOutput(
+    direction: OutputDirection,
+    singletonColumnRequired = false,
+  ): boolean {
     const active = this.prepareActiveWindowCommand();
 
     if (!active || typeof this.workspace.sendClientToScreen !== "function") {
@@ -2289,7 +2497,12 @@ export class RuntimeController {
       !sourceRuntimeContext ||
       owner.contextKey !== active.contextKey ||
       this.floatingWindows.has(active.activeId) ||
-      this.waitingWindowContexts.has(active.activeId)
+      this.waitingWindowContexts.has(active.activeId) ||
+      (singletonColumnRequired &&
+        !this.activeWindowColumnIsSingleton(
+          active.activeId,
+          sourceRuntimeContext,
+        ))
     ) {
       return false;
     }
@@ -2376,6 +2589,10 @@ export class RuntimeController {
       return false;
     }
 
+    const sourceBefore = this.layout.snapshot(
+      active.context.outputId,
+      active.context.desktopId,
+    );
     const targetBefore = this.layout.snapshot(
       targetContext.outputId,
       targetContext.desktopId,
@@ -2459,13 +2676,27 @@ export class RuntimeController {
     this.windowTransferOperation = operation;
 
     try {
-      return this.applyOutputTransfer(
+      const transferred = this.applyOutputTransfer(
         command,
         preview,
         sourceLayout,
         targetLayout,
         operation,
       );
+
+      if (transferred) {
+        this.reconcileTransferredColumnFullWidthRestore(
+          active.activeId,
+          active.contextKey,
+          targetContextKey,
+          sourceBefore,
+          targetBefore,
+          preview.sourceLayout,
+          preview.targetLayout,
+        );
+      }
+
+      return transferred;
     } finally {
       this.layout.discardWindowTransfer(preview);
 
@@ -3250,6 +3481,11 @@ export class RuntimeController {
       command.activeId,
       () => this.layout.commitWindowDetach(preview),
       () => {
+        this.reconcileColumnFullWidthRestore(
+          command.contextKey,
+          before,
+          preview.layout,
+        );
         this.managedWindows.delete(command.activeId);
         context.windowIds.delete(command.activeId);
         this.floatingWindows.set(command.activeId, {
@@ -3326,6 +3562,12 @@ export class RuntimeController {
         return true;
       },
       () => {
+        this.reconcileColumnFullWidthRestore(
+          command.contextKey,
+          before,
+          preview.layout,
+        );
+
         if (!existingContext) {
           this.contexts.set(command.contextKey, runtimeContext);
         }
@@ -3358,10 +3600,31 @@ export class RuntimeController {
       return false;
     }
 
+    const resized = this.applyColumnWidth(command, width, "column resize");
+
+    if (!resized) {
+      return false;
+    }
+
+    this.deleteColumnFullWidthRestore(
+      command.context.key,
+      command.activeColumn.id,
+    );
+    this.finishColumnWidthChange(command.context.key);
+
+    return true;
+  }
+
+  private applyColumnWidth(
+    command: ActiveColumnCommand,
+    width: ColumnWidth,
+    label: string,
+  ): boolean {
     let previousWidth: ColumnWidth | null = null;
-    const resized = this.applyActiveColumnMutation(
+
+    return this.applyActiveColumnMutation(
       command,
-      "column resize",
+      label,
       () => {
         previousWidth = this.layout.setActiveColumnWidth(
           command.activeId,
@@ -3374,22 +3637,18 @@ export class RuntimeController {
         this.layout.setActiveColumnWidth(command.activeId, previousWidth) !==
           null,
     );
+  }
 
-    if (!resized) {
-      return false;
-    }
-
-    this.capacityParkBackoffs.delete(command.context.key);
+  private finishColumnWidthChange(contextKey: string): void {
+    this.capacityParkBackoffs.delete(contextKey);
 
     if (
-      this.capacityLeasesByContext.get(command.context.key)?.size ||
-      this.waitingWindowIds.get(command.context.key)?.size
+      this.capacityLeasesByContext.get(contextKey)?.size ||
+      this.waitingWindowIds.get(contextKey)?.size
     ) {
-      this.pendingAdmissionContexts.add(command.context.key);
+      this.pendingAdmissionContexts.add(contextKey);
       this.scheduleWork();
     }
-
-    return true;
   }
 
   private resizedColumnWidth(
@@ -3441,20 +3700,43 @@ export class RuntimeController {
     }
 
     const current = command.activeColumn.width;
-    let candidate: ColumnWidth;
+    const denominator = command.contextGeometry.workArea.width - this.gap;
 
-    if (action === "reset") {
-      candidate = { ...this.width };
-    } else {
-      const step =
-        current.kind === "fixed"
-          ? FIXED_COLUMN_WIDTH_STEP
-          : PROPORTIONAL_COLUMN_WIDTH_STEP;
-      const direction = action === "increase" ? 1 : -1;
-      candidate = {
-        kind: current.kind,
-        value: this.steppedWidthValue(current, step, direction),
-      };
+    if (!Number.isFinite(denominator) || denominator <= 0) {
+      return null;
+    }
+
+    let candidate: ColumnWidth | null;
+
+    switch (action) {
+      case "reset":
+        candidate = { ...this.width };
+        break;
+      case "preset-next":
+        candidate = this.presetColumnWidth(command, 1);
+        break;
+      case "preset-previous":
+        candidate = this.presetColumnWidth(command, -1);
+        break;
+      default: {
+        const direction = action === "increase" ? 1 : -1;
+        const currentProportion =
+          current.kind === "proportion"
+            ? current.value
+            : (current.value + this.gap) / denominator;
+        candidate = {
+          kind: "proportion",
+          value: this.steppedWidthValue(
+            currentProportion,
+            PROPORTIONAL_COLUMN_WIDTH_STEP,
+            direction,
+          ),
+        };
+      }
+    }
+
+    if (!candidate) {
+      return null;
     }
 
     if (candidate.kind === "fixed") {
@@ -3463,12 +3745,6 @@ export class RuntimeController {
         value: clamp(candidate.value, minimum, maximum),
       };
     } else {
-      const denominator = command.contextGeometry.workArea.width - this.gap;
-
-      if (!Number.isFinite(denominator) || denominator <= 0) {
-        return null;
-      }
-
       const minimumProportion = (minimum + this.gap) / denominator;
       const maximumProportion = (maximum + this.gap) / denominator;
       candidate = {
@@ -3477,39 +3753,222 @@ export class RuntimeController {
       };
     }
 
+    const currentPixels = this.resolvedColumnWidth(current, denominator);
+    const candidatePixels = this.resolvedColumnWidth(candidate, denominator);
+
+    if (currentPixels === null || candidatePixels === null) {
+      return null;
+    }
+
+    const tolerance = floatingPointTolerance(currentPixels, candidatePixels);
+
     if (
-      (action === "increase" && candidate.value <= current.value) ||
-      (action === "decrease" && candidate.value >= current.value)
+      (action === "increase" && candidatePixels <= currentPixels + tolerance) ||
+      (action === "decrease" && candidatePixels >= currentPixels - tolerance)
     ) {
       return null;
     }
 
-    return current.kind === candidate.kind && current.value === candidate.value
-      ? null
-      : candidate;
+    return sameColumnWidth(current, candidate) ? null : candidate;
   }
 
   private steppedWidthValue(
-    current: ColumnWidth,
+    current: number,
     step: number,
     direction: -1 | 1,
   ): number {
-    if (current.kind !== this.width.kind) {
-      return current.value + direction * step;
-    }
-
-    const latticeOffset = (current.value - this.width.value) / step;
+    const origin = this.width.kind === "proportion" ? this.width.value : 0;
+    const latticeOffset = (current - origin) / step;
     const latticeIndex = Math.round(latticeOffset);
-    const latticeValue = this.width.value + latticeIndex * step;
+    const latticeValue = origin + latticeIndex * step;
 
     if (
-      Math.abs(current.value - latticeValue) <=
-      floatingPointTolerance(current.value, this.width.value, latticeValue)
+      Math.abs(current - latticeValue) <=
+      floatingPointTolerance(current, origin, latticeValue)
     ) {
-      return this.width.value + (latticeIndex + direction) * step;
+      return origin + (latticeIndex + direction) * step;
     }
 
-    return current.value + direction * step;
+    return current + direction * step;
+  }
+
+  private presetColumnWidth(
+    command: ActiveColumnCommand,
+    direction: -1 | 1,
+  ): ColumnWidth | null {
+    const presets = this.columnWidthPresets;
+
+    if (presets.length === 0) {
+      return null;
+    }
+
+    const current = command.activeColumn.width;
+    const exactIndex = presets.findIndex((preset) =>
+      sameColumnWidth(preset, current),
+    );
+
+    if (exactIndex >= 0) {
+      const nextIndex =
+        (exactIndex + (direction > 0 ? 1 : presets.length - 1)) %
+        presets.length;
+      const preset = presets[nextIndex];
+      return preset ? { ...preset } : null;
+    }
+
+    const denominator = command.contextGeometry.workArea.width - this.gap;
+    const currentPixels = this.resolvedColumnWidth(current, denominator);
+
+    if (currentPixels === null) {
+      return null;
+    }
+
+    const resolved = presets.map((preset) =>
+      this.resolvedColumnWidth(preset, denominator),
+    );
+    const tolerance = floatingPointTolerance(
+      currentPixels,
+      ...resolved.filter((width): width is number => width !== null),
+    );
+    let targetIndex = -1;
+
+    if (direction > 0) {
+      targetIndex = resolved.findIndex(
+        (width) => width !== null && width > currentPixels + tolerance,
+      );
+      targetIndex = targetIndex < 0 ? 0 : targetIndex;
+    } else {
+      for (let index = resolved.length - 1; index >= 0; index -= 1) {
+        const width = resolved[index];
+
+        if (
+          width !== undefined &&
+          width !== null &&
+          width < currentPixels - tolerance
+        ) {
+          targetIndex = index;
+          break;
+        }
+      }
+
+      targetIndex = targetIndex < 0 ? presets.length - 1 : targetIndex;
+    }
+
+    const preset = presets[targetIndex];
+    return preset ? { ...preset } : null;
+  }
+
+  private resolvedColumnWidth(
+    width: ColumnWidth,
+    denominator: number,
+  ): number | null {
+    const resolved =
+      width.kind === "fixed"
+        ? width.value
+        : width.value * denominator - this.gap;
+
+    return Number.isFinite(resolved) && resolved > 0 ? resolved : null;
+  }
+
+  private columnFullWidthRestoreWidth(
+    contextKey: string,
+    id: ColumnId,
+  ): ColumnWidth | undefined {
+    const width = this.columnFullWidthRestore.get(contextKey)?.get(id);
+    return width ? { ...width } : undefined;
+  }
+
+  private setColumnFullWidthRestore(
+    contextKey: string,
+    id: ColumnId,
+    width: ColumnWidth,
+  ): void {
+    let contextRestore = this.columnFullWidthRestore.get(contextKey);
+
+    if (!contextRestore) {
+      contextRestore = new Map<ColumnId, ColumnWidth>();
+      this.columnFullWidthRestore.set(contextKey, contextRestore);
+    }
+
+    contextRestore.set(id, { ...width });
+  }
+
+  private deleteColumnFullWidthRestore(contextKey: string, id: ColumnId): void {
+    const contextRestore = this.columnFullWidthRestore.get(contextKey);
+
+    if (!contextRestore) {
+      return;
+    }
+
+    contextRestore.delete(id);
+
+    if (contextRestore.size === 0) {
+      this.columnFullWidthRestore.delete(contextKey);
+    }
+  }
+
+  private reconcileColumnFullWidthRestore(
+    contextKey: string,
+    before: LayoutContextSnapshot,
+    after: LayoutContextSnapshot,
+  ): void {
+    const contextRestore = this.columnFullWidthRestore.get(contextKey);
+
+    if (!contextRestore) {
+      return;
+    }
+
+    const beforeIds = new Set(before.columns.map((column) => column.id));
+    const afterIds = new Set(after.columns.map((column) => column.id));
+
+    for (const id of contextRestore.keys()) {
+      if (!beforeIds.has(id) || !afterIds.has(id)) {
+        contextRestore.delete(id);
+      }
+    }
+
+    if (contextRestore.size === 0) {
+      this.columnFullWidthRestore.delete(contextKey);
+    }
+  }
+
+  private reconcileTransferredColumnFullWidthRestore(
+    activeId: WindowId,
+    sourceContextKey: string,
+    targetContextKey: string,
+    sourceBefore: LayoutContextSnapshot,
+    targetBefore: LayoutContextSnapshot,
+    sourceAfter: LayoutContextSnapshot,
+    targetAfter: LayoutContextSnapshot,
+  ): void {
+    const sourceColumn = sourceBefore.columns.find((column) =>
+      column.windowIds.includes(activeId),
+    );
+    const targetColumn = targetAfter.columns.find((column) =>
+      column.windowIds.includes(activeId),
+    );
+    const restore =
+      sourceColumn?.windowIds.length === 1
+        ? this.columnFullWidthRestoreWidth(sourceContextKey, sourceColumn.id)
+        : undefined;
+
+    this.reconcileColumnFullWidthRestore(
+      sourceContextKey,
+      sourceBefore,
+      sourceAfter,
+    );
+    this.reconcileColumnFullWidthRestore(
+      targetContextKey,
+      targetBefore,
+      targetAfter,
+    );
+
+    if (restore && targetColumn) {
+      this.setColumnFullWidthRestore(
+        targetContextKey,
+        targetColumn.id,
+        restore,
+      );
+    }
   }
 
   private extractedColumnId(command: ActiveColumnCommand): ColumnId {
@@ -3603,6 +4062,22 @@ export class RuntimeController {
         contextKey(memberContext) === context.key
       );
     });
+  }
+
+  private activeWindowColumnIsSingleton(
+    id: WindowId,
+    context: RuntimeContext,
+  ): boolean {
+    const snapshot = this.layout.snapshot(context.outputId, context.desktopId);
+    const column = snapshot.columns.find((candidate) =>
+      candidate.windowIds.includes(id),
+    );
+
+    return Boolean(
+      column &&
+      column.id === snapshot.activeColumnId &&
+      column.windowIds.length === 1,
+    );
   }
 
   private prepareActiveWindowCommand(): ActiveWindowCommand | null {
@@ -6763,14 +7238,20 @@ export class RuntimeController {
         : undefined;
     this.managedWindows.delete(id);
     this.layout.unmanageWindow(id);
+    const after =
+      ownedContext && removedColumn
+        ? this.layout.snapshot(ownedContext.outputId, ownedContext.desktopId)
+        : null;
 
-    if (ownedContext && removedColumn && removedColumnIndex !== undefined) {
-      const after = this.layout.snapshot(
-        ownedContext.outputId,
-        ownedContext.desktopId,
-      );
+    if (
+      ownedContext &&
+      removedColumn &&
+      after &&
+      !after.columns.some((column) => column.id === removedColumn.id)
+    ) {
+      this.deleteColumnFullWidthRestore(owner.contextKey, removedColumn.id);
 
-      if (!after.columns.some((column) => column.id === removedColumn.id)) {
+      if (removedColumnIndex !== undefined) {
         this.rebaseCapacityLeasesAfterColumnRemoval(
           owner.contextKey,
           removedColumnIndex,
@@ -8430,6 +8911,10 @@ function nearlyEqual(left: number, right: number): boolean {
   return Math.abs(left - right) <= 1e-6;
 }
 
+function sameColumnWidth(left: ColumnWidth, right: ColumnWidth): boolean {
+  return left.kind === right.kind && nearlyEqual(left.value, right.value);
+}
+
 function fixedFrameSizeConstraintState(
   window: KWinWindow,
 ):
@@ -8548,6 +9033,12 @@ function clampFrameToWorkArea(frame: Rect, workArea: Rect): Rect {
 
 function clamp(value: number, minimum: number, maximum: number): number {
   return Math.min(maximum, Math.max(minimum, value));
+}
+
+function roundToPhysicalPixel(value: number, devicePixelRatio: number): number {
+  const physicalValue = value * devicePixelRatio;
+  const magnitude = Math.round(Math.abs(physicalValue));
+  return (physicalValue < 0 ? -magnitude : magnitude) / devicePixelRatio;
 }
 
 function ceilToPhysicalPixel(value: number, devicePixelRatio: number): number {

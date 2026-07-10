@@ -342,6 +342,12 @@ let
             && "$shortcuts" == *"driftile_focus_output_right"* \
             && "$shortcuts" == *"driftile_focus_output_up"* \
             && "$shortcuts" == *"driftile_focus_output_down"* \
+            && "$shortcuts" == *"driftile_move_column_to_previous_desktop"* \
+            && "$shortcuts" == *"driftile_move_column_to_next_desktop"* \
+            && "$shortcuts" == *"driftile_move_column_to_output_left"* \
+            && "$shortcuts" == *"driftile_move_column_to_output_right"* \
+            && "$shortcuts" == *"driftile_move_column_to_output_up"* \
+            && "$shortcuts" == *"driftile_move_column_to_output_down"* \
             && "$shortcuts" == *"driftile_move_window_to_previous_desktop"* \
             && "$shortcuts" == *"driftile_move_window_to_next_desktop"* \
             && "$shortcuts" == *"driftile_move_window_to_output_left"* \
@@ -354,6 +360,10 @@ let
             && "$shortcuts" == *"driftile_decrease_column_width"* \
             && "$shortcuts" == *"driftile_increase_column_width"* \
             && "$shortcuts" == *"driftile_increase_column_width_plus"* \
+            && "$shortcuts" == *"driftile_switch_preset_column_width"* \
+            && "$shortcuts" == *"driftile_switch_preset_column_width_back"* \
+            && "$shortcuts" == *"driftile_maximize_column"* \
+            && "$shortcuts" == *"driftile_center_column"* \
             && "$shortcuts" == *"driftile_reset_column_width"* ]]; then
             return 0
           fi
@@ -1542,14 +1552,14 @@ let
             "$third_frame" \
             "$fixed_frame" \
           && automatic_floating_shortcut_is_no_op \
-            "driftile_move_window_to_next_desktop" \
+            "driftile_move_column_to_next_desktop" \
             "$fixed_title" \
             "$first_frame" \
             "$second_frame" \
             "$third_frame" \
             "$fixed_frame" \
           && automatic_floating_shortcut_is_no_op \
-            "driftile_move_window_to_output_right" \
+            "driftile_move_column_to_output_right" \
             "$fixed_title" \
             "$first_frame" \
             "$second_frame" \
@@ -2045,35 +2055,82 @@ let
         record_focus_state "window B extracted into the right column"
       }
 
-      verify_physical_width_shortcut() {
+      request_physical_width_shortcut() {
+        local attempt
+        local key_name=$1
+        local ready_file="/tmp/shared/driftile-key-test-$key_name-ready"
+        local sent_file="/tmp/shared/driftile-key-test-$key_name-sent"
+
+        rm -f "$ready_file" "$sent_file"
+        : > "$ready_file"
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          [[ -f "$sent_file" ]] && return 0
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      verify_physical_width_shortcuts() {
         local after_width
         local attempt
         local before_width
+        local decreased_width
+        local equal_width
 
         activate_window "$title_c" \
           && wait_for_active "$title_c" \
           || return 1
         before_width=$(window_frame_width "$title_c") || return 1
-        rm -f \
-          /tmp/shared/driftile-key-test-ready \
-          /tmp/shared/driftile-key-test-sent
-        : > /tmp/shared/driftile-key-test-ready
+        decreased_width=$before_width
+        equal_width=$before_width
+
+        request_physical_width_shortcut minus || return 1
 
         for ((attempt = 0; attempt < 100; attempt += 1)); do
-          if [[ -f /tmp/shared/driftile-key-test-sent ]]; then
+          after_width=$(window_frame_width "$title_c") || return 1
+
+          if ((after_width < before_width)); then
+            decreased_width=$after_width
+            record_focus_state "physical Meta+- decreased the active column width"
             break
           fi
 
           sleep 0.1
         done
 
-        [[ -f /tmp/shared/driftile-key-test-sent ]] || return 1
+        if ((decreased_width >= before_width)); then
+          record_focus_state "physical Meta+- did not reach Driftile"
+          return 1
+        fi
+
+        request_physical_width_shortcut equal || return 1
 
         for ((attempt = 0; attempt < 100; attempt += 1)); do
           after_width=$(window_frame_width "$title_c") || return 1
 
-          if ((after_width < before_width)); then
-            record_focus_state "physical Meta+- decreased the active column width"
+          if ((after_width > decreased_width)); then
+            equal_width=$after_width
+            record_focus_state "physical Meta+= increased the active column width"
+            break
+          fi
+
+          sleep 0.1
+        done
+
+        if ((equal_width <= decreased_width)); then
+          record_focus_state "physical Meta+= did not reach Driftile"
+          return 1
+        fi
+
+        request_physical_width_shortcut plus || return 1
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          after_width=$(window_frame_width "$title_c") || return 1
+
+          if ((after_width > equal_width)); then
+            record_focus_state "physical Meta++ increased the active column width"
             invoke_shortcut "driftile_reset_column_width" || true
             return 0
           fi
@@ -2081,7 +2138,7 @@ let
           sleep 0.1
         done
 
-        record_focus_state "physical Meta+- did not reach Driftile"
+        record_focus_state "physical Meta++ did not reach Driftile"
         return 1
       }
 
@@ -2155,7 +2212,7 @@ let
 
       if [[ "$loaded" == true && "$desktops_ready" == true ]] \
         && verify_focus \
-        && verify_physical_width_shortcut; then
+        && verify_physical_width_shortcuts; then
         focus_verified=true
       fi
 

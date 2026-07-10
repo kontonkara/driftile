@@ -193,28 +193,48 @@ QtObject {
         sequence: "Meta+PgDown"
         onActivated: Runtime.DriftileRuntime.focusNextDesktop()
     }
+    readonly property ShortcutHandler moveColumnToPreviousDesktopShortcut: ShortcutHandler {
+        name: "driftile_move_column_to_previous_desktop"
+        text: "Driftile: Move column to previous desktop"
+        sequence: "Meta+Ctrl+I"
+        onActivated: Runtime.DriftileRuntime.moveColumnToPreviousDesktop()
+    }
+    readonly property ShortcutHandler moveColumnToPreviousDesktopPageShortcut: ShortcutHandler {
+        name: "driftile_move_column_to_previous_desktop_page_up"
+        text: "Driftile: Move column to previous desktop (Page Up)"
+        sequence: "Meta+Ctrl+PgUp"
+        onActivated: Runtime.DriftileRuntime.moveColumnToPreviousDesktop()
+    }
+    readonly property ShortcutHandler moveColumnToNextDesktopShortcut: ShortcutHandler {
+        name: "driftile_move_column_to_next_desktop"
+        text: "Driftile: Move column to next desktop"
+        sequence: "Meta+Ctrl+U"
+        onActivated: Runtime.DriftileRuntime.moveColumnToNextDesktop()
+    }
+    readonly property ShortcutHandler moveColumnToNextDesktopPageShortcut: ShortcutHandler {
+        name: "driftile_move_column_to_next_desktop_page_down"
+        text: "Driftile: Move column to next desktop (Page Down)"
+        sequence: "Meta+Ctrl+PgDown"
+        onActivated: Runtime.DriftileRuntime.moveColumnToNextDesktop()
+    }
     readonly property ShortcutHandler moveWindowToPreviousDesktopShortcut: ShortcutHandler {
         name: "driftile_move_window_to_previous_desktop"
         text: "Driftile: Move window to previous desktop"
-        sequence: "Meta+Ctrl+I"
         onActivated: Runtime.DriftileRuntime.moveWindowToPreviousDesktop()
     }
     readonly property ShortcutHandler moveWindowToPreviousDesktopPageShortcut: ShortcutHandler {
         name: "driftile_move_window_to_previous_desktop_page_up"
         text: "Driftile: Move window to previous desktop (Page Up)"
-        sequence: "Meta+Ctrl+PgUp"
         onActivated: Runtime.DriftileRuntime.moveWindowToPreviousDesktop()
     }
     readonly property ShortcutHandler moveWindowToNextDesktopShortcut: ShortcutHandler {
         name: "driftile_move_window_to_next_desktop"
         text: "Driftile: Move window to next desktop"
-        sequence: "Meta+Ctrl+U"
         onActivated: Runtime.DriftileRuntime.moveWindowToNextDesktop()
     }
     readonly property ShortcutHandler moveWindowToNextDesktopPageShortcut: ShortcutHandler {
         name: "driftile_move_window_to_next_desktop_page_down"
         text: "Driftile: Move window to next desktop (Page Down)"
-        sequence: "Meta+Ctrl+PgDown"
         onActivated: Runtime.DriftileRuntime.moveWindowToNextDesktop()
     }
     readonly property ShortcutHandler focusOutputLeftShortcut: ShortcutHandler {
@@ -265,53 +285,117 @@ QtObject {
         sequence: "Meta+Shift+Down"
         onActivated: Workspace.slotSwitchToBelowScreen()
     }
+    readonly property ShortcutHandler moveColumnToOutputLeftShortcut: ShortcutHandler {
+        name: "driftile_move_column_to_output_left"
+        text: "Driftile: Move column to output left"
+        sequence: "Meta+Ctrl+Shift+H"
+        onActivated: Runtime.DriftileRuntime.moveColumnToOutputLeft()
+    }
+    readonly property ShortcutHandler moveColumnToOutputLeftArrowShortcut: ShortcutHandler {
+        name: "driftile_move_column_to_output_left_arrow"
+        text: "Driftile: Move column to output left (arrow)"
+        sequence: "Meta+Ctrl+Shift+Left"
+        onActivated: Runtime.DriftileRuntime.moveColumnToOutputLeft()
+    }
+    readonly property ShortcutHandler moveColumnToOutputRightShortcut: ShortcutHandler {
+        name: "driftile_move_column_to_output_right"
+        text: "Driftile: Move column to output right"
+        sequence: "Meta+Ctrl+Shift+L"
+        onActivated: Runtime.DriftileRuntime.moveColumnToOutputRight()
+    }
+    readonly property ShortcutHandler moveColumnToOutputRightArrowShortcut: ShortcutHandler {
+        name: "driftile_move_column_to_output_right_arrow"
+        text: "Driftile: Move column to output right (arrow)"
+        sequence: "Meta+Ctrl+Shift+Right"
+        onActivated: Runtime.DriftileRuntime.moveColumnToOutputRight()
+    }
+    readonly property ShortcutHandler moveColumnToOutputUpShortcut: ShortcutHandler {
+        name: "driftile_move_column_to_output_up"
+        text: "Driftile: Move column to output up"
+        sequence: "Meta+Ctrl+Shift+K"
+        onActivated: Runtime.DriftileRuntime.moveColumnToOutputUp()
+    }
+    readonly property ShortcutHandler moveColumnToOutputUpArrowShortcut: ShortcutHandler {
+        name: "driftile_move_column_to_output_up_arrow"
+        text: "Driftile: Move column to output up (arrow)"
+        sequence: "Meta+Ctrl+Shift+Up"
+        onActivated: Runtime.DriftileRuntime.moveColumnToOutputUp()
+    }
+    readonly property ShortcutHandler moveColumnToOutputDownShortcut: ShortcutHandler {
+        name: "driftile_move_column_to_output_down"
+        text: "Driftile: Move column to output down"
+        sequence: "Meta+Ctrl+Shift+J"
+        onActivated: Runtime.DriftileRuntime.moveColumnToOutputDown()
+    }
+    readonly property ShortcutHandler moveColumnToOutputDownArrowShortcut: ShortcutHandler {
+        name: "driftile_move_column_to_output_down_arrow"
+        text: "Driftile: Move column to output down (arrow)"
+        sequence: "Meta+Ctrl+Shift+Down"
+        onActivated: Runtime.DriftileRuntime.moveColumnToOutputDown()
+    }
     readonly property ShortcutHandler moveWindowToOutputLeftShortcut: ShortcutHandler {
         name: "driftile_move_window_to_output_left"
         text: "Driftile: Move window to output left"
-        sequence: "Meta+Ctrl+Shift+H"
         onActivated: Runtime.DriftileRuntime.moveWindowToOutputLeft()
     }
     readonly property ShortcutHandler moveWindowToOutputLeftArrowShortcut: ShortcutHandler {
         name: "driftile_move_window_to_output_left_arrow"
         text: "Driftile: Move window to output left (arrow)"
-        sequence: "Meta+Ctrl+Shift+Left"
         onActivated: Runtime.DriftileRuntime.moveWindowToOutputLeft()
     }
     readonly property ShortcutHandler moveWindowToOutputRightShortcut: ShortcutHandler {
         name: "driftile_move_window_to_output_right"
         text: "Driftile: Move window to output right"
-        sequence: "Meta+Ctrl+Shift+L"
         onActivated: Runtime.DriftileRuntime.moveWindowToOutputRight()
     }
     readonly property ShortcutHandler moveWindowToOutputRightArrowShortcut: ShortcutHandler {
         name: "driftile_move_window_to_output_right_arrow"
         text: "Driftile: Move window to output right (arrow)"
-        sequence: "Meta+Ctrl+Shift+Right"
         onActivated: Runtime.DriftileRuntime.moveWindowToOutputRight()
     }
     readonly property ShortcutHandler moveWindowToOutputUpShortcut: ShortcutHandler {
         name: "driftile_move_window_to_output_up"
         text: "Driftile: Move window to output up"
-        sequence: "Meta+Ctrl+Shift+K"
         onActivated: Runtime.DriftileRuntime.moveWindowToOutputUp()
     }
     readonly property ShortcutHandler moveWindowToOutputUpArrowShortcut: ShortcutHandler {
         name: "driftile_move_window_to_output_up_arrow"
         text: "Driftile: Move window to output up (arrow)"
-        sequence: "Meta+Ctrl+Shift+Up"
         onActivated: Runtime.DriftileRuntime.moveWindowToOutputUp()
     }
     readonly property ShortcutHandler moveWindowToOutputDownShortcut: ShortcutHandler {
         name: "driftile_move_window_to_output_down"
         text: "Driftile: Move window to output down"
-        sequence: "Meta+Ctrl+Shift+J"
         onActivated: Runtime.DriftileRuntime.moveWindowToOutputDown()
     }
     readonly property ShortcutHandler moveWindowToOutputDownArrowShortcut: ShortcutHandler {
         name: "driftile_move_window_to_output_down_arrow"
         text: "Driftile: Move window to output down (arrow)"
-        sequence: "Meta+Ctrl+Shift+Down"
         onActivated: Runtime.DriftileRuntime.moveWindowToOutputDown()
+    }
+    readonly property ShortcutHandler switchPresetColumnWidthShortcut: ShortcutHandler {
+        name: "driftile_switch_preset_column_width"
+        text: "Driftile: Switch preset column width"
+        sequence: "Meta+R"
+        onActivated: Runtime.DriftileRuntime.switchPresetColumnWidth()
+    }
+    readonly property ShortcutHandler switchPresetColumnWidthBackShortcut: ShortcutHandler {
+        name: "driftile_switch_preset_column_width_back"
+        text: "Driftile: Switch preset column width back"
+        sequence: "Meta+Shift+R"
+        onActivated: Runtime.DriftileRuntime.switchPresetColumnWidthBack()
+    }
+    readonly property ShortcutHandler maximizeColumnShortcut: ShortcutHandler {
+        name: "driftile_maximize_column"
+        text: "Driftile: Maximize column"
+        sequence: "Meta+F"
+        onActivated: Runtime.DriftileRuntime.maximizeColumn()
+    }
+    readonly property ShortcutHandler centerColumnShortcut: ShortcutHandler {
+        name: "driftile_center_column"
+        text: "Driftile: Center column"
+        sequence: "Meta+C"
+        onActivated: Runtime.DriftileRuntime.centerColumn()
     }
     readonly property ShortcutHandler decreaseColumnWidthShortcut: ShortcutHandler {
         name: "driftile_decrease_column_width"

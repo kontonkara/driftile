@@ -12,10 +12,17 @@ const qml = readFileSync(
   new URL("../packaging/kwin-script/contents/ui/main.qml", import.meta.url),
   "utf8",
 );
+const packageMetadata = JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+) as { readonly scripts?: Readonly<Record<string, string>> };
 
 const expectedHandlers: Readonly<
   Record<string, Omit<ShortcutHandler, "name">>
 > = {
+  driftile_center_column: {
+    activated: "Runtime.DriftileRuntime.centerColumn()",
+    sequence: "Meta+C",
+  },
   driftile_decrease_column_width: {
     activated: "Runtime.DriftileRuntime.decreaseColumnWidth()",
     sequence: "Meta+-",
@@ -114,6 +121,10 @@ const expectedHandlers: Readonly<
   driftile_insert_window_into_stack_right: {
     activated: "Runtime.DriftileRuntime.insertWindowIntoStackRight()",
   },
+  driftile_maximize_column: {
+    activated: "Runtime.DriftileRuntime.maximizeColumn()",
+    sequence: "Meta+F",
+  },
   driftile_move_column_left: {
     activated: "Runtime.DriftileRuntime.moveColumnLeft()",
     sequence: "Meta+Ctrl+H",
@@ -129,6 +140,54 @@ const expectedHandlers: Readonly<
   driftile_move_column_right_arrow: {
     activated: "Runtime.DriftileRuntime.moveColumnRight()",
     sequence: "Meta+Ctrl+Right",
+  },
+  driftile_move_column_to_next_desktop: {
+    activated: "Runtime.DriftileRuntime.moveColumnToNextDesktop()",
+    sequence: "Meta+Ctrl+U",
+  },
+  driftile_move_column_to_next_desktop_page_down: {
+    activated: "Runtime.DriftileRuntime.moveColumnToNextDesktop()",
+    sequence: "Meta+Ctrl+PgDown",
+  },
+  driftile_move_column_to_output_down: {
+    activated: "Runtime.DriftileRuntime.moveColumnToOutputDown()",
+    sequence: "Meta+Ctrl+Shift+J",
+  },
+  driftile_move_column_to_output_down_arrow: {
+    activated: "Runtime.DriftileRuntime.moveColumnToOutputDown()",
+    sequence: "Meta+Ctrl+Shift+Down",
+  },
+  driftile_move_column_to_output_left: {
+    activated: "Runtime.DriftileRuntime.moveColumnToOutputLeft()",
+    sequence: "Meta+Ctrl+Shift+H",
+  },
+  driftile_move_column_to_output_left_arrow: {
+    activated: "Runtime.DriftileRuntime.moveColumnToOutputLeft()",
+    sequence: "Meta+Ctrl+Shift+Left",
+  },
+  driftile_move_column_to_output_right: {
+    activated: "Runtime.DriftileRuntime.moveColumnToOutputRight()",
+    sequence: "Meta+Ctrl+Shift+L",
+  },
+  driftile_move_column_to_output_right_arrow: {
+    activated: "Runtime.DriftileRuntime.moveColumnToOutputRight()",
+    sequence: "Meta+Ctrl+Shift+Right",
+  },
+  driftile_move_column_to_output_up: {
+    activated: "Runtime.DriftileRuntime.moveColumnToOutputUp()",
+    sequence: "Meta+Ctrl+Shift+K",
+  },
+  driftile_move_column_to_output_up_arrow: {
+    activated: "Runtime.DriftileRuntime.moveColumnToOutputUp()",
+    sequence: "Meta+Ctrl+Shift+Up",
+  },
+  driftile_move_column_to_previous_desktop: {
+    activated: "Runtime.DriftileRuntime.moveColumnToPreviousDesktop()",
+    sequence: "Meta+Ctrl+I",
+  },
+  driftile_move_column_to_previous_desktop_page_up: {
+    activated: "Runtime.DriftileRuntime.moveColumnToPreviousDesktop()",
+    sequence: "Meta+Ctrl+PgUp",
   },
   driftile_move_window_down: {
     activated: "Runtime.DriftileRuntime.moveWindowDown()",
@@ -148,51 +207,39 @@ const expectedHandlers: Readonly<
   },
   driftile_move_window_to_next_desktop: {
     activated: "Runtime.DriftileRuntime.moveWindowToNextDesktop()",
-    sequence: "Meta+Ctrl+U",
   },
   driftile_move_window_to_next_desktop_page_down: {
     activated: "Runtime.DriftileRuntime.moveWindowToNextDesktop()",
-    sequence: "Meta+Ctrl+PgDown",
   },
   driftile_move_window_to_output_down: {
     activated: "Runtime.DriftileRuntime.moveWindowToOutputDown()",
-    sequence: "Meta+Ctrl+Shift+J",
   },
   driftile_move_window_to_output_down_arrow: {
     activated: "Runtime.DriftileRuntime.moveWindowToOutputDown()",
-    sequence: "Meta+Ctrl+Shift+Down",
   },
   driftile_move_window_to_output_left: {
     activated: "Runtime.DriftileRuntime.moveWindowToOutputLeft()",
-    sequence: "Meta+Ctrl+Shift+H",
   },
   driftile_move_window_to_output_left_arrow: {
     activated: "Runtime.DriftileRuntime.moveWindowToOutputLeft()",
-    sequence: "Meta+Ctrl+Shift+Left",
   },
   driftile_move_window_to_output_right: {
     activated: "Runtime.DriftileRuntime.moveWindowToOutputRight()",
-    sequence: "Meta+Ctrl+Shift+L",
   },
   driftile_move_window_to_output_right_arrow: {
     activated: "Runtime.DriftileRuntime.moveWindowToOutputRight()",
-    sequence: "Meta+Ctrl+Shift+Right",
   },
   driftile_move_window_to_output_up: {
     activated: "Runtime.DriftileRuntime.moveWindowToOutputUp()",
-    sequence: "Meta+Ctrl+Shift+K",
   },
   driftile_move_window_to_output_up_arrow: {
     activated: "Runtime.DriftileRuntime.moveWindowToOutputUp()",
-    sequence: "Meta+Ctrl+Shift+Up",
   },
   driftile_move_window_to_previous_desktop: {
     activated: "Runtime.DriftileRuntime.moveWindowToPreviousDesktop()",
-    sequence: "Meta+Ctrl+I",
   },
   driftile_move_window_to_previous_desktop_page_up: {
     activated: "Runtime.DriftileRuntime.moveWindowToPreviousDesktop()",
-    sequence: "Meta+Ctrl+PgUp",
   },
   driftile_move_window_up: {
     activated: "Runtime.DriftileRuntime.moveWindowUp()",
@@ -204,6 +251,14 @@ const expectedHandlers: Readonly<
   },
   driftile_reset_column_width: {
     activated: "Runtime.DriftileRuntime.resetColumnWidth()",
+  },
+  driftile_switch_preset_column_width: {
+    activated: "Runtime.DriftileRuntime.switchPresetColumnWidth()",
+    sequence: "Meta+R",
+  },
+  driftile_switch_preset_column_width_back: {
+    activated: "Runtime.DriftileRuntime.switchPresetColumnWidthBack()",
+    sequence: "Meta+Shift+R",
   },
   driftile_toggle_floating: {
     activated: "Runtime.DriftileRuntime.toggleFloating()",
@@ -262,8 +317,26 @@ describe("KWin shortcut handlers", () => {
     ).toEqual([
       "driftile_insert_window_into_stack_left",
       "driftile_insert_window_into_stack_right",
+      "driftile_move_window_to_next_desktop",
+      "driftile_move_window_to_next_desktop_page_down",
+      "driftile_move_window_to_output_down",
+      "driftile_move_window_to_output_down_arrow",
+      "driftile_move_window_to_output_left",
+      "driftile_move_window_to_output_left_arrow",
+      "driftile_move_window_to_output_right",
+      "driftile_move_window_to_output_right_arrow",
+      "driftile_move_window_to_output_up",
+      "driftile_move_window_to_output_up_arrow",
+      "driftile_move_window_to_previous_desktop",
+      "driftile_move_window_to_previous_desktop_page_up",
       "driftile_reset_column_width",
     ]);
+  });
+
+  it("releases a saved shortcut profile before a development upgrade", () => {
+    expect(packageMetadata.scripts?.["upgrade:dev"]).toBe(
+      "npm run shortcuts:release && node tools/install.mjs upgrade",
+    );
   });
 });
 

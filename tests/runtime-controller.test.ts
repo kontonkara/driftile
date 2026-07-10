@@ -670,13 +670,23 @@ describe("RuntimeController", () => {
       () => controller.toggleFloating(),
       () => controller.moveWindowToPreviousDesktop(),
       () => controller.moveWindowToNextDesktop(),
+      () => controller.moveColumnToPreviousDesktop(),
+      () => controller.moveColumnToNextDesktop(),
       () => controller.moveWindowToOutputLeft(),
       () => controller.moveWindowToOutputRight(),
       () => controller.moveWindowToOutputUp(),
       () => controller.moveWindowToOutputDown(),
+      () => controller.moveColumnToOutputLeft(),
+      () => controller.moveColumnToOutputRight(),
+      () => controller.moveColumnToOutputUp(),
+      () => controller.moveColumnToOutputDown(),
       () => controller.decreaseColumnWidth(),
       () => controller.increaseColumnWidth(),
       () => controller.resetColumnWidth(),
+      () => controller.switchPresetColumnWidth(),
+      () => controller.switchPresetColumnWidthBack(),
+      () => controller.maximizeColumn(),
+      () => controller.centerColumn(),
     ];
 
     expect(commands.map((command) => command())).toEqual(
@@ -2585,8 +2595,8 @@ describe("RuntimeController", () => {
     fixture.workspace.activeWindow = first.window;
     expect(controller.increaseColumnWidth()).toBe(true);
     expect(activeColumnWidth(controller, output, desktop)).toEqual({
-      kind: "fixed",
-      value: 364,
+      kind: "proportion",
+      value: 310 / 990 + 0.1,
     });
     fixture.workspace.activeWindow = active.window;
 
@@ -2599,12 +2609,12 @@ describe("RuntimeController", () => {
       { id: "column:other", windowIds: ["window-4"] },
     ]);
     expect(activeColumnWidth(controller, output, desktop)).toEqual({
-      kind: "fixed",
-      value: 364,
+      kind: "proportion",
+      value: 310 / 990 + 0.1,
     });
     expect(active.window.frameGeometry).toMatchObject({
       height: 254,
-      width: 364,
+      width: 399,
       x: 10,
       y: 273,
     });
@@ -4072,9 +4082,9 @@ describe("RuntimeController", () => {
     expect(controller.increaseColumnWidth()).toBe(true);
     expect(activeColumnWidth(controller, output, desktop)).toEqual({
       kind: "proportion",
-      value: 0.5625,
+      value: 0.6,
     });
-    expect(active.window.frameGeometry.width).toBe(547);
+    expect(active.window.frameGeometry.width).toBe(584);
     expect(controller.decreaseColumnWidth()).toBe(true);
     expect(activeColumnWidth(controller, output, desktop)).toEqual({
       kind: "proportion",
@@ -4094,9 +4104,9 @@ describe("RuntimeController", () => {
     expect(controller.decreaseColumnWidth()).toBe(true);
     expect(activeColumnWidth(controller, output, desktop)).toEqual({
       kind: "proportion",
-      value: 0.4375,
+      value: 0.4,
     });
-    expect(active.window.frameGeometry.width).toBe(423);
+    expect(active.window.frameGeometry.width).toBe(386);
     expect(controller.resetColumnWidth()).toBe(true);
     expect(activeColumnWidth(controller, output, desktop)).toEqual({
       kind: "proportion",
@@ -4143,7 +4153,284 @@ describe("RuntimeController", () => {
     },
   );
 
-  it("resizes and resets a fixed active column in logical-pixel steps", () => {
+  it("cycles preset column widths in both directions", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const active = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [active.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    controller.start();
+
+    expect(controller.switchPresetColumnWidth()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "proportion",
+      value: 2 / 3,
+    });
+    expect(active.window.frameGeometry.width).toBe(650);
+
+    expect(controller.switchPresetColumnWidth()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "proportion",
+      value: 1 / 3,
+    });
+    expect(active.window.frameGeometry.width).toBe(320);
+
+    expect(controller.switchPresetColumnWidthBack()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "proportion",
+      value: 2 / 3,
+    });
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+    expect(fixture.activationCount).toBe(0);
+  });
+
+  it("selects the nearest preset in the requested direction", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const active = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [active.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    controller.start();
+    const layout = runtimeLayout(controller);
+    const id = windowId(String(active.window.internalId));
+
+    expect(
+      layout.setActiveColumnWidth(id, { kind: "fixed", value: 321 }),
+    ).toEqual({ kind: "proportion", value: 0.5 });
+    controller.reconcile();
+    expect(controller.switchPresetColumnWidthBack()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "proportion",
+      value: 1 / 3,
+    });
+
+    expect(
+      layout.setActiveColumnWidth(id, { kind: "fixed", value: 319 }),
+    ).toEqual({ kind: "proportion", value: 1 / 3 });
+    controller.reconcile();
+    expect(controller.switchPresetColumnWidth()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "proportion",
+      value: 1 / 3,
+    });
+  });
+
+  it("toggles full-width columns and discards the restore on manual resize", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const active = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [active.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    controller.start();
+
+    expect(controller.maximizeColumn()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "proportion",
+      value: 1,
+    });
+    expect(active.window.frameGeometry.width).toBe(980);
+    expect(controller.maximizeColumn()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "proportion",
+      value: 0.5,
+    });
+
+    expect(controller.maximizeColumn()).toBe(true);
+    expect(controller.decreaseColumnWidth()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "proportion",
+      value: 0.9,
+    });
+    expect(controller.maximizeColumn()).toBe(true);
+    expect(controller.maximizeColumn()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "proportion",
+      value: 0.9,
+    });
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+    expect(fixture.activationCount).toBe(0);
+  });
+
+  it("discards full-width restore state when a column ID is reused", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const second = createTrackedWindow("window-2", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window, second.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    controller.start();
+    fixture.workspace.activeWindow = first.window;
+    expect(controller.maximizeColumn()).toBe(true);
+    expect(controller.moveWindowRight()).toBe(true);
+    expect(controller.moveWindowLeft()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "proportion",
+      value: 0.5,
+    });
+
+    expect(controller.maximizeColumn()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "proportion",
+      value: 1,
+    });
+  });
+
+  it("discards full-width restore state when the last column member closes", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const active = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [active.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    controller.start();
+    expect(controller.maximizeColumn()).toBe(true);
+    fixture.windowRemoved.emit(active.window);
+
+    const replacement = createTrackedWindow("window-1", output, desktop);
+    fixture.windowAdded.emit(replacement.window);
+    fixture.workspace.activeWindow = replacement.window;
+    expect(controller.maximizeColumn()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "proportion",
+      value: 1,
+    });
+  });
+
+  it("centers the active column without changing order or focus", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const windows = Array.from({ length: 3 }, (_value, index) =>
+      createTrackedWindow(`window-${String(index + 1)}`, output, desktop),
+    );
+    const middle = windows[1];
+
+    if (!middle) {
+      throw new Error("missing middle column fixture");
+    }
+
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map((window) => window.window),
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 500 },
+      gap: 10,
+    });
+
+    controller.start();
+    fixture.workspace.activeWindow = middle.window;
+    const before = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+
+    expect(controller.centerColumn()).toBe(true);
+    const after = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    expect(after.viewportOffset).toBe(270);
+    expect(middle.window.frameGeometry.x).toBe(250);
+    expect(after.columns).toEqual(before.columns);
+    expect(controller.centerColumn()).toBe(false);
+    expect(fixture.workspace.activeWindow).toBe(middle.window);
+  });
+
+  it("settles centering when the exact midpoint is between physical pixels", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const windows = Array.from({ length: 3 }, (_value, index) =>
+      createTrackedWindow(`window-${String(index + 1)}`, output, desktop),
+    );
+    const middle = windows[1];
+
+    if (!middle) {
+      throw new Error("missing middle column fixture");
+    }
+
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map((window) => window.window),
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    controller.start();
+    fixture.workspace.activeWindow = middle.window;
+
+    expect(controller.centerColumn()).toBe(true);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ).viewportOffset,
+    ).toBe(248);
+    expect(middle.window.frameGeometry).toMatchObject({
+      width: 485,
+      x: 257,
+    });
+    expect(controller.centerColumn()).toBe(false);
+  });
+
+  it("converts a fixed column for percentage adjustments and resets it", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
     const active = createTrackedWindow("window-1", output, desktop);
@@ -4164,21 +4451,21 @@ describe("RuntimeController", () => {
     expect(active.window.frameGeometry.width).toBe(300);
     expect(controller.increaseColumnWidth()).toBe(true);
     expect(activeColumnWidth(controller, output, desktop)).toEqual({
-      kind: "fixed",
-      value: 364,
+      kind: "proportion",
+      value: 310 / 990 + 0.1,
     });
-    expect(active.window.frameGeometry.width).toBe(364);
+    expect(active.window.frameGeometry.width).toBe(399);
     expect(controller.decreaseColumnWidth()).toBe(true);
     expect(activeColumnWidth(controller, output, desktop)).toEqual({
-      kind: "fixed",
-      value: 300,
+      kind: "proportion",
+      value: 310 / 990,
     });
     expect(controller.decreaseColumnWidth()).toBe(true);
     expect(activeColumnWidth(controller, output, desktop)).toEqual({
-      kind: "fixed",
-      value: 236,
+      kind: "proportion",
+      value: 310 / 990 - 0.1,
     });
-    expect(active.window.frameGeometry.width).toBe(236);
+    expect(active.window.frameGeometry.width).toBe(201);
     expect(controller.resetColumnWidth()).toBe(true);
     expect(activeColumnWidth(controller, output, desktop)).toEqual({
       kind: "fixed",
@@ -4228,13 +4515,11 @@ describe("RuntimeController", () => {
 
     controller.start();
     expect(controller.increaseColumnWidth()).toBe(true);
-    expect(active.window.frameGeometry.width).toBe(364);
-    expect(controller.increaseColumnWidth()).toBe(true);
     expect(active.window.frameGeometry.width).toBe(370);
     expect(controller.increaseColumnWidth()).toBe(false);
 
     expect(controller.decreaseColumnWidth()).toBe(true);
-    expect(active.window.frameGeometry.width).toBe(306);
+    expect(active.window.frameGeometry.width).toBe(271);
     expect(controller.decreaseColumnWidth()).toBe(true);
     expect(active.window.frameGeometry.width).toBe(270);
     expect(controller.decreaseColumnWidth()).toBe(false);
@@ -4398,8 +4683,8 @@ describe("RuntimeController", () => {
     controller.start();
     const releasedWrites = released.writeCount;
     const activeX = active.window.frameGeometry.x;
-    active.setWriteBehavior((_frame, commit) => {
-      active.setWriteBehavior(null);
+    first.setWriteBehavior((_frame, commit) => {
+      first.setWriteBehavior(null);
       commit();
       Object.defineProperty(released.window, "transient", {
         configurable: true,
@@ -4550,8 +4835,8 @@ describe("RuntimeController", () => {
     expect(
       activeColumnWidth(controller, trackedOutput.output, desktop),
     ).toEqual({
-      kind: "fixed",
-      value: 149.6,
+      kind: "proportion",
+      value: 159.6 / 990,
     });
     expect(active.window.frameGeometry.width).toBe(149.6);
     expect(controller.increaseColumnWidth()).toBe(false);
@@ -4560,8 +4845,8 @@ describe("RuntimeController", () => {
     expect(
       activeColumnWidth(controller, trackedOutput.output, desktop),
     ).toEqual({
-      kind: "fixed",
-      value: 101.6,
+      kind: "proportion",
+      value: 111.6 / 990,
     });
     expect(active.window.frameGeometry.width).toBe(101.6);
     expect(controller.decreaseColumnWidth()).toBe(false);
@@ -4604,11 +4889,11 @@ describe("RuntimeController", () => {
     constraints.minSize = { height: 1, width: 450 };
     expect(controller.decreaseColumnWidth()).toBe(false);
     expect(activeColumnWidth(controller, output, desktop)).toEqual({
-      kind: "fixed",
-      value: 400,
+      kind: "proportion",
+      value: 410 / 990,
     });
     expect(controller.increaseColumnWidth()).toBe(true);
-    expect(active.window.frameGeometry.width).toBe(464);
+    expect(active.window.frameGeometry.width).toBe(499);
   });
 
   it("uses every grouped member constraint while a sibling is suspended", () => {
@@ -4677,18 +4962,15 @@ describe("RuntimeController", () => {
 
     expect(controller.increaseColumnWidth()).toBe(true);
     expect(activeColumnWidth(controller, output, desktop)).toEqual({
-      kind: "fixed",
-      value: 520,
+      kind: "proportion",
+      value: 530 / 990,
     });
     expect(controller.increaseColumnWidth()).toBe(false);
     expect(active.window.frameGeometry.width).toBe(520);
 
-    for (const expected of [456, 392, 328, 264, 250]) {
+    for (const expected of [421, 322, 250]) {
       expect(controller.decreaseColumnWidth()).toBe(true);
-      expect(activeColumnWidth(controller, output, desktop)).toEqual({
-        kind: "fixed",
-        value: expected,
-      });
+      expect(active.window.frameGeometry.width).toBe(expected);
     }
 
     expect(controller.decreaseColumnWidth()).toBe(false);
@@ -4825,7 +5107,7 @@ describe("RuntimeController", () => {
     expect(controller.increaseColumnWidth()).toBe(true);
     expect(activeColumnWidth(controller, output, desktop)).toEqual({
       kind: "proportion",
-      value: 0.5625,
+      value: 0.6,
     });
   });
 
@@ -4994,11 +5276,12 @@ describe("RuntimeController", () => {
     });
     const parkedWrites = parked?.writeCount ?? 0;
 
-    for (const expected of [336, 272, 208]) {
+    for (const expected of [301, 202]) {
       expect(setup.controller.decreaseColumnWidth()).toBe(true);
       expect(
         activeColumnWidth(setup.controller, setup.output.output, setup.desktop),
-      ).toEqual({ kind: "fixed", value: expected });
+      ).toMatchObject({ kind: "proportion" });
+      expect(setup.windows[2]?.window.frameGeometry.width).toBe(expected);
       expect(setup.controller.managedCount).toBe(2);
       setup.workScheduler.flush();
       expect(setup.controller.managedCount).toBe(2);
@@ -5007,7 +5290,8 @@ describe("RuntimeController", () => {
     expect(setup.controller.decreaseColumnWidth()).toBe(true);
     expect(
       activeColumnWidth(setup.controller, setup.output.output, setup.desktop),
-    ).toEqual({ kind: "fixed", value: 144 });
+    ).toMatchObject({ kind: "proportion" });
+    expect(setup.windows[2]?.window.frameGeometry.width).toBe(103);
     setup.workScheduler.flush();
 
     expect(setup.controller.managedCount).toBe(3);
@@ -10207,8 +10491,8 @@ describe("RuntimeController desktop transfers", () => {
     const { controller, desktops, fixture, moved, output } =
       createDesktopTransferFixture();
 
-    expect(controller.moveWindowToPreviousDesktop()).toBe(false);
-    expect(controller.moveWindowToNextDesktop()).toBe(true);
+    expect(controller.moveColumnToPreviousDesktop()).toBe(false);
+    expect(controller.moveColumnToNextDesktop()).toBe(true);
     expect(moved.window.desktops).toEqual([desktops[1]]);
     expect(fixture.workspace.currentDesktopForScreen?.(output)).toBe(
       desktops[1],
@@ -10221,8 +10505,8 @@ describe("RuntimeController desktop transfers", () => {
       { id: "column:destination", windowIds: ["destination"] },
       { id: "column:moved", windowIds: ["moved"] },
     ]);
-    expect(controller.moveWindowToNextDesktop()).toBe(false);
-    expect(controller.moveWindowToPreviousDesktop()).toBe(true);
+    expect(controller.moveColumnToNextDesktop()).toBe(false);
+    expect(controller.moveColumnToPreviousDesktop()).toBe(true);
     expect(moved.window.desktops).toEqual([desktops[0]]);
     expect(fixture.workspace.currentDesktopForScreen?.(output)).toBe(
       desktops[0],
@@ -10231,6 +10515,34 @@ describe("RuntimeController desktop transfers", () => {
       { id: "column:source", windowIds: ["source"] },
       { id: "column:moved", windowIds: ["moved"] },
     ]);
+  });
+
+  it("migrates full-width restore state when a desktop transfer renames the column", () => {
+    const transfer = createDesktopTransferFixture({
+      targetColumnId: "column:moved",
+    });
+
+    expect(transfer.controller.maximizeColumn()).toBe(true);
+    expect(transfer.controller.moveColumnToNextDesktop()).toBe(true);
+    expect(
+      testLayoutColumns(
+        transfer.controller,
+        transfer.output,
+        transfer.desktops[1],
+      ),
+    ).toEqual([
+      { id: "column:moved", windowIds: ["destination"] },
+      { id: "column:transfer:moved", windowIds: ["moved"] },
+    ]);
+
+    expect(transfer.controller.maximizeColumn()).toBe(true);
+    expect(
+      activeColumnWidth(
+        transfer.controller,
+        transfer.output,
+        transfer.desktops[1],
+      ),
+    ).toEqual({ kind: "proportion", value: 0.5 });
   });
 
   it("extracts a stack member and returns it after the surviving active column", () => {
@@ -10292,6 +10604,20 @@ describe("RuntimeController desktop transfers", () => {
     ).layout = layout;
     fixture.workspace.activeWindow = moved.window;
     controller.reconcile();
+
+    const sourceBefore = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktops[0].id),
+    );
+    expect(controller.moveColumnToNextDesktop()).toBe(false);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktops[0].id),
+      ),
+    ).toEqual(sourceBefore);
+    expect(moved.desktopWriteCount).toBe(0);
+    expect(fixture.desktopSwitchCount).toBe(0);
 
     expect(controller.moveWindowToNextDesktop()).toBe(true);
     expect(
@@ -10772,25 +11098,25 @@ describe("RuntimeController output transfers", () => {
     {
       direction: "left",
       move: (controller: RuntimeController) =>
-        controller.moveWindowToOutputLeft(),
+        controller.moveColumnToOutputLeft(),
       target: { x: -1000, y: 0 },
     },
     {
       direction: "right",
       move: (controller: RuntimeController) =>
-        controller.moveWindowToOutputRight(),
+        controller.moveColumnToOutputRight(),
       target: { x: 1000, y: 0 },
     },
     {
       direction: "up",
       move: (controller: RuntimeController) =>
-        controller.moveWindowToOutputUp(),
+        controller.moveColumnToOutputUp(),
       target: { x: 0, y: -800 },
     },
     {
       direction: "down",
       move: (controller: RuntimeController) =>
-        controller.moveWindowToOutputDown(),
+        controller.moveColumnToOutputDown(),
       target: { x: 0, y: 800 },
     },
   ])(
@@ -10831,6 +11157,34 @@ describe("RuntimeController output transfers", () => {
       expect(transfer.fixture.outputTransferCount).toBe(1);
     },
   );
+
+  it("never splits a stacked column through a default output transfer", () => {
+    const transfer = createOutputTransferFixture({ sourceStack: true });
+    const sourceBefore = runtimeLayout(transfer.controller).snapshot(
+      outputId(transfer.sourceOutput.name),
+      desktopId(transfer.sourceDesktop.id),
+    );
+    const targetBefore = runtimeLayout(transfer.controller).snapshot(
+      outputId(transfer.targetOutput.name),
+      desktopId(transfer.targetDesktop.id),
+    );
+
+    expect(transfer.controller.moveColumnToOutputRight()).toBe(false);
+    expect(transfer.fixture.outputTransferCount).toBe(0);
+    expect(transfer.moved.desktopWriteCount).toBe(0);
+    expect(
+      runtimeLayout(transfer.controller).snapshot(
+        outputId(transfer.sourceOutput.name),
+        desktopId(transfer.sourceDesktop.id),
+      ),
+    ).toEqual(sourceBefore);
+    expect(
+      runtimeLayout(transfer.controller).snapshot(
+        outputId(transfer.targetOutput.name),
+        desktopId(transfer.targetDesktop.id),
+      ),
+    ).toEqual(targetBefore);
+  });
 
   it("uses the target output's visible desktop without switching either output", () => {
     const transfer = createOutputTransferFixture({ differentDesktop: true });
@@ -10899,6 +11253,44 @@ describe("RuntimeController output transfers", () => {
       value: 0.3,
     });
     expect(target.activeColumnId).toBe(columnId("column:moved"));
+  });
+
+  it("migrates full-width restore state when an output transfer renames the column", () => {
+    const transfer = createOutputTransferFixture({
+      movedWidth: 0.3,
+      sourceOnly: true,
+      targetColumnId: "column:moved",
+      targetColumnWidth: 0.3,
+    });
+
+    expect(transfer.controller.maximizeColumn()).toBe(true);
+    expect(
+      runtimeLayout(transfer.controller).setActiveColumnWidth(
+        windowId(String(transfer.moved.window.internalId)),
+        { kind: "proportion", value: 0.4 },
+      ),
+    ).toEqual({ kind: "proportion", value: 1 });
+    transfer.controller.reconcile();
+    expect(transfer.controller.moveColumnToOutputRight()).toBe(true);
+    expect(
+      testLayoutColumns(
+        transfer.controller,
+        transfer.targetOutput,
+        transfer.targetDesktop,
+      ),
+    ).toEqual([
+      { id: "column:moved", windowIds: ["destination"] },
+      { id: "column:transfer:moved", windowIds: ["moved"] },
+    ]);
+
+    expect(transfer.controller.maximizeColumn()).toBe(true);
+    expect(
+      activeColumnWidth(
+        transfer.controller,
+        transfer.targetOutput,
+        transfer.targetDesktop,
+      ),
+    ).toEqual({ kind: "proportion", value: 0.3 });
   });
 
   it("creates an empty target context and removes an emptied source", () => {
@@ -11452,6 +11844,7 @@ function createOutputTransferFixture(
     readonly sourceOnly?: boolean;
     readonly sourceStack?: boolean;
     readonly target?: { readonly x: number; readonly y: number };
+    readonly targetColumnId?: string;
     readonly targetColumnWidth?: number;
   } = {},
 ) {
@@ -11564,12 +11957,14 @@ function createOutputTransferFixture(
   });
   layout.restoreColumns({
     activeColumnId:
-      destinations.length === 0 ? null : columnId("column:destination"),
+      destinations.length === 0
+        ? null
+        : columnId(options.targetColumnId ?? "column:destination"),
     columns: destinations.map((window, index) => ({
       column: {
         id: columnId(
           index === 0
-            ? "column:destination"
+            ? (options.targetColumnId ?? "column:destination")
             : `column:destination-${String(index + 1)}`,
         ),
         width: {
@@ -11621,6 +12016,7 @@ function createDesktopTransferFixture(
   options: {
     readonly destinationCount?: number;
     readonly movedOverrides?: Partial<KWinWindow>;
+    readonly targetColumnId?: string;
     readonly trackedOutput?: boolean;
   } = {},
 ) {
@@ -11687,12 +12083,12 @@ function createDesktopTransferFixture(
     outputId: outputId(output.name),
   });
   layout.restoreColumns({
-    activeColumnId: columnId("column:destination"),
+    activeColumnId: columnId(options.targetColumnId ?? "column:destination"),
     columns: destinations.map((window, index) => ({
       column: {
         id: columnId(
           index === 0
-            ? "column:destination"
+            ? (options.targetColumnId ?? "column:destination")
             : `column:destination-${String(index + 1)}`,
         ),
         width: { kind: "proportion" as const, value: 0.5 },
