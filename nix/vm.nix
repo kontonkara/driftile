@@ -157,7 +157,7 @@ let
             /component/kwin \
             org.kde.kglobalaccel.Component \
             shortcutNames 2>/dev/null \
-            | grep -o 'Driftile Focus \(Left\|Right\)' \
+            | grep -o 'Driftile \(Focus\|Move Column\) \(Left\|Right\)' \
             | sort -u \
             | tr '\n' ' ' || true
           printf '\nwindow A captions: '
@@ -203,6 +203,18 @@ let
           && wait_for_layout -800 32 864 \
           || return 1
         record_focus_state "window C activated"
+
+        invoke_shortcut "Driftile Move Column Left" \
+          && wait_for_active "$title_c" \
+          && wait_for_layout -800 864 32 \
+          || return 1
+        record_focus_state "column C moved left"
+
+        invoke_shortcut "Driftile Move Column Right" \
+          && wait_for_active "$title_c" \
+          && wait_for_layout -800 32 864 \
+          || return 1
+        record_focus_state "column C moved right"
 
         invoke_shortcut "Driftile Focus Left" \
           && wait_for_active "$title_b" \

@@ -2,12 +2,18 @@
 
 set -euo pipefail
 
+global_accel_pid=""
 kwin_pid=""
 
 cleanup() {
   if [[ -n "$kwin_pid" ]]; then
     kill "$kwin_pid" >/dev/null 2>&1 || true
     wait "$kwin_pid" >/dev/null 2>&1 || true
+  fi
+
+  if [[ -n "$global_accel_pid" ]]; then
+    kill "$global_accel_pid" >/dev/null 2>&1 || true
+    wait "$global_accel_pid" >/dev/null 2>&1 || true
   fi
 }
 
@@ -20,6 +26,9 @@ xrandr --newmode \
   600 603 613 624 \
   -hsync +vsync
 xrandr --addmode screen 1024x600
+
+QT_QPA_PLATFORM=xcb "$DRIFTILE_SMOKE_KGLOBALACCELD" &
+global_accel_pid=$!
 
 QT_QPA_PLATFORM=xcb LIBGL_ALWAYS_SOFTWARE=1 kwin_x11 --no-kactivities &
 kwin_pid=$!

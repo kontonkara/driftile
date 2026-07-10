@@ -55,6 +55,7 @@ run_backend() (
   local sandbox
   local log_file
   local layer_shell_qml_import="${DRIFTILE_SMOKE_LAYER_SHELL_QML_IMPORT:-}"
+  local kglobalacceld="${DRIFTILE_SMOKE_KGLOBALACCELD:-}"
   local result_file
   local display_number
   local qml_binary
@@ -173,6 +174,7 @@ run_backend() (
       require_command Xwayland || exit 1
       export DRIFTILE_SMOKE_PROTOCOLS="xwayland wayland"
       export KWIN_COMPOSE=Q
+      export XDG_SESSION_TYPE=wayland
 
       if [[ "$backend" == "wayland-multi-output" ]]; then
         require_command kscreen-doctor || exit 1
@@ -204,7 +206,6 @@ run_backend() (
         --scale 1 \
         --xwayland \
         --socket "$socket_name" \
-        --no-global-shortcuts \
         --no-kactivities \
         --no-lockscreen \
         --exit-with-session "$project_root/tools/integration/session.sh" \
@@ -217,8 +218,15 @@ run_backend() (
       require_command Xvfb || exit 1
       require_command xprop || exit 1
       require_command xrandr || exit 1
+
+      if [[ -z "$kglobalacceld" || ! -x "$kglobalacceld" ]]; then
+        fail "Set DRIFTILE_SMOKE_KGLOBALACCELD to an executable kglobalacceld path for X11."
+      fi
+
+      export DRIFTILE_SMOKE_KGLOBALACCELD="$kglobalacceld"
       export DRIFTILE_SMOKE_PROTOCOLS=x11
       export DRIFTILE_SMOKE_SCENARIO=single-output
+      export XDG_SESSION_TYPE=x11
       xvfb_log="$sandbox/xvfb.log"
 
       Xvfb \

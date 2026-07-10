@@ -71,6 +71,7 @@
             developmentPackages
             ++ (with pkgs; [
               dbus
+              kdePackages.kglobalacceld
               kdePackages.layer-shell-qt
               kdePackages.libkscreen
               kdePackages.kwin
@@ -93,6 +94,8 @@
             packages = integrationPackages;
             DRIFTILE_SMOKE_LAYER_SHELL_QML_IMPORT =
               "${pkgs.kdePackages.layer-shell-qt}/lib/qt-6/qml";
+            DRIFTILE_SMOKE_KGLOBALACCELD =
+              "${pkgs.kdePackages.kglobalacceld}/libexec/kglobalacceld";
           };
         }
       );

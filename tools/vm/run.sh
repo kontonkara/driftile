@@ -83,9 +83,9 @@ monitor_guest() {
       fi
 
       if [[ "$(<"$focus_file")" == true ]]; then
-        printf 'The VM verified focus shortcuts and viewport scrolling.\n'
+        printf 'The VM verified focus, column movement, and viewport scrolling.\n'
       else
-        printf 'The VM failed to verify focus shortcuts and viewport scrolling.\n' >&2
+        printf 'The VM failed to verify focus, column movement, and viewport scrolling.\n' >&2
         failed=true
 
         if [[ -f "$diagnostics_file" ]]; then

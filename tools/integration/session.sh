@@ -160,6 +160,41 @@ run_window_action() {
     >/dev/null
 }
 
+shortcut_is_registered() {
+  local shortcut_name=$1
+
+  busctl --user call \
+    org.kde.kglobalaccel \
+    /component/kwin \
+    org.kde.kglobalaccel.Component \
+    shortcutNames 2>/dev/null | grep -Fq "$shortcut_name"
+}
+
+wait_for_shortcut() {
+  local shortcut_name=$1
+  local attempt
+
+  for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
+    if shortcut_is_registered "$shortcut_name"; then
+      return 0
+    fi
+
+    sleep 0.05
+  done
+
+  return 1
+}
+
+invoke_shortcut() {
+  busctl --user call \
+    org.kde.kglobalaccel \
+    /component/kwin \
+    org.kde.kglobalaccel.Component \
+    invokeShortcut \
+    s "$1" \
+    >/dev/null
+}
+
 activate_window() {
   local match_id
 
@@ -922,6 +957,26 @@ run_scenario() {
     "$second_title" "32,16,616,688" \
     "$third_title" "664,16,616,688" || \
     fail "Driftile did not reveal the third $protocol window again: $(describe_layout "$first_title" "$second_title" "$third_title")"
+
+  wait_for_shortcut "Driftile Move Column Left" || \
+    fail "KGlobalAccel did not register the move-left shortcut"
+  wait_for_shortcut "Driftile Move Column Right" || \
+    fail "KGlobalAccel did not register the move-right shortcut"
+  invoke_shortcut "Driftile Move Column Left" || \
+    fail "KGlobalAccel could not invoke the move-left shortcut"
+  wait_for_layout \
+    "$first_title" "-600,16,616,688" \
+    "$second_title" "664,16,616,688" \
+    "$third_title" "32,16,616,688" || \
+    fail "Driftile did not move the active $protocol column left: $(describe_layout "$first_title" "$second_title" "$third_title")"
+
+  invoke_shortcut "Driftile Move Column Right" || \
+    fail "KGlobalAccel could not invoke the move-right shortcut"
+  wait_for_layout \
+    "$first_title" "-600,16,616,688" \
+    "$second_title" "32,16,616,688" \
+    "$third_title" "664,16,616,688" || \
+    fail "Driftile did not move the active $protocol column right: $(describe_layout "$first_title" "$second_title" "$third_title")"
 
   set_plugin_state false
   wait_for_script_state false || fail "KWin did not unload Driftile"
