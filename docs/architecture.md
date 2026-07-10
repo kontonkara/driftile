@@ -36,6 +36,8 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Focuses vertical stack members; reorders, merges, and extracts them while preserving KWin focus.
 - Resolves directional output neighbors from logical output geometry and transfers the active tiled window between both visible contexts.
 - Releases explicitly floating windows from geometry ownership and restores their anchored layout slots on return.
+- Keeps dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows entirely KWin-owned in state separate from manual floating.
+- Releases a managed window that gains an automatic-floating role without restoring its old frame, then readmits it when the role clears and it remains eligible.
 - Owns startup, reconfiguration, and shutdown sequencing.
 
 ### Core
@@ -68,13 +70,14 @@ RuntimeState
   pendingWindowSyncs: Set<WindowId>
   waitingWindowIds: Map<ContextKey, Set<WindowId>>
   floatingWindows: Map<WindowId, { placement, sourceContextKey }>
+  automaticFloatingWindows: Set<WindowId>
   requestedSuspensions: Map<WindowId, Set<StateReason>>
   suspendedWindows: Set<WindowId>
   toggleGeometryTransitions: Map<WindowId, { contextKey, expectedFrame, settlementArmed }>
   topologyBarrier: { revision, affectedOutputs, stableSample }
 ```
 
-`LayoutContext` owns columns, viewport offset, and the last applied geometry fingerprint. A managed window owns an optional original-frame restore baseline. A floating window remains observed but has no layout or geometry owner; its detached placement records stable anchors for reinsertion. A suspended window keeps its layout slot, but reconcile excludes it until KWin releases geometry authority. Waiting windows have no layout owner. KWin objects never enter core state.
+`LayoutContext` owns columns, viewport offset, and the last applied geometry fingerprint. A managed window owns an optional original-frame restore baseline. A manually floating window remains observed but has no layout or geometry owner; its detached placement records stable anchors for reinsertion. An automatically floating window has no layout slot, floating anchor, waiting entry, suspension, or retry state. A suspended window keeps its layout slot, but reconcile excludes it until KWin releases geometry authority. Waiting windows have no layout owner. KWin objects never enter core state.
 
 ## Reconciliation rules
 
@@ -88,11 +91,13 @@ RuntimeState
 - Transfer a tiled window between existing desktops through an immutable two-context preview, then commit both contexts only after KWin accepts the desktop switch and destination geometry.
 - Transfer a tiled window between outputs through the same two-context preview, then commit only after KWin accepts the output and desktop mechanism plus both visible layouts.
 - Apply floating transitions from immutable previews, commit ownership only after every geometry request succeeds, and defer later context writes until asynchronous frames settle.
+- Leave dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows fully KWin-owned. Driftile layout commands are no-ops when one is active.
+- If a managed window gains an automatic-floating role, remove its slot without writing a stale restore frame or disturbing unrelated order, widths, or viewport state. Re-admit it through normal admission after the role clears.
 - Allow horizontal overflow and viewport scrolling when KWin reports one output.
 - Queue a candidate window unmanaged if it would introduce overflow with multiple outputs, then retry it when that context gains capacity.
 - When a topology change invalidates existing multi-output capacity, park whole writable columns with a reachable anchor inside the work area and release them to the waiting queue. Preserve the active column when possible; choose the farthest non-active column first and the rightmost on a tie.
 - Release externally transferred windows from their old context before admitting them to the destination context.
-- Respect minimum and maximum window sizes before emitting geometry.
+- Translate client minimum and maximum sizes to frame bounds by adding current nonnegative decoration extents before emitting geometry or resizing a column. Treat malformed bounds conservatively.
 - Preserve a window's slot through fullscreen, minimize, maximize, native tiling, and interactive move or resize transitions.
 - Require a stable restored frame before resuming writes or rebasing a transferred window.
 - Freeze admission, focus commands, and affected-context geometry writes until two successive delayed topology snapshots match.
@@ -109,6 +114,11 @@ RuntimeState
 - Do not write unchanged properties.
 - Keep core operations linear in the affected context, not the whole workspace.
 
+## Current constraint limits
+
+- KWin does not expose a complete change signal for all minimum, maximum, and resizeability metadata. Signaled changes are reclassified immediately; silent changes are rechecked before reconciliation and geometry writes.
+- Size increments and aspect-ratio policies are not modeled yet.
+
 ## Verification
 
 - Unit-test core policies with plain fixtures.
@@ -116,6 +126,8 @@ RuntimeState
 - Replay window lifecycle and output or desktop transfer sequences.
 - Verify window-state ownership, cancellation races, stable resumption, and slot reservation.
 - Verify active-column reorder and resizing, including constraint bounds and transactional rollback.
+- Verify decorated client-to-frame constraint translation and conservative handling of malformed bounds.
+- Verify automatic KWin ownership, command no-ops, late role changes, manual-floating separation, and safe readmission.
 - Verify vertical focus, member reorder, contextual merge and extraction, suspended members, and structural rollback.
 - Verify the settled topology barrier, output replacement and removal, dock and silent work-area invalidations, sticky restore invalidation, and deterministic capacity recovery.
 - Verify independent contexts with native Wayland and Xwayland windows on two virtual outputs.

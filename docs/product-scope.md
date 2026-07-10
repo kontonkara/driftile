@@ -15,7 +15,7 @@ The ownership rule is strict:
 - One horizontal strip of columns per `(output, desktop)` context.
 - Deterministic window insertion, ordering, focus, movement, resizing, and scrolling.
 - Vertical window stacks within columns.
-- Managed, floating, and ignored window states.
+- Managed, manually floating, automatically KWin-owned, and ignored window states.
 - Output-local commands unless a transfer is explicit.
 - Work-area, size-constraint, fullscreen, minimized, dialog, and hot-plug handling.
 - Settled recovery for output-list, geometry, scale, and work-area changes.
@@ -49,6 +49,7 @@ Driftile must integrate with, not duplicate:
 - Window Rules and general application matching.
 - Global shortcut registration and editing.
 - Fullscreen, maximize, minimize, decorations, and interactive move/resize behavior.
+- Dialogs, modal or transient windows, non-resizable normal windows, and normal windows fixed on both axes.
 - Overview, Pager, Task Switcher, desktop OSD, and session restoration.
 
 ## Invariants
@@ -58,7 +59,7 @@ Driftile must integrate with, not duplicate:
 - No layout write occurs while a topology snapshot is unsettled.
 - Focusing a managed window makes it fully visible with the smallest required scroll.
 - Reordering moves one whole active column inside its context without changing focus or widths.
-- Resizing changes one whole active column, respects every member's width constraints, and preserves focus and grouping.
+- Resizing changes one whole active column, translates client limits to decorated frame bounds, respects every member's width constraints, and preserves focus and grouping.
 - Horizontal window movement merges a singleton into its neighbor or extracts a stacked member into a new adjacent singleton column.
 - Merge preserves the destination width; extraction copies the source width; both preserve focus and member order.
 - Direct insertion appends the active window to the nearest existing stack in its direction, skips singleton columns without wrapping, and preserves the target width.
@@ -67,8 +68,10 @@ Driftile must integrate with, not duplicate:
 - Output transfer selects a deterministic adjacent output without wrapping, preserves the source width, and inserts the active tiled window after the visible destination context's active column.
 - Output transfer never changes an output's current desktop; the moving window adopts the destination output's visible desktop when needed.
 - Desktop switching follows KWin's global or per-output virtual-desktop mode while layout ownership remains output-local.
-- A floating window has no Driftile geometry owner and cannot be admitted automatically.
-- Retiling restores a surviving anchored slot when possible and captures the latest floating frame as the next safe restore baseline.
+- A manually floating window has no Driftile geometry owner and returns only through the explicit toggle.
+- Retiling a manually floating window restores a surviving anchored slot when possible and captures the latest floating frame as the next safe restore baseline.
+- An automatically KWin-owned window has no layout slot, manual-floating anchor, waiting entry, suspension, or retry state. Driftile layout commands are no-ops while it is active.
+- A managed window that becomes modal or transient leaves its layout without a geometry write or stale baseline restore. It may be admitted again after the role clears.
 - Unrelated window order, widths, and viewport offsets remain stable.
 - A changed context never restores an original frame captured under stale output geometry.
 - Capacity eviction keeps windows reachable and preserves the active column when a writable alternative exists.

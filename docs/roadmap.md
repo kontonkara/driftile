@@ -47,15 +47,17 @@ The current runtime already:
 - Toggles the active normal window between tiled and floating states with anchored reinsertion and safe geometry ownership.
 - Moves the active tiled window between adjacent existing desktops with follow-focus and atomic two-context ownership.
 - Moves the active tiled window to an adjacent output with deterministic spatial routing and atomic visible-context reflow.
+- Leaves dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows entirely KWin-owned, separate from manual floating.
+- Translates client minimum and maximum sizes to decorated frame bounds for layout validation and column resizing.
 
-Physical connector hot-plug and a wider rotation matrix remain MVP hardening work.
+The automatic-floating base is complete. Size increments, aspect ratios, live constraint changes across more toolkits, physical connector hot-plug, and a wider rotation matrix remain MVP hardening work.
 
 ## MVP
 
 Complete the daily keyboard-driven workflow.
 
 - Manage every output and desktop independently.
-- Integrate dialogs and remaining size-constraint behavior.
+- Define size-increment and aspect-ratio behavior, and expand live constraint-change coverage across toolkits.
 - Harden the existing topology recovery for rotation, rapid physical hot-plug sequences, and more hardware configurations.
 - Maintain a trailing empty desktop with guarded removal.
 - Register configurable shortcuts and essential layout settings.
