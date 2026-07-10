@@ -131,6 +131,7 @@ run_backend() (
   chmod 0700 "$sandbox/runtime"
 
   export DRIFTILE_SMOKE_CLIENT="$project_root/tools/integration/client.qml"
+  export DRIFTILE_SMOKE_DESKTOP_STATE_PROBE="$project_root/tools/integration/desktop-state-probe.js"
   export DRIFTILE_SMOKE_LAYER_SHELL_QML_IMPORT="$layer_shell_qml_import"
   export DRIFTILE_SMOKE_NATIVE_TILE_TOGGLE="$project_root/tools/integration/native-tile-toggle.js"
   export DRIFTILE_SMOKE_OUTPUT_ROUTER="$project_root/tools/integration/output-router.js"
@@ -159,6 +160,15 @@ run_backend() (
     WAYLAND_DISPLAY \
     XDG_CURRENT_DESKTOP \
     XDG_SESSION_DESKTOP
+
+  if [[ "$backend" == "wayland-multi-output" ]]; then
+    kwriteconfig6 \
+      --file "$XDG_CONFIG_HOME/kwinrc" \
+      --group Windows \
+      --key PerOutputVirtualDesktops \
+      --type bool \
+      true
+  fi
 
   if ! kpackagetool6 \
     --type=KWin/Script \

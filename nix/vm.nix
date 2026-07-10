@@ -116,6 +116,124 @@ let
         return 1
       }
 
+      virtual_desktop_count() {
+        busctl --user --json=short get-property \
+          org.kde.KWin \
+          /VirtualDesktopManager \
+          org.kde.KWin.VirtualDesktopManager \
+          desktops 2>/dev/null \
+          | jq --exit-status --raw-output '.data | length'
+      }
+
+      virtual_desktop_id() {
+        local index=$1
+
+        busctl --user --json=short get-property \
+          org.kde.KWin \
+          /VirtualDesktopManager \
+          org.kde.KWin.VirtualDesktopManager \
+          desktops 2>/dev/null \
+          | jq --exit-status --raw-output \
+            --argjson index "$index" \
+            '.data | sort_by(.[0]) | .[$index][1]'
+      }
+
+      current_desktop_id() {
+        busctl --user --json=short get-property \
+          org.kde.KWin \
+          /VirtualDesktopManager \
+          org.kde.KWin.VirtualDesktopManager \
+          current 2>/dev/null \
+          | jq --exit-status --raw-output '.data'
+      }
+
+      wait_for_current_desktop() {
+        local attempt
+        local expected=$1
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          if [[ "$(current_desktop_id 2>/dev/null || true)" == "$expected" ]]; then
+            return 0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      set_current_desktop() {
+        local desktop=$1
+
+        busctl --user set-property \
+          org.kde.KWin \
+          /VirtualDesktopManager \
+          org.kde.KWin.VirtualDesktopManager \
+          current \
+          s "$desktop" \
+          >/dev/null \
+          && wait_for_current_desktop "$desktop"
+      }
+
+      prepare_test_desktops() {
+        local attempt
+
+        [[ "$(virtual_desktop_count 2>/dev/null || true)" == 1 ]] || return 1
+        primary_desktop_id=$(virtual_desktop_id 0) || return 1
+        busctl --user call \
+          org.kde.KWin \
+          /VirtualDesktopManager \
+          org.kde.KWin.VirtualDesktopManager \
+          createDesktop \
+          us 1 "Driftile Test Desktop" \
+          >/dev/null || return 1
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          if [[ "$(virtual_desktop_count 2>/dev/null || true)" == 2 ]]; then
+            secondary_desktop_id=$(virtual_desktop_id 1) || return 1
+            break
+          fi
+
+          sleep 0.1
+        done
+
+        [[ -n "$secondary_desktop_id" ]] || return 1
+        set_current_desktop "$primary_desktop_id"
+      }
+
+      window_is_on_desktop() {
+        local expected=$2
+        local id
+
+        id=$(window_id "$1") || return 1
+        busctl --user --json=short call \
+          org.kde.KWin \
+          /KWin \
+          org.kde.KWin \
+          getWindowInfo \
+          s "$id" 2>/dev/null \
+          | jq --exit-status \
+            --arg expected "$expected" \
+            '.data[0].desktops.data == [$expected]' \
+            >/dev/null
+      }
+
+      wait_for_window_desktop() {
+        local attempt
+        local expected=$2
+        local title=$1
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          if window_is_on_desktop "$title" "$expected"; then
+            return 0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
       wait_for_shortcuts() {
         local attempt
         local shortcuts
@@ -137,6 +255,8 @@ let
             && "$shortcuts" == *"Driftile Move Window Right"* \
             && "$shortcuts" == *"Driftile Move Window Up"* \
             && "$shortcuts" == *"Driftile Move Window Down"* \
+            && "$shortcuts" == *"Driftile Move Window to Previous Desktop"* \
+            && "$shortcuts" == *"Driftile Move Window to Next Desktop"* \
             && "$shortcuts" == *"Driftile Insert Window into Stack Left"* \
             && "$shortcuts" == *"Driftile Insert Window into Stack Right"* \
             && "$shortcuts" == *"Driftile Toggle Floating"* \
@@ -206,6 +326,36 @@ let
 
       frame_is_valid() {
         [[ "$1" =~ ^-?[0-9]+,-?[0-9]+,[1-9][0-9]*,[1-9][0-9]*$ ]]
+      }
+
+      capture_stable_window_frame() {
+        local attempt
+        local current
+        local previous=""
+        local stable_samples=0
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          current=$(window_frame "$1" 2>/dev/null || true)
+
+          if frame_is_valid "$current" && [[ "$current" == "$previous" ]]; then
+            stable_samples=$((stable_samples + 1))
+          elif frame_is_valid "$current"; then
+            stable_samples=1
+          else
+            stable_samples=0
+          fi
+
+          previous=$current
+
+          if ((stable_samples >= 2)); then
+            printf '%s' "$current"
+            return 0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
       }
 
       capture_stable_frames() {
@@ -282,6 +432,197 @@ let
             fi
           else
             stable_samples=0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      wait_for_desktop_destination_layout() {
+        local attempt
+        local current_destination
+        local current_first
+        local current_layout
+        local current_second
+        local current_third
+        local destination_height
+        local destination_width
+        local destination_x
+        local destination_y
+        local matches
+        local previous_layout=""
+        local second_height
+        local second_width
+        local second_x
+        local second_y
+        local source_first=$2
+        local source_third=$3
+        local source_width=$1
+        local stable_samples=0
+
+        frame_is_valid "$source_first" && frame_is_valid "$source_third" || return 1
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          current_first=$(window_frame "$title_a" 2>/dev/null || true)
+          current_second=$(window_frame "$title_b" 2>/dev/null || true)
+          current_third=$(window_frame "$title_c" 2>/dev/null || true)
+          current_destination=$(window_frame "$title_desktop_destination" 2>/dev/null || true)
+          current_layout="$current_first|$current_second|$current_third|$current_destination"
+          matches=false
+
+          if [[ "$current_first" == "$source_first" \
+            && "$current_third" == "$source_third" ]] \
+            && frame_is_valid "$current_second" \
+            && frame_is_valid "$current_destination"; then
+            IFS=, read -r second_x second_y second_width second_height \
+              <<< "$current_second"
+            IFS=, read -r \
+              destination_x \
+              destination_y \
+              destination_width \
+              destination_height \
+              <<< "$current_destination"
+
+            if ((second_y == destination_y \
+              && second_width == source_width \
+              && second_height == destination_height \
+              && destination_x + destination_width < second_x)); then
+              matches=true
+            fi
+          fi
+
+          if [[ "$matches" == true && "$current_layout" == "$previous_layout" ]]; then
+            stable_samples=$((stable_samples + 1))
+          elif [[ "$matches" == true ]]; then
+            stable_samples=1
+          else
+            stable_samples=0
+          fi
+
+          previous_layout=$current_layout
+
+          if ((stable_samples >= 2)); then
+            desktop_detached_first_frame=$current_first
+            desktop_detached_third_frame=$current_third
+            desktop_destination_frame=$current_destination
+            desktop_moved_frame=$current_second
+            return 0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      wait_for_desktop_destination_frames() {
+        local attempt
+        local stable_samples=0
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          if [[ "$(window_frame "$title_a" 2>/dev/null || true)" == "$3" \
+            && "$(window_frame "$title_b" 2>/dev/null || true)" == "$2" \
+            && "$(window_frame "$title_c" 2>/dev/null || true)" == "$4" \
+            && "$(window_frame "$title_desktop_destination" 2>/dev/null || true)" == "$1" ]]; then
+            stable_samples=$((stable_samples + 1))
+
+            if ((stable_samples >= 2)); then
+              return 0
+            fi
+          else
+            stable_samples=0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      wait_for_desktop_source_layout() {
+        local attempt
+        local current_first
+        local current_layout
+        local current_second
+        local current_third
+        local first_height
+        local first_width
+        local first_x
+        local first_y
+        local matches
+        local previous_layout=""
+        local second_height
+        local second_width
+        local second_x
+        local second_y
+        local source_third=$2
+        local source_third_height
+        local source_third_width
+        local source_third_y
+        local source_width=$1
+        local stable_samples=0
+        local third_height
+        local third_width
+        local third_x
+        local third_y
+
+        frame_is_valid "$source_third" || return 1
+        IFS=, read -r \
+          _ \
+          source_third_y \
+          source_third_width \
+          source_third_height \
+          <<< "$source_third"
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          current_first=$(window_frame "$title_a" 2>/dev/null || true)
+          current_second=$(window_frame "$title_b" 2>/dev/null || true)
+          current_third=$(window_frame "$title_c" 2>/dev/null || true)
+          current_layout="$current_first|$current_second|$current_third"
+          matches=false
+
+          if frame_is_valid "$current_first" \
+            && frame_is_valid "$current_second" \
+            && frame_is_valid "$current_third"; then
+            IFS=, read -r first_x first_y first_width first_height \
+              <<< "$current_first"
+            IFS=, read -r second_x second_y second_width second_height \
+              <<< "$current_second"
+            IFS=, read -r third_x third_y third_width third_height \
+              <<< "$current_third"
+
+            if ((first_y == second_y \
+              && second_y == third_y \
+              && first_height == second_height \
+              && second_height == third_height \
+              && first_width == source_width \
+              && second_width == source_width \
+              && third_y == source_third_y \
+              && third_width == source_third_width \
+              && third_height == source_third_height \
+              && first_x + first_width < second_x \
+              && second_x + second_width < third_x)); then
+              matches=true
+            fi
+          fi
+
+          if [[ "$matches" == true && "$current_layout" == "$previous_layout" ]]; then
+            stable_samples=$((stable_samples + 1))
+          elif [[ "$matches" == true ]]; then
+            stable_samples=1
+          else
+            stable_samples=0
+          fi
+
+          previous_layout=$current_layout
+
+          if ((stable_samples >= 2)); then
+            desktop_return_first_frame=$current_first
+            desktop_return_second_frame=$current_second
+            desktop_return_third_frame=$current_third
+            return 0
           fi
 
           sleep 0.1
@@ -924,7 +1265,7 @@ let
             org.kde.kglobalaccel.Component \
             shortcutNames 2>/dev/null \
             | grep -oE \
-              'Driftile (Focus (Left|Right|Up|Down)|Move Column (Left|Right)|Move Window (Left|Right|Up|Down)|Insert Window into Stack (Left|Right)|Toggle Floating|(Decrease|Increase|Reset) Column Width)' \
+              'Driftile (Focus (Left|Right|Up|Down)|Move Column (Left|Right)|Move Window ((Left|Right|Up|Down)|to (Previous|Next) Desktop)|Insert Window into Stack (Left|Right)|Toggle Floating|(Decrease|Increase|Reset) Column Width)' \
             | sort -u \
             | tr '\n' ' ' || true
           printf '\nwindow A captions: '
@@ -959,21 +1300,34 @@ let
             Match \
             s "$title_d" 2>/dev/null \
             | jq --compact-output '[.data[0][] | .[1]]' || true
-          printf 'frame x positions: A=%s B=%s C=%s D=%s\n' \
+          printf 'desktop destination captions: '
+          busctl --user --json=short call \
+            org.kde.KWin \
+            /WindowsRunner \
+            org.kde.krunner1 \
+            Match \
+            s "$title_desktop_destination" 2>/dev/null \
+            | jq --compact-output '[.data[0][] | .[1]]' || true
+          printf 'current desktop: %s\n' \
+            "$(current_desktop_id 2>/dev/null || printf missing)"
+          printf 'frame x positions: A=%s B=%s C=%s D=%s destination=%s\n' \
             "$(window_frame_x "$title_a" 2>/dev/null || printf missing)" \
             "$(window_frame_x "$title_b" 2>/dev/null || printf missing)" \
             "$(window_frame_x "$title_c" 2>/dev/null || printf missing)" \
-            "$(window_frame_x "$title_d" 2>/dev/null || printf missing)"
-          printf 'frame widths: A=%s B=%s C=%s D=%s\n' \
+            "$(window_frame_x "$title_d" 2>/dev/null || printf missing)" \
+            "$(window_frame_x "$title_desktop_destination" 2>/dev/null || printf missing)"
+          printf 'frame widths: A=%s B=%s C=%s D=%s destination=%s\n' \
             "$(window_frame_width "$title_a" 2>/dev/null || printf missing)" \
             "$(window_frame_width "$title_b" 2>/dev/null || printf missing)" \
             "$(window_frame_width "$title_c" 2>/dev/null || printf missing)" \
-            "$(window_frame_width "$title_d" 2>/dev/null || printf missing)"
-          printf 'full frames (x,y,width,height): A=%s B=%s C=%s D=%s\n' \
+            "$(window_frame_width "$title_d" 2>/dev/null || printf missing)" \
+            "$(window_frame_width "$title_desktop_destination" 2>/dev/null || printf missing)"
+          printf 'full frames (x,y,width,height): A=%s B=%s C=%s D=%s destination=%s\n' \
             "$(window_frame "$title_a" 2>/dev/null || printf missing)" \
             "$(window_frame "$title_b" 2>/dev/null || printf missing)" \
             "$(window_frame "$title_c" 2>/dev/null || printf missing)" \
-            "$(window_frame "$title_d" 2>/dev/null || printf missing)"
+            "$(window_frame "$title_d" 2>/dev/null || printf missing)" \
+            "$(window_frame "$title_desktop_destination" 2>/dev/null || printf missing)"
         } >> /tmp/shared/driftile-focus-diagnostics
       }
 
@@ -981,6 +1335,8 @@ let
         local baseline_first_width
         local baseline_second_width
         local baseline_third_width
+        local desktop_source_width
+        local desktop_window
         local direct_insert_verified
         local floating_first_frame
         local floating_second_frame
@@ -1151,6 +1507,100 @@ let
         merged_second_frame=$stable_second_frame
         merged_third_frame=$stable_third_frame
 
+        IFS=, read -r _ _ desktop_source_width _ <<< "$merged_first_frame"
+
+        if [[ ! "$desktop_source_width" =~ ^[1-9][0-9]*$ ]]; then
+          return 1
+        fi
+
+        set_current_desktop "$secondary_desktop_id" || return 1
+        qml -f ${demoClient} -- --mark-active "$title_desktop_destination" &
+        desktop_window=$!
+
+        wait_for_window "$title_desktop_destination" \
+          && wait_for_active "$title_desktop_destination" \
+          && capture_stable_window_frame "$title_desktop_destination" >/dev/null \
+          && wait_for_window_desktop \
+            "$title_desktop_destination" \
+            "$secondary_desktop_id" \
+          && set_current_desktop "$primary_desktop_id" \
+          && activate_window "$title_b" \
+          && wait_for_active "$title_b" \
+          && wait_for_frames \
+            "$merged_first_frame" \
+            "$merged_second_frame" \
+            "$merged_third_frame" \
+          || return 1
+        record_focus_state "desktop transfer destination seeded"
+
+        invoke_shortcut "Driftile Move Window to Previous Desktop" \
+          && wait_for_current_desktop "$primary_desktop_id" \
+          && wait_for_window_desktop "$title_b" "$primary_desktop_id" \
+          && wait_for_frames \
+            "$merged_first_frame" \
+            "$merged_second_frame" \
+            "$merged_third_frame" \
+          && wait_for_active "$title_b" \
+          || return 1
+        record_focus_state "previous desktop boundary preserved the source stack"
+
+        invoke_shortcut "Driftile Move Window to Next Desktop" \
+          && wait_for_current_desktop "$secondary_desktop_id" \
+          && wait_for_window_desktop "$title_b" "$secondary_desktop_id" \
+          && wait_for_desktop_destination_layout \
+            "$desktop_source_width" \
+            "$merged_first_frame" \
+            "$merged_third_frame" \
+          && wait_for_active "$title_b" \
+          || return 1
+        record_focus_state "window B moved to the next desktop"
+
+        invoke_shortcut "Driftile Move Window to Next Desktop" \
+          && wait_for_current_desktop "$secondary_desktop_id" \
+          && wait_for_desktop_destination_frames \
+            "$desktop_destination_frame" \
+            "$desktop_moved_frame" \
+            "$desktop_detached_first_frame" \
+            "$desktop_detached_third_frame" \
+          && wait_for_active "$title_b" \
+          || return 1
+        record_focus_state "next desktop boundary preserved the destination layout"
+
+        invoke_shortcut "Driftile Move Window to Previous Desktop" \
+          && wait_for_current_desktop "$primary_desktop_id" \
+          && wait_for_window_desktop "$title_b" "$primary_desktop_id" \
+          && wait_for_desktop_source_layout \
+            "$desktop_source_width" \
+            "$merged_third_frame" \
+          && wait_for_active "$title_b" \
+          || return 1
+        record_focus_state "window B returned after the source active column"
+
+        invoke_shortcut "Driftile Move Window to Previous Desktop" \
+          && wait_for_current_desktop "$primary_desktop_id" \
+          && wait_for_frames \
+            "$desktop_return_first_frame" \
+            "$desktop_return_second_frame" \
+            "$desktop_return_third_frame" \
+          && wait_for_active "$title_b" \
+          || return 1
+        record_focus_state "returned window preserved the previous desktop boundary"
+        floating_second_frame=$desktop_return_second_frame
+
+        invoke_shortcut "Driftile Move Window Left" \
+          && wait_for_frames \
+            "$merged_first_frame" \
+            "$merged_second_frame" \
+            "$merged_third_frame" \
+          && wait_for_active "$title_b" \
+          || return 1
+
+        kill "$desktop_window" >/dev/null 2>&1 || true
+        wait "$desktop_window" >/dev/null 2>&1 || true
+        desktop_window=""
+        wait_for_window_gone "$title_desktop_destination" || return 1
+        record_focus_state "desktop transfer source layout restored"
+
         activate_window "$title_c" \
           && wait_for_active "$title_c" \
           && wait_for_frames \
@@ -1295,10 +1745,19 @@ let
 
       printf '%s\n' "$loaded" > /tmp/shared/driftile-loaded
 
+      primary_desktop_id=""
+      secondary_desktop_id=""
+      desktops_ready=false
+
+      if prepare_test_desktops; then
+        desktops_ready=true
+      fi
+
       title_a="$status - window A - Meta+Ctrl+H"
       title_b="$status - window B - middle column"
       title_c="$status - window C - Meta+Ctrl+L"
       title_d="$status - window D - Meta+Ctrl+Alt+Shift+H"
+      title_desktop_destination="$status - desktop destination"
       fourth_window=""
       : > /tmp/shared/driftile-focus-diagnostics
 
@@ -1323,8 +1782,12 @@ let
 
       focus_verified=false
 
-      if [[ "$loaded" == true ]] && verify_focus; then
+      if [[ "$loaded" == true && "$desktops_ready" == true ]] && verify_focus; then
         focus_verified=true
+      fi
+
+      if [[ -n "$primary_desktop_id" ]]; then
+        set_current_desktop "$primary_desktop_id" || true
       fi
 
       printf '%s\n' "$focus_verified" > /tmp/shared/driftile-focus-verified

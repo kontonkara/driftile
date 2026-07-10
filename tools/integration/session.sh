@@ -7,13 +7,17 @@ if [[ "${DRIFTILE_SMOKE_TRACE:-0}" == "1" ]]; then
 fi
 
 readonly plugin_id="io.github.kontonkara.driftile"
+readonly desktop_state_probe_plugin_id="io.github.kontonkara.driftile.integration-desktop-state-probe"
+readonly desktop_state_verified_shortcut_prefix="Driftile Integration Desktop State Verified"
 readonly native_tile_toggle_plugin_id="io.github.kontonkara.driftile.integration-native-tile-toggle"
 readonly output_router_plugin_id="io.github.kontonkara.driftile.integration-output-router"
 readonly stable_sample_count=2
 readonly wait_attempts=200
 
 client_pids=()
+primary_desktop_id=""
 qml_options=(--software)
+secondary_desktop_id=""
 work_area_panel_pid=""
 x11_work_area_dock_pid=""
 
@@ -84,6 +88,13 @@ cleanup() {
     /Scripting \
     org.kde.kwin.Scripting \
     unloadScript \
+    s "$desktop_state_probe_plugin_id" \
+    >/dev/null 2>&1 || true
+  busctl --user call \
+    org.kde.KWin \
+    /Scripting \
+    org.kde.kwin.Scripting \
+    unloadScript \
     s "$native_tile_toggle_plugin_id" \
     >/dev/null 2>&1 || true
   busctl --user call \
@@ -93,6 +104,11 @@ cleanup() {
     unloadScript \
     s "$output_router_plugin_id" \
     >/dev/null 2>&1 || true
+
+  if [[ -n "$primary_desktop_id" ]]; then
+    set_current_desktop "$primary_desktop_id" >/dev/null 2>&1 || true
+  fi
+
   stop_clients
 }
 
@@ -199,6 +215,21 @@ wait_for_shortcut() {
 
   for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
     if shortcut_is_registered "$shortcut_name"; then
+      return 0
+    fi
+
+    sleep 0.05
+  done
+
+  return 1
+}
+
+wait_for_shortcut_absent() {
+  local shortcut_name=$1
+  local attempt
+
+  for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
+    if ! shortcut_is_registered "$shortcut_name"; then
       return 0
     fi
 
@@ -340,6 +371,123 @@ wait_for_dbus() {
   for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
     if busctl --user introspect org.kde.KWin /Scripting >/dev/null 2>&1 &&
       busctl --user introspect org.kde.KWin /WindowsRunner >/dev/null 2>&1; then
+      return 0
+    fi
+
+    sleep 0.05
+  done
+
+  return 1
+}
+
+virtual_desktop_ids() {
+  busctl --user --json=short get-property \
+    org.kde.KWin \
+    /VirtualDesktopManager \
+    org.kde.KWin.VirtualDesktopManager \
+    desktops 2>/dev/null | jq --exit-status --raw-output '
+      .data
+      | sort_by(.[0])
+      | .[][1]
+    '
+}
+
+current_desktop_id() {
+  busctl --user --json=short get-property \
+    org.kde.KWin \
+    /VirtualDesktopManager \
+    org.kde.KWin.VirtualDesktopManager \
+    current 2>/dev/null | jq --exit-status --raw-output '.data'
+}
+
+wait_for_current_desktop() {
+  local expected=$1
+  local attempt
+
+  for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
+    if [[ "$(current_desktop_id 2>/dev/null || true)" == "$expected" ]]; then
+      return 0
+    fi
+
+    sleep 0.05
+  done
+
+  return 1
+}
+
+set_current_desktop() {
+  local desktop=$1
+
+  busctl --user set-property \
+    org.kde.KWin \
+    /VirtualDesktopManager \
+    org.kde.KWin.VirtualDesktopManager \
+    current \
+    s "$desktop" \
+    >/dev/null || return 1
+
+  wait_for_current_desktop "$desktop"
+}
+
+prepare_test_desktops() {
+  local attempt
+  local -a desktop_ids=()
+
+  mapfile -t desktop_ids < <(virtual_desktop_ids)
+
+  if ((${#desktop_ids[@]} != 1)); then
+    return 1
+  fi
+
+  primary_desktop_id=${desktop_ids[0]}
+  busctl --user call \
+    org.kde.KWin \
+    /VirtualDesktopManager \
+    org.kde.KWin.VirtualDesktopManager \
+    createDesktop \
+    us 1 "Driftile Test Desktop" \
+    >/dev/null || return 1
+
+  for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
+    mapfile -t desktop_ids < <(virtual_desktop_ids)
+
+    if ((${#desktop_ids[@]} == 2)); then
+      secondary_desktop_id=${desktop_ids[1]}
+      break
+    fi
+
+    sleep 0.05
+  done
+
+  [[ -n "$secondary_desktop_id" ]] || return 1
+  set_current_desktop "$primary_desktop_id"
+}
+
+window_is_on_desktop() {
+  local window_title=$1
+  local expected=$2
+  local id
+
+  id=$(window_id "$window_title") || return 1
+  busctl --user --json=short call \
+    org.kde.KWin \
+    /KWin \
+    org.kde.KWin \
+    getWindowInfo \
+    s "$id" 2>/dev/null | jq --exit-status \
+      --arg expected "$expected" '
+        .data[0].desktops.data == [$expected]
+      ' \
+      >/dev/null
+}
+
+wait_for_window_desktop() {
+  local window_title=$1
+  local expected=$2
+  local attempt
+
+  for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
+    if window_is_on_desktop "$window_title" "$expected"; then
       return 0
     fi
 
@@ -719,6 +867,46 @@ toggle_native_tile() {
     "$native_tile_toggle_plugin_id"
 }
 
+verify_multi_output_desktop_state() {
+  local desktop_label=$2
+  local load_result
+  local script_id
+  local verified=false
+  local verified_shortcut="$desktop_state_verified_shortcut_prefix $1 $desktop_label"
+
+  wait_for_shortcut_absent "$verified_shortcut" || return 1
+  load_result=$(busctl --user call \
+    org.kde.KWin \
+    /Scripting \
+    org.kde.kwin.Scripting \
+    loadScript \
+    ss "$DRIFTILE_SMOKE_DESKTOP_STATE_PROBE" "$desktop_state_probe_plugin_id") || return 1
+  script_id=${load_result#i }
+
+  if [[ "$script_id" =~ ^[0-9]+$ ]]; then
+    if busctl --user call \
+      org.kde.KWin \
+      "/Scripting/Script${script_id}" \
+      org.kde.kwin.Script \
+      run \
+      >/dev/null && \
+      wait_for_shortcut "$verified_shortcut"; then
+      verified=true
+    fi
+  fi
+
+  busctl --user call \
+    org.kde.KWin \
+    /Scripting \
+    org.kde.kwin.Scripting \
+    unloadScript \
+    s "$desktop_state_probe_plugin_id" \
+    >/dev/null 2>&1 || true
+
+  wait_for_named_script_state "$desktop_state_probe_plugin_id" false || verified=false
+  [[ "$verified" == true ]]
+}
+
 load_output_router() {
   local load_result
   local script_id
@@ -968,6 +1156,241 @@ verify_x11_topology_recovery() {
     fail "KWin did not unload Driftile after X11 topology recovery"
 }
 
+verify_desktop_transfer() {
+  local protocol=$1
+  local first_title=$2
+  local second_title=$3
+  local third_title=$4
+  local baseline_variable=$5
+  local destination_title="driftile-desktop-destination-${protocol}"
+  local destination_pid
+  local transferred_baseline
+
+  wait_for_shortcut "Driftile Move Window to Previous Desktop" || \
+    fail "KGlobalAccel did not register the previous-desktop shortcut"
+  wait_for_shortcut "Driftile Move Window to Next Desktop" || \
+    fail "KGlobalAccel did not register the next-desktop shortcut"
+
+  set_current_desktop "$secondary_desktop_id" || \
+    fail "KWin could not select the destination desktop for $protocol transfer coverage"
+  start_client "$protocol" "$destination_title" true
+  destination_pid=${client_pids[${#client_pids[@]}-1]}
+  wait_for_geometries \
+    "$destination_title" "16,16,616,688" || \
+    fail "Driftile did not seed the $protocol destination desktop: $(describe_layout "$destination_title")"
+  wait_for_active "$destination_title" || \
+    fail "KWin did not focus the $protocol destination seed window"
+  wait_for_window_desktop "$destination_title" "$secondary_desktop_id" || \
+    fail "KWin placed the $protocol destination seed on the wrong desktop"
+
+  set_current_desktop "$primary_desktop_id" || \
+    fail "KWin could not restore the source desktop before $protocol transfer coverage"
+  activate_window "$second_title" || \
+    fail "KWin could not focus the lower $protocol stack member before desktop transfer"
+  wait_for_active "$second_title" || \
+    fail "KWin did not focus the lower $protocol stack member before desktop transfer"
+  wait_for_geometries \
+    "$first_title" "16,16,616,336" \
+    "$second_title" "16,368,616,336" \
+    "$third_title" "648,16,616,688" || \
+    fail "Driftile did not restore the $protocol source stack before desktop transfer: $(describe_layout "$first_title" "$second_title" "$third_title")"
+
+  invoke_shortcut "Driftile Move Window to Previous Desktop" || \
+    fail "KGlobalAccel could not invoke the previous-desktop boundary shortcut"
+  wait_for_current_desktop "$primary_desktop_id" || \
+    fail "Driftile wrapped the $protocol transfer before the first desktop"
+  wait_for_geometries \
+    "$first_title" "16,16,616,336" \
+    "$second_title" "16,368,616,336" \
+    "$third_title" "648,16,616,688" || \
+    fail "Driftile changed the $protocol layout at the previous-desktop boundary: $(describe_layout "$first_title" "$second_title" "$third_title")"
+  wait_for_active "$second_title" || \
+    fail "Driftile changed $protocol focus at the previous-desktop boundary"
+
+  invoke_shortcut "Driftile Move Window to Next Desktop" || \
+    fail "KGlobalAccel could not transfer the $protocol stack member to the next desktop"
+  wait_for_current_desktop "$secondary_desktop_id" || \
+    fail "Driftile did not follow the $protocol window to the next desktop"
+  wait_for_geometries \
+    "$destination_title" "16,16,616,688" \
+    "$second_title" "648,16,616,688" || \
+    fail "Driftile did not append the transferred $protocol window after the destination active column: $(describe_layout "$destination_title" "$second_title")"
+  wait_for_active "$second_title" || \
+    fail "Driftile did not preserve $protocol focus after the next-desktop transfer"
+  wait_for_window_desktop "$second_title" "$secondary_desktop_id" || \
+    fail "KWin did not move the $protocol window to the next desktop"
+  wait_for_window_desktop "$first_title" "$primary_desktop_id" || \
+    fail "Driftile moved an unrelated $protocol source stack member"
+  wait_for_window_desktop "$third_title" "$primary_desktop_id" || \
+    fail "Driftile moved an unrelated $protocol source column"
+
+  invoke_shortcut "Driftile Move Window to Next Desktop" || \
+    fail "KGlobalAccel could not invoke the next-desktop boundary shortcut"
+  wait_for_current_desktop "$secondary_desktop_id" || \
+    fail "Driftile wrapped the $protocol transfer after the last desktop"
+  wait_for_geometries \
+    "$destination_title" "16,16,616,688" \
+    "$second_title" "648,16,616,688" || \
+    fail "Driftile changed the $protocol layout at the next-desktop boundary: $(describe_layout "$destination_title" "$second_title")"
+  wait_for_active "$second_title" || \
+    fail "Driftile changed $protocol focus at the next-desktop boundary"
+
+  invoke_shortcut "Driftile Move Window to Previous Desktop" || \
+    fail "KGlobalAccel could not return the $protocol window to the previous desktop"
+  wait_for_current_desktop "$primary_desktop_id" || \
+    fail "Driftile did not follow the returning $protocol window"
+  wait_for_geometries \
+    "$first_title" "16,16,616,688" \
+    "$second_title" "648,16,616,688" \
+    "$third_title" "1280,16,616,688" || \
+    fail "Driftile did not insert the returning $protocol window after the source active column: $(describe_layout "$first_title" "$second_title" "$third_title")"
+  wait_for_active "$second_title" || \
+    fail "Driftile did not preserve $protocol focus after the previous-desktop transfer"
+  wait_for_window_desktop "$second_title" "$primary_desktop_id" || \
+    fail "KWin did not return the $protocol window to the source desktop"
+  transferred_baseline=$(capture_stable_geometry "$second_title") || \
+    fail "the returned $protocol window restore baseline did not stabilize"
+  printf -v "$baseline_variable" '%s' "$transferred_baseline"
+
+  invoke_shortcut "Driftile Move Window to Previous Desktop" || \
+    fail "KGlobalAccel could not recheck the previous-desktop boundary"
+  wait_for_current_desktop "$primary_desktop_id" || \
+    fail "Driftile wrapped the returned $protocol window before the first desktop"
+  wait_for_geometries \
+    "$first_title" "16,16,616,688" \
+    "$second_title" "648,16,616,688" \
+    "$third_title" "1280,16,616,688" || \
+    fail "Driftile changed the returned $protocol layout at the desktop boundary: $(describe_layout "$first_title" "$second_title" "$third_title")"
+
+  invoke_shortcut "Driftile Move Window Left" || \
+    fail "KGlobalAccel could not restore the $protocol source stack after desktop transfer"
+  wait_for_geometries \
+    "$first_title" "16,16,616,336" \
+    "$second_title" "16,368,616,336" \
+    "$third_title" "648,16,616,688" || \
+    fail "Driftile did not restore the $protocol source layout after desktop transfer: $(describe_layout "$first_title" "$second_title" "$third_title")"
+  wait_for_active "$second_title" || \
+    fail "Driftile changed $protocol focus while restoring the source stack"
+
+  stop_client "$destination_pid"
+  wait_for_window_gone "$destination_title" || \
+    fail "the $protocol destination seed window did not close"
+}
+
+verify_multi_output_desktop_transfer() {
+  local protocol=$1
+  local left_first_title=$2
+  local left_second_title=$3
+  local right_first_title=$4
+  local right_second_title=$5
+  local left_destination_title="driftile-multi-output-${protocol}-left-desktop-destination"
+  local right_destination_title="driftile-multi-output-${protocol}-right-desktop-destination"
+  local left_destination_pid
+  local right_destination_pid
+
+  wait_for_shortcut "Driftile Move Window to Previous Desktop" || \
+    fail "KGlobalAccel did not register the multi-output previous-desktop shortcut"
+  wait_for_shortcut "Driftile Move Window to Next Desktop" || \
+    fail "KGlobalAccel did not register the multi-output next-desktop shortcut"
+
+  activate_window "$left_first_title" || \
+    fail "KWin could not activate the left $protocol source before destination seeding"
+  set_current_desktop "$secondary_desktop_id" || \
+    fail "KWin could not select the left $protocol destination desktop"
+  start_client "$protocol" "$left_destination_title" true
+  left_destination_pid=${client_pids[${#client_pids[@]}-1]}
+  capture_stable_geometry "$left_destination_title" >/dev/null || \
+    fail "the left multi-output $protocol destination seed did not stabilize"
+  activate_window "$right_first_title" || \
+    fail "KWin could not activate the right $protocol source before destination seeding"
+  set_current_desktop "$secondary_desktop_id" || \
+    fail "KWin could not select the right $protocol destination desktop"
+  start_client "$protocol" "$right_destination_title" true
+  right_destination_pid=${client_pids[${#client_pids[@]}-1]}
+  capture_stable_geometry "$right_destination_title" >/dev/null || \
+    fail "the right multi-output $protocol destination seed did not stabilize"
+  activate_window "$left_destination_title" || \
+    fail "KWin could not activate the left multi-output $protocol destination seed"
+  wait_for_geometries \
+    "$left_destination_title" "16,16,616,688" \
+    "$right_destination_title" "1296,16,616,688" || \
+    fail "Driftile did not seed isolated multi-output $protocol destination contexts: $(describe_layout "$left_destination_title" "$right_destination_title")"
+  window_is_on_output_side "$left_destination_title" left || \
+    fail "the output router placed the left $protocol destination seed incorrectly"
+  window_is_on_output_side "$right_destination_title" right || \
+    fail "the output router placed the right $protocol destination seed incorrectly"
+
+  activate_window "$left_destination_title" || \
+    fail "KWin could not activate the left $protocol destination before source restoration"
+  set_current_desktop "$primary_desktop_id" || \
+    fail "KWin could not restore the left $protocol source desktop"
+  activate_window "$right_destination_title" || \
+    fail "KWin could not activate the right $protocol destination before source restoration"
+  set_current_desktop "$primary_desktop_id" || \
+    fail "KWin could not restore the right $protocol source desktop"
+  activate_window "$left_second_title" || \
+    fail "KWin could not focus the left $protocol stack member before desktop transfer"
+  wait_for_geometries \
+    "$left_first_title" "16,16,616,336" \
+    "$left_second_title" "16,368,616,336" \
+    "$right_first_title" "1296,16,616,688" \
+    "$right_second_title" "1928,16,616,688" || \
+    fail "Driftile did not restore the multi-output $protocol source contexts before desktop transfer: $(describe_layout "$left_first_title" "$left_second_title" "$right_first_title" "$right_second_title")"
+
+  invoke_shortcut "Driftile Move Window to Next Desktop" || \
+    fail "KGlobalAccel could not transfer the left $protocol stack member to the next desktop"
+  wait_for_geometries \
+    "$left_destination_title" "16,16,616,688" \
+    "$left_second_title" "648,16,616,688" \
+    "$right_destination_title" "1296,16,616,688" \
+    "$right_first_title" "1296,16,616,688" \
+    "$right_second_title" "1928,16,616,688" || \
+    fail "Driftile did not isolate the multi-output $protocol desktop transfer: $(describe_layout "$left_destination_title" "$left_second_title" "$right_destination_title" "$right_first_title" "$right_second_title")"
+  wait_for_active "$left_second_title" || \
+    fail "Driftile changed $protocol focus during the multi-output desktop transfer"
+  window_is_on_output_side "$left_second_title" left || \
+    fail "Driftile moved the $protocol window to another output during desktop transfer"
+  wait_for_window_desktop "$left_second_title" "$secondary_desktop_id" || \
+    fail "KWin did not move the left $protocol window to the next desktop"
+  wait_for_window_desktop "$right_first_title" "$primary_desktop_id" || \
+    fail "Driftile moved an unrelated right-output $protocol window"
+  wait_for_window_desktop "$right_second_title" "$primary_desktop_id" || \
+    fail "Driftile moved an unrelated right-output $protocol window"
+  verify_multi_output_desktop_state "$left_second_title" secondary || \
+    fail "KWin did not expose the expected per-output $protocol desktop state"
+
+  invoke_shortcut "Driftile Move Window to Previous Desktop" || \
+    fail "KGlobalAccel could not return the left $protocol window to the source desktop"
+  wait_for_geometries \
+    "$left_first_title" "16,16,616,688" \
+    "$left_second_title" "648,16,616,688" \
+    "$right_first_title" "1296,16,616,688" \
+    "$right_second_title" "1928,16,616,688" || \
+    fail "Driftile did not restore isolated multi-output $protocol source contexts: $(describe_layout "$left_first_title" "$left_second_title" "$right_first_title" "$right_second_title")"
+  wait_for_active "$left_second_title" || \
+    fail "Driftile changed $protocol focus while returning from the destination desktop"
+  wait_for_window_desktop "$left_second_title" "$primary_desktop_id" || \
+    fail "KWin did not return the left $protocol window to the source desktop"
+  verify_multi_output_desktop_state "$left_second_title" primary || \
+    fail "KWin did not restore the expected per-output $protocol desktop state"
+
+  invoke_shortcut "Driftile Move Window Left" || \
+    fail "KGlobalAccel could not restore the left $protocol stack after desktop transfer"
+  wait_for_geometries \
+    "$left_first_title" "16,16,616,336" \
+    "$left_second_title" "16,368,616,336" \
+    "$right_first_title" "1296,16,616,688" \
+    "$right_second_title" "1928,16,616,688" || \
+    fail "Driftile did not restore the multi-output $protocol source stack: $(describe_layout "$left_first_title" "$left_second_title" "$right_first_title" "$right_second_title")"
+
+  stop_client "$left_destination_pid"
+  stop_client "$right_destination_pid"
+  wait_for_window_gone "$left_destination_title" || \
+    fail "the left multi-output $protocol destination seed did not close"
+  wait_for_window_gone "$right_destination_title" || \
+    fail "the right multi-output $protocol destination seed did not close"
+}
+
 run_scenario() {
   local protocol=$1
   local first_title="driftile-smoke-${protocol}-a"
@@ -1101,6 +1524,13 @@ run_scenario() {
     fail "Driftile did not restore the lower $protocol stack member: $(describe_layout "$first_title" "$second_title" "$third_title")"
   wait_for_active "$second_title" || \
     fail "Driftile changed $protocol focus after restoring the lower stack member"
+
+  verify_desktop_transfer \
+    "$protocol" \
+    "$first_title" \
+    "$second_title" \
+    "$third_title" \
+    second_baseline
 
   activate_window "$third_title" || \
     fail "KWin could not activate the singleton before direct $protocol stack insertion"
@@ -1539,6 +1969,13 @@ run_multi_output_scenario() {
     "${titles[4]}" "1928,16,616,688" || \
     fail "Driftile did not prepare the isolated left $protocol stack: $(describe_layout "${titles[0]}" "${titles[1]}" "${titles[3]}" "${titles[4]}")"
 
+  verify_multi_output_desktop_transfer \
+    "$protocol" \
+    "${titles[0]}" \
+    "${titles[1]}" \
+    "${titles[3]}" \
+    "${titles[4]}"
+
   start_client "$protocol" "${titles[2]}" true
   temporary_left_pid=${client_pids[${#client_pids[@]}-1]}
   capture_stable_geometry "${titles[2]}" >/dev/null || \
@@ -1766,6 +2203,7 @@ run_multi_output_scenario() {
 trap cleanup EXIT
 
 wait_for_dbus || fail "the required KWin D-Bus APIs did not appear"
+prepare_test_desktops || fail "KWin could not create the second integration virtual desktop"
 
 case "${DRIFTILE_SMOKE_SCENARIO:-single-output}" in
   multi-output)
