@@ -7,6 +7,16 @@ if [[ "${DRIFTILE_SMOKE_TRACE:-0}" == "1" ]]; then
 fi
 
 readonly plugin_id="io.github.kontonkara.driftile"
+readonly automatic_floating_probe_plugin_id="io.github.kontonkara.driftile.integration-automatic-floating-probe"
+readonly automatic_floating_probe_arm_shortcut="Driftile Integration Automatic Floating Arm"
+readonly automatic_floating_probe_armed_shortcut_prefix="Driftile Integration Automatic Floating Armed"
+readonly automatic_floating_probe_capture_shortcut="Driftile Integration Automatic Floating Capture"
+readonly automatic_floating_probe_captured_shortcut_prefix="Driftile Integration Automatic Floating Captured"
+readonly automatic_floating_probe_closed_shortcut_prefix="Driftile Integration Automatic Floating Closed"
+readonly automatic_floating_probe_reset_shortcut="Driftile Integration Automatic Floating Reset"
+readonly automatic_floating_probe_reset_shortcut_prefix="Driftile Integration Automatic Floating Reset Complete"
+readonly automatic_floating_probe_verified_shortcut_prefix="Driftile Integration Automatic Floating Verified"
+readonly automatic_floating_probe_verify_shortcut="Driftile Integration Automatic Floating Verify"
 readonly desktop_state_probe_plugin_id="io.github.kontonkara.driftile.integration-desktop-state-probe"
 readonly desktop_state_verified_shortcut_prefix="Driftile Integration Desktop State Verified"
 readonly native_tile_toggle_plugin_id="io.github.kontonkara.driftile.integration-native-tile-toggle"
@@ -84,6 +94,13 @@ cleanup() {
     org.kde.kwin.Scripting \
     unloadScript \
     s "$plugin_id" \
+    >/dev/null 2>&1 || true
+  busctl --user call \
+    org.kde.KWin \
+    /Scripting \
+    org.kde.kwin.Scripting \
+    unloadScript \
+    s "$automatic_floating_probe_plugin_id" \
     >/dev/null 2>&1 || true
   busctl --user call \
     org.kde.KWin \
@@ -316,6 +333,34 @@ window_frame_geometry() {
       | map((((. * 1000000) | round) / 1000000) | tostring)
       | join(",")
     '
+}
+
+window_frame_respects_fixed_client() {
+  local window_title=$1
+  local client_width=$2
+  local client_height=$3
+  local id
+
+  id=$(window_id "$window_title") || return 1
+
+  busctl --user --json=short call \
+    org.kde.KWin \
+    /KWin \
+    org.kde.KWin \
+    getWindowInfo \
+    s "$id" 2>/dev/null | jq --exit-status \
+      --argjson clientWidth "$client_width" \
+      --argjson clientHeight "$client_height" '
+        .data[0] as $window
+        | ($window.type.data == 0)
+          and ($window.width.data >= $clientWidth)
+          and ($window.height.data >= $clientHeight)
+          and (
+            ($window.noBorder.data == true)
+            or ($window.width.data > $clientWidth)
+            or ($window.height.data > $clientHeight)
+          )
+      ' >/dev/null
 }
 
 window_state_matches() {
@@ -863,6 +908,124 @@ run_one_shot_script() {
   wait_for_named_script_state "$name" false
 }
 
+load_automatic_floating_probe() {
+  local load_result
+  local script_id
+  local state
+
+  state=$(busctl --user call \
+    org.kde.KWin \
+    /Scripting \
+    org.kde.kwin.Scripting \
+    isScriptLoaded \
+    s "$automatic_floating_probe_plugin_id" 2>/dev/null || true)
+
+  if [[ "$state" == "b true" ]]; then
+    wait_for_shortcut "$automatic_floating_probe_arm_shortcut" && \
+      wait_for_shortcut "$automatic_floating_probe_capture_shortcut" && \
+      wait_for_shortcut "$automatic_floating_probe_reset_shortcut" && \
+      wait_for_shortcut "$automatic_floating_probe_verify_shortcut"
+    return
+  fi
+
+  wait_for_shortcut_absent "$automatic_floating_probe_arm_shortcut" || return 1
+  wait_for_shortcut_absent "$automatic_floating_probe_capture_shortcut" || return 1
+  wait_for_shortcut_absent "$automatic_floating_probe_reset_shortcut" || return 1
+  wait_for_shortcut_absent "$automatic_floating_probe_verify_shortcut" || return 1
+
+  load_result=$(busctl --user call \
+    org.kde.KWin \
+    /Scripting \
+    org.kde.kwin.Scripting \
+    loadScript \
+    ss \
+    "$DRIFTILE_SMOKE_AUTOMATIC_FLOATING_PROBE" \
+    "$automatic_floating_probe_plugin_id") || return 1
+  script_id=${load_result#i }
+
+  if [[ ! "$script_id" =~ ^[0-9]+$ ]]; then
+    return 1
+  fi
+
+  busctl --user call \
+    org.kde.KWin \
+    "/Scripting/Script${script_id}" \
+    org.kde.kwin.Script \
+    run \
+    >/dev/null || return 1
+
+  wait_for_named_script_state "$automatic_floating_probe_plugin_id" true && \
+    wait_for_shortcut "$automatic_floating_probe_arm_shortcut" && \
+    wait_for_shortcut "$automatic_floating_probe_capture_shortcut" && \
+    wait_for_shortcut "$automatic_floating_probe_reset_shortcut" && \
+    wait_for_shortcut "$automatic_floating_probe_verify_shortcut"
+}
+
+unload_automatic_floating_probe() {
+  busctl --user call \
+    org.kde.KWin \
+    /Scripting \
+    org.kde.kwin.Scripting \
+    unloadScript \
+    s "$automatic_floating_probe_plugin_id" \
+    >/dev/null || return 1
+
+  wait_for_named_script_state "$automatic_floating_probe_plugin_id" false
+}
+
+arm_automatic_floating_dialog() {
+  local dialog_title=$1
+  local armed_shortcut="$automatic_floating_probe_armed_shortcut_prefix $dialog_title"
+
+  wait_for_shortcut_absent "$armed_shortcut" || return 1
+  invoke_shortcut "$automatic_floating_probe_arm_shortcut" || return 1
+  wait_for_shortcut "$armed_shortcut"
+}
+
+capture_automatic_floating_dialog() {
+  local dialog_title=$1
+  local captured_shortcut="$automatic_floating_probe_captured_shortcut_prefix $dialog_title"
+  local attempt
+
+  wait_for_shortcut_absent "$captured_shortcut" || return 1
+
+  for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
+    invoke_shortcut "$automatic_floating_probe_capture_shortcut" || return 1
+
+    if shortcut_is_registered "$captured_shortcut"; then
+      return 0
+    fi
+
+    sleep 0.05
+  done
+
+  return 1
+}
+
+verify_automatic_floating_dialog() {
+  local dialog_title=$1
+  local verification_index=$2
+  local verified_shortcut="$automatic_floating_probe_verified_shortcut_prefix $dialog_title $verification_index"
+
+  wait_for_shortcut_absent "$verified_shortcut" || return 1
+  invoke_shortcut "$automatic_floating_probe_verify_shortcut" || return 1
+  wait_for_shortcut "$verified_shortcut"
+}
+
+wait_for_automatic_floating_dialog_closed() {
+  wait_for_shortcut \
+    "$automatic_floating_probe_closed_shortcut_prefix $1"
+}
+
+reset_automatic_floating_probe() {
+  local dialog_title=$1
+  local reset_shortcut="$automatic_floating_probe_reset_shortcut_prefix $dialog_title"
+
+  wait_for_shortcut_absent "$reset_shortcut" || return 1
+  invoke_shortcut "$automatic_floating_probe_reset_shortcut" || return 1
+  wait_for_shortcut "$reset_shortcut"
+}
+
 toggle_native_tile() {
   run_one_shot_script \
     "$DRIFTILE_SMOKE_NATIVE_TILE_TOGGLE" \
@@ -1005,6 +1168,33 @@ set_plugin_state() {
     >/dev/null
 }
 
+start_qml_client() {
+  local protocol=$1
+  local client=$2
+
+  shift 2
+
+  case "$protocol" in
+    wayland)
+      QT_QPA_PLATFORM=wayland qml \
+        "${qml_options[@]}" \
+        -f "$client" \
+        -- "$@" &
+      ;;
+    x11 | xwayland)
+      QT_QPA_PLATFORM=xcb qml \
+        "${qml_options[@]}" \
+        -f "$client" \
+        -- "$@" &
+      ;;
+    *)
+      fail "unsupported client protocol: $protocol"
+      ;;
+  esac
+
+  client_pids+=("$!")
+}
+
 start_client() {
   local protocol=$1
   local window_title=$2
@@ -1015,25 +1205,10 @@ start_client() {
     client_arguments=(--mark-active "$window_title")
   fi
 
-  case "$protocol" in
-    wayland)
-      QT_QPA_PLATFORM=wayland qml \
-        "${qml_options[@]}" \
-        -f "$DRIFTILE_SMOKE_CLIENT" \
-        -- "${client_arguments[@]}" &
-      ;;
-    x11 | xwayland)
-      QT_QPA_PLATFORM=xcb qml \
-        "${qml_options[@]}" \
-        -f "$DRIFTILE_SMOKE_CLIENT" \
-        -- "${client_arguments[@]}" &
-      ;;
-    *)
-      fail "unsupported client protocol: $protocol"
-      ;;
-  esac
-
-  client_pids+=("$!")
+  start_qml_client \
+    "$protocol" \
+    "$DRIFTILE_SMOKE_CLIENT" \
+    "${client_arguments[@]}"
 }
 
 start_work_area_panel() {
@@ -1528,8 +1703,6 @@ verify_multi_output_output_transfer() {
     "$destination_title" "1296,16,616,688" \
     "$left_second_title" "1928,16,537,688" || \
     fail "Driftile did not preserve source order, target order, and width during the right-output transfer: $(describe_layout "$left_first_title" "$destination_title" "$left_second_title")"
-  wait_for_active "$left_second_title" || \
-    fail "Driftile changed $protocol focus during the right-output transfer"
   window_is_on_output_side "$left_first_title" left || \
     fail "Driftile moved an unrelated left-output $protocol window"
   window_is_on_output_side "$left_second_title" right || \
@@ -1547,7 +1720,7 @@ verify_multi_output_output_transfer() {
   wait_for_window_desktop "$right_second_title" "$primary_desktop_id" || \
     fail "Driftile changed an unrelated right-output $protocol window desktop"
   verify_multi_output_output_transfer_state "$left_second_title" right-secondary || \
-    fail "KWin changed an output desktop during the right-output $protocol transfer"
+    fail "KWin changed focus or an output desktop during the right-output $protocol transfer"
   activate_window "$left_second_title" || \
     fail "KWin could not restore $protocol focus after the right-output state probe"
   wait_for_active "$left_second_title" || \
@@ -1570,8 +1743,6 @@ verify_multi_output_output_transfer() {
     "$left_second_title" "569,16,537,688" \
     "$destination_title" "1296,16,616,688" || \
     fail "Driftile did not preserve source order, target order, and width during the left-output transfer: $(describe_layout "$left_first_title" "$left_second_title" "$destination_title")"
-  wait_for_active "$left_second_title" || \
-    fail "Driftile changed $protocol focus during the left-output transfer"
   window_is_on_output_side "$left_first_title" left || \
     fail "Driftile moved an unrelated left-output $protocol window while returning"
   window_is_on_output_side "$left_second_title" left || \
@@ -1587,7 +1758,7 @@ verify_multi_output_output_transfer() {
   wait_for_window_desktop "$right_second_title" "$primary_desktop_id" || \
     fail "Driftile changed an unrelated right-output $protocol window desktop while returning"
   verify_multi_output_output_transfer_state "$left_second_title" left-primary || \
-    fail "KWin changed an output desktop during the left-output $protocol transfer"
+    fail "KWin changed focus or an output desktop during the left-output $protocol transfer"
   activate_window "$left_second_title" || \
     fail "KWin could not restore $protocol focus after the left-output state probe"
   wait_for_active "$left_second_title" || \
@@ -1631,6 +1802,224 @@ verify_multi_output_output_transfer() {
     "$right_first_title" "1296,16,616,688" \
     "$right_second_title" "1928,16,616,688" || \
     fail "Driftile did not restore the two $protocol output contexts after output transfer: $(describe_layout "$left_first_title" "$left_second_title" "$right_first_title" "$right_second_title")"
+}
+
+verify_automatic_floating_shortcut_no_op() {
+  local protocol=$1
+  local active_title=$2
+  local shortcut=$3
+  local index
+  local -a geometry_pairs
+  local -a window_titles=()
+
+  shift 3
+  geometry_pairs=("$@")
+
+  for ((index = 0; index < ${#geometry_pairs[@]}; index += 2)); do
+    window_titles+=("${geometry_pairs[index]}")
+  done
+
+  invoke_shortcut "$shortcut" || \
+    fail "KGlobalAccel could not invoke $shortcut for the automatic-floating $protocol window"
+  wait_for_geometries "${geometry_pairs[@]}" || \
+    fail "Driftile changed the $protocol automatic-floating layout after $shortcut: $(describe_layout "${window_titles[@]}")"
+  wait_for_active "$active_title" || \
+    fail "Driftile changed $protocol focus after $shortcut on an automatic-floating window"
+  wait_for_current_desktop "$primary_desktop_id" || \
+    fail "Driftile changed the desktop after $shortcut on an automatic-floating $protocol window"
+  wait_for_window_desktop "$active_title" "$primary_desktop_id" || \
+    fail "Driftile moved the automatic-floating $protocol window after $shortcut"
+}
+
+verify_dialog_shortcut_no_op() {
+  local protocol=$1
+  local dialog_title=$2
+  local shortcut=$3
+  local verification_index=$4
+  local index
+  local -a geometry_pairs
+  local -a window_titles=()
+
+  shift 4
+  geometry_pairs=("$@")
+
+  for ((index = 0; index < ${#geometry_pairs[@]}; index += 2)); do
+    window_titles+=("${geometry_pairs[index]}")
+  done
+
+  invoke_shortcut "$shortcut" || \
+    fail "KGlobalAccel could not invoke $shortcut for the modal $protocol dialog"
+  wait_for_geometries "${geometry_pairs[@]}" || \
+    fail "Driftile changed the $protocol dialog parent layout after $shortcut: $(describe_layout "${window_titles[@]}")"
+  wait_for_current_desktop "$primary_desktop_id" || \
+    fail "Driftile changed the desktop after $shortcut on the modal $protocol dialog"
+  verify_automatic_floating_dialog "$dialog_title" "$verification_index" || \
+    fail "Driftile changed the active $protocol dialog after $shortcut"
+}
+
+verify_automatic_floating() {
+  local protocol=$1
+  local first_title=$2
+  local second_title=$3
+  local third_title=$4
+  local dialog_title="driftile-dialog-${protocol}"
+  local fixed_title="driftile-fixed-${protocol}"
+  local parent_title="driftile-dialog-parent-${protocol}"
+  local first_frame
+  local second_frame
+  local third_frame
+  local dialog_first_frame
+  local dialog_second_frame
+  local dialog_third_frame
+  local dialog_parent_frame
+  local fixed_frame
+  local parent_pid
+  local fixed_pid
+  local shortcut
+  local verification_index=0
+  local -a no_op_shortcuts=(
+    "Driftile Focus Left"
+    "Driftile Move Window Left"
+    "Driftile Toggle Floating"
+    "Driftile Move Window to Next Desktop"
+    "Driftile Move Window to Output Right"
+  )
+
+  for shortcut in "${no_op_shortcuts[@]}"; do
+    wait_for_shortcut "$shortcut" || \
+      fail "KGlobalAccel did not register $shortcut for automatic-floating acceptance"
+  done
+
+  first_frame=$(capture_stable_geometry "$first_title") || \
+    fail "the first $protocol window did not stabilize before automatic-floating acceptance"
+  second_frame=$(capture_stable_geometry "$second_title") || \
+    fail "the second $protocol window did not stabilize before automatic-floating acceptance"
+  third_frame=$(capture_stable_geometry "$third_title") || \
+    fail "the third $protocol window did not stabilize before automatic-floating acceptance"
+  wait_for_geometries \
+    "$first_title" "$first_frame" \
+    "$second_title" "$second_frame" \
+    "$third_title" "$third_frame" || \
+    fail "the $protocol layout did not settle before automatic-floating acceptance"
+
+  load_automatic_floating_probe || \
+    fail "KWin could not load the $protocol automatic-floating probe"
+  start_qml_client \
+    "$protocol" \
+    "$DRIFTILE_SMOKE_DIALOG_CLIENT" \
+    "$parent_title" \
+    "$dialog_title"
+  parent_pid=${client_pids[${#client_pids[@]}-1]}
+
+  capture_stable_geometry "$parent_title" >/dev/null || \
+    fail "the $protocol dialog parent did not appear"
+  activate_window "$parent_title" || \
+    fail "KWin could not activate the $protocol dialog parent"
+  wait_for_active "$parent_title" || \
+    fail "KWin did not focus the $protocol dialog parent"
+
+  dialog_first_frame=$(capture_stable_geometry "$first_title") || \
+    fail "the first $protocol window did not settle with the dialog parent"
+  dialog_second_frame=$(capture_stable_geometry "$second_title") || \
+    fail "the second $protocol window did not settle with the dialog parent"
+  dialog_third_frame=$(capture_stable_geometry "$third_title") || \
+    fail "the third $protocol window did not settle with the dialog parent"
+  dialog_parent_frame=$(capture_stable_geometry "$parent_title") || \
+    fail "the $protocol dialog parent did not settle"
+  wait_for_geometries \
+    "$first_title" "$dialog_first_frame" \
+    "$second_title" "$dialog_second_frame" \
+    "$third_title" "$dialog_third_frame" \
+    "$parent_title" "$dialog_parent_frame" || \
+    fail "the $protocol parent layout did not settle before the dialog opened"
+  arm_automatic_floating_dialog "$dialog_title" || \
+    fail "KWin could not arm the $protocol dialog before it opened"
+
+  capture_automatic_floating_dialog "$dialog_title" || \
+    fail "KWin did not expose a stable active modal transient $protocol dialog"
+  wait_for_geometries \
+    "$first_title" "$dialog_first_frame" \
+    "$second_title" "$dialog_second_frame" \
+    "$third_title" "$dialog_third_frame" \
+    "$parent_title" "$dialog_parent_frame" || \
+    fail "Driftile changed the $protocol parent layout when the dialog opened"
+
+  for shortcut in "${no_op_shortcuts[@]}"; do
+    verification_index=$((verification_index + 1))
+    verify_dialog_shortcut_no_op \
+      "$protocol" \
+      "$dialog_title" \
+      "$shortcut" \
+      "$verification_index" \
+      "$first_title" "$dialog_first_frame" \
+      "$second_title" "$dialog_second_frame" \
+      "$third_title" "$dialog_third_frame" \
+      "$parent_title" "$dialog_parent_frame"
+  done
+
+  stop_client "$parent_pid"
+  wait_for_automatic_floating_dialog_closed "$dialog_title" || \
+    fail "the modal transient $protocol dialog did not close"
+  wait_for_window_gone "$parent_title" || \
+    fail "the $protocol dialog parent did not close"
+  reset_automatic_floating_probe "$dialog_title" || \
+    fail "KWin could not reset the $protocol automatic-floating probe"
+  activate_window "$second_title" || \
+    fail "KWin could not restore $protocol focus after dialog cleanup"
+  wait_for_geometries \
+    "$first_title" "$first_frame" \
+    "$second_title" "$second_frame" \
+    "$third_title" "$third_frame" || \
+    fail "Driftile did not restore the $protocol layout after dialog cleanup"
+  wait_for_active "$second_title" || \
+    fail "KWin did not restore $protocol focus after dialog cleanup"
+
+  start_qml_client \
+    "$protocol" \
+    "$DRIFTILE_SMOKE_FIXED_SIZE_CLIENT" \
+    "$fixed_title"
+  fixed_pid=${client_pids[${#client_pids[@]}-1]}
+
+  capture_stable_geometry "$fixed_title" >/dev/null || \
+    fail "the fixed-size normal $protocol window did not appear"
+  activate_window "$fixed_title" || \
+    fail "KWin could not activate the fixed-size normal $protocol window"
+  wait_for_active "$fixed_title" || \
+    fail "KWin did not focus the fixed-size normal $protocol window"
+  fixed_frame=$(capture_stable_geometry "$fixed_title") || \
+    fail "the fixed-size normal $protocol window did not stabilize"
+  window_frame_respects_fixed_client "$fixed_title" 360 240 || \
+    fail "KWin did not preserve the fixed client bounds and frame extents for $protocol"
+  wait_for_geometries \
+    "$first_title" "$first_frame" \
+    "$second_title" "$second_frame" \
+    "$third_title" "$third_frame" \
+    "$fixed_title" "$fixed_frame" || \
+    fail "Driftile changed the $protocol layout for a fixed-size normal window"
+
+  for shortcut in "${no_op_shortcuts[@]}"; do
+    verify_automatic_floating_shortcut_no_op \
+      "$protocol" \
+      "$fixed_title" \
+      "$shortcut" \
+      "$first_title" "$first_frame" \
+      "$second_title" "$second_frame" \
+      "$third_title" "$third_frame" \
+      "$fixed_title" "$fixed_frame"
+  done
+
+  stop_client "$fixed_pid"
+  wait_for_window_gone "$fixed_title" || \
+    fail "the fixed-size normal $protocol window did not close"
+  activate_window "$second_title" || \
+    fail "KWin could not restore $protocol focus after fixed-size cleanup"
+  wait_for_geometries \
+    "$first_title" "$first_frame" \
+    "$second_title" "$second_frame" \
+    "$third_title" "$third_frame" || \
+    fail "Driftile changed the $protocol layout after fixed-size cleanup"
+  wait_for_active "$second_title" || \
+    fail "KWin did not restore $protocol focus after fixed-size cleanup"
 }
 
 run_scenario() {
@@ -1736,6 +2125,12 @@ run_scenario() {
     fail "KGlobalAccel did not register the insert-into-stack-right shortcut"
   wait_for_shortcut "Driftile Toggle Floating" || \
     fail "KGlobalAccel did not register the floating-toggle shortcut"
+
+  verify_automatic_floating \
+    "$protocol" \
+    "$first_title" \
+    "$second_title" \
+    "$third_title"
 
   invoke_shortcut "Driftile Move Window Left" || \
     fail "KGlobalAccel could not invoke the move-window-left shortcut"
@@ -2468,6 +2863,9 @@ case "${DRIFTILE_SMOKE_SCENARIO:-single-output}" in
     for protocol in $DRIFTILE_SMOKE_PROTOCOLS; do
       run_scenario "$protocol"
     done
+
+    unload_automatic_floating_probe || \
+      fail "KWin could not unload the automatic-floating integration probe"
     ;;
   *)
     fail "unsupported smoke-test scenario: $DRIFTILE_SMOKE_SCENARIO"

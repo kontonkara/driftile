@@ -7,6 +7,7 @@
 let
   pluginId = "io.github.kontonkara.driftile";
   demoClient = ../tools/integration/client.qml;
+  fixedSizeClient = ../tools/integration/fixed-size-client.qml;
   demo = pkgs.writeShellApplication {
     name = "driftile-demo";
     runtimeInputs = [
@@ -328,6 +329,33 @@ let
           '
       }
 
+      window_frame_respects_fixed_client() {
+        local client_height=$3
+        local client_width=$2
+        local id
+
+        id=$(window_id "$1") || return 1
+        busctl --user --json=short call \
+          org.kde.KWin \
+          /KWin \
+          org.kde.KWin \
+          getWindowInfo \
+          s "$id" 2>/dev/null \
+          | jq --exit-status \
+            --argjson clientWidth "$client_width" \
+            --argjson clientHeight "$client_height" '
+              .data[0] as $window
+              | ($window.type.data == 0)
+                and ($window.width.data >= $clientWidth)
+                and ($window.height.data >= $clientHeight)
+                and (
+                  ($window.noBorder.data == true)
+                  or ($window.width.data > $clientWidth)
+                  or ($window.height.data > $clientHeight)
+                )
+            ' >/dev/null
+      }
+
       frame_is_valid() {
         [[ "$1" =~ ^-?[0-9]+,-?[0-9]+,[1-9][0-9]*,[1-9][0-9]*$ ]]
       }
@@ -429,6 +457,39 @@ let
           if [[ "$current_first" == "$1" \
             && "$current_second" == "$2" \
             && "$current_third" == "$3" ]]; then
+            stable_samples=$((stable_samples + 1))
+
+            if ((stable_samples >= 2)); then
+              return 0
+            fi
+          else
+            stable_samples=0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      wait_for_automatic_floating_frames() {
+        local attempt
+        local current_first
+        local current_fixed
+        local current_second
+        local current_third
+        local stable_samples=0
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          current_first=$(window_frame "$title_a" 2>/dev/null || true)
+          current_second=$(window_frame "$title_b" 2>/dev/null || true)
+          current_third=$(window_frame "$title_c" 2>/dev/null || true)
+          current_fixed=$(window_frame "$4" 2>/dev/null || true)
+
+          if [[ "$current_first" == "$1" \
+            && "$current_second" == "$2" \
+            && "$current_third" == "$3" \
+            && "$current_fixed" == "$5" ]]; then
             stable_samples=$((stable_samples + 1))
 
             if ((stable_samples >= 2)); then
@@ -1335,6 +1396,95 @@ let
         } >> /tmp/shared/driftile-focus-diagnostics
       }
 
+      automatic_floating_shortcut_is_no_op() {
+        invoke_shortcut "$1" \
+          && wait_for_automatic_floating_frames "$3" "$4" "$5" "$2" "$6" \
+          && wait_for_active "$2" \
+          && wait_for_current_desktop "$primary_desktop_id" \
+          && wait_for_window_desktop "$2" "$primary_desktop_id"
+      }
+
+      verify_automatic_floating() {
+        local first_frame
+        local fixed_frame
+        local fixed_title="$status - fixed-size automatic floating"
+        local fixed_window
+        local restored=false
+        local second_frame
+        local third_frame
+        local verified=false
+
+        capture_stable_frames || return 1
+        first_frame=$stable_first_frame
+        second_frame=$stable_second_frame
+        third_frame=$stable_third_frame
+
+        qml -f ${fixedSizeClient} -- "$fixed_title" &
+        fixed_window=$!
+
+        if wait_for_window "$fixed_title" \
+          && activate_window "$fixed_title" \
+          && wait_for_active "$fixed_title" \
+          && fixed_frame=$(capture_stable_window_frame "$fixed_title") \
+          && window_frame_respects_fixed_client "$fixed_title" 360 240 \
+          && wait_for_automatic_floating_frames \
+            "$first_frame" \
+            "$second_frame" \
+            "$third_frame" \
+            "$fixed_title" \
+            "$fixed_frame" \
+          && automatic_floating_shortcut_is_no_op \
+            "Driftile Focus Left" \
+            "$fixed_title" \
+            "$first_frame" \
+            "$second_frame" \
+            "$third_frame" \
+            "$fixed_frame" \
+          && automatic_floating_shortcut_is_no_op \
+            "Driftile Move Window Left" \
+            "$fixed_title" \
+            "$first_frame" \
+            "$second_frame" \
+            "$third_frame" \
+            "$fixed_frame" \
+          && automatic_floating_shortcut_is_no_op \
+            "Driftile Toggle Floating" \
+            "$fixed_title" \
+            "$first_frame" \
+            "$second_frame" \
+            "$third_frame" \
+            "$fixed_frame" \
+          && automatic_floating_shortcut_is_no_op \
+            "Driftile Move Window to Next Desktop" \
+            "$fixed_title" \
+            "$first_frame" \
+            "$second_frame" \
+            "$third_frame" \
+            "$fixed_frame" \
+          && automatic_floating_shortcut_is_no_op \
+            "Driftile Move Window to Output Right" \
+            "$fixed_title" \
+            "$first_frame" \
+            "$second_frame" \
+            "$third_frame" \
+            "$fixed_frame"; then
+          verified=true
+        fi
+
+        kill "$fixed_window" >/dev/null 2>&1 || true
+        wait "$fixed_window" >/dev/null 2>&1 || true
+
+        if wait_for_window_gone "$fixed_title" \
+          && set_current_desktop "$primary_desktop_id" \
+          && activate_window "$title_c" \
+          && wait_for_active "$title_c" \
+          && wait_for_frames "$first_frame" "$second_frame" "$third_frame"; then
+          restored=true
+        fi
+
+        [[ "$verified" == true && "$restored" == true ]]
+      }
+
       verify_focus() {
         local baseline_first_width
         local baseline_second_width
@@ -1374,6 +1524,12 @@ let
           && wait_for_layout -800 32 864 \
           || return 1
         record_focus_state "window C activated"
+
+        if ! verify_automatic_floating; then
+          record_focus_state "automatic-floating acceptance failed"
+          return 1
+        fi
+        record_focus_state "automatic-floating window preserved layout and focus"
 
         capture_stable_frames \
           && invoke_shortcut "Driftile Move Window to Output Left" \
