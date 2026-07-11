@@ -88,6 +88,15 @@ type ColumnResizeAction =
   "decrease" | "increase" | "preset-next" | "preset-previous" | "reset";
 type WindowHeightResizeAction = ColumnResizeAction;
 type DesktopTransferDirection = -1 | 1;
+type DesktopTransferTarget =
+  | {
+      readonly direction: DesktopTransferDirection;
+      readonly kind: "adjacent";
+    }
+  | {
+      readonly index: number;
+      readonly kind: "index";
+    };
 type FloatingFocusDestination =
   HorizontalDirection | HorizontalEdge | VerticalDirection;
 type WindowLayer = "floating" | "tiling";
@@ -535,11 +544,19 @@ export class RuntimeController {
   }
 
   focusPreviousDesktop(): boolean {
-    return this.focusDesktop(-1);
+    return this.focusDesktopTarget({ direction: -1, kind: "adjacent" });
   }
 
   focusNextDesktop(): boolean {
-    return this.focusDesktop(1);
+    return this.focusDesktopTarget({ direction: 1, kind: "adjacent" });
+  }
+
+  focusDesktop(index: number): boolean {
+    if (!validDesktopIndex(index)) {
+      return false;
+    }
+
+    return this.focusDesktopTarget({ index, kind: "index" });
   }
 
   moveColumnLeft(): boolean {
@@ -757,19 +774,36 @@ export class RuntimeController {
   }
 
   moveWindowToPreviousDesktop(): boolean {
-    return this.moveActiveWindowToDesktop(-1);
+    return this.moveActiveWindowToDesktop({
+      direction: -1,
+      kind: "adjacent",
+    });
   }
 
   moveWindowToNextDesktop(): boolean {
-    return this.moveActiveWindowToDesktop(1);
+    return this.moveActiveWindowToDesktop({ direction: 1, kind: "adjacent" });
   }
 
   moveColumnToPreviousDesktop(): boolean {
-    return this.moveActiveWindowToDesktop(-1, true);
+    return this.moveActiveWindowToDesktop(
+      { direction: -1, kind: "adjacent" },
+      true,
+    );
   }
 
   moveColumnToNextDesktop(): boolean {
-    return this.moveActiveWindowToDesktop(1, true);
+    return this.moveActiveWindowToDesktop(
+      { direction: 1, kind: "adjacent" },
+      true,
+    );
+  }
+
+  moveColumnToDesktop(index: number): boolean {
+    if (!validDesktopIndex(index)) {
+      return false;
+    }
+
+    return this.moveActiveWindowToDesktop({ index, kind: "index" }, true);
   }
 
   moveWindowToOutputLeft(): boolean {
@@ -1980,7 +2014,7 @@ export class RuntimeController {
     }
   }
 
-  private focusDesktop(direction: DesktopTransferDirection): boolean {
+  private focusDesktopTarget(target: DesktopTransferTarget): boolean {
     if (
       !this.started ||
       this.windowTransferOperation ||
@@ -2001,14 +2035,38 @@ export class RuntimeController {
           (desktop) => desktop.id === current.id,
         )
       : -1;
-    const target = this.workspace.desktops[currentIndex + direction];
+    const targetIndex = this.desktopTargetIndex(currentIndex, target);
+    const targetDesktop = this.workspace.desktops[targetIndex];
 
-    if (currentIndex < 0 || !target) {
+    if (
+      currentIndex < 0 ||
+      !targetDesktop ||
+      targetDesktop.id === current?.id
+    ) {
       return false;
     }
 
-    this.switchDesktop(target, output);
+    this.switchDesktop(targetDesktop, output);
     return true;
+  }
+
+  private desktopTargetIndex(
+    currentIndex: number,
+    target: DesktopTransferTarget,
+  ): number {
+    if (currentIndex < 0) {
+      return -1;
+    }
+
+    if (target.kind === "adjacent") {
+      return currentIndex + target.direction;
+    }
+
+    if (!validDesktopIndex(target.index)) {
+      return -1;
+    }
+
+    return Math.min(target.index - 1, this.workspace.desktops.length - 1);
   }
 
   private focusFloatingWindow(
@@ -2567,7 +2625,7 @@ export class RuntimeController {
   }
 
   private moveActiveWindowToDesktop(
-    direction: DesktopTransferDirection,
+    target: DesktopTransferTarget,
     wholeColumn = false,
   ): boolean {
     const active = this.prepareActiveWindowCommand();
@@ -2594,8 +2652,11 @@ export class RuntimeController {
     const sourceDesktopIndex = this.workspace.desktops.findIndex(
       (desktop) => desktop.id === active.context.desktopId,
     );
-    const targetDesktop =
-      this.workspace.desktops[sourceDesktopIndex + direction];
+    const targetDesktopIndex = this.desktopTargetIndex(
+      sourceDesktopIndex,
+      target,
+    );
+    const targetDesktop = this.workspace.desktops[targetDesktopIndex];
     const sourceDesktop = this.workspace.desktops[sourceDesktopIndex];
     const output = this.workspace.screens.find(
       (candidate) => candidate.name === active.context.outputId,
@@ -11253,6 +11314,10 @@ function validDecorationExtent(
 
 function contextKey(context: ManagedContext): string {
   return `${context.outputId}\u0000${context.desktopId}`;
+}
+
+function validDesktopIndex(index: number): boolean {
+  return Number.isInteger(index) && index > 0;
 }
 
 function currentDesktopForOutput(workspace: KWinWorkspace, output: KWinOutput) {

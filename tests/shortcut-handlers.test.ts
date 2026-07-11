@@ -77,6 +77,42 @@ const expectedHandlers: Readonly<
     activated: "Runtime.DriftileRuntime.focusRight()",
     sequence: "Meta+Right",
   },
+  driftile_focus_desktop_1: {
+    activated: "Runtime.DriftileRuntime.focusDesktop(1)",
+    sequence: "Meta+1",
+  },
+  driftile_focus_desktop_2: {
+    activated: "Runtime.DriftileRuntime.focusDesktop(2)",
+    sequence: "Meta+2",
+  },
+  driftile_focus_desktop_3: {
+    activated: "Runtime.DriftileRuntime.focusDesktop(3)",
+    sequence: "Meta+3",
+  },
+  driftile_focus_desktop_4: {
+    activated: "Runtime.DriftileRuntime.focusDesktop(4)",
+    sequence: "Meta+4",
+  },
+  driftile_focus_desktop_5: {
+    activated: "Runtime.DriftileRuntime.focusDesktop(5)",
+    sequence: "Meta+5",
+  },
+  driftile_focus_desktop_6: {
+    activated: "Runtime.DriftileRuntime.focusDesktop(6)",
+    sequence: "Meta+6",
+  },
+  driftile_focus_desktop_7: {
+    activated: "Runtime.DriftileRuntime.focusDesktop(7)",
+    sequence: "Meta+7",
+  },
+  driftile_focus_desktop_8: {
+    activated: "Runtime.DriftileRuntime.focusDesktop(8)",
+    sequence: "Meta+8",
+  },
+  driftile_focus_desktop_9: {
+    activated: "Runtime.DriftileRuntime.focusDesktop(9)",
+    sequence: "Meta+9",
+  },
   driftile_focus_floating: {
     activated: "Runtime.DriftileRuntime.focusFloating()",
   },
@@ -192,6 +228,42 @@ const expectedHandlers: Readonly<
   driftile_move_column_right_arrow: {
     activated: "Runtime.DriftileRuntime.moveColumnRight()",
     sequence: "Meta+Ctrl+Right",
+  },
+  driftile_move_column_to_desktop_1: {
+    activated: "Runtime.DriftileRuntime.moveColumnToDesktop(1)",
+    sequence: "Meta+Ctrl+1",
+  },
+  driftile_move_column_to_desktop_2: {
+    activated: "Runtime.DriftileRuntime.moveColumnToDesktop(2)",
+    sequence: "Meta+Ctrl+2",
+  },
+  driftile_move_column_to_desktop_3: {
+    activated: "Runtime.DriftileRuntime.moveColumnToDesktop(3)",
+    sequence: "Meta+Ctrl+3",
+  },
+  driftile_move_column_to_desktop_4: {
+    activated: "Runtime.DriftileRuntime.moveColumnToDesktop(4)",
+    sequence: "Meta+Ctrl+4",
+  },
+  driftile_move_column_to_desktop_5: {
+    activated: "Runtime.DriftileRuntime.moveColumnToDesktop(5)",
+    sequence: "Meta+Ctrl+5",
+  },
+  driftile_move_column_to_desktop_6: {
+    activated: "Runtime.DriftileRuntime.moveColumnToDesktop(6)",
+    sequence: "Meta+Ctrl+6",
+  },
+  driftile_move_column_to_desktop_7: {
+    activated: "Runtime.DriftileRuntime.moveColumnToDesktop(7)",
+    sequence: "Meta+Ctrl+7",
+  },
+  driftile_move_column_to_desktop_8: {
+    activated: "Runtime.DriftileRuntime.moveColumnToDesktop(8)",
+    sequence: "Meta+Ctrl+8",
+  },
+  driftile_move_column_to_desktop_9: {
+    activated: "Runtime.DriftileRuntime.moveColumnToDesktop(9)",
+    sequence: "Meta+Ctrl+9",
   },
   driftile_move_column_to_first: {
     activated: "Runtime.DriftileRuntime.moveColumnToFirst()",

@@ -79,6 +79,10 @@ export function focusNextDesktop(): void {
   controller?.focusNextDesktop();
 }
 
+export function focusDesktop(index: number): void {
+  controller?.focusDesktop(index);
+}
+
 export function moveColumnLeft(): void {
   controller?.moveColumnLeft();
 }
@@ -165,6 +169,10 @@ export function moveColumnToPreviousDesktop(): void {
 
 export function moveColumnToNextDesktop(): void {
   controller?.moveColumnToNextDesktop();
+}
+
+export function moveColumnToDesktop(index: number): void {
+  controller?.moveColumnToDesktop(index);
 }
 
 export function moveWindowToOutputLeft(): void {

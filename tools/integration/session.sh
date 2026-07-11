@@ -1729,6 +1729,169 @@ verify_x11_topology_recovery() {
     fail "KWin did not unload Driftile after X11 topology recovery"
 }
 
+numbered_desktop_shortcuts_are_registered() {
+  local index
+
+  for ((index = 1; index <= 9; index += 1)); do
+    wait_for_shortcut "driftile_focus_desktop_${index}" || return 1
+    wait_for_shortcut "driftile_move_column_to_desktop_${index}" || return 1
+  done
+}
+
+verify_numbered_desktop_actions() {
+  local protocol=$1
+  local first_title=$2
+  local second_title=$3
+  local third_title=$4
+  local destination_title=$5
+  local first_trailing_desktop_id=$6
+  local second_trailing_desktop_id=""
+
+  numbered_desktop_shortcuts_are_registered || \
+    fail "KGlobalAccel did not register all numbered desktop actions"
+
+  invoke_shortcut "driftile_focus_desktop_1" || \
+    fail "KGlobalAccel could not invoke the same-target numbered $protocol desktop action"
+  wait_for_current_desktop "$primary_desktop_id" || \
+    fail "Driftile changed the $protocol desktop for the same-target numbered action"
+  wait_for_geometries \
+    "$first_title" "16,16,616,336" \
+    "$second_title" "16,368,616,336" \
+    "$third_title" "648,16,616,688" || \
+    fail "Driftile changed the $protocol layout for the same-target numbered action: $(describe_layout "$first_title" "$second_title" "$third_title")"
+  wait_for_active "$second_title" || \
+    fail "Driftile changed $protocol focus for the same-target numbered action"
+
+  invoke_shortcut "driftile_focus_desktop_2" || \
+    fail "KGlobalAccel could not invoke the second numbered $protocol desktop action"
+  wait_for_current_desktop "$secondary_desktop_id" || \
+    fail "Driftile did not resolve numbered $protocol desktop 2 as one-based"
+  wait_for_active "$destination_title" || \
+    fail "KWin did not restore target focus on numbered $protocol desktop 2"
+
+  invoke_shortcut "driftile_focus_desktop_9" || \
+    fail "KGlobalAccel could not invoke the high numbered $protocol desktop action"
+  wait_for_current_desktop "$first_trailing_desktop_id" || \
+    fail "Driftile did not clamp high numbered $protocol desktop focus to the shared tail"
+  wait_for_desktop_sequence \
+    "$primary_desktop_id" \
+    "$secondary_desktop_id" \
+    "$first_trailing_desktop_id" || \
+    fail "numbered $protocol desktop focus changed the shared trailing desktop"
+
+  invoke_shortcut "driftile_focus_desktop_1" || \
+    fail "KGlobalAccel could not restore numbered $protocol desktop 1"
+  wait_for_current_desktop "$primary_desktop_id" || \
+    fail "Driftile did not restore numbered $protocol desktop 1"
+  activate_window "$second_title" || \
+    fail "KWin could not restore $protocol stack focus before numbered transfer"
+  wait_for_active "$second_title" || \
+    fail "KWin did not restore $protocol stack focus before numbered transfer"
+
+  invoke_shortcut "driftile_move_column_to_desktop_2" || \
+    fail "KGlobalAccel could not move the $protocol column to numbered desktop 2"
+  wait_for_current_desktop "$secondary_desktop_id" || \
+    fail "Driftile did not follow the $protocol column to numbered desktop 2"
+  wait_for_geometries \
+    "$destination_title" "16,16,616,688" \
+    "$first_title" "648,16,616,336" \
+    "$second_title" "648,368,616,336" \
+    "$third_title" "648,16,616,688" || \
+    fail "Driftile did not preserve $protocol order, width, and height on numbered desktop 2: $(describe_layout "$destination_title" "$first_title" "$second_title" "$third_title")"
+  wait_for_window_desktop "$first_title" "$secondary_desktop_id" || \
+    fail "KWin did not move the upper $protocol stack member to numbered desktop 2"
+  wait_for_window_desktop "$second_title" "$secondary_desktop_id" || \
+    fail "KWin did not move the lower $protocol stack member to numbered desktop 2"
+  wait_for_window_desktop "$third_title" "$primary_desktop_id" || \
+    fail "Driftile moved an unrelated $protocol column during numbered transfer"
+  wait_for_active "$second_title" || \
+    fail "Driftile changed $protocol focus during numbered column transfer"
+
+  invoke_shortcut "driftile_move_column_to_desktop_2" || \
+    fail "KGlobalAccel could not invoke the same-target numbered $protocol transfer"
+  wait_for_geometries \
+    "$destination_title" "16,16,616,688" \
+    "$first_title" "648,16,616,336" \
+    "$second_title" "648,368,616,336" \
+    "$third_title" "648,16,616,688" || \
+    fail "Driftile changed the $protocol layout for the same-target numbered transfer: $(describe_layout "$destination_title" "$first_title" "$second_title" "$third_title")"
+  wait_for_active "$second_title" || \
+    fail "Driftile changed $protocol focus for the same-target numbered transfer"
+
+  invoke_shortcut "driftile_move_column_to_desktop_1" || \
+    fail "KGlobalAccel could not return the $protocol column to numbered desktop 1"
+  wait_for_current_desktop "$primary_desktop_id" || \
+    fail "Driftile did not follow the returning $protocol column to desktop 1"
+  wait_for_geometries \
+    "$third_title" "16,16,616,688" \
+    "$first_title" "648,16,616,336" \
+    "$second_title" "648,368,616,336" || \
+    fail "Driftile did not preserve the returning numbered $protocol column: $(describe_layout "$third_title" "$first_title" "$second_title")"
+  wait_for_active "$second_title" || \
+    fail "Driftile changed $protocol focus while returning to desktop 1"
+  invoke_shortcut "driftile_move_column_left" || \
+    fail "KGlobalAccel could not restore the $protocol order after numbered transfer"
+  wait_for_geometries \
+    "$first_title" "16,16,616,336" \
+    "$second_title" "16,368,616,336" \
+    "$third_title" "648,16,616,688" || \
+    fail "Driftile did not restore the $protocol order after numbered transfer: $(describe_layout "$first_title" "$second_title" "$third_title")"
+
+  invoke_shortcut "driftile_move_column_to_desktop_9" || \
+    fail "KGlobalAccel could not move the $protocol column to the shared tail"
+  wait_for_current_desktop "$first_trailing_desktop_id" || \
+    fail "Driftile did not clamp the high numbered $protocol transfer to the shared tail"
+  wait_for_geometries \
+    "$first_title" "16,16,616,336" \
+    "$second_title" "16,368,616,336" \
+    "$third_title" "648,16,616,688" || \
+    fail "Driftile did not preserve the $protocol column on the shared tail: $(describe_layout "$first_title" "$second_title" "$third_title")"
+  wait_for_window_desktop "$first_title" "$first_trailing_desktop_id" || \
+    fail "KWin did not move the upper $protocol stack member to the shared tail"
+  wait_for_window_desktop "$second_title" "$first_trailing_desktop_id" || \
+    fail "KWin did not move the lower $protocol stack member to the shared tail"
+  wait_for_active "$second_title" || \
+    fail "Driftile changed $protocol focus on the shared tail"
+  wait_for_appended_desktop \
+    second_trailing_desktop_id \
+    "$primary_desktop_id" \
+    "$secondary_desktop_id" \
+    "$first_trailing_desktop_id" || \
+    fail "Driftile did not append exactly one empty tail after the numbered $protocol transfer"
+  [[ "$second_trailing_desktop_id" != "$first_trailing_desktop_id" ]] || \
+    fail "Driftile reused the occupied numbered $protocol desktop as its empty tail"
+
+  invoke_shortcut "driftile_move_column_to_desktop_1" || \
+    fail "KGlobalAccel could not return the $protocol column from the shared tail"
+  wait_for_current_desktop "$primary_desktop_id" || \
+    fail "Driftile did not follow the $protocol column back from the shared tail"
+  wait_for_window_desktop "$first_title" "$primary_desktop_id" || \
+    fail "KWin did not return the upper $protocol stack member from the shared tail"
+  wait_for_window_desktop "$second_title" "$primary_desktop_id" || \
+    fail "KWin did not return the lower $protocol stack member from the shared tail"
+  wait_for_desktop_sequence \
+    "$primary_desktop_id" \
+    "$secondary_desktop_id" \
+    "$first_trailing_desktop_id" || \
+    fail "Driftile did not remove the single redundant $protocol tail it created"
+  wait_for_geometries \
+    "$third_title" "16,16,616,688" \
+    "$first_title" "648,16,616,336" \
+    "$second_title" "648,368,616,336" || \
+    fail "Driftile did not preserve the numbered $protocol column after leaving the tail: $(describe_layout "$third_title" "$first_title" "$second_title")"
+  wait_for_active "$second_title" || \
+    fail "Driftile changed $protocol focus while leaving the shared tail"
+  invoke_shortcut "driftile_move_column_left" || \
+    fail "KGlobalAccel could not restore the $protocol column after tail coverage"
+  wait_for_geometries \
+    "$first_title" "16,16,616,336" \
+    "$second_title" "16,368,616,336" \
+    "$third_title" "648,16,616,688" || \
+    fail "Driftile did not restore the $protocol layout after numbered tail coverage: $(describe_layout "$first_title" "$second_title" "$third_title")"
+  wait_for_active "$second_title" || \
+    fail "Driftile changed $protocol focus after numbered tail coverage"
+}
+
 verify_desktop_transfer() {
   local protocol=$1
   local first_title=$2
@@ -1784,6 +1947,14 @@ verify_desktop_transfer() {
     "$second_title" "16,368,616,336" \
     "$third_title" "648,16,616,688" || \
     fail "Driftile did not restore the $protocol source stack before desktop transfer: $(describe_layout "$first_title" "$second_title" "$third_title")"
+
+  verify_numbered_desktop_actions \
+    "$protocol" \
+    "$first_title" \
+    "$second_title" \
+    "$third_title" \
+    "$destination_title" \
+    "$first_trailing_desktop_id"
 
   invoke_shortcut "driftile_focus_next_desktop" || \
     fail "KGlobalAccel could not focus the next $protocol desktop"
@@ -1965,6 +2136,8 @@ verify_multi_output_desktop_transfer() {
     fail "KGlobalAccel did not register the multi-output previous-desktop shortcut"
   wait_for_shortcut "driftile_move_window_to_next_desktop" || \
     fail "KGlobalAccel did not register the multi-output next-desktop shortcut"
+  numbered_desktop_shortcuts_are_registered || \
+    fail "KGlobalAccel did not register all multi-output numbered desktop actions"
 
   activate_window "$left_first_title" || \
     fail "KWin could not activate the left $protocol source before destination seeding"
@@ -2009,6 +2182,88 @@ verify_multi_output_desktop_transfer() {
     "$right_first_title" "1296,16,616,688" \
     "$right_second_title" "1928,16,616,688" || \
     fail "Driftile did not restore the multi-output $protocol source contexts before desktop transfer: $(describe_layout "$left_first_title" "$left_second_title" "$right_first_title" "$right_second_title")"
+
+  invoke_shortcut "driftile_focus_desktop_2" || \
+    fail "KGlobalAccel could not focus numbered desktop 2 on the left $protocol output"
+  wait_for_active "$left_destination_title" || \
+    fail "KWin did not restore left $protocol focus on numbered desktop 2"
+  wait_for_geometries \
+    "$left_destination_title" "16,16,616,688" \
+    "$right_first_title" "1296,16,616,688" \
+    "$right_second_title" "1928,16,616,688" || \
+    fail "Driftile did not isolate numbered $protocol desktop focus: $(describe_layout "$left_destination_title" "$right_first_title" "$right_second_title")"
+  verify_multi_output_desktop_state "$left_destination_title" secondary || \
+    fail "KWin did not expose isolated numbered $protocol desktop-2 focus"
+
+  invoke_shortcut "driftile_focus_desktop_1" || \
+    fail "KGlobalAccel could not restore numbered desktop 1 on the left $protocol output"
+  wait_for_active "$left_second_title" || \
+    fail "KWin did not restore left $protocol focus on numbered desktop 1"
+  wait_for_geometries \
+    "$left_first_title" "16,16,616,336" \
+    "$left_second_title" "16,368,616,336" \
+    "$right_first_title" "1296,16,616,688" \
+    "$right_second_title" "1928,16,616,688" || \
+    fail "Driftile did not restore isolated numbered $protocol desktop focus: $(describe_layout "$left_first_title" "$left_second_title" "$right_first_title" "$right_second_title")"
+
+  invoke_shortcut "driftile_move_column_to_desktop_2" || \
+    fail "KGlobalAccel could not move the left $protocol stack to numbered desktop 2"
+  wait_for_geometries \
+    "$left_destination_title" "16,16,616,688" \
+    "$left_first_title" "648,16,616,336" \
+    "$left_second_title" "648,368,616,336" \
+    "$right_first_title" "1296,16,616,688" \
+    "$right_second_title" "1928,16,616,688" || \
+    fail "Driftile did not isolate the numbered multi-output $protocol column transfer: $(describe_layout "$left_destination_title" "$left_first_title" "$left_second_title" "$right_first_title" "$right_second_title")"
+  wait_for_window_desktop "$left_first_title" "$secondary_desktop_id" || \
+    fail "KWin did not move the upper left $protocol member to numbered desktop 2"
+  wait_for_window_desktop "$left_second_title" "$secondary_desktop_id" || \
+    fail "KWin did not move the lower left $protocol member to numbered desktop 2"
+  wait_for_window_desktop "$right_first_title" "$primary_desktop_id" || \
+    fail "Driftile moved an unrelated right-output $protocol window during numbered transfer"
+  wait_for_window_desktop "$right_second_title" "$primary_desktop_id" || \
+    fail "Driftile moved another right-output $protocol window during numbered transfer"
+  wait_for_active "$left_second_title" || \
+    fail "Driftile changed $protocol focus during numbered multi-output transfer"
+  window_is_on_output_side "$left_second_title" left || \
+    fail "Driftile moved the numbered $protocol column away from its left output"
+  activate_window "$left_first_title" || \
+    fail "KWin could not prepare the unique numbered $protocol outbound state probe"
+  wait_for_active "$left_first_title" || \
+    fail "KWin did not focus the unique numbered $protocol outbound state probe"
+  verify_multi_output_desktop_state "$left_first_title" secondary || \
+    fail "KWin did not expose the numbered multi-output $protocol transfer state"
+  activate_window "$left_second_title" || \
+    fail "KWin could not restore $protocol focus after the numbered outbound state probe"
+  wait_for_active "$left_second_title" || \
+    fail "KWin did not restore $protocol focus after the numbered outbound state probe"
+
+  invoke_shortcut "driftile_move_column_to_desktop_1" || \
+    fail "KGlobalAccel could not return the left $protocol stack to numbered desktop 1"
+  wait_for_geometries \
+    "$left_first_title" "16,16,616,336" \
+    "$left_second_title" "16,368,616,336" \
+    "$right_first_title" "1296,16,616,688" \
+    "$right_second_title" "1928,16,616,688" || \
+    fail "Driftile did not restore the numbered multi-output $protocol column: $(describe_layout "$left_first_title" "$left_second_title" "$right_first_title" "$right_second_title")"
+  wait_for_window_desktop "$left_first_title" "$primary_desktop_id" || \
+    fail "KWin did not return the upper left $protocol member to numbered desktop 1"
+  wait_for_window_desktop "$left_second_title" "$primary_desktop_id" || \
+    fail "KWin did not return the lower left $protocol member to numbered desktop 1"
+  wait_for_active "$left_second_title" || \
+    fail "Driftile changed $protocol focus while restoring numbered desktop 1"
+  window_is_on_output_side "$left_second_title" left || \
+    fail "Driftile returned the numbered $protocol column to the wrong output"
+  activate_window "$left_first_title" || \
+    fail "KWin could not prepare the unique numbered $protocol return state probe"
+  wait_for_active "$left_first_title" || \
+    fail "KWin did not focus the unique numbered $protocol return state probe"
+  verify_multi_output_desktop_state "$left_first_title" primary || \
+    fail "KWin did not restore the numbered multi-output $protocol source state"
+  activate_window "$left_second_title" || \
+    fail "KWin could not restore $protocol focus after the numbered return state probe"
+  wait_for_active "$left_second_title" || \
+    fail "KWin did not restore $protocol focus after the numbered return state probe"
 
   invoke_shortcut "driftile_move_window_to_next_desktop" || \
     fail "KGlobalAccel could not transfer the left $protocol stack member to the next desktop"

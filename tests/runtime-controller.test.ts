@@ -14646,6 +14646,50 @@ describe("RuntimeController", () => {
     );
   });
 
+  it("focuses numbered desktops on the active output and clamps to the tail", () => {
+    const activeOutput = createOutput("DP-1", 0);
+    const otherOutput = createOutput("HDMI-A-1", 1000);
+    const desktops = [
+      { id: "desktop-1" },
+      { id: "desktop-2" },
+      { id: "desktop-tail" },
+    ] as const;
+    const fixture = createWorkspace(
+      activeOutput,
+      desktops[1],
+      [activeOutput, otherOutput],
+      desktops,
+      [],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(controller.focusDesktop(1)).toBe(true);
+    expect(fixture.workspace.currentDesktopForScreen?.(activeOutput)).toBe(
+      desktops[0],
+    );
+    expect(fixture.workspace.currentDesktopForScreen?.(otherOutput)).toBe(
+      desktops[1],
+    );
+    expect(controller.focusDesktop(1)).toBe(false);
+    expect(controller.focusDesktop(9)).toBe(true);
+    expect(fixture.workspace.currentDesktopForScreen?.(activeOutput)).toBe(
+      desktops[2],
+    );
+    expect(fixture.workspace.currentDesktopForScreen?.(otherOutput)).toBe(
+      desktops[1],
+    );
+    expect(fixture.desktopSwitchCount).toBe(2);
+
+    for (const invalid of [0, -1, 1.5, Number.NaN]) {
+      expect(controller.focusDesktop(invalid)).toBe(false);
+    }
+
+    expect(fixture.desktopSwitchCount).toBe(2);
+  });
+
   it("focuses adjacent desktops through the global fallback", () => {
     const output = createOutput("DP-1", 0);
     const desktops = [{ id: "desktop-1" }, { id: "desktop-2" }] as const;
@@ -14734,6 +14778,78 @@ describe("RuntimeController", () => {
     expect(desktops.map((candidate) => candidate.id)).toEqual(["desktop-1"]);
     expect(removeCount).toBe(2);
   });
+
+  it("creates a fresh shared tail after a numbered column transfer", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const tracked = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [tracked.window],
+    );
+    const desktopsChanged = new Signal<[]>();
+    let desktops: KWinVirtualDesktop[] = [desktop];
+    let createCount = 0;
+    Object.defineProperties(fixture.workspace, {
+      createDesktop: {
+        configurable: true,
+        value: (position: number) => {
+          createCount += 1;
+          desktops.splice(position, 0, {
+            id: `created-${String(createCount)}`,
+          });
+          desktopsChanged.emit();
+        },
+      },
+      desktops: {
+        configurable: true,
+        get: () => desktops,
+      },
+      desktopsChanged: { configurable: true, value: desktopsChanged },
+      removeDesktop: {
+        configurable: true,
+        value: (removed: KWinVirtualDesktop) => {
+          desktops = desktops.filter((candidate) => candidate !== removed);
+          desktopsChanged.emit();
+        },
+      },
+    });
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(desktops.map((candidate) => candidate.id)).toEqual([
+      "desktop-1",
+      "created-1",
+    ]);
+    expect(controller.moveColumnToDesktop(9)).toBe(true);
+    expect(desktops.map((candidate) => candidate.id)).toEqual([
+      "desktop-1",
+      "created-1",
+      "created-2",
+    ]);
+    expect(tracked.window.desktops).toEqual([desktops[1]]);
+    expect(fixture.workspace.currentDesktopForScreen?.(output)).toBe(
+      desktops[1],
+    );
+
+    expect(controller.focusDesktop(9)).toBe(true);
+    expect(fixture.workspace.currentDesktopForScreen?.(output)).toBe(
+      desktops[2],
+    );
+    expect(controller.focusDesktop(2)).toBe(true);
+    expect(controller.moveColumnToDesktop(1)).toBe(true);
+    expect(desktops.map((candidate) => candidate.id)).toEqual([
+      "desktop-1",
+      "created-1",
+    ]);
+    expect(tracked.window.desktops).toEqual([desktop]);
+    expect(fixture.workspace.currentDesktopForScreen?.(output)).toBe(desktop);
+  });
 });
 
 describe("RuntimeController desktop transfers", () => {
@@ -14792,6 +14908,39 @@ describe("RuntimeController desktop transfers", () => {
       { id: "column:source", windowIds: ["source"] },
       { id: "column:moved", windowIds: ["moved"] },
     ]);
+  });
+
+  it("moves the active stack to a numbered desktop and clamps to the tail", () => {
+    const { controller, desktops, destinations, fixture, moved, output } =
+      createDesktopTransferFixture({
+        destinationCount: 2,
+        sourceStack: true,
+      });
+
+    expect(controller.moveColumnToDesktop(9)).toBe(true);
+    expect(moved.window.desktops).toEqual([desktops[1]]);
+    expect(fixture.workspace.currentDesktopForScreen?.(output)).toBe(
+      desktops[1],
+    );
+    expect(fixture.workspace.activeWindow).toBe(moved.window);
+    expect(testLayoutColumns(controller, output, desktops[0])).toEqual([]);
+    expect(testLayoutColumns(controller, output, desktops[1])).toEqual([
+      { id: "column:destination", windowIds: ["destination"] },
+      { id: "column:source", windowIds: ["source", "moved"] },
+      { id: "column:destination-2", windowIds: ["destination-2"] },
+    ]);
+    expect(activeColumnWidth(controller, output, desktops[1])).toEqual({
+      kind: "proportion",
+      value: 0.5,
+    });
+    expect(destinations[1]?.window.frameGeometry.x).toBeGreaterThan(
+      moved.window.frameGeometry.x,
+    );
+    expect(controller.moveColumnToDesktop(2)).toBe(false);
+
+    for (const invalid of [0, -1, 1.5, Number.NaN]) {
+      expect(controller.moveColumnToDesktop(invalid)).toBe(false);
+    }
   });
 
   it("migrates full-width restore state when a desktop transfer renames the column", () => {

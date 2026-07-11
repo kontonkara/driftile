@@ -196,6 +196,51 @@ const definitions: readonly ShortcutDefinition[] = [
     sequence: "Meta+PgDown",
   },
   {
+    name: "driftile_focus_desktop_1",
+    text: "Driftile: Focus desktop 1",
+    sequence: "Meta+1",
+  },
+  {
+    name: "driftile_focus_desktop_2",
+    text: "Driftile: Focus desktop 2",
+    sequence: "Meta+2",
+  },
+  {
+    name: "driftile_focus_desktop_3",
+    text: "Driftile: Focus desktop 3",
+    sequence: "Meta+3",
+  },
+  {
+    name: "driftile_focus_desktop_4",
+    text: "Driftile: Focus desktop 4",
+    sequence: "Meta+4",
+  },
+  {
+    name: "driftile_focus_desktop_5",
+    text: "Driftile: Focus desktop 5",
+    sequence: "Meta+5",
+  },
+  {
+    name: "driftile_focus_desktop_6",
+    text: "Driftile: Focus desktop 6",
+    sequence: "Meta+6",
+  },
+  {
+    name: "driftile_focus_desktop_7",
+    text: "Driftile: Focus desktop 7",
+    sequence: "Meta+7",
+  },
+  {
+    name: "driftile_focus_desktop_8",
+    text: "Driftile: Focus desktop 8",
+    sequence: "Meta+8",
+  },
+  {
+    name: "driftile_focus_desktop_9",
+    text: "Driftile: Focus desktop 9",
+    sequence: "Meta+9",
+  },
+  {
     name: "driftile_move_column_to_previous_desktop",
     text: "Driftile: Move column to previous desktop",
     sequence: "Meta+Ctrl+I",
@@ -214,6 +259,51 @@ const definitions: readonly ShortcutDefinition[] = [
     name: "driftile_move_column_to_next_desktop_page_down",
     text: "Driftile: Move column to next desktop (Page Down)",
     sequence: "Meta+Ctrl+PgDown",
+  },
+  {
+    name: "driftile_move_column_to_desktop_1",
+    text: "Driftile: Move column to desktop 1",
+    sequence: "Meta+Ctrl+1",
+  },
+  {
+    name: "driftile_move_column_to_desktop_2",
+    text: "Driftile: Move column to desktop 2",
+    sequence: "Meta+Ctrl+2",
+  },
+  {
+    name: "driftile_move_column_to_desktop_3",
+    text: "Driftile: Move column to desktop 3",
+    sequence: "Meta+Ctrl+3",
+  },
+  {
+    name: "driftile_move_column_to_desktop_4",
+    text: "Driftile: Move column to desktop 4",
+    sequence: "Meta+Ctrl+4",
+  },
+  {
+    name: "driftile_move_column_to_desktop_5",
+    text: "Driftile: Move column to desktop 5",
+    sequence: "Meta+Ctrl+5",
+  },
+  {
+    name: "driftile_move_column_to_desktop_6",
+    text: "Driftile: Move column to desktop 6",
+    sequence: "Meta+Ctrl+6",
+  },
+  {
+    name: "driftile_move_column_to_desktop_7",
+    text: "Driftile: Move column to desktop 7",
+    sequence: "Meta+Ctrl+7",
+  },
+  {
+    name: "driftile_move_column_to_desktop_8",
+    text: "Driftile: Move column to desktop 8",
+    sequence: "Meta+Ctrl+8",
+  },
+  {
+    name: "driftile_move_column_to_desktop_9",
+    text: "Driftile: Move column to desktop 9",
+    sequence: "Meta+Ctrl+9",
   },
   {
     name: "driftile_focus_output_left",

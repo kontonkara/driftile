@@ -29,6 +29,8 @@ const extraSequence: ShortcutSequence = [extraKey, changedKey, 0, 0];
 describe("shortcut ownership", () => {
   it("encodes Qt key sequences including shifted symbols and navigation keys", () => {
     expect(encodeShortcut("Meta+H")).toBe(0x10000048);
+    expect(encodeShortcut("Meta+1")).toBe(0x10000031);
+    expect(encodeShortcut("Meta+Ctrl+9")).toBe(0x14000039);
     expect(encodeShortcut("Meta+=")).toBe(0x1000003d);
     expect(encodeShortcut("Meta+,")).toBe(0x1000002c);
     expect(encodeShortcut("Meta+.")).toBe(0x1000002e);

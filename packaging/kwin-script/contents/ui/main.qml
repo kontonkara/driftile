@@ -266,6 +266,60 @@ QtObject {
         sequence: "Meta+PgDown"
         onActivated: Runtime.DriftileRuntime.focusNextDesktop()
     }
+    readonly property ShortcutHandler focusDesktop1Shortcut: ShortcutHandler {
+        name: "driftile_focus_desktop_1"
+        text: "Driftile: Focus desktop 1"
+        sequence: "Meta+1"
+        onActivated: Runtime.DriftileRuntime.focusDesktop(1)
+    }
+    readonly property ShortcutHandler focusDesktop2Shortcut: ShortcutHandler {
+        name: "driftile_focus_desktop_2"
+        text: "Driftile: Focus desktop 2"
+        sequence: "Meta+2"
+        onActivated: Runtime.DriftileRuntime.focusDesktop(2)
+    }
+    readonly property ShortcutHandler focusDesktop3Shortcut: ShortcutHandler {
+        name: "driftile_focus_desktop_3"
+        text: "Driftile: Focus desktop 3"
+        sequence: "Meta+3"
+        onActivated: Runtime.DriftileRuntime.focusDesktop(3)
+    }
+    readonly property ShortcutHandler focusDesktop4Shortcut: ShortcutHandler {
+        name: "driftile_focus_desktop_4"
+        text: "Driftile: Focus desktop 4"
+        sequence: "Meta+4"
+        onActivated: Runtime.DriftileRuntime.focusDesktop(4)
+    }
+    readonly property ShortcutHandler focusDesktop5Shortcut: ShortcutHandler {
+        name: "driftile_focus_desktop_5"
+        text: "Driftile: Focus desktop 5"
+        sequence: "Meta+5"
+        onActivated: Runtime.DriftileRuntime.focusDesktop(5)
+    }
+    readonly property ShortcutHandler focusDesktop6Shortcut: ShortcutHandler {
+        name: "driftile_focus_desktop_6"
+        text: "Driftile: Focus desktop 6"
+        sequence: "Meta+6"
+        onActivated: Runtime.DriftileRuntime.focusDesktop(6)
+    }
+    readonly property ShortcutHandler focusDesktop7Shortcut: ShortcutHandler {
+        name: "driftile_focus_desktop_7"
+        text: "Driftile: Focus desktop 7"
+        sequence: "Meta+7"
+        onActivated: Runtime.DriftileRuntime.focusDesktop(7)
+    }
+    readonly property ShortcutHandler focusDesktop8Shortcut: ShortcutHandler {
+        name: "driftile_focus_desktop_8"
+        text: "Driftile: Focus desktop 8"
+        sequence: "Meta+8"
+        onActivated: Runtime.DriftileRuntime.focusDesktop(8)
+    }
+    readonly property ShortcutHandler focusDesktop9Shortcut: ShortcutHandler {
+        name: "driftile_focus_desktop_9"
+        text: "Driftile: Focus desktop 9"
+        sequence: "Meta+9"
+        onActivated: Runtime.DriftileRuntime.focusDesktop(9)
+    }
     readonly property ShortcutHandler moveColumnToPreviousDesktopShortcut: ShortcutHandler {
         name: "driftile_move_column_to_previous_desktop"
         text: "Driftile: Move column to previous desktop"
@@ -289,6 +343,60 @@ QtObject {
         text: "Driftile: Move column to next desktop (Page Down)"
         sequence: "Meta+Ctrl+PgDown"
         onActivated: Runtime.DriftileRuntime.moveColumnToNextDesktop()
+    }
+    readonly property ShortcutHandler moveColumnToDesktop1Shortcut: ShortcutHandler {
+        name: "driftile_move_column_to_desktop_1"
+        text: "Driftile: Move column to desktop 1"
+        sequence: "Meta+Ctrl+1"
+        onActivated: Runtime.DriftileRuntime.moveColumnToDesktop(1)
+    }
+    readonly property ShortcutHandler moveColumnToDesktop2Shortcut: ShortcutHandler {
+        name: "driftile_move_column_to_desktop_2"
+        text: "Driftile: Move column to desktop 2"
+        sequence: "Meta+Ctrl+2"
+        onActivated: Runtime.DriftileRuntime.moveColumnToDesktop(2)
+    }
+    readonly property ShortcutHandler moveColumnToDesktop3Shortcut: ShortcutHandler {
+        name: "driftile_move_column_to_desktop_3"
+        text: "Driftile: Move column to desktop 3"
+        sequence: "Meta+Ctrl+3"
+        onActivated: Runtime.DriftileRuntime.moveColumnToDesktop(3)
+    }
+    readonly property ShortcutHandler moveColumnToDesktop4Shortcut: ShortcutHandler {
+        name: "driftile_move_column_to_desktop_4"
+        text: "Driftile: Move column to desktop 4"
+        sequence: "Meta+Ctrl+4"
+        onActivated: Runtime.DriftileRuntime.moveColumnToDesktop(4)
+    }
+    readonly property ShortcutHandler moveColumnToDesktop5Shortcut: ShortcutHandler {
+        name: "driftile_move_column_to_desktop_5"
+        text: "Driftile: Move column to desktop 5"
+        sequence: "Meta+Ctrl+5"
+        onActivated: Runtime.DriftileRuntime.moveColumnToDesktop(5)
+    }
+    readonly property ShortcutHandler moveColumnToDesktop6Shortcut: ShortcutHandler {
+        name: "driftile_move_column_to_desktop_6"
+        text: "Driftile: Move column to desktop 6"
+        sequence: "Meta+Ctrl+6"
+        onActivated: Runtime.DriftileRuntime.moveColumnToDesktop(6)
+    }
+    readonly property ShortcutHandler moveColumnToDesktop7Shortcut: ShortcutHandler {
+        name: "driftile_move_column_to_desktop_7"
+        text: "Driftile: Move column to desktop 7"
+        sequence: "Meta+Ctrl+7"
+        onActivated: Runtime.DriftileRuntime.moveColumnToDesktop(7)
+    }
+    readonly property ShortcutHandler moveColumnToDesktop8Shortcut: ShortcutHandler {
+        name: "driftile_move_column_to_desktop_8"
+        text: "Driftile: Move column to desktop 8"
+        sequence: "Meta+Ctrl+8"
+        onActivated: Runtime.DriftileRuntime.moveColumnToDesktop(8)
+    }
+    readonly property ShortcutHandler moveColumnToDesktop9Shortcut: ShortcutHandler {
+        name: "driftile_move_column_to_desktop_9"
+        text: "Driftile: Move column to desktop 9"
+        sequence: "Meta+Ctrl+9"
+        onActivated: Runtime.DriftileRuntime.moveColumnToDesktop(9)
     }
     readonly property ShortcutHandler moveWindowToPreviousDesktopShortcut: ShortcutHandler {
         name: "driftile_move_window_to_previous_desktop"
