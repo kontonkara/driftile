@@ -15278,14 +15278,323 @@ describe("RuntimeController desktop transfers", () => {
     expect(capacity.fixture.desktopSwitchCount).toBe(0);
   });
 
-  it("rejects suspension, floating, topology, capacity, and waiting barriers", () => {
+  it("moves only the active manual floating window and keeps tiled layouts unchanged", () => {
+    const transfer = createDesktopTransferFixture();
+
+    expect(transfer.controller.toggleFloating()).toBe(true);
+    const floatingFrame = {
+      height: 260,
+      width: 360,
+      x: 120,
+      y: 90,
+    };
+    transfer.moved.setFrameGeometry(floatingFrame);
+    const sourceBefore = runtimeLayout(transfer.controller).snapshot(
+      outputId(transfer.output.name),
+      desktopId(transfer.desktops[0].id),
+    );
+    const targetBefore = runtimeLayout(transfer.controller).snapshot(
+      outputId(transfer.output.name),
+      desktopId(transfer.desktops[1].id),
+    );
+    const tiledFrames = [
+      { ...transfer.source.window.frameGeometry },
+      { ...transfer.destination.window.frameGeometry },
+    ];
+    const tiledWrites = [
+      transfer.source.writeCount,
+      transfer.destination.writeCount,
+    ];
+
+    expect(transfer.controller.moveColumnToNextDesktop()).toBe(true);
+    expect(transfer.moved.window.desktops).toEqual([transfer.desktops[1]]);
+    expect(transfer.moved.window.frameGeometry).toEqual(floatingFrame);
+    expect(transfer.fixture.workspace.activeWindow).toBe(transfer.moved.window);
+    expect(
+      transfer.fixture.workspace.currentDesktopForScreen?.(transfer.output),
+    ).toBe(transfer.desktops[1]);
+    expect(transfer.controller.floatingCount).toBe(1);
+    expect(
+      runtimeLayout(transfer.controller).snapshot(
+        outputId(transfer.output.name),
+        desktopId(transfer.desktops[0].id),
+      ),
+    ).toEqual(sourceBefore);
+    expect(
+      runtimeLayout(transfer.controller).snapshot(
+        outputId(transfer.output.name),
+        desktopId(transfer.desktops[1].id),
+      ),
+    ).toEqual(targetBefore);
+    expect([
+      transfer.source.window.frameGeometry,
+      transfer.destination.window.frameGeometry,
+    ]).toEqual(tiledFrames);
+    expect([
+      transfer.source.writeCount,
+      transfer.destination.writeCount,
+    ]).toEqual(tiledWrites);
+    const desktopWrites = transfer.moved.desktopWriteCount;
+    expect(transfer.controller.moveColumnToDesktop(2)).toBe(false);
+    expect(transfer.moved.desktopWriteCount).toBe(desktopWrites);
+    expect(transfer.moved.window.frameGeometry).toEqual(floatingFrame);
+
+    expect(transfer.controller.toggleFloating()).toBe(true);
+    expect(transfer.controller.floatingCount).toBe(0);
+    expect(
+      testLayoutColumns(
+        transfer.controller,
+        transfer.output,
+        transfer.desktops[0],
+      ),
+    ).toEqual([{ id: "column:source", windowIds: ["source"] }]);
+    expect(
+      testLayoutColumns(
+        transfer.controller,
+        transfer.output,
+        transfer.desktops[1],
+      ),
+    ).toEqual([
+      { id: "column:destination", windowIds: ["destination"] },
+      { id: "column:moved", windowIds: ["moved"] },
+    ]);
+  });
+
+  it.each([
+    { name: "fixed normal", overrides: { resizeable: false } },
+    {
+      name: "relation-free dialog",
+      overrides: { dialog: true, normalWindow: false },
+    },
+    {
+      name: "constraint-mismatched fixed normal",
+      overrides: {
+        maxSize: { height: 100, width: 100 },
+        minSize: { height: 100, width: 100 },
+      },
+    },
+  ] satisfies readonly {
+    readonly name: string;
+    readonly overrides: Partial<KWinWindow>;
+  }[])(
+    "moves a $name floating window to a numbered desktop",
+    ({ overrides }) => {
+      const output = createOutput("DP-1", 0);
+      const desktops = [{ id: "desktop-1" }, { id: "desktop-2" }] as const;
+      const tiled = createTrackedWindow("tiled", output, desktops[0]);
+      const destination = createTrackedWindow(
+        "destination",
+        output,
+        desktops[1],
+      );
+      const automatic = createTrackedWindow("automatic", output, desktops[0], {
+        frameGeometry: { height: 240, width: 320, x: 130, y: 100 },
+        ...overrides,
+      });
+      const fixture = createWorkspace(output, desktops[0], [output], desktops, [
+        tiled.window,
+        destination.window,
+        automatic.window,
+      ]);
+      const controller = new RuntimeController(fixture.workspace, {
+        clientAreaOption: 2,
+        gap: 10,
+      });
+
+      controller.start();
+      fixture.workspace.activeWindow = automatic.window;
+      const sourceBefore = runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktops[0].id),
+      );
+      const targetBefore = runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktops[1].id),
+      );
+      const automaticFrame = { ...automatic.window.frameGeometry };
+      const automaticWrites = automatic.writeCount;
+      const tiledFrames = [
+        { ...tiled.window.frameGeometry },
+        { ...destination.window.frameGeometry },
+      ];
+      const tiledWrites = [tiled.writeCount, destination.writeCount];
+
+      expect(controller.moveColumnToDesktop(9)).toBe(true);
+      expect(automatic.window.desktops).toEqual([desktops[1]]);
+      expect(automatic.window.frameGeometry).toEqual(automaticFrame);
+      expect(fixture.workspace.activeWindow).toBe(automatic.window);
+      expect(fixture.workspace.currentDesktopForScreen?.(output)).toBe(
+        desktops[1],
+      );
+      expect(controller.automaticFloatingCount).toBe(1);
+      expect(automatic.writeCount).toBe(automaticWrites);
+      expect(
+        runtimeLayout(controller).snapshot(
+          outputId(output.name),
+          desktopId(desktops[0].id),
+        ),
+      ).toEqual(sourceBefore);
+      expect(
+        runtimeLayout(controller).snapshot(
+          outputId(output.name),
+          desktopId(desktops[1].id),
+        ),
+      ).toEqual(targetBefore);
+      expect([
+        tiled.window.frameGeometry,
+        destination.window.frameGeometry,
+      ]).toEqual(tiledFrames);
+      expect([tiled.writeCount, destination.writeCount]).toEqual(tiledWrites);
+    },
+  );
+
+  it("rolls back an automatic transfer without an unsafe frame write", () => {
+    const output = createOutput("DP-1", 0);
+    const desktops = [{ id: "desktop-1" }, { id: "desktop-2" }] as const;
+    const automatic = createTrackedWindow("automatic", output, desktops[0], {
+      frameGeometry: { height: 240, width: 320, x: 130, y: 100 },
+      maxSize: { height: 100, width: 100 },
+      minSize: { height: 100, width: 100 },
+    });
+    const fixture = createWorkspace(output, desktops[0], [output], desktops, [
+      automatic.window,
+    ]);
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+    });
+    const mechanismFrame = {
+      height: 180,
+      width: 280,
+      x: 20,
+      y: 30,
+    };
+
+    controller.start();
+    automatic.setDesktopWriteBehavior((next, commit) => {
+      commit();
+
+      if (next[0]?.id === desktops[1].id) {
+        automatic.setFrameGeometry(mechanismFrame);
+      }
+    });
+
+    expect(controller.moveColumnToNextDesktop()).toBe(false);
+    expect(automatic.window.desktops).toEqual([desktops[0]]);
+    expect(automatic.window.frameGeometry).toEqual(mechanismFrame);
+    expect(automatic.desktopWriteCount).toBe(2);
+    expect(automatic.writeCount).toBe(0);
+    expect(fixture.desktopSwitchCount).toBe(0);
+    expect(fixture.workspace.activeWindow).toBe(automatic.window);
+  });
+
+  it("rejects related floating windows before assigning a desktop", () => {
+    const output = createOutput("DP-1", 0);
+    const desktops = [{ id: "desktop-1" }, { id: "desktop-2" }] as const;
+
+    for (const [id, overrides] of [
+      ["modal", { modal: true }],
+      ["transient", { transient: true }],
+    ] satisfies readonly (readonly [string, Partial<KWinWindow>])[]) {
+      const related = createTrackedWindow(id, output, desktops[0], overrides);
+      const fixture = createWorkspace(output, desktops[0], [output], desktops, [
+        related.window,
+      ]);
+      const controller = new RuntimeController(fixture.workspace, {
+        clientAreaOption: 2,
+      });
+
+      controller.start();
+      expect(controller.moveColumnToNextDesktop()).toBe(false);
+      expect(related.desktopWriteCount).toBe(0);
+      expect(fixture.desktopSwitchCount).toBe(0);
+    }
+
+    const parent = createTrackedWindow("parent", output, desktops[0]);
+    const child = createTrackedWindow("child", output, desktops[0], {
+      transient: true,
+      transientFor: parent.window,
+    });
+    const fixture = createWorkspace(output, desktops[0], [output], desktops, [
+      parent.window,
+      child.window,
+    ]);
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+    });
+
+    controller.start();
+    fixture.workspace.activeWindow = parent.window;
+    expect(controller.toggleFloating()).toBe(true);
+    expect(controller.moveColumnToNextDesktop()).toBe(false);
+    expect(parent.desktopWriteCount).toBe(0);
+    expect(child.desktopWriteCount).toBe(0);
+    expect(fixture.desktopSwitchCount).toBe(0);
+
+    fixture.workspace.activeWindow = child.window;
+    expect(controller.moveColumnToDesktop(9)).toBe(false);
+    expect(parent.desktopWriteCount).toBe(0);
+    expect(child.desktopWriteCount).toBe(0);
+    expect(fixture.desktopSwitchCount).toBe(0);
+  });
+
+  it("restores a manual floating window when KWin rejects its desktop assignment", () => {
+    const transfer = createDesktopTransferFixture();
+
+    expect(transfer.controller.toggleFloating()).toBe(true);
+    const floatingFrame = {
+      height: 260,
+      width: 360,
+      x: 120,
+      y: 90,
+    };
+    transfer.moved.setFrameGeometry(floatingFrame);
+    const sourceBefore = runtimeLayout(transfer.controller).snapshot(
+      outputId(transfer.output.name),
+      desktopId(transfer.desktops[0].id),
+    );
+    const targetBefore = runtimeLayout(transfer.controller).snapshot(
+      outputId(transfer.output.name),
+      desktopId(transfer.desktops[1].id),
+    );
+    transfer.moved.setDesktopWriteBehavior((next, commit) => {
+      commit();
+
+      if (next[0]?.id === transfer.desktops[1].id) {
+        transfer.moved.setFrameGeometry({
+          height: 220,
+          width: 300,
+          x: 10,
+          y: 20,
+        });
+        throw new Error("desktop assignment rejected");
+      }
+    });
+
+    expect(transfer.controller.moveColumnToNextDesktop()).toBe(false);
+    expect(transfer.moved.window.desktops).toEqual([transfer.desktops[0]]);
+    expect(transfer.moved.window.frameGeometry).toEqual(floatingFrame);
+    expect(transfer.moved.desktopWriteCount).toBe(2);
+    expect(transfer.fixture.desktopSwitchCount).toBe(0);
+    expect(transfer.fixture.workspace.activeWindow).toBe(transfer.moved.window);
+    expect(transfer.controller.floatingCount).toBe(1);
+    expect(
+      runtimeLayout(transfer.controller).snapshot(
+        outputId(transfer.output.name),
+        desktopId(transfer.desktops[0].id),
+      ),
+    ).toEqual(sourceBefore);
+    expect(
+      runtimeLayout(transfer.controller).snapshot(
+        outputId(transfer.output.name),
+        desktopId(transfer.desktops[1].id),
+      ),
+    ).toEqual(targetBefore);
+  });
+
+  it("rejects suspension, topology, capacity, and waiting barriers", () => {
     const suspended = createDesktopTransferFixture();
     setWindowState("fullscreen", suspended.destination, true);
     expect(suspended.controller.moveWindowToNextDesktop()).toBe(false);
-
-    const floating = createDesktopTransferFixture();
-    expect(floating.controller.toggleFloating()).toBe(true);
-    expect(floating.controller.moveWindowToNextDesktop()).toBe(false);
 
     const topology = createDesktopTransferFixture({ trackedOutput: true });
     (

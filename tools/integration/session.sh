@@ -686,6 +686,30 @@ wait_for_window_desktop() {
   return 1
 }
 
+window_desktop_transfer_state() {
+  local id
+
+  id=$(window_id "$1") || return 1
+  busctl --user --json=short call \
+    org.kde.KWin \
+    /KWin \
+    org.kde.KWin \
+    getWindowInfo \
+    s "$id" 2>/dev/null | jq --compact-output '
+      .data[0]
+      | {
+          desktops: .desktops.data,
+          dialog: .dialog.data,
+          modal: .modal.data,
+          moveable: .moveable.data,
+          normalWindow: .normalWindow.data,
+          output: .output.data,
+          resizeable: .resizeable.data,
+          transient: .transient.data
+        }
+    '
+}
+
 capture_stable_geometry() {
   local window_title=$1
   local attempt
@@ -1738,6 +1762,161 @@ numbered_desktop_shortcuts_are_registered() {
   done
 }
 
+verify_manual_floating_desktop_transfer() {
+  local protocol=$1
+  local first_title=$2
+  local floating_title=$3
+  local third_title=$4
+  local destination_title=$5
+  local first_trailing_desktop_id=$6
+  local floating_frame
+  local second_trailing_desktop_id=""
+
+  activate_window "$floating_title" || \
+    fail "KWin could not focus the $protocol window before floating transfer"
+  wait_for_active "$floating_title" || \
+    fail "KWin did not focus the $protocol window before floating transfer"
+  invoke_shortcut "driftile_toggle_floating" || \
+    fail "KGlobalAccel could not prepare the manual $protocol floating transfer"
+  floating_frame=$(capture_stable_geometry "$floating_title") || \
+    fail "the manual $protocol floating frame did not stabilize"
+  wait_for_geometries \
+    "$first_title" "16,16,616,688" \
+    "$floating_title" "$floating_frame" \
+    "$third_title" "648,16,616,688" \
+    "$destination_title" "16,16,616,688" || \
+    fail "Driftile did not isolate the manual $protocol floating window before transfer: $(describe_layout "$first_title" "$floating_title" "$third_title" "$destination_title")"
+  wait_for_active "$floating_title" || \
+    fail "Driftile changed $protocol focus while preparing the floating transfer"
+
+  invoke_shortcut "driftile_move_column_to_next_desktop" || \
+    fail "KGlobalAccel could not move the manual $protocol floating window to the next desktop"
+  wait_for_current_desktop "$secondary_desktop_id" || \
+    fail "Driftile did not follow the manual $protocol floating window"
+  wait_for_window_desktop "$floating_title" "$secondary_desktop_id" || \
+    fail "KWin did not move the manual $protocol floating window to the next desktop"
+  wait_for_window_desktop "$first_title" "$primary_desktop_id" || \
+    fail "Driftile moved a tiled $protocol stack sibling with the floating window"
+  wait_for_window_desktop "$third_title" "$primary_desktop_id" || \
+    fail "Driftile moved an unrelated tiled $protocol column with the floating window"
+  wait_for_geometries \
+    "$first_title" "16,16,616,688" \
+    "$floating_title" "$floating_frame" \
+    "$third_title" "648,16,616,688" \
+    "$destination_title" "16,16,616,688" || \
+    fail "Driftile changed tiled $protocol geometry or the exact floating frame during transfer: $(describe_layout "$first_title" "$floating_title" "$third_title" "$destination_title")"
+  wait_for_active "$floating_title" || \
+    fail "Driftile changed $protocol focus during manual floating transfer"
+
+  invoke_shortcut "driftile_focus_tiling" || \
+    fail "KGlobalAccel could not verify the tiled layer after floating transfer"
+  wait_for_active "$destination_title" || \
+    fail "Driftile did not keep the transferred $protocol window in the floating layer"
+  invoke_shortcut "driftile_focus_floating" || \
+    fail "KGlobalAccel could not restore the transferred floating $protocol window"
+  wait_for_active "$floating_title" || \
+    fail "Driftile did not restore floating $protocol focus after transfer"
+  wait_for_geometries \
+    "$first_title" "16,16,616,688" \
+    "$floating_title" "$floating_frame" \
+    "$third_title" "648,16,616,688" \
+    "$destination_title" "16,16,616,688" || \
+    fail "Driftile changed $protocol geometry while verifying the transferred floating layer: $(describe_layout "$first_title" "$floating_title" "$third_title" "$destination_title")"
+
+  invoke_shortcut "driftile_move_column_to_desktop_1" || \
+    fail "KGlobalAccel could not directly return the manual $protocol floating window"
+  wait_for_current_desktop "$primary_desktop_id" || \
+    fail "Driftile did not follow the directly returning manual $protocol floating window"
+  wait_for_window_desktop "$floating_title" "$primary_desktop_id" || \
+    fail "KWin did not directly return the manual $protocol floating window"
+  wait_for_geometries \
+    "$first_title" "16,16,616,688" \
+    "$floating_title" "$floating_frame" \
+    "$third_title" "648,16,616,688" \
+    "$destination_title" "16,16,616,688" || \
+    fail "Driftile changed the exact manual $protocol floating state during direct return: $(describe_layout "$first_title" "$floating_title" "$third_title" "$destination_title")"
+  wait_for_active "$floating_title" || \
+    fail "Driftile changed $protocol focus during the direct floating return"
+
+  invoke_shortcut "driftile_toggle_floating" || \
+    fail "KGlobalAccel could not immediately retile the directly returned $protocol window"
+  wait_for_geometries \
+    "$first_title" "16,16,616,336" \
+    "$floating_title" "16,368,616,336" \
+    "$third_title" "648,16,616,688" || \
+    fail "Driftile did not restore the directly returned $protocol window to its exact tiled stack: $(describe_layout "$first_title" "$floating_title" "$third_title")"
+  wait_for_active "$floating_title" || \
+    fail "Driftile changed $protocol focus during immediate retile"
+
+  invoke_shortcut "driftile_toggle_floating" || \
+    fail "KGlobalAccel could not prepare the manual $protocol floating tail transfer"
+  floating_frame=$(capture_stable_geometry "$floating_title") || \
+    fail "the manual $protocol floating tail-transfer frame did not stabilize"
+  wait_for_geometries \
+    "$first_title" "16,16,616,688" \
+    "$floating_title" "$floating_frame" \
+    "$third_title" "648,16,616,688" \
+    "$destination_title" "16,16,616,688" || \
+    fail "Driftile did not isolate the manual $protocol floating window before the tail transfer: $(describe_layout "$first_title" "$floating_title" "$third_title" "$destination_title")"
+  wait_for_active "$floating_title" || \
+    fail "Driftile changed $protocol focus while preparing the floating tail transfer"
+
+  invoke_shortcut "driftile_move_column_to_desktop_9" || \
+    fail "KGlobalAccel could not move the manual $protocol floating window to the shared tail"
+  wait_for_current_desktop "$first_trailing_desktop_id" || \
+    fail "Driftile did not clamp the manual $protocol floating transfer to the shared tail"
+  wait_for_window_desktop "$floating_title" "$first_trailing_desktop_id" || \
+    fail "KWin did not move the manual $protocol floating window to the shared tail"
+  wait_for_window_desktop "$first_title" "$primary_desktop_id" || \
+    fail "Driftile moved a tiled $protocol sibling to the shared tail"
+  wait_for_window_desktop "$third_title" "$primary_desktop_id" || \
+    fail "Driftile moved an unrelated tiled $protocol column to the shared tail"
+  wait_for_geometries \
+    "$first_title" "16,16,616,688" \
+    "$floating_title" "$floating_frame" \
+    "$third_title" "648,16,616,688" \
+    "$destination_title" "16,16,616,688" || \
+    fail "Driftile changed tiled $protocol geometry or the floating frame on the shared tail: $(describe_layout "$first_title" "$floating_title" "$third_title" "$destination_title")"
+  wait_for_active "$floating_title" || \
+    fail "Driftile changed $protocol focus on the floating shared-tail window"
+  wait_for_appended_desktop \
+    second_trailing_desktop_id \
+    "$primary_desktop_id" \
+    "$secondary_desktop_id" \
+    "$first_trailing_desktop_id" || \
+    fail "Driftile did not replenish the tail after the manual $protocol floating transfer"
+
+  invoke_shortcut "driftile_move_column_to_desktop_1" || \
+    fail "KGlobalAccel could not return the manual $protocol floating window from the tail"
+  wait_for_current_desktop "$primary_desktop_id" || \
+    fail "Driftile did not follow the manual $protocol floating window from the tail"
+  wait_for_window_desktop "$floating_title" "$primary_desktop_id" || \
+    fail "KWin did not return the manual $protocol floating window from the tail"
+  wait_for_desktop_sequence \
+    "$primary_desktop_id" \
+    "$secondary_desktop_id" \
+    "$first_trailing_desktop_id" || \
+    fail "Driftile did not remove its redundant manual-floating $protocol tail"
+  wait_for_geometries \
+    "$first_title" "16,16,616,688" \
+    "$floating_title" "$floating_frame" \
+    "$third_title" "648,16,616,688" \
+    "$destination_title" "16,16,616,688" || \
+    fail "Driftile changed the exact manual $protocol floating state after tail cleanup: $(describe_layout "$first_title" "$floating_title" "$third_title" "$destination_title")"
+  wait_for_active "$floating_title" || \
+    fail "Driftile changed $protocol focus after manual-floating tail cleanup"
+
+  invoke_shortcut "driftile_toggle_floating" || \
+    fail "KGlobalAccel could not retile the transferred manual $protocol window"
+  wait_for_geometries \
+    "$first_title" "16,16,616,336" \
+    "$floating_title" "16,368,616,336" \
+    "$third_title" "648,16,616,688" || \
+    fail "Driftile did not restore the manual $protocol window to its tiled stack: $(describe_layout "$first_title" "$floating_title" "$third_title")"
+  wait_for_active "$floating_title" || \
+    fail "Driftile changed $protocol focus while retiling after floating transfer"
+}
+
 verify_numbered_desktop_actions() {
   local protocol=$1
   local first_title=$2
@@ -1948,6 +2127,14 @@ verify_desktop_transfer() {
     "$third_title" "648,16,616,688" || \
     fail "Driftile did not restore the $protocol source stack before desktop transfer: $(describe_layout "$first_title" "$second_title" "$third_title")"
 
+  verify_manual_floating_desktop_transfer \
+    "$protocol" \
+    "$first_title" \
+    "$second_title" \
+    "$third_title" \
+    "$destination_title" \
+    "$first_trailing_desktop_id"
+
   verify_numbered_desktop_actions \
     "$protocol" \
     "$first_title" \
@@ -2129,6 +2316,7 @@ verify_multi_output_desktop_transfer() {
   local right_second_title=$5
   local left_destination_title="driftile-multi-output-${protocol}-left-desktop-destination"
   local right_destination_title="driftile-multi-output-${protocol}-right-desktop-destination"
+  local floating_frame
   local left_destination_pid
   local right_destination_pid
 
@@ -2310,6 +2498,69 @@ verify_multi_output_desktop_transfer() {
     "$right_first_title" "1296,16,616,688" \
     "$right_second_title" "1928,16,616,688" || \
     fail "Driftile did not restore the multi-output $protocol source stack: $(describe_layout "$left_first_title" "$left_second_title" "$right_first_title" "$right_second_title")"
+
+  invoke_shortcut "driftile_toggle_floating" || \
+    fail "KGlobalAccel could not prepare the isolated manual $protocol floating transfer"
+  floating_frame=$(capture_stable_geometry "$left_second_title") || \
+    fail "the isolated manual $protocol floating frame did not stabilize"
+  wait_for_geometries \
+    "$left_first_title" "16,16,616,688" \
+    "$left_second_title" "$floating_frame" \
+    "$left_destination_title" "16,16,616,688" \
+    "$right_first_title" "1296,16,616,688" \
+    "$right_second_title" "1928,16,616,688" \
+    "$right_destination_title" "1296,16,616,688" || \
+    fail "Driftile did not isolate the manual multi-output $protocol floating baseline: $(describe_layout "$left_first_title" "$left_second_title" "$left_destination_title" "$right_first_title" "$right_second_title" "$right_destination_title")"
+  wait_for_active "$left_second_title" || \
+    fail "Driftile changed $protocol focus while preparing the isolated floating transfer"
+
+  invoke_shortcut "driftile_move_column_to_next_desktop" || \
+    fail "KGlobalAccel could not move the isolated manual $protocol floating window"
+  wait_for_window_desktop "$left_second_title" "$secondary_desktop_id" || \
+    fail "KWin did not move the isolated manual $protocol floating window"
+  wait_for_window_desktop "$left_first_title" "$primary_desktop_id" || \
+    fail "Driftile moved a tiled left-output $protocol sibling with the floating window"
+  wait_for_window_desktop "$right_first_title" "$primary_desktop_id" || \
+    fail "Driftile changed an unrelated right-output $protocol window desktop"
+  wait_for_window_desktop "$right_second_title" "$primary_desktop_id" || \
+    fail "Driftile changed another right-output $protocol window desktop"
+  window_is_on_output_side "$left_second_title" left || \
+    fail "Driftile moved the manual $protocol floating window to another output"
+  wait_for_geometries \
+    "$left_first_title" "16,16,616,688" \
+    "$left_second_title" "$floating_frame" \
+    "$left_destination_title" "16,16,616,688" \
+    "$right_first_title" "1296,16,616,688" \
+    "$right_second_title" "1928,16,616,688" \
+    "$right_destination_title" "1296,16,616,688" || \
+    fail "Driftile disturbed another output or tiled geometry during manual $protocol floating transfer: $(describe_layout "$left_first_title" "$left_second_title" "$left_destination_title" "$right_first_title" "$right_second_title" "$right_destination_title")"
+  wait_for_active "$left_second_title" || \
+    fail "Driftile changed $protocol focus during isolated manual floating transfer"
+
+  invoke_shortcut "driftile_move_column_to_previous_desktop" || \
+    fail "KGlobalAccel could not return the isolated manual $protocol floating window"
+  wait_for_window_desktop "$left_second_title" "$primary_desktop_id" || \
+    fail "KWin did not return the isolated manual $protocol floating window"
+  wait_for_geometries \
+    "$left_first_title" "16,16,616,688" \
+    "$left_second_title" "$floating_frame" \
+    "$left_destination_title" "16,16,616,688" \
+    "$right_first_title" "1296,16,616,688" \
+    "$right_second_title" "1928,16,616,688" \
+    "$right_destination_title" "1296,16,616,688" || \
+    fail "Driftile changed isolated $protocol geometry while returning the floating window: $(describe_layout "$left_first_title" "$left_second_title" "$left_destination_title" "$right_first_title" "$right_second_title" "$right_destination_title")"
+  wait_for_active "$left_second_title" || \
+    fail "Driftile changed $protocol focus while returning the isolated floating window"
+  invoke_shortcut "driftile_toggle_floating" || \
+    fail "KGlobalAccel could not retile the isolated transferred $protocol window"
+  wait_for_geometries \
+    "$left_first_title" "16,16,616,336" \
+    "$left_second_title" "16,368,616,336" \
+    "$right_first_title" "1296,16,616,688" \
+    "$right_second_title" "1928,16,616,688" || \
+    fail "Driftile did not restore isolated $protocol tiling after floating transfer: $(describe_layout "$left_first_title" "$left_second_title" "$right_first_title" "$right_second_title")"
+  wait_for_active "$left_second_title" || \
+    fail "Driftile changed $protocol focus while restoring isolated tiling"
 
   stop_client "$left_destination_pid"
   stop_client "$right_destination_pid"
@@ -2582,6 +2833,61 @@ verify_automatic_floating_shortcut_no_op() {
     fail "Driftile moved the automatic-floating $protocol window after $shortcut"
 }
 
+verify_relation_free_automatic_desktop_transfer() {
+  local protocol=$1
+  local active_title=$2
+  local active_frame=$3
+  local before_state
+  local trailing_desktop_id=""
+  local index
+  local -a geometry_pairs
+  local -a window_titles=()
+
+  shift 3
+  geometry_pairs=("$@")
+
+  for ((index = 0; index < ${#geometry_pairs[@]}; index += 2)); do
+    window_titles+=("${geometry_pairs[index]}")
+  done
+
+  before_state=$(window_desktop_transfer_state "$active_title") || \
+    fail "KWin did not expose the relation-free $protocol transfer state"
+
+  invoke_shortcut "driftile_move_column_to_next_desktop" || \
+    fail "KGlobalAccel could not transfer the relation-free $protocol window"
+  if ! wait_for_window_desktop "$active_title" "$secondary_desktop_id"; then
+    fail "KWin did not move the relation-free $protocol window to the next desktop: before=$before_state after=$(window_desktop_transfer_state "$active_title" 2>/dev/null || printf unavailable) current=$(current_desktop_id 2>/dev/null || printf unavailable)"
+  fi
+  wait_for_current_desktop "$secondary_desktop_id" || \
+    fail "Driftile did not follow the relation-free $protocol window"
+  wait_for_geometries "${geometry_pairs[@]}" || \
+    fail "Driftile changed the tiled $protocol layout or automatic floating frame during transfer: $(describe_layout "${window_titles[@]}")"
+  wait_for_active "$active_title" || \
+    fail "Driftile changed $protocol focus during the relation-free transfer"
+  wait_for_appended_desktop \
+    trailing_desktop_id \
+    "$primary_desktop_id" \
+    "$secondary_desktop_id" || \
+    fail "Driftile did not replenish the shared tail after the relation-free $protocol transfer"
+  [[ "$trailing_desktop_id" != "$secondary_desktop_id" ]] || \
+    fail "Driftile reused the occupied relation-free $protocol desktop as its tail"
+
+  invoke_shortcut "driftile_move_column_to_desktop_1" || \
+    fail "KGlobalAccel could not return the relation-free $protocol window"
+  wait_for_current_desktop "$primary_desktop_id" || \
+    fail "Driftile did not follow the returning relation-free $protocol window"
+  wait_for_window_desktop "$active_title" "$primary_desktop_id" || \
+    fail "KWin did not return the relation-free $protocol window to desktop 1"
+  wait_for_geometries "${geometry_pairs[@]}" || \
+    fail "Driftile changed the tiled $protocol layout or automatic floating frame while returning: $(describe_layout "${window_titles[@]}")"
+  wait_for_active "$active_title" || \
+    fail "Driftile changed $protocol focus while returning the relation-free window"
+  wait_for_desktop_sequence "$primary_desktop_id" "$secondary_desktop_id" || \
+    fail "Driftile did not remove the redundant relation-free $protocol tail"
+  [[ "$(capture_stable_geometry "$active_title")" == "$active_frame" ]] || \
+    fail "Driftile changed the exact relation-free $protocol floating frame"
+}
+
 verify_dialog_shortcut_no_op() {
   local protocol=$1
   local dialog_title=$2
@@ -2833,7 +3139,7 @@ verify_automatic_floating() {
   local fixed_pid
   local shortcut
   local verification_index=0
-  local -a no_op_shortcuts=(
+  local -a automatic_no_op_shortcuts=(
     "driftile_focus_column_left"
     "driftile_focus_column_right"
     "driftile_focus_column_first"
@@ -2842,13 +3148,18 @@ verify_automatic_floating() {
     "driftile_focus_window_down"
     "driftile_move_window_left"
     "driftile_toggle_floating"
-    "driftile_move_column_to_next_desktop"
     "driftile_move_column_to_output_right"
     "driftile_expand_column_to_available_width"
     "driftile_center_visible_columns"
   )
+  local -a dialog_no_op_shortcuts=(
+    "${automatic_no_op_shortcuts[@]}"
+    "driftile_move_column_to_next_desktop"
+    "driftile_move_column_to_desktop_2"
+    "driftile_move_column_to_desktop_9"
+  )
 
-  for shortcut in "${no_op_shortcuts[@]}"; do
+  for shortcut in "${dialog_no_op_shortcuts[@]}"; do
     wait_for_shortcut "$shortcut" || \
       fail "KGlobalAccel did not register $shortcut for automatic-floating acceptance"
   done
@@ -2907,7 +3218,7 @@ verify_automatic_floating() {
     "$parent_title" "$dialog_parent_frame" || \
     fail "Driftile changed the $protocol parent layout when the dialog opened"
 
-  for shortcut in "${no_op_shortcuts[@]}"; do
+  for shortcut in "${dialog_no_op_shortcuts[@]}"; do
     verification_index=$((verification_index + 1))
     verify_dialog_shortcut_no_op \
       "$protocol" \
@@ -2962,7 +3273,20 @@ verify_automatic_floating() {
     "$fixed_title" "$fixed_frame" || \
     fail "Driftile changed the $protocol layout for a fixed-size normal window"
 
-  for shortcut in "${no_op_shortcuts[@]}"; do
+  verify_relation_free_automatic_desktop_transfer \
+    "$protocol" \
+    "$fixed_title" \
+    "$fixed_frame" \
+    "$first_title" "$first_frame" \
+    "$second_title" "$second_frame" \
+    "$third_title" "$third_frame" \
+    "$fixed_title" "$fixed_frame"
+  wait_for_window_border_state "$fixed_title" true || \
+    fail "Driftile lost border ownership during relation-free $protocol transfer"
+  window_frame_respects_fixed_client "$fixed_title" 360 240 || \
+    fail "Driftile changed the fixed $protocol client bounds during desktop transfer"
+
+  for shortcut in "${automatic_no_op_shortcuts[@]}"; do
     verify_automatic_floating_shortcut_no_op \
       "$protocol" \
       "$fixed_title" \

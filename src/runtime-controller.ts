@@ -135,7 +135,7 @@ interface FloatingWindow {
 interface WindowTransferOperation {
   readonly activeId: WindowId;
   desktopChangeSuppressed: boolean;
-  readonly kind: "desktop" | "output";
+  readonly kind: "desktop" | "floating-desktop" | "output";
   readonly movingIds: ReadonlySet<WindowId>;
   readonly sourceContextKey: string;
   readonly targetContextKey: string;
@@ -163,6 +163,24 @@ interface DesktopTransferCommand
   readonly targetContextKey: string;
   readonly targetDesktop: KWinVirtualDesktop;
   readonly targetRuntimeContext: RuntimeContext | undefined;
+}
+
+interface FloatingDesktopTransferCommand {
+  readonly activeId: WindowId;
+  readonly activeWindow: KWinWindow;
+  readonly classification:
+    | { readonly floating: FloatingWindow; readonly kind: "manual" }
+    | { readonly kind: "automatic" };
+  readonly frame: Rect;
+  readonly output: KWinOutput;
+  readonly sourceContext: ManagedContext;
+  readonly sourceContextKey: string;
+  readonly sourceDesktop: KWinVirtualDesktop;
+  readonly sourceLayout: LayoutContextSnapshot;
+  readonly targetContext: ManagedContext;
+  readonly targetContextKey: string;
+  readonly targetDesktop: KWinVirtualDesktop;
+  readonly targetLayout: LayoutContextSnapshot;
 }
 
 interface OutputTransferCommand extends ActiveWindowCommand, TransferSelection {
@@ -357,6 +375,7 @@ export class RuntimeController {
   >();
   private readonly columnWidthPresets: readonly ColumnWidth[];
   private readonly contexts = new Map<string, RuntimeContext>();
+  private readonly createRect: KWinRectFactory;
   private readonly dirtyContexts = new Set<string>();
   private readonly desktopLifecycle: DesktopLifecycle;
   private windowTransferOperation: WindowTransferOperation | null = null;
@@ -453,6 +472,9 @@ export class RuntimeController {
     this.windowHeightPresets = (
       options.windowHeightPresets ?? DEFAULT_WINDOW_HEIGHT_PRESETS
     ).map((height) => ({ ...height }));
+    this.createRect =
+      options.createRect ??
+      ((x, y, width, height) => ({ height, width, x, y }));
     this.workspace = workspace;
     this.desktopLifecycle = new DesktopLifecycle(workspace, {
       changed: () => {
@@ -472,7 +494,7 @@ export class RuntimeController {
       workspace,
       this.observer,
       options.clientAreaOption,
-      options.createRect,
+      this.createRect,
       (id, source) =>
         !this.automaticFloatingWindows.has(id) &&
         !this.automaticallyFloats(source),
@@ -2624,10 +2646,588 @@ export class RuntimeController {
     return true;
   }
 
+  private moveActiveFloatingWindowToDesktop(
+    target: DesktopTransferTarget,
+  ): boolean | null {
+    const activeWindow = this.workspace.activeWindow;
+
+    if (!activeWindow) {
+      return null;
+    }
+
+    const activeId = windowId(String(activeWindow.internalId));
+    const sourceContext = layerFocusContext(activeWindow);
+    const sourceContextKey = sourceContext ? contextKey(sourceContext) : null;
+    const manualFloating = this.floatingWindows.get(activeId);
+    const automaticFloating =
+      this.automaticFloatingWindows.has(activeId) &&
+      this.automaticFloatingOwnershipApplies(activeId, activeWindow);
+
+    if (!manualFloating && !automaticFloating) {
+      return null;
+    }
+
+    if (
+      !sourceContext ||
+      !sourceContextKey ||
+      !this.started ||
+      this.windowTransferOperation ||
+      this.startupStabilizationToken !== null ||
+      this.hasTopologyBarrier() ||
+      this.observer.source(activeId) !== activeWindow ||
+      (manualFloating !== undefined &&
+        this.automaticallyFloats(activeWindow)) ||
+      this.windowLayer(activeId, activeWindow, sourceContextKey) !==
+        "floating" ||
+      this.floatingDesktopTransferHasRelations(activeWindow) ||
+      this.pendingWindowSyncs.has(activeId) ||
+      this.suspendedWindows.has(activeId) ||
+      this.requestedSuspensions.has(activeId) ||
+      !this.floatingDesktopFrameStateIsSafe(
+        activeWindow,
+        activeWindow.frameGeometry,
+        sourceContext,
+      )
+    ) {
+      return false;
+    }
+
+    const sourceDesktopIndex = this.workspace.desktops.findIndex(
+      (desktop) => desktop.id === sourceContext.desktopId,
+    );
+    const targetDesktopIndex = this.desktopTargetIndex(
+      sourceDesktopIndex,
+      target,
+    );
+    const sourceDesktop = this.workspace.desktops[sourceDesktopIndex];
+    const targetDesktop = this.workspace.desktops[targetDesktopIndex];
+    const output = this.workspace.screens.find(
+      (candidate) => candidate.name === sourceContext.outputId,
+    );
+
+    if (
+      sourceDesktopIndex < 0 ||
+      !sourceDesktop ||
+      !targetDesktop ||
+      sourceDesktop.id === targetDesktop.id ||
+      !output ||
+      activeWindow.output?.name !== output.name ||
+      currentDesktopForOutput(this.workspace, output)?.id !== sourceDesktop.id
+    ) {
+      return false;
+    }
+
+    const targetContext: ManagedContext = {
+      desktopId: desktopId(targetDesktop.id),
+      outputId: sourceContext.outputId,
+    };
+    const targetContextKey = contextKey(targetContext);
+
+    if (
+      this.hasPendingCapacityState(sourceContextKey) ||
+      this.hasPendingCapacityState(targetContextKey) ||
+      this.waitingWindowIds.has(sourceContextKey) ||
+      this.waitingWindowIds.has(targetContextKey) ||
+      this.toggleTransitionPending(sourceContextKey) ||
+      this.toggleTransitionPending(targetContextKey)
+    ) {
+      return false;
+    }
+
+    const command: FloatingDesktopTransferCommand = {
+      activeId,
+      activeWindow,
+      classification: manualFloating
+        ? { floating: manualFloating, kind: "manual" }
+        : { kind: "automatic" },
+      frame: { ...activeWindow.frameGeometry },
+      output,
+      sourceContext,
+      sourceContextKey,
+      sourceDesktop,
+      sourceLayout: this.layout.snapshot(
+        sourceContext.outputId,
+        sourceContext.desktopId,
+      ),
+      targetContext,
+      targetContextKey,
+      targetDesktop,
+      targetLayout: this.layout.snapshot(
+        targetContext.outputId,
+        targetContext.desktopId,
+      ),
+    };
+    const operation: WindowTransferOperation = {
+      activeId,
+      desktopChangeSuppressed: false,
+      kind: "floating-desktop",
+      movingIds: new Set([activeId]),
+      sourceContextKey,
+      targetContextKey,
+    };
+    this.windowTransferOperation = operation;
+    let transferred: boolean;
+
+    try {
+      transferred = this.applyFloatingDesktopTransfer(command, operation);
+    } finally {
+      if (this.windowTransferOperation === operation) {
+        this.windowTransferOperation = null;
+      }
+
+      this.handleWindowActivated(this.workspace.activeWindow);
+
+      if (
+        [...this.dirtyContexts].some((key) => {
+          const context = this.contexts.get(key);
+          return Boolean(context && this.isContextVisible(context));
+        }) ||
+        this.pendingWindowSyncs.size > 0 ||
+        this.pendingAdmissionContexts.size > 0 ||
+        this.desktopLifecycle.pendingWork
+      ) {
+        this.scheduleWork();
+      }
+    }
+
+    return transferred;
+  }
+
+  private applyFloatingDesktopTransfer(
+    command: FloatingDesktopTransferCommand,
+    operation: WindowTransferOperation,
+  ): boolean {
+    const topologyRevision = this.topologyRevision;
+    const originalActiveWindow = this.workspace.activeWindow;
+    const sourceRemembered = this.lastFloatingFocus.get(
+      command.sourceContextKey,
+    );
+    const targetRemembered = this.lastFloatingFocus.get(
+      command.targetContextKey,
+    );
+    let mechanismFrame = { ...command.activeWindow.frameGeometry };
+    let frameWrites = 0;
+    let failure: string;
+
+    try {
+      if (
+        !this.floatingDesktopTransferOperationIsCurrent(
+          command,
+          operation,
+          topologyRevision,
+          command.sourceDesktop,
+          command.sourceDesktop,
+        )
+      ) {
+        throw new Error("floating desktop transfer context changed");
+      }
+
+      try {
+        command.activeWindow.desktops = [command.targetDesktop];
+      } finally {
+        mechanismFrame = { ...command.activeWindow.frameGeometry };
+      }
+
+      if (
+        !this.floatingDesktopTransferOperationIsCurrent(
+          command,
+          operation,
+          topologyRevision,
+          command.targetDesktop,
+          command.sourceDesktop,
+        )
+      ) {
+        throw new Error("floating desktop assignment was rejected");
+      }
+
+      this.switchDesktop(command.targetDesktop, command.output);
+
+      if (
+        !this.floatingDesktopTransferOperationIsCurrent(
+          command,
+          operation,
+          topologyRevision,
+          command.targetDesktop,
+          command.targetDesktop,
+        )
+      ) {
+        throw new Error("floating desktop switch was rejected");
+      }
+
+      const writeResult = this.writeFloatingDesktopFrame(
+        command.activeWindow,
+        command.frame,
+        command.targetContext,
+      );
+
+      if (writeResult === null) {
+        throw new Error("floating frame preservation was rejected");
+      }
+
+      frameWrites += writeResult;
+
+      if (this.workspace.activeWindow !== command.activeWindow) {
+        this.workspace.activeWindow = command.activeWindow;
+      }
+
+      if (
+        this.workspace.activeWindow !== command.activeWindow ||
+        !rectsEqual(command.activeWindow.frameGeometry, command.frame) ||
+        !this.floatingDesktopTransferOperationIsCurrent(
+          command,
+          operation,
+          topologyRevision,
+          command.targetDesktop,
+          command.targetDesktop,
+        )
+      ) {
+        throw new Error("floating desktop transfer was not accepted");
+      }
+
+      if (
+        this.lastFloatingFocus.get(command.sourceContextKey) ===
+        command.activeId
+      ) {
+        this.lastFloatingFocus.delete(command.sourceContextKey);
+      }
+
+      this.lastFloatingFocus.set(command.targetContextKey, command.activeId);
+      this.lastWrites = frameWrites;
+      return true;
+    } catch (error) {
+      failure = String(error);
+    }
+
+    frameWrites += this.rollbackFloatingDesktopTransfer(
+      command,
+      operation,
+      topologyRevision,
+      originalActiveWindow,
+      mechanismFrame,
+      sourceRemembered,
+      targetRemembered,
+    );
+    this.lastWrites = frameWrites;
+    console.warn(
+      `[driftile] floating desktop transfer rolled back window=${String(command.activeId)} error=${failure}`,
+    );
+    return false;
+  }
+
+  private rollbackFloatingDesktopTransfer(
+    command: FloatingDesktopTransferCommand,
+    operation: WindowTransferOperation,
+    topologyRevision: number,
+    originalActiveWindow: KWinWindow | null,
+    mechanismFrame: Rect,
+    sourceRemembered: WindowId | undefined,
+    targetRemembered: WindowId | undefined,
+  ): number {
+    let frameWrites = 0;
+
+    const compensationSafe =
+      this.windowTransferOperation === operation &&
+      this.topologyRevision === topologyRevision &&
+      this.observer.source(command.activeId) === command.activeWindow &&
+      this.workspace.screens.includes(command.output) &&
+      command.activeWindow.output?.name === command.output.name &&
+      this.workspace.desktops.some(
+        (desktop) => desktop.id === command.sourceDesktop.id,
+      ) &&
+      this.workspace.desktops.some(
+        (desktop) => desktop.id === command.targetDesktop.id,
+      ) &&
+      this.floatingDesktopClassificationIsCurrent(command) &&
+      !this.floatingDesktopTransferHasRelations(command.activeWindow) &&
+      this.floatingDesktopLayoutsAreCurrent(command);
+
+    if (compensationSafe) {
+      let restoreMechanismFrame = { ...command.activeWindow.frameGeometry };
+
+      if (windowIsOnDesktop(command.activeWindow, command.targetDesktop)) {
+        try {
+          command.activeWindow.desktops = [command.sourceDesktop];
+        } catch (error) {
+          console.warn(
+            `[driftile] floating desktop restore failed window=${String(command.activeId)} error=${String(error)}`,
+          );
+        } finally {
+          restoreMechanismFrame = { ...command.activeWindow.frameGeometry };
+        }
+      }
+
+      const desktopRestored = windowIsOnDesktop(
+        command.activeWindow,
+        command.sourceDesktop,
+      );
+
+      if (
+        desktopRestored &&
+        currentDesktopForOutput(this.workspace, command.output)?.id ===
+          command.targetDesktop.id &&
+        this.workspace.screens.includes(command.output)
+      ) {
+        try {
+          this.switchDesktop(command.sourceDesktop, command.output);
+        } catch (error) {
+          console.warn(
+            `[driftile] floating desktop selection restore failed output=${command.output.name} error=${String(error)}`,
+          );
+        }
+      }
+
+      const liveFrame = command.activeWindow.frameGeometry;
+      const frameOwned = [
+        command.frame,
+        mechanismFrame,
+        restoreMechanismFrame,
+      ].some((frame) => rectsEqual(liveFrame, frame));
+
+      if (
+        frameOwned &&
+        windowIsOnDesktop(command.activeWindow, command.sourceDesktop)
+      ) {
+        frameWrites +=
+          this.writeFloatingDesktopFrame(
+            command.activeWindow,
+            command.frame,
+            command.sourceContext,
+          ) ?? 0;
+      }
+
+      if (
+        this.workspace.activeWindow === command.activeWindow ||
+        this.workspace.activeWindow === null
+      ) {
+        try {
+          this.workspace.activeWindow = originalActiveWindow;
+        } catch (error) {
+          console.warn(
+            `[driftile] floating focus restore failed window=${String(command.activeId)} error=${String(error)}`,
+          );
+        }
+      }
+    }
+
+    restoreRememberedFocus(
+      this.lastFloatingFocus,
+      command.sourceContextKey,
+      sourceRemembered,
+    );
+    restoreRememberedFocus(
+      this.lastFloatingFocus,
+      command.targetContextKey,
+      targetRemembered,
+    );
+
+    if (
+      !windowIsOnDesktop(command.activeWindow, command.sourceDesktop) ||
+      !rectsEqual(command.activeWindow.frameGeometry, command.frame) ||
+      !this.floatingDesktopLayoutsAreCurrent(command)
+    ) {
+      this.pendingWindowSyncs.add(command.activeId);
+    } else {
+      this.pendingWindowSyncs.delete(command.activeId);
+    }
+
+    return frameWrites;
+  }
+
+  private floatingDesktopTransferOperationIsCurrent(
+    command: FloatingDesktopTransferCommand,
+    operation: WindowTransferOperation,
+    topologyRevision: number,
+    windowDesktop: KWinVirtualDesktop,
+    selectedDesktop: KWinVirtualDesktop,
+  ): boolean {
+    const liveContext = layerFocusContext(command.activeWindow);
+
+    return (
+      this.windowTransferOperation === operation &&
+      operation.kind === "floating-desktop" &&
+      operation.movingIds.size === 1 &&
+      operation.movingIds.has(command.activeId) &&
+      this.topologyRevision === topologyRevision &&
+      !this.hasTopologyBarrier() &&
+      this.observer.source(command.activeId) === command.activeWindow &&
+      this.workspace.screens.includes(command.output) &&
+      command.activeWindow.output?.name === command.output.name &&
+      this.workspace.desktops.some(
+        (desktop) => desktop.id === command.sourceDesktop.id,
+      ) &&
+      this.workspace.desktops.some(
+        (desktop) => desktop.id === command.targetDesktop.id,
+      ) &&
+      windowIsOnDesktop(command.activeWindow, windowDesktop) &&
+      currentDesktopForOutput(this.workspace, command.output)?.id ===
+        selectedDesktop.id &&
+      liveContext !== null &&
+      contextKey(liveContext) ===
+        contextKey({
+          desktopId: desktopId(windowDesktop.id),
+          outputId: command.sourceContext.outputId,
+        }) &&
+      this.floatingDesktopClassificationIsCurrent(command) &&
+      !this.floatingDesktopTransferHasRelations(command.activeWindow) &&
+      this.floatingDesktopFrameStateIsSafe(
+        command.activeWindow,
+        command.frame,
+        {
+          desktopId: desktopId(windowDesktop.id),
+          outputId: command.sourceContext.outputId,
+        },
+      ) &&
+      this.floatingDesktopLayoutsAreCurrent(command)
+    );
+  }
+
+  private floatingDesktopClassificationIsCurrent(
+    command: FloatingDesktopTransferCommand,
+  ): boolean {
+    if (command.classification.kind === "manual") {
+      return (
+        this.floatingWindows.get(command.activeId) ===
+          command.classification.floating &&
+        !this.automaticFloatingWindows.has(command.activeId) &&
+        !this.automaticallyFloats(command.activeWindow)
+      );
+    }
+
+    return (
+      !this.floatingWindows.has(command.activeId) &&
+      this.automaticFloatingWindows.has(command.activeId) &&
+      this.automaticFloatingOwnershipApplies(
+        command.activeId,
+        command.activeWindow,
+      )
+    );
+  }
+
+  private floatingDesktopLayoutsAreCurrent(
+    command: FloatingDesktopTransferCommand,
+  ): boolean {
+    return (
+      layoutContextSnapshotsEqual(
+        this.layout.snapshot(
+          command.sourceContext.outputId,
+          command.sourceContext.desktopId,
+        ),
+        command.sourceLayout,
+      ) &&
+      layoutContextSnapshotsEqual(
+        this.layout.snapshot(
+          command.targetContext.outputId,
+          command.targetContext.desktopId,
+        ),
+        command.targetLayout,
+      )
+    );
+  }
+
+  private floatingDesktopTransferHasRelations(active: KWinWindow): boolean {
+    if (active.modal || active.transient || active.transientFor) {
+      return true;
+    }
+
+    for (const candidate of this.workspace.stackingOrder) {
+      if (
+        candidate === active ||
+        this.observer.source(String(candidate.internalId)) !== candidate
+      ) {
+        continue;
+      }
+
+      const visited = new Set<KWinWindow>();
+      let ancestor = candidate.transientFor;
+
+      while (ancestor && !visited.has(ancestor)) {
+        if (ancestor === active) {
+          return true;
+        }
+
+        visited.add(ancestor);
+        ancestor = ancestor.transientFor;
+      }
+    }
+
+    return false;
+  }
+
+  private floatingDesktopFrameStateIsSafe(
+    window: KWinWindow,
+    frame: Rect,
+    context: ManagedContext,
+  ): boolean {
+    return (
+      window.managed &&
+      !window.deleted &&
+      (window.normalWindow || window.dialog) &&
+      !window.specialWindow &&
+      !window.onAllDesktops &&
+      window.output?.name === context.outputId &&
+      window.desktops.length === 1 &&
+      window.desktops[0]?.id === context.desktopId &&
+      !hasGeometryAuthorityBlocker(window) &&
+      Number.isFinite(frame.x) &&
+      Number.isFinite(frame.y) &&
+      Number.isFinite(frame.width) &&
+      frame.width > 0 &&
+      Number.isFinite(frame.height) &&
+      frame.height > 0 &&
+      (rectsEqual(window.frameGeometry, frame) ||
+        respectsSizeConstraints(frame, window))
+    );
+  }
+
+  private writeFloatingDesktopFrame(
+    window: KWinWindow,
+    frame: Rect,
+    context: ManagedContext,
+  ): number | null {
+    if (!this.floatingDesktopFrameStateIsSafe(window, frame, context)) {
+      return null;
+    }
+
+    if (rectsEqual(window.frameGeometry, frame)) {
+      return 0;
+    }
+
+    if (
+      !window.moveable ||
+      (!window.resizeable &&
+        (!nearlyEqual(window.frameGeometry.width, frame.width) ||
+          !nearlyEqual(window.frameGeometry.height, frame.height)))
+    ) {
+      return null;
+    }
+
+    try {
+      window.frameGeometry = this.createRect(
+        frame.x,
+        frame.y,
+        frame.width,
+        frame.height,
+      );
+    } catch (error) {
+      console.warn(
+        `[driftile] floating frame restore failed window=${String(window.internalId)} error=${String(error)}`,
+      );
+      return null;
+    }
+
+    return rectsEqual(window.frameGeometry, frame) ? 1 : null;
+  }
+
   private moveActiveWindowToDesktop(
     target: DesktopTransferTarget,
     wholeColumn = false,
   ): boolean {
+    const floatingResult = this.moveActiveFloatingWindowToDesktop(target);
+
+    if (floatingResult !== null) {
+      return floatingResult;
+    }
+
     const active = this.prepareActiveWindowCommand();
 
     if (!active) {
@@ -11314,6 +11914,70 @@ function validDecorationExtent(
 
 function contextKey(context: ManagedContext): string {
   return `${context.outputId}\u0000${context.desktopId}`;
+}
+
+function restoreRememberedFocus(
+  remembered: Map<string, WindowId>,
+  key: string,
+  id: WindowId | undefined,
+): void {
+  if (id === undefined) {
+    remembered.delete(key);
+  } else {
+    remembered.set(key, id);
+  }
+}
+
+function layoutContextSnapshotsEqual(
+  left: LayoutContextSnapshot,
+  right: LayoutContextSnapshot,
+): boolean {
+  if (
+    left.activeColumnId !== right.activeColumnId ||
+    left.desktopId !== right.desktopId ||
+    left.outputId !== right.outputId ||
+    left.viewportOffset !== right.viewportOffset ||
+    left.columns.length !== right.columns.length
+  ) {
+    return false;
+  }
+
+  return left.columns.every((column, columnIndex) => {
+    const candidate = right.columns[columnIndex];
+
+    if (
+      !candidate ||
+      column.id !== candidate.id ||
+      column.width.kind !== candidate.width.kind ||
+      column.width.value !== candidate.width.value ||
+      column.windowIds.length !== candidate.windowIds.length ||
+      column.windowHeights?.length !== candidate.windowHeights?.length ||
+      column.windowIds.some(
+        (id, memberIndex) => id !== candidate.windowIds[memberIndex],
+      )
+    ) {
+      return false;
+    }
+
+    return (column.windowHeights ?? []).every((height, memberIndex) => {
+      const other = candidate.windowHeights?.[memberIndex];
+
+      if (!other || height.kind !== other.kind) {
+        return false;
+      }
+
+      switch (height.kind) {
+        case "auto":
+          return other.kind === "auto" && height.weight === other.weight;
+        case "fixed":
+          return (
+            other.kind === "fixed" && height.clientHeight === other.clientHeight
+          );
+        case "preset":
+          return other.kind === "preset" && height.index === other.index;
+      }
+    });
+  });
 }
 
 function validDesktopIndex(index: number): boolean {
