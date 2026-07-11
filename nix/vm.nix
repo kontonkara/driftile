@@ -4289,6 +4289,151 @@ let
           "minimized-peer consume cleanup reconstructed the exact fixture"
       }
 
+      verify_physical_expel_past_minimized_peer() {
+        local direct_first_height
+        local direct_first_width
+        local direct_first_x
+        local direct_first_y
+        local direct_fourth_height
+        local direct_fourth_y
+        local direct_second_y
+        local direct_third_height
+        local direct_third_width
+        local direct_third_x
+        local direct_third_y
+        local horizontal_gap
+        local remaining_active_frame
+        local remaining_active_height
+        local remaining_active_y
+        local remaining_top_height
+        local shifted_unrelated_frame
+        local stack_height
+        local vertical_gap
+
+        frame_is_valid "$direct_first_frame" \
+          && frame_is_valid "$direct_second_frame" \
+          && frame_is_valid "$direct_third_frame" \
+          && frame_is_valid "$direct_fourth_frame" \
+          || return 1
+        IFS=, read -r \
+          direct_first_x \
+          direct_first_y \
+          direct_first_width \
+          direct_first_height \
+          <<< "$direct_first_frame"
+        IFS=, read -r _ direct_second_y _ _ <<< "$direct_second_frame"
+        IFS=, read -r \
+          direct_third_x \
+          direct_third_y \
+          direct_third_width \
+          direct_third_height \
+          <<< "$direct_third_frame"
+        IFS=, read -r \
+          _ \
+          direct_fourth_y \
+          _ \
+          direct_fourth_height \
+          <<< "$direct_fourth_frame"
+        vertical_gap=$((
+          direct_second_y - direct_first_y - direct_first_height
+        ))
+        horizontal_gap=$((
+          direct_third_x - direct_first_x - direct_first_width
+        ))
+        stack_height=$((
+          direct_fourth_y + direct_fourth_height - direct_first_y
+        ))
+        remaining_top_height=$(((stack_height - vertical_gap) / 2))
+        remaining_active_y=$((
+          direct_first_y + remaining_top_height + vertical_gap
+        ))
+        remaining_active_height=$((
+          stack_height - vertical_gap - remaining_top_height
+        ))
+
+        if ((vertical_gap <= 0 \
+          || horizontal_gap <= 0 \
+          || remaining_top_height <= 0 \
+          || remaining_active_height <= 0 \
+          || direct_first_width != direct_third_width \
+          || direct_first_y != direct_third_y \
+          || stack_height != direct_third_height)); then
+          record_focus_state "physical minimized-peer expel geometry was invalid"
+          return 1
+        fi
+
+        printf -v remaining_active_frame '%s,%s,%s,%s' \
+          "$direct_first_x" \
+          "$remaining_active_y" \
+          "$direct_first_width" \
+          "$remaining_active_height"
+        printf -v shifted_unrelated_frame '%s,%s,%s,%s' \
+          "$((direct_third_x + direct_third_width + horizontal_gap))" \
+          "$direct_third_y" \
+          "$direct_third_width" \
+          "$direct_third_height"
+
+        if ! activate_window "$title_b" \
+          || ! wait_for_active "$title_b" \
+          || ! wait_for_four_frames \
+            "$direct_first_frame" \
+            "$direct_second_frame" \
+            "$direct_third_frame" \
+            "$direct_fourth_frame" \
+          || ! set_external_window_minimized "$title_a" true \
+          || ! wait_for_window_minimized_state "$title_a" true \
+          || ! wait_for_four_frames \
+            "$direct_first_frame" \
+            "$direct_second_frame" \
+            "$direct_third_frame" \
+            "$direct_fourth_frame" \
+          || ! activate_window "$title_d" \
+          || ! wait_for_active "$title_d"; then
+          record_focus_state "physical minimized-peer expel setup failed"
+          return 1
+        fi
+
+        if ! request_physical_shortcut minimized-expel \
+          || ! wait_for_active "$title_b" \
+          || ! wait_for_four_frames \
+            "$direct_first_frame" \
+            "$remaining_active_frame" \
+            "$shifted_unrelated_frame" \
+            "$direct_third_frame" \
+          || ! wait_for_window_minimized_state "$title_a" true \
+          || [[ "$(window_frame "$title_a" 2>/dev/null || true)" \
+            != "$direct_first_frame" ]]; then
+          record_focus_state "physical Meta+. minimized-peer expel failed"
+          return 1
+        fi
+        record_focus_state \
+          "physical Meta+. expelled a visible bottom member past a minimized peer"
+
+        if ! invoke_shortcut "driftile_consume_window_into_column" \
+          || ! wait_for_active "$title_b" \
+          || ! wait_for_four_frames \
+            "$direct_first_frame" \
+            "$direct_second_frame" \
+            "$direct_third_frame" \
+            "$direct_fourth_frame" \
+          || ! wait_for_window_minimized_state "$title_a" true \
+          || [[ "$(window_frame "$title_a" 2>/dev/null || true)" \
+            != "$direct_first_frame" ]] \
+          || ! set_external_window_minimized "$title_a" false \
+          || ! wait_for_window_minimized_state "$title_a" false \
+          || ! wait_for_four_frames \
+            "$direct_first_frame" \
+            "$direct_second_frame" \
+            "$direct_third_frame" \
+            "$direct_fourth_frame" \
+          || ! wait_for_active "$title_b"; then
+          record_focus_state "physical minimized-peer expel fixture reconstruction failed"
+          return 1
+        fi
+        record_focus_state \
+          "minimized-peer expel cleanup reconstructed the exact fixture"
+      }
+
       verify_focus() {
         local baseline_first_width
         local baseline_second_width
@@ -4304,6 +4449,7 @@ let
         local merged_second_frame
         local merged_third_frame
         local minimized_consume_verified
+        local minimized_expel_verified
         local minimized_reorder_verified
         local minimized_slots_verified
         local singleton_first_frame
@@ -4797,6 +4943,13 @@ let
           minimized_consume_verified=true
         fi
 
+        minimized_expel_verified=false
+
+        if [[ "$minimized_consume_verified" == true ]] \
+          && verify_physical_expel_past_minimized_peer; then
+          minimized_expel_verified=true
+        fi
+
         kill "$fourth_window" >/dev/null 2>&1 || true
         wait "$fourth_window" >/dev/null 2>&1 || true
         fourth_window=""
@@ -4817,7 +4970,8 @@ let
           && "$minimized_slots_verified" == true \
           && "$minimized_reorder_verified" == true \
           && "$horizontal_extraction_verified" == true \
-          && "$minimized_consume_verified" == true ]] || return 1
+          && "$minimized_consume_verified" == true \
+          && "$minimized_expel_verified" == true ]] || return 1
 
         if ! invoke_shortcut "driftile_toggle_floating" \
           || ! wait_for_floating_layout \
