@@ -1965,6 +1965,22 @@ set_borderless_windows() {
     >/dev/null
 }
 
+set_gap() {
+  kwriteconfig6 \
+    --file "$XDG_CONFIG_HOME/kwinrc" \
+    --group "Script-${plugin_id}" \
+    --key Gap \
+    --type int \
+    "$1"
+
+  busctl --user call \
+    org.kde.KWin \
+    /KWin \
+    org.kde.KWin \
+    reconfigure \
+    >/dev/null
+}
+
 start_qml_client() {
   local protocol=$1
   local client=$2
@@ -5791,6 +5807,8 @@ run_scenario() {
   local direct_passive_id
   local direct_second_passive_frame
   local direct_second_passive_id
+  local gap_minimized_frame
+  local gap_minimized_id
   local state_window_id
   local title
   local reserved_frame="16,16,616,688"
@@ -5856,6 +5874,47 @@ run_scenario() {
     "$second_title" "32,16,616,688" \
     "$third_title" "664,16,616,688" || \
     fail "Driftile changed the $protocol layout while removing decorations: $(describe_layout "$first_title" "$second_title" "$third_title")"
+
+  gap_minimized_id=$(window_id "$second_title") || \
+    fail "KWin did not expose the $protocol gap-test window"
+  set_external_window_minimized "$second_title" true || \
+    fail "KWin could not minimize the $protocol gap-test window"
+  wait_for_state_and_geometries \
+    "$gap_minimized_id" minimized true \
+    "$first_title" "-600,16,616,688" \
+    "$second_title" "32,16,616,688" \
+    "$third_title" "664,16,616,688" || \
+    fail "Driftile changed the minimized $protocol gap-test slot: $(describe_layout "$first_title" "$second_title" "$third_title")"
+  gap_minimized_frame=$(capture_stable_geometry "$second_title") || \
+    fail "the minimized $protocol gap-test frame did not stabilize"
+
+  set_gap 24 || fail "KWin could not apply the $protocol window gap"
+  wait_for_state_and_geometries \
+    "$gap_minimized_id" minimized true \
+    "$first_title" "-592,24,604,672" \
+    "$second_title" "$gap_minimized_frame" \
+    "$third_title" "664,24,604,672" || \
+    fail "Driftile did not apply the live $protocol window gap without touching the minimized slot: $(describe_layout "$first_title" "$second_title" "$third_title")"
+  wait_for_active "$third_title" || \
+    fail "Driftile changed $protocol focus while applying the window gap"
+
+  set_external_window_minimized "$second_title" false || \
+    fail "KWin could not restore the $protocol gap-test window"
+  wait_for_state_and_geometries \
+    "$gap_minimized_id" minimized false \
+    "$first_title" "-592,24,604,672" \
+    "$second_title" "36,24,604,672" \
+    "$third_title" "664,24,604,672" || \
+    fail "Driftile did not restore the $protocol gap-test window into its live slot: $(describe_layout "$first_title" "$second_title" "$third_title")"
+
+  set_gap 16 || fail "KWin could not restore the $protocol window gap"
+  wait_for_layout \
+    "$first_title" "-600,16,616,688" \
+    "$second_title" "32,16,616,688" \
+    "$third_title" "664,16,616,688" || \
+    fail "Driftile did not restore the default $protocol window gap: $(describe_layout "$first_title" "$second_title" "$third_title")"
+  wait_for_active "$third_title" || \
+    fail "Driftile changed $protocol focus while restoring the window gap"
 
   if [[ "$protocol" == xwayland || "$protocol" == x11 ]]; then
     verify_xterm_resize_increment_policy \
@@ -6924,6 +6983,26 @@ run_multi_output_scenario() {
     "${titles[3]}" "1296,16,616,688" \
     "${titles[4]}" "1928,16,616,688" || \
     fail "Driftile did not create two isolated $protocol output contexts: $(describe_layout "${titles[0]}" "${titles[1]}" "${titles[3]}" "${titles[4]}")"
+
+  set_gap 24 || fail "KWin could not apply the multi-output $protocol window gap"
+  wait_for_geometries \
+    "${titles[0]}" "24,24,604,672" \
+    "${titles[1]}" "652,24,604,672" \
+    "${titles[3]}" "1304,24,604,672" \
+    "${titles[4]}" "1932,24,604,672" || \
+    fail "Driftile did not apply the live gap to both $protocol output contexts: $(describe_layout "${titles[0]}" "${titles[1]}" "${titles[3]}" "${titles[4]}")"
+  wait_for_active "${titles[4]}" || \
+    fail "Driftile changed $protocol focus while applying the multi-output gap"
+
+  set_gap 16 || fail "KWin could not restore the multi-output $protocol window gap"
+  wait_for_geometries \
+    "${titles[0]}" "16,16,616,688" \
+    "${titles[1]}" "648,16,616,688" \
+    "${titles[3]}" "1296,16,616,688" \
+    "${titles[4]}" "1928,16,616,688" || \
+    fail "Driftile did not restore the default gap on both $protocol output contexts: $(describe_layout "${titles[0]}" "${titles[1]}" "${titles[3]}" "${titles[4]}")"
+  wait_for_active "${titles[4]}" || \
+    fail "Driftile changed $protocol focus while restoring the multi-output gap"
 
   wait_for_shortcut "driftile_insert_window_into_stack_left" || \
     fail "KGlobalAccel did not register the multi-output insert-into-stack-left shortcut"

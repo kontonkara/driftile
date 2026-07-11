@@ -521,6 +521,30 @@ describe("KWin shortcut handlers", () => {
     expect(qml).toContain("function onConfigChanged()");
     expect(qml).toContain("setBorderlessWindows(");
   });
+
+  it("exposes the window gap as a live bounded user setting", () => {
+    const gapEntry = configuration.match(
+      /<entry name="Gap" type="Int">([\s\S]*?)<\/entry>/,
+    )?.[1];
+    const gapWidget = configurationUi.match(
+      /<widget class="QSpinBox" name="kcfg_Gap">([\s\S]*?)<\/widget>/,
+    )?.[1];
+
+    expect(gapEntry).toContain("<label>Window gap in logical pixels</label>");
+    expect(gapEntry).toContain("<default>16</default>");
+    expect(gapEntry).toContain("<min>0</min>");
+    expect(gapEntry).toContain("<max>64</max>");
+    expect(configurationUi).toContain("<string>Window gap:</string>");
+    expect(gapWidget).toContain("<string> px</string>");
+    expect(gapWidget).toMatch(
+      /<property name="maximum">\s*<number>64<\/number>/,
+    );
+    expect(gapWidget).toMatch(/<property name="value">\s*<number>16<\/number>/);
+    expect(qml.match(/KWin\.readConfig\("Gap", 16\)/g)).toHaveLength(2);
+    expect(qml).toContain(
+      'Runtime.DriftileRuntime.setGap(KWin.readConfig("Gap", 16))',
+    );
+  });
 });
 
 function parseShortcutHandlers(source: string): ShortcutHandler[] {

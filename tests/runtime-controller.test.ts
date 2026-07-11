@@ -3658,6 +3658,779 @@ describe("RuntimeController", () => {
     expect(decorated.window.frameGeometry).toEqual(originalFrame);
   });
 
+  it("reconfigures visible gaps without changing layout state or focus", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("first", output, desktop);
+    const second = createTrackedWindow("second", output, desktop);
+    const active = createTrackedWindow("active", output, desktop);
+    const windows = [first, second, active];
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map(({ window }) => window),
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    const layout = installTestLayout(
+      controller,
+      output,
+      desktop,
+      "column:active",
+      [
+        {
+          id: "column:stack",
+          width: { kind: "proportion", value: 0.5 },
+          windowHeights: [
+            { kind: "auto", weight: 2 },
+            { clientHeight: 300, kind: "fixed" },
+          ],
+          windowIds: ["first", "second"],
+        },
+        {
+          id: "column:active",
+          width: { kind: "proportion", value: 0.5 },
+          windowIds: ["active"],
+        },
+      ],
+    );
+    fixture.workspace.activeWindow = active.window;
+    flushManualScheduler(scheduler);
+    expect(windows.map(({ window }) => window.frameGeometry)).toEqual([
+      { height: 470, width: 485, x: 10, y: 10 },
+      { height: 300, width: 485, x: 10, y: 490 },
+      { height: 780, width: 485, x: 505, y: 10 },
+    ]);
+    const before = layout.snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const activationCount = fixture.activationCount;
+    const initialWrites = windows.map(({ writeCount }) => writeCount);
+
+    expect(controller.setGap(20)).toBe(true);
+    expect(windows.map(({ window }) => window.frameGeometry)).toEqual([
+      { height: 470, width: 485, x: 10, y: 10 },
+      { height: 300, width: 485, x: 10, y: 490 },
+      { height: 780, width: 485, x: 505, y: 10 },
+    ]);
+    flushManualScheduler(scheduler);
+    expect(windows.map(({ window }) => window.frameGeometry)).toEqual([
+      { height: 440, width: 470, x: 20, y: 20 },
+      { height: 300, width: 470, x: 20, y: 480 },
+      { height: 760, width: 470, x: 510, y: 20 },
+    ]);
+    expect(windows.map(({ writeCount }) => writeCount)).toEqual(
+      initialWrites.map((writeCount) => writeCount + 1),
+    );
+    expect(
+      layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+    ).toEqual(before);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+    expect(fixture.activationCount).toBe(activationCount);
+
+    const stableWrites = windows.map(({ writeCount }) => writeCount);
+    expect(controller.setGap(20)).toBe(false);
+
+    for (const invalid of [
+      -1,
+      Number.NaN,
+      Number.NEGATIVE_INFINITY,
+      Number.POSITIVE_INFINITY,
+      1.5,
+      65,
+    ]) {
+      expect(controller.setGap(invalid)).toBe(false);
+    }
+
+    expect(scheduler.pendingCount).toBe(0);
+    expect(controller.reconcile()).toBe(0);
+    expect(windows.map(({ writeCount }) => writeCount)).toEqual(stableWrites);
+    expect(
+      layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+    ).toEqual(before);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+
+    expect(controller.setGap(0)).toBe(true);
+    flushManualScheduler(scheduler);
+    expect(windows.map(({ window }) => window.frameGeometry)).toEqual([
+      { height: 500, width: 500, x: 0, y: 0 },
+      { height: 300, width: 500, x: 0, y: 500 },
+      { height: 800, width: 500, x: 500, y: 0 },
+    ]);
+    expect(
+      layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+    ).toEqual(before);
+
+    expect(controller.setGap(64)).toBe(true);
+    flushManualScheduler(scheduler);
+    expect(windows.map(({ window }) => window.frameGeometry)).toEqual([
+      { height: 308, width: 404, x: 64, y: 64 },
+      { height: 300, width: 404, x: 64, y: 436 },
+      { height: 672, width: 404, x: 532, y: 64 },
+    ]);
+    expect(
+      layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+    ).toEqual(before);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+    expect(fixture.activationCount).toBe(activationCount);
+
+    expect(controller.setGap(10)).toBe(true);
+    flushManualScheduler(scheduler);
+    expect(windows.map(({ window }) => window.frameGeometry)).toEqual([
+      { height: 470, width: 485, x: 10, y: 10 },
+      { height: 300, width: 485, x: 10, y: 490 },
+      { height: 780, width: 485, x: 505, y: 10 },
+    ]);
+  });
+
+  it("keeps manual floating and minimized frames stable across a gap change", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const minimized = createTrackedWindow("minimized", output, desktop);
+    const visible = createTrackedWindow("visible", output, desktop);
+    const floating = createTrackedWindow("floating", output, desktop, {
+      frameGeometry: { height: 222, width: 333, x: 73, y: 91 },
+    });
+    const active = createTrackedWindow("active", output, desktop);
+    const windows = [minimized, visible, floating, active];
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map(({ window }) => window),
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+      scheduleResume: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    const layout = installTestLayout(
+      controller,
+      output,
+      desktop,
+      "column:active",
+      [
+        {
+          id: "column:stack",
+          width: { kind: "proportion", value: 0.5 },
+          windowIds: ["minimized", "visible"],
+        },
+        {
+          id: "column:floating",
+          width: { kind: "proportion", value: 0.5 },
+          windowIds: ["floating"],
+        },
+        {
+          id: "column:active",
+          width: { kind: "proportion", value: 0.5 },
+          windowIds: ["active"],
+        },
+      ],
+    );
+    fixture.workspace.activeWindow = floating.window;
+    expect(controller.toggleFloating()).toBe(true);
+    flushManualScheduler(scheduler);
+    fixture.workspace.activeWindow = active.window;
+    expect(
+      layout.setViewportOffset(outputId(output.name), desktopId(desktop.id), 0),
+    ).toBe(true);
+    controller.reconcile();
+    setWindowState("minimized", minimized, true);
+    flushManualScheduler(scheduler);
+    expect(minimized.window.frameGeometry).toEqual({
+      height: 385,
+      width: 485,
+      x: 10,
+      y: 10,
+    });
+    expect(visible.window.frameGeometry).toEqual({
+      height: 385,
+      width: 485,
+      x: 10,
+      y: 405,
+    });
+    expect(floating.window.frameGeometry).toEqual({
+      height: 222,
+      width: 333,
+      x: 73,
+      y: 91,
+    });
+    expect(active.window.frameGeometry).toEqual({
+      height: 780,
+      width: 485,
+      x: 505,
+      y: 10,
+    });
+    const before = layout.snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const minimizedWrites = minimized.writeCount;
+    const floatingWrites = floating.writeCount;
+    const visibleWrites = visible.writeCount;
+    const activeWrites = active.writeCount;
+    const activationCount = fixture.activationCount;
+
+    expect(controller.setGap(20)).toBe(true);
+    flushManualScheduler(scheduler);
+    expect(minimized.window.frameGeometry).toEqual({
+      height: 385,
+      width: 485,
+      x: 10,
+      y: 10,
+    });
+    expect(minimized.writeCount).toBe(minimizedWrites);
+    expect(floating.window.frameGeometry).toEqual({
+      height: 222,
+      width: 333,
+      x: 73,
+      y: 91,
+    });
+    expect(floating.writeCount).toBe(floatingWrites);
+    expect(visible.window.frameGeometry).toEqual({
+      height: 370,
+      width: 470,
+      x: 20,
+      y: 410,
+    });
+    expect(visible.writeCount).toBe(visibleWrites + 1);
+    expect(active.window.frameGeometry).toEqual({
+      height: 760,
+      width: 470,
+      x: 510,
+      y: 20,
+    });
+    expect(active.writeCount).toBe(activeWrites + 1);
+    expect(controller.floatingCount).toBe(1);
+    expect(
+      layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+    ).toEqual(before);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+    expect(fixture.activationCount).toBe(activationCount);
+
+    setWindowState("minimized", minimized, false);
+    flushManualScheduler(scheduler);
+    expect(minimized.window.frameGeometry).toEqual({
+      height: 370,
+      width: 470,
+      x: 20,
+      y: 20,
+    });
+    expect(minimized.writeCount).toBeGreaterThan(minimizedWrites);
+    expect(floating.window.frameGeometry).toEqual({
+      height: 222,
+      width: 333,
+      x: 73,
+      y: 91,
+    });
+    expect(floating.writeCount).toBe(floatingWrites);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+  });
+
+  it("reconfigures visible output contexts without mixing ownership", () => {
+    const transfer = createOutputTransferFixture({ destinationCount: 2 });
+    const firstDestination = transfer.destinations[0];
+    const secondDestination = transfer.destinations[1];
+
+    if (!firstDestination || !secondDestination) {
+      throw new Error("missing live gap output fixtures");
+    }
+
+    const layout = runtimeLayout(transfer.controller);
+    const sourceBefore = layout.snapshot(
+      outputId(transfer.sourceOutput.name),
+      desktopId(transfer.sourceDesktop.id),
+    );
+    const targetBefore = layout.snapshot(
+      outputId(transfer.targetOutput.name),
+      desktopId(transfer.targetDesktop.id),
+    );
+    const windows = [
+      transfer.source,
+      transfer.moved,
+      firstDestination,
+      secondDestination,
+    ];
+    const writes = windows.map(({ writeCount }) => writeCount);
+    const activationCount = transfer.fixture.activationCount;
+
+    expect(transfer.controller.setGap(20)).toBe(true);
+    expect(windows.map(({ window }) => window.frameGeometry)).toEqual([
+      { height: 760, width: 470, x: 20, y: 20 },
+      { height: 760, width: 470, x: 510, y: 20 },
+      { height: 760, width: 470, x: 1020, y: 20 },
+      { height: 760, width: 470, x: 1510, y: 20 },
+    ]);
+    expect(windows.map(({ writeCount }) => writeCount)).toEqual(
+      writes.map((writeCount) => writeCount + 1),
+    );
+    expect(
+      layout.snapshot(
+        outputId(transfer.sourceOutput.name),
+        desktopId(transfer.sourceDesktop.id),
+      ),
+    ).toEqual(sourceBefore);
+    expect(
+      layout.snapshot(
+        outputId(transfer.targetOutput.name),
+        desktopId(transfer.targetDesktop.id),
+      ),
+    ).toEqual(targetBefore);
+    expect(transfer.source.window.output).toBe(transfer.sourceOutput);
+    expect(transfer.moved.window.output).toBe(transfer.sourceOutput);
+    expect(firstDestination.window.output).toBe(transfer.targetOutput);
+    expect(secondDestination.window.output).toBe(transfer.targetOutput);
+    expect(transfer.source.window.desktops).toEqual([transfer.sourceDesktop]);
+    expect(transfer.moved.window.desktops).toEqual([transfer.sourceDesktop]);
+    expect(firstDestination.window.desktops).toEqual([transfer.targetDesktop]);
+    expect(secondDestination.window.desktops).toEqual([transfer.targetDesktop]);
+    expect(transfer.fixture.workspace.activeWindow).toBe(transfer.moved.window);
+    expect(transfer.fixture.activationCount).toBe(activationCount);
+  });
+
+  it("applies a gap requested during a structural geometry write afterward", () => {
+    const setup = createDirectInsertionFixture();
+    let gapRequested = false;
+    setup.active.setWriteBehavior((_frame, commit) => {
+      commit();
+
+      if (!gapRequested) {
+        gapRequested = true;
+        expect(setup.controller.setGap(20)).toBe(true);
+      }
+    });
+
+    try {
+      expect(setup.controller.insertWindowIntoStackLeft()).toBe(true);
+    } finally {
+      setup.active.setWriteBehavior(null);
+    }
+
+    expect(gapRequested).toBe(true);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(directInsertionLayout());
+    expect(setup.active.window.frameGeometry).toEqual({
+      height: 140,
+      width: 380,
+      x: 10,
+      y: 650,
+    });
+    expect(setup.scheduler.pendingCount).toBeGreaterThan(0);
+
+    flushManualScheduler(setup.scheduler);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(directInsertionLayout());
+    expect(setup.active.window.frameGeometry).toEqual({
+      height: 130,
+      width: 380,
+      x: 20,
+      y: 650,
+    });
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+  });
+
+  it("defers a gap until topology stabilization completes", () => {
+    const output = createTrackedOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const window = createTrackedWindow("window-1", output.output, desktop);
+    const fixture = createWorkspace(
+      output.output,
+      desktop,
+      [output.output],
+      [desktop],
+      [window.window],
+    );
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+    const state = controller as unknown as {
+      readonly gap: number;
+      readonly pendingGap: number | null;
+      readonly topologyStabilizing: boolean;
+    };
+
+    expect(controller.start()).toBe(true);
+    const settledFrame = { ...window.window.frameGeometry };
+    const writes = window.writeCount;
+    output.geometryChanged.emit();
+    expect(state.topologyStabilizing).toBe(true);
+    expect(controller.setGap(20)).toBe(true);
+    expect(workScheduler.pendingCount).toBe(1);
+
+    workScheduler.flush();
+    expect(state.gap).toBe(10);
+    expect(state.pendingGap).toBe(20);
+    expect(window.window.frameGeometry).toEqual(settledFrame);
+    expect(window.writeCount).toBe(writes);
+
+    flushTopologyRecovery(resumeScheduler, workScheduler);
+    expect(state.topologyStabilizing).toBe(false);
+    expect(state.gap).toBe(20);
+    expect(state.pendingGap).toBeNull();
+    expect(window.window.frameGeometry).toEqual({
+      height: 760,
+      width: 470,
+      x: 20,
+      y: 20,
+    });
+    expect(window.writeCount).toBe(writes + 1);
+  });
+
+  it("keeps unrelated contexts live while a gap waits for capacity parking", () => {
+    const primary = createOutput("DP-1", 0);
+    const secondary = createOutput("HDMI-A-1", 1000);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("first", primary, desktop);
+    const second = createTrackedWindow("second", primary, desktop);
+    const other = createTrackedWindow("other", secondary, desktop);
+    const fixture = createWorkspace(
+      primary,
+      desktop,
+      [primary, secondary],
+      [desktop],
+      [first.window, second.window, other.window],
+    );
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    const layout = new LayoutEngine();
+    expect(
+      layout.restoreColumns({
+        activeColumnId: columnId("column:second"),
+        columns: [
+          {
+            column: {
+              id: columnId("column:first"),
+              width: { kind: "fixed", value: 700 },
+              windowIds: [windowId("first")],
+            },
+            index: 0,
+          },
+          {
+            column: {
+              id: columnId("column:second"),
+              width: { kind: "fixed", value: 700 },
+              windowIds: [windowId("second")],
+            },
+            index: 1,
+          },
+        ],
+        desktopId: desktopId(desktop.id),
+        outputId: outputId(primary.name),
+      }),
+    ).toBe(true);
+    expect(
+      layout.restoreColumns({
+        activeColumnId: columnId("column:other"),
+        columns: [
+          {
+            column: {
+              id: columnId("column:other"),
+              width: { kind: "proportion", value: 0.5 },
+              windowIds: [windowId("other")],
+            },
+            index: 0,
+          },
+        ],
+        desktopId: desktopId(desktop.id),
+        outputId: outputId(secondary.name),
+      }),
+    ).toBe(true);
+    (
+      controller as unknown as {
+        layout: LayoutEngine;
+      }
+    ).layout = layout;
+    controller.reconcile();
+    const state = controller as unknown as {
+      readonly capacityParkOperations: ReadonlyMap<string, unknown>;
+      readonly gap: number;
+      readonly pendingGap: number | null;
+    };
+    expect(state.capacityParkOperations.size).toBe(1);
+    const settledOtherFrame = { ...other.window.frameGeometry };
+    const otherWrites = other.writeCount;
+    other.setFrameGeometry({ height: 240, width: 320, x: 1400, y: 180 });
+    fixture.currentDesktopChanged.emit(desktop, desktop, secondary);
+    expect(controller.setGap(20)).toBe(true);
+    expect(workScheduler.pendingCount).toBe(1);
+
+    workScheduler.flush();
+    expect(state.capacityParkOperations.size).toBe(1);
+    expect(state.gap).toBe(10);
+    expect(state.pendingGap).toBe(20);
+    expect(other.window.frameGeometry).toEqual(settledOtherFrame);
+    expect(other.writeCount).toBe(otherWrites + 1);
+
+    flushCapacityParking(resumeScheduler, workScheduler);
+    expect(state.capacityParkOperations.size).toBe(0);
+    expect(state.gap).toBe(20);
+    expect(state.pendingGap).toBeNull();
+    expect(other.window.frameGeometry).not.toEqual(settledOtherFrame);
+  });
+
+  it("restores a committed capacity lease after the gap becomes feasible", () => {
+    const setup = createCapacityFixture(2, { kind: "fixed", value: 450 });
+    const state = setup.controller as unknown as {
+      readonly capacityLeasesByContext: ReadonlyMap<string, unknown>;
+      readonly capacityParkOperations: ReadonlyMap<string, unknown>;
+      readonly gap: number;
+      readonly pendingGap: number | null;
+    };
+
+    expect(setup.controller.start()).toBe(true);
+    setup.fixture.setScreens([setup.output.output, setup.addedOutput.output]);
+    setup.fixture.screensChanged.emit();
+    flushTopologyRecovery(setup.resumeScheduler, setup.workScheduler);
+    expect(setup.controller.managedCount).toBe(2);
+    expect(state.capacityParkOperations.size).toBe(0);
+
+    expect(setup.controller.setGap(64)).toBe(true);
+    setup.workScheduler.flush();
+    expect(state.gap).toBe(64);
+    expect(state.capacityParkOperations.size).toBe(1);
+    flushCapacityParking(setup.resumeScheduler, setup.workScheduler);
+    expect(setup.controller.managedCount).toBe(1);
+    expect(state.capacityLeasesByContext.size).toBe(1);
+
+    expect(setup.controller.setGap(0)).toBe(true);
+    setup.workScheduler.flush();
+    expect(state.gap).toBe(0);
+    expect(state.pendingGap).toBeNull();
+    expect(state.capacityLeasesByContext.size).toBe(0);
+    expect(setup.controller.managedCount).toBe(2);
+    expect(
+      runtimeLayout(setup.controller)
+        .snapshot(
+          outputId(setup.output.output.name),
+          desktopId(setup.desktop.id),
+        )
+        .columns.map((column) => column.windowIds.map(String)),
+    ).toEqual([["window-1"], ["window-2"]]);
+  });
+
+  it("coalesces, cancels, and discards stale pending gap work", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const window = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [window.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+    const state = controller as unknown as {
+      readonly gap: number;
+      readonly pendingGap: number | null;
+    };
+
+    expect(controller.start()).toBe(true);
+    const writes = window.writeCount;
+    expect(controller.setGap(20)).toBe(true);
+    expect(controller.setGap(30)).toBe(true);
+    expect(controller.setGap(30)).toBe(false);
+    expect(scheduler.pendingCount).toBe(1);
+    scheduler.flush();
+    expect(state.gap).toBe(30);
+    expect(state.pendingGap).toBeNull();
+    expect(window.window.frameGeometry).toEqual({
+      height: 740,
+      width: 455,
+      x: 30,
+      y: 30,
+    });
+    expect(window.writeCount).toBe(writes + 1);
+
+    const settledFrame = { ...window.window.frameGeometry };
+    const settledWrites = window.writeCount;
+    expect(controller.setGap(40)).toBe(true);
+    expect(controller.setGap(30)).toBe(true);
+    expect(state.pendingGap).toBeNull();
+    expect(scheduler.pendingCount).toBe(1);
+    scheduler.flush();
+    expect(state.gap).toBe(30);
+    expect(window.window.frameGeometry).toEqual(settledFrame);
+    expect(window.writeCount).toBe(settledWrites);
+
+    expect(controller.setGap(50)).toBe(true);
+    expect(scheduler.pendingCount).toBe(1);
+    controller.stop();
+    const stoppedFrame = { ...window.window.frameGeometry };
+    const stoppedWrites = window.writeCount;
+    expect(state.pendingGap).toBeNull();
+    scheduler.flush();
+    expect(state.gap).toBe(30);
+    expect(window.window.frameGeometry).toEqual(stoppedFrame);
+    expect(window.writeCount).toBe(stoppedWrites);
+  });
+
+  it("defers a live gap reflow until a hidden desktop becomes visible", () => {
+    const output = createOutput("DP-1", 0);
+    const visibleDesktop = { id: "desktop-1" };
+    const hiddenDesktop = { id: "desktop-2" };
+    const hiddenFirst = createTrackedWindow(
+      "hidden-first",
+      output,
+      hiddenDesktop,
+    );
+    const hiddenSecond = createTrackedWindow(
+      "hidden-second",
+      output,
+      hiddenDesktop,
+    );
+    const visible = createTrackedWindow("visible", output, visibleDesktop);
+    const fixture = createWorkspace(
+      output,
+      visibleDesktop,
+      [output],
+      [visibleDesktop, hiddenDesktop],
+      [hiddenFirst.window, hiddenSecond.window, visible.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    const hiddenFrames = [hiddenFirst, hiddenSecond].map(({ window }) => ({
+      ...window.frameGeometry,
+    }));
+    const hiddenWrites = [hiddenFirst, hiddenSecond].map(
+      ({ writeCount }) => writeCount,
+    );
+    const hiddenLayout = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(hiddenDesktop.id),
+    );
+
+    expect(hiddenWrites).toEqual([0, 0]);
+    expect(controller.setGap(20)).toBe(true);
+    scheduler.flush();
+    expect(visible.window.frameGeometry).toEqual({
+      height: 760,
+      width: 470,
+      x: 20,
+      y: 20,
+    });
+    expect(
+      [hiddenFirst, hiddenSecond].map(({ window }) => window.frameGeometry),
+    ).toEqual(hiddenFrames);
+    expect(
+      [hiddenFirst, hiddenSecond].map(({ writeCount }) => writeCount),
+    ).toEqual(hiddenWrites);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(hiddenDesktop.id),
+      ),
+    ).toEqual(hiddenLayout);
+
+    fixture.setCurrentDesktop(output, hiddenDesktop);
+    expect(scheduler.pendingCount).toBe(1);
+    scheduler.flush();
+    expect(
+      [hiddenFirst, hiddenSecond].map(({ window }) => window.frameGeometry),
+    ).toEqual([
+      { height: 760, width: 470, x: 20, y: 20 },
+      { height: 760, width: 470, x: 510, y: 20 },
+    ]);
+    expect(
+      [hiddenFirst, hiddenSecond].map(({ writeCount }) => writeCount),
+    ).toEqual(hiddenWrites.map((writeCount) => writeCount + 1));
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(hiddenDesktop.id),
+      ),
+    ).toEqual(hiddenLayout);
+  });
+
+  it("leaves automatically excluded frames untouched during a gap change", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const excluded = createTrackedWindow("dialog", output, desktop, {
+      dialog: true,
+      frameGeometry: { height: 240, width: 320, x: 73, y: 91 },
+      normalWindow: false,
+    });
+    const tiled = createTrackedWindow("tiled", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [excluded.window, tiled.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(controller.managedCount).toBe(1);
+    const excludedFrame = { ...excluded.window.frameGeometry };
+    const excludedWrites = excluded.writeCount;
+    const tiledWrites = tiled.writeCount;
+
+    expect(controller.setGap(20)).toBe(true);
+    scheduler.flush();
+    expect(tiled.window.frameGeometry).toEqual({
+      height: 760,
+      width: 470,
+      x: 20,
+      y: 20,
+    });
+    expect(tiled.writeCount).toBe(tiledWrites + 1);
+    expect(excluded.window.frameGeometry).toEqual(excludedFrame);
+    expect(excluded.writeCount).toBe(excludedWrites);
+    expect(controller.managedCount).toBe(1);
+  });
+
   it("leaves automatic-floating window classes exclusively to KWin", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };

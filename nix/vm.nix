@@ -1131,6 +1131,23 @@ let
         wait_for_window_minimized_state_contains "$query" "$expected"
       }
 
+      set_gap() {
+        ${pkgs.kdePackages.kconfig}/bin/kwriteconfig6 \
+          --file "$HOME/.config/kwinrc" \
+          --group "Script-${pluginId}" \
+          --key Gap \
+          --type int \
+          "$1" \
+          || return 1
+
+        busctl --user call \
+          org.kde.KWin \
+          /KWin \
+          org.kde.KWin \
+          reconfigure \
+          >/dev/null
+      }
+
       window_fullscreen_state() {
         local id
 
@@ -4862,6 +4879,8 @@ let
         local direct_insert_verified
         local first_trailing_desktop_id=""
         local floating_second_frame
+        local gap_first_frame
+        local gap_third_frame
         local horizontal_extraction_verified
         local merged_first_frame
         local merged_second_frame
@@ -4873,6 +4892,14 @@ let
         local singleton_first_frame
         local singleton_second_frame
         local singleton_third_frame
+        local tiled_first_height
+        local tiled_first_width
+        local tiled_first_x
+        local tiled_first_y
+        local tiled_third_height
+        local tiled_third_width
+        local tiled_third_x
+        local tiled_third_y
         local second_trailing_desktop_id=""
         local stacked_fullscreen_verified
         local stacked_maximize_verified
@@ -5073,6 +5100,45 @@ let
         fi
         floating_second_frame=$stable_second_frame
         record_focus_state "window B floated from its tiled column"
+
+        IFS=, read -r \
+          tiled_first_x \
+          tiled_first_y \
+          tiled_first_width \
+          tiled_first_height \
+          <<< "$stable_first_frame"
+        IFS=, read -r \
+          tiled_third_x \
+          tiled_third_y \
+          tiled_third_width \
+          tiled_third_height \
+          <<< "$stable_third_frame"
+        gap_first_frame="$((tiled_first_x + 8)),$((tiled_first_y + 8)),$((tiled_first_width - 12)),$((tiled_first_height - 16))"
+        gap_third_frame="$((tiled_third_x + 4)),$((tiled_third_y + 8)),$((tiled_third_width - 12)),$((tiled_third_height - 16))"
+
+        if ! set_gap 24 \
+          || ! wait_for_frames \
+            "$gap_first_frame" \
+            "$floating_second_frame" \
+            "$gap_third_frame" \
+          || ! wait_for_active "$title_b"; then
+          set_gap 16 >/dev/null 2>&1 || true
+          record_focus_state "live window gap reflow failed"
+          return 1
+        fi
+        record_focus_state \
+          "live window gap reflow preserved the real floating application"
+
+        if ! set_gap 16 \
+          || ! wait_for_frames \
+            "$stable_first_frame" \
+            "$floating_second_frame" \
+            "$stable_third_frame" \
+          || ! wait_for_active "$title_b"; then
+          record_focus_state "default window gap restoration failed"
+          return 1
+        fi
+        record_focus_state "default window gap restored exactly"
 
         invoke_shortcut "driftile_toggle_floating" \
           && wait_for_frames \
@@ -7421,6 +7487,9 @@ let
   kwinConfig = pkgs.writeText "driftile-vm-kwinrc" ''
     [Plugins]
     ${pluginId}Enabled=true
+
+    [Script-${pluginId}]
+    Gap=16
   '';
   screenLockerConfig = pkgs.writeText "driftile-vm-kscreenlockerrc" ''
     [Daemon]
