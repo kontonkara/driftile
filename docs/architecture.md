@@ -131,7 +131,8 @@ RuntimeState
 - Preserve a tiled window's exact logical slot and a manually floating window's exact detached frame while KWin minimizes and restores it.
 - Allow a visible active member to reorder vertically across settled minimized slots without writing hidden frames; reject every other passive suspension blocker.
 - Allow horizontal extraction of a visible active member past settled minimized source peers without writing hidden frames; retain the existing constraint-validated singleton merge policy.
-- Permit stacked native-state extraction past settled minimized peers while retaining their slots without hidden frame writes. Reject whole-column transfers and consume or expel edits when a required member is minimized; other hidden-member edit semantics remain outside this slice.
+- Allow explicit consume to pull a visible immediate-right top member past settled minimized passive members in the source or target column without hidden frame writes. Reject the transaction if focus leaves the active member or if either required visible member or any participant changes identity, context, or minimized state during reflow. Preserve the external focus or lifecycle transition while rolling back only the command's structural edit.
+- Permit stacked native-state extraction past settled minimized peers while retaining their slots without hidden frame writes. Reject whole-column transfers and expel edits when a participating member is minimized; other hidden-member edit semantics remain outside this slice.
 - A native fullscreen command extracts a member of a regular stack into an immediate right singleton before calling KWin. The new column copies the source width, and leaving fullscreen does not merge it back.
 - A native maximize command extracts a member of a regular stack into an immediate right singleton before calling KWin. The new column copies the source width, and unmaximize does not merge it back.
 - Require a stable restored frame before resuming writes or rebasing a transferred window.
@@ -165,7 +166,7 @@ RuntimeState
 - Test reconcile output for minimality and idempotence.
 - Replay window lifecycle and output or desktop transfer sequences.
 - Verify window-state ownership, cancellation races, stable resumption, and slot reservation.
-- Verify minimized tiled-slot and manual-floating-frame retention, horizontal and vertical focus skipping, vertical reorder and horizontal extraction across minimized slots, layer switching, no-wrap boundaries, fail-closed non-minimize suspension blockers, reentrant rollback, and all-member transaction guards.
+- Verify minimized tiled-slot and manual-floating-frame retention, horizontal and vertical focus skipping, vertical reorder, horizontal extraction, and explicit consume across minimized passive slots, layer switching, no-wrap boundaries, fail-closed non-minimize suspension blockers, reentrant rollback, and all-member transaction guards.
 - Verify shortcut and application-driven stacked fullscreen extraction past settled minimized peers, KWin-owned geometry, persistent singleton restoration, deferred Wayland commits, and exact rejection rollback.
 - Verify shortcut and application-driven stacked maximize extraction past settled minimized peers, KWin-owned geometry, persistent singleton restoration, and exact rejection rollback.
 - Verify adjacent and direct-edge active-column reorder, width adjustments, width presets, full width, available-width expansion, single-column and visible-group centering, signed viewport offsets, constraint bounds, and transactional rollback.
@@ -175,7 +176,7 @@ RuntimeState
 - Verify context-local tiled/floating focus memory for manual and automatic floating windows without geometry writes.
 - Verify directional and edge floating focus, stacking tie-breaks, no-wrap boundaries, and exact frame immutability.
 - Verify vertical focus, member reorder, contextual merge and extraction, suspended members, and structural rollback.
-- Verify explicit top-member consume and bottom-member expel, focus clamping, width rules, height-state reset, boundaries, and rollback.
+- Verify explicit top-member consume and bottom-member expel, minimized passive-member policy, focus clamping, width rules, height-state reset, boundaries, and rollback.
 - Verify the settled topology barrier, output replacement and removal, dock and silent work-area invalidations, sticky restore invalidation, and deterministic capacity recovery.
 - Verify independent contexts with native Wayland and XWayland windows on two virtual outputs and native X11 windows on the X11 backend.
 - Verify whole-column and secondary directional transfers, no-wrap boundaries, per-output desktop selection, focus preservation, and exact two-context compensation.

@@ -55,8 +55,11 @@ mechanism. A minimized tiled window retains its exact logical slot, and a
 minimized manually floating window retains its exact frame for restoration.
 Directional, edge, and layer focus skip minimized slots and fully minimized
 columns without wrapping. They do not skip other suspension blockers. Commands
-that require every member to be writable remain unavailable while one is
-minimized; other hidden-member edit semantics remain MVP work.
+may reorder or extract a visible stack member past settled minimized peers.
+Consume may also move the visible top member of the immediate-right column past
+settled minimized passive peers in either column. Hidden frames remain
+untouched. Expel and whole-column transfers still require every participant to
+be writable; other hidden-member edit semantics remain MVP work.
 
 Window-height presets are `1/3`, `1/2`, and `2/3` of the work area, with gaps
 included in the calculation.

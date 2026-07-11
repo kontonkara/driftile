@@ -49,8 +49,11 @@ slots and fully minimized columns without wrapping. Focus does not skip other
 suspension blockers. Native fullscreen and maximize may extract the active
 member past settled minimized peers without writing their frames. A visible
 active member may move vertically across settled minimized slots or extract
-horizontally from that stack. Other all-member transactions remain unavailable
-while one is minimized; further hidden-member edit semantics remain MVP work.
+horizontally from that stack. Consume may pull the visible top member of the
+immediate-right column past settled minimized passive members in either column
+without writing hidden frames. Expel and whole-column transfers remain
+unavailable while a participating member is minimized; further hidden-member
+edit semantics remain MVP work.
 
 When a member of a regular vertical stack enters fullscreen or is maximized,
 Driftile extracts it into a singleton column immediately to the right. Leaving
