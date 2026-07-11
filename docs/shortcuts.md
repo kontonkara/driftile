@@ -39,14 +39,24 @@ existing stack, one-way tiled/floating layer focus, resetting a column width,
 and reverse window-height preset cycling are registered without default keys.
 Assign them in **System Settings > Keyboard > Shortcuts** if needed.
 
-Layer focus is context-local and changes only KWin focus. It restores the last
-focused window in the other layer and does nothing unless both layers contain a
-window.
+Layer focus is context-local. It restores the last focused non-minimized window
+in the other layer. Minimized slots are skipped, but any other blocker on the
+selected remembered or ordered target makes the command a no-op instead of
+choosing a different window. A tiled fallback in another column is selected and
+revealed with the normal minimal scroll before KWin receives focus.
 
 When a floating window is active, `H/J/K/L` select the nearest floating-window
 center on the requested axis. `Home/End` select the leftmost or rightmost
 floating frame. Navigation stays inside the current output and desktop, does
-not wrap, and leaves every frame unchanged.
+not wrap, skips minimized windows, and leaves every frame unchanged.
+
+Driftile does not register a minimize action or default shortcut; KWin owns the
+mechanism. A minimized tiled window retains its exact logical slot, and a
+minimized manually floating window retains its exact frame for restoration.
+Directional, edge, and layer focus skip minimized slots and fully minimized
+columns without wrapping. They do not skip other suspension blockers. Commands
+that require every member to be writable remain unavailable while one is
+minimized; other hidden-member edit semantics remain MVP work.
 
 Window-height presets are `1/3`, `1/2`, and `2/3` of the work area, with gaps
 included in the calculation.

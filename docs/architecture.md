@@ -33,7 +33,7 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Detects otherwise silent client-area changes by fingerprinting visible contexts only.
 - Replays structural output changes in a stable layout order independent of KWin window-signal order.
 - Invalidates stale restore ownership and revalidates multi-output capacity after topology changes.
-- Focuses the first or last column directly with transactional reveal.
+- Focuses the first or last non-minimized column directly with transactional reveal.
 - Reorders the active whole column left, right, first, or last inside one settled context while keeping focus unchanged.
 - Resizes the active whole column within grouped window constraints, cycles presets, toggles full width, uses available visible space up to those constraints, centers one or all fully visible columns, and retries waiting capacity after a successful shrink.
 - Adjusts one tiled window's height, resets it to weighted automatic sizing, and cycles height presets while reflowing its stack atomically.
@@ -46,7 +46,8 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Focuses adjacent desktops on the active output, with a global fallback and no wrapping.
 - Releases explicitly floating windows from geometry ownership and restores their anchored layout slots on return.
 - Transfers one active relation-free floating window between desktops through a dedicated KWin transaction without changing tiled state or frame geometry.
-- Remembers the last tiled and floating focus per context, switches layers, and resolves floating navigation from live frame geometry without changing layout state.
+- Remembers the last non-minimized tiled and floating focus per context, switches layers, and resolves floating navigation from live frame geometry without changing frames during floating navigation.
+- Skips minimized tiled slots, fully minimized columns, and minimized floating candidates during focus resolution without taking ownership of KWin's minimize mechanism.
 - Extracts a regular stack member transactionally before requesting native fullscreen through KWin; application-driven fullscreen commits for the active window use the same persistent singleton model without writing the fullscreen frame.
 - Extracts a regular stack member transactionally before requesting native maximize-to-edges through KWin; rejected requests restore the exact model, frames, focus, and runtime ownership.
 - Keeps dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows outside layout ownership in state separate from manual floating.
@@ -95,13 +96,15 @@ RuntimeState
   topologyBarrier: { revision, affectedOutputs, stableSample }
 ```
 
-`LayoutContext` owns columns, per-window automatic weights or fixed/preset heights, viewport offset, and the last applied geometry fingerprint. A managed window owns an optional decoration-independent client restore baseline plus the exact frame observed at capture time. A manually floating window remains observed but has no layout or geometry owner; its detached placement records stable anchors for reinsertion. An automatically floating window has no layout slot, floating anchor, waiting entry, suspension, or retry state. A suspended window keeps its layout slot, but reconcile excludes it until KWin releases geometry authority. Waiting windows have no layout owner. KWin objects never enter core state.
+`LayoutContext` owns columns, per-window automatic weights or fixed/preset heights, viewport offset, and the last applied geometry fingerprint. A managed window owns an optional decoration-independent client restore baseline plus the exact frame observed at capture time. A manually floating window remains observed but has no layout or geometry owner; its detached placement records stable anchors for reinsertion. An automatically floating window has no layout slot, floating anchor, waiting entry, suspension, or retry state. A minimized tiled window remains suspended in its exact logical slot, while a minimized manually floating window keeps its exact detached frame. Reconcile excludes suspended windows until KWin releases geometry authority. Waiting windows have no layout owner. KWin objects never enter core state.
 
 ## Reconciliation rules
 
 - Read usable geometry from KWin work areas; never infer panel bounds.
 - Apply a context only when its desktop is visible on its output.
-- Keep focus commands inside the active window's context.
+- Keep focus commands inside the active window's context, select one live target, skip minimized slots and fully minimized columns without wrapping, and reveal its column with the smallest required scroll.
+- Treat minimization as the only skippable focus suspension; commands that encounter another suspension blocker remain no-ops.
+- Commit tiled focus and viewport changes only after KWin accepts the same live target; rejection or a synchronous authority change restores the prior focus, model, and frames.
 - Keep adjacent and direct-edge column reorders inside the active context and roll back the exact model order if geometry application cannot complete.
 - Apply active-column width changes transactionally, preserving focus, grouping, and the prior width on failure.
 - Expand only a fully visible active column up to its shared window constraints, keep every other fully visible column on screen, and commit its width and viewport change atomically.
@@ -116,8 +119,8 @@ RuntimeState
 - Transfer either the active column or one secondary window between outputs through the same preview, then commit only after KWin accepts every output and desktop mechanism plus both visible layouts.
 - Preserve whole-column member order and width, apply the active member last, and restore all owned mechanisms and frames if any batch step fails.
 - Apply floating transitions from immutable previews, commit ownership only after every geometry request succeeds, and defer later context writes until asynchronous frames settle.
-- Switch focus between tiled and floating layers only when both have a live member in the active context; validate remembered targets lazily and leave layout state untouched.
-- Resolve floating `H/J/K/L` by the smallest strictly positive center delta on the requested axis and `Home/End` by frame-x extremes, scanning only live same-context floating windows.
+- Switch focus between tiled and floating layers by resolving one deterministic target in each layer. Minimized slots are skipped, but a selected target with any other suspension or geometry-authority blocker fails closed instead of falling through. A tiled target in another column is revealed transactionally before KWin receives focus; ordinary rejection restores the exact model and geometry, while topology supersession uses normal deferred recovery.
+- Resolve floating `H/J/K/L` by the smallest strictly positive center delta on the requested axis and `Home/End` by frame-x extremes, scanning only live, non-minimized same-context floating windows.
 - Leave dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows outside layout ownership. Commands that require layout ownership are no-ops when one is active; desktop transfer may move one relation-free floating window.
 - If a managed window gains an automatic-floating role, remove its slot without writing a stale restore frame or disturbing unrelated order, widths, or viewport state. Re-admit it through normal admission after the role clears.
 - Allow horizontal overflow and viewport scrolling when KWin reports one output.
@@ -125,7 +128,8 @@ RuntimeState
 - When a topology change invalidates existing multi-output capacity, park whole writable columns with a reachable anchor inside the work area and release them to the waiting queue. Preserve the active column when possible; choose the farthest non-active column first and the rightmost on a tie.
 - Release externally transferred windows from their old context before admitting them to the destination context.
 - Translate client minimum and maximum sizes to frame bounds by adding current nonnegative decoration extents before emitting geometry or resizing a column. Treat malformed bounds conservatively.
-- Preserve a window's slot through minimize, native tiling, and interactive move or resize transitions.
+- Preserve a tiled window's exact logical slot and a manually floating window's exact detached frame while KWin minimizes and restores it.
+- Reject whole-column transfers, consume or expel edits, and stacked native-state extraction when a required member is minimized; other hidden-member edit semantics remain outside this slice.
 - A native fullscreen command extracts a member of a regular stack into an immediate right singleton before calling KWin. The new column copies the source width, and leaving fullscreen does not merge it back.
 - A native maximize command extracts a member of a regular stack into an immediate right singleton before calling KWin. The new column copies the source width, and unmaximize does not merge it back.
 - Require a stable restored frame before resuming writes or rebasing a transferred window.
@@ -159,6 +163,7 @@ RuntimeState
 - Test reconcile output for minimality and idempotence.
 - Replay window lifecycle and output or desktop transfer sequences.
 - Verify window-state ownership, cancellation races, stable resumption, and slot reservation.
+- Verify minimized tiled-slot and manual-floating-frame retention, horizontal and vertical focus skipping, layer switching, no-wrap boundaries, fail-closed non-minimize suspension blockers, reentrant focus rollback, and all-member transaction guards.
 - Verify shortcut and application-driven stacked fullscreen extraction, KWin-owned geometry, persistent singleton restoration, deferred Wayland commits, and exact rejection rollback.
 - Verify shortcut and application-driven stacked maximize extraction, KWin-owned geometry, persistent singleton restoration, and exact rejection rollback.
 - Verify adjacent and direct-edge active-column reorder, width adjustments, width presets, full width, available-width expansion, single-column and visible-group centering, signed viewport offsets, constraint bounds, and transactional rollback.

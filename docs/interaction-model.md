@@ -22,7 +22,8 @@ Driftile uses one keyboard grammar and does not wrap at layout boundaries:
 | Outputs              | Focus an adjacent output and transfer the whole active column                                     | Available |
 | Fullscreen           | Extract a regular stack member, then toggle native fullscreen through KWin                        | Available |
 | Native maximize      | Extract a regular stack member, then toggle it to work-area edges through KWin                    | Available |
-| Window state         | Complete minimized-window policies                                                                | MVP       |
+| Minimize focus       | Preserve tiled slots and floating frames; skip minimized windows without wrapping                 | Available |
+| Hidden-member edits  | Define structural commands for columns or stacks containing minimized members                     | MVP       |
 | Floating layer       | Toggle state, switch layers, and navigate floating windows geometrically                          | Available |
 | Tabbed columns       | Toggle a column between stacked and tabbed presentation without changing navigation               | v1        |
 | Pointer input        | Provide wheel navigation and mouse rearrangement with the same model as keyboard commands         | v1        |
@@ -40,6 +41,14 @@ returns the active member to automatic sizing.
 
 KWin owns fullscreen, maximize, minimize, output transfer, and virtual-desktop
 mechanisms. Driftile owns their layout semantics.
+
+Driftile provides no minimize action or default shortcut. A minimized tiled
+window retains its exact logical slot, and a minimized manually floating window
+retains its exact frame. Directional, edge, and layer focus skip minimized
+slots and fully minimized columns without wrapping. Focus does not skip other
+suspension blockers. Transactions that require every member to be writable
+remain unavailable while one is minimized; other hidden-member edit semantics
+remain MVP work.
 
 When a member of a regular vertical stack enters fullscreen or is maximized,
 Driftile extracts it into a singleton column immediately to the right. Leaving

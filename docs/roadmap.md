@@ -48,6 +48,7 @@ The current runtime already:
 - Focuses and reorders vertical stack members, contextually merges or extracts the active window, consumes or expels edge members, and inserts directly into the nearest stack across singleton columns.
 - Toggles the active normal window between tiled and floating states with anchored reinsertion and safe geometry ownership.
 - Switches focus between tiled and floating layers inside one output and desktop, remembers each layer, and navigates floating windows geometrically without changing frames.
+- Leaves minimization to KWin, preserves exact logical tiled slots and manually floating frames across restoration, and skips minimized focus candidates or fully minimized columns without wrapping.
 - Extracts a regular stack member into an immediate right singleton before native fullscreen, preserves focus and source order, and keeps the window separate after leaving fullscreen.
 - Extracts a regular stack member into an immediate right singleton before native maximize-to-edges, preserves focus and source order, and keeps the window separate after unmaximize.
 - Moves the whole active column between adjacent existing desktops with follow-focus, atomic two-context ownership, and exact rollback; single-window transfer remains secondary.
@@ -69,7 +70,7 @@ The automatic-floating base is complete. Size increments, aspect ratios, live co
 Complete the daily keyboard-driven workflow.
 
 - Manage every output and desktop independently.
-- Complete minimized-window semantics without taking KWin's mechanism ownership.
+- Define structural command behavior for columns and stacks containing minimized members.
 - Add virtual-desktop reordering within KDE's global desktop model.
 - Define size-increment and aspect-ratio behavior, and expand live constraint-change coverage across toolkits.
 - Harden the existing topology recovery for rotation, rapid physical hot-plug sequences, and more hardware configurations.
@@ -80,7 +81,8 @@ Exit criteria:
 - Commands affect only their target context.
 - Default transfer shortcuts preserve every member and the width of the active column.
 - Opening, closing, moving, and resizing windows preserves unrelated layout state.
-- Fullscreen windows retain their extracted singleton position, while minimized windows return to their previous layout position.
+- Fullscreen windows retain their extracted singleton position.
+- Structural commands involving minimized members have an explicit, tested policy.
 - Hot-plug recovery leaves every window reachable.
 - Dynamic workspace changes never remove an occupied or visible desktop.
 - A sustained lifecycle test produces no exceptions or geometry feedback loop.

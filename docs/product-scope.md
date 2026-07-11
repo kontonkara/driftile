@@ -19,7 +19,7 @@ The ownership rule is strict:
 - Managed, manually floating, automatically layout-excluded, and ignored window states.
 - Optional borderless presentation for application windows with exact decoration ownership.
 - Output-local commands unless a transfer is explicit.
-- Work-area, size-constraint, fullscreen, minimized, dialog, and hot-plug handling.
+- Work-area, size-constraint, fullscreen, minimized-window compatibility, dialog, and hot-plug handling.
 - Native fullscreen control through KWin with stack-aware extraction.
 - Native maximize-to-edges control through KWin with stack-aware extraction.
 - Settled recovery for output-list, geometry, scale, and work-area changes.
@@ -64,7 +64,7 @@ Driftile must integrate with, not duplicate:
 - Entering fullscreen for a member of a regular stack extracts it into an immediate right singleton before calling KWin; leaving fullscreen keeps it separate.
 - Maximizing a member of a regular stack extracts it into an immediate right singleton before calling KWin; unmaximizing leaves it separate.
 - No layout write occurs while a topology snapshot is unsettled.
-- Focusing a managed window makes it fully visible with the smallest required scroll.
+- Focusing a non-minimized managed window makes it fully visible with the smallest required scroll.
 - Reordering moves one whole active column left, right, first, or last inside its context without changing focus or widths.
 - Column-width resizing changes one whole active column, translates client limits to decorated frame bounds, respects every member's width constraints, and preserves focus and grouping.
 - Available-width expansion grows only a fully visible active column up to its shared window constraints, preserves every other fully visible column, and changes width and viewport atomically.
@@ -75,7 +75,10 @@ Driftile must integrate with, not duplicate:
 - Merge preserves the destination width; extraction copies the source width; both preserve focus and member order.
 - Direct insertion appends the active window to the nearest existing stack in its direction, skips singleton columns without wrapping, and preserves the target width.
 - Explicit consume appends the immediate right column's top member to the active column; explicit expel moves the active column's bottom member into a new right column. Focus remains in the active column.
-- Vertical focus and member reorder stop at stack boundaries without wrapping.
+- Horizontal focus skips fully minimized columns; vertical focus skips minimized slots. Both stop at layout boundaries without wrapping.
+- Focus traversal does not route around suspension reasons other than minimization; those blockers remain fail-closed.
+- Tiled and floating focus commit only after KWin accepts the selected live target; rejected or synchronously invalidated requests restore the prior focus and layout.
+- Whole-column transfers, consume or expel edits, and stacked native-state extraction remain unavailable when a required member is minimized; other hidden-member edit semantics remain MVP work.
 - Default desktop transfer follows the active tiled column without wrapping, preserving its members, order, width, and active member. On the floating layer, it transfers only the active relation-free window. The secondary action transfers only one active window.
 - Numbered desktop actions are one-based and clamp to the shared trailing empty desktop when their target exceeds the current global desktop count.
 - Default output transfer selects a deterministic adjacent output without wrapping, preserves the whole active column, and adopts the destination output's visible desktop. The secondary action transfers only the active tiled window.
@@ -86,8 +89,9 @@ Driftile must integrate with, not duplicate:
 - Driftile removes only a redundant, empty, unselected tail created by its current run; externally created desktops are never removed.
 - A manually floating window has no Driftile geometry owner and returns only through the explicit toggle.
 - Retiling a manually floating window restores a surviving anchored slot when possible and captures the latest floating frame as the next safe restore baseline.
-- Layer focus remains inside the active `(output, desktop)` context, restores the last active tiled or floating window, and never changes layout geometry or ownership.
-- Directional floating focus chooses the nearest positive center distance on the requested axis; first and last choose frame-x extremes. Neither action wraps or writes geometry.
+- Layer focus remains inside the active `(output, desktop)` context and restores the last non-minimized tiled or floating window. Minimized slots are skipped, while any other blocker on the selected remembered or ordered target fails closed without fallback. Selecting a tiled target in another column reveals it with the normal minimal scroll; ownership never changes.
+- Directional floating focus chooses the nearest positive center distance on the requested axis; first and last choose frame-x extremes. Minimized windows are excluded, and no action wraps or writes geometry.
+- KWin alone owns minimization. Driftile registers no minimize action or default shortcut, keeps a minimized tiled window in its exact logical slot, and preserves a minimized manually floating window's exact detached frame for restoration.
 - An automatically layout-excluded window has no layout slot, manual-floating anchor, waiting entry, suspension, or retry state. Commands requiring layout ownership are no-ops; relation-free desktop transfer remains available.
 - A managed window that becomes modal or transient leaves its layout without a geometry write or stale baseline restore. It may be admitted again after the role clears.
 - Unrelated window order, widths, and viewport offsets remain stable.
