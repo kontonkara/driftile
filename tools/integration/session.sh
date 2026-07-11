@@ -4366,6 +4366,166 @@ verify_stacked_fullscreen_extraction() {
     fail "Driftile changed $protocol focus while restoring the stacked-fullscreen fixture"
 }
 
+verify_stacked_native_state_extraction_past_minimized_peer() {
+  local protocol=$1
+  local state=$2
+  local minimized_position=$3
+  local first_title=$4
+  local active_title=$5
+  local last_title=$6
+  local unrelated_title=$7
+  local active_id
+  local minimized_id
+  local minimized_title
+  local minimized_frame
+  local shortcut
+  local transition
+  local extracted_first_frame
+  local extracted_last_frame
+
+  case "$state" in
+    fullscreen)
+      shortcut="driftile_toggle_fullscreen"
+      transition="fullscreen"
+      ;;
+    maximized)
+      shortcut="driftile_maximize_window_to_edges"
+      transition="maximize"
+      ;;
+    *)
+      fail "unsupported minimized-peer native state: $state"
+      ;;
+  esac
+
+  case "$minimized_position" in
+    first)
+      minimized_title=$first_title
+      minimized_frame="16,16,616,219"
+      extracted_first_frame=$minimized_frame
+      extracted_last_frame="16,368,616,336"
+      ;;
+    last)
+      minimized_title=$last_title
+      minimized_frame="16,485,616,219"
+      extracted_first_frame="16,16,616,336"
+      extracted_last_frame=$minimized_frame
+      ;;
+    *)
+      fail "unsupported minimized-peer stack position: $minimized_position"
+      ;;
+  esac
+
+  active_id=$(window_id "$active_title") || \
+    fail "KWin did not expose the active $protocol stack member before minimized-peer $transition"
+  minimized_id=$(window_id "$minimized_title") || \
+    fail "KWin did not expose the passive $protocol stack member before minimized-peer $transition"
+  wait_for_shortcut "$shortcut" || \
+    fail "KGlobalAccel did not register the minimized-peer $transition shortcut"
+  activate_window "$active_title" || \
+    fail "KWin could not activate the middle $protocol stack member before minimized-peer $transition"
+  wait_for_active "$active_title" || \
+    fail "KWin did not focus the middle $protocol stack member before minimized-peer $transition"
+  window_state_matches "$active_id" "$state" false || \
+    fail "the middle $protocol stack member already owned native $transition state"
+  wait_for_geometries \
+    "$first_title" "16,16,616,219" \
+    "$active_title" "16,251,616,218" \
+    "$last_title" "16,485,616,219" \
+    "$unrelated_title" "648,16,616,688" || \
+    fail "Driftile did not preserve the $protocol stack before minimized-peer $transition: $(describe_layout "$first_title" "$active_title" "$last_title" "$unrelated_title")"
+
+  set_external_window_minimized "$minimized_title" true || \
+    fail "KWin could not externally minimize the passive $protocol stack member before $transition"
+  wait_for_state_and_geometries \
+    "$minimized_id" minimized true \
+    "$first_title" "16,16,616,219" \
+    "$active_title" "16,251,616,218" \
+    "$last_title" "16,485,616,219" \
+    "$unrelated_title" "648,16,616,688" || \
+    fail "Driftile wrote the passive $protocol stack slot before minimized-peer $transition: $(describe_layout "$first_title" "$active_title" "$last_title" "$unrelated_title")"
+  if ! window_state_matches "$minimized_id" fullscreen false \
+    || ! window_state_matches "$minimized_id" maximized false; then
+    fail "the minimized passive $protocol stack member gained native state before $transition"
+  fi
+  activate_window "$active_title" || \
+    fail "KWin could not restore active $protocol stack focus before minimized-peer $transition"
+  wait_for_active "$active_title" || \
+    fail "KWin did not restore active $protocol stack focus before minimized-peer $transition"
+
+  invoke_shortcut "$shortcut" || \
+    fail "KGlobalAccel could not enter minimized-peer $protocol $transition"
+  wait_for_state_and_geometries \
+    "$active_id" "$state" true \
+    "$first_title" "$extracted_first_frame" \
+    "$active_title" "0,0,1280,720" \
+    "$last_title" "$extracted_last_frame" \
+    "$unrelated_title" "1280,16,616,688" || \
+    fail "Driftile did not extract the active $protocol stack member past its minimized peer for $transition: $(describe_layout "$first_title" "$active_title" "$last_title" "$unrelated_title")"
+  wait_for_window_state "$minimized_id" minimized true || \
+    fail "Driftile restored the passive $protocol stack member during $transition extraction"
+  if ! window_state_matches "$minimized_id" fullscreen false \
+    || ! window_state_matches "$minimized_id" maximized false; then
+    fail "the minimized passive $protocol stack member gained native state during $transition extraction"
+  fi
+  [[ "$(window_frame_geometry "$minimized_title")" == "$minimized_frame" ]] || \
+    fail "Driftile changed the minimized passive $protocol stack frame during $transition extraction"
+  wait_for_active "$active_title" || \
+    fail "Driftile changed $protocol focus during minimized-peer $transition"
+
+  invoke_shortcut "$shortcut" || \
+    fail "KGlobalAccel could not leave minimized-peer $protocol $transition"
+  wait_for_state_and_geometries \
+    "$active_id" "$state" false \
+    "$first_title" "$extracted_first_frame" \
+    "$active_title" "648,16,616,688" \
+    "$last_title" "$extracted_last_frame" \
+    "$unrelated_title" "1280,16,616,688" || \
+    fail "Driftile did not retain immediate-right singleton semantics after minimized-peer $transition: $(describe_layout "$first_title" "$active_title" "$last_title" "$unrelated_title")"
+  wait_for_window_state "$minimized_id" minimized true || \
+    fail "Driftile restored the passive $protocol stack member while leaving $transition"
+  if ! window_state_matches "$minimized_id" fullscreen false \
+    || ! window_state_matches "$minimized_id" maximized false; then
+    fail "the minimized passive $protocol stack member retained native state after leaving $transition"
+  fi
+  [[ "$(window_frame_geometry "$minimized_title")" == "$minimized_frame" ]] || \
+    fail "Driftile changed the minimized passive $protocol stack frame while leaving $transition"
+  wait_for_active "$active_title" || \
+    fail "Driftile changed $protocol focus while leaving minimized-peer $transition"
+
+  set_external_window_minimized "$minimized_title" false || \
+    fail "KWin could not restore the passive $protocol stack member after $transition"
+  wait_for_state_and_geometries \
+    "$minimized_id" minimized false \
+    "$first_title" "16,16,616,336" \
+    "$active_title" "648,16,616,688" \
+    "$last_title" "16,368,616,336" \
+    "$unrelated_title" "1280,16,616,688" || \
+    fail "Driftile did not safely restore the passive $protocol stack member after $transition: $(describe_layout "$first_title" "$active_title" "$last_title" "$unrelated_title")"
+  activate_window "$active_title" || \
+    fail "KWin could not restore active $protocol singleton focus after minimized-peer $transition"
+  wait_for_active "$active_title" || \
+    fail "KWin did not restore active $protocol singleton focus after minimized-peer $transition"
+
+  invoke_shortcut "driftile_move_window_left" || \
+    fail "KGlobalAccel could not return the $protocol $transition singleton to its source stack"
+  wait_for_geometries \
+    "$first_title" "16,16,616,219" \
+    "$active_title" "16,485,616,219" \
+    "$last_title" "16,251,616,218" \
+    "$unrelated_title" "648,16,616,688" || \
+    fail "Driftile did not append the $protocol $transition singleton while restoring the fixture: $(describe_layout "$first_title" "$active_title" "$last_title" "$unrelated_title")"
+  invoke_shortcut "driftile_move_window_up" || \
+    fail "KGlobalAccel could not restore the active $protocol stack order after minimized-peer $transition"
+  wait_for_geometries \
+    "$first_title" "16,16,616,219" \
+    "$active_title" "16,251,616,218" \
+    "$last_title" "16,485,616,219" \
+    "$unrelated_title" "648,16,616,688" || \
+    fail "Driftile did not restore the exact $protocol stack after minimized-peer $transition: $(describe_layout "$first_title" "$active_title" "$last_title" "$unrelated_title")"
+  wait_for_active "$active_title" || \
+    fail "Driftile changed $protocol focus while restoring the minimized-peer $transition fixture"
+}
+
 run_scenario() {
   local protocol=$1
   local first_title="driftile-smoke-${protocol}-a"
@@ -4745,6 +4905,23 @@ run_scenario() {
 
   verify_minimized_slot_navigation \
     "$protocol" \
+    "$first_title" \
+    "$second_title" \
+    "$fourth_title" \
+    "$third_title"
+
+  verify_stacked_native_state_extraction_past_minimized_peer \
+    "$protocol" \
+    maximized \
+    last \
+    "$first_title" \
+    "$second_title" \
+    "$fourth_title" \
+    "$third_title"
+  verify_stacked_native_state_extraction_past_minimized_peer \
+    "$protocol" \
+    fullscreen \
+    first \
     "$first_title" \
     "$second_title" \
     "$fourth_title" \

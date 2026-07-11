@@ -7062,6 +7062,7 @@ export class RuntimeController {
   private columnMembersAreStackTransferEligible(
     column: LayoutColumnSnapshot,
     context: RuntimeContext,
+    nativeStateActiveId?: WindowId,
   ): boolean {
     if (!this.columnMembersBelongToContext(column, context)) {
       return false;
@@ -7071,17 +7072,51 @@ export class RuntimeController {
       const source = this.observer.source(id);
       return Boolean(
         source &&
-        context.windowIds.has(id) &&
-        !this.floatingWindows.has(id) &&
-        !this.waitingWindowContexts.has(id) &&
-        !this.suspendedWindows.has(id) &&
-        !this.requestedSuspensions.has(id) &&
-        !this.automaticFloatingWindows.has(id) &&
-        !this.automaticallyFloats(source) &&
-        this.toggleGeometrySettled(id) &&
-        isGeometryWritable(source),
+        this.stackTransferMemberIsEligible(
+          id,
+          source,
+          context,
+          nativeStateActiveId !== undefined && id !== nativeStateActiveId,
+        ),
       );
     });
+  }
+
+  private stackTransferMemberIsEligible(
+    id: WindowId,
+    source: KWinWindow,
+    context: RuntimeContext,
+    allowSettledMinimized: boolean,
+  ): boolean {
+    if (
+      !context.windowIds.has(id) ||
+      this.floatingWindows.has(id) ||
+      this.waitingWindowContexts.has(id) ||
+      this.requestedSuspensions.has(id) ||
+      this.automaticFloatingWindows.has(id) ||
+      this.automaticallyFloats(source) ||
+      !this.toggleGeometrySettled(id)
+    ) {
+      return false;
+    }
+
+    if (!this.suspendedWindows.has(id)) {
+      return isGeometryWritable(source);
+    }
+
+    return (
+      allowSettledMinimized &&
+      source.managed &&
+      !source.deleted &&
+      source.minimized &&
+      !source.fullScreen &&
+      source.maximizeMode === 0 &&
+      !source.move &&
+      source.moveable &&
+      !source.resize &&
+      source.resizeable &&
+      source.tile === null
+    );
   }
 
   private columnMembersAreExternalFullscreenTransferEligible(
@@ -7118,7 +7153,7 @@ export class RuntimeController {
         );
       }
 
-      return !this.suspendedWindows.has(id) && isGeometryWritable(source);
+      return this.stackTransferMemberIsEligible(id, source, context, true);
     });
   }
 
@@ -8436,6 +8471,7 @@ export class RuntimeController {
         : this.columnMembersAreStackTransferEligible(
             command.activeColumn,
             command.context,
+            command.activeId,
           )),
     );
 
@@ -8616,13 +8652,24 @@ export class RuntimeController {
     const extractedColumn = snapshot.columns.find(
       (column) => column.id === operation.newColumnId,
     );
-    const nativeStateIsCurrent =
-      operation.state === "maximize"
-        ? operation.activeWindow.maximizeMode === 0
-        : operation.external
-          ? operation.activeWindow.fullScreen &&
-            this.suspendedWindows.has(operation.activeId)
-          : !operation.activeWindow.fullScreen;
+    const activeStateIsCurrent =
+      operation.state === "fullscreen" && operation.external
+        ? operation.activeWindow.fullScreen &&
+          !operation.activeWindow.minimized &&
+          operation.activeWindow.maximizeMode === 0 &&
+          !operation.activeWindow.move &&
+          !operation.activeWindow.resize &&
+          operation.activeWindow.tile === null &&
+          this.suspendedWindows.has(operation.activeId) &&
+          !this.requestedSuspensions.has(operation.activeId) &&
+          !this.automaticFloatingWindows.has(operation.activeId) &&
+          !this.automaticallyFloats(operation.activeWindow)
+        : this.stackTransferMemberIsEligible(
+            operation.activeId,
+            operation.activeWindow,
+            operation.command.context,
+            false,
+          );
 
     return (
       this.started &&
@@ -8636,14 +8683,19 @@ export class RuntimeController {
       contextKey(liveContext) === operation.command.context.key &&
       String(this.workspace.activeWindow?.internalId) ===
         String(operation.activeId) &&
-      nativeStateIsCurrent &&
+      activeStateIsCurrent &&
       layoutContextSnapshotsEqual(snapshot, operation.after) &&
       snapshot.activeColumnId === operation.newColumnId &&
       Boolean(
         sourceColumn &&
         sourceColumn.windowIds.length ===
           operation.command.activeColumn.windowIds.length - 1 &&
-        !sourceColumn.windowIds.includes(operation.activeId),
+        !sourceColumn.windowIds.includes(operation.activeId) &&
+        this.columnMembersAreStackTransferEligible(
+          sourceColumn,
+          operation.command.context,
+          operation.activeId,
+        ),
       ) &&
       Boolean(
         extractedColumn &&

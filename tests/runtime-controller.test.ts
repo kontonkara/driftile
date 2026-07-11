@@ -1313,6 +1313,212 @@ describe("RuntimeController", () => {
     },
   );
 
+  it("extracts fullscreen past a settled minimized stack member", () => {
+    const setup = createStackedFullscreenFixture(1);
+    const minimized = setup.windows[0];
+    const visible = setup.windows[2];
+
+    if (!minimized || !visible) {
+      throw new Error("missing minimized fullscreen stack fixture");
+    }
+
+    setWindowState("minimized", minimized, true);
+    flushManualScheduler(setup.scheduler);
+    const minimizedFrame = { ...minimized.window.frameGeometry };
+    const minimizedWrites = minimized.writeCount;
+    const visibleFrame = { ...visible.window.frameGeometry };
+    const visibleWrites = visible.writeCount;
+
+    expect(setup.controller.toggleFullscreen()).toBe(true);
+
+    const fullscreen = setup.layout.snapshot(
+      outputId(setup.output.name),
+      desktopId(setup.desktop.id),
+    );
+    expect(fullscreen.columns[0]).toMatchObject({
+      id: "column:stack",
+      windowHeights: [
+        { kind: "auto", weight: 2 },
+        { kind: "auto", weight: 4 },
+      ],
+      windowIds: ["window-1", "window-3"],
+    });
+    expect(fullscreen.columns[1]).toEqual({
+      id: "column:window-2",
+      width: { kind: "proportion", value: 0.45 },
+      windowIds: ["window-2"],
+    });
+    expect(minimized.window.minimized).toBe(true);
+    expect(minimized.window.frameGeometry).toEqual(minimizedFrame);
+    expect(minimized.writeCount).toBe(minimizedWrites);
+    expect(visible.window.frameGeometry).not.toEqual(visibleFrame);
+    expect(visible.window.frameGeometry.height).toBeGreaterThan(
+      visibleFrame.height,
+    );
+    expect(visible.writeCount).toBeGreaterThan(visibleWrites);
+    expect(setup.fullscreen.fullScreen).toBe(true);
+    expect(setup.fullscreen.writeCount).toBe(1);
+
+    setup.controller.stop();
+  });
+
+  it("rejects stacked fullscreen while a passive non-minimized member owns geometry", () => {
+    const setup = createStackedFullscreenFixture(1);
+    const blocked = setup.windows[0];
+
+    if (!blocked) {
+      throw new Error("missing blocked fullscreen stack fixture");
+    }
+
+    blockWindowFocus(setup.controller, blocked, "maximized");
+    flushManualScheduler(setup.scheduler);
+    const beforeLayout = setup.layout.snapshot(
+      outputId(setup.output.name),
+      desktopId(setup.desktop.id),
+    );
+    const beforeFrames = setup.windows.map(({ window }) => ({
+      ...window.frameGeometry,
+    }));
+    const beforeWrites = setup.windows.map(({ writeCount }) => writeCount);
+
+    expect(setup.controller.toggleFullscreen()).toBe(false);
+    expect(setup.fullscreen.fullScreen).toBe(false);
+    expect(setup.fullscreen.writeCount).toBe(0);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(beforeLayout);
+    expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
+      beforeFrames,
+    );
+    expect(setup.windows.map(({ writeCount }) => writeCount)).toEqual(
+      beforeWrites,
+    );
+
+    setup.controller.stop();
+  });
+
+  it("rolls back fullscreen extraction when a minimized passive member resumes during reflow", () => {
+    const setup = createStackedFullscreenFixture(1);
+    const minimized = setup.windows[0];
+    const visible = setup.windows[2];
+
+    if (!minimized || !visible) {
+      throw new Error("missing reentrant fullscreen stack fixture");
+    }
+
+    setWindowState("minimized", minimized, true);
+    flushManualScheduler(setup.scheduler);
+    const beforeLayout = setup.layout.snapshot(
+      outputId(setup.output.name),
+      desktopId(setup.desktop.id),
+    );
+    const beforeFrames = setup.windows.map(({ window }) => ({
+      ...window.frameGeometry,
+    }));
+    const minimizedWrites = minimized.writeCount;
+    let resumedDuringReflow = false;
+    visible.setWriteBehavior((_frame, commit) => {
+      commit();
+
+      if (!resumedDuringReflow) {
+        resumedDuringReflow = true;
+        setWindowState("minimized", minimized, false);
+      }
+    });
+    const warning = console.warn;
+    console.warn = () => undefined;
+
+    try {
+      expect(setup.controller.toggleFullscreen()).toBe(false);
+    } finally {
+      console.warn = warning;
+      visible.setWriteBehavior(null);
+    }
+
+    expect(resumedDuringReflow).toBe(true);
+    expect(minimized.window.minimized).toBe(false);
+    expect(minimized.writeCount).toBe(minimizedWrites);
+    expect(setup.fullscreen.fullScreen).toBe(false);
+    expect(setup.fullscreen.writeCount).toBe(0);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(beforeLayout);
+    expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
+      beforeFrames,
+    );
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+
+    setup.controller.stop();
+  });
+
+  it("rejects fullscreen when the active member is minimized during reflow", () => {
+    const setup = createStackedFullscreenFixture(1);
+    const writer = setup.windows[2];
+
+    if (!writer) {
+      throw new Error("missing active-invalidation fullscreen fixture");
+    }
+
+    const beforeLayout = setup.layout.snapshot(
+      outputId(setup.output.name),
+      desktopId(setup.desktop.id),
+    );
+    const beforeFrames = setup.windows.map(({ window }) => ({
+      ...window.frameGeometry,
+    }));
+    let invalidatedDuringReflow = false;
+    writer.setWriteBehavior((_frame, commit) => {
+      commit();
+
+      if (!invalidatedDuringReflow) {
+        invalidatedDuringReflow = true;
+        setWindowState("minimized", setup.active, true);
+      }
+    });
+    const warning = console.warn;
+    console.warn = () => undefined;
+
+    try {
+      expect(setup.controller.toggleFullscreen()).toBe(false);
+    } finally {
+      console.warn = warning;
+      writer.setWriteBehavior(null);
+    }
+
+    expect(invalidatedDuringReflow).toBe(true);
+    expect(setup.active.window.minimized).toBe(true);
+    expect(setup.fullscreen.fullScreen).toBe(false);
+    expect(setup.fullscreen.writeCount).toBe(0);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(beforeLayout);
+
+    const operationState = setup.controller as unknown as {
+      readonly stackedNativeStateOperation: unknown;
+      readonly windowTransferOperation: unknown;
+    };
+    expect(operationState.windowTransferOperation).toBeNull();
+    expect(operationState.stackedNativeStateOperation).toBeNull();
+
+    setWindowState("minimized", setup.active, false);
+    flushManualScheduler(setup.scheduler);
+    expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
+      beforeFrames,
+    );
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+
+    setup.controller.stop();
+  });
+
   it("handles a synchronous fullscreen signal while extraction is active", () => {
     const setup = createStackedFullscreenFixture(1);
 
@@ -1822,6 +2028,62 @@ describe("RuntimeController", () => {
     setup.controller.stop();
   });
 
+  it("does not commit external fullscreen extraction when the active window becomes modal during reflow", () => {
+    const setup = createStackedFullscreenFixture(1);
+    const writer = setup.windows[2];
+
+    if (!writer) {
+      throw new Error("missing external fullscreen classification fixture");
+    }
+
+    const beforeFrames = setup.windows.map(({ window }) => ({
+      ...window.frameGeometry,
+    }));
+    let reclassifiedDuringReflow = false;
+    writer.setWriteBehavior((_frame, commit) => {
+      commit();
+
+      if (!reclassifiedDuringReflow) {
+        reclassifiedDuringReflow = true;
+        Object.defineProperty(setup.active.window, "modal", {
+          configurable: true,
+          value: true,
+        });
+        setup.active.modalChanged.emit();
+      }
+    });
+    const warning = console.warn;
+    console.warn = () => undefined;
+
+    try {
+      setup.fullscreen.externalCommit(true);
+    } finally {
+      console.warn = warning;
+      writer.setWriteBehavior(null);
+    }
+
+    expect(reclassifiedDuringReflow).toBe(true);
+    expect(setup.fullscreen.fullScreen).toBe(true);
+    expect(setup.active.window.modal).toBe(true);
+    expect(
+      testLayoutColumns(setup.controller, setup.output, setup.desktop),
+    ).toEqual([
+      { id: "column:stack", windowIds: ["window-1", "window-3"] },
+      { id: "column:right", windowIds: ["window-4"] },
+    ]);
+    expect(setup.active.window.frameGeometry).toEqual(beforeFrames[1]);
+    expect(setup.fullscreen.writeCount).toBe(0);
+
+    const operationState = setup.controller as unknown as {
+      readonly stackedNativeStateOperation: unknown;
+      readonly windowTransferOperation: unknown;
+    };
+    expect(operationState.windowTransferOperation).toBeNull();
+    expect(operationState.stackedNativeStateOperation).toBeNull();
+
+    setup.controller.stop();
+  });
+
   it("retries external fullscreen extraction after activation and startup barriers clear", () => {
     const setup = createStackedFullscreenFixture(1);
     const activeId = windowId("window-2");
@@ -1880,59 +2142,43 @@ describe("RuntimeController", () => {
     setup.controller.stop();
   });
 
-  it("does not consume external fullscreen attempts while a sibling is suspended", () => {
+  it("extracts an external fullscreen window past a settled minimized sibling", () => {
     const setup = createStackedFullscreenFixture(1);
     const activeId = windowId("window-2");
-    const sibling = setup.windows[0];
+    const minimized = setup.windows[0];
+    const visible = setup.windows[2];
     const state = setup.controller as unknown as {
       readonly pendingExternalFullscreenExtractions: ReadonlyMap<
         WindowId,
-        { readonly attempts: number }
+        unknown
       >;
     };
 
-    if (!sibling) {
-      throw new Error("missing blocked fullscreen sibling");
+    if (!minimized || !visible) {
+      throw new Error("missing minimized external fullscreen stack fixture");
     }
 
-    setWindowState("minimized", sibling, true);
+    setWindowState("minimized", minimized, true);
     flushManualScheduler(setup.scheduler);
     const activeFrame = { ...setup.active.window.frameGeometry };
     const activeWrites = setup.active.writeCount;
+    const minimizedFrame = { ...minimized.window.frameGeometry };
+    const minimizedWrites = minimized.writeCount;
+    const visibleFrame = { ...visible.window.frameGeometry };
+    const visibleWrites = visible.writeCount;
 
     setup.fullscreen.externalCommit(true);
-
-    expect(state.pendingExternalFullscreenExtractions.get(activeId)).toEqual(
-      expect.objectContaining({ attempts: 0 }),
-    );
-
-    for (let attempt = 0; attempt < 25; attempt += 1) {
-      setup.controller.reconcile();
-    }
-
-    expect(state.pendingExternalFullscreenExtractions.get(activeId)).toEqual(
-      expect.objectContaining({ attempts: 0 }),
-    );
-    expect(setup.active.window.frameGeometry).toEqual(activeFrame);
-    expect(setup.active.writeCount).toBe(activeWrites);
-    expect(
-      testLayoutColumns(setup.controller, setup.output, setup.desktop),
-    ).toEqual([
-      {
-        id: "column:stack",
-        windowIds: ["window-1", "window-2", "window-3"],
-      },
-      { id: "column:right", windowIds: ["window-4"] },
-    ]);
-
-    setWindowState("minimized", sibling, false);
-    flushManualScheduler(setup.scheduler);
 
     expect(state.pendingExternalFullscreenExtractions.has(activeId)).toBe(
       false,
     );
     expect(setup.active.window.frameGeometry).toEqual(activeFrame);
     expect(setup.active.writeCount).toBe(activeWrites);
+    expect(minimized.window.minimized).toBe(true);
+    expect(minimized.window.frameGeometry).toEqual(minimizedFrame);
+    expect(minimized.writeCount).toBe(minimizedWrites);
+    expect(visible.window.frameGeometry).not.toEqual(visibleFrame);
+    expect(visible.writeCount).toBeGreaterThan(visibleWrites);
     expect(
       testLayoutColumns(setup.controller, setup.output, setup.desktop),
     ).toEqual([
@@ -2266,6 +2512,55 @@ describe("RuntimeController", () => {
     },
   );
 
+  it("extracts native maximize past a settled minimized stack member", () => {
+    const setup = createStackedMaximizeFixture(1);
+    const visible = setup.windows[0];
+    const minimized = setup.windows[2];
+
+    if (!visible || !minimized) {
+      throw new Error("missing minimized maximize stack fixture");
+    }
+
+    setWindowState("minimized", minimized, true);
+    flushManualScheduler(setup.scheduler);
+    const minimizedFrame = { ...minimized.window.frameGeometry };
+    const minimizedWrites = minimized.writeCount;
+    const visibleFrame = { ...visible.window.frameGeometry };
+    const visibleWrites = visible.writeCount;
+
+    expect(setup.controller.maximizeWindowToEdges()).toBe(true);
+
+    const maximized = setup.layout.snapshot(
+      outputId(setup.output.name),
+      desktopId(setup.desktop.id),
+    );
+    expect(maximized.columns[0]).toMatchObject({
+      id: "column:stack",
+      windowHeights: [
+        { kind: "auto", weight: 2 },
+        { kind: "auto", weight: 4 },
+      ],
+      windowIds: ["window-1", "window-3"],
+    });
+    expect(maximized.columns[1]).toEqual({
+      id: "column:window-2",
+      width: { kind: "proportion", value: 0.45 },
+      windowIds: ["window-2"],
+    });
+    expect(minimized.window.minimized).toBe(true);
+    expect(minimized.window.frameGeometry).toEqual(minimizedFrame);
+    expect(minimized.writeCount).toBe(minimizedWrites);
+    expect(visible.window.frameGeometry).not.toEqual(visibleFrame);
+    expect(visible.window.frameGeometry.height).toBeGreaterThan(
+      visibleFrame.height,
+    );
+    expect(visible.writeCount).toBeGreaterThan(visibleWrites);
+    expect(setup.maximize.maximizeMode).toBe(3);
+    expect(setup.maximize.calls).toEqual([[true, true]]);
+
+    setup.controller.stop();
+  });
+
   it("accepts a synchronous maximize request before its deferred commit", () => {
     const setup = createStackedMaximizeFixture(1, { write: "defer" });
 
@@ -2451,10 +2746,23 @@ describe("RuntimeController", () => {
 
   it("extracts an app-requested maximize and keeps it separate after exit", () => {
     const setup = createStackedMaximizeFixture(1);
+    const minimized = setup.windows[2];
+
+    if (!minimized) {
+      throw new Error("missing app-requested maximize peer");
+    }
+
+    setWindowState("minimized", minimized, true);
+    flushManualScheduler(setup.scheduler);
+    const minimizedFrame = { ...minimized.window.frameGeometry };
+    const minimizedWrites = minimized.writeCount;
 
     setup.maximize.externalRequest(3);
     expect(setup.maximize.calls).toEqual([]);
     expect(setup.maximize.maximizeMode).toBe(3);
+    expect(minimized.window.minimized).toBe(true);
+    expect(minimized.window.frameGeometry).toEqual(minimizedFrame);
+    expect(minimized.writeCount).toBe(minimizedWrites);
     expect(
       testLayoutColumns(setup.controller, setup.output, setup.desktop),
     ).toEqual([
@@ -2474,6 +2782,11 @@ describe("RuntimeController", () => {
       { id: "column:right", windowIds: ["window-4"] },
     ]);
     expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+    expect(minimized.window.frameGeometry).toEqual(minimizedFrame);
+    expect(minimized.writeCount).toBe(minimizedWrites);
+
+    setWindowState("minimized", minimized, false);
+    flushManualScheduler(setup.scheduler);
 
     setup.controller.stop();
   });
