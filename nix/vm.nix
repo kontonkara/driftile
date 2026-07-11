@@ -5187,17 +5187,33 @@ let
           && wait_for_active "$title_b" \
           || return 1
 
+        if ! set_external_window_minimized "$title_a" true \
+          || ! wait_for_window_minimized_state "$title_a" true \
+          || ! wait_for_numbered_desktop_frames \
+            "$source_first_frame" \
+            "$source_second_frame" \
+            "$source_third_frame" \
+            "$destination_frame" \
+          || ! activate_window "$title_b" \
+          || ! wait_for_active "$title_b"; then
+          record_focus_state \
+            "minimized physical numbered desktop transfer setup failed"
+          return 1
+        fi
+
         if ! request_physical_shortcut desktop-ctrl-2 \
           || ! wait_for_current_desktop "$secondary_desktop_id" \
           || ! wait_for_window_desktop "$title_a" "$secondary_desktop_id" \
           || ! wait_for_window_desktop "$title_b" "$secondary_desktop_id" \
           || ! wait_for_window_desktop "$title_c" "$primary_desktop_id" \
           || ! wait_for_active "$title_b" \
-          || ! wait_for_numbered_desktop_frames \
-            "$target_first_frame" \
-            "$target_second_frame" \
-            "$source_third_frame" \
-            "$destination_frame" \
+          || ! wait_for_window_minimized_state "$title_a" true \
+          || [[ "$(window_frame "$title_a" 2>/dev/null || true)" \
+            != "$source_first_frame" ]] \
+          || ! wait_for_named_frames \
+            "$title_b" "$target_second_frame" \
+            "$title_c" "$source_third_frame" \
+            "$title_desktop_destination" "$destination_frame" \
           || ! wait_for_desktop_sequence \
             "$primary_desktop_id" \
             "$secondary_desktop_id" \
@@ -5206,7 +5222,23 @@ let
           return 1
         fi
         record_focus_state \
-          "physical Meta+Ctrl+2 preserved the whole stack on desktop 2"
+          "physical Meta+Ctrl+2 transferred the stack without writing its minimized member"
+
+        if ! set_external_window_minimized "$title_a" false \
+          || ! wait_for_window_minimized_state "$title_a" false \
+          || ! wait_for_numbered_desktop_frames \
+            "$target_first_frame" \
+            "$target_second_frame" \
+            "$source_third_frame" \
+            "$destination_frame" \
+          || ! activate_window "$title_b" \
+          || ! wait_for_active "$title_b"; then
+          record_focus_state \
+            "transferred minimized desktop member restoration failed"
+          return 1
+        fi
+        record_focus_state \
+          "restored minimized desktop member occupied its transferred logical slot"
 
         invoke_shortcut "driftile_move_column_to_desktop_1" \
           && wait_for_current_desktop "$primary_desktop_id" \

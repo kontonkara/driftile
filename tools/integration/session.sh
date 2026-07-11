@@ -2116,6 +2116,7 @@ verify_numbered_desktop_actions() {
   local third_title=$4
   local destination_title=$5
   local first_trailing_desktop_id=$6
+  local first_id
   local second_trailing_desktop_id=""
 
   numbered_desktop_shortcuts_are_registered || \
@@ -2158,17 +2159,32 @@ verify_numbered_desktop_actions() {
     fail "KWin could not restore $protocol stack focus before numbered transfer"
   wait_for_active "$second_title" || \
     fail "KWin did not restore $protocol stack focus before numbered transfer"
+  first_id=$(window_id "$first_title") || \
+    fail "KWin did not expose the passive $protocol stack member before numbered transfer"
+  set_external_window_minimized "$first_title" true || \
+    fail "KWin could not minimize the passive $protocol stack member before numbered transfer"
+  wait_for_state_and_geometries \
+    "$first_id" minimized true \
+    "$first_title" "16,16,616,336" \
+    "$second_title" "16,368,616,336" \
+    "$third_title" "648,16,616,688" || \
+    fail "Driftile changed the $protocol source stack while settling its minimized transfer member: $(describe_layout "$first_title" "$second_title" "$third_title")"
+  activate_window "$second_title" || \
+    fail "KWin could not restore active $protocol stack focus before minimized numbered transfer"
+  wait_for_active "$second_title" || \
+    fail "KWin did not restore active $protocol stack focus before minimized numbered transfer"
 
   invoke_shortcut "driftile_move_column_to_desktop_2" || \
     fail "KGlobalAccel could not move the $protocol column to numbered desktop 2"
   wait_for_current_desktop "$secondary_desktop_id" || \
     fail "Driftile did not follow the $protocol column to numbered desktop 2"
-  wait_for_geometries \
+  wait_for_state_and_geometries \
+    "$first_id" minimized true \
     "$destination_title" "16,16,616,688" \
-    "$first_title" "648,16,616,336" \
+    "$first_title" "16,16,616,336" \
     "$second_title" "648,368,616,336" \
     "$third_title" "648,16,616,688" || \
-    fail "Driftile did not preserve $protocol order, width, and height on numbered desktop 2: $(describe_layout "$destination_title" "$first_title" "$second_title" "$third_title")"
+    fail "Driftile did not transfer the $protocol column without writing its minimized member: $(describe_layout "$destination_title" "$first_title" "$second_title" "$third_title")"
   wait_for_window_desktop "$first_title" "$secondary_desktop_id" || \
     fail "KWin did not move the upper $protocol stack member to numbered desktop 2"
   wait_for_window_desktop "$second_title" "$secondary_desktop_id" || \
@@ -2177,6 +2193,20 @@ verify_numbered_desktop_actions() {
     fail "Driftile moved an unrelated $protocol column during numbered transfer"
   wait_for_active "$second_title" || \
     fail "Driftile changed $protocol focus during numbered column transfer"
+
+  set_external_window_minimized "$first_title" false || \
+    fail "KWin could not restore the transferred passive $protocol stack member"
+  wait_for_state_and_geometries \
+    "$first_id" minimized false \
+    "$destination_title" "16,16,616,688" \
+    "$first_title" "648,16,616,336" \
+    "$second_title" "648,368,616,336" \
+    "$third_title" "648,16,616,688" || \
+    fail "Driftile did not restore the passive $protocol member in its transferred logical slot: $(describe_layout "$destination_title" "$first_title" "$second_title" "$third_title")"
+  activate_window "$second_title" || \
+    fail "KWin could not restore active $protocol focus after the minimized numbered transfer"
+  wait_for_active "$second_title" || \
+    fail "KWin did not restore active $protocol focus after the minimized numbered transfer"
 
   invoke_shortcut "driftile_move_column_to_desktop_2" || \
     fail "KGlobalAccel could not invoke the same-target numbered $protocol transfer"
