@@ -6,7 +6,8 @@ Driftile uses one keyboard grammar and does not wrap at layout boundaries:
 - Adding `Ctrl` moves the focused window or column in that direction.
 - Adding `Shift` to a monitor direction targets another output.
 - `Home/End` focus the first or last column; adding `Ctrl` moves the active column to that edge.
-- `U/I` address the next and previous virtual desktop.
+- `U/I` address the next and previous virtual desktop; `Page Down/Page Up` are aliases.
+- Adding `Shift` reorders the currently selected desktop one global position down or up.
 - `1..9` address a virtual desktop directly; adding `Ctrl` moves the active column there.
 
 ## Delivery contract
@@ -18,7 +19,7 @@ Driftile uses one keyboard grammar and does not wrap at layout boundaries:
 | Column view          | Cycle `1/3`, `1/2`, and `2/3` widths in both directions; adjust by 10%; toggle full width; center | Available |
 | Advanced column view | Fill available width and center all fully visible columns                                         | Available |
 | Window height        | Adjust one window by 10%; reset to automatic; cycle `1/3`, `1/2`, and `2/3` presets               | Available |
-| Virtual desktops     | Focus adjacent or numbered desktops; transfer a tiled column or one active floating window        | Available |
+| Virtual desktops     | Focus adjacent or numbered desktops; reorder when KWin supports it; transfer a column or window   | Available |
 | Outputs              | Focus an adjacent output and transfer the whole active column                                     | Available |
 | Fullscreen           | Extract a regular stack member, then toggle native fullscreen through KWin                        | Available |
 | Native maximize      | Extract a regular stack member, then toggle it to work-area edges through KWin                    | Available |
@@ -65,6 +66,12 @@ Driftile extracts it into a singleton column immediately to the right. Leaving
 the native state keeps that column separate. A singleton or floating window
 keeps its existing layout ownership.
 
-Plasma exposes one global virtual-desktop list. Driftile keeps independent
-layout state per output and uses output-local desktop selection where KWin
-supports it, but it cannot create private per-output desktop lists.
+Plasma exposes one global virtual-desktop list, and KWin owns its reorder
+mechanism. Driftile can request a one-position move of the desktop currently
+selected on the active output. It never wraps; desktop IDs, per-output
+selections, and window memberships stay unchanged. The shared empty tail stays
+pinned at the end, so neither it nor another desktop can cross that boundary.
+If the active KWin scripting backend does not expose the mechanism, the request
+is a no-op.
+Driftile keeps independent layout state per output and uses output-local desktop
+selection where KWin supports it, but it cannot create private per-output lists.

@@ -25,6 +25,7 @@ The ownership rule is strict:
 - Settled recovery for output-list, geometry, scale, and work-area changes.
 - Deterministic multi-output capacity eviction with reachable waiting windows and automatic retry.
 - One shared trailing empty virtual desktop, with output-local selection where supported and conservative creation and removal.
+- Guarded one-step reordering of the currently selected desktop when the KWin scripting backend exposes it.
 - Single-window floating desktop transfer with exact frame and tiled-layout preservation.
 - Event-driven, incremental reconciliation; only visible context geometry is checked periodically, while a settled structural output change permits one bounded workspace resynchronization.
 
@@ -43,6 +44,7 @@ The ownership rule is strict:
 - Plasma 6.7 or newer is the primary target.
 - Wayland and XWayland windows share the same layout model.
 - The Plasma 6.7 X11 session uses a global-workspace fallback.
+- Desktop reordering is fail-closed on KWin X11 builds that do not expose the reorder method; all other X11 layout behavior remains available.
 
 ## KDE-owned
 
@@ -50,7 +52,7 @@ Driftile must integrate with, not duplicate:
 
 - Window creation, destruction, geometry application, focus state, stacking, and constraints.
 - Output discovery, scaling, work areas, configuration, and window transfer.
-- Virtual-desktop objects, per-screen selection, names, grid settings, and switching.
+- Virtual-desktop objects, ordering, per-screen selection, names, grid settings, and switching.
 - Window Rules and general application matching.
 - Global shortcut registration plus explicit, reversible conflict resolution.
 - Fullscreen, maximize, minimize, decoration mechanisms, and interactive move/resize behavior.
@@ -89,6 +91,9 @@ Driftile must integrate with, not duplicate:
 - Output transfer never changes an output's current desktop; moving members adopt the destination output's visible desktop when needed.
 - A whole-column transfer commits only after every KWin mechanism and both context layouts succeed; partial work is compensated exactly.
 - Desktop switching follows KWin's global or per-output virtual-desktop mode while layout ownership remains output-local.
+- Desktop reordering asks KWin to move the currently selected desktop by exactly one global position without wrapping. Desktop IDs, every output's selection, and every window's desktop memberships remain unchanged.
+- If the KWin scripting backend does not expose desktop reordering, the command is a no-op.
+- The shared trailing empty desktop is pinned at the end; it cannot move or be crossed by another desktop.
 - If the shared trailing desktop becomes occupied, Driftile appends another through KWin.
 - Driftile removes only a redundant, empty, unselected tail created by its current run; externally created desktops are never removed.
 - A manually floating window has no Driftile geometry owner and returns only through the explicit toggle.

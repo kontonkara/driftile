@@ -11,6 +11,8 @@ arrow keys are interchangeable unless noted otherwise.
 | Focus output in a direction                      | `Meta+Shift+H/J/K/L` or `Meta+Shift+Arrow`           |
 | Focus next or previous desktop                   | `Meta+U/I` or `Meta+Page Down/Page Up`               |
 | Focus desktop 1 through 9                        | `Meta+1..9`                                          |
+| Move selected desktop one position down          | `Meta+Shift+U` or `Meta+Shift+Page Down`             |
+| Move selected desktop one position up            | `Meta+Shift+I` or `Meta+Shift+Page Up`               |
 | Move column left or right                        | `Meta+Ctrl+H/L` or `Meta+Ctrl+Left/Right`            |
 | Move active column to first or last              | `Meta+Ctrl+Home/End`                                 |
 | Move window down or up in a column               | `Meta+Ctrl+J/K` or `Meta+Ctrl+Down/Up`               |
@@ -86,6 +88,13 @@ visible column. Visible-column centering changes only the viewport position.
 Default desktop and output transfers move the whole active column atomically.
 They preserve member order, column width, and the active member; a rejected
 KWin mechanism or geometry write leaves both contexts unchanged.
+
+Desktop reordering asks KWin to move the currently selected desktop by exactly
+one position in its global list. It does not wrap. Desktop IDs, per-output
+selections, and window memberships remain unchanged. The shared empty tail is
+pinned at the end, so neither it nor another desktop can cross it. On KWin X11
+builds without the reorder method, these actions leave the desktop list and all
+window state unchanged.
 
 When the floating layer is active, desktop transfer shortcuts move only the
 active floating window and preserve its frame. Modal and transient families

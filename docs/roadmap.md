@@ -55,6 +55,7 @@ The current runtime already:
 - Extracts a regular stack member into an immediate right singleton before native maximize-to-edges, preserves settled minimized peers without frame writes, and keeps the window separate after unmaximize.
 - Moves the whole active column between adjacent existing desktops with follow-focus, atomic two-context ownership, exact rollback, and no hidden-frame writes for settled minimized passive members; single-window transfer remains secondary.
 - Focuses desktops 1 through 9 directly and moves the whole active column there, clamping out-of-range targets to the shared empty tail.
+- Reorders the currently selected desktop one position when the KWin scripting backend supports it, without wrapping or changing desktop IDs, output selections, window memberships, or the pinned empty tail.
 - Moves one relation-free floating window between adjacent or numbered desktops without changing its frame or either tiled layout.
 - Moves the whole active column to an adjacent output with deterministic spatial routing, atomic visible-context reflow, and no layout geometry writes for settled minimized passive members; single-window transfer remains secondary.
 - Optionally removes application-window decorations independently of layout ownership while preserving pre-existing borderless state, reasserting owned policy, and restoring owned state on disable.
@@ -73,7 +74,6 @@ Complete the daily keyboard-driven workflow.
 
 - Manage every output and desktop independently.
 - Define structural command behavior for columns and stacks containing minimized members.
-- Add virtual-desktop reordering within KDE's global desktop model.
 - Define size-increment and aspect-ratio behavior, and expand live constraint-change coverage across toolkits.
 - Harden the existing topology recovery for rotation, rapid physical hot-plug sequences, and more hardware configurations.
 - Add the remaining essential layout settings.
