@@ -4262,6 +4262,90 @@ verify_vertical_reorder_past_minimized_peer() {
     fail "Driftile changed $protocol focus while reconstructing the minimized-peer reorder fixture"
 }
 
+verify_horizontal_extraction_past_minimized_peer() {
+  local protocol=$1
+  local first_title=$2
+  local active_title=$3
+  local minimized_title=$4
+  local unrelated_title=$5
+  local minimized_id
+
+  minimized_id=$(window_id "$minimized_title") || \
+    fail "KWin did not expose the passive $protocol stack member before horizontal extraction"
+  activate_window "$active_title" || \
+    fail "KWin could not focus the active $protocol stack member before horizontal extraction"
+  wait_for_active "$active_title" || \
+    fail "KWin did not focus the active $protocol stack member before horizontal extraction"
+  wait_for_geometries \
+    "$first_title" "16,16,616,219" \
+    "$active_title" "16,251,616,218" \
+    "$minimized_title" "16,485,616,219" \
+    "$unrelated_title" "648,16,616,688" || \
+    fail "Driftile did not preserve the $protocol stack before minimized-peer horizontal extraction: $(describe_layout "$first_title" "$active_title" "$minimized_title" "$unrelated_title")"
+
+  set_external_window_minimized "$minimized_title" true || \
+    fail "KWin could not externally minimize the passive $protocol stack member before horizontal extraction"
+  wait_for_state_and_geometries \
+    "$minimized_id" minimized true \
+    "$first_title" "16,16,616,219" \
+    "$active_title" "16,251,616,218" \
+    "$minimized_title" "16,485,616,219" \
+    "$unrelated_title" "648,16,616,688" || \
+    fail "Driftile changed the $protocol fixture while settling the horizontal extraction peer: $(describe_layout "$first_title" "$active_title" "$minimized_title" "$unrelated_title")"
+  activate_window "$active_title" || \
+    fail "KWin could not restore active $protocol stack focus before horizontal extraction"
+  wait_for_active "$active_title" || \
+    fail "KWin did not restore active $protocol stack focus before horizontal extraction"
+
+  invoke_shortcut "driftile_move_window_right" || \
+    fail "KGlobalAccel could not extract the active $protocol window past its minimized peer"
+  wait_for_geometries \
+    "$first_title" "16,16,616,336" \
+    "$active_title" "648,16,616,688" \
+    "$minimized_title" "16,485,616,219" \
+    "$unrelated_title" "1280,16,616,688" || \
+    fail "Driftile did not place the extracted $protocol window in the immediate-right singleton: $(describe_layout "$first_title" "$active_title" "$minimized_title" "$unrelated_title")"
+  wait_for_window_state "$minimized_id" minimized true || \
+    fail "Driftile restored the passive $protocol stack member during horizontal extraction"
+  [[ "$(window_frame_geometry "$minimized_title")" == "16,485,616,219" ]] || \
+    fail "Driftile wrote the minimized passive $protocol stack frame during horizontal extraction"
+  wait_for_active "$active_title" || \
+    fail "Driftile changed $protocol focus during minimized-peer horizontal extraction"
+
+  set_external_window_minimized "$minimized_title" false || \
+    fail "KWin could not restore the passive $protocol stack member after horizontal extraction"
+  wait_for_state_and_geometries \
+    "$minimized_id" minimized false \
+    "$first_title" "16,16,616,336" \
+    "$active_title" "648,16,616,688" \
+    "$minimized_title" "16,368,616,336" \
+    "$unrelated_title" "1280,16,616,688" || \
+    fail "Driftile did not safely restore the passive $protocol stack member after horizontal extraction: $(describe_layout "$first_title" "$active_title" "$minimized_title" "$unrelated_title")"
+  activate_window "$active_title" || \
+    fail "KWin could not restore extracted $protocol singleton focus before fixture reconstruction"
+  wait_for_active "$active_title" || \
+    fail "KWin did not restore extracted $protocol singleton focus before fixture reconstruction"
+
+  invoke_shortcut "driftile_move_window_left" || \
+    fail "KGlobalAccel could not return the extracted $protocol singleton to its source stack"
+  wait_for_geometries \
+    "$first_title" "16,16,616,219" \
+    "$active_title" "16,485,616,219" \
+    "$minimized_title" "16,251,616,218" \
+    "$unrelated_title" "648,16,616,688" || \
+    fail "Driftile did not append the extracted $protocol singleton while reconstructing the fixture: $(describe_layout "$first_title" "$active_title" "$minimized_title" "$unrelated_title")"
+  invoke_shortcut "driftile_move_window_up" || \
+    fail "KGlobalAccel could not reconstruct the $protocol stack after horizontal extraction"
+  wait_for_geometries \
+    "$first_title" "16,16,616,219" \
+    "$active_title" "16,251,616,218" \
+    "$minimized_title" "16,485,616,219" \
+    "$unrelated_title" "648,16,616,688" || \
+    fail "Driftile did not reconstruct the exact $protocol stack after horizontal extraction: $(describe_layout "$first_title" "$active_title" "$minimized_title" "$unrelated_title")"
+  wait_for_active "$active_title" || \
+    fail "Driftile changed $protocol focus while reconstructing the horizontal-extraction fixture"
+}
+
 verify_stacked_maximize_extraction() {
   local protocol=$1
   local trigger=$2
@@ -4987,6 +5071,13 @@ run_scenario() {
     "$third_title"
 
   verify_vertical_reorder_past_minimized_peer \
+    "$protocol" \
+    "$first_title" \
+    "$second_title" \
+    "$fourth_title" \
+    "$third_title"
+
+  verify_horizontal_extraction_past_minimized_peer \
     "$protocol" \
     "$first_title" \
     "$second_title" \

@@ -4602,6 +4602,216 @@ describe("RuntimeController", () => {
     expect(other.writeCount).toBe(otherWrites);
   });
 
+  it.each([
+    {
+      direction: "left",
+      expectedColumns: [
+        { id: "column:left", windowIds: ["left"] },
+        { id: "column:active", windowIds: ["active"] },
+        {
+          id: "column:source",
+          windowIds: ["minimized-top", "visible", "minimized-bottom"],
+        },
+        { id: "column:right", windowIds: ["right"] },
+      ],
+    },
+    {
+      direction: "right",
+      expectedColumns: [
+        { id: "column:left", windowIds: ["left"] },
+        {
+          id: "column:source",
+          windowIds: ["minimized-top", "visible", "minimized-bottom"],
+        },
+        { id: "column:active", windowIds: ["active"] },
+        { id: "column:right", windowIds: ["right"] },
+      ],
+    },
+  ] as const)(
+    "extracts a visible stack member immediately to the $direction past minimized peers",
+    ({ direction, expectedColumns }) => {
+      const setup = createHorizontalExtractionFixture();
+
+      for (const minimized of setup.minimized) {
+        setWindowState("minimized", minimized, true);
+      }
+
+      flushManualScheduler(setup.scheduler);
+      const minimizedFrames = setup.minimized.map(({ window }) => ({
+        ...window.frameGeometry,
+      }));
+      const minimizedWrites = setup.minimized.map(
+        ({ writeCount }) => writeCount,
+      );
+      const visibleFrame = { ...setup.visible.window.frameGeometry };
+      const visibleWrites = setup.visible.writeCount;
+
+      expect(
+        direction === "left"
+          ? setup.controller.moveWindowLeft()
+          : setup.controller.moveWindowRight(),
+      ).toBe(true);
+      expect(
+        testLayoutColumns(setup.controller, setup.output, setup.desktop),
+      ).toEqual(expectedColumns);
+      expect(
+        setup.layout.snapshot(
+          outputId(setup.output.name),
+          desktopId(setup.desktop.id),
+        ).activeColumnId,
+      ).toBe(columnId("column:active"));
+      expect(setup.minimized.map(({ window }) => window.frameGeometry)).toEqual(
+        minimizedFrames,
+      );
+      expect(setup.minimized.map(({ writeCount }) => writeCount)).toEqual(
+        minimizedWrites,
+      );
+      expect(setup.visible.window.frameGeometry).not.toEqual(visibleFrame);
+      expect(setup.visible.writeCount).toBeGreaterThan(visibleWrites);
+      expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+
+      const extractedVisibleFrame = {
+        ...setup.visible.window.frameGeometry,
+      };
+      const extractedVisibleWrites = setup.visible.writeCount;
+
+      for (const minimized of setup.minimized) {
+        setWindowState("minimized", minimized, false);
+      }
+
+      flushManualScheduler(setup.scheduler);
+      expect(
+        testLayoutColumns(setup.controller, setup.output, setup.desktop),
+      ).toEqual(expectedColumns);
+      const restoredY = [
+        setup.minimized[0],
+        setup.visible,
+        setup.minimized[1],
+      ].map((candidate) => candidate.window.frameGeometry.y);
+      expect(restoredY).toEqual([...restoredY].sort((a, b) => a - b));
+
+      for (const [index, minimized] of setup.minimized.entries()) {
+        expect(minimized.window.frameGeometry).not.toEqual(
+          minimizedFrames[index],
+        );
+        expect(minimized.writeCount).toBeGreaterThan(
+          minimizedWrites[index] ?? Number.POSITIVE_INFINITY,
+        );
+      }
+
+      expect(setup.visible.window.frameGeometry).toEqual(extractedVisibleFrame);
+      expect(setup.visible.writeCount).toBe(extractedVisibleWrites);
+      expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+    },
+  );
+
+  it.each([
+    "fullscreen",
+    "maximized",
+    "native tiled",
+    "restore settling",
+    "toggle unsettled",
+  ] as const)(
+    "rejects stack extraction past a passive source %s blocker",
+    (blocker) => {
+      const setup = createHorizontalExtractionFixture();
+      const blocked = setup.minimized[0];
+
+      blockWindowFocus(setup.controller, blocked, blocker);
+      flushManualScheduler(setup.scheduler);
+      const before = setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      );
+      const frames = setup.windows.map(({ window }) => ({
+        ...window.frameGeometry,
+      }));
+      const writes = setup.windows.map(({ writeCount }) => writeCount);
+
+      expect(setup.controller.moveWindowLeft()).toBe(false);
+      expect(
+        setup.layout.snapshot(
+          outputId(setup.output.name),
+          desktopId(setup.desktop.id),
+        ),
+      ).toEqual(before);
+      expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
+        frames,
+      );
+      expect(setup.windows.map(({ writeCount }) => writeCount)).toEqual(writes);
+      expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+    },
+  );
+
+  it("rolls back stack extraction when a minimized source peer resumes during reflow", () => {
+    const setup = createHorizontalExtractionFixture();
+    const resumed = setup.minimized[0];
+    const stillMinimized = setup.minimized[1];
+
+    for (const minimized of setup.minimized) {
+      setWindowState("minimized", minimized, true);
+    }
+
+    flushManualScheduler(setup.scheduler);
+    const before = setup.layout.snapshot(
+      outputId(setup.output.name),
+      desktopId(setup.desktop.id),
+    );
+    const frames = setup.windows.map(({ window }) => ({
+      ...window.frameGeometry,
+    }));
+    const minimizedWrites = setup.minimized.map(({ writeCount }) => writeCount);
+    let resumedDuringReflow = false;
+    setup.active.setWriteBehavior((_frame, commit) => {
+      commit();
+
+      if (!resumedDuringReflow) {
+        resumedDuringReflow = true;
+        setWindowState("minimized", resumed, false);
+      }
+    });
+    const warning = console.warn;
+    console.warn = () => undefined;
+
+    try {
+      expect(setup.controller.moveWindowRight()).toBe(false);
+    } finally {
+      console.warn = warning;
+      setup.active.setWriteBehavior(null);
+    }
+
+    expect(resumedDuringReflow).toBe(true);
+    expect(resumed.window.minimized).toBe(false);
+    expect(stillMinimized.window.minimized).toBe(true);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(before);
+    expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
+      frames,
+    );
+    expect(setup.minimized.map(({ writeCount }) => writeCount)).toEqual(
+      minimizedWrites,
+    );
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+
+    flushManualScheduler(setup.scheduler);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(before);
+    expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
+      frames,
+    );
+    expect(setup.minimized.map(({ writeCount }) => writeCount)).toEqual(
+      minimizedWrites,
+    );
+  });
+
   it("inserts a singleton into the nearest stack on the left", () => {
     const output = createOutput("DP-1", 0);
     const otherOutput = createOutput("HDMI-A-1", 1000);
@@ -20927,6 +21137,98 @@ function createVerticalReorderFixture(): VerticalReorderFixture {
     layout,
     output,
     scheduler,
+    windows,
+  };
+}
+
+interface HorizontalExtractionFixture {
+  readonly active: TrackedWindow;
+  readonly controller: RuntimeController;
+  readonly desktop: KWinVirtualDesktop;
+  readonly fixture: WorkspaceFixture;
+  readonly layout: LayoutEngine;
+  readonly minimized: readonly [TrackedWindow, TrackedWindow];
+  readonly output: KWinOutput;
+  readonly scheduler: ManualScheduler;
+  readonly visible: TrackedWindow;
+  readonly windows: readonly TrackedWindow[];
+}
+
+function createHorizontalExtractionFixture(): HorizontalExtractionFixture {
+  const output = createOutput("DP-1", 0);
+  const desktop = { id: "desktop-1" };
+  const left = createTrackedWindow("left", output, desktop);
+  const minimizedTop = createTrackedWindow("minimized-top", output, desktop);
+  const active = createTrackedWindow("active", output, desktop);
+  const visible = createTrackedWindow("visible", output, desktop);
+  const minimizedBottom = createTrackedWindow(
+    "minimized-bottom",
+    output,
+    desktop,
+  );
+  const right = createTrackedWindow("right", output, desktop);
+  const windows = [left, minimizedTop, active, visible, minimizedBottom, right];
+  const fixture = createWorkspace(
+    output,
+    desktop,
+    [output],
+    [desktop],
+    windows.map(({ window }) => window),
+  );
+  const scheduler = new ManualScheduler();
+  const controller = new RuntimeController(fixture.workspace, {
+    clientAreaOption: 2,
+    gap: 10,
+    schedule: scheduler.schedule,
+    scheduleResume: scheduler.schedule,
+  });
+
+  if (!controller.start()) {
+    throw new Error("could not start horizontal extraction fixture");
+  }
+
+  const layout = installTestLayout(
+    controller,
+    output,
+    desktop,
+    "column:source",
+    [
+      {
+        id: "column:left",
+        width: { kind: "fixed", value: 140 },
+        windowIds: ["left"],
+      },
+      {
+        id: "column:source",
+        width: { kind: "fixed", value: 240 },
+        windowHeights: [
+          { kind: "auto", weight: 2 },
+          { clientHeight: 240, kind: "fixed" },
+          { kind: "auto", weight: 4 },
+          { kind: "auto", weight: 5 },
+        ],
+        windowIds: ["minimized-top", "active", "visible", "minimized-bottom"],
+      },
+      {
+        id: "column:right",
+        width: { kind: "fixed", value: 140 },
+        windowIds: ["right"],
+      },
+    ],
+  );
+  fixture.workspace.activeWindow = active.window;
+  flushManualScheduler(scheduler);
+
+  return {
+    active,
+    controller,
+    desktop,
+    fixture,
+    layout,
+    minimized: [minimizedTop, minimizedBottom],
+    output,
+    scheduler,
+    visible,
     windows,
   };
 }

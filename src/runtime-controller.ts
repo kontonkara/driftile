@@ -3079,6 +3079,20 @@ export class RuntimeController {
       }
     }
 
+    const extractionRemainsEligible =
+      command.activeColumn.windowIds.length === 1
+        ? undefined
+        : (): boolean =>
+            this.columnMembersAreStackTransferEligible(
+              command.activeColumn,
+              command.context,
+              command.activeId,
+            );
+
+    if (extractionRemainsEligible && !extractionRemainsEligible()) {
+      return false;
+    }
+
     const newColumnId = this.extractedColumnId(command);
     const editState: { value: StackEditResult | null } = { value: null };
     const moved = this.applyActiveColumnMutation(
@@ -3095,6 +3109,7 @@ export class RuntimeController {
       () =>
         editState.value !== null &&
         this.layout.rollbackStackEdit(editState.value.rollback),
+      extractionRemainsEligible,
     );
     const edit = editState.value;
 
