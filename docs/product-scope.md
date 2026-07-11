@@ -79,6 +79,7 @@ Driftile must integrate with, not duplicate:
 - Focus traversal does not route around suspension reasons other than minimization; those blockers remain fail-closed.
 - Tiled and floating focus commit only after KWin accepts the selected live target; rejected or synchronously invalidated requests restore the prior focus and layout.
 - Vertical stack reorder may move a visible active member across settled minimized slots, changing logical order without writing hidden frames. Any other passive suspension blocker remains fail-closed.
+- Horizontal extraction may split a visible active member from a stack with settled minimized peers without writing hidden frames. Other passive source blockers remain fail-closed; singleton merge semantics are unchanged.
 - Stacked native-state extraction may pass settled minimized peers, retaining their exact slots without frame writes. Whole-column transfers and consume or expel edits remain unavailable when a required member is minimized; other hidden-member edit semantics remain MVP work.
 - Default desktop transfer follows the active tiled column without wrapping, preserving its members, order, width, and active member. On the floating layer, it transfers only the active relation-free window. The secondary action transfers only one active window.
 - Numbered desktop actions are one-based and clamp to the shared trailing empty desktop when their target exceeds the current global desktop count.

@@ -48,7 +48,7 @@ The current runtime already:
 - Focuses and reorders vertical stack members, contextually merges or extracts the active window, consumes or expels edge members, and inserts directly into the nearest stack across singleton columns.
 - Toggles the active normal window between tiled and floating states with anchored reinsertion and safe geometry ownership.
 - Switches focus between tiled and floating layers inside one output and desktop, remembers each layer, and navigates floating windows geometrically without changing frames.
-- Leaves minimization to KWin, preserves exact logical tiled slots and manually floating frames across restoration, skips minimized focus candidates, and reorders visible stack members across settled minimized slots without frame writes.
+- Leaves minimization to KWin, preserves exact logical tiled slots and manually floating frames across restoration, skips minimized focus candidates, and moves visible stack members across or out of settled minimized slots without frame writes.
 - Extracts a regular stack member into an immediate right singleton before native fullscreen, preserves settled minimized peers without frame writes, and keeps the window separate after leaving fullscreen.
 - Extracts a regular stack member into an immediate right singleton before native maximize-to-edges, preserves settled minimized peers without frame writes, and keeps the window separate after unmaximize.
 - Moves the whole active column between adjacent existing desktops with follow-focus, atomic two-context ownership, and exact rollback; single-window transfer remains secondary.

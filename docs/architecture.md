@@ -130,6 +130,7 @@ RuntimeState
 - Translate client minimum and maximum sizes to frame bounds by adding current nonnegative decoration extents before emitting geometry or resizing a column. Treat malformed bounds conservatively.
 - Preserve a tiled window's exact logical slot and a manually floating window's exact detached frame while KWin minimizes and restores it.
 - Allow a visible active member to reorder vertically across settled minimized slots without writing hidden frames; reject every other passive suspension blocker.
+- Allow horizontal extraction of a visible active member past settled minimized source peers without writing hidden frames; retain the existing constraint-validated singleton merge policy.
 - Permit stacked native-state extraction past settled minimized peers while retaining their slots without hidden frame writes. Reject whole-column transfers and consume or expel edits when a required member is minimized; other hidden-member edit semantics remain outside this slice.
 - A native fullscreen command extracts a member of a regular stack into an immediate right singleton before calling KWin. The new column copies the source width, and leaving fullscreen does not merge it back.
 - A native maximize command extracts a member of a regular stack into an immediate right singleton before calling KWin. The new column copies the source width, and unmaximize does not merge it back.
@@ -164,7 +165,7 @@ RuntimeState
 - Test reconcile output for minimality and idempotence.
 - Replay window lifecycle and output or desktop transfer sequences.
 - Verify window-state ownership, cancellation races, stable resumption, and slot reservation.
-- Verify minimized tiled-slot and manual-floating-frame retention, horizontal and vertical focus skipping, vertical reorder across minimized slots, layer switching, no-wrap boundaries, fail-closed non-minimize suspension blockers, reentrant rollback, and all-member transaction guards.
+- Verify minimized tiled-slot and manual-floating-frame retention, horizontal and vertical focus skipping, vertical reorder and horizontal extraction across minimized slots, layer switching, no-wrap boundaries, fail-closed non-minimize suspension blockers, reentrant rollback, and all-member transaction guards.
 - Verify shortcut and application-driven stacked fullscreen extraction past settled minimized peers, KWin-owned geometry, persistent singleton restoration, deferred Wayland commits, and exact rejection rollback.
 - Verify shortcut and application-driven stacked maximize extraction past settled minimized peers, KWin-owned geometry, persistent singleton restoration, and exact rejection rollback.
 - Verify adjacent and direct-edge active-column reorder, width adjustments, width presets, full width, available-width expansion, single-column and visible-group centering, signed viewport offsets, constraint bounds, and transactional rollback.

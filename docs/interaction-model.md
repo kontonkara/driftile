@@ -48,9 +48,9 @@ retains its exact frame. Directional, edge, and layer focus skip minimized
 slots and fully minimized columns without wrapping. Focus does not skip other
 suspension blockers. Native fullscreen and maximize may extract the active
 member past settled minimized peers without writing their frames. A visible
-active member may move vertically across settled minimized slots. Other
-all-member transactions remain unavailable while one is minimized; further
-hidden-member edit semantics remain MVP work.
+active member may move vertically across settled minimized slots or extract
+horizontally from that stack. Other all-member transactions remain unavailable
+while one is minimized; further hidden-member edit semantics remain MVP work.
 
 When a member of a regular vertical stack enters fullscreen or is maximized,
 Driftile extracts it into a singleton column immediately to the right. Leaving
