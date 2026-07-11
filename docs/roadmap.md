@@ -45,7 +45,7 @@ The current runtime already:
 - Decreases, increases, or resets the active whole column width with grouped constraints and transactional rollback.
 - Cycles preset widths in both directions, adjusts width by 10%, toggles full width, expands into available space within shared constraints, and centers either the active column or all fully visible columns.
 - Adjusts one window's height by 10%, resets it to weighted automatic sizing, and cycles `1/3`, `1/2`, and `2/3` presets with transactional stack reflow.
-- Focuses and reorders vertical stack members, contextually merges or extracts the active window, and inserts it directly into the nearest stack across singleton columns.
+- Focuses and reorders vertical stack members, contextually merges or extracts the active window, consumes or expels edge members, and inserts directly into the nearest stack across singleton columns.
 - Toggles the active normal window between tiled and floating states with anchored reinsertion and safe geometry ownership.
 - Switches focus between tiled and floating layers inside one output and desktop, remembers each layer, and navigates floating windows geometrically without changing frames.
 - Toggles the active KWin-managed window's native fullscreen state while the existing suspension path preserves its layout slot.

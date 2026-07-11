@@ -73,6 +73,7 @@ Driftile must integrate with, not duplicate:
 - Horizontal window movement merges a singleton into its neighbor or extracts a stacked member into a new adjacent singleton column.
 - Merge preserves the destination width; extraction copies the source width; both preserve focus and member order.
 - Direct insertion appends the active window to the nearest existing stack in its direction, skips singleton columns without wrapping, and preserves the target width.
+- Explicit consume appends the immediate right column's top member to the active column; explicit expel moves the active column's bottom member into a new right column. Focus remains in the active column.
 - Vertical focus and member reorder stop at stack boundaries without wrapping.
 - Default desktop transfer follows the active column without wrapping, preserving its members, order, width, and active member. The secondary action transfers only the active tiled window.
 - Default output transfer selects a deterministic adjacent output without wrapping, preserves the whole active column, and adopts the destination output's visible desktop. The secondary action transfers only the active tiled window.

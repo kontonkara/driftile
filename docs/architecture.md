@@ -38,6 +38,7 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Resizes the active whole column within grouped window constraints, cycles presets, toggles full width, uses available visible space up to those constraints, centers one or all fully visible columns, and retries waiting capacity after a successful shrink.
 - Adjusts one tiled window's height, resets it to weighted automatic sizing, and cycles height presets while reflowing its stack atomically.
 - Focuses vertical stack members; reorders, merges, and extracts them while preserving KWin focus.
+- Consumes the immediate right column's top member or expels the active column's bottom member through rollback-safe stack edits while retaining focus in the active column.
 - Resolves directional output neighbors from logical output geometry and transfers the active column atomically between contexts; secondary actions transfer one tiled window.
 - Applies desktop and output mechanisms member-by-member with the active member last, keeps it visible through cross-desktop output moves, commits both core contexts together, and compensates every owned field and frame on failure.
 - Maintains one shared trailing empty desktop through a guarded KWin lifecycle adapter.
@@ -107,6 +108,7 @@ RuntimeState
 - Keep at most one fixed or preset height in a stack. When another member is changed, preserve the remaining members' visible proportions as automatic weights and distribute the remaining work-area height among them.
 - Apply active-window height changes transactionally across the affected stack, preserving focus, order, width, and every prior height state on failure.
 - Apply stack edits with compare-and-swap model rollback and exact compensating frame writes after partial failure.
+- Reset a consumed or expelled member to automatic height, preserve surviving member order and height state, and keep the active column selected.
 - Resolve direct stack insertion inside the active context, skipping singleton columns without wrapping and preserving every intermediate column.
 - Transfer either the active column or one secondary window between existing desktops through an immutable two-context preview, then commit only after KWin accepts every desktop mechanism, focus, and destination geometry.
 - Transfer either the active column or one secondary window between outputs through the same preview, then commit only after KWin accepts every output and desktop mechanism plus both visible layouts.
@@ -162,6 +164,7 @@ RuntimeState
 - Verify context-local tiled/floating focus memory for manual and automatic floating windows without geometry writes.
 - Verify directional and edge floating focus, stacking tie-breaks, no-wrap boundaries, and exact frame immutability.
 - Verify vertical focus, member reorder, contextual merge and extraction, suspended members, and structural rollback.
+- Verify explicit top-member consume and bottom-member expel, focus clamping, width rules, height-state reset, boundaries, and rollback.
 - Verify the settled topology barrier, output replacement and removal, dock and silent work-area invalidations, sticky restore invalidation, and deterministic capacity recovery.
 - Verify independent contexts with native Wayland and XWayland windows on two virtual outputs and native X11 windows on the X11 backend.
 - Verify whole-column and secondary directional transfers, no-wrap boundaries, per-output desktop selection, focus preservation, and exact two-context compensation.

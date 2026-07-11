@@ -14,6 +14,8 @@ arrow keys are interchangeable unless noted otherwise.
 | Move active column to first or last              | `Meta+Ctrl+Home/End`                                 |
 | Move window down or up in a column               | `Meta+Ctrl+J/K` or `Meta+Ctrl+Down/Up`               |
 | Consume or expel the active window left or right | `Meta+[` or `Meta+]`                                 |
+| Consume the right column's top window            | `Meta+,`                                             |
+| Expel the active column's bottom window          | `Meta+.`                                             |
 | Move active column to next or previous desktop   | `Meta+Ctrl+U/I` or `Meta+Ctrl+Page Down/Page Up`     |
 | Move active column to another output             | `Meta+Ctrl+Shift+H/J/K/L` or `Meta+Ctrl+Shift+Arrow` |
 | Toggle floating                                  | `Meta+V`                                             |
@@ -54,6 +56,10 @@ visible column. Visible-column centering changes only the viewport position.
 Default desktop and output transfers move the whole active column atomically.
 They preserve member order, column width, and the active member; a rejected
 KWin mechanism or geometry write leaves both contexts unchanged.
+
+`Meta+,` appends the immediate right column's top window to the active column.
+`Meta+.` creates a new right column from the active column's bottom window.
+Both keep focus in the active column and stop at an unavailable boundary.
 
 Plasma already owns some listed sequences. During development, enable Driftile
 and claim the complete profile explicitly:
