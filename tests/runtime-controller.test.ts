@@ -5522,6 +5522,253 @@ describe("RuntimeController", () => {
     expect(fixture.activationCount).toBe(activationCount);
   });
 
+  it("inserts past settled minimized peers in both affected columns", () => {
+    const setup = createDirectInsertionFixture();
+    const minimized = [setup.targetPassive, setup.sourcePassive];
+
+    for (const candidate of minimized) {
+      setWindowState("minimized", candidate, true);
+    }
+
+    flushManualScheduler(setup.scheduler);
+    const minimizedFrames = minimized.map(({ window }) => ({
+      ...window.frameGeometry,
+    }));
+    const minimizedWrites = minimized.map(({ writeCount }) => writeCount);
+
+    expect(setup.controller.insertWindowIntoStackLeft()).toBe(true);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(directInsertionLayout());
+    expect(minimized.map(({ window }) => window.frameGeometry)).toEqual(
+      minimizedFrames,
+    );
+    expect(minimized.map(({ writeCount }) => writeCount)).toEqual(
+      minimizedWrites,
+    );
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+
+    for (const candidate of minimized) {
+      setWindowState("minimized", candidate, false);
+    }
+
+    flushManualScheduler(setup.scheduler);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(directInsertionLayout());
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+  });
+
+  it("inserts a visible member into a completely minimized target stack", () => {
+    const setup = createDirectInsertionFixture();
+    const minimized = [
+      setup.targetPassive,
+      setup.targetVisible,
+      setup.sourcePassive,
+    ];
+
+    for (const candidate of minimized) {
+      setWindowState("minimized", candidate, true);
+    }
+
+    flushManualScheduler(setup.scheduler);
+    const minimizedFrames = minimized.map(({ window }) => ({
+      ...window.frameGeometry,
+    }));
+    const minimizedWrites = minimized.map(({ writeCount }) => writeCount);
+
+    expect(setup.controller.insertWindowIntoStackLeft()).toBe(true);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(directInsertionLayout());
+    expect(minimized.map(({ window }) => window.frameGeometry)).toEqual(
+      minimizedFrames,
+    );
+    expect(minimized.map(({ writeCount }) => writeCount)).toEqual(
+      minimizedWrites,
+    );
+    expect(setup.active.window.frameGeometry).toMatchObject({ width: 380 });
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+  });
+
+  it("preserves an externally changed hidden frame during direct insertion", () => {
+    const setup = createDirectInsertionFixture();
+    const minimized = [setup.targetPassive, setup.sourcePassive];
+
+    for (const candidate of minimized) {
+      setWindowState("minimized", candidate, true);
+    }
+
+    flushManualScheduler(setup.scheduler);
+    const originalFrame = { ...setup.targetPassive.window.frameGeometry };
+    const externalFrame = { ...originalFrame, x: originalFrame.x + 23 };
+    const passiveWrites = setup.targetPassive.writeCount;
+    let frameChanged = false;
+    setup.active.setWriteBehavior((_frame, commit) => {
+      commit();
+
+      if (frameChanged) {
+        return;
+      }
+
+      frameChanged = true;
+      setup.targetPassive.setFrameGeometry(externalFrame);
+      setup.targetPassive.frameGeometryChanged.emit(originalFrame);
+    });
+
+    try {
+      expect(setup.controller.insertWindowIntoStackLeft()).toBe(true);
+    } finally {
+      setup.active.setWriteBehavior(null);
+    }
+
+    expect(frameChanged).toBe(true);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(directInsertionLayout());
+    expect(setup.targetPassive.window.frameGeometry).toEqual(externalFrame);
+    expect(setup.targetPassive.writeCount).toBe(passiveWrites);
+    expect(setup.targetPassive.window.minimized).toBe(true);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+
+    flushManualScheduler(setup.scheduler);
+    expect(setup.targetPassive.window.frameGeometry).toEqual(externalFrame);
+    expect(setup.targetPassive.writeCount).toBe(passiveWrites);
+  });
+
+  it.each(
+    (["source", "target"] as const).flatMap((location) =>
+      (
+        [
+          "fullscreen",
+          "maximized",
+          "native tiled",
+          "restore settling",
+          "toggle unsettled",
+        ] as const
+      ).map((blocker) => ({ blocker, location })),
+    ),
+  )(
+    "rejects direct insertion past a $blocker blocker in the $location column",
+    ({ blocker, location }) => {
+      const setup = createDirectInsertionFixture();
+      const blocked =
+        location === "source" ? setup.sourcePassive : setup.targetPassive;
+
+      blockWindowFocus(setup.controller, blocked, blocker);
+      flushManualScheduler(setup.scheduler);
+      const before = setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      );
+      const frames = setup.windows.map(({ window }) => ({
+        ...window.frameGeometry,
+      }));
+      const writes = setup.windows.map(({ writeCount }) => writeCount);
+
+      expect(setup.controller.insertWindowIntoStackLeft()).toBe(false);
+      expect(
+        setup.layout.snapshot(
+          outputId(setup.output.name),
+          desktopId(setup.desktop.id),
+        ),
+      ).toEqual(before);
+      expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
+        frames,
+      );
+      expect(setup.windows.map(({ writeCount }) => writeCount)).toEqual(writes);
+      expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+    },
+  );
+
+  it.each(["restore", "restore and minimize again"] as const)(
+    "rolls back direct insertion when a minimized participant performs %s during reflow",
+    (transition) => {
+      const setup = createDirectInsertionFixture();
+      const minimized = [setup.targetPassive, setup.sourcePassive];
+
+      for (const candidate of minimized) {
+        setWindowState("minimized", candidate, true);
+      }
+
+      flushManualScheduler(setup.scheduler);
+      const before = setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      );
+      const frames = setup.windows.map(({ window }) => ({
+        ...window.frameGeometry,
+      }));
+      const minimizedWrites = minimized.map(({ writeCount }) => writeCount);
+      let participantChanged = false;
+      setup.active.setWriteBehavior((_frame, commit) => {
+        commit();
+
+        if (participantChanged) {
+          return;
+        }
+
+        participantChanged = true;
+        setWindowState("minimized", setup.targetPassive, false);
+
+        if (transition === "restore and minimize again") {
+          setWindowState("minimized", setup.targetPassive, true);
+        }
+      });
+      const warning = console.warn;
+      console.warn = () => undefined;
+
+      try {
+        expect(setup.controller.insertWindowIntoStackLeft()).toBe(false);
+      } finally {
+        console.warn = warning;
+        setup.active.setWriteBehavior(null);
+      }
+
+      expect(participantChanged).toBe(true);
+      expect(
+        setup.layout.snapshot(
+          outputId(setup.output.name),
+          desktopId(setup.desktop.id),
+        ),
+      ).toEqual(before);
+      expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
+        frames,
+      );
+      expect(minimized.map(({ writeCount }) => writeCount)).toEqual(
+        minimizedWrites,
+      );
+      expect(setup.targetPassive.window.minimized).toBe(
+        transition === "restore and minimize again",
+      );
+      expect(setup.sourcePassive.window.minimized).toBe(true);
+      expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+
+      flushManualScheduler(setup.scheduler);
+      expect(
+        setup.layout.snapshot(
+          outputId(setup.output.name),
+          desktopId(setup.desktop.id),
+        ),
+      ).toEqual(before);
+      expect(setup.sourcePassive.window.frameGeometry).toEqual(frames[3]);
+      expect(setup.sourcePassive.writeCount).toBe(minimizedWrites[1]);
+      expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+    },
+  );
+
   it("does not wrap or insert when a direction has no eligible stack", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
@@ -5664,7 +5911,7 @@ describe("RuntimeController", () => {
     expect(fixture.workspace.activeWindow).toBe(active.window);
   });
 
-  it("checks constraints for suspended members of the destination stack", () => {
+  it("checks constraints for minimized members of the destination stack", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
     const destination = createTrackedWindow("window-1", output, desktop);
@@ -5700,7 +5947,7 @@ describe("RuntimeController", () => {
       },
     ]);
     fixture.workspace.activeWindow = active.window;
-    setWindowState("fullscreen", suspended, true);
+    setWindowState("minimized", suspended, true);
     scheduler.flush();
     const suspendedFrame = { ...suspended.window.frameGeometry };
     const suspendedWrites = suspended.writeCount;
@@ -25773,6 +26020,22 @@ interface VerticalReorderFixture {
   readonly windows: readonly TrackedWindow[];
 }
 
+interface DirectInsertionFixture {
+  readonly active: TrackedWindow;
+  readonly controller: RuntimeController;
+  readonly desktop: KWinVirtualDesktop;
+  readonly fixture: WorkspaceFixture;
+  readonly layout: LayoutEngine;
+  readonly otherDesktop: KWinVirtualDesktop;
+  readonly output: KWinOutput;
+  readonly scheduler: ManualScheduler;
+  readonly sourcePassive: TrackedWindow;
+  readonly sourceVisible: TrackedWindow;
+  readonly targetPassive: TrackedWindow;
+  readonly targetVisible: TrackedWindow;
+  readonly windows: readonly TrackedWindow[];
+}
+
 interface MinimizedConsumeFixture {
   readonly active: TrackedWindow;
   readonly controller: RuntimeController;
@@ -25806,6 +26069,150 @@ interface MinimizedExpelFixture {
   readonly scheduler: ManualScheduler;
   readonly trailing: TrackedWindow;
   readonly windows: readonly TrackedWindow[];
+}
+
+function createDirectInsertionFixture(): DirectInsertionFixture {
+  const output = createOutput("DP-1", 0);
+  const desktop = { id: "desktop-1" };
+  const otherDesktop = { id: "desktop-2" };
+  const targetPassive = createTrackedWindow("target-passive", output, desktop);
+  const targetVisible = createTrackedWindow("target-visible", output, desktop);
+  const skipped = createTrackedWindow("skipped", output, desktop);
+  const sourcePassive = createTrackedWindow("source-passive", output, desktop);
+  const active = createTrackedWindow("active", output, desktop);
+  const sourceVisible = createTrackedWindow("source-visible", output, desktop);
+  const trailing = createTrackedWindow("trailing", output, desktop);
+  const windows = [
+    targetPassive,
+    targetVisible,
+    skipped,
+    sourcePassive,
+    active,
+    sourceVisible,
+    trailing,
+  ];
+  const fixture = createWorkspace(
+    output,
+    desktop,
+    [output],
+    [desktop, otherDesktop],
+    windows.map(({ window }) => window),
+  );
+  const scheduler = new ManualScheduler();
+  const controller = new RuntimeController(fixture.workspace, {
+    clientAreaOption: 2,
+    gap: 10,
+    schedule: scheduler.schedule,
+    scheduleResume: scheduler.schedule,
+  });
+
+  if (!controller.start()) {
+    throw new Error("could not start direct insertion fixture");
+  }
+
+  const layout = installTestLayout(
+    controller,
+    output,
+    desktop,
+    "column:source",
+    [
+      {
+        id: "column:target",
+        width: { kind: "fixed", value: 380 },
+        windowHeights: [
+          { clientHeight: 200, kind: "fixed" },
+          { kind: "auto", weight: 3 },
+        ],
+        windowIds: ["target-passive", "target-visible"],
+      },
+      {
+        id: "column:skipped",
+        width: { kind: "fixed", value: 140 },
+        windowIds: ["skipped"],
+      },
+      {
+        id: "column:source",
+        width: { kind: "fixed", value: 420 },
+        windowHeights: [
+          { kind: "auto", weight: 2 },
+          { clientHeight: 220, kind: "fixed" },
+          { kind: "auto", weight: 4 },
+        ],
+        windowIds: ["source-passive", "active", "source-visible"],
+      },
+      {
+        id: "column:trailing",
+        width: { kind: "fixed", value: 360 },
+        windowIds: ["trailing"],
+      },
+    ],
+  );
+
+  if (
+    !layout.setViewportOffset(outputId(output.name), desktopId(desktop.id), -31)
+  ) {
+    throw new Error("could not set direct insertion viewport");
+  }
+
+  controller.reconcile();
+  fixture.workspace.activeWindow = active.window;
+  flushManualScheduler(scheduler);
+
+  return {
+    active,
+    controller,
+    desktop,
+    fixture,
+    layout,
+    otherDesktop,
+    output,
+    scheduler,
+    sourcePassive,
+    sourceVisible,
+    targetPassive,
+    targetVisible,
+    windows,
+  };
+}
+
+function directInsertionLayout(): unknown {
+  return {
+    activeColumnId: "column:target",
+    columns: [
+      {
+        id: "column:target",
+        width: { kind: "fixed", value: 380 },
+        windowHeights: [
+          { clientHeight: 200, kind: "fixed" },
+          { kind: "auto", weight: 3 },
+          { kind: "auto", weight: 1 },
+        ],
+        windowIds: ["target-passive", "target-visible", "active"],
+      },
+      {
+        id: "column:skipped",
+        width: { kind: "fixed", value: 140 },
+        windowIds: ["skipped"],
+      },
+      {
+        id: "column:source",
+        width: { kind: "fixed", value: 420 },
+        windowHeights: [
+          { kind: "auto", weight: 2 },
+          { kind: "auto", weight: 4 },
+        ],
+        windowIds: ["source-passive", "source-visible"],
+      },
+      {
+        id: "column:trailing",
+        width: { kind: "fixed", value: 360 },
+        windowIds: ["trailing"],
+      },
+    ],
+    desktopId: "desktop-1",
+    outputId: "DP-1",
+    viewportOffset: 0,
+  };
 }
 
 function createMinimizedExpelFixture(

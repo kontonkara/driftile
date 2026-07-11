@@ -2139,6 +2139,80 @@ let
         return 1
       }
 
+      wait_for_direct_stack_layout_with_retained_peers() {
+        local retained_first=$1
+        local retained_second=$2
+        local attempt
+        local current_first
+        local current_fourth
+        local current_layout
+        local current_second
+        local current_third
+        local fourth_height
+        local fourth_width
+        local fourth_x
+        local fourth_y
+        local matches
+        local previous_layout=""
+        local stable_samples=0
+        local third_height
+        local third_width
+        local third_x
+        local third_y
+
+        frame_is_valid "$retained_first" \
+          && frame_is_valid "$retained_second" \
+          || return 1
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          current_first=$(window_frame "$title_a" 2>/dev/null || true)
+          current_second=$(window_frame "$title_b" 2>/dev/null || true)
+          current_third=$(window_frame "$title_c" 2>/dev/null || true)
+          current_fourth=$(window_frame "$title_d" 2>/dev/null || true)
+          current_layout="$current_first|$current_second|$current_third|$current_fourth"
+          matches=false
+
+          if [[ "$current_first" == "$retained_first" \
+            && "$current_second" == "$retained_second" ]] \
+            && frame_is_valid "$current_third" \
+            && frame_is_valid "$current_fourth"; then
+            IFS=, read -r third_x third_y third_width third_height \
+              <<< "$current_third"
+            IFS=, read -r fourth_x fourth_y fourth_width fourth_height \
+              <<< "$current_fourth"
+
+            if ((fourth_width == direct_target_width \
+              && fourth_y > direct_reference_y \
+              && fourth_y + fourth_height \
+                == direct_reference_y + direct_reference_height \
+              && fourth_x + fourth_width < third_x \
+              && third_y == direct_reference_y \
+              && third_width == direct_reference_width \
+              && third_height == direct_reference_height)); then
+              matches=true
+            fi
+          fi
+
+          if [[ "$matches" == true && "$current_layout" == "$previous_layout" ]]; then
+            stable_samples=$((stable_samples + 1))
+          elif [[ "$matches" == true ]]; then
+            stable_samples=1
+          else
+            stable_samples=0
+          fi
+
+          previous_layout=$current_layout
+
+          if ((stable_samples >= 2)); then
+            return 0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
       wait_for_direct_stack_layout() {
         local attempt
         local current_first
@@ -5250,7 +5324,30 @@ let
           && activate_window "$title_d" \
           && wait_for_active "$title_d" \
           && wait_for_direct_insertion_source \
+          && set_external_window_minimized "$title_a" true \
+          && set_external_window_minimized "$title_b" true \
+          && wait_for_window_minimized_state "$title_a" true \
+          && wait_for_window_minimized_state "$title_b" true \
+          && direct_retained_frame=$(window_frame "$title_a") \
+          && direct_second_retained_frame=$(window_frame "$title_b") \
+          && frame_is_valid "$direct_retained_frame" \
+          && frame_is_valid "$direct_second_retained_frame" \
+          && activate_window "$title_d" \
+          && wait_for_active "$title_d" \
           && invoke_shortcut "driftile_insert_window_into_stack_left" \
+          && wait_for_direct_stack_layout_with_retained_peers \
+            "$direct_retained_frame" \
+            "$direct_second_retained_frame" \
+          && wait_for_window_minimized_state "$title_a" true \
+          && wait_for_window_minimized_state "$title_b" true \
+          && [[ "$(window_frame "$title_a" 2>/dev/null || true)" \
+            == "$direct_retained_frame" ]] \
+          && [[ "$(window_frame "$title_b" 2>/dev/null || true)" \
+            == "$direct_second_retained_frame" ]] \
+          && set_external_window_minimized "$title_a" false \
+          && set_external_window_minimized "$title_b" false \
+          && wait_for_window_minimized_state "$title_a" false \
+          && wait_for_window_minimized_state "$title_b" false \
           && wait_for_direct_stack_layout \
           && wait_for_active "$title_d" \
           && invoke_shortcut "driftile_insert_window_into_stack_right" \
@@ -5261,7 +5358,8 @@ let
             "$direct_fourth_frame" \
           && wait_for_active "$title_d"; then
           direct_insert_verified=true
-          record_focus_state "window D inserted directly into the left stack"
+          record_focus_state \
+            "Firefox D inserted while minimized Konsole peers retained their frames"
         else
           record_focus_state "direct stack insertion failed"
         fi

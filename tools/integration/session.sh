@@ -5787,6 +5787,10 @@ run_scenario() {
   local second_floating_baseline
   local third_baseline
   local fourth_pid
+  local direct_passive_frame
+  local direct_passive_id
+  local direct_second_passive_frame
+  local direct_second_passive_id
   local state_window_id
   local title
   local reserved_frame="16,16,616,688"
@@ -6145,16 +6149,63 @@ run_scenario() {
     "$third_title" \
     "$fourth_title"
 
+  direct_passive_id=$(window_id "$first_title") || \
+    fail "KWin did not expose the passive direct-insertion $protocol peer"
+  direct_second_passive_id=$(window_id "$second_title") || \
+    fail "KWin did not expose the second passive direct-insertion $protocol peer"
+  set_external_window_minimized "$first_title" true || \
+    fail "KWin could not minimize the passive direct-insertion $protocol peer"
+  set_external_window_minimized "$second_title" true || \
+    fail "KWin could not minimize the second passive direct-insertion $protocol peer"
+  wait_for_state_and_geometries \
+    "$direct_passive_id" minimized true \
+    "$first_title" "-600,16,616,336" \
+    "$second_title" "-600,368,616,336" \
+    "$third_title" "32,16,616,688" \
+    "$fourth_title" "664,16,616,688" || \
+    fail "Driftile changed the $protocol fixture while settling the direct-insertion peer: $(describe_layout "$first_title" "$second_title" "$third_title" "$fourth_title")"
+  wait_for_window_state "$direct_second_passive_id" minimized true || \
+    fail "Driftile restored the second passive direct-insertion $protocol peer"
+  direct_passive_frame=$(capture_stable_geometry "$first_title") || \
+    fail "the passive direct-insertion $protocol peer frame did not stabilize"
+  direct_second_passive_frame=$(capture_stable_geometry "$second_title") || \
+    fail "the second passive direct-insertion $protocol peer frame did not stabilize"
+  activate_window "$fourth_title" || \
+    fail "KWin could not refocus the active direct-insertion $protocol window"
+  wait_for_active "$fourth_title" || \
+    fail "KWin did not refocus the active direct-insertion $protocol window"
+
   invoke_shortcut "driftile_insert_window_into_stack_left" || \
     fail "KGlobalAccel could not invoke the insert-into-stack-left shortcut"
-  wait_for_geometries \
+  wait_for_state_and_geometries \
+    "$direct_passive_id" minimized true \
+    "$first_title" "$direct_passive_frame" \
+    "$second_title" "$direct_second_passive_frame" \
+    "$third_title" "648,16,616,688" \
+    "$fourth_title" "16,485,616,219" || \
+    fail "Driftile did not skip the singleton and append the active $protocol window to the left stack: $(describe_layout "$first_title" "$second_title" "$third_title" "$fourth_title")"
+  wait_for_window_state "$direct_second_passive_id" minimized true || \
+    fail "Driftile restored the second passive $protocol peer during direct insertion"
+  wait_for_active "$fourth_title" || \
+    fail "Driftile changed $protocol focus after direct stack insertion"
+
+  set_external_window_minimized "$first_title" false || \
+    fail "KWin could not restore the passive direct-insertion $protocol peer"
+  set_external_window_minimized "$second_title" false || \
+    fail "KWin could not restore the second passive direct-insertion $protocol peer"
+  wait_for_state_and_geometries \
+    "$direct_passive_id" minimized false \
     "$first_title" "16,16,616,219" \
     "$second_title" "16,251,616,218" \
     "$third_title" "648,16,616,688" \
     "$fourth_title" "16,485,616,219" || \
-    fail "Driftile did not skip the singleton and append the active $protocol window to the left stack: $(describe_layout "$first_title" "$second_title" "$third_title" "$fourth_title")"
+    fail "Driftile did not restore the passive direct-insertion $protocol peer: $(describe_layout "$first_title" "$second_title" "$third_title" "$fourth_title")"
+  wait_for_window_state "$direct_second_passive_id" minimized false || \
+    fail "Driftile did not restore the second passive direct-insertion $protocol peer"
+  activate_window "$fourth_title" || \
+    fail "KWin could not refocus the inserted $protocol window after peer restoration"
   wait_for_active "$fourth_title" || \
-    fail "Driftile changed $protocol focus after direct stack insertion"
+    fail "KWin did not refocus the inserted $protocol window after peer restoration"
 
   invoke_shortcut "driftile_insert_window_into_stack_right" || \
     fail "KGlobalAccel could not invoke the insert-into-stack-right shortcut"
