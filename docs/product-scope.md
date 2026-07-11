@@ -83,6 +83,7 @@ Driftile must integrate with, not duplicate:
 - Driftile removes only a redundant, empty, unselected tail created by its current run; externally created desktops are never removed.
 - A manually floating window has no Driftile geometry owner and returns only through the explicit toggle.
 - Retiling a manually floating window restores a surviving anchored slot when possible and captures the latest floating frame as the next safe restore baseline.
+- Layer focus remains inside the active `(output, desktop)` context, restores the last active tiled or floating window, and never changes layout geometry or ownership.
 - An automatically layout-excluded window has no layout slot, manual-floating anchor, waiting entry, suspension, or retry state. Driftile layout commands are no-ops while it is active.
 - A managed window that becomes modal or transient leaves its layout without a geometry write or stale baseline restore. It may be admitted again after the role clears.
 - Unrelated window order, widths, and viewport offsets remain stable.

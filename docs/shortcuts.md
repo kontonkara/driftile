@@ -17,6 +17,7 @@ arrow keys are interchangeable unless noted otherwise.
 | Move active column to next or previous desktop   | `Meta+Ctrl+U/I` or `Meta+Ctrl+Page Down/Page Up`     |
 | Move active column to another output             | `Meta+Ctrl+Shift+H/J/K/L` or `Meta+Ctrl+Shift+Arrow` |
 | Toggle floating                                  | `Meta+V`                                             |
+| Switch focus between tiled and floating layers   | `Meta+Shift+V`                                       |
 | Toggle native fullscreen                         | `Meta+Shift+F`                                       |
 | Toggle native maximize to work-area edges        | `Meta+M`                                             |
 | Cycle preset column width forward or back        | `Meta+R` or `Meta+Shift+R`                           |
@@ -30,9 +31,13 @@ arrow keys are interchangeable unless noted otherwise.
 | Reset active window height to automatic          | `Meta+Ctrl+R`                                        |
 
 Single-window desktop/output transfer, direct insertion into the nearest
-existing stack, resetting a column width, and reverse window-height preset
-cycling are registered without default keys. Assign them in **System Settings >
-Keyboard > Shortcuts** if needed.
+existing stack, one-way tiled/floating layer focus, resetting a column width,
+and reverse window-height preset cycling are registered without default keys.
+Assign them in **System Settings > Keyboard > Shortcuts** if needed.
+
+Layer focus is context-local and changes only KWin focus. It restores the last
+focused window in the other layer and does nothing unless both layers contain a
+window.
 
 Window-height presets are `1/3`, `1/2`, and `2/3` of the work area, with gaps
 included in the calculation.

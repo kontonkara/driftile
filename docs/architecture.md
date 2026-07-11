@@ -43,6 +43,7 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Maintains one shared trailing empty desktop through a guarded KWin lifecycle adapter.
 - Focuses adjacent desktops on the active output, with a global fallback and no wrapping.
 - Releases explicitly floating windows from geometry ownership and restores their anchored layout slots on return.
+- Remembers the last tiled and floating focus per context and switches layers without changing layout state.
 - Requests native fullscreen only through KWin; suspension retains the layout slot and resumes ownership after the restored frame settles.
 - Requests native maximize-to-edges only through KWin and uses the same suspension and stable-restore path.
 - Keeps dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows outside layout ownership in state separate from manual floating.
@@ -81,6 +82,8 @@ RuntimeState
   waitingWindowIds: Map<ContextKey, Set<WindowId>>
   floatingWindows: Map<WindowId, { placement, sourceContextKey }>
   automaticFloatingWindows: Set<WindowId>
+  lastTiledFocus: Map<ContextKey, WindowId>
+  lastFloatingFocus: Map<ContextKey, WindowId>
   windowBorderRestore: Map<WindowId, { noBorder, clientFrame, frame }>
   requestedSuspensions: Map<WindowId, Set<StateReason>>
   suspendedWindows: Set<WindowId>
@@ -109,6 +112,7 @@ RuntimeState
 - Transfer either the active column or one secondary window between outputs through the same preview, then commit only after KWin accepts every output and desktop mechanism plus both visible layouts.
 - Preserve whole-column member order and width, apply the active member last, and restore all owned mechanisms and frames if any batch step fails.
 - Apply floating transitions from immutable previews, commit ownership only after every geometry request succeeds, and defer later context writes until asynchronous frames settle.
+- Switch focus between tiled and floating layers only when both have a live member in the active context; validate remembered targets lazily and leave layout state untouched.
 - Leave dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows outside layout ownership. Driftile layout commands are no-ops when one is active.
 - If a managed window gains an automatic-floating role, remove its slot without writing a stale restore frame or disturbing unrelated order, widths, or viewport state. Re-admit it through normal admission after the role clears.
 - Allow horizontal overflow and viewport scrolling when KWin reports one output.
@@ -154,6 +158,7 @@ RuntimeState
 - Verify per-window 10% height changes, automatic reset, forward and reverse height presets, weighted stack redistribution, singleton sizing, and exact rollback.
 - Verify decorated client-to-frame constraint translation and conservative handling of malformed bounds.
 - Verify automatic KWin ownership, command no-ops, late role changes, manual-floating separation, and safe readmission.
+- Verify context-local tiled/floating focus memory for manual and automatic floating windows without geometry writes.
 - Verify vertical focus, member reorder, contextual merge and extraction, suspended members, and structural rollback.
 - Verify the settled topology barrier, output replacement and removal, dock and silent work-area invalidations, sticky restore invalidation, and deterministic capacity recovery.
 - Verify independent contexts with native Wayland and XWayland windows on two virtual outputs and native X11 windows on the X11 backend.
