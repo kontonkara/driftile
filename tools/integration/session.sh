@@ -337,6 +337,174 @@ wait_for_active() {
   return 1
 }
 
+wait_for_shortcut_focus() {
+  local shortcut=$1
+  local window_title=$2
+  local attempt
+  local sample
+
+  for ((attempt = 0; attempt < wait_attempts / 5; attempt += 1)); do
+    if window_is_active "$window_title"; then
+      return 0
+    fi
+
+    invoke_shortcut "$shortcut" || return 1
+
+    for ((sample = 0; sample < 5; sample += 1)); do
+      sleep 0.05
+
+      if window_is_active "$window_title"; then
+        return 0
+      fi
+    done
+  done
+
+  return 1
+}
+
+geometries_match_once() {
+  local current
+
+  (($# > 0 && $# % 2 == 0)) || return 1
+
+  while (($# > 0)); do
+    current=$(window_frame_geometry "$1" 2>/dev/null || true)
+    [[ "$current" == "$2" ]] || return 1
+    shift 2
+  done
+}
+
+wait_for_shortcut_geometries() {
+  local shortcut=$1
+  local attempt
+  local sample
+  local -a geometry_pairs
+
+  shift
+  geometry_pairs=("$@")
+
+  for ((attempt = 0; attempt < wait_attempts / 5; attempt += 1)); do
+    if geometries_match_once "${geometry_pairs[@]}"; then
+      wait_for_geometries "${geometry_pairs[@]}"
+      return
+    fi
+
+    invoke_shortcut "$shortcut" || return 1
+
+    for ((sample = 0; sample < 5; sample += 1)); do
+      sleep 0.05
+
+      if geometries_match_once "${geometry_pairs[@]}"; then
+        wait_for_geometries "${geometry_pairs[@]}"
+        return
+      fi
+    done
+  done
+
+  return 1
+}
+
+describe_active_windows() {
+  local title
+  local active=()
+
+  for title in "$@"; do
+    if window_is_active "$title" 2>/dev/null; then
+      active+=("$title")
+    fi
+  done
+
+  if ((${#active[@]} == 0)); then
+    printf '%s' none
+  else
+    local IFS=,
+    printf '%s' "${active[*]}"
+  fi
+}
+
+frames_match_leftward_reveal() {
+  local before_first=$1
+  local after_first=$2
+  local before_second=$3
+  local after_second=$4
+  local before_target=$5
+  local after_target=$6
+  local output_width=$7
+  local before_first_x before_first_y before_first_width before_first_height
+  local after_first_x after_first_y after_first_width after_first_height
+  local before_second_x before_second_y before_second_width before_second_height
+  local after_second_x after_second_y after_second_width after_second_height
+  local before_target_x before_target_y before_target_width before_target_height
+  local after_target_x after_target_y after_target_width after_target_height
+  local delta
+  local frame
+
+  for frame in \
+    "$before_first" "$after_first" \
+    "$before_second" "$after_second" \
+    "$before_target" "$after_target"; do
+    [[ "$frame" =~ ^-?[0-9]+,-?[0-9]+,[0-9]+,[0-9]+$ ]] || return 1
+  done
+
+  IFS=, read -r before_first_x before_first_y before_first_width before_first_height <<< "$before_first"
+  IFS=, read -r after_first_x after_first_y after_first_width after_first_height <<< "$after_first"
+  IFS=, read -r before_second_x before_second_y before_second_width before_second_height <<< "$before_second"
+  IFS=, read -r after_second_x after_second_y after_second_width after_second_height <<< "$after_second"
+  IFS=, read -r before_target_x before_target_y before_target_width before_target_height <<< "$before_target"
+  IFS=, read -r after_target_x after_target_y after_target_width after_target_height <<< "$after_target"
+  delta=$((after_first_x - before_first_x))
+
+  ((
+    delta < 0 &&
+      after_second_x - before_second_x == delta &&
+      after_target_x - before_target_x == delta &&
+      before_first_y == after_first_y &&
+      before_first_width == after_first_width &&
+      before_first_height == after_first_height &&
+      before_second_y == after_second_y &&
+      before_second_width == after_second_width &&
+      before_second_height == after_second_height &&
+      before_target_y == after_target_y &&
+      before_target_width == after_target_width &&
+      before_target_height == after_target_height &&
+      before_target_x + before_target_width > output_width &&
+      after_target_x >= 0 &&
+      after_target_x + after_target_width <= output_width
+  ))
+}
+
+frames_share_horizontal_translation() {
+  local before
+  local after
+  local before_x before_y before_width before_height
+  local after_x after_y after_width after_height
+  local delta=""
+
+  (($# > 0 && $# % 2 == 0)) || return 1
+
+  while (($# > 0)); do
+    before=$1
+    after=$2
+    shift 2
+
+    [[ "$before" =~ ^-?[0-9]+,-?[0-9]+,[0-9]+,[0-9]+$ ]] || return 1
+    [[ "$after" =~ ^-?[0-9]+,-?[0-9]+,[0-9]+,[0-9]+$ ]] || return 1
+    IFS=, read -r before_x before_y before_width before_height <<< "$before"
+    IFS=, read -r after_x after_y after_width after_height <<< "$after"
+
+    if [[ -z "$delta" ]]; then
+      delta=$((after_x - before_x))
+    fi
+
+    ((
+      after_x - before_x == delta &&
+        before_y == after_y &&
+        before_width == after_width &&
+        before_height == after_height
+    )) || return 1
+  done
+}
+
 window_frame_geometry() {
   local window_title=$1
   local id
@@ -446,6 +614,30 @@ window_state_matches() {
           (.data[0][$state].data == $expected)
         end
       ' >/dev/null
+}
+
+wait_for_window_state() {
+  local id=$1
+  local state=$2
+  local expected=$3
+  local attempt
+  local stable_samples=0
+
+  for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
+    if window_state_matches "$id" "$state" "$expected" 2>/dev/null; then
+      ((stable_samples += 1))
+
+      if ((stable_samples >= stable_sample_count)); then
+        return 0
+      fi
+    else
+      stable_samples=0
+    fi
+
+    sleep 0.05
+  done
+
+  return 1
 }
 
 window_is_on_output_side() {
@@ -2997,7 +3189,7 @@ verify_floating_navigation_step() {
   invoke_shortcut "$shortcut" || \
     fail "KGlobalAccel could not invoke $shortcut for floating $protocol navigation"
   wait_for_active "$expected_title" || \
-    fail "Driftile did not focus $expected_title after $shortcut"
+    fail "Driftile did not focus $expected_title after $shortcut: active=$(describe_active_windows "${window_titles[@]}")"
   wait_for_geometries "${geometry_pairs[@]}" || \
     fail "Driftile changed floating $protocol frames after $shortcut: $(describe_layout "${window_titles[@]}")"
 }
@@ -3046,12 +3238,29 @@ verify_manual_floating_navigation() {
       fail "KGlobalAccel could not float $title for navigation acceptance"
     wait_for_active "$title" || \
       fail "Driftile changed focus while floating $title for navigation acceptance"
+    capture_stable_geometry "$title" >/dev/null || \
+      fail "the floating-navigation $protocol window $title did not settle after detaching"
   done
+
+  activate_window "$active_tiled_title" || \
+    fail "KWin could not focus a tiled $protocol window before floating-navigation readiness"
+  wait_for_active "$active_tiled_title" || \
+    fail "KWin did not focus a tiled $protocol window before floating-navigation readiness"
+  wait_for_shortcut_focus \
+    "driftile_focus_floating" "${navigation_titles[2]}" || \
+    fail "the last floating-navigation $protocol window did not become focus-ready"
 
   arrange_floating_navigation_windows || \
     fail "KWin could not arrange the $protocol floating-navigation windows"
   wait_for_geometries "${geometry_pairs[@]}" || \
     fail "KWin did not place the $protocol floating-navigation windows: $(describe_layout "${navigation_titles[@]}")"
+  activate_window "$active_tiled_title" || \
+    fail "KWin could not recheck tiled focus after arranging floating $protocol windows"
+  wait_for_active "$active_tiled_title" || \
+    fail "KWin did not recheck tiled focus after arranging floating $protocol windows"
+  wait_for_shortcut_focus \
+    "driftile_focus_floating" "${navigation_titles[2]}" || \
+    fail "the arranged floating-navigation $protocol windows did not become focus-ready"
   activate_window "${navigation_titles[1]}" || \
     fail "KWin could not focus the center $protocol floating window"
   wait_for_active "${navigation_titles[1]}" || \
@@ -3562,6 +3771,419 @@ verify_consume_and_expel_window() {
     fail "Driftile changed the $protocol layout while expelling from a singleton: $(describe_layout "$first_title" "$second_title" "$third_title" "$fourth_title")"
   wait_for_active "$fourth_title" || \
     fail "Driftile changed $protocol focus while expelling from a singleton"
+}
+
+set_external_window_minimized() {
+  local title=$1
+  local expected=$2
+  local id
+
+  id=$(window_id "$title") || return 1
+
+  if ! window_state_matches "$id" minimized "$expected" 2>/dev/null; then
+    run_window_action "$title" minimize || return 1
+  fi
+
+  wait_for_window_state "$id" minimized "$expected"
+}
+
+verify_minimized_slot_navigation() {
+  local protocol=$1
+  local first_title=$2
+  local middle_title=$3
+  local last_title=$4
+  local middle_column_title=$5
+  local edge_title="driftile-minimized-edge-${protocol}"
+  local edge_pid
+  local baseline_edge
+  local baseline_first
+  local baseline_last
+  local baseline_middle
+  local baseline_middle_column
+  local boundary_edge
+  local boundary_first
+  local boundary_last
+  local boundary_middle
+  local boundary_middle_column
+  local before_end_edge
+  local before_end_first
+  local before_end_last
+  local before_end_middle
+  local before_end_middle_column
+  local restored_edge
+  local restored_first
+  local restored_last
+  local restored_middle
+  local restored_middle_column
+
+  start_client "$protocol" "$edge_title" true
+  edge_pid=${client_pids[${#client_pids[@]}-1]}
+  capture_stable_geometry "$edge_title" >/dev/null || \
+    fail "the minimized-slot $protocol edge window did not stabilize"
+  activate_window "$first_title" || \
+    fail "KWin could not focus the first $protocol stack member before minimized-slot navigation"
+  wait_for_active "$first_title" || \
+    fail "KWin did not focus the first $protocol stack member before minimized-slot navigation"
+
+  baseline_first=$(capture_stable_geometry "$first_title") || \
+    fail "the first $protocol minimized-slot baseline did not stabilize"
+  baseline_middle=$(capture_stable_geometry "$middle_title") || \
+    fail "the middle $protocol minimized-slot baseline did not stabilize"
+  baseline_last=$(capture_stable_geometry "$last_title") || \
+    fail "the last $protocol minimized-slot baseline did not stabilize"
+  baseline_middle_column=$(capture_stable_geometry "$middle_column_title") || \
+    fail "the middle-column $protocol minimized-slot baseline did not stabilize"
+  baseline_edge=$(capture_stable_geometry "$edge_title") || \
+    fail "the edge $protocol minimized-slot baseline did not stabilize"
+  wait_for_geometries \
+    "$first_title" "$baseline_first" \
+    "$middle_title" "$baseline_middle" \
+    "$last_title" "$baseline_last" \
+    "$middle_column_title" "$baseline_middle_column" \
+    "$edge_title" "$baseline_edge" || \
+    fail "the $protocol minimized-slot fixture did not stabilize: $(describe_layout "$first_title" "$middle_title" "$last_title" "$middle_column_title" "$edge_title")"
+
+  set_external_window_minimized "$middle_title" true || \
+    fail "KWin could not externally minimize the middle $protocol stack member"
+  wait_for_geometries \
+    "$first_title" "$baseline_first" \
+    "$middle_title" "$baseline_middle" \
+    "$last_title" "$baseline_last" \
+    "$middle_column_title" "$baseline_middle_column" \
+    "$edge_title" "$baseline_edge" || \
+    fail "Driftile changed the $protocol fixture while minimizing its middle stack member: $(describe_layout "$first_title" "$middle_title" "$last_title" "$middle_column_title" "$edge_title")"
+  set_external_window_minimized "$middle_column_title" true || \
+    fail "KWin could not externally minimize the middle $protocol singleton column"
+  wait_for_geometries \
+    "$first_title" "$baseline_first" \
+    "$middle_title" "$baseline_middle" \
+    "$last_title" "$baseline_last" \
+    "$middle_column_title" "$baseline_middle_column" \
+    "$edge_title" "$baseline_edge" || \
+    fail "Driftile changed the $protocol fixture while minimizing its middle singleton column: $(describe_layout "$first_title" "$middle_title" "$last_title" "$middle_column_title" "$edge_title")"
+  activate_window "$first_title" || \
+    fail "KWin could not restore $protocol focus before skipping minimized slots"
+  wait_for_active "$first_title" || \
+    fail "KWin did not restore $protocol focus before skipping minimized slots"
+
+  invoke_shortcut "driftile_focus_window_down" || \
+    fail "KGlobalAccel could not focus down across the minimized $protocol stack member"
+  wait_for_active "$last_title" || \
+    fail "Driftile did not skip the minimized middle $protocol stack member"
+  boundary_first=$(capture_stable_geometry "$first_title")
+  boundary_middle=$(capture_stable_geometry "$middle_title")
+  boundary_last=$(capture_stable_geometry "$last_title")
+  boundary_middle_column=$(capture_stable_geometry "$middle_column_title")
+  boundary_edge=$(capture_stable_geometry "$edge_title")
+  invoke_shortcut "driftile_focus_window_down" || \
+    fail "KGlobalAccel could not recheck the lower $protocol focus boundary"
+  wait_for_active "$last_title" || \
+    fail "Driftile wrapped vertical $protocol focus past the last visible stack member"
+  wait_for_geometries \
+    "$first_title" "$boundary_first" \
+    "$middle_title" "$boundary_middle" \
+    "$last_title" "$boundary_last" \
+    "$middle_column_title" "$boundary_middle_column" \
+    "$edge_title" "$boundary_edge" || \
+    fail "Driftile changed the $protocol layout at the minimized vertical boundary"
+
+  invoke_shortcut "driftile_focus_window_up" || \
+    fail "KGlobalAccel could not focus up across the minimized $protocol stack member"
+  wait_for_active "$first_title" || \
+    fail "Driftile did not skip the minimized middle $protocol stack member while focusing up"
+  wait_for_geometries \
+    "$first_title" "$boundary_first" \
+    "$middle_title" "$boundary_middle" \
+    "$last_title" "$boundary_last" \
+    "$middle_column_title" "$boundary_middle_column" \
+    "$edge_title" "$boundary_edge" || \
+    fail "Driftile changed the $protocol layout while focusing up across a minimized slot"
+  invoke_shortcut "driftile_focus_window_up" || \
+    fail "KGlobalAccel could not recheck the upper $protocol focus boundary"
+  wait_for_active "$first_title" || \
+    fail "Driftile wrapped vertical $protocol focus past the first visible stack member"
+  wait_for_geometries \
+    "$first_title" "$boundary_first" \
+    "$middle_title" "$boundary_middle" \
+    "$last_title" "$boundary_last" \
+    "$middle_column_title" "$boundary_middle_column" \
+    "$edge_title" "$boundary_edge" || \
+    fail "Driftile changed the $protocol layout at the upper minimized boundary"
+  invoke_shortcut "driftile_focus_window_down" || \
+    fail "KGlobalAccel could not restore the lower visible $protocol stack member"
+  wait_for_active "$last_title" || \
+    fail "Driftile did not restore the lower visible $protocol stack member"
+  wait_for_geometries \
+    "$first_title" "$boundary_first" \
+    "$middle_title" "$boundary_middle" \
+    "$last_title" "$boundary_last" \
+    "$middle_column_title" "$boundary_middle_column" \
+    "$edge_title" "$boundary_edge" || \
+    fail "Driftile changed the $protocol layout while restoring lower focus"
+
+  invoke_shortcut "driftile_focus_column_right" || \
+    fail "KGlobalAccel could not focus right across the minimized $protocol singleton column"
+  wait_for_active "$edge_title" || \
+    fail "Driftile did not skip the fully minimized middle $protocol column"
+  boundary_first=$(capture_stable_geometry "$first_title")
+  boundary_middle=$(capture_stable_geometry "$middle_title")
+  boundary_last=$(capture_stable_geometry "$last_title")
+  boundary_middle_column=$(capture_stable_geometry "$middle_column_title")
+  boundary_edge=$(capture_stable_geometry "$edge_title")
+  invoke_shortcut "driftile_focus_column_right" || \
+    fail "KGlobalAccel could not recheck the right $protocol focus boundary"
+  wait_for_active "$edge_title" || \
+    fail "Driftile wrapped horizontal $protocol focus past the last visible column"
+  wait_for_geometries \
+    "$first_title" "$boundary_first" \
+    "$middle_title" "$boundary_middle" \
+    "$last_title" "$boundary_last" \
+    "$middle_column_title" "$boundary_middle_column" \
+    "$edge_title" "$boundary_edge" || \
+    fail "Driftile changed the $protocol layout at the minimized horizontal boundary"
+
+  invoke_shortcut "driftile_focus_column_left" || \
+    fail "KGlobalAccel could not focus left across the minimized $protocol singleton column"
+  wait_for_active "$first_title" || \
+    fail "Driftile did not enter the $protocol stack at its first visible member across the minimized column"
+  boundary_first=$(capture_stable_geometry "$first_title")
+  boundary_middle=$(capture_stable_geometry "$middle_title")
+  boundary_last=$(capture_stable_geometry "$last_title")
+  boundary_middle_column=$(capture_stable_geometry "$middle_column_title")
+  boundary_edge=$(capture_stable_geometry "$edge_title")
+  invoke_shortcut "driftile_focus_column_left" || \
+    fail "KGlobalAccel could not recheck the left $protocol focus boundary"
+  wait_for_active "$first_title" || \
+    fail "Driftile wrapped horizontal $protocol focus past the first visible column"
+  wait_for_geometries \
+    "$first_title" "$boundary_first" \
+    "$middle_title" "$boundary_middle" \
+    "$last_title" "$boundary_last" \
+    "$middle_column_title" "$boundary_middle_column" \
+    "$edge_title" "$boundary_edge" || \
+    fail "Driftile changed the $protocol layout at the left minimized boundary"
+  invoke_shortcut "driftile_focus_window_down" || \
+    fail "KGlobalAccel could not focus down after entering the $protocol stack"
+  wait_for_active "$last_title" || \
+    fail "Driftile did not skip the minimized middle $protocol stack member after horizontal entry"
+  wait_for_geometries \
+    "$first_title" "$boundary_first" \
+    "$middle_title" "$boundary_middle" \
+    "$last_title" "$boundary_last" \
+    "$middle_column_title" "$boundary_middle_column" \
+    "$edge_title" "$boundary_edge" || \
+    fail "Driftile changed the $protocol layout while confirming stack order after horizontal entry"
+
+  set_external_window_minimized "$middle_column_title" false || \
+    fail "KWin could not restore the middle $protocol singleton column"
+  set_external_window_minimized "$edge_title" true || \
+    fail "KWin could not externally minimize the last $protocol singleton column"
+  wait_for_geometries \
+    "$first_title" "$boundary_first" \
+    "$middle_title" "$boundary_middle" \
+    "$last_title" "$boundary_last" \
+    "$edge_title" "$boundary_edge" || \
+    fail "the $protocol fixture did not settle before the minimized End check"
+  capture_stable_geometry "$middle_column_title" >/dev/null || \
+    fail "the restored middle $protocol column did not settle before the minimized End check"
+  activate_window "$last_title" || \
+    fail "KWin could not check the restored $protocol column before the minimized End check"
+  wait_for_active "$last_title" || \
+    fail "KWin did not check the restored $protocol column before the minimized End check"
+  wait_for_shortcut_focus \
+    "driftile_focus_column_right" "$middle_column_title" || \
+    fail "the restored middle $protocol column did not become focus-ready"
+  activate_window "$last_title" || \
+    fail "KWin could not focus the $protocol stack before the minimized End check"
+  wait_for_active "$last_title" || \
+    fail "KWin did not focus the $protocol stack before the minimized End check"
+  capture_stable_geometry "$last_title" >/dev/null || \
+    fail "the $protocol stack did not settle before the minimized End check"
+  before_end_first=$(capture_stable_geometry "$first_title") || \
+    fail "the first $protocol stack frame did not settle before the minimized End check"
+  before_end_middle=$(capture_stable_geometry "$middle_title") || \
+    fail "the minimized middle $protocol stack frame did not settle before the minimized End check"
+  before_end_last=$(capture_stable_geometry "$last_title") || \
+    fail "the last $protocol stack frame did not settle before the minimized End check"
+  before_end_middle_column=$(capture_stable_geometry "$middle_column_title") || \
+    fail "the target $protocol column frame did not settle before the minimized End check"
+  before_end_edge=$(capture_stable_geometry "$edge_title") || \
+    fail "the minimized edge $protocol frame did not settle before the minimized End check"
+  invoke_shortcut "driftile_focus_column_last" || \
+    fail "KGlobalAccel could not focus the last visible $protocol column"
+  wait_for_active "$middle_column_title" || \
+    fail "Driftile did not skip the minimized last $protocol column for End"
+  boundary_first=$(capture_stable_geometry "$first_title")
+  boundary_middle=$(capture_stable_geometry "$middle_title")
+  boundary_last=$(capture_stable_geometry "$last_title")
+  boundary_middle_column=$(capture_stable_geometry "$middle_column_title")
+  boundary_edge=$(capture_stable_geometry "$edge_title")
+  frames_match_leftward_reveal \
+    "$before_end_first" "$boundary_first" \
+    "$before_end_last" "$boundary_last" \
+    "$before_end_middle_column" "$boundary_middle_column" \
+    1280 || \
+    fail "Driftile did not reveal the off-screen $protocol End target with one common viewport translation"
+  [[ "$boundary_middle" == "$before_end_middle" ]] || \
+    fail "Driftile wrote the minimized middle $protocol stack frame during End reveal"
+  [[ "$boundary_edge" == "$before_end_edge" ]] || \
+    fail "Driftile wrote the minimized edge $protocol frame during End reveal"
+  activate_window "$middle_column_title" || \
+    fail "KWin could not refocus the effective $protocol End boundary"
+  wait_for_active "$middle_column_title" || \
+    fail "KWin did not refocus the effective $protocol End boundary"
+  invoke_shortcut "driftile_focus_column_last" || \
+    fail "KGlobalAccel could not recheck the effective $protocol End boundary"
+  wait_for_active "$middle_column_title" || \
+    fail "Driftile wrapped End past the last visible $protocol column"
+  wait_for_geometries \
+    "$first_title" "$boundary_first" \
+    "$middle_title" "$boundary_middle" \
+    "$last_title" "$boundary_last" \
+    "$middle_column_title" "$boundary_middle_column" \
+    "$edge_title" "$boundary_edge" || \
+    fail "Driftile changed the $protocol layout at the effective End boundary"
+
+  set_external_window_minimized "$first_title" true || \
+    fail "KWin could not minimize the first $protocol stack member"
+  set_external_window_minimized "$last_title" true || \
+    fail "KWin could not minimize the last $protocol stack member"
+  set_external_window_minimized "$edge_title" false || \
+    fail "KWin could not restore the last $protocol singleton column"
+  wait_for_geometries \
+    "$first_title" "$boundary_first" \
+    "$middle_title" "$boundary_middle" \
+    "$last_title" "$boundary_last" \
+    "$middle_column_title" "$boundary_middle_column" || \
+    fail "the $protocol fixture did not preserve existing frames before the minimized Home check: $(describe_layout "$first_title" "$middle_title" "$last_title" "$middle_column_title" "$edge_title")"
+  capture_stable_geometry "$edge_title" >/dev/null || \
+    fail "the restored $protocol edge did not settle before the minimized Home check"
+  activate_window "$middle_column_title" || \
+    fail "KWin could not check the restored $protocol edge before the minimized Home check"
+  wait_for_active "$middle_column_title" || \
+    fail "KWin did not check the restored $protocol edge before the minimized Home check"
+  wait_for_shortcut_focus "driftile_focus_column_left" "$edge_title" || \
+    fail "the restored $protocol edge did not become focus-ready"
+  activate_window "$middle_column_title" || \
+    fail "KWin could not focus the last $protocol column before the minimized Home check"
+  wait_for_active "$middle_column_title" || \
+    fail "KWin did not focus the last $protocol column before the minimized Home check"
+  capture_stable_geometry "$middle_column_title" >/dev/null || \
+    fail "the last $protocol column did not settle before the minimized Home check"
+  invoke_shortcut "driftile_focus_column_first" || \
+    fail "KGlobalAccel could not focus the first visible $protocol column"
+  wait_for_active "$edge_title" || \
+    fail "Driftile did not skip the fully minimized first $protocol stack for Home"
+  boundary_first=$(capture_stable_geometry "$first_title")
+  boundary_middle=$(capture_stable_geometry "$middle_title")
+  boundary_last=$(capture_stable_geometry "$last_title")
+  boundary_middle_column=$(capture_stable_geometry "$middle_column_title")
+  boundary_edge=$(capture_stable_geometry "$edge_title")
+  activate_window "$edge_title" || \
+    fail "KWin could not refocus the effective $protocol Home boundary"
+  wait_for_active "$edge_title" || \
+    fail "KWin did not refocus the effective $protocol Home boundary"
+  invoke_shortcut "driftile_focus_column_first" || \
+    fail "KGlobalAccel could not recheck the effective $protocol Home boundary"
+  wait_for_active "$edge_title" || \
+    fail "Driftile wrapped Home past the first visible $protocol column: active=$(describe_active_windows "$first_title" "$middle_title" "$last_title" "$middle_column_title" "$edge_title")"
+  wait_for_geometries \
+    "$first_title" "$boundary_first" \
+    "$middle_title" "$boundary_middle" \
+    "$last_title" "$boundary_last" \
+    "$middle_column_title" "$boundary_middle_column" \
+    "$edge_title" "$boundary_edge" || \
+    fail "Driftile changed the $protocol layout at the effective Home boundary"
+
+  set_external_window_minimized "$first_title" false || \
+    fail "KWin could not restore the first $protocol stack member"
+  set_external_window_minimized "$middle_title" false || \
+    fail "KWin could not restore the middle $protocol stack member"
+  set_external_window_minimized "$last_title" false || \
+    fail "KWin could not restore the last $protocol stack member"
+  capture_stable_geometry "$first_title" >/dev/null || \
+    fail "the restored first $protocol stack member did not settle"
+  capture_stable_geometry "$middle_title" >/dev/null || \
+    fail "the restored middle $protocol stack member did not settle"
+  capture_stable_geometry "$last_title" >/dev/null || \
+    fail "the restored last $protocol stack member did not settle"
+  activate_window "$first_title" || \
+    fail "KWin could not focus the restored first $protocol stack member"
+  wait_for_active "$first_title" || \
+    fail "KWin did not focus the restored first $protocol stack member"
+  restored_first=$(capture_stable_geometry "$first_title") || \
+    fail "the restored first $protocol frame did not stabilize"
+  restored_middle=$(capture_stable_geometry "$middle_title") || \
+    fail "the restored middle $protocol frame did not stabilize"
+  restored_last=$(capture_stable_geometry "$last_title") || \
+    fail "the restored last $protocol frame did not stabilize"
+  restored_middle_column=$(capture_stable_geometry "$middle_column_title") || \
+    fail "the restored middle-column $protocol frame did not stabilize"
+  restored_edge=$(capture_stable_geometry "$edge_title") || \
+    fail "the restored edge $protocol frame did not stabilize"
+  frames_share_horizontal_translation \
+    "$baseline_first" "$restored_first" \
+    "$baseline_middle" "$restored_middle" \
+    "$baseline_last" "$restored_last" \
+    "$baseline_middle_column" "$restored_middle_column" \
+    "$baseline_edge" "$restored_edge" || \
+    fail "Driftile did not restore the exact $protocol minimized-slot sizes and relative positions"
+
+  invoke_shortcut "driftile_focus_window_down" || \
+    fail "KGlobalAccel could not focus the restored middle $protocol stack member"
+  wait_for_active "$middle_title" || \
+    fail "Driftile did not restore the middle $protocol stack order"
+  invoke_shortcut "driftile_focus_window_down" || \
+    fail "KGlobalAccel could not focus the restored last $protocol stack member"
+  wait_for_active "$last_title" || \
+    fail "Driftile did not restore the last $protocol stack order"
+  invoke_shortcut "driftile_focus_column_right" || \
+    fail "KGlobalAccel could not focus the restored edge $protocol column"
+  wait_for_active "$edge_title" || \
+    fail "Driftile did not restore the edge $protocol singleton slot"
+  invoke_shortcut "driftile_focus_column_right" || \
+    fail "KGlobalAccel could not focus the restored middle $protocol column"
+  wait_for_active "$middle_column_title" || \
+    fail "Driftile did not restore the middle $protocol singleton slot"
+  invoke_shortcut "driftile_focus_column_first" || \
+    fail "KGlobalAccel could not return to the restored first $protocol column"
+  wait_for_active "$first_title" || \
+    fail "Driftile did not return to the restored first $protocol stack member"
+  wait_for_geometries \
+    "$first_title" "$restored_first" \
+    "$middle_title" "$restored_middle" \
+    "$last_title" "$restored_last" \
+    "$middle_column_title" "$restored_middle_column" \
+    "$edge_title" "$restored_edge" || \
+    fail "Driftile changed the restored $protocol minimized-slot order"
+
+  stop_client "$edge_pid"
+  wait_for_window_gone "$edge_title" || \
+    fail "the minimized-slot $protocol edge window did not close"
+  activate_window "$last_title" || \
+    fail "KWin could not restore $protocol focus after minimized-slot navigation"
+  wait_for_active "$last_title" || \
+    fail "KWin did not restore $protocol focus after minimized-slot navigation"
+  wait_for_shortcut_geometries \
+    "driftile_center_column" \
+    "$first_title" "332,16,616,219" \
+    "$middle_title" "332,251,616,218" \
+    "$last_title" "332,485,616,219" \
+    "$middle_column_title" "964,16,616,688" || \
+    fail "Driftile could not center the active $protocol column during minimized-slot cleanup"
+  wait_for_shortcut_focus \
+    "driftile_focus_column_right" "$middle_column_title" || \
+    fail "Driftile could not restore the canonical $protocol viewport after minimized-slot navigation"
+  wait_for_geometries \
+    "$first_title" "16,16,616,219" \
+    "$middle_title" "16,251,616,218" \
+    "$last_title" "16,485,616,219" \
+    "$middle_column_title" "648,16,616,688" || \
+    fail "Driftile did not restore the exact $protocol fixture after minimized-slot navigation: $(describe_layout "$first_title" "$middle_title" "$last_title" "$middle_column_title")"
+  activate_window "$last_title" || \
+    fail "KWin could not restore final $protocol stack focus after minimized-slot navigation"
+  wait_for_active "$last_title" || \
+    fail "KWin did not restore final $protocol stack focus after minimized-slot navigation"
 }
 
 verify_stacked_maximize_extraction() {
@@ -4120,6 +4742,13 @@ run_scenario() {
     fail "Driftile wrapped the direct $protocol stack search past the right boundary: $(describe_layout "$first_title" "$second_title" "$third_title" "$fourth_title")"
   wait_for_active "$fourth_title" || \
     fail "Driftile changed $protocol focus after the bounded stack search"
+
+  verify_minimized_slot_navigation \
+    "$protocol" \
+    "$first_title" \
+    "$second_title" \
+    "$fourth_title" \
+    "$third_title"
 
   if [[ "$protocol" == "x11" ]]; then
     verify_stacked_maximize_extraction \

@@ -2031,7 +2031,7 @@ export class RuntimeController {
     }
 
     const key = contextKey(context);
-    const activeLayer = this.windowLayer(activeId, active, key);
+    const activeLayer = this.focusAvailableWindowLayer(activeId, active, key);
 
     if (!activeLayer) {
       return false;
@@ -2050,6 +2050,7 @@ export class RuntimeController {
       return false;
     }
 
+    const rememberedTiledFocus = this.lastTiledFocus.get(key);
     const floating = this.floatingFocusTarget(key);
     const tiled = this.tiledFocusTarget(context, key);
 
@@ -2058,25 +2059,200 @@ export class RuntimeController {
     }
 
     const target = targetLayer === "floating" ? floating : tiled;
+    const targetId = windowId(String(target.internalId));
 
-    if (target === active) {
+    if (
+      target === active ||
+      this.focusAvailableWindowLayer(targetId, target, key) !== targetLayer
+    ) {
       return false;
     }
 
     this.lastWrites = 0;
 
-    try {
-      this.workspace.activeWindow = target;
-    } catch {
+    if (
+      targetLayer === "tiling" &&
+      !this.focusTiledLayerTarget(
+        targetId,
+        target,
+        context,
+        key,
+        active,
+        rememberedTiledFocus,
+      )
+    ) {
       return false;
     }
 
-    if (this.workspace.activeWindow !== target) {
+    if (targetLayer === "tiling") {
+      this.rememberLayerFocus(targetId, target);
+      return true;
+    }
+
+    return this.focusFloatingTarget(targetId, target, key, active);
+  }
+
+  private focusTiledLayerTarget(
+    targetId: WindowId,
+    target: KWinWindow,
+    context: ManagedContext,
+    key: string,
+    originalActive: KWinWindow,
+    rememberedTiledFocus: WindowId | undefined,
+  ): boolean {
+    const rememberedFloatingFocus = this.lastFloatingFocus.get(key);
+    const snapshot = this.layout.snapshot(context.outputId, context.desktopId);
+    const targetColumn = snapshot.columns.find((column) =>
+      column.windowIds.includes(targetId),
+    );
+
+    if (!targetColumn) {
       return false;
     }
 
-    this.rememberLayerFocus(windowId(String(target.internalId)), target);
-    return true;
+    if (targetColumn.id === snapshot.activeColumnId) {
+      let focusRequestFailed = false;
+
+      try {
+        this.workspace.activeWindow = target;
+      } catch {
+        focusRequestFailed = true;
+      }
+
+      if (
+        !focusRequestFailed &&
+        !this.hasTopologyBarrier() &&
+        this.workspace.activeWindow === target &&
+        this.observer.source(targetId) === target &&
+        this.focusAvailableWindowLayer(targetId, target, key) === "tiling"
+      ) {
+        return true;
+      }
+
+      this.recoverRejectedFocus(
+        originalActive,
+        key,
+        rememberedFloatingFocus,
+        rememberedTiledFocus,
+      );
+
+      return false;
+    }
+
+    const command = this.prepareTiledLayerFocusCommand(context, key, targetId);
+
+    if (
+      !command ||
+      this.workspace.activeWindow !== originalActive ||
+      this.observer.source(targetId) !== target ||
+      this.focusAvailableWindowLayer(targetId, target, key) !== "tiling"
+    ) {
+      return false;
+    }
+
+    let focusRequestFailed = false;
+    const focused = this.applyActiveColumnMutation(
+      command,
+      "layer column focus",
+      () => this.layout.activateWindow(targetId),
+      () => this.layout.activateWindow(command.activeId),
+      () => {
+        if (
+          this.workspace.activeWindow !== originalActive ||
+          this.hasTopologyBarrier() ||
+          this.observer.source(targetId) !== target ||
+          this.focusAvailableWindowLayer(targetId, target, key) !== "tiling"
+        ) {
+          return false;
+        }
+
+        try {
+          this.workspace.activeWindow = target;
+        } catch {
+          focusRequestFailed = true;
+        }
+
+        return (
+          !focusRequestFailed &&
+          !this.hasTopologyBarrier() &&
+          this.workspace.activeWindow === target &&
+          this.observer.source(targetId) === target &&
+          this.focusAvailableWindowLayer(targetId, target, key) === "tiling"
+        );
+      },
+    );
+
+    if (focused) {
+      return true;
+    }
+
+    this.recoverRejectedFocus(
+      originalActive,
+      key,
+      rememberedFloatingFocus,
+      rememberedTiledFocus,
+    );
+
+    return false;
+  }
+
+  private prepareTiledLayerFocusCommand(
+    context: ManagedContext,
+    key: string,
+    targetId: WindowId,
+  ): ActiveColumnCommand | null {
+    const sampledGeometries = this.sampleSettledVisibleContextGeometries();
+
+    if (!sampledGeometries || !this.synchronizePendingWindows()) {
+      return null;
+    }
+
+    if (this.hasTopologyBarrier()) {
+      return null;
+    }
+
+    const runtimeContext = this.contexts.get(key);
+
+    if (
+      !runtimeContext ||
+      runtimeContext.outputId !== context.outputId ||
+      runtimeContext.desktopId !== context.desktopId ||
+      this.refreshContextAutomaticFloatingOwnership(runtimeContext) ||
+      this.toggleTransitionPending(key)
+    ) {
+      return null;
+    }
+
+    const before = this.layout.snapshot(context.outputId, context.desktopId);
+    const activeColumn = before.columns.find(
+      (column) => column.id === before.activeColumnId,
+    );
+    const targetColumn = before.columns.find((column) =>
+      column.windowIds.includes(targetId),
+    );
+    const rollbackId = activeColumn?.windowIds[0];
+    const contextGeometry = sampledGeometries.get(key);
+
+    if (
+      !activeColumn ||
+      !targetColumn ||
+      targetColumn.id === activeColumn.id ||
+      !rollbackId ||
+      !contextGeometry ||
+      !this.columnMembersBelongToContext(activeColumn, runtimeContext) ||
+      !this.columnMembersBelongToContext(targetColumn, runtimeContext)
+    ) {
+      return null;
+    }
+
+    return {
+      activeColumn,
+      activeId: rollbackId,
+      before,
+      context: runtimeContext,
+      contextGeometry,
+      sampledGeometries,
+    };
   }
 
   private floatingFocusTarget(key: string): KWinWindow | null {
@@ -2091,8 +2267,6 @@ export class RuntimeController {
       ) {
         return remembered;
       }
-
-      this.lastFloatingFocus.delete(key);
     }
 
     for (
@@ -2109,7 +2283,6 @@ export class RuntimeController {
       const id = windowId(String(candidate.internalId));
 
       if (this.windowLayer(id, candidate, key) === "floating") {
-        this.lastFloatingFocus.set(key, id);
         return candidate;
       }
     }
@@ -2124,17 +2297,16 @@ export class RuntimeController {
     const runtimeContext = this.contexts.get(key);
 
     if (!runtimeContext) {
-      this.lastTiledFocus.delete(key);
       return null;
     }
 
     const snapshot = this.layout.snapshot(context.outputId, context.desktopId);
-    const activeColumn = snapshot.columns.find(
+    const activeColumnIndex = snapshot.columns.findIndex(
       (column) => column.id === snapshot.activeColumnId,
     );
+    const activeColumn = snapshot.columns[activeColumnIndex];
 
     if (!activeColumn) {
-      this.lastTiledFocus.delete(key);
       return null;
     }
 
@@ -2147,24 +2319,188 @@ export class RuntimeController {
         remembered &&
         this.windowLayer(rememberedId, remembered, key) === "tiling"
       ) {
-        return remembered;
+        return this.tiledLayerCandidate(rememberedId, key);
       }
     }
 
-    if (rememberedId) {
-      this.lastTiledFocus.delete(key);
+    const activeCandidateId = this.firstNonMinimizedColumnMember(activeColumn);
+
+    if (activeCandidateId) {
+      return this.tiledLayerCandidate(activeCandidateId, key);
     }
 
-    for (const id of activeColumn.windowIds) {
-      const candidate = this.observer.source(id);
+    for (let distance = 1; distance < snapshot.columns.length; distance += 1) {
+      const right = snapshot.columns[activeColumnIndex + distance];
 
-      if (candidate && this.windowLayer(id, candidate, key) === "tiling") {
-        this.lastTiledFocus.set(key, id);
-        return candidate;
+      if (right) {
+        const rightCandidateId = this.firstNonMinimizedColumnMember(right);
+
+        if (rightCandidateId) {
+          return this.tiledLayerCandidate(rightCandidateId, key);
+        }
+      }
+
+      const left = snapshot.columns[activeColumnIndex - distance];
+
+      if (left) {
+        const leftCandidateId = this.firstNonMinimizedColumnMember(left);
+
+        if (leftCandidateId) {
+          return this.tiledLayerCandidate(leftCandidateId, key);
+        }
       }
     }
 
     return null;
+  }
+
+  private tiledLayerCandidate(id: WindowId, key: string): KWinWindow | null {
+    const candidate = this.observer.source(id);
+
+    if (
+      !candidate ||
+      this.focusAvailableWindowLayer(id, candidate, key) !== "tiling"
+    ) {
+      return null;
+    }
+
+    return candidate;
+  }
+
+  private focusAvailableWindowLayer(
+    id: WindowId,
+    source: KWinWindow,
+    key: string,
+  ): WindowLayer | null {
+    if (this.observer.source(id) !== source) {
+      return null;
+    }
+
+    const layer = this.windowLayer(id, source, key);
+
+    if (
+      !layer ||
+      !this.toggleGeometrySettled(id) ||
+      this.suspendedWindows.has(id) ||
+      this.requestedSuspensions.has(id)
+    ) {
+      return null;
+    }
+
+    if (
+      layer === "floating" &&
+      this.automaticFloatingOwnershipApplies(id, source)
+    ) {
+      return hasGeometryAuthorityBlocker(source) ? null : layer;
+    }
+
+    return isGeometryWritable(source) ? layer : null;
+  }
+
+  private focusFloatingTarget(
+    targetId: WindowId,
+    target: KWinWindow,
+    key: string,
+    originalActive: KWinWindow,
+  ): boolean {
+    const rememberedFloatingFocus = this.lastFloatingFocus.get(key);
+    const rememberedTiledFocus = this.lastTiledFocus.get(key);
+
+    if (this.requestWindowFocus(targetId, target, key, "floating")) {
+      this.rememberLayerFocus(targetId, target);
+      return true;
+    }
+
+    this.recoverRejectedFocus(
+      originalActive,
+      key,
+      rememberedFloatingFocus,
+      rememberedTiledFocus,
+    );
+    return false;
+  }
+
+  private requestWindowFocus(
+    targetId: WindowId,
+    target: KWinWindow,
+    key: string,
+    layer: WindowLayer,
+  ): boolean {
+    let focusRequestFailed = false;
+
+    try {
+      this.workspace.activeWindow = target;
+    } catch {
+      focusRequestFailed = true;
+    }
+
+    return (
+      !focusRequestFailed &&
+      this.started &&
+      !this.windowTransferOperation &&
+      this.startupStabilizationToken === null &&
+      !this.hasTopologyBarrier() &&
+      this.workspace.activeWindow === target &&
+      this.observer.source(targetId) === target &&
+      this.focusAvailableWindowLayer(targetId, target, key) === layer
+    );
+  }
+
+  private recoverRejectedFocus(
+    originalActive: KWinWindow,
+    key: string,
+    rememberedFloatingFocus: WindowId | undefined,
+    rememberedTiledFocus: WindowId | undefined,
+  ): void {
+    const originalId = windowId(String(originalActive.internalId));
+
+    if (
+      this.workspace.activeWindow !== originalActive &&
+      this.observer.source(originalId) === originalActive &&
+      this.focusAvailableWindowLayer(originalId, originalActive, key)
+    ) {
+      try {
+        this.workspace.activeWindow = originalActive;
+      } catch {
+        // KWin focus recovery is best effort after a rejected focus request.
+      }
+    }
+
+    this.restoreRememberedLayerFocus(
+      key,
+      rememberedFloatingFocus,
+      rememberedTiledFocus,
+    );
+  }
+
+  private restoreRememberedLayerFocus(
+    key: string,
+    floatingId: WindowId | undefined,
+    tiledId: WindowId | undefined,
+  ): void {
+    const floating = floatingId ? this.observer.source(floatingId) : undefined;
+
+    if (
+      floatingId &&
+      floating &&
+      this.windowLayer(floatingId, floating, key) === "floating"
+    ) {
+      this.lastFloatingFocus.set(key, floatingId);
+    } else {
+      this.lastFloatingFocus.delete(key);
+    }
+
+    const tiled = tiledId ? this.observer.source(tiledId) : undefined;
+
+    if (
+      tiledId &&
+      tiled &&
+      this.windowLayer(tiledId, tiled, key) === "tiling"
+    ) {
+      this.lastTiledFocus.set(key, tiledId);
+    } else {
+      this.lastTiledFocus.delete(key);
+    }
   }
 
   private windowLayer(
@@ -2339,9 +2675,14 @@ export class RuntimeController {
     }
 
     const key = contextKey(context);
+    const activeLayer = this.windowLayer(activeId, active, key);
 
-    if (this.windowLayer(activeId, active, key) !== "floating") {
+    if (activeLayer !== "floating") {
       return null;
+    }
+
+    if (this.focusAvailableWindowLayer(activeId, active, key) !== "floating") {
+      return false;
     }
 
     if (
@@ -2364,20 +2705,15 @@ export class RuntimeController {
       return false;
     }
 
+    const targetId = windowId(String(target.internalId));
+
+    if (this.focusAvailableWindowLayer(targetId, target, key) !== "floating") {
+      return false;
+    }
+
     this.lastWrites = 0;
 
-    try {
-      this.workspace.activeWindow = target;
-    } catch {
-      return false;
-    }
-
-    if (this.workspace.activeWindow !== target) {
-      return false;
-    }
-
-    this.rememberLayerFocus(windowId(String(target.internalId)), target);
-    return true;
+    return this.focusFloatingTarget(targetId, target, key, active);
   }
 
   private floatingNavigationTarget(
@@ -2469,10 +2805,7 @@ export class RuntimeController {
       return false;
     }
 
-    const targetId =
-      destination === "left" || destination === "right"
-        ? this.layout.adjacentWindow(command.activeId, destination)
-        : this.layout.edgeWindow(command.activeId, destination);
+    const targetId = this.horizontalFocusTarget(command, destination);
 
     if (!targetId) {
       return false;
@@ -2480,38 +2813,44 @@ export class RuntimeController {
 
     const targetOwner = this.managedWindows.get(targetId);
     const target = this.observer.source(targetId);
-    const observedTarget = target ? normalizeWindow(target) : null;
-    const targetContext = observedTarget
-      ? managedContext(observedTarget)
-      : null;
+    const originalActive = this.observer.source(command.activeId);
+    const key = command.context.key;
 
     if (
       targetOwner?.contextKey !== command.context.key ||
       !target ||
-      this.automaticallyFloats(target) ||
-      this.automaticFloatingWindows.has(targetId) ||
-      !this.toggleGeometrySettled(targetId) ||
-      this.suspendedWindows.has(targetId) ||
-      this.requestedSuspensions.has(targetId) ||
-      !isGeometryWritable(target) ||
-      !targetContext ||
-      contextKey(targetContext) !== command.context.key
+      !originalActive ||
+      this.workspace.activeWindow !== originalActive ||
+      this.focusAvailableWindowLayer(targetId, target, key) !== "tiling"
     ) {
       return false;
     }
 
-    if (
-      !this.applyActiveColumnMutation(
-        command,
-        "column focus",
-        () => this.layout.activateWindow(targetId),
-        () => this.layout.activateWindow(command.activeId),
-      )
-    ) {
+    const rememberedFloatingFocus = this.lastFloatingFocus.get(key);
+    const rememberedTiledFocus = this.lastTiledFocus.get(key);
+    const focused = this.applyActiveColumnMutation(
+      command,
+      "column focus",
+      () => this.layout.activateWindow(targetId),
+      () => this.layout.activateWindow(command.activeId),
+      () =>
+        this.workspace.activeWindow === originalActive &&
+        this.observer.source(targetId) === target &&
+        this.focusAvailableWindowLayer(targetId, target, key) === "tiling" &&
+        this.requestWindowFocus(targetId, target, key, "tiling"),
+    );
+
+    if (!focused) {
+      this.recoverRejectedFocus(
+        originalActive,
+        key,
+        rememberedFloatingFocus,
+        rememberedTiledFocus,
+      );
       return false;
     }
 
-    this.workspace.activeWindow = target;
+    this.rememberLayerFocus(targetId, target);
     return true;
   }
 
@@ -2528,10 +2867,32 @@ export class RuntimeController {
       return false;
     }
 
-    const targetId = this.layout.adjacentWindowInColumn(
+    const activeIndex = command.activeColumn.windowIds.indexOf(
       command.activeId,
-      direction,
     );
+    const step = direction === "up" ? -1 : 1;
+    let targetId: WindowId | null = null;
+
+    for (
+      let index = activeIndex + step;
+      index >= 0 && index < command.activeColumn.windowIds.length;
+      index += step
+    ) {
+      const candidateId = command.activeColumn.windowIds[index];
+
+      if (!candidateId) {
+        break;
+      }
+
+      const candidate = this.observer.source(candidateId);
+
+      if (candidate?.minimized) {
+        continue;
+      }
+
+      targetId = candidateId;
+      break;
+    }
 
     if (!targetId) {
       return false;
@@ -2539,28 +2900,108 @@ export class RuntimeController {
 
     const targetOwner = this.managedWindows.get(targetId);
     const target = this.observer.source(targetId);
-    const observedTarget = target ? normalizeWindow(target) : null;
-    const targetContext = observedTarget
-      ? managedContext(observedTarget)
-      : null;
+    const originalActive = this.observer.source(command.activeId);
+    const key = command.context.key;
 
     if (
       targetOwner?.contextKey !== command.context.key ||
       !target ||
-      this.automaticallyFloats(target) ||
-      this.automaticFloatingWindows.has(targetId) ||
-      this.suspendedWindows.has(targetId) ||
-      this.requestedSuspensions.has(targetId) ||
-      !isGeometryWritable(target) ||
-      !targetContext ||
-      contextKey(targetContext) !== command.context.key
+      !originalActive ||
+      this.workspace.activeWindow !== originalActive ||
+      this.focusAvailableWindowLayer(targetId, target, key) !== "tiling"
     ) {
       return false;
     }
 
+    const rememberedFloatingFocus = this.lastFloatingFocus.get(key);
+    const rememberedTiledFocus = this.lastTiledFocus.get(key);
     this.lastWrites = 0;
-    this.workspace.activeWindow = target;
-    return true;
+
+    if (this.requestWindowFocus(targetId, target, key, "tiling")) {
+      this.rememberLayerFocus(targetId, target);
+      return true;
+    }
+
+    this.recoverRejectedFocus(
+      originalActive,
+      key,
+      rememberedFloatingFocus,
+      rememberedTiledFocus,
+    );
+    return false;
+  }
+
+  private horizontalFocusTarget(
+    command: ActiveColumnCommand,
+    destination: HorizontalDirection | HorizontalEdge,
+  ): WindowId | null {
+    const activeColumnIndex = command.before.columns.findIndex(
+      (column) => column.id === command.activeColumn.id,
+    );
+
+    if (activeColumnIndex < 0) {
+      return null;
+    }
+
+    if (destination === "first" || destination === "last") {
+      const start =
+        destination === "first" ? 0 : command.before.columns.length - 1;
+      const step = destination === "first" ? 1 : -1;
+
+      for (
+        let index = start;
+        index >= 0 && index < command.before.columns.length;
+        index += step
+      ) {
+        const column = command.before.columns[index];
+
+        if (!column) {
+          break;
+        }
+
+        const candidateId = this.firstNonMinimizedColumnMember(column);
+
+        if (candidateId) {
+          return column.id === command.activeColumn.id ? null : candidateId;
+        }
+      }
+
+      return null;
+    }
+
+    const step = destination === "left" ? -1 : 1;
+
+    for (
+      let index = activeColumnIndex + step;
+      index >= 0 && index < command.before.columns.length;
+      index += step
+    ) {
+      const column = command.before.columns[index];
+
+      if (!column) {
+        break;
+      }
+
+      const candidateId = this.firstNonMinimizedColumnMember(column);
+
+      if (candidateId) {
+        return candidateId;
+      }
+    }
+
+    return null;
+  }
+
+  private firstNonMinimizedColumnMember(
+    column: LayoutColumnSnapshot,
+  ): WindowId | null {
+    for (const id of column.windowIds) {
+      if (!this.observer.source(id)?.minimized) {
+        return id;
+      }
+    }
+
+    return null;
   }
 
   private moveActiveColumn(direction: HorizontalDirection): boolean {
@@ -8498,6 +8939,7 @@ export class RuntimeController {
     );
     const wasDirty = this.dirtyContexts.has(context.key);
     this.dirtyContexts.delete(context.key);
+    let dirtyDuringAcceptance = false;
     let forwardWrites = 0;
     let forwardError: string | null = null;
 
@@ -8517,13 +8959,17 @@ export class RuntimeController {
       !this.dirtyContexts.has(context.key)
     ) {
       try {
-        if (!accept || accept()) {
+        const accepted = !accept || accept();
+        dirtyDuringAcceptance = this.dirtyContexts.has(context.key);
+
+        if (accepted) {
           this.lastWrites = forwardWrites;
           return true;
         }
 
         forwardError = `${label} acceptance was rejected`;
       } catch (error) {
+        dirtyDuringAcceptance = this.dirtyContexts.has(context.key);
         forwardError = String(error);
       }
     }
@@ -8531,7 +8977,6 @@ export class RuntimeController {
     const restored = restoreLayout();
     const ownershipChangedDuringMutation =
       this.snapshotContainsAutomaticFloatingWindow(before);
-
     if (restored && this.topologyWindowOrder !== null) {
       this.captureTopologyWindowOrder();
     }
@@ -8554,6 +8999,7 @@ export class RuntimeController {
 
       if (
         compensationWrites !== rollbackTargets.length ||
+        dirtyDuringAcceptance ||
         (dirtyBeforeCompensation && ownershipChangedDuringMutation) ||
         wasDirty
       ) {

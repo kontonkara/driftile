@@ -65,6 +65,7 @@ run_backend() (
   local xvfb_pid=""
   local package_installed=0
   local output_count
+  local protocols
   local scenario
   local socket_name
 
@@ -188,7 +189,14 @@ run_backend() (
     wayland | wayland-multi-output)
       require_command kwin_wayland || exit 1
       require_command Xwayland || exit 1
-      export DRIFTILE_SMOKE_PROTOCOLS="xwayland wayland"
+      protocols="${DRIFTILE_SMOKE_PROTOCOLS:-xwayland wayland}"
+
+      case "$protocols" in
+        wayland | xwayland | "wayland xwayland" | "xwayland wayland") ;;
+        *) fail "DRIFTILE_SMOKE_PROTOCOLS must contain wayland, xwayland, or both." ;;
+      esac
+
+      export DRIFTILE_SMOKE_PROTOCOLS="$protocols"
       export KWIN_COMPOSE=Q
       export XDG_SESSION_TYPE=wayland
 

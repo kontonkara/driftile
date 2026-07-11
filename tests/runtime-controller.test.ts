@@ -305,6 +305,9 @@ interface WorkspaceFixture {
   readonly desktopSwitchCount: number;
   readonly outputTransferCount: number;
   readonly screensChanged: Signal<[]>;
+  setActivationBehavior(
+    behavior: ((window: KWinWindow | null, commit: () => void) => void) | null,
+  ): void;
   setCurrentDesktop(output: KWinOutput, desktop: KWinVirtualDesktop): void;
   setDesktopSwitchBehavior(
     behavior:
@@ -349,6 +352,8 @@ function createWorkspace(
   const windowAdded = new Signal<[window: KWinWindow]>();
   const windowRemoved = new Signal<[window: KWinWindow]>();
   let activationCount = 0;
+  let activationBehavior:
+    ((window: KWinWindow | null, commit: () => void) => void) | null = null;
   let desktopSwitchCount = 0;
   let outputTransferCount = 0;
   let desktopSwitchBehavior:
@@ -472,9 +477,17 @@ function createWorkspace(
     enumerable: true,
     get: () => activeWindow,
     set: (window: KWinWindow | null) => {
-      activeWindow = window;
       activationCount += 1;
-      windowActivated.emit(window);
+      const commit = (): void => {
+        activeWindow = window;
+        windowActivated.emit(window);
+      };
+
+      if (activationBehavior) {
+        activationBehavior(window, commit);
+      } else {
+        commit();
+      }
     },
   });
   Object.defineProperty(workspace, "currentDesktop", {
@@ -505,6 +518,9 @@ function createWorkspace(
       return outputTransferCount;
     },
     screensChanged,
+    setActivationBehavior: (behavior) => {
+      activationBehavior = behavior;
+    },
     setCurrentDesktop: (output, desktop) => {
       commitDesktop(output, desktop, perOutputDesktops);
     },
@@ -595,6 +611,54 @@ function setWindowState(
   }
 
   transition.set(tracked, enabled);
+}
+
+type FocusAvailabilityBlocker =
+  | "fullscreen"
+  | "maximized"
+  | "native tiled"
+  | "restore settling"
+  | "toggle unsettled";
+
+function blockWindowFocus(
+  controller: RuntimeController,
+  tracked: TrackedWindow,
+  blocker: FocusAvailabilityBlocker,
+): void {
+  if (
+    blocker === "fullscreen" ||
+    blocker === "maximized" ||
+    blocker === "native tiled"
+  ) {
+    setWindowState(blocker, tracked, true);
+    return;
+  }
+
+  const id = windowId(String(tracked.window.internalId));
+  const state = controller as unknown as {
+    readonly requestedSuspensions: Map<WindowId, Set<string>>;
+    readonly suspendedWindows: Set<WindowId>;
+    readonly toggleGeometryTransitions: Map<
+      WindowId,
+      {
+        readonly contextKey: string;
+        readonly expectedFrame: KWinWindow["frameGeometry"];
+        settlementArmed: boolean;
+      }
+    >;
+  };
+
+  if (blocker === "restore settling") {
+    state.suspendedWindows.add(id);
+    state.requestedSuspensions.set(id, new Set(["maximized-settling"]));
+    return;
+  }
+
+  state.toggleGeometryTransitions.set(id, {
+    contextKey: `${tracked.window.output?.name ?? ""}\u0000${tracked.window.desktops[0]?.id ?? ""}`,
+    expectedFrame: { ...tracked.window.frameGeometry },
+    settlementArmed: false,
+  });
 }
 
 interface FullscreenControl {
@@ -3725,6 +3789,369 @@ describe("RuntimeController", () => {
     expect(fixture.activationCount).toBe(2);
   });
 
+  it("skips minimized stack members vertically without changing their slots", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const windows = Array.from({ length: 8 }, (_value, index) =>
+      createTrackedWindow(`window-${String(index + 1)}`, output, desktop),
+    );
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map(({ window }) => window),
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+      scheduleResume: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    const layout = installTestLayout(
+      controller,
+      output,
+      desktop,
+      "column:stack",
+      [
+        {
+          id: "column:stack",
+          width: { kind: "fixed", value: 620 },
+          windowHeights: [
+            { kind: "auto", weight: 1 },
+            { kind: "auto", weight: 2 },
+            { kind: "auto", weight: 3 },
+            { kind: "auto", weight: 4 },
+            { kind: "auto", weight: 5 },
+            { kind: "auto", weight: 6 },
+            { kind: "auto", weight: 7 },
+          ],
+          windowIds: [
+            "window-1",
+            "window-2",
+            "window-3",
+            "window-4",
+            "window-5",
+            "window-6",
+            "window-7",
+          ],
+        },
+        {
+          id: "column:right",
+          width: { kind: "proportion", value: 0.55 },
+          windowIds: ["window-8"],
+        },
+      ],
+    );
+    expect(
+      layout.setViewportOffset(
+        outputId(output.name),
+        desktopId(desktop.id),
+        137,
+      ),
+    ).toBe(true);
+    fixture.workspace.activeWindow = windows[3]?.window ?? null;
+    controller.reconcile();
+    const before = layout.snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
+    const writes = windows.map(({ writeCount }) => writeCount);
+    const minimizedTop = windows[1];
+    const minimizedUpperMiddle = windows[2];
+    const minimizedLowerMiddle = windows[4];
+    const minimizedBottom = windows[5];
+
+    if (
+      !minimizedTop ||
+      !minimizedUpperMiddle ||
+      !minimizedLowerMiddle ||
+      !minimizedBottom
+    ) {
+      throw new Error("missing minimized stack fixture");
+    }
+
+    const minimized = [
+      minimizedTop,
+      minimizedUpperMiddle,
+      minimizedLowerMiddle,
+      minimizedBottom,
+    ];
+
+    for (const candidate of minimized) {
+      setWindowState("minimized", candidate, true);
+    }
+
+    flushManualScheduler(scheduler);
+    const activationCount = fixture.activationCount;
+
+    expect(controller.focusUp()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(windows[0]?.window);
+    fixture.workspace.activeWindow = windows[3]?.window ?? null;
+    expect(controller.focusDown()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(windows[6]?.window);
+    expect(controller.focusDown()).toBe(false);
+    fixture.workspace.activeWindow = windows[0]?.window ?? null;
+    expect(controller.focusUp()).toBe(false);
+    expect(fixture.activationCount).toBe(activationCount + 4);
+    expect(minimized.every(({ window }) => window.minimized)).toBe(true);
+    expect(
+      layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+    ).toEqual(before);
+    expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
+    expect(windows.map(({ writeCount }) => writeCount)).toEqual(writes);
+
+    for (const candidate of minimized) {
+      setWindowState("minimized", candidate, false);
+    }
+
+    flushManualScheduler(scheduler);
+    expect(
+      layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+    ).toEqual(before);
+    expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
+    expect(windows.map(({ writeCount }) => writeCount)).toEqual(writes);
+    const restoredStack = layout.snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    ).columns[0];
+    expect(restoredStack && columnWindowHeights(restoredStack)).toEqual(
+      before.columns[0]?.windowHeights,
+    );
+  });
+
+  it("skips fully minimized columns and selects a visible stack member", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const windows = Array.from({ length: 10 }, (_value, index) =>
+      createTrackedWindow(`window-${String(index + 1)}`, output, desktop),
+    );
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map(({ window }) => window),
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+      scheduleResume: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    const layout = installTestLayout(
+      controller,
+      output,
+      desktop,
+      "column:active",
+      [
+        {
+          id: "column:minimized-first",
+          width: { kind: "fixed", value: 170 },
+          windowIds: ["window-1"],
+        },
+        {
+          id: "column:left",
+          width: { kind: "fixed", value: 180 },
+          windowIds: ["window-2"],
+        },
+        {
+          id: "column:minimized-left",
+          width: { kind: "fixed", value: 190 },
+          windowHeights: [
+            { clientHeight: 220, kind: "fixed" },
+            { kind: "auto", weight: 3 },
+          ],
+          windowIds: ["window-3", "window-4"],
+        },
+        {
+          id: "column:active",
+          width: { kind: "proportion", value: 0.4 },
+          windowHeights: [
+            { kind: "auto", weight: 2 },
+            { kind: "auto", weight: 5 },
+          ],
+          windowIds: ["window-5", "window-6"],
+        },
+        {
+          id: "column:minimized-right",
+          width: { kind: "fixed", value: 210 },
+          windowIds: ["window-7"],
+        },
+        {
+          id: "column:right",
+          width: { kind: "fixed", value: 220 },
+          windowHeights: [
+            { kind: "auto", weight: 1 },
+            { clientHeight: 260, kind: "fixed" },
+          ],
+          windowIds: ["window-8", "window-9"],
+        },
+        {
+          id: "column:minimized-last",
+          width: { kind: "fixed", value: 230 },
+          windowIds: ["window-10"],
+        },
+      ],
+    );
+    fixture.workspace.activeWindow = windows[5]?.window ?? null;
+    const minimizedIndices = [0, 2, 3, 4, 6, 7, 9];
+
+    for (const index of minimizedIndices) {
+      const candidate = windows[index];
+
+      if (!candidate) {
+        throw new Error("missing minimized column fixture");
+      }
+
+      setWindowState("minimized", candidate, true);
+    }
+
+    flushManualScheduler(scheduler);
+    const beforeColumns = layout.snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    ).columns;
+    const minimizedWindows = minimizedIndices.map((index) => {
+      const candidate = windows[index];
+
+      if (!candidate) {
+        throw new Error("missing minimized column fixture");
+      }
+
+      return candidate;
+    });
+    const minimizedFrames = minimizedWindows.map(({ window }) => ({
+      ...window.frameGeometry,
+    }));
+    const minimizedWrites = minimizedWindows.map(
+      ({ writeCount }) => writeCount,
+    );
+
+    expect(controller.focusLeft()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(windows[1]?.window);
+    fixture.workspace.activeWindow = windows[5]?.window ?? null;
+    expect(controller.focusRight()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(windows[8]?.window);
+    expect(controller.focusFirstColumn()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(windows[1]?.window);
+    expect(controller.focusLastColumn()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(windows[8]?.window);
+    expect(controller.focusLastColumn()).toBe(false);
+    expect(minimizedWindows.every(({ window }) => window.minimized)).toBe(true);
+    expect(
+      layout.snapshot(outputId(output.name), desktopId(desktop.id)).columns,
+    ).toEqual(beforeColumns);
+    expect(minimizedWindows.map(({ window }) => window.frameGeometry)).toEqual(
+      minimizedFrames,
+    );
+    expect(minimizedWindows.map(({ writeCount }) => writeCount)).toEqual(
+      minimizedWrites,
+    );
+  });
+
+  it.each([
+    "fullscreen",
+    "maximized",
+    "native tiled",
+    "restore settling",
+    "toggle unsettled",
+  ] as const)(
+    "stops at a non-minimized %s blocker while scanning focus targets",
+    (blockedState) => {
+      const output = createOutput("DP-1", 0);
+      const desktop = { id: "desktop-1" };
+      const windows = Array.from({ length: 7 }, (_value, index) =>
+        createTrackedWindow(`window-${String(index + 1)}`, output, desktop),
+      );
+      const fixture = createWorkspace(
+        output,
+        desktop,
+        [output],
+        [desktop],
+        windows.map(({ window }) => window),
+      );
+      const scheduler = new ManualScheduler();
+      const controller = new RuntimeController(fixture.workspace, {
+        clientAreaOption: 2,
+        gap: 10,
+        schedule: scheduler.schedule,
+        scheduleResume: scheduler.schedule,
+      });
+
+      expect(controller.start()).toBe(true);
+      const layout = installTestLayout(
+        controller,
+        output,
+        desktop,
+        "column:active",
+        [
+          {
+            id: "column:active",
+            width: { kind: "fixed", value: 300 },
+            windowIds: ["window-1", "window-2", "window-3", "window-4"],
+          },
+          {
+            id: "column:nearest",
+            width: { kind: "fixed", value: 300 },
+            windowIds: ["window-5", "window-6"],
+          },
+          {
+            id: "column:farther",
+            width: { kind: "fixed", value: 300 },
+            windowIds: ["window-7"],
+          },
+        ],
+      );
+      fixture.workspace.activeWindow = windows[0]?.window ?? null;
+      const firstMinimized = windows[1];
+      const verticalBlocker = windows[2];
+      const columnMinimized = windows[4];
+      const horizontalBlocker = windows[5];
+
+      if (
+        !firstMinimized ||
+        !verticalBlocker ||
+        !columnMinimized ||
+        !horizontalBlocker
+      ) {
+        throw new Error("missing blocked focus fixture");
+      }
+
+      setWindowState("minimized", firstMinimized, true);
+      blockWindowFocus(controller, verticalBlocker, blockedState);
+      setWindowState("minimized", columnMinimized, true);
+      blockWindowFocus(controller, horizontalBlocker, blockedState);
+      flushManualScheduler(scheduler);
+      const before = layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      );
+      const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
+      const writes = windows.map(({ writeCount }) => writeCount);
+      const activationCount = fixture.activationCount;
+
+      expect(controller.focusDown()).toBe(false);
+      expect(controller.focusRight()).toBe(false);
+      expect(fixture.workspace.activeWindow).toBe(windows[0]?.window);
+      expect(fixture.activationCount).toBe(activationCount);
+      expect(
+        layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+      ).toEqual(before);
+      expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
+      expect(windows.map(({ writeCount }) => writeCount)).toEqual(writes);
+      expect(firstMinimized.window.minimized).toBe(true);
+      expect(columnMinimized.window.minimized).toBe(true);
+    },
+  );
+
   it("keeps focus and geometry after a partial edge-focus failure", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
@@ -6047,6 +6474,297 @@ describe("RuntimeController", () => {
     expect(windows.map(({ writeCount }) => writeCount)).toEqual(writes);
   });
 
+  it.each(
+    (["layer", "directional"] as const).flatMap((mode) =>
+      (["commit then throw", "minimize", "remove"] as const).map(
+        (behavior) => ({ behavior, mode }),
+      ),
+    ),
+  )(
+    "recovers from a $behavior activation during $mode floating focus",
+    ({ behavior, mode }) => {
+      const output = createOutput("DP-1", 0);
+      const desktop = { id: "desktop-1" };
+      const tiled = createTrackedWindow("tiled", output, desktop);
+      const target = createTrackedWindow("target", output, desktop);
+      const active = createTrackedWindow("active", output, desktop);
+      const windows = [tiled, target, active];
+      const fixture = createWorkspace(
+        output,
+        desktop,
+        [output],
+        [desktop],
+        windows.map(({ window }) => window),
+      );
+      const controller = new RuntimeController(fixture.workspace, {
+        clientAreaOption: 2,
+        gap: 10,
+      });
+
+      expect(controller.start()).toBe(true);
+      fixture.workspace.activeWindow = target.window;
+      expect(controller.toggleFloating()).toBe(true);
+      fixture.workspace.activeWindow = active.window;
+      expect(controller.toggleFloating()).toBe(true);
+      target.setFrameGeometry({ height: 100, width: 100, x: 700, y: 400 });
+      active.setFrameGeometry({ height: 100, width: 100, x: 400, y: 400 });
+      fixture.workspace.activeWindow = target.window;
+      const originalActive = mode === "layer" ? tiled.window : active.window;
+      fixture.workspace.activeWindow = originalActive;
+      const layout = runtimeLayout(controller);
+      const before = layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      );
+      const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
+      const writes = windows.map(({ writeCount }) => writeCount);
+      const activationCount = fixture.activationCount;
+      let targetRequest = true;
+
+      fixture.setActivationBehavior((window, commit) => {
+        if (window !== target.window || !targetRequest) {
+          commit();
+          return;
+        }
+
+        targetRequest = false;
+        commit();
+
+        if (behavior === "commit then throw") {
+          throw new Error("injected focus failure");
+        }
+
+        if (behavior === "minimize") {
+          setWindowState("minimized", target, true);
+        } else {
+          fixture.windowRemoved.emit(target.window);
+        }
+      });
+
+      const focused =
+        mode === "layer" ? controller.focusFloating() : controller.focusRight();
+      fixture.setActivationBehavior(null);
+
+      expect(focused).toBe(false);
+      expect(fixture.workspace.activeWindow).toBe(originalActive);
+      expect(fixture.activationCount).toBe(activationCount + 2);
+      expect(
+        layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+      ).toEqual(before);
+      expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
+      expect(windows.map(({ writeCount }) => writeCount)).toEqual(writes);
+      expect(controller.floatingCount).toBe(behavior === "remove" ? 1 : 2);
+      expect(target.window.minimized).toBe(behavior === "minimize");
+    },
+  );
+
+  it.each(
+    (["horizontal", "vertical"] as const).flatMap((mode) =>
+      (["reject", "commit then throw", "minimize", "remove"] as const).map(
+        (behavior) => ({ behavior, mode }),
+      ),
+    ),
+  )(
+    "recovers a tiled $mode focus when activation is $behavior",
+    ({ behavior, mode }) => {
+      const output = createOutput("DP-1", 0);
+      const desktop = { id: "desktop-1" };
+      const active = createTrackedWindow("active", output, desktop);
+      const vertical = createTrackedWindow("vertical", output, desktop);
+      const horizontal = createTrackedWindow("horizontal", output, desktop);
+      const far = createTrackedWindow("far", output, desktop);
+      const windows = [active, vertical, horizontal, far];
+      const fixture = createWorkspace(
+        output,
+        desktop,
+        [output],
+        [desktop],
+        windows.map(({ window }) => window),
+      );
+      const scheduler = new ManualScheduler();
+      const controller = new RuntimeController(fixture.workspace, {
+        clientAreaOption: 2,
+        gap: 10,
+        schedule: scheduler.schedule,
+        scheduleResume: scheduler.schedule,
+      });
+
+      expect(controller.start()).toBe(true);
+      const layout = installTestLayout(
+        controller,
+        output,
+        desktop,
+        "column:stack",
+        [
+          {
+            id: "column:stack",
+            width: { kind: "fixed", value: 700 },
+            windowIds: ["active", "vertical"],
+          },
+          {
+            id: "column:horizontal",
+            width: { kind: "fixed", value: 700 },
+            windowIds: ["horizontal"],
+          },
+          {
+            id: "column:far",
+            width: { kind: "fixed", value: 700 },
+            windowIds: ["far"],
+          },
+        ],
+      );
+      fixture.workspace.activeWindow = active.window;
+      const before = layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      );
+      const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
+      const target = mode === "horizontal" ? horizontal : vertical;
+      const activationCount = fixture.activationCount;
+      let targetRequest = true;
+
+      fixture.setActivationBehavior((window, commit) => {
+        if (window !== target.window || !targetRequest) {
+          commit();
+          return;
+        }
+
+        targetRequest = false;
+
+        if (behavior === "reject") {
+          return;
+        }
+
+        commit();
+
+        if (behavior === "commit then throw") {
+          throw new Error("injected focus failure");
+        }
+
+        if (behavior === "minimize") {
+          setWindowState("minimized", target, true);
+        } else {
+          fixture.windowRemoved.emit(target.window);
+        }
+      });
+
+      const focused =
+        mode === "horizontal"
+          ? controller.focusRight()
+          : controller.focusDown();
+      fixture.setActivationBehavior(null);
+
+      expect(focused).toBe(false);
+      expect(fixture.workspace.activeWindow).toBe(active.window);
+      expect(fixture.activationCount).toBe(
+        activationCount + (behavior === "reject" ? 1 : 2),
+      );
+      if (behavior !== "remove") {
+        expect(
+          layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+        ).toEqual(before);
+      }
+
+      if (behavior === "minimize") {
+        expect(target.window.minimized).toBe(true);
+        setWindowState("minimized", target, false);
+        flushManualScheduler(scheduler);
+      } else if (behavior === "remove") {
+        flushManualScheduler(scheduler);
+        expect(testLayoutColumns(controller, output, desktop)).toEqual(
+          mode === "horizontal"
+            ? [
+                {
+                  id: "column:stack",
+                  windowIds: ["active", "vertical"],
+                },
+                { id: "column:far", windowIds: ["far"] },
+              ]
+            : [
+                { id: "column:stack", windowIds: ["active"] },
+                {
+                  id: "column:horizontal",
+                  windowIds: ["horizontal"],
+                },
+                { id: "column:far", windowIds: ["far"] },
+              ],
+        );
+
+        if (mode === "horizontal") {
+          expect(far.window.frameGeometry.x).toBeLessThan(frames[3]?.x ?? 0);
+        } else {
+          expect(active.window.frameGeometry.height).toBeGreaterThan(
+            frames[0]?.height ?? 0,
+          );
+        }
+      }
+
+      if (behavior !== "remove") {
+        expect(windows.map(({ window }) => window.frameGeometry)).toEqual(
+          frames,
+        );
+      }
+      expect(fixture.workspace.activeWindow).toBe(active.window);
+    },
+  );
+
+  it("restores remembered layer targets after focus starts a topology barrier", () => {
+    const trackedOutput = createTrackedOutput("DP-1", 0);
+    const output = trackedOutput.output;
+    const desktop = { id: "desktop-1" };
+    const tiled = createTrackedWindow("tiled", output, desktop);
+    const floating = createTrackedWindow("floating", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [tiled.window, floating.window],
+    );
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(controller.toggleFloating()).toBe(true);
+    fixture.workspace.activeWindow = tiled.window;
+    const key = `${output.name}\u0000${desktop.id}`;
+    const state = controller as unknown as {
+      readonly lastFloatingFocus: ReadonlyMap<string, WindowId>;
+      readonly lastTiledFocus: ReadonlyMap<string, WindowId>;
+    };
+    const rememberedFloating = state.lastFloatingFocus.get(key);
+    const rememberedTiled = state.lastTiledFocus.get(key);
+    let targetRequest = true;
+
+    fixture.setActivationBehavior((window, commit) => {
+      commit();
+
+      if (window !== floating.window || !targetRequest) {
+        return;
+      }
+
+      targetRequest = false;
+      trackedOutput.setGeometry({ height: 800, width: 1000, x: 100, y: 0 });
+      trackedOutput.geometryChanged.emit();
+    });
+
+    expect(controller.focusFloating()).toBe(false);
+    fixture.setActivationBehavior(null);
+    expect(fixture.workspace.activeWindow).toBe(tiled.window);
+    expect(state.lastFloatingFocus.get(key)).toBe(rememberedFloating);
+    expect(state.lastTiledFocus.get(key)).toBe(rememberedTiled);
+    expect(resumeScheduler.pendingCount).toBe(1);
+
+    flushTopologyRecovery(resumeScheduler, workScheduler);
+    expect(fixture.workspace.activeWindow).toBe(tiled.window);
+  });
+
   it("restores the remembered member of a tiled stack", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
@@ -6106,6 +6824,7 @@ describe("RuntimeController", () => {
 
     expect(controller.switchFocusBetweenFloatingAndTiling()).toBe(true);
     expect(fixture.workspace.activeWindow).toBe(stackRemembered.window);
+    expect(controller.lastWriteCount).toBe(0);
     expect(controller.switchFocusBetweenFloatingAndTiling()).toBe(true);
     expect(fixture.workspace.activeWindow).toBe(floating.window);
     expect(
@@ -6358,6 +7077,636 @@ describe("RuntimeController", () => {
       writesAfterFloatingRemoval,
     );
   });
+
+  it("finds the nearest visible tiled window beyond a minimized active column", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const left = createTrackedWindow("left", output, desktop);
+    const minimizedTop = createTrackedWindow("minimized-top", output, desktop);
+    const minimizedBottom = createTrackedWindow(
+      "minimized-bottom",
+      output,
+      desktop,
+    );
+    const right = createTrackedWindow("right", output, desktop);
+    const floating = createTrackedWindow("floating", output, desktop);
+    const windows = [left, minimizedTop, minimizedBottom, right, floating];
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map(({ window }) => window),
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+      scheduleResume: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(controller.toggleFloating()).toBe(true);
+    const floatingFrame = { ...floating.window.frameGeometry };
+    const layout = installTestLayout(
+      controller,
+      output,
+      desktop,
+      "column:minimized",
+      [
+        {
+          id: "column:left",
+          width: { kind: "fixed", value: 280 },
+          windowIds: ["left"],
+        },
+        {
+          id: "column:minimized",
+          width: { kind: "proportion", value: 0.45 },
+          windowHeights: [
+            { clientHeight: 240, kind: "fixed" },
+            { kind: "auto", weight: 3 },
+          ],
+          windowIds: ["minimized-top", "minimized-bottom"],
+        },
+        {
+          id: "column:right",
+          width: { kind: "fixed", value: 320 },
+          windowIds: ["right"],
+        },
+      ],
+    );
+    fixture.workspace.activeWindow = floating.window;
+    setWindowState("minimized", minimizedTop, true);
+    setWindowState("minimized", minimizedBottom, true);
+    flushManualScheduler(scheduler);
+    const before = layout.snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
+    const writes = windows.map(({ writeCount }) => writeCount);
+    const activations: Array<{
+      readonly id: string;
+      readonly minimized: boolean;
+    }> = [];
+    fixture.windowActivated.connect((window) => {
+      if (window) {
+        activations.push({
+          id: String(window.internalId),
+          minimized: window.minimized,
+        });
+      }
+    });
+
+    expect(controller.focusTiling()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(right.window);
+    expect(activations).toEqual([{ id: "right", minimized: false }]);
+    expect(minimizedTop.window.minimized).toBe(true);
+    expect(minimizedBottom.window.minimized).toBe(true);
+    expect(controller.floatingCount).toBe(1);
+    expect(floating.window.frameGeometry).toEqual(floatingFrame);
+    const after = layout.snapshot(outputId(output.name), desktopId(desktop.id));
+    expect(after.columns).toEqual(before.columns);
+    expect(after.activeColumnId).toBe(columnId("column:right"));
+    expect(after.viewportOffset).toBeGreaterThan(before.viewportOffset);
+    expect(right.window.frameGeometry.x).toBeGreaterThanOrEqual(10);
+    expect(
+      right.window.frameGeometry.x + right.window.frameGeometry.width,
+    ).toBeLessThanOrEqual(1000);
+    expect(minimizedTop.window.frameGeometry).toEqual(frames[1]);
+    expect(minimizedBottom.window.frameGeometry).toEqual(frames[2]);
+    expect(floating.window.frameGeometry).toEqual(frames[4]);
+    expect(minimizedTop.writeCount).toBe(writes[1]);
+    expect(minimizedBottom.writeCount).toBe(writes[2]);
+    expect(floating.writeCount).toBe(writes[4]);
+    expect(right.writeCount).toBeGreaterThan(writes[3] ?? 0);
+  });
+
+  it.each(["right", "left"] as const)(
+    "reveals an offscreen tiled layer target on the %s before activating it",
+    (direction) => {
+      const setup = createTiledLayerRevealFixture(direction);
+      const before = setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      );
+      const frames = setup.windows.map(({ window }) => ({
+        ...window.frameGeometry,
+      }));
+      const writes = setup.windows.map(({ writeCount }) => writeCount);
+      let activationSnapshot: ReturnType<LayoutEngine["snapshot"]> | undefined;
+      let activationFrame: KWinWindow["frameGeometry"] | undefined;
+      let activationWrites: readonly number[] | undefined;
+      setup.fixture.windowActivated.connect((window) => {
+        if (window === setup.target.window) {
+          activationSnapshot = setup.layout.snapshot(
+            outputId(setup.output.name),
+            desktopId(setup.desktop.id),
+          );
+          activationFrame = { ...setup.target.window.frameGeometry };
+          activationWrites = setup.windows.map(({ writeCount }) => writeCount);
+        }
+      });
+
+      expect(setup.controller.focusTiling()).toBe(true);
+      const after = setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      );
+      expect(setup.fixture.workspace.activeWindow).toBe(setup.target.window);
+      expect(after.activeColumnId).toBe(columnId("column:target"));
+      expect(after.viewportOffset).toBe(direction === "right" ? 640 : 10);
+      expect(setup.target.window.frameGeometry).toMatchObject({
+        width: 400,
+        x: direction === "right" ? 600 : 0,
+      });
+      expect(activationSnapshot).toEqual(after);
+      expect(activationFrame).toEqual(setup.target.window.frameGeometry);
+      expect(activationWrites).toEqual(
+        setup.windows.map(({ writeCount }) => writeCount),
+      );
+      expect(setup.scheduler.pendingCount).toBe(0);
+      expect(setup.controller.lastWriteCount).toBe(1);
+      expect(setup.target.writeCount).toBe((writes[0] ?? 0) + 1);
+      expect(setup.minimized.map(({ writeCount }) => writeCount)).toEqual(
+        writes.slice(1, 4),
+      );
+      expect(setup.floating.writeCount).toBe(writes[writes.length - 1]);
+      expect(setup.minimized.map(({ window }) => window.frameGeometry)).toEqual(
+        frames.slice(1, 4),
+      );
+      expect(before.activeColumnId).not.toBe(after.activeColumnId);
+    },
+  );
+
+  it.each(["reject", "throw", "commit then throw"] as const)(
+    "rolls back a tiled layer reveal when focus is %s",
+    (behavior) => {
+      const setup = createTiledLayerRevealFixture("right");
+      const before = setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      );
+      const frames = setup.windows.map(({ window }) => ({
+        ...window.frameGeometry,
+      }));
+      const writes = setup.windows.map(({ writeCount }) => writeCount);
+      const state = setup.controller as unknown as {
+        readonly lastFloatingFocus: ReadonlyMap<string, WindowId>;
+        readonly lastTiledFocus: ReadonlyMap<string, WindowId>;
+      };
+      const key = `${setup.output.name}\u0000${setup.desktop.id}`;
+      const rememberedFloating = state.lastFloatingFocus.get(key);
+      let targetRequest = true;
+      setup.fixture.setActivationBehavior((window, commit) => {
+        if (window !== setup.target.window || !targetRequest) {
+          commit();
+          return;
+        }
+
+        targetRequest = false;
+
+        if (behavior === "reject") {
+          return;
+        }
+
+        if (behavior === "commit then throw") {
+          commit();
+        }
+
+        throw new Error("injected focus failure");
+      });
+
+      expect(setup.controller.focusTiling()).toBe(false);
+      expect(setup.fixture.workspace.activeWindow).toBe(setup.floating.window);
+      expect(
+        setup.layout.snapshot(
+          outputId(setup.output.name),
+          desktopId(setup.desktop.id),
+        ),
+      ).toEqual(before);
+      expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
+        frames,
+      );
+      expect(setup.target.writeCount).toBe((writes[0] ?? 0) + 2);
+      expect(setup.minimized.map(({ writeCount }) => writeCount)).toEqual(
+        writes.slice(1, 4),
+      );
+      expect(setup.floating.writeCount).toBe(writes[writes.length - 1]);
+      expect(state.lastFloatingFocus.get(key)).toBe(rememberedFloating);
+      expect(state.lastTiledFocus.get(key)).toBeUndefined();
+      expect(setup.scheduler.pendingCount).toBe(0);
+    },
+  );
+
+  it.each(["minimize", "remove"] as const)(
+    "forgets a tiled layer target invalidated by %s in the active column",
+    (behavior) => {
+      const output = createOutput("DP-1", 0);
+      const desktop = { id: "desktop-1" };
+      const target = createTrackedWindow("target", output, desktop);
+      const sibling = createTrackedWindow("sibling", output, desktop);
+      const floating = createTrackedWindow("floating", output, desktop);
+      const fixture = createWorkspace(
+        output,
+        desktop,
+        [output],
+        [desktop],
+        [target.window, sibling.window, floating.window],
+      );
+      const scheduler = new ManualScheduler();
+      const controller = new RuntimeController(fixture.workspace, {
+        clientAreaOption: 2,
+        gap: 10,
+        schedule: scheduler.schedule,
+        scheduleResume: scheduler.schedule,
+      });
+
+      expect(controller.start()).toBe(true);
+      expect(controller.toggleFloating()).toBe(true);
+      installTestLayout(controller, output, desktop, "column:stack", [
+        {
+          id: "column:stack",
+          width: { kind: "fixed", value: 400 },
+          windowIds: ["target", "sibling"],
+        },
+      ]);
+      fixture.workspace.activeWindow = target.window;
+      fixture.workspace.activeWindow = floating.window;
+      const key = `${output.name}\u0000${desktop.id}`;
+      const state = controller as unknown as {
+        readonly lastFloatingFocus: ReadonlyMap<string, WindowId>;
+        readonly lastTiledFocus: ReadonlyMap<string, WindowId>;
+      };
+      const rememberedFloating = state.lastFloatingFocus.get(key);
+      let targetRequest = true;
+      fixture.setActivationBehavior((window, commit) => {
+        commit();
+
+        if (window !== target.window || !targetRequest) {
+          return;
+        }
+
+        targetRequest = false;
+
+        if (behavior === "minimize") {
+          setWindowState("minimized", target, true);
+        } else {
+          fixture.windowRemoved.emit(target.window);
+        }
+      });
+
+      expect(state.lastTiledFocus.get(key)).toBe(windowId("target"));
+      expect(controller.focusTiling()).toBe(false);
+      fixture.setActivationBehavior(null);
+      expect(fixture.workspace.activeWindow).toBe(floating.window);
+      expect(state.lastFloatingFocus.get(key)).toBe(rememberedFloating);
+      expect(state.lastTiledFocus.get(key)).toBeUndefined();
+
+      if (behavior === "minimize") {
+        setWindowState("minimized", target, false);
+      }
+
+      flushManualScheduler(scheduler);
+      expect(
+        testLayoutColumns(controller, output, desktop).flatMap(
+          (column) => column.windowIds,
+        ),
+      ).toEqual(behavior === "remove" ? ["sibling"] : ["target", "sibling"]);
+    },
+  );
+
+  it.each(["minimize", "remove"] as const)(
+    "forgets a revealed tiled layer target invalidated by %s",
+    (behavior) => {
+      const setup = createTiledLayerRevealFixture("right");
+      setup.fixture.workspace.activeWindow = setup.target.window;
+      setup.fixture.workspace.activeWindow = setup.floating.window;
+      const key = `${setup.output.name}\u0000${setup.desktop.id}`;
+      const state = setup.controller as unknown as {
+        readonly dirtyContexts: ReadonlySet<string>;
+        readonly lastFloatingFocus: ReadonlyMap<string, WindowId>;
+        readonly lastTiledFocus: ReadonlyMap<string, WindowId>;
+      };
+      const rememberedFloating = state.lastFloatingFocus.get(key);
+      let targetRequest = true;
+      setup.fixture.setActivationBehavior((window, commit) => {
+        commit();
+
+        if (window !== setup.target.window || !targetRequest) {
+          return;
+        }
+
+        targetRequest = false;
+
+        if (behavior === "minimize") {
+          setWindowState("minimized", setup.target, true);
+        } else {
+          setup.fixture.windowRemoved.emit(setup.target.window);
+        }
+      });
+
+      expect(state.lastTiledFocus.get(key)).toBe(windowId("target"));
+      expect(setup.controller.focusTiling()).toBe(false);
+      setup.fixture.setActivationBehavior(null);
+      expect(setup.fixture.workspace.activeWindow).toBe(setup.floating.window);
+      expect(state.lastFloatingFocus.get(key)).toBe(rememberedFloating);
+      expect(state.lastTiledFocus.get(key)).toBeUndefined();
+
+      if (behavior === "minimize") {
+        setWindowState("minimized", setup.target, false);
+      }
+
+      flushManualScheduler(setup.scheduler);
+      expect(
+        testLayoutColumns(setup.controller, setup.output, setup.desktop).some(
+          (column) => column.windowIds.includes("target"),
+        ),
+      ).toBe(behavior !== "remove");
+      expect(state.dirtyContexts.has(key)).toBe(false);
+    },
+  );
+
+  it("rolls back a partially written tiled layer reveal before focus", () => {
+    const setup = createTiledLayerRevealFixture("right", true);
+    const sibling = setup.targetSibling;
+
+    if (!sibling) {
+      throw new Error("missing partial reveal sibling");
+    }
+
+    const before = setup.layout.snapshot(
+      outputId(setup.output.name),
+      desktopId(setup.desktop.id),
+    );
+    const frames = setup.windows.map(({ window }) => ({
+      ...window.frameGeometry,
+    }));
+    const writes = setup.windows.map(({ writeCount }) => writeCount);
+    const activationCount = setup.fixture.activationCount;
+    const warning = console.warn;
+    sibling.setWriteBehavior(() => {
+      throw new Error("injected geometry failure");
+    });
+    console.warn = () => undefined;
+
+    try {
+      expect(setup.controller.focusTiling()).toBe(false);
+    } finally {
+      console.warn = warning;
+      sibling.setWriteBehavior(null);
+    }
+
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.floating.window);
+    expect(setup.fixture.activationCount).toBe(activationCount);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(before);
+    expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
+      frames,
+    );
+    expect(setup.target.writeCount).toBe((writes[0] ?? 0) + 2);
+    expect(sibling.writeCount).toBe((writes[1] ?? 0) + 2);
+    expect(setup.scheduler.pendingCount).toBe(1);
+    flushManualScheduler(setup.scheduler);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.floating.window);
+  });
+
+  it("defers frame recovery when topology supersedes a tiled layer reveal", () => {
+    const trackedOutput = createTrackedOutput("DP-1", 0);
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const setup = createTiledLayerRevealFixture("right", false, {
+      output: trackedOutput.output,
+      resumeScheduler,
+      scheduler: workScheduler,
+    });
+    const before = setup.layout.snapshot(
+      outputId(setup.output.name),
+      desktopId(setup.desktop.id),
+    );
+    const targetFrame = { ...setup.target.window.frameGeometry };
+    const targetWrites = setup.target.writeCount;
+    const activationCount = setup.fixture.activationCount;
+    const key = `${setup.output.name}\u0000${setup.desktop.id}`;
+    const state = setup.controller as unknown as {
+      readonly dirtyContexts: ReadonlySet<string>;
+    };
+    let superseded = false;
+    setup.target.setWriteBehavior((_frame, commit) => {
+      commit();
+
+      if (superseded) {
+        return;
+      }
+
+      superseded = true;
+      trackedOutput.setGeometry({
+        height: 800,
+        width: 1000,
+        x: 200,
+        y: 0,
+      });
+      trackedOutput.geometryChanged.emit();
+    });
+
+    expect(setup.controller.focusTiling()).toBe(false);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.floating.window);
+    expect(setup.fixture.activationCount).toBe(activationCount);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(before);
+    expect(setup.target.window.frameGeometry).not.toEqual(targetFrame);
+    expect(setup.target.writeCount).toBe(targetWrites + 1);
+    expect(state.dirtyContexts.has(key)).toBe(true);
+    expect(resumeScheduler.pendingCount).toBe(1);
+
+    setup.target.setWriteBehavior(null);
+    flushTopologyRecovery(resumeScheduler, workScheduler);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.floating.window);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(before);
+    expect(setup.target.window.frameGeometry).toMatchObject({
+      width: 400,
+      x: 1440,
+    });
+    expect(setup.target.writeCount).toBe(targetWrites + 2);
+    expect(state.dirtyContexts.has(key)).toBe(false);
+    expect(resumeScheduler.pendingCount).toBe(0);
+    expect(workScheduler.pendingCount).toBe(0);
+  });
+
+  it.each([
+    "fullscreen",
+    "maximized",
+    "native tiled",
+    "restore settling",
+    "toggle unsettled",
+  ] as const)(
+    "does not bypass a %s tiled layer candidate after minimized members",
+    (blocker) => {
+      const output = createOutput("DP-1", 0);
+      const desktop = { id: "desktop-1" };
+      const left = createTrackedWindow("left", output, desktop);
+      const activeMinimized = createTrackedWindow(
+        "active-minimized",
+        output,
+        desktop,
+      );
+      const candidateMinimized = createTrackedWindow(
+        "candidate-minimized",
+        output,
+        desktop,
+      );
+      const blocked = createTrackedWindow("blocked", output, desktop);
+      const farther = createTrackedWindow("farther", output, desktop);
+      const floating = createTrackedWindow("floating", output, desktop);
+      const windows = [
+        left,
+        activeMinimized,
+        candidateMinimized,
+        blocked,
+        farther,
+        floating,
+      ];
+      const fixture = createWorkspace(
+        output,
+        desktop,
+        [output],
+        [desktop],
+        windows.map(({ window }) => window),
+      );
+      const scheduler = new ManualScheduler();
+      const controller = new RuntimeController(fixture.workspace, {
+        clientAreaOption: 2,
+        gap: 10,
+        schedule: scheduler.schedule,
+        scheduleResume: scheduler.schedule,
+      });
+
+      expect(controller.start()).toBe(true);
+      expect(controller.toggleFloating()).toBe(true);
+      const layout = installTestLayout(
+        controller,
+        output,
+        desktop,
+        "column:active-minimized",
+        [
+          {
+            id: "column:left",
+            width: { kind: "fixed", value: 240 },
+            windowIds: ["left"],
+          },
+          {
+            id: "column:active-minimized",
+            width: { kind: "fixed", value: 250 },
+            windowIds: ["active-minimized"],
+          },
+          {
+            id: "column:blocked",
+            width: { kind: "fixed", value: 260 },
+            windowIds: ["candidate-minimized", "blocked"],
+          },
+          {
+            id: "column:farther",
+            width: { kind: "fixed", value: 270 },
+            windowIds: ["farther"],
+          },
+        ],
+      );
+      fixture.workspace.activeWindow = floating.window;
+      setWindowState("minimized", activeMinimized, true);
+      setWindowState("minimized", candidateMinimized, true);
+      blockWindowFocus(controller, blocked, blocker);
+      flushManualScheduler(scheduler);
+      const before = layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      );
+      const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
+      const activationCount = fixture.activationCount;
+
+      expect(controller.focusTiling()).toBe(false);
+      expect(fixture.workspace.activeWindow).toBe(floating.window);
+      expect(fixture.activationCount).toBe(activationCount);
+      expect(
+        layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+      ).toEqual(before);
+      expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
+      expect(activeMinimized.window.minimized).toBe(true);
+      expect(candidateMinimized.window.minimized).toBe(true);
+    },
+  );
+
+  it.each([
+    "fullscreen",
+    "maximized",
+    "native tiled",
+    "restore settling",
+    "toggle unsettled",
+  ] as const)(
+    "does not bypass a remembered %s floating layer candidate",
+    (blocker) => {
+      const output = createOutput("DP-1", 0);
+      const desktop = { id: "desktop-1" };
+      const tiled = createTrackedWindow("tiled", output, desktop);
+      const eligible = createTrackedWindow("eligible", output, desktop);
+      const blocked = createTrackedWindow("blocked", output, desktop);
+      const windows = [tiled, eligible, blocked];
+      const fixture = createWorkspace(
+        output,
+        desktop,
+        [output],
+        [desktop],
+        windows.map(({ window }) => window),
+      );
+      const scheduler = new ManualScheduler();
+      const controller = new RuntimeController(fixture.workspace, {
+        clientAreaOption: 2,
+        gap: 10,
+        schedule: scheduler.schedule,
+        scheduleResume: scheduler.schedule,
+      });
+
+      expect(controller.start()).toBe(true);
+      expect(controller.toggleFloating()).toBe(true);
+      fixture.workspace.activeWindow = eligible.window;
+      expect(controller.toggleFloating()).toBe(true);
+      fixture.workspace.activeWindow = blocked.window;
+      fixture.workspace.activeWindow = tiled.window;
+      blockWindowFocus(controller, blocked, blocker);
+      flushManualScheduler(scheduler);
+      const layout = runtimeLayout(controller);
+      const before = layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      );
+      const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
+      const writes = windows.map(({ writeCount }) => writeCount);
+      const activationCount = fixture.activationCount;
+
+      expect(controller.focusFloating()).toBe(false);
+      expect(controller.switchFocusBetweenFloatingAndTiling()).toBe(false);
+      expect(fixture.workspace.activeWindow).toBe(tiled.window);
+      expect(fixture.activationCount).toBe(activationCount);
+      expect(
+        layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+      ).toEqual(before);
+      expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
+      expect(windows.map(({ writeCount }) => writeCount)).toEqual(writes);
+    },
+  );
 
   it("keeps remembered layer focus isolated between output contexts", () => {
     const firstOutput = createOutput("DP-1", 0);
@@ -6884,6 +8233,250 @@ describe("RuntimeController", () => {
     expect(controller.focusRight()).toBe(true);
     expect(fixture.workspace.activeWindow).toBe(eligible.window);
   });
+
+  it("skips a minimized manual-floating window without changing its placement", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const tiled = createTrackedWindow("tiled", output, desktop);
+    const eligible = createTrackedWindow("eligible", output, desktop);
+    const minimized = createTrackedWindow("minimized", output, desktop);
+    const active = createTrackedWindow("active", output, desktop);
+    const windows = [tiled, eligible, minimized, active];
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map(({ window }) => window),
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+      schedule: scheduler.schedule,
+      scheduleResume: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(controller.toggleFloating()).toBe(true);
+    fixture.workspace.activeWindow = eligible.window;
+    expect(controller.toggleFloating()).toBe(true);
+    fixture.workspace.activeWindow = minimized.window;
+    expect(controller.toggleFloating()).toBe(true);
+    active.setFrameGeometry({ height: 100, width: 100, x: 400, y: 400 });
+    minimized.setFrameGeometry({ height: 100, width: 100, x: 501, y: 400 });
+    eligible.setFrameGeometry({ height: 100, width: 100, x: 600, y: 400 });
+    fixture.workspace.activeWindow = active.window;
+    setWindowState("minimized", minimized, true);
+    flushManualScheduler(scheduler);
+    const layout = runtimeLayout(controller);
+    const before = layout.snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
+    const writes = windows.map(({ writeCount }) => writeCount);
+
+    expect(controller.floatingCount).toBe(3);
+    expect(controller.focusRight()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(eligible.window);
+    expect(minimized.window.minimized).toBe(true);
+    expect(controller.floatingCount).toBe(3);
+    expect(
+      layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+    ).toEqual(before);
+    expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
+    expect(windows.map(({ writeCount }) => writeCount)).toEqual(writes);
+
+    setWindowState("minimized", minimized, false);
+    flushManualScheduler(scheduler);
+    expect(controller.floatingCount).toBe(3);
+    expect(minimized.window.frameGeometry).toEqual(frames[2]);
+    expect(
+      layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+    ).toEqual(before);
+  });
+
+  it.each(
+    (
+      [
+        "fullscreen",
+        "maximized",
+        "native tiled",
+        "restore settling",
+        "toggle unsettled",
+      ] as const
+    ).flatMap((blocker) =>
+      (
+        [
+          {
+            blockedFrame: { height: 100, width: 100, x: 400, y: 500 },
+            destination: "left",
+            eligibleFrame: { height: 100, width: 100, x: 300, y: 500 },
+          },
+          {
+            blockedFrame: { height: 100, width: 100, x: 600, y: 500 },
+            destination: "right",
+            eligibleFrame: { height: 100, width: 100, x: 700, y: 500 },
+          },
+          {
+            blockedFrame: { height: 100, width: 100, x: 500, y: 400 },
+            destination: "up",
+            eligibleFrame: { height: 100, width: 100, x: 500, y: 300 },
+          },
+          {
+            blockedFrame: { height: 100, width: 100, x: 500, y: 600 },
+            destination: "down",
+            eligibleFrame: { height: 100, width: 100, x: 500, y: 700 },
+          },
+          {
+            blockedFrame: { height: 100, width: 100, x: 100, y: 500 },
+            destination: "first",
+            eligibleFrame: { height: 100, width: 100, x: 200, y: 500 },
+          },
+          {
+            blockedFrame: { height: 100, width: 100, x: 900, y: 500 },
+            destination: "last",
+            eligibleFrame: { height: 100, width: 100, x: 800, y: 500 },
+          },
+        ] as const
+      ).map((testCase) => ({ ...testCase, blocker })),
+    ),
+  )(
+    "does not bypass a $blocker floating $destination target",
+    ({ blockedFrame, blocker, destination, eligibleFrame }) => {
+      const output = createOutput("DP-1", 0);
+      const desktop = { id: "desktop-1" };
+      const tiled = createTrackedWindow("tiled", output, desktop);
+      const eligible = createTrackedWindow("eligible", output, desktop);
+      const blocked = createTrackedWindow("blocked", output, desktop);
+      const active = createTrackedWindow("active", output, desktop);
+      const windows = [tiled, eligible, blocked, active];
+      const fixture = createWorkspace(
+        output,
+        desktop,
+        [output],
+        [desktop],
+        windows.map(({ window }) => window),
+      );
+      const scheduler = new ManualScheduler();
+      const controller = new RuntimeController(fixture.workspace, {
+        clientAreaOption: 2,
+        gap: 10,
+        schedule: scheduler.schedule,
+        scheduleResume: scheduler.schedule,
+      });
+
+      expect(controller.start()).toBe(true);
+      expect(controller.toggleFloating()).toBe(true);
+      fixture.workspace.activeWindow = blocked.window;
+      expect(controller.toggleFloating()).toBe(true);
+      fixture.workspace.activeWindow = eligible.window;
+      expect(controller.toggleFloating()).toBe(true);
+      active.setFrameGeometry({ height: 100, width: 100, x: 500, y: 500 });
+      blocked.setFrameGeometry(blockedFrame);
+      eligible.setFrameGeometry(eligibleFrame);
+      fixture.workspace.activeWindow = active.window;
+      blockWindowFocus(controller, blocked, blocker);
+      flushManualScheduler(scheduler);
+      const layout = runtimeLayout(controller);
+      const before = layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      );
+      const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
+      const writes = windows.map(({ writeCount }) => writeCount);
+      const activationCount = fixture.activationCount;
+      const focused =
+        destination === "left"
+          ? controller.focusLeft()
+          : destination === "right"
+            ? controller.focusRight()
+            : destination === "up"
+              ? controller.focusUp()
+              : destination === "down"
+                ? controller.focusDown()
+                : destination === "first"
+                  ? controller.focusFirstColumn()
+                  : controller.focusLastColumn();
+
+      expect(focused).toBe(false);
+      expect(fixture.workspace.activeWindow).toBe(active.window);
+      expect(fixture.activationCount).toBe(activationCount);
+      expect(
+        layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+      ).toEqual(before);
+      expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
+      expect(windows.map(({ writeCount }) => writeCount)).toEqual(writes);
+    },
+  );
+
+  it.each([
+    "fullscreen",
+    "maximized",
+    "native tiled",
+    "restore settling",
+    "toggle unsettled",
+  ] as const)(
+    "keeps every floating focus command inert while active is %s",
+    (blocker) => {
+      const output = createOutput("DP-1", 0);
+      const desktop = { id: "desktop-1" };
+      const target = createTrackedWindow("target", output, desktop);
+      const active = createTrackedWindow("active", output, desktop);
+      const windows = [target, active];
+      const fixture = createWorkspace(
+        output,
+        desktop,
+        [output],
+        [desktop],
+        windows.map(({ window }) => window),
+      );
+      const scheduler = new ManualScheduler();
+      const controller = new RuntimeController(fixture.workspace, {
+        clientAreaOption: 2,
+        gap: 10,
+        schedule: scheduler.schedule,
+        scheduleResume: scheduler.schedule,
+      });
+
+      expect(controller.start()).toBe(true);
+      expect(controller.toggleFloating()).toBe(true);
+      fixture.workspace.activeWindow = target.window;
+      expect(controller.toggleFloating()).toBe(true);
+      active.setFrameGeometry({ height: 100, width: 100, x: 500, y: 500 });
+      target.setFrameGeometry({ height: 100, width: 100, x: 700, y: 700 });
+      fixture.workspace.activeWindow = active.window;
+      blockWindowFocus(controller, active, blocker);
+      flushManualScheduler(scheduler);
+      const layout = runtimeLayout(controller);
+      const before = layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      );
+      const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
+      const writes = windows.map(({ writeCount }) => writeCount);
+      const activationCount = fixture.activationCount;
+
+      expect(controller.focusLeft()).toBe(false);
+      expect(controller.focusRight()).toBe(false);
+      expect(controller.focusUp()).toBe(false);
+      expect(controller.focusDown()).toBe(false);
+      expect(controller.focusFirstColumn()).toBe(false);
+      expect(controller.focusLastColumn()).toBe(false);
+      expect(controller.switchFocusBetweenFloatingAndTiling()).toBe(false);
+      expect(controller.focusTiling()).toBe(false);
+      expect(controller.focusFloating()).toBe(false);
+      expect(fixture.workspace.activeWindow).toBe(active.window);
+      expect(fixture.activationCount).toBe(activationCount);
+      expect(
+        layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+      ).toEqual(before);
+      expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
+      expect(windows.map(({ writeCount }) => writeCount)).toEqual(writes);
+    },
+  );
 
   it("keeps tiled directional focus behavior when floating windows exist", () => {
     const output = createOutput("DP-1", 0);
@@ -18775,6 +20368,124 @@ interface StackedFullscreenFixture {
   readonly output: KWinOutput;
   readonly scheduler: ManualScheduler;
   readonly windows: readonly TrackedWindow[];
+}
+
+interface TiledLayerRevealFixture {
+  readonly controller: RuntimeController;
+  readonly desktop: KWinVirtualDesktop;
+  readonly fixture: WorkspaceFixture;
+  readonly floating: TrackedWindow;
+  readonly layout: LayoutEngine;
+  readonly minimized: readonly TrackedWindow[];
+  readonly output: KWinOutput;
+  readonly resumeScheduler: ManualScheduler;
+  readonly scheduler: ManualScheduler;
+  readonly target: TrackedWindow;
+  readonly targetSibling: TrackedWindow | null;
+  readonly windows: readonly TrackedWindow[];
+}
+
+function createTiledLayerRevealFixture(
+  direction: "left" | "right",
+  targetStack = false,
+  options: {
+    readonly output?: KWinOutput;
+    readonly resumeScheduler?: ManualScheduler;
+    readonly scheduler?: ManualScheduler;
+  } = {},
+): TiledLayerRevealFixture {
+  const output = options.output ?? createOutput("DP-1", 0);
+  const desktop = { id: "desktop-1" };
+  const target = createTrackedWindow("target", output, desktop);
+  const targetSibling = targetStack
+    ? createTrackedWindow("target-sibling", output, desktop)
+    : null;
+  const firstMinimized = createTrackedWindow("minimized-1", output, desktop);
+  const secondMinimized = createTrackedWindow("minimized-2", output, desktop);
+  const thirdMinimized = createTrackedWindow("minimized-3", output, desktop);
+  const floating = createTrackedWindow("floating", output, desktop);
+  const minimized = [firstMinimized, secondMinimized, thirdMinimized];
+  const windows = [
+    target,
+    ...(targetSibling ? [targetSibling] : []),
+    ...minimized,
+    floating,
+  ];
+  const fixture = createWorkspace(
+    output,
+    desktop,
+    [output],
+    [desktop],
+    windows.map(({ window }) => window),
+  );
+  const scheduler = options.scheduler ?? new ManualScheduler();
+  const resumeScheduler = options.resumeScheduler ?? scheduler;
+  const controller = new RuntimeController(fixture.workspace, {
+    clientAreaOption: 2,
+    gap: 10,
+    schedule: scheduler.schedule,
+    scheduleResume: resumeScheduler.schedule,
+  });
+
+  if (!controller.start() || !controller.toggleFloating()) {
+    throw new Error("could not initialize tiled layer reveal fixture");
+  }
+
+  const targetColumn: TestLayoutColumn = {
+    id: "column:target",
+    width: { kind: "fixed", value: 400 },
+    ...(targetSibling
+      ? {
+          windowHeights: [
+            { kind: "auto", weight: 2 },
+            { kind: "auto", weight: 3 },
+          ],
+        }
+      : {}),
+    windowIds: ["target", ...(targetSibling ? ["target-sibling"] : [])],
+  };
+  const minimizedColumns: readonly TestLayoutColumn[] = minimized.map(
+    (_window, index) => ({
+      id: `column:minimized-${String(index + 1)}`,
+      width: { kind: "fixed", value: 400 },
+      windowIds: [`minimized-${String(index + 1)}`],
+    }),
+  );
+  const columns =
+    direction === "right"
+      ? [...minimizedColumns, targetColumn]
+      : [targetColumn, ...minimizedColumns];
+  const activeColumnId =
+    direction === "right" ? "column:minimized-1" : "column:minimized-3";
+  const layout = installTestLayout(
+    controller,
+    output,
+    desktop,
+    activeColumnId,
+    columns,
+  );
+  fixture.workspace.activeWindow = floating.window;
+
+  for (const candidate of minimized) {
+    setWindowState("minimized", candidate, true);
+  }
+
+  flushManualScheduler(scheduler);
+
+  return {
+    controller,
+    desktop,
+    fixture,
+    floating,
+    layout,
+    minimized,
+    output,
+    resumeScheduler,
+    scheduler,
+    target,
+    targetSibling,
+    windows,
+  };
 }
 
 function createStackedFullscreenFixture(
