@@ -1981,6 +1981,29 @@ set_gap() {
     >/dev/null
 }
 
+set_layout_configuration() {
+  kwriteconfig6 \
+    --file "$XDG_CONFIG_HOME/kwinrc" \
+    --group "Script-${plugin_id}" \
+    --key DefaultColumnWidthPercent \
+    --type int \
+    "$1" || return 1
+
+  kwriteconfig6 \
+    --file "$XDG_CONFIG_HOME/kwinrc" \
+    --group "Script-${plugin_id}" \
+    --key Gap \
+    --type int \
+    "$2" || return 1
+
+  busctl --user call \
+    org.kde.KWin \
+    /KWin \
+    org.kde.KWin \
+    reconfigure \
+    >/dev/null
+}
+
 start_qml_client() {
   local protocol=$1
   local client=$2
@@ -5915,6 +5938,59 @@ run_scenario() {
     fail "Driftile did not restore the default $protocol window gap: $(describe_layout "$first_title" "$second_title" "$third_title")"
   wait_for_active "$third_title" || \
     fail "Driftile changed $protocol focus while restoring the window gap"
+
+  # The gap transition is the observable barrier for the co-delivered width policy.
+  set_layout_configuration 70 24 || \
+    fail "KWin could not apply the $protocol layout configuration"
+  wait_for_layout \
+    "$first_title" "-592,24,604,672" \
+    "$second_title" "36,24,604,672" \
+    "$third_title" "664,24,604,672" || \
+    fail "Driftile changed existing $protocol widths while applying the configuration barrier: $(describe_layout "$first_title" "$second_title" "$third_title")"
+  wait_for_active "$third_title" || \
+    fail "Driftile changed $protocol focus at the configuration barrier"
+  invoke_shortcut "driftile_reset_column_width" || \
+    fail "KGlobalAccel could not reset the active $protocol column to its configured width"
+  wait_for_layout \
+    "$first_title" "-831,24,604,672" \
+    "$second_title" "-203,24,604,672" \
+    "$third_title" "425,24,855,672" || \
+    fail "Driftile did not use the exact configured $protocol default column width: $(describe_layout "$first_title" "$second_title" "$third_title")"
+  wait_for_active "$third_title" || \
+    fail "Driftile changed $protocol focus while resetting to the configured width"
+
+  set_layout_configuration 50 16 || \
+    fail "KWin could not restore the $protocol layout configuration"
+  wait_for_layout \
+    "$first_title" "-853,16,616,688" \
+    "$second_title" "-221,16,616,688" \
+    "$third_title" "411,16,869,688" || \
+    fail "Driftile did not preserve the active $protocol 70% width before explicit reset: $(describe_layout "$first_title" "$second_title" "$third_title")"
+  wait_for_active "$third_title" || \
+    fail "Driftile changed $protocol focus while restoring the layout configuration"
+  invoke_shortcut "driftile_reset_column_width" || \
+    fail "KGlobalAccel could not restore the active $protocol column width"
+  wait_for_layout \
+    "$first_title" "-853,16,616,688" \
+    "$second_title" "-221,16,616,688" \
+    "$third_title" "411,16,616,688" || \
+    fail "Driftile did not restore the exact default $protocol column width: $(describe_layout "$first_title" "$second_title" "$third_title")"
+  activate_window "$first_title" || \
+    fail "KWin could not reveal the first $protocol column after default-width acceptance"
+  wait_for_layout \
+    "$first_title" "0,16,616,688" \
+    "$second_title" "632,16,616,688" \
+    "$third_title" "1264,16,616,688" || \
+    fail "Driftile did not normalize the $protocol viewport after default-width acceptance: $(describe_layout "$first_title" "$second_title" "$third_title")"
+  activate_window "$third_title" || \
+    fail "KWin could not restore active $protocol focus after default-width acceptance"
+  wait_for_layout \
+    "$first_title" "-600,16,616,688" \
+    "$second_title" "32,16,616,688" \
+    "$third_title" "664,16,616,688" || \
+    fail "Driftile did not restore the exact $protocol viewport after default-width acceptance: $(describe_layout "$first_title" "$second_title" "$third_title")"
+  wait_for_active "$third_title" || \
+    fail "Driftile changed $protocol focus after default-width acceptance"
 
   if [[ "$protocol" == xwayland || "$protocol" == x11 ]]; then
     verify_xterm_resize_increment_policy \

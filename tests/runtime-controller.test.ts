@@ -3658,6 +3658,510 @@ describe("RuntimeController", () => {
     expect(decorated.window.frameGeometry).toEqual(originalFrame);
   });
 
+  it("bounds, coalesces, and discards default column width changes", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const window = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [window.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+    const state = controller as unknown as {
+      readonly pendingDefaultColumnWidth: {
+        readonly kind: "fixed" | "proportion";
+        readonly value: number;
+      } | null;
+      readonly defaultColumnWidth: {
+        readonly kind: "fixed" | "proportion";
+        readonly value: number;
+      };
+    };
+
+    expect(controller.setDefaultColumnWidthPercent(40)).toBe(true);
+    expect(controller.setDefaultColumnWidthPercent(40)).toBe(false);
+    expect(state.defaultColumnWidth).toEqual({
+      kind: "proportion",
+      value: 0.4,
+    });
+    expect(state.pendingDefaultColumnWidth).toBeNull();
+    expect(scheduler.pendingCount).toBe(0);
+    expect(controller.start()).toBe(true);
+    expect(window.window.frameGeometry).toEqual({
+      height: 780,
+      width: 386,
+      x: 10,
+      y: 10,
+    });
+    const settledFrame = { ...window.window.frameGeometry };
+    const settledWrites = window.writeCount;
+
+    for (const invalid of [
+      9,
+      101,
+      40.5,
+      Number.NaN,
+      Number.NEGATIVE_INFINITY,
+      Number.POSITIVE_INFINITY,
+    ]) {
+      expect(controller.setDefaultColumnWidthPercent(invalid)).toBe(false);
+    }
+
+    expect(controller.setDefaultColumnWidthPercent(70)).toBe(true);
+    expect(controller.setDefaultColumnWidthPercent(80)).toBe(true);
+    expect(controller.setDefaultColumnWidthPercent(80)).toBe(false);
+    expect(state.pendingDefaultColumnWidth).toEqual({
+      kind: "proportion",
+      value: 0.8,
+    });
+    expect(scheduler.pendingCount).toBe(1);
+    scheduler.flush();
+    expect(state.defaultColumnWidth).toEqual({
+      kind: "proportion",
+      value: 0.8,
+    });
+    expect(state.pendingDefaultColumnWidth).toBeNull();
+    expect(controller.setDefaultColumnWidthPercent(80)).toBe(false);
+
+    expect(controller.setDefaultColumnWidthPercent(100)).toBe(true);
+    scheduler.flush();
+    expect(state.defaultColumnWidth).toEqual({ kind: "proportion", value: 1 });
+    expect(controller.setDefaultColumnWidthPercent(10)).toBe(true);
+    scheduler.flush();
+    expect(state.defaultColumnWidth).toEqual({
+      kind: "proportion",
+      value: 0.1,
+    });
+    expect(window.window.frameGeometry).toEqual(settledFrame);
+    expect(window.writeCount).toBe(settledWrites);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "proportion",
+      value: 0.4,
+    });
+
+    expect(controller.setDefaultColumnWidthPercent(30)).toBe(true);
+    expect(scheduler.pendingCount).toBe(1);
+    controller.stop();
+    expect(state.pendingDefaultColumnWidth).toBeNull();
+    scheduler.flush();
+    expect(state.defaultColumnWidth).toEqual({
+      kind: "proportion",
+      value: 0.1,
+    });
+  });
+
+  it("keeps existing tiled, hidden, floating, and excluded windows unchanged", () => {
+    const output = createOutput("DP-1", 0);
+    const visibleDesktop = { id: "desktop-1" };
+    const hiddenDesktop = { id: "desktop-2" };
+    const hidden = createTrackedWindow("hidden", output, hiddenDesktop);
+    const floating = createTrackedWindow("floating", output, visibleDesktop, {
+      frameGeometry: { height: 222, width: 333, x: 73, y: 91 },
+    });
+    const excluded = createTrackedWindow("dialog", output, visibleDesktop, {
+      dialog: true,
+      frameGeometry: { height: 240, width: 320, x: 101, y: 117 },
+      normalWindow: false,
+    });
+    const visible = createTrackedWindow("visible", output, visibleDesktop);
+    const windows = [hidden, floating, excluded, visible];
+    const fixture = createWorkspace(
+      output,
+      visibleDesktop,
+      [output],
+      [visibleDesktop, hiddenDesktop],
+      windows.map(({ window }) => window),
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    fixture.workspace.activeWindow = floating.window;
+    flushManualScheduler(scheduler);
+    expect(controller.toggleFloating()).toBe(true);
+    flushManualScheduler(scheduler);
+    fixture.workspace.activeWindow = visible.window;
+    flushManualScheduler(scheduler);
+    const layout = runtimeLayout(controller);
+    const visibleBefore = layout.snapshot(
+      outputId(output.name),
+      desktopId(visibleDesktop.id),
+    );
+    const hiddenBefore = layout.snapshot(
+      outputId(output.name),
+      desktopId(hiddenDesktop.id),
+    );
+    const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
+    const writes = windows.map(({ writeCount }) => writeCount);
+    const activationCount = fixture.activationCount;
+
+    expect(controller.setDefaultColumnWidthPercent(40)).toBe(true);
+    expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
+    flushManualScheduler(scheduler);
+
+    expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
+    expect(windows.map(({ writeCount }) => writeCount)).toEqual(writes);
+    expect(
+      layout.snapshot(outputId(output.name), desktopId(visibleDesktop.id)),
+    ).toEqual(visibleBefore);
+    expect(
+      layout.snapshot(outputId(output.name), desktopId(hiddenDesktop.id)),
+    ).toEqual(hiddenBefore);
+    expect(controller.managedCount).toBe(2);
+    expect(controller.floatingCount).toBe(1);
+    expect(controller.automaticFloatingCount).toBe(1);
+    expect(fixture.workspace.activeWindow).toBe(visible.window);
+    expect(fixture.activationCount).toBe(activationCount);
+  });
+
+  it("resets to a changed default column width transactionally", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("first", output, desktop);
+    const active = createTrackedWindow("active", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window, active.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+    const warning = console.warn;
+
+    expect(controller.start()).toBe(true);
+    const layout = installTestLayout(
+      controller,
+      output,
+      desktop,
+      "column:stack",
+      [
+        {
+          id: "column:stack",
+          width: { kind: "proportion", value: 0.5 },
+          windowIds: ["first", "active"],
+        },
+      ],
+    );
+    fixture.workspace.activeWindow = active.window;
+    flushManualScheduler(scheduler);
+    expect(controller.setDefaultColumnWidthPercent(40)).toBe(true);
+    flushManualScheduler(scheduler);
+    const before = layout.snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const frames = [first, active].map(({ window }) => ({
+      ...window.frameGeometry,
+    }));
+    const activationCount = fixture.activationCount;
+    let rejectNextWrite = true;
+    active.setWriteBehavior((_frame, commit) => {
+      if (rejectNextWrite) {
+        rejectNextWrite = false;
+        throw new Error("geometry rejected");
+      }
+
+      commit();
+    });
+    console.warn = () => undefined;
+
+    try {
+      expect(controller.resetColumnWidth()).toBe(false);
+    } finally {
+      console.warn = warning;
+      active.setWriteBehavior(null);
+    }
+
+    expect(
+      layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+    ).toEqual(before);
+    expect([first, active].map(({ window }) => window.frameGeometry)).toEqual(
+      frames,
+    );
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+    expect(fixture.activationCount).toBe(activationCount);
+
+    expect(controller.resetColumnWidth()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "proportion",
+      value: 0.4,
+    });
+    expect([first, active].map(({ window }) => window.frameGeometry)).toEqual([
+      { height: 385, width: 386, x: 10, y: 10 },
+      { height: 385, width: 386, x: 10, y: 405 },
+    ]);
+    expect(controller.resetColumnWidth()).toBe(false);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+    expect(fixture.activationCount).toBe(activationCount);
+  });
+
+  it("uses a changed default width for a newly admitted singleton", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const existing = createTrackedWindow("existing", output, desktop);
+    const added = createTrackedWindow("added", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [existing.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    const existingWrites = existing.writeCount;
+    expect(controller.setDefaultColumnWidthPercent(40)).toBe(true);
+    flushManualScheduler(scheduler);
+    fixture.windowAdded.emit(added.window);
+    flushManualScheduler(scheduler);
+
+    const snapshot = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    expect(snapshot.columns.map((column) => column.width)).toEqual([
+      { kind: "proportion", value: 0.5 },
+      { kind: "proportion", value: 0.4 },
+    ]);
+    expect(existing.window.frameGeometry).toEqual({
+      height: 780,
+      width: 485,
+      x: 10,
+      y: 10,
+    });
+    expect(existing.writeCount).toBe(existingWrites);
+    expect(added.window.frameGeometry).toEqual({
+      height: 780,
+      width: 386,
+      x: 505,
+      y: 10,
+    });
+    expect(added.writeCount).toBe(1);
+    expect(fixture.workspace.activeWindow).toBe(existing.window);
+    expect(fixture.activationCount).toBe(0);
+  });
+
+  it("retries a waiting capacity admission with a narrower default width", () => {
+    const output = createOutput("DP-1", 0);
+    const otherOutput = createOutput("HDMI-A-1", 1000);
+    const desktop = { id: "desktop-1" };
+    const existing = createTrackedWindow("existing", output, desktop);
+    const waiting = createTrackedWindow("waiting", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output, otherOutput],
+      [desktop],
+      [existing.window, waiting.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "proportion", value: 0.6 },
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+    const waitingId = windowId("waiting");
+    const state = controller as unknown as {
+      readonly waitingWindowContexts: ReadonlyMap<WindowId, string>;
+    };
+
+    expect(controller.start()).toBe(true);
+    expect(controller.managedCount).toBe(1);
+    expect(state.waitingWindowContexts.has(waitingId)).toBe(true);
+    expect(existing.window.frameGeometry).toEqual({
+      height: 780,
+      width: 584,
+      x: 10,
+      y: 10,
+    });
+    expect(waiting.writeCount).toBe(0);
+    const existingWrites = existing.writeCount;
+
+    expect(controller.setDefaultColumnWidthPercent(40)).toBe(true);
+    flushManualScheduler(scheduler);
+
+    const snapshot = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    expect(controller.managedCount).toBe(2);
+    expect(state.waitingWindowContexts.has(waitingId)).toBe(false);
+    expect(snapshot.columns.map((column) => column.width)).toEqual([
+      { kind: "proportion", value: 0.6 },
+      { kind: "proportion", value: 0.4 },
+    ]);
+    expect(existing.window.frameGeometry).toEqual({
+      height: 780,
+      width: 584,
+      x: 10,
+      y: 10,
+    });
+    expect(existing.writeCount).toBe(existingWrites);
+    expect(waiting.window.frameGeometry).toEqual({
+      height: 780,
+      width: 386,
+      x: 604,
+      y: 10,
+    });
+    expect(waiting.writeCount).toBe(1);
+    expect(fixture.workspace.activeWindow).toBe(waiting.window);
+  });
+
+  it("defers a default width change until topology stabilization completes", () => {
+    const output = createTrackedOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const window = createTrackedWindow("window-1", output.output, desktop);
+    const fixture = createWorkspace(
+      output.output,
+      desktop,
+      [output.output],
+      [desktop],
+      [window.window],
+    );
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+    const state = controller as unknown as {
+      readonly pendingDefaultColumnWidth: {
+        readonly kind: "fixed" | "proportion";
+        readonly value: number;
+      } | null;
+      readonly topologyStabilizing: boolean;
+      readonly defaultColumnWidth: {
+        readonly kind: "fixed" | "proportion";
+        readonly value: number;
+      };
+    };
+
+    expect(controller.start()).toBe(true);
+    const before = runtimeLayout(controller).snapshot(
+      outputId(output.output.name),
+      desktopId(desktop.id),
+    );
+    const settledFrame = { ...window.window.frameGeometry };
+    const writes = window.writeCount;
+    output.geometryChanged.emit();
+    expect(state.topologyStabilizing).toBe(true);
+    expect(controller.setDefaultColumnWidthPercent(40)).toBe(true);
+    expect(workScheduler.pendingCount).toBe(1);
+
+    workScheduler.flush();
+    expect(state.defaultColumnWidth).toEqual({
+      kind: "proportion",
+      value: 0.5,
+    });
+    expect(state.pendingDefaultColumnWidth).toEqual({
+      kind: "proportion",
+      value: 0.4,
+    });
+    expect(window.window.frameGeometry).toEqual(settledFrame);
+    expect(window.writeCount).toBe(writes);
+
+    flushTopologyRecovery(resumeScheduler, workScheduler);
+    expect(state.topologyStabilizing).toBe(false);
+    expect(state.defaultColumnWidth).toEqual({
+      kind: "proportion",
+      value: 0.4,
+    });
+    expect(state.pendingDefaultColumnWidth).toBeNull();
+    expect(window.window.frameGeometry).toEqual(settledFrame);
+    expect(window.writeCount).toBe(writes);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.output.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(before);
+    expect(fixture.workspace.activeWindow).toBe(window.window);
+  });
+
+  it("clamps a narrow default width to a safe frame on a small work area", () => {
+    const trackedOutput = createTrackedOutput("DP-1", 0);
+    const output = trackedOutput.output;
+    trackedOutput.setGeometry({ height: 480, width: 640, x: 0, y: 0 });
+    const desktop = { id: "desktop-1" };
+    const window = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [window.window],
+    );
+    let workAreaWidth = 640;
+    Object.defineProperty(fixture.workspace, "clientArea", {
+      configurable: true,
+      value: () => ({ height: 480, width: workAreaWidth, x: 0, y: 0 }),
+    });
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 64,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    expect(controller.setDefaultColumnWidthPercent(10)).toBe(true);
+    expect(controller.start()).toBe(true);
+    expect(controller.managedCount).toBe(1);
+    expect(window.window.frameGeometry).toEqual({
+      height: 352,
+      width: 64,
+      x: 64,
+      y: 64,
+    });
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "fixed",
+      value: 64,
+    });
+
+    workAreaWidth = 1280;
+    trackedOutput.setGeometry({ height: 480, width: 1280, x: 0, y: 0 });
+    trackedOutput.geometryChanged.emit();
+    flushTopologyRecovery(resumeScheduler, workScheduler);
+    expect(window.window.frameGeometry).toEqual({
+      height: 352,
+      width: 64,
+      x: 64,
+      y: 64,
+    });
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "fixed",
+      value: 64,
+    });
+  });
+
   it("reconfigures visible gaps without changing layout state or focus", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
@@ -19113,7 +19617,7 @@ describe("RuntimeController", () => {
     expect(waiting.writeCount).toBe(1);
   });
 
-  it("leaves a window unmanaged when its size constraints reject the slot", () => {
+  it("clamps a new column to the window minimum width", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
     const constrained = createTrackedWindow("window-1", output, desktop, {
@@ -19135,11 +19639,19 @@ describe("RuntimeController", () => {
 
     controller.start();
 
-    expect(controller.managedCount).toBe(0);
-    expect(constrained.writeCount).toBe(0);
+    expect(controller.managedCount).toBe(1);
+    expect(constrained.window.frameGeometry).toEqual({
+      height: 780,
+      width: 600,
+      x: 10,
+      y: 10,
+    });
+    expect(constrained.writeCount).toBe(1);
 
     fixture.currentDesktopChanged.emit(desktop, desktop, output);
-    expect(scheduler.pendingCount).toBe(0);
+    flushManualScheduler(scheduler);
+    expect(controller.managedCount).toBe(1);
+    expect(constrained.writeCount).toBe(1);
   });
 
   it("cleans up a failed start and can be started again", () => {
@@ -23948,6 +24460,7 @@ describe("RuntimeController desktop transfers", () => {
     expect(transfer.moved.desktopWriteCount).toBe(desktopWrites);
     expect(transfer.moved.window.frameGeometry).toEqual(floatingFrame);
 
+    expect(transfer.controller.setDefaultColumnWidthPercent(70)).toBe(true);
     expect(transfer.controller.toggleFloating()).toBe(true);
     expect(transfer.controller.floatingCount).toBe(0);
     expect(
@@ -23966,6 +24479,17 @@ describe("RuntimeController desktop transfers", () => {
     ).toEqual([
       { id: "column:destination", windowIds: ["destination"] },
       { id: "column:moved", windowIds: ["moved"] },
+    ]);
+    expect(
+      runtimeLayout(transfer.controller)
+        .snapshot(
+          outputId(transfer.output.name),
+          desktopId(transfer.desktops[1].id),
+        )
+        .columns.map((column) => column.width),
+    ).toEqual([
+      { kind: "proportion", value: 0.5 },
+      { kind: "proportion", value: 0.7 },
     ]);
   });
 

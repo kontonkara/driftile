@@ -545,6 +545,45 @@ describe("KWin shortcut handlers", () => {
       'Runtime.DriftileRuntime.setGap(KWin.readConfig("Gap", 16))',
     );
   });
+
+  it("exposes the default column width as a live bounded user setting", () => {
+    const widthEntry = configuration.match(
+      /<entry name="DefaultColumnWidthPercent" type="Int">([\s\S]*?)<\/entry>/,
+    )?.[1];
+    const widthLabel = configurationUi.match(
+      /<widget class="QLabel" name="defaultColumnWidthLabel">([\s\S]*?)<\/widget>/,
+    )?.[1];
+    const widthWidget = configurationUi.match(
+      /<widget class="QSpinBox" name="kcfg_DefaultColumnWidthPercent">([\s\S]*?)<\/widget>/,
+    )?.[1];
+
+    expect(widthEntry).toContain(
+      "<label>Default column width in percent</label>",
+    );
+    expect(widthEntry).toContain("<default>50</default>");
+    expect(widthEntry).toContain("<min>10</min>");
+    expect(widthEntry).toContain("<max>100</max>");
+    expect(widthLabel).toContain("<string>Default column width:</string>");
+    expect(widthLabel).toContain(
+      "<cstring>kcfg_DefaultColumnWidthPercent</cstring>",
+    );
+    expect(widthWidget).toContain("<string> %</string>");
+    expect(widthWidget).toMatch(
+      /<property name="minimum">\s*<number>10<\/number>/,
+    );
+    expect(widthWidget).toMatch(
+      /<property name="maximum">\s*<number>100<\/number>/,
+    );
+    expect(widthWidget).toMatch(
+      /<property name="value">\s*<number>50<\/number>/,
+    );
+    expect(
+      qml.match(/KWin\.readConfig\("DefaultColumnWidthPercent", 50\)/g),
+    ).toHaveLength(2);
+    expect(qml).toMatch(
+      /Runtime\.DriftileRuntime\.setDefaultColumnWidthPercent\(\s*KWin\.readConfig\("DefaultColumnWidthPercent", 50\)\)/,
+    );
+  });
 });
 
 function parseShortcutHandlers(source: string): ShortcutHandler[] {

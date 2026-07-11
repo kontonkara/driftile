@@ -1148,6 +1148,30 @@ let
           >/dev/null
       }
 
+      set_default_column_width_and_gap() {
+        ${pkgs.kdePackages.kconfig}/bin/kwriteconfig6 \
+          --file "$HOME/.config/kwinrc" \
+          --group "Script-${pluginId}" \
+          --key DefaultColumnWidthPercent \
+          --type int \
+          "$1" \
+          || return 1
+        ${pkgs.kdePackages.kconfig}/bin/kwriteconfig6 \
+          --file "$HOME/.config/kwinrc" \
+          --group "Script-${pluginId}" \
+          --key Gap \
+          --type int \
+          "$2" \
+          || return 1
+
+        busctl --user call \
+          org.kde.KWin \
+          /KWin \
+          org.kde.KWin \
+          reconfigure \
+          >/dev/null
+      }
+
       window_fullscreen_state() {
         local id
 
@@ -2692,45 +2716,47 @@ let
         return 1
       }
 
-      wait_for_middle_width() {
-        local attempt
+      middle_width_matches() {
         local comparison=$1
         local expected_first=$2
         local reference_second=$3
         local expected_third=$4
         local first_width
-        local matches
         local second_width
-        local stable_samples=0
         local third_width
 
+        first_width=$(window_frame_width "$title_a" 2>/dev/null || true)
+        second_width=$(window_frame_width "$title_b" 2>/dev/null || true)
+        third_width=$(window_frame_width "$title_c" 2>/dev/null || true)
+
+        [[ "$first_width" =~ ^[0-9]+$ \
+          && "$second_width" =~ ^[0-9]+$ \
+          && "$third_width" =~ ^[0-9]+$ ]] \
+          && ((first_width == expected_first && third_width == expected_third)) \
+          || return 1
+
+        case "$comparison" in
+          equal)
+            ((second_width == reference_second))
+            ;;
+          greater)
+            ((second_width > reference_second))
+            ;;
+          less)
+            ((second_width < reference_second))
+            ;;
+          *)
+            return 1
+            ;;
+        esac
+      }
+
+      wait_for_middle_width() {
+        local attempt
+        local stable_samples=0
+
         for ((attempt = 0; attempt < 100; attempt += 1)); do
-          first_width=$(window_frame_width "$title_a" 2>/dev/null || true)
-          second_width=$(window_frame_width "$title_b" 2>/dev/null || true)
-          third_width=$(window_frame_width "$title_c" 2>/dev/null || true)
-          matches=false
-
-          if [[ "$first_width" =~ ^[0-9]+$ \
-            && "$second_width" =~ ^[0-9]+$ \
-            && "$third_width" =~ ^[0-9]+$ ]] \
-            && ((first_width == expected_first && third_width == expected_third)); then
-            case "$comparison" in
-              equal)
-                ((second_width == reference_second)) && matches=true
-                ;;
-              greater)
-                ((second_width > reference_second)) && matches=true
-                ;;
-              less)
-                ((second_width < reference_second)) && matches=true
-                ;;
-              *)
-                return 1
-                ;;
-            esac
-          fi
-
-          if [[ "$matches" == true ]]; then
+          if middle_width_matches "$@"; then
             stable_samples=$((stable_samples + 1))
 
             if ((stable_samples >= 2)); then
@@ -4869,11 +4895,30 @@ let
       }
 
       verify_focus() {
+        local baseline_first_height
         local baseline_first_width
+        local baseline_first_x
+        local baseline_first_y
+        local baseline_second_height
         local baseline_second_width
+        local baseline_second_x
+        local baseline_second_y
+        local baseline_third_height
         local baseline_third_width
+        local baseline_third_x
+        local baseline_third_y
         local border_query
+        local configured_default_first_frame
+        local configured_default_second_frame
+        local configured_default_third_frame
+        local configured_default_width
         local consume_fixture_rebuilt
+        local default_width_delivery_first_frame
+        local default_width_delivery_second_frame
+        local default_width_delivery_third_frame
+        local default_width_restore_first_frame
+        local default_width_restore_second_frame
+        local default_width_restore_third_frame
         local desktop_reorder_destination_frame
         local desktop_source_width
         local direct_insert_verified
@@ -5028,17 +5073,98 @@ let
           && capture_stable_frames \
           || return 1
 
-        IFS=, read -r _ _ baseline_first_width _ <<< "$stable_first_frame"
-        IFS=, read -r _ _ baseline_second_width _ <<< "$stable_second_frame"
-        IFS=, read -r _ _ baseline_third_width _ <<< "$stable_third_frame"
+        IFS=, read -r \
+          baseline_first_x \
+          baseline_first_y \
+          baseline_first_width \
+          baseline_first_height \
+          <<< "$stable_first_frame"
+        IFS=, read -r \
+          baseline_second_x \
+          baseline_second_y \
+          baseline_second_width \
+          baseline_second_height \
+          <<< "$stable_second_frame"
+        IFS=, read -r \
+          baseline_third_x \
+          baseline_third_y \
+          baseline_third_width \
+          baseline_third_height \
+          <<< "$stable_third_frame"
 
-        if [[ ! "$baseline_first_width" =~ ^[0-9]+$ \
-          || ! "$baseline_second_width" =~ ^[0-9]+$ \
-          || ! "$baseline_third_width" =~ ^[0-9]+$ ]]; then
+        if ! frame_is_valid "$stable_first_frame" \
+          || ! frame_is_valid "$stable_second_frame" \
+          || ! frame_is_valid "$stable_third_frame"; then
           return 1
         fi
 
         record_focus_state "window B activated for column resizing"
+
+        configured_default_width=$((
+          (70 * ((2 * baseline_second_width + 48) - 16) + 50) / 100 - 16
+        ))
+        default_width_delivery_first_frame="$((baseline_first_x + 8)),$((baseline_first_y + 8)),$((baseline_first_width - 12)),$((baseline_first_height - 16))"
+        default_width_delivery_second_frame="$((baseline_second_x + 4)),$((baseline_second_y + 8)),$((baseline_second_width - 12)),$((baseline_second_height - 16))"
+        default_width_delivery_third_frame="$baseline_third_x,$((baseline_third_y + 8)),$((baseline_third_width - 12)),$((baseline_third_height - 16))"
+        configured_default_first_frame=$stable_first_frame
+        configured_default_second_frame="$baseline_second_x,$baseline_second_y,$configured_default_width,$baseline_second_height"
+        configured_default_third_frame="$((baseline_third_x + configured_default_width - baseline_second_width)),$baseline_third_y,$baseline_third_width,$baseline_third_height"
+        default_width_restore_first_frame=$default_width_delivery_first_frame
+        default_width_restore_second_frame="$((baseline_second_x + 4)),$((baseline_second_y + 8)),$((configured_default_width - 14)),$((baseline_second_height - 16))"
+        default_width_restore_third_frame="$((baseline_third_x + configured_default_width - baseline_second_width - 2)),$((baseline_third_y + 8)),$((baseline_third_width - 12)),$((baseline_third_height - 16))"
+
+        if ! set_default_column_width_and_gap 70 24 \
+          || ! wait_for_frames \
+            "$default_width_delivery_first_frame" \
+            "$default_width_delivery_second_frame" \
+            "$default_width_delivery_third_frame" \
+          || ! set_gap 16 \
+          || ! wait_for_frames \
+            "$stable_first_frame" \
+            "$stable_second_frame" \
+            "$stable_third_frame" \
+          || ! wait_for_active "$title_b"; then
+          set_default_column_width_and_gap 50 16 >/dev/null 2>&1 || true
+          record_focus_state "configured default column width delivery failed"
+          return 1
+        fi
+        record_focus_state \
+          "configured default column width preserved existing policy before reset"
+
+        if ! invoke_shortcut "driftile_reset_column_width" \
+          || ! wait_for_frames \
+            "$configured_default_first_frame" \
+            "$configured_default_second_frame" \
+            "$configured_default_third_frame" \
+          || ! wait_for_active "$title_b"; then
+          set_default_column_width_and_gap 50 16 >/dev/null 2>&1 || true
+          record_focus_state "configured default column width reset failed"
+          return 1
+        fi
+        record_focus_state \
+          "configured default column width reset exactly to 70 percent"
+
+        if ! set_default_column_width_and_gap 50 24 \
+          || ! wait_for_frames \
+            "$default_width_restore_first_frame" \
+            "$default_width_restore_second_frame" \
+            "$default_width_restore_third_frame" \
+          || ! set_gap 16 \
+          || ! wait_for_frames \
+            "$configured_default_first_frame" \
+            "$configured_default_second_frame" \
+            "$configured_default_third_frame" \
+          || ! invoke_shortcut "driftile_reset_column_width" \
+          || ! wait_for_frames \
+            "$stable_first_frame" \
+            "$stable_second_frame" \
+            "$stable_third_frame" \
+          || ! wait_for_active "$title_b"; then
+          set_default_column_width_and_gap 50 16 >/dev/null 2>&1 || true
+          record_focus_state "default column width restoration failed"
+          return 1
+        fi
+        record_focus_state "default column width restored exact baseline frames"
 
         invoke_shortcut "driftile_increase_column_width" \
           && wait_for_middle_width \
@@ -7489,6 +7615,7 @@ let
     ${pluginId}Enabled=true
 
     [Script-${pluginId}]
+    DefaultColumnWidthPercent=50
     Gap=16
   '';
   screenLockerConfig = pkgs.writeText "driftile-vm-kscreenlockerrc" ''
