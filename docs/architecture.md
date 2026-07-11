@@ -112,7 +112,7 @@ RuntimeState
 - Preserve signed viewport positions across width and structural changes while the active column remains visible; reveal it only after it leaves the work area.
 - Keep at most one fixed or preset height in a stack. When another member is changed, preserve the remaining members' visible proportions as automatic weights and distribute the remaining work-area height among them.
 - Apply active-window height changes transactionally across the affected stack, preserving focus, order, width, and every prior height state on failure.
-- Apply stack edits with compare-and-swap model rollback and exact compensating frame writes after partial failure.
+- Apply stack edits with compare-and-swap model rollback and exact compensating frame writes after partial failure. Pin every writable ID to its captured KWin object so a same-ID replacement never receives stale writes. Rebase rollback across authoritative participant removal or context departure only when every surviving column, member, width, and height state still matches the applied edit.
 - Reset a consumed or expelled member to automatic height, preserve surviving member order and height state, and keep the active column selected.
 - Resolve direct stack insertion inside the active context, skipping singleton columns without wrapping and preserving every intermediate column.
 - Transfer either the active column or one secondary window between existing desktops through an immutable two-context preview, then commit only after KWin accepts every desktop mechanism, focus, and destination geometry.
@@ -132,7 +132,8 @@ RuntimeState
 - Allow a visible active member to reorder vertically across settled minimized slots without writing hidden frames; reject every other passive suspension blocker.
 - Allow horizontal extraction of a visible active member past settled minimized source peers without writing hidden frames; retain the existing constraint-validated singleton merge policy.
 - Allow explicit consume to pull a visible immediate-right top member past settled minimized passive members in the source or target column without hidden frame writes. Reject the transaction if focus leaves the active member or if either required visible member or any participant changes identity, context, or minimized state during reflow. Preserve the external focus or lifecycle transition while rolling back only the command's structural edit.
-- Permit stacked native-state extraction past settled minimized peers while retaining their slots without hidden frame writes. Reject whole-column transfers and expel edits when a participating member is minimized; other hidden-member edit semantics remain outside this slice.
+- Allow explicit expel to move a visible bottom member past settled minimized passive peers without hidden frame writes. Keep a non-bottom active member focused; if the bottom member is active, require its visible immediate predecessor without searching for a fallback. Confirm that focus before creating or applying the structural edit, then revalidate the exact snapshot, KWin objects, and minimized states. Bound asynchronous confirmation and reject reentrant commands until it finishes.
+- Permit stacked native-state extraction past settled minimized peers while retaining their slots without hidden frame writes. Reject whole-column transfers when a participating member is minimized; other hidden-member edit semantics remain outside this slice.
 - A native fullscreen command extracts a member of a regular stack into an immediate right singleton before calling KWin. The new column copies the source width, and leaving fullscreen does not merge it back.
 - A native maximize command extracts a member of a regular stack into an immediate right singleton before calling KWin. The new column copies the source width, and unmaximize does not merge it back.
 - Require a stable restored frame before resuming writes or rebasing a transferred window.
@@ -176,7 +177,7 @@ RuntimeState
 - Verify context-local tiled/floating focus memory for manual and automatic floating windows without geometry writes.
 - Verify directional and edge floating focus, stacking tie-breaks, no-wrap boundaries, and exact frame immutability.
 - Verify vertical focus, member reorder, contextual merge and extraction, suspended members, and structural rollback.
-- Verify explicit top-member consume and bottom-member expel, minimized passive-member policy, focus clamping, width rules, height-state reset, boundaries, and rollback.
+- Verify explicit top-member consume and bottom-member expel, minimized passive-member policy, synchronous and deferred focus handoff, reentrant command rejection, width rules, height-state reset, boundaries, and rollback.
 - Verify the settled topology barrier, output replacement and removal, dock and silent work-area invalidations, sticky restore invalidation, and deterministic capacity recovery.
 - Verify independent contexts with native Wayland and XWayland windows on two virtual outputs and native X11 windows on the X11 backend.
 - Verify whole-column and secondary directional transfers, no-wrap boundaries, per-output desktop selection, focus preservation, and exact two-context compensation.

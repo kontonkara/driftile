@@ -51,9 +51,13 @@ member past settled minimized peers without writing their frames. A visible
 active member may move vertically across settled minimized slots or extract
 horizontally from that stack. Consume may pull the visible top member of the
 immediate-right column past settled minimized passive members in either column
-without writing hidden frames. Expel and whole-column transfers remain
-unavailable while a participating member is minimized; further hidden-member
-edit semantics remain MVP work.
+without writing hidden frames. Expel may move a visible bottom member past
+settled minimized passive peers. When that bottom member is active, its
+immediate predecessor must be visible and receives focus before the layout
+changes; the command does not search past a minimized predecessor. If KWin does
+not confirm the handoff, the layout and frames remain unchanged. Whole-column transfers still require
+every participant to be writable; further hidden-member edit semantics remain
+MVP work.
 
 When a member of a regular vertical stack enters fullscreen or is maximized,
 Driftile extracts it into a singleton column immediately to the right. Leaving

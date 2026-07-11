@@ -58,8 +58,12 @@ columns without wrapping. They do not skip other suspension blockers. Commands
 may reorder or extract a visible stack member past settled minimized peers.
 Consume may also move the visible top member of the immediate-right column past
 settled minimized passive peers in either column. Hidden frames remain
-untouched. Expel and whole-column transfers still require every participant to
-be writable; other hidden-member edit semantics remain MVP work.
+untouched. Expel may move a visible bottom member past minimized passive peers
+when its retained focus target is visible. An active bottom member hands focus
+only to its immediate predecessor; a minimized predecessor makes the command a
+no-op. The structural edit waits for KWin to confirm that handoff and is
+discarded if the original layout or participants change. Whole-column transfers still require every participant to be writable;
+other hidden-member edit semantics remain MVP work.
 
 Window-height presets are `1/3`, `1/2`, and `2/3` of the work area, with gaps
 included in the calculation.
