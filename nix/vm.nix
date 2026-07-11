@@ -3869,6 +3869,74 @@ let
           "minimized slots preserved focus boundaries, order, and exact frames"
       }
 
+      verify_physical_vertical_reorder_past_minimized_peer() {
+        if ! activate_window "$title_a" \
+          || ! wait_for_active "$title_a" \
+          || ! wait_for_four_frames \
+            "$direct_first_frame" \
+            "$direct_second_frame" \
+            "$direct_third_frame" \
+            "$direct_fourth_frame"; then
+          record_focus_state "physical minimized-peer reorder setup failed"
+          return 1
+        fi
+
+        if ! set_external_window_minimized "$title_b" true \
+          || ! wait_for_window_minimized_state "$title_b" true \
+          || ! wait_for_four_frames \
+            "$direct_first_frame" \
+            "$direct_second_frame" \
+            "$direct_third_frame" \
+            "$direct_fourth_frame" \
+          || ! activate_window "$title_a" \
+          || ! wait_for_active "$title_a"; then
+          record_focus_state "physical minimized-peer reorder settle failed"
+          return 1
+        fi
+
+        if ! request_physical_shortcut ctrl-j \
+          || ! wait_for_active "$title_a" \
+          || ! wait_for_four_frames \
+            "$direct_second_frame" \
+            "$direct_second_frame" \
+            "$direct_third_frame" \
+            "$direct_fourth_frame" \
+          || ! wait_for_window_minimized_state "$title_b" true \
+          || [[ "$(window_frame "$title_b" 2>/dev/null || true)" \
+            != "$direct_second_frame" ]]; then
+          record_focus_state "physical minimized-peer reorder failed"
+          return 1
+        fi
+        record_focus_state \
+          "physical Meta+Ctrl+J reordered past a minimized peer without writing it"
+
+        if ! set_external_window_minimized "$title_b" false \
+          || ! wait_for_window_minimized_state "$title_b" false \
+          || ! wait_for_four_frames \
+            "$direct_second_frame" \
+            "$direct_first_frame" \
+            "$direct_third_frame" \
+            "$direct_fourth_frame" \
+          || ! activate_window "$title_a" \
+          || ! wait_for_active "$title_a"; then
+          record_focus_state "physical minimized-peer reorder restore failed"
+          return 1
+        fi
+
+        if ! request_physical_shortcut ctrl-k \
+          || ! wait_for_active "$title_a" \
+          || ! wait_for_four_frames \
+            "$direct_first_frame" \
+            "$direct_second_frame" \
+            "$direct_third_frame" \
+            "$direct_fourth_frame"; then
+          record_focus_state "physical minimized-peer reorder reconstruction failed"
+          return 1
+        fi
+        record_focus_state \
+          "physical Meta+Ctrl+K reconstructed the exact minimized-peer fixture"
+      }
+
       verify_focus() {
         local baseline_first_width
         local baseline_second_width
@@ -3882,6 +3950,7 @@ let
         local merged_first_frame
         local merged_second_frame
         local merged_third_frame
+        local minimized_reorder_verified
         local minimized_slots_verified
         local singleton_first_frame
         local singleton_second_frame
@@ -4353,6 +4422,13 @@ let
           minimized_slots_verified=true
         fi
 
+        minimized_reorder_verified=false
+
+        if [[ "$minimized_slots_verified" == true ]] \
+          && verify_physical_vertical_reorder_past_minimized_peer; then
+          minimized_reorder_verified=true
+        fi
+
         kill "$fourth_window" >/dev/null 2>&1 || true
         wait "$fourth_window" >/dev/null 2>&1 || true
         fourth_window=""
@@ -4370,7 +4446,8 @@ let
         [[ "$direct_insert_verified" == true \
           && "$stacked_maximize_verified" == true \
           && "$stacked_fullscreen_verified" == true \
-          && "$minimized_slots_verified" == true ]] || return 1
+          && "$minimized_slots_verified" == true \
+          && "$minimized_reorder_verified" == true ]] || return 1
 
         if ! invoke_shortcut "driftile_toggle_floating" \
           || ! wait_for_floating_layout \
