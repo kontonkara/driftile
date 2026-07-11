@@ -493,6 +493,8 @@ let
             && "$shortcuts" == *"driftile_move_window_right"* \
             && "$shortcuts" == *"driftile_move_window_up"* \
             && "$shortcuts" == *"driftile_move_window_down"* \
+            && "$shortcuts" == *"driftile_consume_window_into_column"* \
+            && "$shortcuts" == *"driftile_expel_window_from_column"* \
             && "$shortcuts" == *"driftile_focus_previous_desktop"* \
             && "$shortcuts" == *"driftile_focus_next_desktop"* \
             && "$shortcuts" == *"driftile_focus_output_left"* \
@@ -3427,6 +3429,47 @@ let
         fi
       }
 
+      verify_physical_consume_expel_shortcuts() {
+        local first_frame
+        local second_frame
+        local third_frame
+
+        if ! activate_window "$title_a" \
+          || ! wait_for_active "$title_a" \
+          || ! capture_stable_frames; then
+          record_focus_state "physical consume/expel shortcut setup failed"
+          return 1
+        fi
+
+        first_frame=$stable_first_frame
+        second_frame=$stable_second_frame
+        third_frame=$stable_third_frame
+
+        if ! request_physical_shortcut comma \
+          || ! wait_for_active "$title_a" \
+          || ! wait_for_frames \
+            "16,16,816,478" \
+            "16,510,816,478" \
+            "848,16,816,972"; then
+          record_focus_state "physical Meta+, consume failed"
+          return 1
+        fi
+        record_focus_state \
+          "physical Meta+, consumed the right top window without changing focus"
+
+        if ! request_physical_shortcut period \
+          || ! wait_for_active "$title_a" \
+          || ! wait_for_frames "$first_frame" "$second_frame" "$third_frame" \
+          || ! activate_window "$title_b" \
+          || ! wait_for_active "$title_b" \
+          || ! wait_for_frames "$first_frame" "$second_frame" "$third_frame"; then
+          record_focus_state "physical Meta+. expel or cleanup failed"
+          return 1
+        fi
+        record_focus_state \
+          "physical Meta+. expelled the bottom window and restored the layout"
+      }
+
       verify_physical_floating_navigation_shortcuts() {
         local center_frame="650,120,360,240"
         local center_pid=""
@@ -4356,6 +4399,7 @@ let
 
       if [[ "$loaded" == true && "$desktops_ready" == true ]] \
         && verify_focus \
+        && verify_physical_consume_expel_shortcuts \
         && verify_physical_layer_focus_shortcut \
         && verify_physical_floating_navigation_shortcuts \
         && verify_physical_width_shortcuts \
