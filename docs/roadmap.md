@@ -29,7 +29,7 @@ Exit criteria:
 - Directional focus reveals the target window.
 - Repeating reconcile without a state change performs no writes.
 - Other outputs and desktops remain untouched.
-- The runtime performs no workspace-wide periodic scans.
+- The runtime performs no periodic workspace or stacking-order rescans.
 
 ## Recovery base
 
@@ -37,7 +37,7 @@ The current runtime already:
 
 - Settles output and work-area event bursts behind two matching delayed snapshots.
 - Observes output-list, geometry, scale, and dock invalidations.
-- Checks visible client areas every two seconds to cover the missing complete KWin signal.
+- Checks visible client areas and non-minimized tracked-window hard constraints every two seconds to cover missing complete KWin signals.
 - Preserves a deterministic layout order across structural output changes.
 - Invalidates stale restore baselines without reviving them when old geometry returns.
 - Parks deterministic whole columns when a new multi-output capacity limit no longer fits, preferring non-active columns, then retries waiting windows.
@@ -59,6 +59,7 @@ The current runtime already:
 - Moves one relation-free floating window between adjacent or numbered desktops without changing its frame or either tiled layout.
 - Moves the whole active column to an adjacent output with deterministic spatial routing, atomic visible-context reflow, and no layout geometry writes for settled minimized passive members; single-window transfer remains secondary.
 - Optionally removes application-window decorations independently of layout ownership while preserving pre-existing borderless state, reasserting owned policy, and restoring owned state on disable.
+- Treats exposed client minimum and maximum sizes as hard bounds, detects silent changes on visible tracked windows, does not model unexposed X11 increment and aspect hints, and leaves backend enforcement to KWin.
 - Keeps one shared trailing desktop empty and removes only redundant tails created by the current run.
 - Registers compact default shortcuts with `H/J/K/L`, arrow, Home/End, and Page Up/Down aliases.
 - Provides a reversible development helper for claiming shortcuts already used
@@ -66,7 +67,7 @@ The current runtime already:
 - Leaves dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows outside layout ownership, separate from manual floating.
 - Translates client minimum and maximum sizes to decorated frame bounds for layout validation and column resizing.
 
-The automatic-floating base is complete. Size increments, aspect ratios, live constraint changes across more toolkits, physical connector hot-plug, and a wider rotation matrix remain MVP hardening work.
+The automatic-floating base and the script-visible hard-constraint policy are complete. Live constraint changes across more toolkits, a future KWin oracle for strict X11 geometry hints, physical connector hot-plug, and a wider rotation matrix remain MVP hardening work.
 
 ## MVP
 
@@ -74,7 +75,7 @@ Complete the daily keyboard-driven workflow.
 
 - Manage every output and desktop independently.
 - Define structural command behavior for columns and stacks containing minimized members.
-- Define size-increment and aspect-ratio behavior, and expand live constraint-change coverage across toolkits.
+- Expand live hard-constraint coverage across toolkits and track a public KWin constraint oracle for optional strict X11 hint compliance.
 - Harden the existing topology recovery for rotation, rapid physical hot-plug sequences, and more hardware configurations.
 - Add the remaining essential layout settings.
 
@@ -108,3 +109,13 @@ Exit criteria:
 - Keyboard and mouse operations produce the same layout model.
 - Performance budgets pass on the documented reference scenario.
 - Installation, upgrade, disable, and uninstall paths leave Plasma usable.
+
+## Post-v1
+
+Extend visual shell integration without taking over compositor mechanisms.
+
+- Keep Plasma's built-in Overview as the compatible baseline.
+- Explore an optional Driftile overview that presents the horizontal desktop strip, columns, stacks, and current viewport from the shared layout model.
+- Add focus, desktop selection, and pointer-driven rearrangement only through public KWin and Plasma extension APIs.
+
+The optional overview must remain removable, preserve the authoritative layout state, and fall back cleanly to Plasma's Overview.

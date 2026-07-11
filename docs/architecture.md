@@ -18,7 +18,7 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Ships a separate setup helper that transactionally claims KGlobalAccel keys
   and restores displaced assignments; it is not part of the KWin runtime.
 - Provides event-loop and minimum-delay schedulers for batched work and transition stabilization.
-- Runs a two-second topology watchdog for visible contexts.
+- Runs a two-second watchdog for visible-context geometry and non-minimized tracked-window hard constraints.
 - Contains no layout policy or durable state.
 
 ### TypeScript runtime
@@ -30,7 +30,7 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Defers external output and desktop transfers, then re-owns each window in its destination context.
 - Suspends geometry writes while KWin owns a window-state transition and resumes after its restored frame stabilizes.
 - Observes output list, geometry, scale, and dock invalidations, then holds writes until two delayed topology snapshots match.
-- Detects otherwise silent client-area changes by fingerprinting visible contexts only.
+- Detects otherwise silent client-area and hard-constraint changes with visibility-limited fingerprints.
 - Replays structural output changes in a stable layout order independent of KWin window-signal order.
 - Invalidates stale restore ownership and revalidates multi-output capacity after topology changes.
 - Focuses the first or last non-minimized column directly with transactional reveal.
@@ -150,7 +150,7 @@ RuntimeState
 
 ## Engineering constraints
 
-- No workspace-wide polling. Lifecycle is signal-driven, with one bounded startup grace, bounded per-window state and floating-transition probes, and a two-second client-area fingerprint check limited to visible tracked contexts because KWin exposes no complete client-area change signal.
+- No periodic workspace or stacking-order rescan. Lifecycle is signal-driven, with one bounded startup grace, bounded per-window state and floating-transition probes, and a two-second client-area plus hard-constraint fingerprint check limited to visible tracked windows and contexts because KWin exposes no complete change signal for either surface.
 - Desktop lifecycle snapshots scan observed windows only after relevant signals; they never run on a timer.
 - Structural output recovery performs one bounded workspace resynchronization after the topology settles.
 - Coalesce each event burst into at most one reconcile pass per dirty context.
@@ -160,10 +160,11 @@ RuntimeState
 
 ## Current constraint limits
 
-- KWin does not expose a complete change signal for all minimum, maximum, and resizeability metadata. Signaled changes are reclassified immediately; silent changes are rechecked before reconciliation and geometry writes.
+- KWin does not expose a complete change signal for minimum, maximum, and resizeability metadata. Signaled changes are reclassified immediately; a cached visible-window probe catches silent changes, and every geometry write still rereads the live bounds.
 - KWin reports application-driven fullscreen only after saving restore geometry. Leaving it can briefly expose the former stack frame before Driftile settles the extracted singleton.
 - On Wayland, KWin captures restore geometry before notifying scripts about an application-driven maximize. Unmaximize can briefly expose the former stack frame before Driftile settles the extracted singleton.
-- Size increments and aspect-ratio policies are not modeled yet.
+- The Plasma 6.7 workspace `KWin::Window` API used by Driftile does not expose X11 base size, resize increments, aspect bounds, the per-window strict-geometry rule, or a constraint oracle. Driftile therefore does not quantize its layout model to these hints. KWin can still constrain an applied frame according to backend policy, including native X11 character-cell sizing.
+- For Driftile to model strict tiled compliance with unexposed X11 hints, KWin must provide a future public API. Driftile does not infer them from application identity or observed sizes.
 
 ## Verification
 
@@ -177,6 +178,8 @@ RuntimeState
 - Verify adjacent and direct-edge active-column reorder, width adjustments, width presets, full width, available-width expansion, single-column and visible-group centering, signed viewport offsets, constraint bounds, and transactional rollback.
 - Verify per-window 10% height changes, automatic reset, forward and reverse height presets, weighted stack redistribution, singleton sizing, and exact rollback.
 - Verify decorated client-to-frame constraint translation and conservative handling of malformed bounds.
+- Verify cached visible-window detection for silent hard-bound changes, exact recovery after relaxation, and no duplicate work for unchanged fingerprints.
+- Verify with unit fixtures that unexposed X11 metadata does not quantize the layout model or weaken hard minimum and maximum checks, with XWayland that an exact off-lattice frame remains accepted, and with native X11 that grid-aligned frames survive a real resize and reset cycle.
 - Verify automatic KWin ownership, command no-ops, late role changes, manual-floating separation, and safe readmission.
 - Verify context-local tiled/floating focus memory for manual and automatic floating windows without geometry writes.
 - Verify directional and edge floating focus, stacking tie-breaks, no-wrap boundaries, and exact frame immutability.

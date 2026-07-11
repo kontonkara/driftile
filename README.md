@@ -16,7 +16,7 @@ KWin owns minimization; Driftile provides no minimize action or default shortcut
 
 KWin-decorated application windows are borderless by default, including tiled, floating, dialog, transient, and utility windows. The setting is optional, never claims windows that were already borderless, and restores owned decorations when disabled or unloaded. See [Configuration](docs/configuration.md).
 
-Live output-list, geometry, scale, and work-area changes recover after two delayed topology snapshots agree. Output and dock signals trigger normal recovery; a two-second watchdog checks visible contexts for client-area changes that KWin does not signal. Reconfigured contexts discard stale original-frame restore baselines for the rest of the run. If a multi-output context no longer fits, Driftile parks whole columns with a reachable anchor inside the work area, preferring non-active columns, and retries them when capacity returns.
+Live output-list, geometry, scale, and work-area changes recover after two delayed topology snapshots agree. Output and dock signals trigger normal recovery; a two-second watchdog checks visible contexts and windows for client-area or hard size-constraint changes that KWin does not signal. Reconfigured contexts discard stale original-frame restore baselines for the rest of the run. If a multi-output context no longer fits, Driftile parks whole columns with a reachable anchor inside the work area, preferring non-active columns, and retries them when capacity returns.
 
 Layout and workspace persistence are not implemented yet.
 

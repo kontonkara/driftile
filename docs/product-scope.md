@@ -20,6 +20,7 @@ The ownership rule is strict:
 - Optional borderless presentation for application windows with exact decoration ownership.
 - Output-local commands unless a transfer is explicit.
 - Work-area, size-constraint, fullscreen, minimized-window compatibility, dialog, and hot-plug handling.
+- Hard client minimum and maximum bounds with cached detection of silent visible-window changes; unexposed increment and aspect hints do not alter Driftile's tiled model, while applied frames remain subject to KWin.
 - Native fullscreen control through KWin with stack-aware extraction.
 - Native maximize-to-edges control through KWin with stack-aware extraction.
 - Settled recovery for output-list, geometry, scale, and work-area changes.
@@ -27,7 +28,7 @@ The ownership rule is strict:
 - One shared trailing empty virtual desktop, with output-local selection where supported and conservative creation and removal.
 - Guarded one-step reordering of the currently selected desktop when the KWin scripting backend exposes it.
 - Single-window floating desktop transfer with exact frame and tiled-layout preservation.
-- Event-driven, incremental reconciliation; only visible context geometry is checked periodically, while a settled structural output change permits one bounded workspace resynchronization.
+- Event-driven, incremental reconciliation; only visible context geometry and non-minimized tracked-window hard constraints are checked periodically, while a settled structural output change permits one bounded workspace resynchronization.
 
 ## Later
 
@@ -45,6 +46,7 @@ The ownership rule is strict:
 - Wayland and XWayland windows share the same layout model.
 - The Plasma 6.7 X11 session uses a global-workspace fallback.
 - Desktop reordering is fail-closed on KWin X11 builds that do not expose the reorder method; all other X11 layout behavior remains available.
+- X11 and XWayland resize increments, base size, aspect bounds, and strict-geometry rules are not visible through the Plasma 6.7 workspace `KWin::Window` API used by Driftile. XWayland accepts the tested exact off-lattice frames; native X11 may quantize applied frames, so compatibility tests use grid-aligned geometry.
 
 ## KDE-owned
 
@@ -69,6 +71,7 @@ Driftile must integrate with, not duplicate:
 - Focusing a non-minimized managed window makes it fully visible with the smallest required scroll.
 - Reordering moves one whole active column left, right, first, or last inside its context without changing focus or widths.
 - Column-width resizing changes one whole active column, translates client limits to decorated frame bounds, respects every member's width constraints, and preserves focus and grouping.
+- Exposed client minimum and maximum sizes are hard bounds and are revalidated immediately before writes. Unexposed X11 increment and aspect hints never change Driftile's modeled admission, grouping, shared widths, or height partitioning; KWin may still constrain the applied frame on a backend that enforces them.
 - Available-width expansion grows only a fully visible active column up to its shared window constraints, preserves every other fully visible column, and changes width and viewport atomically.
 - Visible-column centering changes only the viewport offset and preserves focus, order, widths, and grouping.
 - Window-height resizing makes the active member the sole fixed or preset member; automatic siblings preserve their relative weights while sharing the remaining height.
