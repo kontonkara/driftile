@@ -1062,7 +1062,13 @@ let
               .data[0].maximizeVertical.data
             ]
             | select(map(type == "number") | all)
-            | (all(. != 0) | tostring)
+            | if all(. == 0) then
+                "false"
+              elif all(. != 0) then
+                "true"
+              else
+                "partial"
+              end
           '
       }
 
@@ -4312,7 +4318,8 @@ let
             maximized \
             stacked-m-enter \
             stacked-m-exit \
-            maximize; then
+            maximize \
+            "$title_d"; then
           stacked_maximize_verified=true
           record_focus_state \
             "physical stacked maximize preserved extraction semantics"
@@ -4328,7 +4335,8 @@ let
             fullscreen \
             stacked-shift-f-enter \
             stacked-shift-f-exit \
-            fullscreen; then
+            fullscreen \
+            "$title_a"; then
           stacked_fullscreen_verified=true
           record_focus_state \
             "physical stacked fullscreen preserved extraction semantics"
@@ -5527,7 +5535,11 @@ let
         local direct_third_y
         local horizontal_gap
         local enter_marker=$2
+        local extracted_first_frame
+        local extracted_fourth_frame
         local exit_marker=$3
+        local minimized_frame
+        local minimized_peer=$5
         local native_frame
         local output_frame
         local remaining_available_height
@@ -5618,6 +5630,22 @@ let
         restored_bottom_frame=$direct_fourth_frame
         output_frame=$(single_enabled_output_frame 2>/dev/null || true)
 
+        case "$minimized_peer" in
+          "$title_a")
+            minimized_frame=$direct_first_frame
+            extracted_first_frame=$direct_first_frame
+            extracted_fourth_frame=$remaining_last_frame
+            ;;
+          "$title_d")
+            minimized_frame=$direct_fourth_frame
+            extracted_first_frame=$remaining_first_frame
+            extracted_fourth_frame=$direct_fourth_frame
+            ;;
+          *)
+            return 2
+            ;;
+        esac
+
         if [[ "$state" == "maximized" ]]; then
           native_frame=$(
             maximized_work_area_frame \
@@ -5654,13 +5682,35 @@ let
           return 1
         fi
 
+        if ! set_external_window_minimized "$minimized_peer" true \
+          || ! wait_for_four_frames \
+            "$direct_first_frame" \
+            "$direct_second_frame" \
+            "$direct_third_frame" \
+            "$direct_fourth_frame" \
+          || ! wait_for_window_fullscreen_state "$minimized_peer" false \
+          || ! wait_for_window_maximized_state "$minimized_peer" false \
+          || [[ "$(window_frame "$minimized_peer" 2>/dev/null || true)" \
+            != "$minimized_frame" ]] \
+          || ! activate_window "$title_b" \
+          || ! wait_for_active "$title_b"; then
+          record_focus_state \
+            "physical stacked $state_label minimized-peer setup failed"
+          return 1
+        fi
+        record_focus_state \
+          "physical stacked $state_label passive peer settled minimized"
+
         if ! request_physical_shortcut "$enter_marker" \
           || ! wait_for_window_native_state "$title_b" "$state" true \
           || ! wait_for_four_frames \
-            "$remaining_first_frame" \
+            "$extracted_first_frame" \
             "$native_frame" \
             "$shifted_unrelated_frame" \
-            "$remaining_last_frame" \
+            "$extracted_fourth_frame" \
+          || ! wait_for_window_minimized_state "$minimized_peer" true \
+          || ! wait_for_window_fullscreen_state "$minimized_peer" false \
+          || ! wait_for_window_maximized_state "$minimized_peer" false \
           || ! wait_for_window_desktop "$title_a" "$primary_desktop_id" \
           || ! wait_for_window_desktop "$title_b" "$primary_desktop_id" \
           || ! wait_for_window_desktop "$title_c" "$primary_desktop_id" \
@@ -5670,10 +5720,10 @@ let
           {
             printf 'expected stacked %s frames: %s | %s | %s | %s\n' \
               "$state_label" \
-              "$remaining_first_frame" \
+              "$extracted_first_frame" \
               "$native_frame" \
               "$shifted_unrelated_frame" \
-              "$remaining_last_frame"
+              "$extracted_fourth_frame"
             printf 'actual stacked %s frames: %s | %s | %s | %s\n' \
               "$state_label" \
               "$(window_frame "$title_a" 2>/dev/null || true)" \
@@ -5684,24 +5734,27 @@ let
           return 1
         fi
         record_focus_state \
-          "physical stacked $state_label extracted the active middle member"
+          "physical stacked $state_label extracted past a minimized peer"
 
         if ! request_physical_shortcut "$exit_marker" \
           || ! wait_for_window_native_state "$title_b" "$state" false \
           || ! wait_for_four_frames \
-            "$remaining_first_frame" \
+            "$extracted_first_frame" \
             "$singleton_frame" \
             "$shifted_unrelated_frame" \
-            "$remaining_last_frame" \
+            "$extracted_fourth_frame" \
+          || ! wait_for_window_minimized_state "$minimized_peer" true \
+          || ! wait_for_window_fullscreen_state "$minimized_peer" false \
+          || ! wait_for_window_maximized_state "$minimized_peer" false \
           || ! wait_for_active "$title_b"; then
           record_focus_state "physical stacked $state_label exit failed"
           {
             printf 'expected former stacked %s frames: %s | %s | %s | %s\n' \
               "$state_label" \
-              "$remaining_first_frame" \
+              "$extracted_first_frame" \
               "$singleton_frame" \
               "$shifted_unrelated_frame" \
-              "$remaining_last_frame"
+              "$extracted_fourth_frame"
             printf 'actual former stacked %s frames: %s | %s | %s | %s\n' \
               "$state_label" \
               "$(window_frame "$title_a" 2>/dev/null || true)" \
@@ -5713,6 +5766,23 @@ let
         fi
         record_focus_state \
           "physical stacked $state_label kept the restored window separate"
+
+        if ! set_external_window_minimized "$minimized_peer" false \
+          || ! wait_for_four_frames \
+            "$remaining_first_frame" \
+            "$singleton_frame" \
+            "$shifted_unrelated_frame" \
+            "$remaining_last_frame" \
+          || ! wait_for_window_fullscreen_state "$minimized_peer" false \
+          || ! wait_for_window_maximized_state "$minimized_peer" false \
+          || ! activate_window "$title_b" \
+          || ! wait_for_active "$title_b"; then
+          record_focus_state \
+            "physical stacked $state_label minimized-peer restore failed"
+          return 1
+        fi
+        record_focus_state \
+          "physical stacked $state_label preserved the minimized peer"
 
         if ! invoke_shortcut "driftile_move_window_left" \
           || ! wait_for_four_frames \
