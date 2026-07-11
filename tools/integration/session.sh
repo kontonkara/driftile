@@ -2802,6 +2802,8 @@ verify_multi_output_output_transfer() {
   local right_second_title=$5
   local destination_title="driftile-multi-output-${protocol}-right-output-destination"
   local destination_pid
+  local left_first_id
+  local minimized_transfer_frame
 
   wait_for_shortcut "driftile_move_window_to_output_left" || \
     fail "KGlobalAccel did not register the multi-output move-to-output-left shortcut"
@@ -2855,24 +2857,58 @@ verify_multi_output_output_transfer() {
     fail "KWin could not focus the left $protocol stack member before output transfer"
   wait_for_active "$left_second_title" || \
     fail "KWin did not focus the left $protocol stack member before output transfer"
+  left_first_id=$(window_id "$left_first_title") || \
+    fail "KWin did not expose the passive left $protocol stack member before output transfer"
+  set_external_window_minimized "$left_first_title" true || \
+    fail "KWin could not minimize the passive left $protocol stack member before output transfer"
+  wait_for_state_and_geometries \
+    "$left_first_id" minimized true \
+    "$left_first_title" "16,16,490,336" \
+    "$left_second_title" "16,368,490,336" \
+    "$destination_title" "1296,16,616,688" || \
+    fail "Driftile changed the source layout while settling the minimized $protocol output-transfer member: $(describe_layout "$left_first_title" "$left_second_title" "$destination_title")"
+  activate_window "$left_second_title" || \
+    fail "KWin could not restore active $protocol output-transfer focus after minimizing its passive member"
+  wait_for_active "$left_second_title" || \
+    fail "KWin did not restore active $protocol output-transfer focus after minimizing its passive member"
 
   invoke_shortcut "driftile_move_column_to_output_right" || \
     fail "KGlobalAccel could not invoke the default $protocol output transfer"
-  wait_for_geometries \
+  wait_for_state_and_geometries \
+    "$left_first_id" minimized true \
     "$destination_title" "1296,16,616,688" \
-    "$left_first_title" "1928,16,490,336" \
     "$left_second_title" "1928,368,490,336" || \
-    fail "Driftile did not preserve the stacked $protocol column through the default output transfer: $(describe_layout "$destination_title" "$left_first_title" "$left_second_title")"
+    fail "Driftile did not transfer the stacked $protocol column past its minimized member: $(describe_layout "$destination_title" "$left_first_title" "$left_second_title")"
+  minimized_transfer_frame=$(capture_stable_geometry "$left_first_title") || \
+    fail "the transferred minimized $protocol member did not keep a stable KWin frame"
+  wait_for_geometries \
+    "$left_first_title" "$minimized_transfer_frame" \
+    "$destination_title" "1296,16,616,688" \
+    "$left_second_title" "1928,368,490,336" || \
+    fail "Driftile wrote the hidden $protocol output-transfer member after the mechanism settled: $(describe_layout "$destination_title" "$left_first_title" "$left_second_title")"
   wait_for_window_desktop "$left_first_title" "$secondary_desktop_id" || \
     fail "Driftile did not adopt the target desktop for the upper $protocol stack member"
   wait_for_window_desktop "$left_second_title" "$secondary_desktop_id" || \
     fail "Driftile did not adopt the target desktop for the lower $protocol stack member"
-  window_is_on_output_side "$left_first_title" right || \
-    fail "KWin did not move the upper $protocol stack member to the right output"
   window_is_on_output_side "$left_second_title" right || \
     fail "KWin did not move the lower $protocol stack member to the right output"
   wait_for_active "$left_second_title" || \
     fail "Driftile changed $protocol focus during the whole-column output transfer"
+
+  set_external_window_minimized "$left_first_title" false || \
+    fail "KWin could not restore the transferred passive $protocol output member"
+  wait_for_state_and_geometries \
+    "$left_first_id" minimized false \
+    "$destination_title" "1296,16,616,688" \
+    "$left_first_title" "1928,16,490,336" \
+    "$left_second_title" "1928,368,490,336" || \
+    fail "Driftile did not restore the passive $protocol member in its target-output logical slot: $(describe_layout "$destination_title" "$left_first_title" "$left_second_title")"
+  window_is_on_output_side "$left_first_title" right || \
+    fail "KWin did not retain the restored upper $protocol stack member on the right output"
+  activate_window "$left_second_title" || \
+    fail "KWin could not restore active $protocol focus after the minimized output transfer"
+  wait_for_active "$left_second_title" || \
+    fail "KWin did not restore active $protocol focus after the minimized output transfer"
 
   invoke_shortcut "driftile_move_column_to_output_left" || \
     fail "KGlobalAccel could not return the default $protocol column transfer"
