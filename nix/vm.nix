@@ -720,6 +720,24 @@ let
         return 1
       }
 
+      wait_for_window_native_state() {
+        local title=$1
+        local state=$2
+        local expected=$3
+
+        case "$state" in
+          fullscreen)
+            wait_for_window_fullscreen_state "$title" "$expected"
+            ;;
+          maximized)
+            wait_for_window_maximized_state "$title" "$expected"
+            ;;
+          *)
+            return 2
+            ;;
+        esac
+      }
+
       single_enabled_output_frame() {
         kscreen-doctor -j 2>/dev/null \
           | jq --exit-status --raw-output '
@@ -2927,6 +2945,7 @@ let
         local singleton_second_frame
         local singleton_third_frame
         local second_trailing_desktop_id=""
+        local stacked_fullscreen_verified
         local stacked_maximize_verified
 
         wait_for_window "$title_a" \
@@ -3345,12 +3364,32 @@ let
         stacked_maximize_verified=false
 
         if [[ "$direct_insert_verified" == true ]] \
-          && verify_physical_stacked_maximize_shortcut; then
+          && verify_physical_stacked_native_state_shortcut \
+            maximized \
+            stacked-m-enter \
+            stacked-m-exit \
+            maximize; then
           stacked_maximize_verified=true
           record_focus_state \
             "physical stacked maximize preserved extraction semantics"
         else
           record_focus_state "physical stacked maximize verification failed"
+        fi
+
+        stacked_fullscreen_verified=false
+
+        if [[ "$direct_insert_verified" == true \
+          && "$stacked_maximize_verified" == true ]] \
+          && verify_physical_stacked_native_state_shortcut \
+            fullscreen \
+            stacked-shift-f-enter \
+            stacked-shift-f-exit \
+            fullscreen; then
+          stacked_fullscreen_verified=true
+          record_focus_state \
+            "physical stacked fullscreen preserved extraction semantics"
+        else
+          record_focus_state "physical stacked fullscreen verification failed"
         fi
 
         kill "$fourth_window" >/dev/null 2>&1 || true
@@ -3368,7 +3407,8 @@ let
         record_focus_state "three-window layout restored after direct insertion"
 
         [[ "$direct_insert_verified" == true \
-          && "$stacked_maximize_verified" == true ]] || return 1
+          && "$stacked_maximize_verified" == true \
+          && "$stacked_fullscreen_verified" == true ]] || return 1
 
         if ! invoke_shortcut "driftile_toggle_floating" \
           || ! wait_for_floating_layout \
@@ -4465,7 +4505,7 @@ let
           "physical Meta+Shift+F restored the exact tiled layout and focus"
       }
 
-      verify_physical_stacked_maximize_shortcut() {
+      verify_physical_stacked_native_state_shortcut() {
         local direct_first_height
         local direct_first_width
         local direct_first_x
@@ -4482,7 +4522,9 @@ let
         local direct_third_x
         local direct_third_y
         local horizontal_gap
-        local maximize_frame
+        local enter_marker=$2
+        local exit_marker=$3
+        local native_frame
         local output_frame
         local remaining_available_height
         local remaining_first_frame
@@ -4494,8 +4536,15 @@ let
         local shifted_unrelated_frame
         local singleton_frame
         local singleton_x
+        local state=$1
+        local state_label=$4
         local stack_height
         local vertical_gap
+
+        case "$state" in
+          fullscreen|maximized) ;;
+          *) return 2 ;;
+        esac
 
         frame_is_valid "$direct_first_frame" \
           && frame_is_valid "$direct_second_frame" \
@@ -4564,12 +4613,17 @@ let
         restored_middle_frame=$direct_second_frame
         restored_bottom_frame=$direct_fourth_frame
         output_frame=$(single_enabled_output_frame 2>/dev/null || true)
-        maximize_frame=$(
-          maximized_work_area_frame \
-            "$direct_third_frame" \
-            "$output_frame" 2>/dev/null \
-            || true
-        )
+
+        if [[ "$state" == "maximized" ]]; then
+          native_frame=$(
+            maximized_work_area_frame \
+              "$direct_third_frame" \
+              "$output_frame" 2>/dev/null \
+              || true
+          )
+        else
+          native_frame=$output_frame
+        fi
 
         if ((vertical_gap <= 0 \
           || horizontal_gap <= 0 \
@@ -4579,28 +4633,28 @@ let
           || direct_second_x != direct_fourth_x \
           || direct_first_width != direct_second_width \
           || direct_second_width != direct_fourth_width)) \
-          || ! frame_is_valid "$maximize_frame"; then
-          record_focus_state "physical stacked maximize geometry was invalid"
+          || ! frame_is_valid "$native_frame"; then
+          record_focus_state "physical stacked $state_label geometry was invalid"
           return 1
         fi
 
         if ! activate_window "$title_b" \
           || ! wait_for_active "$title_b" \
-          || ! wait_for_window_maximized_state "$title_b" false \
+          || ! wait_for_window_native_state "$title_b" "$state" false \
           || ! wait_for_four_frames \
             "$direct_first_frame" \
             "$direct_second_frame" \
             "$direct_third_frame" \
             "$direct_fourth_frame"; then
-          record_focus_state "physical stacked maximize setup failed"
+          record_focus_state "physical stacked $state_label setup failed"
           return 1
         fi
 
-        if ! request_physical_shortcut stacked-m-enter \
-          || ! wait_for_window_maximized_state "$title_b" true \
+        if ! request_physical_shortcut "$enter_marker" \
+          || ! wait_for_window_native_state "$title_b" "$state" true \
           || ! wait_for_four_frames \
             "$remaining_first_frame" \
-            "$maximize_frame" \
+            "$native_frame" \
             "$shifted_unrelated_frame" \
             "$remaining_last_frame" \
           || ! wait_for_window_desktop "$title_a" "$primary_desktop_id" \
@@ -4608,14 +4662,16 @@ let
           || ! wait_for_window_desktop "$title_c" "$primary_desktop_id" \
           || ! wait_for_window_desktop "$title_d" "$primary_desktop_id" \
           || ! wait_for_active "$title_b"; then
-          record_focus_state "physical stacked Meta+M maximize entry failed"
+          record_focus_state "physical stacked $state_label entry failed"
           {
-            printf 'expected stacked maximize frames: %s | %s | %s | %s\n' \
+            printf 'expected stacked %s frames: %s | %s | %s | %s\n' \
+              "$state_label" \
               "$remaining_first_frame" \
-              "$maximize_frame" \
+              "$native_frame" \
               "$shifted_unrelated_frame" \
               "$remaining_last_frame"
-            printf 'actual stacked maximize frames: %s | %s | %s | %s\n' \
+            printf 'actual stacked %s frames: %s | %s | %s | %s\n' \
+              "$state_label" \
               "$(window_frame "$title_a" 2>/dev/null || true)" \
               "$(window_frame "$title_b" 2>/dev/null || true)" \
               "$(window_frame "$title_c" 2>/dev/null || true)" \
@@ -4624,24 +4680,26 @@ let
           return 1
         fi
         record_focus_state \
-          "physical stacked Meta+M extracted the active middle member"
+          "physical stacked $state_label extracted the active middle member"
 
-        if ! request_physical_shortcut stacked-m-exit \
-          || ! wait_for_window_maximized_state "$title_b" false \
+        if ! request_physical_shortcut "$exit_marker" \
+          || ! wait_for_window_native_state "$title_b" "$state" false \
           || ! wait_for_four_frames \
             "$remaining_first_frame" \
             "$singleton_frame" \
             "$shifted_unrelated_frame" \
             "$remaining_last_frame" \
           || ! wait_for_active "$title_b"; then
-          record_focus_state "physical stacked Meta+M maximize exit failed"
+          record_focus_state "physical stacked $state_label exit failed"
           {
-            printf 'expected stacked unmaximize frames: %s | %s | %s | %s\n' \
+            printf 'expected former stacked %s frames: %s | %s | %s | %s\n' \
+              "$state_label" \
               "$remaining_first_frame" \
               "$singleton_frame" \
               "$shifted_unrelated_frame" \
               "$remaining_last_frame"
-            printf 'actual stacked unmaximize frames: %s | %s | %s | %s\n' \
+            printf 'actual former stacked %s frames: %s | %s | %s | %s\n' \
+              "$state_label" \
               "$(window_frame "$title_a" 2>/dev/null || true)" \
               "$(window_frame "$title_b" 2>/dev/null || true)" \
               "$(window_frame "$title_c" 2>/dev/null || true)" \
@@ -4650,7 +4708,7 @@ let
           return 1
         fi
         record_focus_state \
-          "physical stacked Meta+M kept the unmaximized window separate"
+          "physical stacked $state_label kept the restored window separate"
 
         if ! invoke_shortcut "driftile_move_window_left" \
           || ! wait_for_four_frames \
@@ -4665,11 +4723,11 @@ let
             "$direct_third_frame" \
             "$direct_fourth_frame" \
           || ! wait_for_active "$title_b"; then
-          record_focus_state "physical stacked maximize fixture restore failed"
+          record_focus_state "physical stacked $state_label fixture restore failed"
           return 1
         fi
         record_focus_state \
-          "physical stacked maximize restored the exact source fixture"
+          "physical stacked $state_label restored the exact source fixture"
       }
 
       verify_physical_maximize_shortcut() {
