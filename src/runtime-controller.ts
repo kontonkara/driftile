@@ -300,6 +300,7 @@ interface StackTransferAcceptance {
 interface StackTransferParticipant {
   readonly id: WindowId;
   readonly minimized: boolean;
+  readonly stateRevision: number;
   readonly window: KWinWindow;
 }
 
@@ -561,6 +562,7 @@ export class RuntimeController {
     WindowId,
     WindowBorderRestore
   >();
+  private readonly windowStateRevisions = new Map<WindowId, number>();
   private workScheduled = false;
   private readonly workspace: KWinWorkspace;
 
@@ -1633,6 +1635,7 @@ export class RuntimeController {
       this.waitingWindowIds.clear();
       this.windowAdmissionHistory.clear();
       this.windowBorderRestore.clear();
+      this.windowStateRevisions.clear();
       this.topologyAllowsOverflowAdmissions = false;
       this.topologyColumnByWindow.clear();
       this.topologyWindowOrder = null;
@@ -1846,6 +1849,10 @@ export class RuntimeController {
   private readonly handleWindowStateChanged = (id: string): void => {
     const changedId = windowId(id);
     const source = this.observer.source(id);
+    this.windowStateRevisions.set(
+      changedId,
+      (this.windowStateRevisions.get(changedId) ?? 0) + 1,
+    );
 
     if (source) {
       this.settleFullscreenRequest(changedId, source.fullScreen);
@@ -2084,6 +2091,7 @@ export class RuntimeController {
     this.borderlessSettlementTokens.delete(managedId);
     this.windowAdmissionHistory.delete(managedId);
     this.windowBorderRestore.delete(managedId);
+    this.windowStateRevisions.delete(managedId);
     this.forgetRememberedLayerFocus(managedId);
     const releasedContextKey = this.releaseWindow(managedId);
 
@@ -3404,6 +3412,17 @@ export class RuntimeController {
       return false;
     }
 
+    const acceptance = this.prepareStackTransferAcceptance(
+      [command.activeColumn, target],
+      command.context,
+      command.activeId,
+      command.activeId,
+    );
+
+    if (!acceptance) {
+      return false;
+    }
+
     const editState: { value: StackEditResult | null } = { value: null };
     const inserted = this.applyActiveColumnMutation(
       command,
@@ -3418,6 +3437,7 @@ export class RuntimeController {
       () =>
         editState.value !== null &&
         this.layout.rollbackStackEdit(editState.value.rollback),
+      () => acceptance.accept(acceptance.activeWindow),
     );
     const edit = editState.value;
 
@@ -8109,7 +8129,12 @@ export class RuntimeController {
           return null;
         }
 
-        participants.push({ id, minimized: window.minimized, window });
+        participants.push({
+          id,
+          minimized: window.minimized,
+          stateRevision: this.windowStateRevisions.get(id) ?? 0,
+          window,
+        });
       }
     }
 
@@ -8132,7 +8157,9 @@ export class RuntimeController {
       for (const participant of participants) {
         if (
           this.observer.source(participant.id) !== participant.window ||
-          participant.window.minimized !== participant.minimized
+          participant.window.minimized !== participant.minimized ||
+          (this.windowStateRevisions.get(participant.id) ?? 0) !==
+            participant.stateRevision
         ) {
           return false;
         }
