@@ -50,7 +50,14 @@ slots and fully minimized columns without wrapping. Focus does not skip other
 suspension blockers. Native fullscreen and maximize may extract the active
 member past settled minimized peers without writing their frames. A visible
 active member may move vertically across settled minimized slots or extract
-horizontally from that stack. Consume may pull the visible top member of the
+horizontally from that stack. Direct insertion may cross settled minimized
+passive peers in its participating source and target columns, including a fully
+minimized target stack; skipped singleton columns are nonparticipants. Passive
+logical order, height state, minimized state, and externally changed hidden
+frames remain authoritative without geometry writes. Fullscreen, maximized,
+native-tiled, restore- or toggle-settling, and other blockers in either column
+make insertion fail closed. A state round trip during reflow cancels and rolls
+back the edit. Consume may pull the visible top member of the
 immediate-right column past settled minimized passive members in either column
 without writing hidden frames. Expel may move a visible bottom member past
 settled minimized passive peers. When that bottom member is active, its

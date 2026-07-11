@@ -116,7 +116,9 @@ RuntimeState
 - Apply active-window height changes transactionally across the affected stack, preserving focus, order, width, and every prior height state on failure.
 - Apply stack edits with compare-and-swap model rollback and exact compensating frame writes after partial failure. Pin every writable ID to its captured KWin object so a same-ID replacement never receives stale writes. Rebase rollback across authoritative participant removal or context departure only when every surviving column, member, width, and height state still matches the applied edit.
 - Reset a consumed or expelled member to automatic height, preserve surviving member order and height state, and keep the active column selected.
-- Resolve direct stack insertion inside the active context, skipping singleton columns without wrapping and preserving every intermediate column.
+- Resolve direct stack insertion inside the active context, skipping singleton columns without wrapping and preserving every intermediate column. Skipped columns are nonparticipants.
+- Permit a visible active member to insert past settled minimized passive peers in the participating source and target columns, including a fully minimized target stack. Preserve passive logical order, height state, minimized state, and externally changed hidden frames without geometry writes.
+- Reject direct insertion when either participating column contains a fullscreen, maximized, native-tiled, restore- or toggle-settling, or other non-minimize blocker. Cancel and roll back if a participant completes a state round trip during reflow.
 - Transfer either the active column or one secondary window between existing desktops through an immutable two-context preview, then commit only after KWin accepts every desktop mechanism, focus, and destination geometry.
 - Transfer either the active column or one secondary window between outputs through the same preview, then commit only after KWin accepts every output and desktop mechanism plus both visible layouts.
 - Preserve whole-column member order and width, apply the active member last, and restore all owned mechanisms and frames if any batch step fails.
@@ -186,6 +188,7 @@ RuntimeState
 - Verify context-local tiled/floating focus memory for manual and automatic floating windows without geometry writes.
 - Verify directional and edge floating focus, stacking tie-breaks, no-wrap boundaries, and exact frame immutability.
 - Verify vertical focus, member reorder, contextual merge and extraction, suspended members, and structural rollback.
+- Verify direct insertion past settled minimized source and target peers, fully minimized target stacks, skipped-singleton nonparticipation, zero hidden-frame writes, authoritative external frame changes, state-round-trip cancellation, exact rollback, and fail-closed blockers.
 - Verify explicit top-member consume and bottom-member expel, minimized passive-member policy, synchronous and deferred focus handoff, reentrant command rejection, width rules, height-state reset, boundaries, and rollback.
 - Verify the settled topology barrier, output replacement and removal, dock and silent work-area invalidations, sticky restore invalidation, and deterministic capacity recovery.
 - Verify independent contexts with native Wayland and XWayland windows on two virtual outputs and native X11 windows on the X11 backend.

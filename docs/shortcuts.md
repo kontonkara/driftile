@@ -58,6 +58,14 @@ minimized manually floating window retains its exact frame for restoration.
 Directional, edge, and layer focus skip minimized slots and fully minimized
 columns without wrapping. They do not skip other suspension blockers. Commands
 may reorder or extract a visible stack member past settled minimized peers.
+Direct insertion may also cross settled minimized peers in its participating
+source and target columns, including a fully minimized target stack; skipped
+singleton columns are nonparticipants. Passive order, height state, minimized
+state, and externally changed hidden frames remain authoritative without
+geometry writes. Fullscreen, maximized, native-tiled, restore- or
+toggle-settling, and other blockers in either participating column make the
+action a no-op. A state round trip during reflow cancels and rolls back the
+edit.
 Consume may also move the visible top member of the immediate-right column past
 settled minimized passive peers in either column. Hidden frames remain
 untouched. Expel may move a visible bottom member past minimized passive peers

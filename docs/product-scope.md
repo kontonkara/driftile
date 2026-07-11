@@ -78,7 +78,8 @@ Driftile must integrate with, not duplicate:
 - Resetting a window height returns that member to automatic sizing. A failed stack reflow restores every prior height state and frame.
 - Horizontal window movement merges a singleton into its neighbor or extracts a stacked member into a new adjacent singleton column.
 - Merge preserves the destination width; extraction copies the source width; both preserve focus and member order.
-- Direct insertion appends the active window to the nearest existing stack in its direction, skips singleton columns without wrapping, and preserves the target width.
+- Direct insertion appends the active window to the nearest existing stack in its direction, skips singleton columns as nonparticipants without wrapping, and preserves the target width.
+- Direct insertion may cross settled minimized passive peers in the participating source and target columns, including a fully minimized target stack. Those peers retain logical order, height state, minimized state, and externally changed frames without geometry writes. Fullscreen, maximized, native-tiled, restore- or toggle-settling, and other blockers in either participating column fail closed; a state round trip during reflow cancels and rolls back the edit.
 - Explicit consume appends the immediate right column's visible top member to the active column; explicit expel moves the active column's visible bottom member into a new right column. Focus remains in the active column.
 - Horizontal focus skips fully minimized columns; vertical focus skips minimized slots. Both stop at layout boundaries without wrapping.
 - Focus traversal does not route around suspension reasons other than minimization; those blockers remain fail-closed.
