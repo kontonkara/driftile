@@ -43,7 +43,10 @@ import type {
   KWinWindow,
   KWinWorkspace,
 } from "./platform/kwin/api";
-import { DesktopLifecycle } from "./platform/kwin/desktop-lifecycle";
+import {
+  DesktopLifecycle,
+  type DesktopReorderDirection,
+} from "./platform/kwin/desktop-lifecycle";
 import {
   frameSizeConstraintBounds,
   KWinGeometryAdapter,
@@ -684,6 +687,14 @@ export class RuntimeController {
     }
 
     return this.focusDesktopTarget({ index, kind: "index" });
+  }
+
+  moveDesktopDown(): boolean {
+    return this.moveSelectedDesktop(1);
+  }
+
+  moveDesktopUp(): boolean {
+    return this.moveSelectedDesktop(-1);
   }
 
   moveColumnLeft(): boolean {
@@ -2774,6 +2785,26 @@ export class RuntimeController {
 
     this.switchDesktop(targetDesktop, output);
     return true;
+  }
+
+  private moveSelectedDesktop(direction: DesktopReorderDirection): boolean {
+    if (
+      !this.desktopLifecycleCanMutate() ||
+      this.stackEditOperation ||
+      this.stackedNativeStateOperation ||
+      this.startupStabilizationToken !== null
+    ) {
+      return false;
+    }
+
+    const output = this.workspace.activeScreen;
+
+    if (!output || !this.workspace.screens.includes(output)) {
+      return false;
+    }
+
+    this.lastWrites = 0;
+    return this.desktopLifecycle.moveSelectedDesktop(output, direction);
   }
 
   private desktopTargetIndex(

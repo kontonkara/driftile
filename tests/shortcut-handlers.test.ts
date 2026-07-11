@@ -209,6 +209,22 @@ const expectedHandlers: Readonly<
     activated: "Runtime.DriftileRuntime.maximizeWindowToEdges()",
     sequence: "Meta+M",
   },
+  driftile_move_desktop_down: {
+    activated: "Runtime.DriftileRuntime.moveDesktopDown()",
+    sequence: "Meta+Shift+U",
+  },
+  driftile_move_desktop_down_page_down: {
+    activated: "Runtime.DriftileRuntime.moveDesktopDown()",
+    sequence: "Meta+Shift+PgDown",
+  },
+  driftile_move_desktop_up: {
+    activated: "Runtime.DriftileRuntime.moveDesktopUp()",
+    sequence: "Meta+Shift+I",
+  },
+  driftile_move_desktop_up_page_up: {
+    activated: "Runtime.DriftileRuntime.moveDesktopUp()",
+    sequence: "Meta+Shift+PgUp",
+  },
   driftile_expand_column_to_available_width: {
     activated: "Runtime.DriftileRuntime.expandColumnToAvailableWidth()",
     sequence: "Meta+Ctrl+F",

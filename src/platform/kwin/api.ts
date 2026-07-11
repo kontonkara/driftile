@@ -105,6 +105,7 @@ export interface KWinWorkspace {
   ): KWinRect;
   createDesktop?(position: number, name: string): void;
   currentDesktopForScreen?(output: KWinOutput): KWinVirtualDesktop | null;
+  moveDesktop?(desktop: KWinVirtualDesktop, position: number): void;
   removeDesktop?(desktop: KWinVirtualDesktop): void;
   sendClientToScreen?(window: KWinWindow, output: KWinOutput): void;
   setCurrentDesktopForScreen?(

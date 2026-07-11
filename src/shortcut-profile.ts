@@ -196,6 +196,26 @@ const definitions: readonly ShortcutDefinition[] = [
     sequence: "Meta+PgDown",
   },
   {
+    name: "driftile_move_desktop_down",
+    text: "Driftile: Move desktop down",
+    sequence: "Meta+Shift+U",
+  },
+  {
+    name: "driftile_move_desktop_down_page_down",
+    text: "Driftile: Move desktop down (Page Down)",
+    sequence: "Meta+Shift+PgDown",
+  },
+  {
+    name: "driftile_move_desktop_up",
+    text: "Driftile: Move desktop up",
+    sequence: "Meta+Shift+I",
+  },
+  {
+    name: "driftile_move_desktop_up_page_up",
+    text: "Driftile: Move desktop up (Page Up)",
+    sequence: "Meta+Shift+PgUp",
+  },
+  {
     name: "driftile_focus_desktop_1",
     text: "Driftile: Focus desktop 1",
     sequence: "Meta+1",

@@ -266,6 +266,30 @@ QtObject {
         sequence: "Meta+PgDown"
         onActivated: Runtime.DriftileRuntime.focusNextDesktop()
     }
+    readonly property ShortcutHandler moveDesktopDownShortcut: ShortcutHandler {
+        name: "driftile_move_desktop_down"
+        text: "Driftile: Move desktop down"
+        sequence: "Meta+Shift+U"
+        onActivated: Runtime.DriftileRuntime.moveDesktopDown()
+    }
+    readonly property ShortcutHandler moveDesktopDownPageShortcut: ShortcutHandler {
+        name: "driftile_move_desktop_down_page_down"
+        text: "Driftile: Move desktop down (Page Down)"
+        sequence: "Meta+Shift+PgDown"
+        onActivated: Runtime.DriftileRuntime.moveDesktopDown()
+    }
+    readonly property ShortcutHandler moveDesktopUpShortcut: ShortcutHandler {
+        name: "driftile_move_desktop_up"
+        text: "Driftile: Move desktop up"
+        sequence: "Meta+Shift+I"
+        onActivated: Runtime.DriftileRuntime.moveDesktopUp()
+    }
+    readonly property ShortcutHandler moveDesktopUpPageShortcut: ShortcutHandler {
+        name: "driftile_move_desktop_up_page_up"
+        text: "Driftile: Move desktop up (Page Up)"
+        sequence: "Meta+Shift+PgUp"
+        onActivated: Runtime.DriftileRuntime.moveDesktopUp()
+    }
     readonly property ShortcutHandler focusDesktop1Shortcut: ShortcutHandler {
         name: "driftile_focus_desktop_1"
         text: "Driftile: Focus desktop 1"

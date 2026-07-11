@@ -1,4 +1,6 @@
-import type { KWinWindow, KWinWorkspace } from "./api";
+import type { KWinOutput, KWinWindow, KWinWorkspace } from "./api";
+
+export type DesktopReorderDirection = -1 | 1;
 
 export interface DesktopLifecycleSnapshot {
   readonly desktopIds: readonly string[];
@@ -15,6 +17,14 @@ export type DesktopLifecycleMutation =
 interface PendingMutation {
   readonly beforeDesktopIds: readonly string[];
   readonly mutation: DesktopLifecycleMutation;
+}
+
+interface DesktopOrderSnapshot {
+  readonly desktopIds: readonly string[];
+  readonly occupiedDesktopIds: ReadonlySet<string>;
+  readonly selectedDesktopId: string;
+  readonly selectionFingerprint: readonly string[];
+  readonly windowDesktopFingerprint: readonly string[];
 }
 
 interface TrackedWindow {
@@ -134,6 +144,7 @@ export class DesktopLifecycle {
       !this.started ||
       !this.dirty ||
       this.pendingMutation ||
+      this.mutationCallActive ||
       !canMutate ||
       !this.workspace.desktopsChanged
     ) {
@@ -195,9 +206,128 @@ export class DesktopLifecycle {
     } finally {
       this.mutationCallActive = false;
       this.settleMutationAfterCall(pending);
+
+      if (this.dirty) {
+        this.events.changed();
+      }
     }
 
     return mutation;
+  }
+
+  moveSelectedDesktop(
+    output: KWinOutput,
+    direction: DesktopReorderDirection,
+  ): boolean {
+    if (
+      !this.started ||
+      this.dirty ||
+      this.pendingMutation ||
+      this.mutationCallActive ||
+      typeof this.workspace.moveDesktop !== "function" ||
+      !this.workspace.desktopsChanged
+    ) {
+      return false;
+    }
+
+    const before = this.desktopOrderSnapshot(output);
+
+    if (!before) {
+      return false;
+    }
+
+    const sourceIndex = before.desktopIds.indexOf(before.selectedDesktopId);
+    const targetIndex = sourceIndex + direction;
+    const trailingIndex = before.desktopIds.length - 1;
+    const trailingDesktopId = before.desktopIds[trailingIndex];
+
+    if (
+      sourceIndex < 0 ||
+      sourceIndex === trailingIndex ||
+      targetIndex < 0 ||
+      targetIndex >= trailingIndex ||
+      !trailingDesktopId ||
+      before.occupiedDesktopIds.has(trailingDesktopId)
+    ) {
+      return false;
+    }
+
+    const confirmation = this.desktopOrderSnapshot(output);
+
+    if (
+      !confirmation ||
+      confirmation.selectedDesktopId !== before.selectedDesktopId ||
+      !sameStrings(confirmation.desktopIds, before.desktopIds) ||
+      !sameStrings(
+        confirmation.selectionFingerprint,
+        before.selectionFingerprint,
+      ) ||
+      !sameStrings(
+        confirmation.windowDesktopFingerprint,
+        before.windowDesktopFingerprint,
+      ) ||
+      confirmation.occupiedDesktopIds.has(trailingDesktopId)
+    ) {
+      return false;
+    }
+
+    const desktop = this.workspace.desktops[sourceIndex];
+
+    if (desktop?.id !== before.selectedDesktopId) {
+      return false;
+    }
+
+    const expectedDesktopIds = movedString(
+      before.desktopIds,
+      sourceIndex,
+      targetIndex,
+    );
+
+    let callFailed = false;
+
+    try {
+      this.mutationCallActive = true;
+      this.workspace.moveDesktop(desktop, targetIndex);
+    } catch (error) {
+      callFailed = true;
+      console.warn(
+        `[driftile] desktop reorder failed desktop=${before.selectedDesktopId} position=${String(targetIndex)} error=${String(error)}`,
+      );
+    } finally {
+      this.mutationCallActive = false;
+    }
+
+    const after = this.desktopOrderSnapshot(output);
+
+    if (
+      callFailed ||
+      !after ||
+      after.selectedDesktopId !== before.selectedDesktopId ||
+      !sameStrings(after.desktopIds, expectedDesktopIds) ||
+      !sameStrings(after.selectionFingerprint, before.selectionFingerprint) ||
+      !sameStrings(
+        after.windowDesktopFingerprint,
+        before.windowDesktopFingerprint,
+      ) ||
+      after.occupiedDesktopIds.has(trailingDesktopId)
+    ) {
+      if (
+        !after ||
+        !sameStrings(after.desktopIds, before.desktopIds) ||
+        !sameStrings(after.selectionFingerprint, before.selectionFingerprint) ||
+        !sameStrings(
+          after.windowDesktopFingerprint,
+          before.windowDesktopFingerprint,
+        )
+      ) {
+        this.publishChanged();
+      }
+
+      return false;
+    }
+
+    this.publishChanged();
+    return true;
   }
 
   private readonly handleDesktopsChanged = (): void => {
@@ -321,6 +451,126 @@ export class DesktopLifecycle {
     this.events.changed();
   }
 
+  private desktopOrderSnapshot(
+    output: KWinOutput,
+  ): DesktopOrderSnapshot | null {
+    try {
+      if (!this.workspace.screens.includes(output)) {
+        return null;
+      }
+
+      const desktopIds = this.workspace.desktops.map((desktop) => desktop.id);
+      const desktopIdSet = new Set(desktopIds);
+
+      if (
+        desktopIds.length === 0 ||
+        desktopIdSet.size !== desktopIds.length ||
+        desktopIds.some((id) => id.length === 0)
+      ) {
+        return null;
+      }
+
+      const occupiedDesktopIds = new Set<string>();
+      const windowDesktopFingerprint: string[] = [];
+
+      for (const tracked of this.trackedWindows.values()) {
+        const window = tracked.source;
+
+        if (window.deleted || window.desktopWindow || window.dock) {
+          continue;
+        }
+
+        const id = String(window.internalId);
+
+        if (id.length === 0) {
+          return null;
+        }
+
+        if (window.onAllDesktops) {
+          windowDesktopFingerprint.push(`${id}\u0000*`);
+          continue;
+        }
+
+        const windowDesktopIds = window.desktops.map((desktop) => desktop.id);
+
+        if (
+          windowDesktopIds.length === 0 ||
+          new Set(windowDesktopIds).size !== windowDesktopIds.length ||
+          windowDesktopIds.some((id) => !desktopIdSet.has(id))
+        ) {
+          return null;
+        }
+
+        windowDesktopIds.sort();
+
+        for (const id of windowDesktopIds) {
+          occupiedDesktopIds.add(id);
+        }
+
+        windowDesktopFingerprint.push(
+          `${id}\u0000${windowDesktopIds.join("\u0000")}`,
+        );
+      }
+
+      windowDesktopFingerprint.sort();
+
+      const selectionFingerprint: string[] = [];
+      let selectedDesktopId = "";
+
+      if (typeof this.workspace.currentDesktopForScreen === "function") {
+        const outputNames = new Set<string>();
+
+        for (const candidate of this.workspace.screens) {
+          const selected = this.workspace.currentDesktopForScreen(candidate);
+
+          if (
+            candidate.name.length === 0 ||
+            outputNames.has(candidate.name) ||
+            !selected ||
+            !desktopIdSet.has(selected.id)
+          ) {
+            return null;
+          }
+
+          outputNames.add(candidate.name);
+          selectionFingerprint.push(`${candidate.name}\u0000${selected.id}`);
+
+          if (candidate === output) {
+            selectedDesktopId = selected.id;
+          }
+        }
+
+        selectionFingerprint.sort();
+      } else {
+        const selected = this.workspace.currentDesktop;
+
+        if (!selected || !desktopIdSet.has(selected.id)) {
+          return null;
+        }
+
+        selectedDesktopId = selected.id;
+        selectionFingerprint.push(`global\u0000${selected.id}`);
+      }
+
+      if (selectedDesktopId.length === 0) {
+        return null;
+      }
+
+      return {
+        desktopIds,
+        occupiedDesktopIds,
+        selectedDesktopId,
+        selectionFingerprint,
+        windowDesktopFingerprint,
+      };
+    } catch (error) {
+      console.warn(
+        `[driftile] desktop reorder snapshot failed error=${String(error)}`,
+      );
+      return null;
+    }
+  }
+
   private snapshot(): DesktopLifecycleSnapshot | null {
     try {
       const desktopIds = this.workspace.desktops.map((desktop) => desktop.id);
@@ -438,6 +688,21 @@ function mutationsEqual(
       ? right.kind === "create" && left.position === right.position
       : right.kind === "remove" && left.desktopId === right.desktopId),
   );
+}
+
+function movedString(
+  values: readonly string[],
+  sourceIndex: number,
+  targetIndex: number,
+): readonly string[] {
+  const moved = [...values];
+  const [value] = moved.splice(sourceIndex, 1);
+
+  if (value !== undefined) {
+    moved.splice(targetIndex, 0, value);
+  }
+
+  return moved;
 }
 
 function sameStrings(

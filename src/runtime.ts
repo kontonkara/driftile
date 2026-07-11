@@ -83,6 +83,14 @@ export function focusDesktop(index: number): void {
   controller?.focusDesktop(index);
 }
 
+export function moveDesktopDown(): void {
+  controller?.moveDesktopDown();
+}
+
+export function moveDesktopUp(): void {
+  controller?.moveDesktopUp();
+}
+
 export function moveColumnLeft(): void {
   controller?.moveColumnLeft();
 }
