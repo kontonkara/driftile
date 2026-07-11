@@ -45,6 +45,8 @@ QtObject {
             Runtime.DriftileRuntime.setBorderlessWindows(
                 KWin.readConfig("BorderlessWindows", true))
             Runtime.DriftileRuntime.setGap(KWin.readConfig("Gap", 16))
+            Runtime.DriftileRuntime.setDefaultColumnWidthPercent(
+                KWin.readConfig("DefaultColumnWidthPercent", 50))
         }
     }
 
@@ -685,6 +687,7 @@ QtObject {
                                                         root.createRect, root.schedule,
                                                         root.scheduleResume,
                                                         KWin.readConfig("BorderlessWindows", true),
-                                                        KWin.readConfig("Gap", 16))
+                                                        KWin.readConfig("Gap", 16),
+                                                        KWin.readConfig("DefaultColumnWidthPercent", 50))
     Component.onDestruction: Runtime.DriftileRuntime.destroy()
 }
