@@ -38,6 +38,7 @@ The current runtime already:
 - Settles output and work-area event bursts behind two matching delayed snapshots.
 - Observes output-list, geometry, scale, and dock invalidations.
 - Checks visible client areas and non-minimized tracked-window hard constraints every two seconds to cover missing complete KWin signals.
+- Maintains independent layout state for every `(output, desktop)` context.
 - Preserves a deterministic layout order across structural output changes.
 - Invalidates stale restore baselines without reviving them when old geometry returns.
 - Parks deterministic whole columns when a new multi-output capacity limit no longer fits, preferring non-active columns, then retries waiting windows.
@@ -53,11 +54,12 @@ The current runtime already:
 - Expels a visible bottom member past settled minimized passive peers only after an exact focus handoff inside the surviving column is confirmed.
 - Extracts a regular stack member into an immediate right singleton before native fullscreen, preserves settled minimized peers without frame writes, and keeps the window separate after leaving fullscreen.
 - Extracts a regular stack member into an immediate right singleton before native maximize-to-edges, preserves settled minimized peers without frame writes, and keeps the window separate after unmaximize.
-- Moves the whole active column between adjacent existing desktops with follow-focus, atomic two-context ownership, exact rollback, and no hidden-frame writes for settled minimized passive members; single-window transfer remains secondary.
+- Moves the whole active column between adjacent existing desktops with follow-focus, atomic two-context ownership, exact rollback, and no hidden-frame writes for settled minimized passive members. A secondary single-window transfer may extract the visible active member while settled minimized peers in the same source column keep their logical slots, height state, minimized state, and frames without desktop or geometry writes.
 - Focuses desktops 1 through 9 directly and moves the whole active column there, clamping out-of-range targets to the shared empty tail.
 - Reorders the currently selected desktop one position when the KWin scripting backend supports it, without wrapping or changing desktop IDs, output selections, window memberships, or the pinned empty tail.
 - Moves one relation-free floating window between adjacent or numbered desktops without changing its frame or either tiled layout.
-- Moves the whole active column to an adjacent output with deterministic spatial routing, atomic visible-context reflow, and no layout geometry writes for settled minimized passive members; single-window transfer remains secondary.
+- Moves the whole active column to an adjacent output with deterministic spatial routing, atomic visible-context reflow, and no layout geometry writes for settled minimized passive members. A secondary single-window transfer uses the same retained-source policy without output, desktop, or geometry writes to settled minimized peers.
+- Keeps both secondary transfer paths fail-closed when a minimized window is outside the active member's source column or is already in the target context.
 - Optionally removes application-window decorations independently of layout ownership while preserving pre-existing borderless state, reasserting owned policy, and restoring owned state on disable.
 - Treats exposed client minimum and maximum sizes as hard bounds, detects silent changes on visible tracked windows, does not model unexposed X11 increment and aspect hints, and leaves backend enforcement to KWin.
 - Keeps one shared trailing desktop empty and removes only redundant tails created by the current run.
@@ -73,8 +75,7 @@ The automatic-floating base and the script-visible hard-constraint policy are co
 
 Complete the daily keyboard-driven workflow.
 
-- Manage every output and desktop independently.
-- Define structural command behavior for columns and stacks containing minimized members.
+- Harden operation-specific fail-closed policies for unsupported minimized-member source and target combinations.
 - Expand live hard-constraint coverage across toolkits and track a public KWin constraint oracle for optional strict X11 hint compliance.
 - Harden the existing topology recovery for rotation, rapid physical hot-plug sequences, and more hardware configurations.
 - Add the remaining essential layout settings.
@@ -84,8 +85,8 @@ Exit criteria:
 - Commands affect only their target context.
 - Default transfer shortcuts preserve every member and the width of the active column.
 - Opening, closing, moving, and resizing windows preserves unrelated layout state.
-- Fullscreen windows retain their extracted singleton position.
-- Structural commands involving minimized members have an explicit, tested policy.
+- Fullscreen and maximized windows retain their extracted singleton position.
+- Structural commands involving minimized members have tested behavior or an explicit fail-closed policy.
 - Hot-plug recovery leaves every window reachable.
 - Dynamic workspace changes never remove an occupied or visible desktop.
 - A sustained lifecycle test produces no exceptions or geometry feedback loop.

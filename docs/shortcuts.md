@@ -66,8 +66,13 @@ only to its immediate predecessor; a minimized predecessor makes the command a
 no-op. The structural edit waits for KWin to confirm that handoff and is
 discarded if the original layout or participants change. Whole-column desktop
 and output transfers may carry settled minimized passive members without layout
-geometry writes. Secondary single-window transfers and other hidden-member edit
-semantics remain fail-closed MVP work.
+geometry writes. A secondary single-window desktop or output transfer may
+extract the visible active member while settled minimized passive members in
+the same source column remain untouched. Those retained members keep their
+logical slots, height state, minimized state, and frames, and receive no
+desktop, output, or geometry writes. Minimized windows elsewhere in the source
+or target context and other undocumented hidden-member edits remain
+fail-closed. These secondary actions remain unbound by default.
 
 Window-height presets are `1/3`, `1/2`, and `2/3` of the work area, with gaps
 included in the calculation.

@@ -24,7 +24,7 @@ Driftile uses one keyboard grammar and does not wrap at layout boundaries:
 | Fullscreen           | Extract a regular stack member, then toggle native fullscreen through KWin                        | Available |
 | Native maximize      | Extract a regular stack member, then toggle it to work-area edges through KWin                    | Available |
 | Minimize focus       | Preserve tiled slots and floating frames; skip minimized windows without wrapping                 | Available |
-| Hidden-member edits  | Define structural commands for columns or stacks containing minimized members                     | MVP       |
+| Hidden-member edits  | Preserve documented passive peers; reject every other minimized-member structural edit            | Available |
 | Floating layer       | Toggle state, switch layers, and navigate floating windows geometrically                          | Available |
 | Tabbed columns       | Toggle a column between stacked and tabbed presentation without changing navigation               | v1        |
 | Pointer input        | Provide wheel navigation and mouse rearrangement with the same model as keyboard commands         | v1        |
@@ -58,8 +58,13 @@ immediate predecessor must be visible and receives focus before the layout
 changes; the command does not search past a minimized predecessor. If KWin does
 not confirm the handoff, the layout and frames remain unchanged. Whole-column
 desktop and output transfers may carry settled minimized passive members
-without layout geometry writes. Secondary single-window transfers and further
-hidden-member edit semantics remain fail-closed MVP work.
+without layout geometry writes. A secondary single-window desktop or output
+transfer may extract the visible active member while settled minimized passive
+members in the same source column remain untouched. Those members keep their
+logical slots, height state, minimized state, and frames, and receive no
+desktop, output, or geometry writes. Minimized windows elsewhere in the source
+or target context and other undocumented hidden-member edits remain
+fail-closed.
 
 When a member of a regular vertical stack enters fullscreen or is maximized,
 Driftile extracts it into a singleton column immediately to the right. Leaving
