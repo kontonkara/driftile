@@ -69,6 +69,9 @@ const expectedHandlers: Readonly<
     activated: "Runtime.DriftileRuntime.focusRight()",
     sequence: "Meta+Right",
   },
+  driftile_focus_floating: {
+    activated: "Runtime.DriftileRuntime.focusFloating()",
+  },
   driftile_focus_next_desktop: {
     activated: "Runtime.DriftileRuntime.focusNextDesktop()",
     sequence: "Meta+U",
@@ -116,6 +119,9 @@ const expectedHandlers: Readonly<
   driftile_focus_previous_desktop_page_up: {
     activated: "Runtime.DriftileRuntime.focusPreviousDesktop()",
     sequence: "Meta+PgUp",
+  },
+  driftile_focus_tiling: {
+    activated: "Runtime.DriftileRuntime.focusTiling()",
   },
   driftile_focus_window_down: {
     activated: "Runtime.DriftileRuntime.focusDown()",
@@ -302,6 +308,10 @@ const expectedHandlers: Readonly<
     activated: "Runtime.DriftileRuntime.resetWindowHeight()",
     sequence: "Meta+Ctrl+R",
   },
+  driftile_switch_focus_between_floating_and_tiling: {
+    activated: "Runtime.DriftileRuntime.switchFocusBetweenFloatingAndTiling()",
+    sequence: "Meta+Shift+V",
+  },
   driftile_switch_preset_column_width: {
     activated: "Runtime.DriftileRuntime.switchPresetColumnWidth()",
     sequence: "Meta+R",
@@ -376,6 +386,8 @@ describe("KWin shortcut handlers", () => {
         .map((handler) => handler.name)
         .sort(),
     ).toEqual([
+      "driftile_focus_floating",
+      "driftile_focus_tiling",
       "driftile_insert_window_into_stack_left",
       "driftile_insert_window_into_stack_right",
       "driftile_move_window_to_next_desktop",

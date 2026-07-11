@@ -3722,6 +3722,571 @@ describe("RuntimeController", () => {
     expect(fixture.workspace.activeWindow).toBe(active.window);
   });
 
+  it("switches between remembered tiled and floating windows without layout writes", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const tiledRemembered = createTrackedWindow(
+      "tiled-remembered",
+      output,
+      desktop,
+    );
+    const tiledTopmost = createTrackedWindow("tiled-topmost", output, desktop);
+    const floatingRemembered = createTrackedWindow(
+      "floating-remembered",
+      output,
+      desktop,
+    );
+    const floatingTopmost = createTrackedWindow(
+      "floating-topmost",
+      output,
+      desktop,
+    );
+    const windows = [
+      tiledRemembered,
+      tiledTopmost,
+      floatingRemembered,
+      floatingTopmost,
+    ];
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map(({ window }) => window),
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(controller.toggleFloating()).toBe(true);
+    fixture.workspace.activeWindow = floatingRemembered.window;
+    expect(controller.toggleFloating()).toBe(true);
+    fixture.workspace.activeWindow = tiledTopmost.window;
+    fixture.workspace.activeWindow = tiledRemembered.window;
+    const layout = runtimeLayout(controller);
+    layout.setViewportOffset(outputId(output.name), desktopId(desktop.id), -73);
+    controller.reconcile();
+
+    const before = layout.snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
+    const writes = windows.map(({ writeCount }) => writeCount);
+    const activationCount = fixture.activationCount;
+
+    expect(before.viewportOffset).toBe(-73);
+    expect(controller.switchFocusBetweenFloatingAndTiling()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(floatingRemembered.window);
+    expect(controller.switchFocusBetweenFloatingAndTiling()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(tiledRemembered.window);
+    expect(controller.focusFloating()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(floatingRemembered.window);
+    expect(controller.focusFloating()).toBe(false);
+    expect(controller.focusTiling()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(tiledRemembered.window);
+    expect(controller.focusTiling()).toBe(false);
+
+    expect(fixture.activationCount).toBe(activationCount + 4);
+    expect(
+      layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+    ).toEqual(before);
+    expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
+    expect(windows.map(({ writeCount }) => writeCount)).toEqual(writes);
+  });
+
+  it("restores the remembered member of a tiled stack", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const stackFirst = createTrackedWindow("stack-first", output, desktop);
+    const stackRemembered = createTrackedWindow(
+      "stack-remembered",
+      output,
+      desktop,
+    );
+    const other = createTrackedWindow("other", output, desktop);
+    const floating = createTrackedWindow("floating", output, desktop);
+    const windows = [stackFirst, stackRemembered, other, floating];
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map(({ window }) => window),
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(controller.toggleFloating()).toBe(true);
+    const layout = installTestLayout(
+      controller,
+      output,
+      desktop,
+      "column:stack",
+      [
+        {
+          id: "column:stack",
+          width: { kind: "fixed", value: 300 },
+          windowIds: ["stack-first", "stack-remembered"],
+        },
+        {
+          id: "column:other",
+          width: { kind: "fixed", value: 300 },
+          windowIds: ["other"],
+        },
+      ],
+    );
+    fixture.workspace.activeWindow = stackFirst.window;
+    fixture.workspace.activeWindow = stackRemembered.window;
+    fixture.workspace.activeWindow = floating.window;
+    layout.setViewportOffset(outputId(output.name), desktopId(desktop.id), -44);
+    controller.reconcile();
+    const before = layout.snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
+    const writes = windows.map(({ writeCount }) => writeCount);
+
+    expect(controller.switchFocusBetweenFloatingAndTiling()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(stackRemembered.window);
+    expect(controller.switchFocusBetweenFloatingAndTiling()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(floating.window);
+    expect(
+      layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+    ).toEqual(before);
+    expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
+    expect(windows.map(({ writeCount }) => writeCount)).toEqual(writes);
+  });
+
+  it.each([
+    {
+      name: "dialog",
+      overrides: { dialog: true, normalWindow: false },
+    },
+    {
+      name: "transient",
+      overrides: { transient: true },
+    },
+    {
+      name: "fixed-size",
+      overrides: {
+        clientGeometry: { height: 180, width: 280, x: 10, y: 10 },
+        frameGeometry: { height: 200, width: 300, x: 0, y: 0 },
+        maxSize: { height: 180, width: 280 },
+        minSize: { height: 180, width: 280 },
+      },
+    },
+  ] satisfies readonly {
+    readonly name: string;
+    readonly overrides: Partial<KWinWindow>;
+  }[])(
+    "switches focus to and from a $name automatic floating window",
+    ({ overrides }) => {
+      const output = createOutput("DP-1", 0);
+      const desktop = { id: "desktop-1" };
+      const tiled = createTrackedWindow("tiled", output, desktop);
+      const automatic = createTrackedWindow(
+        "automatic",
+        output,
+        desktop,
+        overrides,
+      );
+      const windows = [tiled, automatic];
+      const fixture = createWorkspace(
+        output,
+        desktop,
+        [output],
+        [desktop],
+        windows.map(({ window }) => window),
+      );
+      const controller = new RuntimeController(fixture.workspace, {
+        clientAreaOption: 2,
+        columnWidth: { kind: "fixed", value: 300 },
+        gap: 10,
+      });
+
+      expect(controller.start()).toBe(true);
+      expect(controller.managedCount).toBe(1);
+      expect(controller.automaticFloatingCount).toBe(1);
+      fixture.workspace.activeWindow = tiled.window;
+      const layout = runtimeLayout(controller);
+      const before = layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      );
+      const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
+      const writes = windows.map(({ writeCount }) => writeCount);
+      const activationCount = fixture.activationCount;
+
+      expect(controller.switchFocusBetweenFloatingAndTiling()).toBe(true);
+      expect(fixture.workspace.activeWindow).toBe(automatic.window);
+      expect(controller.focusTiling()).toBe(true);
+      expect(fixture.workspace.activeWindow).toBe(tiled.window);
+      expect(controller.focusTiling()).toBe(false);
+      expect(controller.focusFloating()).toBe(true);
+      expect(fixture.workspace.activeWindow).toBe(automatic.window);
+      expect(controller.focusFloating()).toBe(false);
+
+      expect(fixture.activationCount).toBe(activationCount + 3);
+      expect(
+        layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+      ).toEqual(before);
+      expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
+      expect(windows.map(({ writeCount }) => writeCount)).toEqual(writes);
+    },
+  );
+
+  it("does not switch focus when either window layer is empty", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const tiled = createTrackedWindow("tiled", output, desktop);
+    const tiledFixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [tiled.window],
+    );
+    const tiledController = new RuntimeController(tiledFixture.workspace, {
+      clientAreaOption: 2,
+    });
+
+    expect(tiledController.start()).toBe(true);
+    const tiledLayout = runtimeLayout(tiledController).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const tiledWrites = tiled.writeCount;
+    const tiledActivationCount = tiledFixture.activationCount;
+
+    expect(tiledController.switchFocusBetweenFloatingAndTiling()).toBe(false);
+    expect(tiledController.focusFloating()).toBe(false);
+    expect(tiledController.focusTiling()).toBe(false);
+    expect(tiledFixture.activationCount).toBe(tiledActivationCount);
+    expect(tiled.writeCount).toBe(tiledWrites);
+    expect(
+      runtimeLayout(tiledController).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(tiledLayout);
+
+    const automatic = createTrackedWindow("automatic", output, desktop, {
+      clientGeometry: { height: 180, width: 280, x: 10, y: 10 },
+      frameGeometry: { height: 200, width: 300, x: 0, y: 0 },
+      maxSize: { height: 180, width: 280 },
+      minSize: { height: 180, width: 280 },
+    });
+    const floatingFixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [automatic.window],
+    );
+    const floatingController = new RuntimeController(
+      floatingFixture.workspace,
+      { clientAreaOption: 2 },
+    );
+
+    expect(floatingController.start()).toBe(true);
+    expect(floatingController.managedCount).toBe(0);
+    expect(floatingController.automaticFloatingCount).toBe(1);
+    const floatingLayout = runtimeLayout(floatingController).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const floatingWrites = automatic.writeCount;
+    const floatingActivationCount = floatingFixture.activationCount;
+
+    expect(floatingController.switchFocusBetweenFloatingAndTiling()).toBe(
+      false,
+    );
+    expect(floatingController.focusTiling()).toBe(false);
+    expect(floatingController.focusFloating()).toBe(false);
+    expect(floatingFixture.activationCount).toBe(floatingActivationCount);
+    expect(automatic.writeCount).toBe(floatingWrites);
+    expect(
+      runtimeLayout(floatingController).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(floatingLayout);
+  });
+
+  it("falls back within each layer after remembered windows are removed", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const staleTiled = createTrackedWindow("stale-tiled", output, desktop);
+    const tiledFallback = createTrackedWindow(
+      "tiled-fallback",
+      output,
+      desktop,
+    );
+    const staleFloating = createTrackedWindow(
+      "stale-floating",
+      output,
+      desktop,
+    );
+    const floatingFallback = createTrackedWindow(
+      "floating-fallback",
+      output,
+      desktop,
+    );
+    const windows = [
+      staleTiled,
+      tiledFallback,
+      staleFloating,
+      floatingFallback,
+    ];
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map(({ window }) => window),
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(controller.toggleFloating()).toBe(true);
+    fixture.workspace.activeWindow = staleFloating.window;
+    expect(controller.toggleFloating()).toBe(true);
+    fixture.workspace.activeWindow = staleTiled.window;
+    fixture.workspace.activeWindow = staleFloating.window;
+    fixture.windowRemoved.emit(staleTiled.window);
+    const layoutAfterTiledRemoval = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const writesAfterTiledRemoval = windows.map(({ writeCount }) => writeCount);
+
+    expect(controller.switchFocusBetweenFloatingAndTiling()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(tiledFallback.window);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(layoutAfterTiledRemoval);
+    expect(windows.map(({ writeCount }) => writeCount)).toEqual(
+      writesAfterTiledRemoval,
+    );
+
+    expect(controller.focusFloating()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(staleFloating.window);
+    fixture.windowRemoved.emit(staleFloating.window);
+    fixture.workspace.activeWindow = tiledFallback.window;
+    const layoutAfterFloatingRemoval = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const writesAfterFloatingRemoval = windows.map(
+      ({ writeCount }) => writeCount,
+    );
+
+    expect(controller.switchFocusBetweenFloatingAndTiling()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(floatingFallback.window);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(layoutAfterFloatingRemoval);
+    expect(windows.map(({ writeCount }) => writeCount)).toEqual(
+      writesAfterFloatingRemoval,
+    );
+  });
+
+  it("keeps remembered layer focus isolated between output contexts", () => {
+    const firstOutput = createOutput("DP-1", 0);
+    const secondOutput = createOutput("HDMI-A-1", 1000);
+    const desktop = { id: "desktop-1" };
+    const firstTiled = createTrackedWindow("first-tiled", firstOutput, desktop);
+    const firstRemembered = createTrackedWindow(
+      "first-remembered",
+      firstOutput,
+      desktop,
+    );
+    const firstTopmost = createTrackedWindow(
+      "first-topmost",
+      firstOutput,
+      desktop,
+    );
+    const secondTiled = createTrackedWindow(
+      "second-tiled",
+      secondOutput,
+      desktop,
+    );
+    const secondRemembered = createTrackedWindow(
+      "second-remembered",
+      secondOutput,
+      desktop,
+    );
+    const secondTopmost = createTrackedWindow(
+      "second-topmost",
+      secondOutput,
+      desktop,
+    );
+    const windows = [
+      firstTiled,
+      firstRemembered,
+      firstTopmost,
+      secondTiled,
+      secondRemembered,
+      secondTopmost,
+    ];
+    const fixture = createWorkspace(
+      firstOutput,
+      desktop,
+      [firstOutput, secondOutput],
+      [desktop],
+      windows.map(({ window }) => window),
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(controller.toggleFloating()).toBe(true);
+    fixture.workspace.activeWindow = secondRemembered.window;
+    expect(controller.toggleFloating()).toBe(true);
+    fixture.workspace.activeWindow = firstTopmost.window;
+    expect(controller.toggleFloating()).toBe(true);
+    fixture.workspace.activeWindow = firstRemembered.window;
+    expect(controller.toggleFloating()).toBe(true);
+    fixture.workspace.activeWindow = firstTiled.window;
+
+    const firstLayout = runtimeLayout(controller).snapshot(
+      outputId(firstOutput.name),
+      desktopId(desktop.id),
+    );
+    const secondLayout = runtimeLayout(controller).snapshot(
+      outputId(secondOutput.name),
+      desktopId(desktop.id),
+    );
+    const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
+    const writes = windows.map(({ writeCount }) => writeCount);
+
+    expect(controller.switchFocusBetweenFloatingAndTiling()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(firstRemembered.window);
+    expect(controller.switchFocusBetweenFloatingAndTiling()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(firstTiled.window);
+
+    fixture.workspace.activeWindow = secondTiled.window;
+    expect(controller.switchFocusBetweenFloatingAndTiling()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(secondRemembered.window);
+    expect(controller.switchFocusBetweenFloatingAndTiling()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(secondTiled.window);
+
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(firstOutput.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(firstLayout);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(secondOutput.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(secondLayout);
+    expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
+    expect(windows.map(({ writeCount }) => writeCount)).toEqual(writes);
+  });
+
+  it("keeps remembered layer focus isolated between desktop contexts", () => {
+    const output = createOutput("DP-1", 0);
+    const firstDesktop = { id: "desktop-1" };
+    const secondDesktop = { id: "desktop-2" };
+    const firstTiled = createTrackedWindow("first-tiled", output, firstDesktop);
+    const firstRemembered = createTrackedWindow(
+      "first-remembered",
+      output,
+      firstDesktop,
+    );
+    const firstTopmost = createTrackedWindow(
+      "first-topmost",
+      output,
+      firstDesktop,
+    );
+    const secondTiled = createTrackedWindow(
+      "second-tiled",
+      output,
+      secondDesktop,
+    );
+    const secondRemembered = createTrackedWindow(
+      "second-remembered",
+      output,
+      secondDesktop,
+    );
+    const secondTopmost = createTrackedWindow(
+      "second-topmost",
+      output,
+      secondDesktop,
+    );
+    const windows = [
+      firstTiled,
+      firstRemembered,
+      firstTopmost,
+      secondTiled,
+      secondRemembered,
+      secondTopmost,
+    ];
+    const fixture = createWorkspace(
+      output,
+      firstDesktop,
+      [output],
+      [firstDesktop, secondDesktop],
+      windows.map(({ window }) => window),
+    );
+    fixture.workspace.activeWindow = firstTopmost.window;
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(controller.toggleFloating()).toBe(true);
+    fixture.workspace.activeWindow = firstRemembered.window;
+    expect(controller.toggleFloating()).toBe(true);
+
+    fixture.setCurrentDesktop(output, secondDesktop);
+    fixture.workspace.activeWindow = secondTopmost.window;
+    expect(controller.toggleFloating()).toBe(true);
+    fixture.workspace.activeWindow = secondRemembered.window;
+    expect(controller.toggleFloating()).toBe(true);
+
+    fixture.setCurrentDesktop(output, firstDesktop);
+    fixture.workspace.activeWindow = firstTiled.window;
+    expect(controller.switchFocusBetweenFloatingAndTiling()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(firstRemembered.window);
+    expect(controller.switchFocusBetweenFloatingAndTiling()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(firstTiled.window);
+
+    fixture.setCurrentDesktop(output, secondDesktop);
+    fixture.workspace.activeWindow = secondTiled.window;
+    expect(controller.switchFocusBetweenFloatingAndTiling()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(secondRemembered.window);
+    expect(controller.switchFocusBetweenFloatingAndTiling()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(secondTiled.window);
+  });
+
   it("keeps external floating geometry and uses it as the next baseline", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };

@@ -87,6 +87,7 @@ type ColumnResizeAction =
   "decrease" | "increase" | "preset-next" | "preset-previous" | "reset";
 type WindowHeightResizeAction = ColumnResizeAction;
 type DesktopTransferDirection = -1 | 1;
+type WindowLayer = "floating" | "tiling";
 
 interface ManagedContext {
   readonly desktopId: DesktopId;
@@ -351,6 +352,8 @@ export class RuntimeController {
   private readonly geometry: KWinGeometryAdapter;
   private readonly gap: number;
   private initializing = false;
+  private readonly lastFloatingFocus = new Map<string, WindowId>();
+  private readonly lastTiledFocus = new Map<string, WindowId>();
   private ownershipFollowUpRequired = false;
   private ownershipRefreshInProgress = false;
   private readonly knownOutputInstances = new Map<string, number>();
@@ -590,6 +593,18 @@ export class RuntimeController {
     }
 
     return this.floatActiveWindow(command);
+  }
+
+  switchFocusBetweenFloatingAndTiling(): boolean {
+    return this.focusWindowLayer();
+  }
+
+  focusFloating(): boolean {
+    return this.focusWindowLayer("floating");
+  }
+
+  focusTiling(): boolean {
+    return this.focusWindowLayer("tiling");
   }
 
   toggleFullscreen(): boolean {
@@ -1190,6 +1205,8 @@ export class RuntimeController {
       this.automaticFloatingWindows.clear();
       this.borderlessSettlementTokens.clear();
       this.floatingWindows.clear();
+      this.lastFloatingFocus.clear();
+      this.lastTiledFocus.clear();
       this.managedWindows.clear();
       this.pendingAdmissionContexts.clear();
       this.pendingWindowSyncs.clear();
@@ -1376,6 +1393,7 @@ export class RuntimeController {
     const source = this.observer.source(id);
 
     this.synchronizeWindowBorder(changedId, source);
+    this.refreshRememberedLayerFocus(changedId, source);
 
     if (this.windowTransferOperation) {
       if (
@@ -1416,6 +1434,7 @@ export class RuntimeController {
     const source = this.observer.source(id);
 
     this.synchronizeWindowBorder(changedId, source);
+    this.refreshRememberedLayerFocus(changedId, source);
 
     if (this.windowTransferOperation) {
       if (
@@ -1550,6 +1569,7 @@ export class RuntimeController {
     this.borderlessSettlementTokens.delete(managedId);
     this.windowAdmissionHistory.delete(managedId);
     this.windowBorderRestore.delete(managedId);
+    this.forgetRememberedLayerFocus(managedId);
     const releasedContextKey = this.releaseWindow(managedId);
 
     if (releasedContextKey) {
@@ -1575,10 +1595,10 @@ export class RuntimeController {
     }
 
     const id = windowId(String(window.internalId));
+    const activeLayer = this.rememberLayerFocus(id, window);
 
     if (
-      this.automaticallyFloats(window) ||
-      this.automaticFloatingWindows.has(id) ||
+      activeLayer !== "tiling" ||
       (!allowSuspended &&
         (this.suspendedWindows.has(id) || !isGeometryWritable(window)))
     ) {
@@ -1608,6 +1628,263 @@ export class RuntimeController {
       }
     }
   };
+
+  private focusWindowLayer(requestedLayer?: WindowLayer): boolean {
+    const active = this.workspace.activeWindow;
+
+    if (
+      !this.started ||
+      this.windowTransferOperation ||
+      this.startupStabilizationToken !== null ||
+      this.hasTopologyBarrier() ||
+      !active
+    ) {
+      return false;
+    }
+
+    const activeId = windowId(String(active.internalId));
+    const context = layerFocusContext(active);
+
+    if (!context) {
+      return false;
+    }
+
+    const key = contextKey(context);
+    const activeLayer = this.windowLayer(activeId, active, key);
+
+    if (!activeLayer) {
+      return false;
+    }
+
+    if (activeLayer === "floating") {
+      this.lastFloatingFocus.set(key, activeId);
+    } else {
+      this.lastTiledFocus.set(key, activeId);
+    }
+
+    const targetLayer =
+      requestedLayer ?? (activeLayer === "floating" ? "tiling" : "floating");
+
+    if (targetLayer === activeLayer) {
+      return false;
+    }
+
+    const floating = this.floatingFocusTarget(key);
+    const tiled = this.tiledFocusTarget(context, key);
+
+    if (!floating || !tiled) {
+      return false;
+    }
+
+    const target = targetLayer === "floating" ? floating : tiled;
+
+    if (target === active) {
+      return false;
+    }
+
+    this.lastWrites = 0;
+
+    try {
+      this.workspace.activeWindow = target;
+    } catch {
+      return false;
+    }
+
+    if (this.workspace.activeWindow !== target) {
+      return false;
+    }
+
+    this.rememberLayerFocus(windowId(String(target.internalId)), target);
+    return true;
+  }
+
+  private floatingFocusTarget(key: string): KWinWindow | null {
+    const rememberedId = this.lastFloatingFocus.get(key);
+
+    if (rememberedId) {
+      const remembered = this.observer.source(rememberedId);
+
+      if (
+        remembered &&
+        this.windowLayer(rememberedId, remembered, key) === "floating"
+      ) {
+        return remembered;
+      }
+
+      this.lastFloatingFocus.delete(key);
+    }
+
+    for (
+      let index = this.workspace.stackingOrder.length - 1;
+      index >= 0;
+      index -= 1
+    ) {
+      const candidate = this.workspace.stackingOrder[index];
+
+      if (!candidate) {
+        continue;
+      }
+
+      const id = windowId(String(candidate.internalId));
+
+      if (this.windowLayer(id, candidate, key) === "floating") {
+        this.lastFloatingFocus.set(key, id);
+        return candidate;
+      }
+    }
+
+    return null;
+  }
+
+  private tiledFocusTarget(
+    context: ManagedContext,
+    key: string,
+  ): KWinWindow | null {
+    const runtimeContext = this.contexts.get(key);
+
+    if (!runtimeContext) {
+      this.lastTiledFocus.delete(key);
+      return null;
+    }
+
+    const snapshot = this.layout.snapshot(context.outputId, context.desktopId);
+    const activeColumn = snapshot.columns.find(
+      (column) => column.id === snapshot.activeColumnId,
+    );
+
+    if (!activeColumn) {
+      this.lastTiledFocus.delete(key);
+      return null;
+    }
+
+    const rememberedId = this.lastTiledFocus.get(key);
+
+    if (rememberedId && activeColumn.windowIds.includes(rememberedId)) {
+      const remembered = this.observer.source(rememberedId);
+
+      if (
+        remembered &&
+        this.windowLayer(rememberedId, remembered, key) === "tiling"
+      ) {
+        return remembered;
+      }
+    }
+
+    if (rememberedId) {
+      this.lastTiledFocus.delete(key);
+    }
+
+    for (const id of activeColumn.windowIds) {
+      const candidate = this.observer.source(id);
+
+      if (candidate && this.windowLayer(id, candidate, key) === "tiling") {
+        this.lastTiledFocus.set(key, id);
+        return candidate;
+      }
+    }
+
+    return null;
+  }
+
+  private windowLayer(
+    id: WindowId,
+    source: KWinWindow,
+    key: string,
+  ): WindowLayer | null {
+    const context = layerFocusContext(source);
+
+    if (!context || contextKey(context) !== key || source.minimized) {
+      return null;
+    }
+
+    if (
+      this.floatingWindows.has(id) ||
+      this.automaticFloatingOwnershipApplies(id, source)
+    ) {
+      return "floating";
+    }
+
+    const owner = this.managedWindows.get(id);
+    const runtimeContext = this.contexts.get(key);
+
+    if (
+      owner?.contextKey !== key ||
+      !runtimeContext?.windowIds.has(id) ||
+      this.floatingWindows.has(id) ||
+      this.automaticFloatingWindows.has(id) ||
+      this.automaticallyFloats(source)
+    ) {
+      return null;
+    }
+
+    return "tiling";
+  }
+
+  private rememberLayerFocus(
+    id: WindowId,
+    source: KWinWindow,
+  ): WindowLayer | null {
+    const context = layerFocusContext(source);
+
+    if (!context) {
+      return null;
+    }
+
+    const key = contextKey(context);
+    const layer = this.windowLayer(id, source, key);
+
+    if (layer === "floating") {
+      this.lastFloatingFocus.set(key, id);
+    } else if (layer === "tiling") {
+      this.lastTiledFocus.set(key, id);
+    }
+
+    return layer;
+  }
+
+  private refreshRememberedLayerFocus(
+    id: WindowId,
+    source: KWinWindow | undefined,
+  ): void {
+    for (const [key, rememberedId] of this.lastFloatingFocus) {
+      if (
+        rememberedId === id &&
+        (!source || this.windowLayer(id, source, key) !== "floating")
+      ) {
+        this.lastFloatingFocus.delete(key);
+      }
+    }
+
+    for (const [key, rememberedId] of this.lastTiledFocus) {
+      if (
+        rememberedId === id &&
+        (!source || this.windowLayer(id, source, key) !== "tiling")
+      ) {
+        this.lastTiledFocus.delete(key);
+      }
+    }
+
+    if (
+      source &&
+      String(this.workspace.activeWindow?.internalId) === String(id)
+    ) {
+      this.rememberLayerFocus(id, source);
+    }
+  }
+
+  private forgetRememberedLayerFocus(id: WindowId): void {
+    for (const [key, rememberedId] of this.lastFloatingFocus) {
+      if (rememberedId === id) {
+        this.lastFloatingFocus.delete(key);
+      }
+    }
+
+    for (const [key, rememberedId] of this.lastTiledFocus) {
+      if (rememberedId === id) {
+        this.lastTiledFocus.delete(key);
+      }
+    }
+  }
 
   private focusDesktop(direction: DesktopTransferDirection): boolean {
     if (
@@ -4173,6 +4450,7 @@ export class RuntimeController {
           restoreBaseline: floatingRestoreBaseline,
           sourceContextKey: command.contextKey,
         });
+        this.lastFloatingFocus.set(command.contextKey, command.activeId);
         this.capacityParkBackoffs.delete(command.contextKey);
 
         if (context.windowIds.size === 0) {
@@ -4273,6 +4551,7 @@ export class RuntimeController {
           restoreBaseline,
         });
         this.floatingWindows.delete(command.activeId);
+        this.lastTiledFocus.set(command.contextKey, command.activeId);
         this.capacityParkBackoffs.delete(command.contextKey);
         this.forgetWaitingWindow(command.activeId);
       },
@@ -10416,6 +10695,20 @@ function managedContext(window: ObservedWindow): ManagedContext | null {
   return {
     desktopId: desktopId(desktop),
     outputId: outputId(window.outputId),
+  };
+}
+
+function layerFocusContext(window: KWinWindow): ManagedContext | null {
+  const observed = normalizeWindow(window);
+  const desktop = observed?.desktopIds[0];
+
+  if (!observed || observed.desktopIds.length !== 1 || !desktop) {
+    return null;
+  }
+
+  return {
+    desktopId: desktopId(desktop),
+    outputId: outputId(observed.outputId),
   };
 }
 

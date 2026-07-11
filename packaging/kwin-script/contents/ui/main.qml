@@ -202,6 +202,22 @@ QtObject {
         sequence: "Meta+V"
         onActivated: Runtime.DriftileRuntime.toggleFloating()
     }
+    readonly property ShortcutHandler switchLayerFocusShortcut: ShortcutHandler {
+        name: "driftile_switch_focus_between_floating_and_tiling"
+        text: "Driftile: Switch focus between floating and tiling"
+        sequence: "Meta+Shift+V"
+        onActivated: Runtime.DriftileRuntime.switchFocusBetweenFloatingAndTiling()
+    }
+    readonly property ShortcutHandler focusFloatingShortcut: ShortcutHandler {
+        name: "driftile_focus_floating"
+        text: "Driftile: Focus floating"
+        onActivated: Runtime.DriftileRuntime.focusFloating()
+    }
+    readonly property ShortcutHandler focusTilingShortcut: ShortcutHandler {
+        name: "driftile_focus_tiling"
+        text: "Driftile: Focus tiling"
+        onActivated: Runtime.DriftileRuntime.focusTiling()
+    }
     readonly property ShortcutHandler toggleFullscreenShortcut: ShortcutHandler {
         name: "driftile_toggle_fullscreen"
         text: "Driftile: Toggle fullscreen"

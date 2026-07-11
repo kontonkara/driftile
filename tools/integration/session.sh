@@ -2346,6 +2346,71 @@ verify_dialog_shortcut_no_op() {
     fail "Driftile changed the active $protocol dialog after $shortcut"
 }
 
+verify_focus_layer_roundtrip() {
+  local protocol=$1
+  local floating_title=$2
+  local tiled_title=$3
+  local index
+  local -a geometry_pairs
+  local -a window_titles=()
+
+  shift 3
+  geometry_pairs=("$@")
+
+  for ((index = 0; index < ${#geometry_pairs[@]}; index += 2)); do
+    window_titles+=("${geometry_pairs[index]}")
+  done
+
+  activate_window "$tiled_title" || \
+    fail "KWin could not focus the tiled $protocol window before the layer roundtrip"
+  wait_for_active "$tiled_title" || \
+    fail "KWin did not focus the tiled $protocol window before the layer roundtrip"
+  wait_for_geometries "${geometry_pairs[@]}" || \
+    fail "the $protocol layout changed before the layer roundtrip: $(describe_layout "${window_titles[@]}")"
+
+  invoke_shortcut "driftile_switch_focus_between_floating_and_tiling" || \
+    fail "KGlobalAccel could not focus the floating $protocol layer"
+  wait_for_active "$floating_title" || \
+    fail "Driftile did not restore the last focused floating $protocol window"
+  wait_for_geometries "${geometry_pairs[@]}" || \
+    fail "Driftile changed the $protocol layout while focusing the floating layer: $(describe_layout "${window_titles[@]}")"
+
+  invoke_shortcut "driftile_switch_focus_between_floating_and_tiling" || \
+    fail "KGlobalAccel could not focus the tiled $protocol layer"
+  wait_for_active "$tiled_title" || \
+    fail "Driftile did not restore the last focused tiled $protocol window"
+  wait_for_geometries "${geometry_pairs[@]}" || \
+    fail "Driftile changed the $protocol layout while restoring tiled focus: $(describe_layout "${window_titles[@]}")"
+
+  invoke_shortcut "driftile_focus_tiling" || \
+    fail "KGlobalAccel could not recheck the active tiled $protocol layer"
+  wait_for_active "$tiled_title" || \
+    fail "Driftile changed focus while rechecking the active tiled $protocol layer"
+  wait_for_geometries "${geometry_pairs[@]}" || \
+    fail "Driftile changed the $protocol layout while rechecking tiled focus: $(describe_layout "${window_titles[@]}")"
+
+  invoke_shortcut "driftile_focus_floating" || \
+    fail "KGlobalAccel could not directly focus the floating $protocol layer"
+  wait_for_active "$floating_title" || \
+    fail "Driftile did not directly restore floating $protocol focus"
+  wait_for_geometries "${geometry_pairs[@]}" || \
+    fail "Driftile changed the $protocol layout during direct floating focus: $(describe_layout "${window_titles[@]}")"
+
+  invoke_shortcut "driftile_focus_floating" || \
+    fail "KGlobalAccel could not recheck the active floating $protocol layer"
+  wait_for_active "$floating_title" || \
+    fail "Driftile changed focus while rechecking the active floating $protocol layer"
+  wait_for_geometries "${geometry_pairs[@]}" || \
+    fail "Driftile changed the $protocol layout while rechecking floating focus: $(describe_layout "${window_titles[@]}")"
+
+  invoke_shortcut "driftile_focus_tiling" || \
+    fail "KGlobalAccel could not directly focus the tiled $protocol layer"
+  wait_for_active "$tiled_title" || \
+    fail "Driftile did not directly restore tiled $protocol focus"
+  wait_for_geometries "${geometry_pairs[@]}" || \
+    fail "Driftile changed the $protocol layout during direct tiled focus: $(describe_layout "${window_titles[@]}")"
+}
+
 verify_automatic_floating() {
   local protocol=$1
   local first_title=$2
@@ -2500,6 +2565,15 @@ verify_automatic_floating() {
       "$third_title" "$third_frame" \
       "$fixed_title" "$fixed_frame"
   done
+
+  verify_focus_layer_roundtrip \
+    "$protocol" \
+    "$fixed_title" \
+    "$second_title" \
+    "$first_title" "$first_frame" \
+    "$second_title" "$second_frame" \
+    "$third_title" "$third_frame" \
+    "$fixed_title" "$fixed_frame"
 
   stop_client "$fixed_pid"
   wait_for_window_gone "$fixed_title" || \
@@ -2835,6 +2909,12 @@ run_scenario() {
     fail "KGlobalAccel did not register the insert-into-stack-right shortcut"
   wait_for_shortcut "driftile_toggle_floating" || \
     fail "KGlobalAccel did not register the floating-toggle shortcut"
+  wait_for_shortcut "driftile_switch_focus_between_floating_and_tiling" || \
+    fail "KGlobalAccel did not register the focus-layer shortcut"
+  wait_for_shortcut "driftile_focus_floating" || \
+    fail "KGlobalAccel did not register the direct floating-focus action"
+  wait_for_shortcut "driftile_focus_tiling" || \
+    fail "KGlobalAccel did not register the direct tiled-focus action"
   wait_for_shortcut "driftile_decrease_window_height" || \
     fail "KGlobalAccel did not register the decrease-height shortcut"
   wait_for_shortcut "driftile_increase_window_height" || \
@@ -3188,6 +3268,19 @@ run_scenario() {
   wait_for_active "$second_title" || \
     fail "Driftile changed $protocol focus after floating the middle window"
 
+  verify_focus_layer_roundtrip \
+    "$protocol" \
+    "$second_title" \
+    "$third_title" \
+    "$first_title" "-600,16,616,688" \
+    "$second_title" "$second_baseline" \
+    "$third_title" "32,16,616,688"
+
+  activate_window "$second_title" || \
+    fail "KWin could not restore floating $protocol focus before retiling"
+  wait_for_active "$second_title" || \
+    fail "KWin did not restore floating $protocol focus before retiling"
+
   invoke_shortcut "driftile_toggle_floating" || \
     fail "KGlobalAccel could not retile the middle $protocol window"
   wait_for_layout \
@@ -3535,6 +3628,12 @@ run_multi_output_scenario() {
 
   wait_for_shortcut "driftile_toggle_floating" || \
     fail "KGlobalAccel did not register the multi-output floating shortcut"
+  wait_for_shortcut "driftile_switch_focus_between_floating_and_tiling" || \
+    fail "KGlobalAccel did not register the multi-output focus-layer shortcut"
+  wait_for_shortcut "driftile_focus_floating" || \
+    fail "KGlobalAccel did not register the multi-output floating-focus action"
+  wait_for_shortcut "driftile_focus_tiling" || \
+    fail "KGlobalAccel did not register the multi-output tiled-focus action"
   activate_window "${titles[0]}" || \
     fail "KWin could not activate the left $protocol window for floating"
   wait_for_active "${titles[0]}" || \
@@ -3549,6 +3648,35 @@ run_multi_output_scenario() {
     fail "Driftile did not isolate the multi-output $protocol floating reflow: $(describe_layout "${titles[0]}" "${titles[1]}" "${titles[3]}" "${titles[4]}")"
   wait_for_active "${titles[0]}" || \
     fail "Driftile changed $protocol focus after the multi-output floating toggle"
+
+  activate_window "${titles[4]}" || \
+    fail "KWin could not focus the right $protocol context during floating isolation"
+  wait_for_active "${titles[4]}" || \
+    fail "KWin did not focus the right $protocol context during floating isolation"
+  invoke_shortcut "driftile_switch_focus_between_floating_and_tiling" || \
+    fail "KGlobalAccel could not check the empty right floating layer"
+  wait_for_active "${titles[4]}" || \
+    fail "Driftile crossed output contexts while the right floating layer was empty"
+  wait_for_geometries \
+    "${titles[0]}" "${baselines[0]}" \
+    "${titles[1]}" "16,16,616,688" \
+    "${titles[3]}" "1296,16,616,688" \
+    "${titles[4]}" "1928,16,616,688" || \
+    fail "Driftile changed the multi-output $protocol layout during the empty-layer check: $(describe_layout "${titles[0]}" "${titles[1]}" "${titles[3]}" "${titles[4]}")"
+
+  verify_focus_layer_roundtrip \
+    "$protocol" \
+    "${titles[0]}" \
+    "${titles[1]}" \
+    "${titles[0]}" "${baselines[0]}" \
+    "${titles[1]}" "16,16,616,688" \
+    "${titles[3]}" "1296,16,616,688" \
+    "${titles[4]}" "1928,16,616,688"
+
+  activate_window "${titles[0]}" || \
+    fail "KWin could not restore floating $protocol focus before the multi-output retile"
+  wait_for_active "${titles[0]}" || \
+    fail "KWin did not restore floating $protocol focus before the multi-output retile"
 
   invoke_shortcut "driftile_toggle_floating" || \
     fail "KGlobalAccel could not retile the left $protocol window"

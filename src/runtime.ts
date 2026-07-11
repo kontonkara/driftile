@@ -123,6 +123,18 @@ export function toggleFloating(): void {
   controller?.toggleFloating();
 }
 
+export function switchFocusBetweenFloatingAndTiling(): void {
+  controller?.switchFocusBetweenFloatingAndTiling();
+}
+
+export function focusFloating(): void {
+  controller?.focusFloating();
+}
+
+export function focusTiling(): void {
+  controller?.focusTiling();
+}
+
 export function toggleFullscreen(): void {
   controller?.toggleFullscreen();
 }
