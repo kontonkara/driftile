@@ -108,6 +108,8 @@ monitor_guest() {
     [shift-v-floating]=false
     [shift-v-tiling]=false
     [shift-minus]=false
+    [stacked-m-enter]=false
+    [stacked-m-exit]=false
   )
 
   for ((attempt = 0; attempt < 1200; attempt += 1)); do
@@ -139,6 +141,8 @@ monitor_guest() {
       floating-up \
       floating-down \
       floating-desktop-next \
+      stacked-m-enter \
+      stacked-m-exit \
       shift-f-enter \
       shift-f-exit \
       m-enter \
@@ -167,9 +171,9 @@ monitor_guest() {
       fi
 
       if [[ "$(<"$focus_file")" == true ]]; then
-        printf 'The VM verified physical shortcut routing, native fullscreen and maximize, borderless ownership, numbered dynamic desktops, floating desktop transfers, output transfers, floating-layer navigation, focus, stack editing, advanced column view, column and window sizing, scrolling, and Firefox, KDE Calculator, and XWayland xterm lifecycles.\n'
+        printf 'The VM verified physical shortcut routing, native fullscreen and maximize, stacked maximize extraction, borderless ownership, numbered dynamic desktops, floating desktop transfers, output transfers, floating-layer navigation, focus, stack editing, advanced column view, column and window sizing, scrolling, and Firefox, KDE Calculator, and XWayland xterm lifecycles.\n'
       else
-        printf 'The VM failed to verify physical shortcut routing, native fullscreen or maximize, borderless ownership, numbered dynamic desktops, floating desktop transfers, output transfers, floating-layer navigation, focus, stack editing, advanced column view, column or window sizing, scrolling, or the real-application lifecycle pool.\n' >&2
+        printf 'The VM failed to verify physical shortcut routing, native fullscreen or maximize, stacked maximize extraction, borderless ownership, numbered dynamic desktops, floating desktop transfers, output transfers, floating-layer navigation, focus, stack editing, advanced column view, column or window sizing, scrolling, or the real-application lifecycle pool.\n' >&2
         failed=true
 
         if [[ -f "$diagnostics_file" ]]; then
@@ -275,7 +279,7 @@ send_physical_shortcut() {
     shift-v-floating|shift-v-tiling)
       input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"shift"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"v"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"v"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"shift"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
       ;;
-    m-enter|m-exit)
+    m-enter|m-exit|stacked-m-enter|stacked-m-exit)
       input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"m"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"m"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
       ;;
     *)

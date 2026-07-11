@@ -2927,6 +2927,7 @@ let
         local singleton_second_frame
         local singleton_third_frame
         local second_trailing_desktop_id=""
+        local stacked_maximize_verified
 
         wait_for_window "$title_a" \
           && wait_for_window "$title_b" \
@@ -3341,6 +3342,17 @@ let
           record_focus_state "direct stack insertion failed"
         fi
 
+        stacked_maximize_verified=false
+
+        if [[ "$direct_insert_verified" == true ]] \
+          && verify_physical_stacked_maximize_shortcut; then
+          stacked_maximize_verified=true
+          record_focus_state \
+            "physical stacked maximize preserved extraction semantics"
+        else
+          record_focus_state "physical stacked maximize verification failed"
+        fi
+
         kill "$fourth_window" >/dev/null 2>&1 || true
         wait "$fourth_window" >/dev/null 2>&1 || true
         fourth_window=""
@@ -3355,7 +3367,8 @@ let
           || return 1
         record_focus_state "three-window layout restored after direct insertion"
 
-        [[ "$direct_insert_verified" == true ]] || return 1
+        [[ "$direct_insert_verified" == true \
+          && "$stacked_maximize_verified" == true ]] || return 1
 
         if ! invoke_shortcut "driftile_toggle_floating" \
           || ! wait_for_floating_layout \
@@ -4450,6 +4463,213 @@ let
         fi
         record_focus_state \
           "physical Meta+Shift+F restored the exact tiled layout and focus"
+      }
+
+      verify_physical_stacked_maximize_shortcut() {
+        local direct_first_height
+        local direct_first_width
+        local direct_first_x
+        local direct_first_y
+        local direct_fourth_height
+        local direct_fourth_width
+        local direct_fourth_x
+        local direct_fourth_y
+        local direct_second_width
+        local direct_second_x
+        local direct_second_y
+        local direct_third_height
+        local direct_third_width
+        local direct_third_x
+        local direct_third_y
+        local horizontal_gap
+        local maximize_frame
+        local output_frame
+        local remaining_available_height
+        local remaining_first_frame
+        local remaining_first_height
+        local remaining_last_frame
+        local remaining_last_height
+        local restored_bottom_frame
+        local restored_middle_frame
+        local shifted_unrelated_frame
+        local singleton_frame
+        local singleton_x
+        local stack_height
+        local vertical_gap
+
+        frame_is_valid "$direct_first_frame" \
+          && frame_is_valid "$direct_second_frame" \
+          && frame_is_valid "$direct_third_frame" \
+          && frame_is_valid "$direct_fourth_frame" \
+          || return 1
+        IFS=, read -r \
+          direct_first_x \
+          direct_first_y \
+          direct_first_width \
+          direct_first_height \
+          <<< "$direct_first_frame"
+        IFS=, read -r \
+          direct_second_x \
+          direct_second_y \
+          direct_second_width \
+          _ \
+          <<< "$direct_second_frame"
+        IFS=, read -r \
+          direct_third_x \
+          direct_third_y \
+          direct_third_width \
+          direct_third_height \
+          <<< "$direct_third_frame"
+        IFS=, read -r \
+          direct_fourth_x \
+          direct_fourth_y \
+          direct_fourth_width \
+          direct_fourth_height \
+          <<< "$direct_fourth_frame"
+        vertical_gap=$((
+          direct_second_y - direct_first_y - direct_first_height
+        ))
+        horizontal_gap=$((
+          direct_third_x - direct_first_x - direct_first_width
+        ))
+        stack_height=$((
+          direct_fourth_y + direct_fourth_height - direct_first_y
+        ))
+        remaining_available_height=$((stack_height - vertical_gap))
+        remaining_first_height=$((remaining_available_height / 2))
+        remaining_last_height=$((
+          remaining_available_height - remaining_first_height
+        ))
+        singleton_x=$direct_third_x
+        printf -v remaining_first_frame '%s,%s,%s,%s' \
+          "$direct_first_x" \
+          "$direct_first_y" \
+          "$direct_first_width" \
+          "$remaining_first_height"
+        printf -v remaining_last_frame '%s,%s,%s,%s' \
+          "$direct_first_x" \
+          "$((direct_first_y + remaining_first_height + vertical_gap))" \
+          "$direct_first_width" \
+          "$remaining_last_height"
+        printf -v singleton_frame '%s,%s,%s,%s' \
+          "$singleton_x" \
+          "$direct_first_y" \
+          "$direct_first_width" \
+          "$stack_height"
+        printf -v shifted_unrelated_frame '%s,%s,%s,%s' \
+          "$((singleton_x + direct_first_width + horizontal_gap))" \
+          "$direct_third_y" \
+          "$direct_third_width" \
+          "$direct_third_height"
+        restored_middle_frame=$direct_second_frame
+        restored_bottom_frame=$direct_fourth_frame
+        output_frame=$(single_enabled_output_frame 2>/dev/null || true)
+        maximize_frame=$(
+          maximized_work_area_frame \
+            "$direct_third_frame" \
+            "$output_frame" 2>/dev/null \
+            || true
+        )
+
+        if ((vertical_gap <= 0 \
+          || horizontal_gap <= 0 \
+          || remaining_first_height <= 0 \
+          || remaining_last_height <= 0 \
+          || direct_first_x != direct_second_x \
+          || direct_second_x != direct_fourth_x \
+          || direct_first_width != direct_second_width \
+          || direct_second_width != direct_fourth_width)) \
+          || ! frame_is_valid "$maximize_frame"; then
+          record_focus_state "physical stacked maximize geometry was invalid"
+          return 1
+        fi
+
+        if ! activate_window "$title_b" \
+          || ! wait_for_active "$title_b" \
+          || ! wait_for_window_maximized_state "$title_b" false \
+          || ! wait_for_four_frames \
+            "$direct_first_frame" \
+            "$direct_second_frame" \
+            "$direct_third_frame" \
+            "$direct_fourth_frame"; then
+          record_focus_state "physical stacked maximize setup failed"
+          return 1
+        fi
+
+        if ! request_physical_shortcut stacked-m-enter \
+          || ! wait_for_window_maximized_state "$title_b" true \
+          || ! wait_for_four_frames \
+            "$remaining_first_frame" \
+            "$maximize_frame" \
+            "$shifted_unrelated_frame" \
+            "$remaining_last_frame" \
+          || ! wait_for_window_desktop "$title_a" "$primary_desktop_id" \
+          || ! wait_for_window_desktop "$title_b" "$primary_desktop_id" \
+          || ! wait_for_window_desktop "$title_c" "$primary_desktop_id" \
+          || ! wait_for_window_desktop "$title_d" "$primary_desktop_id" \
+          || ! wait_for_active "$title_b"; then
+          record_focus_state "physical stacked Meta+M maximize entry failed"
+          {
+            printf 'expected stacked maximize frames: %s | %s | %s | %s\n' \
+              "$remaining_first_frame" \
+              "$maximize_frame" \
+              "$shifted_unrelated_frame" \
+              "$remaining_last_frame"
+            printf 'actual stacked maximize frames: %s | %s | %s | %s\n' \
+              "$(window_frame "$title_a" 2>/dev/null || true)" \
+              "$(window_frame "$title_b" 2>/dev/null || true)" \
+              "$(window_frame "$title_c" 2>/dev/null || true)" \
+              "$(window_frame "$title_d" 2>/dev/null || true)"
+          } >> /tmp/shared/driftile-focus-diagnostics
+          return 1
+        fi
+        record_focus_state \
+          "physical stacked Meta+M extracted the active middle member"
+
+        if ! request_physical_shortcut stacked-m-exit \
+          || ! wait_for_window_maximized_state "$title_b" false \
+          || ! wait_for_four_frames \
+            "$remaining_first_frame" \
+            "$singleton_frame" \
+            "$shifted_unrelated_frame" \
+            "$remaining_last_frame" \
+          || ! wait_for_active "$title_b"; then
+          record_focus_state "physical stacked Meta+M maximize exit failed"
+          {
+            printf 'expected stacked unmaximize frames: %s | %s | %s | %s\n' \
+              "$remaining_first_frame" \
+              "$singleton_frame" \
+              "$shifted_unrelated_frame" \
+              "$remaining_last_frame"
+            printf 'actual stacked unmaximize frames: %s | %s | %s | %s\n' \
+              "$(window_frame "$title_a" 2>/dev/null || true)" \
+              "$(window_frame "$title_b" 2>/dev/null || true)" \
+              "$(window_frame "$title_c" 2>/dev/null || true)" \
+              "$(window_frame "$title_d" 2>/dev/null || true)"
+          } >> /tmp/shared/driftile-focus-diagnostics
+          return 1
+        fi
+        record_focus_state \
+          "physical stacked Meta+M kept the unmaximized window separate"
+
+        if ! invoke_shortcut "driftile_move_window_left" \
+          || ! wait_for_four_frames \
+            "$direct_first_frame" \
+            "$restored_bottom_frame" \
+            "$direct_third_frame" \
+            "$restored_middle_frame" \
+          || ! invoke_shortcut "driftile_move_window_up" \
+          || ! wait_for_four_frames \
+            "$direct_first_frame" \
+            "$direct_second_frame" \
+            "$direct_third_frame" \
+            "$direct_fourth_frame" \
+          || ! wait_for_active "$title_b"; then
+          record_focus_state "physical stacked maximize fixture restore failed"
+          return 1
+        fi
+        record_focus_state \
+          "physical stacked maximize restored the exact source fixture"
       }
 
       verify_physical_maximize_shortcut() {
