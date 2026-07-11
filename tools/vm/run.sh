@@ -88,6 +88,8 @@ monitor_guest() {
     [home]=false
     [minus]=false
     [shift-equal]=false
+    [shift-f-enter]=false
+    [shift-f-exit]=false
     [shift-minus]=false
   )
 
@@ -104,7 +106,9 @@ monitor_guest() {
       ctrl-shift-r \
       ctrl-r \
       ctrl-f \
-      ctrl-c; do
+      ctrl-c \
+      shift-f-enter \
+      shift-f-exit; do
       key_ready_file="$temporary_directory/xchg/driftile-key-test-$key_name-ready"
       key_sent_file="$temporary_directory/xchg/driftile-key-test-$key_name-sent"
 
@@ -129,9 +133,9 @@ monitor_guest() {
       fi
 
       if [[ "$(<"$focus_file")" == true ]]; then
-        printf 'The VM verified physical shortcut routing, borderless ownership, dynamic desktops, transfers, floating, focus, stack editing, advanced column view, column and window sizing, scrolling, and Firefox, KDE Calculator, and XWayland xterm lifecycles.\n'
+        printf 'The VM verified physical shortcut routing, native fullscreen, borderless ownership, dynamic desktops, transfers, floating, focus, stack editing, advanced column view, column and window sizing, scrolling, and Firefox, KDE Calculator, and XWayland xterm lifecycles.\n'
       else
-        printf 'The VM failed to verify physical shortcut routing, borderless ownership, dynamic desktops, transfers, floating, focus, stack editing, advanced column view, column or window sizing, scrolling, or the real-application lifecycle pool.\n' >&2
+        printf 'The VM failed to verify physical shortcut routing, native fullscreen, borderless ownership, dynamic desktops, transfers, floating, focus, stack editing, advanced column view, column or window sizing, scrolling, or the real-application lifecycle pool.\n' >&2
         failed=true
 
         if [[ -f "$diagnostics_file" ]]; then
@@ -197,6 +201,9 @@ send_physical_shortcut() {
       ;;
     ctrl-c)
       input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"ctrl"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"c"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"c"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"ctrl"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
+      ;;
+    shift-f-enter|shift-f-exit)
+      input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"shift"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"f"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"f"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"shift"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
       ;;
     *)
       return 1

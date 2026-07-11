@@ -467,6 +467,7 @@ let
             && "$shortcuts" == *"driftile_insert_window_into_stack_left"* \
             && "$shortcuts" == *"driftile_insert_window_into_stack_right"* \
             && "$shortcuts" == *"driftile_toggle_floating"* \
+            && "$shortcuts" == *"driftile_toggle_fullscreen"* \
             && "$shortcuts" == *"driftile_decrease_column_width"* \
             && "$shortcuts" == *"driftile_increase_column_width"* \
             && "$shortcuts" == *"driftile_switch_preset_column_width"* \
@@ -539,6 +540,72 @@ let
             | select(map(type == "number") | all)
             | map(round | tostring)
               | join(",")
+          '
+      }
+
+      window_fullscreen_state() {
+        local id
+
+        id=$(window_id "$1") || return 1
+        busctl --user --json=short call \
+          org.kde.KWin \
+          /KWin \
+          org.kde.KWin \
+          getWindowInfo \
+          s "$id" 2>/dev/null \
+          | jq --exit-status --raw-output '
+            .data[0].fullscreen.data
+            | select(type == "boolean")
+            | tostring
+          '
+      }
+
+      window_is_normal() {
+        local id
+
+        id=$(window_id "$1") || return 1
+        busctl --user --json=short call \
+          org.kde.KWin \
+          /KWin \
+          org.kde.KWin \
+          getWindowInfo \
+          s "$id" 2>/dev/null \
+          | jq --exit-status '.data[0].type.data == 0' >/dev/null
+      }
+
+      wait_for_window_fullscreen_state() {
+        local attempt
+        local expected=$2
+        local title=$1
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          if [[ "$(window_fullscreen_state "$title" 2>/dev/null || true)" == "$expected" ]]; then
+            return 0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      single_enabled_output_frame() {
+        kscreen-doctor -j 2>/dev/null \
+          | jq --exit-status --raw-output '
+            [.outputs[] | select(.enabled)]
+            | select(length == 1)
+            | .[0] as $output
+            | ($output.scale // 1) as $scale
+            | select(($scale | type) == "number" and $scale > 0)
+            | [
+                $output.pos.x,
+                $output.pos.y,
+                ($output.size.width / $scale),
+                ($output.size.height / $scale)
+              ]
+            | select(map(type == "number") | all)
+            | map(round | tostring)
+            | join(",")
           '
       }
 
@@ -3549,6 +3616,79 @@ let
           "physical column-view shortcut viewport restored before application tests"
       }
 
+      verify_physical_fullscreen_shortcut() {
+        local baseline_first
+        local baseline_second
+        local baseline_third
+        local output_frame
+
+        if ! activate_window "$title_b" \
+          || ! wait_for_active "$title_b" \
+          || ! window_is_normal "$title_b" \
+          || ! wait_for_window_fullscreen_state "$title_b" false \
+          || ! capture_stable_frames; then
+          record_focus_state "physical fullscreen shortcut setup failed"
+          return 1
+        fi
+
+        baseline_first=$stable_first_frame
+        baseline_second=$stable_second_frame
+        baseline_third=$stable_third_frame
+        output_frame=$(single_enabled_output_frame 2>/dev/null || true)
+
+        if ! frame_is_valid "$output_frame" \
+          || [[ "$baseline_second" == "$output_frame" ]]; then
+          record_focus_state "physical fullscreen output frame was invalid"
+          return 1
+        fi
+
+        if ! request_physical_shortcut shift-f-enter \
+          || ! wait_for_window_fullscreen_state "$title_b" true \
+          || ! wait_for_frames \
+            "$baseline_first" \
+            "$output_frame" \
+            "$baseline_third" \
+          || ! wait_for_active "$title_b"; then
+          record_focus_state "physical Meta+Shift+F fullscreen entry failed"
+          {
+            printf 'expected fullscreen frames: %s | %s | %s\n' \
+              "$baseline_first" \
+              "$output_frame" \
+              "$baseline_third"
+            printf 'actual fullscreen frames: %s | %s | %s\n' \
+              "$(window_frame "$title_a" 2>/dev/null || true)" \
+              "$(window_frame "$title_b" 2>/dev/null || true)" \
+              "$(window_frame "$title_c" 2>/dev/null || true)"
+          } >> /tmp/shared/driftile-focus-diagnostics
+          return 1
+        fi
+        record_focus_state \
+          "physical Meta+Shift+F entered native fullscreen without moving siblings"
+
+        if ! request_physical_shortcut shift-f-exit \
+          || ! wait_for_window_fullscreen_state "$title_b" false \
+          || ! wait_for_frames \
+            "$baseline_first" \
+            "$baseline_second" \
+            "$baseline_third" \
+          || ! wait_for_active "$title_b"; then
+          record_focus_state "physical Meta+Shift+F fullscreen exit failed"
+          {
+            printf 'expected restored frames: %s | %s | %s\n' \
+              "$baseline_first" \
+              "$baseline_second" \
+              "$baseline_third"
+            printf 'actual restored frames: %s | %s | %s\n' \
+              "$(window_frame "$title_a" 2>/dev/null || true)" \
+              "$(window_frame "$title_b" 2>/dev/null || true)" \
+              "$(window_frame "$title_c" 2>/dev/null || true)"
+          } >> /tmp/shared/driftile-focus-diagnostics
+          return 1
+        fi
+        record_focus_state \
+          "physical Meta+Shift+F restored the exact tiled layout and focus"
+      }
+
       verify_real_applications() {
         local baseline_first
         local baseline_second
@@ -3793,6 +3933,7 @@ let
         && verify_physical_width_shortcuts \
         && verify_physical_height_shortcuts \
         && verify_physical_column_view_shortcuts \
+        && verify_physical_fullscreen_shortcut \
         && verify_real_applications; then
         focus_verified=true
       fi
