@@ -39,6 +39,11 @@ Layer focus is context-local and changes only KWin focus. It restores the last
 focused window in the other layer and does nothing unless both layers contain a
 window.
 
+When a floating window is active, `H/J/K/L` select the nearest floating-window
+center on the requested axis. `Home/End` select the leftmost or rightmost
+floating frame. Navigation stays inside the current output and desktop, does
+not wrap, and leaves every frame unchanged.
+
 Window-height presets are `1/3`, `1/2`, and `2/3` of the work area, with gaps
 included in the calculation.
 

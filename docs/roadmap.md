@@ -47,7 +47,7 @@ The current runtime already:
 - Adjusts one window's height by 10%, resets it to weighted automatic sizing, and cycles `1/3`, `1/2`, and `2/3` presets with transactional stack reflow.
 - Focuses and reorders vertical stack members, contextually merges or extracts the active window, and inserts it directly into the nearest stack across singleton columns.
 - Toggles the active normal window between tiled and floating states with anchored reinsertion and safe geometry ownership.
-- Switches focus between tiled and floating layers inside one output and desktop, remembering the last active window in each layer without changing geometry.
+- Switches focus between tiled and floating layers inside one output and desktop, remembers each layer, and navigates floating windows geometrically without changing frames.
 - Toggles the active KWin-managed window's native fullscreen state while the existing suspension path preserves its layout slot.
 - Toggles native maximize-to-edges through KWin while preserving the active window's layout slot.
 - Moves the whole active column between adjacent existing desktops with follow-focus, atomic two-context ownership, and exact rollback; single-window transfer remains secondary.
