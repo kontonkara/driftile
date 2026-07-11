@@ -62,6 +62,8 @@ Driftile must integrate with, not duplicate:
 - Focusing a managed window makes it fully visible with the smallest required scroll.
 - Reordering moves one whole active column left, right, first, or last inside its context without changing focus or widths.
 - Column-width resizing changes one whole active column, translates client limits to decorated frame bounds, respects every member's width constraints, and preserves focus and grouping.
+- Available-width expansion grows only a fully visible active column up to its shared window constraints, preserves every other fully visible column, and changes width and viewport atomically.
+- Visible-column centering changes only the viewport offset and preserves focus, order, widths, and grouping.
 - Window-height resizing makes the active member the sole fixed or preset member; automatic siblings preserve their relative weights while sharing the remaining height.
 - Resetting a window height returns that member to automatic sizing. A failed stack reflow restores every prior height state and frame.
 - Horizontal window movement merges a singleton into its neighbor or extracts a stacked member into a new adjacent singleton column.

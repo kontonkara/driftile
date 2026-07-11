@@ -35,7 +35,7 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Invalidates stale restore ownership and revalidates multi-output capacity after topology changes.
 - Focuses the first or last column directly with transactional reveal.
 - Reorders the active whole column left, right, first, or last inside one settled context while keeping focus unchanged.
-- Resizes the active whole column within grouped window constraints, cycles presets, toggles full width, centers it, and retries waiting capacity after a successful shrink.
+- Resizes the active whole column within grouped window constraints, cycles presets, toggles full width, uses available visible space up to those constraints, centers one or all fully visible columns, and retries waiting capacity after a successful shrink.
 - Adjusts one tiled window's height, resets it to weighted automatic sizing, and cycles height presets while reflowing its stack atomically.
 - Focuses vertical stack members; reorders, merges, and extracts them while preserving KWin focus.
 - Resolves directional output neighbors from logical output geometry and transfers the active column atomically between contexts; secondary actions transfer one tiled window.
@@ -96,6 +96,9 @@ RuntimeState
 - Keep focus commands inside the active window's context.
 - Keep adjacent and direct-edge column reorders inside the active context and roll back the exact model order if geometry application cannot complete.
 - Apply active-column width changes transactionally, preserving focus, grouping, and the prior width on failure.
+- Expand only a fully visible active column up to its shared window constraints, keep every other fully visible column on screen, and commit its width and viewport change atomically.
+- Center a fully visible column group with a viewport-only transaction; permit signed viewport offsets when exact centering requires them.
+- Preserve signed viewport positions across width and structural changes while the active column remains visible; reveal it only after it leaves the work area.
 - Keep at most one fixed or preset height in a stack. When another member is changed, preserve the remaining members' visible proportions as automatic weights and distribute the remaining work-area height among them.
 - Apply active-window height changes transactionally across the affected stack, preserving focus, order, width, and every prior height state on failure.
 - Apply stack edits with compare-and-swap model rollback and exact compensating frame writes after partial failure.
@@ -141,7 +144,7 @@ RuntimeState
 - Test reconcile output for minimality and idempotence.
 - Replay window lifecycle and output or desktop transfer sequences.
 - Verify window-state ownership, cancellation races, stable resumption, and slot reservation.
-- Verify adjacent and direct-edge active-column reorder, width adjustments, width presets, full width, centering, constraint bounds, and transactional rollback.
+- Verify adjacent and direct-edge active-column reorder, width adjustments, width presets, full width, available-width expansion, single-column and visible-group centering, signed viewport offsets, constraint bounds, and transactional rollback.
 - Verify per-window 10% height changes, automatic reset, forward and reverse height presets, weighted stack redistribution, singleton sizing, and exact rollback.
 - Verify decorated client-to-frame constraint translation and conservative handling of malformed bounds.
 - Verify automatic KWin ownership, command no-ops, late role changes, manual-floating separation, and safe readmission.

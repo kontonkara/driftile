@@ -15,7 +15,7 @@ Driftile uses one keyboard grammar and does not wrap at layout boundaries:
 | Horizontal strip     | Focus and reorder columns; focus or move to first and last; reveal with minimal scrolling                | Available |
 | Vertical column      | Focus and reorder members; consume or expel a member on either side                                      | Available |
 | Column view          | Cycle `1/3`, `1/2`, and `2/3` widths in both directions; adjust by 10%; toggle full width; center        | Available |
-| Advanced column view | Fill available width and center all visible columns                                                      | MVP       |
+| Advanced column view | Fill available width and center all fully visible columns                                                | Available |
 | Window height        | Adjust one window by 10%; reset to automatic; cycle `1/3`, `1/2`, and `2/3` presets                      | Available |
 | Virtual desktops     | Focus adjacent desktops and transfer the whole active column                                             | Available |
 | Outputs              | Focus an adjacent output and transfer the whole active column                                            | Available |

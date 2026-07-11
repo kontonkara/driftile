@@ -19,7 +19,9 @@ arrow keys are interchangeable unless noted otherwise.
 | Toggle floating                                  | `Meta+V`                                             |
 | Cycle preset column width forward or back        | `Meta+R` or `Meta+Shift+R`                           |
 | Toggle full-width column                         | `Meta+F`                                             |
+| Expand active column into available width        | `Meta+Ctrl+F`                                        |
 | Center active column                             | `Meta+C`                                             |
+| Center fully visible columns                     | `Meta+Ctrl+C`                                        |
 | Decrease or increase column width by 10%         | `Meta+-` or `Meta+=`                                 |
 | Decrease or increase active window height by 10% | `Meta+Shift+-` or `Meta+Shift+=`                     |
 | Cycle preset window height forward               | `Meta+Ctrl+Shift+R`                                  |
@@ -32,6 +34,10 @@ Keyboard > Shortcuts** if needed.
 
 Window-height presets are `1/3`, `1/2`, and `2/3` of the work area, with gaps
 included in the calculation.
+
+Available-width expansion grows the active column into the unused horizontal
+space, up to its shared window constraints, without hiding any currently fully
+visible column. Visible-column centering changes only the viewport position.
 
 Default desktop and output transfers move the whole active column atomically.
 They preserve member order, column width, and the active member; a rejected
