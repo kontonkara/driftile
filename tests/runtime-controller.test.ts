@@ -598,27 +598,56 @@ function setWindowState(
 }
 
 interface FullscreenControl {
+  commitDeferred(): boolean;
+  externalCommit(fullScreen: boolean): void;
   readonly fullScreen: boolean;
   fullScreenable: boolean;
+  restoreRequestedGeometry(): void;
+  setWriteHook(hook: ((fullScreen: boolean) => void) | null): void;
   readonly writeCount: number;
+}
+
+interface FullscreenControlOptions {
+  readonly fullScreen?: boolean;
+  readonly fullScreenable?: boolean;
+  readonly write?: "accept" | "defer" | "reject" | "throw";
 }
 
 function controlFullscreen(
   tracked: TrackedWindow,
-  options: {
-    readonly fullScreen?: boolean;
-    readonly fullScreenable?: boolean;
-    readonly write?: "accept" | "reject" | "throw";
-  } = {},
+  options: FullscreenControlOptions = {},
 ): FullscreenControl {
   let fullScreen = options.fullScreen ?? false;
   let fullScreenable = options.fullScreenable ?? true;
+  let deferredFullScreen: boolean | null = null;
+  let moveable = !fullScreen;
+  let resizeable = !fullScreen;
+  let writeHook: ((fullScreen: boolean) => void) | null = null;
   let writeCount = 0;
+  const setRequestedGeometryState = (value: boolean): void => {
+    moveable = !value;
+    resizeable = !value;
+  };
+  const commit = (value: boolean): void => {
+    fullScreen = value;
+    setRequestedGeometryState(value);
+    tracked.fullScreenChanged.emit();
+  };
 
   Object.defineProperty(tracked.window, "fullScreenable", {
     configurable: true,
     enumerable: true,
     get: () => fullScreenable,
+  });
+  Object.defineProperty(tracked.window, "moveable", {
+    configurable: true,
+    enumerable: true,
+    get: () => moveable,
+  });
+  Object.defineProperty(tracked.window, "resizeable", {
+    configurable: true,
+    enumerable: true,
+    get: () => resizeable,
   });
   Object.defineProperty(tracked.window, "fullScreen", {
     configurable: true,
@@ -635,12 +664,32 @@ function controlFullscreen(
         return;
       }
 
-      fullScreen = value;
-      tracked.fullScreenChanged.emit();
+      setRequestedGeometryState(value);
+      writeHook?.(value);
+
+      if (options.write === "defer") {
+        deferredFullScreen = value;
+      } else {
+        commit(value);
+      }
     },
   });
 
   return {
+    commitDeferred: () => {
+      if (deferredFullScreen === null) {
+        return false;
+      }
+
+      const value = deferredFullScreen;
+      deferredFullScreen = null;
+      commit(value);
+      return true;
+    },
+    externalCommit: (value) => {
+      deferredFullScreen = null;
+      commit(value);
+    },
     get fullScreen() {
       return fullScreen;
     },
@@ -649,6 +698,13 @@ function controlFullscreen(
     },
     set fullScreenable(value: boolean) {
       fullScreenable = value;
+    },
+    restoreRequestedGeometry: () => {
+      deferredFullScreen = null;
+      setRequestedGeometryState(fullScreen);
+    },
+    setWriteHook: (hook) => {
+      writeHook = hook;
     },
     get writeCount() {
       return writeCount;
@@ -1016,6 +1072,987 @@ describe("RuntimeController", () => {
     controller.stop();
   });
 
+  it("preserves manual-floating placement through a deferred fullscreen race", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const active = createTrackedWindow("window-1", output, desktop);
+    const fullscreen = controlFullscreen(active, { write: "defer" });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [active.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      schedule: scheduler.schedule,
+    });
+    const activeId = windowId("window-1");
+
+    expect(controller.start()).toBe(true);
+    expect(controller.toggleFloating()).toBe(true);
+    const state = controller as unknown as {
+      readonly floatingWindows: ReadonlyMap<WindowId, unknown>;
+      readonly fullscreenRequestProbes: ReadonlyMap<WindowId, unknown>;
+      readonly pendingFullscreenTargets: ReadonlyMap<WindowId, boolean>;
+      readonly suspendedWindows: ReadonlySet<WindowId>;
+      readonly unconfirmedFullscreenTargets: ReadonlyMap<WindowId, boolean>;
+    };
+    const floatingState = structuredClone(state.floatingWindows.get(activeId));
+    const floatingFrame = { ...active.window.frameGeometry };
+    const frameWrites = active.writeCount;
+    const layout = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+
+    expect(floatingState).toBeDefined();
+    expect(controller.floatingCount).toBe(1);
+    expect(controller.managedCount).toBe(0);
+    expect(controller.toggleFullscreen()).toBe(true);
+    expect(fullscreen.fullScreen).toBe(false);
+    expect(state.pendingFullscreenTargets.get(activeId)).toBe(true);
+    expect(state.fullscreenRequestProbes.has(activeId)).toBe(true);
+    expect(active.window.moveable).toBe(false);
+    expect(active.window.resizeable).toBe(false);
+
+    active.minimizedChanged.emit();
+    controller.reconcile();
+
+    expect(controller.floatingCount).toBe(1);
+    expect(controller.managedCount).toBe(0);
+    expect(state.floatingWindows.get(activeId)).toEqual(floatingState);
+    expect(active.window.frameGeometry).toEqual(floatingFrame);
+    expect(active.writeCount).toBe(frameWrites);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(layout);
+    expect(state.pendingFullscreenTargets.get(activeId)).toBe(true);
+    expect(state.fullscreenRequestProbes.has(activeId)).toBe(true);
+
+    expect(fullscreen.commitDeferred()).toBe(true);
+    expect(fullscreen.fullScreen).toBe(true);
+    expect(state.pendingFullscreenTargets.has(activeId)).toBe(false);
+    expect(state.fullscreenRequestProbes.has(activeId)).toBe(false);
+    flushManualScheduler(scheduler);
+    expect(controller.floatingCount).toBe(1);
+    expect(controller.managedCount).toBe(0);
+    expect(state.floatingWindows.get(activeId)).toEqual(floatingState);
+    expect(active.window.frameGeometry).toEqual(floatingFrame);
+    expect(active.writeCount).toBe(frameWrites);
+
+    expect(controller.toggleFullscreen()).toBe(true);
+    expect(state.pendingFullscreenTargets.get(activeId)).toBe(false);
+    expect(fullscreen.commitDeferred()).toBe(true);
+    expect(fullscreen.fullScreen).toBe(false);
+    flushManualScheduler(scheduler);
+
+    expect(controller.floatingCount).toBe(1);
+    expect(controller.managedCount).toBe(0);
+    expect(state.floatingWindows.get(activeId)).toEqual(floatingState);
+    expect(active.window.frameGeometry).toEqual(floatingFrame);
+    expect(active.writeCount).toBe(frameWrites);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(layout);
+    expect(state.pendingFullscreenTargets.has(activeId)).toBe(false);
+    expect(state.fullscreenRequestProbes.has(activeId)).toBe(false);
+    expect(state.unconfirmedFullscreenTargets.has(activeId)).toBe(false);
+    expect(state.suspendedWindows.has(activeId)).toBe(false);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+
+    controller.stop();
+  });
+
+  it.each([
+    {
+      activeIndex: 0,
+      expectedHeights: [
+        { clientHeight: 240, kind: "fixed" },
+        { kind: "auto", weight: 4 },
+      ],
+      expectedSourceIds: ["window-2", "window-3"],
+      name: "top",
+    },
+    {
+      activeIndex: 1,
+      expectedHeights: [
+        { kind: "auto", weight: 2 },
+        { kind: "auto", weight: 4 },
+      ],
+      expectedSourceIds: ["window-1", "window-3"],
+      name: "middle",
+    },
+    {
+      activeIndex: 2,
+      expectedHeights: [
+        { kind: "auto", weight: 2 },
+        { clientHeight: 240, kind: "fixed" },
+      ],
+      expectedSourceIds: ["window-1", "window-2"],
+      name: "bottom",
+    },
+  ] as const)(
+    "extracts the $name stack member before synchronous fullscreen",
+    ({ activeIndex, expectedHeights, expectedSourceIds }) => {
+      const setup = createStackedFullscreenFixture(activeIndex);
+      const activeId = String(setup.active.window.internalId);
+
+      expect(setup.controller.toggleFullscreen()).toBe(true);
+      expect(setup.fullscreen.fullScreen).toBe(true);
+      expect(setup.fullscreen.writeCount).toBe(1);
+
+      const fullscreen = setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      );
+      expect(fullscreen.columns.map((column) => String(column.id))).toEqual([
+        "column:stack",
+        `column:${activeId}`,
+        "column:right",
+      ]);
+      expect(fullscreen.columns[0]).toMatchObject({
+        id: "column:stack",
+        width: { kind: "proportion", value: 0.45 },
+        windowHeights: expectedHeights,
+        windowIds: expectedSourceIds,
+      });
+      expect(fullscreen.columns[1]).toEqual({
+        id: `column:${activeId}`,
+        width: { kind: "proportion", value: 0.45 },
+        windowIds: [activeId],
+      });
+      expect(fullscreen.activeColumnId).toBe(`column:${activeId}`);
+      expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+
+      expect(setup.controller.toggleFullscreen()).toBe(true);
+      expect(setup.fullscreen.fullScreen).toBe(false);
+      flushManualScheduler(setup.scheduler);
+      expect(
+        testLayoutColumns(setup.controller, setup.output, setup.desktop),
+      ).toEqual([
+        { id: "column:stack", windowIds: expectedSourceIds },
+        { id: `column:${activeId}`, windowIds: [activeId] },
+        { id: "column:right", windowIds: ["window-4"] },
+      ]);
+      expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+
+      setup.controller.stop();
+    },
+  );
+
+  it("handles a synchronous fullscreen signal while extraction is active", () => {
+    const setup = createStackedFullscreenFixture(1);
+
+    expect(setup.controller.toggleFullscreen()).toBe(true);
+
+    const state = setup.controller as unknown as {
+      readonly pendingWindowSyncs: ReadonlySet<WindowId>;
+      readonly stackedNativeStateOperation: unknown;
+      readonly suspendedWindows: ReadonlySet<WindowId>;
+      readonly windowTransferOperation: unknown;
+    };
+    expect(setup.fullscreen.fullScreen).toBe(true);
+    expect(state.pendingWindowSyncs.has(windowId("window-2"))).toBe(true);
+    expect(state.suspendedWindows.has(windowId("window-2"))).toBe(true);
+    expect(state.windowTransferOperation).toBeNull();
+    expect(state.stackedNativeStateOperation).toBeNull();
+
+    setup.controller.stop();
+  });
+
+  it("keeps a Wayland fullscreen extraction pending until its deferred commit", () => {
+    const setup = createStackedFullscreenFixture(1, { write: "defer" });
+
+    expect(setup.controller.toggleFullscreen()).toBe(true);
+    expect(setup.fullscreen.fullScreen).toBe(false);
+    expect(setup.fullscreen.writeCount).toBe(1);
+    expect(setup.active.window.moveable).toBe(false);
+    expect(setup.active.window.resizeable).toBe(false);
+    expect(
+      testLayoutColumns(setup.controller, setup.output, setup.desktop),
+    ).toEqual([
+      { id: "column:stack", windowIds: ["window-1", "window-3"] },
+      { id: "column:window-2", windowIds: ["window-2"] },
+      { id: "column:right", windowIds: ["window-4"] },
+    ]);
+    expect(setup.controller.toggleFullscreen()).toBe(false);
+    expect(setup.fullscreen.writeCount).toBe(1);
+
+    expect(setup.fullscreen.commitDeferred()).toBe(true);
+    expect(setup.fullscreen.fullScreen).toBe(true);
+    expect(setup.controller.toggleFullscreen()).toBe(true);
+    expect(setup.fullscreen.fullScreen).toBe(true);
+    expect(setup.fullscreen.writeCount).toBe(2);
+    expect(setup.fullscreen.commitDeferred()).toBe(true);
+    expect(setup.fullscreen.fullScreen).toBe(false);
+    flushManualScheduler(setup.scheduler);
+    expect(
+      testLayoutColumns(setup.controller, setup.output, setup.desktop),
+    ).toEqual([
+      { id: "column:stack", windowIds: ["window-1", "window-3"] },
+      { id: "column:window-2", windowIds: ["window-2"] },
+      { id: "column:right", windowIds: ["window-4"] },
+    ]);
+
+    setup.controller.stop();
+  });
+
+  it("cancels a deferred Wayland fullscreen request after silent mobility reversion", () => {
+    const setup = createStackedFullscreenFixture(1, { write: "defer" });
+    const activeId = windowId("window-2");
+    const state = setup.controller as unknown as {
+      readonly fullscreenRequestProbes: ReadonlyMap<WindowId, unknown>;
+      readonly pendingFullscreenTargets: ReadonlyMap<WindowId, boolean>;
+      readonly suspendedWindows: ReadonlySet<WindowId>;
+      readonly unconfirmedFullscreenTargets: ReadonlyMap<WindowId, boolean>;
+    };
+
+    expect(setup.controller.toggleFullscreen()).toBe(true);
+    expect(state.pendingFullscreenTargets.get(activeId)).toBe(true);
+    expect(state.fullscreenRequestProbes.has(activeId)).toBe(true);
+    expect(state.suspendedWindows.has(activeId)).toBe(true);
+
+    setup.fullscreen.restoreRequestedGeometry();
+    flushManualScheduler(setup.scheduler);
+
+    expect(setup.fullscreen.fullScreen).toBe(false);
+    expect(setup.active.window.moveable).toBe(true);
+    expect(setup.active.window.resizeable).toBe(true);
+    expect(state.pendingFullscreenTargets.has(activeId)).toBe(false);
+    expect(state.fullscreenRequestProbes.has(activeId)).toBe(false);
+    expect(state.unconfirmedFullscreenTargets.has(activeId)).toBe(false);
+    expect(state.suspendedWindows.has(activeId)).toBe(false);
+    expect(
+      testLayoutColumns(setup.controller, setup.output, setup.desktop),
+    ).toEqual([
+      { id: "column:stack", windowIds: ["window-1", "window-3"] },
+      { id: "column:window-2", windowIds: ["window-2"] },
+      { id: "column:right", windowIds: ["window-4"] },
+    ]);
+
+    setup.controller.stop();
+  });
+
+  it("retains a pending Wayland fullscreen extraction through unrelated ownership refreshes", () => {
+    const setup = createStackedFullscreenFixture(1, { write: "defer" });
+    const activeId = windowId("window-2");
+    const state = setup.controller as unknown as {
+      readonly fullscreenRequestProbes: ReadonlyMap<WindowId, unknown>;
+      readonly pendingFullscreenTargets: ReadonlyMap<WindowId, boolean>;
+      readonly suspendedWindows: ReadonlySet<WindowId>;
+      readonly unconfirmedFullscreenTargets: ReadonlyMap<WindowId, boolean>;
+    };
+
+    expect(setup.controller.toggleFullscreen()).toBe(true);
+    expect(state.pendingFullscreenTargets.get(activeId)).toBe(true);
+    expect(state.fullscreenRequestProbes.has(activeId)).toBe(true);
+    expect(setup.fullscreen.fullScreen).toBe(false);
+    expect(setup.active.window.moveable).toBe(false);
+    expect(setup.active.window.resizeable).toBe(false);
+
+    setup.active.minimizedChanged.emit();
+    setup.controller.reconcile();
+
+    expect(state.pendingFullscreenTargets.get(activeId)).toBe(true);
+    expect(state.fullscreenRequestProbes.has(activeId)).toBe(true);
+    expect(setup.controller.managedCount).toBe(4);
+    expect(setup.controller.automaticFloatingCount).toBe(0);
+    expect(
+      testLayoutColumns(setup.controller, setup.output, setup.desktop),
+    ).toEqual([
+      { id: "column:stack", windowIds: ["window-1", "window-3"] },
+      { id: "column:window-2", windowIds: ["window-2"] },
+      { id: "column:right", windowIds: ["window-4"] },
+    ]);
+
+    expect(setup.fullscreen.commitDeferred()).toBe(true);
+    expect(setup.fullscreen.fullScreen).toBe(true);
+    expect(state.pendingFullscreenTargets.has(activeId)).toBe(false);
+    expect(state.fullscreenRequestProbes.has(activeId)).toBe(false);
+    expect(state.unconfirmedFullscreenTargets.has(activeId)).toBe(false);
+    flushManualScheduler(setup.scheduler);
+    expect(
+      testLayoutColumns(setup.controller, setup.output, setup.desktop),
+    ).toEqual([
+      { id: "column:stack", windowIds: ["window-1", "window-3"] },
+      { id: "column:window-2", windowIds: ["window-2"] },
+      { id: "column:right", windowIds: ["window-4"] },
+    ]);
+
+    expect(setup.controller.toggleFullscreen()).toBe(true);
+    expect(setup.fullscreen.commitDeferred()).toBe(true);
+    expect(setup.fullscreen.fullScreen).toBe(false);
+    flushManualScheduler(setup.scheduler);
+    expect(state.pendingFullscreenTargets.has(activeId)).toBe(false);
+    expect(state.fullscreenRequestProbes.has(activeId)).toBe(false);
+    expect(state.suspendedWindows.has(activeId)).toBe(false);
+
+    setup.controller.stop();
+  });
+
+  it("releases an authoritative fullscreen mismatch into mobility-aware retention", () => {
+    const setup = createStackedFullscreenFixture(1, { write: "defer" });
+    const activeId = windowId("window-2");
+    const state = setup.controller as unknown as {
+      readonly fullscreenRequestProbes: ReadonlyMap<WindowId, unknown>;
+      readonly pendingFullscreenTargets: ReadonlyMap<WindowId, boolean>;
+      readonly suspendedWindows: ReadonlySet<WindowId>;
+      readonly unconfirmedFullscreenTargets: ReadonlyMap<WindowId, boolean>;
+    };
+
+    expect(setup.controller.toggleFullscreen()).toBe(true);
+    expect(state.pendingFullscreenTargets.get(activeId)).toBe(true);
+    expect(state.fullscreenRequestProbes.has(activeId)).toBe(true);
+    expect(setup.fullscreen.fullScreen).toBe(false);
+    expect(setup.active.window.moveable).toBe(false);
+    expect(setup.active.window.resizeable).toBe(false);
+    const layout = setup.layout.snapshot(
+      outputId(setup.output.name),
+      desktopId(setup.desktop.id),
+    );
+    const frames = setup.windows.map((window) => ({
+      ...window.window.frameGeometry,
+    }));
+    const frameWrites = setup.windows.map((window) => window.writeCount);
+
+    setup.active.fullScreenChanged.emit();
+
+    expect(state.pendingFullscreenTargets.has(activeId)).toBe(false);
+    expect(state.fullscreenRequestProbes.has(activeId)).toBe(false);
+    expect(state.unconfirmedFullscreenTargets.get(activeId)).toBe(true);
+    expect(setup.controller.managedCount).toBe(4);
+    expect(setup.controller.automaticFloatingCount).toBe(0);
+
+    setup.active.minimizedChanged.emit();
+    setup.controller.reconcile();
+    flushManualScheduler(setup.scheduler);
+
+    expect(state.unconfirmedFullscreenTargets.get(activeId)).toBe(true);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(layout);
+    expect(setup.windows.map((window) => window.window.frameGeometry)).toEqual(
+      frames,
+    );
+    expect(setup.windows.map((window) => window.writeCount)).toEqual(
+      frameWrites,
+    );
+    expect(setup.controller.managedCount).toBe(4);
+    expect(setup.controller.automaticFloatingCount).toBe(0);
+
+    expect(setup.controller.toggleFullscreen()).toBe(false);
+    expect(setup.fullscreen.writeCount).toBe(2);
+    expect(state.pendingFullscreenTargets.has(activeId)).toBe(false);
+    expect(state.fullscreenRequestProbes.has(activeId)).toBe(false);
+    expect(state.unconfirmedFullscreenTargets.get(activeId)).toBe(true);
+
+    expect(setup.fullscreen.commitDeferred()).toBe(true);
+    expect(setup.fullscreen.fullScreen).toBe(true);
+    expect(state.unconfirmedFullscreenTargets.has(activeId)).toBe(false);
+    expect(setup.controller.toggleFullscreen()).toBe(true);
+    expect(setup.fullscreen.commitDeferred()).toBe(true);
+    expect(setup.fullscreen.fullScreen).toBe(false);
+    flushManualScheduler(setup.scheduler);
+
+    expect(state.pendingFullscreenTargets.has(activeId)).toBe(false);
+    expect(state.fullscreenRequestProbes.has(activeId)).toBe(false);
+    expect(state.unconfirmedFullscreenTargets.has(activeId)).toBe(false);
+    expect(state.suspendedWindows.has(activeId)).toBe(false);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(layout);
+    expect(setup.windows.map((window) => window.window.frameGeometry)).toEqual(
+      frames,
+    );
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+
+    setup.controller.stop();
+  });
+
+  it("bounds an unconfirmed Wayland fullscreen request and releases its command gate", () => {
+    const setup = createStackedFullscreenFixture(1, { write: "defer" });
+    const activeId = windowId("window-2");
+    const state = setup.controller as unknown as {
+      readonly fullscreenRequestProbes: ReadonlyMap<WindowId, unknown>;
+      readonly pendingFullscreenTargets: ReadonlyMap<WindowId, boolean>;
+      readonly stackedNativeStateOperation: unknown;
+      readonly unconfirmedFullscreenTargets: ReadonlyMap<WindowId, boolean>;
+      readonly windowTransferOperation: unknown;
+    };
+
+    expect(setup.controller.toggleFullscreen()).toBe(true);
+    expect(state.pendingFullscreenTargets.get(activeId)).toBe(true);
+    expect(setup.fullscreen.writeCount).toBe(1);
+    expect(setup.fullscreen.fullScreen).toBe(false);
+
+    flushManualScheduler(setup.scheduler);
+
+    expect(state.pendingFullscreenTargets.has(activeId)).toBe(false);
+    expect(state.fullscreenRequestProbes.has(activeId)).toBe(false);
+    expect(state.unconfirmedFullscreenTargets.get(activeId)).toBe(true);
+    expect(state.windowTransferOperation).toBeNull();
+    expect(state.stackedNativeStateOperation).toBeNull();
+    expect(
+      testLayoutColumns(setup.controller, setup.output, setup.desktop),
+    ).toEqual([
+      { id: "column:stack", windowIds: ["window-1", "window-3"] },
+      { id: "column:window-2", windowIds: ["window-2"] },
+      { id: "column:right", windowIds: ["window-4"] },
+    ]);
+    expect(setup.controller.managedCount).toBe(4);
+    expect(setup.controller.automaticFloatingCount).toBe(0);
+
+    setup.active.minimizedChanged.emit();
+    setup.controller.reconcile();
+    flushManualScheduler(setup.scheduler);
+    expect(state.unconfirmedFullscreenTargets.get(activeId)).toBe(true);
+    expect(
+      testLayoutColumns(setup.controller, setup.output, setup.desktop),
+    ).toEqual([
+      { id: "column:stack", windowIds: ["window-1", "window-3"] },
+      { id: "column:window-2", windowIds: ["window-2"] },
+      { id: "column:right", windowIds: ["window-4"] },
+    ]);
+    expect(setup.controller.managedCount).toBe(4);
+    expect(setup.controller.automaticFloatingCount).toBe(0);
+
+    expect(setup.controller.toggleFullscreen()).toBe(false);
+    expect(setup.fullscreen.writeCount).toBe(2);
+    expect(state.pendingFullscreenTargets.has(activeId)).toBe(false);
+    expect(state.fullscreenRequestProbes.has(activeId)).toBe(false);
+    expect(state.unconfirmedFullscreenTargets.get(activeId)).toBe(true);
+
+    expect(setup.fullscreen.commitDeferred()).toBe(true);
+    expect(setup.fullscreen.fullScreen).toBe(true);
+    expect(state.unconfirmedFullscreenTargets.has(activeId)).toBe(false);
+    expect(setup.controller.toggleFullscreen()).toBe(true);
+    expect(setup.fullscreen.commitDeferred()).toBe(true);
+    expect(setup.fullscreen.fullScreen).toBe(false);
+    flushManualScheduler(setup.scheduler);
+    expect(state.unconfirmedFullscreenTargets.has(activeId)).toBe(false);
+    expect(
+      testLayoutColumns(setup.controller, setup.output, setup.desktop),
+    ).toEqual([
+      { id: "column:stack", windowIds: ["window-1", "window-3"] },
+      { id: "column:window-2", windowIds: ["window-2"] },
+      { id: "column:right", windowIds: ["window-4"] },
+    ]);
+
+    setup.controller.stop();
+  });
+
+  it("clears unconfirmed fullscreen retention when requested mobility reverts", () => {
+    const setup = createStackedFullscreenFixture(1, { write: "defer" });
+    const activeId = windowId("window-2");
+    const state = setup.controller as unknown as {
+      readonly unconfirmedFullscreenTargets: ReadonlyMap<WindowId, boolean>;
+    };
+
+    expect(setup.controller.toggleFullscreen()).toBe(true);
+    flushManualScheduler(setup.scheduler);
+    expect(state.unconfirmedFullscreenTargets.get(activeId)).toBe(true);
+
+    setup.fullscreen.restoreRequestedGeometry();
+    setup.active.minimizedChanged.emit();
+    flushManualScheduler(setup.scheduler);
+
+    expect(setup.active.window.moveable).toBe(true);
+    expect(setup.active.window.resizeable).toBe(true);
+    expect(state.unconfirmedFullscreenTargets.has(activeId)).toBe(false);
+    expect(setup.controller.managedCount).toBe(4);
+    expect(setup.controller.automaticFloatingCount).toBe(0);
+    expect(
+      testLayoutColumns(setup.controller, setup.output, setup.desktop),
+    ).toEqual([
+      { id: "column:stack", windowIds: ["window-1", "window-3"] },
+      { id: "column:window-2", windowIds: ["window-2"] },
+      { id: "column:right", windowIds: ["window-4"] },
+    ]);
+
+    setup.controller.stop();
+  });
+
+  it("settles silent post-timeout mobility reversion during topology probing", () => {
+    const setup = createStackedFullscreenFixture(1, { write: "defer" });
+    const activeId = windowId("window-2");
+    const state = setup.controller as unknown as {
+      readonly fullscreenRequestProbes: ReadonlyMap<WindowId, unknown>;
+      readonly pendingFullscreenTargets: ReadonlyMap<WindowId, boolean>;
+      readonly suspendedWindows: ReadonlySet<WindowId>;
+      readonly unconfirmedFullscreenTargets: ReadonlyMap<WindowId, boolean>;
+    };
+
+    expect(setup.controller.toggleFullscreen()).toBe(true);
+    flushManualScheduler(setup.scheduler);
+    expect(state.unconfirmedFullscreenTargets.get(activeId)).toBe(true);
+    expect(state.suspendedWindows.has(activeId)).toBe(true);
+    const layout = setup.layout.snapshot(
+      outputId(setup.output.name),
+      desktopId(setup.desktop.id),
+    );
+    const frames = setup.windows.map((window) => ({
+      ...window.window.frameGeometry,
+    }));
+
+    setup.fullscreen.restoreRequestedGeometry();
+    setup.controller.probeTopology();
+    flushManualScheduler(setup.scheduler);
+
+    expect(setup.active.window.moveable).toBe(true);
+    expect(setup.active.window.resizeable).toBe(true);
+    expect(state.pendingFullscreenTargets.has(activeId)).toBe(false);
+    expect(state.fullscreenRequestProbes.has(activeId)).toBe(false);
+    expect(state.unconfirmedFullscreenTargets.has(activeId)).toBe(false);
+    expect(state.suspendedWindows.has(activeId)).toBe(false);
+    expect(setup.controller.managedCount).toBe(4);
+    expect(setup.controller.automaticFloatingCount).toBe(0);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(layout);
+    expect(setup.windows.map((window) => window.window.frameGeometry)).toEqual(
+      frames,
+    );
+
+    setup.controller.stop();
+  });
+
+  it("restores exact default stack metadata after reconstructing the source column from fullscreen", () => {
+    const setup = createStackedFullscreenFixture(1);
+    const layout = installTestLayout(
+      setup.controller,
+      setup.output,
+      setup.desktop,
+      "column:stack",
+      [
+        {
+          id: "column:stack",
+          width: { kind: "proportion", value: 0.45 },
+          windowIds: ["window-1", "window-2", "window-3"],
+        },
+        {
+          id: "column:right",
+          width: { kind: "fixed", value: 240 },
+          windowIds: ["window-4"],
+        },
+      ],
+    );
+    setup.fixture.workspace.activeWindow = setup.active.window;
+    flushManualScheduler(setup.scheduler);
+    const beforeLayout = layout.snapshot(
+      outputId(setup.output.name),
+      desktopId(setup.desktop.id),
+    );
+    const beforeFrames = setup.windows.map((window) => ({
+      ...window.window.frameGeometry,
+    }));
+
+    expect(setup.controller.toggleFullscreen()).toBe(true);
+    expect(setup.controller.toggleFullscreen()).toBe(true);
+    flushManualScheduler(setup.scheduler);
+    expect(setup.controller.moveWindowLeft()).toBe(true);
+    expect(setup.controller.moveWindowUp()).toBe(true);
+
+    expect(
+      layout.snapshot(outputId(setup.output.name), desktopId(setup.desktop.id)),
+    ).toEqual(beforeLayout);
+    expect(setup.windows.map((window) => window.window.frameGeometry)).toEqual(
+      beforeFrames,
+    );
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+
+    setup.controller.stop();
+  });
+
+  it.each(["reject", "throw"] as const)(
+    "restores all stacked state when the fullscreen request is %s",
+    (write) => {
+      const setup = createStackedFullscreenFixture(1, { write });
+
+      expect(setup.controller.maximizeColumn()).toBe(true);
+      markOnlyRuntimeContextDirty(setup.controller);
+      const beforeLayout = setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      );
+      const beforeFrames = setup.windows.map((window) => ({
+        ...window.window.frameGeometry,
+      }));
+      const beforeRuntime = stackedExtractionRuntimeState(setup.controller);
+      const warning = console.warn;
+      console.warn = () => undefined;
+
+      try {
+        expect(setup.controller.toggleFullscreen()).toBe(false);
+      } finally {
+        console.warn = warning;
+      }
+
+      expect(setup.fullscreen.fullScreen).toBe(false);
+      expect(setup.fullscreen.writeCount).toBe(1);
+      expect(
+        setup.layout.snapshot(
+          outputId(setup.output.name),
+          desktopId(setup.desktop.id),
+        ),
+      ).toEqual(beforeLayout);
+      expect(
+        setup.windows.map((window) => window.window.frameGeometry),
+      ).toEqual(beforeFrames);
+      expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+      expect(stackedExtractionRuntimeState(setup.controller)).toEqual(
+        beforeRuntime,
+      );
+
+      setup.controller.stop();
+    },
+  );
+
+  it("extracts an externally committed fullscreen window without writing its native frame", () => {
+    const setup = createStackedFullscreenFixture(1);
+    const activeFrame = { ...setup.active.window.frameGeometry };
+    const activeWrites = setup.active.writeCount;
+
+    setup.fullscreen.externalCommit(true);
+
+    expect(setup.fullscreen.writeCount).toBe(0);
+    expect(setup.fullscreen.fullScreen).toBe(true);
+    expect(setup.active.window.frameGeometry).toEqual(activeFrame);
+    expect(setup.active.writeCount).toBe(activeWrites);
+    expect(
+      testLayoutColumns(setup.controller, setup.output, setup.desktop),
+    ).toEqual([
+      { id: "column:stack", windowIds: ["window-1", "window-3"] },
+      { id: "column:window-2", windowIds: ["window-2"] },
+      { id: "column:right", windowIds: ["window-4"] },
+    ]);
+
+    setup.fullscreen.externalCommit(false);
+    flushManualScheduler(setup.scheduler);
+    expect(
+      testLayoutColumns(setup.controller, setup.output, setup.desktop),
+    ).toEqual([
+      { id: "column:stack", windowIds: ["window-1", "window-3"] },
+      { id: "column:window-2", windowIds: ["window-2"] },
+      { id: "column:right", windowIds: ["window-4"] },
+    ]);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+
+    setup.controller.stop();
+  });
+
+  it("retries external fullscreen extraction after activation and startup barriers clear", () => {
+    const setup = createStackedFullscreenFixture(1);
+    const activeId = windowId("window-2");
+    const state = setup.controller as unknown as {
+      readonly pendingExternalFullscreenExtractions: ReadonlyMap<
+        WindowId,
+        unknown
+      >;
+      startupStabilizationToken: object | null;
+    };
+    const otherWindow = setup.windows[3]?.window;
+
+    if (!otherWindow) {
+      throw new Error("missing delayed fullscreen activation target");
+    }
+
+    setup.fixture.workspace.activeWindow = otherWindow;
+    flushManualScheduler(setup.scheduler);
+    const activeFrame = { ...setup.active.window.frameGeometry };
+    const activeWrites = setup.active.writeCount;
+    state.startupStabilizationToken = {};
+
+    setup.fullscreen.externalCommit(true);
+
+    expect(state.pendingExternalFullscreenExtractions.has(activeId)).toBe(true);
+    expect(
+      testLayoutColumns(setup.controller, setup.output, setup.desktop),
+    ).toEqual([
+      {
+        id: "column:stack",
+        windowIds: ["window-1", "window-2", "window-3"],
+      },
+      { id: "column:right", windowIds: ["window-4"] },
+    ]);
+
+    setup.fixture.workspace.activeWindow = setup.active.window;
+    expect(state.pendingExternalFullscreenExtractions.has(activeId)).toBe(true);
+    state.startupStabilizationToken = null;
+    setup.controller.reconcile();
+
+    expect(state.pendingExternalFullscreenExtractions.has(activeId)).toBe(
+      false,
+    );
+    expect(setup.active.window.frameGeometry).toEqual(activeFrame);
+    expect(setup.active.writeCount).toBe(activeWrites);
+    expect(
+      testLayoutColumns(setup.controller, setup.output, setup.desktop),
+    ).toEqual([
+      { id: "column:stack", windowIds: ["window-1", "window-3"] },
+      { id: "column:window-2", windowIds: ["window-2"] },
+      { id: "column:right", windowIds: ["window-4"] },
+    ]);
+
+    setup.fullscreen.externalCommit(false);
+    flushManualScheduler(setup.scheduler);
+    setup.controller.stop();
+  });
+
+  it("does not consume external fullscreen attempts while a sibling is suspended", () => {
+    const setup = createStackedFullscreenFixture(1);
+    const activeId = windowId("window-2");
+    const sibling = setup.windows[0];
+    const state = setup.controller as unknown as {
+      readonly pendingExternalFullscreenExtractions: ReadonlyMap<
+        WindowId,
+        { readonly attempts: number }
+      >;
+    };
+
+    if (!sibling) {
+      throw new Error("missing blocked fullscreen sibling");
+    }
+
+    setWindowState("minimized", sibling, true);
+    flushManualScheduler(setup.scheduler);
+    const activeFrame = { ...setup.active.window.frameGeometry };
+    const activeWrites = setup.active.writeCount;
+
+    setup.fullscreen.externalCommit(true);
+
+    expect(state.pendingExternalFullscreenExtractions.get(activeId)).toEqual(
+      expect.objectContaining({ attempts: 0 }),
+    );
+
+    for (let attempt = 0; attempt < 25; attempt += 1) {
+      setup.controller.reconcile();
+    }
+
+    expect(state.pendingExternalFullscreenExtractions.get(activeId)).toEqual(
+      expect.objectContaining({ attempts: 0 }),
+    );
+    expect(setup.active.window.frameGeometry).toEqual(activeFrame);
+    expect(setup.active.writeCount).toBe(activeWrites);
+    expect(
+      testLayoutColumns(setup.controller, setup.output, setup.desktop),
+    ).toEqual([
+      {
+        id: "column:stack",
+        windowIds: ["window-1", "window-2", "window-3"],
+      },
+      { id: "column:right", windowIds: ["window-4"] },
+    ]);
+
+    setWindowState("minimized", sibling, false);
+    flushManualScheduler(setup.scheduler);
+
+    expect(state.pendingExternalFullscreenExtractions.has(activeId)).toBe(
+      false,
+    );
+    expect(setup.active.window.frameGeometry).toEqual(activeFrame);
+    expect(setup.active.writeCount).toBe(activeWrites);
+    expect(
+      testLayoutColumns(setup.controller, setup.output, setup.desktop),
+    ).toEqual([
+      { id: "column:stack", windowIds: ["window-1", "window-3"] },
+      { id: "column:window-2", windowIds: ["window-2"] },
+      { id: "column:right", windowIds: ["window-4"] },
+    ]);
+
+    setup.fullscreen.externalCommit(false);
+    flushManualScheduler(setup.scheduler);
+    setup.controller.stop();
+  });
+
+  it("drops a pending external fullscreen extraction when fullscreen exits", () => {
+    const setup = createStackedFullscreenFixture(1);
+    const activeId = windowId("window-2");
+    const state = setup.controller as unknown as {
+      readonly pendingExternalFullscreenExtractions: ReadonlyMap<
+        WindowId,
+        unknown
+      >;
+    };
+    const otherWindow = setup.windows[3]?.window;
+
+    if (!otherWindow) {
+      throw new Error("missing delayed fullscreen activation target");
+    }
+
+    setup.fixture.workspace.activeWindow = otherWindow;
+    flushManualScheduler(setup.scheduler);
+    setup.fullscreen.externalCommit(true);
+    expect(state.pendingExternalFullscreenExtractions.has(activeId)).toBe(true);
+
+    setup.fullscreen.externalCommit(false);
+
+    expect(state.pendingExternalFullscreenExtractions.has(activeId)).toBe(
+      false,
+    );
+    flushManualScheduler(setup.scheduler);
+    expect(
+      testLayoutColumns(setup.controller, setup.output, setup.desktop),
+    ).toEqual([
+      {
+        id: "column:stack",
+        windowIds: ["window-1", "window-2", "window-3"],
+      },
+      { id: "column:right", windowIds: ["window-4"] },
+    ]);
+
+    setup.controller.stop();
+  });
+
+  it("copies full-width restore state to the fullscreen extraction", () => {
+    const setup = createStackedFullscreenFixture(1);
+
+    expect(setup.controller.maximizeColumn()).toBe(true);
+    expect(
+      activeColumnWidth(setup.controller, setup.output, setup.desktop),
+    ).toEqual({ kind: "proportion", value: 1 });
+    expect(setup.controller.toggleFullscreen()).toBe(true);
+    expect(setup.controller.toggleFullscreen()).toBe(true);
+    flushManualScheduler(setup.scheduler);
+
+    expect(setup.controller.maximizeColumn()).toBe(true);
+    expect(
+      activeColumnWidth(setup.controller, setup.output, setup.desktop),
+    ).toEqual({ kind: "proportion", value: 0.45 });
+    setup.fixture.workspace.activeWindow = setup.windows[0]?.window ?? null;
+    expect(setup.controller.maximizeColumn()).toBe(true);
+    expect(
+      activeColumnWidth(setup.controller, setup.output, setup.desktop),
+    ).toEqual({ kind: "proportion", value: 0.45 });
+
+    setup.controller.stop();
+  });
+
+  it("rolls back fullscreen extraction before invoking KWin on a frame failure", () => {
+    const setup = createStackedFullscreenFixture(1);
+    const beforeLayout = setup.layout.snapshot(
+      outputId(setup.output.name),
+      desktopId(setup.desktop.id),
+    );
+    const beforeFrames = setup.windows.map((window) => ({
+      ...window.window.frameGeometry,
+    }));
+    const beforeRuntime = stackedExtractionRuntimeState(setup.controller);
+    let rejectNextWrite = true;
+    setup.windows[3]?.setWriteBehavior((_frame, commit) => {
+      if (rejectNextWrite) {
+        rejectNextWrite = false;
+        throw new Error("injected stacked fullscreen frame failure");
+      }
+
+      commit();
+    });
+    const warning = console.warn;
+    console.warn = () => undefined;
+
+    try {
+      expect(setup.controller.toggleFullscreen()).toBe(false);
+    } finally {
+      console.warn = warning;
+      setup.windows[3]?.setWriteBehavior(null);
+    }
+
+    expect(setup.fullscreen.writeCount).toBe(0);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(beforeLayout);
+    expect(setup.windows.map((window) => window.window.frameGeometry)).toEqual(
+      beforeFrames,
+    );
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+    expect(stackedExtractionRuntimeState(setup.controller)).toEqual(
+      beforeRuntime,
+    );
+
+    setup.controller.stop();
+  });
+
+  it("blocks reentrant fullscreen toggles and clears the operation token", () => {
+    const setup = createStackedFullscreenFixture(1);
+    let nestedResult: boolean | null = null;
+    setup.fullscreen.setWriteHook(() => {
+      nestedResult = setup.controller.toggleFullscreen();
+    });
+
+    expect(setup.controller.toggleFullscreen()).toBe(true);
+    expect(nestedResult).toBe(false);
+    const state = setup.controller as unknown as {
+      readonly fullscreenRequestProbes: ReadonlyMap<WindowId, unknown>;
+      readonly pendingFullscreenTargets: ReadonlyMap<WindowId, boolean>;
+      readonly stackedNativeStateOperation: unknown;
+      readonly windowTransferOperation: unknown;
+    };
+    expect(state.windowTransferOperation).toBeNull();
+    expect(state.stackedNativeStateOperation).toBeNull();
+    expect(state.pendingFullscreenTargets.has(windowId("window-2"))).toBe(
+      false,
+    );
+    expect(state.fullscreenRequestProbes.has(windowId("window-2"))).toBe(false);
+
+    setup.fullscreen.setWriteHook(null);
+    expect(setup.controller.toggleFullscreen()).toBe(true);
+    flushManualScheduler(setup.scheduler);
+    expect(setup.fullscreen.fullScreen).toBe(false);
+
+    setup.controller.stop();
+  });
+
+  it("clears fullscreen extraction tokens when the active window is removed during the request", () => {
+    const setup = createStackedFullscreenFixture(1);
+    setup.fullscreen.setWriteHook(() => {
+      setup.fixture.windowRemoved.emit(setup.active.window);
+    });
+    const warning = console.warn;
+    console.warn = () => undefined;
+
+    try {
+      expect(setup.controller.toggleFullscreen()).toBe(false);
+    } finally {
+      console.warn = warning;
+    }
+
+    const state = setup.controller as unknown as {
+      readonly fullscreenRequestProbes: ReadonlyMap<WindowId, unknown>;
+      readonly pendingFullscreenTargets: ReadonlyMap<WindowId, boolean>;
+      readonly stackedNativeStateOperation: unknown;
+      readonly windowTransferOperation: unknown;
+    };
+    expect(state.windowTransferOperation).toBeNull();
+    expect(state.stackedNativeStateOperation).toBeNull();
+    expect(state.pendingFullscreenTargets.has(windowId("window-2"))).toBe(
+      false,
+    );
+    expect(state.fullscreenRequestProbes.has(windowId("window-2"))).toBe(false);
+    expect(setup.controller.managedCount).toBe(3);
+
+    setup.controller.stop();
+  });
+
   it("delegates maximize-to-edges to KWin without changing the tiled layout", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
@@ -1264,7 +2301,7 @@ describe("RuntimeController", () => {
       const beforeFrames = setup.windows.map((window) => ({
         ...window.window.frameGeometry,
       }));
-      const beforeRuntime = stackedMaximizeRuntimeState(setup.controller);
+      const beforeRuntime = stackedExtractionRuntimeState(setup.controller);
       const warning = console.warn;
       console.warn = () => undefined;
 
@@ -1286,7 +2323,7 @@ describe("RuntimeController", () => {
         setup.windows.map((window) => window.window.frameGeometry),
       ).toEqual(beforeFrames);
       expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
-      expect(stackedMaximizeRuntimeState(setup.controller)).toEqual(
+      expect(stackedExtractionRuntimeState(setup.controller)).toEqual(
         beforeRuntime,
       );
 
@@ -1320,7 +2357,7 @@ describe("RuntimeController", () => {
 
       const state = setup.controller as unknown as {
         readonly pendingWindowSyncs: ReadonlySet<WindowId>;
-        readonly stackedMaximizeOperation: unknown;
+        readonly stackedNativeStateOperation: unknown;
         readonly suspendedWindows: ReadonlySet<WindowId>;
         readonly windowTransferOperation: unknown;
       };
@@ -1342,7 +2379,7 @@ describe("RuntimeController", () => {
       expect(state.pendingWindowSyncs.has(windowId("window-2"))).toBe(true);
       expect(state.suspendedWindows.has(windowId("window-2"))).toBe(true);
       expect(state.windowTransferOperation).toBeNull();
-      expect(state.stackedMaximizeOperation).toBeNull();
+      expect(state.stackedNativeStateOperation).toBeNull();
 
       setup.controller.stop();
     },
@@ -1419,7 +2456,7 @@ describe("RuntimeController", () => {
     const beforeFrames = setup.windows.map((window) => ({
       ...window.window.frameGeometry,
     }));
-    const beforeRuntime = stackedMaximizeRuntimeState(setup.controller);
+    const beforeRuntime = stackedExtractionRuntimeState(setup.controller);
     let rejectNextWrite = true;
     setup.windows[3]?.setWriteBehavior((_frame, commit) => {
       if (rejectNextWrite) {
@@ -1450,7 +2487,7 @@ describe("RuntimeController", () => {
       beforeFrames,
     );
     expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
-    expect(stackedMaximizeRuntimeState(setup.controller)).toEqual(
+    expect(stackedExtractionRuntimeState(setup.controller)).toEqual(
       beforeRuntime,
     );
 
@@ -17728,6 +18765,91 @@ function testLayoutColumns(
     }));
 }
 
+interface StackedFullscreenFixture {
+  readonly active: TrackedWindow;
+  readonly controller: RuntimeController;
+  readonly desktop: KWinVirtualDesktop;
+  readonly fixture: WorkspaceFixture;
+  readonly fullscreen: FullscreenControl;
+  readonly layout: LayoutEngine;
+  readonly output: KWinOutput;
+  readonly scheduler: ManualScheduler;
+  readonly windows: readonly TrackedWindow[];
+}
+
+function createStackedFullscreenFixture(
+  activeIndex: number,
+  options: FullscreenControlOptions = {},
+): StackedFullscreenFixture {
+  const output = createOutput("DP-1", 0);
+  const desktop = { id: "desktop-1" };
+  const windows = Array.from({ length: 4 }, (_value, index) =>
+    createTrackedWindow(`window-${String(index + 1)}`, output, desktop),
+  );
+  const active = windows[activeIndex];
+
+  if (!active || activeIndex > 2) {
+    throw new Error("invalid stacked fullscreen active index");
+  }
+
+  const fullscreen = controlFullscreen(active, options);
+  const fixture = createWorkspace(
+    output,
+    desktop,
+    [output],
+    [desktop],
+    windows.map((window) => window.window),
+  );
+  const scheduler = new ManualScheduler();
+  const controller = new RuntimeController(fixture.workspace, {
+    clientAreaOption: 2,
+    gap: 10,
+    schedule: scheduler.schedule,
+  });
+
+  if (!controller.start()) {
+    throw new Error("could not start stacked fullscreen fixture");
+  }
+
+  const layout = installTestLayout(
+    controller,
+    output,
+    desktop,
+    "column:stack",
+    [
+      {
+        id: "column:stack",
+        width: { kind: "proportion", value: 0.45 },
+        windowHeights: [
+          { kind: "auto", weight: 2 },
+          { clientHeight: 240, kind: "fixed" },
+          { kind: "auto", weight: 4 },
+        ],
+        windowIds: ["window-1", "window-2", "window-3"],
+      },
+      {
+        id: "column:right",
+        width: { kind: "fixed", value: 240 },
+        windowIds: ["window-4"],
+      },
+    ],
+  );
+  fixture.workspace.activeWindow = active.window;
+  flushManualScheduler(scheduler);
+
+  return {
+    active,
+    controller,
+    desktop,
+    fixture,
+    fullscreen,
+    layout,
+    output,
+    scheduler,
+    windows,
+  };
+}
+
 interface StackedMaximizeFixture {
   readonly active: TrackedWindow;
   readonly controller: RuntimeController;
@@ -17826,7 +18948,7 @@ function flushManualScheduler(scheduler: ManualScheduler): void {
   }
 }
 
-function stackedMaximizeRuntimeState(controller: RuntimeController): unknown {
+function stackedExtractionRuntimeState(controller: RuntimeController): unknown {
   const state = controller as unknown as {
     readonly columnFullWidthRestore: ReadonlyMap<
       string,
@@ -17836,8 +18958,10 @@ function stackedMaximizeRuntimeState(controller: RuntimeController): unknown {
       >
     >;
     readonly dirtyContexts: ReadonlySet<string>;
+    readonly fullscreenRequestProbes?: ReadonlyMap<WindowId, unknown>;
     readonly lastTiledFocus: ReadonlyMap<string, WindowId>;
     readonly pendingAdmissionContexts: ReadonlySet<string>;
+    readonly pendingFullscreenTargets?: ReadonlyMap<WindowId, boolean>;
     readonly pendingWindowSyncs: ReadonlySet<WindowId>;
     readonly requestedSuspensions: ReadonlyMap<WindowId, ReadonlySet<string>>;
     readonly resumeSamples: ReadonlyMap<
@@ -17847,12 +18971,13 @@ function stackedMaximizeRuntimeState(controller: RuntimeController): unknown {
         readonly frame: KWinWindow["frameGeometry"];
       }
     >;
-    readonly stackedMaximizeOperation: unknown;
+    readonly stackedNativeStateOperation: unknown;
     readonly suspendedWindows: ReadonlySet<WindowId>;
     readonly transientResumeProbes: ReadonlyMap<
       WindowId,
       { readonly completedAttempts: number; readonly pending: boolean }
     >;
+    readonly unconfirmedFullscreenTargets?: ReadonlyMap<WindowId, boolean>;
     readonly windowTransferOperation: unknown;
   };
   const sorted = <T>(values: Iterable<T>): T[] =>
@@ -17870,11 +18995,17 @@ function stackedMaximizeRuntimeState(controller: RuntimeController): unknown {
       ],
     ),
     dirtyContexts: sorted(state.dirtyContexts),
+    fullscreenRequestProbes: sorted(
+      state.fullscreenRequestProbes?.keys() ?? [],
+    ),
     lastTiledFocus: sorted(state.lastTiledFocus.keys()).map((key) => [
       key,
       state.lastTiledFocus.get(key),
     ]),
     pendingAdmissionContexts: sorted(state.pendingAdmissionContexts),
+    pendingFullscreenTargets: sorted(
+      state.pendingFullscreenTargets?.keys() ?? [],
+    ).map((id) => [id, state.pendingFullscreenTargets?.get(id)]),
     pendingWindowSyncs: sorted(state.pendingWindowSyncs),
     requestedSuspensions: sorted(state.requestedSuspensions.keys()).map(
       (id) => [id, sorted(state.requestedSuspensions.get(id) ?? [])],
@@ -17888,11 +19019,14 @@ function stackedMaximizeRuntimeState(controller: RuntimeController): unknown {
           : null,
       ];
     }),
-    stackedMaximizeOperation: state.stackedMaximizeOperation !== null,
+    stackedNativeStateOperation: state.stackedNativeStateOperation !== null,
     suspendedWindows: sorted(state.suspendedWindows),
     transientResumeProbes: sorted(state.transientResumeProbes.keys()).map(
       (id) => [id, { ...state.transientResumeProbes.get(id) }],
     ),
+    unconfirmedFullscreenTargets: sorted(
+      state.unconfirmedFullscreenTargets?.keys() ?? [],
+    ).map((id) => [id, state.unconfirmedFullscreenTargets?.get(id)]),
     windowTransferOperation: state.windowTransferOperation !== null,
   };
 }

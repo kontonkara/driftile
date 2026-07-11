@@ -397,6 +397,37 @@ describe("WindowObserver", () => {
     expect(changed).toEqual(Array.from({ length: 6 }, () => "window-1"));
   });
 
+  it("publishes committed fullscreen state before the generic state refresh", () => {
+    const source = createWindow();
+    const fullScreenChanged = source.fullScreenChanged as Signal<[]>;
+    const events: string[] = [];
+    const observer = new WindowObserver(createWorkspace([source]), {
+      fullScreenChanged: (windowId, fullScreen) =>
+        events.push(`fullscreen:${windowId}:${String(fullScreen)}`),
+      stateChanged: (windowId) =>
+        events.push(`state:${windowId}:${String(source.fullScreen)}`),
+    });
+
+    observer.start();
+    Object.defineProperty(source, "fullScreen", {
+      configurable: true,
+      value: true,
+    });
+    fullScreenChanged.emit();
+    Object.defineProperty(source, "fullScreen", {
+      configurable: true,
+      value: false,
+    });
+    fullScreenChanged.emit();
+
+    expect(events).toEqual([
+      "fullscreen:window-1:true",
+      "state:window-1:true",
+      "fullscreen:window-1:false",
+      "state:window-1:false",
+    ]);
+  });
+
   it("orders maximize transition callbacks around suspension and state refreshes", () => {
     const source = createWindow();
     const maximizedAboutToChange = source.maximizedAboutToChange as Signal<

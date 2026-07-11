@@ -18,6 +18,7 @@ export interface ObservedWindow {
 export interface WindowObserverEvents {
   readonly added?: (window: ObservedWindow) => void;
   readonly changed?: (windowId: string) => void;
+  readonly fullScreenChanged?: (windowId: string, fullScreen: boolean) => void;
   readonly maximizedAboutToChange?: (windowId: string, mode: number) => void;
   readonly removed?: (windowId: string) => void;
   readonly suspensionSettled?: (
@@ -36,6 +37,7 @@ interface WindowEntry {
   readonly handleAutomaticFloatingChanged: () => void;
   readonly handleDecorationPolicyChanged: () => void;
   readonly handleDesktopsChanged: () => void;
+  readonly handleFullScreenChanged: () => void;
   readonly handleMaximizedAboutToChange: (mode: number) => void;
   readonly handleMaximizedChanged: () => void;
   readonly handleOutputChanged: (oldOutput?: KWinOutput | null) => void;
@@ -150,6 +152,10 @@ export class WindowObserver {
       handleAutomaticFloatingChanged: refreshAutomaticFloating,
       handleDecorationPolicyChanged: refreshState,
       handleDesktopsChanged: refresh,
+      handleFullScreenChanged: () => {
+        this.events.fullScreenChanged?.(id, window.fullScreen);
+        refreshState();
+      },
       handleMaximizedAboutToChange: (mode) => {
         if (mode !== 0) {
           this.events.maximizedAboutToChange?.(id, mode);
@@ -238,7 +244,7 @@ export class WindowObserver {
 
     this.windows.set(id, entry);
     window.desktopsChanged?.connect(entry.handleDesktopsChanged);
-    window.fullScreenChanged?.connect(entry.handleStateChanged);
+    window.fullScreenChanged?.connect(entry.handleFullScreenChanged);
     window.interactiveMoveResizeFinished?.connect(entry.handleStateChanged);
     window.maximizedAboutToChange?.connect(entry.handleMaximizedAboutToChange);
     window.maximizeableChanged?.connect(entry.handleAutomaticFloatingChanged);
@@ -342,7 +348,7 @@ function disconnectWindowSignals(entry: WindowEntry): void {
   );
   entry.source.noBorderChanged?.disconnect(entry.handleDecorationPolicyChanged);
   entry.source.desktopsChanged?.disconnect(entry.handleDesktopsChanged);
-  entry.source.fullScreenChanged?.disconnect(entry.handleStateChanged);
+  entry.source.fullScreenChanged?.disconnect(entry.handleFullScreenChanged);
   entry.source.interactiveMoveResizeFinished?.disconnect(
     entry.handleStateChanged,
   );

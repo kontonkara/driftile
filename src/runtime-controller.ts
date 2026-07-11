@@ -76,6 +76,8 @@ const FLEXIBLE_SIZE_CONSTRAINTS = 0;
 const MALFORMED_SIZE_CONSTRAINTS = -1;
 const MAX_CAPACITY_PARK_ATTEMPTS = 20;
 const MAX_BORDERLESS_SETTLEMENT_PROBES = 20;
+const MAX_EXTERNAL_FULLSCREEN_EXTRACTION_ATTEMPTS = 20;
+const MAX_FULLSCREEN_REQUEST_PROBES = 20;
 const MAX_TOPOLOGY_SAMPLE_ATTEMPTS = 20;
 const MAX_TRANSIENT_RESUME_PROBES = 20;
 const MINIMUM_COLUMN_WIDTH = 64;
@@ -99,6 +101,7 @@ type DesktopTransferTarget =
     };
 type FloatingFocusDestination =
   HorizontalDirection | HorizontalEdge | VerticalDirection;
+type StackedNativeState = "fullscreen" | "maximize";
 type WindowLayer = "floating" | "tiling";
 
 interface ManagedContext {
@@ -135,17 +138,20 @@ interface FloatingWindow {
 interface WindowTransferOperation {
   readonly activeId: WindowId;
   desktopChangeSuppressed: boolean;
-  readonly kind: "desktop" | "floating-desktop" | "output" | "stack-maximize";
+  readonly kind:
+    "desktop" | "floating-desktop" | "output" | "stack-native-state";
   readonly movingIds: ReadonlySet<WindowId>;
   readonly sourceContextKey: string;
   readonly targetContextKey: string;
 }
 
-interface StackedMaximizeRuntimeSnapshot {
+interface StackedNativeStateRuntimeSnapshot {
   readonly contextDirty: boolean;
+  readonly fullscreenRequestProbe: FullscreenRequestProbe | null;
   readonly lastTiledFocus: WindowId | undefined;
   readonly originalActiveWindow: KWinWindow | null;
   readonly pendingAdmission: boolean;
+  readonly pendingFullscreenTarget: boolean | undefined;
   readonly pendingWindowSync: boolean;
   readonly requestedSuspensions: ReadonlySet<WindowSuspensionRequest> | null;
   readonly resumeSample: ResumeSample | null;
@@ -153,20 +159,22 @@ interface StackedMaximizeRuntimeSnapshot {
   readonly transientResumeProbe: TransientResumeProbe | null;
 }
 
-interface StackedMaximizePreparation {
+interface StackedNativeStatePreparation {
   readonly activeId: WindowId;
   readonly activeWindow: KWinWindow;
   readonly before: LayoutContextSnapshot;
   readonly command: ActiveColumnCommand;
+  readonly external: boolean;
   readonly newColumnId: ColumnId;
-  readonly runtime: StackedMaximizeRuntimeSnapshot;
+  readonly runtime: StackedNativeStateRuntimeSnapshot;
   readonly sourceColumnId: ColumnId;
   readonly sourceFullWidthRestore: ColumnWidth | undefined;
+  readonly state: StackedNativeState;
   readonly topologyRevision: number;
   readonly transfer: WindowTransferOperation;
 }
 
-interface StackedMaximizeOperation extends StackedMaximizePreparation {
+interface StackedNativeStateOperation extends StackedNativeStatePreparation {
   readonly after: LayoutContextSnapshot;
   readonly edit: StackEditResult;
 }
@@ -295,6 +303,23 @@ interface TransientResumeProbe {
   pending: boolean;
 }
 
+interface FullscreenRequestProbe {
+  completedAttempts: number;
+  pending: boolean;
+  readonly target: boolean;
+}
+
+interface UnconfirmedFullscreenRetention {
+  readonly generation: number;
+  readonly source: KWinWindow;
+}
+
+interface PendingExternalFullscreenExtraction {
+  attempts: number;
+  readonly generation: number;
+  readonly source: KWinWindow;
+}
+
 interface TopologySample {
   readonly revision: number;
   readonly signature: string;
@@ -409,8 +434,17 @@ export class RuntimeController {
   private readonly dirtyContexts = new Set<string>();
   private readonly desktopLifecycle: DesktopLifecycle;
   private windowTransferOperation: WindowTransferOperation | null = null;
-  private stackedMaximizeOperation: StackedMaximizeOperation | null = null;
+  private stackedNativeStateOperation: StackedNativeStateOperation | null =
+    null;
+  private readonly pendingExternalFullscreenExtractions = new Map<
+    WindowId,
+    PendingExternalFullscreenExtraction
+  >();
   private readonly floatingWindows = new Map<WindowId, FloatingWindow>();
+  private readonly fullscreenRequestProbes = new Map<
+    WindowId,
+    FullscreenRequestProbe
+  >();
   private readonly geometry: KWinGeometryAdapter;
   private readonly gap: number;
   private initializing = false;
@@ -423,6 +457,7 @@ export class RuntimeController {
   private lastWrites = 0;
   private layout = new LayoutEngine();
   private readonly managedWindows = new Map<WindowId, ManagedWindow>();
+  private readonly pendingFullscreenTargets = new Map<WindowId, boolean>();
   private readonly observer: WindowObserver;
   private readonly pendingAdmissionContexts = new Set<string>();
   private readonly pendingWindowSyncs = new Set<WindowId>();
@@ -441,6 +476,11 @@ export class RuntimeController {
     Set<WindowSuspensionRequest>
   >();
   private readonly suspendedWindows = new Set<WindowId>();
+  private readonly unconfirmedFullscreenRetentions = new Map<
+    WindowId,
+    UnconfirmedFullscreenRetention
+  >();
+  private readonly unconfirmedFullscreenTargets = new Map<WindowId, boolean>();
   private topologyAllOutputs = false;
   private topologyAllowsOverflowAdmissions = false;
   private readonly topologyColumnByWindow = new Map<
@@ -515,6 +555,7 @@ export class RuntimeController {
     this.observer = new WindowObserver(workspace, {
       added: this.handleWindowAdded,
       changed: this.handleWindowChanged,
+      fullScreenChanged: this.handleFullScreenChanged,
       maximizedAboutToChange: this.handleMaximizedAboutToChange,
       removed: this.handleWindowRemoved,
       stateChanged: this.handleWindowStateChanged,
@@ -784,19 +825,40 @@ export class RuntimeController {
       return false;
     }
 
+    const activeId = windowId(String(activeWindow.internalId));
+
+    if (this.pendingFullscreenTargets.has(activeId)) {
+      return false;
+    }
+
     const fullScreen = !activeWindow.fullScreen;
 
     if (fullScreen && activeWindow.fullScreenable === false) {
       return false;
     }
 
-    try {
-      activeWindow.fullScreen = fullScreen;
-    } catch {
-      return false;
+    if (fullScreen) {
+      const owner = this.managedWindows.get(activeId);
+
+      if (owner) {
+        const context = this.contexts.get(owner.contextKey);
+        const activeColumn = context
+          ? this.layout
+              .snapshot(context.outputId, context.desktopId)
+              .columns.find((column) => column.windowIds.includes(activeId))
+          : undefined;
+
+        if (!context || !activeColumn) {
+          return false;
+        }
+
+        if (activeColumn.windowIds.length > 1) {
+          return this.fullscreenStackedActiveWindow(activeWindow);
+        }
+      }
     }
 
-    return activeWindow.fullScreen === fullScreen;
+    return this.requestFullscreenState(activeId, activeWindow, fullScreen);
   }
 
   maximizeWindowToEdges(): boolean {
@@ -1287,8 +1349,15 @@ export class RuntimeController {
   }
 
   probeTopology(): void {
+    if (!this.started) {
+      return;
+    }
+
+    const runGeneration = this.runGeneration;
+    this.settleUnconfirmedFullscreenTargets();
+
     if (
-      !this.started ||
+      this.runGeneration !== runGeneration ||
       this.windowTransferOperation ||
       this.topologyStabilizing
     ) {
@@ -1405,7 +1474,12 @@ export class RuntimeController {
       this.knownOutputInstances.clear();
       this.contexts.clear();
       this.windowTransferOperation = null;
-      this.stackedMaximizeOperation = null;
+      this.stackedNativeStateOperation = null;
+      this.pendingExternalFullscreenExtractions.clear();
+      this.fullscreenRequestProbes.clear();
+      this.pendingFullscreenTargets.clear();
+      this.unconfirmedFullscreenRetentions.clear();
+      this.unconfirmedFullscreenTargets.clear();
       this.dirtyContexts.clear();
       this.automaticFloatingWindows.clear();
       this.borderlessSettlementTokens.clear();
@@ -1501,6 +1575,7 @@ export class RuntimeController {
     }
 
     this.lastWrites = writeCount;
+    this.retryPendingExternalFullscreenExtractions();
 
     if (this.ownershipFollowUpRequired) {
       this.ownershipFollowUpRequired = false;
@@ -1597,6 +1672,11 @@ export class RuntimeController {
     const changedId = windowId(id);
     const source = this.observer.source(id);
 
+    if (source) {
+      this.settleFullscreenRequest(changedId, source.fullScreen);
+      this.retainsFullscreenRequestGeometry(source);
+    }
+
     this.synchronizeWindowBorder(changedId, source);
     this.refreshRememberedLayerFocus(changedId, source);
 
@@ -1637,6 +1717,11 @@ export class RuntimeController {
   private readonly handleWindowStateChanged = (id: string): void => {
     const changedId = windowId(id);
     const source = this.observer.source(id);
+
+    if (source) {
+      this.settleFullscreenRequest(changedId, source.fullScreen);
+      this.retainsFullscreenRequestGeometry(source);
+    }
 
     this.synchronizeWindowBorder(changedId, source);
     this.refreshRememberedLayerFocus(changedId, source);
@@ -1742,6 +1827,49 @@ export class RuntimeController {
     this.scheduleWork();
   };
 
+  private readonly handleFullScreenChanged = (
+    id: string,
+    fullScreen: boolean,
+  ): void => {
+    const activeId = windowId(id);
+    const source = this.observer.source(id);
+
+    if (!fullScreen) {
+      this.pendingExternalFullscreenExtractions.delete(activeId);
+    }
+
+    this.settleFullscreenRequest(activeId, fullScreen, true);
+
+    if (!source) {
+      return;
+    }
+
+    const automaticFloating =
+      this.automaticFloatingWindows.has(activeId) ||
+      this.automaticallyFloats(source);
+
+    if (!automaticFloating) {
+      if (fullScreen) {
+        this.suspendGeometryLease(activeId);
+      }
+
+      this.pendingWindowSyncs.add(activeId);
+    }
+
+    if (!fullScreen) {
+      return;
+    }
+
+    if (automaticFloating) {
+      this.pendingExternalFullscreenExtractions.delete(activeId);
+      return;
+    }
+
+    if (this.queueExternalFullscreenExtraction(activeId, source)) {
+      this.tryPendingExternalFullscreenExtraction(activeId);
+    }
+  };
+
   private readonly handleMaximizedAboutToChange = (
     id: string,
     mode: number,
@@ -1751,7 +1879,7 @@ export class RuntimeController {
     }
 
     const activeId = windowId(id);
-    const operation = this.stackedMaximizeOperation;
+    const operation = this.stackedNativeStateOperation;
 
     if (operation) {
       return;
@@ -1794,6 +1922,10 @@ export class RuntimeController {
     this.dropCanceledCapacityParkForWindow(managedId);
     this.invalidateCapacityLeaseForWindow(managedId);
     this.capacitySupersededParkWindows.delete(managedId);
+    this.pendingExternalFullscreenExtractions.delete(managedId);
+    this.fullscreenRequestProbes.delete(managedId);
+    this.pendingFullscreenTargets.delete(managedId);
+    this.deleteUnconfirmedFullscreenTarget(managedId);
     this.pendingWindowSyncs.delete(managedId);
     this.forgetWaitingWindow(managedId);
     this.requestedSuspensions.delete(managedId);
@@ -1823,8 +1955,20 @@ export class RuntimeController {
     window: KWinWindow | null,
     allowSuspended = false,
   ): void => {
+    if (!window) {
+      return;
+    }
+
+    const id = windowId(String(window.internalId));
+
     if (
-      !window ||
+      window.fullScreen &&
+      this.queueExternalFullscreenExtraction(id, window)
+    ) {
+      this.tryPendingExternalFullscreenExtraction(id);
+    }
+
+    if (
       this.windowTransferOperation ||
       this.topologyStabilizing ||
       this.topologyRetryPending
@@ -1832,7 +1976,6 @@ export class RuntimeController {
       return;
     }
 
-    const id = windowId(String(window.internalId));
     const activeLayer = this.rememberLayerFocus(id, window);
 
     if (
@@ -6500,6 +6643,44 @@ export class RuntimeController {
     });
   }
 
+  private columnMembersAreExternalFullscreenTransferEligible(
+    column: LayoutColumnSnapshot,
+    context: RuntimeContext,
+    activeId: WindowId,
+    activeWindow: KWinWindow,
+  ): boolean {
+    if (!this.columnMembersBelongToContext(column, context)) {
+      return false;
+    }
+
+    return column.windowIds.every((id) => {
+      const source = this.observer.source(id);
+
+      if (
+        !source ||
+        !context.windowIds.has(id) ||
+        this.floatingWindows.has(id) ||
+        this.waitingWindowContexts.has(id) ||
+        this.requestedSuspensions.has(id) ||
+        this.automaticFloatingWindows.has(id) ||
+        this.automaticallyFloats(source) ||
+        !this.toggleGeometrySettled(id)
+      ) {
+        return false;
+      }
+
+      if (id === activeId) {
+        return (
+          source === activeWindow &&
+          source.fullScreen &&
+          this.suspendedWindows.has(id)
+        );
+      }
+
+      return !this.suspendedWindows.has(id) && isGeometryWritable(source);
+    });
+  }
+
   private prepareTransferSelection(
     active: ActiveWindowCommand,
     context: RuntimeContext,
@@ -7072,6 +7253,638 @@ export class RuntimeController {
     };
   }
 
+  private fullscreenStackedActiveWindow(activeWindow: KWinWindow): boolean {
+    const preparation = this.prepareStackedNativeState(
+      activeWindow,
+      "fullscreen",
+      false,
+    );
+
+    if (!preparation) {
+      return false;
+    }
+
+    const operation = this.extractStackedNativeStateWindow(
+      preparation,
+      (candidate) =>
+        this.stackedNativeStateOperationIsCurrent(candidate) &&
+        this.requestFullscreenState(
+          candidate.activeId,
+          candidate.activeWindow,
+          true,
+        ),
+    );
+
+    if (!operation) {
+      this.restoreStackedNativeStateRuntime(preparation);
+      this.finishStackedNativeStateOperation(preparation.transfer);
+      this.scheduleStackedNativeStateFollowUp();
+      return false;
+    }
+
+    return this.commitStackedNativeStateOperation(operation);
+  }
+
+  private requestFullscreenState(
+    id: WindowId,
+    source: KWinWindow,
+    target: boolean,
+  ): boolean {
+    if (
+      !this.started ||
+      this.observer.source(id) !== source ||
+      this.pendingFullscreenTargets.has(id)
+    ) {
+      return false;
+    }
+
+    const committedBefore = source.fullScreen;
+    const moveableBefore = source.moveable;
+    const resizeableBefore = source.resizeable;
+    const readRequestedGeometryState = (): readonly [boolean, boolean] => [
+      source.moveable,
+      source.resizeable,
+    ];
+    let requestFailure: string | null = null;
+    this.pendingFullscreenTargets.set(id, target);
+
+    try {
+      source.fullScreen = target;
+    } catch (error) {
+      requestFailure = String(error);
+    }
+
+    const sourceIsLive = this.fullscreenRequestSourceIsLive(id, source);
+    const committed = source.fullScreen === target;
+    const [moveableAfter, resizeableAfter] = readRequestedGeometryState();
+    const requestedStateChanged = target
+      ? moveableBefore && resizeableBefore && !moveableAfter && !resizeableAfter
+      : !moveableBefore &&
+        !resizeableBefore &&
+        moveableAfter &&
+        resizeableAfter;
+    const accepted =
+      sourceIsLive &&
+      committedBefore !== target &&
+      (committed ||
+        (requestedStateChanged &&
+          this.pendingFullscreenTargets.get(id) === target));
+
+    if (!accepted) {
+      if (this.pendingFullscreenTargets.get(id) === target) {
+        this.pendingFullscreenTargets.delete(id);
+      }
+
+      this.fullscreenRequestProbes.delete(id);
+      this.retainsFullscreenRequestGeometry(source);
+
+      if (requestFailure !== null) {
+        console.warn(
+          `[driftile] fullscreen request failed window=${String(id)} error=${requestFailure}`,
+        );
+      }
+
+      return false;
+    }
+
+    if (target) {
+      this.suspendGeometryLease(id);
+    }
+
+    if (committed) {
+      this.pendingWindowSyncs.add(id);
+      this.settleFullscreenRequest(id, target, true);
+    } else if (this.pendingFullscreenTargets.get(id) === target) {
+      this.scheduleFullscreenRequestProbe(id, target);
+    }
+
+    if (requestFailure !== null) {
+      console.warn(
+        `[driftile] fullscreen request reported an error after acceptance window=${String(id)} error=${requestFailure}`,
+      );
+    }
+
+    if (!this.windowTransferOperation) {
+      this.scheduleWork();
+    }
+
+    return true;
+  }
+
+  private fullscreenRequestSourceIsLive(
+    id: WindowId,
+    source: KWinWindow,
+  ): boolean {
+    return (
+      this.started && !source.deleted && this.observer.source(id) === source
+    );
+  }
+
+  private settleFullscreenRequest(
+    id: WindowId,
+    committed: boolean,
+    authoritative = false,
+  ): void {
+    const pendingTarget = this.pendingFullscreenTargets.get(id);
+
+    if (authoritative) {
+      const retainedTarget = this.unconfirmedFullscreenTargets.get(id);
+      const requestedTarget = pendingTarget ?? retainedTarget;
+      this.deleteUnconfirmedFullscreenTarget(id);
+
+      if (requestedTarget !== undefined && requestedTarget !== committed) {
+        const source = this.observer.source(id);
+
+        if (
+          source &&
+          !this.fullscreenRequestGeometryReverted(source, requestedTarget)
+        ) {
+          this.retainUnconfirmedFullscreenTarget(id, requestedTarget, source);
+        }
+      }
+    }
+
+    if (pendingTarget === undefined) {
+      this.fullscreenRequestProbes.delete(id);
+      return;
+    }
+
+    if (pendingTarget !== committed && !authoritative) {
+      return;
+    }
+
+    this.pendingFullscreenTargets.delete(id);
+    this.fullscreenRequestProbes.delete(id);
+  }
+
+  private retainUnconfirmedFullscreenTarget(
+    id: WindowId,
+    target: boolean,
+    source: KWinWindow,
+  ): void {
+    this.unconfirmedFullscreenTargets.set(id, target);
+    this.unconfirmedFullscreenRetentions.set(id, {
+      generation: this.runGeneration,
+      source,
+    });
+  }
+
+  private deleteUnconfirmedFullscreenTarget(id: WindowId): void {
+    this.unconfirmedFullscreenTargets.delete(id);
+    this.unconfirmedFullscreenRetentions.delete(id);
+  }
+
+  private scheduleFullscreenRequestProbe(id: WindowId, target: boolean): void {
+    if (!this.started || this.pendingFullscreenTargets.get(id) !== target) {
+      return;
+    }
+
+    let probe = this.fullscreenRequestProbes.get(id);
+
+    if (!probe || probe.target !== target) {
+      probe = { completedAttempts: 0, pending: false, target };
+      this.fullscreenRequestProbes.set(id, probe);
+    }
+
+    if (
+      probe.pending ||
+      probe.completedAttempts >= MAX_FULLSCREEN_REQUEST_PROBES
+    ) {
+      return;
+    }
+
+    probe.pending = true;
+    const runGeneration = this.runGeneration;
+    let schedulerReturned = false;
+
+    this.scheduleResume(() => {
+      if (
+        !this.started ||
+        this.runGeneration !== runGeneration ||
+        this.fullscreenRequestProbes.get(id) !== probe ||
+        this.pendingFullscreenTargets.get(id) !== target
+      ) {
+        return;
+      }
+
+      const synchronous = !schedulerReturned;
+
+      if (!synchronous) {
+        probe.pending = false;
+      }
+
+      const source = this.observer.source(id);
+
+      if (!source) {
+        this.pendingFullscreenTargets.delete(id);
+        this.fullscreenRequestProbes.delete(id);
+        this.deleteUnconfirmedFullscreenTarget(id);
+        return;
+      }
+
+      if (source.fullScreen === target) {
+        this.settleFullscreenRequest(id, target, true);
+        this.pendingWindowSyncs.add(id);
+        this.scheduleWork();
+        return;
+      }
+
+      if (this.fullscreenRequestGeometryReverted(source, target)) {
+        this.pendingFullscreenTargets.delete(id);
+        this.fullscreenRequestProbes.delete(id);
+
+        if (this.unconfirmedFullscreenTargets.get(id) === target) {
+          this.deleteUnconfirmedFullscreenTarget(id);
+        }
+
+        this.queueFullscreenRequestGeometrySync(id);
+        return;
+      }
+
+      probe.completedAttempts += 1;
+
+      if (probe.completedAttempts >= MAX_FULLSCREEN_REQUEST_PROBES) {
+        this.retainUnconfirmedFullscreenTarget(id, target, source);
+        this.pendingFullscreenTargets.delete(id);
+        this.fullscreenRequestProbes.delete(id);
+        return;
+      }
+
+      if (synchronous && this.fullscreenRequestProbes.get(id) === probe) {
+        probe.pending = false;
+      }
+
+      this.scheduleFullscreenRequestProbe(id, target);
+    });
+    schedulerReturned = true;
+  }
+
+  private queueExternalFullscreenExtraction(
+    id: WindowId,
+    source: KWinWindow,
+  ): boolean {
+    const existing = this.pendingExternalFullscreenExtractions.get(id);
+
+    if (!this.externalFullscreenExtractionRequired(id, source)) {
+      if (
+        existing?.source === source &&
+        existing.generation === this.runGeneration
+      ) {
+        this.pendingExternalFullscreenExtractions.delete(id);
+      }
+
+      return false;
+    }
+
+    if (
+      existing?.source === source &&
+      existing.generation === this.runGeneration
+    ) {
+      return true;
+    }
+
+    this.pendingExternalFullscreenExtractions.set(id, {
+      attempts: 0,
+      generation: this.runGeneration,
+      source,
+    });
+    return true;
+  }
+
+  private externalFullscreenExtractionRequired(
+    id: WindowId,
+    source: KWinWindow,
+  ): boolean {
+    if (
+      !this.started ||
+      source.deleted ||
+      !source.fullScreen ||
+      this.observer.source(id) !== source ||
+      this.floatingWindows.has(id) ||
+      this.automaticFloatingWindows.has(id) ||
+      this.automaticallyFloats(source)
+    ) {
+      return false;
+    }
+
+    const nativeStateOperation = this.stackedNativeStateOperation;
+
+    if (
+      nativeStateOperation?.activeId === id &&
+      nativeStateOperation.activeWindow === source &&
+      nativeStateOperation.command.activeColumn.windowIds.length > 1
+    ) {
+      return true;
+    }
+
+    const owner = this.managedWindows.get(id);
+    const context = owner ? this.contexts.get(owner.contextKey) : undefined;
+
+    if (!owner || !context || !context.windowIds.has(id)) {
+      return Boolean(
+        this.windowTransferOperation ||
+        this.startupStabilizationToken !== null ||
+        this.hasTopologyBarrier() ||
+        this.pendingWindowSyncs.has(id),
+      );
+    }
+
+    const observed = normalizeWindow(source);
+    const liveContext = observed ? managedContext(observed) : null;
+
+    if (!liveContext || contextKey(liveContext) !== owner.contextKey) {
+      return Boolean(
+        this.windowTransferOperation ||
+        this.startupStabilizationToken !== null ||
+        this.hasTopologyBarrier() ||
+        this.pendingWindowSyncs.has(id),
+      );
+    }
+
+    const column = this.layout
+      .snapshot(context.outputId, context.desktopId)
+      .columns.find((candidate) => candidate.windowIds.includes(id));
+
+    if (column) {
+      return column.windowIds.length > 1;
+    }
+
+    return Boolean(
+      this.windowTransferOperation ||
+      this.startupStabilizationToken !== null ||
+      this.hasTopologyBarrier() ||
+      this.pendingWindowSyncs.has(id),
+    );
+  }
+
+  private tryPendingExternalFullscreenExtraction(id: WindowId): void {
+    const pending = this.pendingExternalFullscreenExtractions.get(id);
+
+    if (!pending) {
+      return;
+    }
+
+    if (
+      pending.generation !== this.runGeneration ||
+      this.observer.source(id) !== pending.source ||
+      !this.externalFullscreenExtractionRequired(id, pending.source)
+    ) {
+      this.deletePendingExternalFullscreenExtraction(id, pending);
+      return;
+    }
+
+    if (
+      this.workspace.activeWindow !== pending.source ||
+      this.windowTransferOperation ||
+      this.stackedNativeStateOperation ||
+      this.startupStabilizationToken !== null ||
+      this.hasTopologyBarrier()
+    ) {
+      return;
+    }
+
+    if (!this.externalFullscreenManagedStackIsReady(id, pending.source)) {
+      return;
+    }
+
+    this.activateExternalFullscreenWindow(id, pending.source);
+    this.suspendGeometryLease(id);
+    const command = this.prepareExternalFullscreenColumnCommand(pending.source);
+
+    if (!command) {
+      return;
+    }
+
+    if (
+      this.runGeneration !== pending.generation ||
+      this.pendingExternalFullscreenExtractions.get(id) !== pending
+    ) {
+      return;
+    }
+
+    let extracted = false;
+
+    try {
+      extracted = this.extractStackedWindowForExternalFullscreen(
+        pending.source,
+        command,
+      );
+    } catch (error) {
+      console.warn(
+        `[driftile] external stacked fullscreen interception failed window=${String(id)} error=${String(error)}`,
+      );
+    }
+
+    if (
+      this.runGeneration !== pending.generation ||
+      this.pendingExternalFullscreenExtractions.get(id) !== pending
+    ) {
+      return;
+    }
+
+    if (
+      extracted ||
+      !this.externalFullscreenExtractionRequired(id, pending.source)
+    ) {
+      this.deletePendingExternalFullscreenExtraction(id, pending);
+      return;
+    }
+
+    pending.attempts += 1;
+
+    if (pending.attempts >= MAX_EXTERNAL_FULLSCREEN_EXTRACTION_ATTEMPTS) {
+      this.deletePendingExternalFullscreenExtraction(id, pending);
+    }
+  }
+
+  private deletePendingExternalFullscreenExtraction(
+    id: WindowId,
+    pending: PendingExternalFullscreenExtraction,
+  ): void {
+    if (this.pendingExternalFullscreenExtractions.get(id) === pending) {
+      this.pendingExternalFullscreenExtractions.delete(id);
+    }
+  }
+
+  private externalFullscreenManagedStackIsReady(
+    id: WindowId,
+    source: KWinWindow,
+  ): boolean {
+    const owner = this.managedWindows.get(id);
+    const context = owner ? this.contexts.get(owner.contextKey) : undefined;
+    const observed = normalizeWindow(source);
+    const liveContext = observed ? managedContext(observed) : null;
+
+    if (
+      !owner ||
+      !context ||
+      !context.windowIds.has(id) ||
+      !liveContext ||
+      contextKey(liveContext) !== owner.contextKey
+    ) {
+      return false;
+    }
+
+    const column = this.layout
+      .snapshot(context.outputId, context.desktopId)
+      .columns.find((candidate) => candidate.windowIds.includes(id));
+    return Boolean(column && column.windowIds.length > 1);
+  }
+
+  private activateExternalFullscreenWindow(
+    id: WindowId,
+    source: KWinWindow,
+  ): void {
+    const owner = this.managedWindows.get(id);
+    const context = owner ? this.contexts.get(owner.contextKey) : undefined;
+    const observed = normalizeWindow(source);
+    const liveContext = observed ? managedContext(observed) : null;
+
+    if (
+      !owner ||
+      !context ||
+      !liveContext ||
+      contextKey(liveContext) !== owner.contextKey
+    ) {
+      return;
+    }
+
+    this.rememberLayerFocus(id, source);
+
+    if (this.layout.activateWindow(id)) {
+      this.markContextDirty(context);
+    }
+  }
+
+  private retryPendingExternalFullscreenExtractions(): void {
+    for (const id of [...this.pendingExternalFullscreenExtractions.keys()]) {
+      this.tryPendingExternalFullscreenExtraction(id);
+    }
+  }
+
+  private extractStackedWindowForExternalFullscreen(
+    activeWindow: KWinWindow,
+    command: ActiveColumnCommand,
+  ): boolean {
+    const preparation = this.prepareStackedNativeState(
+      activeWindow,
+      "fullscreen",
+      true,
+      command,
+    );
+
+    if (!preparation) {
+      return false;
+    }
+
+    const operation = this.extractStackedNativeStateWindow(
+      preparation,
+      (candidate) => this.stackedNativeStateOperationIsCurrent(candidate),
+    );
+
+    if (!operation) {
+      this.restoreStackedNativeStateRuntime(preparation);
+      this.finishStackedNativeStateOperation(preparation.transfer);
+      this.scheduleStackedNativeStateFollowUp();
+      return false;
+    }
+
+    const committed = this.commitStackedNativeStateOperation(operation);
+
+    if (!committed) {
+      console.warn(
+        `[driftile] external stacked fullscreen extraction could not commit window=${String(operation.activeId)}`,
+      );
+    }
+
+    return committed;
+  }
+
+  private prepareExternalFullscreenColumnCommand(
+    activeWindow: KWinWindow,
+  ): ActiveColumnCommand | null {
+    if (
+      !this.started ||
+      this.windowTransferOperation ||
+      this.stackedNativeStateOperation ||
+      this.startupStabilizationToken !== null ||
+      this.hasTopologyBarrier() ||
+      !activeWindow.fullScreen ||
+      this.automaticallyFloats(activeWindow)
+    ) {
+      return null;
+    }
+
+    const activeId = windowId(String(activeWindow.internalId));
+
+    if (
+      this.workspace.activeWindow !== activeWindow ||
+      this.observer.source(activeId) !== activeWindow ||
+      !this.suspendedWindows.has(activeId) ||
+      this.requestedSuspensions.has(activeId) ||
+      !this.toggleGeometrySettled(activeId)
+    ) {
+      return null;
+    }
+
+    const sampledGeometries = this.sampleSettledVisibleContextGeometries();
+
+    if (!sampledGeometries || this.hasTopologyBarrier()) {
+      return null;
+    }
+
+    const owner = this.managedWindows.get(activeId);
+    const context = owner ? this.contexts.get(owner.contextKey) : undefined;
+    const observedActive = normalizeWindow(activeWindow);
+    const activeContext = observedActive
+      ? managedContext(observedActive)
+      : null;
+
+    if (
+      !owner ||
+      !context ||
+      !activeContext ||
+      contextKey(activeContext) !== owner.contextKey ||
+      this.hasPendingCapacityState(context.key) ||
+      this.pendingAdmissionContexts.has(context.key) ||
+      this.waitingWindowIds.has(context.key) ||
+      this.refreshContextAutomaticFloatingOwnership(context) ||
+      this.toggleTransitionPending(context.key)
+    ) {
+      return null;
+    }
+
+    const before = this.layout.snapshot(context.outputId, context.desktopId);
+    const activeColumn = before.columns.find((column) =>
+      column.windowIds.includes(activeId),
+    );
+    const contextGeometry = sampledGeometries.get(context.key);
+
+    if (
+      !activeColumn ||
+      before.activeColumnId !== activeColumn.id ||
+      activeColumn.windowIds.length < 2 ||
+      !contextGeometry ||
+      !this.columnMembersAreExternalFullscreenTransferEligible(
+        activeColumn,
+        context,
+        activeId,
+        activeWindow,
+      )
+    ) {
+      return null;
+    }
+
+    return {
+      activeColumn,
+      activeId,
+      before,
+      context,
+      contextGeometry,
+      sampledGeometries,
+    };
+  }
+
   private maximizeStackedActiveWindow(activeWindow: KWinWindow): boolean {
     const signal = activeWindow.maximizedAboutToChange;
 
@@ -7079,7 +7892,11 @@ export class RuntimeController {
       return false;
     }
 
-    const preparation = this.prepareStackedMaximize(activeWindow);
+    const preparation = this.prepareStackedNativeState(
+      activeWindow,
+      "maximize",
+      false,
+    );
 
     if (!preparation) {
       return false;
@@ -7089,10 +7906,10 @@ export class RuntimeController {
     const handleRequest = (mode: number): void => {
       observedModes.push(mode);
     };
-    const operation = this.extractStackedMaximizeWindow(
+    const operation = this.extractStackedNativeStateWindow(
       preparation,
       (candidate) => {
-        if (!this.stackedMaximizeOperationIsCurrent(candidate)) {
+        if (!this.stackedNativeStateOperationIsCurrent(candidate)) {
           return false;
         }
 
@@ -7116,49 +7933,70 @@ export class RuntimeController {
 
     if (!operation) {
       if (observedModes.length === 0) {
-        this.restoreStackedMaximizeRuntime(preparation);
+        this.restoreStackedNativeStateRuntime(preparation);
       }
 
-      this.finishStackedMaximizeOperation(preparation.transfer);
-      this.scheduleStackedMaximizeFollowUp();
+      this.finishStackedNativeStateOperation(preparation.transfer);
+      this.scheduleStackedNativeStateFollowUp();
       return false;
     }
 
-    return this.commitStackedMaximizeOperation(operation);
+    return this.commitStackedNativeStateOperation(operation);
   }
 
   private extractStackedWindowForExternalMaximize(
     activeWindow: KWinWindow,
   ): void {
-    const preparation = this.prepareStackedMaximize(activeWindow);
+    const preparation = this.prepareStackedNativeState(
+      activeWindow,
+      "maximize",
+      true,
+    );
 
     if (!preparation) {
       return;
     }
 
-    const operation = this.extractStackedMaximizeWindow(
+    const operation = this.extractStackedNativeStateWindow(
       preparation,
-      (candidate) => this.stackedMaximizeOperationIsCurrent(candidate),
+      (candidate) => this.stackedNativeStateOperationIsCurrent(candidate),
     );
 
     if (!operation) {
-      this.restoreStackedMaximizeRuntime(preparation);
-      this.finishStackedMaximizeOperation(preparation.transfer);
-      this.scheduleStackedMaximizeFollowUp();
+      this.restoreStackedNativeStateRuntime(preparation);
+      this.finishStackedNativeStateOperation(preparation.transfer);
+      this.scheduleStackedNativeStateFollowUp();
       return;
     }
 
-    if (!this.commitStackedMaximizeOperation(operation)) {
+    if (!this.commitStackedNativeStateOperation(operation)) {
       console.warn(
         `[driftile] external stacked maximize extraction could not commit window=${String(operation.activeId)}`,
       );
     }
   }
 
-  private prepareStackedMaximize(
+  private prepareStackedNativeState(
     activeWindow: KWinWindow,
-  ): StackedMaximizePreparation | null {
-    const command = this.prepareActiveColumnCommand();
+    state: StackedNativeState,
+    external: boolean,
+    suppliedCommand?: ActiveColumnCommand,
+  ): StackedNativeStatePreparation | null {
+    const command = suppliedCommand ?? this.prepareActiveColumnCommand();
+    const membersAreEligible = Boolean(
+      command &&
+      (state === "fullscreen" && external
+        ? this.columnMembersAreExternalFullscreenTransferEligible(
+            command.activeColumn,
+            command.context,
+            command.activeId,
+            activeWindow,
+          )
+        : this.columnMembersAreStackTransferEligible(
+            command.activeColumn,
+            command.context,
+          )),
+    );
 
     if (
       !command ||
@@ -7167,10 +8005,7 @@ export class RuntimeController {
       this.hasPendingCapacityState(command.context.key) ||
       this.pendingAdmissionContexts.has(command.context.key) ||
       this.waitingWindowIds.has(command.context.key) ||
-      !this.columnMembersAreStackTransferEligible(
-        command.activeColumn,
-        command.context,
-      )
+      !membersAreEligible
     ) {
       return null;
     }
@@ -7184,12 +8019,15 @@ export class RuntimeController {
     }
 
     const requests = this.requestedSuspensions.get(command.activeId);
+    const fullscreenRequestProbe = this.fullscreenRequestProbes.get(
+      command.activeId,
+    );
     const resumeSample = this.resumeSamples.get(command.activeId);
     const transientProbe = this.transientResumeProbes.get(command.activeId);
     const transfer: WindowTransferOperation = {
       activeId: command.activeId,
       desktopChangeSuppressed: false,
-      kind: "stack-maximize",
+      kind: "stack-native-state",
       movingIds: new Set([command.activeId]),
       sourceContextKey: command.context.key,
       targetContextKey: command.context.key,
@@ -7200,13 +8038,20 @@ export class RuntimeController {
       activeWindow,
       before: command.before,
       command,
+      external,
       newColumnId,
       runtime: {
         contextDirty: this.dirtyContexts.has(command.context.key),
+        fullscreenRequestProbe: fullscreenRequestProbe
+          ? { ...fullscreenRequestProbe }
+          : null,
         lastTiledFocus: this.lastTiledFocus.get(command.context.key),
         originalActiveWindow: this.workspace.activeWindow,
         pendingAdmission: this.pendingAdmissionContexts.has(
           command.context.key,
+        ),
+        pendingFullscreenTarget: this.pendingFullscreenTargets.get(
+          command.activeId,
         ),
         pendingWindowSync: this.pendingWindowSyncs.has(command.activeId),
         requestedSuspensions: requests ? new Set(requests) : null,
@@ -7224,28 +8069,29 @@ export class RuntimeController {
         command.context.key,
         command.activeColumn.id,
       ),
+      state,
       topologyRevision: this.topologyRevision,
       transfer,
     };
   }
 
-  private extractStackedMaximizeWindow(
-    preparation: StackedMaximizePreparation,
-    accept: (operation: StackedMaximizeOperation) => boolean,
-  ): StackedMaximizeOperation | null {
-    if (this.windowTransferOperation || this.stackedMaximizeOperation) {
+  private extractStackedNativeStateWindow(
+    preparation: StackedNativeStatePreparation,
+    accept: (operation: StackedNativeStateOperation) => boolean,
+  ): StackedNativeStateOperation | null {
+    if (this.windowTransferOperation || this.stackedNativeStateOperation) {
       return null;
     }
 
     this.windowTransferOperation = preparation.transfer;
     const editState: { value: StackEditResult | null } = { value: null };
-    let operation: StackedMaximizeOperation | null = null;
+    let operation: StackedNativeStateOperation | null = null;
     let applied = false;
 
     try {
       applied = this.applyActiveColumnMutation(
         preparation.command,
-        "stacked maximize extraction",
+        `stacked ${preparation.state} extraction`,
         () => {
           const candidate = this.layout.moveActiveWindow(
             preparation.activeId,
@@ -7277,7 +8123,7 @@ export class RuntimeController {
             return false;
           }
 
-          const candidateOperation: StackedMaximizeOperation = {
+          const candidateOperation: StackedNativeStateOperation = {
             ...preparation,
             after: this.layout.snapshot(
               preparation.command.context.outputId,
@@ -7286,7 +8132,7 @@ export class RuntimeController {
             edit,
           };
           operation = candidateOperation;
-          this.stackedMaximizeOperation = candidateOperation;
+          this.stackedNativeStateOperation = candidateOperation;
           return accept(candidateOperation);
         },
       );
@@ -7296,7 +8142,7 @@ export class RuntimeController {
       }
 
       console.warn(
-        `[driftile] stacked maximize extraction failed window=${String(preparation.activeId)} error=${String(error)}`,
+        `[driftile] stacked ${preparation.state} extraction failed window=${String(preparation.activeId)} error=${String(error)}`,
       );
     }
 
@@ -7305,15 +8151,15 @@ export class RuntimeController {
         this.layout.discardStackEditRollback(editState.value.rollback);
       }
 
-      this.stackedMaximizeOperation = null;
+      this.stackedNativeStateOperation = null;
       return null;
     }
 
     return operation;
   }
 
-  private stackedMaximizeOperationIsCurrent(
-    operation: StackedMaximizeOperation,
+  private stackedNativeStateOperationIsCurrent(
+    operation: StackedNativeStateOperation,
   ): boolean {
     const owner = this.managedWindows.get(operation.activeId);
     const source = this.observer.source(operation.activeId);
@@ -7329,11 +8175,18 @@ export class RuntimeController {
     const extractedColumn = snapshot.columns.find(
       (column) => column.id === operation.newColumnId,
     );
+    const nativeStateIsCurrent =
+      operation.state === "maximize"
+        ? operation.activeWindow.maximizeMode === 0
+        : operation.external
+          ? operation.activeWindow.fullScreen &&
+            this.suspendedWindows.has(operation.activeId)
+          : !operation.activeWindow.fullScreen;
 
     return (
       this.started &&
       this.windowTransferOperation === operation.transfer &&
-      this.stackedMaximizeOperation === operation &&
+      this.stackedNativeStateOperation === operation &&
       this.topologyRevision === operation.topologyRevision &&
       !this.hasTopologyBarrier() &&
       source === operation.activeWindow &&
@@ -7342,7 +8195,7 @@ export class RuntimeController {
       contextKey(liveContext) === operation.command.context.key &&
       String(this.workspace.activeWindow?.internalId) ===
         String(operation.activeId) &&
-      operation.activeWindow.maximizeMode === 0 &&
+      nativeStateIsCurrent &&
       layoutContextSnapshotsEqual(snapshot, operation.after) &&
       snapshot.activeColumnId === operation.newColumnId &&
       Boolean(
@@ -7363,8 +8216,8 @@ export class RuntimeController {
     );
   }
 
-  private commitStackedMaximizeOperation(
-    operation: StackedMaximizeOperation,
+  private commitStackedNativeStateOperation(
+    operation: StackedNativeStateOperation,
   ): boolean {
     let committed = false;
 
@@ -7383,7 +8236,7 @@ export class RuntimeController {
 
       if (
         !this.started ||
-        this.stackedMaximizeOperation !== operation ||
+        this.stackedNativeStateOperation !== operation ||
         this.windowTransferOperation !== operation.transfer ||
         this.topologyRevision !== operation.topologyRevision ||
         this.hasTopologyBarrier() ||
@@ -7429,14 +8282,14 @@ export class RuntimeController {
         }
       }
 
-      this.finishStackedMaximizeOperation(operation.transfer);
+      this.finishStackedNativeStateOperation(operation.transfer);
       this.handleWindowActivated(this.workspace.activeWindow);
-      this.scheduleStackedMaximizeFollowUp();
+      this.scheduleStackedNativeStateFollowUp();
     }
   }
 
-  private restoreStackedMaximizeRuntime(
-    preparation: StackedMaximizePreparation,
+  private restoreStackedNativeStateRuntime(
+    preparation: StackedNativeStatePreparation,
   ): void {
     const { activeId, command, runtime } = preparation;
     const activeWindowIsLive =
@@ -7465,6 +8318,23 @@ export class RuntimeController {
       runtime.pendingWindowSync,
     );
     restoreSetMembership(this.suspendedWindows, activeId, runtime.suspended);
+
+    if (runtime.pendingFullscreenTarget === undefined) {
+      this.pendingFullscreenTargets.delete(activeId);
+    } else {
+      this.pendingFullscreenTargets.set(
+        activeId,
+        runtime.pendingFullscreenTarget,
+      );
+    }
+
+    if (runtime.fullscreenRequestProbe) {
+      this.fullscreenRequestProbes.set(activeId, {
+        ...runtime.fullscreenRequestProbe,
+      });
+    } else {
+      this.fullscreenRequestProbes.delete(activeId);
+    }
 
     if (runtime.requestedSuspensions) {
       this.requestedSuspensions.set(
@@ -7507,17 +8377,17 @@ export class RuntimeController {
         this.workspace.activeWindow = originalActiveWindow;
       } catch (error) {
         console.warn(
-          `[driftile] stacked maximize focus restore failed window=${String(activeId)} error=${String(error)}`,
+          `[driftile] stacked ${preparation.state} focus restore failed window=${String(activeId)} error=${String(error)}`,
         );
       }
     }
   }
 
-  private finishStackedMaximizeOperation(
+  private finishStackedNativeStateOperation(
     transfer: WindowTransferOperation,
   ): void {
-    if (this.stackedMaximizeOperation?.transfer === transfer) {
-      this.stackedMaximizeOperation = null;
+    if (this.stackedNativeStateOperation?.transfer === transfer) {
+      this.stackedNativeStateOperation = null;
     }
 
     if (this.windowTransferOperation === transfer) {
@@ -7525,7 +8395,7 @@ export class RuntimeController {
     }
   }
 
-  private scheduleStackedMaximizeFollowUp(): void {
+  private scheduleStackedNativeStateFollowUp(): void {
     if (
       this.pendingWindowSyncs.size > 0 ||
       this.pendingAdmissionContexts.size > 0 ||
@@ -9006,6 +9876,7 @@ export class RuntimeController {
     }
 
     this.lastWrites = writeCount;
+    this.retryPendingExternalFullscreenExtractions();
 
     if (this.ownershipFollowUpRequired) {
       this.ownershipFollowUpRequired = false;
@@ -10106,6 +10977,15 @@ export class RuntimeController {
       return false;
     }
 
+    const id = windowId(String(source.internalId));
+
+    if (
+      (this.managedWindows.has(id) || this.floatingWindows.has(id)) &&
+      this.retainsFullscreenRequestGeometry(source)
+    ) {
+      return false;
+    }
+
     const geometryBlocked = hasGeometryAuthorityBlocker(source);
 
     if (!source.resizeable && !geometryBlocked) {
@@ -10119,6 +10999,92 @@ export class RuntimeController {
     }
 
     return constraintState === FIXED_SIZE_CONSTRAINTS;
+  }
+
+  private retainsFullscreenRequestGeometry(source: KWinWindow): boolean {
+    const id = windowId(String(source.internalId));
+    const pendingTarget = this.pendingFullscreenTargets.get(id);
+
+    if (pendingTarget !== undefined) {
+      if (source.fullScreen === pendingTarget) {
+        this.settleFullscreenRequest(id, pendingTarget, true);
+        this.queueFullscreenRequestGeometrySync(id);
+        return false;
+      }
+
+      if (this.fullscreenRequestGeometryReverted(source, pendingTarget)) {
+        this.pendingFullscreenTargets.delete(id);
+        this.fullscreenRequestProbes.delete(id);
+        this.queueFullscreenRequestGeometrySync(id);
+        return false;
+      }
+
+      return true;
+    }
+
+    const target = this.unconfirmedFullscreenTargets.get(id);
+
+    if (target === undefined) {
+      return false;
+    }
+
+    if (
+      source.fullScreen === target ||
+      this.fullscreenRequestGeometryReverted(source, target)
+    ) {
+      this.deleteUnconfirmedFullscreenTarget(id);
+      this.queueFullscreenRequestGeometrySync(id);
+      return false;
+    }
+
+    return true;
+  }
+
+  private settleUnconfirmedFullscreenTargets(): void {
+    if (!this.started || this.unconfirmedFullscreenTargets.size === 0) {
+      return;
+    }
+
+    const generation = this.runGeneration;
+
+    for (const id of [...this.unconfirmedFullscreenTargets.keys()]) {
+      if (this.runGeneration !== generation) {
+        return;
+      }
+
+      const retention = this.unconfirmedFullscreenRetentions.get(id);
+      const source = this.observer.source(id);
+
+      if (
+        !retention ||
+        retention.generation !== generation ||
+        !source ||
+        source !== retention.source ||
+        source.deleted
+      ) {
+        this.deleteUnconfirmedFullscreenTarget(id);
+        continue;
+      }
+
+      this.retainsFullscreenRequestGeometry(source);
+    }
+  }
+
+  private fullscreenRequestGeometryReverted(
+    source: KWinWindow,
+    target: boolean,
+  ): boolean {
+    return target
+      ? source.moveable && source.resizeable
+      : !source.moveable && !source.resizeable;
+  }
+
+  private queueFullscreenRequestGeometrySync(id: WindowId): void {
+    this.pendingWindowSyncs.add(id);
+
+    if (!this.windowTransferOperation) {
+      this.scheduleWork();
+    }
   }
 
   private refreshLiveWindowOwnership(relevantContextsOnly = false): boolean {
