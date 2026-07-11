@@ -497,12 +497,16 @@ let
             && "$shortcuts" == *"driftile_expel_window_from_column"* \
             && "$shortcuts" == *"driftile_focus_previous_desktop"* \
             && "$shortcuts" == *"driftile_focus_next_desktop"* \
+            && "$shortcuts" == *"driftile_focus_desktop_1"* \
+            && "$shortcuts" == *"driftile_focus_desktop_9"* \
             && "$shortcuts" == *"driftile_focus_output_left"* \
             && "$shortcuts" == *"driftile_focus_output_right"* \
             && "$shortcuts" == *"driftile_focus_output_up"* \
             && "$shortcuts" == *"driftile_focus_output_down"* \
             && "$shortcuts" == *"driftile_move_column_to_previous_desktop"* \
             && "$shortcuts" == *"driftile_move_column_to_next_desktop"* \
+            && "$shortcuts" == *"driftile_move_column_to_desktop_2"* \
+            && "$shortcuts" == *"driftile_move_column_to_desktop_9"* \
             && "$shortcuts" == *"driftile_move_column_to_output_left"* \
             && "$shortcuts" == *"driftile_move_column_to_output_right"* \
             && "$shortcuts" == *"driftile_move_column_to_output_up"* \
@@ -1078,6 +1082,30 @@ let
           if [[ "$current_first" == "$1" \
             && "$current_second" == "$2" \
             && "$current_third" == "$3" ]]; then
+            stable_samples=$((stable_samples + 1))
+
+            if ((stable_samples >= 2)); then
+              return 0
+            fi
+          else
+            stable_samples=0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      wait_for_numbered_desktop_frames() {
+        local attempt
+        local stable_samples=0
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          if [[ "$(window_frame "$title_a" 2>/dev/null || true)" == "$1" \
+            && "$(window_frame "$title_b" 2>/dev/null || true)" == "$2" \
+            && "$(window_frame "$title_c" 2>/dev/null || true)" == "$3" \
+            && "$(window_frame "$title_desktop_destination" 2>/dev/null || true)" == "$4" ]]; then
             stable_samples=$((stable_samples + 1))
 
             if ((stable_samples >= 2)); then
@@ -3115,6 +3143,17 @@ let
           || return 1
         record_focus_state "desktop transfer destination seeded"
 
+        if ! verify_physical_numbered_desktop_shortcuts \
+          "$merged_first_frame" \
+          "$merged_second_frame" \
+          "$merged_third_frame" \
+          "$first_trailing_desktop_id"; then
+          record_focus_state "physical numbered desktop shortcuts failed"
+          return 1
+        fi
+        record_focus_state \
+          "physical numbered desktop shortcuts preserved focus and lifecycle"
+
         invoke_shortcut "driftile_focus_next_desktop" \
           && wait_for_current_desktop "$secondary_desktop_id" \
           && invoke_shortcut "driftile_focus_previous_desktop" \
@@ -3354,6 +3393,203 @@ let
         done
 
         return 1
+      }
+
+      verify_physical_numbered_desktop_shortcuts() {
+        local destination_frame
+        local destination_height
+        local destination_width
+        local destination_x
+        local destination_y
+        local first_height
+        local first_width
+        local first_x
+        local first_y
+        local gap
+        local second_height
+        local second_trailing_desktop_id=""
+        local second_width
+        local second_x
+        local second_y
+        local source_first_frame=$1
+        local source_second_frame=$2
+        local source_singleton_frame
+        local source_third_frame=$3
+        local target_first_frame
+        local target_second_frame
+        local target_x
+        local third_height
+        local third_width
+        local third_x
+        local third_y
+        local trailing_desktop_id=$4
+
+        destination_frame=$(capture_stable_window_frame "$title_desktop_destination") \
+          || return 1
+        frame_is_valid "$source_first_frame" \
+          && frame_is_valid "$source_second_frame" \
+          && frame_is_valid "$source_third_frame" \
+          && frame_is_valid "$destination_frame" \
+          || return 1
+
+        IFS=, read -r first_x first_y first_width first_height \
+          <<< "$source_first_frame"
+        IFS=, read -r second_x second_y second_width second_height \
+          <<< "$source_second_frame"
+        IFS=, read -r third_x third_y third_width third_height \
+          <<< "$source_third_frame"
+        IFS=, read -r \
+          destination_x \
+          destination_y \
+          destination_width \
+          destination_height \
+          <<< "$destination_frame"
+        gap=$((third_x - first_x - first_width))
+
+        if ((gap < 0 \
+          || first_x != second_x \
+          || first_width != second_width \
+          || first_width != third_width \
+          || destination_width != third_width \
+          || destination_height != third_height)); then
+          return 1
+        fi
+
+        target_x=$((destination_x + destination_width + gap))
+        printf -v target_first_frame '%s,%s,%s,%s' \
+          "$target_x" "$first_y" "$first_width" "$first_height"
+        printf -v target_second_frame '%s,%s,%s,%s' \
+          "$target_x" "$second_y" "$second_width" "$second_height"
+        printf -v source_singleton_frame '%s,%s,%s,%s' \
+          "$first_x" "$third_y" "$third_width" "$third_height"
+
+        if ! request_physical_shortcut desktop-1 \
+          || ! wait_for_current_desktop "$primary_desktop_id" \
+          || ! wait_for_window_desktop "$title_a" "$primary_desktop_id" \
+          || ! wait_for_window_desktop "$title_b" "$primary_desktop_id" \
+          || ! wait_for_active "$title_b" \
+          || ! wait_for_numbered_desktop_frames \
+            "$source_first_frame" \
+            "$source_second_frame" \
+            "$source_third_frame" \
+            "$destination_frame" \
+          || ! wait_for_desktop_sequence \
+            "$primary_desktop_id" \
+            "$secondary_desktop_id" \
+            "$trailing_desktop_id"; then
+          record_focus_state "physical Meta+1 same-target desktop focus failed"
+          return 1
+        fi
+        record_focus_state "physical Meta+1 preserved desktop 1 state"
+
+        if ! request_physical_shortcut desktop-9 \
+          || ! wait_for_current_desktop "$trailing_desktop_id" \
+          || ! wait_for_window_desktop "$title_a" "$primary_desktop_id" \
+          || ! wait_for_window_desktop "$title_b" "$primary_desktop_id" \
+          || ! wait_for_numbered_desktop_frames \
+            "$source_first_frame" \
+            "$source_second_frame" \
+            "$source_third_frame" \
+            "$destination_frame" \
+          || ! wait_for_desktop_sequence \
+            "$primary_desktop_id" \
+            "$secondary_desktop_id" \
+            "$trailing_desktop_id"; then
+          record_focus_state "physical Meta+9 trailing desktop focus failed"
+          return 1
+        fi
+        record_focus_state "physical Meta+9 focused the shared empty tail"
+
+        invoke_shortcut "driftile_focus_desktop_1" \
+          && wait_for_current_desktop "$primary_desktop_id" \
+          && activate_window "$title_b" \
+          && wait_for_active "$title_b" \
+          || return 1
+
+        if ! request_physical_shortcut desktop-ctrl-2 \
+          || ! wait_for_current_desktop "$secondary_desktop_id" \
+          || ! wait_for_window_desktop "$title_a" "$secondary_desktop_id" \
+          || ! wait_for_window_desktop "$title_b" "$secondary_desktop_id" \
+          || ! wait_for_window_desktop "$title_c" "$primary_desktop_id" \
+          || ! wait_for_active "$title_b" \
+          || ! wait_for_numbered_desktop_frames \
+            "$target_first_frame" \
+            "$target_second_frame" \
+            "$source_third_frame" \
+            "$destination_frame" \
+          || ! wait_for_desktop_sequence \
+            "$primary_desktop_id" \
+            "$secondary_desktop_id" \
+            "$trailing_desktop_id"; then
+          record_focus_state "physical Meta+Ctrl+2 column transfer failed"
+          return 1
+        fi
+        record_focus_state \
+          "physical Meta+Ctrl+2 preserved the whole stack on desktop 2"
+
+        invoke_shortcut "driftile_move_column_to_desktop_1" \
+          && wait_for_current_desktop "$primary_desktop_id" \
+          && wait_for_window_desktop "$title_a" "$primary_desktop_id" \
+          && wait_for_window_desktop "$title_b" "$primary_desktop_id" \
+          && wait_for_active "$title_b" \
+          && wait_for_numbered_desktop_frames \
+            "$target_first_frame" \
+            "$target_second_frame" \
+            "$source_singleton_frame" \
+            "$destination_frame" \
+          && invoke_shortcut "driftile_move_column_left" \
+          && wait_for_numbered_desktop_frames \
+            "$source_first_frame" \
+            "$source_second_frame" \
+            "$source_third_frame" \
+            "$destination_frame" \
+          && wait_for_active "$title_b" \
+          || return 1
+
+        if ! request_physical_shortcut desktop-ctrl-9 \
+          || ! wait_for_current_desktop "$trailing_desktop_id" \
+          || ! wait_for_window_desktop "$title_a" "$trailing_desktop_id" \
+          || ! wait_for_window_desktop "$title_b" "$trailing_desktop_id" \
+          || ! wait_for_window_desktop "$title_c" "$primary_desktop_id" \
+          || ! wait_for_active "$title_b" \
+          || ! wait_for_numbered_desktop_frames \
+            "$source_first_frame" \
+            "$source_second_frame" \
+            "$source_third_frame" \
+            "$destination_frame" \
+          || ! wait_for_appended_desktop \
+            second_trailing_desktop_id \
+            "$primary_desktop_id" \
+            "$secondary_desktop_id" \
+            "$trailing_desktop_id" \
+          || [[ "$second_trailing_desktop_id" == "$trailing_desktop_id" ]]; then
+          record_focus_state "physical Meta+Ctrl+9 trailing transfer failed"
+          return 1
+        fi
+        record_focus_state \
+          "physical Meta+Ctrl+9 replenished one empty tail after moving the stack"
+
+        invoke_shortcut "driftile_move_column_to_desktop_1" \
+          && wait_for_current_desktop "$primary_desktop_id" \
+          && wait_for_window_desktop "$title_a" "$primary_desktop_id" \
+          && wait_for_window_desktop "$title_b" "$primary_desktop_id" \
+          && wait_for_desktop_sequence \
+            "$primary_desktop_id" \
+            "$secondary_desktop_id" \
+            "$trailing_desktop_id" \
+          && wait_for_active "$title_b" \
+          && wait_for_numbered_desktop_frames \
+            "$target_first_frame" \
+            "$target_second_frame" \
+            "$source_singleton_frame" \
+            "$destination_frame" \
+          && invoke_shortcut "driftile_move_column_left" \
+          && wait_for_numbered_desktop_frames \
+            "$source_first_frame" \
+            "$source_second_frame" \
+            "$source_third_frame" \
+            "$destination_frame" \
+          && wait_for_active "$title_b"
       }
 
       verify_physical_layer_focus_shortcut() {
