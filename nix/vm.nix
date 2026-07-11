@@ -477,7 +477,9 @@ let
             && "$shortcuts" == *"driftile_switch_preset_window_height_back"* \
             && "$shortcuts" == *"driftile_reset_window_height"* \
             && "$shortcuts" == *"driftile_maximize_column"* \
+            && "$shortcuts" == *"driftile_expand_column_to_available_width"* \
             && "$shortcuts" == *"driftile_center_column"* \
+            && "$shortcuts" == *"driftile_center_visible_columns"* \
             && "$shortcuts" == *"driftile_reset_column_width"* ]]; then
             return 0
           fi
@@ -1508,6 +1510,7 @@ let
       wait_for_floating_layout() {
         local attempt
         local current_first
+        local current_gap
         local current_second
         local current_third
         local first_height
@@ -1527,14 +1530,21 @@ let
         local third_width
         local third_x
         local third_y
+        local expected_floating_second="''${4:-}"
         local tiled_first=$1
+        local tiled_first_gap
         local tiled_first_height
         local tiled_first_width
+        local tiled_first_x
         local tiled_first_y
         local tiled_second=$2
+        local tiled_second_gap
+        local tiled_second_width
+        local tiled_second_x
         local tiled_third=$3
         local tiled_third_height
         local tiled_third_width
+        local tiled_third_x
         local tiled_third_y
 
         frame_is_valid "$tiled_first" \
@@ -1542,17 +1552,30 @@ let
           && frame_is_valid "$tiled_third" \
           || return 1
         IFS=, read -r \
-          _ \
+          tiled_first_x \
           tiled_first_y \
           tiled_first_width \
           tiled_first_height \
           <<< "$tiled_first"
+        IFS=, read -r tiled_second_x _ tiled_second_width _ \
+          <<< "$tiled_second"
         IFS=, read -r \
-          _ \
+          tiled_third_x \
           tiled_third_y \
           tiled_third_width \
           tiled_third_height \
           <<< "$tiled_third"
+        tiled_first_gap=$((
+          tiled_second_x - tiled_first_x - tiled_first_width
+        ))
+        tiled_second_gap=$((
+          tiled_third_x - tiled_second_x - tiled_second_width
+        ))
+
+        ((tiled_first_gap > 0 \
+          && tiled_second_gap >= tiled_first_gap - 1 \
+          && tiled_second_gap <= tiled_first_gap + 1)) \
+          || return 1
 
         for ((attempt = 0; attempt < 200; attempt += 1)); do
           current_first=$(window_frame "$title_a" 2>/dev/null || true)
@@ -1569,6 +1592,7 @@ let
               <<< "$current_second"
             IFS=, read -r third_x third_y third_width third_height \
               <<< "$current_third"
+            current_gap=$((third_x - first_x - first_width))
 
             if ((first_y == tiled_first_y \
               && first_width == tiled_first_width \
@@ -1579,11 +1603,12 @@ let
               && first_y == third_y \
               && first_width == third_width \
               && first_height == third_height \
-              && first_x + first_width < third_x)) \
+              && current_gap >= tiled_first_gap - 1 \
+              && current_gap <= tiled_first_gap + 1)) \
               && [[ "$current_first" != "$tiled_first" \
-                && "$current_third" != "$tiled_third" ]] \
-              && [[ "$current_second" != "$current_first" \
-                && "$current_second" != "$current_third" ]]; then
+                || "$current_third" != "$tiled_third" ]] \
+              && [[ -z "$expected_floating_second" \
+                || "$current_second" == "$expected_floating_second" ]]; then
               matches=true
             fi
           fi
@@ -1677,6 +1702,327 @@ let
                 return 1
                 ;;
             esac
+          fi
+
+          if [[ "$matches" == true ]]; then
+            stable_samples=$((stable_samples + 1))
+
+            if ((stable_samples >= 2)); then
+              return 0
+            fi
+          else
+            stable_samples=0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      wait_for_available_width_expansion() {
+        local baseline_first=$1
+        local baseline_second=$2
+        local baseline_third=$3
+        local usable_left=$4
+        local usable_right=$5
+        local attempt
+        local baseline_first_gap
+        local baseline_first_height
+        local baseline_first_width
+        local baseline_first_x
+        local baseline_first_y
+        local baseline_second_gap
+        local baseline_second_height
+        local baseline_second_width
+        local baseline_second_x
+        local baseline_second_y
+        local baseline_third_height
+        local baseline_third_width
+        local baseline_third_x
+        local baseline_third_y
+        local current_first
+        local current_first_gap
+        local current_second
+        local current_second_gap
+        local current_third
+        local expected_second_width
+        local first_height
+        local first_width
+        local first_x
+        local first_y
+        local left_difference
+        local matches
+        local right_difference
+        local second_height
+        local second_width
+        local second_x
+        local second_y
+        local stable_samples=0
+        local third_height
+        local third_width
+        local third_x
+        local third_y
+
+        frame_is_valid "$baseline_first" \
+          && frame_is_valid "$baseline_second" \
+          && frame_is_valid "$baseline_third" \
+          && [[ "$usable_left" =~ ^-?[0-9]+$ ]] \
+          && [[ "$usable_right" =~ ^-?[0-9]+$ ]] \
+          || return 1
+        IFS=, read -r \
+          baseline_first_x \
+          baseline_first_y \
+          baseline_first_width \
+          baseline_first_height \
+          <<< "$baseline_first"
+        IFS=, read -r \
+          baseline_second_x \
+          baseline_second_y \
+          baseline_second_width \
+          baseline_second_height \
+          <<< "$baseline_second"
+        IFS=, read -r \
+          baseline_third_x \
+          baseline_third_y \
+          baseline_third_width \
+          baseline_third_height \
+          <<< "$baseline_third"
+        baseline_first_gap=$((
+          baseline_second_x - baseline_first_x - baseline_first_width
+        ))
+        baseline_second_gap=$((
+          baseline_third_x - baseline_second_x - baseline_second_width
+        ))
+        expected_second_width=$((
+          usable_right \
+            - usable_left \
+            - baseline_third_width \
+            - baseline_second_gap
+        ))
+
+        ((usable_right > usable_left \
+          && baseline_first_gap > 0 \
+          && baseline_second_gap > 0 \
+          && expected_second_width > baseline_second_width)) \
+          || return 1
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          current_first=$(window_frame "$title_a" 2>/dev/null || true)
+          current_second=$(window_frame "$title_b" 2>/dev/null || true)
+          current_third=$(window_frame "$title_c" 2>/dev/null || true)
+          matches=false
+
+          if frame_is_valid "$current_first" \
+            && frame_is_valid "$current_second" \
+            && frame_is_valid "$current_third"; then
+            IFS=, read -r first_x first_y first_width first_height \
+              <<< "$current_first"
+            IFS=, read -r second_x second_y second_width second_height \
+              <<< "$current_second"
+            IFS=, read -r third_x third_y third_width third_height \
+              <<< "$current_third"
+            current_first_gap=$((second_x - first_x - first_width))
+            current_second_gap=$((third_x - second_x - second_width))
+            left_difference=$((second_x - usable_left))
+            right_difference=$((third_x + third_width - usable_right))
+
+            ((left_difference < 0)) \
+              && left_difference=$((-left_difference))
+            ((right_difference < 0)) \
+              && right_difference=$((-right_difference))
+
+            if ((first_y == baseline_first_y \
+              && first_width == baseline_first_width \
+              && first_height == baseline_first_height \
+              && second_y == baseline_second_y \
+              && second_height == baseline_second_height \
+              && third_y == baseline_third_y \
+              && third_width == baseline_third_width \
+              && third_height == baseline_third_height \
+              && second_width >= expected_second_width - 1 \
+              && second_width <= expected_second_width + 1 \
+              && current_first_gap >= baseline_first_gap - 1 \
+              && current_first_gap <= baseline_first_gap + 1 \
+              && current_second_gap >= baseline_second_gap - 1 \
+              && current_second_gap <= baseline_second_gap + 1 \
+              && left_difference <= 1 \
+              && right_difference <= 1)); then
+              matches=true
+            fi
+          fi
+
+          if [[ "$matches" == true ]]; then
+            stable_samples=$((stable_samples + 1))
+
+            if ((stable_samples >= 2)); then
+              return 0
+            fi
+          else
+            stable_samples=0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      wait_for_visible_group_centered() {
+        local baseline_first=$1
+        local baseline_second=$2
+        local baseline_third=$3
+        local usable_left=$4
+        local usable_right=$5
+        local attempt
+        local baseline_first_gap
+        local baseline_first_height
+        local baseline_first_width
+        local baseline_first_x
+        local baseline_first_y
+        local baseline_left_margin
+        local baseline_margin_difference
+        local baseline_right_margin
+        local baseline_second_gap
+        local baseline_second_height
+        local baseline_second_width
+        local baseline_second_x
+        local baseline_second_y
+        local baseline_third_height
+        local baseline_third_width
+        local baseline_third_x
+        local baseline_third_y
+        local current_first
+        local current_first_gap
+        local current_second
+        local current_second_gap
+        local current_third
+        local delta_difference
+        local first_delta
+        local first_height
+        local first_width
+        local first_x
+        local first_y
+        local left_margin
+        local margin_difference
+        local matches
+        local right_margin
+        local second_delta
+        local second_height
+        local second_width
+        local second_x
+        local second_y
+        local stable_samples=0
+        local third_delta
+        local third_height
+        local third_width
+        local third_x
+        local third_y
+
+        frame_is_valid "$baseline_first" \
+          && frame_is_valid "$baseline_second" \
+          && frame_is_valid "$baseline_third" \
+          && [[ "$usable_left" =~ ^-?[0-9]+$ ]] \
+          && [[ "$usable_right" =~ ^-?[0-9]+$ ]] \
+          || return 1
+        IFS=, read -r \
+          baseline_first_x \
+          baseline_first_y \
+          baseline_first_width \
+          baseline_first_height \
+          <<< "$baseline_first"
+        IFS=, read -r \
+          baseline_second_x \
+          baseline_second_y \
+          baseline_second_width \
+          baseline_second_height \
+          <<< "$baseline_second"
+        IFS=, read -r \
+          baseline_third_x \
+          baseline_third_y \
+          baseline_third_width \
+          baseline_third_height \
+          <<< "$baseline_third"
+        baseline_first_gap=$((
+          baseline_second_x - baseline_first_x - baseline_first_width
+        ))
+        baseline_second_gap=$((
+          baseline_third_x - baseline_second_x - baseline_second_width
+        ))
+        baseline_left_margin=$((baseline_second_x - usable_left))
+        baseline_right_margin=$((
+          usable_right - baseline_third_x - baseline_third_width
+        ))
+        baseline_margin_difference=$((
+          baseline_left_margin - baseline_right_margin
+        ))
+        ((baseline_margin_difference < 0)) \
+          && baseline_margin_difference=$((-baseline_margin_difference))
+
+        ((usable_right > usable_left \
+          && baseline_first_gap > 0 \
+          && baseline_second_gap > 0 \
+          && baseline_left_margin >= 0 \
+          && baseline_right_margin >= 0 \
+          && baseline_margin_difference > 1)) \
+          || return 1
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          current_first=$(window_frame "$title_a" 2>/dev/null || true)
+          current_second=$(window_frame "$title_b" 2>/dev/null || true)
+          current_third=$(window_frame "$title_c" 2>/dev/null || true)
+          matches=false
+
+          if frame_is_valid "$current_first" \
+            && frame_is_valid "$current_second" \
+            && frame_is_valid "$current_third"; then
+            IFS=, read -r first_x first_y first_width first_height \
+              <<< "$current_first"
+            IFS=, read -r second_x second_y second_width second_height \
+              <<< "$current_second"
+            IFS=, read -r third_x third_y third_width third_height \
+              <<< "$current_third"
+            first_delta=$((first_x - baseline_first_x))
+            second_delta=$((second_x - baseline_second_x))
+            third_delta=$((third_x - baseline_third_x))
+            current_first_gap=$((second_x - first_x - first_width))
+            current_second_gap=$((third_x - second_x - second_width))
+            left_margin=$((second_x - usable_left))
+            right_margin=$((usable_right - third_x - third_width))
+            margin_difference=$((left_margin - right_margin))
+            delta_difference=$((first_delta - second_delta))
+
+            ((margin_difference < 0)) \
+              && margin_difference=$((-margin_difference))
+            ((delta_difference < 0)) \
+              && delta_difference=$((-delta_difference))
+
+            if ((delta_difference <= 1)); then
+              delta_difference=$((second_delta - third_delta))
+              ((delta_difference < 0)) \
+                && delta_difference=$((-delta_difference))
+            fi
+
+            if ((first_y == baseline_first_y \
+              && first_width == baseline_first_width \
+              && first_height == baseline_first_height \
+              && second_y == baseline_second_y \
+              && second_width == baseline_second_width \
+              && second_height == baseline_second_height \
+              && third_y == baseline_third_y \
+              && third_width == baseline_third_width \
+              && third_height == baseline_third_height \
+              && current_first_gap >= baseline_first_gap - 1 \
+              && current_first_gap <= baseline_first_gap + 1 \
+              && current_second_gap >= baseline_second_gap - 1 \
+              && current_second_gap <= baseline_second_gap + 1 \
+              && delta_difference <= 1 \
+              && second_delta != 0 \
+              && left_margin >= 0 \
+              && right_margin >= 0 \
+              && margin_difference <= 1)); then
+              matches=true
+            fi
           fi
 
           if [[ "$matches" == true ]]; then
@@ -2276,9 +2622,7 @@ let
         local desktop_window
         local direct_insert_verified
         local first_trailing_desktop_id=""
-        local floating_first_frame
         local floating_second_frame
-        local floating_third_frame
         local merged_first_frame
         local merged_second_frame
         local merged_third_frame
@@ -2471,17 +2815,17 @@ let
         singleton_second_frame=$stable_second_frame
         singleton_third_frame=$stable_third_frame
 
-        invoke_shortcut "driftile_toggle_floating" \
-          && wait_for_floating_layout \
+        if ! invoke_shortcut "driftile_toggle_floating" \
+          || ! wait_for_floating_layout \
             "$singleton_first_frame" \
             "$singleton_second_frame" \
             "$singleton_third_frame" \
-          && wait_for_real_window_borderless "$title_b" \
-          && wait_for_active "$title_b" \
-          || return 1
-        floating_first_frame=$stable_first_frame
+          || ! wait_for_real_window_borderless "$title_b" \
+          || ! wait_for_active "$title_b"; then
+          record_focus_state "window B floating reflow failed"
+          return 1
+        fi
         floating_second_frame=$stable_second_frame
-        floating_third_frame=$stable_third_frame
         record_focus_state "window B floated from its tiled column"
 
         invoke_shortcut "driftile_toggle_floating" \
@@ -2694,14 +3038,17 @@ let
 
         [[ "$direct_insert_verified" == true ]] || return 1
 
-        invoke_shortcut "driftile_toggle_floating" \
-          && wait_for_frames \
-            "$floating_first_frame" \
+        if ! invoke_shortcut "driftile_toggle_floating" \
+          || ! wait_for_floating_layout \
+            "$singleton_first_frame" \
+            "$singleton_second_frame" \
+            "$singleton_third_frame" \
             "$floating_second_frame" \
-            "$floating_third_frame" \
-          && wait_for_real_window_borderless "$title_b" \
-          && wait_for_active "$title_b" \
-          || return 1
+          || ! wait_for_real_window_borderless "$title_b" \
+          || ! wait_for_active "$title_b"; then
+          record_focus_state "window B stack floating reflow failed"
+          return 1
+        fi
         record_focus_state "window B floated from the left stack"
 
         invoke_shortcut "driftile_toggle_floating" \
@@ -2988,6 +3335,220 @@ let
           "physical height shortcut viewport restored before application tests"
       }
 
+      verify_physical_column_view_shortcuts() {
+        local center_first_frame
+        local center_second_frame
+        local center_third_frame
+        local expand_first_frame
+        local expand_second_frame
+        local expand_third_frame
+        local expanded_second_width
+        local full_second_frame
+        local full_second_height
+        local full_second_width
+        local full_second_y
+        local original_first_frame
+        local original_first_width
+        local original_gap
+        local original_second_frame
+        local original_second_height
+        local original_second_width
+        local original_second_x
+        local original_second_y
+        local original_third_frame
+        local original_third_width
+        local original_third_x
+        local setup_second_width
+        local setup_second_x
+        local setup_third_width
+        local setup_third_x
+        local usable_left
+        local usable_right
+
+        activate_window "$title_c" \
+          && wait_for_active "$title_c" \
+          && capture_stable_frames \
+          || return 1
+        original_first_frame=$stable_first_frame
+        original_second_frame=$stable_second_frame
+        original_third_frame=$stable_third_frame
+        IFS=, read -r _ _ original_first_width _ \
+          <<< "$original_first_frame"
+        IFS=, read -r \
+          original_second_x \
+          original_second_y \
+          original_second_width \
+          original_second_height \
+          <<< "$original_second_frame"
+        IFS=, read -r original_third_x _ original_third_width _ \
+          <<< "$original_third_frame"
+        original_gap=$((
+          original_third_x - original_second_x - original_second_width
+        ))
+
+        activate_window "$title_b" \
+          && wait_for_active "$title_b" \
+          && wait_for_frames \
+            "$original_first_frame" \
+            "$original_second_frame" \
+            "$original_third_frame" \
+          || return 1
+
+        if ! invoke_shortcut "driftile_maximize_column" \
+          || ! wait_for_middle_width \
+            greater \
+            "$original_first_width" \
+            "$original_second_width" \
+            "$original_third_width" \
+          || ! capture_stable_frames \
+          || ! wait_for_active "$title_b"; then
+          record_focus_state \
+            "available-width usable span discovery failed"
+          return 1
+        fi
+        full_second_frame=$stable_second_frame
+        IFS=, read -r \
+          _ \
+          full_second_y \
+          full_second_width \
+          full_second_height \
+          <<< "$full_second_frame"
+        usable_right=$((
+          original_third_x + original_third_width - original_gap
+        ))
+        usable_left=$((usable_right - full_second_width))
+
+        if ((original_gap <= 0 \
+          || usable_right <= usable_left \
+          || full_second_width <= original_second_width \
+          || full_second_y != original_second_y \
+          || full_second_height != original_second_height)); then
+          record_focus_state \
+            "available-width usable span was invalid"
+          return 1
+        fi
+
+        if ! invoke_shortcut "driftile_maximize_column" \
+          || ! wait_for_middle_width \
+            equal \
+            "$original_first_width" \
+            "$original_second_width" \
+            "$original_third_width" \
+          || ! activate_window "$title_c" \
+          || ! wait_for_active "$title_c" \
+          || ! wait_for_frames \
+            "$original_first_frame" \
+            "$original_second_frame" \
+            "$original_third_frame" \
+          || ! activate_window "$title_b" \
+          || ! wait_for_active "$title_b"; then
+          record_focus_state \
+            "available-width baseline restoration failed"
+          return 1
+        fi
+
+        if ! invoke_shortcut "driftile_decrease_column_width" \
+          || ! wait_for_middle_width \
+            less \
+            "$original_first_width" \
+            "$original_second_width" \
+            "$original_third_width" \
+          || ! capture_stable_frames \
+          || ! wait_for_active "$title_b"; then
+          record_focus_state \
+            "available-width physical shortcut setup failed"
+          return 1
+        fi
+        expand_first_frame=$stable_first_frame
+        expand_second_frame=$stable_second_frame
+        expand_third_frame=$stable_third_frame
+        IFS=, read -r setup_second_x _ setup_second_width _ \
+          <<< "$expand_second_frame"
+        IFS=, read -r setup_third_x _ setup_third_width _ \
+          <<< "$expand_third_frame"
+
+        if ((setup_second_x < usable_left \
+          || setup_third_x + setup_third_width > usable_right \
+          || setup_third_x <= setup_second_x + setup_second_width)); then
+          record_focus_state \
+            "available-width physical shortcut setup was not fully visible"
+          return 1
+        fi
+
+        if ! request_physical_shortcut ctrl-f \
+          || ! wait_for_available_width_expansion \
+            "$expand_first_frame" \
+            "$expand_second_frame" \
+            "$expand_third_frame" \
+            "$usable_left" \
+            "$usable_right" \
+          || ! wait_for_active "$title_b"; then
+          record_focus_state \
+            "physical Meta+Ctrl+F available-width expansion failed"
+          return 1
+        fi
+        record_focus_state \
+          "physical Meta+Ctrl+F filled the available column span"
+
+        capture_stable_frames || return 1
+        expanded_second_width=$(window_frame_width "$title_b") || return 1
+
+        if ! invoke_shortcut "driftile_decrease_column_width" \
+          || ! wait_for_middle_width \
+            less \
+            "$original_first_width" \
+            "$expanded_second_width" \
+            "$original_third_width" \
+          || ! capture_stable_frames \
+          || ! wait_for_active "$title_b"; then
+          record_focus_state \
+            "visible-column centering physical shortcut setup failed"
+          return 1
+        fi
+        center_first_frame=$stable_first_frame
+        center_second_frame=$stable_second_frame
+        center_third_frame=$stable_third_frame
+
+        if ! request_physical_shortcut ctrl-c \
+          || ! wait_for_visible_group_centered \
+            "$center_first_frame" \
+            "$center_second_frame" \
+            "$center_third_frame" \
+            "$usable_left" \
+            "$usable_right" \
+          || ! wait_for_active "$title_b"; then
+          record_focus_state \
+            "physical Meta+Ctrl+C visible-column centering failed"
+          return 1
+        fi
+        record_focus_state \
+          "physical Meta+Ctrl+C centered the fully visible columns"
+
+        if ! invoke_shortcut "driftile_reset_column_width" \
+          || ! wait_for_middle_width \
+            equal \
+            "$original_first_width" \
+            "$original_second_width" \
+            "$original_third_width" \
+          || ! activate_window "$title_c" \
+          || ! wait_for_active "$title_c" \
+          || ! wait_for_frames \
+            "$original_first_frame" \
+            "$original_second_frame" \
+            "$original_third_frame"; then
+          record_focus_state \
+            "physical column-view shortcut viewport restoration failed"
+          {
+            printf 'expected frame A: %s\n' "$original_first_frame"
+            printf 'expected frame B: %s\n' "$original_second_frame"
+            printf 'expected frame C: %s\n' "$original_third_frame"
+          } >> /tmp/shared/driftile-focus-diagnostics
+          return 1
+        fi
+        record_focus_state \
+          "physical column-view shortcut viewport restored before application tests"
+      }
+
       verify_real_applications() {
         local baseline_first
         local baseline_second
@@ -3231,6 +3792,7 @@ let
         && verify_focus \
         && verify_physical_width_shortcuts \
         && verify_physical_height_shortcuts \
+        && verify_physical_column_view_shortcuts \
         && verify_real_applications; then
         focus_verified=true
       fi
