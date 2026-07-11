@@ -661,21 +661,48 @@ interface MaximizeControl {
     vertical: boolean,
     horizontal: boolean,
   ])[];
+  commitDeferred(): boolean;
+  externalRequest(mode: number, defer?: boolean): void;
   readonly maximizeMode: number;
   maximizable: boolean;
 }
 
+interface MaximizeControlOptions {
+  readonly maximizeMode?: number;
+  readonly maximizable?: boolean;
+  readonly requestModes?: readonly number[];
+  readonly write?: "accept" | "defer" | "reject" | "throw";
+}
+
 function controlMaximize(
   tracked: TrackedWindow,
-  options: {
-    readonly maximizeMode?: number;
-    readonly maximizable?: boolean;
-    readonly write?: "accept" | "throw";
-  } = {},
+  options: MaximizeControlOptions = {},
 ): MaximizeControl {
   const calls: Array<readonly [vertical: boolean, horizontal: boolean]> = [];
   let maximizeMode = options.maximizeMode ?? 0;
   let maximizable = options.maximizable ?? true;
+  let deferredMode: number | null = null;
+  const commit = (mode: number): void => {
+    maximizeMode = mode;
+    tracked.maximizedChanged.emit();
+  };
+  const emitRequest = (modes: readonly number[], defer: boolean): void => {
+    for (const mode of modes) {
+      tracked.maximizedAboutToChange.emit(mode);
+    }
+
+    const mode = modes[modes.length - 1];
+
+    if (mode === undefined) {
+      return;
+    }
+
+    if (defer) {
+      deferredMode = mode;
+    } else {
+      commit(mode);
+    }
+  };
 
   Object.defineProperty(tracked.window, "maximizable", {
     configurable: true,
@@ -697,15 +724,33 @@ function controlMaximize(
         throw new Error("injected maximize write failure");
       }
 
+      if (options.write === "reject") {
+        return;
+      }
+
       const nextMode = vertical && horizontal ? 3 : 0;
-      tracked.maximizedAboutToChange.emit(nextMode);
-      maximizeMode = nextMode;
-      tracked.maximizedChanged.emit();
+      emitRequest(
+        options.requestModes ?? [nextMode],
+        options.write === "defer",
+      );
     },
   });
 
   return {
     calls,
+    commitDeferred: () => {
+      if (deferredMode === null) {
+        return false;
+      }
+
+      const mode = deferredMode;
+      deferredMode = null;
+      commit(mode);
+      return true;
+    },
+    externalRequest: (mode, defer = false) => {
+      emitRequest([mode], defer);
+    },
     get maximizeMode() {
       return maximizeMode;
     },
@@ -1041,6 +1086,375 @@ describe("RuntimeController", () => {
     expect(fixture.workspace.activeWindow).toBe(active.window);
 
     controller.stop();
+  });
+
+  it.each([
+    {
+      activeIndex: 0,
+      expectedHeights: [
+        { clientHeight: 240, kind: "fixed" },
+        { kind: "auto", weight: 4 },
+      ],
+      expectedSourceIds: ["window-2", "window-3"],
+      name: "top",
+    },
+    {
+      activeIndex: 1,
+      expectedHeights: [
+        { kind: "auto", weight: 2 },
+        { kind: "auto", weight: 4 },
+      ],
+      expectedSourceIds: ["window-1", "window-3"],
+      name: "middle",
+    },
+    {
+      activeIndex: 2,
+      expectedHeights: [
+        { kind: "auto", weight: 2 },
+        { clientHeight: 240, kind: "fixed" },
+      ],
+      expectedSourceIds: ["window-1", "window-2"],
+      name: "bottom",
+    },
+  ] as const)(
+    "extracts the $name stack member before native maximize",
+    ({ activeIndex, expectedHeights, expectedSourceIds }) => {
+      const setup = createStackedMaximizeFixture(activeIndex);
+      const activeId = String(setup.active.window.internalId);
+
+      expect(setup.controller.maximizeWindowToEdges()).toBe(true);
+      expect(setup.maximize.maximizeMode).toBe(3);
+      expect(setup.maximize.calls).toEqual([[true, true]]);
+
+      const maximized = setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      );
+      expect(maximized.columns.map((column) => String(column.id))).toEqual([
+        "column:stack",
+        `column:${activeId}`,
+        "column:right",
+      ]);
+      expect(maximized.columns[0]).toMatchObject({
+        id: "column:stack",
+        width: { kind: "proportion", value: 0.45 },
+        windowHeights: expectedHeights,
+        windowIds: expectedSourceIds,
+      });
+      expect(maximized.columns[1]).toEqual({
+        id: `column:${activeId}`,
+        width: { kind: "proportion", value: 0.45 },
+        windowIds: [activeId],
+      });
+      expect(maximized.activeColumnId).toBe(`column:${activeId}`);
+      expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+
+      expect(setup.controller.maximizeWindowToEdges()).toBe(true);
+      expect(setup.maximize.maximizeMode).toBe(0);
+      flushManualScheduler(setup.scheduler);
+      expect(
+        testLayoutColumns(setup.controller, setup.output, setup.desktop),
+      ).toEqual([
+        { id: "column:stack", windowIds: expectedSourceIds },
+        { id: `column:${activeId}`, windowIds: [activeId] },
+        { id: "column:right", windowIds: ["window-4"] },
+      ]);
+      expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+
+      setup.controller.stop();
+    },
+  );
+
+  it("accepts a synchronous maximize request before its deferred commit", () => {
+    const setup = createStackedMaximizeFixture(1, { write: "defer" });
+
+    expect(setup.controller.maximizeWindowToEdges()).toBe(true);
+    expect(setup.maximize.maximizeMode).toBe(0);
+    expect(setup.maximize.calls).toEqual([[true, true]]);
+    expect(
+      testLayoutColumns(setup.controller, setup.output, setup.desktop),
+    ).toEqual([
+      { id: "column:stack", windowIds: ["window-1", "window-3"] },
+      { id: "column:window-2", windowIds: ["window-2"] },
+      { id: "column:right", windowIds: ["window-4"] },
+    ]);
+
+    expect(setup.maximize.commitDeferred()).toBe(true);
+    expect(setup.maximize.maximizeMode).toBe(3);
+    expect(setup.controller.maximizeWindowToEdges()).toBe(true);
+    expect(setup.maximize.maximizeMode).toBe(3);
+    expect(setup.maximize.commitDeferred()).toBe(true);
+    expect(setup.maximize.maximizeMode).toBe(0);
+    flushManualScheduler(setup.scheduler);
+    expect(
+      testLayoutColumns(setup.controller, setup.output, setup.desktop),
+    ).toEqual([
+      { id: "column:stack", windowIds: ["window-1", "window-3"] },
+      { id: "column:window-2", windowIds: ["window-2"] },
+      { id: "column:right", windowIds: ["window-4"] },
+    ]);
+
+    setup.controller.stop();
+  });
+
+  it("restores exact stack metadata after reconstructing the source column", () => {
+    const setup = createStackedMaximizeFixture(1);
+    const layout = installTestLayout(
+      setup.controller,
+      setup.output,
+      setup.desktop,
+      "column:stack",
+      [
+        {
+          id: "column:stack",
+          width: { kind: "proportion", value: 0.45 },
+          windowIds: ["window-1", "window-2", "window-3"],
+        },
+        {
+          id: "column:right",
+          width: { kind: "fixed", value: 240 },
+          windowIds: ["window-4"],
+        },
+      ],
+    );
+    setup.fixture.workspace.activeWindow = setup.active.window;
+    flushManualScheduler(setup.scheduler);
+    const beforeLayout = layout.snapshot(
+      outputId(setup.output.name),
+      desktopId(setup.desktop.id),
+    );
+    const beforeFrames = setup.windows.map((window) => ({
+      ...window.window.frameGeometry,
+    }));
+
+    expect(setup.controller.maximizeWindowToEdges()).toBe(true);
+    expect(setup.controller.maximizeWindowToEdges()).toBe(true);
+    flushManualScheduler(setup.scheduler);
+    expect(setup.controller.moveWindowLeft()).toBe(true);
+    expect(setup.controller.moveWindowUp()).toBe(true);
+
+    expect(
+      layout.snapshot(outputId(setup.output.name), desktopId(setup.desktop.id)),
+    ).toEqual(beforeLayout);
+    expect(setup.windows.map((window) => window.window.frameGeometry)).toEqual(
+      beforeFrames,
+    );
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+
+    setup.controller.stop();
+  });
+
+  it.each(["reject", "throw"] as const)(
+    "restores all stacked state when the maximize request is %s",
+    (write) => {
+      const setup = createStackedMaximizeFixture(1, { write });
+
+      expect(setup.controller.maximizeColumn()).toBe(true);
+      expect(
+        activeColumnWidth(setup.controller, setup.output, setup.desktop),
+      ).toEqual({
+        kind: "proportion",
+        value: 1,
+      });
+      markOnlyRuntimeContextDirty(setup.controller);
+      const beforeLayout = setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      );
+      const beforeFrames = setup.windows.map((window) => ({
+        ...window.window.frameGeometry,
+      }));
+      const beforeRuntime = stackedMaximizeRuntimeState(setup.controller);
+      const warning = console.warn;
+      console.warn = () => undefined;
+
+      try {
+        expect(setup.controller.maximizeWindowToEdges()).toBe(false);
+      } finally {
+        console.warn = warning;
+      }
+
+      expect(setup.maximize.maximizeMode).toBe(0);
+      expect(setup.maximize.calls).toEqual([[true, true]]);
+      expect(
+        setup.layout.snapshot(
+          outputId(setup.output.name),
+          desktopId(setup.desktop.id),
+        ),
+      ).toEqual(beforeLayout);
+      expect(
+        setup.windows.map((window) => window.window.frameGeometry),
+      ).toEqual(beforeFrames);
+      expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+      expect(stackedMaximizeRuntimeState(setup.controller)).toEqual(
+        beforeRuntime,
+      );
+
+      setup.controller.stop();
+    },
+  );
+
+  it.each([
+    { expectedMode: 1, requestModes: [1], name: "vertical" },
+    { expectedMode: 2, requestModes: [2], name: "horizontal" },
+    { expectedMode: 3, requestModes: [3, 3], name: "duplicate" },
+  ] as const)(
+    "rolls back a $name native maximize request without clearing suspension",
+    ({ expectedMode, requestModes }) => {
+      const setup = createStackedMaximizeFixture(1, { requestModes });
+      const beforeLayout = setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      );
+      const beforeFrames = setup.windows.map((window) => ({
+        ...window.window.frameGeometry,
+      }));
+      const warning = console.warn;
+      console.warn = () => undefined;
+
+      try {
+        expect(setup.controller.maximizeWindowToEdges()).toBe(false);
+      } finally {
+        console.warn = warning;
+      }
+
+      const state = setup.controller as unknown as {
+        readonly pendingWindowSyncs: ReadonlySet<WindowId>;
+        readonly stackedMaximizeOperation: unknown;
+        readonly suspendedWindows: ReadonlySet<WindowId>;
+        readonly windowTransferOperation: unknown;
+      };
+      expect(setup.maximize.maximizeMode).toBe(expectedMode);
+      expect(
+        setup.layout.snapshot(
+          outputId(setup.output.name),
+          desktopId(setup.desktop.id),
+        ),
+      ).toEqual(beforeLayout);
+      expect(
+        setup.windows
+          .filter((_window, index) => index !== 1)
+          .map((window) => window.window.frameGeometry),
+      ).toEqual(beforeFrames.filter((_frame, index) => index !== 1));
+      expect(setup.active.window.frameGeometry).not.toEqual(beforeFrames[1]);
+      expect(setup.active.window.frameGeometry.height).toBe(780);
+      expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+      expect(state.pendingWindowSyncs.has(windowId("window-2"))).toBe(true);
+      expect(state.suspendedWindows.has(windowId("window-2"))).toBe(true);
+      expect(state.windowTransferOperation).toBeNull();
+      expect(state.stackedMaximizeOperation).toBeNull();
+
+      setup.controller.stop();
+    },
+  );
+
+  it("extracts an app-requested maximize and keeps it separate after exit", () => {
+    const setup = createStackedMaximizeFixture(1);
+
+    setup.maximize.externalRequest(3);
+    expect(setup.maximize.calls).toEqual([]);
+    expect(setup.maximize.maximizeMode).toBe(3);
+    expect(
+      testLayoutColumns(setup.controller, setup.output, setup.desktop),
+    ).toEqual([
+      { id: "column:stack", windowIds: ["window-1", "window-3"] },
+      { id: "column:window-2", windowIds: ["window-2"] },
+      { id: "column:right", windowIds: ["window-4"] },
+    ]);
+
+    setup.maximize.externalRequest(0);
+    flushManualScheduler(setup.scheduler);
+    expect(setup.maximize.maximizeMode).toBe(0);
+    expect(
+      testLayoutColumns(setup.controller, setup.output, setup.desktop),
+    ).toEqual([
+      { id: "column:stack", windowIds: ["window-1", "window-3"] },
+      { id: "column:window-2", windowIds: ["window-2"] },
+      { id: "column:right", windowIds: ["window-4"] },
+    ]);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+
+    setup.controller.stop();
+  });
+
+  it("copies full-width restore state to the extracted column", () => {
+    const setup = createStackedMaximizeFixture(1);
+
+    expect(setup.controller.maximizeColumn()).toBe(true);
+    expect(
+      activeColumnWidth(setup.controller, setup.output, setup.desktop),
+    ).toEqual({
+      kind: "proportion",
+      value: 1,
+    });
+    expect(setup.controller.maximizeWindowToEdges()).toBe(true);
+    expect(setup.controller.maximizeWindowToEdges()).toBe(true);
+    flushManualScheduler(setup.scheduler);
+
+    expect(setup.controller.maximizeColumn()).toBe(true);
+    expect(
+      activeColumnWidth(setup.controller, setup.output, setup.desktop),
+    ).toEqual({
+      kind: "proportion",
+      value: 0.45,
+    });
+    setup.fixture.workspace.activeWindow = setup.windows[0]?.window ?? null;
+    expect(setup.controller.maximizeColumn()).toBe(true);
+    expect(
+      activeColumnWidth(setup.controller, setup.output, setup.desktop),
+    ).toEqual({
+      kind: "proportion",
+      value: 0.45,
+    });
+
+    setup.controller.stop();
+  });
+
+  it("rolls back stacked extraction before invoking KWin on a frame failure", () => {
+    const setup = createStackedMaximizeFixture(1);
+    const beforeLayout = setup.layout.snapshot(
+      outputId(setup.output.name),
+      desktopId(setup.desktop.id),
+    );
+    const beforeFrames = setup.windows.map((window) => ({
+      ...window.window.frameGeometry,
+    }));
+    const beforeRuntime = stackedMaximizeRuntimeState(setup.controller);
+    let rejectNextWrite = true;
+    setup.windows[3]?.setWriteBehavior((_frame, commit) => {
+      if (rejectNextWrite) {
+        rejectNextWrite = false;
+        throw new Error("injected stacked maximize frame failure");
+      }
+
+      commit();
+    });
+    const warning = console.warn;
+    console.warn = () => undefined;
+
+    try {
+      expect(setup.controller.maximizeWindowToEdges()).toBe(false);
+    } finally {
+      console.warn = warning;
+      setup.windows[3]?.setWriteBehavior(null);
+    }
+
+    expect(setup.maximize.calls).toEqual([]);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(beforeLayout);
+    expect(setup.windows.map((window) => window.window.frameGeometry)).toEqual(
+      beforeFrames,
+    );
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+    expect(stackedMaximizeRuntimeState(setup.controller)).toEqual(
+      beforeRuntime,
+    );
+
+    setup.controller.stop();
   });
 
   it("rejects maximize-to-edges when KWin cannot perform it", () => {
@@ -17312,6 +17726,189 @@ function testLayoutColumns(
       id: String(column.id),
       windowIds: column.windowIds.map(String),
     }));
+}
+
+interface StackedMaximizeFixture {
+  readonly active: TrackedWindow;
+  readonly controller: RuntimeController;
+  readonly desktop: KWinVirtualDesktop;
+  readonly fixture: WorkspaceFixture;
+  readonly layout: LayoutEngine;
+  readonly maximize: MaximizeControl;
+  readonly output: KWinOutput;
+  readonly scheduler: ManualScheduler;
+  readonly windows: readonly TrackedWindow[];
+}
+
+function createStackedMaximizeFixture(
+  activeIndex: number,
+  options: MaximizeControlOptions = {},
+): StackedMaximizeFixture {
+  const output = createOutput("DP-1", 0);
+  const desktop = { id: "desktop-1" };
+  const windows = Array.from({ length: 4 }, (_value, index) =>
+    createTrackedWindow(`window-${String(index + 1)}`, output, desktop),
+  );
+  const active = windows[activeIndex];
+
+  if (!active || activeIndex > 2) {
+    throw new Error("invalid stacked maximize active index");
+  }
+
+  const maximize = controlMaximize(active, options);
+  const fixture = createWorkspace(
+    output,
+    desktop,
+    [output],
+    [desktop],
+    windows.map((window) => window.window),
+  );
+  const scheduler = new ManualScheduler();
+  const controller = new RuntimeController(fixture.workspace, {
+    clientAreaOption: 2,
+    gap: 10,
+    schedule: scheduler.schedule,
+  });
+
+  if (!controller.start()) {
+    throw new Error("could not start stacked maximize fixture");
+  }
+
+  const layout = installTestLayout(
+    controller,
+    output,
+    desktop,
+    "column:stack",
+    [
+      {
+        id: "column:stack",
+        width: { kind: "proportion", value: 0.45 },
+        windowHeights: [
+          { kind: "auto", weight: 2 },
+          { clientHeight: 240, kind: "fixed" },
+          { kind: "auto", weight: 4 },
+        ],
+        windowIds: ["window-1", "window-2", "window-3"],
+      },
+      {
+        id: "column:right",
+        width: { kind: "fixed", value: 240 },
+        windowIds: ["window-4"],
+      },
+    ],
+  );
+  fixture.workspace.activeWindow = active.window;
+  flushManualScheduler(scheduler);
+
+  return {
+    active,
+    controller,
+    desktop,
+    fixture,
+    layout,
+    maximize,
+    output,
+    scheduler,
+    windows,
+  };
+}
+
+function flushManualScheduler(scheduler: ManualScheduler): void {
+  let callbacks = 0;
+
+  while (scheduler.pendingCount > 0 && callbacks < 100) {
+    scheduler.flush();
+    callbacks += 1;
+  }
+
+  if (scheduler.pendingCount > 0) {
+    throw new Error("manual scheduler did not settle");
+  }
+}
+
+function stackedMaximizeRuntimeState(controller: RuntimeController): unknown {
+  const state = controller as unknown as {
+    readonly columnFullWidthRestore: ReadonlyMap<
+      string,
+      ReadonlyMap<
+        string,
+        { readonly kind: "fixed" | "proportion"; readonly value: number }
+      >
+    >;
+    readonly dirtyContexts: ReadonlySet<string>;
+    readonly lastTiledFocus: ReadonlyMap<string, WindowId>;
+    readonly pendingAdmissionContexts: ReadonlySet<string>;
+    readonly pendingWindowSyncs: ReadonlySet<WindowId>;
+    readonly requestedSuspensions: ReadonlyMap<WindowId, ReadonlySet<string>>;
+    readonly resumeSamples: ReadonlyMap<
+      WindowId,
+      {
+        readonly contextKey: string | null;
+        readonly frame: KWinWindow["frameGeometry"];
+      }
+    >;
+    readonly stackedMaximizeOperation: unknown;
+    readonly suspendedWindows: ReadonlySet<WindowId>;
+    readonly transientResumeProbes: ReadonlyMap<
+      WindowId,
+      { readonly completedAttempts: number; readonly pending: boolean }
+    >;
+    readonly windowTransferOperation: unknown;
+  };
+  const sorted = <T>(values: Iterable<T>): T[] =>
+    [...values].sort((first, second) =>
+      String(first).localeCompare(String(second)),
+    );
+
+  return {
+    columnFullWidthRestore: sorted(state.columnFullWidthRestore.keys()).map(
+      (key) => [
+        key,
+        sorted(state.columnFullWidthRestore.get(key)?.keys() ?? []).map(
+          (id) => [id, { ...state.columnFullWidthRestore.get(key)?.get(id) }],
+        ),
+      ],
+    ),
+    dirtyContexts: sorted(state.dirtyContexts),
+    lastTiledFocus: sorted(state.lastTiledFocus.keys()).map((key) => [
+      key,
+      state.lastTiledFocus.get(key),
+    ]),
+    pendingAdmissionContexts: sorted(state.pendingAdmissionContexts),
+    pendingWindowSyncs: sorted(state.pendingWindowSyncs),
+    requestedSuspensions: sorted(state.requestedSuspensions.keys()).map(
+      (id) => [id, sorted(state.requestedSuspensions.get(id) ?? [])],
+    ),
+    resumeSamples: sorted(state.resumeSamples.keys()).map((id) => {
+      const sample = state.resumeSamples.get(id);
+      return [
+        id,
+        sample
+          ? { contextKey: sample.contextKey, frame: { ...sample.frame } }
+          : null,
+      ];
+    }),
+    stackedMaximizeOperation: state.stackedMaximizeOperation !== null,
+    suspendedWindows: sorted(state.suspendedWindows),
+    transientResumeProbes: sorted(state.transientResumeProbes.keys()).map(
+      (id) => [id, { ...state.transientResumeProbes.get(id) }],
+    ),
+    windowTransferOperation: state.windowTransferOperation !== null,
+  };
+}
+
+function markOnlyRuntimeContextDirty(controller: RuntimeController): void {
+  const state = controller as unknown as {
+    readonly contexts: ReadonlyMap<string, unknown>;
+    readonly dirtyContexts: Set<string>;
+  };
+  const keys = [...state.contexts.keys()];
+
+  if (keys.length !== 1 || !keys[0]) {
+    throw new Error("stacked maximize fixture has an unexpected context set");
+  }
+
+  state.dirtyContexts.add(keys[0]);
 }
 
 function createCapacityFixture(

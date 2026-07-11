@@ -397,6 +397,55 @@ describe("WindowObserver", () => {
     expect(changed).toEqual(Array.from({ length: 6 }, () => "window-1"));
   });
 
+  it("orders maximize transition callbacks around suspension and state refreshes", () => {
+    const source = createWindow();
+    const maximizedAboutToChange = source.maximizedAboutToChange as Signal<
+      [mode: number]
+    >;
+    const maximizedChanged = source.maximizedChanged as Signal<[]>;
+    const events: string[] = [];
+    const observer = new WindowObserver(createWorkspace([source]), {
+      maximizedAboutToChange: (windowId, mode) =>
+        events.push(`about:${windowId}:${String(mode)}`),
+      stateChanged: (windowId) =>
+        events.push(`state:${windowId}:${String(source.maximizeMode)}`),
+      suspensionSettled: (windowId, request) =>
+        events.push(`settled:${windowId}:${request}`),
+      suspending: (windowId, request) =>
+        events.push(`suspending:${windowId}:${request}`),
+    });
+
+    observer.start();
+    maximizedAboutToChange.emit(3);
+    Object.defineProperty(source, "maximizeMode", {
+      configurable: true,
+      value: 3,
+    });
+    maximizedChanged.emit();
+    maximizedAboutToChange.emit(0);
+    Object.defineProperty(source, "maximizeMode", {
+      configurable: true,
+      value: 0,
+    });
+    maximizedChanged.emit();
+
+    expect(events).toEqual([
+      "about:window-1:3",
+      "settled:window-1:maximized-settling",
+      "suspending:window-1:maximized-requested",
+      "state:window-1:0",
+      "settled:window-1:maximized-requested",
+      "state:window-1:3",
+      "settled:window-1:maximized-requested",
+      "suspending:window-1:maximized-settling",
+      "state:window-1:3",
+      "about:window-1:0",
+      "settled:window-1:maximized-requested",
+      "settled:window-1:maximized-settling",
+      "state:window-1:0",
+    ]);
+  });
+
   it("publishes early maximize and native-tile suspension requests", () => {
     const source = createWindow();
     const maximizedAboutToChange = source.maximizedAboutToChange as Signal<

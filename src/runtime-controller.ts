@@ -135,10 +135,40 @@ interface FloatingWindow {
 interface WindowTransferOperation {
   readonly activeId: WindowId;
   desktopChangeSuppressed: boolean;
-  readonly kind: "desktop" | "floating-desktop" | "output";
+  readonly kind: "desktop" | "floating-desktop" | "output" | "stack-maximize";
   readonly movingIds: ReadonlySet<WindowId>;
   readonly sourceContextKey: string;
   readonly targetContextKey: string;
+}
+
+interface StackedMaximizeRuntimeSnapshot {
+  readonly contextDirty: boolean;
+  readonly lastTiledFocus: WindowId | undefined;
+  readonly originalActiveWindow: KWinWindow | null;
+  readonly pendingAdmission: boolean;
+  readonly pendingWindowSync: boolean;
+  readonly requestedSuspensions: ReadonlySet<WindowSuspensionRequest> | null;
+  readonly resumeSample: ResumeSample | null;
+  readonly suspended: boolean;
+  readonly transientResumeProbe: TransientResumeProbe | null;
+}
+
+interface StackedMaximizePreparation {
+  readonly activeId: WindowId;
+  readonly activeWindow: KWinWindow;
+  readonly before: LayoutContextSnapshot;
+  readonly command: ActiveColumnCommand;
+  readonly newColumnId: ColumnId;
+  readonly runtime: StackedMaximizeRuntimeSnapshot;
+  readonly sourceColumnId: ColumnId;
+  readonly sourceFullWidthRestore: ColumnWidth | undefined;
+  readonly topologyRevision: number;
+  readonly transfer: WindowTransferOperation;
+}
+
+interface StackedMaximizeOperation extends StackedMaximizePreparation {
+  readonly after: LayoutContextSnapshot;
+  readonly edit: StackEditResult;
 }
 
 interface ColumnTransferMember {
@@ -379,6 +409,7 @@ export class RuntimeController {
   private readonly dirtyContexts = new Set<string>();
   private readonly desktopLifecycle: DesktopLifecycle;
   private windowTransferOperation: WindowTransferOperation | null = null;
+  private stackedMaximizeOperation: StackedMaximizeOperation | null = null;
   private readonly floatingWindows = new Map<WindowId, FloatingWindow>();
   private readonly geometry: KWinGeometryAdapter;
   private readonly gap: number;
@@ -484,6 +515,7 @@ export class RuntimeController {
     this.observer = new WindowObserver(workspace, {
       added: this.handleWindowAdded,
       changed: this.handleWindowChanged,
+      maximizedAboutToChange: this.handleMaximizedAboutToChange,
       removed: this.handleWindowRemoved,
       stateChanged: this.handleWindowStateChanged,
       suspensionSettled: this.handleWindowSuspensionSettled,
@@ -784,6 +816,28 @@ export class RuntimeController {
 
     if (!maximized && activeWindow.maximizable === false) {
       return false;
+    }
+
+    if (!maximized) {
+      const activeId = windowId(String(activeWindow.internalId));
+      const owner = this.managedWindows.get(activeId);
+
+      if (owner) {
+        const context = this.contexts.get(owner.contextKey);
+        const activeColumn = context
+          ? this.layout
+              .snapshot(context.outputId, context.desktopId)
+              .columns.find((column) => column.windowIds.includes(activeId))
+          : undefined;
+
+        if (!context || !activeColumn) {
+          return false;
+        }
+
+        if (activeColumn.windowIds.length > 1) {
+          return this.maximizeStackedActiveWindow(activeWindow);
+        }
+      }
     }
 
     try {
@@ -1351,6 +1405,7 @@ export class RuntimeController {
       this.knownOutputInstances.clear();
       this.contexts.clear();
       this.windowTransferOperation = null;
+      this.stackedMaximizeOperation = null;
       this.dirtyContexts.clear();
       this.automaticFloatingWindows.clear();
       this.borderlessSettlementTokens.clear();
@@ -1685,6 +1740,39 @@ export class RuntimeController {
     this.suspendGeometryLease(suspendedId);
     this.pendingWindowSyncs.add(suspendedId);
     this.scheduleWork();
+  };
+
+  private readonly handleMaximizedAboutToChange = (
+    id: string,
+    mode: number,
+  ): void => {
+    if (mode !== 3) {
+      return;
+    }
+
+    const activeId = windowId(id);
+    const operation = this.stackedMaximizeOperation;
+
+    if (operation) {
+      return;
+    }
+
+    const source = this.observer.source(id);
+
+    if (
+      !source ||
+      String(this.workspace.activeWindow?.internalId) !== String(activeId)
+    ) {
+      return;
+    }
+
+    try {
+      this.extractStackedWindowForExternalMaximize(source);
+    } catch (error) {
+      console.warn(
+        `[driftile] external stacked maximize interception failed window=${String(activeId)} error=${String(error)}`,
+      );
+    }
   };
 
   private readonly handleWindowRemoved = (id: string): void => {
@@ -6984,11 +7072,479 @@ export class RuntimeController {
     };
   }
 
+  private maximizeStackedActiveWindow(activeWindow: KWinWindow): boolean {
+    const signal = activeWindow.maximizedAboutToChange;
+
+    if (!signal) {
+      return false;
+    }
+
+    const preparation = this.prepareStackedMaximize(activeWindow);
+
+    if (!preparation) {
+      return false;
+    }
+
+    const observedModes: number[] = [];
+    const handleRequest = (mode: number): void => {
+      observedModes.push(mode);
+    };
+    const operation = this.extractStackedMaximizeWindow(
+      preparation,
+      (candidate) => {
+        if (!this.stackedMaximizeOperationIsCurrent(candidate)) {
+          return false;
+        }
+
+        signal.connect(handleRequest);
+
+        try {
+          activeWindow.setMaximize?.(true, true);
+        } catch (error) {
+          if (observedModes.length === 0) {
+            console.warn(
+              `[driftile] stacked maximize request failed window=${String(candidate.activeId)} error=${String(error)}`,
+            );
+          }
+        } finally {
+          signal.disconnect(handleRequest);
+        }
+
+        return observedModes.length === 1 && observedModes[0] === 3;
+      },
+    );
+
+    if (!operation) {
+      if (observedModes.length === 0) {
+        this.restoreStackedMaximizeRuntime(preparation);
+      }
+
+      this.finishStackedMaximizeOperation(preparation.transfer);
+      this.scheduleStackedMaximizeFollowUp();
+      return false;
+    }
+
+    return this.commitStackedMaximizeOperation(operation);
+  }
+
+  private extractStackedWindowForExternalMaximize(
+    activeWindow: KWinWindow,
+  ): void {
+    const preparation = this.prepareStackedMaximize(activeWindow);
+
+    if (!preparation) {
+      return;
+    }
+
+    const operation = this.extractStackedMaximizeWindow(
+      preparation,
+      (candidate) => this.stackedMaximizeOperationIsCurrent(candidate),
+    );
+
+    if (!operation) {
+      this.restoreStackedMaximizeRuntime(preparation);
+      this.finishStackedMaximizeOperation(preparation.transfer);
+      this.scheduleStackedMaximizeFollowUp();
+      return;
+    }
+
+    if (!this.commitStackedMaximizeOperation(operation)) {
+      console.warn(
+        `[driftile] external stacked maximize extraction could not commit window=${String(operation.activeId)}`,
+      );
+    }
+  }
+
+  private prepareStackedMaximize(
+    activeWindow: KWinWindow,
+  ): StackedMaximizePreparation | null {
+    const command = this.prepareActiveColumnCommand();
+
+    if (
+      !command ||
+      this.observer.source(command.activeId) !== activeWindow ||
+      command.activeColumn.windowIds.length < 2 ||
+      this.hasPendingCapacityState(command.context.key) ||
+      this.pendingAdmissionContexts.has(command.context.key) ||
+      this.waitingWindowIds.has(command.context.key) ||
+      !this.columnMembersAreStackTransferEligible(
+        command.activeColumn,
+        command.context,
+      )
+    ) {
+      return null;
+    }
+
+    let newColumnId: ColumnId;
+
+    try {
+      newColumnId = this.extractedColumnId(command);
+    } catch {
+      return null;
+    }
+
+    const requests = this.requestedSuspensions.get(command.activeId);
+    const resumeSample = this.resumeSamples.get(command.activeId);
+    const transientProbe = this.transientResumeProbes.get(command.activeId);
+    const transfer: WindowTransferOperation = {
+      activeId: command.activeId,
+      desktopChangeSuppressed: false,
+      kind: "stack-maximize",
+      movingIds: new Set([command.activeId]),
+      sourceContextKey: command.context.key,
+      targetContextKey: command.context.key,
+    };
+
+    return {
+      activeId: command.activeId,
+      activeWindow,
+      before: command.before,
+      command,
+      newColumnId,
+      runtime: {
+        contextDirty: this.dirtyContexts.has(command.context.key),
+        lastTiledFocus: this.lastTiledFocus.get(command.context.key),
+        originalActiveWindow: this.workspace.activeWindow,
+        pendingAdmission: this.pendingAdmissionContexts.has(
+          command.context.key,
+        ),
+        pendingWindowSync: this.pendingWindowSyncs.has(command.activeId),
+        requestedSuspensions: requests ? new Set(requests) : null,
+        resumeSample: resumeSample
+          ? {
+              contextKey: resumeSample.contextKey,
+              frame: { ...resumeSample.frame },
+            }
+          : null,
+        suspended: this.suspendedWindows.has(command.activeId),
+        transientResumeProbe: transientProbe ? { ...transientProbe } : null,
+      },
+      sourceColumnId: command.activeColumn.id,
+      sourceFullWidthRestore: this.columnFullWidthRestoreWidth(
+        command.context.key,
+        command.activeColumn.id,
+      ),
+      topologyRevision: this.topologyRevision,
+      transfer,
+    };
+  }
+
+  private extractStackedMaximizeWindow(
+    preparation: StackedMaximizePreparation,
+    accept: (operation: StackedMaximizeOperation) => boolean,
+  ): StackedMaximizeOperation | null {
+    if (this.windowTransferOperation || this.stackedMaximizeOperation) {
+      return null;
+    }
+
+    this.windowTransferOperation = preparation.transfer;
+    const editState: { value: StackEditResult | null } = { value: null };
+    let operation: StackedMaximizeOperation | null = null;
+    let applied = false;
+
+    try {
+      applied = this.applyActiveColumnMutation(
+        preparation.command,
+        "stacked maximize extraction",
+        () => {
+          const candidate = this.layout.moveActiveWindow(
+            preparation.activeId,
+            "right",
+            preparation.newColumnId,
+          );
+
+          if (!candidate) {
+            return false;
+          }
+
+          if (candidate.kind !== "extract") {
+            this.layout.rollbackStackEdit(candidate.rollback);
+            return false;
+          }
+
+          editState.value = candidate;
+          return true;
+        },
+        () =>
+          Boolean(
+            editState.value &&
+            this.layout.rollbackStackEdit(editState.value.rollback),
+          ),
+        () => {
+          const edit = editState.value;
+
+          if (!edit) {
+            return false;
+          }
+
+          const candidateOperation: StackedMaximizeOperation = {
+            ...preparation,
+            after: this.layout.snapshot(
+              preparation.command.context.outputId,
+              preparation.command.context.desktopId,
+            ),
+            edit,
+          };
+          operation = candidateOperation;
+          this.stackedMaximizeOperation = candidateOperation;
+          return accept(candidateOperation);
+        },
+      );
+    } catch (error) {
+      if (editState.value) {
+        this.layout.rollbackStackEdit(editState.value.rollback);
+      }
+
+      console.warn(
+        `[driftile] stacked maximize extraction failed window=${String(preparation.activeId)} error=${String(error)}`,
+      );
+    }
+
+    if (!applied) {
+      if (editState.value) {
+        this.layout.discardStackEditRollback(editState.value.rollback);
+      }
+
+      this.stackedMaximizeOperation = null;
+      return null;
+    }
+
+    return operation;
+  }
+
+  private stackedMaximizeOperationIsCurrent(
+    operation: StackedMaximizeOperation,
+  ): boolean {
+    const owner = this.managedWindows.get(operation.activeId);
+    const source = this.observer.source(operation.activeId);
+    const observed = source ? normalizeWindow(source) : null;
+    const liveContext = observed ? managedContext(observed) : null;
+    const snapshot = this.layout.snapshot(
+      operation.command.context.outputId,
+      operation.command.context.desktopId,
+    );
+    const sourceColumn = snapshot.columns.find(
+      (column) => column.id === operation.sourceColumnId,
+    );
+    const extractedColumn = snapshot.columns.find(
+      (column) => column.id === operation.newColumnId,
+    );
+
+    return (
+      this.started &&
+      this.windowTransferOperation === operation.transfer &&
+      this.stackedMaximizeOperation === operation &&
+      this.topologyRevision === operation.topologyRevision &&
+      !this.hasTopologyBarrier() &&
+      source === operation.activeWindow &&
+      owner?.contextKey === operation.command.context.key &&
+      liveContext !== null &&
+      contextKey(liveContext) === operation.command.context.key &&
+      String(this.workspace.activeWindow?.internalId) ===
+        String(operation.activeId) &&
+      operation.activeWindow.maximizeMode === 0 &&
+      layoutContextSnapshotsEqual(snapshot, operation.after) &&
+      snapshot.activeColumnId === operation.newColumnId &&
+      Boolean(
+        sourceColumn &&
+        sourceColumn.windowIds.length ===
+          operation.command.activeColumn.windowIds.length - 1 &&
+        !sourceColumn.windowIds.includes(operation.activeId),
+      ) &&
+      Boolean(
+        extractedColumn &&
+        extractedColumn.windowIds.length === 1 &&
+        extractedColumn.windowIds[0] === operation.activeId &&
+        sameColumnWidth(
+          extractedColumn.width,
+          operation.command.activeColumn.width,
+        ),
+      )
+    );
+  }
+
+  private commitStackedMaximizeOperation(
+    operation: StackedMaximizeOperation,
+  ): boolean {
+    let committed = false;
+
+    try {
+      const owner = this.managedWindows.get(operation.activeId);
+      const source = this.observer.source(operation.activeId);
+      const observed = source ? normalizeWindow(source) : null;
+      const liveContext = observed ? managedContext(observed) : null;
+      const after = this.layout.snapshot(
+        operation.command.context.outputId,
+        operation.command.context.desktopId,
+      );
+      const extracted = after.columns.find(
+        (column) => column.id === operation.newColumnId,
+      );
+
+      if (
+        !this.started ||
+        this.stackedMaximizeOperation !== operation ||
+        this.windowTransferOperation !== operation.transfer ||
+        this.topologyRevision !== operation.topologyRevision ||
+        this.hasTopologyBarrier() ||
+        source !== operation.activeWindow ||
+        owner?.contextKey !== operation.command.context.key ||
+        !liveContext ||
+        contextKey(liveContext) !== operation.command.context.key ||
+        String(this.workspace.activeWindow?.internalId) !==
+          String(operation.activeId) ||
+        !layoutContextSnapshotsEqual(after, operation.after) ||
+        after.activeColumnId !== operation.newColumnId ||
+        extracted?.windowIds.length !== 1 ||
+        extracted.windowIds[0] !== operation.activeId
+      ) {
+        return false;
+      }
+
+      this.layout.discardStackEditRollback(operation.edit.rollback);
+      this.reconcileColumnFullWidthRestore(
+        operation.command.context.key,
+        operation.before,
+        after,
+      );
+
+      if (operation.sourceFullWidthRestore) {
+        this.setColumnFullWidthRestore(
+          operation.command.context.key,
+          operation.newColumnId,
+          operation.sourceFullWidthRestore,
+        );
+      }
+
+      this.capacityParkBackoffs.delete(operation.command.context.key);
+      committed = true;
+      return true;
+    } finally {
+      if (!committed) {
+        this.layout.discardStackEditRollback(operation.edit.rollback);
+        this.markContextDirty(operation.command.context);
+
+        if (this.observer.source(operation.activeId)) {
+          this.pendingWindowSyncs.add(operation.activeId);
+        }
+      }
+
+      this.finishStackedMaximizeOperation(operation.transfer);
+      this.handleWindowActivated(this.workspace.activeWindow);
+      this.scheduleStackedMaximizeFollowUp();
+    }
+  }
+
+  private restoreStackedMaximizeRuntime(
+    preparation: StackedMaximizePreparation,
+  ): void {
+    const { activeId, command, runtime } = preparation;
+    const activeWindowIsLive =
+      this.observer.source(activeId) === preparation.activeWindow;
+
+    if (activeWindowIsLive) {
+      restoreRememberedFocus(
+        this.lastTiledFocus,
+        command.context.key,
+        runtime.lastTiledFocus,
+      );
+    }
+    restoreSetMembership(
+      this.dirtyContexts,
+      command.context.key,
+      runtime.contextDirty,
+    );
+    restoreSetMembership(
+      this.pendingAdmissionContexts,
+      command.context.key,
+      runtime.pendingAdmission,
+    );
+    restoreSetMembership(
+      this.pendingWindowSyncs,
+      activeId,
+      runtime.pendingWindowSync,
+    );
+    restoreSetMembership(this.suspendedWindows, activeId, runtime.suspended);
+
+    if (runtime.requestedSuspensions) {
+      this.requestedSuspensions.set(
+        activeId,
+        new Set(runtime.requestedSuspensions),
+      );
+    } else {
+      this.requestedSuspensions.delete(activeId);
+    }
+
+    if (runtime.resumeSample) {
+      this.resumeSamples.set(activeId, {
+        contextKey: runtime.resumeSample.contextKey,
+        frame: { ...runtime.resumeSample.frame },
+      });
+    } else {
+      this.resumeSamples.delete(activeId);
+    }
+
+    if (runtime.transientResumeProbe) {
+      this.transientResumeProbes.set(activeId, {
+        ...runtime.transientResumeProbe,
+      });
+    } else {
+      this.transientResumeProbes.delete(activeId);
+    }
+
+    const originalActiveWindow = runtime.originalActiveWindow;
+    const originalActiveIsLive = Boolean(
+      originalActiveWindow &&
+      this.observer.source(String(originalActiveWindow.internalId)) ===
+        originalActiveWindow,
+    );
+
+    if (
+      this.workspace.activeWindow !== originalActiveWindow &&
+      (originalActiveWindow === null || originalActiveIsLive)
+    ) {
+      try {
+        this.workspace.activeWindow = originalActiveWindow;
+      } catch (error) {
+        console.warn(
+          `[driftile] stacked maximize focus restore failed window=${String(activeId)} error=${String(error)}`,
+        );
+      }
+    }
+  }
+
+  private finishStackedMaximizeOperation(
+    transfer: WindowTransferOperation,
+  ): void {
+    if (this.stackedMaximizeOperation?.transfer === transfer) {
+      this.stackedMaximizeOperation = null;
+    }
+
+    if (this.windowTransferOperation === transfer) {
+      this.windowTransferOperation = null;
+    }
+  }
+
+  private scheduleStackedMaximizeFollowUp(): void {
+    if (
+      this.pendingWindowSyncs.size > 0 ||
+      this.pendingAdmissionContexts.size > 0 ||
+      this.desktopLifecycle.pendingWork ||
+      [...this.dirtyContexts].some((key) => {
+        const context = this.contexts.get(key);
+        return Boolean(context && this.isContextVisible(context));
+      })
+    ) {
+      this.scheduleWork();
+    }
+  }
+
   private applyActiveColumnMutation(
     command: ActiveColumnCommand,
     label: string,
     mutate: () => boolean,
     rollback: () => boolean,
+    accept?: () => boolean,
   ): boolean {
     if (!mutate()) {
       return false;
@@ -7090,8 +7646,16 @@ export class RuntimeController {
       !this.hasTopologyBarrier() &&
       !this.dirtyContexts.has(context.key)
     ) {
-      this.lastWrites = forwardWrites;
-      return true;
+      try {
+        if (!accept || accept()) {
+          this.lastWrites = forwardWrites;
+          return true;
+        }
+
+        forwardError = `${label} acceptance was rejected`;
+      } catch (error) {
+        forwardError = String(error);
+      }
     }
 
     const restored = restoreLayout();
@@ -11925,6 +12489,18 @@ function restoreRememberedFocus(
     remembered.delete(key);
   } else {
     remembered.set(key, id);
+  }
+}
+
+function restoreSetMembership<T>(
+  values: Set<T>,
+  value: T,
+  included: boolean,
+): void {
+  if (included) {
+    values.add(value);
+  } else {
+    values.delete(value);
   }
 }
 

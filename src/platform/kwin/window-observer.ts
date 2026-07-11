@@ -18,6 +18,7 @@ export interface ObservedWindow {
 export interface WindowObserverEvents {
   readonly added?: (window: ObservedWindow) => void;
   readonly changed?: (windowId: string) => void;
+  readonly maximizedAboutToChange?: (windowId: string, mode: number) => void;
   readonly removed?: (windowId: string) => void;
   readonly suspensionSettled?: (
     windowId: string,
@@ -151,6 +152,7 @@ export class WindowObserver {
       handleDesktopsChanged: refresh,
       handleMaximizedAboutToChange: (mode) => {
         if (mode !== 0) {
+          this.events.maximizedAboutToChange?.(id, mode);
           this.events.suspensionSettled?.(id, "maximized-settling");
           this.events.suspending?.(id, "maximized-requested");
           maximizeRequested = true;
@@ -165,6 +167,10 @@ export class WindowObserver {
         }
 
         refreshState();
+
+        if (mode === 0) {
+          this.events.maximizedAboutToChange?.(id, mode);
+        }
       },
       handleMaximizedChanged: () => {
         const maximized = window.maximizeMode !== 0;

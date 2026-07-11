@@ -3564,6 +3564,96 @@ verify_consume_and_expel_window() {
     fail "Driftile changed $protocol focus while expelling from a singleton"
 }
 
+verify_stacked_maximize_extraction() {
+  local protocol=$1
+  local trigger=$2
+  local first_title=$3
+  local middle_title=$4
+  local last_title=$5
+  local unrelated_title=$6
+  local middle_id
+
+  middle_id=$(window_id "$middle_title") || \
+    fail "KWin did not expose the middle $protocol stack member"
+  activate_window "$middle_title" || \
+    fail "KWin could not activate the middle $protocol stack member before $trigger maximize"
+  wait_for_active "$middle_title" || \
+    fail "KWin did not focus the middle $protocol stack member before $trigger maximize"
+  window_state_matches "$middle_id" maximized false || \
+    fail "the middle $protocol stack member was already maximized"
+  wait_for_geometries \
+    "$first_title" "16,16,616,219" \
+    "$middle_title" "16,251,616,218" \
+    "$last_title" "16,485,616,219" \
+    "$unrelated_title" "648,16,616,688" || \
+    fail "Driftile did not preserve the three-window $protocol stack before $trigger maximize: $(describe_layout "$first_title" "$middle_title" "$last_title" "$unrelated_title")"
+
+  if [[ "$trigger" == "shortcut" ]]; then
+    wait_for_shortcut "driftile_maximize_window_to_edges" || \
+      fail "KGlobalAccel did not register the stacked maximize shortcut"
+    invoke_shortcut "driftile_maximize_window_to_edges" || \
+      fail "KGlobalAccel could not maximize the middle $protocol stack member"
+  else
+    run_window_action "$middle_title" maximize || \
+      fail "KWin could not externally maximize the middle $protocol stack member"
+  fi
+
+  wait_for_state_and_geometries \
+    "$middle_id" maximized true \
+    "$first_title" "16,16,616,336" \
+    "$middle_title" "0,0,1280,720" \
+    "$last_title" "16,368,616,336" \
+    "$unrelated_title" "1280,16,616,688" || \
+    fail "Driftile did not extract the middle $protocol stack member before $trigger maximize ownership: $(describe_layout "$first_title" "$middle_title" "$last_title" "$unrelated_title")"
+  wait_for_active "$middle_title" || \
+    fail "Driftile changed $protocol focus during $trigger stacked maximize"
+  wait_for_window_desktop "$first_title" "$primary_desktop_id" || \
+    fail "Driftile moved the first $protocol stack member during maximize extraction"
+  wait_for_window_desktop "$middle_title" "$primary_desktop_id" || \
+    fail "Driftile moved the maximized $protocol stack member to another desktop"
+  wait_for_window_desktop "$last_title" "$primary_desktop_id" || \
+    fail "Driftile moved the last $protocol stack member during maximize extraction"
+  wait_for_window_desktop "$unrelated_title" "$primary_desktop_id" || \
+    fail "Driftile moved the unrelated $protocol column during maximize extraction"
+
+  if [[ "$trigger" == "shortcut" ]]; then
+    invoke_shortcut "driftile_maximize_window_to_edges" || \
+      fail "KGlobalAccel could not unmaximize the extracted $protocol stack member"
+  else
+    run_window_action "$middle_title" maximize || \
+      fail "KWin could not externally unmaximize the extracted $protocol stack member"
+  fi
+
+  wait_for_state_and_geometries \
+    "$middle_id" maximized false \
+    "$first_title" "16,16,616,336" \
+    "$middle_title" "648,16,616,688" \
+    "$last_title" "16,368,616,336" \
+    "$unrelated_title" "1280,16,616,688" || \
+    fail "Driftile did not keep the unmaximized $protocol window in its exact singleton column: $(describe_layout "$first_title" "$middle_title" "$last_title" "$unrelated_title")"
+  wait_for_active "$middle_title" || \
+    fail "Driftile changed $protocol focus while leaving $trigger stacked maximize"
+
+  invoke_shortcut "driftile_move_window_left" || \
+    fail "KGlobalAccel could not restore the extracted $protocol window to its source stack"
+  wait_for_geometries \
+    "$first_title" "16,16,616,219" \
+    "$middle_title" "16,485,616,219" \
+    "$last_title" "16,251,616,218" \
+    "$unrelated_title" "648,16,616,688" || \
+    fail "Driftile did not append the extracted $protocol window while restoring the fixture: $(describe_layout "$first_title" "$middle_title" "$last_title" "$unrelated_title")"
+  invoke_shortcut "driftile_move_window_up" || \
+    fail "KGlobalAccel could not restore the middle $protocol stack order"
+  wait_for_geometries \
+    "$first_title" "16,16,616,219" \
+    "$middle_title" "16,251,616,218" \
+    "$last_title" "16,485,616,219" \
+    "$unrelated_title" "648,16,616,688" || \
+    fail "Driftile did not restore the exact three-window $protocol stack after $trigger maximize: $(describe_layout "$first_title" "$middle_title" "$last_title" "$unrelated_title")"
+  wait_for_active "$middle_title" || \
+    fail "Driftile changed $protocol focus while restoring the stacked-maximize fixture"
+}
+
 run_scenario() {
   local protocol=$1
   local first_title="driftile-smoke-${protocol}-a"
@@ -3940,6 +4030,16 @@ run_scenario() {
     fail "Driftile wrapped the direct $protocol stack search past the right boundary: $(describe_layout "$first_title" "$second_title" "$third_title" "$fourth_title")"
   wait_for_active "$fourth_title" || \
     fail "Driftile changed $protocol focus after the bounded stack search"
+
+  if [[ "$protocol" == "x11" ]]; then
+    verify_stacked_maximize_extraction \
+      "$protocol" \
+      shortcut \
+      "$first_title" \
+      "$second_title" \
+      "$fourth_title" \
+      "$third_title"
+  fi
 
   stop_client "$fourth_pid"
   wait_for_window_gone "$fourth_title" || \
@@ -4324,6 +4424,100 @@ run_scenario() {
   wait_for_window_gone "$third_title" || fail "the third $protocol test window did not close"
 }
 
+verify_multi_output_stacked_maximize_extraction() {
+  local protocol=$1
+  local trigger=$2
+  local first_title=$3
+  local middle_title=$4
+  local last_title=$5
+  local right_first_title=$6
+  local right_second_title=$7
+  local middle_id
+
+  middle_id=$(window_id "$middle_title") || \
+    fail "KWin did not expose the middle multi-output $protocol stack member"
+  activate_window "$middle_title" || \
+    fail "KWin could not activate the middle multi-output $protocol stack member"
+  wait_for_active "$middle_title" || \
+    fail "KWin did not focus the middle multi-output $protocol stack member"
+  wait_for_geometries \
+    "$first_title" "16,16,616,219" \
+    "$middle_title" "16,251,616,218" \
+    "$last_title" "16,485,616,219" \
+    "$right_first_title" "1296,16,616,688" \
+    "$right_second_title" "1928,16,616,688" || \
+    fail "Driftile did not preserve the isolated left $protocol stack before maximize: $(describe_layout "$first_title" "$middle_title" "$last_title" "$right_first_title" "$right_second_title")"
+
+  if [[ "$trigger" == "shortcut" ]]; then
+    wait_for_shortcut "driftile_maximize_window_to_edges" || \
+      fail "KGlobalAccel did not register the multi-output stacked maximize shortcut"
+    invoke_shortcut "driftile_maximize_window_to_edges" || \
+      fail "KGlobalAccel could not maximize the middle multi-output $protocol stack member"
+  else
+    run_window_action "$middle_title" maximize || \
+      fail "KWin could not externally maximize the middle multi-output $protocol stack member"
+  fi
+  wait_for_state_and_geometries \
+    "$middle_id" maximized true \
+    "$first_title" "16,16,616,336" \
+    "$middle_title" "0,0,1280,720" \
+    "$last_title" "16,368,616,336" \
+    "$right_first_title" "1296,16,616,688" \
+    "$right_second_title" "1928,16,616,688" || \
+    fail "Driftile crossed output contexts during stacked $protocol maximize extraction: $(describe_layout "$first_title" "$middle_title" "$last_title" "$right_first_title" "$right_second_title")"
+  wait_for_active "$middle_title" || \
+    fail "Driftile changed $protocol focus during multi-output stacked maximize"
+  window_is_on_output_side "$first_title" left || \
+    fail "Driftile moved the first $protocol source member to another output"
+  window_is_on_output_side "$middle_title" left || \
+    fail "Driftile maximized the extracted $protocol window on another output"
+  window_is_on_output_side "$last_title" left || \
+    fail "Driftile moved the last $protocol source member to another output"
+  window_is_on_output_side "$right_first_title" right || \
+    fail "Driftile moved the first unrelated right-output $protocol window"
+  window_is_on_output_side "$right_second_title" right || \
+    fail "Driftile moved the second unrelated right-output $protocol window"
+
+  if [[ "$trigger" == "shortcut" ]]; then
+    invoke_shortcut "driftile_maximize_window_to_edges" || \
+      fail "KGlobalAccel could not unmaximize the extracted multi-output $protocol window"
+  else
+    run_window_action "$middle_title" maximize || \
+      fail "KWin could not externally unmaximize the extracted multi-output $protocol window"
+  fi
+  wait_for_state_and_geometries \
+    "$middle_id" maximized false \
+    "$first_title" "16,16,616,336" \
+    "$middle_title" "648,16,616,688" \
+    "$last_title" "16,368,616,336" \
+    "$right_first_title" "1296,16,616,688" \
+    "$right_second_title" "1928,16,616,688" || \
+    fail "Driftile did not preserve the isolated singleton after multi-output $protocol unmaximize: $(describe_layout "$first_title" "$middle_title" "$last_title" "$right_first_title" "$right_second_title")"
+  wait_for_active "$middle_title" || \
+    fail "Driftile changed $protocol focus while leaving multi-output stacked maximize"
+
+  invoke_shortcut "driftile_move_window_left" || \
+    fail "KGlobalAccel could not restore the multi-output $protocol maximize fixture"
+  wait_for_geometries \
+    "$first_title" "16,16,616,219" \
+    "$middle_title" "16,485,616,219" \
+    "$last_title" "16,251,616,218" \
+    "$right_first_title" "1296,16,616,688" \
+    "$right_second_title" "1928,16,616,688" || \
+    fail "Driftile did not append the extracted multi-output $protocol window during fixture restore: $(describe_layout "$first_title" "$middle_title" "$last_title" "$right_first_title" "$right_second_title")"
+  invoke_shortcut "driftile_move_window_up" || \
+    fail "KGlobalAccel could not restore the middle multi-output $protocol stack order"
+  wait_for_geometries \
+    "$first_title" "16,16,616,219" \
+    "$middle_title" "16,251,616,218" \
+    "$last_title" "16,485,616,219" \
+    "$right_first_title" "1296,16,616,688" \
+    "$right_second_title" "1928,16,616,688" || \
+    fail "Driftile did not restore the exact isolated $protocol stack after maximize: $(describe_layout "$first_title" "$middle_title" "$last_title" "$right_first_title" "$right_second_title")"
+  wait_for_active "$middle_title" || \
+    fail "Driftile changed $protocol focus while restoring the multi-output maximize fixture"
+}
+
 run_multi_output_scenario() {
   local protocol=$1
   local baseline
@@ -4466,6 +4660,26 @@ run_multi_output_scenario() {
     fail "Driftile crossed an output boundary during the $protocol stack search: $(describe_layout "${titles[0]}" "${titles[1]}" "${titles[2]}" "${titles[3]}" "${titles[4]}")"
   wait_for_active "${titles[2]}" || \
     fail "Driftile changed $protocol focus after the bounded multi-output stack search"
+
+  if [[ "$protocol" == "wayland" ]]; then
+    verify_multi_output_stacked_maximize_extraction \
+      "$protocol" \
+      window-action \
+      "${titles[0]}" \
+      "${titles[1]}" \
+      "${titles[2]}" \
+      "${titles[3]}" \
+      "${titles[4]}"
+  else
+    verify_multi_output_stacked_maximize_extraction \
+      "$protocol" \
+      shortcut \
+      "${titles[0]}" \
+      "${titles[1]}" \
+      "${titles[2]}" \
+      "${titles[3]}" \
+      "${titles[4]}"
+  fi
 
   stop_client "$temporary_left_pid"
   wait_for_window_gone "${titles[2]}" || \
