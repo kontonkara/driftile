@@ -1475,6 +1475,7 @@ export class RuntimeController {
     }
 
     this.probeToggleTransitions();
+    this.observer.probeVisibleConstraintChanges();
     this.sampleSettledVisibleContextGeometries();
   }
 
@@ -12521,18 +12522,34 @@ export class RuntimeController {
     }
 
     const geometryBlocked = hasGeometryAuthorityBlocker(source);
+    let resizeable: boolean;
 
-    if (!source.resizeable && !geometryBlocked) {
-      return true;
+    try {
+      resizeable = source.resizeable;
+    } catch {
+      return !geometryBlocked;
     }
 
-    const constraintState = fixedFrameSizeConstraintState(source);
+    if (typeof resizeable !== "boolean" || !resizeable) {
+      return !geometryBlocked;
+    }
+
+    let constraintState:
+      | typeof FIXED_SIZE_CONSTRAINTS
+      | typeof FLEXIBLE_SIZE_CONSTRAINTS
+      | typeof MALFORMED_SIZE_CONSTRAINTS;
+
+    try {
+      constraintState = fixedFrameSizeConstraintState(source);
+    } catch {
+      constraintState = MALFORMED_SIZE_CONSTRAINTS;
+    }
 
     if (constraintState === MALFORMED_SIZE_CONSTRAINTS) {
       return !geometryBlocked;
     }
 
-    return constraintState === FIXED_SIZE_CONSTRAINTS;
+    return constraintState === FIXED_SIZE_CONSTRAINTS && !geometryBlocked;
   }
 
   private retainsFullscreenRequestGeometry(source: KWinWindow): boolean {
@@ -12608,9 +12625,21 @@ export class RuntimeController {
     source: KWinWindow,
     target: boolean,
   ): boolean {
-    return target
-      ? source.moveable && source.resizeable
-      : !source.moveable && !source.resizeable;
+    let moveable: boolean;
+    let resizeable: boolean;
+
+    try {
+      moveable = source.moveable;
+      resizeable = source.resizeable;
+    } catch {
+      return false;
+    }
+
+    if (typeof moveable !== "boolean" || typeof resizeable !== "boolean") {
+      return false;
+    }
+
+    return target ? moveable && resizeable : !moveable && !resizeable;
   }
 
   private queueFullscreenRequestGeometrySync(id: WindowId): void {

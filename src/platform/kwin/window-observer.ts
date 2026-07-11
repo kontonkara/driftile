@@ -1,4 +1,4 @@
-import type { KWinOutput, KWinWindow, KWinWorkspace } from "./api";
+import type { KWinOutput, KWinRect, KWinWindow, KWinWorkspace } from "./api";
 
 export type ObservedWindowKind = "dialog" | "normal" | "other";
 export type WindowSuspensionRequest =
@@ -35,18 +35,26 @@ export interface WindowObserverEvents {
 
 interface WindowEntry {
   readonly handleAutomaticFloatingChanged: () => void;
+  readonly handleClientGeometryChanged: (oldGeometry: KWinRect) => void;
+  readonly handleConstraintChanged: () => void;
   readonly handleDecorationPolicyChanged: () => void;
   readonly handleDesktopsChanged: () => void;
   readonly handleFullScreenChanged: () => void;
+  readonly handleFrameGeometryChanged: (oldGeometry: KWinRect) => void;
+  readonly handleInteractiveStateChanged: () => void;
   readonly handleMaximizedAboutToChange: (mode: number) => void;
   readonly handleMaximizedChanged: () => void;
   readonly handleOutputChanged: (oldOutput?: KWinOutput | null) => void;
   readonly handleRequestedTileChanged: () => void;
   readonly handleStateChanged: () => void;
   readonly handleTileChanged: (tile: object | null) => void;
+  constraintFingerprint: string;
   observed: ObservedWindow | null;
   readonly source: KWinWindow;
 }
+
+const INVALID_CONSTRAINT_FINGERPRINT = "invalid";
+const CONSTRAINT_EPSILON = 1e-6;
 
 export class WindowObserver {
   private readonly events: WindowObserverEvents;
@@ -109,6 +117,40 @@ export class WindowObserver {
     return this.windows.get(windowId)?.source;
   }
 
+  probeVisibleConstraintChanges(): number {
+    if (!this.started) {
+      return 0;
+    }
+
+    const selectedDesktopIds = this.selectedDesktopIdsByOutput();
+    let changedCount = 0;
+
+    for (const [id, entry] of [...this.windows]) {
+      if (
+        this.windows.get(id) !== entry ||
+        !entry.observed ||
+        entry.source.minimized
+      ) {
+        continue;
+      }
+
+      const selectedDesktopId = selectedDesktopIds.get(entry.observed.outputId);
+
+      if (
+        !selectedDesktopId ||
+        !entry.observed.desktopIds.includes(selectedDesktopId)
+      ) {
+        continue;
+      }
+
+      if (this.refreshConstraintFingerprint(id, entry.source)) {
+        changedCount += 1;
+      }
+    }
+
+    return changedCount;
+  }
+
   private readonly handleWindowAdded = (window: KWinWindow): void => {
     this.add(window);
   };
@@ -142,6 +184,27 @@ export class WindowObserver {
     const refreshState = (): void => {
       this.refreshState(id, window);
     };
+    const refreshConstraint = (): void => {
+      this.refreshConstraintFingerprint(id, window);
+    };
+    const refreshClientGeometry = (oldGeometry: KWinRect): void => {
+      if (geometrySizeChanged(oldGeometry, window, "clientGeometry")) {
+        refreshConstraint();
+      }
+    };
+    const refreshFrameGeometry = (oldGeometry: KWinRect): void => {
+      if (geometrySizeChanged(oldGeometry, window, "frameGeometry")) {
+        refreshConstraint();
+      }
+    };
+    const refreshInteractiveState = (): void => {
+      refreshConstraint();
+      refreshState();
+    };
+    const refreshDecorationPolicy = (): void => {
+      refreshConstraint();
+      refreshState();
+    };
     const refreshAutomaticFloating = (): void => {
       this.refresh(id, window, true);
     };
@@ -150,12 +213,16 @@ export class WindowObserver {
     let tileRequested = window.tile !== null;
     const entry: WindowEntry = {
       handleAutomaticFloatingChanged: refreshAutomaticFloating,
-      handleDecorationPolicyChanged: refreshState,
+      handleClientGeometryChanged: refreshClientGeometry,
+      handleConstraintChanged: refreshConstraint,
+      handleDecorationPolicyChanged: refreshDecorationPolicy,
       handleDesktopsChanged: refresh,
       handleFullScreenChanged: () => {
         this.events.fullScreenChanged?.(id, window.fullScreen);
         refreshState();
       },
+      handleFrameGeometryChanged: refreshFrameGeometry,
+      handleInteractiveStateChanged: refreshInteractiveState,
       handleMaximizedAboutToChange: (mode) => {
         if (mode !== 0) {
           this.events.maximizedAboutToChange?.(id, mode);
@@ -238,20 +305,25 @@ export class WindowObserver {
 
         refreshState();
       },
+      constraintFingerprint: constraintFingerprint(window),
       observed: observedWindow,
       source: window,
     };
 
     this.windows.set(id, entry);
+    window.clientGeometryChanged?.connect(entry.handleClientGeometryChanged);
     window.desktopsChanged?.connect(entry.handleDesktopsChanged);
+    window.frameGeometryChanged?.connect(entry.handleFrameGeometryChanged);
     window.fullScreenChanged?.connect(entry.handleFullScreenChanged);
-    window.interactiveMoveResizeFinished?.connect(entry.handleStateChanged);
+    window.interactiveMoveResizeFinished?.connect(
+      entry.handleInteractiveStateChanged,
+    );
     window.maximizedAboutToChange?.connect(entry.handleMaximizedAboutToChange);
-    window.maximizeableChanged?.connect(entry.handleAutomaticFloatingChanged);
+    window.maximizeableChanged?.connect(entry.handleConstraintChanged);
     window.maximizedChanged?.connect(entry.handleMaximizedChanged);
     window.minimizedChanged?.connect(entry.handleStateChanged);
     window.modalChanged?.connect(entry.handleAutomaticFloatingChanged);
-    window.moveResizedChanged?.connect(entry.handleStateChanged);
+    window.moveResizedChanged?.connect(entry.handleInteractiveStateChanged);
     window.outputChanged?.connect(entry.handleOutputChanged);
     window.requestedTileChanged?.connect(entry.handleRequestedTileChanged);
     window.tileChanged?.connect(entry.handleTileChanged);
@@ -295,6 +367,67 @@ export class WindowObserver {
     if (entry?.source === source) {
       this.events.stateChanged?.(id);
     }
+  }
+
+  private refreshConstraintFingerprint(
+    id: string,
+    source: KWinWindow,
+  ): boolean {
+    const entry = this.windows.get(id);
+
+    if (!entry || entry.source !== source) {
+      return false;
+    }
+
+    const fingerprint = constraintFingerprint(source);
+
+    if (entry.constraintFingerprint === fingerprint) {
+      return false;
+    }
+
+    entry.constraintFingerprint = fingerprint;
+    this.events.changed?.(id);
+    return true;
+  }
+
+  private selectedDesktopIdsByOutput(): ReadonlyMap<string, string> {
+    const selectedDesktopIds = new Map<string, string>();
+
+    try {
+      const outputs = this.workspace.screens;
+
+      if (typeof this.workspace.currentDesktopForScreen === "function") {
+        for (const output of outputs) {
+          try {
+            const selected = this.workspace.currentDesktopForScreen(output);
+
+            if (output.name.length > 0 && selected?.id.length) {
+              selectedDesktopIds.set(output.name, selected.id);
+            }
+          } catch {
+            // An unreadable output selection is not safe to probe.
+          }
+        }
+
+        return selectedDesktopIds;
+      }
+
+      const selected = this.workspace.currentDesktop;
+
+      if (!selected?.id.length) {
+        return selectedDesktopIds;
+      }
+
+      for (const output of outputs) {
+        if (output.name.length > 0) {
+          selectedDesktopIds.set(output.name, selected.id);
+        }
+      }
+    } catch {
+      selectedDesktopIds.clear();
+    }
+
+    return selectedDesktopIds;
   }
 }
 
@@ -347,21 +480,27 @@ function disconnectWindowSignals(entry: WindowEntry): void {
     entry.handleDecorationPolicyChanged,
   );
   entry.source.noBorderChanged?.disconnect(entry.handleDecorationPolicyChanged);
+  entry.source.clientGeometryChanged?.disconnect(
+    entry.handleClientGeometryChanged,
+  );
   entry.source.desktopsChanged?.disconnect(entry.handleDesktopsChanged);
+  entry.source.frameGeometryChanged?.disconnect(
+    entry.handleFrameGeometryChanged,
+  );
   entry.source.fullScreenChanged?.disconnect(entry.handleFullScreenChanged);
   entry.source.interactiveMoveResizeFinished?.disconnect(
-    entry.handleStateChanged,
+    entry.handleInteractiveStateChanged,
   );
   entry.source.maximizedAboutToChange?.disconnect(
     entry.handleMaximizedAboutToChange,
   );
-  entry.source.maximizeableChanged?.disconnect(
-    entry.handleAutomaticFloatingChanged,
-  );
+  entry.source.maximizeableChanged?.disconnect(entry.handleConstraintChanged);
   entry.source.maximizedChanged?.disconnect(entry.handleMaximizedChanged);
   entry.source.minimizedChanged?.disconnect(entry.handleStateChanged);
   entry.source.modalChanged?.disconnect(entry.handleAutomaticFloatingChanged);
-  entry.source.moveResizedChanged?.disconnect(entry.handleStateChanged);
+  entry.source.moveResizedChanged?.disconnect(
+    entry.handleInteractiveStateChanged,
+  );
   entry.source.outputChanged?.disconnect(entry.handleOutputChanged);
   entry.source.requestedTileChanged?.disconnect(
     entry.handleRequestedTileChanged,
@@ -370,6 +509,105 @@ function disconnectWindowSignals(entry: WindowEntry): void {
   entry.source.transientChanged?.disconnect(
     entry.handleAutomaticFloatingChanged,
   );
+}
+
+function constraintFingerprint(window: KWinWindow): string {
+  try {
+    const frame = window.frameGeometry;
+    const client = window.clientGeometry;
+    const minimum = window.minSize;
+    const maximum = window.maxSize;
+    const resizeable = window.resizeable;
+    const horizontalDecoration = decorationExtent(frame.width, client.width);
+    const verticalDecoration = decorationExtent(frame.height, client.height);
+
+    if (
+      typeof resizeable !== "boolean" ||
+      !validMinimum(minimum.width) ||
+      !validMinimum(minimum.height) ||
+      !validMaximum(maximum.width) ||
+      !validMaximum(maximum.height) ||
+      horizontalDecoration === null ||
+      verticalDecoration === null ||
+      (maximum.width > 0 &&
+        Number.isFinite(maximum.width) &&
+        maximum.width < minimum.width) ||
+      (maximum.height > 0 &&
+        Number.isFinite(maximum.height) &&
+        maximum.height < minimum.height)
+    ) {
+      return INVALID_CONSTRAINT_FINGERPRINT;
+    }
+
+    return [
+      "valid",
+      resizeable ? "1" : "0",
+      numberFingerprint(minimum.width),
+      numberFingerprint(minimum.height),
+      maximumFingerprint(maximum.width),
+      maximumFingerprint(maximum.height),
+      numberFingerprint(horizontalDecoration),
+      numberFingerprint(verticalDecoration),
+    ].join("\u0000");
+  } catch {
+    return INVALID_CONSTRAINT_FINGERPRINT;
+  }
+}
+
+function geometrySizeChanged(
+  oldGeometry: KWinRect,
+  window: KWinWindow,
+  property: "clientGeometry" | "frameGeometry",
+): boolean {
+  try {
+    const current = window[property];
+
+    return (
+      oldGeometry.width !== current.width ||
+      oldGeometry.height !== current.height
+    );
+  } catch {
+    return true;
+  }
+}
+
+function validMinimum(value: number): boolean {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
+function validMaximum(value: number): boolean {
+  return typeof value === "number";
+}
+
+function decorationExtent(frame: number, client: number): number | null {
+  if (
+    typeof frame !== "number" ||
+    !Number.isFinite(frame) ||
+    frame < 0 ||
+    typeof client !== "number" ||
+    !Number.isFinite(client) ||
+    client < 0
+  ) {
+    return null;
+  }
+
+  const extent = frame - client;
+
+  if (extent < -CONSTRAINT_EPSILON) {
+    return null;
+  }
+
+  return extent > 0 ? extent : 0;
+}
+
+function maximumFingerprint(value: number): string {
+  return !Number.isFinite(value) || value <= 0
+    ? "unbounded"
+    : numberFingerprint(value);
+}
+
+function numberFingerprint(value: number): string {
+  return Object.is(value, -0) ? "0" : String(value);
 }
 
 function sameObservedWindow(

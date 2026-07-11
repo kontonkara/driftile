@@ -29,6 +29,7 @@ export interface KWinOutput {
 
 export interface KWinWindow {
   readonly clientGeometry: KWinRect;
+  readonly clientGeometryChanged?: KWinSignal<[oldGeometry: KWinRect]>;
   readonly decorationChanged?: KWinSignal<[]>;
   readonly decorationPolicyChanged?: KWinSignal<[]>;
   readonly deleted: boolean;
