@@ -151,6 +151,11 @@ const definitions: readonly ShortcutDefinition[] = [
     sequence: "Meta+V",
   },
   {
+    name: "driftile_toggle_fullscreen",
+    text: "Driftile: Toggle fullscreen",
+    sequence: "Meta+Shift+F",
+  },
+  {
     name: "driftile_focus_previous_desktop",
     text: "Driftile: Focus previous desktop",
     sequence: "Meta+I",

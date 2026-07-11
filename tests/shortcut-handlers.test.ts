@@ -317,6 +317,10 @@ const expectedHandlers: Readonly<
     activated: "Runtime.DriftileRuntime.toggleFloating()",
     sequence: "Meta+V",
   },
+  driftile_toggle_fullscreen: {
+    activated: "Runtime.DriftileRuntime.toggleFullscreen()",
+    sequence: "Meta+Shift+F",
+  },
 };
 
 describe("KWin shortcut handlers", () => {

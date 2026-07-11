@@ -592,6 +592,33 @@ export class RuntimeController {
     return this.floatActiveWindow(command);
   }
 
+  toggleFullscreen(): boolean {
+    const activeWindow = this.workspace.activeWindow;
+
+    if (
+      !this.started ||
+      !activeWindow ||
+      activeWindow.deleted ||
+      !activeWindow.managed
+    ) {
+      return false;
+    }
+
+    const fullScreen = !activeWindow.fullScreen;
+
+    if (fullScreen && activeWindow.fullScreenable === false) {
+      return false;
+    }
+
+    try {
+      activeWindow.fullScreen = fullScreen;
+    } catch {
+      return false;
+    }
+
+    return activeWindow.fullScreen === fullScreen;
+  }
+
   moveWindowToPreviousDesktop(): boolean {
     return this.moveActiveWindowToDesktop(-1);
   }

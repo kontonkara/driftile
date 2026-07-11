@@ -1594,22 +1594,40 @@ verify_window_action_transition() {
   local reserved_frame=$7
   local active_frame=$8
   local restored_frame=$9
+  local trigger=${10:-window-action}
 
-  run_window_action "$target_title" "$action" || \
-    fail "KWin could not enter $action for the $protocol state window"
+  if [[ "$trigger" == "shortcut" ]]; then
+    invoke_shortcut "$action" || \
+      fail "KGlobalAccel could not enter $state for the $protocol state window"
+  else
+    run_window_action "$target_title" "$action" || \
+      fail "KWin could not enter $action for the $protocol state window"
+  fi
   wait_for_state_and_geometries \
     "$id" "$state" true \
     "$reserved_title" "$reserved_frame" \
     "$target_title" "$active_frame" || \
     fail "Driftile fought the $protocol $action transition: $(describe_layout "$reserved_title" "$target_title")"
 
-  run_window_action "$target_title" "$action" || \
-    fail "KWin could not leave $action for the $protocol state window"
+  if [[ "$trigger" == "shortcut" ]]; then
+    wait_for_active "$target_title" || \
+      fail "Driftile changed $protocol focus after entering $state"
+    invoke_shortcut "$action" || \
+      fail "KGlobalAccel could not leave $state for the $protocol state window"
+  else
+    run_window_action "$target_title" "$action" || \
+      fail "KWin could not leave $action for the $protocol state window"
+  fi
   wait_for_state_and_geometries \
     "$id" "$state" false \
     "$reserved_title" "$reserved_frame" \
     "$target_title" "$restored_frame" || \
     fail "Driftile did not restore the $protocol state window after $action: $(describe_layout "$reserved_title" "$target_title")"
+
+  if [[ "$trigger" == "shortcut" ]]; then
+    wait_for_active "$target_title" || \
+      fail "Driftile changed $protocol focus after leaving $state"
+  fi
 }
 
 verify_x11_topology_recovery() {
@@ -3295,6 +3313,8 @@ run_scenario() {
   activate_window "$second_title" || fail "KWin could not activate the $protocol state window"
   set_plugin_state true
   wait_for_script_state true || fail "KWin did not reload Driftile for $protocol state transitions"
+  wait_for_shortcut "driftile_toggle_fullscreen" || \
+    fail "KGlobalAccel did not register the fullscreen shortcut"
   wait_for_geometries \
     "$first_title" "$reserved_frame" \
     "$second_title" "$state_frame" || \
@@ -3303,9 +3323,9 @@ run_scenario() {
   state_window_id=$(window_id "$second_title") || fail "KWin did not expose the $protocol state window id"
 
   verify_window_action_transition \
-    "$protocol" fullscreen fullscreen "$state_window_id" \
+    "$protocol" driftile_toggle_fullscreen fullscreen "$state_window_id" \
     "$first_title" "$second_title" \
-    "$reserved_frame" "$full_output_frame" "$state_frame"
+    "$reserved_frame" "$full_output_frame" "$state_frame" shortcut
   verify_window_action_transition \
     "$protocol" minimize minimized "$state_window_id" \
     "$first_title" "$second_title" \

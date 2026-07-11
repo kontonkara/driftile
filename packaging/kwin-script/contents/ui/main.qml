@@ -202,6 +202,12 @@ QtObject {
         sequence: "Meta+V"
         onActivated: Runtime.DriftileRuntime.toggleFloating()
     }
+    readonly property ShortcutHandler toggleFullscreenShortcut: ShortcutHandler {
+        name: "driftile_toggle_fullscreen"
+        text: "Driftile: Toggle fullscreen"
+        sequence: "Meta+Shift+F"
+        onActivated: Runtime.DriftileRuntime.toggleFullscreen()
+    }
     readonly property ShortcutHandler focusPreviousDesktopShortcut: ShortcutHandler {
         name: "driftile_focus_previous_desktop"
         text: "Driftile: Focus previous desktop"

@@ -597,7 +597,318 @@ function setWindowState(
   transition.set(tracked, enabled);
 }
 
+interface FullscreenControl {
+  readonly fullScreen: boolean;
+  fullScreenable: boolean;
+  readonly writeCount: number;
+}
+
+function controlFullscreen(
+  tracked: TrackedWindow,
+  options: {
+    readonly fullScreen?: boolean;
+    readonly fullScreenable?: boolean;
+    readonly write?: "accept" | "reject" | "throw";
+  } = {},
+): FullscreenControl {
+  let fullScreen = options.fullScreen ?? false;
+  let fullScreenable = options.fullScreenable ?? true;
+  let writeCount = 0;
+
+  Object.defineProperty(tracked.window, "fullScreenable", {
+    configurable: true,
+    enumerable: true,
+    get: () => fullScreenable,
+  });
+  Object.defineProperty(tracked.window, "fullScreen", {
+    configurable: true,
+    enumerable: true,
+    get: () => fullScreen,
+    set: (value: boolean) => {
+      writeCount += 1;
+
+      if (options.write === "throw") {
+        throw new Error("injected fullscreen write failure");
+      }
+
+      if (options.write === "reject" || value === fullScreen) {
+        return;
+      }
+
+      fullScreen = value;
+      tracked.fullScreenChanged.emit();
+    },
+  });
+
+  return {
+    get fullScreen() {
+      return fullScreen;
+    },
+    get fullScreenable() {
+      return fullScreenable;
+    },
+    set fullScreenable(value: boolean) {
+      fullScreenable = value;
+    },
+    get writeCount() {
+      return writeCount;
+    },
+  };
+}
+
 describe("RuntimeController", () => {
+  it("delegates fullscreen to KWin without changing the tiled layout", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const windows = Array.from({ length: 3 }, (_, index) =>
+      createTrackedWindow(`window-${String(index + 1)}`, output, desktop),
+    );
+    const active = windows[2];
+
+    if (!active) {
+      throw new Error("missing fullscreen fixture");
+    }
+
+    const fullscreen = controlFullscreen(active);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map(({ window }) => window),
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 400 },
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    const layout = runtimeLayout(controller);
+    layout.setViewportOffset(outputId(output.name), desktopId(desktop.id), 125);
+    const before = layout.snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
+    const frameWrites = windows.map(({ writeCount }) => writeCount);
+
+    expect(controller.toggleFullscreen()).toBe(true);
+    expect(fullscreen.fullScreen).toBe(true);
+    expect(fullscreen.writeCount).toBe(1);
+    expect(
+      (
+        controller as unknown as {
+          readonly suspendedWindows: ReadonlySet<WindowId>;
+        }
+      ).suspendedWindows.has(windowId("window-3")),
+    ).toBe(true);
+    expect(
+      layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+    ).toEqual(before);
+    expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
+    expect(windows.map(({ writeCount }) => writeCount)).toEqual(frameWrites);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+
+    fullscreen.fullScreenable = false;
+    expect(controller.toggleFullscreen()).toBe(true);
+    expect(fullscreen.fullScreen).toBe(false);
+    expect(fullscreen.writeCount).toBe(2);
+    expect(
+      layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+    ).toEqual(before);
+    expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
+    expect(windows.map(({ writeCount }) => writeCount)).toEqual(frameWrites);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+
+    controller.stop();
+  });
+
+  it("does not enter fullscreen when KWin reports it unsupported", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const active = createTrackedWindow("window-1", output, desktop);
+    const fullscreen = controlFullscreen(active, { fullScreenable: false });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [active.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+    });
+
+    expect(controller.start()).toBe(true);
+    const before = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const frame = { ...active.window.frameGeometry };
+    const frameWrites = active.writeCount;
+
+    expect(controller.toggleFullscreen()).toBe(false);
+    expect(fullscreen.fullScreen).toBe(false);
+    expect(fullscreen.writeCount).toBe(0);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(before);
+    expect(active.window.frameGeometry).toEqual(frame);
+    expect(active.writeCount).toBe(frameWrites);
+
+    controller.stop();
+  });
+
+  it("rejects fullscreen without a live active window", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const stoppedWindow = createTrackedWindow("stopped", output, desktop);
+    const stoppedFullscreen = controlFullscreen(stoppedWindow);
+    const stoppedFixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [stoppedWindow.window],
+    );
+    const stopped = new RuntimeController(stoppedFixture.workspace, {
+      clientAreaOption: 2,
+    });
+
+    expect(stopped.toggleFullscreen()).toBe(false);
+    expect(stoppedFullscreen.writeCount).toBe(0);
+
+    const emptyFixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [],
+    );
+    const empty = new RuntimeController(emptyFixture.workspace, {
+      clientAreaOption: 2,
+    });
+
+    expect(empty.start()).toBe(true);
+    expect(empty.toggleFullscreen()).toBe(false);
+    empty.stop();
+
+    const deletedWindow = createTrackedWindow("deleted", output, desktop, {
+      deleted: true,
+    });
+    const deletedFullscreen = controlFullscreen(deletedWindow);
+    const deletedFixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [deletedWindow.window],
+    );
+    const deleted = new RuntimeController(deletedFixture.workspace, {
+      clientAreaOption: 2,
+    });
+
+    expect(deleted.start()).toBe(true);
+    expect(deleted.toggleFullscreen()).toBe(false);
+    expect(deletedFullscreen.writeCount).toBe(0);
+    deleted.stop();
+  });
+
+  it("reports rejected fullscreen property writes without layout changes", () => {
+    for (const write of ["reject", "throw"] as const) {
+      const output = createOutput("DP-1", 0);
+      const desktop = { id: "desktop-1" };
+      const active = createTrackedWindow(`window-${write}`, output, desktop);
+      const fullscreen = controlFullscreen(active, { write });
+      const fixture = createWorkspace(
+        output,
+        desktop,
+        [output],
+        [desktop],
+        [active.window],
+      );
+      const controller = new RuntimeController(fixture.workspace, {
+        clientAreaOption: 2,
+      });
+
+      expect(controller.start()).toBe(true);
+      const before = runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      );
+      const frame = { ...active.window.frameGeometry };
+      const frameWrites = active.writeCount;
+
+      expect(controller.toggleFullscreen()).toBe(false);
+      expect(fullscreen.fullScreen).toBe(false);
+      expect(fullscreen.writeCount).toBe(1);
+      expect(
+        runtimeLayout(controller).snapshot(
+          outputId(output.name),
+          desktopId(desktop.id),
+        ),
+      ).toEqual(before);
+      expect(active.window.frameGeometry).toEqual(frame);
+      expect(active.writeCount).toBe(frameWrites);
+
+      controller.stop();
+    }
+  });
+
+  it("preserves manual-floating ownership through fullscreen", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const active = createTrackedWindow("window-1", output, desktop);
+    const fullscreen = controlFullscreen(active);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [active.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      schedule: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(controller.toggleFloating()).toBe(true);
+    expect(controller.floatingCount).toBe(1);
+    expect(controller.managedCount).toBe(0);
+    const floatingFrame = { ...active.window.frameGeometry };
+    const frameWrites = active.writeCount;
+    const layout = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+
+    expect(controller.toggleFullscreen()).toBe(true);
+    expect(fullscreen.fullScreen).toBe(true);
+    expect(controller.toggleFullscreen()).toBe(true);
+    expect(fullscreen.fullScreen).toBe(false);
+    expect(controller.floatingCount).toBe(1);
+    expect(controller.managedCount).toBe(0);
+    expect(active.window.frameGeometry).toEqual(floatingFrame);
+    expect(active.writeCount).toBe(frameWrites);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(layout);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+
+    controller.stop();
+  });
+
   it("applies optional borderless windows and restores owned decoration state", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };

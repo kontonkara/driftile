@@ -34,6 +34,7 @@ describe("shortcut ownership", () => {
     expect(encodeShortcut("Meta++")).toBe(0x1000002b);
     expect(encodeShortcut("Meta+Ctrl+R")).toBe(0x14000052);
     expect(encodeShortcut("Meta+Ctrl+Shift+R")).toBe(0x16000052);
+    expect(encodeShortcut("Meta+Shift+F")).toBe(0x12000046);
     expect(encodeShortcut("Meta+Ctrl+C")).toBe(0x14000043);
     expect(encodeShortcut("Meta+Ctrl+F")).toBe(0x14000046);
     expect(encodeShortcut("Meta+Home")).toBe(0x11000010);

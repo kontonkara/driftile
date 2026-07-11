@@ -39,8 +39,9 @@ export interface KWinWindow {
   readonly dock: boolean;
   frameGeometry: KWinRect;
   readonly frameGeometryChanged?: KWinSignal<[oldGeometry: KWinRect]>;
-  readonly fullScreen: boolean;
+  fullScreen: boolean;
   readonly fullScreenChanged?: KWinSignal<[]>;
+  readonly fullScreenable?: boolean;
   readonly hiddenChanged?: KWinSignal<[]>;
   readonly internalId: string | { toString(): string };
   readonly interactiveMoveResizeFinished?: KWinSignal<[]>;

@@ -123,6 +123,10 @@ export function toggleFloating(): void {
   controller?.toggleFloating();
 }
 
+export function toggleFullscreen(): void {
+  controller?.toggleFullscreen();
+}
+
 export function moveWindowToPreviousDesktop(): void {
   controller?.moveWindowToPreviousDesktop();
 }
