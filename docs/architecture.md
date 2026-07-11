@@ -44,6 +44,7 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Focuses adjacent desktops on the active output, with a global fallback and no wrapping.
 - Releases explicitly floating windows from geometry ownership and restores their anchored layout slots on return.
 - Requests native fullscreen only through KWin; suspension retains the layout slot and resumes ownership after the restored frame settles.
+- Requests native maximize-to-edges only through KWin and uses the same suspension and stable-restore path.
 - Keeps dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows outside layout ownership in state separate from manual floating.
 - Releases a managed window that gains an automatic-floating role without restoring its old frame, then readmits it when the role clears and it remains eligible.
 - Optionally claims borderless state for application windows independently of layout ownership, reasserts owned state after policy changes, and restores only decoration state that it owns.
@@ -117,6 +118,7 @@ RuntimeState
 - Translate client minimum and maximum sizes to frame bounds by adding current nonnegative decoration extents before emitting geometry or resizing a column. Treat malformed bounds conservatively.
 - Preserve a window's slot through fullscreen, minimize, maximize, native tiling, and interactive move or resize transitions.
 - A fullscreen command changes only KWin's native state; entering and leaving it does not directly mutate layout geometry, order, widths, heights, or viewport state.
+- A native maximize command calls KWin's maximize mechanism without directly changing Driftile layout state.
 - Require a stable restored frame before resuming writes or rebasing a transferred window.
 - Freeze admission, focus commands, and affected-context geometry writes until two successive delayed topology snapshots match.
 - Treat output-list, output-geometry, output-scale, and dock changes as topology invalidations.
@@ -147,6 +149,7 @@ RuntimeState
 - Replay window lifecycle and output or desktop transfer sequences.
 - Verify window-state ownership, cancellation races, stable resumption, and slot reservation.
 - Verify native fullscreen shortcut entry, KWin-owned geometry, and exact layout restoration.
+- Verify native maximize shortcut entry, KWin-owned geometry, and exact layout restoration.
 - Verify adjacent and direct-edge active-column reorder, width adjustments, width presets, full width, available-width expansion, single-column and visible-group centering, signed viewport offsets, constraint bounds, and transactional rollback.
 - Verify per-window 10% height changes, automatic reset, forward and reverse height presets, weighted stack redistribution, singleton sizing, and exact rollback.
 - Verify decorated client-to-frame constraint translation and conservative handling of malformed bounds.

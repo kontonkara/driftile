@@ -20,7 +20,8 @@ Driftile uses one keyboard grammar and does not wrap at layout boundaries:
 | Virtual desktops     | Focus adjacent desktops and transfer the whole active column                                      | Available |
 | Outputs              | Focus an adjacent output and transfer the whole active column                                     | Available |
 | Fullscreen           | Toggle through KWin and preserve the window's layout slot                                         | Available |
-| Window state         | Preserve layout participation through maximize; define a separate minimized-window policy         | MVP       |
+| Native maximize      | Toggle to work-area edges through KWin and preserve the window's layout slot                      | Available |
+| Window state         | Define complete stacked-state and minimized-window policies                                       | MVP       |
 | Floating layer       | Toggle tiled/floating state and switch focus between both layers                                  | MVP       |
 | Tabbed columns       | Toggle a column between stacked and tabbed presentation without changing navigation               | v1        |
 | Pointer input        | Provide wheel navigation and mouse rearrangement with the same model as keyboard commands         | v1        |
