@@ -18,6 +18,7 @@ The ownership rule is strict:
 - Per-window height adjustment, weighted automatic stack distribution, and height presets.
 - Managed, manually floating, automatically layout-excluded, and ignored window states.
 - Optional borderless presentation for application windows with exact decoration ownership.
+- Live global tiled-window gap from 0 to 64 logical pixels without changing layout state.
 - Output-local commands unless a transfer is explicit.
 - Work-area, size-constraint, fullscreen, minimized-window compatibility, dialog, and hot-plug handling.
 - Hard client minimum and maximum bounds with cached detection of silent visible-window changes; unexposed increment and aspect hints do not alter Driftile's tiled model, while applied frames remain subject to KWin.
@@ -115,3 +116,4 @@ Driftile must integrate with, not duplicate:
 - Occupied or visible virtual desktops are never removed.
 - Special and all-desktop windows are never tiled.
 - Borderless mode covers tiled, floating, dialog, transient, and utility windows, changes only decoration state claimed by Driftile, and restores it when disabled or unloaded.
+- A live gap change reflows visible tiled contexts only. It preserves logical order, widths, height policies, focus, floating frames, excluded windows, and minimized frames; hidden contexts adopt it when shown.

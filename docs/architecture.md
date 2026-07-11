@@ -54,6 +54,7 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Keeps dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows outside layout ownership in state separate from manual floating.
 - Releases a managed window that gains an automatic-floating role without restoring its old frame, then readmits it when the role clears and it remains eligible.
 - Optionally claims borderless state for application windows independently of layout ownership, reasserts owned state after policy changes, and restores only decoration state that it owns.
+- Defers live gap changes across structural transactions, then reflows dirty visible contexts and retries capacity admissions under one settled value.
 - Owns startup, reconfiguration, and shutdown sequencing.
 
 ### Core
@@ -84,6 +85,8 @@ RuntimeState
   windows: Map<WindowId, ManagedWindow>
   contexts: Map<ContextKey, LayoutContext>
   dirtyContexts: Set<ContextKey>
+  gap: number
+  pendingGap: number | null
   pendingWindowSyncs: Set<WindowId>
   waitingWindowIds: Map<ContextKey, Set<WindowId>>
   floatingWindows: Map<WindowId, { placement, sourceContextKey }>
@@ -159,6 +162,7 @@ RuntimeState
 - Structural output recovery performs one bounded workspace resynchronization after the topology settles.
 - Coalesce each event burst into at most one reconcile pass per dirty context.
 - Reflow affected visible contexts only; defer hidden desktops until they become visible.
+- Treat a gap change as layout policy, not a model or topology mutation; preserve logical state and defer it until structural and capacity transactions settle.
 - Do not write unchanged properties.
 - Keep core operations linear in the affected context, not the whole workspace.
 
@@ -196,6 +200,7 @@ RuntimeState
 - Verify numbered desktop selection and whole-column transfer, tail clamping, same-target no-ops, and shared-tail renewal.
 - Verify manual and automatic floating desktop transfer, exact frame preservation, related-window guards, tiled-state isolation, and compensation.
 - Verify optional borderless ownership across tiled and floating windows, policy reassertion, live reconfigure handling, and unload restoration.
+- Verify live gap reflow, bounds, no-op coalescing, hidden-context deferral, capacity retry, and zero writes to minimized, floating, or excluded windows.
 - Verify one-step desktop reordering in both directions, all four default shortcut handlers, boundary and tail no-ops, unavailable or rejected mechanisms, wrong permutations, and the pinned tail. Unit and multi-output integration coverage preserve every output selection; integration and visible-VM coverage preserve live IDs, memberships, focus, and frames.
 - Verify shared trailing-desktop creation, guarded removal, silent mutation rejection, and preservation of external desktops.
 - Exercise live output reconfiguration against an isolated real KWin session.
