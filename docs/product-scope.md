@@ -15,6 +15,7 @@ The ownership rule is strict:
 - One horizontal strip of columns per `(output, desktop)` context.
 - Deterministic window insertion, ordering, focus, movement, resizing, and scrolling.
 - Vertical window stacks within columns.
+- Per-window height adjustment, weighted automatic stack distribution, and height presets.
 - Managed, manually floating, automatically layout-excluded, and ignored window states.
 - Optional borderless presentation for application windows with exact decoration ownership.
 - Output-local commands unless a transfer is explicit.
@@ -60,7 +61,9 @@ Driftile must integrate with, not duplicate:
 - No layout write occurs while a topology snapshot is unsettled.
 - Focusing a managed window makes it fully visible with the smallest required scroll.
 - Reordering moves one whole active column left, right, first, or last inside its context without changing focus or widths.
-- Resizing changes one whole active column, translates client limits to decorated frame bounds, respects every member's width constraints, and preserves focus and grouping.
+- Column-width resizing changes one whole active column, translates client limits to decorated frame bounds, respects every member's width constraints, and preserves focus and grouping.
+- Window-height resizing makes the active member the sole fixed or preset member; automatic siblings preserve their relative weights while sharing the remaining height.
+- Resetting a window height returns that member to automatic sizing. A failed stack reflow restores every prior height state and frame.
 - Horizontal window movement merges a singleton into its neighbor or extracts a stacked member into a new adjacent singleton column.
 - Merge preserves the destination width; extraction copies the source width; both preserve focus and member order.
 - Direct insertion appends the active window to the nearest existing stack in its direction, skips singleton columns without wrapping, and preserves the target width.

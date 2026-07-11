@@ -20,11 +20,18 @@ arrow keys are interchangeable unless noted otherwise.
 | Cycle preset column width forward or back        | `Meta+R` or `Meta+Shift+R`                           |
 | Toggle full-width column                         | `Meta+F`                                             |
 | Center active column                             | `Meta+C`                                             |
-| Decrease or increase column width by 10%         | `Meta+-`, `Meta+=`, or `Meta++`                      |
+| Decrease or increase column width by 10%         | `Meta+-` or `Meta+=`                                 |
+| Decrease or increase active window height by 10% | `Meta+Shift+-` or `Meta+Shift+=`                     |
+| Cycle preset window height forward               | `Meta+Ctrl+Shift+R`                                  |
+| Reset active window height to automatic          | `Meta+Ctrl+R`                                        |
 
 Single-window desktop/output transfer, direct insertion into the nearest
-existing stack, and resetting a column width are registered without default
-keys. Assign them in **System Settings > Keyboard > Shortcuts** if needed.
+existing stack, resetting a column width, and reverse window-height preset
+cycling are registered without default keys. Assign them in **System Settings >
+Keyboard > Shortcuts** if needed.
+
+Window-height presets are `1/3`, `1/2`, and `2/3` of the work area, with gaps
+included in the calculation.
 
 Default desktop and output transfers move the whole active column atomically.
 They preserve member order, column width, and the active member; a rejected

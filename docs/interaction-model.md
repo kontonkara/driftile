@@ -16,7 +16,7 @@ Driftile uses one keyboard grammar and does not wrap at layout boundaries:
 | Vertical column      | Focus and reorder members; consume or expel a member on either side                                      | Available |
 | Column view          | Cycle `1/3`, `1/2`, and `2/3` widths in both directions; adjust by 10%; toggle full width; center        | Available |
 | Advanced column view | Fill available width and center all visible columns                                                      | MVP       |
-| Window height        | Adjust by 10%, reset to automatic, and cycle height presets                                              | MVP       |
+| Window height        | Adjust one window by 10%; reset to automatic; cycle `1/3`, `1/2`, and `2/3` presets                      | Available |
 | Virtual desktops     | Focus adjacent desktops and transfer the whole active column                                             | Available |
 | Outputs              | Focus an adjacent output and transfer the whole active column                                            | Available |
 | Window state         | Preserve layout participation through fullscreen and maximize; define a separate minimized-window policy | MVP       |
@@ -26,6 +26,11 @@ Driftile uses one keyboard grammar and does not wrap at layout boundaries:
 
 Single-window transfers will remain available as secondary, unbound actions.
 Default desktop and output transfer shortcuts must move the whole active column.
+
+A stack has at most one fixed or preset window height. Changing a different
+member converts the other members to weighted automatic heights that preserve
+their visible proportions while sharing the remaining work-area height. Reset
+returns the active member to automatic sizing.
 
 ## KWin boundary
 

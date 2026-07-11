@@ -44,6 +44,7 @@ The current runtime already:
 - Focuses adjacent and edge columns, and reorders the active whole column left, right, first, or last with context-local shortcuts and transactional geometry rollback.
 - Decreases, increases, or resets the active whole column width with grouped constraints and transactional rollback.
 - Cycles preset widths in both directions, adjusts width by 10%, toggles full width, and centers the active column.
+- Adjusts one window's height by 10%, resets it to weighted automatic sizing, and cycles `1/3`, `1/2`, and `2/3` presets with transactional stack reflow.
 - Focuses and reorders vertical stack members, contextually merges or extracts the active window, and inserts it directly into the nearest stack across singleton columns.
 - Toggles the active normal window between tiled and floating states with anchored reinsertion and safe geometry ownership.
 - Moves the whole active column between adjacent existing desktops with follow-focus, atomic two-context ownership, and exact rollback; single-window transfer remains secondary.
@@ -63,7 +64,6 @@ The automatic-floating base is complete. Size increments, aspect ratios, live co
 Complete the daily keyboard-driven workflow.
 
 - Manage every output and desktop independently.
-- Add window-height adjustment, automatic reset, and preset cycling.
 - Add fill-available-width and center-visible-column commands.
 - Add fullscreen, native maximize, floating-layer focus, and minimized-window semantics without taking KWin's mechanism ownership.
 - Add virtual-desktop reordering within KDE's global desktop model.

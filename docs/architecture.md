@@ -36,6 +36,7 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Focuses the first or last column directly with transactional reveal.
 - Reorders the active whole column left, right, first, or last inside one settled context while keeping focus unchanged.
 - Resizes the active whole column within grouped window constraints, cycles presets, toggles full width, centers it, and retries waiting capacity after a successful shrink.
+- Adjusts one tiled window's height, resets it to weighted automatic sizing, and cycles height presets while reflowing its stack atomically.
 - Focuses vertical stack members; reorders, merges, and extracts them while preserving KWin focus.
 - Resolves directional output neighbors from logical output geometry and transfers the active column atomically between contexts; secondary actions transfer one tiled window.
 - Applies desktop and output mechanisms member-by-member with the active member last, keeps it visible through cross-desktop output moves, commits both core contexts together, and compensates every owned field and frame on failure.
@@ -86,7 +87,7 @@ RuntimeState
   topologyBarrier: { revision, affectedOutputs, stableSample }
 ```
 
-`LayoutContext` owns columns, viewport offset, and the last applied geometry fingerprint. A managed window owns an optional decoration-independent client restore baseline plus the exact frame observed at capture time. A manually floating window remains observed but has no layout or geometry owner; its detached placement records stable anchors for reinsertion. An automatically floating window has no layout slot, floating anchor, waiting entry, suspension, or retry state. A suspended window keeps its layout slot, but reconcile excludes it until KWin releases geometry authority. Waiting windows have no layout owner. KWin objects never enter core state.
+`LayoutContext` owns columns, per-window automatic weights or fixed/preset heights, viewport offset, and the last applied geometry fingerprint. A managed window owns an optional decoration-independent client restore baseline plus the exact frame observed at capture time. A manually floating window remains observed but has no layout or geometry owner; its detached placement records stable anchors for reinsertion. An automatically floating window has no layout slot, floating anchor, waiting entry, suspension, or retry state. A suspended window keeps its layout slot, but reconcile excludes it until KWin releases geometry authority. Waiting windows have no layout owner. KWin objects never enter core state.
 
 ## Reconciliation rules
 
@@ -95,6 +96,8 @@ RuntimeState
 - Keep focus commands inside the active window's context.
 - Keep adjacent and direct-edge column reorders inside the active context and roll back the exact model order if geometry application cannot complete.
 - Apply active-column width changes transactionally, preserving focus, grouping, and the prior width on failure.
+- Keep at most one fixed or preset height in a stack. When another member is changed, preserve the remaining members' visible proportions as automatic weights and distribute the remaining work-area height among them.
+- Apply active-window height changes transactionally across the affected stack, preserving focus, order, width, and every prior height state on failure.
 - Apply stack edits with compare-and-swap model rollback and exact compensating frame writes after partial failure.
 - Resolve direct stack insertion inside the active context, skipping singleton columns without wrapping and preserving every intermediate column.
 - Transfer either the active column or one secondary window between existing desktops through an immutable two-context preview, then commit only after KWin accepts every desktop mechanism, focus, and destination geometry.
@@ -138,12 +141,13 @@ RuntimeState
 - Test reconcile output for minimality and idempotence.
 - Replay window lifecycle and output or desktop transfer sequences.
 - Verify window-state ownership, cancellation races, stable resumption, and slot reservation.
-- Verify adjacent and direct-edge active-column reorder, 10% adjustments, preset cycling, full width, centering, constraint bounds, and transactional rollback.
+- Verify adjacent and direct-edge active-column reorder, width adjustments, width presets, full width, centering, constraint bounds, and transactional rollback.
+- Verify per-window 10% height changes, automatic reset, forward and reverse height presets, weighted stack redistribution, singleton sizing, and exact rollback.
 - Verify decorated client-to-frame constraint translation and conservative handling of malformed bounds.
 - Verify automatic KWin ownership, command no-ops, late role changes, manual-floating separation, and safe readmission.
 - Verify vertical focus, member reorder, contextual merge and extraction, suspended members, and structural rollback.
 - Verify the settled topology barrier, output replacement and removal, dock and silent work-area invalidations, sticky restore invalidation, and deterministic capacity recovery.
-- Verify independent contexts with native Wayland and Xwayland windows on two virtual outputs.
+- Verify independent contexts with native Wayland and XWayland windows on two virtual outputs and native X11 windows on the X11 backend.
 - Verify whole-column and secondary directional transfers, no-wrap boundaries, per-output desktop selection, focus preservation, and exact two-context compensation.
 - Verify optional borderless ownership across tiled and floating windows, policy reassertion, live reconfigure handling, and unload restoration.
 - Verify shared trailing-desktop creation, guarded removal, silent mutation rejection, and preservation of external desktops.
