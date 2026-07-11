@@ -147,6 +147,7 @@ interface WindowTransferOperation {
     "desktop" | "floating-desktop" | "output" | "stack-native-state";
   readonly movingIds: ReadonlySet<WindowId>;
   readonly sourceContextKey: string;
+  readonly stateGuardIds: ReadonlySet<WindowId>;
   readonly targetContextKey: string;
 }
 
@@ -190,10 +191,16 @@ interface ColumnTransferMember {
   readonly window: KWinWindow;
 }
 
+interface RetainedTransferMember extends ColumnTransferMember {
+  readonly frame: Rect;
+}
+
 interface TransferSelection {
   readonly geometryPassiveIds: ReadonlySet<WindowId>;
   readonly memberIds: ReadonlySet<WindowId>;
   readonly members: readonly ColumnTransferMember[];
+  readonly retainedSourceIds: ReadonlySet<WindowId>;
+  readonly retainedSourceMembers: readonly RetainedTransferMember[];
   readonly sourceColumn: LayoutColumnSnapshot;
   readonly wholeColumn: boolean;
 }
@@ -1795,6 +1802,14 @@ export class RuntimeController {
     this.cancelInvalidPendingExpelFocusHandoff();
 
     if (this.windowTransferOperation) {
+      const retainedGuardChanged =
+        this.windowTransferOperation.stateGuardIds.has(changedId) &&
+        !this.windowTransferOperation.movingIds.has(changedId);
+
+      if (retainedGuardChanged) {
+        this.windowTransferOperation.memberStateInvalidated = true;
+      }
+
       if (
         !this.windowTransferOperation.movingIds.has(changedId) ||
         (source &&
@@ -1842,17 +1857,17 @@ export class RuntimeController {
     this.cancelInvalidPendingExpelFocusHandoff();
 
     if (this.windowTransferOperation) {
-      const movingContextTransferMember =
+      const guardedContextTransferMember =
         (this.windowTransferOperation.kind === "desktop" ||
           this.windowTransferOperation.kind === "output") &&
-        this.windowTransferOperation.movingIds.has(changedId);
+        this.windowTransferOperation.stateGuardIds.has(changedId);
 
-      if (movingContextTransferMember) {
+      if (guardedContextTransferMember) {
         this.windowTransferOperation.memberStateInvalidated = true;
       }
 
       if (
-        movingContextTransferMember ||
+        guardedContextTransferMember ||
         !this.windowTransferOperation.movingIds.has(changedId) ||
         (source &&
           (this.automaticFloatingWindows.has(changedId) ||
@@ -4150,12 +4165,14 @@ export class RuntimeController {
         targetContext.desktopId,
       ),
     };
+    const movingIds = new Set([activeId]);
     const operation: WindowTransferOperation = {
       activeId,
       desktopChangeSuppressed: false,
       kind: "floating-desktop",
-      movingIds: new Set([activeId]),
+      movingIds,
       sourceContextKey,
+      stateGuardIds: movingIds,
       targetContextKey,
     };
     this.windowTransferOperation = operation;
@@ -4728,7 +4745,6 @@ export class RuntimeController {
       sourceRuntimeContext,
       sourceBefore,
       wholeColumn,
-      wholeColumn,
     );
 
     if (!selection) {
@@ -4799,6 +4815,10 @@ export class RuntimeController {
         active.context,
         active.contextKey,
         selection.memberIds,
+        active.contextKey,
+        active.contextKey,
+        undefined,
+        selection.retainedSourceIds,
       ) ||
       !this.transferLayoutIsSafe(
         targetLayout,
@@ -4822,6 +4842,10 @@ export class RuntimeController {
       kind: "desktop",
       movingIds: selection.memberIds,
       sourceContextKey: active.contextKey,
+      stateGuardIds: new Set([
+        ...selection.memberIds,
+        ...selection.retainedSourceIds,
+      ]),
       targetContextKey,
     };
     this.windowTransferOperation = operation;
@@ -4976,7 +5000,7 @@ export class RuntimeController {
         return false;
       }
 
-      if (moving && geometryPassiveIds?.has(window.windowId) === true) {
+      if (geometryPassiveIds?.has(window.windowId) === true) {
         return this.transferMemberIsSettledMinimized(window.windowId, source);
       }
 
@@ -5053,6 +5077,12 @@ export class RuntimeController {
       operation.memberStateInvalidated !== true &&
       command.members.every((member) =>
         this.transferMemberStateIsCurrent(member),
+      ) &&
+      command.retainedSourceMembers.every(
+        (member) =>
+          operation.stateGuardIds.has(member.id) &&
+          !operation.movingIds.has(member.id) &&
+          this.retainedTransferMemberIsCurrent(member, command),
       )
     );
   }
@@ -5080,6 +5110,24 @@ export class RuntimeController {
     );
   }
 
+  private retainedTransferMemberIsCurrent(
+    member: RetainedTransferMember,
+    command: DesktopTransferCommand | OutputTransferCommand,
+  ): boolean {
+    const observed = normalizeWindow(member.window);
+    const liveContext = observed ? managedContext(observed) : null;
+
+    return (
+      this.observer.source(member.id) === member.window &&
+      this.managedWindows.get(member.id)?.contextKey === command.contextKey &&
+      command.sourceRuntimeContext.windowIds.has(member.id) &&
+      liveContext !== null &&
+      contextKey(liveContext) === command.contextKey &&
+      this.transferMemberStateIsCurrent(member) &&
+      rectsEqual(member.window.frameGeometry, member.frame)
+    );
+  }
+
   private queueChangedTransferMembers(
     command: DesktopTransferCommand | OutputTransferCommand,
   ): void {
@@ -5090,24 +5138,37 @@ export class RuntimeController {
         this.pendingWindowSyncs.add(member.id);
       }
     }
+
+    for (const member of command.retainedSourceMembers) {
+      if (!this.retainedTransferMemberIsCurrent(member, command)) {
+        this.pendingWindowSyncs.add(member.id);
+      }
+    }
   }
 
   private transferPassiveFramesMatch(
     command: DesktopTransferCommand | OutputTransferCommand,
     destinationBaselines: ReadonlyMap<WindowId, RestoreBaseline>,
   ): boolean {
-    return command.members.every((member) => {
-      if (!command.geometryPassiveIds.has(member.id)) {
-        return true;
-      }
+    return (
+      command.members.every((member) => {
+        if (!command.geometryPassiveIds.has(member.id)) {
+          return true;
+        }
 
-      const baseline = destinationBaselines.get(member.id);
-      return Boolean(
-        baseline &&
-        this.observer.source(member.id) === member.window &&
-        rectsEqual(member.window.frameGeometry, baseline.frame),
-      );
-    });
+        const baseline = destinationBaselines.get(member.id);
+        return Boolean(
+          baseline &&
+          this.observer.source(member.id) === member.window &&
+          rectsEqual(member.window.frameGeometry, baseline.frame),
+        );
+      }) &&
+      command.retainedSourceMembers.every(
+        (member) =>
+          this.observer.source(member.id) === member.window &&
+          rectsEqual(member.window.frameGeometry, member.frame),
+      )
+    );
   }
 
   private transferOperationIdentityIsCurrent(
@@ -5476,6 +5537,10 @@ export class RuntimeController {
         command.context,
         command.contextKey,
         command.memberIds,
+        command.contextKey,
+        command.contextKey,
+        undefined,
+        command.retainedSourceIds,
       ) &&
       this.transferLayoutIsSafe(
         targetLayout,
@@ -5936,7 +6001,6 @@ export class RuntimeController {
       sourceRuntimeContext,
       sourceBefore,
       wholeColumn,
-      wholeColumn,
     );
 
     if (!selection) {
@@ -6008,6 +6072,10 @@ export class RuntimeController {
         active.context,
         active.contextKey,
         selection.memberIds,
+        active.contextKey,
+        active.contextKey,
+        undefined,
+        selection.retainedSourceIds,
       ) ||
       !this.transferLayoutIsSafe(
         targetLayout,
@@ -6031,6 +6099,10 @@ export class RuntimeController {
       memberStateInvalidated: false,
       movingIds: selection.memberIds,
       sourceContextKey: active.contextKey,
+      stateGuardIds: new Set([
+        ...selection.memberIds,
+        ...selection.retainedSourceIds,
+      ]),
       targetContextKey,
     };
     this.windowTransferOperation = operation;
@@ -6263,11 +6335,13 @@ export class RuntimeController {
         {
           context: command.context,
           contextKey: command.contextKey,
+          geometryPassiveIds: command.retainedSourceIds,
           layout: sourceLayout,
         },
         {
           context: command.targetContext,
           contextKey: command.targetContextKey,
+          geometryPassiveIds: command.geometryPassiveIds,
           layout: targetLayout,
         },
       ] as const;
@@ -6275,7 +6349,7 @@ export class RuntimeController {
 
       for (const plan of plans) {
         const geometryLayout = plan.layout.windows.filter(
-          (window) => !command.geometryPassiveIds.has(window.windowId),
+          (window) => !plan.geometryPassiveIds.has(window.windowId),
         );
         const windowIds = geometryLayout.map((window) => window.windowId);
         const observedBefore = this.geometry.observedFrames(
@@ -6518,7 +6592,11 @@ export class RuntimeController {
       !this.hasPendingCapacityState(command.targetContextKey) &&
       !this.waitingWindowIds.has(command.contextKey) &&
       !this.waitingWindowIds.has(command.targetContextKey) &&
-      this.transferUnchangedFramesMatch(sourceLayout, changedWindowIds) &&
+      this.transferUnchangedFramesMatch(
+        sourceLayout,
+        changedWindowIds,
+        command.retainedSourceIds,
+      ) &&
       this.transferUnchangedFramesMatch(
         targetLayout,
         changedWindowIds,
@@ -6532,6 +6610,7 @@ export class RuntimeController {
         command.contextKey,
         command.targetContextKey,
         command.contextKey,
+        command.retainedSourceIds,
       ) &&
       this.transferLayoutIsSafe(
         targetLayout,
@@ -8152,7 +8231,6 @@ export class RuntimeController {
     context: RuntimeContext,
     snapshot: LayoutContextSnapshot,
     wholeColumn: boolean,
-    allowSettledMinimizedPassive = false,
   ): TransferSelection | null {
     const sourceColumn = snapshot.columns.find((candidate) =>
       candidate.windowIds.includes(active.activeId),
@@ -8167,6 +8245,8 @@ export class RuntimeController {
       : [active.activeId];
     const geometryPassiveIds = new Set<WindowId>();
     const members: ColumnTransferMember[] = [];
+    const retainedSourceIds = new Set<WindowId>();
+    const retainedSourceMembers: RetainedTransferMember[] = [];
 
     for (const id of selectedIds) {
       const owner = this.managedWindows.get(id);
@@ -8192,7 +8272,7 @@ export class RuntimeController {
 
       if (this.suspendedWindows.has(id)) {
         if (
-          !allowSettledMinimizedPassive ||
+          !wholeColumn ||
           id === active.activeId ||
           !this.transferMemberIsSettledMinimized(id, source)
         ) {
@@ -8207,6 +8287,37 @@ export class RuntimeController {
       members.push({ id, minimized: source.minimized, window: source });
     }
 
+    if (!wholeColumn) {
+      for (const id of sourceColumn.windowIds) {
+        if (id === active.activeId || !this.suspendedWindows.has(id)) {
+          continue;
+        }
+
+        const owner = this.managedWindows.get(id);
+        const source = this.observer.source(id);
+        const observed = source ? normalizeWindow(source) : null;
+        const liveContext = observed ? managedContext(observed) : null;
+
+        if (
+          !source ||
+          owner?.contextKey !== context.key ||
+          !liveContext ||
+          contextKey(liveContext) !== context.key ||
+          !this.transferMemberIsSettledMinimized(id, source)
+        ) {
+          return null;
+        }
+
+        retainedSourceIds.add(id);
+        retainedSourceMembers.push({
+          frame: { ...source.frameGeometry },
+          id,
+          minimized: true,
+          window: source,
+        });
+      }
+    }
+
     if (
       members.length === 0 ||
       members.find((member) => member.id === active.activeId)?.window !==
@@ -8219,6 +8330,8 @@ export class RuntimeController {
       geometryPassiveIds,
       memberIds: new Set(selectedIds),
       members,
+      retainedSourceIds,
+      retainedSourceMembers,
       sourceColumn,
       wholeColumn,
     };
@@ -9516,12 +9629,14 @@ export class RuntimeController {
     );
     const resumeSample = this.resumeSamples.get(command.activeId);
     const transientProbe = this.transientResumeProbes.get(command.activeId);
+    const movingIds = new Set([command.activeId]);
     const transfer: WindowTransferOperation = {
       activeId: command.activeId,
       desktopChangeSuppressed: false,
       kind: "stack-native-state",
-      movingIds: new Set([command.activeId]),
+      movingIds,
       sourceContextKey: command.context.key,
+      stateGuardIds: movingIds,
       targetContextKey: command.context.key,
     };
 
