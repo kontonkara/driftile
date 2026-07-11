@@ -51,6 +51,11 @@ not wrap, and leaves every frame unchanged.
 Window-height presets are `1/3`, `1/2`, and `2/3` of the work area, with gaps
 included in the calculation.
 
+Native maximize extracts an active member of a regular vertical stack into a
+new singleton column immediately to the right. The column remains separate
+after unmaximize. Maximizing an existing singleton or floating window does not
+change its layout ownership.
+
 Available-width expansion grows the active column into the unused horizontal
 space, up to its shared window constraints, without hiding any currently fully
 visible column. Visible-column centering changes only the viewport position.

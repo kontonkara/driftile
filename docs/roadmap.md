@@ -49,7 +49,7 @@ The current runtime already:
 - Toggles the active normal window between tiled and floating states with anchored reinsertion and safe geometry ownership.
 - Switches focus between tiled and floating layers inside one output and desktop, remembers each layer, and navigates floating windows geometrically without changing frames.
 - Toggles the active KWin-managed window's native fullscreen state while the existing suspension path preserves its layout slot.
-- Toggles native maximize-to-edges through KWin while preserving the active window's layout slot.
+- Extracts a regular stack member into an immediate right singleton before native maximize-to-edges, preserves focus and source order, and keeps the window separate after unmaximize.
 - Moves the whole active column between adjacent existing desktops with follow-focus, atomic two-context ownership, and exact rollback; single-window transfer remains secondary.
 - Focuses desktops 1 through 9 directly and moves the whole active column there, clamping out-of-range targets to the shared empty tail.
 - Moves one relation-free floating window between adjacent or numbered desktops without changing its frame or either tiled layout.
@@ -69,7 +69,7 @@ The automatic-floating base is complete. Size increments, aspect ratios, live co
 Complete the daily keyboard-driven workflow.
 
 - Manage every output and desktop independently.
-- Complete stacked fullscreen, maximize, and minimized-window semantics without taking KWin's mechanism ownership.
+- Complete stacked fullscreen and minimized-window semantics without taking KWin's mechanism ownership.
 - Add virtual-desktop reordering within KDE's global desktop model.
 - Define size-increment and aspect-ratio behavior, and expand live constraint-change coverage across toolkits.
 - Harden the existing topology recovery for rotation, rapid physical hot-plug sequences, and more hardware configurations.
