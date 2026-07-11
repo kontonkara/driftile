@@ -17058,8 +17058,8 @@ describe("RuntimeController", () => {
     expect(
       activeColumnWidth(controller, trackedOutput.output, desktop),
     ).toEqual({
-      kind: "proportion",
-      value: 159.6 / 990,
+      kind: "fixed",
+      value: 149.6,
     });
     expect(active.window.frameGeometry.width).toBe(149.6);
     expect(controller.increaseColumnWidth()).toBe(false);
@@ -17068,13 +17068,160 @@ describe("RuntimeController", () => {
     expect(
       activeColumnWidth(controller, trackedOutput.output, desktop),
     ).toEqual({
-      kind: "proportion",
-      value: 111.6 / 990,
+      kind: "fixed",
+      value: 101.6,
     });
     expect(active.window.frameGeometry.width).toBe(101.6);
     expect(controller.decreaseColumnWidth()).toBe(false);
     expect(controller.resetColumnWidth()).toBe(true);
     expect(active.window.frameGeometry.width).toBe(128);
+  });
+
+  it("keeps exact reset and preset maximum clamps fixed across work-area growth", () => {
+    const trackedOutput = createTrackedOutput("DP-1", 0);
+    const output = trackedOutput.output;
+    const desktop = { id: "desktop-1" };
+    const active = createTrackedWindow("window-1", output, desktop, {
+      maxSize: { height: 10_000, width: 485 },
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [active.window],
+    );
+    let workAreaWidth = 1000;
+    Object.defineProperty(fixture.workspace, "clientArea", {
+      configurable: true,
+      value: () => ({ height: 800, width: workAreaWidth, x: 0, y: 0 }),
+    });
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+    const id = windowId(String(active.window.internalId));
+
+    expect(controller.start()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "fixed",
+      value: 485,
+    });
+    expect(
+      runtimeLayout(controller).setActiveColumnWidth(id, {
+        kind: "fixed",
+        value: 300,
+      }),
+    ).toEqual({ kind: "fixed", value: 485 });
+    expect(controller.reconcile()).toBe(1);
+
+    expect(controller.resetColumnWidth()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "fixed",
+      value: 485,
+    });
+    expect(active.window.frameGeometry.width).toBe(485);
+    expect(controller.resetColumnWidth()).toBe(false);
+
+    expect(
+      runtimeLayout(controller).setActiveColumnWidth(id, {
+        kind: "fixed",
+        value: 350,
+      }),
+    ).toEqual({ kind: "fixed", value: 485 });
+    expect(controller.reconcile()).toBe(1);
+    expect(controller.switchPresetColumnWidth()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "fixed",
+      value: 485,
+    });
+    expect(controller.switchPresetColumnWidth()).toBe(false);
+
+    const writesAtBoundary = active.writeCount;
+    workAreaWidth = 1600;
+    trackedOutput.setGeometry({ height: 800, width: 1600, x: 0, y: 0 });
+    trackedOutput.geometryChanged.emit();
+    flushTopologyRecovery(resumeScheduler, workScheduler);
+
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "fixed",
+      value: 485,
+    });
+    expect(active.window.frameGeometry.width).toBe(485);
+    expect(active.writeCount).toBe(writesAtBoundary);
+    expect(controller.reconcile()).toBe(0);
+    expect(workScheduler.pendingCount).toBe(0);
+    expect(resumeScheduler.pendingCount).toBe(0);
+  });
+
+  it("keeps an exact decrease minimum clamp fixed across work-area shrink", () => {
+    const trackedOutput = createTrackedOutput("DP-1", 0);
+    const output = trackedOutput.output;
+    const desktop = { id: "desktop-1" };
+    const active = createTrackedWindow("window-1", output, desktop, {
+      minSize: { height: 1, width: 287 },
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [active.window],
+    );
+    let workAreaWidth = 1000;
+    Object.defineProperty(fixture.workspace, "clientArea", {
+      configurable: true,
+      value: () => ({ height: 800, width: workAreaWidth, x: 0, y: 0 }),
+    });
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(controller.decreaseColumnWidth()).toBe(true);
+    expect(controller.decreaseColumnWidth()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "fixed",
+      value: 287,
+    });
+    expect(active.window.frameGeometry.width).toBe(287);
+    expect(controller.decreaseColumnWidth()).toBe(false);
+
+    const writesAtBoundary = active.writeCount;
+    workAreaWidth = 700;
+    trackedOutput.setGeometry({ height: 800, width: 700, x: 0, y: 0 });
+    trackedOutput.geometryChanged.emit();
+    flushTopologyRecovery(resumeScheduler, workScheduler);
+
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "fixed",
+      value: 287,
+    });
+    expect(active.window.frameGeometry.width).toBe(287);
+    expect(active.writeCount).toBe(writesAtBoundary);
+    expect(workScheduler.pendingCount).toBe(0);
+    expect(resumeScheduler.pendingCount).toBe(0);
+
+    expect(controller.increaseColumnWidth()).toBe(true);
+    expect(active.window.frameGeometry.width).toBeGreaterThan(287);
+    expect(controller.decreaseColumnWidth()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "fixed",
+      value: 287,
+    });
+    expect(controller.decreaseColumnWidth()).toBe(false);
+    const writesAfterRoundTrip = active.writeCount;
+    expect(controller.reconcile()).toBe(0);
+    expect(active.writeCount).toBe(writesAfterRoundTrip);
   });
 
   it("never reverses the requested direction after constraints change", () => {
@@ -17107,13 +17254,17 @@ describe("RuntimeController", () => {
     });
     expect(controller.decreaseColumnWidth()).toBe(true);
     expect(active.window.frameGeometry.width).toBe(400);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "fixed",
+      value: 400,
+    });
 
     constraints.maxSize = { height: 10_000, width: 10_000 };
     constraints.minSize = { height: 1, width: 450 };
     expect(controller.decreaseColumnWidth()).toBe(false);
     expect(activeColumnWidth(controller, output, desktop)).toEqual({
-      kind: "proportion",
-      value: 410 / 990,
+      kind: "fixed",
+      value: 400,
     });
     expect(controller.increaseColumnWidth()).toBe(true);
     expect(active.window.frameGeometry.width).toBe(499);
@@ -17185,8 +17336,8 @@ describe("RuntimeController", () => {
 
     expect(controller.increaseColumnWidth()).toBe(true);
     expect(activeColumnWidth(controller, output, desktop)).toEqual({
-      kind: "proportion",
-      value: 530 / 990,
+      kind: "fixed",
+      value: 520,
     });
     expect(controller.increaseColumnWidth()).toBe(false);
     expect(active.window.frameGeometry.width).toBe(520);

@@ -7831,25 +7831,26 @@ export class RuntimeController {
       return null;
     }
 
-    if (candidate.kind === "fixed") {
-      candidate = {
-        kind: "fixed",
-        value: clamp(candidate.value, minimum, maximum),
-      };
-    } else {
-      const minimumProportion = (minimum + this.gap) / denominator;
-      const maximumProportion = (maximum + this.gap) / denominator;
-      candidate = {
-        kind: "proportion",
-        value: clamp(candidate.value, minimumProportion, maximumProportion),
-      };
-    }
-
     const currentPixels = this.resolvedColumnWidth(current, denominator);
-    const candidatePixels = this.resolvedColumnWidth(candidate, denominator);
+    let candidatePixels = this.resolvedColumnWidth(candidate, denominator);
 
     if (currentPixels === null || candidatePixels === null) {
       return null;
+    }
+
+    if (
+      candidatePixels <=
+      minimum + floatingPointTolerance(candidatePixels, minimum)
+    ) {
+      candidate = { kind: "fixed", value: minimum };
+      candidatePixels = minimum;
+    } else if (
+      Number.isFinite(maximum) &&
+      candidatePixels >=
+        maximum - floatingPointTolerance(candidatePixels, maximum)
+    ) {
+      candidate = { kind: "fixed", value: maximum };
+      candidatePixels = maximum;
     }
 
     const tolerance = floatingPointTolerance(currentPixels, candidatePixels);
@@ -15104,11 +15105,18 @@ export class RuntimeController {
       return { kind: "fixed", value: minimum };
     }
 
-    if (requestedWidth < minimum) {
+    if (
+      requestedWidth <=
+      minimum + floatingPointTolerance(requestedWidth, minimum)
+    ) {
       return { kind: "fixed", value: minimum };
     }
 
-    if (requestedWidth > maximum) {
+    if (
+      Number.isFinite(maximum) &&
+      requestedWidth >=
+        maximum - floatingPointTolerance(requestedWidth, maximum)
+    ) {
       return { kind: "fixed", value: maximum };
     }
 
