@@ -375,7 +375,7 @@ let
           -p "tabtitle=$base_title" \
           -p "LocalTabTitleFormat=$base_title" \
           -p "RemoteTabTitleFormat=$base_title" \
-          -e ${pkgs.coreutils}/bin/sleep 300 \
+          -e ${pkgs.coreutils}/bin/sleep 480 \
           >>/tmp/driftile-vm-konsole.log 2>&1 &
         process_pid=$!
         printf -v "$pid_variable" '%s' "$process_pid"
@@ -388,7 +388,118 @@ let
 
         if ! real_window_is_normal "$resolved_title" \
           || ! real_window_identity_matches "$resolved_title" konsole \
-          || ! real_window_protocol_matches "$resolved_title" konsole false; then
+          || ! real_window_protocol_matches "$resolved_title" konsole false \
+          || ! wait_for_real_window_borderless "$resolved_title"; then
+          terminate_process "$process_pid"
+          printf -v "$pid_variable" '%s' ""
+          return 1
+        fi
+
+        printf -v "$title_variable" '%s' "$resolved_title"
+      }
+
+      start_firefox_window() {
+        local pid_variable=$1
+        local title_variable=$2
+        local profile_variable=$3
+        local base_title=$4
+        local process_pid
+        local profile_directory
+        local resolved_title
+
+        printf -v "$pid_variable" '%s' ""
+        printf -v "$profile_variable" '%s' ""
+        profile_directory=$(mktemp -d -t driftile-firefox.XXXXXXXXXX) || return 1
+
+        if ! cp ${firefoxPreferences} "$profile_directory/user.js"; then
+          rm -rf -- "$profile_directory"
+          return 1
+        fi
+
+        printf -v "$profile_variable" '%s' "$profile_directory"
+        env \
+          MOZ_CRASHREPORTER_DISABLE=1 \
+          MOZ_DATA_REPORTING=0 \
+          MOZ_ENABLE_WAYLAND=1 \
+          ${pkgs.firefox}/bin/firefox \
+          --new-instance \
+          --no-remote \
+          --profile "$profile_directory" \
+          --new-window "file://${firefoxPage}" \
+          >>/tmp/driftile-vm-firefox.log 2>&1 &
+        process_pid=$!
+        printf -v "$pid_variable" '%s' "$process_pid"
+
+        if ! wait_for_window_caption resolved_title "$base_title" \
+          || ! real_window_is_normal "$resolved_title" \
+          || ! real_window_identity_matches "$resolved_title" firefox \
+          || ! real_window_protocol_matches "$resolved_title" firefox false \
+          || ! wait_for_real_window_borderless "$resolved_title"; then
+          terminate_process "$process_pid"
+          printf -v "$pid_variable" '%s' ""
+
+          if wait_for_window_gone_contains "$base_title"; then
+            if rm -rf -- "$profile_directory"; then
+              printf -v "$profile_variable" '%s' ""
+            fi
+          fi
+
+          return 1
+        fi
+
+        printf -v "$title_variable" '%s' "$resolved_title"
+      }
+
+      start_kcalc_window() {
+        local pid_variable=$1
+        local title_variable=$2
+        local base_title=$3
+        local process_pid
+        local resolved_title
+
+        printf -v "$pid_variable" '%s' ""
+        env QT_QPA_PLATFORM=wayland \
+          ${pkgs.kdePackages.kcalc}/bin/kcalc \
+          --qwindowtitle "$base_title" \
+          >>/tmp/driftile-vm-kcalc.log 2>&1 &
+        process_pid=$!
+        printf -v "$pid_variable" '%s' "$process_pid"
+
+        if ! wait_for_window_caption resolved_title "$base_title" \
+          || ! real_window_is_normal "$resolved_title" \
+          || ! real_window_identity_matches "$resolved_title" kcalc \
+          || ! real_window_protocol_matches "$resolved_title" kcalc false \
+          || ! wait_for_real_window_borderless "$resolved_title"; then
+          terminate_process "$process_pid"
+          printf -v "$pid_variable" '%s' ""
+          return 1
+        fi
+
+        printf -v "$title_variable" '%s' "$resolved_title"
+      }
+
+      start_xterm_window() {
+        local pid_variable=$1
+        local title_variable=$2
+        local base_title=$3
+        local process_pid
+        local resolved_title
+
+        printf -v "$pid_variable" '%s' ""
+        DISPLAY="''${DISPLAY:-:0}" \
+          ${pkgs.xterm}/bin/xterm \
+          -T "$base_title" \
+          -class DriftileXTerm \
+          -e ${pkgs.coreutils}/bin/sleep 300 \
+          >>/tmp/driftile-vm-xterm.log 2>&1 &
+        process_pid=$!
+        printf -v "$pid_variable" '%s' "$process_pid"
+
+        if ! wait_for_window_caption resolved_title "$base_title" \
+          || ! real_window_is_normal "$resolved_title" \
+          || ! real_window_identity_matches "$resolved_title" xterm \
+          || ! real_window_protocol_matches "$resolved_title" xterm true \
+          || ! wait_for_real_window_borderless "$resolved_title"; then
           terminate_process "$process_pid"
           printf -v "$pid_variable" '%s' ""
           return 1
@@ -425,7 +536,8 @@ let
 
         if ! real_window_is_normal "$resolved_title" \
           || ! real_window_identity_matches "$resolved_title" xmessage \
-          || ! real_window_protocol_matches "$resolved_title" xmessage true; then
+          || ! real_window_protocol_matches "$resolved_title" xmessage true \
+          || ! wait_for_real_window_borderless "$resolved_title"; then
           terminate_process "$process_pid"
           printf -v "$pid_variable" '%s' ""
           return 1
@@ -1235,12 +1347,8 @@ let
                 $window.resourceName.data?,
                 $window.desktopFile.data?
               ]
-            | map(select(type == "string") | ascii_downcase)
-            | if length == 0 then
-                true
-              else
-                any(.[]; contains($expected))
-              end
+            | map(select(type == "string" and length > 0) | ascii_downcase)
+            | (length > 0 and any(.[]; contains($expected)))
           ' >/dev/null
       }
 
@@ -3262,6 +3370,83 @@ let
         wait "$pid" >/dev/null 2>&1 || true
       }
 
+      cleanup_fourth_window() {
+        local process_pid="''${fourth_window:-}"
+        local profile_directory="''${fourth_window_profile:-}"
+
+        if [[ -n "$process_pid" ]]; then
+          terminate_process "$process_pid"
+        fi
+        fourth_window=""
+
+        if [[ -n "$profile_directory" ]]; then
+          if ! wait_for_window_gone_contains "$base_title_d"; then
+            return 1
+          fi
+
+          if ! rm -rf -- "$profile_directory"; then
+            return 1
+          fi
+
+          fourth_window_profile=""
+        fi
+      }
+
+      cleanup_fifth_window() {
+        local process_pid="''${fifth_window:-}"
+
+        if [[ -n "$process_pid" ]]; then
+          terminate_process "$process_pid"
+        fi
+        fifth_window=""
+      }
+
+      cleanup_desktop_window() {
+        local process_pid="''${desktop_window:-}"
+
+        if [[ -n "$process_pid" ]]; then
+          terminate_process "$process_pid"
+        fi
+        desktop_window=""
+      }
+
+      cleanup_temporary_windows() {
+        cleanup_fourth_window || true
+        cleanup_fifth_window
+        cleanup_desktop_window
+      }
+
+      rebuild_direct_insertion_with_konsole() {
+        local firefox_title=$title_d
+
+        if ! cleanup_fourth_window \
+          || ! wait_for_window_gone "$firefox_title" \
+          || ! activate_window "$title_c" \
+          || ! wait_for_active "$title_c"; then
+          return 1
+        fi
+
+        title_d=$base_title_d_konsole
+        start_konsole_window \
+          fourth_window \
+          title_d \
+          "$base_title_d_konsole" \
+          && wait_for_window "$title_d" \
+          && activate_window "$title_d" \
+          && wait_for_active "$title_d" \
+          && wait_for_direct_insertion_source \
+          && invoke_shortcut "driftile_insert_window_into_stack_left" \
+          && wait_for_direct_stack_layout \
+          && wait_for_active "$title_d" \
+          && invoke_shortcut "driftile_insert_window_into_stack_right" \
+          && wait_for_four_frames \
+            "$direct_first_frame" \
+            "$direct_second_frame" \
+            "$direct_third_frame" \
+            "$direct_fourth_frame" \
+          && wait_for_active "$title_d"
+      }
+
       close_real_application_and_restore() {
         local baseline_first=$3
         local baseline_second=$4
@@ -3804,7 +3989,7 @@ let
         local fixture_restored=false
         local verified=false
 
-        if start_konsole_window \
+        if start_xterm_window \
           fifth_window \
           title_e \
           "$base_title_e" \
@@ -3833,8 +4018,7 @@ let
         set_external_window_minimized "$title_c" false >/dev/null 2>&1 || true
         set_external_window_minimized "$title_d" false >/dev/null 2>&1 || true
         set_external_window_minimized "$title_e" false >/dev/null 2>&1 || true
-        [[ -z "$fifth_window" ]] || terminate_process "$fifth_window"
-        fifth_window=""
+        cleanup_fifth_window
 
         IFS=, read -r \
           direct_first_x direct_first_y direct_first_width direct_first_height \
@@ -4455,8 +4639,8 @@ let
         local baseline_second_width
         local baseline_third_width
         local border_query
+        local consume_fixture_rebuilt
         local desktop_source_width
-        local desktop_window=""
         local direct_insert_verified
         local first_trailing_desktop_id=""
         local floating_second_frame
@@ -4703,7 +4887,7 @@ let
         fi
 
         set_current_desktop "$secondary_desktop_id" || return 1
-        start_konsole_window \
+        start_kcalc_window \
           desktop_window \
           title_desktop_destination \
           "$base_title_desktop_destination" \
@@ -4854,8 +5038,7 @@ let
           && wait_for_active "$title_b" \
           || return 1
 
-        [[ -z "$desktop_window" ]] || terminate_process "$desktop_window"
-        desktop_window=""
+        cleanup_desktop_window
         wait_for_window_gone "$title_desktop_destination" || return 1
         wait_for_desktop_sequence \
           "$primary_desktop_id" \
@@ -4874,9 +5057,10 @@ let
 
         direct_insert_verified=false
 
-        if start_konsole_window \
+        if start_firefox_window \
           fourth_window \
           title_d \
+          fourth_window_profile \
           "$base_title_d" \
           && wait_for_window "$title_d" \
           && activate_window "$title_d" \
@@ -4954,9 +5138,20 @@ let
           horizontal_extraction_verified=true
         fi
 
-        minimized_consume_verified=false
+        consume_fixture_rebuilt=false
 
         if [[ "$horizontal_extraction_verified" == true ]] \
+          && rebuild_direct_insertion_with_konsole; then
+          consume_fixture_rebuilt=true
+          record_focus_state \
+            "Konsole D reconstructed the deterministic consume fixture"
+        else
+          record_focus_state "deterministic consume fixture reconstruction failed"
+        fi
+
+        minimized_consume_verified=false
+
+        if [[ "$consume_fixture_rebuilt" == true ]] \
           && verify_physical_consume_past_minimized_peers; then
           minimized_consume_verified=true
         fi
@@ -4968,8 +5163,7 @@ let
           minimized_expel_verified=true
         fi
 
-        [[ -z "$fourth_window" ]] || terminate_process "$fourth_window"
-        fourth_window=""
+        cleanup_fourth_window
 
         wait_for_window_gone "$title_d" \
           && activate_window "$title_b" \
@@ -6566,7 +6760,11 @@ let
         baseline_second=$stable_second_frame
         baseline_third=$stable_third_frame
         firefox_profile=$(mktemp -d -t driftile-firefox.XXXXXXXXXX) || return 1
-        cp ${firefoxPreferences} "$firefox_profile/user.js" || return 1
+
+        if ! cp ${firefoxPreferences} "$firefox_profile/user.js"; then
+          rm -rf -- "$firefox_profile"
+          return 1
+        fi
 
         env \
           MOZ_CRASHREPORTER_DISABLE=1 \
@@ -6582,7 +6780,11 @@ let
 
         if ! wait_for_window_query firefox_query "$firefox_title"; then
           terminate_process "$firefox_pid"
-          rm -rf "$firefox_profile"
+
+          if wait_for_window_gone_contains "$firefox_title"; then
+            rm -rf -- "$firefox_profile"
+          fi
+
           record_focus_state "Firefox window discovery failed"
           return 1
         fi
@@ -6593,25 +6795,31 @@ let
           firefox \
           false; then
           record_real_application_state "Firefox acceptance failed" "$firefox_query"
-          close_real_application_and_restore \
+          if close_real_application_and_restore \
+              "$firefox_query" \
+              "$firefox_pid" \
+              "$baseline_first" \
+              "$baseline_second" \
+              "$baseline_third"; then
+            rm -rf -- "$firefox_profile"
+          fi
+
+          return 1
+        fi
+
+        if ! close_real_application_and_restore \
             "$firefox_query" \
             "$firefox_pid" \
             "$baseline_first" \
             "$baseline_second" \
-            "$baseline_third" \
-            || true
-          rm -rf "$firefox_profile"
+            "$baseline_third"; then
+          return 1
+        fi
+        if ! rm -rf -- "$firefox_profile"; then
+          record_focus_state "Firefox profile cleanup failed"
           return 1
         fi
 
-        close_real_application_and_restore \
-          "$firefox_query" \
-          "$firefox_pid" \
-          "$baseline_first" \
-          "$baseline_second" \
-          "$baseline_third" \
-          || return 1
-        rm -rf "$firefox_profile"
         record_focus_state "Firefox closed and the tiled layout reflowed"
 
         activate_window "$title_c" \
@@ -6756,9 +6964,10 @@ let
       base_title_a="$status - Konsole A - Meta+H"
       base_title_b="$status - Konsole B - middle column"
       base_title_c="$status - Konsole C - Meta+L"
-      base_title_d="$status - Konsole D - direct insertion"
-      base_title_e="$status - Konsole E - minimized edge"
-      base_title_desktop_destination="$status - Konsole desktop destination"
+      base_title_d="Driftile VM Firefox"
+      base_title_d_konsole="$status - Konsole D - consume and expel"
+      base_title_e="$status - XWayland xterm E - minimized edge"
+      base_title_desktop_destination="$status - KCalc desktop destination"
       title_a="$base_title_a"
       title_b="$base_title_b"
       title_c="$base_title_c"
@@ -6768,8 +6977,11 @@ let
       first_window=""
       second_window=""
       third_window=""
+      desktop_window=""
       fifth_window=""
       fourth_window=""
+      fourth_window_profile=""
+      trap cleanup_temporary_windows EXIT
       : > /tmp/shared/driftile-focus-diagnostics
 
       start_konsole_window first_window title_a "$base_title_a" \
@@ -6790,7 +7002,6 @@ let
 
       if [[ "$loaded" == true && "$desktops_ready" == true ]] \
         && verify_focus \
-        && verify_real_applications \
         && verify_physical_consume_expel_shortcuts \
         && verify_physical_layer_focus_shortcut \
         && verify_physical_floating_navigation_shortcuts \
@@ -6798,9 +7009,12 @@ let
         && verify_physical_height_shortcuts \
         && verify_physical_column_view_shortcuts \
         && verify_physical_fullscreen_shortcut \
-        && verify_physical_maximize_shortcut; then
+        && verify_physical_maximize_shortcut \
+        && verify_real_applications; then
         focus_verified=true
       fi
+
+      cleanup_temporary_windows
 
       if [[ -n "$primary_desktop_id" ]]; then
         set_current_desktop "$primary_desktop_id" || true
@@ -6941,10 +7155,10 @@ in
   '';
 
   virtualisation.vmVariant.virtualisation = {
-    cores = 4;
+    cores = 8;
     diskImage = null;
     graphics = true;
-    memorySize = 4096;
+    memorySize = 8192;
     resolution = {
       x = 1680;
       y = 1050;
