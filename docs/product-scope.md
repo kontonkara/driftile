@@ -73,6 +73,7 @@ Driftile must integrate with, not duplicate:
 - Focusing a non-minimized managed window makes it fully visible with the smallest required scroll.
 - Reordering moves one whole active column left, right, first, or last inside its context without changing focus or widths.
 - Column-width resizing changes one whole active column, translates client limits to decorated frame bounds, respects every member's width constraints, and preserves focus and grouping.
+- A newly admitted or explicitly resized width that reaches a hard minimum or maximum is stored at that fixed logical-pixel boundary, so work-area changes cannot scale it past the same constraint.
 - Exposed client minimum and maximum sizes are hard bounds and are revalidated immediately before writes. Unexposed X11 increment and aspect hints never change Driftile's modeled admission, grouping, shared widths, or height partitioning; KWin may still constrain the applied frame on a backend that enforces them.
 - Available-width expansion grows only a fully visible active column up to its shared window constraints, preserves every other fully visible column, and changes width and viewport atomically.
 - Visible-column centering changes only the viewport offset and preserves focus, order, widths, and grouping.
