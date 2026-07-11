@@ -78,6 +78,7 @@ const MAX_CAPACITY_PARK_ATTEMPTS = 20;
 const MAX_BORDERLESS_SETTLEMENT_PROBES = 20;
 const MAX_EXTERNAL_FULLSCREEN_EXTRACTION_ATTEMPTS = 20;
 const MAX_FULLSCREEN_REQUEST_PROBES = 20;
+const MAX_STACK_EDIT_FOCUS_PROBES = 20;
 const MAX_TOPOLOGY_SAMPLE_ATTEMPTS = 20;
 const MAX_TRANSIENT_RESUME_PROBES = 20;
 const MINIMUM_COLUMN_WIDTH = 64;
@@ -277,6 +278,32 @@ interface ActiveColumnCommand {
   readonly sampledGeometries: ReadonlyMap<string, ContextGeometry>;
 }
 
+interface StackTransferAcceptance {
+  readonly accept: (expectedActive: KWinWindow) => boolean;
+  readonly activeWindow: KWinWindow;
+  readonly participants: readonly StackTransferParticipant[];
+}
+
+interface StackTransferParticipant {
+  readonly id: WindowId;
+  readonly minimized: boolean;
+  readonly window: KWinWindow;
+}
+
+interface PendingExpelFocusHandoff {
+  attempts: number;
+  readonly acceptance: StackTransferAcceptance;
+  readonly command: ActiveColumnCommand;
+  continuationPending: boolean;
+  readonly generation: number;
+  probePending: boolean;
+  requestInProgress: boolean;
+  readonly targetId: WindowId;
+  readonly targetWindow: KWinWindow;
+  readonly token: object;
+  readonly topologyRevision: number;
+}
+
 interface VisibleColumnGroup {
   readonly activeFrame: Rect;
   readonly layout: ReturnType<typeof solveStripGeometry>;
@@ -433,6 +460,8 @@ export class RuntimeController {
   private readonly createRect: KWinRectFactory;
   private readonly dirtyContexts = new Set<string>();
   private readonly desktopLifecycle: DesktopLifecycle;
+  private pendingExpelFocusHandoff: PendingExpelFocusHandoff | null = null;
+  private stackEditOperation: object | null = null;
   private windowTransferOperation: WindowTransferOperation | null = null;
   private stackedNativeStateOperation: StackedNativeStateOperation | null =
     null;
@@ -707,82 +736,21 @@ export class RuntimeController {
     const source = command.before.columns[activeIndex + 1];
     const movedWindowId = source?.windowIds[0];
 
-    if (
-      activeIndex < 0 ||
-      !source ||
-      !movedWindowId ||
-      !this.columnMembersAreStackTransferEligible(
-        command.activeColumn,
-        command.context,
-        command.activeId,
-      ) ||
-      !this.columnMembersAreStackTransferEligible(
-        source,
-        command.context,
-        movedWindowId,
-      )
-    ) {
+    if (activeIndex < 0 || !source || !movedWindowId) {
       return false;
     }
 
-    const activeWindow = this.observer.source(command.activeId);
-    const movedWindow = this.observer.source(movedWindowId);
+    const acceptance = this.prepareStackTransferAcceptance(
+      [command.activeColumn, source],
+      command.context,
+      command.activeId,
+      command.activeId,
+      movedWindowId,
+    );
 
-    if (
-      !activeWindow ||
-      !movedWindow ||
-      this.workspace.activeWindow !== activeWindow
-    ) {
+    if (!acceptance) {
       return false;
     }
-
-    const participantStates: Array<{
-      readonly id: WindowId;
-      readonly minimized: boolean;
-      readonly window: KWinWindow;
-    }> = [];
-
-    for (const id of [...command.activeColumn.windowIds, ...source.windowIds]) {
-      const window = this.observer.source(id);
-
-      if (!window) {
-        return false;
-      }
-
-      participantStates.push({ id, minimized: window.minimized, window });
-    }
-
-    const participantsRemainEligible = (): boolean => {
-      if (
-        this.workspace.activeWindow !== activeWindow ||
-        this.observer.source(command.activeId) !== activeWindow ||
-        this.observer.source(movedWindowId) !== movedWindow
-      ) {
-        return false;
-      }
-
-      for (const participant of participantStates) {
-        if (
-          this.observer.source(participant.id) !== participant.window ||
-          participant.window.minimized !== participant.minimized
-        ) {
-          return false;
-        }
-      }
-
-      return (
-        this.columnMembersAreStackTransferEligible(
-          command.activeColumn,
-          command.context,
-          command.activeId,
-        ) &&
-        this.columnMembersAreStackTransferEligible(
-          source,
-          command.context,
-          movedWindowId,
-        )
-      );
-    };
 
     const preview = this.layout.previewConsumeWindowIntoColumn(
       command.activeId,
@@ -802,11 +770,14 @@ export class RuntimeController {
       preview,
       command.activeId,
       undefined,
-      participantsRemainEligible,
+      acceptance.accept,
     );
 
     if (!consumed) {
-      this.recoverRejectedStackEditExternalFocus(command.context, activeWindow);
+      this.recoverRejectedStackEditExternalFocus(
+        command.context,
+        acceptance.activeWindow,
+      );
     }
 
     return consumed;
@@ -818,11 +789,7 @@ export class RuntimeController {
     if (
       !command ||
       command.activeColumn.windowIds.length < 2 ||
-      this.hasStructuralCapacityState(command.context.key) ||
-      !this.columnMembersAreStackTransferEligible(
-        command.activeColumn,
-        command.context,
-      )
+      this.hasStructuralCapacityState(command.context.key)
     ) {
       return false;
     }
@@ -832,6 +799,37 @@ export class RuntimeController {
 
     if (!movedWindowId) {
       return false;
+    }
+
+    const remainingWindowId =
+      movedWindowId === command.activeId
+        ? command.activeColumn.windowIds[
+            command.activeColumn.windowIds.length - 2
+          ]
+        : command.activeId;
+
+    if (!remainingWindowId) {
+      return false;
+    }
+
+    const acceptance = this.prepareStackTransferAcceptance(
+      [command.activeColumn],
+      command.context,
+      command.activeId,
+      movedWindowId,
+      remainingWindowId,
+    );
+
+    if (!acceptance) {
+      return false;
+    }
+
+    if (movedWindowId === command.activeId) {
+      return this.beginExpelFocusHandoff(
+        command,
+        remainingWindowId,
+        acceptance,
+      );
     }
 
     const newColumnId = this.availableColumnId(
@@ -848,24 +846,27 @@ export class RuntimeController {
       return false;
     }
 
-    const remainingWindowId =
-      movedWindowId === command.activeId
-        ? command.activeColumn.windowIds[
-            command.activeColumn.windowIds.length - 2
-          ]
-        : command.activeId;
-
-    if (!remainingWindowId) {
+    if (preview.movedWindowId !== movedWindowId) {
       this.layout.discardColumnStackEdit(preview);
       return false;
     }
 
-    return this.applyColumnStackEdit(
+    const expelled = this.applyColumnStackEdit(
       command,
       preview,
       remainingWindowId,
       newColumnId,
+      acceptance.accept,
     );
+
+    if (!expelled) {
+      this.recoverRejectedStackEditExternalFocus(
+        command.context,
+        acceptance.activeWindow,
+      );
+    }
+
+    return expelled;
   }
 
   toggleFloating(): boolean {
@@ -901,6 +902,7 @@ export class RuntimeController {
 
     if (
       !this.started ||
+      this.stackEditOperation ||
       !activeWindow ||
       activeWindow.deleted ||
       !activeWindow.managed
@@ -949,6 +951,7 @@ export class RuntimeController {
 
     if (
       !this.started ||
+      this.stackEditOperation ||
       !activeWindow ||
       activeWindow.deleted ||
       !activeWindow.managed ||
@@ -1526,6 +1529,8 @@ export class RuntimeController {
     this.started = false;
     this.workScheduled = false;
     this.runGeneration += 1;
+    this.pendingExpelFocusHandoff = null;
+    this.stackEditOperation = null;
 
     try {
       try {
@@ -1556,6 +1561,8 @@ export class RuntimeController {
       this.layout = new LayoutEngine();
       this.knownOutputInstances.clear();
       this.contexts.clear();
+      this.pendingExpelFocusHandoff = null;
+      this.stackEditOperation = null;
       this.windowTransferOperation = null;
       this.stackedNativeStateOperation = null;
       this.pendingExternalFullscreenExtractions.clear();
@@ -1617,6 +1624,7 @@ export class RuntimeController {
   reconcile(): number {
     if (
       !this.started ||
+      this.stackEditOperation ||
       this.windowTransferOperation ||
       this.topologyStabilizing ||
       this.topologyRetryPending
@@ -1681,6 +1689,12 @@ export class RuntimeController {
       return;
     }
 
+    const pendingHandoff = this.pendingExpelFocusHandoff;
+
+    if (pendingHandoff) {
+      this.cancelPendingExpelFocusHandoff(pendingHandoff, false);
+    }
+
     const globalDesktop =
       typeof this.workspace.currentDesktopForScreen !== "function";
     const liveCurrent = globalDesktop ? this.workspace.currentDesktop : current;
@@ -1733,6 +1747,7 @@ export class RuntimeController {
 
     if (
       this.initializing ||
+      this.stackEditOperation ||
       this.windowTransferOperation ||
       this.startupStabilizationToken !== null ||
       this.topologyStabilizing ||
@@ -1762,6 +1777,7 @@ export class RuntimeController {
 
     this.synchronizeWindowBorder(changedId, source);
     this.refreshRememberedLayerFocus(changedId, source);
+    this.cancelInvalidPendingExpelFocusHandoff();
 
     if (this.windowTransferOperation) {
       if (
@@ -1808,6 +1824,7 @@ export class RuntimeController {
 
     this.synchronizeWindowBorder(changedId, source);
     this.refreshRememberedLayerFocus(changedId, source);
+    this.cancelInvalidPendingExpelFocusHandoff();
 
     if (this.windowTransferOperation) {
       if (
@@ -1906,6 +1923,7 @@ export class RuntimeController {
     }
 
     this.suspendGeometryLease(suspendedId);
+    this.cancelInvalidPendingExpelFocusHandoff();
     this.pendingWindowSyncs.add(suspendedId);
     this.scheduleWork();
   };
@@ -1924,8 +1942,11 @@ export class RuntimeController {
     this.settleFullscreenRequest(activeId, fullScreen, true);
 
     if (!source) {
+      this.cancelInvalidPendingExpelFocusHandoff();
       return;
     }
+
+    this.cancelInvalidPendingExpelFocusHandoff();
 
     const automaticFloating =
       this.automaticFloatingWindows.has(activeId) ||
@@ -1988,6 +2009,7 @@ export class RuntimeController {
 
   private readonly handleWindowRemoved = (id: string): void => {
     const managedId = windowId(id);
+    this.cancelInvalidPendingExpelFocusHandoff();
     const affectedContextKeys = new Set<string>();
     const floating = this.floatingWindows.get(managedId);
     const transition = this.toggleGeometryTransitions.get(managedId);
@@ -2038,6 +2060,23 @@ export class RuntimeController {
     window: KWinWindow | null,
     allowSuspended = false,
   ): void => {
+    const pendingHandoff = this.pendingExpelFocusHandoff;
+
+    if (pendingHandoff) {
+      if (
+        window !== null &&
+        window !== pendingHandoff.acceptance.activeWindow &&
+        window !== pendingHandoff.targetWindow
+      ) {
+        this.cancelPendingExpelFocusHandoff(pendingHandoff, false);
+      } else if (
+        window === pendingHandoff.targetWindow &&
+        !pendingHandoff.requestInProgress
+      ) {
+        this.schedulePendingExpelFocusHandoff(pendingHandoff);
+      }
+    }
+
     if (!window) {
       return;
     }
@@ -2098,6 +2137,7 @@ export class RuntimeController {
 
     if (
       !this.started ||
+      this.stackEditOperation ||
       this.windowTransferOperation ||
       this.startupStabilizationToken !== null ||
       this.hasTopologyBarrier() ||
@@ -2689,6 +2729,7 @@ export class RuntimeController {
   private focusDesktopTarget(target: DesktopTransferTarget): boolean {
     if (
       !this.started ||
+      this.stackEditOperation ||
       this.windowTransferOperation ||
       this.hasTopologyBarrier()
     ) {
@@ -2770,6 +2811,7 @@ export class RuntimeController {
 
     if (
       !this.started ||
+      this.stackEditOperation ||
       this.windowTransferOperation ||
       this.startupStabilizationToken !== null ||
       this.hasTopologyBarrier()
@@ -3342,19 +3384,433 @@ export class RuntimeController {
     return true;
   }
 
+  private beginExpelFocusHandoff(
+    command: ActiveColumnCommand,
+    targetId: WindowId,
+    acceptance: StackTransferAcceptance,
+  ): boolean {
+    const targetWindow = this.observer.source(targetId);
+
+    if (
+      this.stackEditOperation ||
+      this.pendingExpelFocusHandoff ||
+      !targetWindow ||
+      this.workspace.activeWindow !== acceptance.activeWindow ||
+      this.observer.source(command.activeId) !== acceptance.activeWindow
+    ) {
+      return false;
+    }
+
+    const operation: PendingExpelFocusHandoff = {
+      acceptance,
+      attempts: 0,
+      command,
+      continuationPending: false,
+      generation: this.runGeneration,
+      probePending: false,
+      requestInProgress: true,
+      targetId,
+      targetWindow,
+      token: {},
+      topologyRevision: this.topologyRevision,
+    };
+    this.pendingExpelFocusHandoff = operation;
+    this.stackEditOperation = operation.token;
+    let focusRequestFailed = false;
+
+    try {
+      this.workspace.activeWindow = targetWindow;
+    } catch {
+      focusRequestFailed = true;
+    } finally {
+      operation.requestInProgress = false;
+    }
+
+    if (this.pendingExpelFocusHandoff !== operation) {
+      return false;
+    }
+
+    if (focusRequestFailed) {
+      this.cancelPendingExpelFocusHandoff(operation, true);
+      return false;
+    }
+
+    if (this.workspace.activeWindow === targetWindow) {
+      return this.completePendingExpelFocusHandoff(operation);
+    }
+
+    if (this.workspace.activeWindow !== acceptance.activeWindow) {
+      this.cancelPendingExpelFocusHandoff(operation, false);
+      return false;
+    }
+
+    this.schedulePendingExpelFocusHandoff(operation);
+    return this.pendingExpelFocusHandoff === operation;
+  }
+
+  private schedulePendingExpelFocusHandoff(
+    operation: PendingExpelFocusHandoff,
+  ): void {
+    if (
+      operation.continuationPending ||
+      this.pendingExpelFocusHandoff !== operation
+    ) {
+      return;
+    }
+
+    operation.continuationPending = true;
+
+    try {
+      this.schedule(() => {
+        if (this.pendingExpelFocusHandoff !== operation) {
+          return;
+        }
+
+        operation.continuationPending = false;
+
+        if (this.settlePendingExpelFocusHandoff(operation)) {
+          return;
+        }
+
+        this.schedulePendingExpelFocusProbe(operation);
+      });
+    } catch (error) {
+      operation.continuationPending = false;
+      this.failPendingExpelFocusScheduling(operation, "continuation", error);
+    }
+  }
+
+  private schedulePendingExpelFocusProbe(
+    operation: PendingExpelFocusHandoff,
+  ): void {
+    if (operation.probePending || this.pendingExpelFocusHandoff !== operation) {
+      return;
+    }
+
+    operation.probePending = true;
+
+    try {
+      this.scheduleResume(() => {
+        if (this.pendingExpelFocusHandoff !== operation) {
+          return;
+        }
+
+        operation.probePending = false;
+        operation.attempts += 1;
+
+        if (this.settlePendingExpelFocusHandoff(operation)) {
+          return;
+        }
+
+        if (operation.attempts >= MAX_STACK_EDIT_FOCUS_PROBES) {
+          this.cancelPendingExpelFocusHandoff(operation, false);
+          return;
+        }
+
+        this.schedulePendingExpelFocusProbe(operation);
+      });
+    } catch (error) {
+      operation.probePending = false;
+      this.failPendingExpelFocusScheduling(operation, "probe", error);
+    }
+  }
+
+  private failPendingExpelFocusScheduling(
+    operation: PendingExpelFocusHandoff,
+    phase: "continuation" | "probe",
+    error: unknown,
+  ): void {
+    try {
+      this.cancelPendingExpelFocusHandoff(
+        operation,
+        this.workspace.activeWindow === operation.targetWindow,
+      );
+    } catch (cleanupError) {
+      if (this.pendingExpelFocusHandoff === operation) {
+        this.pendingExpelFocusHandoff = null;
+      }
+
+      if (this.stackEditOperation === operation.token) {
+        this.stackEditOperation = null;
+      }
+
+      console.warn(
+        `[driftile] expel focus scheduling cleanup failed phase=${phase} error=${String(cleanupError)}`,
+      );
+    }
+
+    console.warn(
+      `[driftile] expel focus ${phase} could not be scheduled error=${String(error)}`,
+    );
+  }
+
+  private settlePendingExpelFocusHandoff(
+    operation: PendingExpelFocusHandoff,
+  ): boolean {
+    if (this.pendingExpelFocusHandoff !== operation) {
+      return true;
+    }
+
+    const activeWindow = this.workspace.activeWindow;
+
+    if (activeWindow === operation.targetWindow) {
+      this.completePendingExpelFocusHandoff(operation);
+      return true;
+    }
+
+    if (
+      activeWindow !== null &&
+      activeWindow !== operation.acceptance.activeWindow
+    ) {
+      this.cancelPendingExpelFocusHandoff(operation, false);
+      return true;
+    }
+
+    if (!this.pendingExpelFocusHandoffRemainsValid(operation, activeWindow)) {
+      this.cancelPendingExpelFocusHandoff(operation, false);
+      return true;
+    }
+
+    return false;
+  }
+
+  private completePendingExpelFocusHandoff(
+    operation: PendingExpelFocusHandoff,
+  ): boolean {
+    if (
+      !this.pendingExpelFocusHandoffRemainsValid(
+        operation,
+        operation.targetWindow,
+      )
+    ) {
+      this.cancelPendingExpelFocusHandoff(operation, true);
+      return false;
+    }
+
+    const command = this.prepareActiveColumnCommand(operation.token);
+    const sourceWindowIds = command?.activeColumn.windowIds;
+    const movedWindowId = sourceWindowIds?.[sourceWindowIds.length - 1];
+    const predecessorId = sourceWindowIds?.[sourceWindowIds.length - 2];
+
+    if (
+      this.pendingExpelFocusHandoff !== operation ||
+      !command ||
+      command.activeId !== operation.targetId ||
+      command.context !== operation.command.context ||
+      command.activeColumn.id !== operation.command.activeColumn.id ||
+      !layoutContextSnapshotsEqual(command.before, operation.command.before) ||
+      movedWindowId !== operation.command.activeId ||
+      predecessorId !== operation.targetId ||
+      !operation.acceptance.accept(operation.targetWindow)
+    ) {
+      this.cancelPendingExpelFocusHandoff(operation, true);
+      return false;
+    }
+
+    const newColumnId = this.availableColumnId(
+      command.before,
+      movedWindowId,
+      "expel",
+    );
+    const preview = this.layout.previewExpelWindowFromColumn(
+      command.activeId,
+      newColumnId,
+    );
+
+    if (!preview || preview.movedWindowId !== movedWindowId) {
+      if (preview) {
+        this.layout.discardColumnStackEdit(preview);
+      }
+
+      this.cancelPendingExpelFocusHandoff(operation, true);
+      return false;
+    }
+
+    this.pendingExpelFocusHandoff = null;
+    const expelled = this.applyColumnStackEdit(
+      command,
+      preview,
+      operation.targetId,
+      newColumnId,
+      operation.acceptance.accept,
+      operation.token,
+    );
+
+    if (this.stackEditOperation === operation.token) {
+      this.finishStackEditOperation(operation.token);
+    }
+
+    if (!expelled) {
+      if (this.workspace.activeWindow === operation.targetWindow) {
+        this.restorePendingExpelOriginalFocus(operation);
+      } else {
+        this.recoverRejectedStackEditExternalFocus(
+          command.context,
+          operation.acceptance.activeWindow,
+        );
+      }
+    }
+
+    return expelled;
+  }
+
+  private pendingExpelFocusHandoffRemainsValid(
+    operation: PendingExpelFocusHandoff,
+    activeWindow: KWinWindow | null,
+  ): boolean {
+    const { command } = operation;
+    const snapshot = this.layout.snapshot(
+      command.context.outputId,
+      command.context.desktopId,
+    );
+    const sourceColumn = snapshot.columns.find(
+      (column) => column.id === command.activeColumn.id,
+    );
+    const output = this.workspace.screens.find(
+      (candidate) => candidate.name === command.context.outputId,
+    );
+
+    if (
+      !this.started ||
+      this.pendingExpelFocusHandoff !== operation ||
+      this.stackEditOperation !== operation.token ||
+      this.runGeneration !== operation.generation ||
+      this.topologyRevision !== operation.topologyRevision ||
+      this.windowTransferOperation !== null ||
+      this.startupStabilizationToken !== null ||
+      this.hasTopologyBarrier() ||
+      this.contexts.get(command.context.key) !== command.context ||
+      !output ||
+      currentDesktopForOutput(this.workspace, output)?.id !==
+        command.context.desktopId ||
+      this.observer.source(command.activeId) !==
+        operation.acceptance.activeWindow ||
+      this.observer.source(operation.targetId) !== operation.targetWindow ||
+      !layoutContextSnapshotsEqual(snapshot, command.before) ||
+      !sourceColumn ||
+      sourceColumn.windowIds[sourceColumn.windowIds.length - 1] !==
+        command.activeId ||
+      sourceColumn.windowIds[sourceColumn.windowIds.length - 2] !==
+        operation.targetId ||
+      this.hasStructuralCapacityState(command.context.key) ||
+      (activeWindow !== null &&
+        activeWindow !== operation.acceptance.activeWindow &&
+        activeWindow !== operation.targetWindow)
+    ) {
+      return false;
+    }
+
+    for (const participant of operation.acceptance.participants) {
+      if (
+        this.observer.source(participant.id) !== participant.window ||
+        participant.window.minimized !== participant.minimized
+      ) {
+        return false;
+      }
+    }
+
+    if (activeWindow !== null) {
+      return operation.acceptance.accept(activeWindow);
+    }
+
+    return this.columnMembersAreStackTransferEligible(
+      command.activeColumn,
+      command.context,
+      command.activeId,
+      operation.targetId,
+    );
+  }
+
+  private cancelInvalidPendingExpelFocusHandoff(): void {
+    const operation = this.pendingExpelFocusHandoff;
+
+    if (!operation) {
+      return;
+    }
+
+    const activeWindow = this.workspace.activeWindow;
+
+    if (
+      activeWindow !== null &&
+      activeWindow !== operation.acceptance.activeWindow &&
+      activeWindow !== operation.targetWindow
+    ) {
+      this.cancelPendingExpelFocusHandoff(operation, false);
+      return;
+    }
+
+    if (!this.pendingExpelFocusHandoffRemainsValid(operation, activeWindow)) {
+      this.cancelPendingExpelFocusHandoff(
+        operation,
+        activeWindow === operation.targetWindow,
+      );
+    }
+  }
+
+  private cancelPendingExpelFocusHandoff(
+    operation: PendingExpelFocusHandoff,
+    restoreOriginalFocus: boolean,
+  ): void {
+    if (this.pendingExpelFocusHandoff !== operation) {
+      return;
+    }
+
+    this.pendingExpelFocusHandoff = null;
+
+    if (this.stackEditOperation === operation.token) {
+      this.stackEditOperation = null;
+    }
+
+    if (restoreOriginalFocus) {
+      this.restorePendingExpelOriginalFocus(operation);
+    }
+
+    this.scheduleDeferredRuntimeWork();
+  }
+
+  private restorePendingExpelOriginalFocus(
+    operation: PendingExpelFocusHandoff,
+  ): void {
+    const originalWindow = operation.acceptance.activeWindow;
+
+    if (
+      this.workspace.activeWindow !== operation.targetWindow ||
+      this.observer.source(operation.command.activeId) !== originalWindow ||
+      this.focusAvailableWindowLayer(
+        operation.command.activeId,
+        originalWindow,
+        operation.command.context.key,
+      ) !== "tiling"
+    ) {
+      return;
+    }
+
+    try {
+      this.workspace.activeWindow = originalWindow;
+    } catch {
+      // KWin focus recovery is best effort after a rejected focus handoff.
+    }
+  }
+
   private applyColumnStackEdit(
     command: ActiveColumnCommand,
     preview: ColumnStackEditPreview,
     focusWindowId: WindowId,
     createdColumnId?: ColumnId,
-    accept?: () => boolean,
+    accept?: (expectedActive: KWinWindow) => boolean,
+    existingOperation?: object,
   ): boolean {
+    const activeWindow = this.observer.source(command.activeId);
     const focusWindow = this.observer.source(focusWindowId);
     const focusOwner = this.managedWindows.get(focusWindowId);
     const observedFocus = focusWindow ? normalizeWindow(focusWindow) : null;
     const focusContext = observedFocus ? managedContext(observedFocus) : null;
 
     if (
+      (this.stackEditOperation !== null &&
+        this.stackEditOperation !== existingOperation) ||
+      !activeWindow ||
+      this.workspace.activeWindow !== activeWindow ||
       !focusWindow ||
       focusOwner?.contextKey !== command.context.key ||
       !focusContext ||
@@ -3371,65 +3827,143 @@ export class RuntimeController {
       return false;
     }
 
-    const fullWidthRestore =
-      preview.kind === "expel"
-        ? this.columnFullWidthRestoreWidth(
+    const operation = existingOperation ?? {};
+    this.stackEditOperation = operation;
+
+    try {
+      const fullWidthRestore =
+        preview.kind === "expel"
+          ? this.columnFullWidthRestoreWidth(
+              command.context.key,
+              command.activeColumn.id,
+            )
+          : undefined;
+      const editState: { value: StackEditResult | null } = { value: null };
+      const focusRequest = { attempted: false };
+      const acceptEdit = (): boolean => {
+        if (
+          this.workspace.activeWindow !== activeWindow ||
+          (accept && !accept(activeWindow))
+        ) {
+          return false;
+        }
+
+        if (focusWindowId === command.activeId) {
+          return true;
+        }
+
+        focusRequest.attempted = true;
+
+        if (
+          !this.requestWindowFocus(
+            focusWindowId,
+            focusWindow,
             command.context.key,
-            command.activeColumn.id,
+            "tiling",
           )
-        : undefined;
-    const editState: { value: StackEditResult | null } = { value: null };
-    const applied = this.applyActiveColumnMutation(
-      command,
-      `${preview.kind} window`,
-      () => {
-        editState.value = this.layout.applyColumnStackEdit(preview);
-        return editState.value !== null;
-      },
-      () =>
-        editState.value !== null &&
-        this.layout.rollbackStackEdit(editState.value.rollback),
-      accept,
-    );
-    const edit = editState.value;
+        ) {
+          return false;
+        }
 
-    if (!applied || !edit) {
-      this.layout.discardColumnStackEdit(preview);
-      return false;
-    }
-
-    this.layout.discardStackEditRollback(edit.rollback);
-
-    if (focusWindowId !== command.activeId) {
-      this.workspace.activeWindow = focusWindow;
-    }
-
-    this.reconcileColumnFullWidthRestore(
-      command.context.key,
-      command.before,
-      preview.layout,
-    );
-
-    if (createdColumnId && fullWidthRestore) {
-      this.setColumnFullWidthRestore(
-        command.context.key,
-        createdColumnId,
-        fullWidthRestore,
+        return !accept || accept(focusWindow);
+      };
+      const applied = this.applyActiveColumnMutation(
+        command,
+        `${preview.kind} window`,
+        () => {
+          editState.value = this.layout.applyColumnStackEdit(preview);
+          return editState.value !== null;
+        },
+        () =>
+          editState.value !== null &&
+          this.layout.rollbackStackEdit(editState.value.rollback),
+        acceptEdit,
       );
+      const edit = editState.value;
+
+      if (!applied || !edit) {
+        this.layout.discardColumnStackEdit(preview);
+
+        if (
+          focusRequest.attempted &&
+          this.workspace.activeWindow === focusWindow &&
+          this.observer.source(command.activeId) === activeWindow &&
+          this.focusAvailableWindowLayer(
+            command.activeId,
+            activeWindow,
+            command.context.key,
+          ) === "tiling"
+        ) {
+          try {
+            this.workspace.activeWindow = activeWindow;
+          } catch {
+            // KWin focus recovery is best effort after a rejected stack edit.
+          }
+        }
+
+        return false;
+      }
+
+      this.layout.discardStackEditRollback(edit.rollback);
+
+      this.reconcileColumnFullWidthRestore(
+        command.context.key,
+        command.before,
+        preview.layout,
+      );
+
+      if (createdColumnId && fullWidthRestore) {
+        this.setColumnFullWidthRestore(
+          command.context.key,
+          createdColumnId,
+          fullWidthRestore,
+        );
+      }
+
+      this.capacityParkBackoffs.delete(command.context.key);
+
+      if (
+        preview.kind === "consume" &&
+        preview.layout.columns.length < command.before.columns.length &&
+        this.waitingWindowIds.get(command.context.key)?.size
+      ) {
+        this.pendingAdmissionContexts.add(command.context.key);
+        this.scheduleWork();
+      }
+
+      return true;
+    } finally {
+      this.finishStackEditOperation(operation);
+    }
+  }
+
+  private finishStackEditOperation(operation: object): void {
+    if (this.stackEditOperation !== operation) {
+      return;
     }
 
-    this.capacityParkBackoffs.delete(command.context.key);
+    this.stackEditOperation = null;
+    this.scheduleDeferredRuntimeWork();
+  }
 
+  private scheduleDeferredRuntimeWork(): void {
     if (
-      preview.kind === "consume" &&
-      preview.layout.columns.length < command.before.columns.length &&
-      this.waitingWindowIds.get(command.context.key)?.size
+      this.pendingWindowSyncs.size > 0 ||
+      this.pendingAdmissionContexts.size > 0 ||
+      this.desktopLifecycle.pendingWork ||
+      this.topologyRecoveryPending ||
+      this.ownershipFollowUpRequired ||
+      [...this.dirtyContexts].some((key) => {
+        const context = this.contexts.get(key);
+        return Boolean(context && this.isContextVisible(context));
+      })
     ) {
-      this.pendingAdmissionContexts.add(command.context.key);
       this.scheduleWork();
     }
 
-    return true;
+    if (this.pendingExternalFullscreenExtractions.size > 0) {
+      this.retryPendingExternalFullscreenExtractions();
+    }
   }
 
   private recoverRejectedStackEditExternalFocus(
@@ -4036,6 +4570,10 @@ export class RuntimeController {
     target: DesktopTransferTarget,
     wholeColumn = false,
   ): boolean {
+    if (this.stackEditOperation) {
+      return false;
+    }
+
     const floatingResult = this.moveActiveFloatingWindowToDesktop(target);
 
     if (floatingResult !== null) {
@@ -7204,7 +7742,8 @@ export class RuntimeController {
   private columnMembersAreStackTransferEligible(
     column: LayoutColumnSnapshot,
     context: RuntimeContext,
-    activeMemberId?: WindowId,
+    requiredMemberId?: WindowId,
+    additionalRequiredMemberId?: WindowId,
   ): boolean {
     if (!this.columnMembersBelongToContext(column, context)) {
       return false;
@@ -7218,10 +7757,77 @@ export class RuntimeController {
           id,
           source,
           context,
-          activeMemberId !== undefined && id !== activeMemberId,
+          requiredMemberId !== undefined &&
+            id !== requiredMemberId &&
+            id !== additionalRequiredMemberId,
         ),
       );
     });
+  }
+
+  private prepareStackTransferAcceptance(
+    columns: readonly LayoutColumnSnapshot[],
+    context: RuntimeContext,
+    activeId: WindowId,
+    requiredMemberId: WindowId,
+    additionalRequiredMemberId?: WindowId,
+  ): StackTransferAcceptance | null {
+    const activeWindow = this.observer.source(activeId);
+
+    if (!activeWindow || this.workspace.activeWindow !== activeWindow) {
+      return null;
+    }
+
+    const participants: StackTransferParticipant[] = [];
+
+    for (const column of columns) {
+      for (const id of column.windowIds) {
+        const window = this.observer.source(id);
+
+        if (!window) {
+          return null;
+        }
+
+        participants.push({ id, minimized: window.minimized, window });
+      }
+    }
+
+    if (
+      !participants.some(({ id }) => id === requiredMemberId) ||
+      (additionalRequiredMemberId !== undefined &&
+        !participants.some(({ id }) => id === additionalRequiredMemberId))
+    ) {
+      return null;
+    }
+
+    const accept = (expectedActive: KWinWindow): boolean => {
+      if (
+        this.workspace.activeWindow !== expectedActive ||
+        this.observer.source(activeId) !== activeWindow
+      ) {
+        return false;
+      }
+
+      for (const participant of participants) {
+        if (
+          this.observer.source(participant.id) !== participant.window ||
+          participant.window.minimized !== participant.minimized
+        ) {
+          return false;
+        }
+      }
+
+      return columns.every((column) =>
+        this.columnMembersAreStackTransferEligible(
+          column,
+          context,
+          requiredMemberId,
+          additionalRequiredMemberId,
+        ),
+      );
+    };
+
+    return accept(activeWindow) ? { accept, activeWindow, participants } : null;
   }
 
   private stackTransferMemberIsEligible(
@@ -7366,6 +7972,7 @@ export class RuntimeController {
 
     if (
       !this.started ||
+      this.stackEditOperation ||
       this.windowTransferOperation ||
       this.startupStabilizationToken !== null ||
       this.hasTopologyBarrier() ||
@@ -7789,11 +8396,15 @@ export class RuntimeController {
     }
   }
 
-  private prepareActiveColumnCommand(): ActiveColumnCommand | null {
+  private prepareActiveColumnCommand(
+    existingOperation?: object,
+  ): ActiveColumnCommand | null {
     const activeWindow = this.workspace.activeWindow;
 
     if (
       !this.started ||
+      (this.stackEditOperation !== null &&
+        this.stackEditOperation !== existingOperation) ||
       this.windowTransferOperation ||
       this.startupStabilizationToken !== null ||
       this.hasTopologyBarrier() ||
@@ -7805,7 +8416,10 @@ export class RuntimeController {
 
     const sampledGeometries = this.sampleSettledVisibleContextGeometries();
 
-    if (!sampledGeometries || !this.synchronizePendingWindows()) {
+    if (
+      !sampledGeometries ||
+      (existingOperation === undefined && !this.synchronizePendingWindows())
+    ) {
       return null;
     }
 
@@ -7896,7 +8510,7 @@ export class RuntimeController {
     if (!operation) {
       this.restoreStackedNativeStateRuntime(preparation);
       this.finishStackedNativeStateOperation(preparation.transfer);
-      this.scheduleStackedNativeStateFollowUp();
+      this.scheduleDeferredRuntimeWork();
       return false;
     }
 
@@ -8253,6 +8867,7 @@ export class RuntimeController {
 
     if (
       this.workspace.activeWindow !== pending.source ||
+      this.stackEditOperation ||
       this.windowTransferOperation ||
       this.stackedNativeStateOperation ||
       this.startupStabilizationToken !== null ||
@@ -8403,7 +9018,7 @@ export class RuntimeController {
     if (!operation) {
       this.restoreStackedNativeStateRuntime(preparation);
       this.finishStackedNativeStateOperation(preparation.transfer);
-      this.scheduleStackedNativeStateFollowUp();
+      this.scheduleDeferredRuntimeWork();
       return false;
     }
 
@@ -8423,6 +9038,7 @@ export class RuntimeController {
   ): ActiveColumnCommand | null {
     if (
       !this.started ||
+      this.stackEditOperation ||
       this.windowTransferOperation ||
       this.stackedNativeStateOperation ||
       this.startupStabilizationToken !== null ||
@@ -8555,7 +9171,7 @@ export class RuntimeController {
       }
 
       this.finishStackedNativeStateOperation(preparation.transfer);
-      this.scheduleStackedNativeStateFollowUp();
+      this.scheduleDeferredRuntimeWork();
       return false;
     }
 
@@ -8583,7 +9199,7 @@ export class RuntimeController {
     if (!operation) {
       this.restoreStackedNativeStateRuntime(preparation);
       this.finishStackedNativeStateOperation(preparation.transfer);
-      this.scheduleStackedNativeStateFollowUp();
+      this.scheduleDeferredRuntimeWork();
       return;
     }
 
@@ -8919,7 +9535,7 @@ export class RuntimeController {
 
       this.finishStackedNativeStateOperation(operation.transfer);
       this.handleWindowActivated(this.workspace.activeWindow);
-      this.scheduleStackedNativeStateFollowUp();
+      this.scheduleDeferredRuntimeWork();
     }
   }
 
@@ -9030,20 +9646,6 @@ export class RuntimeController {
     }
   }
 
-  private scheduleStackedNativeStateFollowUp(): void {
-    if (
-      this.pendingWindowSyncs.size > 0 ||
-      this.pendingAdmissionContexts.size > 0 ||
-      this.desktopLifecycle.pendingWork ||
-      [...this.dirtyContexts].some((key) => {
-        const context = this.contexts.get(key);
-        return Boolean(context && this.isContextVisible(context));
-      })
-    ) {
-      this.scheduleWork();
-    }
-  }
-
   private applyActiveColumnMutation(
     command: ActiveColumnCommand,
     label: string,
@@ -9106,6 +9708,19 @@ export class RuntimeController {
     }
 
     const rollbackWindowIds = writableLayout.map((window) => window.windowId);
+    const mutationSources = new Map<WindowId, KWinWindow>();
+
+    for (const id of rollbackWindowIds) {
+      const source = this.observer.source(id);
+
+      if (!source) {
+        restoreLayout();
+        return false;
+      }
+
+      mutationSources.set(id, source);
+    }
+
     const observedBefore = this.geometry.observedFrames(
       rollbackWindowIds,
       context,
@@ -9115,7 +9730,11 @@ export class RuntimeController {
     for (const window of writableLayout) {
       const frame = observedBefore.get(window.windowId);
 
-      if (!frame) {
+      if (
+        !frame ||
+        this.observer.source(window.windowId) !==
+          mutationSources.get(window.windowId)
+      ) {
         restoreLayout();
         return false;
       }
@@ -9141,7 +9760,9 @@ export class RuntimeController {
       forwardWrites = this.reconcileContext(
         context,
         sampledGeometries,
-        () => !this.hasTopologyBarrier(),
+        (id) =>
+          !this.hasTopologyBarrier() &&
+          this.observer.source(id) === mutationSources.get(id),
       );
     } catch (error) {
       forwardError = String(error);
@@ -9179,8 +9800,11 @@ export class RuntimeController {
     const dirtyBeforeCompensation = this.dirtyContexts.has(context.key);
 
     if (restored && !this.hasTopologyBarrier()) {
-      const compensationTargets = rollbackTargets.filter((window) =>
-        this.windowOwnershipClassificationIsCurrent(window.windowId),
+      const compensationTargets = rollbackTargets.filter(
+        (window) =>
+          this.observer.source(window.windowId) ===
+            mutationSources.get(window.windowId) &&
+          this.windowOwnershipClassificationIsCurrent(window.windowId),
       );
       this.dirtyContexts.delete(context.key);
       compensationWrites = this.geometry.apply(
@@ -9188,6 +9812,8 @@ export class RuntimeController {
         context,
         (change) =>
           !this.hasTopologyBarrier() &&
+          this.observer.source(change.windowId) ===
+            mutationSources.get(change.windowId) &&
           this.windowOwnershipClassificationIsCurrent(change.windowId),
       );
 
@@ -10420,20 +11046,32 @@ export class RuntimeController {
 
     this.workScheduled = true;
     const runGeneration = this.runGeneration;
-    this.schedule(() => {
-      if (this.runGeneration !== runGeneration) {
-        return;
-      }
 
+    try {
+      this.schedule(() => {
+        if (this.runGeneration !== runGeneration) {
+          return;
+        }
+
+        this.workScheduled = false;
+
+        if (this.started) {
+          this.flushScheduledWork();
+        }
+      });
+    } catch (error) {
       this.workScheduled = false;
-
-      if (this.started) {
-        this.flushScheduledWork();
-      }
-    });
+      console.warn(
+        `[driftile] runtime work could not be scheduled error=${String(error)}`,
+      );
+    }
   }
 
   private flushScheduledWork(): void {
+    if (this.stackEditOperation) {
+      return;
+    }
+
     const ownershipChanged = this.refreshLiveWindowOwnership(
       !this.topologyRecoveryPending && this.topologyWindowOrder === null,
     );
@@ -12630,7 +13268,7 @@ export class RuntimeController {
   private reconcileContext(
     context: RuntimeContext,
     sampledGeometries?: ReadonlyMap<string, ContextGeometry>,
-    canContinueWriting?: () => boolean,
+    canContinueWriting?: (id: WindowId) => boolean,
   ): number {
     if (this.refreshContextAutomaticFloatingOwnership(context)) {
       this.ownershipFollowUpRequired = true;
@@ -12718,7 +13356,7 @@ export class RuntimeController {
       context,
       (change) =>
         this.windowOwnershipClassificationIsCurrent(change.windowId) &&
-        (canContinueWriting?.() ?? true),
+        (canContinueWriting?.(change.windowId) ?? true),
     );
     writeCount += applied;
 

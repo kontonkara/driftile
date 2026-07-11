@@ -221,7 +221,7 @@ run_backend() (
 
       export DRIFTILE_SMOKE_SCENARIO="$scenario"
 
-      if ! timeout --kill-after=5s 90s dbus-run-session -- \
+      if ! timeout --kill-after=5s 150s dbus-run-session -- \
         kwin_wayland \
         --virtual \
         --width 1280 \

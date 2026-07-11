@@ -5965,6 +5965,8 @@ describe("RuntimeController", () => {
       setup.desktop,
       { frameGeometry: { ...setup.moved.window.frameGeometry } },
     );
+    const replacementFrame = { ...replacement.window.frameGeometry };
+    const replacementWrites = replacement.writeCount;
     let replacedDuringReflow = false;
     setup.active.setWriteBehavior((_frame, commit) => {
       commit();
@@ -5992,24 +5994,31 @@ describe("RuntimeController", () => {
         };
       }
     ).observer;
+    const state = setup.controller as unknown as {
+      readonly pendingWindowSyncs: ReadonlySet<WindowId>;
+    };
     expect(replacedDuringReflow).toBe(true);
     expect(observer.source("moved-top")).toBe(replacement.window);
+    expect(state.pendingWindowSyncs.has(windowId("moved-top"))).toBe(true);
     expect(
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
       ),
-    ).toEqual(minimizedConsumeLayoutAfterMovedReplacement());
+    ).toEqual(minimizedConsumeLayoutAfterMovedRemoval());
     expect(setup.moved.window.frameGeometry).toEqual(frames[2]);
     expect(setup.moved.writeCount).toBe(writes[2]);
+    expect(replacement.window.frameGeometry).toEqual(replacementFrame);
+    expect(replacement.writeCount).toBe(replacementWrites);
     expect(setup.target.window.frameGeometry).toEqual(frames[0]);
     expect(setup.target.writeCount).toBe(writes[0]);
     expect(setup.source.window.frameGeometry).toEqual(frames[3]);
     expect(setup.source.writeCount).toBe(writes[3]);
     expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
-    expect(setup.controller.managedCount).toBe(5);
+    expect(setup.controller.managedCount).toBe(4);
 
     flushManualScheduler(setup.scheduler);
+    expect(state.pendingWindowSyncs.has(windowId("moved-top"))).toBe(false);
     expect(
       setup.layout.snapshot(
         outputId(setup.output.name),
@@ -6017,6 +6026,9 @@ describe("RuntimeController", () => {
       ),
     ).toEqual(minimizedConsumeLayoutAfterMovedReplacement());
     expect(observer.source("moved-top")).toBe(replacement.window);
+    expect(replacement.window.frameGeometry).not.toEqual(replacementFrame);
+    expect(replacement.writeCount).toBe(replacementWrites + 1);
+    expect(setup.controller.managedCount).toBe(5);
     expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
   });
 
@@ -6236,6 +6248,1605 @@ describe("RuntimeController", () => {
             (windows[0]?.window.frameGeometry.width ?? 0),
         ),
       ).toBeLessThanOrEqual(1);
+    },
+  );
+
+  it.each([
+    { minimizedMembers: ["earlier"] as const, name: "earlier peer" },
+    { minimizedMembers: ["predecessor"] as const, name: "predecessor" },
+    {
+      minimizedMembers: ["earlier", "passive", "predecessor"] as const,
+      name: "all passive peers",
+    },
+  ])(
+    "expels a visible bottom member past a settled minimized $name",
+    ({ minimizedMembers }) => {
+      const setup = createMinimizedExpelFixture();
+      const minimized = minimizedMembers.map((member) => setup[member]);
+
+      for (const candidate of minimized) {
+        setWindowState("minimized", candidate, true);
+      }
+
+      flushManualScheduler(setup.scheduler);
+      const minimizedFrames = minimized.map(({ window }) => ({
+        ...window.frameGeometry,
+      }));
+      const minimizedWrites = minimized.map(({ writeCount }) => writeCount);
+      const movedFrame = { ...setup.moved.window.frameGeometry };
+      const movedWrites = setup.moved.writeCount;
+      const activationCount = setup.fixture.activationCount;
+
+      expect(setup.controller.expelWindowFromColumn()).toBe(true);
+      expect(
+        setup.layout.snapshot(
+          outputId(setup.output.name),
+          desktopId(setup.desktop.id),
+        ),
+      ).toEqual(minimizedExpelLayout());
+      expect(setup.moved.window.frameGeometry).not.toEqual(movedFrame);
+      expect(setup.moved.writeCount).toBeGreaterThan(movedWrites);
+      expect(
+        Math.abs(
+          setup.moved.window.frameGeometry.width -
+            setup.retained.window.frameGeometry.width,
+        ),
+      ).toBeLessThanOrEqual(1);
+      expect(setup.moved.window.frameGeometry.x).toBeGreaterThan(
+        setup.retained.window.frameGeometry.x,
+      );
+      expect(setup.moved.window.frameGeometry.x).toBeLessThan(
+        setup.trailing.window.frameGeometry.x,
+      );
+      expect(minimized.map(({ window }) => window.frameGeometry)).toEqual(
+        minimizedFrames,
+      );
+      expect(minimized.map(({ writeCount }) => writeCount)).toEqual(
+        minimizedWrites,
+      );
+      expect(setup.fixture.workspace.activeWindow).toBe(setup.retained.window);
+      expect(setup.fixture.activationCount).toBe(activationCount);
+
+      const expelledFrame = { ...setup.moved.window.frameGeometry };
+      const expelledWrites = setup.moved.writeCount;
+
+      for (const candidate of minimized) {
+        setWindowState("minimized", candidate, false);
+      }
+
+      flushManualScheduler(setup.scheduler);
+      expect(
+        setup.layout.snapshot(
+          outputId(setup.output.name),
+          desktopId(setup.desktop.id),
+        ),
+      ).toEqual(minimizedExpelLayout());
+      expect(
+        [setup.earlier, setup.retained, setup.passive, setup.predecessor].map(
+          ({ window }) => window.frameGeometry.y,
+        ),
+      ).toEqual(
+        [setup.earlier, setup.retained, setup.passive, setup.predecessor]
+          .map(({ window }) => window.frameGeometry.y)
+          .sort((left, right) => left - right),
+      );
+
+      for (const [index, candidate] of minimized.entries()) {
+        expect(candidate.window.frameGeometry).not.toEqual(
+          minimizedFrames[index],
+        );
+        expect(candidate.writeCount).toBeGreaterThan(
+          minimizedWrites[index] ?? Number.POSITIVE_INFINITY,
+        );
+      }
+
+      expect(setup.moved.window.frameGeometry).toEqual(expelledFrame);
+      expect(setup.moved.writeCount).toBe(expelledWrites);
+      expect(setup.fixture.workspace.activeWindow).toBe(setup.retained.window);
+      expect(setup.fixture.activationCount).toBe(activationCount);
+    },
+  );
+
+  it("expels an active bottom member past an earlier minimized peer and focuses its exact predecessor", () => {
+    const setup = createMinimizedExpelFixture("bottom");
+    const minimized = [setup.earlier, setup.passive];
+
+    for (const candidate of minimized) {
+      setWindowState("minimized", candidate, true);
+    }
+
+    flushManualScheduler(setup.scheduler);
+    const minimizedFrames = minimized.map(({ window }) => ({
+      ...window.frameGeometry,
+    }));
+    const minimizedWrites = minimized.map(({ writeCount }) => writeCount);
+    const activationCount = setup.fixture.activationCount;
+
+    expect(setup.controller.expelWindowFromColumn()).toBe(true);
+    flushManualScheduler(setup.scheduler);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(minimizedExpelLayout());
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.predecessor.window);
+    expect(setup.fixture.workspace.activeWindow).not.toBe(setup.passive.window);
+    expect(setup.fixture.activationCount).toBe(activationCount + 1);
+    expect(minimized.map(({ window }) => window.frameGeometry)).toEqual(
+      minimizedFrames,
+    );
+    expect(minimized.map(({ writeCount }) => writeCount)).toEqual(
+      minimizedWrites,
+    );
+
+    for (const candidate of minimized) {
+      setWindowState("minimized", candidate, false);
+    }
+
+    flushManualScheduler(setup.scheduler);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(minimizedExpelLayout());
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.predecessor.window);
+
+    for (const [index, candidate] of minimized.entries()) {
+      expect(candidate.window.frameGeometry).not.toEqual(
+        minimizedFrames[index],
+      );
+      expect(candidate.writeCount).toBeGreaterThan(
+        minimizedWrites[index] ?? Number.POSITIVE_INFINITY,
+      );
+    }
+  });
+
+  it("rejects expel when the moved bottom member is minimized", () => {
+    const setup = createMinimizedExpelFixture();
+
+    setWindowState("minimized", setup.moved, true);
+    flushManualScheduler(setup.scheduler);
+    const before = setup.layout.snapshot(
+      outputId(setup.output.name),
+      desktopId(setup.desktop.id),
+    );
+    const frames = setup.windows.map(({ window }) => ({
+      ...window.frameGeometry,
+    }));
+    const writes = setup.windows.map(({ writeCount }) => writeCount);
+    const activationCount = setup.fixture.activationCount;
+
+    expect(setup.controller.expelWindowFromColumn()).toBe(false);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(before);
+    expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
+      frames,
+    );
+    expect(setup.windows.map(({ writeCount }) => writeCount)).toEqual(writes);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.retained.window);
+    expect(setup.fixture.activationCount).toBe(activationCount);
+  });
+
+  it("rejects bottom-active expel when the immediate predecessor is minimized without falling back", () => {
+    const setup = createMinimizedExpelFixture("bottom");
+
+    setWindowState("minimized", setup.predecessor, true);
+    flushManualScheduler(setup.scheduler);
+    const before = setup.layout.snapshot(
+      outputId(setup.output.name),
+      desktopId(setup.desktop.id),
+    );
+    const frames = setup.windows.map(({ window }) => ({
+      ...window.frameGeometry,
+    }));
+    const writes = setup.windows.map(({ writeCount }) => writeCount);
+    const activationCount = setup.fixture.activationCount;
+
+    expect(setup.controller.expelWindowFromColumn()).toBe(false);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(before);
+    expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
+      frames,
+    );
+    expect(setup.windows.map(({ writeCount }) => writeCount)).toEqual(writes);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.moved.window);
+    expect(setup.fixture.workspace.activeWindow).not.toBe(setup.passive.window);
+    expect(setup.fixture.activationCount).toBe(activationCount);
+  });
+
+  it.each([
+    "fullscreen",
+    "maximized",
+    "native tiled",
+    "restore settling",
+    "toggle unsettled",
+  ] as const)("rejects expel past a passive %s blocker", (blocker) => {
+    const setup = createMinimizedExpelFixture();
+
+    blockWindowFocus(setup.controller, setup.earlier, blocker);
+    flushManualScheduler(setup.scheduler);
+    const before = setup.layout.snapshot(
+      outputId(setup.output.name),
+      desktopId(setup.desktop.id),
+    );
+    const frames = setup.windows.map(({ window }) => ({
+      ...window.frameGeometry,
+    }));
+    const writes = setup.windows.map(({ writeCount }) => writeCount);
+    const activationCount = setup.fixture.activationCount;
+
+    expect(setup.controller.expelWindowFromColumn()).toBe(false);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(before);
+    expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
+      frames,
+    );
+    expect(setup.windows.map(({ writeCount }) => writeCount)).toEqual(writes);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.retained.window);
+    expect(setup.fixture.activationCount).toBe(activationCount);
+  });
+
+  it("rolls back expel when a minimized passive peer resumes during reflow", () => {
+    const setup = createMinimizedExpelFixture();
+    const minimized = [setup.earlier, setup.passive, setup.predecessor];
+
+    for (const candidate of minimized) {
+      setWindowState("minimized", candidate, true);
+    }
+
+    flushManualScheduler(setup.scheduler);
+    const before = setup.layout.snapshot(
+      outputId(setup.output.name),
+      desktopId(setup.desktop.id),
+    );
+    const frames = setup.windows.map(({ window }) => ({
+      ...window.frameGeometry,
+    }));
+    const minimizedWrites = minimized.map(({ writeCount }) => writeCount);
+    const activationCount = setup.fixture.activationCount;
+    let resumedDuringReflow = false;
+    setup.retained.setWriteBehavior((_frame, commit) => {
+      commit();
+
+      if (!resumedDuringReflow) {
+        resumedDuringReflow = true;
+        setWindowState("minimized", setup.earlier, false);
+      }
+    });
+    const warning = console.warn;
+    console.warn = () => undefined;
+
+    try {
+      expect(setup.controller.expelWindowFromColumn()).toBe(false);
+    } finally {
+      console.warn = warning;
+      setup.retained.setWriteBehavior(null);
+    }
+
+    expect(resumedDuringReflow).toBe(true);
+    expect(setup.earlier.window.minimized).toBe(false);
+    expect(setup.passive.window.minimized).toBe(true);
+    expect(setup.predecessor.window.minimized).toBe(true);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(before);
+    expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
+      frames,
+    );
+    expect(minimized.map(({ writeCount }) => writeCount)).toEqual(
+      minimizedWrites,
+    );
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.retained.window);
+    expect(setup.fixture.activationCount).toBe(activationCount);
+
+    flushManualScheduler(setup.scheduler);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(before);
+    expect(setup.passive.window.frameGeometry).toEqual(frames[2]);
+    expect(setup.passive.writeCount).toBe(minimizedWrites[1]);
+    expect(setup.predecessor.window.frameGeometry).toEqual(frames[3]);
+    expect(setup.predecessor.writeCount).toBe(minimizedWrites[2]);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.retained.window);
+  });
+
+  it.each(["minimize", "remove"] as const)(
+    "rolls back expel when the moved bottom member is invalidated by $behavior during reflow",
+    (behavior) => {
+      const setup = createMinimizedExpelFixture();
+      const minimized = [setup.earlier, setup.passive, setup.predecessor];
+
+      for (const candidate of minimized) {
+        setWindowState("minimized", candidate, true);
+      }
+
+      flushManualScheduler(setup.scheduler);
+      const before = setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      );
+      const frames = setup.windows.map(({ window }) => ({
+        ...window.frameGeometry,
+      }));
+      const writes = setup.windows.map(({ writeCount }) => writeCount);
+      const activationCount = setup.fixture.activationCount;
+      let movedForwardFrame: KWinWindow["frameGeometry"] | null = null;
+      setup.moved.setWriteBehavior((frame, commit) => {
+        commit();
+
+        if (movedForwardFrame) {
+          return;
+        }
+
+        movedForwardFrame = { ...frame };
+
+        if (behavior === "minimize") {
+          setWindowState("minimized", setup.moved, true);
+        } else {
+          setup.fixture.windowRemoved.emit(setup.moved.window);
+        }
+      });
+      const warning = console.warn;
+      console.warn = () => undefined;
+
+      try {
+        expect(setup.controller.expelWindowFromColumn()).toBe(false);
+      } finally {
+        console.warn = warning;
+        setup.moved.setWriteBehavior(null);
+      }
+
+      expect(movedForwardFrame).not.toBeNull();
+      expect(setup.moved.window.frameGeometry).toEqual(movedForwardFrame);
+      expect(setup.moved.writeCount).toBe((writes[4] ?? 0) + 1);
+      expect(setup.earlier.window.frameGeometry).toEqual(frames[0]);
+      expect(setup.earlier.writeCount).toBe(writes[0]);
+      expect(setup.passive.window.frameGeometry).toEqual(frames[2]);
+      expect(setup.passive.writeCount).toBe(writes[2]);
+      expect(setup.predecessor.window.frameGeometry).toEqual(frames[3]);
+      expect(setup.predecessor.writeCount).toBe(writes[3]);
+      expect(setup.fixture.workspace.activeWindow).toBe(setup.retained.window);
+      expect(setup.fixture.activationCount).toBe(activationCount);
+
+      flushManualScheduler(setup.scheduler);
+
+      if (behavior === "minimize") {
+        expect(
+          setup.layout.snapshot(
+            outputId(setup.output.name),
+            desktopId(setup.desktop.id),
+          ),
+        ).toEqual(before);
+        expect(setup.moved.window.minimized).toBe(true);
+        setWindowState("minimized", setup.moved, false);
+
+        for (const candidate of minimized) {
+          setWindowState("minimized", candidate, false);
+        }
+
+        flushManualScheduler(setup.scheduler);
+        expect(
+          setup.layout.snapshot(
+            outputId(setup.output.name),
+            desktopId(setup.desktop.id),
+          ),
+        ).toEqual(before);
+        expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
+          frames,
+        );
+      } else {
+        expect(
+          setup.layout.snapshot(
+            outputId(setup.output.name),
+            desktopId(setup.desktop.id),
+          ),
+        ).toEqual(minimizedExpelLayoutAfterMovedRemoval());
+        expect(setup.controller.managedCount).toBe(5);
+      }
+
+      expect(setup.fixture.workspace.activeWindow).toBe(setup.retained.window);
+    },
+  );
+
+  it("rolls back expel and recovers a moved bottom member after a reentrant desktop change", () => {
+    const setup = createMinimizedExpelFixture();
+    const minimized = [setup.earlier, setup.passive, setup.predecessor];
+
+    for (const candidate of minimized) {
+      setWindowState("minimized", candidate, true);
+    }
+
+    flushManualScheduler(setup.scheduler);
+    const before = setup.layout.snapshot(
+      outputId(setup.output.name),
+      desktopId(setup.desktop.id),
+    );
+    const frames = setup.windows.map(({ window }) => ({
+      ...window.frameGeometry,
+    }));
+    const writes = setup.windows.map(({ writeCount }) => writeCount);
+    let movedForwardFrame: KWinWindow["frameGeometry"] | null = null;
+    setup.moved.setWriteBehavior((frame, commit) => {
+      commit();
+
+      if (!movedForwardFrame) {
+        movedForwardFrame = { ...frame };
+        Reflect.set(setup.moved.window, "desktops", [setup.otherDesktop]);
+      }
+    });
+    const warning = console.warn;
+    console.warn = () => undefined;
+
+    try {
+      expect(setup.controller.expelWindowFromColumn()).toBe(false);
+    } finally {
+      console.warn = warning;
+      setup.moved.setWriteBehavior(null);
+    }
+
+    const state = setup.controller as unknown as {
+      readonly pendingWindowSyncs: ReadonlySet<WindowId>;
+    };
+    expect(movedForwardFrame).not.toBeNull();
+    expect(setup.moved.window.desktops).toEqual([setup.otherDesktop]);
+    expect(setup.moved.window.frameGeometry).toEqual(movedForwardFrame);
+    expect(setup.moved.writeCount).toBe((writes[4] ?? 0) + 1);
+    expect(state.pendingWindowSyncs.has(windowId("moved-bottom"))).toBe(true);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(before);
+    expect(setup.earlier.window.frameGeometry).toEqual(frames[0]);
+    expect(setup.earlier.writeCount).toBe(writes[0]);
+    expect(setup.passive.window.frameGeometry).toEqual(frames[2]);
+    expect(setup.passive.writeCount).toBe(writes[2]);
+    expect(setup.predecessor.window.frameGeometry).toEqual(frames[3]);
+    expect(setup.predecessor.writeCount).toBe(writes[3]);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.retained.window);
+
+    flushManualScheduler(setup.scheduler);
+    expect(state.pendingWindowSyncs.has(windowId("moved-bottom"))).toBe(false);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(minimizedExpelLayoutAfterMovedRemoval());
+    expect(
+      testLayoutColumns(setup.controller, setup.output, setup.otherDesktop),
+    ).toEqual([{ id: "column:moved-bottom", windowIds: ["moved-bottom"] }]);
+    expect(setup.controller.managedCount).toBe(6);
+    expect(setup.moved.window.frameGeometry).toEqual(movedForwardFrame);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.retained.window);
+  });
+
+  it("rejects a same-id moved bottom replacement during expel reflow", () => {
+    const setup = createMinimizedExpelFixture();
+    const minimized = [setup.earlier, setup.passive, setup.predecessor];
+
+    for (const candidate of minimized) {
+      setWindowState("minimized", candidate, true);
+    }
+
+    flushManualScheduler(setup.scheduler);
+    const frames = setup.windows.map(({ window }) => ({
+      ...window.frameGeometry,
+    }));
+    const writes = setup.windows.map(({ writeCount }) => writeCount);
+    const replacement = createTrackedWindow(
+      "moved-bottom",
+      setup.output,
+      setup.desktop,
+      { frameGeometry: { ...setup.moved.window.frameGeometry } },
+    );
+    const replacementFrame = { ...replacement.window.frameGeometry };
+    const replacementWrites = replacement.writeCount;
+    let movedForwardFrame: KWinWindow["frameGeometry"] | null = null;
+    setup.moved.setWriteBehavior((frame, commit) => {
+      commit();
+
+      if (!movedForwardFrame) {
+        movedForwardFrame = { ...frame };
+        setup.fixture.windowRemoved.emit(setup.moved.window);
+        setup.fixture.windowAdded.emit(replacement.window);
+      }
+    });
+    const warning = console.warn;
+    console.warn = () => undefined;
+
+    try {
+      expect(setup.controller.expelWindowFromColumn()).toBe(false);
+    } finally {
+      console.warn = warning;
+      setup.moved.setWriteBehavior(null);
+    }
+
+    const observer = (
+      setup.controller as unknown as {
+        readonly observer: {
+          source(id: string): KWinWindow | undefined;
+        };
+      }
+    ).observer;
+    const state = setup.controller as unknown as {
+      readonly pendingWindowSyncs: ReadonlySet<WindowId>;
+    };
+    expect(movedForwardFrame).not.toBeNull();
+    expect(observer.source("moved-bottom")).toBe(replacement.window);
+    expect(state.pendingWindowSyncs.has(windowId("moved-bottom"))).toBe(true);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(minimizedExpelLayoutAfterMovedRemoval());
+    expect(setup.moved.window.frameGeometry).toEqual(movedForwardFrame);
+    expect(setup.moved.writeCount).toBe((writes[4] ?? 0) + 1);
+    expect(replacement.window.frameGeometry).toEqual(replacementFrame);
+    expect(replacement.writeCount).toBe(replacementWrites);
+    expect(setup.earlier.window.frameGeometry).toEqual(frames[0]);
+    expect(setup.earlier.writeCount).toBe(writes[0]);
+    expect(setup.passive.window.frameGeometry).toEqual(frames[2]);
+    expect(setup.passive.writeCount).toBe(writes[2]);
+    expect(setup.predecessor.window.frameGeometry).toEqual(frames[3]);
+    expect(setup.predecessor.writeCount).toBe(writes[3]);
+    expect(setup.controller.managedCount).toBe(5);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.retained.window);
+
+    flushManualScheduler(setup.scheduler);
+    expect(state.pendingWindowSyncs.has(windowId("moved-bottom"))).toBe(false);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(minimizedExpelReplacementLayout());
+    expect(observer.source("moved-bottom")).toBe(replacement.window);
+    expect(replacement.window.frameGeometry).not.toEqual(replacementFrame);
+    expect(replacement.writeCount).toBe(replacementWrites + 1);
+    expect(setup.controller.managedCount).toBe(6);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.retained.window);
+  });
+
+  it("rolls back expel without reclaiming an external focus switch during reflow", () => {
+    const setup = createMinimizedExpelFixture();
+    const minimized = [setup.earlier, setup.passive, setup.predecessor];
+
+    for (const candidate of minimized) {
+      setWindowState("minimized", candidate, true);
+    }
+
+    flushManualScheduler(setup.scheduler);
+    const before = setup.layout.snapshot(
+      outputId(setup.output.name),
+      desktopId(setup.desktop.id),
+    );
+    const expectedLayout = {
+      ...before,
+      activeColumnId: columnId("column:trailing"),
+    };
+    const frames = setup.windows.map(({ window }) => ({
+      ...window.frameGeometry,
+    }));
+    const writes = setup.windows.map(({ writeCount }) => writeCount);
+    const activationCount = setup.fixture.activationCount;
+    let focusChangedDuringReflow = false;
+    setup.moved.setWriteBehavior((_frame, commit) => {
+      commit();
+
+      if (!focusChangedDuringReflow) {
+        focusChangedDuringReflow = true;
+        setup.fixture.workspace.activeWindow = setup.trailing.window;
+      }
+    });
+    const warning = console.warn;
+    console.warn = () => undefined;
+
+    try {
+      expect(setup.controller.expelWindowFromColumn()).toBe(false);
+    } finally {
+      console.warn = warning;
+      setup.moved.setWriteBehavior(null);
+    }
+
+    expect(focusChangedDuringReflow).toBe(true);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(expectedLayout);
+    expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
+      frames,
+    );
+    expect(setup.earlier.writeCount).toBe(writes[0]);
+    expect(setup.passive.writeCount).toBe(writes[2]);
+    expect(setup.predecessor.writeCount).toBe(writes[3]);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.trailing.window);
+    expect(setup.fixture.activationCount).toBe(activationCount + 1);
+
+    flushManualScheduler(setup.scheduler);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(expectedLayout);
+    expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
+      frames,
+    );
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.trailing.window);
+  });
+
+  it("blocks reentrant structural commands during post-expel focus acceptance", () => {
+    const setup = createMinimizedExpelFixture("bottom");
+
+    setWindowState("minimized", setup.earlier, true);
+    flushManualScheduler(setup.scheduler);
+    const earlierFrame = { ...setup.earlier.window.frameGeometry };
+    const earlierWrites = setup.earlier.writeCount;
+    const activationCount = setup.fixture.activationCount;
+    let nestedResult: boolean | null = null;
+    let targetRequested = false;
+    setup.fixture.setActivationBehavior((window, commit) => {
+      commit();
+
+      if (window === setup.predecessor.window && !targetRequested) {
+        targetRequested = true;
+        nestedResult = setup.controller.moveWindowUp();
+      }
+    });
+
+    try {
+      expect(setup.controller.expelWindowFromColumn()).toBe(true);
+    } finally {
+      setup.fixture.setActivationBehavior(null);
+    }
+
+    expect(targetRequested).toBe(true);
+    expect(nestedResult).toBe(false);
+    flushManualScheduler(setup.scheduler);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(minimizedExpelLayout());
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.predecessor.window);
+    expect(setup.fixture.activationCount).toBe(activationCount + 1);
+    expect(setup.earlier.window.frameGeometry).toEqual(earlierFrame);
+    expect(setup.earlier.writeCount).toBe(earlierWrites);
+
+    expect(setup.controller.moveWindowUp()).toBe(true);
+    expect(
+      testLayoutColumns(setup.controller, setup.output, setup.desktop)[0]
+        ?.windowIds,
+    ).toEqual(["earlier", "retained", "predecessor", "passive"]);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.predecessor.window);
+    expect(setup.fixture.activationCount).toBe(activationCount + 1);
+    expect(setup.earlier.window.frameGeometry).toEqual(earlierFrame);
+    expect(setup.earlier.writeCount).toBe(earlierWrites);
+  });
+
+  it("commits bottom-active expel only after deferred pre-edit focus is confirmed", () => {
+    const scheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const setup = createMinimizedExpelFixture("bottom", {
+      resumeScheduler,
+      scheduler,
+    });
+    const before = setup.layout.snapshot(
+      outputId(setup.output.name),
+      desktopId(setup.desktop.id),
+    );
+    const frames = setup.windows.map(({ window }) => ({
+      ...window.frameGeometry,
+    }));
+    const writes = setup.windows.map(({ writeCount }) => writeCount);
+    const activationCount = setup.fixture.activationCount;
+    const state = setup.controller as unknown as {
+      readonly pendingExpelFocusHandoff: object | null;
+      readonly stackEditOperation: object | null;
+    };
+    let targetRequested = false;
+    setup.fixture.setActivationBehavior((window, commit) => {
+      if (window === setup.predecessor.window && !targetRequested) {
+        targetRequested = true;
+        resumeScheduler.schedule(commit);
+        return;
+      }
+
+      commit();
+    });
+
+    try {
+      expect(setup.controller.expelWindowFromColumn()).toBe(true);
+      expect(targetRequested).toBe(true);
+      expect(state.pendingExpelFocusHandoff).not.toBeNull();
+      expect(state.stackEditOperation).not.toBeNull();
+      expect(
+        setup.layout.snapshot(
+          outputId(setup.output.name),
+          desktopId(setup.desktop.id),
+        ),
+      ).toEqual(before);
+      expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
+        frames,
+      );
+      expect(setup.windows.map(({ writeCount }) => writeCount)).toEqual(writes);
+      expect(setup.fixture.workspace.activeWindow).toBe(setup.moved.window);
+      expect(setup.fixture.activationCount).toBe(activationCount + 1);
+      expect(setup.controller.moveWindowUp()).toBe(false);
+
+      resumeScheduler.flush();
+      expect(setup.fixture.workspace.activeWindow).toBe(
+        setup.predecessor.window,
+      );
+      expect(state.stackEditOperation).not.toBeNull();
+      expect(
+        setup.layout.snapshot(
+          outputId(setup.output.name),
+          desktopId(setup.desktop.id),
+        ),
+      ).toEqual(before);
+      expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
+        frames,
+      );
+      expect(setup.windows.map(({ writeCount }) => writeCount)).toEqual(writes);
+      expect(setup.controller.moveWindowUp()).toBe(false);
+
+      flushManualScheduler(scheduler);
+      flushManualScheduler(resumeScheduler);
+      flushManualScheduler(scheduler);
+      expect(state.pendingExpelFocusHandoff).toBeNull();
+      expect(state.stackEditOperation).toBeNull();
+      expect(resumeScheduler.pendingCount).toBe(0);
+      expect(
+        setup.layout.snapshot(
+          outputId(setup.output.name),
+          desktopId(setup.desktop.id),
+        ),
+      ).toEqual(minimizedExpelLayout());
+      expect(setup.fixture.workspace.activeWindow).toBe(
+        setup.predecessor.window,
+      );
+      expect(setup.fixture.activationCount).toBe(activationCount + 1);
+      expect(setup.moved.window.frameGeometry).not.toEqual(frames[4]);
+      expect(setup.moved.writeCount).toBeGreaterThan(writes[4] ?? 0);
+    } finally {
+      setup.fixture.setActivationBehavior(null);
+    }
+  });
+
+  it("cancels an unconfirmed bottom-active expel after bounded focus probes", () => {
+    const scheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const setup = createMinimizedExpelFixture("bottom", {
+      resumeScheduler,
+      scheduler,
+    });
+    const before = setup.layout.snapshot(
+      outputId(setup.output.name),
+      desktopId(setup.desktop.id),
+    );
+    const frames = setup.windows.map(({ window }) => ({
+      ...window.frameGeometry,
+    }));
+    const writes = setup.windows.map(({ writeCount }) => writeCount);
+    const activationCount = setup.fixture.activationCount;
+    const state = setup.controller as unknown as {
+      readonly pendingExpelFocusHandoff: object | null;
+      readonly stackEditOperation: object | null;
+    };
+    let targetRequests = 0;
+    setup.fixture.setActivationBehavior((window, commit) => {
+      if (window === setup.predecessor.window) {
+        targetRequests += 1;
+        return;
+      }
+
+      commit();
+    });
+
+    expect(setup.controller.expelWindowFromColumn()).toBe(true);
+    expect(targetRequests).toBe(1);
+    expect(state.pendingExpelFocusHandoff).not.toBeNull();
+    expect(state.stackEditOperation).not.toBeNull();
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(before);
+    expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
+      frames,
+    );
+    expect(setup.windows.map(({ writeCount }) => writeCount)).toEqual(writes);
+
+    scheduler.flush();
+    expect(resumeScheduler.pendingCount).toBeGreaterThan(0);
+    flushManualScheduler(resumeScheduler);
+    setup.fixture.setActivationBehavior(null);
+    expect(state.pendingExpelFocusHandoff).toBeNull();
+    expect(state.stackEditOperation).toBeNull();
+    expect(resumeScheduler.pendingCount).toBe(0);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(before);
+    expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
+      frames,
+    );
+    expect(setup.windows.map(({ writeCount }) => writeCount)).toEqual(writes);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.moved.window);
+    expect(setup.fixture.activationCount).toBe(activationCount + 1);
+
+    expect(setup.controller.expelWindowFromColumn()).toBe(true);
+    flushManualScheduler(scheduler);
+    flushManualScheduler(resumeScheduler);
+    flushManualScheduler(scheduler);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(minimizedExpelLayout());
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.predecessor.window);
+  });
+
+  it.each(["confirm", "cancel"] as const)(
+    "isolates deferred bottom-active expel from unrelated window synchronization before focus %s",
+    (resolution) => {
+      const scheduler = new ManualScheduler();
+      const resumeScheduler = new ManualScheduler();
+      const setup = createMinimizedExpelFixture("bottom", {
+        resumeScheduler,
+        scheduler,
+      });
+      const before = setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      );
+      const frames = setup.windows.map(({ window }) => ({
+        ...window.frameGeometry,
+      }));
+      const writes = setup.windows.map(({ writeCount }) => writeCount);
+      const newcomer = createTrackedWindow(
+        "unrelated-newcomer",
+        setup.output,
+        setup.desktop,
+        {
+          frameGeometry: { height: 180, width: 260, x: 1400, y: 60 },
+        },
+      );
+      const newcomerFrame = { ...newcomer.window.frameGeometry };
+      const newcomerWrites = newcomer.writeCount;
+      const state = setup.controller as unknown as {
+        readonly managedWindows: ReadonlyMap<WindowId, object>;
+        readonly pendingExpelFocusHandoff: object | null;
+        readonly pendingWindowSyncs: ReadonlySet<WindowId>;
+        readonly stackEditOperation: object | null;
+        readonly workScheduled: boolean;
+      };
+      let targetCaptured = false;
+      let targetCommit = (): void => {
+        throw new Error("deferred focus request was not captured");
+      };
+      setup.fixture.setActivationBehavior((window, commit) => {
+        if (window === setup.predecessor.window && !targetCaptured) {
+          targetCaptured = true;
+          targetCommit = commit;
+          return;
+        }
+
+        commit();
+      });
+
+      expect(setup.controller.expelWindowFromColumn()).toBe(true);
+      expect(targetCaptured).toBe(true);
+      expect(state.pendingExpelFocusHandoff).not.toBeNull();
+      expect(state.stackEditOperation).not.toBeNull();
+
+      setup.fixture.windowAdded.emit(newcomer.window);
+      newcomer.frameGeometryChanged.emit({ ...newcomer.window.frameGeometry });
+      expect(setup.controller.reconcile()).toBe(0);
+      flushManualScheduler(scheduler);
+
+      expect(
+        setup.layout.snapshot(
+          outputId(setup.output.name),
+          desktopId(setup.desktop.id),
+        ),
+      ).toEqual(before);
+      expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
+        frames,
+      );
+      expect(setup.windows.map(({ writeCount }) => writeCount)).toEqual(writes);
+      expect(newcomer.window.frameGeometry).toEqual(newcomerFrame);
+      expect(newcomer.writeCount).toBe(newcomerWrites);
+      expect(state.pendingWindowSyncs.has(windowId("unrelated-newcomer"))).toBe(
+        true,
+      );
+      expect(state.managedWindows.has(windowId("unrelated-newcomer"))).toBe(
+        false,
+      );
+      expect(setup.controller.managedCount).toBe(6);
+      expect(state.pendingExpelFocusHandoff).not.toBeNull();
+      expect(state.stackEditOperation).not.toBeNull();
+      expect(resumeScheduler.pendingCount).toBeGreaterThan(0);
+
+      if (resolution === "confirm") {
+        targetCommit();
+      } else {
+        flushManualScheduler(resumeScheduler);
+      }
+
+      setup.fixture.setActivationBehavior(null);
+      flushManualScheduler(scheduler);
+      flushManualScheduler(resumeScheduler);
+      flushManualScheduler(scheduler);
+
+      const after = setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      );
+      expect(
+        after.columns
+          .flatMap(({ windowIds }) => windowIds)
+          .filter((id) => id === windowId("unrelated-newcomer")),
+      ).toHaveLength(1);
+      expect(
+        after.columns.find(({ windowIds }) =>
+          windowIds.includes(windowId("moved-bottom")),
+        )?.windowIds,
+      ).toEqual(
+        resolution === "confirm"
+          ? [windowId("moved-bottom")]
+          : [
+              windowId("earlier"),
+              windowId("retained"),
+              windowId("passive"),
+              windowId("predecessor"),
+              windowId("moved-bottom"),
+            ],
+      );
+      expect(newcomer.window.frameGeometry).not.toEqual(newcomerFrame);
+      expect(newcomer.writeCount).toBe(newcomerWrites + 1);
+      expect(state.pendingWindowSyncs.has(windowId("unrelated-newcomer"))).toBe(
+        false,
+      );
+      expect(state.managedWindows.has(windowId("unrelated-newcomer"))).toBe(
+        true,
+      );
+      expect(setup.controller.managedCount).toBe(7);
+      expect(state.pendingExpelFocusHandoff).toBeNull();
+      expect(state.stackEditOperation).toBeNull();
+      expect(state.workScheduled).toBe(false);
+      expect(scheduler.pendingCount).toBe(0);
+      expect(resumeScheduler.pendingCount).toBe(0);
+      expect(setup.fixture.workspace.activeWindow).toBe(
+        resolution === "confirm"
+          ? setup.predecessor.window
+          : setup.moved.window,
+      );
+    },
+  );
+
+  it("recovers deferred bottom-active expel when work scheduling throws", () => {
+    const scheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    let rejectNextSchedule = false;
+    const setup = createMinimizedExpelFixture("bottom", {
+      resumeScheduler,
+      schedule: (callback) => {
+        if (rejectNextSchedule) {
+          rejectNextSchedule = false;
+          throw new Error("work scheduling rejected");
+        }
+
+        scheduler.schedule(callback);
+      },
+      scheduler,
+    });
+    const before = setup.layout.snapshot(
+      outputId(setup.output.name),
+      desktopId(setup.desktop.id),
+    );
+    const frames = setup.windows.map(({ window }) => ({
+      ...window.frameGeometry,
+    }));
+    const writes = setup.windows.map(({ writeCount }) => writeCount);
+    const activationCount = setup.fixture.activationCount;
+    const state = setup.controller as unknown as {
+      readonly pendingExpelFocusHandoff: object | null;
+      readonly stackEditOperation: object | null;
+    };
+    setup.fixture.setActivationBehavior((window, commit) => {
+      if (window !== setup.predecessor.window) {
+        commit();
+      }
+    });
+    rejectNextSchedule = true;
+    let result: boolean | null = null;
+    const warning = console.warn;
+    console.warn = () => undefined;
+
+    try {
+      expect(() => {
+        result = setup.controller.expelWindowFromColumn();
+      }).not.toThrow();
+    } finally {
+      console.warn = warning;
+    }
+
+    expect(result).toBe(false);
+    expect(state.pendingExpelFocusHandoff).toBeNull();
+    expect(state.stackEditOperation).toBeNull();
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(before);
+    expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
+      frames,
+    );
+    expect(setup.windows.map(({ writeCount }) => writeCount)).toEqual(writes);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.moved.window);
+    expect(setup.fixture.activationCount).toBe(activationCount + 1);
+
+    setup.fixture.setActivationBehavior(null);
+    expect(setup.controller.expelWindowFromColumn()).toBe(true);
+    flushManualScheduler(scheduler);
+    flushManualScheduler(resumeScheduler);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(minimizedExpelLayout());
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.predecessor.window);
+    expect(state.pendingExpelFocusHandoff).toBeNull();
+    expect(state.stackEditOperation).toBeNull();
+    expect(scheduler.pendingCount).toBe(0);
+    expect(resumeScheduler.pendingCount).toBe(0);
+  });
+
+  it("recovers deferred bottom-active expel when focus probe scheduling throws", () => {
+    const scheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    let rejectNextResume = false;
+    const setup = createMinimizedExpelFixture("bottom", {
+      resumeScheduler,
+      scheduleResume: (callback) => {
+        if (rejectNextResume) {
+          rejectNextResume = false;
+          throw new Error("focus probe scheduling rejected");
+        }
+
+        resumeScheduler.schedule(callback);
+      },
+      scheduler,
+    });
+    const before = setup.layout.snapshot(
+      outputId(setup.output.name),
+      desktopId(setup.desktop.id),
+    );
+    const frames = setup.windows.map(({ window }) => ({
+      ...window.frameGeometry,
+    }));
+    const writes = setup.windows.map(({ writeCount }) => writeCount);
+    const activationCount = setup.fixture.activationCount;
+    const state = setup.controller as unknown as {
+      readonly pendingExpelFocusHandoff: object | null;
+      readonly stackEditOperation: object | null;
+    };
+    setup.fixture.setActivationBehavior((window, commit) => {
+      if (window !== setup.predecessor.window) {
+        commit();
+      }
+    });
+
+    expect(setup.controller.expelWindowFromColumn()).toBe(true);
+    expect(state.pendingExpelFocusHandoff).not.toBeNull();
+    expect(state.stackEditOperation).not.toBeNull();
+    rejectNextResume = true;
+    const warning = console.warn;
+    console.warn = () => undefined;
+
+    try {
+      expect(() => {
+        scheduler.flush();
+      }).not.toThrow();
+    } finally {
+      console.warn = warning;
+    }
+
+    expect(state.pendingExpelFocusHandoff).toBeNull();
+    expect(state.stackEditOperation).toBeNull();
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(before);
+    expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
+      frames,
+    );
+    expect(setup.windows.map(({ writeCount }) => writeCount)).toEqual(writes);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.moved.window);
+    expect(setup.fixture.activationCount).toBe(activationCount + 1);
+    expect(scheduler.pendingCount).toBe(0);
+    expect(resumeScheduler.pendingCount).toBe(0);
+
+    setup.fixture.setActivationBehavior(null);
+    expect(setup.controller.expelWindowFromColumn()).toBe(true);
+    flushManualScheduler(scheduler);
+    flushManualScheduler(resumeScheduler);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(minimizedExpelLayout());
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.predecessor.window);
+    expect(state.pendingExpelFocusHandoff).toBeNull();
+    expect(state.stackEditOperation).toBeNull();
+    expect(scheduler.pendingCount).toBe(0);
+    expect(resumeScheduler.pendingCount).toBe(0);
+  });
+
+  it("cancels deferred bottom-active expel for an external focus redirect without reclaiming focus", () => {
+    const scheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const setup = createMinimizedExpelFixture("bottom", {
+      resumeScheduler,
+      scheduler,
+    });
+    const before = setup.layout.snapshot(
+      outputId(setup.output.name),
+      desktopId(setup.desktop.id),
+    );
+    const expectedLayout = {
+      ...before,
+      activeColumnId: columnId("column:trailing"),
+    };
+    const frames = setup.windows.map(({ window }) => ({
+      ...window.frameGeometry,
+    }));
+    const writes = setup.windows.map(({ writeCount }) => writeCount);
+    const activationCount = setup.fixture.activationCount;
+    const state = setup.controller as unknown as {
+      readonly pendingExpelFocusHandoff: object | null;
+      readonly stackEditOperation: object | null;
+    };
+    let targetRequested = false;
+    setup.fixture.setActivationBehavior((window, commit) => {
+      if (window === setup.predecessor.window && !targetRequested) {
+        targetRequested = true;
+        resumeScheduler.schedule(() => {
+          setup.fixture.workspace.activeWindow = setup.trailing.window;
+        });
+        return;
+      }
+
+      commit();
+    });
+
+    try {
+      expect(setup.controller.expelWindowFromColumn()).toBe(true);
+      expect(state.pendingExpelFocusHandoff).not.toBeNull();
+      expect(state.stackEditOperation).not.toBeNull();
+      expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
+        frames,
+      );
+      expect(setup.windows.map(({ writeCount }) => writeCount)).toEqual(writes);
+
+      resumeScheduler.flush();
+      expect(setup.fixture.workspace.activeWindow).toBe(setup.trailing.window);
+      expect(state.pendingExpelFocusHandoff).toBeNull();
+      expect(state.stackEditOperation).toBeNull();
+      flushManualScheduler(scheduler);
+      flushManualScheduler(resumeScheduler);
+      flushManualScheduler(scheduler);
+
+      expect(state.pendingExpelFocusHandoff).toBeNull();
+      expect(state.stackEditOperation).toBeNull();
+      expect(
+        setup.layout.snapshot(
+          outputId(setup.output.name),
+          desktopId(setup.desktop.id),
+        ),
+      ).toEqual(expectedLayout);
+      expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
+        frames,
+      );
+      expect(setup.windows.map(({ writeCount }) => writeCount)).toEqual(writes);
+      expect(setup.fixture.workspace.activeWindow).toBe(setup.trailing.window);
+      expect(setup.fixture.activationCount).toBe(activationCount + 2);
+    } finally {
+      setup.fixture.setActivationBehavior(null);
+    }
+  });
+
+  it.each([
+    "minimize",
+    "remove",
+    "same-id replacement",
+    "layout drift",
+  ] as const)(
+    "cancels deferred bottom-active expel after participant %s before focus confirmation",
+    (behavior) => {
+      const scheduler = new ManualScheduler();
+      const resumeScheduler = new ManualScheduler();
+      const setup = createMinimizedExpelFixture("bottom", {
+        resumeScheduler,
+        scheduler,
+      });
+      const before = setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      );
+      const frames = setup.windows.map(({ window }) => ({
+        ...window.frameGeometry,
+      }));
+      const writes = setup.windows.map(({ writeCount }) => writeCount);
+      const activationCount = setup.fixture.activationCount;
+      const state = setup.controller as unknown as {
+        readonly pendingWindowSyncs: ReadonlySet<WindowId>;
+        readonly pendingExpelFocusHandoff: object | null;
+        readonly stackEditOperation: object | null;
+      };
+      let targetRequested = false;
+      setup.fixture.setActivationBehavior((window, commit) => {
+        if (window === setup.predecessor.window && !targetRequested) {
+          targetRequested = true;
+          return;
+        }
+
+        commit();
+      });
+
+      expect(setup.controller.expelWindowFromColumn()).toBe(true);
+      expect(targetRequested).toBe(true);
+      expect(state.pendingExpelFocusHandoff).not.toBeNull();
+      expect(state.stackEditOperation).not.toBeNull();
+      expect(
+        setup.layout.snapshot(
+          outputId(setup.output.name),
+          desktopId(setup.desktop.id),
+        ),
+      ).toEqual(before);
+      expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
+        frames,
+      );
+      expect(setup.windows.map(({ writeCount }) => writeCount)).toEqual(writes);
+
+      let expectedAfterInterruption: unknown = before;
+      let replacement: TrackedWindow | null = null;
+      let replacementFrame: KWinWindow["frameGeometry"] | null = null;
+      let replacementWrites = 0;
+
+      if (behavior === "minimize") {
+        setWindowState("minimized", setup.predecessor, true);
+      } else if (behavior === "remove") {
+        setup.fixture.windowRemoved.emit(setup.predecessor.window);
+        expectedAfterInterruption =
+          minimizedExpelLayoutAfterPredecessorRemoval();
+      } else if (behavior === "same-id replacement") {
+        replacement = createTrackedWindow(
+          "predecessor",
+          setup.output,
+          setup.desktop,
+          { frameGeometry: { ...setup.predecessor.window.frameGeometry } },
+        );
+        replacementFrame = { ...replacement.window.frameGeometry };
+        replacementWrites = replacement.writeCount;
+        setup.fixture.windowRemoved.emit(setup.predecessor.window);
+        setup.fixture.windowAdded.emit(replacement.window);
+        expectedAfterInterruption =
+          minimizedExpelPredecessorReplacementLayout();
+      } else {
+        expect(
+          setup.layout.moveActiveColumn(windowId("moved-bottom"), "right"),
+        ).toBe(true);
+        expectedAfterInterruption = setup.layout.snapshot(
+          outputId(setup.output.name),
+          desktopId(setup.desktop.id),
+        );
+      }
+
+      expect(
+        setup.layout.snapshot(
+          outputId(setup.output.name),
+          desktopId(setup.desktop.id),
+        ),
+      ).toEqual(expectedAfterInterruption);
+      expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
+        frames,
+      );
+      expect(setup.windows.map(({ writeCount }) => writeCount)).toEqual(writes);
+      expect(setup.fixture.workspace.activeWindow).toBe(setup.moved.window);
+
+      if (replacement && replacementFrame) {
+        expect(replacement.window.frameGeometry).toEqual(replacementFrame);
+        expect(replacement.writeCount).toBe(replacementWrites);
+        expect(state.pendingWindowSyncs.has(windowId("predecessor"))).toBe(
+          false,
+        );
+        expect(setup.controller.managedCount).toBe(6);
+      }
+
+      if (state.pendingExpelFocusHandoff) {
+        scheduler.flush();
+      }
+
+      setup.fixture.setActivationBehavior(null);
+      expect(state.pendingExpelFocusHandoff).toBeNull();
+      expect(state.stackEditOperation).toBeNull();
+      expect(resumeScheduler.pendingCount).toBe(0);
+      expect(
+        setup.layout.snapshot(
+          outputId(setup.output.name),
+          desktopId(setup.desktop.id),
+        ),
+      ).toEqual(expectedAfterInterruption);
+      expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
+        frames,
+      );
+      expect(setup.windows.map(({ writeCount }) => writeCount)).toEqual(writes);
+      expect(setup.fixture.workspace.activeWindow).toBe(setup.moved.window);
+      expect(setup.fixture.activationCount).toBe(activationCount + 1);
+
+      if (replacement && replacementFrame) {
+        expect(replacement.window.frameGeometry).toEqual(replacementFrame);
+        expect(replacement.writeCount).toBe(replacementWrites);
+        expect(state.pendingWindowSyncs.has(windowId("predecessor"))).toBe(
+          false,
+        );
+      }
+
+      flushManualScheduler(scheduler);
+
+      if (behavior === "minimize") {
+        expect(setup.predecessor.window.minimized).toBe(true);
+        expect(
+          setup.layout.snapshot(
+            outputId(setup.output.name),
+            desktopId(setup.desktop.id),
+          ),
+        ).toEqual(before);
+      } else if (behavior === "remove") {
+        expect(setup.controller.managedCount).toBe(5);
+        expect(
+          setup.layout.snapshot(
+            outputId(setup.output.name),
+            desktopId(setup.desktop.id),
+          ),
+        ).toEqual(minimizedExpelLayoutAfterPredecessorRemoval());
+      } else if (behavior === "same-id replacement") {
+        expect(replacement).not.toBeNull();
+        expect(state.pendingWindowSyncs.has(windowId("predecessor"))).toBe(
+          false,
+        );
+        expect(setup.controller.managedCount).toBe(6);
+        expect(
+          setup.layout.snapshot(
+            outputId(setup.output.name),
+            desktopId(setup.desktop.id),
+          ),
+        ).toEqual(minimizedExpelPredecessorReplacementLayout());
+
+        if (replacement && replacementFrame) {
+          expect(replacement.window.frameGeometry).not.toEqual(
+            replacementFrame,
+          );
+          expect(replacement.writeCount).toBe(replacementWrites + 1);
+        }
+      } else {
+        expect(
+          setup.layout.snapshot(
+            outputId(setup.output.name),
+            desktopId(setup.desktop.id),
+          ),
+        ).toEqual(expectedAfterInterruption);
+        expect(setup.windows.map(({ writeCount }) => writeCount)).toEqual(
+          writes,
+        );
+      }
+    },
+  );
+
+  it("cancels deferred bottom-active expel callbacks when the controller stops", () => {
+    const scheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const setup = createMinimizedExpelFixture("bottom", {
+      resumeScheduler,
+      scheduler,
+    });
+    const before = setup.layout.snapshot(
+      outputId(setup.output.name),
+      desktopId(setup.desktop.id),
+    );
+    const frames = setup.windows.map(({ window }) => ({
+      ...window.frameGeometry,
+    }));
+    const writes = setup.windows.map(({ writeCount }) => writeCount);
+    const state = setup.controller as unknown as {
+      readonly pendingExpelFocusHandoff: object | null;
+      readonly stackEditOperation: object | null;
+    };
+    setup.fixture.setActivationBehavior((window, commit) => {
+      if (window !== setup.predecessor.window) {
+        commit();
+      }
+    });
+
+    expect(setup.controller.expelWindowFromColumn()).toBe(true);
+    expect(state.pendingExpelFocusHandoff).not.toBeNull();
+    expect(state.stackEditOperation).not.toBeNull();
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(before);
+    expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
+      frames,
+    );
+    expect(setup.windows.map(({ writeCount }) => writeCount)).toEqual(writes);
+
+    setup.controller.stop();
+    setup.fixture.setActivationBehavior(null);
+    expect(state.pendingExpelFocusHandoff).toBeNull();
+    expect(state.stackEditOperation).toBeNull();
+    const stoppedFrames = setup.windows.map(({ window }) => ({
+      ...window.frameGeometry,
+    }));
+    const stoppedWrites = setup.windows.map(({ writeCount }) => writeCount);
+
+    flushManualScheduler(resumeScheduler);
+    flushManualScheduler(scheduler);
+    expect(resumeScheduler.pendingCount).toBe(0);
+    expect(scheduler.pendingCount).toBe(0);
+    expect(state.stackEditOperation).toBeNull();
+    expect(setup.controller.managedCount).toBe(0);
+    expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
+      stoppedFrames,
+    );
+    expect(setup.windows.map(({ writeCount }) => writeCount)).toEqual(
+      stoppedWrites,
+    );
+  });
+
+  it.each(["redirect", "commit then throw", "minimize", "remove"] as const)(
+    "rolls back bottom-active expel when post-expel focus is invalidated by %s",
+    (behavior) => {
+      const setup = createMinimizedExpelFixture("bottom");
+
+      setWindowState("minimized", setup.earlier, true);
+      flushManualScheduler(setup.scheduler);
+      const before = setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      );
+      const frames = setup.windows.map(({ window }) => ({
+        ...window.frameGeometry,
+      }));
+      const writes = setup.windows.map(({ writeCount }) => writeCount);
+      const activationCount = setup.fixture.activationCount;
+      let targetRequested = false;
+      setup.fixture.setActivationBehavior((window, commit) => {
+        if (window !== setup.predecessor.window || targetRequested) {
+          commit();
+          return;
+        }
+
+        targetRequested = true;
+
+        if (behavior === "redirect") {
+          setup.fixture.workspace.activeWindow = setup.trailing.window;
+          return;
+        }
+
+        commit();
+
+        if (behavior === "commit then throw") {
+          throw new Error("injected post-expel focus failure");
+        }
+
+        if (behavior === "minimize") {
+          setWindowState("minimized", setup.predecessor, true);
+        } else {
+          setup.fixture.windowRemoved.emit(setup.predecessor.window);
+        }
+      });
+      const warning = console.warn;
+      console.warn = () => undefined;
+
+      try {
+        expect(setup.controller.expelWindowFromColumn()).toBe(false);
+      } finally {
+        console.warn = warning;
+        setup.fixture.setActivationBehavior(null);
+      }
+
+      const expectedLayout =
+        behavior === "redirect"
+          ? {
+              ...before,
+              activeColumnId: columnId("column:trailing"),
+            }
+          : behavior === "remove"
+            ? minimizedExpelLayoutAfterPredecessorRemoval()
+            : before;
+      const expectedFocus =
+        behavior === "redirect" ? setup.trailing.window : setup.moved.window;
+      expect(targetRequested).toBe(true);
+      expect(
+        setup.layout.snapshot(
+          outputId(setup.output.name),
+          desktopId(setup.desktop.id),
+        ),
+      ).toEqual(expectedLayout);
+      expect(setup.fixture.workspace.activeWindow).toBe(expectedFocus);
+      expect(setup.fixture.activationCount).toBe(activationCount + 2);
+      expect(setup.earlier.window.frameGeometry).toEqual(frames[0]);
+      expect(setup.earlier.writeCount).toBe(writes[0]);
+
+      if (behavior === "redirect" || behavior === "commit then throw") {
+        expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
+          frames,
+        );
+      } else {
+        expect(setup.retained.window.frameGeometry).toEqual(frames[1]);
+        expect(setup.passive.window.frameGeometry).toEqual(frames[2]);
+        expect(setup.moved.window.frameGeometry).toEqual(frames[4]);
+        expect(setup.trailing.window.frameGeometry).toEqual(frames[5]);
+      }
+
+      flushManualScheduler(setup.scheduler);
+      expect(
+        setup.layout.snapshot(
+          outputId(setup.output.name),
+          desktopId(setup.desktop.id),
+        ),
+      ).toEqual(expectedLayout);
+      expect(setup.fixture.workspace.activeWindow).toBe(expectedFocus);
+
+      if (behavior === "minimize") {
+        expect(setup.predecessor.window.minimized).toBe(true);
+      } else if (behavior === "remove") {
+        expect(setup.controller.managedCount).toBe(5);
+        expect(
+          testLayoutColumns(setup.controller, setup.output, setup.desktop)[0]
+            ?.windowIds,
+        ).toEqual(["earlier", "retained", "passive", "moved-bottom"]);
+      }
     },
   );
 
@@ -6709,7 +8320,9 @@ describe("RuntimeController", () => {
         frames,
       );
       expect(fixture.workspace.activeWindow).toBe(windows[1]?.window);
-      expect(fixture.activationCount).toBe(activationCount);
+      expect(fixture.activationCount).toBe(
+        operation === "expel" ? activationCount + 2 : activationCount,
+      );
       expect(
         operation === "consume"
           ? controller.consumeWindowIntoColumn()
@@ -21674,6 +23287,277 @@ interface MinimizedConsumeFixture {
   readonly target: TrackedWindow;
   readonly trailing: TrackedWindow;
   readonly windows: readonly TrackedWindow[];
+}
+
+interface MinimizedExpelFixture {
+  readonly active: TrackedWindow;
+  readonly controller: RuntimeController;
+  readonly desktop: KWinVirtualDesktop;
+  readonly earlier: TrackedWindow;
+  readonly fixture: WorkspaceFixture;
+  readonly layout: LayoutEngine;
+  readonly moved: TrackedWindow;
+  readonly otherDesktop: KWinVirtualDesktop;
+  readonly output: KWinOutput;
+  readonly passive: TrackedWindow;
+  readonly predecessor: TrackedWindow;
+  readonly retained: TrackedWindow;
+  readonly resumeScheduler: ManualScheduler;
+  readonly scheduler: ManualScheduler;
+  readonly trailing: TrackedWindow;
+  readonly windows: readonly TrackedWindow[];
+}
+
+function createMinimizedExpelFixture(
+  activeMember: "bottom" | "retained" = "retained",
+  options: {
+    readonly resumeScheduler?: ManualScheduler;
+    readonly schedule?: (callback: () => void) => void;
+    readonly scheduleResume?: (callback: () => void) => void;
+    readonly scheduler?: ManualScheduler;
+  } = {},
+): MinimizedExpelFixture {
+  const output = createOutput("DP-1", 0);
+  const desktop = { id: "desktop-1" };
+  const otherDesktop = { id: "desktop-2" };
+  const earlier = createTrackedWindow("earlier", output, desktop);
+  const retained = createTrackedWindow("retained", output, desktop);
+  const passive = createTrackedWindow("passive", output, desktop);
+  const predecessor = createTrackedWindow("predecessor", output, desktop);
+  const moved = createTrackedWindow("moved-bottom", output, desktop);
+  const trailing = createTrackedWindow("trailing", output, desktop);
+  const windows = [earlier, retained, passive, predecessor, moved, trailing];
+  const fixture = createWorkspace(
+    output,
+    desktop,
+    [output],
+    [desktop, otherDesktop],
+    windows.map(({ window }) => window),
+  );
+  const scheduler = options.scheduler ?? new ManualScheduler();
+  const resumeScheduler = options.resumeScheduler ?? scheduler;
+  const controller = new RuntimeController(fixture.workspace, {
+    clientAreaOption: 2,
+    gap: 10,
+    schedule: options.schedule ?? scheduler.schedule,
+    scheduleResume: options.scheduleResume ?? resumeScheduler.schedule,
+  });
+
+  if (!controller.start()) {
+    throw new Error("could not start minimized expel fixture");
+  }
+
+  const layout = installTestLayout(
+    controller,
+    output,
+    desktop,
+    "column:source",
+    [
+      {
+        id: "column:source",
+        width: { kind: "proportion", value: 0.44 },
+        windowHeights: [
+          { kind: "auto", weight: 2 },
+          { clientHeight: 220, kind: "fixed" },
+          { kind: "auto", weight: 3 },
+          { kind: "auto", weight: 4 },
+          { kind: "auto", weight: 5 },
+        ],
+        windowIds: [
+          "earlier",
+          "retained",
+          "passive",
+          "predecessor",
+          "moved-bottom",
+        ],
+      },
+      {
+        id: "column:trailing",
+        width: { kind: "fixed", value: 200 },
+        windowIds: ["trailing"],
+      },
+    ],
+  );
+
+  if (
+    !layout.setViewportOffset(outputId(output.name), desktopId(desktop.id), -29)
+  ) {
+    throw new Error("could not set minimized expel viewport");
+  }
+
+  controller.reconcile();
+  const active = activeMember === "bottom" ? moved : retained;
+  fixture.workspace.activeWindow = active.window;
+  flushManualScheduler(scheduler);
+
+  return {
+    active,
+    controller,
+    desktop,
+    earlier,
+    fixture,
+    layout,
+    moved,
+    otherDesktop,
+    output,
+    passive,
+    predecessor,
+    retained,
+    resumeScheduler,
+    scheduler,
+    trailing,
+    windows,
+  };
+}
+
+function minimizedExpelLayout(activeColumnId = "column:source"): unknown {
+  return {
+    activeColumnId,
+    columns: [
+      {
+        id: "column:source",
+        width: { kind: "proportion", value: 0.44 },
+        windowHeights: [
+          { kind: "auto", weight: 2 },
+          { clientHeight: 220, kind: "fixed" },
+          { kind: "auto", weight: 3 },
+          { kind: "auto", weight: 4 },
+        ],
+        windowIds: ["earlier", "retained", "passive", "predecessor"],
+      },
+      {
+        id: "column:moved-bottom",
+        width: { kind: "proportion", value: 0.44 },
+        windowIds: ["moved-bottom"],
+      },
+      {
+        id: "column:trailing",
+        width: { kind: "fixed", value: 200 },
+        windowIds: ["trailing"],
+      },
+    ],
+    desktopId: "desktop-1",
+    outputId: "DP-1",
+    viewportOffset: -29,
+  };
+}
+
+function minimizedExpelLayoutAfterMovedRemoval(): unknown {
+  return {
+    activeColumnId: "column:source",
+    columns: [
+      {
+        id: "column:source",
+        width: { kind: "proportion", value: 0.44 },
+        windowHeights: [
+          { kind: "auto", weight: 2 },
+          { clientHeight: 220, kind: "fixed" },
+          { kind: "auto", weight: 3 },
+          { kind: "auto", weight: 4 },
+        ],
+        windowIds: ["earlier", "retained", "passive", "predecessor"],
+      },
+      {
+        id: "column:trailing",
+        width: { kind: "fixed", value: 200 },
+        windowIds: ["trailing"],
+      },
+    ],
+    desktopId: "desktop-1",
+    outputId: "DP-1",
+    viewportOffset: -29,
+  };
+}
+
+function minimizedExpelReplacementLayout(): unknown {
+  return {
+    activeColumnId: "column:source",
+    columns: [
+      {
+        id: "column:source",
+        width: { kind: "proportion", value: 0.44 },
+        windowHeights: [
+          { kind: "auto", weight: 2 },
+          { clientHeight: 220, kind: "fixed" },
+          { kind: "auto", weight: 3 },
+          { kind: "auto", weight: 4 },
+        ],
+        windowIds: ["earlier", "retained", "passive", "predecessor"],
+      },
+      {
+        id: "column:moved-bottom",
+        width: { kind: "proportion", value: 0.5 },
+        windowIds: ["moved-bottom"],
+      },
+      {
+        id: "column:trailing",
+        width: { kind: "fixed", value: 200 },
+        windowIds: ["trailing"],
+      },
+    ],
+    desktopId: "desktop-1",
+    outputId: "DP-1",
+    viewportOffset: -29,
+  };
+}
+
+function minimizedExpelLayoutAfterPredecessorRemoval(): unknown {
+  return {
+    activeColumnId: "column:source",
+    columns: [
+      {
+        id: "column:source",
+        width: { kind: "proportion", value: 0.44 },
+        windowHeights: [
+          { kind: "auto", weight: 2 },
+          { clientHeight: 220, kind: "fixed" },
+          { kind: "auto", weight: 3 },
+          { kind: "auto", weight: 5 },
+        ],
+        windowIds: ["earlier", "retained", "passive", "moved-bottom"],
+      },
+      {
+        id: "column:trailing",
+        width: { kind: "fixed", value: 200 },
+        windowIds: ["trailing"],
+      },
+    ],
+    desktopId: "desktop-1",
+    outputId: "DP-1",
+    viewportOffset: -29,
+  };
+}
+
+function minimizedExpelPredecessorReplacementLayout(): unknown {
+  return {
+    activeColumnId: "column:source",
+    columns: [
+      {
+        id: "column:source",
+        width: { kind: "proportion", value: 0.44 },
+        windowHeights: [
+          { kind: "auto", weight: 2 },
+          { clientHeight: 220, kind: "fixed" },
+          { kind: "auto", weight: 3 },
+          { kind: "auto", weight: 5 },
+        ],
+        windowIds: ["earlier", "retained", "passive", "moved-bottom"],
+      },
+      {
+        id: "column:predecessor",
+        width: { kind: "proportion", value: 0.5 },
+        windowIds: ["predecessor"],
+      },
+      {
+        id: "column:trailing",
+        width: { kind: "fixed", value: 200 },
+        windowIds: ["trailing"],
+      },
+    ],
+    desktopId: "desktop-1",
+    outputId: "DP-1",
+    viewportOffset: -29,
+  };
 }
 
 function createMinimizedConsumeFixture(): MinimizedConsumeFixture {

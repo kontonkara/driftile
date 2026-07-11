@@ -1298,6 +1298,126 @@ describe("LayoutEngine", () => {
     });
   });
 
+  it("rebases a stack rollback across an authoritative window removal", () => {
+    const engine = new LayoutEngine();
+
+    engine.restoreColumns({
+      activeColumnId: columnId("column-source"),
+      columns: [
+        {
+          column: {
+            id: columnId("column-source"),
+            width: { kind: "proportion", value: 0.45 },
+            windowHeights: [
+              { kind: "auto", weight: 2 },
+              { clientHeight: 220, kind: "fixed" },
+              { kind: "auto", weight: 5 },
+            ],
+            windowIds: [
+              windowId("earlier"),
+              windowId("removed"),
+              windowId("moved"),
+            ],
+          },
+          index: 0,
+        },
+        {
+          column: {
+            id: columnId("column-trailing"),
+            width: { kind: "fixed", value: 240 },
+            windowIds: [windowId("trailing")],
+          },
+          index: 1,
+        },
+      ],
+      desktopId: desktop,
+      outputId: output,
+      viewportOffset: -40,
+    });
+    const preview = engine.previewExpelWindowFromColumn(
+      windowId("moved"),
+      columnId("column-moved"),
+    );
+    const edit = preview ? engine.applyColumnStackEdit(preview) : null;
+
+    expect(edit?.kind).toBe("expel");
+    expect(engine.unmanageWindow(windowId("removed"))).toBe(true);
+    expect(edit && engine.rollbackStackEdit(edit.rollback)).toBe(true);
+    expect(engine.snapshot(output, desktop)).toEqual({
+      activeColumnId: "column-source",
+      columns: [
+        {
+          id: "column-source",
+          width: { kind: "proportion", value: 0.45 },
+          windowHeights: [
+            { kind: "auto", weight: 2 },
+            { kind: "auto", weight: 5 },
+          ],
+          windowIds: ["earlier", "moved"],
+        },
+        {
+          id: "column-trailing",
+          width: { kind: "fixed", value: 240 },
+          windowIds: ["trailing"],
+        },
+      ],
+      desktopId: "desktop-1",
+      outputId: "DP-1",
+      viewportOffset: -40,
+    });
+  });
+
+  it("rejects stack rollback after a surviving member is recolumned", () => {
+    const engine = new LayoutEngine();
+
+    engine.restoreColumns({
+      activeColumnId: columnId("column-source"),
+      columns: [
+        {
+          column: {
+            id: columnId("column-source"),
+            width: { kind: "fixed", value: 420 },
+            windowIds: [
+              windowId("survivor"),
+              windowId("middle"),
+              windowId("moved"),
+            ],
+          },
+          index: 0,
+        },
+        {
+          column: {
+            id: columnId("column-trailing"),
+            width: { kind: "fixed", value: 240 },
+            windowIds: [windowId("trailing")],
+          },
+          index: 1,
+        },
+      ],
+      desktopId: desktop,
+      outputId: output,
+    });
+    const preview = engine.previewExpelWindowFromColumn(
+      windowId("moved"),
+      columnId("column-moved"),
+    );
+    const outer = preview ? engine.applyColumnStackEdit(preview) : null;
+    const nested = engine.moveActiveWindow(
+      windowId("survivor"),
+      "right",
+      columnId("column-survivor"),
+    );
+
+    expect(outer?.kind).toBe("expel");
+    expect(nested?.kind).toBe("extract");
+    expect(nested && engine.discardStackEditRollback(nested.rollback)).toBe(
+      true,
+    );
+    const recolumned = engine.snapshot(output, desktop);
+    expect(outer && engine.rollbackStackEdit(outer.rollback)).toBe(false);
+    expect(engine.snapshot(output, desktop)).toEqual(recolumned);
+  });
+
   it("previews expelling the bottom member into a right-hand singleton", () => {
     const engine = new LayoutEngine();
 

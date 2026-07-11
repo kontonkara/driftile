@@ -788,12 +788,26 @@ export class LayoutEngine {
     this.stackEditRollbacks.delete(rollback);
     const { after, before } = snapshots;
     const current = this.snapshot(after.outputId, after.desktopId);
+    const removedWindowIds = contextRemovedWindowIds(after, current);
+
+    if (removedWindowIds === null || !sameWindowSet(before, after)) {
+      return false;
+    }
+
+    const rollbackAfter =
+      removedWindowIds.size === 0
+        ? after
+        : contextWithoutWindows(after, removedWindowIds);
+    const rollbackBefore =
+      removedWindowIds.size === 0
+        ? before
+        : contextWithoutWindows(before, removedWindowIds);
 
     if (
       before.outputId !== after.outputId ||
       before.desktopId !== after.desktopId ||
-      !sameContextColumns(current, after) ||
-      !sameWindowSet(before, after)
+      !sameContextColumns(current, rollbackAfter) ||
+      !sameWindowSet(rollbackBefore, rollbackAfter)
     ) {
       return false;
     }
@@ -802,14 +816,14 @@ export class LayoutEngine {
       contextKey(before.outputId, before.desktopId),
     );
 
-    if (!context || !validContextSnapshot(before)) {
+    if (!context || !validContextSnapshot(rollbackBefore)) {
       return false;
     }
 
     context.columns.length = 0;
     context.columnIds.clear();
 
-    for (const snapshot of before.columns) {
+    for (const snapshot of rollbackBefore.columns) {
       const column: LayoutColumn = {
         id: snapshot.id,
         width: { ...snapshot.width },
@@ -829,14 +843,21 @@ export class LayoutEngine {
       }
     }
 
-    const activeColumnChanged = current.activeColumnId !== after.activeColumnId;
+    const afterActiveColumnSurvived = rollbackAfter.columns.some(
+      (column) => column.id === after.activeColumnId,
+    );
+    const activeColumnChanged =
+      current.activeColumnId !== after.activeColumnId ||
+      !afterActiveColumnSurvived;
     context.activeColumnId =
       activeColumnChanged &&
       (current.activeColumnId === null ||
-        before.columns.some((column) => column.id === current.activeColumnId))
+        rollbackBefore.columns.some(
+          (column) => column.id === current.activeColumnId,
+        ))
         ? current.activeColumnId
-        : before.activeColumnId;
-    context.viewportOffset = before.viewportOffset;
+        : rollbackBefore.activeColumnId;
+    context.viewportOffset = rollbackBefore.viewportOffset;
     return true;
   }
 
@@ -2484,6 +2505,95 @@ function sameWindowSet(
     rightSet.size === rightWindows.length &&
     leftWindows.every((window) => rightSet.has(window))
   );
+}
+
+function contextRemovedWindowIds(
+  expected: LayoutContextSnapshot,
+  current: LayoutContextSnapshot,
+): ReadonlySet<WindowId> | null {
+  const expectedIds = contextWindowIds(expected);
+  const currentIds = contextWindowIds(current);
+  const expectedSet = new Set(expectedIds);
+  const currentSet = new Set(currentIds);
+
+  if (
+    expectedSet.size !== expectedIds.length ||
+    currentSet.size !== currentIds.length ||
+    currentIds.some((id) => !expectedSet.has(id))
+  ) {
+    return null;
+  }
+
+  return new Set(expectedIds.filter((id) => !currentSet.has(id)));
+}
+
+function contextWithoutWindows(
+  snapshot: LayoutContextSnapshot,
+  removedIds: ReadonlySet<WindowId>,
+): LayoutContextSnapshot {
+  const columns: LayoutColumnSnapshot[] = [];
+
+  for (const column of snapshot.columns) {
+    const retainedIndices: number[] = [];
+
+    for (const [index, id] of column.windowIds.entries()) {
+      if (!removedIds.has(id)) {
+        retainedIndices.push(index);
+      }
+    }
+
+    if (retainedIndices.length === 0) {
+      continue;
+    }
+
+    let windowHeights = column.windowHeights
+      ? retainedIndices.map((index) => {
+          const height = column.windowHeights?.[index];
+
+          if (!height) {
+            throw new Error("window height state is out of sync");
+          }
+
+          return cloneWindowHeight(height);
+        })
+      : undefined;
+
+    if (windowHeights?.length === 1 && windowHeights[0]?.kind === "auto") {
+      windowHeights = [automaticWindowHeight()];
+    }
+
+    const compactHeights = windowHeights
+      ? compactWindowHeights(windowHeights)
+      : undefined;
+    columns.push({
+      id: column.id,
+      width: { ...column.width },
+      ...(compactHeights ? { windowHeights: compactHeights } : {}),
+      windowIds: retainedIndices.map((index) => {
+        const id = column.windowIds[index];
+
+        if (!id) {
+          throw new Error("window order is out of sync");
+        }
+
+        return id;
+      }),
+    });
+  }
+
+  const activeColumnId = columns.some(
+    (column) => column.id === snapshot.activeColumnId,
+  )
+    ? snapshot.activeColumnId
+    : (columns[0]?.id ?? null);
+
+  return {
+    activeColumnId,
+    columns,
+    desktopId: snapshot.desktopId,
+    outputId: snapshot.outputId,
+    viewportOffset: columns.length === 0 ? 0 : snapshot.viewportOffset,
+  };
 }
 
 function sameWindowSetAcrossContexts(

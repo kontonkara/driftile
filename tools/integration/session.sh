@@ -4366,14 +4366,38 @@ verify_consume_past_minimized_peers() {
     fail "KWin did not focus the passive source $protocol window while preparing minimized-peer consume"
   invoke_shortcut "driftile_move_window_right" || \
     fail "KGlobalAccel could not extract the passive source $protocol window while preparing minimized-peer consume"
+  wait_for_geometries \
+    "$first_title" "16,16,616,336" \
+    "$active_title" "16,368,616,336" \
+    "$moved_title" "1280,16,616,688" \
+    "$minimized_source_title" "648,16,616,688" || \
+    fail "Driftile did not settle the extracted $protocol source member while preparing minimized-peer consume: $(describe_layout "$first_title" "$active_title" "$moved_title" "$minimized_source_title")"
+  wait_for_active "$minimized_source_title" || \
+    fail "Driftile changed $protocol focus after extracting the passive consume source member"
   activate_window "$moved_title" || \
     fail "KWin could not focus the moved $protocol window while preparing minimized-peer consume"
   wait_for_active "$moved_title" || \
     fail "KWin did not focus the moved $protocol window while preparing minimized-peer consume"
   invoke_shortcut "driftile_move_window_left" || \
     fail "KGlobalAccel could not prepare the $protocol consume source stack"
+  wait_for_geometries \
+    "$first_title" "-600,16,616,336" \
+    "$active_title" "-600,368,616,336" \
+    "$moved_title" "32,368,616,336" \
+    "$minimized_source_title" "32,16,616,336" || \
+    fail "Driftile did not settle the $protocol source stack before minimized-peer consume: $(describe_layout "$first_title" "$active_title" "$moved_title" "$minimized_source_title")"
+  wait_for_active "$moved_title" || \
+    fail "Driftile changed $protocol focus while forming the minimized-peer consume source stack"
   invoke_shortcut "driftile_move_window_up" || \
     fail "KGlobalAccel could not move the visible $protocol source member above its passive peer"
+  wait_for_geometries \
+    "$first_title" "-600,16,616,336" \
+    "$active_title" "-600,368,616,336" \
+    "$moved_title" "32,16,616,336" \
+    "$minimized_source_title" "32,368,616,336" || \
+    fail "Driftile did not settle the reordered $protocol source stack before minimized-peer consume: $(describe_layout "$first_title" "$active_title" "$moved_title" "$minimized_source_title")"
+  wait_for_active "$moved_title" || \
+    fail "Driftile changed $protocol focus while reordering the minimized-peer consume source stack"
   activate_window "$active_title" || \
     fail "KWin could not focus the target $protocol window before minimized-peer consume"
   wait_for_active "$active_title" || \
@@ -4464,6 +4488,84 @@ verify_consume_past_minimized_peers() {
     fail "KWin could not restore $protocol focus after minimized-peer consume"
   wait_for_active "$active_title" || \
     fail "KWin did not restore $protocol focus after minimized-peer consume"
+}
+
+verify_expel_past_minimized_peer() {
+  local protocol=$1
+  local minimized_title=$2
+  local focus_title=$3
+  local moved_title=$4
+  local unrelated_title=$5
+  local minimized_id
+
+  minimized_id=$(window_id "$minimized_title") || \
+    fail "KWin did not expose the passive $protocol window before minimized-peer expel"
+  activate_window "$focus_title" || \
+    fail "KWin could not focus the middle $protocol stack member before minimized-peer expel"
+  wait_for_active "$focus_title" || \
+    fail "KWin did not focus the middle $protocol stack member before minimized-peer expel"
+  wait_for_geometries \
+    "$minimized_title" "16,16,616,219" \
+    "$focus_title" "16,251,616,218" \
+    "$moved_title" "16,485,616,219" \
+    "$unrelated_title" "648,16,616,688" || \
+    fail "Driftile did not preserve the canonical $protocol fixture before minimized-peer expel: $(describe_layout "$minimized_title" "$focus_title" "$moved_title" "$unrelated_title")"
+
+  set_external_window_minimized "$minimized_title" true || \
+    fail "KWin could not minimize the passive $protocol window before expel"
+  wait_for_state_and_geometries \
+    "$minimized_id" minimized true \
+    "$minimized_title" "16,16,616,219" \
+    "$focus_title" "16,251,616,218" \
+    "$moved_title" "16,485,616,219" \
+    "$unrelated_title" "648,16,616,688" || \
+    fail "Driftile changed the $protocol fixture while settling the passive expel peer"
+  activate_window "$moved_title" || \
+    fail "KWin could not focus the bottom $protocol stack member before minimized-peer expel"
+  wait_for_active "$moved_title" || \
+    fail "KWin did not focus the bottom $protocol stack member before minimized-peer expel"
+
+  invoke_shortcut "driftile_expel_window_from_column" || \
+    fail "KGlobalAccel could not expel past the settled minimized $protocol peer"
+  wait_for_geometries \
+    "$minimized_title" "16,16,616,219" \
+    "$focus_title" "16,368,616,336" \
+    "$moved_title" "648,16,616,688" \
+    "$unrelated_title" "1280,16,616,688" || \
+    fail "Driftile did not expel the visible bottom $protocol member past its minimized peer: $(describe_layout "$minimized_title" "$focus_title" "$moved_title" "$unrelated_title")"
+  wait_for_window_state "$minimized_id" minimized true || \
+    fail "Driftile restored the passive $protocol window during expel"
+  [[ "$(window_frame_geometry "$minimized_title")" == "16,16,616,219" ]] || \
+    fail "Driftile wrote the minimized passive $protocol frame during expel"
+  wait_for_active "$focus_title" || \
+    fail "Driftile did not preserve the $protocol bottom-member focus handoff during minimized-peer expel"
+
+  invoke_shortcut "driftile_consume_window_into_column" || \
+    fail "KGlobalAccel could not reconstruct the $protocol stack after minimized-peer expel"
+  wait_for_geometries \
+    "$minimized_title" "16,16,616,219" \
+    "$focus_title" "16,251,616,218" \
+    "$moved_title" "16,485,616,219" \
+    "$unrelated_title" "648,16,616,688" || \
+    fail "Driftile did not reconstruct the hidden-member $protocol fixture after expel: $(describe_layout "$minimized_title" "$focus_title" "$moved_title" "$unrelated_title")"
+  wait_for_window_state "$minimized_id" minimized true || \
+    fail "Driftile restored the passive $protocol window during expel cleanup"
+  [[ "$(window_frame_geometry "$minimized_title")" == "16,16,616,219" ]] || \
+    fail "Driftile wrote the minimized passive $protocol frame during expel cleanup"
+  wait_for_active "$focus_title" || \
+    fail "Driftile changed $protocol focus during minimized-peer expel cleanup"
+
+  set_external_window_minimized "$minimized_title" false || \
+    fail "KWin could not restore the passive $protocol window after expel cleanup"
+  wait_for_state_and_geometries \
+    "$minimized_id" minimized false \
+    "$minimized_title" "16,16,616,219" \
+    "$focus_title" "16,251,616,218" \
+    "$moved_title" "16,485,616,219" \
+    "$unrelated_title" "648,16,616,688" || \
+    fail "Driftile did not restore the exact $protocol fixture after minimized-peer expel: $(describe_layout "$minimized_title" "$focus_title" "$moved_title" "$unrelated_title")"
+  wait_for_active "$focus_title" || \
+    fail "KWin did not preserve $protocol focus after minimized-peer expel"
 }
 
 verify_stacked_maximize_extraction() {
@@ -5205,6 +5307,13 @@ run_scenario() {
     "$third_title"
 
   verify_consume_past_minimized_peers \
+    "$protocol" \
+    "$first_title" \
+    "$second_title" \
+    "$fourth_title" \
+    "$third_title"
+
+  verify_expel_past_minimized_peer \
     "$protocol" \
     "$first_title" \
     "$second_title" \
