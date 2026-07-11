@@ -65,8 +65,11 @@ import {
 import { TopologyObserver } from "./platform/kwin/topology-observer";
 
 const DEFAULT_COLUMN_WIDTH_PERCENT = 50;
+const DEFAULT_COLUMN_WIDTH_STEP_PERCENT = 10;
 const MAX_DEFAULT_COLUMN_WIDTH_PERCENT = 100;
+const MAX_COLUMN_WIDTH_STEP_PERCENT = 50;
 const MIN_DEFAULT_COLUMN_WIDTH_PERCENT = 10;
+const MIN_COLUMN_WIDTH_STEP_PERCENT = 1;
 const DEFAULT_COLUMN_WIDTH: ColumnWidth = {
   kind: "proportion",
   value: DEFAULT_COLUMN_WIDTH_PERCENT / 100,
@@ -90,7 +93,6 @@ const MAX_STACK_EDIT_FOCUS_PROBES = 20;
 const MAX_TOPOLOGY_SAMPLE_ATTEMPTS = 20;
 const MAX_TRANSIENT_RESUME_PROBES = 20;
 const MINIMUM_COLUMN_WIDTH = 64;
-const PROPORTIONAL_COLUMN_WIDTH_STEP = 0.1;
 const PROPORTIONAL_WINDOW_HEIGHT_STEP = 0.1;
 const REQUIRED_CAPACITY_PARK_SAMPLES = 2;
 const WINDOW_HEIGHT_PRESET_CYCLE_TOLERANCE = 1;
@@ -474,6 +476,7 @@ export class RuntimeController {
     string,
     Map<ColumnId, ColumnWidth>
   >();
+  private columnWidthStep = DEFAULT_COLUMN_WIDTH_STEP_PERCENT / 100;
   private readonly columnWidthPresets: readonly ColumnWidth[];
   private readonly contexts = new Map<string, RuntimeContext>();
   private readonly createRect: KWinRectFactory;
@@ -700,6 +703,23 @@ export class RuntimeController {
 
     this.pendingDefaultColumnWidth = width;
     this.scheduleDeferredRuntimeWork();
+    return true;
+  }
+
+  setColumnWidthStepPercent(value: number): boolean {
+    const percent = normalizeColumnWidthStepPercent(value);
+
+    if (percent === null) {
+      return false;
+    }
+
+    const step = percent / 100;
+
+    if (step === this.columnWidthStep) {
+      return false;
+    }
+
+    this.columnWidthStep = step;
     return true;
   }
 
@@ -7820,7 +7840,7 @@ export class RuntimeController {
           kind: "proportion",
           value: this.steppedWidthValue(
             currentProportion,
-            PROPORTIONAL_COLUMN_WIDTH_STEP,
+            this.columnWidthStep,
             direction,
           ),
         };
@@ -7832,9 +7852,12 @@ export class RuntimeController {
     }
 
     const currentPixels = this.resolvedColumnWidth(current, denominator);
-    let candidatePixels = this.resolvedColumnWidth(candidate, denominator);
+    let candidatePixels =
+      candidate.kind === "fixed"
+        ? candidate.value
+        : candidate.value * denominator - this.gap;
 
-    if (currentPixels === null || candidatePixels === null) {
+    if (currentPixels === null || !Number.isFinite(candidatePixels)) {
       return null;
     }
 
@@ -15517,6 +15540,15 @@ function normalizeDefaultColumnWidthPercent(value: number): number | null {
     Number.isInteger(value) &&
     value >= MIN_DEFAULT_COLUMN_WIDTH_PERCENT &&
     value <= MAX_DEFAULT_COLUMN_WIDTH_PERCENT
+    ? value
+    : null;
+}
+
+function normalizeColumnWidthStepPercent(value: number): number | null {
+  return Number.isFinite(value) &&
+    Number.isInteger(value) &&
+    value >= MIN_COLUMN_WIDTH_STEP_PERCENT &&
+    value <= MAX_COLUMN_WIDTH_STEP_PERCENT
     ? value
     : null;
 }

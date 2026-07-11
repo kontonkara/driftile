@@ -15,6 +15,7 @@ export function init(
   borderlessWindows: boolean,
   gap: number,
   defaultColumnWidthPercent: number,
+  columnWidthStepPercent: number,
 ): void {
   if (controller) {
     return;
@@ -30,6 +31,7 @@ export function init(
     startupStabilizationProbes: STARTUP_STABILIZATION_PROBES,
   });
   nextController.setDefaultColumnWidthPercent(defaultColumnWidthPercent);
+  nextController.setColumnWidthStepPercent(columnWidthStepPercent);
 
   if (!nextController.start()) {
     console.warn("[driftile] no output or virtual desktop available");
@@ -53,6 +55,10 @@ export function setBorderlessWindows(enabled: boolean): void {
 
 export function setDefaultColumnWidthPercent(percent: number): void {
   controller?.setDefaultColumnWidthPercent(percent);
+}
+
+export function setColumnWidthStepPercent(percent: number): void {
+  controller?.setColumnWidthStepPercent(percent);
 }
 
 export function setGap(gap: number): void {
