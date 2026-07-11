@@ -155,6 +155,10 @@ const expectedHandlers: Readonly<
     activated: "Runtime.DriftileRuntime.maximizeColumn()",
     sequence: "Meta+F",
   },
+  driftile_maximize_window_to_edges: {
+    activated: "Runtime.DriftileRuntime.maximizeWindowToEdges()",
+    sequence: "Meta+M",
+  },
   driftile_expand_column_to_available_width: {
     activated: "Runtime.DriftileRuntime.expandColumnToAvailableWidth()",
     sequence: "Meta+Ctrl+F",

@@ -127,6 +127,10 @@ export function toggleFullscreen(): void {
   controller?.toggleFullscreen();
 }
 
+export function maximizeWindowToEdges(): void {
+  controller?.maximizeWindowToEdges();
+}
+
 export function moveWindowToPreviousDesktop(): void {
   controller?.moveWindowToPreviousDesktop();
 }

@@ -156,6 +156,11 @@ const definitions: readonly ShortcutDefinition[] = [
     sequence: "Meta+Shift+F",
   },
   {
+    name: "driftile_maximize_window_to_edges",
+    text: "Driftile: Maximize window to edges",
+    sequence: "Meta+M",
+  },
+  {
     name: "driftile_focus_previous_desktop",
     text: "Driftile: Focus previous desktop",
     sequence: "Meta+I",

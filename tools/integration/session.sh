@@ -1597,6 +1597,10 @@ verify_window_action_transition() {
   local trigger=${10:-window-action}
 
   if [[ "$trigger" == "shortcut" ]]; then
+    activate_window "$target_title" || \
+      fail "KWin could not focus the $protocol state window before $state"
+    wait_for_active "$target_title" || \
+      fail "KWin did not focus the $protocol state window before $state"
     invoke_shortcut "$action" || \
       fail "KGlobalAccel could not enter $state for the $protocol state window"
   else
@@ -3315,6 +3319,8 @@ run_scenario() {
   wait_for_script_state true || fail "KWin did not reload Driftile for $protocol state transitions"
   wait_for_shortcut "driftile_toggle_fullscreen" || \
     fail "KGlobalAccel did not register the fullscreen shortcut"
+  wait_for_shortcut "driftile_maximize_window_to_edges" || \
+    fail "KGlobalAccel did not register the maximize-to-edges shortcut"
   wait_for_geometries \
     "$first_title" "$reserved_frame" \
     "$second_title" "$state_frame" || \
@@ -3331,9 +3337,9 @@ run_scenario() {
     "$first_title" "$second_title" \
     "$reserved_frame" "$state_frame" "$state_frame"
   verify_window_action_transition \
-    "$protocol" maximize maximized "$state_window_id" \
+    "$protocol" driftile_maximize_window_to_edges maximized "$state_window_id" \
     "$first_title" "$second_title" \
-    "$reserved_frame" "$full_output_frame" "$state_frame"
+    "$reserved_frame" "$full_output_frame" "$state_frame" shortcut
 
   # Standalone KWin X11 6.7 does not expose workspace.rootTile to scripts.
   if [[ "$protocol" != "x11" ]]; then

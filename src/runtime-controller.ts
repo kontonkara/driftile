@@ -619,6 +619,34 @@ export class RuntimeController {
     return activeWindow.fullScreen === fullScreen;
   }
 
+  maximizeWindowToEdges(): boolean {
+    const activeWindow = this.workspace.activeWindow;
+
+    if (
+      !this.started ||
+      !activeWindow ||
+      activeWindow.deleted ||
+      !activeWindow.managed ||
+      !activeWindow.setMaximize
+    ) {
+      return false;
+    }
+
+    const maximized = activeWindow.maximizeMode === 3;
+
+    if (!maximized && activeWindow.maximizable === false) {
+      return false;
+    }
+
+    try {
+      activeWindow.setMaximize(!maximized, !maximized);
+    } catch {
+      return false;
+    }
+
+    return true;
+  }
+
   moveWindowToPreviousDesktop(): boolean {
     return this.moveActiveWindowToDesktop(-1);
   }

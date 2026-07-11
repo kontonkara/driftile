@@ -208,6 +208,12 @@ QtObject {
         sequence: "Meta+Shift+F"
         onActivated: Runtime.DriftileRuntime.toggleFullscreen()
     }
+    readonly property ShortcutHandler maximizeWindowToEdgesShortcut: ShortcutHandler {
+        name: "driftile_maximize_window_to_edges"
+        text: "Driftile: Maximize window to edges"
+        sequence: "Meta+M"
+        onActivated: Runtime.DriftileRuntime.maximizeWindowToEdges()
+    }
     readonly property ShortcutHandler focusPreviousDesktopShortcut: ShortcutHandler {
         name: "driftile_focus_previous_desktop"
         text: "Driftile: Focus previous desktop"

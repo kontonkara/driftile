@@ -50,6 +50,7 @@ export interface KWinWindow {
   readonly maximizeableChanged?: KWinSignal<[maximizeable: boolean]>;
   readonly maximizedChanged?: KWinSignal<[]>;
   readonly maxSize: KWinSize;
+  readonly maximizable?: boolean;
   readonly maximizeMode: number;
   readonly minSize: KWinSize;
   readonly minimized: boolean;
@@ -68,6 +69,7 @@ export interface KWinWindow {
   readonly requestedTileChanged?: KWinSignal<[]>;
   readonly resize: boolean;
   readonly resizeable: boolean;
+  setMaximize?(vertically: boolean, horizontally: boolean): void;
   readonly specialWindow: boolean;
   readonly tile: object | null;
   readonly tileChanged?: KWinSignal<[tile: object | null]>;

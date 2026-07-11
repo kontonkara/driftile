@@ -656,6 +656,68 @@ function controlFullscreen(
   };
 }
 
+interface MaximizeControl {
+  readonly calls: readonly (readonly [
+    vertical: boolean,
+    horizontal: boolean,
+  ])[];
+  readonly maximizeMode: number;
+  maximizable: boolean;
+}
+
+function controlMaximize(
+  tracked: TrackedWindow,
+  options: {
+    readonly maximizeMode?: number;
+    readonly maximizable?: boolean;
+    readonly write?: "accept" | "throw";
+  } = {},
+): MaximizeControl {
+  const calls: Array<readonly [vertical: boolean, horizontal: boolean]> = [];
+  let maximizeMode = options.maximizeMode ?? 0;
+  let maximizable = options.maximizable ?? true;
+
+  Object.defineProperty(tracked.window, "maximizable", {
+    configurable: true,
+    enumerable: true,
+    get: () => maximizable,
+  });
+  Object.defineProperty(tracked.window, "maximizeMode", {
+    configurable: true,
+    enumerable: true,
+    get: () => maximizeMode,
+  });
+  Object.defineProperty(tracked.window, "setMaximize", {
+    configurable: true,
+    enumerable: true,
+    value: (vertical: boolean, horizontal: boolean) => {
+      calls.push([vertical, horizontal]);
+
+      if (options.write === "throw") {
+        throw new Error("injected maximize write failure");
+      }
+
+      const nextMode = vertical && horizontal ? 3 : 0;
+      tracked.maximizedAboutToChange.emit(nextMode);
+      maximizeMode = nextMode;
+      tracked.maximizedChanged.emit();
+    },
+  });
+
+  return {
+    calls,
+    get maximizeMode() {
+      return maximizeMode;
+    },
+    get maximizable() {
+      return maximizable;
+    },
+    set maximizable(value: boolean) {
+      maximizable = value;
+    },
+  };
+}
+
 describe("RuntimeController", () => {
   it("delegates fullscreen to KWin without changing the tiled layout", () => {
     const output = createOutput("DP-1", 0);
@@ -894,6 +956,271 @@ describe("RuntimeController", () => {
     expect(fullscreen.fullScreen).toBe(true);
     expect(controller.toggleFullscreen()).toBe(true);
     expect(fullscreen.fullScreen).toBe(false);
+    expect(controller.floatingCount).toBe(1);
+    expect(controller.managedCount).toBe(0);
+    expect(active.window.frameGeometry).toEqual(floatingFrame);
+    expect(active.writeCount).toBe(frameWrites);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(layout);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+
+    controller.stop();
+  });
+
+  it("delegates maximize-to-edges to KWin without changing the tiled layout", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const windows = Array.from({ length: 3 }, (_, index) =>
+      createTrackedWindow(`window-${String(index + 1)}`, output, desktop),
+    );
+    const active = windows[2];
+
+    if (!active) {
+      throw new Error("missing maximize fixture");
+    }
+
+    const maximize = controlMaximize(active);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map(({ window }) => window),
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 400 },
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    const layout = runtimeLayout(controller);
+    layout.setViewportOffset(outputId(output.name), desktopId(desktop.id), 125);
+    const before = layout.snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
+    const frameWrites = windows.map(({ writeCount }) => writeCount);
+
+    expect(controller.maximizeWindowToEdges()).toBe(true);
+    expect(maximize.maximizeMode).toBe(3);
+    expect(maximize.calls).toEqual([[true, true]]);
+    expect(
+      (
+        controller as unknown as {
+          readonly suspendedWindows: ReadonlySet<WindowId>;
+        }
+      ).suspendedWindows.has(windowId("window-3")),
+    ).toBe(true);
+    expect(
+      layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+    ).toEqual(before);
+    expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
+    expect(windows.map(({ writeCount }) => writeCount)).toEqual(frameWrites);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+
+    maximize.maximizable = false;
+    expect(controller.maximizeWindowToEdges()).toBe(true);
+    expect(maximize.maximizeMode).toBe(0);
+    expect(maximize.calls).toEqual([
+      [true, true],
+      [false, false],
+    ]);
+    expect(
+      layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+    ).toEqual(before);
+    expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
+    expect(windows.map(({ writeCount }) => writeCount)).toEqual(frameWrites);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+
+    controller.stop();
+  });
+
+  it("rejects maximize-to-edges when KWin cannot perform it", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const unsupportedWindow = createTrackedWindow(
+      "unsupported",
+      output,
+      desktop,
+    );
+    const unsupportedMaximize = controlMaximize(unsupportedWindow, {
+      maximizable: false,
+    });
+    const unsupportedFixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [unsupportedWindow.window],
+    );
+    const unsupported = new RuntimeController(unsupportedFixture.workspace, {
+      clientAreaOption: 2,
+    });
+
+    expect(unsupported.start()).toBe(true);
+    expect(unsupported.maximizeWindowToEdges()).toBe(false);
+    expect(unsupportedMaximize.calls).toEqual([]);
+    unsupported.stop();
+
+    const missingWindow = createTrackedWindow("missing", output, desktop);
+    const missingFixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [missingWindow.window],
+    );
+    const missing = new RuntimeController(missingFixture.workspace, {
+      clientAreaOption: 2,
+    });
+
+    expect(missing.start()).toBe(true);
+    expect(missing.maximizeWindowToEdges()).toBe(false);
+    missing.stop();
+  });
+
+  it("rejects maximize-to-edges without a live managed active window", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const stoppedWindow = createTrackedWindow("stopped", output, desktop);
+    const stoppedMaximize = controlMaximize(stoppedWindow);
+    const stoppedFixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [stoppedWindow.window],
+    );
+    const stopped = new RuntimeController(stoppedFixture.workspace, {
+      clientAreaOption: 2,
+    });
+
+    expect(stopped.maximizeWindowToEdges()).toBe(false);
+    expect(stoppedMaximize.calls).toEqual([]);
+
+    const emptyFixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [],
+    );
+    const empty = new RuntimeController(emptyFixture.workspace, {
+      clientAreaOption: 2,
+    });
+
+    expect(empty.start()).toBe(true);
+    expect(empty.maximizeWindowToEdges()).toBe(false);
+    empty.stop();
+
+    for (const [name, overrides] of [
+      ["deleted", { deleted: true }],
+      ["unmanaged", { managed: false }],
+    ] as const) {
+      const window = createTrackedWindow(name, output, desktop, overrides);
+      const maximize = controlMaximize(window);
+      const fixture = createWorkspace(
+        output,
+        desktop,
+        [output],
+        [desktop],
+        [window.window],
+      );
+      const controller = new RuntimeController(fixture.workspace, {
+        clientAreaOption: 2,
+      });
+
+      expect(controller.start()).toBe(true);
+      expect(controller.maximizeWindowToEdges()).toBe(false);
+      expect(maximize.calls).toEqual([]);
+      controller.stop();
+    }
+  });
+
+  it("reports a throwing maximize request without layout changes", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const active = createTrackedWindow("window-1", output, desktop);
+    const maximize = controlMaximize(active, { write: "throw" });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [active.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+    });
+
+    expect(controller.start()).toBe(true);
+    const before = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const frame = { ...active.window.frameGeometry };
+    const frameWrites = active.writeCount;
+
+    expect(controller.maximizeWindowToEdges()).toBe(false);
+    expect(maximize.maximizeMode).toBe(0);
+    expect(maximize.calls).toEqual([[true, true]]);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(before);
+    expect(active.window.frameGeometry).toEqual(frame);
+    expect(active.writeCount).toBe(frameWrites);
+
+    controller.stop();
+  });
+
+  it("preserves manual-floating ownership through maximize-to-edges", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const active = createTrackedWindow("window-1", output, desktop);
+    const maximize = controlMaximize(active);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [active.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      schedule: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(controller.toggleFloating()).toBe(true);
+    expect(controller.floatingCount).toBe(1);
+    expect(controller.managedCount).toBe(0);
+    const floatingFrame = { ...active.window.frameGeometry };
+    const frameWrites = active.writeCount;
+    const layout = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+
+    expect(controller.maximizeWindowToEdges()).toBe(true);
+    expect(maximize.maximizeMode).toBe(3);
+    expect(controller.maximizeWindowToEdges()).toBe(true);
+    expect(maximize.maximizeMode).toBe(0);
+    expect(maximize.calls).toEqual([
+      [true, true],
+      [false, false],
+    ]);
     expect(controller.floatingCount).toBe(1);
     expect(controller.managedCount).toBe(0);
     expect(active.window.frameGeometry).toEqual(floatingFrame);
