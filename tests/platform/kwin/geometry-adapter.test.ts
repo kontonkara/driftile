@@ -1,13 +1,35 @@
 import { describe, expect, it } from "vitest";
 
 import type { Rect } from "../../../src/core/geometry";
-import type { KWinWindow } from "../../../src/platform/kwin/api";
+import { desktopId, outputId, windowId } from "../../../src/core/ids";
+import type { KWinWindow, KWinWorkspace } from "../../../src/platform/kwin/api";
 import {
   frameSizeConstraintBounds,
+  KWinGeometryAdapter,
   respectsSizeConstraints,
 } from "../../../src/platform/kwin/geometry-adapter";
 
-function createWindow(overrides: Partial<KWinWindow> = {}): KWinWindow {
+interface TestX11SizeHints {
+  readonly baseSize: { readonly height: number; readonly width: number };
+  readonly maximumAspectRatio: {
+    readonly height: number;
+    readonly width: number;
+  };
+  readonly minimumAspectRatio: {
+    readonly height: number;
+    readonly width: number;
+  };
+  readonly resizeIncrement: {
+    readonly height: number;
+    readonly width: number;
+  };
+}
+
+interface TestHintedWindow extends KWinWindow {
+  testOnlyX11SizeHints: TestX11SizeHints;
+}
+
+function createWindow(overrides: Partial<KWinWindow> = {}): TestHintedWindow {
   return {
     clientGeometry: { height: 600, width: 800, x: 10, y: 30 },
     deleted: false,
@@ -36,11 +58,63 @@ function createWindow(overrides: Partial<KWinWindow> = {}): KWinWindow {
     resize: false,
     resizeable: true,
     specialWindow: false,
+    testOnlyX11SizeHints: {
+      baseSize: { height: 1, width: 1 },
+      maximumAspectRatio: { height: 9, width: 21 },
+      minimumAspectRatio: { height: 9, width: 16 },
+      resizeIncrement: { height: 128, width: 128 },
+    },
     tile: null,
     transient: false,
     transientFor: null,
     ...overrides,
   };
+}
+
+function createGeometryAdapter(window: KWinWindow): KWinGeometryAdapter {
+  const desktop = window.desktops[0];
+  const output = window.output;
+
+  if (!desktop || !output) {
+    throw new Error("geometry adapter fixture requires a window context");
+  }
+
+  const inertSignal = {
+    connect: () => undefined,
+    disconnect: () => undefined,
+  };
+  const workspace = {
+    activeScreen: output,
+    activeWindow: window,
+    clientArea: () => output.geometry,
+    currentDesktop: desktop,
+    currentDesktopChanged: inertSignal,
+    desktops: [desktop],
+    screens: [output],
+    stackingOrder: [window],
+    windowActivated: inertSignal,
+    windowAdded: inertSignal,
+    windowRemoved: inertSignal,
+  } satisfies KWinWorkspace;
+
+  return new KWinGeometryAdapter(
+    workspace,
+    {
+      source: (id) => (id === String(window.internalId) ? window : undefined),
+    },
+    2,
+  );
+}
+
+function canApplyFrame(window: KWinWindow, frame: Rect): boolean {
+  return createGeometryAdapter(window).canApplyFrame(
+    windowId(String(window.internalId)),
+    frame,
+    {
+      desktopId: desktopId("desktop-1"),
+      outputId: outputId("output-1"),
+    },
+  );
 }
 
 describe("frameSizeConstraintBounds", () => {
@@ -211,6 +285,70 @@ describe("respectsSizeConstraints", () => {
         window,
       ),
     ).toBe(true);
+  });
+
+  it("ignores structurally extra base, increment, and aspect hints", () => {
+    const window = createWindow();
+    const frame = { height: 500, width: 320, x: 100, y: 50 };
+    const hints = window.testOnlyX11SizeHints;
+    const clientWidth =
+      frame.width - (window.frameGeometry.width - window.clientGeometry.width);
+    const clientHeight =
+      frame.height -
+      (window.frameGeometry.height - window.clientGeometry.height);
+
+    expect(
+      (clientWidth - hints.baseSize.width) % hints.resizeIncrement.width,
+    ).not.toBe(0);
+    expect(
+      (clientHeight - hints.baseSize.height) % hints.resizeIncrement.height,
+    ).not.toBe(0);
+    expect(clientWidth / clientHeight).toBeLessThan(
+      hints.minimumAspectRatio.width / hints.minimumAspectRatio.height,
+    );
+    expect(respectsSizeConstraints(frame, window)).toBe(true);
+    expect(canApplyFrame(window, frame)).toBe(true);
+  });
+
+  it("keeps fractional hard bounds and decoration extents authoritative", () => {
+    const window = createWindow({
+      clientGeometry: { height: 391.75, width: 492.25, x: 0, y: 0 },
+      frameGeometry: { height: 400.5, width: 500.75, x: 0, y: 0 },
+      maxSize: { height: 300.625, width: 300.125 },
+      minSize: { height: 80.125, width: 100.25 },
+      output: {
+        devicePixelRatio: 1.25,
+        geometry: { height: 864, width: 1536, x: 0, y: 0 },
+        name: "output-1",
+      },
+    });
+    const boundary = { height: 309.375, width: 108.75, x: 0, y: 0 };
+    const belowMinimum = { ...boundary, width: 108.748 };
+    const aboveMaximum = { ...boundary, height: 309.377 };
+
+    expect(respectsSizeConstraints(boundary, window)).toBe(true);
+    expect(canApplyFrame(window, boundary)).toBe(true);
+    expect(respectsSizeConstraints(belowMinimum, window)).toBe(false);
+    expect(canApplyFrame(window, belowMinimum)).toBe(false);
+    expect(respectsSizeConstraints(aboveMaximum, window)).toBe(false);
+    expect(canApplyFrame(window, aboveMaximum)).toBe(false);
+  });
+
+  it("fails closed for malformed hard bounds despite advisory metadata", () => {
+    const window = createWindow({
+      minSize: { height: 200, width: Number.NaN },
+    });
+    const frame = { height: 300, width: 400, x: 0, y: 0 };
+
+    window.testOnlyX11SizeHints = {
+      baseSize: { height: Number.NaN, width: Number.NEGATIVE_INFINITY },
+      maximumAspectRatio: { height: 0, width: Number.NaN },
+      minimumAspectRatio: { height: -1, width: Number.POSITIVE_INFINITY },
+      resizeIncrement: { height: 0, width: -1 },
+    };
+
+    expect(respectsSizeConstraints(frame, window)).toBe(false);
+    expect(canApplyFrame(window, frame)).toBe(false);
   });
 
   it.each([

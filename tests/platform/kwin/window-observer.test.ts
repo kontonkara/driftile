@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type {
   KWinOutput,
+  KWinRect,
   KWinSignal,
   KWinVirtualDesktop,
   KWinWindow,
@@ -43,6 +44,9 @@ function createWindow(overrides: Partial<KWinWindow> = {}): KWinWindow {
 
   return {
     clientGeometry: { height: 600, width: 800, x: 0, y: 0 },
+    clientGeometryChanged: new Signal<[oldGeometry: KWinRect]>(),
+    decorationChanged: new Signal<[]>(),
+    decorationPolicyChanged: new Signal<[]>(),
     deleted: false,
     desktops: [desktop],
     desktopsChanged: new Signal<[]>(),
@@ -50,6 +54,7 @@ function createWindow(overrides: Partial<KWinWindow> = {}): KWinWindow {
     dialog: false,
     dock: false,
     frameGeometry: { height: 600, width: 800, x: 0, y: 0 },
+    frameGeometryChanged: new Signal<[oldGeometry: KWinRect]>(),
     fullScreen: false,
     fullScreenChanged: new Signal<[]>(),
     internalId: "window-1",
@@ -68,6 +73,7 @@ function createWindow(overrides: Partial<KWinWindow> = {}): KWinWindow {
     move: false,
     moveable: true,
     moveResizedChanged: new Signal<[]>(),
+    noBorderChanged: new Signal<[]>(),
     normalWindow: true,
     onAllDesktops: false,
     output,
@@ -358,6 +364,10 @@ describe("WindowObserver", () => {
     });
 
     observer.start();
+    Object.defineProperty(source, "resizeable", {
+      configurable: true,
+      value: false,
+    });
     maximizeableChanged.emit(false);
     Object.defineProperty(source, "transient", {
       configurable: true,
@@ -370,6 +380,227 @@ describe("WindowObserver", () => {
     });
     modalChanged.emit();
 
+    expect(changed).toEqual(["window-1", "window-1", "window-1"]);
+  });
+
+  it("deduplicates hard-constraint refreshes across existing and geometry signals", () => {
+    const source = createWindow();
+    const maximumSize = source.maxSize;
+    let constraintReads = 0;
+    Object.defineProperty(source, "maxSize", {
+      configurable: true,
+      get: () => {
+        constraintReads += 1;
+        return maximumSize;
+      },
+    });
+    const clientGeometryChanged = source.clientGeometryChanged as Signal<
+      [oldGeometry: KWinRect]
+    >;
+    const decorationChanged = source.decorationChanged as Signal<[]>;
+    const finished = source.interactiveMoveResizeFinished as Signal<[]>;
+    const frameGeometryChanged = source.frameGeometryChanged as Signal<
+      [oldGeometry: KWinRect]
+    >;
+    const maximizeableChanged = source.maximizeableChanged as Signal<
+      [maximizeable: boolean]
+    >;
+    const moveResizedChanged = source.moveResizedChanged as Signal<[]>;
+    const changed: string[] = [];
+    const stateChanged: string[] = [];
+    const observer = new WindowObserver(createWorkspace([source]), {
+      changed: (windowId) => changed.push(windowId),
+      stateChanged: (windowId) => stateChanged.push(windowId),
+    });
+
+    observer.start();
+    Object.defineProperty(source, "minSize", {
+      configurable: true,
+      value: { height: 2, width: 3 },
+    });
+    maximizeableChanged.emit(true);
+    frameGeometryChanged.emit({ ...source.frameGeometry });
+    clientGeometryChanged.emit({ ...source.clientGeometry });
+
+    expect(changed).toEqual(["window-1"]);
+
+    const movedFrame = { ...source.frameGeometry, x: 120, y: 80 };
+    const movedClient = { ...source.clientGeometry, x: 120, y: 80 };
+    Object.defineProperties(source, {
+      clientGeometry: { configurable: true, value: movedClient },
+      frameGeometry: { configurable: true, value: movedFrame },
+    });
+    const readsBeforeMove = constraintReads;
+    frameGeometryChanged.emit({ ...source.frameGeometry });
+    clientGeometryChanged.emit({ ...source.clientGeometry });
+
+    expect(changed).toEqual(["window-1"]);
+    expect(constraintReads).toBe(readsBeforeMove);
+
+    Object.defineProperty(source, "frameGeometry", {
+      configurable: true,
+      value: { ...movedFrame, height: 612, width: 820 },
+    });
+    frameGeometryChanged.emit(movedFrame);
+    clientGeometryChanged.emit(movedClient);
+    decorationChanged.emit();
+    moveResizedChanged.emit();
+    finished.emit();
+
+    expect(changed).toEqual(["window-1", "window-1"]);
+    expect(stateChanged).toEqual(["window-1", "window-1", "window-1"]);
+  });
+
+  it("probes only observed windows visible on their selected output desktop", () => {
+    const primary = { id: "desktop-1" };
+    const secondary = { id: "desktop-2" };
+    const left = createWindow().output;
+    const right: KWinOutput = {
+      devicePixelRatio: 1,
+      geometry: { height: 1080, width: 1920, x: 1920, y: 0 },
+      name: "HDMI-A-1",
+    };
+
+    if (!left) {
+      throw new Error("missing visible constraint probe output");
+    }
+
+    const leftPrimary = createWindow({
+      desktops: [primary],
+      internalId: "left-primary",
+      output: left,
+    });
+    const leftSecondary = createWindow({
+      desktops: [secondary],
+      internalId: "left-secondary",
+      output: left,
+    });
+    const rightPrimary = createWindow({
+      desktops: [primary],
+      internalId: "right-primary",
+      output: right,
+    });
+    const rightSecondary = createWindow({
+      desktops: [secondary],
+      internalId: "right-secondary",
+      output: right,
+    });
+    const windows = [leftPrimary, leftSecondary, rightPrimary, rightSecondary];
+    const workspace = createWorkspace(windows);
+    const selected = new Map<string, KWinVirtualDesktop>([
+      [left.name, primary],
+      [right.name, secondary],
+    ]);
+    Object.defineProperties(workspace, {
+      currentDesktopForScreen: {
+        configurable: true,
+        value: (output: KWinOutput) => selected.get(output.name) ?? null,
+      },
+      desktops: { configurable: true, value: [primary, secondary] },
+      screens: { configurable: true, value: [left, right] },
+    });
+    const changed: string[] = [];
+    const observer = new WindowObserver(workspace, {
+      changed: (windowId) => changed.push(windowId),
+    });
+
+    observer.start();
+
+    for (const [index, window] of windows.entries()) {
+      Object.defineProperty(window, "minSize", {
+        configurable: true,
+        value: { height: index + 2, width: index + 3 },
+      });
+    }
+
+    expect(observer.probeVisibleConstraintChanges()).toBe(2);
+    expect(changed).toEqual(["left-primary", "right-secondary"]);
+    expect(observer.probeVisibleConstraintChanges()).toBe(0);
+
+    selected.set(left.name, secondary);
+    selected.set(right.name, primary);
+    expect(observer.probeVisibleConstraintChanges()).toBe(2);
+    expect(changed).toEqual([
+      "left-primary",
+      "right-secondary",
+      "left-secondary",
+      "right-primary",
+    ]);
+    expect(observer.probeVisibleConstraintChanges()).toBe(0);
+  });
+
+  it("defers silent hard-constraint probes while a visible-desktop window is minimized", () => {
+    const source = createWindow({ minimized: true });
+    const changed: string[] = [];
+    const observer = new WindowObserver(createWorkspace([source]), {
+      changed: (windowId) => changed.push(windowId),
+    });
+
+    observer.start();
+    Object.defineProperty(source, "minSize", {
+      configurable: true,
+      value: { height: 240, width: 360 },
+    });
+
+    expect(observer.probeVisibleConstraintChanges()).toBe(0);
+    expect(changed).toEqual([]);
+
+    Object.defineProperty(source, "minimized", {
+      configurable: true,
+      value: false,
+    });
+    expect(observer.probeVisibleConstraintChanges()).toBe(1);
+    expect(changed).toEqual(["window-1"]);
+    expect(observer.probeVisibleConstraintChanges()).toBe(0);
+  });
+
+  it("fails closed and settles throwing or malformed constraint getters", () => {
+    const source = createWindow();
+    Object.defineProperty(source, "maxSize", {
+      configurable: true,
+      get: () => {
+        throw new Error("max size unavailable");
+      },
+    });
+    const changed: string[] = [];
+    const observer = new WindowObserver(createWorkspace([source]), {
+      changed: (windowId) => changed.push(windowId),
+    });
+
+    expect(() => {
+      observer.start();
+    }).not.toThrow();
+    expect(observer.probeVisibleConstraintChanges()).toBe(0);
+
+    Object.defineProperty(source, "maxSize", {
+      configurable: true,
+      value: { height: 10_000, width: 10_000 },
+    });
+    expect(observer.probeVisibleConstraintChanges()).toBe(1);
+
+    Object.defineProperty(source, "resizeable", {
+      configurable: true,
+      get: () => {
+        throw new Error("resizeability unavailable");
+      },
+    });
+    expect(observer.probeVisibleConstraintChanges()).toBe(1);
+    expect(observer.probeVisibleConstraintChanges()).toBe(0);
+
+    Object.defineProperties(source, {
+      minSize: {
+        configurable: true,
+        value: { height: 1, width: -1 },
+      },
+      resizeable: { configurable: true, value: true },
+    });
+    expect(observer.probeVisibleConstraintChanges()).toBe(0);
+
+    Object.defineProperty(source, "minSize", {
+      configurable: true,
+      value: { height: 1, width: 1 },
+    });
+    expect(observer.probeVisibleConstraintChanges()).toBe(1);
     expect(changed).toEqual(["window-1", "window-1", "window-1"]);
   });
 
@@ -650,13 +881,26 @@ describe("WindowObserver", () => {
     const windowRemoved = new Signal<[window: KWinWindow]>();
     const removedSource = createWindow();
     const stoppedSource = createWindow({ internalId: "window-2" });
+    const removedClientGeometry = removedSource.clientGeometryChanged as Signal<
+      [oldGeometry: KWinRect]
+    >;
     const removedDesktops = removedSource.desktopsChanged as Signal<[]>;
+    const removedFrameGeometry = removedSource.frameGeometryChanged as Signal<
+      [oldGeometry: KWinRect]
+    >;
     const removedFullScreen = removedSource.fullScreenChanged as Signal<[]>;
     const removedMoveResize = removedSource.moveResizedChanged as Signal<[]>;
     const removedOutput = removedSource.outputChanged as Signal<
       [oldOutput?: KWinOutput | null]
     >;
+    const stoppedClientGeometry = stoppedSource.clientGeometryChanged as Signal<
+      [oldGeometry: KWinRect]
+    >;
+    const stoppedDecoration = stoppedSource.decorationChanged as Signal<[]>;
     const stoppedDesktops = stoppedSource.desktopsChanged as Signal<[]>;
+    const stoppedFrameGeometry = stoppedSource.frameGeometryChanged as Signal<
+      [oldGeometry: KWinRect]
+    >;
     const stoppedMoveResize =
       stoppedSource.interactiveMoveResizeFinished as Signal<[]>;
     const stoppedOutput = stoppedSource.outputChanged as Signal<
@@ -682,43 +926,58 @@ describe("WindowObserver", () => {
 
     observer.start();
     expect([
+      removedClientGeometry.size,
       removedDesktops.size,
+      removedFrameGeometry.size,
       removedFullScreen.size,
       removedMoveResize.size,
       removedOutput.size,
+      stoppedClientGeometry.size,
+      stoppedDecoration.size,
       stoppedDesktops.size,
+      stoppedFrameGeometry.size,
       stoppedMoveResize.size,
       stoppedOutput.size,
       stoppedTile.size,
       stoppedModal.size,
       stoppedMaximizeable.size,
       stoppedTransient.size,
-    ]).toEqual([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
+    ]).toEqual(Array.from({ length: 16 }, () => 1));
 
     windowRemoved.emit(removedSource);
     expect([
+      removedClientGeometry.size,
       removedDesktops.size,
+      removedFrameGeometry.size,
       removedFullScreen.size,
       removedMoveResize.size,
       removedOutput.size,
-    ]).toEqual([0, 0, 0, 0]);
+    ]).toEqual([0, 0, 0, 0, 0, 0]);
 
     observer.stop();
     expect([
+      stoppedClientGeometry.size,
+      stoppedDecoration.size,
       stoppedDesktops.size,
+      stoppedFrameGeometry.size,
       stoppedMoveResize.size,
       stoppedOutput.size,
       stoppedTile.size,
       stoppedModal.size,
       stoppedMaximizeable.size,
       stoppedTransient.size,
-    ]).toEqual([0, 0, 0, 0, 0, 0, 0]);
+    ]).toEqual(Array.from({ length: 10 }, () => 0));
 
+    removedClientGeometry.emit({ ...removedSource.clientGeometry });
     removedDesktops.emit();
+    removedFrameGeometry.emit({ ...removedSource.frameGeometry });
     removedFullScreen.emit();
     removedMoveResize.emit();
     removedOutput.emit();
+    stoppedClientGeometry.emit({ ...stoppedSource.clientGeometry });
+    stoppedDecoration.emit();
     stoppedDesktops.emit();
+    stoppedFrameGeometry.emit({ ...stoppedSource.frameGeometry });
     stoppedMoveResize.emit();
     stoppedOutput.emit();
     stoppedTile.emit(null);

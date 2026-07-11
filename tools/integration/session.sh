@@ -192,18 +192,135 @@ x11_window_id() {
       sed -n 's/^_NET_CLIENT_LIST[^#]*# //p' |
       tr ',' '\n'
   ); do
-    candidate_title=$(
-      xprop -id "$candidate" -notype _NET_WM_NAME 2>/dev/null |
-        sed -n 's/^_NET_WM_NAME = "\(.*\)"$/\1/p'
+    while IFS= read -r candidate_title; do
+      if [[ "$candidate_title" == "$window_title" ]]; then
+        printf '%s' "$candidate"
+        return 0
+      fi
+    done < <(
+      xprop -id "$candidate" -notype _NET_WM_NAME WM_NAME 2>/dev/null |
+        sed -n 's/^[^=]*= "\(.*\)"$/\1/p'
     )
-
-    if [[ "$candidate_title" == "$window_title" ]]; then
-      printf '%s' "$candidate"
-      return 0
-    fi
   done
 
   return 1
+}
+
+x11_window_is_active() {
+  local window_title=$1
+  local active_id
+  local target_id
+
+  target_id=$(x11_window_id "$window_title") || return 1
+  active_id=$(
+    xprop -root -notype _NET_ACTIVE_WINDOW 2>/dev/null |
+      sed -n 's/^_NET_ACTIVE_WINDOW[^#]*# \(0x[0-9a-fA-F]*\)$/\1/p'
+  )
+
+  [[ -n "$active_id" && "${active_id,,}" == "${target_id,,}" ]]
+}
+
+wait_for_x11_window_active() {
+  local window_title=$1
+  local attempt
+
+  for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
+    if x11_window_is_active "$window_title"; then
+      return 0
+    fi
+
+    sleep 0.05
+  done
+
+  return 1
+}
+
+x11_window_resize_policy() {
+  local window_title=$1
+  local id
+  local hints
+  local hint
+  local increments=""
+  local base_size=""
+
+  id=$(x11_window_id "$window_title") || return 1
+  hints=$(LC_ALL=C xprop -id "$id" WM_NORMAL_HINTS 2>/dev/null) || return 1
+
+  while IFS= read -r hint; do
+    if [[ "$hint" =~ program[[:space:]]specified[[:space:]]resize[[:space:]]increment:[[:space:]]([0-9]+)[[:space:]]by[[:space:]]([0-9]+) ]]; then
+      increments="${BASH_REMATCH[1]},${BASH_REMATCH[2]}"
+    elif [[ "$hint" =~ program[[:space:]]specified[[:space:]]base[[:space:]]size:[[:space:]]([0-9]+)[[:space:]]by[[:space:]]([0-9]+) ]]; then
+      base_size="${BASH_REMATCH[1]},${BASH_REMATCH[2]}"
+    fi
+  done <<< "$hints"
+
+  [[ "$increments" =~ ^[0-9]+,[0-9]+$ ]] || return 1
+  [[ "$base_size" =~ ^[0-9]+,[0-9]+$ ]] || return 1
+  printf '%s,%s' "$increments" "$base_size"
+}
+
+resize_policy_is_nontrivial() {
+  local policy=$1
+  local increment_width
+  local increment_height
+  local base_width
+  local base_height
+
+  [[ "$policy" =~ ^[0-9]+,[0-9]+,[0-9]+,[0-9]+$ ]] || return 1
+  IFS=, read -r \
+    increment_width increment_height base_width base_height \
+    <<< "$policy"
+
+  ((
+    increment_width > 1 &&
+      increment_height > 1 &&
+      base_width > 0 &&
+      base_height > 0
+  ))
+}
+
+frame_is_off_resize_lattice() {
+  local frame=$1
+  local policy=$2
+  local width
+  local height
+  local increment_width
+  local increment_height
+  local base_width
+  local base_height
+
+  [[ "$frame" =~ ^-?[0-9]+,-?[0-9]+,[0-9]+,[0-9]+$ ]] || return 1
+  resize_policy_is_nontrivial "$policy" || return 1
+  IFS=, read -r _ _ width height <<< "$frame"
+  IFS=, read -r \
+    increment_width increment_height base_width base_height \
+    <<< "$policy"
+
+  ((width > 0 && height > 0)) || return 1
+  (((width - base_width) % increment_width != 0)) || \
+    (((height - base_height) % increment_height != 0))
+}
+
+frame_is_on_resize_lattice() {
+  local frame=$1
+  local policy=$2
+  local width
+  local height
+  local increment_width
+  local increment_height
+  local base_width
+  local base_height
+
+  [[ "$frame" =~ ^-?[0-9]+,-?[0-9]+,[0-9]+,[0-9]+$ ]] || return 1
+  resize_policy_is_nontrivial "$policy" || return 1
+  IFS=, read -r _ _ width height <<< "$frame"
+  IFS=, read -r \
+    increment_width increment_height base_width base_height \
+    <<< "$policy"
+
+  ((width > 0 && height > 0)) || return 1
+  (((width - base_width) % increment_width == 0)) && \
+    (((height - base_height) % increment_height == 0))
 }
 
 window_action_match_id() {
@@ -1889,6 +2006,28 @@ start_client() {
     "$protocol" \
     "$DRIFTILE_SMOKE_CLIENT" \
     "${client_arguments[@]}"
+}
+
+start_xterm_client() {
+  local protocol=$1
+  local window_title=$2
+  local internal_border=2
+
+  if [[ "$protocol" == x11 ]]; then
+    # Keep native X11 sizes on xterm's character-cell lattice so KWin's
+    # backend constraint enforcement cannot perturb the structural checks.
+    internal_border=32
+  fi
+
+  xterm \
+    -T "$window_title" \
+    -b "$internal_border" \
+    -class DriftileIntegrationXTerm \
+    -fn fixed \
+    -geometry 80x24 \
+    -e sleep 300 \
+    >/tmp/driftile-smoke-xterm.log 2>&1 &
+  client_pids+=("$!")
 }
 
 start_work_area_panel() {
@@ -5295,6 +5434,262 @@ verify_stacked_native_state_extraction_past_minimized_peer() {
     fail "Driftile changed $protocol focus while restoring the minimized-peer $transition fixture"
 }
 
+verify_xterm_resize_increment_policy() {
+  local protocol=$1
+  local first_title=$2
+  local second_title=$3
+  local third_title=$4
+  local xterm_title="driftile-resize-increment-${protocol}-xterm"
+  local original_first
+  local original_second
+  local original_third
+  local policy=""
+  local candidate_policy
+  local attempt
+  local xterm_hints
+  local xterm_id
+  local xterm_pid
+  local tiled_first="-1232,16,616,688"
+  local tiled_second="-600,16,616,688"
+  local tiled_third="32,16,616,688"
+  local tiled_xterm="664,16,616,688"
+  local narrower_xterm="664,16,490,688"
+
+  original_first=$(capture_stable_geometry "$first_title") || \
+    fail "the first $protocol window did not stabilize before xterm resize-increment acceptance"
+  original_second=$(capture_stable_geometry "$second_title") || \
+    fail "the second $protocol window did not stabilize before xterm resize-increment acceptance"
+  original_third=$(capture_stable_geometry "$third_title") || \
+    fail "the third $protocol window did not stabilize before xterm resize-increment acceptance"
+  wait_for_geometries \
+    "$first_title" "$original_first" \
+    "$second_title" "$original_second" \
+    "$third_title" "$original_third" || \
+    fail "the $protocol layout did not settle before xterm resize-increment acceptance"
+  wait_for_active "$third_title" || \
+    fail "KWin did not preserve $protocol focus before xterm resize-increment acceptance"
+  wait_for_shortcut "driftile_decrease_column_width" || \
+    fail "KGlobalAccel did not register the decrease-width shortcut for $protocol xterm acceptance"
+  wait_for_shortcut "driftile_reset_column_width" || \
+    fail "KGlobalAccel did not register the reset-width shortcut for $protocol xterm acceptance"
+
+  start_xterm_client "$protocol" "$xterm_title"
+  xterm_pid=${client_pids[${#client_pids[@]}-1]}
+  capture_stable_geometry "$xterm_title" >/dev/null || \
+    fail "the real $protocol xterm window did not stabilize"
+  activate_window "$third_title" || \
+    fail "KWin could not select the adjacent $protocol column before xterm acceptance"
+  wait_for_active "$third_title" || \
+    fail "KWin did not focus the adjacent $protocol column before xterm acceptance"
+  invoke_shortcut "driftile_focus_column_right" || \
+    fail "KGlobalAccel could not focus the real $protocol xterm column"
+  wait_for_x11_window_active "$xterm_title" || \
+    fail "KWin did not focus the real $protocol xterm window"
+  wait_for_window_border_state "$xterm_title" true || \
+    fail "Driftile did not remove the real $protocol xterm decoration"
+  wait_for_geometries \
+    "$first_title" "$tiled_first" \
+    "$second_title" "$tiled_second" \
+    "$third_title" "$tiled_third" \
+    "$xterm_title" "$tiled_xterm" || \
+    fail "Driftile did not own the exact real $protocol xterm tiled geometry: $(describe_layout "$first_title" "$second_title" "$third_title" "$xterm_title")"
+
+  for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
+    candidate_policy=$(x11_window_resize_policy "$xterm_title" 2>/dev/null || true)
+
+    if resize_policy_is_nontrivial "$candidate_policy"; then
+      policy=$candidate_policy
+      break
+    fi
+
+    sleep 0.05
+  done
+
+  if [[ -z "$policy" ]]; then
+    xterm_id=$(x11_window_id "$xterm_title" 2>/dev/null || true)
+    xterm_hints=$(
+      LC_ALL=C xprop -id "$xterm_id" WM_NORMAL_HINTS 2>/dev/null \
+        | tr '\n' ';' \
+        || true
+    )
+    fail "the real $protocol xterm did not advertise nontrivial resize increments and base size: $xterm_hints"
+  fi
+  if [[ "$protocol" == xwayland ]]; then
+    frame_is_off_resize_lattice "$tiled_xterm" "$policy" || \
+      fail "Driftile snapped the exact real $protocol xterm frame to its advertised resize lattice: frame=$tiled_xterm policy=$policy"
+    frame_is_off_resize_lattice "$narrower_xterm" "$policy" || \
+      fail "the real $protocol xterm resize fixture unexpectedly aligns with its advertised resize lattice: frame=$narrower_xterm policy=$policy"
+  else
+    frame_is_on_resize_lattice "$tiled_xterm" "$policy" || \
+      fail "the real $protocol xterm fixture does not align with its advertised resize lattice: frame=$tiled_xterm policy=$policy"
+    frame_is_on_resize_lattice "$narrower_xterm" "$policy" || \
+      fail "the real $protocol xterm resize fixture does not align with its advertised resize lattice: frame=$narrower_xterm policy=$policy"
+  fi
+
+  invoke_shortcut "driftile_decrease_column_width" || \
+    fail "KGlobalAccel could not decrease the real $protocol xterm column width"
+  wait_for_geometries \
+    "$first_title" "$tiled_first" \
+    "$second_title" "$tiled_second" \
+    "$third_title" "$tiled_third" \
+    "$xterm_title" "$narrower_xterm" || \
+    fail "Driftile did not decrease the exact real $protocol xterm width without layout churn: $(describe_layout "$first_title" "$second_title" "$third_title" "$xterm_title")"
+  wait_for_window_border_state "$xterm_title" true || \
+    fail "Driftile restored the real $protocol xterm decoration after decreasing its width"
+
+  invoke_shortcut "driftile_reset_column_width" || \
+    fail "KGlobalAccel could not reset the real $protocol xterm column width"
+  wait_for_geometries \
+    "$first_title" "$tiled_first" \
+    "$second_title" "$tiled_second" \
+    "$third_title" "$tiled_third" \
+    "$xterm_title" "$tiled_xterm" || \
+    fail "Driftile did not reset the exact real $protocol xterm geometry without layout churn: $(describe_layout "$first_title" "$second_title" "$third_title" "$xterm_title")"
+
+  stop_client "$xterm_pid"
+  wait_for_window_gone "$xterm_title" || \
+    fail "the real $protocol xterm window did not close"
+  activate_window "$first_title" || \
+    fail "KWin could not reveal the first $protocol window after xterm acceptance"
+  wait_for_active "$first_title" || \
+    fail "KWin did not focus the first $protocol window after xterm acceptance"
+  activate_window "$third_title" || \
+    fail "KWin could not restore $protocol focus after xterm acceptance"
+  wait_for_active "$third_title" || \
+    fail "KWin did not restore $protocol focus after xterm acceptance"
+  wait_for_geometries \
+    "$first_title" "$original_first" \
+    "$second_title" "$original_second" \
+    "$third_title" "$original_third" || \
+    fail "Driftile did not restore the exact $protocol layout after xterm acceptance: $(describe_layout "$first_title" "$second_title" "$third_title")"
+}
+
+verify_live_hard_constraint_recovery() {
+  local protocol=$1
+  local first_title=$2
+  local second_title=$3
+  local third_title=$4
+  local base_title="driftile-live-constraint-${protocol}"
+  local initial_title="$base_title initial"
+  local constrained_title="$base_title constrained"
+  local relaxed_title="$base_title relaxed"
+  local original_first
+  local original_second
+  local original_third
+  local constrained_frame
+  local constrained_width
+  local client_pid
+  local attempt
+  local tiled_first="-1232,16,616,688"
+  local tiled_second="-600,16,616,688"
+  local tiled_third="32,16,616,688"
+  local tiled_client="664,16,616,688"
+
+  original_first=$(capture_stable_geometry "$first_title") || \
+    fail "the first $protocol window did not stabilize before live hard-constraint acceptance"
+  original_second=$(capture_stable_geometry "$second_title") || \
+    fail "the second $protocol window did not stabilize before live hard-constraint acceptance"
+  original_third=$(capture_stable_geometry "$third_title") || \
+    fail "the third $protocol window did not stabilize before live hard-constraint acceptance"
+  wait_for_active "$third_title" || \
+    fail "KWin did not preserve $protocol focus before live hard-constraint acceptance"
+
+  start_qml_client \
+    "$protocol" \
+    "$DRIFTILE_SMOKE_LIVE_CONSTRAINT_CLIENT" \
+    "$base_title"
+  client_pid=${client_pids[${#client_pids[@]}-1]}
+
+  capture_stable_geometry "$initial_title" >/dev/null || \
+    fail "the initial live-constraint $protocol window did not stabilize"
+  activate_window "$initial_title" || \
+    fail "KWin could not activate the initial live-constraint $protocol window"
+  wait_for_active "$initial_title" || \
+    fail "KWin did not focus the initial live-constraint $protocol window"
+  wait_for_window_border_state "$initial_title" true || \
+    fail "Driftile did not remove the live-constraint $protocol decoration"
+  wait_for_geometries \
+    "$first_title" "$tiled_first" \
+    "$second_title" "$tiled_second" \
+    "$third_title" "$tiled_third" \
+    "$initial_title" "$tiled_client" || \
+    fail "Driftile did not own the initial live-constraint $protocol layout: $(describe_layout "$first_title" "$second_title" "$third_title" "$initial_title")"
+  activate_window "$third_title" || \
+    fail "KWin could not trigger the tightened live $protocol constraint"
+  wait_for_active "$third_title" || \
+    fail "KWin did not focus the adjacent $protocol window while tightening constraints"
+
+  constrained_frame=""
+  constrained_width=0
+
+  for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
+    constrained_frame=$(
+      window_frame_geometry "$constrained_title" 2>/dev/null || true
+    )
+
+    if [[ "$constrained_frame" =~ ^-?[0-9]+,-?[0-9]+,[0-9]+,[0-9]+$ ]]; then
+      IFS=, read -r _ _ constrained_width _ <<< "$constrained_frame"
+
+      if ((constrained_width >= 700)); then
+        constrained_frame=$(capture_stable_geometry "$constrained_title") || \
+          constrained_frame=""
+        break
+      fi
+    fi
+
+    sleep 0.05
+  done
+
+  [[ "$constrained_frame" =~ ^-?[0-9]+,-?[0-9]+,[0-9]+,[0-9]+$ ]] || \
+    fail "the tightened live-constraint $protocol window did not stabilize"
+  IFS=, read -r _ _ constrained_width _ <<< "$constrained_frame"
+  ((constrained_width >= 700)) || \
+    fail "KWin did not apply the tightened live $protocol minimum width: $constrained_frame"
+  wait_for_geometries \
+    "$first_title" "$tiled_first" \
+    "$second_title" "$tiled_second" \
+    "$third_title" "$tiled_third" || \
+    fail "Driftile changed sibling frames after the live $protocol minimum became incompatible: $(describe_layout "$first_title" "$second_title" "$third_title" "$constrained_title")"
+  wait_for_active "$third_title" || \
+    fail "Driftile changed focus after the live $protocol minimum became incompatible"
+  activate_window "$constrained_title" || \
+    fail "KWin could not refocus the constrained $protocol window"
+  wait_for_active "$constrained_title" || \
+    fail "KWin did not refocus the constrained $protocol window"
+  activate_window "$third_title" || \
+    fail "KWin could not trigger relaxed live $protocol constraints"
+  wait_for_active "$third_title" || \
+    fail "KWin did not focus the adjacent $protocol window while relaxing constraints"
+
+  wait_for_geometries \
+    "$first_title" "$tiled_first" \
+    "$second_title" "$tiled_second" \
+    "$third_title" "$tiled_third" \
+    "$relaxed_title" "$tiled_client" || \
+    fail "Driftile did not recover the exact $protocol layout after hard constraints relaxed: $(describe_layout "$first_title" "$second_title" "$third_title" "$relaxed_title")"
+  invoke_shortcut "driftile_focus_column_right" || \
+    fail "KGlobalAccel could not focus the recovered $protocol window"
+  wait_for_active "$relaxed_title" || \
+    fail "Driftile could not focus the recovered $protocol window"
+
+  stop_client "$client_pid"
+  wait_for_window_gone "$relaxed_title" || \
+    fail "the live-constraint $protocol window did not close"
+  activate_window "$first_title" || \
+    fail "KWin could not reveal the first $protocol window after live-constraint acceptance"
+  wait_for_active "$first_title" || \
+    fail "KWin did not focus the first $protocol window after live-constraint acceptance"
+  activate_window "$third_title" || \
+    fail "KWin could not restore $protocol focus after live-constraint acceptance"
+  wait_for_active "$third_title" || \
+    fail "KWin did not restore $protocol focus after live-constraint acceptance"
+  wait_for_geometries \
+    "$first_title" "$original_first" \
+    "$second_title" "$original_second" \
+    "$third_title" "$original_third" || \
+    fail "Driftile did not restore the exact $protocol layout after live-constraint acceptance: $(describe_layout "$first_title" "$second_title" "$third_title")"
+}
+
 run_scenario() {
   local protocol=$1
   local first_title="driftile-smoke-${protocol}-a"
@@ -5371,6 +5766,20 @@ run_scenario() {
     "$second_title" "32,16,616,688" \
     "$third_title" "664,16,616,688" || \
     fail "Driftile changed the $protocol layout while removing decorations: $(describe_layout "$first_title" "$second_title" "$third_title")"
+
+  if [[ "$protocol" == xwayland || "$protocol" == x11 ]]; then
+    verify_xterm_resize_increment_policy \
+      "$protocol" \
+      "$first_title" \
+      "$second_title" \
+      "$third_title"
+  fi
+
+  verify_live_hard_constraint_recovery \
+    "$protocol" \
+    "$first_title" \
+    "$second_title" \
+    "$third_title"
 
   wait_for_shortcut "driftile_focus_column_first" || \
     fail "KGlobalAccel did not register the focus-first shortcut"

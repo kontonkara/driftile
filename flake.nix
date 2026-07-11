@@ -91,6 +91,7 @@
               socat
               systemd
               xorg-server
+              xterm
               xprop
               xrandr
               xwayland

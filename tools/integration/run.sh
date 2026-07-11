@@ -139,6 +139,7 @@ run_backend() (
   export DRIFTILE_SMOKE_DESKTOP_REORDER_STATE_PROBE="$project_root/tools/integration/desktop-reorder-state-probe.js"
   export DRIFTILE_SMOKE_FIXED_SIZE_CLIENT="$project_root/tools/integration/fixed-size-client.qml"
   export DRIFTILE_SMOKE_FLOATING_NAVIGATION_ARRANGER="$project_root/tools/integration/floating-navigation-arranger.js"
+  export DRIFTILE_SMOKE_LIVE_CONSTRAINT_CLIENT="$project_root/tools/integration/live-constraint-client.qml"
   export DRIFTILE_SMOKE_LAYER_SHELL_QML_IMPORT="$layer_shell_qml_import"
   export DRIFTILE_SMOKE_NATIVE_TILE_TOGGLE="$project_root/tools/integration/native-tile-toggle.js"
   export DRIFTILE_SMOKE_OUTPUT_ROUTER="$project_root/tools/integration/output-router.js"
@@ -191,6 +192,7 @@ run_backend() (
     wayland | wayland-multi-output)
       require_command kwin_wayland || exit 1
       require_command Xwayland || exit 1
+      require_command kscreen-doctor || exit 1
       protocols="${DRIFTILE_SMOKE_PROTOCOLS:-xwayland wayland}"
 
       case "$protocols" in
@@ -198,13 +200,16 @@ run_backend() (
         *) fail "DRIFTILE_SMOKE_PROTOCOLS must contain wayland, xwayland, or both." ;;
       esac
 
+      if [[ "$backend" == wayland && "$protocols" == *xwayland* ]]; then
+        require_command xterm || exit 1
+        require_command xprop || exit 1
+      fi
+
       export DRIFTILE_SMOKE_PROTOCOLS="$protocols"
       export KWIN_COMPOSE=Q
       export XDG_SESSION_TYPE=wayland
 
       if [[ "$backend" == "wayland-multi-output" ]]; then
-        require_command kscreen-doctor || exit 1
-
         if [[
           -n "$layer_shell_qml_import" &&
             ! -d "$layer_shell_qml_import/org/kde/layershell"
@@ -242,6 +247,7 @@ run_backend() (
     x11)
       require_command kwin_x11 || exit 1
       require_command Xvfb || exit 1
+      require_command xterm || exit 1
       require_command xprop || exit 1
       require_command xrandr || exit 1
 

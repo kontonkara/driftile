@@ -1401,6 +1401,109 @@ let
         printf '%s' "$matches"
       }
 
+      x11_window_resize_policy() {
+        local client_list
+        local display="''${DISPLAY:-:0}"
+        local expected_identity=$2
+        local id
+        local matched_id=""
+        local class_properties
+        local query=$1
+        local title_properties
+        local hints
+        local hint
+        local increments=""
+        local base_size=""
+
+        client_list=$(
+          xprop -display "$display" -root _NET_CLIENT_LIST 2>/dev/null
+        ) || return 1
+
+        while IFS= read -r id; do
+          [[ -n "$id" ]] || continue
+          title_properties=$(
+            xprop -display "$display" -id "$id" \
+              _NET_WM_NAME WM_NAME 2>/dev/null \
+              || true
+          )
+          class_properties=$(
+            xprop -display "$display" -id "$id" WM_CLASS 2>/dev/null \
+              || true
+          )
+
+          if [[ "$title_properties" == *"$query"* ]] \
+            && grep --fixed-strings --ignore-case --quiet \
+              -- "$expected_identity" <<< "$class_properties"; then
+            [[ -z "$matched_id" ]] || return 1
+            matched_id=$id
+          fi
+        done < <(
+          grep --only-matching --extended-regexp \
+            '0x[0-9a-fA-F]+' <<< "$client_list" \
+            || true
+        )
+
+        [[ -n "$matched_id" ]] || return 1
+        hints=$(
+          LC_ALL=C xprop -display "$display" -id "$matched_id" \
+            WM_NORMAL_HINTS 2>/dev/null
+        ) || return 1
+
+        while IFS= read -r hint; do
+          if [[ "$hint" =~ program[[:space:]]specified[[:space:]]resize[[:space:]]increment:[[:space:]]([0-9]+)[[:space:]]by[[:space:]]([0-9]+) ]]; then
+            increments="''${BASH_REMATCH[1]},''${BASH_REMATCH[2]}"
+          elif [[ "$hint" =~ program[[:space:]]specified[[:space:]]base[[:space:]]size:[[:space:]]([0-9]+)[[:space:]]by[[:space:]]([0-9]+) ]]; then
+            base_size="''${BASH_REMATCH[1]},''${BASH_REMATCH[2]}"
+          fi
+        done <<< "$hints"
+
+        [[ "$increments" =~ ^[0-9]+,[0-9]+$ ]] || return 1
+        [[ "$base_size" =~ ^[0-9]+,[0-9]+$ ]] || return 1
+        printf '%s,%s' "$increments" "$base_size"
+      }
+
+      resize_policy_is_nontrivial() {
+        local policy=$1
+        local increment_width
+        local increment_height
+        local base_width
+        local base_height
+
+        [[ "$policy" =~ ^[0-9]+,[0-9]+,[0-9]+,[0-9]+$ ]] || return 1
+        IFS=, read -r \
+          increment_width increment_height base_width base_height \
+          <<< "$policy"
+
+        ((
+          increment_width > 1 &&
+            increment_height > 1 &&
+            base_width > 0 &&
+            base_height > 0
+        ))
+      }
+
+      frame_is_off_resize_lattice() {
+        local frame=$1
+        local policy=$2
+        local width
+        local height
+        local increment_width
+        local increment_height
+        local base_width
+        local base_height
+
+        [[ "$frame" =~ ^-?[0-9]+,-?[0-9]+,[0-9]+,[0-9]+$ ]] || return 1
+        resize_policy_is_nontrivial "$policy" || return 1
+        IFS=, read -r _ _ width height <<< "$frame"
+        IFS=, read -r \
+          increment_width increment_height base_width base_height \
+          <<< "$policy"
+
+        ((width > 0 && height > 0)) || return 1
+        (((width - base_width) % increment_width != 0)) || \
+          (((height - base_height) % increment_height != 0))
+      }
+
       real_window_protocol_matches() {
         local attempt
         local expected_x11=$3
@@ -1549,6 +1652,42 @@ let
         done
 
         return 1
+      }
+
+      verify_xterm_resize_increment_policy() {
+        local query=$1
+        local attempt
+        local candidate_policy
+        local policy=""
+        local frame
+
+        if ! wait_for_real_window_borderless "$query"; then
+          return 1
+        fi
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          candidate_policy=$(
+            x11_window_resize_policy "$query" xterm 2>/dev/null \
+              || true
+          )
+
+          if resize_policy_is_nontrivial "$candidate_policy"; then
+            policy=$candidate_policy
+            break
+          fi
+
+          sleep 0.1
+        done
+
+        [[ -n "$policy" ]] || return 1
+        frame=$(capture_stable_window_frame_contains "$query") || return 1
+        frame_is_off_resize_lattice "$frame" "$policy" || return 1
+
+        {
+          printf '\n[XWayland terminal resize-increment policy]\n'
+          printf 'frame: %s\n' "$frame"
+          printf 'resize increment and base size: %s\n' "$policy"
+        } >> /tmp/shared/driftile-focus-diagnostics
       }
 
       capture_stable_frames() {
@@ -6991,7 +7130,10 @@ let
         DISPLAY="''${DISPLAY:-:0}" \
           ${pkgs.xterm}/bin/xterm \
           -T "$xterm_title" \
+          -b 2 \
           -class DriftileXTerm \
+          -fn fixed \
+          -geometry 80x24 \
           -e ${pkgs.coreutils}/bin/sleep 300 \
           >/tmp/driftile-vm-xterm.log 2>&1 &
         xterm_pid=$!
@@ -7010,6 +7152,23 @@ let
           record_real_application_state \
             "XWayland terminal acceptance failed" \
             "$xterm_query"
+          close_real_application_and_restore \
+            "$xterm_query" \
+            "$xterm_pid" \
+            "$baseline_first" \
+            "$baseline_second" \
+            "$baseline_third" \
+            || true
+          return 1
+        fi
+
+        if ! verify_xterm_resize_increment_policy "$xterm_query"; then
+          record_real_application_failure \
+            "XWayland terminal" \
+            "$xterm_query" \
+            "resize-increment policy" \
+            xterm \
+            true
           close_real_application_and_restore \
             "$xterm_query" \
             "$xterm_pid" \

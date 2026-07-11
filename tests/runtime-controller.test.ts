@@ -95,6 +95,37 @@ interface TrackedWindow {
   readonly writeCount: number;
 }
 
+interface TestX11SizeHints {
+  readonly baseSize: { readonly height: number; readonly width: number };
+  readonly maximumAspectRatio: {
+    readonly height: number;
+    readonly width: number;
+  };
+  readonly minimumAspectRatio: {
+    readonly height: number;
+    readonly width: number;
+  };
+  readonly resizeIncrement: {
+    readonly height: number;
+    readonly width: number;
+  };
+}
+
+interface TestHintedWindow extends KWinWindow {
+  testOnlyX11SizeHints: TestX11SizeHints;
+}
+
+function attachTestX11SizeHints(window: KWinWindow): TestHintedWindow {
+  const hinted = window as TestHintedWindow;
+  hinted.testOnlyX11SizeHints = {
+    baseSize: { height: 1, width: 1 },
+    maximumAspectRatio: { height: 9, width: 21 },
+    minimumAspectRatio: { height: 9, width: 16 },
+    resizeIncrement: { height: 128, width: 128 },
+  };
+  return hinted;
+}
+
 function createTrackedWindow(
   id: string,
   output: KWinOutput,
@@ -1749,6 +1780,96 @@ describe("RuntimeController", () => {
       { id: "column:right", windowIds: ["window-4"] },
     ]);
 
+    setup.controller.stop();
+  });
+
+  it.each([
+    {
+      install: (window: KWinWindow) => {
+        Object.defineProperty(window, "resizeable", {
+          configurable: true,
+          get: () => {
+            throw new Error("resizeability unavailable");
+          },
+        });
+      },
+      name: "throwing",
+    },
+    {
+      install: (window: KWinWindow) => {
+        Object.defineProperty(window, "resizeable", {
+          configurable: true,
+          value: "yes",
+        });
+      },
+      name: "malformed",
+    },
+  ] as const)(
+    "retains a pending fullscreen request with $name resizeability metadata",
+    ({ install }) => {
+      const setup = createStackedFullscreenFixture(1, { write: "defer" });
+      const activeId = windowId("window-2");
+      const state = setup.controller as unknown as {
+        readonly fullscreenRequestProbes: ReadonlyMap<WindowId, unknown>;
+        readonly pendingFullscreenTargets: ReadonlyMap<WindowId, boolean>;
+        readonly unconfirmedFullscreenTargets: ReadonlyMap<WindowId, boolean>;
+      };
+
+      expect(setup.controller.toggleFullscreen()).toBe(true);
+      expect(state.pendingFullscreenTargets.get(activeId)).toBe(true);
+      install(setup.active.window);
+
+      expect(() => {
+        flushManualScheduler(setup.scheduler);
+        setup.controller.probeTopology();
+      }).not.toThrow();
+      expect(
+        state.pendingFullscreenTargets.get(activeId) ??
+          state.unconfirmedFullscreenTargets.get(activeId),
+      ).toBe(true);
+      expect(setup.controller.automaticFloatingCount).toBe(0);
+
+      Object.defineProperty(setup.active.window, "resizeable", {
+        configurable: true,
+        value: false,
+      });
+      setup.controller.stop();
+    },
+  );
+
+  it("contains a throwing resizeability getter in unconfirmed fullscreen retention", () => {
+    const setup = createStackedFullscreenFixture(1, { write: "defer" });
+    const activeId = windowId("window-2");
+    const state = setup.controller as unknown as {
+      readonly fullscreenRequestProbes: ReadonlyMap<WindowId, unknown>;
+      readonly pendingFullscreenTargets: ReadonlyMap<WindowId, boolean>;
+      readonly unconfirmedFullscreenTargets: ReadonlyMap<WindowId, boolean>;
+    };
+
+    expect(setup.controller.toggleFullscreen()).toBe(true);
+    setup.active.fullScreenChanged.emit();
+    expect(state.pendingFullscreenTargets.has(activeId)).toBe(false);
+    expect(state.unconfirmedFullscreenTargets.get(activeId)).toBe(true);
+    Object.defineProperty(setup.active.window, "resizeable", {
+      configurable: true,
+      get: () => {
+        throw new Error("resizeability unavailable");
+      },
+    });
+
+    expect(() => {
+      setup.controller.probeTopology();
+      flushManualScheduler(setup.scheduler);
+    }).not.toThrow();
+    expect(state.pendingFullscreenTargets.has(activeId)).toBe(false);
+    expect(state.fullscreenRequestProbes.has(activeId)).toBe(false);
+    expect(state.unconfirmedFullscreenTargets.get(activeId)).toBe(true);
+    expect(setup.controller.automaticFloatingCount).toBe(0);
+
+    Object.defineProperty(setup.active.window, "resizeable", {
+      configurable: true,
+      value: false,
+    });
     setup.controller.stop();
   });
 
@@ -3967,6 +4088,307 @@ describe("RuntimeController", () => {
     expect(controller.managedCount).toBe(3);
     expect(controller.floatingCount).toBe(0);
     expectAutomaticOwnershipBookkeepingClear(controller, id);
+  });
+
+  it("detects a silent fixed-size transition and readmits it after relaxation", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const changing = createTrackedWindow("window-2", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window, changing.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+    const constraints = changing.window as unknown as {
+      maxSize: KWinWindow["maxSize"];
+      minSize: KWinWindow["minSize"];
+    };
+
+    controller.start();
+    const tiledFrame = { ...changing.window.frameGeometry };
+    const tiledWrites = changing.writeCount;
+    constraints.maxSize = {
+      height: changing.window.clientGeometry.height,
+      width: changing.window.clientGeometry.width,
+    };
+    constraints.minSize = { ...constraints.maxSize };
+
+    controller.probeTopology();
+
+    expect(controller.automaticFloatingCount).toBe(1);
+    expect(controller.managedCount).toBe(1);
+    expect(changing.window.frameGeometry).toEqual(tiledFrame);
+    expect(changing.writeCount).toBe(tiledWrites);
+    expect(scheduler.pendingCount).toBe(1);
+    scheduler.flush();
+    expect(changing.writeCount).toBe(tiledWrites);
+
+    changing.setFrameGeometry({ height: 240, width: 360, x: 500, y: 120 });
+    constraints.maxSize = { height: 10_000, width: 10_000 };
+    constraints.minSize = { height: 1, width: 1 };
+    controller.probeTopology();
+
+    expect(scheduler.pendingCount).toBe(1);
+    scheduler.flush();
+    expect(controller.automaticFloatingCount).toBe(0);
+    expect(controller.managedCount).toBe(2);
+    expect(changing.window.frameGeometry).toEqual(tiledFrame);
+    expect(changing.writeCount).toBe(tiledWrites + 1);
+
+    controller.probeTopology();
+    expect(scheduler.pendingCount).toBe(0);
+    expect(changing.writeCount).toBe(tiledWrites + 1);
+  });
+
+  it("fails closed on a silent incompatible minimum and recovers once it relaxes", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const active = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [active.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+    const constraints = active.window as unknown as {
+      minSize: KWinWindow["minSize"];
+    };
+
+    controller.start();
+    const model = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const tiledFrame = { ...active.window.frameGeometry };
+    const tiledWrites = active.writeCount;
+    constraints.minSize = { height: 1, width: 700 };
+    active.setFrameGeometry({ ...tiledFrame, width: 700 });
+
+    controller.probeTopology();
+    expect(scheduler.pendingCount).toBe(1);
+    scheduler.flush();
+
+    expect(controller.managedCount).toBe(1);
+    expect(controller.automaticFloatingCount).toBe(0);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(model);
+    expect(active.window.frameGeometry).toEqual({ ...tiledFrame, width: 700 });
+    expect(active.writeCount).toBe(tiledWrites);
+    expect(controller.lastWriteCount).toBe(0);
+
+    controller.probeTopology();
+    expect(scheduler.pendingCount).toBe(0);
+    constraints.minSize = { height: 1, width: 1 };
+    controller.probeTopology();
+    expect(scheduler.pendingCount).toBe(1);
+    scheduler.flush();
+
+    expect(active.window.frameGeometry).toEqual(tiledFrame);
+    expect(active.writeCount).toBe(tiledWrites + 1);
+    expect(controller.lastWriteCount).toBe(1);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(model);
+  });
+
+  it("contains throwing hard-constraint getters during a visible probe", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const active = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [active.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+
+    controller.start();
+    const tiledFrame = { ...active.window.frameGeometry };
+    const tiledWrites = active.writeCount;
+    Object.defineProperty(active.window, "maxSize", {
+      configurable: true,
+      get: () => {
+        throw new Error("maximum size unavailable");
+      },
+    });
+
+    expect(() => {
+      controller.probeTopology();
+    }).not.toThrow();
+    expect(controller.managedCount).toBe(0);
+    expect(controller.automaticFloatingCount).toBe(1);
+    expect(active.window.frameGeometry).toEqual(tiledFrame);
+    expect(active.writeCount).toBe(tiledWrites);
+    expect(scheduler.pendingCount).toBe(1);
+    scheduler.flush();
+    expect(active.writeCount).toBe(tiledWrites);
+
+    controller.probeTopology();
+    expect(scheduler.pendingCount).toBe(0);
+    expect(controller.automaticFloatingCount).toBe(1);
+  });
+
+  it.each([
+    {
+      install: (window: KWinWindow) => {
+        Object.defineProperty(window, "resizeable", {
+          configurable: true,
+          get: () => {
+            throw new Error("resizeability unavailable");
+          },
+        });
+      },
+      name: "throwing",
+    },
+    {
+      install: (window: KWinWindow) => {
+        Object.defineProperty(window, "resizeable", {
+          configurable: true,
+          value: "yes",
+        });
+      },
+      name: "malformed",
+    },
+  ] as const)(
+    "contains $name resizeability metadata during a visible probe",
+    ({ install }) => {
+      const output = createOutput("DP-1", 0);
+      const desktop = { id: "desktop-1" };
+      const active = createTrackedWindow("window-1", output, desktop);
+      const fixture = createWorkspace(
+        output,
+        desktop,
+        [output],
+        [desktop],
+        [active.window],
+      );
+      const scheduler = new ManualScheduler();
+      const controller = new RuntimeController(fixture.workspace, {
+        clientAreaOption: 2,
+        gap: 10,
+        schedule: scheduler.schedule,
+      });
+
+      controller.start();
+      const tiledFrame = { ...active.window.frameGeometry };
+      const tiledWrites = active.writeCount;
+      install(active.window);
+
+      expect(() => {
+        controller.probeTopology();
+      }).not.toThrow();
+      expect(controller.managedCount).toBe(0);
+      expect(controller.automaticFloatingCount).toBe(1);
+      expect(active.window.frameGeometry).toEqual(tiledFrame);
+      expect(active.writeCount).toBe(tiledWrites);
+      expect(scheduler.pendingCount).toBe(1);
+      scheduler.flush();
+      expect(active.writeCount).toBe(tiledWrites);
+
+      controller.probeTopology();
+      expect(scheduler.pendingCount).toBe(0);
+      expect(controller.automaticFloatingCount).toBe(1);
+    },
+  );
+
+  it("keeps a minimized tiled slot until changed fixed bounds can be restored", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const minimized = createTrackedWindow("window-2", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window, minimized.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+    const constraints = minimized.window as unknown as {
+      maxSize: KWinWindow["maxSize"];
+      minSize: KWinWindow["minSize"];
+    };
+
+    controller.start();
+    const before = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const minimizedFrame = { ...minimized.window.frameGeometry };
+    const minimizedWrites = minimized.writeCount;
+    Object.defineProperty(minimized.window, "minimized", {
+      configurable: true,
+      value: true,
+    });
+    minimized.minimizedChanged.emit();
+    scheduler.flush();
+    constraints.maxSize = {
+      height: minimized.window.clientGeometry.height,
+      width: minimized.window.clientGeometry.width,
+    };
+    constraints.minSize = { ...constraints.maxSize };
+
+    controller.probeTopology();
+
+    expect(scheduler.pendingCount).toBe(0);
+    expect(controller.managedCount).toBe(2);
+    expect(controller.automaticFloatingCount).toBe(0);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(before);
+    expect(minimized.window.frameGeometry).toEqual(minimizedFrame);
+    expect(minimized.writeCount).toBe(minimizedWrites);
+
+    Object.defineProperty(minimized.window, "minimized", {
+      configurable: true,
+      value: false,
+    });
+    minimized.minimizedChanged.emit();
+    expect(controller.managedCount).toBe(1);
+    expect(controller.automaticFloatingCount).toBe(1);
+    expect(minimized.window.frameGeometry).toEqual(minimizedFrame);
+    expect(minimized.writeCount).toBe(minimizedWrites);
   });
 
   it("fails closed on silent resizeability changes at reconcile boundaries", () => {
@@ -14656,6 +15078,150 @@ describe("RuntimeController", () => {
     expect(controller.decreaseColumnWidth()).toBe(true);
     expect(active.window.frameGeometry.width).toBe(270);
     expect(controller.decreaseColumnWidth()).toBe(false);
+  });
+
+  it("ignores advisory hint mutations on a singleton topology probe and fails closed on malformed hard bounds", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const active = createTrackedWindow("window-1", output, desktop);
+    const hinted = attachTestX11SizeHints(active.window);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [active.window],
+    );
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    controller.start();
+    const beforeModel = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const beforeFrame = { ...active.window.frameGeometry };
+    const beforeWrites = active.writeCount;
+    const beforeLastWriteCount = controller.lastWriteCount;
+
+    hinted.testOnlyX11SizeHints = {
+      baseSize: { height: Number.NaN, width: Number.NEGATIVE_INFINITY },
+      maximumAspectRatio: { height: 0, width: Number.NaN },
+      minimumAspectRatio: { height: -1, width: Number.POSITIVE_INFINITY },
+      resizeIncrement: { height: 0, width: -1 },
+    };
+    controller.probeTopology();
+
+    expect(controller.managedCount).toBe(1);
+    expect(controller.automaticFloatingCount).toBe(0);
+    expect(controller.floatingCount).toBe(0);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(beforeModel);
+    expect(active.window.frameGeometry).toEqual(beforeFrame);
+    expect(active.writeCount).toBe(beforeWrites);
+    expect(controller.lastWriteCount).toBe(beforeLastWriteCount);
+    expect(workScheduler.pendingCount).toBe(0);
+    expect(resumeScheduler.pendingCount).toBe(0);
+
+    const hardBounds = active.window as unknown as {
+      minSize: KWinWindow["minSize"];
+    };
+    hardBounds.minSize = { height: 1, width: Number.NaN };
+
+    expect(controller.reconcile()).toBe(0);
+    expect(controller.managedCount).toBe(0);
+    expect(controller.automaticFloatingCount).toBe(1);
+    expect(controller.floatingCount).toBe(0);
+    expect(active.window.frameGeometry).toEqual(beforeFrame);
+    expect(active.writeCount).toBe(beforeWrites);
+  });
+
+  it("ignores advisory hint mutations on a stacked topology probe", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const active = createTrackedWindow("window-2", output, desktop);
+    const firstHinted = attachTestX11SizeHints(first.window);
+    const activeHinted = attachTestX11SizeHints(active.window);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window, active.window],
+    );
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    controller.start();
+    const layout = installTestLayout(
+      controller,
+      output,
+      desktop,
+      "column:stack",
+      [
+        {
+          id: "column:stack",
+          width: { kind: "fixed", value: 300 },
+          windowIds: ["window-1", "window-2"],
+        },
+      ],
+    );
+    const beforeModel = layout.snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const beforeFrames = [first, active].map(({ window }) => ({
+      ...window.frameGeometry,
+    }));
+    const beforeWrites = [first.writeCount, active.writeCount];
+    const beforeLastWriteCount = controller.lastWriteCount;
+
+    firstHinted.testOnlyX11SizeHints = {
+      baseSize: { height: 997, width: 991 },
+      maximumAspectRatio: { height: 1, width: 1 },
+      minimumAspectRatio: { height: 1, width: 1 },
+      resizeIncrement: { height: 983, width: 977 },
+    };
+    activeHinted.testOnlyX11SizeHints = {
+      baseSize: { height: Number.NaN, width: Number.POSITIVE_INFINITY },
+      maximumAspectRatio: { height: -1, width: 0 },
+      minimumAspectRatio: { height: 0, width: Number.NaN },
+      resizeIncrement: { height: -1, width: 0 },
+    };
+    controller.probeTopology();
+
+    expect(controller.managedCount).toBe(2);
+    expect(controller.automaticFloatingCount).toBe(0);
+    expect(controller.floatingCount).toBe(0);
+    expect(
+      layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+    ).toEqual(beforeModel);
+    expect([first, active].map(({ window }) => window.frameGeometry)).toEqual(
+      beforeFrames,
+    );
+    expect([first.writeCount, active.writeCount]).toEqual(beforeWrites);
+    expect(controller.lastWriteCount).toBe(beforeLastWriteCount);
+    expect(workScheduler.pendingCount).toBe(0);
+    expect(resumeScheduler.pendingCount).toBe(0);
   });
 
   it("never restores an automatically released slot after a column write", () => {
