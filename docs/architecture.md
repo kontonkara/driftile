@@ -42,6 +42,7 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Resolves directional output neighbors from logical output geometry and transfers the active column atomically between contexts; secondary actions transfer one tiled window.
 - Applies desktop and output mechanisms member-by-member with the active member last, keeps it visible through cross-desktop output moves, commits both core contexts together, and compensates every owned field and frame on failure.
 - Maintains one shared trailing empty desktop through a guarded KWin lifecycle adapter.
+- Resolves numbered desktop targets against KWin's global list, clamps to the shared empty tail, and reuses the transactional whole-column transfer path.
 - Focuses adjacent desktops on the active output, with a global fallback and no wrapping.
 - Releases explicitly floating windows from geometry ownership and restores their anchored layout slots on return.
 - Remembers the last tiled and floating focus per context, switches layers, and resolves floating navigation from live frame geometry without changing layout state.
@@ -168,6 +169,7 @@ RuntimeState
 - Verify the settled topology barrier, output replacement and removal, dock and silent work-area invalidations, sticky restore invalidation, and deterministic capacity recovery.
 - Verify independent contexts with native Wayland and XWayland windows on two virtual outputs and native X11 windows on the X11 backend.
 - Verify whole-column and secondary directional transfers, no-wrap boundaries, per-output desktop selection, focus preservation, and exact two-context compensation.
+- Verify numbered desktop selection and whole-column transfer, tail clamping, same-target no-ops, and shared-tail renewal.
 - Verify optional borderless ownership across tiled and floating windows, policy reassertion, live reconfigure handling, and unload restoration.
 - Verify shared trailing-desktop creation, guarded removal, silent mutation rejection, and preservation of external desktops.
 - Exercise live output reconfiguration against an isolated real KWin session.

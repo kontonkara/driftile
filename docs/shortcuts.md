@@ -10,6 +10,7 @@ arrow keys are interchangeable unless noted otherwise.
 | Focus window down or up in a column              | `Meta+J/K` or `Meta+Down/Up`                         |
 | Focus output in a direction                      | `Meta+Shift+H/J/K/L` or `Meta+Shift+Arrow`           |
 | Focus next or previous desktop                   | `Meta+U/I` or `Meta+Page Down/Page Up`               |
+| Focus desktop 1 through 9                        | `Meta+1..9`                                          |
 | Move column left or right                        | `Meta+Ctrl+H/L` or `Meta+Ctrl+Left/Right`            |
 | Move active column to first or last              | `Meta+Ctrl+Home/End`                                 |
 | Move window down or up in a column               | `Meta+Ctrl+J/K` or `Meta+Ctrl+Down/Up`               |
@@ -17,6 +18,7 @@ arrow keys are interchangeable unless noted otherwise.
 | Consume the right column's top window            | `Meta+,`                                             |
 | Expel the active column's bottom window          | `Meta+.`                                             |
 | Move active column to next or previous desktop   | `Meta+Ctrl+U/I` or `Meta+Ctrl+Page Down/Page Up`     |
+| Move active column to desktop 1 through 9        | `Meta+Ctrl+1..9`                                     |
 | Move active column to another output             | `Meta+Ctrl+Shift+H/J/K/L` or `Meta+Ctrl+Shift+Arrow` |
 | Toggle floating                                  | `Meta+V`                                             |
 | Switch focus between tiled and floating layers   | `Meta+Shift+V`                                       |
@@ -56,6 +58,10 @@ visible column. Visible-column centering changes only the viewport position.
 Default desktop and output transfers move the whole active column atomically.
 They preserve member order, column width, and the active member; a rejected
 KWin mechanism or geometry write leaves both contexts unchanged.
+
+Numbered desktop actions use one-based positions. A number beyond the current
+desktop count selects the shared trailing empty desktop; moving a column there
+causes Driftile to append a new empty tail through KWin.
 
 `Meta+,` appends the immediate right column's top window to the active column.
 `Meta+.` creates a new right column from the active column's bottom window.

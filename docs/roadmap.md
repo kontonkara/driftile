@@ -51,6 +51,7 @@ The current runtime already:
 - Toggles the active KWin-managed window's native fullscreen state while the existing suspension path preserves its layout slot.
 - Toggles native maximize-to-edges through KWin while preserving the active window's layout slot.
 - Moves the whole active column between adjacent existing desktops with follow-focus, atomic two-context ownership, and exact rollback; single-window transfer remains secondary.
+- Focuses desktops 1 through 9 directly and moves the whole active column there, clamping out-of-range targets to the shared empty tail.
 - Moves the whole active column to an adjacent output with deterministic spatial routing and atomic visible-context reflow; single-window transfer remains secondary.
 - Optionally removes application-window decorations independently of layout ownership while preserving pre-existing borderless state, reasserting owned policy, and restoring owned state on disable.
 - Keeps one shared trailing desktop empty and removes only redundant tails created by the current run.

@@ -76,6 +76,7 @@ Driftile must integrate with, not duplicate:
 - Explicit consume appends the immediate right column's top member to the active column; explicit expel moves the active column's bottom member into a new right column. Focus remains in the active column.
 - Vertical focus and member reorder stop at stack boundaries without wrapping.
 - Default desktop transfer follows the active column without wrapping, preserving its members, order, width, and active member. The secondary action transfers only the active tiled window.
+- Numbered desktop actions are one-based and clamp to the shared trailing empty desktop when their target exceeds the current global desktop count.
 - Default output transfer selects a deterministic adjacent output without wrapping, preserves the whole active column, and adopts the destination output's visible desktop. The secondary action transfers only the active tiled window.
 - Output transfer never changes an output's current desktop; moving members adopt the destination output's visible desktop when needed.
 - A whole-column transfer commits only after every KWin mechanism and both context layouts succeed; partial work is compensated exactly.

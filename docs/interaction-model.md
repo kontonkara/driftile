@@ -7,6 +7,7 @@ Driftile uses one keyboard grammar and does not wrap at layout boundaries:
 - Adding `Shift` to a monitor direction targets another output.
 - `Home/End` focus the first or last column; adding `Ctrl` moves the active column to that edge.
 - `U/I` address the next and previous virtual desktop.
+- `1..9` address a virtual desktop directly; adding `Ctrl` moves the active column there.
 
 ## Delivery contract
 
@@ -17,7 +18,7 @@ Driftile uses one keyboard grammar and does not wrap at layout boundaries:
 | Column view          | Cycle `1/3`, `1/2`, and `2/3` widths in both directions; adjust by 10%; toggle full width; center | Available |
 | Advanced column view | Fill available width and center all fully visible columns                                         | Available |
 | Window height        | Adjust one window by 10%; reset to automatic; cycle `1/3`, `1/2`, and `2/3` presets               | Available |
-| Virtual desktops     | Focus adjacent desktops and transfer the whole active column                                      | Available |
+| Virtual desktops     | Focus adjacent or numbered desktops and transfer the whole active column                          | Available |
 | Outputs              | Focus an adjacent output and transfer the whole active column                                     | Available |
 | Fullscreen           | Toggle through KWin and preserve the window's layout slot                                         | Available |
 | Native maximize      | Toggle to work-area edges through KWin and preserve the window's layout slot                      | Available |
