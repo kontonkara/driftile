@@ -6076,6 +6076,179 @@ describe("RuntimeController", () => {
     expect(other.writeCount).toBe(otherWrites);
   });
 
+  it.each([
+    {
+      direction: "up",
+      expectedIndices: [1, 0, 2],
+      expectedWindowIds: ["window-2", "window-1", "window-3"],
+      minimizedIndex: 0,
+    },
+    {
+      direction: "down",
+      expectedIndices: [0, 2, 1],
+      expectedWindowIds: ["window-1", "window-3", "window-2"],
+      minimizedIndex: 2,
+    },
+  ] as const)(
+    "reorders $direction past a settled minimized stack member",
+    ({ direction, expectedIndices, expectedWindowIds, minimizedIndex }) => {
+      const setup = createVerticalReorderFixture();
+      const minimized = setup.windows[minimizedIndex];
+
+      if (!minimized) {
+        throw new Error("missing minimized reorder fixture");
+      }
+
+      setWindowState("minimized", minimized, true);
+      flushManualScheduler(setup.scheduler);
+      const minimizedFrame = { ...minimized.window.frameGeometry };
+      const minimizedWrites = minimized.writeCount;
+      const activeFrame = { ...setup.active.window.frameGeometry };
+
+      expect(
+        direction === "up"
+          ? setup.controller.moveWindowUp()
+          : setup.controller.moveWindowDown(),
+      ).toBe(true);
+      expect(
+        testLayoutColumns(setup.controller, setup.output, setup.desktop)[0]
+          ?.windowIds,
+      ).toEqual(expectedWindowIds);
+      expect(setup.active.window.frameGeometry).not.toEqual(activeFrame);
+      expect(minimized.window.minimized).toBe(true);
+      expect(minimized.window.frameGeometry).toEqual(minimizedFrame);
+      expect(minimized.writeCount).toBe(minimizedWrites);
+      expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+
+      setWindowState("minimized", minimized, false);
+      flushManualScheduler(setup.scheduler);
+
+      expect(
+        testLayoutColumns(setup.controller, setup.output, setup.desktop)[0]
+          ?.windowIds,
+      ).toEqual(expectedWindowIds);
+      const restoredY = expectedIndices.map((index) => {
+        const candidate = setup.windows[index];
+
+        if (!candidate) {
+          throw new Error("missing restored reorder fixture");
+        }
+
+        return candidate.window.frameGeometry.y;
+      });
+      expect(restoredY).toEqual([...restoredY].sort((a, b) => a - b));
+      expect(minimized.window.frameGeometry).not.toEqual(minimizedFrame);
+      expect(minimized.writeCount).toBeGreaterThan(minimizedWrites);
+      expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+    },
+  );
+
+  it.each([
+    "fullscreen",
+    "maximized",
+    "native tiled",
+    "restore settling",
+    "toggle unsettled",
+  ] as const)(
+    "rejects a vertical reorder past a passive %s blocker",
+    (blocker) => {
+      const setup = createVerticalReorderFixture();
+      const blocked = setup.windows[0];
+
+      if (!blocked) {
+        throw new Error("missing blocked reorder fixture");
+      }
+
+      blockWindowFocus(setup.controller, blocked, blocker);
+      flushManualScheduler(setup.scheduler);
+      const before = setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      );
+      const frames = setup.windows.map(({ window }) => ({
+        ...window.frameGeometry,
+      }));
+      const writes = setup.windows.map(({ writeCount }) => writeCount);
+
+      expect(setup.controller.moveWindowUp()).toBe(false);
+      expect(
+        setup.layout.snapshot(
+          outputId(setup.output.name),
+          desktopId(setup.desktop.id),
+        ),
+      ).toEqual(before);
+      expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
+        frames,
+      );
+      expect(setup.windows.map(({ writeCount }) => writeCount)).toEqual(writes);
+      expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+    },
+  );
+
+  it("rolls back a minimized-member reorder when the member resumes during reflow", () => {
+    const setup = createVerticalReorderFixture();
+    const minimized = setup.windows[0];
+
+    if (!minimized) {
+      throw new Error("missing reentrant reorder fixture");
+    }
+
+    setWindowState("minimized", minimized, true);
+    flushManualScheduler(setup.scheduler);
+    const before = setup.layout.snapshot(
+      outputId(setup.output.name),
+      desktopId(setup.desktop.id),
+    );
+    const frames = setup.windows.map(({ window }) => ({
+      ...window.frameGeometry,
+    }));
+    const minimizedWrites = minimized.writeCount;
+    let resumedDuringReflow = false;
+    setup.active.setWriteBehavior((_frame, commit) => {
+      commit();
+
+      if (!resumedDuringReflow) {
+        resumedDuringReflow = true;
+        setWindowState("minimized", minimized, false);
+      }
+    });
+    const warning = console.warn;
+    console.warn = () => undefined;
+
+    try {
+      expect(setup.controller.moveWindowUp()).toBe(false);
+    } finally {
+      console.warn = warning;
+      setup.active.setWriteBehavior(null);
+    }
+
+    expect(resumedDuringReflow).toBe(true);
+    expect(minimized.window.minimized).toBe(false);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(before);
+    expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
+      frames,
+    );
+    expect(minimized.writeCount).toBe(minimizedWrites);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+
+    flushManualScheduler(setup.scheduler);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(before);
+    expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
+      frames,
+    );
+    expect(minimized.writeCount).toBe(minimizedWrites);
+  });
+
   it("checks suspended destination constraints and applies a merge on resume", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
@@ -20681,6 +20854,81 @@ interface StackedFullscreenFixture {
   readonly output: KWinOutput;
   readonly scheduler: ManualScheduler;
   readonly windows: readonly TrackedWindow[];
+}
+
+interface VerticalReorderFixture {
+  readonly active: TrackedWindow;
+  readonly controller: RuntimeController;
+  readonly desktop: KWinVirtualDesktop;
+  readonly fixture: WorkspaceFixture;
+  readonly layout: LayoutEngine;
+  readonly output: KWinOutput;
+  readonly scheduler: ManualScheduler;
+  readonly windows: readonly TrackedWindow[];
+}
+
+function createVerticalReorderFixture(): VerticalReorderFixture {
+  const output = createOutput("DP-1", 0);
+  const desktop = { id: "desktop-1" };
+  const windows = Array.from({ length: 3 }, (_value, index) =>
+    createTrackedWindow(`window-${String(index + 1)}`, output, desktop),
+  );
+  const active = windows[1];
+
+  if (!active) {
+    throw new Error("missing active reorder fixture");
+  }
+
+  const fixture = createWorkspace(
+    output,
+    desktop,
+    [output],
+    [desktop],
+    windows.map(({ window }) => window),
+  );
+  const scheduler = new ManualScheduler();
+  const controller = new RuntimeController(fixture.workspace, {
+    clientAreaOption: 2,
+    gap: 10,
+    schedule: scheduler.schedule,
+    scheduleResume: scheduler.schedule,
+  });
+
+  if (!controller.start()) {
+    throw new Error("could not start vertical reorder fixture");
+  }
+
+  const layout = installTestLayout(
+    controller,
+    output,
+    desktop,
+    "column:stack",
+    [
+      {
+        id: "column:stack",
+        width: { kind: "fixed", value: 620 },
+        windowHeights: [
+          { kind: "auto", weight: 2 },
+          { clientHeight: 240, kind: "fixed" },
+          { kind: "auto", weight: 4 },
+        ],
+        windowIds: ["window-1", "window-2", "window-3"],
+      },
+    ],
+  );
+  fixture.workspace.activeWindow = active.window;
+  flushManualScheduler(scheduler);
+
+  return {
+    active,
+    controller,
+    desktop,
+    fixture,
+    layout,
+    output,
+    scheduler,
+    windows,
+  };
 }
 
 interface TiledLayerRevealFixture {

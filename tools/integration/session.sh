@@ -4186,6 +4186,82 @@ verify_minimized_slot_navigation() {
     fail "KWin did not restore final $protocol stack focus after minimized-slot navigation"
 }
 
+verify_vertical_reorder_past_minimized_peer() {
+  local protocol=$1
+  local first_title=$2
+  local middle_title=$3
+  local last_title=$4
+  local unrelated_title=$5
+  local middle_id
+
+  middle_id=$(window_id "$middle_title") || \
+    fail "KWin did not expose the passive $protocol stack member before minimized-peer reorder"
+  activate_window "$first_title" || \
+    fail "KWin could not focus the first $protocol stack member before minimized-peer reorder"
+  wait_for_active "$first_title" || \
+    fail "KWin did not focus the first $protocol stack member before minimized-peer reorder"
+  wait_for_geometries \
+    "$first_title" "16,16,616,219" \
+    "$middle_title" "16,251,616,218" \
+    "$last_title" "16,485,616,219" \
+    "$unrelated_title" "648,16,616,688" || \
+    fail "Driftile did not preserve the $protocol stack before minimized-peer reorder: $(describe_layout "$first_title" "$middle_title" "$last_title" "$unrelated_title")"
+
+  set_external_window_minimized "$middle_title" true || \
+    fail "KWin could not externally minimize the passive $protocol stack member before reorder"
+  wait_for_state_and_geometries \
+    "$middle_id" minimized true \
+    "$first_title" "16,16,616,219" \
+    "$middle_title" "16,251,616,218" \
+    "$last_title" "16,485,616,219" \
+    "$unrelated_title" "648,16,616,688" || \
+    fail "Driftile changed the $protocol fixture while settling the minimized reorder peer: $(describe_layout "$first_title" "$middle_title" "$last_title" "$unrelated_title")"
+  activate_window "$first_title" || \
+    fail "KWin could not restore active $protocol stack focus before minimized-peer reorder"
+  wait_for_active "$first_title" || \
+    fail "KWin did not restore active $protocol stack focus before minimized-peer reorder"
+
+  invoke_shortcut "driftile_move_window_down" || \
+    fail "KGlobalAccel could not move the active $protocol window past its minimized peer"
+  wait_for_geometries \
+    "$first_title" "16,251,616,218" \
+    "$middle_title" "16,251,616,218" \
+    "$last_title" "16,485,616,219" \
+    "$unrelated_title" "648,16,616,688" || \
+    fail "Driftile did not reflow the active $protocol window past its minimized peer: $(describe_layout "$first_title" "$middle_title" "$last_title" "$unrelated_title")"
+  wait_for_window_state "$middle_id" minimized true || \
+    fail "Driftile restored the passive $protocol stack member during reorder"
+  [[ "$(window_frame_geometry "$middle_title")" == "16,251,616,218" ]] || \
+    fail "Driftile wrote the minimized passive $protocol stack frame during reorder"
+  wait_for_active "$first_title" || \
+    fail "Driftile changed $protocol focus during minimized-peer reorder"
+
+  set_external_window_minimized "$middle_title" false || \
+    fail "KWin could not restore the passive $protocol stack member after reorder"
+  wait_for_state_and_geometries \
+    "$middle_id" minimized false \
+    "$first_title" "16,251,616,218" \
+    "$middle_title" "16,16,616,219" \
+    "$last_title" "16,485,616,219" \
+    "$unrelated_title" "648,16,616,688" || \
+    fail "Driftile did not restore the passive $protocol window in its reordered stack slot: $(describe_layout "$first_title" "$middle_title" "$last_title" "$unrelated_title")"
+  activate_window "$first_title" || \
+    fail "KWin could not restore active $protocol stack focus before fixture reconstruction"
+  wait_for_active "$first_title" || \
+    fail "KWin did not restore active $protocol stack focus before fixture reconstruction"
+
+  invoke_shortcut "driftile_move_window_up" || \
+    fail "KGlobalAccel could not reconstruct the $protocol stack after minimized-peer reorder"
+  wait_for_geometries \
+    "$first_title" "16,16,616,219" \
+    "$middle_title" "16,251,616,218" \
+    "$last_title" "16,485,616,219" \
+    "$unrelated_title" "648,16,616,688" || \
+    fail "Driftile did not reconstruct the exact $protocol stack after minimized-peer reorder: $(describe_layout "$first_title" "$middle_title" "$last_title" "$unrelated_title")"
+  wait_for_active "$first_title" || \
+    fail "Driftile changed $protocol focus while reconstructing the minimized-peer reorder fixture"
+}
+
 verify_stacked_maximize_extraction() {
   local protocol=$1
   local trigger=$2
@@ -4904,6 +4980,13 @@ run_scenario() {
     fail "Driftile changed $protocol focus after the bounded stack search"
 
   verify_minimized_slot_navigation \
+    "$protocol" \
+    "$first_title" \
+    "$second_title" \
+    "$fourth_title" \
+    "$third_title"
+
+  verify_vertical_reorder_past_minimized_peer \
     "$protocol" \
     "$first_title" \
     "$second_title" \

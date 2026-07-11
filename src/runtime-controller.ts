@@ -3124,7 +3124,15 @@ export class RuntimeController {
   private moveActiveWindowVertically(direction: VerticalDirection): boolean {
     const command = this.prepareActiveColumnCommand();
 
-    if (!command || this.hasCapacityMutationInFlight(command.context.key)) {
+    if (
+      !command ||
+      this.hasCapacityMutationInFlight(command.context.key) ||
+      !this.columnMembersAreStackTransferEligible(
+        command.activeColumn,
+        command.context,
+        command.activeId,
+      )
+    ) {
       return false;
     }
 
@@ -3142,6 +3150,12 @@ export class RuntimeController {
       () =>
         editState.value !== null &&
         this.layout.rollbackStackEdit(editState.value.rollback),
+      () =>
+        this.columnMembersAreStackTransferEligible(
+          command.activeColumn,
+          command.context,
+          command.activeId,
+        ),
     );
     const edit = editState.value;
 
@@ -7062,7 +7076,7 @@ export class RuntimeController {
   private columnMembersAreStackTransferEligible(
     column: LayoutColumnSnapshot,
     context: RuntimeContext,
-    nativeStateActiveId?: WindowId,
+    activeMemberId?: WindowId,
   ): boolean {
     if (!this.columnMembersBelongToContext(column, context)) {
       return false;
@@ -7076,7 +7090,7 @@ export class RuntimeController {
           id,
           source,
           context,
-          nativeStateActiveId !== undefined && id !== nativeStateActiveId,
+          activeMemberId !== undefined && id !== activeMemberId,
         ),
       );
     });
