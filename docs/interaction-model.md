@@ -10,19 +10,20 @@ Driftile uses one keyboard grammar and does not wrap at layout boundaries:
 
 ## Delivery contract
 
-| Area                 | Required behavior                                                                                        | Target    |
-| -------------------- | -------------------------------------------------------------------------------------------------------- | --------- |
-| Horizontal strip     | Focus and reorder columns; focus or move to first and last; reveal with minimal scrolling                | Available |
-| Vertical column      | Focus and reorder members; consume or expel a member on either side                                      | Available |
-| Column view          | Cycle `1/3`, `1/2`, and `2/3` widths in both directions; adjust by 10%; toggle full width; center        | Available |
-| Advanced column view | Fill available width and center all fully visible columns                                                | Available |
-| Window height        | Adjust one window by 10%; reset to automatic; cycle `1/3`, `1/2`, and `2/3` presets                      | Available |
-| Virtual desktops     | Focus adjacent desktops and transfer the whole active column                                             | Available |
-| Outputs              | Focus an adjacent output and transfer the whole active column                                            | Available |
-| Window state         | Preserve layout participation through fullscreen and maximize; define a separate minimized-window policy | MVP       |
-| Floating layer       | Toggle tiled/floating state and switch focus between both layers                                         | MVP       |
-| Tabbed columns       | Toggle a column between stacked and tabbed presentation without changing navigation                      | v1        |
-| Pointer input        | Provide wheel navigation and mouse rearrangement with the same model as keyboard commands                | v1        |
+| Area                 | Required behavior                                                                                 | Target    |
+| -------------------- | ------------------------------------------------------------------------------------------------- | --------- |
+| Horizontal strip     | Focus and reorder columns; focus or move to first and last; reveal with minimal scrolling         | Available |
+| Vertical column      | Focus and reorder members; consume or expel a member on either side                               | Available |
+| Column view          | Cycle `1/3`, `1/2`, and `2/3` widths in both directions; adjust by 10%; toggle full width; center | Available |
+| Advanced column view | Fill available width and center all fully visible columns                                         | Available |
+| Window height        | Adjust one window by 10%; reset to automatic; cycle `1/3`, `1/2`, and `2/3` presets               | Available |
+| Virtual desktops     | Focus adjacent desktops and transfer the whole active column                                      | Available |
+| Outputs              | Focus an adjacent output and transfer the whole active column                                     | Available |
+| Fullscreen           | Toggle through KWin and preserve the window's layout slot                                         | Available |
+| Window state         | Preserve layout participation through maximize; define a separate minimized-window policy         | MVP       |
+| Floating layer       | Toggle tiled/floating state and switch focus between both layers                                  | MVP       |
+| Tabbed columns       | Toggle a column between stacked and tabbed presentation without changing navigation               | v1        |
+| Pointer input        | Provide wheel navigation and mouse rearrangement with the same model as keyboard commands         | v1        |
 
 Single-window transfers will remain available as secondary, unbound actions.
 Default desktop and output transfer shortcuts must move the whole active column.

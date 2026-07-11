@@ -17,6 +17,7 @@ arrow keys are interchangeable unless noted otherwise.
 | Move active column to next or previous desktop   | `Meta+Ctrl+U/I` or `Meta+Ctrl+Page Down/Page Up`     |
 | Move active column to another output             | `Meta+Ctrl+Shift+H/J/K/L` or `Meta+Ctrl+Shift+Arrow` |
 | Toggle floating                                  | `Meta+V`                                             |
+| Toggle native fullscreen                         | `Meta+Shift+F`                                       |
 | Cycle preset column width forward or back        | `Meta+R` or `Meta+Shift+R`                           |
 | Toggle full-width column                         | `Meta+F`                                             |
 | Expand active column into available width        | `Meta+Ctrl+F`                                        |
