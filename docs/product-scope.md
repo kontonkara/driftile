@@ -20,6 +20,7 @@ The ownership rule is strict:
 - Optional borderless presentation for application windows with exact decoration ownership.
 - Live global tiled-window gap from 0 to 64 logical pixels without changing layout state.
 - Configurable 10%–100% default width for newly admitted columns, fresh cross-context retiles, and explicit reset.
+- Configurable 1–50 percentage-point step for explicit column-width decrease and increase actions.
 - Output-local commands unless a transfer is explicit.
 - Work-area, size-constraint, fullscreen, minimized-window compatibility, dialog, and hot-plug handling.
 - Hard client minimum and maximum bounds with cached detection of silent visible-window changes; unexposed increment and aspect hints do not alter Driftile's tiled model, while applied frames remain subject to KWin.
@@ -120,3 +121,4 @@ Driftile must integrate with, not duplicate:
 - Borderless mode covers tiled, floating, dialog, transient, and utility windows, changes only decoration state claimed by Driftile, and restores it when disabled or unloaded.
 - A live gap change reflows visible tiled contexts only. It preserves logical order, widths, height policies, focus, floating frames, excluded windows, and minimized frames; hidden contexts adopt it when shown.
 - A default-width change leaves existing column width policies unchanged. Newly admitted columns, fresh cross-context retiles, and explicit reset use the new proportion subject to live window constraints. Retrying a waiting admission may add a column and update the affected viewport and frames; otherwise the policy change performs no frame writes.
+- A width-step change performs no layout, frame, viewport, or focus write. It affects only later explicit decrease and increase actions; reset, presets, full width, and available-width expansion remain independent.

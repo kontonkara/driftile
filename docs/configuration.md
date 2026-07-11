@@ -14,6 +14,12 @@ Changes apply live to visible tiled contexts. Window order, widths, height polic
 
 Changing it does not alter existing managed width policies, focus, floating anchors, transfers, or stacks. Existing widths remain authoritative until reset. A waiting window may be admitted under the new policy and move the affected viewport and frames. Newly admitted and reset widths are clamped to the live window constraints and physical-pixel grid.
 
+## Column width step
+
+**Column width step** controls the **Decrease column width** and **Increase column width** actions. The default is `10%`; the range is `1%`–`50%`.
+
+The value is a percentage-point step of the gap-adjusted work-area span, not a percentage of the current frame. Changing it does not resize or move any window; the next explicit decrease or increase uses the new step. Reset, presets, full width, and available-width expansion are unchanged. Hard window constraints can clamp the result to a fixed boundary.
+
 ## Window decorations
 
 **Hide KWin borders and title bars on application windows** is enabled by default. It covers tiled, floating, dialog, transient, and utility windows. Panels, desktop surfaces, unmanaged windows, and windows that were already borderless keep their KWin state.
