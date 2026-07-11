@@ -2791,6 +2791,44 @@ let
           && wait_for_window_desktop "$2" "$primary_desktop_id"
       }
 
+      verify_relation_free_automatic_desktop_transfer() {
+        local fixed_frame=$2
+        local fixed_title=$1
+        local first_frame=$3
+        local second_frame=$4
+        local third_frame=$5
+        local trailing_desktop_id=""
+
+        invoke_shortcut "driftile_move_column_to_next_desktop" \
+          && wait_for_current_desktop "$secondary_desktop_id" \
+          && wait_for_window_desktop "$fixed_title" "$secondary_desktop_id" \
+          && wait_for_automatic_floating_frames \
+            "$first_frame" \
+            "$second_frame" \
+            "$third_frame" \
+            "$fixed_title" \
+            "$fixed_frame" \
+          && wait_for_active "$fixed_title" \
+          && wait_for_appended_desktop \
+            trailing_desktop_id \
+            "$primary_desktop_id" \
+            "$secondary_desktop_id" \
+          && [[ "$trailing_desktop_id" != "$secondary_desktop_id" ]] \
+          && invoke_shortcut "driftile_move_column_to_desktop_1" \
+          && wait_for_current_desktop "$primary_desktop_id" \
+          && wait_for_window_desktop "$fixed_title" "$primary_desktop_id" \
+          && wait_for_automatic_floating_frames \
+            "$first_frame" \
+            "$second_frame" \
+            "$third_frame" \
+            "$fixed_title" \
+            "$fixed_frame" \
+          && wait_for_active "$fixed_title" \
+          && wait_for_desktop_sequence \
+            "$primary_desktop_id" \
+            "$secondary_desktop_id"
+      }
+
       verify_automatic_floating() {
         local first_frame
         local fixed_frame
@@ -2842,13 +2880,12 @@ let
             "$second_frame" \
             "$third_frame" \
             "$fixed_frame" \
-          && automatic_floating_shortcut_is_no_op \
-            "driftile_move_column_to_next_desktop" \
+          && verify_relation_free_automatic_desktop_transfer \
             "$fixed_title" \
+            "$fixed_frame" \
             "$first_frame" \
             "$second_frame" \
             "$third_frame" \
-            "$fixed_frame" \
           && automatic_floating_shortcut_is_no_op \
             "driftile_move_column_to_output_right" \
             "$fixed_title" \
@@ -3153,6 +3190,17 @@ let
         fi
         record_focus_state \
           "physical numbered desktop shortcuts preserved focus and lifecycle"
+
+        if ! verify_physical_manual_floating_desktop_shortcut \
+          "$merged_first_frame" \
+          "$merged_second_frame" \
+          "$merged_third_frame" \
+          "$first_trailing_desktop_id"; then
+          record_focus_state "physical manual floating desktop transfer failed"
+          return 1
+        fi
+        record_focus_state \
+          "physical manual floating desktop transfer preserved exact state"
 
         invoke_shortcut "driftile_focus_next_desktop" \
           && wait_for_current_desktop "$secondary_desktop_id" \
@@ -3590,6 +3638,97 @@ let
             "$source_third_frame" \
             "$destination_frame" \
           && wait_for_active "$title_b"
+      }
+
+      verify_physical_manual_floating_desktop_shortcut() {
+        local destination_frame
+        local floating_frame
+        local floating_first_frame
+        local floating_third_frame
+        local source_first_frame=$1
+        local source_second_frame=$2
+        local source_third_frame=$3
+        local trailing_desktop_id=$4
+
+        if ! activate_window "$title_b" \
+          || ! wait_for_active "$title_b" \
+          || ! invoke_shortcut "driftile_toggle_floating" \
+          || ! wait_for_active "$title_b"; then
+          record_focus_state "manual floating desktop transfer setup failed"
+          return 1
+        fi
+
+        floating_first_frame=$(capture_stable_window_frame "$title_a") \
+          || return 1
+        floating_frame=$(capture_stable_window_frame "$title_b") \
+          || return 1
+        floating_third_frame=$(capture_stable_window_frame "$title_c") \
+          || return 1
+        destination_frame=$(capture_stable_window_frame "$title_desktop_destination") \
+          || return 1
+
+        if ! wait_for_numbered_desktop_frames \
+          "$floating_first_frame" \
+          "$floating_frame" \
+          "$floating_third_frame" \
+          "$destination_frame" \
+          || ! request_physical_shortcut floating-desktop-next \
+          || ! wait_for_current_desktop "$secondary_desktop_id" \
+          || ! wait_for_window_desktop "$title_b" "$secondary_desktop_id" \
+          || ! wait_for_window_desktop "$title_a" "$primary_desktop_id" \
+          || ! wait_for_window_desktop "$title_c" "$primary_desktop_id" \
+          || ! wait_for_numbered_desktop_frames \
+            "$floating_first_frame" \
+            "$floating_frame" \
+            "$floating_third_frame" \
+            "$destination_frame" \
+          || ! wait_for_active "$title_b" \
+          || ! wait_for_desktop_sequence \
+            "$primary_desktop_id" \
+            "$secondary_desktop_id" \
+            "$trailing_desktop_id"; then
+          record_focus_state "physical Meta+Ctrl+U floating desktop transfer failed"
+          return 1
+        fi
+        record_focus_state \
+          "physical Meta+Ctrl+U moved only the active floating window"
+
+        if ! invoke_shortcut "driftile_focus_tiling" \
+          || ! wait_for_active "$title_desktop_destination" \
+          || ! invoke_shortcut "driftile_focus_floating" \
+          || ! wait_for_active "$title_b" \
+          || ! wait_for_numbered_desktop_frames \
+            "$floating_first_frame" \
+            "$floating_frame" \
+            "$floating_third_frame" \
+            "$destination_frame"; then
+          record_focus_state "floating layer state changed during physical desktop transfer"
+          return 1
+        fi
+
+        if ! invoke_shortcut "driftile_move_column_to_desktop_1" \
+          || ! wait_for_current_desktop "$primary_desktop_id" \
+          || ! wait_for_window_desktop "$title_b" "$primary_desktop_id" \
+          || ! wait_for_window_desktop "$title_a" "$primary_desktop_id" \
+          || ! wait_for_window_desktop "$title_c" "$primary_desktop_id" \
+          || ! wait_for_numbered_desktop_frames \
+            "$floating_first_frame" \
+            "$floating_frame" \
+            "$floating_third_frame" \
+            "$destination_frame" \
+          || ! wait_for_active "$title_b" \
+          || ! invoke_shortcut "driftile_toggle_floating" \
+          || ! wait_for_numbered_desktop_frames \
+            "$source_first_frame" \
+            "$source_second_frame" \
+            "$source_third_frame" \
+            "$destination_frame" \
+          || ! wait_for_active "$title_b"; then
+          record_focus_state "manual floating desktop transfer cleanup failed"
+          return 1
+        fi
+        record_focus_state \
+          "manual floating desktop transfer restored the exact tiled stack"
       }
 
       verify_physical_layer_focus_shortcut() {
