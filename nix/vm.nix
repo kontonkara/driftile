@@ -809,6 +809,10 @@ let
             && "$shortcuts" == *"driftile_focus_previous_desktop"* \
             && "$shortcuts" == *"driftile_focus_next_desktop"* \
             && "$shortcuts" == *"driftile_focus_next_desktop_page_down"* \
+            && "$shortcuts" == *"driftile_move_desktop_down"* \
+            && "$shortcuts" == *"driftile_move_desktop_down_page_down"* \
+            && "$shortcuts" == *"driftile_move_desktop_up"* \
+            && "$shortcuts" == *"driftile_move_desktop_up_page_up"* \
             && "$shortcuts" == *"driftile_focus_desktop_1"* \
             && "$shortcuts" == *"driftile_focus_desktop_9"* \
             && "$shortcuts" == *"driftile_focus_output_left"* \
@@ -4640,6 +4644,7 @@ let
         local baseline_third_width
         local border_query
         local consume_fixture_rebuilt
+        local desktop_reorder_destination_frame
         local desktop_source_width
         local direct_insert_verified
         local first_trailing_desktop_id=""
@@ -4911,6 +4916,20 @@ let
           "$secondary_desktop_id" \
           || return 1
         record_focus_state "desktop transfer destination seeded"
+
+        desktop_reorder_destination_frame=$(
+          capture_stable_window_frame "$title_desktop_destination"
+        ) || return 1
+
+        if ! verify_physical_desktop_reorder_shortcuts \
+          "$merged_first_frame" \
+          "$merged_second_frame" \
+          "$merged_third_frame" \
+          "$desktop_reorder_destination_frame" \
+          "$first_trailing_desktop_id"; then
+          record_focus_state "physical desktop reorder shortcuts failed"
+          return 1
+        fi
 
         if ! verify_physical_numbered_desktop_shortcuts \
           "$merged_first_frame" \
@@ -5268,6 +5287,95 @@ let
         done
 
         return 1
+      }
+
+      verify_physical_desktop_reorder_shortcuts() {
+        local first_frame=$1
+        local second_frame=$2
+        local third_frame=$3
+        local destination_frame=$4
+        local trailing_desktop_id=$5
+
+        if ! request_physical_shortcut desktop-move-down \
+          || ! wait_for_desktop_sequence \
+            "$secondary_desktop_id" \
+            "$primary_desktop_id" \
+            "$trailing_desktop_id" \
+          || ! wait_for_current_desktop "$primary_desktop_id" \
+          || ! wait_for_window_desktop "$title_a" "$primary_desktop_id" \
+          || ! wait_for_window_desktop "$title_b" "$primary_desktop_id" \
+          || ! wait_for_window_desktop "$title_c" "$primary_desktop_id" \
+          || ! wait_for_window_desktop \
+            "$title_desktop_destination" \
+            "$secondary_desktop_id" \
+          || ! wait_for_numbered_desktop_frames \
+            "$first_frame" \
+            "$second_frame" \
+            "$third_frame" \
+            "$destination_frame" \
+          || ! wait_for_active "$title_b"; then
+          record_focus_state "physical Meta+Shift+U desktop reorder failed"
+          return 1
+        fi
+
+        if ! request_physical_shortcut desktop-move-up-page-up \
+          || ! wait_for_desktop_sequence \
+            "$primary_desktop_id" \
+            "$secondary_desktop_id" \
+            "$trailing_desktop_id" \
+          || ! wait_for_current_desktop "$primary_desktop_id" \
+          || ! wait_for_numbered_desktop_frames \
+            "$first_frame" \
+            "$second_frame" \
+            "$third_frame" \
+            "$destination_frame" \
+          || ! wait_for_active "$title_b"; then
+          record_focus_state \
+            "physical Meta+Shift+PageUp desktop reorder failed"
+          return 1
+        fi
+
+        if ! request_physical_shortcut desktop-move-down-page-down \
+          || ! wait_for_desktop_sequence \
+            "$secondary_desktop_id" \
+            "$primary_desktop_id" \
+            "$trailing_desktop_id" \
+          || ! wait_for_current_desktop "$primary_desktop_id" \
+          || ! wait_for_numbered_desktop_frames \
+            "$first_frame" \
+            "$second_frame" \
+            "$third_frame" \
+            "$destination_frame" \
+          || ! wait_for_active "$title_b"; then
+          record_focus_state \
+            "physical Meta+Shift+PageDown desktop reorder failed"
+          return 1
+        fi
+
+        if ! request_physical_shortcut desktop-move-up \
+          || ! wait_for_desktop_sequence \
+            "$primary_desktop_id" \
+            "$secondary_desktop_id" \
+            "$trailing_desktop_id" \
+          || ! wait_for_current_desktop "$primary_desktop_id" \
+          || ! wait_for_window_desktop "$title_a" "$primary_desktop_id" \
+          || ! wait_for_window_desktop "$title_b" "$primary_desktop_id" \
+          || ! wait_for_window_desktop "$title_c" "$primary_desktop_id" \
+          || ! wait_for_window_desktop \
+            "$title_desktop_destination" \
+            "$secondary_desktop_id" \
+          || ! wait_for_numbered_desktop_frames \
+            "$first_frame" \
+            "$second_frame" \
+            "$third_frame" \
+            "$destination_frame" \
+          || ! wait_for_active "$title_b"; then
+          record_focus_state "physical Meta+Shift+I desktop reorder failed"
+          return 1
+        fi
+
+        record_focus_state \
+          "physical desktop reorder aliases preserved IDs, focus, frames, and the shared tail"
       }
 
       verify_physical_numbered_desktop_shortcuts() {

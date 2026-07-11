@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   DesktopLifecycle,
   planDesktopLifecycle,
@@ -33,14 +33,25 @@ interface LifecycleFixture {
   readonly createCount: number;
   readonly desktops: readonly KWinVirtualDesktop[];
   readonly lifecycle: DesktopLifecycle;
+  readonly moveCount: number;
+  readonly moveRequests: readonly {
+    readonly desktopId: string;
+    readonly position: number;
+  }[];
+  readonly outputs: readonly KWinOutput[];
   readonly removeCount: number;
   emitDesktopsChanged(): void;
   addWindow(window: KWinWindow): void;
   reconcile(): void;
   removeWindow(window: KWinWindow): void;
+  selectedDesktop(output: KWinOutput): KWinVirtualDesktop | null;
   select(output: KWinOutput, desktop: KWinVirtualDesktop): void;
   setCreateCommits(enabled: boolean): void;
   setCreateSignals(enabled: boolean): void;
+  setMoveHook(hook: (() => void) | null): void;
+  setMoveMode(
+    mode: "commit" | "reject" | "throw" | "unavailable" | "wrong",
+  ): void;
 }
 
 function createLifecycleFixture(
@@ -68,11 +79,49 @@ function createLifecycleFixture(
   let createCommits = true;
   let createSignals = true;
   let createCount = 0;
+  let moveCount = 0;
+  let moveHook: (() => void) | null = null;
+  let moveMode: "commit" | "reject" | "throw" | "wrong" = "commit";
+  const moveRequests: Array<{ desktopId: string; position: number }> = [];
   let removeCount = 0;
   let nextCreatedId = 1;
   const selected = new Map(
     outputs.map((output) => [output.name, desktops[0] ?? null]),
   );
+  const moveDesktop = (desktop: KWinVirtualDesktop, position: number): void => {
+    moveCount += 1;
+    moveRequests.push({ desktopId: desktop.id, position });
+
+    if (moveMode === "reject") {
+      return;
+    }
+
+    if (moveMode === "throw") {
+      throw new Error("injected desktop reorder failure");
+    }
+
+    const sourceIndex = desktops.findIndex(
+      (candidate) => candidate.id === desktop.id,
+    );
+
+    if (sourceIndex < 0) {
+      return;
+    }
+
+    const [moved] = desktops.splice(sourceIndex, 1);
+
+    if (!moved) {
+      return;
+    }
+
+    const targetPosition =
+      moveMode === "wrong"
+        ? Math.min(position + 1, desktops.length - 1)
+        : position;
+    desktops.splice(targetPosition, 0, moved);
+    moveHook?.();
+    desktopsChanged.emit();
+  };
   const workspace: KWinWorkspace = {
     activeScreen: outputs[0] ?? null,
     activeWindow: null,
@@ -97,6 +146,7 @@ function createLifecycleFixture(
     currentDesktopForScreen: (output) => selected.get(output.name) ?? null,
     desktops,
     desktopsChanged,
+    moveDesktop,
     removeDesktop: (desktop) => {
       removeCount += 1;
       desktops = desktops.filter((candidate) => candidate !== desktop);
@@ -143,6 +193,11 @@ function createLifecycleFixture(
       desktopsChanged.emit();
     },
     lifecycle,
+    get moveCount() {
+      return moveCount;
+    },
+    moveRequests,
+    outputs,
     reconcile: () => {
       lifecycle.reconcile();
     },
@@ -153,6 +208,7 @@ function createLifecycleFixture(
       windows = windows.filter((candidate) => candidate !== window);
       windowRemoved.emit(window);
     },
+    selectedDesktop: (output) => selected.get(output.name) ?? null,
     select: (output, desktop) => {
       const previous = selected.get(output.name) ?? null;
       selected.set(output.name, desktop);
@@ -163,6 +219,19 @@ function createLifecycleFixture(
     },
     setCreateSignals: (enabled) => {
       createSignals = enabled;
+    },
+    setMoveHook: (hook) => {
+      moveHook = hook;
+    },
+    setMoveMode: (mode) => {
+      Object.defineProperty(workspace, "moveDesktop", {
+        configurable: true,
+        value: mode === "unavailable" ? undefined : moveDesktop,
+      });
+
+      if (mode !== "unavailable") {
+        moveMode = mode;
+      }
     },
   };
 }
@@ -316,6 +385,265 @@ describe("DesktopLifecycle", () => {
     fixture.select(secondOutput, desktop);
     fixture.reconcile();
     expect(fixture.removeCount).toBe(1);
+  });
+
+  it("moves the selected desktop forward and back without changing identities or selections", () => {
+    const primary = { id: "desktop-1" };
+    const secondary = { id: "desktop-2" };
+    const primaryWindow = createWindow("window-1", [primary]);
+    const secondaryWindow = createWindow("window-2", [secondary]);
+    const fixture = createLifecycleFixture(
+      [primary, secondary],
+      [primaryWindow, secondaryWindow],
+      2,
+    );
+
+    fixture.reconcile();
+    const trailing = fixture.desktops[2];
+    const activeOutput = fixture.outputs[0];
+    const otherOutput = fixture.outputs[1];
+
+    if (!trailing || !activeOutput || !otherOutput) {
+      throw new Error("missing desktop reorder fixture state");
+    }
+
+    fixture.select(otherOutput, secondary);
+    fixture.reconcile();
+
+    expect(fixture.lifecycle.moveSelectedDesktop(activeOutput, 1)).toBe(true);
+    expect(fixture.desktops).toEqual([secondary, primary, trailing]);
+    expect(fixture.selectedDesktop(activeOutput)).toBe(primary);
+    expect(fixture.selectedDesktop(otherOutput)).toBe(secondary);
+    expect(primaryWindow.desktops).toEqual([primary]);
+    expect(secondaryWindow.desktops).toEqual([secondary]);
+    expect(fixture.lifecycle.ownedDesktopCount).toBe(1);
+
+    fixture.reconcile();
+    expect(fixture.lifecycle.moveSelectedDesktop(activeOutput, -1)).toBe(true);
+    expect(fixture.desktops).toEqual([primary, secondary, trailing]);
+    expect(fixture.selectedDesktop(activeOutput)).toBe(primary);
+    expect(fixture.selectedDesktop(otherOutput)).toBe(secondary);
+    expect(primaryWindow.desktops).toEqual([primary]);
+    expect(secondaryWindow.desktops).toEqual([secondary]);
+    expect(fixture.moveRequests).toEqual([
+      { desktopId: primary.id, position: 1 },
+      { desktopId: primary.id, position: 0 },
+    ]);
+    expect(fixture.createCount).toBe(1);
+    expect(fixture.removeCount).toBe(0);
+    expect(fixture.lifecycle.ownedDesktopCount).toBe(1);
+  });
+
+  it("does not move past either boundary or into the trailing desktop", () => {
+    const primary = { id: "desktop-1" };
+    const secondary = { id: "desktop-2" };
+    const fixture = createLifecycleFixture(
+      [primary, secondary],
+      [
+        createWindow("window-1", [primary]),
+        createWindow("window-2", [secondary]),
+      ],
+    );
+
+    fixture.reconcile();
+    fixture.reconcile();
+    const output = fixture.outputs[0];
+    const trailing = fixture.desktops[2];
+
+    if (!output || !trailing) {
+      throw new Error("missing desktop reorder boundary fixture state");
+    }
+
+    expect(fixture.lifecycle.moveSelectedDesktop(output, -1)).toBe(false);
+    fixture.select(output, secondary);
+    fixture.reconcile();
+    expect(fixture.lifecycle.moveSelectedDesktop(output, 1)).toBe(false);
+    fixture.select(output, trailing);
+    fixture.reconcile();
+    expect(fixture.lifecycle.moveSelectedDesktop(output, -1)).toBe(false);
+    expect(fixture.lifecycle.moveSelectedDesktop(output, 1)).toBe(false);
+    expect(fixture.desktops).toEqual([primary, secondary, trailing]);
+    expect(fixture.selectedDesktop(output)).toBe(trailing);
+    expect(fixture.moveCount).toBe(0);
+    expect(fixture.lifecycle.ownedDesktopCount).toBe(1);
+  });
+
+  it("does not reorder while the shared trailing desktop is occupied", () => {
+    const primary = { id: "desktop-1" };
+    const secondary = { id: "desktop-2" };
+    const fixture = createLifecycleFixture(
+      [primary, secondary],
+      [
+        createWindow("window-1", [primary]),
+        createWindow("window-2", [secondary]),
+      ],
+    );
+
+    fixture.reconcile();
+    fixture.reconcile();
+    const output = fixture.outputs[0];
+    const trailing = fixture.desktops[2];
+
+    if (!output || !trailing) {
+      throw new Error("missing occupied desktop reorder fixture state");
+    }
+
+    fixture.setCreateCommits(false);
+    fixture.addWindow(createWindow("window-tail", [trailing]));
+    fixture.reconcile();
+
+    expect(fixture.lifecycle.moveSelectedDesktop(output, 1)).toBe(false);
+    expect(fixture.desktops).toEqual([primary, secondary, trailing]);
+    expect(fixture.moveCount).toBe(0);
+    expect(fixture.lifecycle.ownedDesktopCount).toBe(1);
+  });
+
+  it.each([
+    { expectedMoveCount: 0, mode: "unavailable" },
+    { expectedMoveCount: 1, mode: "reject" },
+    { expectedMoveCount: 1, mode: "throw" },
+  ] as const)(
+    "fails closed when desktop reorder is $mode",
+    ({ expectedMoveCount, mode }) => {
+      const primary = { id: "desktop-1" };
+      const secondary = { id: "desktop-2" };
+      const fixture = createLifecycleFixture(
+        [primary, secondary],
+        [
+          createWindow("window-1", [primary]),
+          createWindow("window-2", [secondary]),
+        ],
+      );
+
+      fixture.reconcile();
+      fixture.reconcile();
+      const output = fixture.outputs[0];
+      const trailing = fixture.desktops[2];
+
+      if (!output || !trailing) {
+        throw new Error("missing rejected desktop reorder fixture state");
+      }
+
+      fixture.setMoveMode(mode);
+      const warning =
+        mode === "throw"
+          ? vi.spyOn(console, "warn").mockImplementation(() => undefined)
+          : null;
+
+      try {
+        expect(fixture.lifecycle.moveSelectedDesktop(output, 1)).toBe(false);
+      } finally {
+        warning?.mockRestore();
+      }
+      expect(fixture.desktops).toEqual([primary, secondary, trailing]);
+      expect(fixture.selectedDesktop(output)).toBe(primary);
+      expect(fixture.moveCount).toBe(expectedMoveCount);
+      expect(fixture.createCount).toBe(1);
+      expect(fixture.removeCount).toBe(0);
+      expect(fixture.lifecycle.ownedDesktopCount).toBe(1);
+    },
+  );
+
+  it("fails closed after a wrong same-id permutation without losing the owned tail", () => {
+    const primary = { id: "desktop-1" };
+    const secondary = { id: "desktop-2" };
+    const tertiary = { id: "desktop-3" };
+    const fixture = createLifecycleFixture(
+      [primary, secondary, tertiary],
+      [
+        createWindow("window-1", [primary]),
+        createWindow("window-2", [secondary]),
+        createWindow("window-3", [tertiary]),
+      ],
+    );
+
+    fixture.reconcile();
+    fixture.reconcile();
+    const output = fixture.outputs[0];
+    const trailing = fixture.desktops[3];
+
+    if (!output || !trailing) {
+      throw new Error("missing wrong desktop permutation fixture state");
+    }
+
+    fixture.setMoveMode("wrong");
+
+    expect(fixture.lifecycle.moveSelectedDesktop(output, 1)).toBe(false);
+    expect(fixture.desktops).toEqual([secondary, tertiary, primary, trailing]);
+    expect(fixture.selectedDesktop(output)).toBe(primary);
+    expect(fixture.moveRequests).toEqual([
+      { desktopId: primary.id, position: 1 },
+    ]);
+    expect(fixture.createCount).toBe(1);
+    expect(fixture.removeCount).toBe(0);
+    expect(fixture.lifecycle.ownedDesktopCount).toBe(1);
+
+    fixture.reconcile();
+    expect(fixture.createCount).toBe(1);
+    expect(fixture.removeCount).toBe(0);
+    expect(fixture.lifecycle.ownedDesktopCount).toBe(1);
+  });
+
+  it("fails closed when another output selection changes during reorder", () => {
+    const primary = { id: "desktop-1" };
+    const secondary = { id: "desktop-2" };
+    const fixture = createLifecycleFixture(
+      [primary, secondary],
+      [
+        createWindow("window-1", [primary]),
+        createWindow("window-2", [secondary]),
+      ],
+      2,
+    );
+
+    fixture.reconcile();
+    const activeOutput = fixture.outputs[0];
+    const otherOutput = fixture.outputs[1];
+    const trailing = fixture.desktops[2];
+
+    if (!activeOutput || !otherOutput || !trailing) {
+      throw new Error("missing selection drift reorder fixture state");
+    }
+
+    fixture.select(otherOutput, secondary);
+    fixture.reconcile();
+    fixture.setMoveHook(() => {
+      fixture.select(otherOutput, primary);
+    });
+
+    expect(fixture.lifecycle.moveSelectedDesktop(activeOutput, 1)).toBe(false);
+    expect(fixture.desktops).toEqual([secondary, primary, trailing]);
+    expect(fixture.selectedDesktop(activeOutput)).toBe(primary);
+    expect(fixture.selectedDesktop(otherOutput)).toBe(primary);
+    expect(fixture.lifecycle.ownedDesktopCount).toBe(1);
+  });
+
+  it("fails closed when a window membership changes during reorder", () => {
+    const primary = { id: "desktop-1" };
+    const secondary = { id: "desktop-2" };
+    const primaryWindow = createWindow("window-1", [primary]);
+    const fixture = createLifecycleFixture(
+      [primary, secondary],
+      [primaryWindow, createWindow("window-2", [secondary])],
+    );
+
+    fixture.reconcile();
+    const output = fixture.outputs[0];
+    const trailing = fixture.desktops[2];
+
+    if (!output || !trailing) {
+      throw new Error("missing membership drift reorder fixture state");
+    }
+
+    fixture.reconcile();
+    fixture.setMoveHook(() => {
+      primaryWindow.desktops = [secondary];
+    });
+
+    expect(fixture.lifecycle.moveSelectedDesktop(output, 1)).toBe(false);
+    expect(fixture.desktops).toEqual([secondary, primary, trailing]);
+    expect(primaryWindow.desktops).toEqual([secondary]);
+    expect(fixture.lifecycle.ownedDesktopCount).toBe(1);
   });
 
   it("counts every live application window regardless of layout eligibility", () => {

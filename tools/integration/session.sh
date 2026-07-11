@@ -19,6 +19,11 @@ readonly automatic_floating_probe_verified_shortcut_prefix="Driftile Integration
 readonly automatic_floating_probe_verify_shortcut="Driftile Integration Automatic Floating Verify"
 readonly desktop_state_probe_plugin_id="io.github.kontonkara.driftile.integration-desktop-state-probe"
 readonly desktop_state_verified_shortcut_prefix="Driftile Integration Desktop State Verified"
+readonly desktop_reorder_capability_plugin_id="io.github.kontonkara.driftile.integration-desktop-reorder-capability"
+readonly desktop_reorder_supported_shortcut="Driftile Integration Desktop Reorder Supported"
+readonly desktop_reorder_unavailable_shortcut="Driftile Integration Desktop Reorder Unavailable"
+readonly desktop_reorder_state_plugin_id="io.github.kontonkara.driftile.integration-desktop-reorder-state"
+readonly desktop_reorder_state_verified_shortcut_prefix="Driftile Integration Desktop Reorder State Verified"
 readonly floating_navigation_arranger_plugin_id="io.github.kontonkara.driftile.integration-floating-navigation-arranger"
 readonly native_tile_toggle_plugin_id="io.github.kontonkara.driftile.integration-native-tile-toggle"
 readonly output_router_plugin_id="io.github.kontonkara.driftile.integration-output-router"
@@ -31,6 +36,7 @@ client_pids=()
 primary_desktop_id=""
 qml_options=(--software)
 secondary_desktop_id=""
+desktop_reorder_supported=false
 work_area_panel_pid=""
 x11_work_area_dock_pid=""
 
@@ -109,6 +115,20 @@ cleanup() {
     org.kde.kwin.Scripting \
     unloadScript \
     s "$desktop_state_probe_plugin_id" \
+    >/dev/null 2>&1 || true
+  busctl --user call \
+    org.kde.KWin \
+    /Scripting \
+    org.kde.kwin.Scripting \
+    unloadScript \
+    s "$desktop_reorder_capability_plugin_id" \
+    >/dev/null 2>&1 || true
+  busctl --user call \
+    org.kde.KWin \
+    /Scripting \
+    org.kde.kwin.Scripting \
+    unloadScript \
+    s "$desktop_reorder_state_plugin_id" \
     >/dev/null 2>&1 || true
   busctl --user call \
     org.kde.KWin \
@@ -1436,6 +1456,72 @@ run_one_shot_script() {
   wait_for_named_script_state "$name" false
 }
 
+detect_desktop_reorder_capability() {
+  local attempt
+  local load_result
+  local script_id
+  local detected=""
+
+  wait_for_shortcut_absent "$desktop_reorder_supported_shortcut" || return 1
+  wait_for_shortcut_absent "$desktop_reorder_unavailable_shortcut" || return 1
+  load_result=$(busctl --user call \
+    org.kde.KWin \
+    /Scripting \
+    org.kde.kwin.Scripting \
+    loadScript \
+    ss \
+    "$DRIFTILE_SMOKE_DESKTOP_REORDER_CAPABILITY_PROBE" \
+    "$desktop_reorder_capability_plugin_id") || return 1
+  script_id=${load_result#i }
+
+  if [[ ! "$script_id" =~ ^[0-9]+$ ]]; then
+    return 1
+  fi
+
+  busctl --user call \
+    org.kde.KWin \
+    "/Scripting/Script${script_id}" \
+    org.kde.kwin.Script \
+    run \
+    >/dev/null || return 1
+
+  for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
+    if shortcut_is_registered "$desktop_reorder_supported_shortcut"; then
+      detected=supported
+      break
+    fi
+
+    if shortcut_is_registered "$desktop_reorder_unavailable_shortcut"; then
+      detected=unavailable
+      break
+    fi
+
+    sleep 0.05
+  done
+
+  busctl --user call \
+    org.kde.KWin \
+    /Scripting \
+    org.kde.kwin.Scripting \
+    unloadScript \
+    s "$desktop_reorder_capability_plugin_id" \
+    >/dev/null || return 1
+  wait_for_named_script_state "$desktop_reorder_capability_plugin_id" false \
+    || return 1
+
+  case "$detected" in
+    supported)
+      desktop_reorder_supported=true
+      ;;
+    unavailable)
+      desktop_reorder_supported=false
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 arrange_floating_navigation_windows() {
   run_one_shot_script \
     "$DRIFTILE_SMOKE_FLOATING_NAVIGATION_ARRANGER" \
@@ -1603,6 +1689,50 @@ verify_multi_output_desktop_state() {
     >/dev/null 2>&1 || true
 
   wait_for_named_script_state "$desktop_state_probe_plugin_id" false || verified=false
+  [[ "$verified" == true ]]
+}
+
+verify_multi_output_desktop_reorder_state() {
+  local active_title=$1
+  local order=$2
+  local load_result
+  local script_id
+  local verified=false
+  local verified_shortcut="$desktop_reorder_state_verified_shortcut_prefix $active_title $order"
+
+  wait_for_shortcut_absent "$verified_shortcut" || return 1
+  load_result=$(busctl --user call \
+    org.kde.KWin \
+    /Scripting \
+    org.kde.kwin.Scripting \
+    loadScript \
+    ss \
+    "$DRIFTILE_SMOKE_DESKTOP_REORDER_STATE_PROBE" \
+    "$desktop_reorder_state_plugin_id") || return 1
+  script_id=${load_result#i }
+
+  if [[ "$script_id" =~ ^[0-9]+$ ]]; then
+    if busctl --user call \
+      org.kde.KWin \
+      "/Scripting/Script${script_id}" \
+      org.kde.kwin.Script \
+      run \
+      >/dev/null && \
+      wait_for_shortcut "$verified_shortcut"; then
+      verified=true
+    fi
+  fi
+
+  busctl --user call \
+    org.kde.KWin \
+    /Scripting \
+    org.kde.kwin.Scripting \
+    unloadScript \
+    s "$desktop_reorder_state_plugin_id" \
+    >/dev/null 2>&1 || true
+
+  wait_for_named_script_state "$desktop_reorder_state_plugin_id" false \
+    || verified=false
   [[ "$verified" == true ]]
 }
 
@@ -2349,6 +2479,76 @@ verify_desktop_transfer() {
     "$third_title" "648,16,616,688" || \
     fail "Driftile did not restore the $protocol source stack before desktop transfer: $(describe_layout "$first_title" "$second_title" "$third_title")"
 
+  local desktop_reorder_action
+  local desktop_reorder_index
+  local -a desktop_reorder_actions=(
+    "driftile_move_desktop_down"
+    "driftile_move_desktop_up_page_up"
+    "driftile_move_desktop_down_page_down"
+    "driftile_move_desktop_up"
+  )
+  local -a desktop_reorder_first_ids=(
+    "$secondary_desktop_id"
+    "$primary_desktop_id"
+    "$secondary_desktop_id"
+    "$primary_desktop_id"
+  )
+  local -a desktop_reorder_second_ids=(
+    "$primary_desktop_id"
+    "$secondary_desktop_id"
+    "$primary_desktop_id"
+    "$secondary_desktop_id"
+  )
+
+  if [[ "$desktop_reorder_supported" != true ]]; then
+    desktop_reorder_first_ids=(
+      "$primary_desktop_id"
+      "$primary_desktop_id"
+      "$primary_desktop_id"
+      "$primary_desktop_id"
+    )
+    desktop_reorder_second_ids=(
+      "$secondary_desktop_id"
+      "$secondary_desktop_id"
+      "$secondary_desktop_id"
+      "$secondary_desktop_id"
+    )
+  fi
+
+  for desktop_reorder_action in "${desktop_reorder_actions[@]}"; do
+    wait_for_shortcut "$desktop_reorder_action" || \
+      fail "KGlobalAccel did not register $desktop_reorder_action"
+  done
+
+  for desktop_reorder_index in "${!desktop_reorder_actions[@]}"; do
+    desktop_reorder_action=${desktop_reorder_actions[desktop_reorder_index]}
+    invoke_shortcut "$desktop_reorder_action" || \
+      fail "KGlobalAccel could not invoke $desktop_reorder_action for $protocol desktop reordering"
+    wait_for_desktop_sequence \
+      "${desktop_reorder_first_ids[desktop_reorder_index]}" \
+      "${desktop_reorder_second_ids[desktop_reorder_index]}" \
+      "$first_trailing_desktop_id" || \
+      fail "Driftile did not preserve the expected $protocol desktop order after $desktop_reorder_action"
+    wait_for_current_desktop "$primary_desktop_id" || \
+      fail "Driftile changed the current $protocol desktop after $desktop_reorder_action"
+    wait_for_window_desktop "$first_title" "$primary_desktop_id" || \
+      fail "Driftile moved the upper $protocol stack member after $desktop_reorder_action"
+    wait_for_window_desktop "$second_title" "$primary_desktop_id" || \
+      fail "Driftile moved the lower $protocol stack member after $desktop_reorder_action"
+    wait_for_window_desktop "$third_title" "$primary_desktop_id" || \
+      fail "Driftile moved the separate $protocol source column after $desktop_reorder_action"
+    wait_for_window_desktop "$destination_title" "$secondary_desktop_id" || \
+      fail "Driftile moved the $protocol destination seed after $desktop_reorder_action"
+    wait_for_active "$second_title" || \
+      fail "Driftile changed $protocol focus after $desktop_reorder_action"
+    wait_for_geometries \
+      "$first_title" "16,16,616,336" \
+      "$second_title" "16,368,616,336" \
+      "$third_title" "648,16,616,688" \
+      "$destination_title" "16,16,616,688" || \
+      fail "Driftile changed $protocol geometry after $desktop_reorder_action: $(describe_layout "$first_title" "$second_title" "$third_title" "$destination_title")"
+  done
+
   verify_manual_floating_desktop_transfer \
     "$protocol" \
     "$first_title" \
@@ -2530,6 +2730,111 @@ verify_desktop_transfer() {
     fail "Driftile did not restore the external $protocol desktop baseline"
 }
 
+verify_multi_output_desktop_reorder() {
+  local protocol=$1
+  local left_first_title=$2
+  local left_second_title=$3
+  local right_first_title=$4
+  local right_second_title=$5
+  local left_destination_title=$6
+  local right_destination_title=$7
+  local trailing_desktop_id=$8
+  local first_order=up
+  local first_sequence=(
+    "$primary_desktop_id"
+    "$secondary_desktop_id"
+    "$trailing_desktop_id"
+  )
+
+  if [[ "$desktop_reorder_supported" == true ]]; then
+    first_order=down
+    first_sequence=(
+      "$secondary_desktop_id"
+      "$primary_desktop_id"
+      "$trailing_desktop_id"
+    )
+  fi
+
+  activate_window "$right_second_title" || \
+    fail "KWin could not select the right $protocol output for desktop reorder coverage"
+  invoke_shortcut "driftile_focus_desktop_2" || \
+    fail "KGlobalAccel could not select the right $protocol destination before desktop reordering"
+  wait_for_active "$right_destination_title" || \
+    fail "KWin did not restore the right $protocol destination before desktop reordering"
+  activate_window "$left_second_title" || \
+    fail "KWin could not restore the active left $protocol output before desktop reordering"
+  wait_for_active "$left_second_title" || \
+    fail "KWin did not focus the left $protocol source before desktop reordering"
+
+  invoke_shortcut "driftile_move_desktop_down" || \
+    fail "KGlobalAccel could not invoke multi-output $protocol desktop reorder down"
+  wait_for_desktop_sequence "${first_sequence[@]}" || \
+    fail "Driftile did not produce the expected multi-output $protocol desktop order after reorder down"
+  wait_for_window_desktop "$left_first_title" "$primary_desktop_id" || \
+    fail "Driftile changed the first left $protocol membership during desktop reordering"
+  wait_for_window_desktop "$left_second_title" "$primary_desktop_id" || \
+    fail "Driftile changed the second left $protocol membership during desktop reordering"
+  wait_for_window_desktop "$right_first_title" "$primary_desktop_id" || \
+    fail "Driftile changed the first right $protocol membership during desktop reordering"
+  wait_for_window_desktop "$right_second_title" "$primary_desktop_id" || \
+    fail "Driftile changed the second right $protocol membership during desktop reordering"
+  wait_for_window_desktop "$left_destination_title" "$secondary_desktop_id" || \
+    fail "Driftile changed the left $protocol destination membership during desktop reordering"
+  wait_for_window_desktop "$right_destination_title" "$secondary_desktop_id" || \
+    fail "Driftile changed the right $protocol destination membership during desktop reordering"
+  wait_for_geometries \
+    "$left_first_title" "16,16,616,336" \
+    "$left_second_title" "16,368,616,336" \
+    "$left_destination_title" "16,16,616,688" \
+    "$right_first_title" "1296,16,616,688" \
+    "$right_second_title" "1928,16,616,688" \
+    "$right_destination_title" "1296,16,616,688" || \
+    fail "Driftile changed multi-output $protocol geometry during desktop reorder down: $(describe_layout "$left_first_title" "$left_second_title" "$left_destination_title" "$right_first_title" "$right_second_title" "$right_destination_title")"
+  wait_for_active "$left_second_title" || \
+    fail "Driftile changed left $protocol focus during desktop reorder down"
+  verify_multi_output_desktop_reorder_state \
+    "$left_second_title" \
+    "$first_order" || \
+    fail "KWin did not preserve both $protocol output selections after desktop reorder down"
+
+  invoke_shortcut "driftile_move_desktop_up" || \
+    fail "KGlobalAccel could not invoke multi-output $protocol desktop reorder up"
+  wait_for_desktop_sequence \
+    "$primary_desktop_id" \
+    "$secondary_desktop_id" \
+    "$trailing_desktop_id" || \
+    fail "Driftile did not restore the multi-output $protocol desktop order"
+  wait_for_geometries \
+    "$left_first_title" "16,16,616,336" \
+    "$left_second_title" "16,368,616,336" \
+    "$left_destination_title" "16,16,616,688" \
+    "$right_first_title" "1296,16,616,688" \
+    "$right_second_title" "1928,16,616,688" \
+    "$right_destination_title" "1296,16,616,688" || \
+    fail "Driftile changed multi-output $protocol geometry during desktop reorder up: $(describe_layout "$left_first_title" "$left_second_title" "$left_destination_title" "$right_first_title" "$right_second_title" "$right_destination_title")"
+  wait_for_active "$left_second_title" || \
+    fail "Driftile changed left $protocol focus during desktop reorder up"
+  verify_multi_output_desktop_reorder_state "$left_second_title" up || \
+    fail "KWin did not preserve both $protocol output selections after desktop reorder up"
+
+  activate_window "$right_destination_title" || \
+    fail "KWin could not select the right $protocol destination after desktop reordering"
+  invoke_shortcut "driftile_focus_desktop_1" || \
+    fail "KGlobalAccel could not restore the right $protocol source after desktop reordering"
+  wait_for_active "$right_second_title" || \
+    fail "KWin did not restore right $protocol focus after desktop reordering"
+  activate_window "$left_second_title" || \
+    fail "KWin could not restore left $protocol focus after desktop reordering"
+  wait_for_geometries \
+    "$left_first_title" "16,16,616,336" \
+    "$left_second_title" "16,368,616,336" \
+    "$right_first_title" "1296,16,616,688" \
+    "$right_second_title" "1928,16,616,688" || \
+    fail "Driftile did not restore the multi-output $protocol source contexts after desktop reordering: $(describe_layout "$left_first_title" "$left_second_title" "$right_first_title" "$right_second_title")"
+  wait_for_active "$left_second_title" || \
+    fail "KWin did not restore left $protocol focus after desktop reorder cleanup"
+}
+
 verify_multi_output_desktop_transfer() {
   local protocol=$1
   local left_first_title=$2
@@ -2539,6 +2844,7 @@ verify_multi_output_desktop_transfer() {
   local left_destination_title="driftile-multi-output-${protocol}-left-desktop-destination"
   local right_destination_title="driftile-multi-output-${protocol}-right-desktop-destination"
   local floating_frame
+  local first_trailing_desktop_id=""
   local left_destination_pid
   local right_destination_pid
 
@@ -2575,6 +2881,11 @@ verify_multi_output_desktop_transfer() {
     fail "the output router placed the left $protocol destination seed incorrectly"
   window_is_on_output_side "$right_destination_title" right || \
     fail "the output router placed the right $protocol destination seed incorrectly"
+  wait_for_appended_desktop \
+    first_trailing_desktop_id \
+    "$primary_desktop_id" \
+    "$secondary_desktop_id" || \
+    fail "Driftile did not append the multi-output $protocol empty tail"
 
   activate_window "$left_destination_title" || \
     fail "KWin could not activate the left $protocol destination before source restoration"
@@ -2592,6 +2903,16 @@ verify_multi_output_desktop_transfer() {
     "$right_first_title" "1296,16,616,688" \
     "$right_second_title" "1928,16,616,688" || \
     fail "Driftile did not restore the multi-output $protocol source contexts before desktop transfer: $(describe_layout "$left_first_title" "$left_second_title" "$right_first_title" "$right_second_title")"
+
+  verify_multi_output_desktop_reorder \
+    "$protocol" \
+    "$left_first_title" \
+    "$left_second_title" \
+    "$right_first_title" \
+    "$right_second_title" \
+    "$left_destination_title" \
+    "$right_destination_title" \
+    "$first_trailing_desktop_id"
 
   invoke_shortcut "driftile_focus_desktop_2" || \
     fail "KGlobalAccel could not focus numbered desktop 2 on the left $protocol output"
@@ -6465,6 +6786,8 @@ run_multi_output_scenario() {
 trap cleanup EXIT
 
 wait_for_dbus || fail "the required KWin D-Bus APIs did not appear"
+detect_desktop_reorder_capability || \
+  fail "KWin desktop reorder capability could not be detected"
 prepare_test_desktops || fail "KWin could not create the second integration virtual desktop"
 
 case "${DRIFTILE_SMOKE_SCENARIO:-single-output}" in

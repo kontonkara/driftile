@@ -547,6 +547,146 @@ function createWorkspace(
   };
 }
 
+function createDesktopReorderRuntimeFixture(
+  options: {
+    readonly moveAvailable?: boolean;
+    readonly perOutputDesktops?: boolean;
+  } = {},
+) {
+  const moveAvailable = options.moveAvailable ?? true;
+  const perOutputDesktops = options.perOutputDesktops ?? true;
+  const activeOutput = createOutput("DP-1", 0);
+  const otherOutput = createOutput("HDMI-A-1", 1000);
+  const primary = { id: "desktop-1" };
+  const secondary = { id: "desktop-2" };
+  const trailing = { id: "desktop-tail" };
+  const activeSecondary = createTrackedWindow(
+    "active-secondary",
+    activeOutput,
+    secondary,
+    { frameGeometry: { height: 240, width: 320, x: 80, y: 60 } },
+  );
+  const otherPrimary = createTrackedWindow(
+    "other-primary",
+    otherOutput,
+    primary,
+    { frameGeometry: { height: 250, width: 330, x: 1080, y: 70 } },
+  );
+  const otherSecondary = createTrackedWindow(
+    "other-secondary",
+    otherOutput,
+    secondary,
+    { frameGeometry: { height: 260, width: 340, x: 1140, y: 90 } },
+  );
+  const activePrimary = createTrackedWindow(
+    "active-primary",
+    activeOutput,
+    primary,
+    { frameGeometry: { height: 270, width: 350, x: 120, y: 100 } },
+  );
+  const windows = [
+    activeSecondary,
+    otherPrimary,
+    otherSecondary,
+    activePrimary,
+  ] as const;
+  const desktopOrder: KWinVirtualDesktop[] = [primary, secondary, trailing];
+  const desktopsChanged = new Signal<[]>();
+  const moveRequests: {
+    readonly desktopId: string;
+    readonly position: number;
+  }[] = [];
+  const fixture = createWorkspace(
+    activeOutput,
+    primary,
+    [activeOutput, otherOutput],
+    desktopOrder,
+    windows.map((window) => window.window),
+    perOutputDesktops,
+  );
+
+  if (perOutputDesktops) {
+    fixture.setCurrentDesktop(otherOutput, secondary);
+  }
+
+  const descriptors: PropertyDescriptorMap = {
+    createDesktop: {
+      configurable: true,
+      value: () => {
+        throw new Error("desktop reorder unexpectedly created a desktop");
+      },
+    },
+    desktops: {
+      configurable: true,
+      get: () => desktopOrder,
+    },
+    desktopsChanged: {
+      configurable: true,
+      value: desktopsChanged,
+    },
+    removeDesktop: {
+      configurable: true,
+      value: () => {
+        throw new Error("desktop reorder unexpectedly removed a desktop");
+      },
+    },
+  };
+
+  if (moveAvailable) {
+    descriptors.moveDesktop = {
+      configurable: true,
+      value: (desktop: KWinVirtualDesktop, position: number) => {
+        moveRequests.push({ desktopId: desktop.id, position });
+        const sourceIndex = desktopOrder.indexOf(desktop);
+
+        if (
+          sourceIndex < 0 ||
+          position < 0 ||
+          position >= desktopOrder.length ||
+          position === sourceIndex
+        ) {
+          return;
+        }
+
+        const moved = desktopOrder[sourceIndex];
+
+        if (!moved) {
+          return;
+        }
+
+        desktopOrder.splice(sourceIndex, 1);
+        desktopOrder.splice(position, 0, moved);
+        desktopsChanged.emit();
+      },
+    };
+  }
+
+  Object.defineProperties(fixture.workspace, descriptors);
+  const controller = new RuntimeController(fixture.workspace, {
+    clientAreaOption: 2,
+    gap: 10,
+  });
+
+  if (!controller.start()) {
+    throw new Error("could not start desktop reorder runtime fixture");
+  }
+
+  return {
+    activeOutput,
+    controller,
+    get desktopOrder() {
+      return desktopOrder;
+    },
+    fixture,
+    moveRequests,
+    otherOutput,
+    primary,
+    secondary,
+    trailing,
+    windows,
+  };
+}
+
 interface WindowStateTransition {
   readonly name: string;
   readonly set: (tracked: TrackedWindow, enabled: boolean) => void;
@@ -20624,6 +20764,187 @@ describe("RuntimeController", () => {
     }
 
     expect(fixture.desktopSwitchCount).toBe(2);
+  });
+
+  it("preserves runtime state while desktop reorder moves down and exactly back up", () => {
+    const setup = createDesktopReorderRuntimeFixture();
+    const contexts = [setup.activeOutput, setup.otherOutput].flatMap((output) =>
+      [setup.primary, setup.secondary, setup.trailing].map((desktop) => ({
+        desktop,
+        output,
+      })),
+    );
+    const layoutSnapshots = contexts.map(({ desktop, output }) =>
+      runtimeLayout(setup.controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ),
+    );
+    const frames = setup.windows.map((window) => ({
+      ...window.window.frameGeometry,
+    }));
+    const frameWrites = setup.windows.map((window) => window.writeCount);
+    const desktopWrites = setup.windows.map(
+      (window) => window.desktopWriteCount,
+    );
+    const memberships = setup.windows.map((window) => [
+      ...window.window.desktops,
+    ]);
+    const focused = setup.fixture.workspace.activeWindow;
+    const expectRuntimeStatePreserved = (): void => {
+      expect(
+        setup.fixture.workspace.currentDesktopForScreen?.(setup.activeOutput),
+      ).toBe(setup.primary);
+      expect(
+        setup.fixture.workspace.currentDesktopForScreen?.(setup.otherOutput),
+      ).toBe(setup.secondary);
+      expect(setup.fixture.workspace.activeWindow).toBe(focused);
+      expect(
+        setup.windows.map((window) => ({ ...window.window.frameGeometry })),
+      ).toEqual(frames);
+      expect(setup.windows.map((window) => window.writeCount)).toEqual(
+        frameWrites,
+      );
+      expect(setup.windows.map((window) => window.desktopWriteCount)).toEqual(
+        desktopWrites,
+      );
+      expect(
+        setup.windows.map((window) => [...window.window.desktops]),
+      ).toEqual(memberships);
+      expect(
+        contexts.map(({ desktop, output }) =>
+          runtimeLayout(setup.controller).snapshot(
+            outputId(output.name),
+            desktopId(desktop.id),
+          ),
+        ),
+      ).toEqual(layoutSnapshots);
+      expect(setup.controller.lastWriteCount).toBe(0);
+      expect(setup.desktopOrder[setup.desktopOrder.length - 1]).toBe(
+        setup.trailing,
+      );
+    };
+
+    expect(setup.controller.moveDesktopDown()).toBe(true);
+    expect(setup.desktopOrder).toEqual([
+      setup.secondary,
+      setup.primary,
+      setup.trailing,
+    ]);
+    expectRuntimeStatePreserved();
+
+    expect(setup.controller.moveDesktopUp()).toBe(true);
+    expect(setup.desktopOrder).toEqual([
+      setup.primary,
+      setup.secondary,
+      setup.trailing,
+    ]);
+    expectRuntimeStatePreserved();
+    expect(setup.moveRequests).toEqual([
+      { desktopId: setup.primary.id, position: 1 },
+      { desktopId: setup.primary.id, position: 0 },
+    ]);
+  });
+
+  it("keeps desktop reorder unavailable and boundary requests as no-ops", () => {
+    const unavailable = createDesktopReorderRuntimeFixture({
+      moveAvailable: false,
+    });
+    const unavailableFrames = unavailable.windows.map((window) => ({
+      ...window.window.frameGeometry,
+    }));
+    const unavailableWrites = unavailable.windows.map(
+      (window) => window.writeCount,
+    );
+
+    expect(unavailable.controller.moveDesktopDown()).toBe(false);
+    expect(unavailable.desktopOrder).toEqual([
+      unavailable.primary,
+      unavailable.secondary,
+      unavailable.trailing,
+    ]);
+    expect(
+      unavailable.windows.map((window) => ({ ...window.window.frameGeometry })),
+    ).toEqual(unavailableFrames);
+    expect(unavailable.windows.map((window) => window.writeCount)).toEqual(
+      unavailableWrites,
+    );
+    expect(unavailable.moveRequests).toEqual([]);
+
+    const boundary = createDesktopReorderRuntimeFixture();
+
+    expect(boundary.controller.moveDesktopUp()).toBe(false);
+    expect(boundary.moveRequests).toEqual([]);
+
+    boundary.fixture.setCurrentDesktop(
+      boundary.activeOutput,
+      boundary.secondary,
+    );
+    const penultimateWrites = boundary.windows.map(
+      (window) => window.writeCount,
+    );
+    expect(boundary.controller.moveDesktopDown()).toBe(false);
+    expect(boundary.windows.map((window) => window.writeCount)).toEqual(
+      penultimateWrites,
+    );
+    expect(boundary.moveRequests).toEqual([]);
+
+    boundary.fixture.setCurrentDesktop(
+      boundary.activeOutput,
+      boundary.trailing,
+    );
+    const trailingWrites = boundary.windows.map((window) => window.writeCount);
+    expect(boundary.controller.moveDesktopUp()).toBe(false);
+    expect(boundary.controller.moveDesktopDown()).toBe(false);
+    expect(boundary.windows.map((window) => window.writeCount)).toEqual(
+      trailingWrites,
+    );
+    expect(boundary.desktopOrder).toEqual([
+      boundary.primary,
+      boundary.secondary,
+      boundary.trailing,
+    ]);
+    expect(boundary.moveRequests).toEqual([]);
+  });
+
+  it("supports desktop reorder through the global desktop fallback", () => {
+    const setup = createDesktopReorderRuntimeFixture({
+      perOutputDesktops: false,
+    });
+    const memberships = setup.windows.map((window) => [
+      ...window.window.desktops,
+    ]);
+    const writes = setup.windows.map((window) => window.writeCount);
+    const focused = setup.fixture.workspace.activeWindow;
+
+    expect(setup.controller.moveDesktopDown()).toBe(true);
+    expect(setup.desktopOrder).toEqual([
+      setup.secondary,
+      setup.primary,
+      setup.trailing,
+    ]);
+    expect(setup.fixture.workspace.currentDesktop).toBe(setup.primary);
+    expect(setup.fixture.workspace.activeWindow).toBe(focused);
+    expect(setup.windows.map((window) => [...window.window.desktops])).toEqual(
+      memberships,
+    );
+    expect(setup.windows.map((window) => window.writeCount)).toEqual(writes);
+    expect(setup.controller.lastWriteCount).toBe(0);
+
+    expect(setup.controller.moveDesktopUp()).toBe(true);
+    expect(setup.desktopOrder).toEqual([
+      setup.primary,
+      setup.secondary,
+      setup.trailing,
+    ]);
+    expect(setup.fixture.workspace.currentDesktop).toBe(setup.primary);
+    expect(setup.desktopOrder[setup.desktopOrder.length - 1]).toBe(
+      setup.trailing,
+    );
+    expect(setup.moveRequests).toEqual([
+      { desktopId: setup.primary.id, position: 1 },
+      { desktopId: setup.primary.id, position: 0 },
+    ]);
   });
 
   it("focuses adjacent desktops through the global fallback", () => {
