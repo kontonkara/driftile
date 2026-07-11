@@ -443,6 +443,292 @@ describe("LayoutEngine", () => {
     });
   });
 
+  it("mutates complete window-height state and rolls it back exactly", () => {
+    const engine = new LayoutEngine();
+
+    engine.restoreColumns({
+      activeColumnId: columnId("column-stack"),
+      columns: [
+        {
+          column: {
+            id: columnId("column-stack"),
+            width: { kind: "fixed", value: 420 },
+            windowIds: [windowId("window-1"), windowId("window-2")],
+          },
+          index: 0,
+        },
+      ],
+      desktopId: desktop,
+      outputId: output,
+      viewportOffset: 70,
+    });
+    const before = engine.snapshot(output, desktop);
+    const edit = engine.setActiveColumnWindowHeights(windowId("window-2"), [
+      { kind: "auto", weight: 1.5 },
+      { clientHeight: 360, kind: "fixed" },
+    ]);
+
+    expect(edit).not.toBeNull();
+    expect(engine.snapshot(output, desktop)).toEqual({
+      ...before,
+      columns: [
+        {
+          ...before.columns[0],
+          windowHeights: [
+            { kind: "auto", weight: 1.5 },
+            { clientHeight: 360, kind: "fixed" },
+          ],
+        },
+      ],
+    });
+    expect(edit && engine.rollbackWindowHeightEdit(edit.rollback)).toBe(true);
+    expect(engine.snapshot(output, desktop)).toEqual(before);
+    expect(edit && engine.rollbackWindowHeightEdit(edit.rollback)).toBe(false);
+
+    const stale = engine.setActiveColumnWindowHeights(windowId("window-1"), [
+      { kind: "auto", weight: 2 },
+      { index: 1, kind: "preset" },
+    ]);
+    expect(stale).not.toBeNull();
+    expect(
+      engine.setActiveColumnWidth(windowId("window-1"), {
+        kind: "fixed",
+        value: 500,
+      }),
+    ).toEqual({ kind: "fixed", value: 420 });
+    const changed = engine.snapshot(output, desktop);
+    expect(stale && engine.rollbackWindowHeightEdit(stale.rollback)).toBe(
+      false,
+    );
+    expect(engine.snapshot(output, desktop)).toEqual(changed);
+  });
+
+  it("validates and compacts serialized window-height state", () => {
+    const engine = new LayoutEngine();
+
+    engine.restoreColumns({
+      activeColumnId: columnId("column-stack"),
+      columns: [
+        {
+          column: {
+            id: columnId("column-stack"),
+            width: { kind: "fixed", value: 420 },
+            windowIds: [windowId("window-1"), windowId("window-2")],
+          },
+          index: 0,
+        },
+      ],
+      desktopId: desktop,
+      outputId: output,
+    });
+
+    expect(
+      engine.setActiveColumnWindowHeights(windowId("window-1"), [
+        { kind: "auto", weight: 1 },
+      ]),
+    ).toBeNull();
+    expect(() =>
+      engine.setActiveColumnWindowHeights(windowId("window-1"), [
+        { clientHeight: 200, kind: "fixed" },
+        { index: 0, kind: "preset" },
+      ]),
+    ).toThrow("at most one non-automatic");
+    expect(() =>
+      engine.setActiveColumnWindowHeights(windowId("window-1"), [
+        { kind: "auto", weight: 0 },
+        { kind: "auto", weight: 1 },
+      ]),
+    ).toThrow("window height state is invalid");
+
+    const edit = engine.setActiveColumnWindowHeights(windowId("window-1"), [
+      { kind: "auto", weight: 2 },
+      { clientHeight: 240, kind: "fixed" },
+    ]);
+    expect(edit).not.toBeNull();
+    const reset = engine.setActiveColumnWindowHeights(windowId("window-1"), [
+      { kind: "auto", weight: 1 },
+      { kind: "auto", weight: 1 },
+    ]);
+    expect(reset).not.toBeNull();
+    expect(engine.snapshot(output, desktop).columns[0]).not.toHaveProperty(
+      "windowHeights",
+    );
+  });
+
+  it("keeps height state through reorder, floating, and whole-column transfer", () => {
+    const engine = new LayoutEngine();
+    const targetOutput = outputId("HDMI-A-1");
+
+    engine.restoreColumns({
+      activeColumnId: columnId("column-stack"),
+      columns: [
+        {
+          column: {
+            id: columnId("column-stack"),
+            width: { kind: "fixed", value: 420 },
+            windowIds: [windowId("window-1"), windowId("window-2")],
+          },
+          index: 0,
+        },
+      ],
+      desktopId: desktop,
+      outputId: output,
+    });
+    const edit = engine.setActiveColumnWindowHeights(windowId("window-2"), [
+      { kind: "auto", weight: 2 },
+      { clientHeight: 320, kind: "fixed" },
+    ]);
+    expect(edit).not.toBeNull();
+    expect(edit && engine.discardWindowHeightEditRollback(edit.rollback)).toBe(
+      true,
+    );
+    const before = engine.snapshot(output, desktop);
+    const reorder = engine.moveActiveWindowInColumn(windowId("window-2"), "up");
+
+    expect(engine.snapshot(output, desktop).columns[0]).toMatchObject({
+      windowHeights: [
+        { clientHeight: 320, kind: "fixed" },
+        { kind: "auto", weight: 2 },
+      ],
+      windowIds: ["window-2", "window-1"],
+    });
+    expect(reorder && engine.rollbackStackEdit(reorder.rollback)).toBe(true);
+    expect(engine.snapshot(output, desktop)).toEqual(before);
+
+    const detach = engine.previewWindowDetach(windowId("window-2"));
+    expect(detach?.placement.windowHeight).toEqual({
+      clientHeight: 320,
+      kind: "fixed",
+    });
+    expect(detach?.layout.columns[0]).toMatchObject({
+      windowHeights: [{ kind: "auto", weight: 2 }],
+      windowIds: ["window-1"],
+    });
+    expect(detach && engine.commitWindowDetach(detach)).toBe(true);
+
+    const attach = detach && engine.previewWindowAttach(detach.placement);
+    expect(attach?.layout).toEqual(before);
+    expect(attach && engine.commitWindowAttach(attach)).toBe(true);
+
+    const parkedColumn = engine.snapshot(output, desktop).columns[0];
+
+    if (!parkedColumn) {
+      throw new Error("expected a parked column fixture");
+    }
+
+    expect(
+      engine.removeColumns({
+        columnIds: [parkedColumn.id],
+        desktopId: desktop,
+        outputId: output,
+      }),
+    ).toBe(true);
+    expect(
+      engine.restoreColumns({
+        activeColumnId: parkedColumn.id,
+        columns: [{ column: parkedColumn, index: 0 }],
+        desktopId: desktop,
+        outputId: output,
+      }),
+    ).toBe(true);
+    expect(engine.snapshot(output, desktop)).toEqual(before);
+
+    const transfer = engine.previewColumnTransfer(windowId("window-2"), {
+      columnId: columnId("column-moved"),
+      desktopId: desktop,
+      outputId: targetOutput,
+    });
+    expect(transfer?.targetLayout.columns[0]).toMatchObject({
+      id: "column-moved",
+      windowHeights: [
+        { kind: "auto", weight: 2 },
+        { clientHeight: 320, kind: "fixed" },
+      ],
+      windowIds: ["window-1", "window-2"],
+    });
+    expect(transfer && engine.commitColumnTransfer(transfer)).toBe(true);
+    expect(engine.snapshot(targetOutput, desktop).columns[0]).toEqual(
+      transfer?.targetLayout.columns[0],
+    );
+  });
+
+  it("resets a single moved window height without disturbing survivors", () => {
+    const engine = new LayoutEngine();
+    const targetOutput = outputId("HDMI-A-1");
+
+    engine.restoreColumns({
+      activeColumnId: columnId("column-stack"),
+      columns: [
+        {
+          column: {
+            id: columnId("column-stack"),
+            width: { kind: "fixed", value: 420 },
+            windowIds: [windowId("window-1"), windowId("window-2")],
+          },
+          index: 0,
+        },
+      ],
+      desktopId: desktop,
+      outputId: output,
+    });
+    const edit = engine.setActiveColumnWindowHeights(windowId("window-2"), [
+      { kind: "auto", weight: 2 },
+      { clientHeight: 320, kind: "fixed" },
+    ]);
+    expect(edit && engine.discardWindowHeightEditRollback(edit.rollback)).toBe(
+      true,
+    );
+
+    const extracted = engine.moveActiveWindow(
+      windowId("window-2"),
+      "right",
+      columnId("column-extracted"),
+    );
+    expect(extracted?.kind).toBe("extract");
+    expect(engine.snapshot(output, desktop).columns).toMatchObject([
+      { windowIds: ["window-1"] },
+      { windowIds: ["window-2"] },
+    ]);
+    expect(engine.snapshot(output, desktop).columns[0]).not.toHaveProperty(
+      "windowHeights",
+    );
+    expect(engine.snapshot(output, desktop).columns[1]).not.toHaveProperty(
+      "windowHeights",
+    );
+
+    const fixedSingleton = engine.setActiveColumnWindowHeights(
+      windowId("window-2"),
+      [{ clientHeight: 410, kind: "fixed" }],
+    );
+    expect(
+      fixedSingleton &&
+        engine.discardWindowHeightEditRollback(fixedSingleton.rollback),
+    ).toBe(true);
+    const consumed = engine.moveActiveWindow(
+      windowId("window-2"),
+      "left",
+      columnId("unused"),
+    );
+    expect(consumed?.kind).toBe("merge");
+    expect(engine.snapshot(output, desktop).columns[0]).not.toHaveProperty(
+      "windowHeights",
+    );
+    expect(consumed && engine.rollbackStackEdit(consumed.rollback)).toBe(true);
+    expect(engine.snapshot(output, desktop).columns[1]).toMatchObject({
+      windowHeights: [{ clientHeight: 410, kind: "fixed" }],
+      windowIds: ["window-2"],
+    });
+
+    const singleTransfer = engine.previewWindowTransfer(windowId("window-2"), {
+      columnId: columnId("column-transferred"),
+      desktopId: desktop,
+      outputId: targetOutput,
+    });
+    expect(singleTransfer?.targetLayout.columns[0]).not.toHaveProperty(
+      "windowHeights",
+    );
+  });
+
   it("moves a singleton into an adjacent stack and rolls back exactly", () => {
     const engine = new LayoutEngine();
 

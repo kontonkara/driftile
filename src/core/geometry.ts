@@ -1,4 +1,9 @@
-import type { ColumnWidth, LayoutContextSnapshot } from "./layout-engine";
+import type {
+  ColumnWidth,
+  LayoutColumnSnapshot,
+  LayoutContextSnapshot,
+  WindowHeight,
+} from "./layout-engine";
 import type { ColumnId, WindowId } from "./ids";
 
 export interface Rect {
@@ -13,7 +18,15 @@ export interface StripGeometryInput {
   readonly devicePixelRatio: number;
   readonly gap: number;
   readonly pixelGridOrigin: Point;
+  readonly windowHeightBounds?: ReadonlyMap<WindowId, WindowHeightBounds>;
+  readonly windowHeightPresets?: readonly ColumnWidth[];
   readonly workArea: Rect;
+}
+
+export interface WindowHeightBounds {
+  readonly decorationHeight?: number;
+  readonly maximumClientHeight?: number;
+  readonly minimumClientHeight?: number;
 }
 
 export interface Point {
@@ -35,6 +48,13 @@ export interface StripGeometry {
 }
 
 const MAX_REVEAL_CORRECTIONS = 4;
+
+export const DEFAULT_WINDOW_HEIGHT_PRESETS: readonly ColumnWidth[] =
+  Object.freeze([
+    Object.freeze({ kind: "proportion" as const, value: 1 / 3 }),
+    Object.freeze({ kind: "proportion" as const, value: 0.5 }),
+    Object.freeze({ kind: "proportion" as const, value: 2 / 3 }),
+  ]);
 
 export function solveStripGeometry(input: StripGeometryInput): StripGeometry {
   validateInput(input);
@@ -102,8 +122,7 @@ export function solveStripGeometry(input: StripGeometryInput): StripGeometry {
     );
     appendColumnWindows(
       windows,
-      column.id,
-      column.windowIds,
+      column,
       horizontalSpan.start,
       horizontalSpan.length,
       input,
@@ -296,13 +315,19 @@ function revealColumnSpan(
 
 function appendColumnWindows(
   output: WindowGeometry[],
-  columnId: ColumnId,
-  windowIds: readonly WindowId[],
+  column: LayoutColumnSnapshot,
   left: number,
   width: number,
   input: StripGeometryInput,
 ): void {
+  const { id: columnId, windowIds } = column;
+
   if (windowIds.length === 0) {
+    return;
+  }
+
+  if (column.windowHeights) {
+    appendWeightedHeightWindows(output, column, left, width, input);
     return;
   }
 
@@ -337,6 +362,340 @@ function appendColumnWindows(
       windowId,
     });
     top = bottom + input.gap;
+  }
+}
+
+interface ResolvedWindowHeightBounds {
+  readonly decorationHeight: number;
+  readonly maximumFrameHeight: number;
+  readonly minimumFrameHeight: number;
+}
+
+function appendWeightedHeightWindows(
+  output: WindowGeometry[],
+  column: LayoutColumnSnapshot,
+  left: number,
+  width: number,
+  input: StripGeometryInput,
+): void {
+  const heights = column.windowHeights;
+
+  if (!heights || heights.length !== column.windowIds.length) {
+    throw new RangeError("window height state does not match the column");
+  }
+
+  let nonAutomaticIndex = -1;
+
+  for (const [index, height] of heights.entries()) {
+    validateWindowHeight(height);
+
+    if (height.kind === "auto") {
+      continue;
+    }
+
+    if (nonAutomaticIndex >= 0) {
+      throw new RangeError(
+        "a column can contain at most one non-automatic window height",
+      );
+    }
+
+    nonAutomaticIndex = index;
+  }
+
+  const availableHeight =
+    input.workArea.height - input.gap * (column.windowIds.length + 1);
+
+  if (!Number.isFinite(availableHeight) || availableHeight <= 0) {
+    throw new RangeError(
+      "work area is too small for the requested window gaps",
+    );
+  }
+
+  const bounds = column.windowIds.map((id) =>
+    resolveWindowHeightBounds(
+      input.windowHeightBounds?.get(id),
+      input.devicePixelRatio,
+    ),
+  );
+  const resolved = new Array<number | undefined>(column.windowIds.length);
+  let automaticBudget = availableHeight;
+
+  if (nonAutomaticIndex >= 0) {
+    const policy = heights[nonAutomaticIndex];
+    const targetBounds = bounds[nonAutomaticIndex];
+
+    if (!policy || policy.kind === "auto" || !targetBounds) {
+      throw new Error("window height resolution failed");
+    }
+
+    let otherMinimum = 0;
+
+    for (const [index, candidate] of bounds.entries()) {
+      if (index !== nonAutomaticIndex) {
+        otherMinimum += candidate.minimumFrameHeight;
+      }
+    }
+
+    if (!Number.isFinite(otherMinimum)) {
+      throw new RangeError("window height bounds are invalid");
+    }
+
+    const maximumFromRemainder = snapDownToPixelGrid(
+      availableHeight - otherMinimum,
+      input.devicePixelRatio,
+    );
+
+    if (
+      maximumFromRemainder +
+        floatingPointTolerance(
+          maximumFromRemainder,
+          targetBounds.minimumFrameHeight,
+        ) <
+      targetBounds.minimumFrameHeight
+    ) {
+      throw new RangeError("window minimum heights exceed the work area");
+    }
+
+    const requested = resolveNonAutomaticFrameHeight(
+      policy,
+      targetBounds.decorationHeight,
+      input,
+    );
+    const targetHeight = clamp(
+      requested,
+      targetBounds.minimumFrameHeight,
+      Math.min(targetBounds.maximumFrameHeight, maximumFromRemainder),
+    );
+    resolved[nonAutomaticIndex] = targetHeight;
+    automaticBudget -= targetHeight;
+  }
+
+  distributeAutomaticWindowHeights(resolved, heights, bounds, automaticBudget);
+
+  let top = input.workArea.y + input.gap;
+
+  for (const [index, windowId] of column.windowIds.entries()) {
+    const height = resolved[index];
+
+    if (height === undefined || !Number.isFinite(height) || height <= 0) {
+      throw new Error("window height resolution failed");
+    }
+
+    const bottom = top + height;
+    const verticalSpan = snapSpan(
+      top,
+      bottom,
+      input.devicePixelRatio,
+      input.pixelGridOrigin.y,
+    );
+    output.push({
+      columnId: column.id,
+      frame: {
+        height: verticalSpan.length,
+        width,
+        x: left,
+        y: verticalSpan.start,
+      },
+      windowId,
+    });
+    top = bottom + input.gap;
+  }
+}
+
+function distributeAutomaticWindowHeights(
+  output: Array<number | undefined>,
+  policies: readonly WindowHeight[],
+  bounds: readonly ResolvedWindowHeightBounds[],
+  budget: number,
+): void {
+  const active = new Set<number>();
+  const initialBudget = budget;
+  let minimumTotal = 0;
+  let totalWeight = 0;
+
+  for (const [index, policy] of policies.entries()) {
+    if (policy.kind !== "auto") {
+      continue;
+    }
+
+    const candidateBounds = bounds[index];
+
+    if (!candidateBounds) {
+      throw new Error("window height bounds are missing");
+    }
+
+    active.add(index);
+    minimumTotal += candidateBounds.minimumFrameHeight;
+    totalWeight += policy.weight;
+  }
+
+  if (active.size === 0) {
+    return;
+  }
+
+  if (!Number.isFinite(minimumTotal) || !Number.isFinite(totalWeight)) {
+    throw new RangeError("window height state is invalid");
+  }
+
+  if (budget + floatingPointTolerance(budget, minimumTotal) < minimumTotal) {
+    throw new RangeError("window minimum heights exceed the work area");
+  }
+
+  let remaining = budget;
+
+  while (active.size > 0) {
+    let constrainedIndex = -1;
+    let constrainedHeight = 0;
+
+    for (const index of active) {
+      const policy = policies[index];
+      const candidateBounds = bounds[index];
+
+      if (policy?.kind !== "auto" || !candidateBounds) {
+        throw new Error("window height state is out of sync");
+      }
+
+      const candidate = remaining * (policy.weight / totalWeight);
+
+      if (candidate < candidateBounds.minimumFrameHeight) {
+        constrainedIndex = index;
+        constrainedHeight = candidateBounds.minimumFrameHeight;
+        break;
+      }
+
+      if (candidate > candidateBounds.maximumFrameHeight) {
+        constrainedIndex = index;
+        constrainedHeight = candidateBounds.maximumFrameHeight;
+        break;
+      }
+    }
+
+    if (constrainedIndex >= 0) {
+      const policy = policies[constrainedIndex];
+
+      if (policy?.kind !== "auto") {
+        throw new Error("window height state is out of sync");
+      }
+
+      output[constrainedIndex] = constrainedHeight;
+      active.delete(constrainedIndex);
+      remaining -= constrainedHeight;
+      totalWeight -= policy.weight;
+
+      if (remaining < -floatingPointTolerance(remaining, constrainedHeight)) {
+        throw new RangeError("window minimum heights exceed the work area");
+      }
+
+      continue;
+    }
+
+    let remainingWeight = totalWeight;
+
+    for (const index of active) {
+      const policy = policies[index];
+
+      if (policy?.kind !== "auto") {
+        throw new Error("window height state is out of sync");
+      }
+
+      const height = remaining * (policy.weight / remainingWeight);
+      output[index] = height;
+      remaining -= height;
+      remainingWeight -= policy.weight;
+    }
+
+    active.clear();
+  }
+
+  if (remaining > floatingPointTolerance(initialBudget, remaining)) {
+    throw new RangeError("window maximum heights cannot fill the work area");
+  }
+}
+
+function resolveNonAutomaticFrameHeight(
+  height: Exclude<WindowHeight, { readonly kind: "auto" }>,
+  decorationHeight: number,
+  input: StripGeometryInput,
+): number {
+  if (height.kind === "fixed") {
+    return height.clientHeight + decorationHeight;
+  }
+
+  const presets = input.windowHeightPresets ?? DEFAULT_WINDOW_HEIGHT_PRESETS;
+  const preset = presets[height.index];
+
+  if (!preset) {
+    throw new RangeError("window height preset index is out of range");
+  }
+
+  validateSizePolicy(preset, "window height preset");
+  return preset.kind === "fixed"
+    ? preset.value + decorationHeight
+    : preset.value * (input.workArea.height - input.gap) - input.gap;
+}
+
+function resolveWindowHeightBounds(
+  bounds: WindowHeightBounds | undefined,
+  devicePixelRatio: number,
+): ResolvedWindowHeightBounds {
+  const decorationHeight = bounds?.decorationHeight ?? 0;
+  const minimumClientHeight = bounds?.minimumClientHeight ?? 1;
+  const maximumClientHeight = bounds?.maximumClientHeight;
+
+  if (
+    !Number.isFinite(decorationHeight) ||
+    decorationHeight < 0 ||
+    !Number.isFinite(minimumClientHeight) ||
+    minimumClientHeight < 0 ||
+    (maximumClientHeight !== undefined &&
+      maximumClientHeight !== Number.POSITIVE_INFINITY &&
+      (!Number.isFinite(maximumClientHeight) || maximumClientHeight < 0))
+  ) {
+    throw new RangeError("window height bounds are invalid");
+  }
+
+  const minimumFrameHeight = snapUpToPixelGrid(
+    Math.max(1, minimumClientHeight) + decorationHeight,
+    devicePixelRatio,
+  );
+  const unresolvedMaximumFrameHeight =
+    maximumClientHeight === undefined || maximumClientHeight <= 0
+      ? Number.POSITIVE_INFINITY
+      : maximumClientHeight + decorationHeight;
+  const maximumFrameHeight = Number.isFinite(unresolvedMaximumFrameHeight)
+    ? snapDownToPixelGrid(unresolvedMaximumFrameHeight, devicePixelRatio)
+    : unresolvedMaximumFrameHeight;
+
+  if (
+    !Number.isFinite(minimumFrameHeight) ||
+    maximumFrameHeight < minimumFrameHeight
+  ) {
+    throw new RangeError("window height bounds are inconsistent");
+  }
+
+  return {
+    decorationHeight,
+    maximumFrameHeight,
+    minimumFrameHeight,
+  };
+}
+
+function validateWindowHeight(height: WindowHeight): void {
+  if (
+    (height.kind === "auto" &&
+      (!Number.isFinite(height.weight) || height.weight <= 0)) ||
+    (height.kind === "fixed" &&
+      (!Number.isFinite(height.clientHeight) || height.clientHeight <= 0)) ||
+    (height.kind === "preset" &&
+      (!Number.isInteger(height.index) || height.index < 0))
+  ) {
+    throw new RangeError("window height state is invalid");
+  }
+}
+
+function validateSizePolicy(width: ColumnWidth, label: string): void {
+  if (!Number.isFinite(width.value) || width.value <= 0) {
+    throw new RangeError(`${label} must be finite and greater than zero`);
   }
 }
 
@@ -423,6 +782,13 @@ function snapUpToPixelGrid(value: number, devicePixelRatio: number): number {
   const tolerance = floatingPointTolerance(physicalValue);
 
   return Math.ceil(physicalValue - tolerance) / devicePixelRatio;
+}
+
+function snapDownToPixelGrid(value: number, devicePixelRatio: number): number {
+  const physicalValue = value * devicePixelRatio;
+  const tolerance = floatingPointTolerance(physicalValue);
+
+  return Math.floor(physicalValue + tolerance) / devicePixelRatio;
 }
 
 function moveByPhysicalPixels(

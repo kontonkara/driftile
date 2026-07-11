@@ -2509,6 +2509,16 @@ run_scenario() {
     fail "KGlobalAccel did not register the insert-into-stack-right shortcut"
   wait_for_shortcut "driftile_toggle_floating" || \
     fail "KGlobalAccel did not register the floating-toggle shortcut"
+  wait_for_shortcut "driftile_decrease_window_height" || \
+    fail "KGlobalAccel did not register the decrease-height shortcut"
+  wait_for_shortcut "driftile_increase_window_height" || \
+    fail "KGlobalAccel did not register the increase-height shortcut"
+  wait_for_shortcut "driftile_reset_window_height" || \
+    fail "KGlobalAccel did not register the reset-height shortcut"
+  wait_for_shortcut "driftile_switch_preset_window_height" || \
+    fail "KGlobalAccel did not register the preset-height shortcut"
+  wait_for_shortcut "driftile_switch_preset_window_height_back" || \
+    fail "KGlobalAccel did not register the reverse preset-height shortcut"
 
   verify_automatic_floating \
     "$protocol" \
@@ -2525,6 +2535,70 @@ run_scenario() {
     fail "Driftile did not merge the active $protocol window left: $(describe_layout "$first_title" "$second_title" "$third_title")"
   wait_for_active "$second_title" || \
     fail "Driftile changed $protocol focus after merging the middle window left"
+
+  invoke_shortcut "driftile_increase_window_height" || \
+    fail "KGlobalAccel could not invoke the increase-height shortcut"
+  wait_for_layout \
+    "$first_title" "16,16,616,266" \
+    "$second_title" "16,298,616,406" \
+    "$third_title" "648,16,616,688" || \
+    fail "Driftile did not increase the active $protocol window height: $(describe_layout "$first_title" "$second_title" "$third_title")"
+
+  invoke_shortcut "driftile_decrease_window_height" || \
+    fail "KGlobalAccel could not restore the active window height"
+  wait_for_layout \
+    "$first_title" "16,16,616,336" \
+    "$second_title" "16,368,616,336" \
+    "$third_title" "648,16,616,688" || \
+    fail "Driftile did not restore the active $protocol window height: $(describe_layout "$first_title" "$second_title" "$third_title")"
+
+  invoke_shortcut "driftile_decrease_window_height" || \
+    fail "KGlobalAccel could not invoke the decrease-height shortcut"
+  wait_for_layout \
+    "$first_title" "16,16,616,406" \
+    "$second_title" "16,438,616,266" \
+    "$third_title" "648,16,616,688" || \
+    fail "Driftile did not decrease the active $protocol window height: $(describe_layout "$first_title" "$second_title" "$third_title")"
+
+  invoke_shortcut "driftile_reset_window_height" || \
+    fail "KGlobalAccel could not invoke the reset-height shortcut"
+  wait_for_layout \
+    "$first_title" "16,16,616,336" \
+    "$second_title" "16,368,616,336" \
+    "$third_title" "648,16,616,688" || \
+    fail "Driftile did not reset the active $protocol window height: $(describe_layout "$first_title" "$second_title" "$third_title")"
+
+  invoke_shortcut "driftile_switch_preset_window_height" || \
+    fail "KGlobalAccel could not invoke the preset-height shortcut"
+  wait_for_layout \
+    "$first_title" "16,16,616,219" \
+    "$second_title" "16,251,616,453" \
+    "$third_title" "648,16,616,688" || \
+    fail "Driftile did not select the next $protocol window-height preset: $(describe_layout "$first_title" "$second_title" "$third_title")"
+
+  invoke_shortcut "driftile_reset_window_height" || \
+    fail "KGlobalAccel could not reset the forward height preset"
+  wait_for_layout \
+    "$first_title" "16,16,616,336" \
+    "$second_title" "16,368,616,336" \
+    "$third_title" "648,16,616,688" || \
+    fail "Driftile did not reset the forward $protocol height preset: $(describe_layout "$first_title" "$second_title" "$third_title")"
+
+  invoke_shortcut "driftile_switch_preset_window_height_back" || \
+    fail "KGlobalAccel could not invoke the reverse preset-height shortcut"
+  wait_for_layout \
+    "$first_title" "16,16,616,453" \
+    "$second_title" "16,485,616,219" \
+    "$third_title" "648,16,616,688" || \
+    fail "Driftile did not select the previous $protocol window-height preset: $(describe_layout "$first_title" "$second_title" "$third_title")"
+
+  invoke_shortcut "driftile_reset_window_height" || \
+    fail "KGlobalAccel could not reset the reverse height preset"
+  wait_for_layout \
+    "$first_title" "16,16,616,336" \
+    "$second_title" "16,368,616,336" \
+    "$third_title" "648,16,616,688" || \
+    fail "Driftile did not reset the reverse $protocol height preset: $(describe_layout "$first_title" "$second_title" "$third_title")"
 
   invoke_shortcut "driftile_toggle_floating" || \
     fail "KGlobalAccel could not float the lower $protocol stack member"

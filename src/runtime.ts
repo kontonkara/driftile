@@ -191,6 +191,26 @@ export function switchPresetColumnWidthBack(): void {
   controller?.switchPresetColumnWidthBack();
 }
 
+export function decreaseWindowHeight(): void {
+  controller?.decreaseWindowHeight();
+}
+
+export function increaseWindowHeight(): void {
+  controller?.increaseWindowHeight();
+}
+
+export function resetWindowHeight(): void {
+  controller?.resetWindowHeight();
+}
+
+export function switchPresetWindowHeight(): void {
+  controller?.switchPresetWindowHeight();
+}
+
+export function switchPresetWindowHeightBack(): void {
+  controller?.switchPresetWindowHeightBack();
+}
+
 export function maximizeColumn(): void {
   controller?.maximizeColumn();
 }

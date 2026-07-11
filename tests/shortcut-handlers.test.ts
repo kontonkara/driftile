@@ -133,8 +133,12 @@ const expectedHandlers: Readonly<
     activated: "Runtime.DriftileRuntime.increaseColumnWidth()",
     sequence: "Meta+=",
   },
-  driftile_increase_column_width_plus: {
-    activated: "Runtime.DriftileRuntime.increaseColumnWidth()",
+  driftile_decrease_window_height: {
+    activated: "Runtime.DriftileRuntime.decreaseWindowHeight()",
+    sequence: "Meta+_",
+  },
+  driftile_increase_window_height: {
+    activated: "Runtime.DriftileRuntime.increaseWindowHeight()",
     sequence: "Meta++",
   },
   driftile_insert_window_into_stack_left: {
@@ -282,6 +286,10 @@ const expectedHandlers: Readonly<
   driftile_reset_column_width: {
     activated: "Runtime.DriftileRuntime.resetColumnWidth()",
   },
+  driftile_reset_window_height: {
+    activated: "Runtime.DriftileRuntime.resetWindowHeight()",
+    sequence: "Meta+Ctrl+R",
+  },
   driftile_switch_preset_column_width: {
     activated: "Runtime.DriftileRuntime.switchPresetColumnWidth()",
     sequence: "Meta+R",
@@ -289,6 +297,13 @@ const expectedHandlers: Readonly<
   driftile_switch_preset_column_width_back: {
     activated: "Runtime.DriftileRuntime.switchPresetColumnWidthBack()",
     sequence: "Meta+Shift+R",
+  },
+  driftile_switch_preset_window_height: {
+    activated: "Runtime.DriftileRuntime.switchPresetWindowHeight()",
+    sequence: "Meta+Ctrl+Shift+R",
+  },
+  driftile_switch_preset_window_height_back: {
+    activated: "Runtime.DriftileRuntime.switchPresetWindowHeightBack()",
   },
   driftile_toggle_floating: {
     activated: "Runtime.DriftileRuntime.toggleFloating()",
@@ -360,6 +375,7 @@ describe("KWin shortcut handlers", () => {
       "driftile_move_window_to_previous_desktop",
       "driftile_move_window_to_previous_desktop_page_up",
       "driftile_reset_column_width",
+      "driftile_switch_preset_window_height_back",
     ]);
   });
 

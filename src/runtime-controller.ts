@@ -1,6 +1,8 @@
 import {
+  DEFAULT_WINDOW_HEIGHT_PRESETS,
   solveStripGeometry,
   type Rect,
+  type WindowHeightBounds,
   type WindowGeometry,
 } from "./core/geometry";
 import {
@@ -15,6 +17,7 @@ import {
 } from "./core/ids";
 import {
   LayoutEngine,
+  columnWindowHeights,
   previewColumnRestoration,
   type ColumnWidth,
   type DetachedWindowPlacement,
@@ -25,6 +28,8 @@ import {
   type LayoutContextSnapshot,
   type StackEditResult,
   type VerticalDirection,
+  type WindowHeight,
+  type WindowHeightEditRollback,
 } from "./core/layout-engine";
 import {
   findAdjacentOutput,
@@ -74,10 +79,13 @@ const MAX_TOPOLOGY_SAMPLE_ATTEMPTS = 20;
 const MAX_TRANSIENT_RESUME_PROBES = 20;
 const MINIMUM_COLUMN_WIDTH = 64;
 const PROPORTIONAL_COLUMN_WIDTH_STEP = 0.1;
+const PROPORTIONAL_WINDOW_HEIGHT_STEP = 0.1;
 const REQUIRED_CAPACITY_PARK_SAMPLES = 2;
+const WINDOW_HEIGHT_PRESET_CYCLE_TOLERANCE = 1;
 
 type ColumnResizeAction =
   "decrease" | "increase" | "preset-next" | "preset-previous" | "reset";
+type WindowHeightResizeAction = ColumnResizeAction;
 type DesktopTransferDirection = -1 | 1;
 
 interface ManagedContext {
@@ -295,6 +303,7 @@ export interface RuntimeControllerOptions {
   readonly schedule?: (callback: () => void) => void;
   readonly scheduleResume?: (callback: () => void) => void;
   readonly startupStabilizationProbes?: number;
+  readonly windowHeightPresets?: readonly ColumnWidth[];
 }
 
 export class RuntimeController {
@@ -353,6 +362,7 @@ export class RuntimeController {
   private startupStabilizationToken: object | null = null;
   private started = false;
   private readonly width: ColumnWidth;
+  private readonly windowHeightPresets: readonly ColumnWidth[];
   private readonly requestedSuspensions = new Map<
     WindowId,
     Set<WindowSuspensionRequest>
@@ -417,6 +427,9 @@ export class RuntimeController {
     this.columnWidthPresets = (
       options.columnWidthPresets ?? DEFAULT_COLUMN_WIDTH_PRESETS
     ).map((width) => ({ ...width }));
+    this.windowHeightPresets = (
+      options.windowHeightPresets ?? DEFAULT_WINDOW_HEIGHT_PRESETS
+    ).map((height) => ({ ...height }));
     this.workspace = workspace;
     this.desktopLifecycle = new DesktopLifecycle(workspace, {
       changed: () => {
@@ -639,6 +652,26 @@ export class RuntimeController {
     return this.resizeActiveColumn("preset-previous");
   }
 
+  decreaseWindowHeight(): boolean {
+    return this.resizeActiveWindowHeight("decrease");
+  }
+
+  increaseWindowHeight(): boolean {
+    return this.resizeActiveWindowHeight("increase");
+  }
+
+  resetWindowHeight(): boolean {
+    return this.resizeActiveWindowHeight("reset");
+  }
+
+  switchPresetWindowHeight(): boolean {
+    return this.resizeActiveWindowHeight("preset-next");
+  }
+
+  switchPresetWindowHeightBack(): boolean {
+    return this.resizeActiveWindowHeight("preset-previous");
+  }
+
   maximizeColumn(): boolean {
     const command = this.prepareActiveColumnCommand();
 
@@ -702,13 +735,10 @@ export class RuntimeController {
     let currentLayout: ReturnType<typeof solveStripGeometry>;
 
     try {
-      currentLayout = solveStripGeometry({
-        context: command.before,
-        devicePixelRatio: command.contextGeometry.devicePixelRatio,
-        gap: this.gap,
-        pixelGridOrigin: command.contextGeometry.pixelGridOrigin,
-        workArea: command.contextGeometry.workArea,
-      });
+      currentLayout = this.solveContextGeometry(
+        command.before,
+        command.contextGeometry,
+      );
     } catch {
       return false;
     }
@@ -1798,20 +1828,14 @@ export class RuntimeController {
     let targetLayout: ReturnType<typeof solveStripGeometry>;
 
     try {
-      sourceLayout = solveStripGeometry({
-        context: preview.value.sourceLayout,
-        devicePixelRatio: active.contextGeometry.devicePixelRatio,
-        gap: this.gap,
-        pixelGridOrigin: active.contextGeometry.pixelGridOrigin,
-        workArea: active.contextGeometry.workArea,
-      });
-      targetLayout = solveStripGeometry({
-        context: preview.value.targetLayout,
-        devicePixelRatio: targetContextGeometry.devicePixelRatio,
-        gap: this.gap,
-        pixelGridOrigin: targetContextGeometry.pixelGridOrigin,
-        workArea: targetContextGeometry.workArea,
-      });
+      sourceLayout = this.solveContextGeometry(
+        preview.value.sourceLayout,
+        active.contextGeometry,
+      );
+      targetLayout = this.solveContextGeometry(
+        preview.value.targetLayout,
+        targetContextGeometry,
+      );
     } catch (error) {
       this.discardContextTransferPreview(preview);
       console.warn(
@@ -2863,20 +2887,14 @@ export class RuntimeController {
     let targetLayout: ReturnType<typeof solveStripGeometry>;
 
     try {
-      sourceLayout = solveStripGeometry({
-        context: preview.value.sourceLayout,
-        devicePixelRatio: active.contextGeometry.devicePixelRatio,
-        gap: this.gap,
-        pixelGridOrigin: active.contextGeometry.pixelGridOrigin,
-        workArea: active.contextGeometry.workArea,
-      });
-      targetLayout = solveStripGeometry({
-        context: preview.value.targetLayout,
-        devicePixelRatio: targetContextGeometry.devicePixelRatio,
-        gap: this.gap,
-        pixelGridOrigin: targetContextGeometry.pixelGridOrigin,
-        workArea: targetContextGeometry.workArea,
-      });
+      sourceLayout = this.solveContextGeometry(
+        preview.value.sourceLayout,
+        active.contextGeometry,
+      );
+      targetLayout = this.solveContextGeometry(
+        preview.value.targetLayout,
+        targetContextGeometry,
+      );
     } catch (error) {
       this.discardContextTransferPreview(preview);
       console.warn(
@@ -4054,6 +4072,361 @@ export class RuntimeController {
     }
   }
 
+  private resizeActiveWindowHeight(action: WindowHeightResizeAction): boolean {
+    const command = this.prepareActiveColumnCommand();
+
+    if (!command || this.hasCapacityMutationInFlight(command.context.key)) {
+      return false;
+    }
+
+    let currentLayout: ReturnType<typeof solveStripGeometry>;
+
+    try {
+      currentLayout = this.solveContextGeometry(
+        command.before,
+        command.contextGeometry,
+      );
+    } catch {
+      return false;
+    }
+
+    const activeIndex = command.activeColumn.windowIds.indexOf(
+      command.activeId,
+    );
+
+    if (activeIndex < 0) {
+      return false;
+    }
+
+    const currentFrames = new Map(
+      currentLayout.windows
+        .filter((window) => window.columnId === command.activeColumn.id)
+        .map((window) => [window.windowId, window.frame] as const),
+    );
+
+    if (currentFrames.size !== command.activeColumn.windowIds.length) {
+      return false;
+    }
+
+    const currentHeights = columnWindowHeights(command.activeColumn);
+    const currentActiveHeight = currentHeights[activeIndex];
+    const currentActiveFrame = currentFrames.get(command.activeId);
+
+    if (!currentActiveHeight || !currentActiveFrame) {
+      return false;
+    }
+
+    let nextHeights: WindowHeight[];
+
+    if (action === "reset") {
+      if (
+        currentActiveHeight.kind === "auto" &&
+        currentActiveHeight.weight === 1
+      ) {
+        return false;
+      }
+
+      nextHeights = currentHeights.map((height) => ({ ...height }));
+      nextHeights[activeIndex] = { kind: "auto", weight: 1 };
+    } else {
+      const metrics = this.activeWindowHeightMetrics(command, activeIndex);
+
+      if (!metrics) {
+        return false;
+      }
+
+      if (currentActiveHeight.kind === "auto") {
+        const automaticHeights = this.normalizedAutomaticWindowHeights(
+          command.activeColumn.windowIds,
+          currentFrames,
+        );
+
+        if (!automaticHeights) {
+          return false;
+        }
+
+        nextHeights = automaticHeights;
+      } else {
+        nextHeights = currentHeights.map((height) => ({ ...height }));
+      }
+
+      if (action === "preset-next" || action === "preset-previous") {
+        const presetIndex = this.nextWindowHeightPresetIndex(
+          currentActiveHeight,
+          currentActiveFrame.height,
+          command.contextGeometry,
+          metrics.decorationHeight,
+          metrics.minimumHeight,
+          metrics.maximumHeight,
+          action === "preset-next" ? 1 : -1,
+        );
+
+        if (presetIndex === null) {
+          return false;
+        }
+
+        nextHeights[activeIndex] = { index: presetIndex, kind: "preset" };
+      } else {
+        const direction = action === "increase" ? 1 : -1;
+        const denominator = command.contextGeometry.workArea.height - this.gap;
+
+        if (!Number.isFinite(denominator) || denominator <= 0) {
+          return false;
+        }
+
+        const requested =
+          currentActiveFrame.height +
+          direction * PROPORTIONAL_WINDOW_HEIGHT_STEP * denominator;
+        const targetFrameHeight = clamp(
+          roundToPhysicalPixel(
+            requested,
+            command.contextGeometry.devicePixelRatio,
+          ),
+          metrics.minimumHeight,
+          metrics.maximumHeight,
+        );
+        const targetClientHeight = targetFrameHeight - metrics.decorationHeight;
+
+        if (!Number.isFinite(targetClientHeight) || targetClientHeight <= 0) {
+          return false;
+        }
+
+        const tolerance = floatingPointTolerance(
+          currentActiveFrame.height,
+          targetFrameHeight,
+        );
+        const movesInRequestedDirection =
+          direction > 0
+            ? targetFrameHeight > currentActiveFrame.height + tolerance
+            : targetFrameHeight < currentActiveFrame.height - tolerance;
+
+        if (
+          !movesInRequestedDirection &&
+          currentActiveHeight.kind === "fixed" &&
+          nearlyEqual(currentActiveHeight.clientHeight, targetClientHeight)
+        ) {
+          return false;
+        }
+
+        nextHeights[activeIndex] = {
+          clientHeight: targetClientHeight,
+          kind: "fixed",
+        };
+      }
+    }
+
+    const rollbackState: { current?: WindowHeightEditRollback } = {};
+    const applied = this.applyActiveColumnMutation(
+      command,
+      "window height resize",
+      () => {
+        const edit = this.layout.setActiveColumnWindowHeights(
+          command.activeId,
+          nextHeights,
+        );
+
+        if (edit) {
+          rollbackState.current = edit.rollback;
+        }
+
+        return edit !== null;
+      },
+      () => {
+        const rollback = rollbackState.current;
+        return (
+          rollback !== undefined &&
+          this.layout.rollbackWindowHeightEdit(rollback)
+        );
+      },
+    );
+    const rollback = rollbackState.current;
+
+    if (applied && rollback !== undefined) {
+      this.layout.discardWindowHeightEditRollback(rollback);
+    }
+
+    return applied;
+  }
+
+  private activeWindowHeightMetrics(
+    command: ActiveColumnCommand,
+    activeIndex: number,
+  ): {
+    readonly decorationHeight: number;
+    readonly maximumHeight: number;
+    readonly minimumHeight: number;
+  } | null {
+    const devicePixelRatio = command.contextGeometry.devicePixelRatio;
+    const usableHeight =
+      command.contextGeometry.workArea.height -
+      this.gap * (command.activeColumn.windowIds.length + 1);
+
+    if (
+      !Number.isFinite(devicePixelRatio) ||
+      devicePixelRatio <= 0 ||
+      !Number.isFinite(usableHeight) ||
+      usableHeight <= 0
+    ) {
+      return null;
+    }
+
+    let activeDecorationHeight = 0;
+    let activeMinimumHeight = 0;
+    let activeMaximumHeight = Number.POSITIVE_INFINITY;
+    let siblingMinimumHeight = 0;
+
+    for (const [index, id] of command.activeColumn.windowIds.entries()) {
+      const source = this.observer.source(id);
+
+      if (!source || this.automaticallyFloats(source)) {
+        return null;
+      }
+
+      const bounds = frameSizeConstraintBounds(source);
+      const decorationHeight = validDecorationExtent(
+        source.frameGeometry.height,
+        source.clientGeometry.height,
+      );
+
+      if (!bounds || decorationHeight === null) {
+        return null;
+      }
+
+      const effectiveMinimumHeight = Math.max(
+        bounds.minimumHeight,
+        decorationHeight + 1,
+      );
+
+      if (index === activeIndex) {
+        activeDecorationHeight = decorationHeight;
+        activeMinimumHeight = effectiveMinimumHeight;
+        activeMaximumHeight = bounds.maximumHeight;
+      } else {
+        siblingMinimumHeight += ceilToPhysicalPixel(
+          effectiveMinimumHeight,
+          devicePixelRatio,
+        );
+      }
+    }
+
+    const minimumHeight = ceilToPhysicalPixel(
+      activeMinimumHeight,
+      devicePixelRatio,
+    );
+    const maximumHeight = floorToPhysicalPixel(
+      Math.min(activeMaximumHeight, usableHeight - siblingMinimumHeight),
+      devicePixelRatio,
+    );
+
+    if (
+      !Number.isFinite(minimumHeight) ||
+      !Number.isFinite(maximumHeight) ||
+      maximumHeight < minimumHeight
+    ) {
+      return null;
+    }
+
+    return {
+      decorationHeight: activeDecorationHeight,
+      maximumHeight,
+      minimumHeight,
+    };
+  }
+
+  private normalizedAutomaticWindowHeights(
+    windowIds: readonly WindowId[],
+    frames: ReadonlyMap<WindowId, Rect>,
+  ): WindowHeight[] | null {
+    let maximumHeight = 0;
+
+    for (const id of windowIds) {
+      const height = frames.get(id)?.height ?? 0;
+
+      if (!Number.isFinite(height) || height <= 0) {
+        return null;
+      }
+
+      maximumHeight = Math.max(maximumHeight, height);
+    }
+
+    return windowIds.map((id) => ({
+      kind: "auto",
+      weight: (frames.get(id)?.height ?? maximumHeight) / maximumHeight,
+    }));
+  }
+
+  private nextWindowHeightPresetIndex(
+    current: WindowHeight,
+    currentFrameHeight: number,
+    contextGeometry: ContextGeometry,
+    decorationHeight: number,
+    minimumHeight: number,
+    maximumHeight: number,
+    direction: -1 | 1,
+  ): number | null {
+    const presets = this.windowHeightPresets;
+
+    if (presets.length === 0) {
+      return null;
+    }
+
+    if (
+      current.kind === "preset" &&
+      current.index >= 0 &&
+      current.index < presets.length
+    ) {
+      const next =
+        (current.index + (direction > 0 ? 1 : presets.length - 1)) %
+        presets.length;
+      return next === current.index ? null : next;
+    }
+
+    const resolved = presets.map((preset) => {
+      const requested =
+        preset.kind === "fixed"
+          ? preset.value + decorationHeight
+          : preset.value * (contextGeometry.workArea.height - this.gap) -
+            this.gap;
+
+      if (!Number.isFinite(requested) || requested <= 0) {
+        return null;
+      }
+
+      return clamp(
+        roundToPhysicalPixel(requested, contextGeometry.devicePixelRatio),
+        minimumHeight,
+        maximumHeight,
+      );
+    });
+    let targetIndex = -1;
+
+    if (direction > 0) {
+      targetIndex = resolved.findIndex(
+        (height) =>
+          height !== null &&
+          height > currentFrameHeight + WINDOW_HEIGHT_PRESET_CYCLE_TOLERANCE,
+      );
+      targetIndex = targetIndex < 0 ? 0 : targetIndex;
+    } else {
+      for (let index = resolved.length - 1; index >= 0; index -= 1) {
+        const height = resolved[index];
+
+        if (
+          height !== undefined &&
+          height !== null &&
+          height < currentFrameHeight - WINDOW_HEIGHT_PRESET_CYCLE_TOLERANCE
+        ) {
+          targetIndex = index;
+          break;
+        }
+      }
+
+      targetIndex = targetIndex < 0 ? presets.length - 1 : targetIndex;
+    }
+
+    return resolved[targetIndex] === null ? null : targetIndex;
+  }
+
   private resizedColumnWidth(
     command: ActiveColumnCommand,
     action: ColumnResizeAction,
@@ -4789,6 +5162,63 @@ export class RuntimeController {
     }
   }
 
+  private solveContextGeometry(
+    context: LayoutContextSnapshot,
+    geometry: ContextGeometry,
+  ): ReturnType<typeof solveStripGeometry> {
+    const input = {
+      context,
+      devicePixelRatio: geometry.devicePixelRatio,
+      gap: this.gap,
+      pixelGridOrigin: geometry.pixelGridOrigin,
+      workArea: geometry.workArea,
+    };
+
+    if (!context.columns.some((column) => column.windowHeights !== undefined)) {
+      return solveStripGeometry(input);
+    }
+
+    const windowHeightBounds = new Map<WindowId, WindowHeightBounds>();
+
+    for (const column of context.columns) {
+      if (!column.windowHeights) {
+        continue;
+      }
+
+      for (const id of column.windowIds) {
+        const source = this.observer.source(id);
+        const bounds = source ? frameSizeConstraintBounds(source) : null;
+
+        if (!source || !bounds) {
+          throw new Error("window height bounds are unavailable");
+        }
+
+        const decorationHeight = validDecorationExtent(
+          source.frameGeometry.height,
+          source.clientGeometry.height,
+        );
+
+        if (decorationHeight === null) {
+          throw new RangeError("window decoration height is invalid");
+        }
+
+        windowHeightBounds.set(id, {
+          decorationHeight,
+          maximumClientHeight: Number.isFinite(bounds.maximumHeight)
+            ? bounds.maximumHeight - decorationHeight
+            : Number.POSITIVE_INFINITY,
+          minimumClientHeight: bounds.minimumHeight - decorationHeight,
+        });
+      }
+    }
+
+    return solveStripGeometry({
+      ...input,
+      windowHeightBounds,
+      windowHeightPresets: this.windowHeightPresets,
+    });
+  }
+
   private prepareActiveColumnCommand(): ActiveColumnCommand | null {
     const activeWindow = this.workspace.activeWindow;
 
@@ -4900,13 +5330,10 @@ export class RuntimeController {
     let nextLayout: ReturnType<typeof solveStripGeometry>;
 
     try {
-      nextLayout = solveStripGeometry({
-        context: this.layout.snapshot(context.outputId, context.desktopId),
-        devicePixelRatio: contextGeometry.devicePixelRatio,
-        gap: this.gap,
-        pixelGridOrigin: contextGeometry.pixelGridOrigin,
-        workArea: contextGeometry.workArea,
-      });
+      nextLayout = this.solveContextGeometry(
+        this.layout.snapshot(context.outputId, context.desktopId),
+        contextGeometry,
+      );
     } catch (error) {
       restoreLayout();
       console.warn(
@@ -5082,13 +5509,10 @@ export class RuntimeController {
     let nextLayout: ReturnType<typeof solveStripGeometry>;
 
     try {
-      nextLayout = solveStripGeometry({
-        context: nextContext,
-        devicePixelRatio: command.contextGeometry.devicePixelRatio,
-        gap: this.gap,
-        pixelGridOrigin: command.contextGeometry.pixelGridOrigin,
-        workArea: command.contextGeometry.workArea,
-      });
+      nextLayout = this.solveContextGeometry(
+        nextContext,
+        command.contextGeometry,
+      );
     } catch (error) {
       console.warn(
         `[driftile] ${label} rejected context=${command.contextKey} error=${String(error)}`,
@@ -5471,6 +5895,13 @@ export class RuntimeController {
           column: {
             id: column.id,
             width: { ...column.width },
+            ...(column.windowHeights
+              ? {
+                  windowHeights: column.windowHeights.map((height) => ({
+                    ...height,
+                  })),
+                }
+              : {}),
             windowIds: [...column.windowIds],
           },
           sourceContextKey: key,
@@ -6861,6 +7292,7 @@ export class RuntimeController {
         readonly column: {
           id: ColumnId;
           width: ColumnWidth;
+          windowHeights?: WindowHeight[];
           windowIds: WindowId[];
         };
       }
@@ -6895,9 +7327,46 @@ export class RuntimeController {
 
       planned.candidates.push(candidate);
       planned.column.windowIds.push(candidate.id);
+
+      if (metadata?.column.windowHeights) {
+        const sourceIndex = metadata.column.windowIds.indexOf(candidate.id);
+        const height = metadata.column.windowHeights[sourceIndex];
+
+        if (!height) {
+          throw new Error("topology window height state is out of sync");
+        }
+
+        planned.column.windowHeights ??= [];
+        planned.column.windowHeights.push({ ...height });
+      }
     }
 
     let plannedColumns = [...plannedByKey.values()];
+
+    for (const planned of plannedColumns) {
+      const heights = planned.column.windowHeights;
+
+      if (!heights) {
+        continue;
+      }
+
+      if (heights.length !== planned.column.windowIds.length) {
+        throw new Error("topology window height state is out of sync");
+      }
+
+      const singleton = heights.length === 1 ? heights[0] : undefined;
+
+      if (singleton?.kind === "auto") {
+        heights[0] = { kind: "auto", weight: 1 };
+      }
+
+      if (
+        heights.every((height) => height.kind === "auto" && height.weight === 1)
+      ) {
+        delete planned.column.windowHeights;
+      }
+    }
+
     const preview = (columns: typeof plannedColumns) => {
       const placements = columns.map((planned, index) => ({
         column: planned.column,
@@ -6909,16 +7378,17 @@ export class RuntimeController {
         return null;
       }
 
-      return {
-        layout: solveStripGeometry({
-          context: snapshot,
-          devicePixelRatio: contextGeometry.devicePixelRatio,
-          gap: this.gap,
-          pixelGridOrigin: contextGeometry.pixelGridOrigin,
-          workArea: contextGeometry.workArea,
-        }),
-        placements,
-      };
+      try {
+        return {
+          layout: this.solveContextGeometry(snapshot, contextGeometry),
+          placements,
+        };
+      } catch (error) {
+        console.warn(
+          `[driftile] topology admission geometry rejected context=${key} error=${String(error)}`,
+        );
+        return null;
+      }
     };
     let plannedPreview = preview(plannedColumns);
 
@@ -7129,13 +7599,10 @@ export class RuntimeController {
     let admittedCandidates = candidates;
 
     while (admittedCandidates.length > 0) {
-      const layout = solveStripGeometry({
-        context: this.layout.snapshot(context.outputId, context.desktopId),
-        devicePixelRatio: contextGeometry.devicePixelRatio,
-        gap: this.gap,
-        pixelGridOrigin: contextGeometry.pixelGridOrigin,
-        workArea: contextGeometry.workArea,
-      });
+      const layout = this.solveContextGeometry(
+        this.layout.snapshot(context.outputId, context.desktopId),
+        contextGeometry,
+      );
       const frames = new Map(
         layout.windows.map((window) => [window.windowId, window.frame]),
       );
@@ -8339,13 +8806,10 @@ export class RuntimeController {
       return 0;
     }
 
-    const layout = solveStripGeometry({
-      context: this.layout.snapshot(context.outputId, context.desktopId),
-      devicePixelRatio: contextGeometry.devicePixelRatio,
-      gap: this.gap,
-      pixelGridOrigin: contextGeometry.pixelGridOrigin,
-      workArea: contextGeometry.workArea,
-    });
+    const layout = this.solveContextGeometry(
+      this.layout.snapshot(context.outputId, context.desktopId),
+      contextGeometry,
+    );
     let writeCount = 0;
 
     if (!this.canApplyLayout(layout.maxViewportOffset)) {
@@ -8512,13 +8976,7 @@ export class RuntimeController {
         columns: snapshot.columns.filter((column) => !removed.has(column.id)),
       };
 
-      return solveStripGeometry({
-        context: simulated,
-        devicePixelRatio: contextGeometry.devicePixelRatio,
-        gap: this.gap,
-        pixelGridOrigin: contextGeometry.pixelGridOrigin,
-        workArea: contextGeometry.workArea,
-      });
+      return this.solveContextGeometry(simulated, contextGeometry);
     };
     let lower = 1;
     let required = -1;
@@ -9202,13 +9660,16 @@ export class RuntimeController {
       return false;
     }
 
-    const layout = solveStripGeometry({
-      context: preview,
-      devicePixelRatio: contextGeometry.devicePixelRatio,
-      gap: this.gap,
-      pixelGridOrigin: contextGeometry.pixelGridOrigin,
-      workArea: contextGeometry.workArea,
-    });
+    let layout: ReturnType<typeof solveStripGeometry>;
+
+    try {
+      layout = this.solveContextGeometry(preview, contextGeometry);
+    } catch (error) {
+      console.warn(
+        `[driftile] capacity lease restoration rejected context=${key} error=${String(error)}`,
+      );
+      return false;
+    }
 
     if (!this.canApplyLayout(layout.maxViewportOffset)) {
       return false;
@@ -9442,13 +9903,10 @@ export class RuntimeController {
       return { kind: "deferred" };
     }
 
-    const layout = solveStripGeometry({
-      context: this.layout.snapshot(context.outputId, context.desktopId),
-      devicePixelRatio: contextGeometry.devicePixelRatio,
-      gap: this.gap,
-      pixelGridOrigin: contextGeometry.pixelGridOrigin,
-      workArea: contextGeometry.workArea,
-    });
+    const layout = this.solveContextGeometry(
+      this.layout.snapshot(context.outputId, context.desktopId),
+      contextGeometry,
+    );
     const candidate = layout.windows.find(
       (window) => window.windowId === candidateId,
     );

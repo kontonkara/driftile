@@ -300,10 +300,26 @@ const definitions: readonly ShortcutDefinition[] = [
     text: "Driftile: Increase column width",
     sequence: "Meta+=",
   },
+  // KGlobalAccel matches shifted punctuation by its produced symbol.
   {
-    name: "driftile_increase_column_width_plus",
-    text: "Driftile: Increase column width (plus)",
+    name: "driftile_decrease_window_height",
+    text: "Driftile: Decrease window height",
+    sequence: "Meta+_",
+  },
+  {
+    name: "driftile_increase_window_height",
+    text: "Driftile: Increase window height",
     sequence: "Meta++",
+  },
+  {
+    name: "driftile_switch_preset_window_height",
+    text: "Driftile: Switch preset window height",
+    sequence: "Meta+Ctrl+Shift+R",
+  },
+  {
+    name: "driftile_reset_window_height",
+    text: "Driftile: Reset window height",
+    sequence: "Meta+Ctrl+R",
   },
 ];
 

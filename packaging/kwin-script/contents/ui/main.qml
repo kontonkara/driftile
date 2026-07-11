@@ -442,11 +442,35 @@ QtObject {
         sequence: "Meta+="
         onActivated: Runtime.DriftileRuntime.increaseColumnWidth()
     }
-    readonly property ShortcutHandler increaseColumnWidthPlusShortcut: ShortcutHandler {
-        name: "driftile_increase_column_width_plus"
-        text: "Driftile: Increase column width (plus)"
+    // KGlobalAccel matches shifted punctuation by its produced symbol.
+    readonly property ShortcutHandler decreaseWindowHeightShortcut: ShortcutHandler {
+        name: "driftile_decrease_window_height"
+        text: "Driftile: Decrease window height"
+        sequence: "Meta+_"
+        onActivated: Runtime.DriftileRuntime.decreaseWindowHeight()
+    }
+    readonly property ShortcutHandler increaseWindowHeightShortcut: ShortcutHandler {
+        name: "driftile_increase_window_height"
+        text: "Driftile: Increase window height"
         sequence: "Meta++"
-        onActivated: Runtime.DriftileRuntime.increaseColumnWidth()
+        onActivated: Runtime.DriftileRuntime.increaseWindowHeight()
+    }
+    readonly property ShortcutHandler switchPresetWindowHeightShortcut: ShortcutHandler {
+        name: "driftile_switch_preset_window_height"
+        text: "Driftile: Switch preset window height"
+        sequence: "Meta+Ctrl+Shift+R"
+        onActivated: Runtime.DriftileRuntime.switchPresetWindowHeight()
+    }
+    readonly property ShortcutHandler switchPresetWindowHeightBackShortcut: ShortcutHandler {
+        name: "driftile_switch_preset_window_height_back"
+        text: "Driftile: Switch preset window height back"
+        onActivated: Runtime.DriftileRuntime.switchPresetWindowHeightBack()
+    }
+    readonly property ShortcutHandler resetWindowHeightShortcut: ShortcutHandler {
+        name: "driftile_reset_window_height"
+        text: "Driftile: Reset window height"
+        sequence: "Meta+Ctrl+R"
+        onActivated: Runtime.DriftileRuntime.resetWindowHeight()
     }
     readonly property ShortcutHandler resetColumnWidthShortcut: ShortcutHandler {
         name: "driftile_reset_column_width"

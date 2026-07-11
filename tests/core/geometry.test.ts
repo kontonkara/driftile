@@ -1,6 +1,9 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { solveStripGeometry } from "../../src/core/geometry";
+import {
+  DEFAULT_WINDOW_HEIGHT_PRESETS,
+  solveStripGeometry,
+} from "../../src/core/geometry";
 import { columnId, desktopId, outputId, windowId } from "../../src/core/ids";
 import type {
   ColumnWidth,
@@ -451,6 +454,348 @@ describe("solveStripGeometry", () => {
     expect((lastWindow?.frame.y ?? 0) + (lastWindow?.frame.height ?? 0)).toBe(
       1114,
     );
+  });
+
+  it("distributes automatic height by weight around one fixed client height", () => {
+    const context = createContext([{ kind: "fixed", value: 600 }]);
+    const column = context.columns[0];
+
+    if (!column) {
+      throw new Error("expected a column fixture");
+    }
+
+    const fixed = windowId("window-2");
+    const result = solveStripGeometry({
+      context: {
+        ...context,
+        columns: [
+          {
+            ...column,
+            windowHeights: [
+              { kind: "auto", weight: 1 },
+              { clientHeight: 300, kind: "fixed" },
+              { kind: "auto", weight: 3 },
+            ],
+            windowIds: [windowId("window-1"), fixed, windowId("window-3")],
+          },
+        ],
+      },
+      devicePixelRatio: 1,
+      gap: 10,
+      pixelGridOrigin: { x: 0, y: 0 },
+      windowHeightBounds: new Map([
+        [
+          fixed,
+          {
+            decorationHeight: 20,
+            maximumClientHeight: 800,
+            minimumClientHeight: 100,
+          },
+        ],
+      ]),
+      workArea: { height: 1000, width: 1000, x: 0, y: 0 },
+    });
+
+    expect(result.windows.map((window) => window.frame)).toEqual([
+      { height: 160, width: 600, x: 10, y: 10 },
+      { height: 320, width: 600, x: 10, y: 180 },
+      { height: 480, width: 600, x: 10, y: 510 },
+    ]);
+  });
+
+  it("resolves proportional and fixed presets with frame decorations", () => {
+    const context = createContext([{ kind: "fixed", value: 600 }]);
+    const column = context.columns[0];
+
+    if (!column) {
+      throw new Error("expected a column fixture");
+    }
+
+    const first = windowId("window-1");
+    const proportional = solveStripGeometry({
+      context: {
+        ...context,
+        columns: [
+          {
+            ...column,
+            windowHeights: [
+              { index: 1, kind: "preset" },
+              { kind: "auto", weight: 1 },
+            ],
+            windowIds: [first, windowId("window-2")],
+          },
+        ],
+      },
+      devicePixelRatio: 1,
+      gap: 10,
+      pixelGridOrigin: { x: 0, y: 0 },
+      windowHeightBounds: new Map([[first, { decorationHeight: 30 }]]),
+      windowHeightPresets: DEFAULT_WINDOW_HEIGHT_PRESETS,
+      workArea: { height: 1000, width: 1000, x: 0, y: 0 },
+    });
+    const fixed = solveStripGeometry({
+      context: {
+        ...context,
+        columns: [
+          {
+            ...column,
+            windowHeights: [
+              { index: 0, kind: "preset" },
+              { kind: "auto", weight: 1 },
+            ],
+            windowIds: [first, windowId("window-2")],
+          },
+        ],
+      },
+      devicePixelRatio: 1,
+      gap: 10,
+      pixelGridOrigin: { x: 0, y: 0 },
+      windowHeightBounds: new Map([[first, { decorationHeight: 20 }]]),
+      windowHeightPresets: [{ kind: "fixed", value: 300 }],
+      workArea: { height: 1000, width: 1000, x: 0, y: 0 },
+    });
+
+    expect(proportional.windows.map((window) => window.frame.height)).toEqual([
+      485, 485,
+    ]);
+    expect(fixed.windows.map((window) => window.frame.height)).toEqual([
+      320, 650,
+    ]);
+  });
+
+  it("redistributes weighted automatic height at client bounds", () => {
+    const context = createContext([{ kind: "fixed", value: 600 }]);
+    const column = context.columns[0];
+
+    if (!column) {
+      throw new Error("expected a column fixture");
+    }
+
+    const first = windowId("window-1");
+    const second = windowId("window-2");
+    const third = windowId("window-3");
+    const result = solveStripGeometry({
+      context: {
+        ...context,
+        columns: [
+          {
+            ...column,
+            windowHeights: [
+              { kind: "auto", weight: 1.01 },
+              { kind: "auto", weight: 1 },
+              { kind: "auto", weight: 1 },
+            ],
+            windowIds: [first, second, third],
+          },
+        ],
+      },
+      devicePixelRatio: 1,
+      gap: 10,
+      pixelGridOrigin: { x: 0, y: 0 },
+      windowHeightBounds: new Map([
+        [first, { minimumClientHeight: 400 }],
+        [third, { maximumClientHeight: 200 }],
+      ]),
+      workArea: { height: 1000, width: 1000, x: 0, y: 0 },
+    });
+
+    expect(result.windows.map((window) => window.frame.height)).toEqual([
+      400, 360, 200,
+    ]);
+    expect(result.windows[2]?.frame.y).toBe(790);
+  });
+
+  it("reserves a physical-pixel-aligned sibling minimum", () => {
+    const context = createContext([{ kind: "fixed", value: 600 }]);
+    const column = context.columns[0];
+
+    if (!column) {
+      throw new Error("expected a column fixture");
+    }
+
+    const first = windowId("window-1");
+    const second = windowId("window-2");
+    const result = solveStripGeometry({
+      context: {
+        ...context,
+        columns: [
+          {
+            ...column,
+            windowHeights: [
+              { kind: "auto", weight: 1 },
+              { clientHeight: 1000, kind: "fixed" },
+            ],
+            windowIds: [first, second],
+          },
+        ],
+      },
+      devicePixelRatio: 1.25,
+      gap: 10,
+      pixelGridOrigin: { x: 0, y: 0 },
+      windowHeightBounds: new Map([[first, { minimumClientHeight: 101 }]]),
+      workArea: { height: 800, width: 1000, x: 0, y: 0 },
+    });
+
+    expect(result.windows[0]?.frame.height).toBeGreaterThanOrEqual(101);
+    expect(result.windows[1]?.frame.height).toBeLessThanOrEqual(668);
+  });
+
+  it("keeps a finite maximum representable after fractional snapping", () => {
+    const context = createContext([{ kind: "fixed", value: 600 }]);
+    const column = context.columns[0];
+    const id = windowId("window-1");
+
+    if (!column) {
+      throw new Error("expected a column fixture");
+    }
+
+    const result = solveStripGeometry({
+      context: {
+        ...context,
+        columns: [
+          {
+            ...column,
+            windowHeights: [{ clientHeight: 1000, kind: "fixed" }],
+            windowIds: [id],
+          },
+        ],
+      },
+      devicePixelRatio: 1.25,
+      gap: 10,
+      pixelGridOrigin: { x: 0, y: 0 },
+      windowHeightBounds: new Map([[id, { maximumClientHeight: 100.1 }]]),
+      workArea: { height: 800, width: 1000, x: 0, y: 0 },
+    });
+
+    expect(result.windows[0]?.frame.height).toBeLessThanOrEqual(100.1);
+  });
+
+  it("snaps weighted window-height edges to fractional physical pixels", () => {
+    const context = createContext([{ kind: "fixed", value: 333.3 }]);
+    const column = context.columns[0];
+
+    if (!column) {
+      throw new Error("expected a column fixture");
+    }
+
+    const result = solveStripGeometry({
+      context: {
+        ...context,
+        columns: [
+          {
+            ...column,
+            windowHeights: [
+              { kind: "auto", weight: 1 },
+              { clientHeight: 317.3, kind: "fixed" },
+              { kind: "auto", weight: 2 },
+            ],
+            windowIds: [
+              windowId("window-1"),
+              windowId("window-2"),
+              windowId("window-3"),
+            ],
+          },
+        ],
+      },
+      devicePixelRatio: 1.25,
+      gap: 16,
+      pixelGridOrigin: { x: 100, y: 50 },
+      workArea: { height: 1080, width: 1920, x: 100, y: 50 },
+    });
+
+    for (const { frame } of result.windows) {
+      expect((frame.y - 50) * 1.25).toBeCloseTo(
+        Math.round((frame.y - 50) * 1.25),
+        10,
+      );
+      expect((frame.y + frame.height - 50) * 1.25).toBeCloseTo(
+        Math.round((frame.y + frame.height - 50) * 1.25),
+        10,
+      );
+    }
+  });
+
+  it("rejects invalid serialized window-height geometry", () => {
+    const context = createContext([{ kind: "fixed", value: 600 }]);
+    const column = context.columns[0];
+
+    if (!column) {
+      throw new Error("expected a column fixture");
+    }
+
+    const solveColumn = (
+      windowHeights: NonNullable<typeof column.windowHeights>,
+    ) =>
+      solveStripGeometry({
+        context: {
+          ...context,
+          columns: [
+            {
+              ...column,
+              windowHeights,
+              windowIds: [windowId("window-1"), windowId("window-2")],
+            },
+          ],
+        },
+        devicePixelRatio: 1,
+        gap: 10,
+        pixelGridOrigin: { x: 0, y: 0 },
+        workArea: { height: 1000, width: 1000, x: 0, y: 0 },
+      });
+
+    expect(() => solveColumn([{ kind: "auto", weight: 1 }])).toThrow(
+      "does not match",
+    );
+    expect(() =>
+      solveColumn([
+        { clientHeight: 200, kind: "fixed" },
+        { index: 0, kind: "preset" },
+      ]),
+    ).toThrow("at most one non-automatic");
+    expect(() =>
+      solveColumn([
+        { index: 99, kind: "preset" },
+        { kind: "auto", weight: 1 },
+      ]),
+    ).toThrow("preset index is out of range");
+  });
+
+  it("rejects an automatic stack whose maxima cannot fill the work area", () => {
+    const context = createContext([{ kind: "fixed", value: 600 }]);
+    const column = context.columns[0];
+
+    if (!column) {
+      throw new Error("expected a column fixture");
+    }
+
+    const first = windowId("window-1");
+    const second = windowId("window-2");
+
+    expect(() =>
+      solveStripGeometry({
+        context: {
+          ...context,
+          columns: [
+            {
+              ...column,
+              windowHeights: [
+                { kind: "auto", weight: 2 },
+                { kind: "auto", weight: 1 },
+              ],
+              windowIds: [first, second],
+            },
+          ],
+        },
+        devicePixelRatio: 1,
+        gap: 10,
+        pixelGridOrigin: { x: 0, y: 0 },
+        windowHeightBounds: new Map([
+          [first, { maximumClientHeight: 100 }],
+          [second, { maximumClientHeight: 100 }],
+        ]),
+        workArea: { height: 1000, width: 1000, x: 0, y: 0 },
+      }),
+    ).toThrow("maximum heights cannot fill");
   });
 
   it("snaps every frame edge to the physical pixel grid", () => {

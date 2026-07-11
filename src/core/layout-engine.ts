@@ -5,9 +5,24 @@ export interface ColumnWidth {
   readonly value: number;
 }
 
+export type WindowHeight =
+  | {
+      readonly kind: "auto";
+      readonly weight: number;
+    }
+  | {
+      readonly clientHeight: number;
+      readonly kind: "fixed";
+    }
+  | {
+      readonly index: number;
+      readonly kind: "preset";
+    };
+
 export interface LayoutColumnSnapshot {
   readonly id: ColumnId;
   readonly width: ColumnWidth;
+  readonly windowHeights?: readonly WindowHeight[];
   readonly windowIds: readonly WindowId[];
 }
 
@@ -70,6 +85,7 @@ export interface DetachedWindowPlacement {
   readonly outputId: OutputId;
   readonly previousColumnId: ColumnId | null;
   readonly previousWindowId: WindowId | null;
+  readonly windowHeight?: WindowHeight;
   readonly windowId: WindowId;
 }
 
@@ -131,9 +147,20 @@ export interface StackEditResult {
   readonly rollback: StackEditRollback;
 }
 
+declare const windowHeightEditRollbackBrand: unique symbol;
+
+export interface WindowHeightEditRollback {
+  readonly [windowHeightEditRollbackBrand]: true;
+}
+
+export interface WindowHeightEditResult {
+  readonly rollback: WindowHeightEditRollback;
+}
+
 interface LayoutColumn {
   readonly id: ColumnId;
   readonly width: ColumnWidth;
+  windowHeights?: WindowHeight[];
   readonly windowIds: WindowId[];
 }
 
@@ -152,6 +179,11 @@ interface ManagedWindowPlacement {
 }
 
 interface StackEditSnapshots {
+  readonly after: LayoutContextSnapshot;
+  readonly before: LayoutContextSnapshot;
+}
+
+interface WindowHeightEditSnapshots {
   readonly after: LayoutContextSnapshot;
   readonly before: LayoutContextSnapshot;
 }
@@ -205,6 +237,10 @@ export class LayoutEngine {
   private readonly windowTransferPreviews = new Map<
     WindowTransferPreview,
     WindowTransferPreviewState
+  >();
+  private readonly windowHeightEditRollbacks = new Map<
+    WindowHeightEditRollback,
+    WindowHeightEditSnapshots
   >();
   private readonly placements = new Map<WindowId, ManagedWindowPlacement>();
 
@@ -391,6 +427,7 @@ export class LayoutEngine {
         return null;
       }
 
+      appendDefaultMutableWindowHeight(target);
       target.windowIds.push(windowId);
       context.columns.splice(sourceIndex, 1);
       context.columnIds.delete(source.id);
@@ -405,6 +442,7 @@ export class LayoutEngine {
         return null;
       }
 
+      removeMutableColumnWindowHeight(source, windowIndex);
       source.windowIds.splice(windowIndex, 1);
       const column: LayoutColumn = {
         id: newColumnId,
@@ -473,7 +511,9 @@ export class LayoutEngine {
 
     const before = this.snapshot(context.outputId, context.desktopId);
     const sourceDisappears = source.windowIds.length === 1;
+    removeMutableColumnWindowHeight(source, windowIndex);
     source.windowIds.splice(windowIndex, 1);
+    appendDefaultMutableWindowHeight(target);
     target.windowIds.push(windowId);
 
     if (sourceDisappears) {
@@ -526,6 +566,7 @@ export class LayoutEngine {
     }
 
     const before = this.snapshot(context.outputId, context.desktopId);
+    swapMutableColumnWindowHeights(column, windowIndex, targetIndex);
     column.windowIds[windowIndex] = target;
     column.windowIds[targetIndex] = windowId;
     return this.createStackEditResult(
@@ -572,6 +613,9 @@ export class LayoutEngine {
       const column: LayoutColumn = {
         id: snapshot.id,
         width: { ...snapshot.width },
+        ...(snapshot.windowHeights
+          ? { windowHeights: snapshot.windowHeights.map(cloneWindowHeight) }
+          : {}),
         windowIds: [...snapshot.windowIds],
       };
       context.columns.push(column);
@@ -701,6 +745,85 @@ export class LayoutEngine {
     return previous;
   }
 
+  setActiveColumnWindowHeights(
+    windowId: WindowId,
+    heights: readonly WindowHeight[],
+  ): WindowHeightEditResult | null {
+    assertValidWindowHeights(heights);
+    const placement = this.placements.get(windowId);
+
+    if (!placement) {
+      return null;
+    }
+
+    const context = this.contexts.get(placement.contextKey);
+
+    if (!context || context.activeColumnId !== placement.columnId) {
+      return null;
+    }
+
+    const column = context.columns.find(
+      (candidate) => candidate.id === placement.columnId,
+    );
+
+    if (!column || heights.length !== column.windowIds.length) {
+      return null;
+    }
+
+    const current = column.windowHeights
+      ? column.windowHeights
+      : column.windowIds.map(() => automaticWindowHeight());
+
+    if (
+      current.every((height, index) => {
+        const candidate = heights[index];
+        return candidate !== undefined && sameWindowHeight(height, candidate);
+      })
+    ) {
+      return null;
+    }
+
+    const before = immutableContextSnapshot(
+      this.snapshot(context.outputId, context.desktopId),
+    );
+    setMutableColumnWindowHeights(column, heights);
+    const after = immutableContextSnapshot(
+      this.snapshot(context.outputId, context.desktopId),
+    );
+    const rollback = {} as WindowHeightEditRollback;
+    this.windowHeightEditRollbacks.set(rollback, { after, before });
+    return { rollback };
+  }
+
+  rollbackWindowHeightEdit(rollback: WindowHeightEditRollback): boolean {
+    const snapshots = this.windowHeightEditRollbacks.get(rollback);
+
+    if (!snapshots) {
+      return false;
+    }
+
+    this.windowHeightEditRollbacks.delete(rollback);
+    const { after, before } = snapshots;
+
+    if (
+      !sameContextSnapshot(
+        this.snapshot(after.outputId, after.desktopId),
+        after,
+      ) ||
+      !sameWindowSet(before, after) ||
+      !validContextSnapshot(before)
+    ) {
+      return false;
+    }
+
+    this.replaceContext(before);
+    return true;
+  }
+
+  discardWindowHeightEditRollback(rollback: WindowHeightEditRollback): boolean {
+    return this.windowHeightEditRollbacks.delete(rollback);
+  }
+
   previewColumnTransfer(
     windowId: WindowId,
     target: ColumnTransferTarget,
@@ -787,6 +910,12 @@ export class LayoutEngine {
     targetColumns.splice(targetInsertionIndex, 0, {
       id: target.columnId,
       width: transferredColumn.width,
+      ...(transferredColumn.windowHeights
+        ? {
+            windowHeights:
+              transferredColumn.windowHeights.map(cloneWindowHeight),
+          }
+        : {}),
       windowIds: transferredColumn.windowIds,
     });
     const targetAfter = immutableContextSnapshot({
@@ -938,9 +1067,14 @@ export class LayoutEngine {
       const windowIds = column.windowIds.filter((id) => id !== windowId);
 
       if (windowIds.length > 0) {
+        const windowHeights = withoutSnapshotWindowHeight(
+          column,
+          sourceMemberIndex,
+        );
         sourceColumns.push({
           id: column.id,
           width: column.width,
+          ...(windowHeights ? { windowHeights } : {}),
           windowIds,
         });
       }
@@ -1071,6 +1205,7 @@ export class LayoutEngine {
     const before = immutableContextSnapshot(
       this.snapshot(context.outputId, context.desktopId),
     );
+    const detachedHeight = column.windowHeights?.[memberIndex];
     const placement = immutableDetachedWindowPlacement({
       columnId: column.id,
       columnIndex,
@@ -1082,6 +1217,9 @@ export class LayoutEngine {
       outputId: context.outputId,
       previousColumnId: context.columns[columnIndex - 1]?.id ?? null,
       previousWindowId: column.windowIds[memberIndex - 1] ?? null,
+      ...(detachedHeight && !isDefaultWindowHeight(detachedHeight)
+        ? { windowHeight: cloneWindowHeight(detachedHeight) }
+        : {}),
       windowId,
     });
     const columns: LayoutColumnSnapshot[] = [];
@@ -1095,9 +1233,15 @@ export class LayoutEngine {
       const windowIds = candidate.windowIds.filter((id) => id !== windowId);
 
       if (windowIds.length > 0) {
+        const windowHeights = withoutSnapshotWindowHeight(
+          candidate,
+          memberIndex,
+          false,
+        );
         columns.push({
           id: candidate.id,
           width: candidate.width,
+          ...(windowHeights ? { windowHeights } : {}),
           windowIds,
         });
       }
@@ -1240,6 +1384,7 @@ export class LayoutEngine {
       return false;
     }
 
+    removeMutableColumnWindowHeight(column, windowIndex);
     column.windowIds.splice(windowIndex, 1);
     this.placements.delete(windowId);
 
@@ -1296,25 +1441,56 @@ export class LayoutEngine {
     let removedWindowCount = 0;
 
     for (const [index, column] of context.columns.entries()) {
-      const retainedWindowIds = column.windowIds.filter((id) => {
+      const retainedWindowIds: WindowId[] = [];
+      const retainedWindowHeights: WindowHeight[] = [];
+
+      for (const [memberIndex, id] of column.windowIds.entries()) {
         if (!removedWindowIds.has(id)) {
-          return true;
+          retainedWindowIds.push(id);
+
+          if (column.windowHeights) {
+            const height = column.windowHeights[memberIndex];
+
+            if (!height) {
+              return null;
+            }
+
+            retainedWindowHeights.push(cloneWindowHeight(height));
+          }
+
+          continue;
         }
 
         removedWindowCount += 1;
-        return false;
-      });
+      }
 
       if (retainedWindowIds.length === 0) {
         removedColumns.push({ id: column.id, index });
         continue;
       }
 
+      if (
+        retainedWindowHeights.length === 1 &&
+        retainedWindowHeights[0]?.kind === "auto"
+      ) {
+        retainedWindowHeights[0] = automaticWindowHeight();
+      }
+
+      const compactHeights =
+        retainedWindowHeights.length > 0
+          ? compactWindowHeights(retainedWindowHeights)
+          : undefined;
+
       retainedEntries.push({
         column:
           retainedWindowIds.length === column.windowIds.length
             ? column
-            : { ...column, windowIds: retainedWindowIds },
+            : {
+                id: column.id,
+                width: column.width,
+                ...(compactHeights ? { windowHeights: compactHeights } : {}),
+                windowIds: retainedWindowIds,
+              },
         index,
       });
     }
@@ -1475,6 +1651,9 @@ export class LayoutEngine {
       const mutableColumn: LayoutColumn = {
         id: column.id,
         width: { ...column.width },
+        ...(column.windowHeights
+          ? { windowHeights: column.windowHeights.map(cloneWindowHeight) }
+          : {}),
         windowIds: [...column.windowIds],
       };
       context.columns.push(mutableColumn);
@@ -1511,6 +1690,9 @@ export class LayoutEngine {
       columns: context.columns.map((column) => ({
         id: column.id,
         width: { ...column.width },
+        ...(column.windowHeights
+          ? { windowHeights: column.windowHeights.map(cloneWindowHeight) }
+          : {}),
         windowIds: [...column.windowIds],
       })),
       desktopId: context.desktopId,
@@ -1605,6 +1787,9 @@ export class LayoutEngine {
       const column: LayoutColumn = {
         id: saved.id,
         width: { ...saved.width },
+        ...(saved.windowHeights
+          ? { windowHeights: saved.windowHeights.map(cloneWindowHeight) }
+          : {}),
         windowIds: [...saved.windowIds],
       };
       context.columns.push(column);
@@ -1666,11 +1851,22 @@ function previewWindowAttachment(
     );
     const windowIds = [...survivingColumn.windowIds];
     windowIds.splice(insertionIndex, 0, placement.windowId);
+    const restoredHeight = placement.windowHeight
+      ? cloneWindowHeight(placement.windowHeight)
+      : automaticWindowHeight();
+    const windowHeights = columnWindowHeights(survivingColumn).map((height) =>
+      restoredHeight.kind !== "auto" && height.kind !== "auto"
+        ? automaticWindowHeight()
+        : cloneWindowHeight(height),
+    );
+    windowHeights.splice(insertionIndex, 0, restoredHeight);
+    const compactHeights = compactWindowHeights(windowHeights);
     columns = context.columns.map((column, index) =>
       index === survivingColumnIndex
         ? {
             id: column.id,
             width: column.width,
+            ...(compactHeights ? { windowHeights: compactHeights } : {}),
             windowIds,
           }
         : column,
@@ -1695,6 +1891,10 @@ function previewWindowAttachment(
     const restoredColumn: LayoutColumnSnapshot = {
       id: placement.columnId,
       width: placement.columnWidth,
+      ...(placement.windowHeight &&
+      !isDefaultWindowHeight(placement.windowHeight)
+        ? { windowHeights: [cloneWindowHeight(placement.windowHeight)] }
+        : {}),
       windowIds: [placement.windowId],
     };
     columns = [...context.columns];
@@ -1749,6 +1949,13 @@ function immutableDetachedWindowPlacement(
     outputId: placement.outputId,
     previousColumnId: placement.previousColumnId,
     previousWindowId: placement.previousWindowId,
+    ...(placement.windowHeight
+      ? {
+          windowHeight: Object.freeze(
+            cloneWindowHeight(placement.windowHeight),
+          ),
+        }
+      : {}),
     windowId: placement.windowId,
   });
 }
@@ -1760,6 +1967,15 @@ function immutableContextSnapshot(
     Object.freeze({
       id: column.id,
       width: Object.freeze({ ...column.width }),
+      ...(column.windowHeights
+        ? {
+            windowHeights: Object.freeze(
+              column.windowHeights.map((height) =>
+                Object.freeze(cloneWindowHeight(height)),
+              ),
+            ),
+          }
+        : {}),
       windowIds: Object.freeze([...column.windowIds]),
     }),
   );
@@ -1785,6 +2001,7 @@ function validDetachedWindowPlacement(
   const nextWindowId = placement["nextWindowId"];
   const previousColumnId = placement["previousColumnId"];
   const previousWindowId = placement["previousWindowId"];
+  const height = placement["windowHeight"];
   const windowId = placement["windowId"];
 
   return (
@@ -1803,6 +2020,7 @@ function validDetachedWindowPlacement(
     Number.isInteger(placement["memberIndex"]) &&
     placement["memberIndex"] >= 0 &&
     validWidth(placement["columnWidth"]) &&
+    (height === undefined || validWindowHeight(height)) &&
     previousColumnId !== columnId &&
     nextColumnId !== columnId &&
     (previousColumnId === null || previousColumnId !== nextColumnId) &&
@@ -1870,6 +2088,10 @@ export function previewColumnRestoration(
       index >= finalLength ||
       restoredSlots.has(index) ||
       column.windowIds.length === 0 ||
+      !validSerializedWindowHeights(
+        column.windowHeights,
+        column.windowIds.length,
+      ) ||
       columnIds.has(column.id)
     ) {
       return null;
@@ -1888,6 +2110,9 @@ export function previewColumnRestoration(
     restoredSlots.set(index, {
       id: column.id,
       width: { ...column.width },
+      ...(column.windowHeights
+        ? { windowHeights: column.windowHeights.map(cloneWindowHeight) }
+        : {}),
       windowIds: [...column.windowIds],
     });
   }
@@ -1912,6 +2137,11 @@ export function previewColumnRestoration(
     columns.push({
       id: currentColumn.id,
       width: { ...currentColumn.width },
+      ...(currentColumn.windowHeights
+        ? {
+            windowHeights: currentColumn.windowHeights.map(cloneWindowHeight),
+          }
+        : {}),
       windowIds: [...currentColumn.windowIds],
     });
     currentIndex += 1;
@@ -1961,6 +2191,7 @@ function sameContextStructure(
         column.id === candidate.id &&
         column.width.kind === candidate.width.kind &&
         column.width.value === candidate.width.value &&
+        sameColumnWindowHeights(column, candidate) &&
         column.windowIds.length === candidate.windowIds.length &&
         column.windowIds.every(
           (window, windowIndex) => window === candidate.windowIds[windowIndex],
@@ -2063,6 +2294,10 @@ function validContextSnapshot(snapshot: LayoutContextSnapshot): boolean {
     if (
       columnIds.has(column.id) ||
       column.windowIds.length === 0 ||
+      !validSerializedWindowHeights(
+        column.windowHeights,
+        column.windowIds.length,
+      ) ||
       !Number.isFinite(column.width.value) ||
       column.width.value <= 0
     ) {
@@ -2085,6 +2320,214 @@ function validContextSnapshot(snapshot: LayoutContextSnapshot): boolean {
   );
 }
 
+export function automaticWindowHeight(weight = 1): WindowHeight {
+  const height: WindowHeight = { kind: "auto", weight };
+  assertValidWindowHeight(height);
+  return height;
+}
+
+export function columnWindowHeights(
+  column: LayoutColumnSnapshot,
+): readonly WindowHeight[] {
+  return column.windowHeights
+    ? column.windowHeights.map(cloneWindowHeight)
+    : column.windowIds.map(() => automaticWindowHeight());
+}
+
+function cloneWindowHeight(height: WindowHeight): WindowHeight {
+  switch (height.kind) {
+    case "auto":
+      return { kind: "auto", weight: height.weight };
+    case "fixed":
+      return { clientHeight: height.clientHeight, kind: "fixed" };
+    case "preset":
+      return { index: height.index, kind: "preset" };
+  }
+}
+
+function compactWindowHeights(
+  heights: readonly WindowHeight[],
+): WindowHeight[] | undefined {
+  assertValidWindowHeights(heights);
+  return heights.every(isDefaultWindowHeight)
+    ? undefined
+    : heights.map(cloneWindowHeight);
+}
+
+function isDefaultWindowHeight(height: WindowHeight): boolean {
+  return height.kind === "auto" && height.weight === 1;
+}
+
+function assertValidWindowHeights(heights: readonly WindowHeight[]): void {
+  let nonAutomaticCount = 0;
+
+  for (const height of heights) {
+    assertValidWindowHeight(height);
+
+    if (height.kind !== "auto") {
+      nonAutomaticCount += 1;
+    }
+  }
+
+  if (nonAutomaticCount > 1) {
+    throw new RangeError(
+      "a column can contain at most one non-automatic window height",
+    );
+  }
+}
+
+function assertValidWindowHeight(height: WindowHeight): void {
+  if (
+    (height.kind === "auto" &&
+      (!Number.isFinite(height.weight) || height.weight <= 0)) ||
+    (height.kind === "fixed" &&
+      (!Number.isFinite(height.clientHeight) || height.clientHeight <= 0)) ||
+    (height.kind === "preset" &&
+      (!Number.isInteger(height.index) || height.index < 0))
+  ) {
+    throw new RangeError("window height state is invalid");
+  }
+}
+
+function validSerializedWindowHeights(
+  heights: readonly WindowHeight[] | undefined,
+  windowCount: number,
+): boolean {
+  if (heights === undefined) {
+    return true;
+  }
+
+  if (heights.length !== windowCount) {
+    return false;
+  }
+
+  try {
+    assertValidWindowHeights(heights);
+    return !heights.every(isDefaultWindowHeight);
+  } catch {
+    return false;
+  }
+}
+
+function sameWindowHeight(left: WindowHeight, right: WindowHeight): boolean {
+  if (left.kind !== right.kind) {
+    return false;
+  }
+
+  switch (left.kind) {
+    case "auto":
+      return right.kind === "auto" && left.weight === right.weight;
+    case "fixed":
+      return right.kind === "fixed" && left.clientHeight === right.clientHeight;
+    case "preset":
+      return right.kind === "preset" && left.index === right.index;
+  }
+}
+
+function sameColumnWindowHeights(
+  left: LayoutColumnSnapshot,
+  right: LayoutColumnSnapshot,
+): boolean {
+  if (left.windowIds.length !== right.windowIds.length) {
+    return false;
+  }
+
+  if (!left.windowHeights && !right.windowHeights) {
+    return true;
+  }
+
+  for (let index = 0; index < left.windowIds.length; index += 1) {
+    const leftHeight = left.windowHeights?.[index] ?? automaticWindowHeight();
+    const rightHeight = right.windowHeights?.[index] ?? automaticWindowHeight();
+
+    if (!sameWindowHeight(leftHeight, rightHeight)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function setMutableColumnWindowHeights(
+  column: LayoutColumn,
+  heights: readonly WindowHeight[],
+): void {
+  const compact = compactWindowHeights(heights);
+
+  if (compact) {
+    column.windowHeights = compact;
+  } else {
+    delete column.windowHeights;
+  }
+}
+
+function removeMutableColumnWindowHeight(
+  column: LayoutColumn,
+  index: number,
+): void {
+  if (!column.windowHeights) {
+    return;
+  }
+
+  const heights = column.windowHeights.map(cloneWindowHeight);
+  heights.splice(index, 1);
+
+  if (heights.length === 1 && heights[0]?.kind === "auto") {
+    heights[0] = automaticWindowHeight();
+  }
+
+  setMutableColumnWindowHeights(column, heights);
+}
+
+function appendDefaultMutableWindowHeight(column: LayoutColumn): void {
+  if (column.windowHeights) {
+    column.windowHeights.push(automaticWindowHeight());
+  }
+}
+
+function swapMutableColumnWindowHeights(
+  column: LayoutColumn,
+  first: number,
+  second: number,
+): void {
+  if (!column.windowHeights) {
+    return;
+  }
+
+  const firstHeight = column.windowHeights[first];
+  const secondHeight = column.windowHeights[second];
+
+  if (!firstHeight || !secondHeight) {
+    throw new Error("window height state is out of sync");
+  }
+
+  column.windowHeights[first] = secondHeight;
+  column.windowHeights[second] = firstHeight;
+}
+
+function withoutSnapshotWindowHeight(
+  column: LayoutColumnSnapshot,
+  index: number,
+  normalizeSingleton = true,
+): WindowHeight[] | undefined {
+  if (!column.windowHeights) {
+    return undefined;
+  }
+
+  const heights = column.windowHeights.map(cloneWindowHeight);
+  heights.splice(index, 1);
+
+  if (
+    normalizeSingleton &&
+    heights.length === 1 &&
+    heights[0]?.kind === "auto"
+  ) {
+    heights[0] = automaticWindowHeight();
+  }
+
+  return compactWindowHeights(heights);
+}
+
 function assertValidWidth(width: ColumnWidth): void {
   if (!validWidth(width)) {
     throw new RangeError("column width must be finite and greater than zero");
@@ -2104,6 +2547,35 @@ function validWidth(width: unknown): width is ColumnWidth {
     Number.isFinite(value) &&
     value > 0
   );
+}
+
+function validWindowHeight(height: unknown): height is WindowHeight {
+  if (!isRecord(height)) {
+    return false;
+  }
+
+  switch (height["kind"]) {
+    case "auto":
+      return (
+        typeof height["weight"] === "number" &&
+        Number.isFinite(height["weight"]) &&
+        height["weight"] > 0
+      );
+    case "fixed":
+      return (
+        typeof height["clientHeight"] === "number" &&
+        Number.isFinite(height["clientHeight"]) &&
+        height["clientHeight"] > 0
+      );
+    case "preset":
+      return (
+        typeof height["index"] === "number" &&
+        Number.isInteger(height["index"]) &&
+        height["index"] >= 0
+      );
+    default:
+      return false;
+  }
 }
 
 function assertValidViewportOffset(viewportOffset: number): void {
