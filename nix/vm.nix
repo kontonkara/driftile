@@ -468,6 +468,7 @@ let
             && "$shortcuts" == *"driftile_insert_window_into_stack_right"* \
             && "$shortcuts" == *"driftile_toggle_floating"* \
             && "$shortcuts" == *"driftile_toggle_fullscreen"* \
+            && "$shortcuts" == *"driftile_maximize_window_to_edges"* \
             && "$shortcuts" == *"driftile_decrease_column_width"* \
             && "$shortcuts" == *"driftile_increase_column_width"* \
             && "$shortcuts" == *"driftile_switch_preset_column_width"* \
@@ -589,6 +590,42 @@ let
         return 1
       }
 
+      window_maximized_state() {
+        local id
+
+        id=$(window_id "$1") || return 1
+        busctl --user --json=short call \
+          org.kde.KWin \
+          /KWin \
+          org.kde.KWin \
+          getWindowInfo \
+          s "$id" 2>/dev/null \
+          | jq --exit-status --raw-output '
+            [
+              .data[0].maximizeHorizontal.data,
+              .data[0].maximizeVertical.data
+            ]
+            | select(map(type == "number") | all)
+            | (all(. != 0) | tostring)
+          '
+      }
+
+      wait_for_window_maximized_state() {
+        local attempt
+        local expected=$2
+        local title=$1
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          if [[ "$(window_maximized_state "$title" 2>/dev/null || true)" == "$expected" ]]; then
+            return 0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
       single_enabled_output_frame() {
         kscreen-doctor -j 2>/dev/null \
           | jq --exit-status --raw-output '
@@ -607,6 +644,44 @@ let
             | map(round | tostring)
             | join(",")
           '
+      }
+
+      maximized_work_area_frame() {
+        local baseline=$1
+        local baseline_height
+        local baseline_y
+        local output=$2
+        local output_height
+        local output_width
+        local output_x
+        local output_y
+        local tiled_gap
+        local work_area_height
+        local work_area_y
+
+        frame_is_valid "$baseline" && frame_is_valid "$output" || return 1
+        IFS=, read -r _ baseline_y _ baseline_height <<< "$baseline"
+        IFS=, read -r \
+          output_x \
+          output_y \
+          output_width \
+          output_height \
+          <<< "$output"
+        tiled_gap=$((baseline_y - output_y))
+        work_area_y=$((baseline_y - tiled_gap))
+        work_area_height=$((baseline_height + (2 * tiled_gap)))
+
+        if ((tiled_gap <= 0 \
+          || work_area_y < output_y \
+          || work_area_y + work_area_height > output_y + output_height)); then
+          return 1
+        fi
+
+        printf '%s,%s,%s,%s' \
+          "$output_x" \
+          "$work_area_y" \
+          "$output_width" \
+          "$work_area_height"
       }
 
       window_frame_contains() {
@@ -3689,6 +3764,87 @@ let
           "physical Meta+Shift+F restored the exact tiled layout and focus"
       }
 
+      verify_physical_maximize_shortcut() {
+        local baseline_first
+        local baseline_second
+        local baseline_third
+        local maximize_frame
+        local output_frame
+
+        if ! activate_window "$title_b" \
+          || ! wait_for_active "$title_b" \
+          || ! window_is_normal "$title_b" \
+          || ! wait_for_window_maximized_state "$title_b" false \
+          || ! capture_stable_frames; then
+          record_focus_state "physical maximize shortcut setup failed"
+          return 1
+        fi
+
+        baseline_first=$stable_first_frame
+        baseline_second=$stable_second_frame
+        baseline_third=$stable_third_frame
+        output_frame=$(single_enabled_output_frame 2>/dev/null || true)
+        maximize_frame=$(
+          maximized_work_area_frame \
+            "$baseline_second" \
+            "$output_frame" 2>/dev/null \
+            || true
+        )
+
+        if ! frame_is_valid "$output_frame" \
+          || ! frame_is_valid "$maximize_frame" \
+          || [[ "$baseline_second" == "$maximize_frame" ]]; then
+          record_focus_state "physical maximize work-area frame was invalid"
+          return 1
+        fi
+
+        if ! request_physical_shortcut m-enter \
+          || ! wait_for_window_maximized_state "$title_b" true \
+          || ! wait_for_frames \
+            "$baseline_first" \
+            "$maximize_frame" \
+            "$baseline_third" \
+          || ! wait_for_active "$title_b"; then
+          record_focus_state "physical Meta+M maximize entry failed"
+          {
+            printf 'expected maximized frames: %s | %s | %s\n' \
+              "$baseline_first" \
+              "$maximize_frame" \
+              "$baseline_third"
+            printf 'actual maximized frames: %s | %s | %s\n' \
+              "$(window_frame "$title_a" 2>/dev/null || true)" \
+              "$(window_frame "$title_b" 2>/dev/null || true)" \
+              "$(window_frame "$title_c" 2>/dev/null || true)"
+          } >> /tmp/shared/driftile-focus-diagnostics
+          return 1
+        fi
+        record_focus_state \
+          "physical Meta+M entered native maximize without moving siblings"
+
+        if ! request_physical_shortcut m-exit \
+          || ! wait_for_window_maximized_state "$title_b" false \
+          || ! wait_for_frames \
+            "$baseline_first" \
+            "$baseline_second" \
+            "$baseline_third" \
+          || ! wait_for_active "$title_b"; then
+          record_focus_state "physical Meta+M maximize exit failed"
+          {
+            printf 'expected maximize restore frames: %s | %s | %s\n' \
+              "$baseline_first" \
+              "$baseline_second" \
+              "$baseline_third"
+            printf 'actual maximize restore frames: %s | %s | %s\n' \
+              "$(window_frame "$title_a" 2>/dev/null || true)" \
+              "$(window_frame "$title_b" 2>/dev/null || true)" \
+              "$(window_frame "$title_c" 2>/dev/null || true)"
+          } >> /tmp/shared/driftile-focus-diagnostics
+          return 1
+        fi
+        record_focus_state \
+          "physical Meta+M restored the exact tiled layout and focus"
+      }
+
       verify_real_applications() {
         local baseline_first
         local baseline_second
@@ -3934,6 +4090,7 @@ let
         && verify_physical_height_shortcuts \
         && verify_physical_column_view_shortcuts \
         && verify_physical_fullscreen_shortcut \
+        && verify_physical_maximize_shortcut \
         && verify_real_applications; then
         focus_verified=true
       fi
