@@ -8,5 +8,11 @@
       <label>Hide KWin borders and title bars on application windows</label>
       <default>true</default>
     </entry>
+    <entry name="Gap" type="Int">
+      <label>Window gap in logical pixels</label>
+      <default>16</default>
+      <min>0</min>
+      <max>64</max>
+    </entry>
   </group>
 </kcfg>

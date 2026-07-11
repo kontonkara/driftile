@@ -74,6 +74,8 @@ const DEFAULT_COLUMN_WIDTH_PRESETS: readonly ColumnWidth[] = [
   { kind: "proportion", value: 2 / 3 },
 ];
 const DEFAULT_GAP = 16;
+const MAX_GAP = 64;
+const MIN_GAP = 0;
 const FIXED_SIZE_CONSTRAINTS = 1;
 const FLEXIBLE_SIZE_CONSTRAINTS = 0;
 const MALFORMED_SIZE_CONSTRAINTS = -1;
@@ -489,7 +491,7 @@ export class RuntimeController {
     FullscreenRequestProbe
   >();
   private readonly geometry: KWinGeometryAdapter;
-  private readonly gap: number;
+  private gap: number;
   private initializing = false;
   private readonly lastFloatingFocus = new Map<string, WindowId>();
   private readonly lastTiledFocus = new Map<string, WindowId>();
@@ -503,6 +505,7 @@ export class RuntimeController {
   private readonly pendingFullscreenTargets = new Map<WindowId, boolean>();
   private readonly observer: WindowObserver;
   private readonly pendingAdmissionContexts = new Set<string>();
+  private pendingGap: number | null = null;
   private readonly pendingWindowSyncs = new Set<WindowId>();
   private readonly resumeSamples = new Map<WindowId, ResumeSample>();
   private readonly schedule: (callback: () => void) => void;
@@ -569,7 +572,7 @@ export class RuntimeController {
   constructor(workspace: KWinWorkspace, options: RuntimeControllerOptions) {
     this.borderlessSettlementEnabled = options.scheduleResume !== undefined;
     this.borderlessWindows = options.borderlessWindows ?? false;
-    this.gap = options.gap ?? DEFAULT_GAP;
+    this.gap = normalizeGap(options.gap ?? DEFAULT_GAP) ?? DEFAULT_GAP;
     this.schedule =
       options.schedule ??
       ((callback) => {
@@ -656,6 +659,28 @@ export class RuntimeController {
 
     this.synchronizeWindowBorders();
     this.reconcileBorderAffectedContexts();
+  }
+
+  setGap(value: number): boolean {
+    const gap = normalizeGap(value);
+
+    if (gap === null || gap === (this.pendingGap ?? this.gap)) {
+      return false;
+    }
+
+    if (gap === this.gap) {
+      this.pendingGap = null;
+      return true;
+    }
+
+    if (!this.started) {
+      this.gap = gap;
+      return true;
+    }
+
+    this.pendingGap = gap;
+    this.scheduleDeferredRuntimeWork();
+    return true;
   }
 
   focusLeft(): boolean {
@@ -1602,6 +1627,7 @@ export class RuntimeController {
       this.lastTiledFocus.clear();
       this.managedWindows.clear();
       this.pendingAdmissionContexts.clear();
+      this.pendingGap = null;
       this.pendingWindowSyncs.clear();
       this.ownershipFollowUpRequired = false;
       this.ownershipRefreshInProgress = false;
@@ -3622,6 +3648,7 @@ export class RuntimeController {
     console.warn(
       `[driftile] expel focus ${phase} could not be scheduled error=${String(error)}`,
     );
+    this.scheduleDeferredRuntimeWork();
   }
 
   private settlePendingExpelFocusHandoff(
@@ -4028,6 +4055,7 @@ export class RuntimeController {
 
   private scheduleDeferredRuntimeWork(): void {
     if (
+      this.pendingGap !== null ||
       this.pendingWindowSyncs.size > 0 ||
       this.pendingAdmissionContexts.size > 0 ||
       this.desktopLifecycle.pendingWork ||
@@ -4214,6 +4242,7 @@ export class RuntimeController {
         }) ||
         this.pendingWindowSyncs.size > 0 ||
         this.pendingAdmissionContexts.size > 0 ||
+        this.pendingGap !== null ||
         this.desktopLifecycle.pendingWork
       ) {
         this.scheduleWork();
@@ -4920,6 +4949,7 @@ export class RuntimeController {
         }) ||
         this.pendingAdmissionContexts.size > 0 ||
         this.pendingWindowSyncs.size > 0 ||
+        this.pendingGap !== null ||
         this.desktopLifecycle.pendingWork
       ) {
         this.scheduleWork();
@@ -6181,6 +6211,7 @@ export class RuntimeController {
         }) ||
         this.pendingAdmissionContexts.size > 0 ||
         this.pendingWindowSyncs.size > 0 ||
+        this.pendingGap !== null ||
         this.desktopLifecycle.pendingWork
       ) {
         this.scheduleWork();
@@ -11484,6 +11515,14 @@ export class RuntimeController {
       return;
     }
 
+    if (
+      !this.windowTransferOperation &&
+      !this.stackedNativeStateOperation &&
+      this.capacityParkOperations.size === 0
+    ) {
+      this.applyPendingGap();
+    }
+
     this.desktopLifecycle.reconcile(this.desktopLifecycleCanMutate());
 
     const admissionsPending =
@@ -11558,6 +11597,43 @@ export class RuntimeController {
     if (this.ownershipFollowUpRequired) {
       this.ownershipFollowUpRequired = false;
       this.scheduleWork();
+    }
+
+    if (
+      this.pendingGap !== null &&
+      !this.windowTransferOperation &&
+      !this.stackedNativeStateOperation &&
+      this.capacityParkOperations.size === 0
+    ) {
+      this.scheduleWork();
+    }
+  }
+
+  private applyPendingGap(): void {
+    const gap = this.pendingGap;
+
+    if (gap === null) {
+      return;
+    }
+
+    this.pendingGap = null;
+
+    if (gap === this.gap) {
+      return;
+    }
+
+    this.gap = gap;
+    this.capacityParkBackoffs.clear();
+
+    for (const context of this.contexts.values()) {
+      this.markContextDirty(context);
+    }
+
+    for (const key of new Set([
+      ...this.waitingWindowIds.keys(),
+      ...this.capacityLeasesByContext.keys(),
+    ])) {
+      this.pendingAdmissionContexts.add(key);
     }
   }
 
@@ -15229,6 +15305,15 @@ function layoutContextSnapshotsEqual(
 
 function validDesktopIndex(index: number): boolean {
   return Number.isInteger(index) && index > 0;
+}
+
+function normalizeGap(value: number): number | null {
+  return Number.isFinite(value) &&
+    Number.isInteger(value) &&
+    value >= MIN_GAP &&
+    value <= MAX_GAP
+    ? value
+    : null;
 }
 
 function currentDesktopForOutput(workspace: KWinWorkspace, output: KWinOutput) {

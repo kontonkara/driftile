@@ -13,6 +13,7 @@ export function init(
   schedule: (callback: () => void) => void,
   scheduleResume: (callback: () => void) => void,
   borderlessWindows: boolean,
+  gap: number,
 ): void {
   if (controller) {
     return;
@@ -22,6 +23,7 @@ export function init(
     borderlessWindows,
     clientAreaOption,
     createRect,
+    gap,
     schedule,
     scheduleResume,
     startupStabilizationProbes: STARTUP_STABILIZATION_PROBES,
@@ -45,6 +47,10 @@ export function destroy(): void {
 
 export function setBorderlessWindows(enabled: boolean): void {
   controller?.setBorderlessWindows(enabled);
+}
+
+export function setGap(gap: number): void {
+  controller?.setGap(gap);
 }
 
 export function focusLeft(): void {

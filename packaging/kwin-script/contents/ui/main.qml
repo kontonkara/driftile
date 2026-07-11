@@ -44,6 +44,7 @@ QtObject {
         function onConfigChanged() {
             Runtime.DriftileRuntime.setBorderlessWindows(
                 KWin.readConfig("BorderlessWindows", true))
+            Runtime.DriftileRuntime.setGap(KWin.readConfig("Gap", 16))
         }
     }
 
@@ -683,6 +684,7 @@ QtObject {
     Component.onCompleted: Runtime.DriftileRuntime.init(Workspace, Workspace.MaximizeArea,
                                                         root.createRect, root.schedule,
                                                         root.scheduleResume,
-                                                        KWin.readConfig("BorderlessWindows", true))
+                                                        KWin.readConfig("BorderlessWindows", true),
+                                                        KWin.readConfig("Gap", 16))
     Component.onDestruction: Runtime.DriftileRuntime.destroy()
 }
