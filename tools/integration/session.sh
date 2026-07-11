@@ -2571,8 +2571,10 @@ verify_desktop_transfer() {
   local second_baseline_variable=$6
   local destination_title="driftile-desktop-destination-${protocol}"
   local destination_pid
+  local first_id
   local first_trailing_desktop_id=""
   local first_transfer_baseline
+  local retained_source_frame
   local second_trailing_desktop_id=""
   local transferred_baseline
 
@@ -2770,6 +2772,23 @@ verify_desktop_transfer() {
   wait_for_active "$second_title" || \
     fail "Driftile changed $protocol focus at the previous-desktop boundary"
 
+  first_id=$(window_id "$first_title") || \
+    fail "KWin did not expose the retained $protocol desktop-transfer peer"
+  set_external_window_minimized "$first_title" true || \
+    fail "KWin could not minimize the retained $protocol desktop-transfer peer"
+  wait_for_state_and_geometries \
+    "$first_id" minimized true \
+    "$first_title" "16,16,616,336" \
+    "$second_title" "16,368,616,336" \
+    "$third_title" "648,16,616,688" || \
+    fail "Driftile changed the $protocol source stack while minimizing its retained desktop-transfer peer: $(describe_layout "$first_title" "$second_title" "$third_title")"
+  retained_source_frame=$(capture_stable_geometry "$first_title") || \
+    fail "the retained $protocol desktop-transfer peer frame did not stabilize"
+  activate_window "$second_title" || \
+    fail "KWin could not refocus the visible $protocol desktop-transfer member"
+  wait_for_active "$second_title" || \
+    fail "KWin did not refocus the visible $protocol desktop-transfer member"
+
   invoke_shortcut "driftile_move_window_to_next_desktop" || \
     fail "KGlobalAccel could not transfer the $protocol stack member to the next desktop"
   wait_for_current_desktop "$secondary_desktop_id" || \
@@ -2783,9 +2802,41 @@ verify_desktop_transfer() {
   wait_for_window_desktop "$second_title" "$secondary_desktop_id" || \
     fail "KWin did not move the $protocol window to the next desktop"
   wait_for_window_desktop "$first_title" "$primary_desktop_id" || \
-    fail "Driftile moved an unrelated $protocol source stack member"
+    fail "Driftile moved the retained $protocol source stack member"
   wait_for_window_desktop "$third_title" "$primary_desktop_id" || \
     fail "Driftile moved an unrelated $protocol source column"
+  wait_for_state_and_geometries \
+    "$first_id" minimized true \
+    "$first_title" "$retained_source_frame" \
+    "$destination_title" "16,16,616,688" \
+    "$second_title" "648,16,616,688" || \
+    fail "Driftile wrote or moved the retained $protocol desktop-transfer peer: $(describe_layout "$first_title" "$destination_title" "$second_title")"
+
+  set_current_desktop "$primary_desktop_id" || \
+    fail "KWin could not reveal the retained $protocol desktop-transfer peer"
+  set_external_window_minimized "$first_title" false || \
+    fail "KWin could not restore the retained $protocol desktop-transfer peer"
+  wait_for_state_and_geometries \
+    "$first_id" minimized false \
+    "$first_title" "16,16,616,688" \
+    "$third_title" "648,16,616,688" || \
+    fail "Driftile did not restore the retained $protocol peer in its source singleton: $(describe_layout "$first_title" "$third_title")"
+  wait_for_window_desktop "$first_title" "$primary_desktop_id" || \
+    fail "KWin restored the retained $protocol peer on the wrong desktop"
+  activate_window "$first_title" || \
+    fail "KWin could not make the retained $protocol source column active"
+  wait_for_active "$first_title" || \
+    fail "KWin did not make the retained $protocol source column active"
+  set_current_desktop "$secondary_desktop_id" || \
+    fail "KWin could not return to the transferred $protocol window"
+  activate_window "$second_title" || \
+    fail "KWin could not refocus the transferred $protocol window"
+  wait_for_active "$second_title" || \
+    fail "KWin did not refocus the transferred $protocol window"
+  wait_for_geometries \
+    "$destination_title" "16,16,616,688" \
+    "$second_title" "648,16,616,688" || \
+    fail "Driftile changed the $protocol destination after restoring the retained source peer: $(describe_layout "$destination_title" "$second_title")"
 
   invoke_shortcut "driftile_move_window_to_next_desktop" || \
     fail "KGlobalAccel could not transfer the $protocol window to the trailing desktop"
@@ -3264,6 +3315,7 @@ verify_multi_output_output_transfer() {
   local destination_pid
   local left_first_id
   local minimized_transfer_frame
+  local retained_source_frame
 
   wait_for_shortcut "driftile_move_window_to_output_left" || \
     fail "KGlobalAccel did not register the multi-output move-to-output-left shortcut"
@@ -3414,15 +3466,30 @@ verify_multi_output_output_transfer() {
   wait_for_active "$left_second_title" || \
     fail "Driftile changed $protocol focus without a lower output neighbor"
 
+  set_external_window_minimized "$left_first_title" true || \
+    fail "KWin could not minimize the retained left $protocol output-transfer peer"
+  wait_for_state_and_geometries \
+    "$left_first_id" minimized true \
+    "$left_first_title" "16,16,490,336" \
+    "$left_second_title" "16,368,490,336" \
+    "$destination_title" "1296,16,616,688" || \
+    fail "Driftile changed the left $protocol stack while minimizing its retained output-transfer peer: $(describe_layout "$left_first_title" "$left_second_title" "$destination_title")"
+  retained_source_frame=$(capture_stable_geometry "$left_first_title") || \
+    fail "the retained left $protocol output-transfer peer frame did not stabilize"
+  activate_window "$left_second_title" || \
+    fail "KWin could not refocus the visible left $protocol output-transfer member"
+  wait_for_active "$left_second_title" || \
+    fail "KWin did not refocus the visible left $protocol output-transfer member"
+
   invoke_shortcut "driftile_move_window_to_output_right" || \
     fail "KGlobalAccel could not transfer the $protocol window to the right output"
   wait_for_geometries \
-    "$left_first_title" "16,16,490,688" \
+    "$left_first_title" "$retained_source_frame" \
     "$destination_title" "1296,16,616,688" \
     "$left_second_title" "1928,16,490,688" || \
     fail "Driftile did not preserve source order, target order, and width during the right-output transfer: $(describe_layout "$left_first_title" "$destination_title" "$left_second_title")"
   window_is_on_output_side "$left_first_title" left || \
-    fail "Driftile moved an unrelated left-output $protocol window"
+    fail "Driftile moved the retained left-output $protocol peer"
   window_is_on_output_side "$left_second_title" right || \
     fail "KWin did not move the $protocol window to the right output"
   window_is_on_output_side "$destination_title" right || \
@@ -3433,6 +3500,14 @@ verify_multi_output_output_transfer() {
     fail "Driftile moved an unrelated right-output $protocol window"
   wait_for_window_desktop "$left_second_title" "$secondary_desktop_id" || \
     fail "Driftile did not adopt the right output's visible $protocol desktop"
+  wait_for_window_desktop "$left_first_title" "$primary_desktop_id" || \
+    fail "Driftile moved the retained left-output $protocol peer off its desktop"
+  wait_for_state_and_geometries \
+    "$left_first_id" minimized true \
+    "$left_first_title" "$retained_source_frame" \
+    "$destination_title" "1296,16,616,688" \
+    "$left_second_title" "1928,16,490,688" || \
+    fail "Driftile wrote the retained left-output $protocol peer: $(describe_layout "$left_first_title" "$destination_title" "$left_second_title")"
   wait_for_window_desktop "$right_first_title" "$primary_desktop_id" || \
     fail "Driftile changed an unrelated right-output $protocol window desktop"
   wait_for_window_desktop "$right_second_title" "$primary_desktop_id" || \
@@ -3443,6 +3518,17 @@ verify_multi_output_output_transfer() {
     fail "KWin could not restore $protocol focus after the right-output state probe"
   wait_for_active "$left_second_title" || \
     fail "KWin did not restore $protocol focus after the right-output state probe"
+
+  set_external_window_minimized "$left_first_title" false || \
+    fail "KWin could not restore the retained left $protocol output-transfer peer"
+  wait_for_state_and_geometries \
+    "$left_first_id" minimized false \
+    "$left_first_title" "16,16,490,688" \
+    "$destination_title" "1296,16,616,688" \
+    "$left_second_title" "1928,16,490,688" || \
+    fail "Driftile did not restore the retained left $protocol peer in its source singleton: $(describe_layout "$left_first_title" "$destination_title" "$left_second_title")"
+  wait_for_active "$left_second_title" || \
+    fail "Driftile changed $protocol focus while restoring the retained source peer"
 
   invoke_shortcut "driftile_move_window_to_output_right" || \
     fail "KGlobalAccel could not invoke the right-output boundary shortcut"

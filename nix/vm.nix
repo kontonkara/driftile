@@ -5124,9 +5124,22 @@ let
           || return 1
         record_focus_state "previous desktop boundary preserved the source stack"
 
+        set_external_window_minimized "$title_a" true \
+          && wait_for_window_minimized_state "$title_a" true \
+          && wait_for_frames \
+            "$merged_first_frame" \
+            "$merged_second_frame" \
+            "$merged_third_frame" \
+          && activate_window "$title_b" \
+          && wait_for_active "$title_b" \
+          || return 1
+        record_focus_state \
+          "retained desktop-transfer peer minimized without changing its frame"
+
         invoke_shortcut "driftile_move_window_to_next_desktop" \
           && wait_for_current_desktop "$secondary_desktop_id" \
           && wait_for_window_desktop "$title_b" "$secondary_desktop_id" \
+          && wait_for_window_minimized_state "$title_a" true \
           && wait_for_desktop_destination_layout \
             "$desktop_source_width" \
             "$merged_first_frame" \
@@ -5163,9 +5176,22 @@ let
             "$desktop_moved_frame" \
             "$desktop_detached_first_frame" \
             "$desktop_detached_third_frame" \
+          && wait_for_window_minimized_state "$title_a" true \
           && wait_for_active "$title_b" \
           || return 1
         record_focus_state "redundant trailing desktop removed"
+
+        set_current_desktop "$primary_desktop_id" \
+          && set_external_window_minimized "$title_a" false \
+          && wait_for_window_minimized_state "$title_a" false \
+          && activate_window "$title_a" \
+          && wait_for_active "$title_a" \
+          && set_current_desktop "$secondary_desktop_id" \
+          && activate_window "$title_b" \
+          && wait_for_active "$title_b" \
+          || return 1
+        record_focus_state \
+          "retained desktop-transfer peer restored before the return transfer"
 
         invoke_shortcut "driftile_move_window_to_previous_desktop" \
           && wait_for_current_desktop "$primary_desktop_id" \

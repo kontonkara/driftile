@@ -21733,6 +21733,487 @@ describe("RuntimeController desktop transfers", () => {
     ]);
   });
 
+  it("extracts one window to another desktop past a retained minimized peer", () => {
+    const transfer = createDesktopTransferFixture({ sourceStack: true });
+    const minimizedFrame = { ...transfer.source.window.frameGeometry };
+
+    setWindowState("minimized", transfer.source, true);
+    const minimizedWrites = transfer.source.writeCount;
+
+    expect(transfer.controller.moveWindowToNextDesktop()).toBe(true);
+    expect(transfer.source.window.desktops).toEqual([transfer.desktops[0]]);
+    expect(transfer.moved.window.desktops).toEqual([transfer.desktops[1]]);
+    expect(transfer.source.desktopWriteCount).toBe(0);
+    expect(transfer.moved.desktopWriteCount).toBe(1);
+    expect(transfer.source.window.minimized).toBe(true);
+    expect(transfer.source.window.frameGeometry).toEqual(minimizedFrame);
+    expect(transfer.source.writeCount).toBe(minimizedWrites);
+    expect(transfer.fixture.workspace.activeWindow).toBe(transfer.moved.window);
+    expect(
+      transfer.fixture.workspace.currentDesktopForScreen?.(transfer.output),
+    ).toBe(transfer.desktops[1]);
+    expect(
+      testLayoutColumns(
+        transfer.controller,
+        transfer.output,
+        transfer.desktops[0],
+      ),
+    ).toEqual([{ id: "column:source", windowIds: ["source"] }]);
+    expect(
+      testLayoutColumns(
+        transfer.controller,
+        transfer.output,
+        transfer.desktops[1],
+      ),
+    ).toEqual([
+      { id: "column:destination", windowIds: ["destination"] },
+      { id: "column:moved", windowIds: ["moved"] },
+    ]);
+    expect(
+      runtimeLayout(transfer.controller).snapshot(
+        outputId(transfer.output.name),
+        desktopId(transfer.desktops[0].id),
+      ).columns[0]?.width,
+    ).toEqual({ kind: "proportion", value: 0.5 });
+    expect(
+      runtimeLayout(transfer.controller).snapshot(
+        outputId(transfer.output.name),
+        desktopId(transfer.desktops[1].id),
+      ).columns[1]?.width,
+    ).toEqual({ kind: "proportion", value: 0.5 });
+
+    transfer.fixture.setCurrentDesktop(transfer.output, transfer.desktops[0]);
+    setWindowState("minimized", transfer.source, false);
+
+    expect(transfer.source.window.minimized).toBe(false);
+    expect(transfer.source.window.frameGeometry).toEqual({
+      height: 780,
+      width: 485,
+      x: 10,
+      y: 10,
+    });
+    expect(transfer.source.writeCount).toBeGreaterThan(minimizedWrites);
+    expect(transfer.moved.window.desktops).toEqual([transfer.desktops[1]]);
+  });
+
+  it("retains multiple minimized source peers and their height policy", () => {
+    const transfer = createDesktopTransferFixture({
+      sourcePeerCount: 2,
+      sourceStack: true,
+    });
+    const secondSource = transfer.sources[1];
+
+    if (!secondSource) {
+      throw new Error("missing second desktop transfer source peer");
+    }
+
+    const layout = runtimeLayout(transfer.controller);
+    const heights = [
+      { kind: "auto" as const, weight: 2 },
+      { kind: "auto" as const, weight: 3 },
+      { kind: "auto" as const, weight: 5 },
+    ];
+    const edit = layout.setActiveColumnWindowHeights(
+      windowId("moved"),
+      heights,
+    );
+
+    if (!edit) {
+      throw new Error("could not install source transfer height policy");
+    }
+
+    layout.discardWindowHeightEditRollback(edit.rollback);
+    transfer.controller.reconcile();
+    const sourceColumn = layout.snapshot(
+      outputId(transfer.output.name),
+      desktopId(transfer.desktops[0].id),
+    ).columns[0];
+
+    if (!sourceColumn) {
+      throw new Error("missing source transfer column");
+    }
+
+    setWindowState("minimized", transfer.source, true);
+    setWindowState("minimized", secondSource, true);
+    const passiveFrames = transfer.sources.map(({ window }) => ({
+      ...window.frameGeometry,
+    }));
+    const passiveWrites = transfer.sources.map(({ writeCount }) => writeCount);
+
+    expect(transfer.controller.moveWindowToNextDesktop()).toBe(true);
+    expect(transfer.sources.map(({ window }) => window.desktops)).toEqual([
+      [transfer.desktops[0]],
+      [transfer.desktops[0]],
+    ]);
+    expect(
+      transfer.sources.map(({ desktopWriteCount }) => desktopWriteCount),
+    ).toEqual([0, 0]);
+    expect(transfer.sources.map(({ window }) => window.minimized)).toEqual([
+      true,
+      true,
+    ]);
+    expect(transfer.sources.map(({ window }) => window.frameGeometry)).toEqual(
+      passiveFrames,
+    );
+    expect(transfer.sources.map(({ writeCount }) => writeCount)).toEqual(
+      passiveWrites,
+    );
+    const retainedColumn = layout.snapshot(
+      outputId(transfer.output.name),
+      desktopId(transfer.desktops[0].id),
+    ).columns[0];
+
+    expect(retainedColumn).toEqual({
+      id: sourceColumn.id,
+      width: sourceColumn.width,
+      windowHeights: heights.slice(0, 2),
+      windowIds: [windowId("source"), windowId("source-2")],
+    });
+    expect(
+      testLayoutColumns(
+        transfer.controller,
+        transfer.output,
+        transfer.desktops[1],
+      ),
+    ).toEqual([
+      { id: "column:destination", windowIds: ["destination"] },
+      { id: "column:moved", windowIds: ["moved"] },
+    ]);
+
+    transfer.fixture.setCurrentDesktop(transfer.output, transfer.desktops[0]);
+    setWindowState("minimized", transfer.source, false);
+    setWindowState("minimized", secondSource, false);
+
+    expect(transfer.sources.map(({ window }) => window.minimized)).toEqual([
+      false,
+      false,
+    ]);
+    expect(transfer.sources.map(({ writeCount }) => writeCount)).toEqual(
+      passiveWrites.map((count) => count + 1),
+    );
+    expect(transfer.source.window.frameGeometry.x).toBe(
+      secondSource.window.frameGeometry.x,
+    );
+    expect(transfer.source.window.frameGeometry.y).toBeLessThan(
+      secondSource.window.frameGeometry.y,
+    );
+    expect(
+      layout.snapshot(
+        outputId(transfer.output.name),
+        desktopId(transfer.desktops[0].id),
+      ).columns[0],
+    ).toEqual(retainedColumn);
+  });
+
+  it("rolls back a single-window desktop transfer when its retained peer restores", () => {
+    const transfer = createDesktopTransferFixture({ sourceStack: true });
+
+    setWindowState("minimized", transfer.source, true);
+    const sourceLayout = runtimeLayout(transfer.controller).snapshot(
+      outputId(transfer.output.name),
+      desktopId(transfer.desktops[0].id),
+    );
+    const targetLayout = runtimeLayout(transfer.controller).snapshot(
+      outputId(transfer.output.name),
+      desktopId(transfer.desktops[1].id),
+    );
+    const frames = [
+      { ...transfer.source.window.frameGeometry },
+      { ...transfer.moved.window.frameGeometry },
+      { ...transfer.destination.window.frameGeometry },
+    ];
+    const minimizedWrites = transfer.source.writeCount;
+    let restoredDuringReflow = false;
+    transfer.moved.setWriteBehavior((_frame, commit) => {
+      commit();
+
+      if (!restoredDuringReflow) {
+        restoredDuringReflow = true;
+        setWindowState("minimized", transfer.source, false);
+      }
+    });
+    const warning = console.warn;
+    console.warn = () => undefined;
+
+    try {
+      expect(transfer.controller.moveWindowToNextDesktop()).toBe(false);
+    } finally {
+      console.warn = warning;
+      transfer.moved.setWriteBehavior(null);
+    }
+
+    expect(restoredDuringReflow).toBe(true);
+    expect(transfer.source.window.minimized).toBe(false);
+    expect(transfer.source.window.desktops).toEqual([transfer.desktops[0]]);
+    expect(transfer.moved.window.desktops).toEqual([transfer.desktops[0]]);
+    expect(transfer.source.desktopWriteCount).toBe(0);
+    expect(transfer.moved.desktopWriteCount).toBe(2);
+    expect(transfer.fixture.desktopSwitchCount).toBe(2);
+    expect(transfer.source.writeCount).toBe(minimizedWrites);
+    expect([
+      transfer.source.window.frameGeometry,
+      transfer.moved.window.frameGeometry,
+      transfer.destination.window.frameGeometry,
+    ]).toEqual(frames);
+    expect(transfer.fixture.workspace.activeWindow).toBe(transfer.moved.window);
+    expect(
+      transfer.fixture.workspace.currentDesktopForScreen?.(transfer.output),
+    ).toBe(transfer.desktops[0]);
+    expect(
+      runtimeLayout(transfer.controller).snapshot(
+        outputId(transfer.output.name),
+        desktopId(transfer.desktops[0].id),
+      ),
+    ).toEqual(sourceLayout);
+    expect(
+      runtimeLayout(transfer.controller).snapshot(
+        outputId(transfer.output.name),
+        desktopId(transfer.desktops[1].id),
+      ),
+    ).toEqual(targetLayout);
+  });
+
+  it("rolls back a single-window desktop transfer after a retained state round trip", () => {
+    const transfer = createDesktopTransferFixture({ sourceStack: true });
+
+    setWindowState("minimized", transfer.source, true);
+    const sourceLayout = runtimeLayout(transfer.controller).snapshot(
+      outputId(transfer.output.name),
+      desktopId(transfer.desktops[0].id),
+    );
+    const targetLayout = runtimeLayout(transfer.controller).snapshot(
+      outputId(transfer.output.name),
+      desktopId(transfer.desktops[1].id),
+    );
+    const frames = [
+      { ...transfer.source.window.frameGeometry },
+      { ...transfer.moved.window.frameGeometry },
+      { ...transfer.destination.window.frameGeometry },
+    ];
+    const minimizedWrites = transfer.source.writeCount;
+    let stateChangedDuringReflow = false;
+    transfer.moved.setWriteBehavior((_frame, commit) => {
+      commit();
+
+      if (!stateChangedDuringReflow) {
+        stateChangedDuringReflow = true;
+        setWindowState("minimized", transfer.source, false);
+        setWindowState("minimized", transfer.source, true);
+      }
+    });
+    const warning = console.warn;
+    console.warn = () => undefined;
+
+    try {
+      expect(transfer.controller.moveWindowToNextDesktop()).toBe(false);
+    } finally {
+      console.warn = warning;
+      transfer.moved.setWriteBehavior(null);
+    }
+
+    expect(stateChangedDuringReflow).toBe(true);
+    expect(transfer.source.window.minimized).toBe(true);
+    expect(transfer.source.window.desktops).toEqual([transfer.desktops[0]]);
+    expect(transfer.moved.window.desktops).toEqual([transfer.desktops[0]]);
+    expect(transfer.source.desktopWriteCount).toBe(0);
+    expect(transfer.moved.desktopWriteCount).toBe(2);
+    expect(transfer.fixture.desktopSwitchCount).toBe(2);
+    expect(transfer.source.writeCount).toBe(minimizedWrites);
+    expect([
+      transfer.source.window.frameGeometry,
+      transfer.moved.window.frameGeometry,
+      transfer.destination.window.frameGeometry,
+    ]).toEqual(frames);
+    expect(
+      runtimeLayout(transfer.controller).snapshot(
+        outputId(transfer.output.name),
+        desktopId(transfer.desktops[0].id),
+      ),
+    ).toEqual(sourceLayout);
+    expect(
+      runtimeLayout(transfer.controller).snapshot(
+        outputId(transfer.output.name),
+        desktopId(transfer.desktops[1].id),
+      ),
+    ).toEqual(targetLayout);
+  });
+
+  it("preserves an externally changed retained frame during desktop rollback", () => {
+    const transfer = createDesktopTransferFixture({ sourceStack: true });
+
+    setWindowState("minimized", transfer.source, true);
+    const sourceLayout = runtimeLayout(transfer.controller).snapshot(
+      outputId(transfer.output.name),
+      desktopId(transfer.desktops[0].id),
+    );
+    const targetLayout = runtimeLayout(transfer.controller).snapshot(
+      outputId(transfer.output.name),
+      desktopId(transfer.desktops[1].id),
+    );
+    const movedFrame = { ...transfer.moved.window.frameGeometry };
+    const destinationFrame = { ...transfer.destination.window.frameGeometry };
+    const externalFrame = { height: 333, width: 444, x: 77, y: 88 };
+    let frameChangedDuringReflow = false;
+    transfer.moved.setWriteBehavior((_frame, commit) => {
+      commit();
+
+      if (!frameChangedDuringReflow) {
+        frameChangedDuringReflow = true;
+        transfer.source.setFrameGeometry(externalFrame);
+      }
+    });
+    const warning = console.warn;
+    console.warn = () => undefined;
+
+    try {
+      expect(transfer.controller.moveWindowToNextDesktop()).toBe(false);
+    } finally {
+      console.warn = warning;
+      transfer.moved.setWriteBehavior(null);
+    }
+
+    expect(frameChangedDuringReflow).toBe(true);
+    expect(transfer.source.desktopWriteCount).toBe(0);
+    expect(transfer.moved.desktopWriteCount).toBe(2);
+    expect(transfer.fixture.desktopSwitchCount).toBe(2);
+    expect(transfer.source.window.minimized).toBe(true);
+    expect(transfer.source.window.frameGeometry).toEqual(externalFrame);
+    expect(transfer.moved.window.frameGeometry).toEqual(movedFrame);
+    expect(transfer.destination.window.frameGeometry).toEqual(destinationFrame);
+    expect(
+      runtimeLayout(transfer.controller).snapshot(
+        outputId(transfer.output.name),
+        desktopId(transfer.desktops[0].id),
+      ),
+    ).toEqual(sourceLayout);
+    expect(
+      runtimeLayout(transfer.controller).snapshot(
+        outputId(transfer.output.name),
+        desktopId(transfer.desktops[1].id),
+      ),
+    ).toEqual(targetLayout);
+  });
+
+  it("compensates a desktop transfer after its retained peer is removed", () => {
+    const transfer = createDesktopTransferFixture({ sourceStack: true });
+
+    setWindowState("minimized", transfer.source, true);
+    const targetLayout = runtimeLayout(transfer.controller).snapshot(
+      outputId(transfer.output.name),
+      desktopId(transfer.desktops[1].id),
+    );
+    const movedFrame = { ...transfer.moved.window.frameGeometry };
+    const destinationFrame = { ...transfer.destination.window.frameGeometry };
+    let removedDuringReflow = false;
+    transfer.moved.setWriteBehavior((_frame, commit) => {
+      commit();
+
+      if (!removedDuringReflow) {
+        removedDuringReflow = true;
+        transfer.fixture.windowRemoved.emit(transfer.source.window);
+      }
+    });
+    const warning = console.warn;
+    console.warn = () => undefined;
+
+    try {
+      expect(transfer.controller.moveWindowToNextDesktop()).toBe(false);
+    } finally {
+      console.warn = warning;
+      transfer.moved.setWriteBehavior(null);
+    }
+
+    expect(removedDuringReflow).toBe(true);
+    expect(transfer.controller.managedCount).toBe(2);
+    expect(transfer.source.desktopWriteCount).toBe(0);
+    expect(transfer.moved.desktopWriteCount).toBe(2);
+    expect(transfer.fixture.desktopSwitchCount).toBe(2);
+    expect(transfer.moved.window.desktops).toEqual([transfer.desktops[0]]);
+    expect(transfer.moved.window.frameGeometry).toEqual(movedFrame);
+    expect(transfer.destination.window.frameGeometry).toEqual(destinationFrame);
+    expect(
+      testLayoutColumns(
+        transfer.controller,
+        transfer.output,
+        transfer.desktops[0],
+      ),
+    ).toEqual([{ id: "column:source", windowIds: ["moved"] }]);
+    expect(
+      runtimeLayout(transfer.controller).snapshot(
+        outputId(transfer.output.name),
+        desktopId(transfer.desktops[1].id),
+      ),
+    ).toEqual(targetLayout);
+  });
+
+  it.each([
+    "fullscreen",
+    "maximized",
+    "native tiled",
+    "restore settling",
+    "toggle unsettled",
+  ] as const)(
+    "rejects a single-window desktop transfer past a passive %s blocker",
+    (blocker) => {
+      const transfer = createDesktopTransferFixture({ sourceStack: true });
+
+      blockWindowFocus(transfer.controller, transfer.source, blocker);
+      const sourceLayout = runtimeLayout(transfer.controller).snapshot(
+        outputId(transfer.output.name),
+        desktopId(transfer.desktops[0].id),
+      );
+      const targetLayout = runtimeLayout(transfer.controller).snapshot(
+        outputId(transfer.output.name),
+        desktopId(transfer.desktops[1].id),
+      );
+      const frames = [
+        { ...transfer.source.window.frameGeometry },
+        { ...transfer.moved.window.frameGeometry },
+        { ...transfer.destination.window.frameGeometry },
+      ];
+
+      expect(transfer.controller.moveWindowToNextDesktop()).toBe(false);
+      expect(transfer.source.desktopWriteCount).toBe(0);
+      expect(transfer.moved.desktopWriteCount).toBe(0);
+      expect(transfer.fixture.desktopSwitchCount).toBe(0);
+      expect([
+        transfer.source.window.frameGeometry,
+        transfer.moved.window.frameGeometry,
+        transfer.destination.window.frameGeometry,
+      ]).toEqual(frames);
+      expect(
+        runtimeLayout(transfer.controller).snapshot(
+          outputId(transfer.output.name),
+          desktopId(transfer.desktops[0].id),
+        ),
+      ).toEqual(sourceLayout);
+      expect(
+        runtimeLayout(transfer.controller).snapshot(
+          outputId(transfer.output.name),
+          desktopId(transfer.desktops[1].id),
+        ),
+      ).toEqual(targetLayout);
+    },
+  );
+
+  it("rejects single-window desktop transfer with minimized windows outside the source column", () => {
+    const source = createDesktopTransferFixture();
+    setWindowState("minimized", source.source, true);
+
+    expect(source.controller.moveWindowToNextDesktop()).toBe(false);
+    expect(source.source.desktopWriteCount).toBe(0);
+    expect(source.moved.desktopWriteCount).toBe(0);
+    expect(source.fixture.desktopSwitchCount).toBe(0);
+
+    const target = createDesktopTransferFixture();
+    setWindowState("minimized", target.destination, true);
+
+    expect(target.controller.moveWindowToNextDesktop()).toBe(false);
+    expect(target.source.desktopWriteCount).toBe(0);
+    expect(target.moved.desktopWriteCount).toBe(0);
+    expect(target.fixture.desktopSwitchCount).toBe(0);
+  });
+
   it("moves the active stack to a numbered desktop and clamps to the tail", () => {
     const { controller, desktops, destinations, fixture, moved, output } =
       createDesktopTransferFixture({
@@ -23342,7 +23823,138 @@ describe("RuntimeController output transfers", () => {
     },
   );
 
-  it("keeps the secondary single-window output transfer blocked by a minimized stack peer", () => {
+  it("extracts one window to another output past a retained minimized peer", () => {
+    const transfer = createOutputTransferFixture({ sourceStack: true });
+    const destination = transfer.destinations[0];
+
+    if (!destination) {
+      throw new Error("missing output transfer destination window");
+    }
+
+    setWindowState("minimized", transfer.source, true);
+    const minimizedFrame = { ...transfer.source.window.frameGeometry };
+    const destinationFrame = { ...destination.window.frameGeometry };
+    const minimizedWrites = transfer.source.writeCount;
+
+    expect(transfer.controller.moveWindowToOutputRight()).toBe(true);
+    expect(transfer.fixture.outputTransferCount).toBe(1);
+    expect(transfer.source.desktopWriteCount).toBe(0);
+    expect(transfer.moved.desktopWriteCount).toBe(0);
+    expect(transfer.source.window.output).toBe(transfer.sourceOutput);
+    expect(transfer.moved.window.output).toBe(transfer.targetOutput);
+    expect(transfer.source.window.minimized).toBe(true);
+    expect(transfer.source.window.frameGeometry).toEqual(minimizedFrame);
+    expect(transfer.source.writeCount).toBe(minimizedWrites);
+    expect(destination.window.frameGeometry).toEqual(destinationFrame);
+    expect(transfer.fixture.workspace.activeWindow).toBe(transfer.moved.window);
+    expect(
+      testLayoutColumns(
+        transfer.controller,
+        transfer.sourceOutput,
+        transfer.sourceDesktop,
+      ),
+    ).toEqual([{ id: "column:source", windowIds: ["source"] }]);
+    expect(
+      testLayoutColumns(
+        transfer.controller,
+        transfer.targetOutput,
+        transfer.targetDesktop,
+      ),
+    ).toEqual([
+      { id: "column:destination", windowIds: ["destination"] },
+      { id: "column:moved", windowIds: ["moved"] },
+    ]);
+    expect(
+      runtimeLayout(transfer.controller).snapshot(
+        outputId(transfer.sourceOutput.name),
+        desktopId(transfer.sourceDesktop.id),
+      ).columns[0]?.width,
+    ).toEqual({ kind: "proportion", value: 0.5 });
+    expect(
+      runtimeLayout(transfer.controller).snapshot(
+        outputId(transfer.targetOutput.name),
+        desktopId(transfer.targetDesktop.id),
+      ).columns[1]?.width,
+    ).toEqual({ kind: "proportion", value: 0.5 });
+
+    setWindowState("minimized", transfer.source, false);
+
+    expect(transfer.source.window.minimized).toBe(false);
+    expect(transfer.source.window.frameGeometry).toEqual({
+      height: 780,
+      width: 485,
+      x: 10,
+      y: 10,
+    });
+    expect(transfer.source.writeCount).toBeGreaterThan(minimizedWrites);
+  });
+
+  it("uses the target output desktop while retaining a minimized source peer", () => {
+    const transfer = createOutputTransferFixture({
+      differentDesktop: true,
+      sourceStack: true,
+    });
+    const minimizedFrame = { ...transfer.source.window.frameGeometry };
+
+    setWindowState("minimized", transfer.source, true);
+    const minimizedWrites = transfer.source.writeCount;
+
+    expect(transfer.controller.moveWindowToOutputRight()).toBe(true);
+    expect(transfer.fixture.outputTransferCount).toBe(1);
+    expect(transfer.fixture.desktopSwitchCount).toBe(0);
+    expect(transfer.source.window.output).toBe(transfer.sourceOutput);
+    expect(transfer.source.window.desktops).toEqual([transfer.sourceDesktop]);
+    expect(transfer.source.desktopWriteCount).toBe(0);
+    expect(transfer.source.window.minimized).toBe(true);
+    expect(transfer.source.window.frameGeometry).toEqual(minimizedFrame);
+    expect(transfer.source.writeCount).toBe(minimizedWrites);
+    expect(transfer.moved.window.output).toBe(transfer.targetOutput);
+    expect(transfer.moved.window.desktops).toEqual([transfer.targetDesktop]);
+    expect(transfer.moved.desktopWriteCount).toBe(2);
+    expect(
+      testLayoutColumns(
+        transfer.controller,
+        transfer.sourceOutput,
+        transfer.sourceDesktop,
+      ),
+    ).toEqual([{ id: "column:source", windowIds: ["source"] }]);
+    expect(
+      testLayoutColumns(
+        transfer.controller,
+        transfer.targetOutput,
+        transfer.targetDesktop,
+      ),
+    ).toEqual([
+      { id: "column:destination", windowIds: ["destination"] },
+      { id: "column:moved", windowIds: ["moved"] },
+    ]);
+  });
+
+  it("rejects single-window output transfer with minimized windows outside the source column", () => {
+    const source = createOutputTransferFixture();
+    setWindowState("minimized", source.source, true);
+
+    expect(source.controller.moveWindowToOutputRight()).toBe(false);
+    expect(source.fixture.outputTransferCount).toBe(0);
+    expect(source.source.desktopWriteCount).toBe(0);
+    expect(source.moved.desktopWriteCount).toBe(0);
+
+    const target = createOutputTransferFixture();
+    const destination = target.destinations[0];
+
+    if (!destination) {
+      throw new Error("missing output transfer destination window");
+    }
+
+    setWindowState("minimized", destination, true);
+
+    expect(target.controller.moveWindowToOutputRight()).toBe(false);
+    expect(target.fixture.outputTransferCount).toBe(0);
+    expect(target.source.desktopWriteCount).toBe(0);
+    expect(target.moved.desktopWriteCount).toBe(0);
+  });
+
+  it("rolls back a single-window output transfer when its retained peer restores", () => {
     const transfer = createOutputTransferFixture({ sourceStack: true });
     const destination = transfer.destinations[0];
 
@@ -23365,14 +23977,32 @@ describe("RuntimeController output transfers", () => {
       { ...destination.window.frameGeometry },
     ];
     const minimizedWrites = transfer.source.writeCount;
+    let restoredDuringReflow = false;
+    transfer.moved.setWriteBehavior((_frame, commit) => {
+      commit();
 
-    expect(transfer.controller.moveWindowToOutputRight()).toBe(false);
-    expect(transfer.fixture.outputTransferCount).toBe(0);
+      if (!restoredDuringReflow) {
+        restoredDuringReflow = true;
+        setWindowState("minimized", transfer.source, false);
+      }
+    });
+    const warning = console.warn;
+    console.warn = () => undefined;
+
+    try {
+      expect(transfer.controller.moveWindowToOutputRight()).toBe(false);
+    } finally {
+      console.warn = warning;
+      transfer.moved.setWriteBehavior(null);
+    }
+
+    expect(restoredDuringReflow).toBe(true);
+    expect(transfer.fixture.outputTransferCount).toBe(2);
     expect(transfer.source.desktopWriteCount).toBe(0);
     expect(transfer.moved.desktopWriteCount).toBe(0);
     expect(transfer.source.window.output).toBe(transfer.sourceOutput);
     expect(transfer.moved.window.output).toBe(transfer.sourceOutput);
-    expect(transfer.source.window.minimized).toBe(true);
+    expect(transfer.source.window.minimized).toBe(false);
     expect(transfer.source.writeCount).toBe(minimizedWrites);
     expect([
       transfer.source.window.frameGeometry,
@@ -23380,6 +24010,145 @@ describe("RuntimeController output transfers", () => {
       destination.window.frameGeometry,
     ]).toEqual(frames);
     expect(transfer.fixture.workspace.activeWindow).toBe(transfer.moved.window);
+    expect(
+      runtimeLayout(transfer.controller).snapshot(
+        outputId(transfer.sourceOutput.name),
+        desktopId(transfer.sourceDesktop.id),
+      ),
+    ).toEqual(sourceLayout);
+    expect(
+      runtimeLayout(transfer.controller).snapshot(
+        outputId(transfer.targetOutput.name),
+        desktopId(transfer.targetDesktop.id),
+      ),
+    ).toEqual(targetLayout);
+  });
+
+  it("rolls back a different-desktop output transfer after a retained state round trip", () => {
+    const transfer = createOutputTransferFixture({
+      differentDesktop: true,
+      sourceStack: true,
+    });
+    const destination = transfer.destinations[0];
+
+    if (!destination) {
+      throw new Error("missing output transfer destination window");
+    }
+
+    setWindowState("minimized", transfer.source, true);
+    const sourceLayout = runtimeLayout(transfer.controller).snapshot(
+      outputId(transfer.sourceOutput.name),
+      desktopId(transfer.sourceDesktop.id),
+    );
+    const targetLayout = runtimeLayout(transfer.controller).snapshot(
+      outputId(transfer.targetOutput.name),
+      desktopId(transfer.targetDesktop.id),
+    );
+    const frames = [
+      { ...transfer.source.window.frameGeometry },
+      { ...transfer.moved.window.frameGeometry },
+      { ...destination.window.frameGeometry },
+    ];
+    const minimizedWrites = transfer.source.writeCount;
+    let stateChangedDuringReflow = false;
+    transfer.moved.setWriteBehavior((_frame, commit) => {
+      commit();
+
+      if (!stateChangedDuringReflow) {
+        stateChangedDuringReflow = true;
+        setWindowState("minimized", transfer.source, false);
+        setWindowState("minimized", transfer.source, true);
+      }
+    });
+    const warning = console.warn;
+    console.warn = () => undefined;
+
+    try {
+      expect(transfer.controller.moveWindowToOutputRight()).toBe(false);
+    } finally {
+      console.warn = warning;
+      transfer.moved.setWriteBehavior(null);
+    }
+
+    expect(stateChangedDuringReflow).toBe(true);
+    expect(transfer.fixture.outputTransferCount).toBe(2);
+    expect(transfer.fixture.desktopSwitchCount).toBe(0);
+    expect(transfer.source.desktopWriteCount).toBe(0);
+    expect(transfer.moved.desktopWriteCount).toBe(3);
+    expect(transfer.source.window.output).toBe(transfer.sourceOutput);
+    expect(transfer.moved.window.output).toBe(transfer.sourceOutput);
+    expect(transfer.source.window.desktops).toEqual([transfer.sourceDesktop]);
+    expect(transfer.moved.window.desktops).toEqual([transfer.sourceDesktop]);
+    expect(transfer.source.window.minimized).toBe(true);
+    expect(transfer.source.writeCount).toBe(minimizedWrites);
+    expect([
+      transfer.source.window.frameGeometry,
+      transfer.moved.window.frameGeometry,
+      destination.window.frameGeometry,
+    ]).toEqual(frames);
+    expect(
+      runtimeLayout(transfer.controller).snapshot(
+        outputId(transfer.sourceOutput.name),
+        desktopId(transfer.sourceDesktop.id),
+      ),
+    ).toEqual(sourceLayout);
+    expect(
+      runtimeLayout(transfer.controller).snapshot(
+        outputId(transfer.targetOutput.name),
+        desktopId(transfer.targetDesktop.id),
+      ),
+    ).toEqual(targetLayout);
+  });
+
+  it("preserves an externally changed retained frame during output rollback", () => {
+    const transfer = createOutputTransferFixture({ sourceStack: true });
+    const destination = transfer.destinations[0];
+
+    if (!destination) {
+      throw new Error("missing output transfer destination window");
+    }
+
+    setWindowState("minimized", transfer.source, true);
+    const sourceLayout = runtimeLayout(transfer.controller).snapshot(
+      outputId(transfer.sourceOutput.name),
+      desktopId(transfer.sourceDesktop.id),
+    );
+    const targetLayout = runtimeLayout(transfer.controller).snapshot(
+      outputId(transfer.targetOutput.name),
+      desktopId(transfer.targetDesktop.id),
+    );
+    const movedFrame = { ...transfer.moved.window.frameGeometry };
+    const destinationFrame = { ...destination.window.frameGeometry };
+    const externalFrame = { height: 333, width: 444, x: 77, y: 88 };
+    let frameChangedDuringReflow = false;
+    transfer.moved.setWriteBehavior((_frame, commit) => {
+      commit();
+
+      if (!frameChangedDuringReflow) {
+        frameChangedDuringReflow = true;
+        transfer.source.setFrameGeometry(externalFrame);
+      }
+    });
+    const warning = console.warn;
+    console.warn = () => undefined;
+
+    try {
+      expect(transfer.controller.moveWindowToOutputRight()).toBe(false);
+    } finally {
+      console.warn = warning;
+      transfer.moved.setWriteBehavior(null);
+    }
+
+    expect(frameChangedDuringReflow).toBe(true);
+    expect(transfer.fixture.outputTransferCount).toBe(2);
+    expect(transfer.source.desktopWriteCount).toBe(0);
+    expect(transfer.moved.desktopWriteCount).toBe(0);
+    expect(transfer.source.window.output).toBe(transfer.sourceOutput);
+    expect(transfer.moved.window.output).toBe(transfer.sourceOutput);
+    expect(transfer.source.window.minimized).toBe(true);
+    expect(transfer.source.window.frameGeometry).toEqual(externalFrame);
+    expect(transfer.moved.window.frameGeometry).toEqual(movedFrame);
+    expect(destination.window.frameGeometry).toEqual(destinationFrame);
     expect(
       runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.sourceOutput.name),
@@ -24636,6 +25405,7 @@ function createDesktopTransferFixture(
   options: {
     readonly destinationCount?: number;
     readonly movedOverrides?: Partial<KWinWindow>;
+    readonly sourcePeerCount?: number;
     readonly sourceStack?: boolean;
     readonly targetColumnId?: string;
     readonly trackedOutput?: boolean;
@@ -24646,7 +25416,22 @@ function createDesktopTransferFixture(
     : null;
   const output = trackedOutput?.output ?? createOutput("DP-1", 0);
   const desktops = [{ id: "desktop-1" }, { id: "desktop-2" }] as const;
-  const source = createTrackedWindow("source", output, desktops[0]);
+  const sources = Array.from(
+    {
+      length: options.sourceStack ? (options.sourcePeerCount ?? 1) : 1,
+    },
+    (_value, index) =>
+      createTrackedWindow(
+        index === 0 ? "source" : `source-${String(index + 1)}`,
+        output,
+        desktops[0],
+      ),
+  );
+  const source = sources[0];
+
+  if (!source) {
+    throw new Error("desktop transfer fixture needs a source window");
+  }
   const destinations = Array.from(
     { length: options.destinationCount ?? 1 },
     (_value, index) =>
@@ -24669,7 +25454,7 @@ function createDesktopTransferFixture(
     options.movedOverrides,
   );
   const fixture = createWorkspace(output, desktops[0], [output], desktops, [
-    source.window,
+    ...sources.map((window) => window.window),
     ...destinations.map((window) => window.window),
     moved.window,
   ]);
@@ -24690,7 +25475,12 @@ function createDesktopTransferFixture(
             column: {
               id: columnId("column:source"),
               width: { kind: "proportion", value: 0.5 },
-              windowIds: [windowId("source"), windowId("moved")],
+              windowIds: [
+                ...sources.map((window) =>
+                  windowId(String(window.window.internalId)),
+                ),
+                windowId("moved"),
+              ],
             },
             index: 0,
           },
@@ -24750,6 +25540,7 @@ function createDesktopTransferFixture(
     moved,
     output,
     source,
+    sources,
     trackedOutput,
   };
 }
