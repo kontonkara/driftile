@@ -129,7 +129,7 @@ RuntimeState
 - Release externally transferred windows from their old context before admitting them to the destination context.
 - Translate client minimum and maximum sizes to frame bounds by adding current nonnegative decoration extents before emitting geometry or resizing a column. Treat malformed bounds conservatively.
 - Preserve a tiled window's exact logical slot and a manually floating window's exact detached frame while KWin minimizes and restores it.
-- Reject whole-column transfers, consume or expel edits, and stacked native-state extraction when a required member is minimized; other hidden-member edit semantics remain outside this slice.
+- Permit stacked native-state extraction past settled minimized peers while retaining their slots and excluding them from frame reads and writes. Reject whole-column transfers and consume or expel edits when a required member is minimized; other hidden-member edit semantics remain outside this slice.
 - A native fullscreen command extracts a member of a regular stack into an immediate right singleton before calling KWin. The new column copies the source width, and leaving fullscreen does not merge it back.
 - A native maximize command extracts a member of a regular stack into an immediate right singleton before calling KWin. The new column copies the source width, and unmaximize does not merge it back.
 - Require a stable restored frame before resuming writes or rebasing a transferred window.
@@ -164,8 +164,8 @@ RuntimeState
 - Replay window lifecycle and output or desktop transfer sequences.
 - Verify window-state ownership, cancellation races, stable resumption, and slot reservation.
 - Verify minimized tiled-slot and manual-floating-frame retention, horizontal and vertical focus skipping, layer switching, no-wrap boundaries, fail-closed non-minimize suspension blockers, reentrant focus rollback, and all-member transaction guards.
-- Verify shortcut and application-driven stacked fullscreen extraction, KWin-owned geometry, persistent singleton restoration, deferred Wayland commits, and exact rejection rollback.
-- Verify shortcut and application-driven stacked maximize extraction, KWin-owned geometry, persistent singleton restoration, and exact rejection rollback.
+- Verify shortcut and application-driven stacked fullscreen extraction past settled minimized peers, KWin-owned geometry, persistent singleton restoration, deferred Wayland commits, and exact rejection rollback.
+- Verify shortcut and application-driven stacked maximize extraction past settled minimized peers, KWin-owned geometry, persistent singleton restoration, and exact rejection rollback.
 - Verify adjacent and direct-edge active-column reorder, width adjustments, width presets, full width, available-width expansion, single-column and visible-group centering, signed viewport offsets, constraint bounds, and transactional rollback.
 - Verify per-window 10% height changes, automatic reset, forward and reverse height presets, weighted stack redistribution, singleton sizing, and exact rollback.
 - Verify decorated client-to-frame constraint translation and conservative handling of malformed bounds.
