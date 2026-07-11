@@ -62,7 +62,9 @@ untouched. Expel may move a visible bottom member past minimized passive peers
 when its retained focus target is visible. An active bottom member hands focus
 only to its immediate predecessor; a minimized predecessor makes the command a
 no-op. The structural edit waits for KWin to confirm that handoff and is
-discarded if the original layout or participants change. Whole-column transfers still require every participant to be writable;
+discarded if the original layout or participants change. Whole-column desktop
+transfers may carry settled minimized passive members without writing their
+hidden frames. Output transfers still require every participant to be writable;
 other hidden-member edit semantics remain MVP work.
 
 Window-height presets are `1/3`, `1/2`, and `2/3` of the work area, with gaps

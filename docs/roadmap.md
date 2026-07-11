@@ -53,7 +53,7 @@ The current runtime already:
 - Expels a visible bottom member past settled minimized passive peers only after an exact focus handoff inside the surviving column is confirmed.
 - Extracts a regular stack member into an immediate right singleton before native fullscreen, preserves settled minimized peers without frame writes, and keeps the window separate after leaving fullscreen.
 - Extracts a regular stack member into an immediate right singleton before native maximize-to-edges, preserves settled minimized peers without frame writes, and keeps the window separate after unmaximize.
-- Moves the whole active column between adjacent existing desktops with follow-focus, atomic two-context ownership, and exact rollback; single-window transfer remains secondary.
+- Moves the whole active column between adjacent existing desktops with follow-focus, atomic two-context ownership, exact rollback, and no hidden-frame writes for settled minimized passive members; single-window transfer remains secondary.
 - Focuses desktops 1 through 9 directly and moves the whole active column there, clamping out-of-range targets to the shared empty tail.
 - Moves one relation-free floating window between adjacent or numbered desktops without changing its frame or either tiled layout.
 - Moves the whole active column to an adjacent output with deterministic spatial routing and atomic visible-context reflow; single-window transfer remains secondary.
