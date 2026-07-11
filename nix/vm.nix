@@ -6,6 +6,7 @@
 
 let
   pluginId = "io.github.kontonkara.driftile";
+  activeWindowProbe = ../tools/vm/active-window-probe.js;
   demoClient = ../tools/integration/client.qml;
   fixedSizeClient = ../tools/integration/fixed-size-client.qml;
   floatingNavigationProbe = ../tools/vm/floating-navigation-probe.js;
@@ -49,6 +50,8 @@ let
       pkgs.xprop
     ];
     text = ''
+      active_window_probe_id="io.github.kontonkara.driftile.vm-active-window"
+      active_window_shortcut_prefix="_k_session:Driftile VM Active Window "
       floating_navigation_probe_id="io.github.kontonkara.driftile.vm-floating-navigation"
 
       window_match_id() {
@@ -75,6 +78,39 @@ let
 
         match_id=$(window_match_id "$1") || return 1
         printf '%s' "''${match_id#*_}"
+      }
+
+      window_action_match_id() {
+        local action=$2
+        local title=$1
+
+        busctl --user --json=short call \
+          org.kde.KWin \
+          /WindowsRunner \
+          org.kde.krunner1 \
+          Match \
+          s "$title $action" 2>/dev/null \
+          | jq --exit-status --raw-output --arg title "$title" '
+            [
+              .data[0][]
+              | select(.[1] == $title or .[1] == ($title + " [active]"))
+            ] as $matches
+            | select($matches | length == 1)
+            | $matches[0][0]
+          '
+      }
+
+      run_window_action() {
+        local match_id
+
+        match_id=$(window_action_match_id "$1" "$2") || return 1
+        busctl --user call \
+          org.kde.KWin \
+          /WindowsRunner \
+          org.kde.krunner1 \
+          Run \
+          ss "$match_id" "" \
+          >/dev/null
       }
 
       wait_for_window() {
@@ -193,6 +229,117 @@ let
         return 1
       }
 
+      window_is_active_contains() {
+        local attempt
+        local caption
+        local load_result
+        local needle=$1
+        local script_id
+        local shortcuts
+        local verified=false
+
+        active_window_probe_result=""
+        cleanup_active_window_probe || return 1
+
+        load_result=$(busctl --user call \
+          org.kde.KWin \
+          /Scripting \
+          org.kde.kwin.Scripting \
+          loadScript \
+          ss ${activeWindowProbe} "$active_window_probe_id" \
+          2>/dev/null) || return 1
+        script_id=''${load_result#i }
+
+        if [[ "$script_id" =~ ^[0-9]+$ ]] \
+          && busctl --user call \
+            org.kde.KWin \
+            "/Scripting/Script$script_id" \
+            org.kde.kwin.Script \
+            run \
+            >/dev/null; then
+          for ((attempt = 0; attempt < 10; attempt += 1)); do
+            shortcuts=$(busctl --user --json=short call \
+              org.kde.kglobalaccel \
+              /component/kwin \
+              org.kde.kglobalaccel.Component \
+              shortcutNames 2>/dev/null) || break
+            caption=$(jq --exit-status --raw-output \
+              --arg prefix "$active_window_shortcut_prefix" '
+                [.data[0][] | select(startswith($prefix))]
+                | select(length == 1)
+                | .[0]
+                | ltrimstr($prefix)
+              ' <<< "$shortcuts" 2>/dev/null || true)
+
+            if [[ -n "$caption" ]]; then
+              active_window_probe_result="$caption"
+              [[ "$caption" == *"$needle"* ]] && verified=true
+              break
+            fi
+
+            sleep 0.02
+          done
+        fi
+
+        cleanup_active_window_probe || verified=false
+        [[ "$verified" == true ]]
+      }
+
+      cleanup_active_window_probe() {
+        local action_count
+        local attempt
+        local script_state
+
+        busctl --user call \
+          org.kde.KWin \
+          /Scripting \
+          org.kde.kwin.Scripting \
+          unloadScript \
+          s "$active_window_probe_id" \
+          >/dev/null 2>&1 || true
+
+        for ((attempt = 0; attempt < 50; attempt += 1)); do
+          script_state=$(busctl --user call \
+            org.kde.KWin \
+            /Scripting \
+            org.kde.kwin.Scripting \
+            isScriptLoaded \
+            s "$active_window_probe_id" 2>/dev/null || true)
+          action_count=$(busctl --user --json=short call \
+            org.kde.kglobalaccel \
+            /component/kwin \
+            org.kde.kglobalaccel.Component \
+            shortcutNames 2>/dev/null \
+            | jq --exit-status --raw-output \
+              --arg prefix "$active_window_shortcut_prefix" '
+                [.data[0][] | select(startswith($prefix))] | length
+              ' 2>/dev/null || true)
+
+          if [[ "$script_state" == "b false" && "$action_count" == 0 ]]; then
+            return 0
+          fi
+
+          sleep 0.02
+        done
+
+        return 1
+      }
+
+      wait_for_active_contains() {
+        local attempt
+        local needle=$1
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          if window_is_active_contains "$needle"; then
+            return 0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
       window_match_id_contains() {
         local needle=$1
 
@@ -214,6 +361,43 @@ let
             | select(length == 1)
             | .[0][0]
           '
+      }
+
+      window_action_match_id_contains() {
+        local action=$2
+        local needle=$1
+
+        busctl --user --json=short call \
+          org.kde.KWin \
+          /WindowsRunner \
+          org.kde.krunner1 \
+          Match \
+          s "$needle $action" 2>/dev/null \
+          | jq --exit-status --raw-output --arg needle "$needle" '
+            [
+              .data[0][]
+              | select(
+                  (.[1] | sub(" \\[active\\]$"; ""))
+                  | contains($needle)
+                )
+            ]
+            | unique_by(.[0])
+            | select(length == 1)
+            | .[0][0]
+          '
+      }
+
+      run_window_action_contains() {
+        local match_id
+
+        match_id=$(window_action_match_id_contains "$1" "$2") || return 1
+        busctl --user call \
+          org.kde.KWin \
+          /WindowsRunner \
+          org.kde.krunner1 \
+          Run \
+          ss "$match_id" "" \
+          >/dev/null
       }
 
       window_id_contains() {
@@ -497,6 +681,7 @@ let
             && "$shortcuts" == *"driftile_expel_window_from_column"* \
             && "$shortcuts" == *"driftile_focus_previous_desktop"* \
             && "$shortcuts" == *"driftile_focus_next_desktop"* \
+            && "$shortcuts" == *"driftile_focus_next_desktop_page_down"* \
             && "$shortcuts" == *"driftile_focus_desktop_1"* \
             && "$shortcuts" == *"driftile_focus_desktop_9"* \
             && "$shortcuts" == *"driftile_focus_output_left"* \
@@ -558,6 +743,89 @@ let
           s "$id" 2>/dev/null \
           | jq --exit-status --raw-output \
             '.data[0].x.data | select(type == "number") | round | tostring'
+      }
+
+      frames_match_leftward_reveal() {
+        local before_first=$1
+        local after_first=$2
+        local before_second=$3
+        local after_second=$4
+        local before_target=$5
+        local after_target=$6
+        local output_width=$7
+        local before_first_x before_first_y before_first_width before_first_height
+        local after_first_x after_first_y after_first_width after_first_height
+        local before_second_x before_second_y before_second_width before_second_height
+        local after_second_x after_second_y after_second_width after_second_height
+        local before_target_x before_target_y before_target_width before_target_height
+        local after_target_x after_target_y after_target_width after_target_height
+        local delta
+        local frame
+
+        for frame in \
+          "$before_first" "$after_first" \
+          "$before_second" "$after_second" \
+          "$before_target" "$after_target"; do
+          [[ "$frame" =~ ^-?[0-9]+,-?[0-9]+,[0-9]+,[0-9]+$ ]] || return 1
+        done
+
+        IFS=, read -r before_first_x before_first_y before_first_width before_first_height <<< "$before_first"
+        IFS=, read -r after_first_x after_first_y after_first_width after_first_height <<< "$after_first"
+        IFS=, read -r before_second_x before_second_y before_second_width before_second_height <<< "$before_second"
+        IFS=, read -r after_second_x after_second_y after_second_width after_second_height <<< "$after_second"
+        IFS=, read -r before_target_x before_target_y before_target_width before_target_height <<< "$before_target"
+        IFS=, read -r after_target_x after_target_y after_target_width after_target_height <<< "$after_target"
+        delta=$((after_first_x - before_first_x))
+
+        ((
+          delta < 0 &&
+            after_second_x - before_second_x == delta &&
+            after_target_x - before_target_x == delta &&
+            before_first_y == after_first_y &&
+            before_first_width == after_first_width &&
+            before_first_height == after_first_height &&
+            before_second_y == after_second_y &&
+            before_second_width == after_second_width &&
+            before_second_height == after_second_height &&
+            before_target_y == after_target_y &&
+            before_target_width == after_target_width &&
+            before_target_height == after_target_height &&
+            before_target_x + before_target_width > output_width &&
+            after_target_x >= 0 &&
+            after_target_x + after_target_width <= output_width
+        ))
+      }
+
+      frames_share_horizontal_translation() {
+        local before
+        local after
+        local before_x before_y before_width before_height
+        local after_x after_y after_width after_height
+        local delta=""
+
+        (($# > 0 && $# % 2 == 0)) || return 1
+
+        while (($# > 0)); do
+          before=$1
+          after=$2
+          shift 2
+
+          [[ "$before" =~ ^-?[0-9]+,-?[0-9]+,[0-9]+,[0-9]+$ ]] || return 1
+          [[ "$after" =~ ^-?[0-9]+,-?[0-9]+,[0-9]+,[0-9]+$ ]] || return 1
+          IFS=, read -r before_x before_y before_width before_height <<< "$before"
+          IFS=, read -r after_x after_y after_width after_height <<< "$after"
+
+          if [[ -z "$delta" ]]; then
+            delta=$((after_x - before_x))
+          fi
+
+          ((
+            after_x - before_x == delta &&
+              before_y == after_y &&
+              before_width == after_width &&
+              before_height == after_height
+          )) || return 1
+        done
       }
 
       window_frame_width() {
@@ -636,6 +904,100 @@ let
         done
 
         return 1
+      }
+
+      window_minimized_state() {
+        local id
+
+        id=$(window_id "$1") || return 1
+        busctl --user --json=short call \
+          org.kde.KWin \
+          /KWin \
+          org.kde.KWin \
+          getWindowInfo \
+          s "$id" 2>/dev/null \
+          | jq --exit-status --raw-output '
+            .data[0].minimized.data
+            | select(type == "boolean")
+            | tostring
+          '
+      }
+
+      window_minimized_state_contains() {
+        window_info_contains "$1" \
+          | jq --exit-status --raw-output '
+            .data[0].minimized.data
+            | select(type == "boolean")
+            | tostring
+          '
+      }
+
+      wait_for_window_minimized_state() {
+        local attempt
+        local expected=$2
+        local title=$1
+        local stable_samples=0
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          if [[ "$(window_minimized_state "$title" 2>/dev/null || true)" == "$expected" ]]; then
+            stable_samples=$((stable_samples + 1))
+
+            if ((stable_samples >= 2)); then
+              return 0
+            fi
+          else
+            stable_samples=0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      wait_for_window_minimized_state_contains() {
+        local attempt
+        local expected=$2
+        local query=$1
+        local stable_samples=0
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          if [[ "$(window_minimized_state_contains "$query" 2>/dev/null || true)" == "$expected" ]]; then
+            stable_samples=$((stable_samples + 1))
+
+            if ((stable_samples >= 2)); then
+              return 0
+            fi
+          else
+            stable_samples=0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      set_external_window_minimized() {
+        local expected=$2
+        local title=$1
+
+        if [[ "$(window_minimized_state "$title" 2>/dev/null || true)" != "$expected" ]]; then
+          run_window_action "$title" minimize || return 1
+        fi
+
+        wait_for_window_minimized_state "$title" "$expected"
+      }
+
+      set_external_window_minimized_contains() {
+        local expected=$2
+        local query=$1
+
+        if [[ "$(window_minimized_state_contains "$query" 2>/dev/null || true)" != "$expected" ]]; then
+          run_window_action_contains "$query" minimize || return 1
+        fi
+
+        wait_for_window_minimized_state_contains "$query" "$expected"
       }
 
       window_fullscreen_state() {
@@ -810,6 +1172,29 @@ let
             | map(round | tostring)
             | join(",")
           '
+      }
+
+      wait_for_window_frame_contains() {
+        local attempt
+        local expected=$2
+        local query=$1
+        local stable_samples=0
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          if [[ "$(window_frame_contains "$query" 2>/dev/null || true)" == "$expected" ]]; then
+            stable_samples=$((stable_samples + 1))
+
+            if ((stable_samples >= 2)); then
+              return 0
+            fi
+          else
+            stable_samples=0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
       }
 
       window_frame_width_contains() {
@@ -2439,6 +2824,98 @@ let
           >/dev/null
       }
 
+      wait_for_shortcut_focus() {
+        local attempt
+        local sample
+        local shortcut=$1
+        local title=$2
+
+        for ((attempt = 0; attempt < 50; attempt += 1)); do
+          if window_is_active "$title"; then
+            return 0
+          fi
+
+          invoke_shortcut "$shortcut" || return 1
+
+          for ((sample = 0; sample < 2; sample += 1)); do
+            sleep 0.1
+
+            if window_is_active "$title"; then
+              return 0
+            fi
+          done
+        done
+
+        return 1
+      }
+
+      wait_for_shortcut_focus_contains() {
+        local attempt
+        local shortcut=$1
+        local query=$2
+        local sample
+
+        for ((attempt = 0; attempt < 50; attempt += 1)); do
+          if window_is_active_contains "$query"; then
+            return 0
+          fi
+
+          invoke_shortcut "$shortcut" || return 1
+
+          for ((sample = 0; sample < 2; sample += 1)); do
+            sleep 0.1
+
+            if window_is_active_contains "$query"; then
+              return 0
+            fi
+          done
+        done
+
+        return 1
+      }
+
+      named_frames_match_once() {
+        local current
+
+        (($# > 0 && $# % 2 == 0)) || return 1
+
+        while (($# > 0)); do
+          current=$(window_frame "$1" 2>/dev/null || true)
+          [[ "$current" == "$2" ]] || return 1
+          shift 2
+        done
+      }
+
+      wait_for_shortcut_frames() {
+        local attempt
+        local sample
+        local shortcut=$1
+        local -a frame_pairs
+
+        shift
+        frame_pairs=("$@")
+
+        for ((attempt = 0; attempt < 50; attempt += 1)); do
+          if named_frames_match_once "''${frame_pairs[@]}"; then
+            wait_for_named_frames "''${frame_pairs[@]}"
+            return
+          fi
+
+          invoke_shortcut "$shortcut" || return 1
+
+          for ((sample = 0; sample < 2; sample += 1)); do
+            sleep 0.1
+
+            if named_frames_match_once "''${frame_pairs[@]}"; then
+              wait_for_named_frames "''${frame_pairs[@]}"
+              return
+            fi
+          done
+        done
+
+        return 1
+      }
+
       wait_for_real_window_width() {
         local attempt
         local comparison=$2
@@ -2498,6 +2975,7 @@ let
                 | {
                     caption: $window.caption.data?,
                     desktopFile: $window.desktopFile.data?,
+                    minimized: $window.minimized.data?,
                     noBorder: $window.noBorder.data?,
                     resourceClass: $window.resourceClass.data?,
                     resourceName: $window.resourceName.data?,
@@ -2528,6 +3006,8 @@ let
           printf 'expected identity: %s\n' "$expected_identity"
           printf 'expected X11: %s\n' "$expected_x11"
           printf 'matching X11 windows: %s\n' "$x11_matches"
+          printf 'active-window probe: %s\n' \
+            "''${active_window_probe_result:-unavailable}"
         } >> /tmp/shared/driftile-focus-diagnostics
         record_real_application_state "$label acceptance state" "$query"
       }
@@ -2539,13 +3019,9 @@ let
         local initial_width
         local label=$1
         local query=$2
-
-        if ! invoke_shortcut "driftile_focus_column_right"; then
-          record_real_application_failure \
-            "$label" "$query" "initial focus-right shortcut" \
-            "$expected_identity" "$expected_x11"
-          return 1
-        fi
+        local tiled_first_frame
+        local tiled_second_frame
+        local tiled_third_frame
 
         if ! real_window_is_normal "$query"; then
           record_real_application_failure \
@@ -2573,6 +3049,16 @@ let
           return 1
         fi
 
+        if ! activate_window "$title_c" \
+          || ! wait_for_active "$title_c" \
+          || ! wait_for_shortcut_focus_contains \
+            "driftile_focus_column_right" "$query"; then
+          record_real_application_failure \
+            "$label" "$query" "active state before minimize" \
+            "$expected_identity" "$expected_x11"
+          return 1
+        fi
+
         if ! frame=$(capture_stable_window_frame_contains "$query"); then
           record_real_application_failure \
             "$label" "$query" "stable frame" "$expected_identity" "$expected_x11"
@@ -2582,6 +3068,75 @@ let
         if [[ ! "$initial_width" =~ ^[1-9][0-9]*$ ]]; then
           record_real_application_failure \
             "$label" "$query" "initial width" "$expected_identity" "$expected_x11"
+          return 1
+        fi
+
+        tiled_first_frame=$(capture_stable_window_frame "$title_a") \
+          || tiled_first_frame=""
+        tiled_second_frame=$(capture_stable_window_frame "$title_b") \
+          || tiled_second_frame=""
+        tiled_third_frame=$(capture_stable_window_frame "$title_c") \
+          || tiled_third_frame=""
+        if [[ -z "$tiled_first_frame" \
+          || -z "$tiled_second_frame" \
+          || -z "$tiled_third_frame" ]]; then
+          record_real_application_failure \
+            "$label" "$query" "tiled baseline before minimize" \
+            "$expected_identity" "$expected_x11"
+          return 1
+        fi
+
+        if ! set_external_window_minimized_contains "$query" true; then
+          record_real_application_failure \
+            "$label" "$query" "external minimize" \
+            "$expected_identity" "$expected_x11"
+          return 1
+        fi
+
+        if ! wait_for_window_frame_contains "$query" "$frame" \
+          || ! wait_for_named_frames \
+            "$title_a" "$tiled_first_frame" \
+            "$title_b" "$tiled_second_frame" \
+            "$title_c" "$tiled_third_frame" \
+          || ! wait_for_window_minimized_state_contains "$query" true; then
+          record_real_application_failure \
+            "$label" "$query" "hidden slot while minimized" \
+            "$expected_identity" "$expected_x11"
+          return 1
+        fi
+
+        if ! wait_for_active "$title_c"; then
+          record_real_application_failure \
+            "$label" "$query" "focus fallback after minimize" \
+            "$expected_identity" "$expected_x11"
+          return 1
+        fi
+
+        if ! set_external_window_minimized_contains "$query" false; then
+          record_real_application_failure \
+            "$label" "$query" "external restore" \
+            "$expected_identity" "$expected_x11"
+          return 1
+        fi
+
+        if ! wait_for_window_frame_contains "$query" "$frame" \
+          || ! wait_for_named_frames \
+            "$title_a" "$tiled_first_frame" \
+            "$title_b" "$tiled_second_frame" \
+            "$title_c" "$tiled_third_frame"; then
+          record_real_application_failure \
+            "$label" "$query" "exact frame after restore" \
+            "$expected_identity" "$expected_x11"
+          return 1
+        fi
+
+        if ! activate_window "$title_c" \
+          || ! wait_for_active "$title_c" \
+          || ! wait_for_shortcut_focus_contains \
+            "driftile_focus_column_right" "$query"; then
+          record_real_application_failure \
+            "$label" "$query" "focus restored slot" \
+            "$expected_identity" "$expected_x11"
           return 1
         fi
 
@@ -2928,6 +3483,386 @@ let
         [[ "$verified" == true && "$restored" == true ]]
       }
 
+      capture_minimized_fixture_frames() {
+        minimized_first_frame=$(capture_stable_window_frame "$title_a") \
+          && minimized_middle_frame=$(capture_stable_window_frame "$title_b") \
+          && minimized_last_frame=$(capture_stable_window_frame "$title_d") \
+          && minimized_middle_column_frame=$(capture_stable_window_frame "$title_c") \
+          && minimized_edge_frame=$(capture_stable_window_frame "$title_e")
+      }
+
+      wait_for_minimized_fixture_frames() {
+        wait_for_named_frames \
+          "$title_a" "$1" \
+          "$title_b" "$2" \
+          "$title_d" "$3" \
+          "$title_c" "$4" \
+          "$title_e" "$5"
+      }
+
+      run_minimized_slot_navigation_checks() {
+        local boundary_edge
+        local boundary_first
+        local boundary_last
+        local boundary_middle
+        local boundary_middle_column
+        local before_end_edge
+        local before_end_first
+        local before_end_last
+        local before_end_middle
+        local before_end_middle_column
+        local restored_edge
+        local restored_first
+        local restored_last
+        local restored_middle
+        local restored_middle_column
+        local baseline_first=$1
+        local baseline_middle=$2
+        local baseline_last=$3
+        local baseline_middle_column=$4
+        local baseline_edge=$5
+
+        set_external_window_minimized "$title_b" true || return 1
+        wait_for_minimized_fixture_frames \
+          "$baseline_first" \
+          "$baseline_middle" \
+          "$baseline_last" \
+          "$baseline_middle_column" \
+          "$baseline_edge" \
+          || return 1
+        set_external_window_minimized "$title_c" true || return 1
+        wait_for_minimized_fixture_frames \
+          "$baseline_first" \
+          "$baseline_middle" \
+          "$baseline_last" \
+          "$baseline_middle_column" \
+          "$baseline_edge" \
+          || return 1
+        activate_window "$title_a" && wait_for_active "$title_a" || return 1
+        invoke_shortcut "driftile_focus_window_down" \
+          && wait_for_active "$title_d" \
+          && capture_minimized_fixture_frames \
+          || return 1
+        boundary_first=$minimized_first_frame
+        boundary_middle=$minimized_middle_frame
+        boundary_last=$minimized_last_frame
+        boundary_middle_column=$minimized_middle_column_frame
+        boundary_edge=$minimized_edge_frame
+        invoke_shortcut "driftile_focus_window_down" \
+          && wait_for_active "$title_d" \
+          && wait_for_minimized_fixture_frames \
+            "$boundary_first" \
+            "$boundary_middle" \
+            "$boundary_last" \
+            "$boundary_middle_column" \
+            "$boundary_edge" \
+          || return 1
+
+        invoke_shortcut "driftile_focus_window_up" \
+          && wait_for_active "$title_a" \
+          && wait_for_minimized_fixture_frames \
+            "$boundary_first" \
+            "$boundary_middle" \
+            "$boundary_last" \
+            "$boundary_middle_column" \
+            "$boundary_edge" \
+          && invoke_shortcut "driftile_focus_window_up" \
+          && wait_for_active "$title_a" \
+          && wait_for_minimized_fixture_frames \
+            "$boundary_first" \
+            "$boundary_middle" \
+            "$boundary_last" \
+            "$boundary_middle_column" \
+            "$boundary_edge" \
+          && invoke_shortcut "driftile_focus_window_down" \
+          && wait_for_active "$title_d" \
+          && wait_for_minimized_fixture_frames \
+            "$boundary_first" \
+            "$boundary_middle" \
+            "$boundary_last" \
+            "$boundary_middle_column" \
+            "$boundary_edge" \
+          || return 1
+
+        invoke_shortcut "driftile_focus_column_right" \
+          && wait_for_active "$title_e" \
+          && capture_minimized_fixture_frames \
+          || return 1
+        boundary_first=$minimized_first_frame
+        boundary_middle=$minimized_middle_frame
+        boundary_last=$minimized_last_frame
+        boundary_middle_column=$minimized_middle_column_frame
+        boundary_edge=$minimized_edge_frame
+        invoke_shortcut "driftile_focus_column_right" \
+          && wait_for_active "$title_e" \
+          && wait_for_minimized_fixture_frames \
+            "$boundary_first" \
+            "$boundary_middle" \
+            "$boundary_last" \
+            "$boundary_middle_column" \
+            "$boundary_edge" \
+          || return 1
+
+        invoke_shortcut "driftile_focus_column_left" \
+          && wait_for_active "$title_a" \
+          && capture_minimized_fixture_frames \
+          || return 1
+        boundary_first=$minimized_first_frame
+        boundary_middle=$minimized_middle_frame
+        boundary_last=$minimized_last_frame
+        boundary_middle_column=$minimized_middle_column_frame
+        boundary_edge=$minimized_edge_frame
+        invoke_shortcut "driftile_focus_column_left" \
+          && wait_for_active "$title_a" \
+          && wait_for_minimized_fixture_frames \
+            "$boundary_first" \
+            "$boundary_middle" \
+            "$boundary_last" \
+            "$boundary_middle_column" \
+            "$boundary_edge" \
+          && invoke_shortcut "driftile_focus_window_down" \
+          && wait_for_active "$title_d" \
+          && wait_for_minimized_fixture_frames \
+            "$boundary_first" \
+            "$boundary_middle" \
+            "$boundary_last" \
+            "$boundary_middle_column" \
+            "$boundary_edge" \
+          || return 1
+
+        set_external_window_minimized "$title_c" false || return 1
+        set_external_window_minimized "$title_e" true || return 1
+        wait_for_named_frames \
+          "$title_a" "$boundary_first" \
+          "$title_b" "$boundary_middle" \
+          "$title_d" "$boundary_last" \
+          "$title_e" "$boundary_edge" \
+          || return 1
+        capture_stable_window_frame "$title_c" >/dev/null || return 1
+        activate_window "$title_d" && wait_for_active "$title_d" || return 1
+        wait_for_shortcut_focus \
+          "driftile_focus_column_right" "$title_c" \
+          || return 1
+        activate_window "$title_d" && wait_for_active "$title_d" || return 1
+        capture_minimized_fixture_frames || return 1
+        before_end_first=$minimized_first_frame
+        before_end_middle=$minimized_middle_frame
+        before_end_last=$minimized_last_frame
+        before_end_middle_column=$minimized_middle_column_frame
+        before_end_edge=$minimized_edge_frame
+        invoke_shortcut "driftile_focus_column_last" \
+          && wait_for_active "$title_c" \
+          && capture_minimized_fixture_frames \
+          || return 1
+        boundary_first=$minimized_first_frame
+        boundary_middle=$minimized_middle_frame
+        boundary_last=$minimized_last_frame
+        boundary_middle_column=$minimized_middle_column_frame
+        boundary_edge=$minimized_edge_frame
+        frames_match_leftward_reveal \
+          "$before_end_first" "$boundary_first" \
+          "$before_end_last" "$boundary_last" \
+          "$before_end_middle_column" "$boundary_middle_column" \
+          1680 \
+          || return 1
+        [[ "$boundary_middle" == "$before_end_middle" ]] || return 1
+        [[ "$boundary_edge" == "$before_end_edge" ]] || return 1
+        activate_window "$title_c" \
+          && wait_for_active "$title_c" \
+          && invoke_shortcut "driftile_focus_column_last" \
+          && wait_for_active "$title_c" \
+          && wait_for_minimized_fixture_frames \
+            "$boundary_first" \
+            "$boundary_middle" \
+            "$boundary_last" \
+            "$boundary_middle_column" \
+            "$boundary_edge" \
+          || return 1
+
+        set_external_window_minimized "$title_a" true || return 1
+        set_external_window_minimized "$title_d" true || return 1
+        set_external_window_minimized "$title_e" false || return 1
+        wait_for_named_frames \
+          "$title_a" "$boundary_first" \
+          "$title_b" "$boundary_middle" \
+          "$title_d" "$boundary_last" \
+          "$title_c" "$boundary_middle_column" \
+          || return 1
+        capture_stable_window_frame "$title_e" >/dev/null || return 1
+        activate_window "$title_c" && wait_for_active "$title_c" || return 1
+        wait_for_shortcut_focus \
+          "driftile_focus_column_left" "$title_e" \
+          || return 1
+        activate_window "$title_c" && wait_for_active "$title_c" || return 1
+        capture_minimized_fixture_frames || return 1
+        invoke_shortcut "driftile_focus_column_first" \
+          && wait_for_active "$title_e" \
+          && capture_minimized_fixture_frames \
+          || return 1
+        boundary_first=$minimized_first_frame
+        boundary_middle=$minimized_middle_frame
+        boundary_last=$minimized_last_frame
+        boundary_middle_column=$minimized_middle_column_frame
+        boundary_edge=$minimized_edge_frame
+        activate_window "$title_e" \
+          && wait_for_active "$title_e" \
+          && invoke_shortcut "driftile_focus_column_first" \
+          && wait_for_active "$title_e" \
+          && wait_for_minimized_fixture_frames \
+            "$boundary_first" \
+            "$boundary_middle" \
+            "$boundary_last" \
+            "$boundary_middle_column" \
+            "$boundary_edge" \
+          || return 1
+
+        set_external_window_minimized "$title_a" false || return 1
+        set_external_window_minimized "$title_b" false || return 1
+        set_external_window_minimized "$title_d" false || return 1
+        capture_stable_window_frame "$title_a" >/dev/null || return 1
+        capture_stable_window_frame "$title_b" >/dev/null || return 1
+        capture_stable_window_frame "$title_d" >/dev/null || return 1
+        activate_window "$title_a" && wait_for_active "$title_a" || return 1
+        capture_minimized_fixture_frames || return 1
+        restored_first=$minimized_first_frame
+        restored_middle=$minimized_middle_frame
+        restored_last=$minimized_last_frame
+        restored_middle_column=$minimized_middle_column_frame
+        restored_edge=$minimized_edge_frame
+        frames_share_horizontal_translation \
+          "$baseline_first" "$restored_first" \
+          "$baseline_middle" "$restored_middle" \
+          "$baseline_last" "$restored_last" \
+          "$baseline_middle_column" "$restored_middle_column" \
+          "$baseline_edge" "$restored_edge" \
+          || return 1
+        invoke_shortcut "driftile_focus_window_down" \
+          && wait_for_active "$title_b" \
+          && invoke_shortcut "driftile_focus_window_down" \
+          && wait_for_active "$title_d" \
+          && invoke_shortcut "driftile_focus_column_right" \
+          && wait_for_active "$title_e" \
+          && invoke_shortcut "driftile_focus_column_right" \
+          && wait_for_active "$title_c" \
+          && invoke_shortcut "driftile_focus_column_first" \
+          && wait_for_active "$title_a" \
+          && wait_for_minimized_fixture_frames \
+            "$restored_first" \
+            "$restored_middle" \
+            "$restored_last" \
+            "$restored_middle_column" \
+            "$restored_edge"
+      }
+
+      verify_minimized_slot_navigation() {
+        local baseline_edge
+        local baseline_first
+        local baseline_last
+        local baseline_middle
+        local baseline_middle_column
+        local centered_first
+        local centered_fourth
+        local centered_second
+        local centered_third
+        local direct_first_height
+        local direct_first_width
+        local direct_first_x
+        local direct_first_y
+        local direct_fourth_height
+        local direct_fourth_width
+        local direct_fourth_y
+        local direct_second_height
+        local direct_second_width
+        local direct_second_y
+        local direct_third_height
+        local direct_third_width
+        local direct_third_x
+        local direct_third_y
+        local fixture_gap
+        local fixture_restored=false
+        local verified=false
+
+        qml ${demoClient} -- --mark-active "$title_e" &
+        fifth_window=$!
+
+        if wait_for_window "$title_e" \
+          && activate_window "$title_a" \
+          && wait_for_active "$title_a" \
+          && capture_minimized_fixture_frames; then
+          baseline_first=$minimized_first_frame
+          baseline_middle=$minimized_middle_frame
+          baseline_last=$minimized_last_frame
+          baseline_middle_column=$minimized_middle_column_frame
+          baseline_edge=$minimized_edge_frame
+
+          if run_minimized_slot_navigation_checks \
+            "$baseline_first" \
+            "$baseline_middle" \
+            "$baseline_last" \
+            "$baseline_middle_column" \
+            "$baseline_edge"; then
+            verified=true
+          fi
+        fi
+
+        set_external_window_minimized "$title_a" false >/dev/null 2>&1 || true
+        set_external_window_minimized "$title_b" false >/dev/null 2>&1 || true
+        set_external_window_minimized "$title_c" false >/dev/null 2>&1 || true
+        set_external_window_minimized "$title_d" false >/dev/null 2>&1 || true
+        set_external_window_minimized "$title_e" false >/dev/null 2>&1 || true
+        kill "$fifth_window" >/dev/null 2>&1 || true
+        wait "$fifth_window" >/dev/null 2>&1 || true
+        fifth_window=""
+
+        IFS=, read -r \
+          direct_first_x direct_first_y direct_first_width direct_first_height \
+          <<< "$direct_first_frame"
+        IFS=, read -r \
+          _ direct_second_y direct_second_width direct_second_height \
+          <<< "$direct_second_frame"
+        IFS=, read -r \
+          direct_third_x direct_third_y direct_third_width direct_third_height \
+          <<< "$direct_third_frame"
+        IFS=, read -r \
+          _ direct_fourth_y direct_fourth_width direct_fourth_height \
+          <<< "$direct_fourth_frame"
+        fixture_gap=$((direct_third_x - direct_first_x - direct_first_width))
+        direct_first_x=$(((1680 - direct_first_width) / 2))
+        centered_first="$direct_first_x,$direct_first_y,$direct_first_width,$direct_first_height"
+        centered_second="$direct_first_x,$direct_second_y,$direct_second_width,$direct_second_height"
+        centered_third="$((direct_first_x + direct_first_width + fixture_gap)),$direct_third_y,$direct_third_width,$direct_third_height"
+        centered_fourth="$direct_first_x,$direct_fourth_y,$direct_fourth_width,$direct_fourth_height"
+
+        if wait_for_window_gone "$title_e" \
+          && activate_window "$title_d" \
+          && wait_for_active "$title_d" \
+          && wait_for_shortcut_frames \
+            "driftile_center_column" \
+            "$title_a" "$centered_first" \
+            "$title_b" "$centered_second" \
+            "$title_c" "$centered_third" \
+            "$title_d" "$centered_fourth" \
+          && wait_for_shortcut_focus \
+            "driftile_focus_column_right" "$title_c" \
+          && wait_for_four_frames \
+            "$direct_first_frame" \
+            "$direct_second_frame" \
+            "$direct_third_frame" \
+            "$direct_fourth_frame" \
+          && activate_window "$title_d" \
+          && wait_for_active "$title_d"; then
+          fixture_restored=true
+        fi
+
+        if [[ "$verified" != true || "$fixture_restored" != true ]]; then
+          record_focus_state "minimized-slot navigation failed"
+          return 1
+        fi
+
+        record_focus_state \
+          "minimized slots preserved focus boundaries, order, and exact frames"
+      }
+
       verify_focus() {
         local baseline_first_width
         local baseline_second_width
@@ -2941,6 +3876,7 @@ let
         local merged_first_frame
         local merged_second_frame
         local merged_third_frame
+        local minimized_slots_verified
         local singleton_first_frame
         local singleton_second_frame
         local singleton_third_frame
@@ -3211,6 +4147,14 @@ let
         record_focus_state \
           "physical numbered desktop shortcuts preserved focus and lifecycle"
 
+        if ! verify_physical_page_down_desktop_shortcut \
+          "$merged_first_frame" \
+          "$merged_second_frame" \
+          "$merged_third_frame"; then
+          record_focus_state "physical Page Down desktop shortcut failed"
+          return 1
+        fi
+
         if ! verify_physical_manual_floating_desktop_shortcut \
           "$merged_first_frame" \
           "$merged_second_frame" \
@@ -3392,6 +4336,15 @@ let
           record_focus_state "physical stacked fullscreen verification failed"
         fi
 
+        minimized_slots_verified=false
+
+        if [[ "$direct_insert_verified" == true \
+          && "$stacked_maximize_verified" == true \
+          && "$stacked_fullscreen_verified" == true ]] \
+          && verify_minimized_slot_navigation; then
+          minimized_slots_verified=true
+        fi
+
         kill "$fourth_window" >/dev/null 2>&1 || true
         wait "$fourth_window" >/dev/null 2>&1 || true
         fourth_window=""
@@ -3408,7 +4361,8 @@ let
 
         [[ "$direct_insert_verified" == true \
           && "$stacked_maximize_verified" == true \
-          && "$stacked_fullscreen_verified" == true ]] || return 1
+          && "$stacked_fullscreen_verified" == true \
+          && "$minimized_slots_verified" == true ]] || return 1
 
         if ! invoke_shortcut "driftile_toggle_floating" \
           || ! wait_for_floating_layout \
@@ -3693,6 +4647,44 @@ let
           && wait_for_active "$title_b"
       }
 
+      verify_physical_page_down_desktop_shortcut() {
+        local destination_frame
+        local source_first_frame=$1
+        local source_second_frame=$2
+        local source_third_frame=$3
+
+        destination_frame=$(capture_stable_window_frame "$title_desktop_destination") \
+          || return 1
+
+        if ! wait_for_window_minimized_state "$title_b" false \
+          || ! wait_for_window_minimized_state \
+            "$title_desktop_destination" \
+            false \
+          || ! request_physical_shortcut desktop-next-page-down \
+          || ! wait_for_current_desktop "$secondary_desktop_id" \
+          || ! wait_for_active "$title_desktop_destination" \
+          || ! wait_for_window_minimized_state "$title_b" false \
+          || ! wait_for_window_minimized_state \
+            "$title_desktop_destination" \
+            false; then
+          record_focus_state \
+            "physical Meta+PageDown desktop navigation or minimize isolation failed"
+          return 1
+        fi
+        record_focus_state \
+          "physical Meta+PageDown changed desktops without minimizing either active window"
+
+        invoke_shortcut "driftile_focus_previous_desktop" \
+          && wait_for_current_desktop "$primary_desktop_id" \
+          && wait_for_active "$title_b" \
+          && wait_for_window_minimized_state "$title_b" false \
+          && wait_for_numbered_desktop_frames \
+            "$source_first_frame" \
+            "$source_second_frame" \
+            "$source_third_frame" \
+            "$destination_frame"
+      }
+
       verify_physical_manual_floating_desktop_shortcut() {
         local destination_frame
         local floating_frame
@@ -3858,7 +4850,12 @@ let
       }
 
       verify_physical_consume_expel_shortcuts() {
+        local consumed_first_frame
+        local consumed_second_frame
+        local consumed_third_frame
+        local first_x
         local first_frame
+        local second_x
         local second_frame
         local third_frame
 
@@ -3872,13 +4869,20 @@ let
         first_frame=$stable_first_frame
         second_frame=$stable_second_frame
         third_frame=$stable_third_frame
+        IFS=, read -r first_x _ _ _ <<< "$first_frame"
+        IFS=, read -r second_x _ _ _ <<< "$second_frame"
+        [[ "$first_x" =~ ^-?[0-9]+$ && "$second_x" =~ ^-?[0-9]+$ ]] \
+          || return 1
+        consumed_first_frame="$first_x,16,816,478"
+        consumed_second_frame="$first_x,510,816,478"
+        consumed_third_frame="$second_x,16,816,972"
 
         if ! request_physical_shortcut comma \
           || ! wait_for_active "$title_a" \
           || ! wait_for_frames \
-            "16,16,816,478" \
-            "16,510,816,478" \
-            "848,16,816,972"; then
+            "$consumed_first_frame" \
+            "$consumed_second_frame" \
+            "$consumed_third_frame"; then
           record_focus_state "physical Meta+, consume failed"
           return 1
         fi
@@ -4983,6 +5987,7 @@ let
       }
 
       loaded=false
+      active_window_probe_result=""
 
       for _ in $(seq 1 200); do
         state=$(busctl --user call \
@@ -5025,7 +6030,9 @@ let
       title_b="$status - window B - middle column"
       title_c="$status - window C - Meta+L"
       title_d="$status - window D - direct insertion"
+      title_e="$status - window E - minimized edge"
       title_desktop_destination="$status - desktop destination"
+      fifth_window=""
       fourth_window=""
       : > /tmp/shared/driftile-focus-diagnostics
 
@@ -5052,6 +6059,7 @@ let
 
       if [[ "$loaded" == true && "$desktops_ready" == true ]] \
         && verify_focus \
+        && verify_real_applications \
         && verify_physical_consume_expel_shortcuts \
         && verify_physical_layer_focus_shortcut \
         && verify_physical_floating_navigation_shortcuts \
@@ -5059,8 +6067,7 @@ let
         && verify_physical_height_shortcuts \
         && verify_physical_column_view_shortcuts \
         && verify_physical_fullscreen_shortcut \
-        && verify_physical_maximize_shortcut \
-        && verify_real_applications; then
+        && verify_physical_maximize_shortcut; then
         focus_verified=true
       fi
 

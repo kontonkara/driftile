@@ -88,6 +88,7 @@ monitor_guest() {
     [desktop-9]=false
     [desktop-ctrl-2]=false
     [desktop-ctrl-9]=false
+    [desktop-next-page-down]=false
     [end]=false
     [equal]=false
     [floating-down]=false
@@ -126,6 +127,7 @@ monitor_guest() {
       desktop-9 \
       desktop-ctrl-2 \
       desktop-ctrl-9 \
+      desktop-next-page-down \
       minus \
       equal \
       shift-minus \
@@ -155,12 +157,13 @@ monitor_guest() {
       key_sent_file="$temporary_directory/xchg/driftile-key-test-$key_name-sent"
 
       if [[ "${keys_sent[$key_name]}" == false && -f "$key_ready_file" ]]; then
-        if send_physical_shortcut "$key_name"; then
-          printf 'The VM received the physical shortcut: %s.\n' "$key_name"
-        else
+        if ! send_physical_shortcut "$key_name"; then
           printf 'Could not send the physical shortcut: %s.\n' "$key_name" >&2
+          stop_vm || true
+          return 1
         fi
 
+        printf 'The VM received the physical shortcut: %s.\n' "$key_name"
         : > "$key_sent_file"
         keys_sent[$key_name]=true
       fi
@@ -175,9 +178,9 @@ monitor_guest() {
       fi
 
       if [[ "$(<"$focus_file")" == true ]]; then
-        printf 'The VM verified physical shortcut routing, native fullscreen and maximize, stacked fullscreen and maximize extraction, borderless ownership, numbered dynamic desktops, floating desktop transfers, output transfers, floating-layer navigation, focus, stack editing, advanced column view, column and window sizing, scrolling, and Firefox, KDE Calculator, and XWayland xterm lifecycles.\n'
+        printf 'The VM verified physical shortcut routing, desktop switching without minimization, minimized-slot navigation, native fullscreen and maximize, stacked fullscreen and maximize extraction, borderless ownership, numbered dynamic desktops, floating desktop transfers, output transfers, floating-layer navigation, focus, stack editing, advanced column view, column and window sizing, scrolling, and Firefox, KDE Calculator, and XWayland xterm lifecycles.\n'
       else
-        printf 'The VM failed to verify physical shortcut routing, native fullscreen or maximize, stacked fullscreen or maximize extraction, borderless ownership, numbered dynamic desktops, floating desktop transfers, output transfers, floating-layer navigation, focus, stack editing, advanced column view, column or window sizing, scrolling, or the real-application lifecycle pool.\n' >&2
+        printf 'The VM failed to verify physical shortcut routing, desktop switching without minimization, minimized-slot navigation, native fullscreen or maximize, stacked fullscreen or maximize extraction, borderless ownership, numbered dynamic desktops, floating desktop transfers, output transfers, floating-layer navigation, focus, stack editing, advanced column view, column or window sizing, scrolling, or the real-application lifecycle pool.\n' >&2
         failed=true
 
         if [[ -f "$diagnostics_file" ]]; then
@@ -202,6 +205,39 @@ monitor_guest() {
   return 1
 }
 
+qmp_command_response() {
+  [[ -S "$qmp_socket" ]] || return 1
+  printf '%s\n' "$@" \
+    | nix develop .#integration -c socat -t 2 - "UNIX-CONNECT:$qmp_socket"
+}
+
+validate_qmp_response() {
+  local command
+  local expected_returns=$1
+  local response=$2
+  local return_count=0
+
+  while IFS= read -r command; do
+    if [[ "$command" == *'"error"'* ]]; then
+      printf 'QMP rejected an input command: %s\n' "$command" >&2
+      return 1
+    fi
+
+    if [[ "$command" == *'"return"'* ]]; then
+      return_count=$((return_count + 1))
+    fi
+  done <<< "$response"
+
+  ((return_count == expected_returns))
+}
+
+send_qmp_commands() {
+  local response
+
+  response=$(qmp_command_response "$@") || return 1
+  validate_qmp_response "$#" "$response"
+}
+
 send_physical_shortcut() {
   local key_name=$1
   local capabilities='{"execute":"qmp_capabilities"}'
@@ -219,6 +255,9 @@ send_physical_shortcut() {
       ;;
     desktop-ctrl-9)
       input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"ctrl"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"9"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"9"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"ctrl"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
+      ;;
+    desktop-next-page-down)
+      input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"pgdn"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"pgdn"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
       ;;
     home|floating-home)
       input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"home"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"home"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
@@ -291,10 +330,7 @@ send_physical_shortcut() {
       ;;
   esac
 
-  [[ -S "$qmp_socket" ]] || return 1
-  printf '%s\n%s\n' "$capabilities" "$input" \
-    | nix develop .#integration -c socat -t 2 - "UNIX-CONNECT:$qmp_socket" \
-      >/dev/null
+  send_qmp_commands "$capabilities" "$input"
 }
 
 stop_vm() {
