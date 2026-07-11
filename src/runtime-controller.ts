@@ -20,6 +20,7 @@ import {
   columnWindowHeights,
   previewColumnRestoration,
   type ColumnWidth,
+  type ColumnStackEditPreview,
   type DetachedWindowPlacement,
   type HorizontalDirection,
   type HorizontalEdge,
@@ -579,6 +580,97 @@ export class RuntimeController {
 
   insertWindowIntoStackRight(): boolean {
     return this.insertActiveWindowIntoStack("right");
+  }
+
+  consumeWindowIntoColumn(): boolean {
+    const command = this.prepareActiveColumnCommand();
+
+    if (!command || this.hasStructuralCapacityState(command.context.key)) {
+      return false;
+    }
+
+    const activeIndex = command.before.columns.findIndex(
+      (column) => column.id === command.activeColumn.id,
+    );
+    const source = command.before.columns[activeIndex + 1];
+
+    if (
+      activeIndex < 0 ||
+      !source ||
+      !this.columnMembersAreStackTransferEligible(
+        command.activeColumn,
+        command.context,
+      ) ||
+      !this.columnMembersAreStackTransferEligible(source, command.context)
+    ) {
+      return false;
+    }
+
+    const preview = this.layout.previewConsumeWindowIntoColumn(
+      command.activeId,
+    );
+
+    if (!preview) {
+      return false;
+    }
+
+    return this.applyColumnStackEdit(command, preview, command.activeId);
+  }
+
+  expelWindowFromColumn(): boolean {
+    const command = this.prepareActiveColumnCommand();
+
+    if (
+      !command ||
+      command.activeColumn.windowIds.length < 2 ||
+      this.hasStructuralCapacityState(command.context.key) ||
+      !this.columnMembersAreStackTransferEligible(
+        command.activeColumn,
+        command.context,
+      )
+    ) {
+      return false;
+    }
+
+    const movedWindowId =
+      command.activeColumn.windowIds[command.activeColumn.windowIds.length - 1];
+
+    if (!movedWindowId) {
+      return false;
+    }
+
+    const newColumnId = this.availableColumnId(
+      command.before,
+      movedWindowId,
+      "expel",
+    );
+    const preview = this.layout.previewExpelWindowFromColumn(
+      command.activeId,
+      newColumnId,
+    );
+
+    if (!preview) {
+      return false;
+    }
+
+    const remainingWindowId =
+      movedWindowId === command.activeId
+        ? command.activeColumn.windowIds[
+            command.activeColumn.windowIds.length - 2
+          ]
+        : command.activeId;
+
+    if (!remainingWindowId) {
+      this.layout.discardColumnStackEdit(preview);
+      return false;
+    }
+
+    return this.applyColumnStackEdit(
+      command,
+      preview,
+      remainingWindowId,
+      newColumnId,
+    );
   }
 
   toggleFloating(): boolean {
@@ -2377,6 +2469,94 @@ export class RuntimeController {
 
     if (
       edit.kind === "merge" &&
+      this.waitingWindowIds.get(command.context.key)?.size
+    ) {
+      this.pendingAdmissionContexts.add(command.context.key);
+      this.scheduleWork();
+    }
+
+    return true;
+  }
+
+  private applyColumnStackEdit(
+    command: ActiveColumnCommand,
+    preview: ColumnStackEditPreview,
+    focusWindowId: WindowId,
+    createdColumnId?: ColumnId,
+  ): boolean {
+    const focusWindow = this.observer.source(focusWindowId);
+    const focusOwner = this.managedWindows.get(focusWindowId);
+    const observedFocus = focusWindow ? normalizeWindow(focusWindow) : null;
+    const focusContext = observedFocus ? managedContext(observedFocus) : null;
+
+    if (
+      !focusWindow ||
+      focusOwner?.contextKey !== command.context.key ||
+      !focusContext ||
+      contextKey(focusContext) !== command.context.key ||
+      this.floatingWindows.has(focusWindowId) ||
+      this.automaticFloatingWindows.has(focusWindowId) ||
+      this.automaticallyFloats(focusWindow) ||
+      this.suspendedWindows.has(focusWindowId) ||
+      this.requestedSuspensions.has(focusWindowId) ||
+      !this.toggleGeometrySettled(focusWindowId) ||
+      !isGeometryWritable(focusWindow)
+    ) {
+      this.layout.discardColumnStackEdit(preview);
+      return false;
+    }
+
+    const fullWidthRestore =
+      preview.kind === "expel"
+        ? this.columnFullWidthRestoreWidth(
+            command.context.key,
+            command.activeColumn.id,
+          )
+        : undefined;
+    const editState: { value: StackEditResult | null } = { value: null };
+    const applied = this.applyActiveColumnMutation(
+      command,
+      `${preview.kind} window`,
+      () => {
+        editState.value = this.layout.applyColumnStackEdit(preview);
+        return editState.value !== null;
+      },
+      () =>
+        editState.value !== null &&
+        this.layout.rollbackStackEdit(editState.value.rollback),
+    );
+    const edit = editState.value;
+
+    if (!applied || !edit) {
+      this.layout.discardColumnStackEdit(preview);
+      return false;
+    }
+
+    this.layout.discardStackEditRollback(edit.rollback);
+
+    if (focusWindowId !== command.activeId) {
+      this.workspace.activeWindow = focusWindow;
+    }
+
+    this.reconcileColumnFullWidthRestore(
+      command.context.key,
+      command.before,
+      preview.layout,
+    );
+
+    if (createdColumnId && fullWidthRestore) {
+      this.setColumnFullWidthRestore(
+        command.context.key,
+        createdColumnId,
+        fullWidthRestore,
+      );
+    }
+
+    this.capacityParkBackoffs.delete(command.context.key);
+
+    if (
+      preview.kind === "consume" &&
+      preview.layout.columns.length < command.before.columns.length &&
       this.waitingWindowIds.get(command.context.key)?.size
     ) {
       this.pendingAdmissionContexts.add(command.context.key);
@@ -5448,18 +5628,24 @@ export class RuntimeController {
   }
 
   private extractedColumnId(command: ActiveColumnCommand): ColumnId {
-    const columnIds = new Set(
-      command.before.columns.map((column) => column.id),
-    );
-    const canonical = columnId(`column:${String(command.activeId)}`);
+    return this.availableColumnId(command.before, command.activeId, "split");
+  }
+
+  private availableColumnId(
+    snapshot: LayoutContextSnapshot,
+    id: WindowId,
+    namespace: string,
+  ): ColumnId {
+    const columnIds = new Set(snapshot.columns.map((column) => column.id));
+    const canonical = columnId(`column:${String(id)}`);
 
     if (!columnIds.has(canonical)) {
       return canonical;
     }
 
-    const base = `column:split:${String(command.activeId)}`;
+    const base = `column:${namespace}:${String(id)}`;
 
-    for (let index = 0; index <= command.before.columns.length; index += 1) {
+    for (let index = 0; index <= snapshot.columns.length; index += 1) {
       const candidate = columnId(
         index === 0 ? base : `${base}:${String(index)}`,
       );
@@ -5469,7 +5655,7 @@ export class RuntimeController {
       }
     }
 
-    throw new Error("could not allocate an extracted column ID");
+    throw new Error("could not allocate a column ID");
   }
 
   private freshDetachedWindowPlacement(
@@ -5536,6 +5722,31 @@ export class RuntimeController {
         !this.automaticFloatingWindows.has(id) &&
         memberContext !== null &&
         contextKey(memberContext) === context.key
+      );
+    });
+  }
+
+  private columnMembersAreStackTransferEligible(
+    column: LayoutColumnSnapshot,
+    context: RuntimeContext,
+  ): boolean {
+    if (!this.columnMembersBelongToContext(column, context)) {
+      return false;
+    }
+
+    return column.windowIds.every((id) => {
+      const source = this.observer.source(id);
+      return Boolean(
+        source &&
+        context.windowIds.has(id) &&
+        !this.floatingWindows.has(id) &&
+        !this.waitingWindowContexts.has(id) &&
+        !this.suspendedWindows.has(id) &&
+        !this.requestedSuspensions.has(id) &&
+        !this.automaticFloatingWindows.has(id) &&
+        !this.automaticallyFloats(source) &&
+        this.toggleGeometrySettled(id) &&
+        isGeometryWritable(source),
       );
     });
   }

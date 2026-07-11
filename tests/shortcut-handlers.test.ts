@@ -41,9 +41,17 @@ const expectedHandlers: Readonly<
     activated: "Runtime.DriftileRuntime.centerVisibleColumns()",
     sequence: "Meta+Ctrl+C",
   },
+  driftile_consume_window_into_column: {
+    activated: "Runtime.DriftileRuntime.consumeWindowIntoColumn()",
+    sequence: "Meta+,",
+  },
   driftile_decrease_column_width: {
     activated: "Runtime.DriftileRuntime.decreaseColumnWidth()",
     sequence: "Meta+-",
+  },
+  driftile_expel_window_from_column: {
+    activated: "Runtime.DriftileRuntime.expelWindowFromColumn()",
+    sequence: "Meta+.",
   },
   driftile_focus_column_left: {
     activated: "Runtime.DriftileRuntime.focusLeft()",

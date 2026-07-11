@@ -126,6 +126,16 @@ const definitions: readonly ShortcutDefinition[] = [
     sequence: "Meta+]",
   },
   {
+    name: "driftile_consume_window_into_column",
+    text: "Driftile: Consume window into column",
+    sequence: "Meta+,",
+  },
+  {
+    name: "driftile_expel_window_from_column",
+    text: "Driftile: Expel window from column",
+    sequence: "Meta+.",
+  },
+  {
     name: "driftile_move_window_up",
     text: "Driftile: Move window up",
     sequence: "Meta+Ctrl+K",

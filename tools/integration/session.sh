@@ -2873,6 +2873,118 @@ verify_advanced_column_view() {
     fail "Driftile did not restore the canonical $protocol layout after advanced column-view acceptance: $(describe_layout "$first_title" "$active_title" "$right_title")"
 }
 
+verify_consume_and_expel_window() {
+  local protocol=$1
+  local first_title=$2
+  local second_title=$3
+  local third_title=$4
+  local fourth_title=$5
+
+  wait_for_shortcut "driftile_consume_window_into_column" || \
+    fail "KGlobalAccel did not register the consume-window-into-column shortcut"
+  wait_for_shortcut "driftile_expel_window_from_column" || \
+    fail "KGlobalAccel did not register the expel-window-from-column shortcut"
+
+  invoke_shortcut "driftile_move_window_left" || \
+    fail "KGlobalAccel could not prepare the right $protocol source stack"
+  wait_for_geometries \
+    "$first_title" "-600,16,616,336" \
+    "$second_title" "-600,368,616,336" \
+    "$third_title" "32,16,616,336" \
+    "$fourth_title" "32,368,616,336" || \
+    fail "Driftile did not prepare the right $protocol source stack: $(describe_layout "$first_title" "$second_title" "$third_title" "$fourth_title")"
+  wait_for_active "$fourth_title" || \
+    fail "Driftile changed $protocol focus while preparing the right source stack"
+
+  activate_window "$second_title" || \
+    fail "KWin could not focus the target $protocol column before consuming"
+  wait_for_active "$second_title" || \
+    fail "KWin did not focus the target $protocol column before consuming"
+  wait_for_geometries \
+    "$first_title" "16,16,616,336" \
+    "$second_title" "16,368,616,336" \
+    "$third_title" "648,16,616,336" \
+    "$fourth_title" "648,368,616,336" || \
+    fail "Driftile did not reveal the target $protocol column before consuming: $(describe_layout "$first_title" "$second_title" "$third_title" "$fourth_title")"
+
+  invoke_shortcut "driftile_consume_window_into_column" || \
+    fail "KGlobalAccel could not consume the top $protocol source member"
+  wait_for_geometries \
+    "$first_title" "16,16,616,219" \
+    "$second_title" "16,251,616,218" \
+    "$third_title" "16,485,616,219" \
+    "$fourth_title" "648,16,616,688" || \
+    fail "Driftile did not consume the top $protocol source member at the bottom of the target: $(describe_layout "$first_title" "$second_title" "$third_title" "$fourth_title")"
+  wait_for_active "$second_title" || \
+    fail "Driftile changed $protocol focus after consuming the top source member"
+
+  invoke_shortcut "driftile_consume_window_into_column" || \
+    fail "KGlobalAccel could not consume the remaining $protocol source member"
+  wait_for_geometries \
+    "$first_title" "16,16,616,160" \
+    "$second_title" "16,192,616,160" \
+    "$third_title" "16,368,616,160" \
+    "$fourth_title" "16,544,616,160" || \
+    fail "Driftile did not append the remaining $protocol source member in order: $(describe_layout "$first_title" "$second_title" "$third_title" "$fourth_title")"
+  wait_for_active "$second_title" || \
+    fail "Driftile changed $protocol focus after consuming the remaining source member"
+
+  invoke_shortcut "driftile_expel_window_from_column" || \
+    fail "KGlobalAccel could not expel the bottom $protocol member"
+  wait_for_geometries \
+    "$first_title" "16,16,616,219" \
+    "$second_title" "16,251,616,218" \
+    "$third_title" "16,485,616,219" \
+    "$fourth_title" "648,16,616,688" || \
+    fail "Driftile did not expel the bottom $protocol member to the right: $(describe_layout "$first_title" "$second_title" "$third_title" "$fourth_title")"
+  wait_for_active "$second_title" || \
+    fail "Driftile changed $protocol focus after expelling the bottom member"
+
+  invoke_shortcut "driftile_expel_window_from_column" || \
+    fail "KGlobalAccel could not expel the next bottom $protocol member"
+  wait_for_geometries \
+    "$first_title" "16,16,616,336" \
+    "$second_title" "16,368,616,336" \
+    "$third_title" "648,16,616,688" \
+    "$fourth_title" "1280,16,616,688" || \
+    fail "Driftile did not preserve $protocol order while expelling the next bottom member: $(describe_layout "$first_title" "$second_title" "$third_title" "$fourth_title")"
+  wait_for_active "$second_title" || \
+    fail "Driftile changed $protocol focus after restoring the original columns"
+
+  activate_window "$fourth_title" || \
+    fail "KWin could not focus the last $protocol column for bounded edits"
+  wait_for_active "$fourth_title" || \
+    fail "KWin did not focus the last $protocol column for bounded edits"
+  wait_for_geometries \
+    "$first_title" "-600,16,616,336" \
+    "$second_title" "-600,368,616,336" \
+    "$third_title" "32,16,616,688" \
+    "$fourth_title" "664,16,616,688" || \
+    fail "Driftile did not reveal the last $protocol column before bounded edits: $(describe_layout "$first_title" "$second_title" "$third_title" "$fourth_title")"
+
+  invoke_shortcut "driftile_consume_window_into_column" || \
+    fail "KGlobalAccel could not invoke the bounded $protocol consume action"
+  wait_for_geometries \
+    "$first_title" "-600,16,616,336" \
+    "$second_title" "-600,368,616,336" \
+    "$third_title" "32,16,616,688" \
+    "$fourth_title" "664,16,616,688" || \
+    fail "Driftile changed the $protocol layout while consuming at the right boundary: $(describe_layout "$first_title" "$second_title" "$third_title" "$fourth_title")"
+  wait_for_active "$fourth_title" || \
+    fail "Driftile changed $protocol focus while consuming at the right boundary"
+
+  invoke_shortcut "driftile_expel_window_from_column" || \
+    fail "KGlobalAccel could not invoke the bounded $protocol expel action"
+  wait_for_geometries \
+    "$first_title" "-600,16,616,336" \
+    "$second_title" "-600,368,616,336" \
+    "$third_title" "32,16,616,688" \
+    "$fourth_title" "664,16,616,688" || \
+    fail "Driftile changed the $protocol layout while expelling from a singleton: $(describe_layout "$first_title" "$second_title" "$third_title" "$fourth_title")"
+  wait_for_active "$fourth_title" || \
+    fail "Driftile changed $protocol focus while expelling from a singleton"
+}
+
 run_scenario() {
   local protocol=$1
   local first_title="driftile-smoke-${protocol}-a"
@@ -3220,6 +3332,13 @@ run_scenario() {
     "$third_title" "32,16,616,688" \
     "$fourth_title" "664,16,616,688" || \
     fail "Driftile did not prepare the direct $protocol stack insertion: $(describe_layout "$first_title" "$second_title" "$third_title" "$fourth_title")"
+
+  verify_consume_and_expel_window \
+    "$protocol" \
+    "$first_title" \
+    "$second_title" \
+    "$third_title" \
+    "$fourth_title"
 
   invoke_shortcut "driftile_insert_window_into_stack_left" || \
     fail "KGlobalAccel could not invoke the insert-into-stack-left shortcut"
@@ -3784,6 +3903,36 @@ run_multi_output_scenario() {
     "${titles[3]}" "1296,16,616,688" \
     "${titles[4]}" "1928,16,616,688" || \
     fail "Driftile did not restore the two $protocol output contexts after direct insertion: $(describe_layout "${titles[0]}" "${titles[1]}" "${titles[3]}" "${titles[4]}")"
+
+  wait_for_shortcut "driftile_consume_window_into_column" || \
+    fail "KGlobalAccel did not register the multi-output consume-window shortcut"
+  wait_for_shortcut "driftile_expel_window_from_column" || \
+    fail "KGlobalAccel did not register the multi-output expel-window shortcut"
+  activate_window "${titles[0]}" || \
+    fail "KWin could not focus the left $protocol consume target"
+  wait_for_active "${titles[0]}" || \
+    fail "KWin did not focus the left $protocol consume target"
+  invoke_shortcut "driftile_consume_window_into_column" || \
+    fail "KGlobalAccel could not invoke the isolated multi-output consume action"
+  wait_for_geometries \
+    "${titles[0]}" "16,16,616,336" \
+    "${titles[1]}" "16,368,616,336" \
+    "${titles[3]}" "1296,16,616,688" \
+    "${titles[4]}" "1928,16,616,688" || \
+    fail "Driftile did not isolate the multi-output $protocol consume action: $(describe_layout "${titles[0]}" "${titles[1]}" "${titles[3]}" "${titles[4]}")"
+  wait_for_active "${titles[0]}" || \
+    fail "Driftile changed $protocol focus after the isolated consume action"
+
+  invoke_shortcut "driftile_expel_window_from_column" || \
+    fail "KGlobalAccel could not invoke the isolated multi-output expel action"
+  wait_for_geometries \
+    "${titles[0]}" "16,16,616,688" \
+    "${titles[1]}" "648,16,616,688" \
+    "${titles[3]}" "1296,16,616,688" \
+    "${titles[4]}" "1928,16,616,688" || \
+    fail "Driftile did not isolate the multi-output $protocol expel action: $(describe_layout "${titles[0]}" "${titles[1]}" "${titles[3]}" "${titles[4]}")"
+  wait_for_active "${titles[0]}" || \
+    fail "Driftile changed $protocol focus after the isolated expel action"
 
   wait_for_shortcut "driftile_toggle_floating" || \
     fail "KGlobalAccel did not register the multi-output floating shortcut"

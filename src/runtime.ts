@@ -119,6 +119,14 @@ export function insertWindowIntoStackRight(): void {
   controller?.insertWindowIntoStackRight();
 }
 
+export function consumeWindowIntoColumn(): void {
+  controller?.consumeWindowIntoColumn();
+}
+
+export function expelWindowFromColumn(): void {
+  controller?.expelWindowFromColumn();
+}
+
 export function toggleFloating(): void {
   controller?.toggleFloating();
 }

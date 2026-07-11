@@ -162,6 +162,18 @@ QtObject {
         sequence: "Meta+]"
         onActivated: Runtime.DriftileRuntime.moveWindowRight()
     }
+    readonly property ShortcutHandler consumeWindowIntoColumnShortcut: ShortcutHandler {
+        name: "driftile_consume_window_into_column"
+        text: "Driftile: Consume window into column"
+        sequence: "Meta+,"
+        onActivated: Runtime.DriftileRuntime.consumeWindowIntoColumn()
+    }
+    readonly property ShortcutHandler expelWindowFromColumnShortcut: ShortcutHandler {
+        name: "driftile_expel_window_from_column"
+        text: "Driftile: Expel window from column"
+        sequence: "Meta+."
+        onActivated: Runtime.DriftileRuntime.expelWindowFromColumn()
+    }
     readonly property ShortcutHandler moveWindowUpShortcut: ShortcutHandler {
         name: "driftile_move_window_up"
         text: "Driftile: Move window up"

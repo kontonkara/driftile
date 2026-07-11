@@ -143,8 +143,18 @@ export interface StackEditRollback {
 }
 
 export interface StackEditResult {
-  readonly kind: "extract" | "insert" | "merge" | "reorder";
+  readonly kind:
+    "consume" | "expel" | "extract" | "insert" | "merge" | "reorder";
   readonly rollback: StackEditRollback;
+}
+
+declare const columnStackEditPreviewBrand: unique symbol;
+
+export interface ColumnStackEditPreview {
+  readonly [columnStackEditPreviewBrand]: true;
+  readonly kind: "consume" | "expel";
+  readonly layout: LayoutContextSnapshot;
+  readonly movedWindowId: WindowId;
 }
 
 declare const windowHeightEditRollbackBrand: unique symbol;
@@ -183,6 +193,11 @@ interface StackEditSnapshots {
   readonly before: LayoutContextSnapshot;
 }
 
+interface ColumnStackEditPreviewState {
+  readonly after: LayoutContextSnapshot;
+  readonly before: LayoutContextSnapshot;
+}
+
 interface WindowHeightEditSnapshots {
   readonly after: LayoutContextSnapshot;
   readonly before: LayoutContextSnapshot;
@@ -217,6 +232,10 @@ interface ColumnTransferPreviewState {
 }
 
 export class LayoutEngine {
+  private readonly columnStackEditPreviews = new WeakMap<
+    ColumnStackEditPreview,
+    ColumnStackEditPreviewState
+  >();
   private readonly columnTransferPreviews = new Map<
     ColumnTransferPreview,
     ColumnTransferPreviewState
@@ -531,6 +550,189 @@ export class LayoutEngine {
       before,
       this.snapshot(context.outputId, context.desktopId),
     );
+  }
+
+  previewConsumeWindowIntoColumn(
+    activeWindowId: WindowId,
+  ): ColumnStackEditPreview | null {
+    const placement = this.placements.get(activeWindowId);
+
+    if (!placement) {
+      return null;
+    }
+
+    const context = this.contexts.get(placement.contextKey);
+
+    if (!context || context.activeColumnId !== placement.columnId) {
+      return null;
+    }
+
+    const targetIndex = context.columns.findIndex(
+      (column) => column.id === placement.columnId,
+    );
+    const target = context.columns[targetIndex];
+    const source = context.columns[targetIndex + 1];
+    const movedWindowId = source?.windowIds[0];
+
+    if (
+      targetIndex < 0 ||
+      !target ||
+      !source ||
+      !movedWindowId ||
+      !target.windowIds.includes(activeWindowId)
+    ) {
+      return null;
+    }
+
+    const before = immutableContextSnapshot(
+      this.snapshot(context.outputId, context.desktopId),
+    );
+    const columns = before.columns.map(cloneColumnSnapshot);
+    const nextTarget = columns[targetIndex];
+    const nextSource = columns[targetIndex + 1];
+
+    if (!nextTarget || !nextSource) {
+      return null;
+    }
+
+    const targetWindowHeights = appendedDefaultSnapshotWindowHeight(nextTarget);
+    const sourceWindowHeights = withoutSnapshotWindowHeight(nextSource, 0);
+    columns[targetIndex] = {
+      id: nextTarget.id,
+      width: nextTarget.width,
+      ...(targetWindowHeights ? { windowHeights: targetWindowHeights } : {}),
+      windowIds: [...nextTarget.windowIds, movedWindowId],
+    };
+
+    if (nextSource.windowIds.length === 1) {
+      columns.splice(targetIndex + 1, 1);
+    } else {
+      columns[targetIndex + 1] = {
+        id: nextSource.id,
+        width: nextSource.width,
+        ...(sourceWindowHeights ? { windowHeights: sourceWindowHeights } : {}),
+        windowIds: nextSource.windowIds.slice(1),
+      };
+    }
+
+    return this.createColumnStackEditPreview(
+      "consume",
+      movedWindowId,
+      before,
+      immutableContextSnapshot({ ...before, columns }),
+    );
+  }
+
+  previewExpelWindowFromColumn(
+    activeWindowId: WindowId,
+    newColumnId: ColumnId,
+  ): ColumnStackEditPreview | null {
+    const placement = this.placements.get(activeWindowId);
+
+    if (!placement) {
+      return null;
+    }
+
+    const context = this.contexts.get(placement.contextKey);
+
+    if (
+      !context ||
+      context.activeColumnId !== placement.columnId ||
+      context.columnIds.has(newColumnId)
+    ) {
+      return null;
+    }
+
+    const sourceIndex = context.columns.findIndex(
+      (column) => column.id === placement.columnId,
+    );
+    const source = context.columns[sourceIndex];
+    const movedWindowId = source?.windowIds[source.windowIds.length - 1];
+
+    if (
+      sourceIndex < 0 ||
+      !source ||
+      source.windowIds.length < 2 ||
+      !movedWindowId ||
+      !source.windowIds.includes(activeWindowId)
+    ) {
+      return null;
+    }
+
+    const before = immutableContextSnapshot(
+      this.snapshot(context.outputId, context.desktopId),
+    );
+    const columns = before.columns.map(cloneColumnSnapshot);
+    const nextSource = columns[sourceIndex];
+
+    if (!nextSource) {
+      return null;
+    }
+
+    const sourceWindowHeights = withoutSnapshotWindowHeight(
+      nextSource,
+      nextSource.windowIds.length - 1,
+    );
+    columns[sourceIndex] = {
+      id: nextSource.id,
+      width: nextSource.width,
+      ...(sourceWindowHeights ? { windowHeights: sourceWindowHeights } : {}),
+      windowIds: nextSource.windowIds.slice(0, -1),
+    };
+    columns.splice(sourceIndex + 1, 0, {
+      id: newColumnId,
+      width: nextSource.width,
+      windowIds: [movedWindowId],
+    });
+
+    return this.createColumnStackEditPreview(
+      "expel",
+      movedWindowId,
+      before,
+      immutableContextSnapshot({ ...before, columns }),
+    );
+  }
+
+  applyColumnStackEdit(
+    preview: ColumnStackEditPreview,
+  ): StackEditResult | null {
+    const state = this.columnStackEditPreviews.get(preview);
+
+    if (!state) {
+      return null;
+    }
+
+    this.columnStackEditPreviews.delete(preview);
+
+    if (
+      !sameContextSnapshot(
+        this.snapshot(state.before.outputId, state.before.desktopId),
+        state.before,
+      ) ||
+      !sameWindowSet(state.before, state.after) ||
+      !validContextSnapshot(state.after) ||
+      !this.placementsMatchSnapshot(state.before)
+    ) {
+      return null;
+    }
+
+    this.replaceContext(state.after);
+    return this.createStackEditResult(preview.kind, state.before, state.after);
+  }
+
+  commitColumnStackEdit(preview: ColumnStackEditPreview): boolean {
+    const edit = this.applyColumnStackEdit(preview);
+
+    if (!edit) {
+      return false;
+    }
+
+    this.discardStackEditRollback(edit.rollback);
+    return true;
+  }
+
+  discardColumnStackEdit(preview: ColumnStackEditPreview): boolean {
+    return this.columnStackEditPreviews.delete(preview);
   }
 
   moveActiveWindowInColumn(
@@ -1728,6 +1930,24 @@ export class LayoutEngine {
     return { kind, rollback };
   }
 
+  private createColumnStackEditPreview(
+    kind: ColumnStackEditPreview["kind"],
+    movedWindowId: WindowId,
+    before: LayoutContextSnapshot,
+    after: LayoutContextSnapshot,
+  ): ColumnStackEditPreview {
+    const preview = Object.freeze({
+      kind,
+      layout: after,
+      movedWindowId,
+    }) as ColumnStackEditPreview;
+    this.columnStackEditPreviews.set(preview, {
+      after,
+      before,
+    });
+    return preview;
+  }
+
   private getOrCreateContext(
     key: string,
     outputId: OutputId,
@@ -1958,6 +2178,32 @@ function immutableDetachedWindowPlacement(
       : {}),
     windowId: placement.windowId,
   });
+}
+
+function cloneColumnSnapshot(
+  column: LayoutColumnSnapshot,
+): LayoutColumnSnapshot {
+  return {
+    id: column.id,
+    width: { ...column.width },
+    ...(column.windowHeights
+      ? { windowHeights: column.windowHeights.map(cloneWindowHeight) }
+      : {}),
+    windowIds: [...column.windowIds],
+  };
+}
+
+function appendedDefaultSnapshotWindowHeight(
+  column: LayoutColumnSnapshot,
+): WindowHeight[] | undefined {
+  if (!column.windowHeights) {
+    return undefined;
+  }
+
+  return compactWindowHeights([
+    ...column.windowHeights.map(cloneWindowHeight),
+    automaticWindowHeight(),
+  ]);
 }
 
 function immutableContextSnapshot(
