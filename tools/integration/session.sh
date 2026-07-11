@@ -4346,6 +4346,126 @@ verify_horizontal_extraction_past_minimized_peer() {
     fail "Driftile changed $protocol focus while reconstructing the horizontal-extraction fixture"
 }
 
+verify_consume_past_minimized_peers() {
+  local protocol=$1
+  local first_title=$2
+  local active_title=$3
+  local minimized_source_title=$4
+  local moved_title=$5
+  local first_id
+  local minimized_source_id
+
+  first_id=$(window_id "$first_title") || \
+    fail "KWin did not expose the passive target $protocol window before minimized-peer consume"
+  minimized_source_id=$(window_id "$minimized_source_title") || \
+    fail "KWin did not expose the passive source $protocol window before minimized-peer consume"
+
+  activate_window "$minimized_source_title" || \
+    fail "KWin could not focus the passive source $protocol window while preparing minimized-peer consume"
+  wait_for_active "$minimized_source_title" || \
+    fail "KWin did not focus the passive source $protocol window while preparing minimized-peer consume"
+  invoke_shortcut "driftile_move_window_right" || \
+    fail "KGlobalAccel could not extract the passive source $protocol window while preparing minimized-peer consume"
+  activate_window "$moved_title" || \
+    fail "KWin could not focus the moved $protocol window while preparing minimized-peer consume"
+  wait_for_active "$moved_title" || \
+    fail "KWin did not focus the moved $protocol window while preparing minimized-peer consume"
+  invoke_shortcut "driftile_move_window_left" || \
+    fail "KGlobalAccel could not prepare the $protocol consume source stack"
+  invoke_shortcut "driftile_move_window_up" || \
+    fail "KGlobalAccel could not move the visible $protocol source member above its passive peer"
+  activate_window "$active_title" || \
+    fail "KWin could not focus the target $protocol window before minimized-peer consume"
+  wait_for_active "$active_title" || \
+    fail "KWin did not focus the target $protocol window before minimized-peer consume"
+  wait_for_geometries \
+    "$first_title" "16,16,616,336" \
+    "$active_title" "16,368,616,336" \
+    "$moved_title" "648,16,616,336" \
+    "$minimized_source_title" "648,368,616,336" || \
+    fail "Driftile did not prepare the exact $protocol minimized-peer consume fixture: $(describe_layout "$first_title" "$active_title" "$moved_title" "$minimized_source_title")"
+
+  set_external_window_minimized "$first_title" true || \
+    fail "KWin could not minimize the passive target $protocol window before consume"
+  set_external_window_minimized "$minimized_source_title" true || \
+    fail "KWin could not minimize the passive source $protocol window before consume"
+  wait_for_state_and_geometries \
+    "$first_id" minimized true \
+    "$first_title" "16,16,616,336" \
+    "$active_title" "16,368,616,336" \
+    "$moved_title" "648,16,616,336" \
+    "$minimized_source_title" "648,368,616,336" || \
+    fail "Driftile changed the $protocol fixture while settling the passive target before consume"
+  wait_for_window_state "$minimized_source_id" minimized true || \
+    fail "KWin did not settle the passive $protocol source member before consume"
+  activate_window "$active_title" || \
+    fail "KWin could not restore target $protocol focus before minimized-peer consume"
+  wait_for_active "$active_title" || \
+    fail "KWin did not restore target $protocol focus before minimized-peer consume"
+
+  invoke_shortcut "driftile_consume_window_into_column" || \
+    fail "KGlobalAccel could not consume past settled minimized $protocol peers"
+  wait_for_geometries \
+    "$first_title" "16,16,616,336" \
+    "$active_title" "16,251,616,218" \
+    "$moved_title" "16,485,616,219" \
+    "$minimized_source_title" "648,368,616,336" || \
+    fail "Driftile did not append the visible $protocol source member past minimized peers: $(describe_layout "$first_title" "$active_title" "$moved_title" "$minimized_source_title")"
+  wait_for_window_state "$first_id" minimized true || \
+    fail "Driftile restored the passive target $protocol window during consume"
+  wait_for_window_state "$minimized_source_id" minimized true || \
+    fail "Driftile restored the passive source $protocol window during consume"
+  [[ "$(window_frame_geometry "$first_title")" == "16,16,616,336" ]] || \
+    fail "Driftile wrote the minimized passive target $protocol frame during consume"
+  [[ "$(window_frame_geometry "$minimized_source_title")" == "648,368,616,336" ]] || \
+    fail "Driftile wrote the minimized passive source $protocol frame during consume"
+  wait_for_active "$active_title" || \
+    fail "Driftile changed $protocol focus during minimized-peer consume"
+
+  set_external_window_minimized "$first_title" false || \
+    fail "KWin could not restore the passive target $protocol window after consume"
+  set_external_window_minimized "$minimized_source_title" false || \
+    fail "KWin could not restore the passive source $protocol window after consume"
+  wait_for_state_and_geometries \
+    "$first_id" minimized false \
+    "$first_title" "16,16,616,219" \
+    "$active_title" "16,251,616,218" \
+    "$moved_title" "16,485,616,219" \
+    "$minimized_source_title" "648,16,616,688" || \
+    fail "Driftile did not restore the passive $protocol windows after minimized-peer consume: $(describe_layout "$first_title" "$active_title" "$moved_title" "$minimized_source_title")"
+  wait_for_window_state "$minimized_source_id" minimized false || \
+    fail "KWin did not restore the passive $protocol source member after consume"
+
+  activate_window "$moved_title" || \
+    fail "KWin could not focus the consumed $protocol window for fixture reconstruction"
+  wait_for_active "$moved_title" || \
+    fail "KWin did not focus the consumed $protocol window for fixture reconstruction"
+  invoke_shortcut "driftile_move_window_right" || \
+    fail "KGlobalAccel could not extract the consumed $protocol window during fixture reconstruction"
+  wait_for_geometries \
+    "$first_title" "16,16,616,336" \
+    "$active_title" "16,368,616,336" \
+    "$moved_title" "648,16,616,688" \
+    "$minimized_source_title" "1280,16,616,688" || \
+    fail "Driftile did not isolate the consumed $protocol window during fixture reconstruction: $(describe_layout "$first_title" "$active_title" "$moved_title" "$minimized_source_title")"
+  activate_window "$minimized_source_title" || \
+    fail "KWin could not focus the restored source $protocol window during fixture reconstruction"
+  wait_for_active "$minimized_source_title" || \
+    fail "KWin did not focus the restored source $protocol window during fixture reconstruction"
+  invoke_shortcut "driftile_insert_window_into_stack_left" || \
+    fail "KGlobalAccel could not restore the passive $protocol window to its original stack"
+  wait_for_geometries \
+    "$first_title" "16,16,616,219" \
+    "$active_title" "16,251,616,218" \
+    "$moved_title" "648,16,616,688" \
+    "$minimized_source_title" "16,485,616,219" || \
+    fail "Driftile did not reconstruct the exact $protocol fixture after minimized-peer consume: $(describe_layout "$first_title" "$active_title" "$moved_title" "$minimized_source_title")"
+  activate_window "$active_title" || \
+    fail "KWin could not restore $protocol focus after minimized-peer consume"
+  wait_for_active "$active_title" || \
+    fail "KWin did not restore $protocol focus after minimized-peer consume"
+}
+
 verify_stacked_maximize_extraction() {
   local protocol=$1
   local trigger=$2
@@ -5078,6 +5198,13 @@ run_scenario() {
     "$third_title"
 
   verify_horizontal_extraction_past_minimized_peer \
+    "$protocol" \
+    "$first_title" \
+    "$second_title" \
+    "$fourth_title" \
+    "$third_title"
+
+  verify_consume_past_minimized_peers \
     "$protocol" \
     "$first_title" \
     "$second_title" \

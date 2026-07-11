@@ -787,14 +787,12 @@ export class LayoutEngine {
 
     this.stackEditRollbacks.delete(rollback);
     const { after, before } = snapshots;
+    const current = this.snapshot(after.outputId, after.desktopId);
 
     if (
       before.outputId !== after.outputId ||
       before.desktopId !== after.desktopId ||
-      !sameContextStructure(
-        this.snapshot(after.outputId, after.desktopId),
-        after,
-      ) ||
+      !sameContextColumns(current, after) ||
       !sameWindowSet(before, after)
     ) {
       return false;
@@ -831,7 +829,13 @@ export class LayoutEngine {
       }
     }
 
-    context.activeColumnId = before.activeColumnId;
+    const activeColumnChanged = current.activeColumnId !== after.activeColumnId;
+    context.activeColumnId =
+      activeColumnChanged &&
+      (current.activeColumnId === null ||
+        before.columns.some((column) => column.id === current.activeColumnId))
+        ? current.activeColumnId
+        : before.activeColumnId;
     context.viewportOffset = before.viewportOffset;
     return true;
   }
@@ -2426,9 +2430,18 @@ function sameContextStructure(
   right: LayoutContextSnapshot,
 ): boolean {
   return (
+    left.activeColumnId === right.activeColumnId &&
+    sameContextColumns(left, right)
+  );
+}
+
+function sameContextColumns(
+  left: LayoutContextSnapshot,
+  right: LayoutContextSnapshot,
+): boolean {
+  return (
     left.outputId === right.outputId &&
     left.desktopId === right.desktopId &&
-    left.activeColumnId === right.activeColumnId &&
     left.columns.length === right.columns.length &&
     left.columns.every((column, index) => {
       const candidate = right.columns[index];

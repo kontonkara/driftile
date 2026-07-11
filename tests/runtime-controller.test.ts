@@ -5544,6 +5544,589 @@ describe("RuntimeController", () => {
   });
 
   it.each([
+    { minimizedMembers: ["target"] as const, name: "target peer" },
+    { minimizedMembers: ["source"] as const, name: "lower source peer" },
+    {
+      minimizedMembers: ["target", "source"] as const,
+      name: "target and lower source peers",
+    },
+  ])("consumes past a settled minimized $name", ({ minimizedMembers }) => {
+    const setup = createMinimizedConsumeFixture();
+    const minimized = minimizedMembers.map((member) => setup[member]);
+
+    for (const candidate of minimized) {
+      setWindowState("minimized", candidate, true);
+    }
+
+    flushManualScheduler(setup.scheduler);
+    const minimizedFrames = minimized.map(({ window }) => ({
+      ...window.frameGeometry,
+    }));
+    const minimizedWrites = minimized.map(({ writeCount }) => writeCount);
+    const activationCount = setup.fixture.activationCount;
+
+    expect(setup.controller.consumeWindowIntoColumn()).toBe(true);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(minimizedConsumeLayout());
+    expect(setup.moved.window.frameGeometry).toMatchObject({
+      width: 420,
+      x: setup.active.window.frameGeometry.x,
+    });
+    expect(setup.moved.window.frameGeometry.y).toBeGreaterThan(
+      setup.active.window.frameGeometry.y,
+    );
+    expect(minimized.map(({ window }) => window.frameGeometry)).toEqual(
+      minimizedFrames,
+    );
+    expect(minimized.map(({ writeCount }) => writeCount)).toEqual(
+      minimizedWrites,
+    );
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+    expect(setup.fixture.activationCount).toBe(activationCount);
+
+    for (const candidate of minimized) {
+      setWindowState("minimized", candidate, false);
+    }
+
+    flushManualScheduler(setup.scheduler);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(minimizedConsumeLayout());
+    expect(
+      [setup.target, setup.active, setup.moved].map(
+        ({ window }) => window.frameGeometry.y,
+      ),
+    ).toEqual(
+      [setup.target, setup.active, setup.moved]
+        .map(({ window }) => window.frameGeometry.y)
+        .sort((left, right) => left - right),
+    );
+    expect(
+      [setup.target, setup.active, setup.moved].map(
+        ({ window }) => window.frameGeometry.width,
+      ),
+    ).toEqual([420, 420, 420]);
+    expect(setup.source.window.frameGeometry.x).toBeGreaterThan(
+      setup.active.window.frameGeometry.x,
+    );
+
+    for (const [index, candidate] of minimized.entries()) {
+      expect(candidate.window.frameGeometry).not.toEqual(
+        minimizedFrames[index],
+      );
+      expect(candidate.writeCount).toBeGreaterThan(
+        minimizedWrites[index] ?? Number.POSITIVE_INFINITY,
+      );
+    }
+
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+    expect(setup.fixture.activationCount).toBe(activationCount);
+  });
+
+  it("rejects consume when the moved top member is minimized", () => {
+    const setup = createMinimizedConsumeFixture();
+
+    setWindowState("minimized", setup.moved, true);
+    flushManualScheduler(setup.scheduler);
+    const before = setup.layout.snapshot(
+      outputId(setup.output.name),
+      desktopId(setup.desktop.id),
+    );
+    const frames = setup.windows.map(({ window }) => ({
+      ...window.frameGeometry,
+    }));
+    const writes = setup.windows.map(({ writeCount }) => writeCount);
+    const activationCount = setup.fixture.activationCount;
+
+    expect(setup.controller.consumeWindowIntoColumn()).toBe(false);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(before);
+    expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
+      frames,
+    );
+    expect(setup.windows.map(({ writeCount }) => writeCount)).toEqual(writes);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+    expect(setup.fixture.activationCount).toBe(activationCount);
+
+    setWindowState("minimized", setup.moved, false);
+    flushManualScheduler(setup.scheduler);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(before);
+    expect(setup.moved.window.frameGeometry.width).toBe(
+      setup.source.window.frameGeometry.width,
+    );
+    expect(setup.moved.window.frameGeometry.y).toBeLessThan(
+      setup.source.window.frameGeometry.y,
+    );
+    expect(setup.moved.window.frameGeometry).toEqual(frames[2]);
+    expect(setup.moved.writeCount).toBe(writes[2]);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+    expect(setup.fixture.activationCount).toBe(activationCount);
+  });
+
+  it.each(
+    (["target", "source"] as const).flatMap((member) =>
+      (
+        [
+          "fullscreen",
+          "maximized",
+          "native tiled",
+          "restore settling",
+          "toggle unsettled",
+        ] as const
+      ).map((blocker) => ({ blocker, member })),
+    ),
+  )(
+    "rejects consume past a passive $member $blocker blocker",
+    ({ blocker, member }) => {
+      const setup = createMinimizedConsumeFixture();
+
+      blockWindowFocus(setup.controller, setup[member], blocker);
+      flushManualScheduler(setup.scheduler);
+      const before = setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      );
+      const frames = setup.windows.map(({ window }) => ({
+        ...window.frameGeometry,
+      }));
+      const writes = setup.windows.map(({ writeCount }) => writeCount);
+      const activationCount = setup.fixture.activationCount;
+
+      expect(setup.controller.consumeWindowIntoColumn()).toBe(false);
+      expect(
+        setup.layout.snapshot(
+          outputId(setup.output.name),
+          desktopId(setup.desktop.id),
+        ),
+      ).toEqual(before);
+      expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
+        frames,
+      );
+      expect(setup.windows.map(({ writeCount }) => writeCount)).toEqual(writes);
+      expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+      expect(setup.fixture.activationCount).toBe(activationCount);
+    },
+  );
+
+  it("rolls back consume when a minimized passive peer resumes during reflow", () => {
+    const setup = createMinimizedConsumeFixture();
+
+    setWindowState("minimized", setup.target, true);
+    setWindowState("minimized", setup.source, true);
+    flushManualScheduler(setup.scheduler);
+    const before = setup.layout.snapshot(
+      outputId(setup.output.name),
+      desktopId(setup.desktop.id),
+    );
+    const frames = setup.windows.map(({ window }) => ({
+      ...window.frameGeometry,
+    }));
+    const minimizedWrites = [setup.target.writeCount, setup.source.writeCount];
+    const activationCount = setup.fixture.activationCount;
+    let resumedDuringReflow = false;
+    setup.active.setWriteBehavior((_frame, commit) => {
+      commit();
+
+      if (!resumedDuringReflow) {
+        resumedDuringReflow = true;
+        setWindowState("minimized", setup.target, false);
+      }
+    });
+    const warning = console.warn;
+    console.warn = () => undefined;
+
+    try {
+      expect(setup.controller.consumeWindowIntoColumn()).toBe(false);
+    } finally {
+      console.warn = warning;
+      setup.active.setWriteBehavior(null);
+    }
+
+    expect(resumedDuringReflow).toBe(true);
+    expect(setup.target.window.minimized).toBe(false);
+    expect(setup.source.window.minimized).toBe(true);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(before);
+    expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
+      frames,
+    );
+    expect([setup.target.writeCount, setup.source.writeCount]).toEqual(
+      minimizedWrites,
+    );
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+    expect(setup.fixture.activationCount).toBe(activationCount);
+
+    flushManualScheduler(setup.scheduler);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(before);
+    expect(setup.target.window.frameGeometry).toEqual(frames[0]);
+    expect(setup.target.writeCount).toBe(minimizedWrites[0]);
+    expect(setup.source.window.frameGeometry).toEqual(frames[3]);
+    expect(setup.source.writeCount).toBe(minimizedWrites[1]);
+
+    setWindowState("minimized", setup.source, false);
+    flushManualScheduler(setup.scheduler);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(before);
+    expect(setup.source.window.frameGeometry).toEqual(frames[3]);
+    expect(setup.source.writeCount).toBe(minimizedWrites[1]);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+    expect(setup.fixture.activationCount).toBe(activationCount);
+  });
+
+  it("rolls back consume without reclaiming an external focus switch during reflow", () => {
+    const setup = createMinimizedConsumeFixture();
+
+    setWindowState("minimized", setup.target, true);
+    setWindowState("minimized", setup.source, true);
+    flushManualScheduler(setup.scheduler);
+    const before = setup.layout.snapshot(
+      outputId(setup.output.name),
+      desktopId(setup.desktop.id),
+    );
+    const frames = setup.windows.map(({ window }) => ({
+      ...window.frameGeometry,
+    }));
+    const writes = setup.windows.map(({ writeCount }) => writeCount);
+    const activationCount = setup.fixture.activationCount;
+    const expectedLayout = {
+      ...before,
+      activeColumnId: columnId("column:trailing"),
+    };
+    let focusChangedDuringReflow = false;
+    setup.active.setWriteBehavior((_frame, commit) => {
+      commit();
+
+      if (!focusChangedDuringReflow) {
+        focusChangedDuringReflow = true;
+        setup.fixture.workspace.activeWindow = setup.trailing.window;
+      }
+    });
+    const warning = console.warn;
+    console.warn = () => undefined;
+
+    try {
+      expect(setup.controller.consumeWindowIntoColumn()).toBe(false);
+    } finally {
+      console.warn = warning;
+      setup.active.setWriteBehavior(null);
+    }
+
+    expect(focusChangedDuringReflow).toBe(true);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(expectedLayout);
+    expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
+      frames,
+    );
+    expect(setup.target.writeCount).toBe(writes[0]);
+    expect(setup.source.writeCount).toBe(writes[3]);
+    expect(setup.active.writeCount).toBeGreaterThan(writes[1] ?? 0);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.trailing.window);
+    expect(setup.fixture.activationCount).toBe(activationCount + 1);
+
+    flushManualScheduler(setup.scheduler);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(expectedLayout);
+    expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
+      frames,
+    );
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.trailing.window);
+  });
+
+  it("rolls back consume and recovers a moved top member after a reentrant desktop change", () => {
+    const setup = createMinimizedConsumeFixture();
+
+    setWindowState("minimized", setup.target, true);
+    setWindowState("minimized", setup.source, true);
+    flushManualScheduler(setup.scheduler);
+    const before = setup.layout.snapshot(
+      outputId(setup.output.name),
+      desktopId(setup.desktop.id),
+    );
+    const frames = setup.windows.map(({ window }) => ({
+      ...window.frameGeometry,
+    }));
+    const writes = setup.windows.map(({ writeCount }) => writeCount);
+    let desktopChangedDuringReflow = false;
+    let movedForwardFrame: KWinWindow["frameGeometry"] | null = null;
+    setup.moved.setWriteBehavior((frame, commit) => {
+      commit();
+
+      if (!desktopChangedDuringReflow) {
+        desktopChangedDuringReflow = true;
+        movedForwardFrame = { ...frame };
+        Reflect.set(setup.moved.window, "desktops", [setup.otherDesktop]);
+      }
+    });
+    const warning = console.warn;
+    console.warn = () => undefined;
+
+    try {
+      expect(setup.controller.consumeWindowIntoColumn()).toBe(false);
+    } finally {
+      console.warn = warning;
+      setup.moved.setWriteBehavior(null);
+    }
+
+    const state = setup.controller as unknown as {
+      readonly pendingWindowSyncs: ReadonlySet<WindowId>;
+    };
+    expect(desktopChangedDuringReflow).toBe(true);
+    expect(setup.moved.window.desktops).toEqual([setup.otherDesktop]);
+    expect(state.pendingWindowSyncs.has(windowId("moved-top"))).toBe(true);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(before);
+    expect(
+      [setup.target, setup.active, setup.source, setup.trailing].map(
+        ({ window }) => window.frameGeometry,
+      ),
+    ).toEqual([frames[0], frames[1], frames[3], frames[4]]);
+    expect(movedForwardFrame).not.toBeNull();
+    expect(setup.moved.window.frameGeometry).toEqual(movedForwardFrame);
+    expect(setup.target.writeCount).toBe(writes[0]);
+    expect(setup.source.writeCount).toBe(writes[3]);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+
+    flushManualScheduler(setup.scheduler);
+    expect(state.pendingWindowSyncs.has(windowId("moved-top"))).toBe(false);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(minimizedConsumeLayoutAfterMovedRemoval());
+    expect(
+      testLayoutColumns(setup.controller, setup.output, setup.otherDesktop),
+    ).toEqual([{ id: "column:moved-top", windowIds: ["moved-top"] }]);
+    expect(setup.controller.managedCount).toBe(5);
+    expect(setup.moved.window.desktops).toEqual([setup.otherDesktop]);
+    expect(setup.moved.window.frameGeometry).toEqual(movedForwardFrame);
+    expect(setup.moved.writeCount).toBe((writes[2] ?? 0) + 1);
+    expect(setup.target.window.frameGeometry).toEqual(frames[0]);
+    expect(setup.target.writeCount).toBe(writes[0]);
+    expect(setup.source.window.frameGeometry).toEqual(frames[3]);
+    expect(setup.source.writeCount).toBe(writes[3]);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+  });
+
+  it("rejects a same-id moved top replacement during reflow", () => {
+    const setup = createMinimizedConsumeFixture();
+
+    setWindowState("minimized", setup.target, true);
+    setWindowState("minimized", setup.source, true);
+    flushManualScheduler(setup.scheduler);
+    const frames = setup.windows.map(({ window }) => ({
+      ...window.frameGeometry,
+    }));
+    const writes = setup.windows.map(({ writeCount }) => writeCount);
+    const replacement = createTrackedWindow(
+      "moved-top",
+      setup.output,
+      setup.desktop,
+      { frameGeometry: { ...setup.moved.window.frameGeometry } },
+    );
+    let replacedDuringReflow = false;
+    setup.active.setWriteBehavior((_frame, commit) => {
+      commit();
+
+      if (!replacedDuringReflow) {
+        replacedDuringReflow = true;
+        setup.fixture.windowRemoved.emit(setup.moved.window);
+        setup.fixture.windowAdded.emit(replacement.window);
+      }
+    });
+    const warning = console.warn;
+    console.warn = () => undefined;
+
+    try {
+      expect(setup.controller.consumeWindowIntoColumn()).toBe(false);
+    } finally {
+      console.warn = warning;
+      setup.active.setWriteBehavior(null);
+    }
+
+    const observer = (
+      setup.controller as unknown as {
+        readonly observer: {
+          source(id: string): KWinWindow | undefined;
+        };
+      }
+    ).observer;
+    expect(replacedDuringReflow).toBe(true);
+    expect(observer.source("moved-top")).toBe(replacement.window);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(minimizedConsumeLayoutAfterMovedReplacement());
+    expect(setup.moved.window.frameGeometry).toEqual(frames[2]);
+    expect(setup.moved.writeCount).toBe(writes[2]);
+    expect(setup.target.window.frameGeometry).toEqual(frames[0]);
+    expect(setup.target.writeCount).toBe(writes[0]);
+    expect(setup.source.window.frameGeometry).toEqual(frames[3]);
+    expect(setup.source.writeCount).toBe(writes[3]);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+    expect(setup.controller.managedCount).toBe(5);
+
+    flushManualScheduler(setup.scheduler);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(minimizedConsumeLayoutAfterMovedReplacement());
+    expect(observer.source("moved-top")).toBe(replacement.window);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+  });
+
+  it.each(["minimize", "remove"] as const)(
+    "rolls back consume when the moved top member is invalidated by $behavior during reflow",
+    (behavior) => {
+      const setup = createMinimizedConsumeFixture();
+
+      setWindowState("minimized", setup.target, true);
+      setWindowState("minimized", setup.source, true);
+      flushManualScheduler(setup.scheduler);
+      const before = setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      );
+      const frames = setup.windows.map(({ window }) => ({
+        ...window.frameGeometry,
+      }));
+      const writes = setup.windows.map(({ writeCount }) => writeCount);
+      const activationCount = setup.fixture.activationCount;
+      let invalidatedDuringReflow = false;
+      setup.active.setWriteBehavior((_frame, commit) => {
+        commit();
+
+        if (invalidatedDuringReflow) {
+          return;
+        }
+
+        invalidatedDuringReflow = true;
+
+        if (behavior === "minimize") {
+          setWindowState("minimized", setup.moved, true);
+        } else {
+          setup.fixture.windowRemoved.emit(setup.moved.window);
+        }
+      });
+      const warning = console.warn;
+      console.warn = () => undefined;
+
+      try {
+        expect(setup.controller.consumeWindowIntoColumn()).toBe(false);
+      } finally {
+        console.warn = warning;
+        setup.active.setWriteBehavior(null);
+      }
+
+      expect(invalidatedDuringReflow).toBe(true);
+      expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+      expect(setup.fixture.activationCount).toBe(activationCount);
+      expect(setup.target.window.frameGeometry).toEqual(frames[0]);
+      expect(setup.target.writeCount).toBe(writes[0]);
+      expect(setup.source.window.frameGeometry).toEqual(frames[3]);
+      expect(setup.source.writeCount).toBe(writes[3]);
+
+      flushManualScheduler(setup.scheduler);
+
+      if (behavior === "minimize") {
+        expect(
+          setup.layout.snapshot(
+            outputId(setup.output.name),
+            desktopId(setup.desktop.id),
+          ),
+        ).toEqual(before);
+        expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
+          frames,
+        );
+        expect(setup.moved.window.minimized).toBe(true);
+        expect(setup.moved.writeCount).toBe(writes[2]);
+        setWindowState("minimized", setup.moved, false);
+      } else {
+        expect(
+          setup.layout.snapshot(
+            outputId(setup.output.name),
+            desktopId(setup.desktop.id),
+          ),
+        ).toEqual(minimizedConsumeLayoutAfterMovedRemoval());
+        expect(setup.controller.managedCount).toBe(4);
+        expect(setup.moved.writeCount).toBe(writes[2]);
+      }
+
+      setWindowState("minimized", setup.target, false);
+      setWindowState("minimized", setup.source, false);
+      flushManualScheduler(setup.scheduler);
+      expect(
+        setup.layout.snapshot(
+          outputId(setup.output.name),
+          desktopId(setup.desktop.id),
+        ),
+      ).toEqual(
+        behavior === "minimize"
+          ? before
+          : minimizedConsumeLayoutAfterMovedRemoval(),
+      );
+      expect(setup.target.window.frameGeometry).toEqual(frames[0]);
+      expect(setup.target.writeCount).toBe(writes[0]);
+
+      if (behavior === "minimize") {
+        expect(setup.source.window.frameGeometry).toEqual(frames[3]);
+        expect(setup.source.writeCount).toBe(writes[3]);
+      } else {
+        expect(setup.source.window.frameGeometry).not.toEqual(frames[3]);
+        expect(setup.source.writeCount).toBeGreaterThan(writes[3] ?? 0);
+      }
+
+      expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+      expect(setup.fixture.activationCount).toBe(activationCount);
+    },
+  );
+
+  it.each([
     { activeIndex: 0, expectedFocusIndex: 0, name: "non-bottom active" },
     { activeIndex: 2, expectedFocusIndex: 1, name: "bottom active" },
   ])(
@@ -21075,6 +21658,206 @@ interface VerticalReorderFixture {
   readonly output: KWinOutput;
   readonly scheduler: ManualScheduler;
   readonly windows: readonly TrackedWindow[];
+}
+
+interface MinimizedConsumeFixture {
+  readonly active: TrackedWindow;
+  readonly controller: RuntimeController;
+  readonly desktop: KWinVirtualDesktop;
+  readonly fixture: WorkspaceFixture;
+  readonly layout: LayoutEngine;
+  readonly moved: TrackedWindow;
+  readonly otherDesktop: KWinVirtualDesktop;
+  readonly output: KWinOutput;
+  readonly scheduler: ManualScheduler;
+  readonly source: TrackedWindow;
+  readonly target: TrackedWindow;
+  readonly trailing: TrackedWindow;
+  readonly windows: readonly TrackedWindow[];
+}
+
+function createMinimizedConsumeFixture(): MinimizedConsumeFixture {
+  const output = createOutput("DP-1", 0);
+  const desktop = { id: "desktop-1" };
+  const otherDesktop = { id: "desktop-2" };
+  const target = createTrackedWindow("target-peer", output, desktop);
+  const active = createTrackedWindow("active", output, desktop);
+  const moved = createTrackedWindow("moved-top", output, desktop);
+  const source = createTrackedWindow("source-peer", output, desktop);
+  const trailing = createTrackedWindow("trailing", output, desktop);
+  const windows = [target, active, moved, source, trailing];
+  const fixture = createWorkspace(
+    output,
+    desktop,
+    [output],
+    [desktop, otherDesktop],
+    windows.map(({ window }) => window),
+  );
+  const scheduler = new ManualScheduler();
+  const controller = new RuntimeController(fixture.workspace, {
+    clientAreaOption: 2,
+    gap: 10,
+    schedule: scheduler.schedule,
+    scheduleResume: scheduler.schedule,
+  });
+
+  if (!controller.start()) {
+    throw new Error("could not start minimized consume fixture");
+  }
+
+  const layout = installTestLayout(
+    controller,
+    output,
+    desktop,
+    "column:active",
+    [
+      {
+        id: "column:active",
+        width: { kind: "fixed", value: 420 },
+        windowHeights: [
+          { kind: "auto", weight: 2 },
+          { clientHeight: 230, kind: "fixed" },
+        ],
+        windowIds: ["target-peer", "active"],
+      },
+      {
+        id: "column:source",
+        width: { kind: "proportion", value: 0.32 },
+        windowHeights: [
+          { clientHeight: 310, kind: "fixed" },
+          { kind: "auto", weight: 5 },
+        ],
+        windowIds: ["moved-top", "source-peer"],
+      },
+      {
+        id: "column:trailing",
+        width: { kind: "fixed", value: 180 },
+        windowIds: ["trailing"],
+      },
+    ],
+  );
+
+  if (
+    !layout.setViewportOffset(outputId(output.name), desktopId(desktop.id), -37)
+  ) {
+    throw new Error("could not set minimized consume viewport");
+  }
+
+  controller.reconcile();
+  fixture.workspace.activeWindow = active.window;
+  flushManualScheduler(scheduler);
+
+  return {
+    active,
+    controller,
+    desktop,
+    fixture,
+    layout,
+    moved,
+    otherDesktop,
+    output,
+    scheduler,
+    source,
+    target,
+    trailing,
+    windows,
+  };
+}
+
+function minimizedConsumeLayout(): unknown {
+  return {
+    activeColumnId: "column:active",
+    columns: [
+      {
+        id: "column:active",
+        width: { kind: "fixed", value: 420 },
+        windowHeights: [
+          { kind: "auto", weight: 2 },
+          { clientHeight: 230, kind: "fixed" },
+          { kind: "auto", weight: 1 },
+        ],
+        windowIds: ["target-peer", "active", "moved-top"],
+      },
+      {
+        id: "column:source",
+        width: { kind: "proportion", value: 0.32 },
+        windowIds: ["source-peer"],
+      },
+      {
+        id: "column:trailing",
+        width: { kind: "fixed", value: 180 },
+        windowIds: ["trailing"],
+      },
+    ],
+    desktopId: "desktop-1",
+    outputId: "DP-1",
+    viewportOffset: -37,
+  };
+}
+
+function minimizedConsumeLayoutAfterMovedRemoval(): unknown {
+  return {
+    activeColumnId: "column:active",
+    columns: [
+      {
+        id: "column:active",
+        width: { kind: "fixed", value: 420 },
+        windowHeights: [
+          { kind: "auto", weight: 2 },
+          { clientHeight: 230, kind: "fixed" },
+        ],
+        windowIds: ["target-peer", "active"],
+      },
+      {
+        id: "column:source",
+        width: { kind: "proportion", value: 0.32 },
+        windowIds: ["source-peer"],
+      },
+      {
+        id: "column:trailing",
+        width: { kind: "fixed", value: 180 },
+        windowIds: ["trailing"],
+      },
+    ],
+    desktopId: "desktop-1",
+    outputId: "DP-1",
+    viewportOffset: -37,
+  };
+}
+
+function minimizedConsumeLayoutAfterMovedReplacement(): unknown {
+  return {
+    activeColumnId: "column:active",
+    columns: [
+      {
+        id: "column:active",
+        width: { kind: "fixed", value: 420 },
+        windowHeights: [
+          { kind: "auto", weight: 2 },
+          { clientHeight: 230, kind: "fixed" },
+        ],
+        windowIds: ["target-peer", "active"],
+      },
+      {
+        id: "column:moved-top",
+        width: { kind: "proportion", value: 0.5 },
+        windowIds: ["moved-top"],
+      },
+      {
+        id: "column:source",
+        width: { kind: "proportion", value: 0.32 },
+        windowIds: ["source-peer"],
+      },
+      {
+        id: "column:trailing",
+        width: { kind: "fixed", value: 180 },
+        windowIds: ["trailing"],
+      },
+    ],
+    desktopId: "desktop-1",
+    outputId: "DP-1",
+    viewportOffset: -37,
+  };
 }
 
 function createVerticalReorderFixture(): VerticalReorderFixture {

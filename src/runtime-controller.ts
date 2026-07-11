@@ -705,18 +705,84 @@ export class RuntimeController {
       (column) => column.id === command.activeColumn.id,
     );
     const source = command.before.columns[activeIndex + 1];
+    const movedWindowId = source?.windowIds[0];
 
     if (
       activeIndex < 0 ||
       !source ||
+      !movedWindowId ||
       !this.columnMembersAreStackTransferEligible(
         command.activeColumn,
         command.context,
+        command.activeId,
       ) ||
-      !this.columnMembersAreStackTransferEligible(source, command.context)
+      !this.columnMembersAreStackTransferEligible(
+        source,
+        command.context,
+        movedWindowId,
+      )
     ) {
       return false;
     }
+
+    const activeWindow = this.observer.source(command.activeId);
+    const movedWindow = this.observer.source(movedWindowId);
+
+    if (
+      !activeWindow ||
+      !movedWindow ||
+      this.workspace.activeWindow !== activeWindow
+    ) {
+      return false;
+    }
+
+    const participantStates: Array<{
+      readonly id: WindowId;
+      readonly minimized: boolean;
+      readonly window: KWinWindow;
+    }> = [];
+
+    for (const id of [...command.activeColumn.windowIds, ...source.windowIds]) {
+      const window = this.observer.source(id);
+
+      if (!window) {
+        return false;
+      }
+
+      participantStates.push({ id, minimized: window.minimized, window });
+    }
+
+    const participantsRemainEligible = (): boolean => {
+      if (
+        this.workspace.activeWindow !== activeWindow ||
+        this.observer.source(command.activeId) !== activeWindow ||
+        this.observer.source(movedWindowId) !== movedWindow
+      ) {
+        return false;
+      }
+
+      for (const participant of participantStates) {
+        if (
+          this.observer.source(participant.id) !== participant.window ||
+          participant.window.minimized !== participant.minimized
+        ) {
+          return false;
+        }
+      }
+
+      return (
+        this.columnMembersAreStackTransferEligible(
+          command.activeColumn,
+          command.context,
+          command.activeId,
+        ) &&
+        this.columnMembersAreStackTransferEligible(
+          source,
+          command.context,
+          movedWindowId,
+        )
+      );
+    };
 
     const preview = this.layout.previewConsumeWindowIntoColumn(
       command.activeId,
@@ -726,7 +792,24 @@ export class RuntimeController {
       return false;
     }
 
-    return this.applyColumnStackEdit(command, preview, command.activeId);
+    if (preview.movedWindowId !== movedWindowId) {
+      this.layout.discardColumnStackEdit(preview);
+      return false;
+    }
+
+    const consumed = this.applyColumnStackEdit(
+      command,
+      preview,
+      command.activeId,
+      undefined,
+      participantsRemainEligible,
+    );
+
+    if (!consumed) {
+      this.recoverRejectedStackEditExternalFocus(command.context, activeWindow);
+    }
+
+    return consumed;
   }
 
   expelWindowFromColumn(): boolean {
@@ -3264,6 +3347,7 @@ export class RuntimeController {
     preview: ColumnStackEditPreview,
     focusWindowId: WindowId,
     createdColumnId?: ColumnId,
+    accept?: () => boolean,
   ): boolean {
     const focusWindow = this.observer.source(focusWindowId);
     const focusOwner = this.managedWindows.get(focusWindowId);
@@ -3305,6 +3389,7 @@ export class RuntimeController {
       () =>
         editState.value !== null &&
         this.layout.rollbackStackEdit(editState.value.rollback),
+      accept,
     );
     const edit = editState.value;
 
@@ -3345,6 +3430,34 @@ export class RuntimeController {
     }
 
     return true;
+  }
+
+  private recoverRejectedStackEditExternalFocus(
+    context: RuntimeContext,
+    originalActive: KWinWindow,
+  ): void {
+    const active = this.workspace.activeWindow;
+
+    if (!active || active === originalActive) {
+      return;
+    }
+
+    const activeId = windowId(String(active.internalId));
+    const owner = this.managedWindows.get(activeId);
+    const snapshot = this.layout.snapshot(context.outputId, context.desktopId);
+
+    if (
+      owner?.contextKey !== context.key ||
+      this.focusAvailableWindowLayer(activeId, active, context.key) !==
+        "tiling" ||
+      !snapshot.columns.some((column) => column.windowIds.includes(activeId))
+    ) {
+      return;
+    }
+
+    this.layout.activateWindow(activeId);
+    this.markContextDirty(context);
+    this.scheduleWork();
   }
 
   private moveActiveFloatingWindowToDesktop(

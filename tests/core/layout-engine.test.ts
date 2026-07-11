@@ -1250,6 +1250,54 @@ describe("LayoutEngine", () => {
     });
   });
 
+  it("rolls back a stack edit while preserving a newer active column", () => {
+    const engine = new LayoutEngine();
+
+    engine.restoreColumns({
+      activeColumnId: columnId("column-active"),
+      columns: [
+        {
+          column: {
+            id: columnId("column-active"),
+            width: { kind: "fixed", value: 420 },
+            windowIds: [windowId("active")],
+          },
+          index: 0,
+        },
+        {
+          column: {
+            id: columnId("column-source"),
+            width: { kind: "fixed", value: 360 },
+            windowIds: [windowId("source-top"), windowId("source-bottom")],
+          },
+          index: 1,
+        },
+        {
+          column: {
+            id: columnId("column-trailing"),
+            width: { kind: "fixed", value: 240 },
+            windowIds: [windowId("trailing")],
+          },
+          index: 2,
+        },
+      ],
+      desktopId: desktop,
+      outputId: output,
+      viewportOffset: -40,
+    });
+    const before = engine.snapshot(output, desktop);
+    const preview = engine.previewConsumeWindowIntoColumn(windowId("active"));
+    const edit = preview ? engine.applyColumnStackEdit(preview) : null;
+
+    expect(edit?.kind).toBe("consume");
+    expect(engine.activateWindow(windowId("trailing"))).toBe(true);
+    expect(edit && engine.rollbackStackEdit(edit.rollback)).toBe(true);
+    expect(engine.snapshot(output, desktop)).toEqual({
+      ...before,
+      activeColumnId: "column-trailing",
+    });
+  });
+
   it("previews expelling the bottom member into a right-hand singleton", () => {
     const engine = new LayoutEngine();
 
