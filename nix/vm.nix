@@ -467,6 +467,7 @@ let
             && "$shortcuts" == *"driftile_insert_window_into_stack_left"* \
             && "$shortcuts" == *"driftile_insert_window_into_stack_right"* \
             && "$shortcuts" == *"driftile_toggle_floating"* \
+            && "$shortcuts" == *"driftile_switch_focus_between_floating_and_tiling"* \
             && "$shortcuts" == *"driftile_toggle_fullscreen"* \
             && "$shortcuts" == *"driftile_maximize_window_to_edges"* \
             && "$shortcuts" == *"driftile_decrease_column_width"* \
@@ -3266,6 +3267,79 @@ let
         return 1
       }
 
+      verify_physical_layer_focus_shortcut() {
+        local floating_first_frame
+        local floating_second_frame
+        local floating_third_frame
+        local tiled_first_frame
+        local tiled_second_frame
+        local tiled_third_frame
+
+        if ! activate_window "$title_b" \
+          || ! wait_for_active "$title_b" \
+          || ! capture_stable_frames; then
+          record_focus_state "physical layer-focus shortcut setup failed"
+          return 1
+        fi
+
+        tiled_first_frame=$stable_first_frame
+        tiled_second_frame=$stable_second_frame
+        tiled_third_frame=$stable_third_frame
+
+        if ! invoke_shortcut "driftile_toggle_floating" \
+          || ! wait_for_active "$title_b" \
+          || ! capture_stable_frames; then
+          record_focus_state "physical layer-focus floating setup failed"
+          return 1
+        fi
+
+        floating_first_frame=$stable_first_frame
+        floating_second_frame=$stable_second_frame
+        floating_third_frame=$stable_third_frame
+
+        if ! activate_window "$title_c" \
+          || ! wait_for_active "$title_c" \
+          || ! wait_for_frames \
+            "$floating_first_frame" \
+            "$floating_second_frame" \
+            "$floating_third_frame" \
+          || ! request_physical_shortcut shift-v-floating \
+          || ! wait_for_active "$title_b" \
+          || ! wait_for_frames \
+            "$floating_first_frame" \
+            "$floating_second_frame" \
+            "$floating_third_frame"; then
+          record_focus_state "physical Meta+Shift+V did not focus the floating layer"
+          return 1
+        fi
+        record_focus_state \
+          "physical Meta+Shift+V focused the floating layer without moving windows"
+
+        if ! request_physical_shortcut shift-v-tiling \
+          || ! wait_for_active "$title_c" \
+          || ! wait_for_frames \
+            "$floating_first_frame" \
+            "$floating_second_frame" \
+            "$floating_third_frame"; then
+          record_focus_state "physical Meta+Shift+V did not restore tiled focus"
+          return 1
+        fi
+        record_focus_state \
+          "physical Meta+Shift+V restored tiled focus without moving windows"
+
+        if ! activate_window "$title_b" \
+          || ! wait_for_active "$title_b" \
+          || ! invoke_shortcut "driftile_toggle_floating" \
+          || ! wait_for_active "$title_b" \
+          || ! wait_for_frames \
+            "$tiled_first_frame" \
+            "$tiled_second_frame" \
+            "$tiled_third_frame"; then
+          record_focus_state "physical layer-focus shortcut cleanup failed"
+          return 1
+        fi
+      }
+
       verify_physical_edge_shortcuts() {
         request_physical_shortcut home \
           && wait_for_active "$title_a" \
@@ -4086,6 +4160,7 @@ let
 
       if [[ "$loaded" == true && "$desktops_ready" == true ]] \
         && verify_focus \
+        && verify_physical_layer_focus_shortcut \
         && verify_physical_width_shortcuts \
         && verify_physical_height_shortcuts \
         && verify_physical_column_view_shortcuts \
