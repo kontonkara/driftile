@@ -47,7 +47,7 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Releases explicitly floating windows from geometry ownership and restores their anchored layout slots on return.
 - Transfers one active relation-free floating window between desktops through a dedicated KWin transaction without changing tiled state or frame geometry.
 - Remembers the last tiled and floating focus per context, switches layers, and resolves floating navigation from live frame geometry without changing layout state.
-- Requests native fullscreen only through KWin; suspension retains the layout slot and resumes ownership after the restored frame settles.
+- Extracts a regular stack member transactionally before requesting native fullscreen through KWin; application-driven fullscreen commits for the active window use the same persistent singleton model without writing the fullscreen frame.
 - Extracts a regular stack member transactionally before requesting native maximize-to-edges through KWin; rejected requests restore the exact model, frames, focus, and runtime ownership.
 - Keeps dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows outside layout ownership in state separate from manual floating.
 - Releases a managed window that gains an automatic-floating role without restoring its old frame, then readmits it when the role clears and it remains eligible.
@@ -125,8 +125,8 @@ RuntimeState
 - When a topology change invalidates existing multi-output capacity, park whole writable columns with a reachable anchor inside the work area and release them to the waiting queue. Preserve the active column when possible; choose the farthest non-active column first and the rightmost on a tie.
 - Release externally transferred windows from their old context before admitting them to the destination context.
 - Translate client minimum and maximum sizes to frame bounds by adding current nonnegative decoration extents before emitting geometry or resizing a column. Treat malformed bounds conservatively.
-- Preserve a window's slot through fullscreen, minimize, native tiling, and interactive move or resize transitions.
-- A fullscreen command changes only KWin's native state; entering and leaving it does not directly mutate layout geometry, order, widths, heights, or viewport state.
+- Preserve a window's slot through minimize, native tiling, and interactive move or resize transitions.
+- A native fullscreen command extracts a member of a regular stack into an immediate right singleton before calling KWin. The new column copies the source width, and leaving fullscreen does not merge it back.
 - A native maximize command extracts a member of a regular stack into an immediate right singleton before calling KWin. The new column copies the source width, and unmaximize does not merge it back.
 - Require a stable restored frame before resuming writes or rebasing a transferred window.
 - Freeze admission, focus commands, and affected-context geometry writes until two successive delayed topology snapshots match.
@@ -149,6 +149,7 @@ RuntimeState
 ## Current constraint limits
 
 - KWin does not expose a complete change signal for all minimum, maximum, and resizeability metadata. Signaled changes are reclassified immediately; silent changes are rechecked before reconciliation and geometry writes.
+- KWin reports application-driven fullscreen only after saving restore geometry. Leaving it can briefly expose the former stack frame before Driftile settles the extracted singleton.
 - On Wayland, KWin captures restore geometry before notifying scripts about an application-driven maximize. Unmaximize can briefly expose the former stack frame before Driftile settles the extracted singleton.
 - Size increments and aspect-ratio policies are not modeled yet.
 
@@ -158,7 +159,7 @@ RuntimeState
 - Test reconcile output for minimality and idempotence.
 - Replay window lifecycle and output or desktop transfer sequences.
 - Verify window-state ownership, cancellation races, stable resumption, and slot reservation.
-- Verify native fullscreen shortcut entry, KWin-owned geometry, and exact layout restoration.
+- Verify shortcut and application-driven stacked fullscreen extraction, KWin-owned geometry, persistent singleton restoration, deferred Wayland commits, and exact rejection rollback.
 - Verify shortcut and application-driven stacked maximize extraction, KWin-owned geometry, persistent singleton restoration, and exact rejection rollback.
 - Verify adjacent and direct-edge active-column reorder, width adjustments, width presets, full width, available-width expansion, single-column and visible-group centering, signed viewport offsets, constraint bounds, and transactional rollback.
 - Verify per-window 10% height changes, automatic reset, forward and reverse height presets, weighted stack redistribution, singleton sizing, and exact rollback.

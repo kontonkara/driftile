@@ -20,9 +20,9 @@ Driftile uses one keyboard grammar and does not wrap at layout boundaries:
 | Window height        | Adjust one window by 10%; reset to automatic; cycle `1/3`, `1/2`, and `2/3` presets               | Available |
 | Virtual desktops     | Focus adjacent or numbered desktops; transfer a tiled column or one active floating window        | Available |
 | Outputs              | Focus an adjacent output and transfer the whole active column                                     | Available |
-| Fullscreen           | Toggle through KWin and preserve the window's layout slot                                         | Available |
+| Fullscreen           | Extract a regular stack member, then toggle native fullscreen through KWin                        | Available |
 | Native maximize      | Extract a regular stack member, then toggle it to work-area edges through KWin                    | Available |
-| Window state         | Complete stacked fullscreen and minimized-window policies                                         | MVP       |
+| Window state         | Complete minimized-window policies                                                                | MVP       |
 | Floating layer       | Toggle state, switch layers, and navigate floating windows geometrically                          | Available |
 | Tabbed columns       | Toggle a column between stacked and tabbed presentation without changing navigation               | v1        |
 | Pointer input        | Provide wheel navigation and mouse rearrangement with the same model as keyboard commands         | v1        |
@@ -41,10 +41,10 @@ returns the active member to automatic sizing.
 KWin owns fullscreen, maximize, minimize, output transfer, and virtual-desktop
 mechanisms. Driftile owns their layout semantics.
 
-Maximizing a member of a regular vertical stack extracts it into a singleton
-column immediately to the right before KWin takes geometry ownership.
-Unmaximizing keeps that column separate. A singleton or floating window keeps
-its existing layout ownership.
+When a member of a regular vertical stack enters fullscreen or is maximized,
+Driftile extracts it into a singleton column immediately to the right. Leaving
+the native state keeps that column separate. A singleton or floating window
+keeps its existing layout ownership.
 
 Plasma exposes one global virtual-desktop list. Driftile keeps independent
 layout state per output and uses output-local desktop selection where KWin

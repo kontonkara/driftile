@@ -20,7 +20,7 @@ The ownership rule is strict:
 - Optional borderless presentation for application windows with exact decoration ownership.
 - Output-local commands unless a transfer is explicit.
 - Work-area, size-constraint, fullscreen, minimized, dialog, and hot-plug handling.
-- Native fullscreen control through KWin with retained layout participation.
+- Native fullscreen control through KWin with stack-aware extraction.
 - Native maximize-to-edges control through KWin with stack-aware extraction.
 - Settled recovery for output-list, geometry, scale, and work-area changes.
 - Deterministic multi-output capacity eviction with reachable waiting windows and automatic retry.
@@ -61,7 +61,7 @@ Driftile must integrate with, not duplicate:
 
 - A managed window has exactly one layout context and one geometry owner.
 - A command cannot mutate an unrelated context.
-- Toggling fullscreen changes only KWin's native fullscreen property; Driftile retains the prior layout slot for restoration.
+- Entering fullscreen for a member of a regular stack extracts it into an immediate right singleton before calling KWin; leaving fullscreen keeps it separate.
 - Maximizing a member of a regular stack extracts it into an immediate right singleton before calling KWin; unmaximizing leaves it separate.
 - No layout write occurs while a topology snapshot is unsettled.
 - Focusing a managed window makes it fully visible with the smallest required scroll.

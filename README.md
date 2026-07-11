@@ -4,7 +4,7 @@ A KWin extension for KDE Plasma aiming to provide scrollable tiling and dynamic 
 
 > Driftile is in early development and has no usable release yet.
 
-The current prototype models eligible normal windows in independent `(output, desktop)` contexts. It supports scrollable columns, vertical stacks, focus and reorder commands, manual floating, layer switching and geometric floating-window focus, native fullscreen and stack-aware maximize, preset and incremental column sizing, available-width expansion, active and visible-group centering, per-window height adjustment with automatic reset and `1/3`, `1/2`, and `2/3` presets, and atomic whole-column transfers between desktops and outputs. Secondary single-window transfers remain available without default keys. Structural commands preserve focus, transfers do not wrap, and horizontal focus reveals its target with the smallest required scroll.
+The current prototype models eligible normal windows in independent `(output, desktop)` contexts. It supports scrollable columns, vertical stacks, focus and reorder commands, manual floating, layer switching and geometric floating-window focus, stack-aware native fullscreen and maximize, preset and incremental column sizing, available-width expansion, active and visible-group centering, per-window height adjustment with automatic reset and `1/3`, `1/2`, and `2/3` presets, and atomic whole-column transfers between desktops and outputs. Secondary single-window transfers remain available without default keys. Structural commands preserve focus, transfers do not wrap, and horizontal focus reveals its target with the smallest required scroll.
 
 Driftile keeps one shared trailing virtual desktop empty. It appends a desktop when the tail becomes occupied and removes only a redundant, unselected tail created by the current run. KDE owns the global desktop list; current-desktop selection remains output-local where KWin supports it.
 
@@ -28,7 +28,7 @@ Layout and workspace persistence are not implemented yet.
 
 ## Development
 
-Requirements: Node.js 22 or newer, npm, ShellCheck, `busctl`, `flock`, and KDE Frameworks 6 KPackage tools.
+Requirements: Node.js 22 or newer, npm, `zip`, ShellCheck, `busctl`, `flock`, and KDE Frameworks 6 KPackage tools.
 
 ```bash
 npm ci

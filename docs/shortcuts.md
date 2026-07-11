@@ -56,6 +56,10 @@ new singleton column immediately to the right. The column remains separate
 after unmaximize. Maximizing an existing singleton or floating window does not
 change its layout ownership.
 
+Native fullscreen uses the same extraction rule for a regular vertical stack.
+The singleton remains separate after leaving fullscreen. Existing singleton
+and floating ownership is unchanged.
+
 Available-width expansion grows the active column into the unused horizontal
 space, up to its shared window constraints, without hiding any currently fully
 visible column. Visible-column centering changes only the viewport position.
