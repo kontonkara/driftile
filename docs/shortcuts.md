@@ -63,9 +63,9 @@ when its retained focus target is visible. An active bottom member hands focus
 only to its immediate predecessor; a minimized predecessor makes the command a
 no-op. The structural edit waits for KWin to confirm that handoff and is
 discarded if the original layout or participants change. Whole-column desktop
-transfers may carry settled minimized passive members without writing their
-hidden frames. Output transfers still require every participant to be writable;
-other hidden-member edit semantics remain MVP work.
+and output transfers may carry settled minimized passive members without layout
+geometry writes. Secondary single-window transfers and other hidden-member edit
+semantics remain fail-closed MVP work.
 
 Window-height presets are `1/3`, `1/2`, and `2/3` of the work area, with gaps
 included in the calculation.

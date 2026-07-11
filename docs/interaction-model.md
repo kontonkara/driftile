@@ -56,9 +56,9 @@ settled minimized passive peers. When that bottom member is active, its
 immediate predecessor must be visible and receives focus before the layout
 changes; the command does not search past a minimized predecessor. If KWin does
 not confirm the handoff, the layout and frames remain unchanged. Whole-column
-desktop transfers may carry settled minimized passive members without writing
-their hidden frames. Output transfers still require every participant to be
-writable; further hidden-member edit semantics remain MVP work.
+desktop and output transfers may carry settled minimized passive members
+without layout geometry writes. Secondary single-window transfers and further
+hidden-member edit semantics remain fail-closed MVP work.
 
 When a member of a regular vertical stack enters fullscreen or is maximized,
 Driftile extracts it into a singleton column immediately to the right. Leaving
