@@ -63,6 +63,7 @@ The current runtime already:
 - Keeps both secondary transfer paths fail-closed when a minimized window is outside the active member's source column or is already in the target context.
 - Optionally removes application-window decorations independently of layout ownership while preserving pre-existing borderless state, reasserting owned policy, and restoring owned state on disable.
 - Applies a global 0–64 logical-pixel tiled-window gap live without mutating layout order, sizing policies, focus, floating frames, or minimized frames.
+- Configures a 10%–100% default width for newly admitted columns, fresh cross-context retiles, and explicit reset without changing existing column width policies.
 - Treats exposed client minimum and maximum sizes as hard bounds, detects silent changes on visible tracked windows, does not model unexposed X11 increment and aspect hints, and leaves backend enforcement to KWin.
 - Keeps one shared trailing desktop empty and removes only redundant tails created by the current run.
 - Registers compact default shortcuts with `H/J/K/L`, arrow, Home/End, and Page Up/Down aliases.
