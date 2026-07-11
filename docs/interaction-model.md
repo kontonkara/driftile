@@ -47,7 +47,8 @@ window retains its exact logical slot, and a minimized manually floating window
 retains its exact frame. Directional, edge, and layer focus skip minimized
 slots and fully minimized columns without wrapping. Focus does not skip other
 suspension blockers. Native fullscreen and maximize may extract the active
-member past settled minimized peers without writing their frames. Other
+member past settled minimized peers without writing their frames. A visible
+active member may move vertically across settled minimized slots. Other
 all-member transactions remain unavailable while one is minimized; further
 hidden-member edit semantics remain MVP work.
 
