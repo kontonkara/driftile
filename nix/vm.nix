@@ -469,9 +469,13 @@ let
             && "$shortcuts" == *"driftile_toggle_floating"* \
             && "$shortcuts" == *"driftile_decrease_column_width"* \
             && "$shortcuts" == *"driftile_increase_column_width"* \
-            && "$shortcuts" == *"driftile_increase_column_width_plus"* \
             && "$shortcuts" == *"driftile_switch_preset_column_width"* \
             && "$shortcuts" == *"driftile_switch_preset_column_width_back"* \
+            && "$shortcuts" == *"driftile_decrease_window_height"* \
+            && "$shortcuts" == *"driftile_increase_window_height"* \
+            && "$shortcuts" == *"driftile_switch_preset_window_height"* \
+            && "$shortcuts" == *"driftile_switch_preset_window_height_back"* \
+            && "$shortcuts" == *"driftile_reset_window_height"* \
             && "$shortcuts" == *"driftile_maximize_column"* \
             && "$shortcuts" == *"driftile_center_column"* \
             && "$shortcuts" == *"driftile_reset_column_width"* ]]; then
@@ -1691,6 +1695,116 @@ let
         return 1
       }
 
+      wait_for_stacked_height_relation() {
+        local relation=$1
+        local baseline_first=$2
+        local baseline_second=$3
+        local baseline_third=$4
+        local attempt
+        local baseline_first_height
+        local baseline_first_width
+        local baseline_first_x
+        local baseline_first_y
+        local baseline_gap
+        local baseline_second_height
+        local baseline_second_width
+        local baseline_second_x
+        local baseline_second_y
+        local current_first
+        local current_gap
+        local current_second
+        local current_third
+        local first_height
+        local first_width
+        local first_x
+        local first_y
+        local matches
+        local second_height
+        local second_width
+        local second_x
+        local second_y
+        local stable_samples=0
+
+        frame_is_valid "$baseline_first" \
+          && frame_is_valid "$baseline_second" \
+          && frame_is_valid "$baseline_third" \
+          || return 1
+        IFS=, read -r \
+          baseline_first_x \
+          baseline_first_y \
+          baseline_first_width \
+          baseline_first_height \
+          <<< "$baseline_first"
+        IFS=, read -r \
+          baseline_second_x \
+          baseline_second_y \
+          baseline_second_width \
+          baseline_second_height \
+          <<< "$baseline_second"
+        baseline_gap=$((
+          baseline_second_y - baseline_first_y - baseline_first_height
+        ))
+
+        ((baseline_gap > 0)) || return 1
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          current_first=$(window_frame "$title_a" 2>/dev/null || true)
+          current_second=$(window_frame "$title_b" 2>/dev/null || true)
+          current_third=$(window_frame "$title_c" 2>/dev/null || true)
+          matches=false
+
+          if frame_is_valid "$current_first" \
+            && frame_is_valid "$current_second" \
+            && [[ "$current_third" == "$baseline_third" ]]; then
+            IFS=, read -r first_x first_y first_width first_height \
+              <<< "$current_first"
+            IFS=, read -r second_x second_y second_width second_height \
+              <<< "$current_second"
+            current_gap=$((second_y - first_y - first_height))
+
+            if ((first_x == baseline_first_x \
+              && first_y == baseline_first_y \
+              && first_width == baseline_first_width \
+              && second_x == baseline_second_x \
+              && second_width == baseline_second_width \
+              && first_x == second_x \
+              && current_gap == baseline_gap \
+              && second_y + second_height \
+                == baseline_second_y + baseline_second_height)); then
+              case "$relation" in
+                active-larger)
+                  ((first_height < baseline_first_height \
+                    && second_height > baseline_second_height)) \
+                    && matches=true
+                  ;;
+                active-smaller)
+                  ((first_height > baseline_first_height \
+                    && second_height < baseline_second_height)) \
+                    && matches=true
+                  ;;
+                *)
+                  return 1
+                  ;;
+              esac
+            fi
+          fi
+
+          if [[ "$matches" == true ]]; then
+            stable_samples=$((stable_samples + 1))
+
+            if ((stable_samples >= 2)); then
+              return 0
+            fi
+          else
+            stable_samples=0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
       invoke_shortcut() {
         busctl --user call \
           org.kde.kglobalaccel \
@@ -1957,13 +2071,32 @@ let
 
         terminate_process "$pid"
 
-        wait_for_window_gone_contains "$query" \
-          && activate_window "$title_c" \
-          && wait_for_active "$title_c" \
-          && wait_for_frames \
+        if ! wait_for_window_gone_contains "$query"; then
+          record_real_application_state \
+            "real application window did not close" \
+            "$query"
+          return 1
+        fi
+
+        if ! activate_window "$title_c" || ! wait_for_active "$title_c"; then
+          record_focus_state \
+            "real application layout focus restoration failed"
+          return 1
+        fi
+
+        if ! wait_for_singleton_layout \
             "$baseline_first" \
             "$baseline_second" \
-            "$baseline_third"
+            "$baseline_third"; then
+          record_focus_state \
+            "real application layout restoration failed"
+          {
+            printf 'expected frame A: %s\n' "$baseline_first"
+            printf 'expected frame B: %s\n' "$baseline_second"
+            printf 'expected frame C: %s\n' "$baseline_third"
+          } >> /tmp/shared/driftile-focus-diagnostics
+          return 1
+        fi
       }
 
       record_focus_state() {
@@ -2708,36 +2841,151 @@ let
         for ((attempt = 0; attempt < 100; attempt += 1)); do
           after_width=$(window_frame_width "$title_c") || return 1
 
-          if ((after_width > decreased_width)); then
+          if ((after_width == before_width)); then
             equal_width=$after_width
-            record_focus_state "physical Meta+= increased the active column width"
+            record_focus_state "physical Meta+= restored the active column width"
             break
           fi
 
           sleep 0.1
         done
 
-        if ((equal_width <= decreased_width)); then
-          record_focus_state "physical Meta+= did not reach Driftile"
+        if ((equal_width != before_width)); then
+          record_focus_state "physical Meta+= did not restore the column width"
           return 1
         fi
 
-        request_physical_shortcut plus || return 1
+        return 0
+      }
 
-        for ((attempt = 0; attempt < 100; attempt += 1)); do
-          after_width=$(window_frame_width "$title_c") || return 1
+      verify_physical_height_shortcuts() {
+        local singleton_first_frame
+        local singleton_second_frame
+        local singleton_third_frame
+        local stack_first_frame
+        local stack_second_frame
+        local stack_third_frame
 
-          if ((after_width > equal_width)); then
-            record_focus_state "physical Meta++ increased the active column width"
-            invoke_shortcut "driftile_reset_column_width" || true
-            return 0
-          fi
+        activate_window "$title_b" \
+          && wait_for_active "$title_b" \
+          && capture_stable_frames \
+          || return 1
+        singleton_first_frame=$stable_first_frame
+        singleton_second_frame=$stable_second_frame
+        singleton_third_frame=$stable_third_frame
 
-          sleep 0.1
-        done
+        invoke_shortcut "driftile_move_window_left" \
+          && wait_for_stack_layout \
+            first-above-second \
+            "$singleton_first_frame" \
+            "$singleton_third_frame" \
+          && wait_for_active "$title_b" \
+          && capture_stable_frames \
+          || return 1
+        stack_first_frame=$stable_first_frame
+        stack_second_frame=$stable_second_frame
+        stack_third_frame=$stable_third_frame
+        record_focus_state "window B stacked for physical height shortcuts"
 
-        record_focus_state "physical Meta++ did not reach Driftile"
-        return 1
+        if ! invoke_shortcut "driftile_decrease_window_height" \
+          || ! wait_for_stacked_height_relation \
+            active-smaller \
+            "$stack_first_frame" \
+            "$stack_second_frame" \
+            "$stack_third_frame" \
+          || ! wait_for_active "$title_b"; then
+          record_focus_state "D-Bus height decrease preflight failed"
+          return 1
+        fi
+        record_focus_state "D-Bus height decrease preflight passed"
+
+        if ! invoke_shortcut "driftile_reset_window_height" \
+          || ! wait_for_frames \
+            "$stack_first_frame" \
+            "$stack_second_frame" \
+            "$stack_third_frame" \
+          || ! wait_for_active "$title_b"; then
+          record_focus_state "D-Bus height reset preflight failed"
+          return 1
+        fi
+        record_focus_state "D-Bus height reset preflight passed"
+
+        if ! request_physical_shortcut shift-minus; then
+          record_focus_state "physical Meta+Shift+- delivery failed"
+          return 1
+        fi
+
+        if ! wait_for_stacked_height_relation \
+          active-smaller \
+          "$stack_first_frame" \
+          "$stack_second_frame" \
+          "$stack_third_frame" \
+          || ! wait_for_active "$title_b"; then
+          record_focus_state "physical Meta+Shift+- produced no height change"
+          return 1
+        fi
+        record_focus_state \
+          "physical Meta+Shift+- decreased B and expanded sibling A"
+
+        request_physical_shortcut shift-equal \
+          && wait_for_frames \
+            "$stack_first_frame" \
+            "$stack_second_frame" \
+            "$stack_third_frame" \
+          && wait_for_active "$title_b" \
+          || return 1
+        record_focus_state \
+          "physical Meta+Shift+= restored B and sibling A heights"
+
+        request_physical_shortcut ctrl-shift-r \
+          && wait_for_stacked_height_relation \
+            active-larger \
+            "$stack_first_frame" \
+            "$stack_second_frame" \
+            "$stack_third_frame" \
+          && wait_for_active "$title_b" \
+          || return 1
+        record_focus_state \
+          "physical Meta+Ctrl+Shift+R selected a taller B preset"
+
+        request_physical_shortcut ctrl-r \
+          && wait_for_frames \
+            "$stack_first_frame" \
+            "$stack_second_frame" \
+            "$stack_third_frame" \
+          && wait_for_active "$title_b" \
+          || return 1
+        record_focus_state \
+          "physical Meta+Ctrl+R restored automatic stack heights"
+
+        if ! invoke_shortcut "driftile_move_window_right" \
+          || ! wait_for_singleton_layout \
+            "$singleton_first_frame" \
+            "$singleton_second_frame" \
+            "$singleton_third_frame" \
+          || ! wait_for_active "$title_b"; then
+          record_focus_state \
+            "physical height shortcut layout restoration failed"
+          return 1
+        fi
+
+        if ! activate_window "$title_c" \
+          || ! wait_for_active "$title_c" \
+          || ! wait_for_frames \
+            "$singleton_first_frame" \
+            "$singleton_second_frame" \
+            "$singleton_third_frame"; then
+          record_focus_state \
+            "physical height shortcut viewport restoration failed"
+          {
+            printf 'expected frame A: %s\n' "$singleton_first_frame"
+            printf 'expected frame B: %s\n' "$singleton_second_frame"
+            printf 'expected frame C: %s\n' "$singleton_third_frame"
+          } >> /tmp/shared/driftile-focus-diagnostics
+          return 1
+        fi
+        record_focus_state \
+          "physical height shortcut viewport restored before application tests"
       }
 
       verify_real_applications() {
@@ -2982,6 +3230,7 @@ let
       if [[ "$loaded" == true && "$desktops_ready" == true ]] \
         && verify_focus \
         && verify_physical_width_shortcuts \
+        && verify_physical_height_shortcuts \
         && verify_real_applications; then
         focus_verified=true
       fi
