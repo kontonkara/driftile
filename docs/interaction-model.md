@@ -18,7 +18,7 @@ Driftile uses one keyboard grammar and does not wrap at layout boundaries:
 | Column view          | Cycle `1/3`, `1/2`, and `2/3` widths in both directions; adjust by 10%; toggle full width; center | Available |
 | Advanced column view | Fill available width and center all fully visible columns                                         | Available |
 | Window height        | Adjust one window by 10%; reset to automatic; cycle `1/3`, `1/2`, and `2/3` presets               | Available |
-| Virtual desktops     | Focus adjacent or numbered desktops and transfer the whole active column                          | Available |
+| Virtual desktops     | Focus adjacent or numbered desktops; transfer a tiled column or one active floating window        | Available |
 | Outputs              | Focus an adjacent output and transfer the whole active column                                     | Available |
 | Fullscreen           | Toggle through KWin and preserve the window's layout slot                                         | Available |
 | Native maximize      | Toggle to work-area edges through KWin and preserve the window's layout slot                      | Available |
@@ -29,6 +29,7 @@ Driftile uses one keyboard grammar and does not wrap at layout boundaries:
 
 Single-window transfers will remain available as secondary, unbound actions.
 Default desktop and output transfer shortcuts must move the whole active column.
+An active floating layer changes desktop transfer to the active window only.
 
 A stack has at most one fixed or preset window height. Changing a different
 member converts the other members to weighted automatic heights that preserve

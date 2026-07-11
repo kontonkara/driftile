@@ -25,6 +25,7 @@ The ownership rule is strict:
 - Settled recovery for output-list, geometry, scale, and work-area changes.
 - Deterministic multi-output capacity eviction with reachable waiting windows and automatic retry.
 - One shared trailing empty virtual desktop, with output-local selection where supported and conservative creation and removal.
+- Single-window floating desktop transfer with exact frame and tiled-layout preservation.
 - Event-driven, incremental reconciliation; only visible context geometry is checked periodically, while a settled structural output change permits one bounded workspace resynchronization.
 
 ## Later
@@ -75,7 +76,7 @@ Driftile must integrate with, not duplicate:
 - Direct insertion appends the active window to the nearest existing stack in its direction, skips singleton columns without wrapping, and preserves the target width.
 - Explicit consume appends the immediate right column's top member to the active column; explicit expel moves the active column's bottom member into a new right column. Focus remains in the active column.
 - Vertical focus and member reorder stop at stack boundaries without wrapping.
-- Default desktop transfer follows the active column without wrapping, preserving its members, order, width, and active member. The secondary action transfers only the active tiled window.
+- Default desktop transfer follows the active tiled column without wrapping, preserving its members, order, width, and active member. On the floating layer, it transfers only the active relation-free window. The secondary action transfers only one active window.
 - Numbered desktop actions are one-based and clamp to the shared trailing empty desktop when their target exceeds the current global desktop count.
 - Default output transfer selects a deterministic adjacent output without wrapping, preserves the whole active column, and adopts the destination output's visible desktop. The secondary action transfers only the active tiled window.
 - Output transfer never changes an output's current desktop; moving members adopt the destination output's visible desktop when needed.
@@ -87,7 +88,7 @@ Driftile must integrate with, not duplicate:
 - Retiling a manually floating window restores a surviving anchored slot when possible and captures the latest floating frame as the next safe restore baseline.
 - Layer focus remains inside the active `(output, desktop)` context, restores the last active tiled or floating window, and never changes layout geometry or ownership.
 - Directional floating focus chooses the nearest positive center distance on the requested axis; first and last choose frame-x extremes. Neither action wraps or writes geometry.
-- An automatically layout-excluded window has no layout slot, manual-floating anchor, waiting entry, suspension, or retry state. Driftile layout commands are no-ops while it is active.
+- An automatically layout-excluded window has no layout slot, manual-floating anchor, waiting entry, suspension, or retry state. Commands requiring layout ownership are no-ops; relation-free desktop transfer remains available.
 - A managed window that becomes modal or transient leaves its layout without a geometry write or stale baseline restore. It may be admitted again after the role clears.
 - Unrelated window order, widths, and viewport offsets remain stable.
 - A changed context never restores an original frame captured under stale output geometry.

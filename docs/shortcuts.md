@@ -59,6 +59,10 @@ Default desktop and output transfers move the whole active column atomically.
 They preserve member order, column width, and the active member; a rejected
 KWin mechanism or geometry write leaves both contexts unchanged.
 
+When the floating layer is active, desktop transfer shortcuts move only the
+active floating window and preserve its frame. Modal and transient families
+are left in place because KWin moves those relationships as a group.
+
 Numbered desktop actions use one-based positions. A number beyond the current
 desktop count selects the shared trailing empty desktop; moving a column there
 causes Driftile to append a new empty tail through KWin.

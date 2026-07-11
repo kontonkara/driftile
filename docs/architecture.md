@@ -45,6 +45,7 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Resolves numbered desktop targets against KWin's global list, clamps to the shared empty tail, and reuses the transactional whole-column transfer path.
 - Focuses adjacent desktops on the active output, with a global fallback and no wrapping.
 - Releases explicitly floating windows from geometry ownership and restores their anchored layout slots on return.
+- Transfers one active relation-free floating window between desktops through a dedicated KWin transaction without changing tiled state or frame geometry.
 - Remembers the last tiled and floating focus per context, switches layers, and resolves floating navigation from live frame geometry without changing layout state.
 - Requests native fullscreen only through KWin; suspension retains the layout slot and resumes ownership after the restored frame settles.
 - Requests native maximize-to-edges only through KWin and uses the same suspension and stable-restore path.
@@ -117,7 +118,7 @@ RuntimeState
 - Apply floating transitions from immutable previews, commit ownership only after every geometry request succeeds, and defer later context writes until asynchronous frames settle.
 - Switch focus between tiled and floating layers only when both have a live member in the active context; validate remembered targets lazily and leave layout state untouched.
 - Resolve floating `H/J/K/L` by the smallest strictly positive center delta on the requested axis and `Home/End` by frame-x extremes, scanning only live same-context floating windows.
-- Leave dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows outside layout ownership. Driftile layout commands are no-ops when one is active.
+- Leave dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows outside layout ownership. Commands that require layout ownership are no-ops when one is active; desktop transfer may move one relation-free floating window.
 - If a managed window gains an automatic-floating role, remove its slot without writing a stale restore frame or disturbing unrelated order, widths, or viewport state. Re-admit it through normal admission after the role clears.
 - Allow horizontal overflow and viewport scrolling when KWin reports one output.
 - Queue a candidate window unmanaged if it would introduce overflow with multiple outputs, then retry it when that context gains capacity.
@@ -170,6 +171,7 @@ RuntimeState
 - Verify independent contexts with native Wayland and XWayland windows on two virtual outputs and native X11 windows on the X11 backend.
 - Verify whole-column and secondary directional transfers, no-wrap boundaries, per-output desktop selection, focus preservation, and exact two-context compensation.
 - Verify numbered desktop selection and whole-column transfer, tail clamping, same-target no-ops, and shared-tail renewal.
+- Verify manual and automatic floating desktop transfer, exact frame preservation, related-window guards, tiled-state isolation, and compensation.
 - Verify optional borderless ownership across tiled and floating windows, policy reassertion, live reconfigure handling, and unload restoration.
 - Verify shared trailing-desktop creation, guarded removal, silent mutation rejection, and preservation of external desktops.
 - Exercise live output reconfiguration against an isolated real KWin session.
