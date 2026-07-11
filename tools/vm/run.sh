@@ -105,6 +105,7 @@ monitor_guest() {
     [m-enter]=false
     [m-exit]=false
     [minus]=false
+    [minimized-consume]=false
     [period]=false
     [shift-equal]=false
     [shift-f-enter]=false
@@ -133,6 +134,7 @@ monitor_guest() {
       desktop-ctrl-9 \
       desktop-next-page-down \
       minus \
+      minimized-consume \
       equal \
       shift-minus \
       shift-equal \
@@ -184,9 +186,9 @@ monitor_guest() {
       fi
 
       if [[ "$(<"$focus_file")" == true ]]; then
-        printf 'The VM verified physical shortcut routing, desktop switching without minimization, minimized-slot navigation, reordering, and horizontal extraction, native fullscreen and maximize, stacked fullscreen and maximize extraction past minimized peers, borderless ownership, numbered dynamic desktops, floating desktop transfers, output transfers, floating-layer navigation, focus, stack editing, advanced column view, column and window sizing, scrolling, and Firefox, KDE Calculator, and XWayland xterm lifecycles.\n'
+        printf 'The VM verified physical shortcut routing, desktop switching without minimization, minimized-slot navigation, reordering, horizontal extraction, and consume past minimized peers, native fullscreen and maximize, stacked fullscreen and maximize extraction past minimized peers, borderless ownership, numbered dynamic desktops, floating desktop transfers, output transfers, floating-layer navigation, focus, stack editing, advanced column view, column and window sizing, scrolling, and Firefox, KDE Calculator, and XWayland xterm lifecycles.\n'
       else
-        printf 'The VM failed to verify physical shortcut routing, desktop switching without minimization, minimized-slot navigation, reordering, or horizontal extraction, native fullscreen or maximize, stacked fullscreen or maximize extraction past minimized peers, borderless ownership, numbered dynamic desktops, floating desktop transfers, output transfers, floating-layer navigation, focus, stack editing, advanced column view, column or window sizing, scrolling, or the real-application lifecycle pool.\n' >&2
+        printf 'The VM failed to verify physical shortcut routing, desktop switching without minimization, minimized-slot navigation, reordering, horizontal extraction, or consume past minimized peers, native fullscreen or maximize, stacked fullscreen or maximize extraction past minimized peers, borderless ownership, numbered dynamic desktops, floating desktop transfers, output transfers, floating-layer navigation, focus, stack editing, advanced column view, column or window sizing, scrolling, or the real-application lifecycle pool.\n' >&2
         failed=true
 
         if [[ -f "$diagnostics_file" ]]; then
@@ -280,7 +282,7 @@ send_physical_shortcut() {
     ctrl-end)
       input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"ctrl"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"end"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"end"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"ctrl"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
       ;;
-    comma)
+    comma|minimized-consume)
       input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"comma"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"comma"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
       ;;
     period)

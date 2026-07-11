@@ -4110,6 +4110,185 @@ let
           "horizontal extraction cleanup reconstructed the exact fixture"
       }
 
+      verify_physical_consume_past_minimized_peers() {
+        local direct_first_height
+        local direct_first_width
+        local direct_first_x
+        local direct_first_y
+        local direct_fourth_height
+        local direct_fourth_y
+        local direct_second_y
+        local direct_third_height
+        local direct_third_width
+        local direct_third_x
+        local direct_third_y
+        local horizontal_gap
+        local setup_active_frame
+        local setup_first_frame
+        local setup_lower_height
+        local setup_lower_y
+        local setup_minimized_source_frame
+        local setup_moved_frame
+        local setup_top_height
+        local shifted_source_frame
+        local stack_height
+        local vertical_gap
+
+        frame_is_valid "$direct_first_frame" \
+          && frame_is_valid "$direct_second_frame" \
+          && frame_is_valid "$direct_third_frame" \
+          && frame_is_valid "$direct_fourth_frame" \
+          || return 1
+        IFS=, read -r \
+          direct_first_x \
+          direct_first_y \
+          direct_first_width \
+          direct_first_height \
+          <<< "$direct_first_frame"
+        IFS=, read -r _ direct_second_y _ _ <<< "$direct_second_frame"
+        IFS=, read -r \
+          direct_third_x \
+          direct_third_y \
+          direct_third_width \
+          direct_third_height \
+          <<< "$direct_third_frame"
+        IFS=, read -r \
+          _ \
+          direct_fourth_y \
+          _ \
+          direct_fourth_height \
+          <<< "$direct_fourth_frame"
+        vertical_gap=$((
+          direct_second_y - direct_first_y - direct_first_height
+        ))
+        horizontal_gap=$((
+          direct_third_x - direct_first_x - direct_first_width
+        ))
+        stack_height=$((
+          direct_fourth_y + direct_fourth_height - direct_first_y
+        ))
+        setup_top_height=$(((stack_height - vertical_gap) / 2))
+        setup_lower_y=$((direct_first_y + setup_top_height + vertical_gap))
+        setup_lower_height=$((
+          stack_height - vertical_gap - setup_top_height
+        ))
+
+        if ((vertical_gap <= 0 \
+          || horizontal_gap <= 0 \
+          || setup_top_height <= 0 \
+          || setup_lower_height <= 0 \
+          || direct_first_width != direct_third_width \
+          || direct_first_y != direct_third_y \
+          || stack_height != direct_third_height)); then
+          record_focus_state "physical minimized-peer consume geometry was invalid"
+          return 1
+        fi
+
+        printf -v setup_first_frame '%s,%s,%s,%s' \
+          "$direct_first_x" \
+          "$direct_first_y" \
+          "$direct_first_width" \
+          "$setup_top_height"
+        printf -v setup_active_frame '%s,%s,%s,%s' \
+          "$direct_first_x" \
+          "$setup_lower_y" \
+          "$direct_first_width" \
+          "$setup_lower_height"
+        printf -v setup_moved_frame '%s,%s,%s,%s' \
+          "$direct_third_x" \
+          "$direct_first_y" \
+          "$direct_first_width" \
+          "$setup_top_height"
+        printf -v setup_minimized_source_frame '%s,%s,%s,%s' \
+          "$direct_third_x" \
+          "$setup_lower_y" \
+          "$direct_first_width" \
+          "$setup_lower_height"
+        printf -v shifted_source_frame '%s,%s,%s,%s' \
+          "$((direct_third_x + direct_first_width + horizontal_gap))" \
+          "$direct_third_y" \
+          "$direct_third_width" \
+          "$direct_third_height"
+
+        if ! activate_window "$title_d" \
+          || ! wait_for_active "$title_d" \
+          || ! invoke_shortcut "driftile_move_window_right" \
+          || ! activate_window "$title_c" \
+          || ! wait_for_active "$title_c" \
+          || ! invoke_shortcut "driftile_move_window_left" \
+          || ! invoke_shortcut "driftile_move_window_up" \
+          || ! activate_window "$title_b" \
+          || ! wait_for_active "$title_b" \
+          || ! wait_for_four_frames \
+            "$setup_first_frame" \
+            "$setup_active_frame" \
+            "$setup_moved_frame" \
+            "$setup_minimized_source_frame"; then
+          record_focus_state "physical minimized-peer consume setup failed"
+          return 1
+        fi
+
+        if ! set_external_window_minimized "$title_d" true \
+          || ! wait_for_window_minimized_state "$title_d" true \
+          || ! wait_for_four_frames \
+            "$setup_first_frame" \
+            "$setup_active_frame" \
+            "$setup_moved_frame" \
+            "$setup_minimized_source_frame" \
+          || ! activate_window "$title_b" \
+          || ! wait_for_active "$title_b"; then
+          record_focus_state "physical minimized-peer consume settlement failed"
+          return 1
+        fi
+
+        if ! request_physical_shortcut minimized-consume \
+          || ! wait_for_active "$title_b" \
+          || ! wait_for_four_frames \
+            "$direct_first_frame" \
+            "$direct_second_frame" \
+            "$direct_fourth_frame" \
+            "$setup_minimized_source_frame" \
+          || ! wait_for_window_minimized_state "$title_d" true \
+          || [[ "$(window_frame "$title_d" 2>/dev/null || true)" \
+            != "$setup_minimized_source_frame" ]]; then
+          record_focus_state "physical Meta+, minimized-peer consume failed"
+          return 1
+        fi
+        record_focus_state \
+          "physical Meta+, consumed a visible top member past minimized peers"
+
+        if ! set_external_window_minimized "$title_d" false \
+          || ! wait_for_window_minimized_state "$title_d" false \
+          || ! wait_for_four_frames \
+            "$direct_first_frame" \
+            "$direct_second_frame" \
+            "$direct_fourth_frame" \
+            "$direct_third_frame" \
+          || ! activate_window "$title_c" \
+          || ! wait_for_active "$title_c" \
+          || ! invoke_shortcut "driftile_move_window_right" \
+          || ! wait_for_four_frames \
+            "$setup_first_frame" \
+            "$setup_active_frame" \
+            "$direct_third_frame" \
+            "$shifted_source_frame" \
+          || ! activate_window "$title_d" \
+          || ! wait_for_active "$title_d" \
+          || ! invoke_shortcut "driftile_insert_window_into_stack_left" \
+          || ! wait_for_four_frames \
+            "$direct_first_frame" \
+            "$direct_second_frame" \
+            "$direct_third_frame" \
+            "$direct_fourth_frame" \
+          || ! activate_window "$title_b" \
+          || ! wait_for_active "$title_b"; then
+          record_focus_state "physical minimized-peer consume fixture reconstruction failed"
+          return 1
+        fi
+        record_focus_state \
+          "minimized-peer consume cleanup reconstructed the exact fixture"
+      }
+
       verify_focus() {
         local baseline_first_width
         local baseline_second_width
@@ -4124,6 +4303,7 @@ let
         local merged_first_frame
         local merged_second_frame
         local merged_third_frame
+        local minimized_consume_verified
         local minimized_reorder_verified
         local minimized_slots_verified
         local singleton_first_frame
@@ -4610,6 +4790,13 @@ let
           horizontal_extraction_verified=true
         fi
 
+        minimized_consume_verified=false
+
+        if [[ "$horizontal_extraction_verified" == true ]] \
+          && verify_physical_consume_past_minimized_peers; then
+          minimized_consume_verified=true
+        fi
+
         kill "$fourth_window" >/dev/null 2>&1 || true
         wait "$fourth_window" >/dev/null 2>&1 || true
         fourth_window=""
@@ -4629,7 +4816,8 @@ let
           && "$stacked_fullscreen_verified" == true \
           && "$minimized_slots_verified" == true \
           && "$minimized_reorder_verified" == true \
-          && "$horizontal_extraction_verified" == true ]] || return 1
+          && "$horizontal_extraction_verified" == true \
+          && "$minimized_consume_verified" == true ]] || return 1
 
         if ! invoke_shortcut "driftile_toggle_floating" \
           || ! wait_for_floating_layout \
