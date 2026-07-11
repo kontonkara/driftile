@@ -3758,6 +3758,84 @@ describe("RuntimeController", () => {
     });
   });
 
+  it("bounds column width step changes without scheduling layout work", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const windows = Array.from({ length: 3 }, (_value, index) =>
+      createTrackedWindow(`window-${String(index + 1)}`, output, desktop),
+    );
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map(({ window }) => window),
+    );
+    let geometryLookups = 0;
+    Object.defineProperty(fixture.workspace, "clientArea", {
+      configurable: true,
+      value: () => {
+        geometryLookups += 1;
+        return { height: 800, width: 1000, x: 0, y: 0 };
+      },
+    });
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+    const state = controller as unknown as {
+      readonly columnWidthStep: number;
+    };
+
+    expect(controller.start()).toBe(true);
+    const before = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
+    const writes = windows.map(({ writeCount }) => writeCount);
+    const active = fixture.workspace.activeWindow;
+    const activationCount = fixture.activationCount;
+    const settledGeometryLookups = geometryLookups;
+
+    expect(state.columnWidthStep).toBe(0.1);
+    expect(controller.setColumnWidthStepPercent(10)).toBe(false);
+
+    for (const invalid of [
+      0,
+      51,
+      1.5,
+      Number.NaN,
+      Number.NEGATIVE_INFINITY,
+      Number.POSITIVE_INFINITY,
+    ]) {
+      expect(controller.setColumnWidthStepPercent(invalid)).toBe(false);
+    }
+
+    expect(controller.setColumnWidthStepPercent(1)).toBe(true);
+    expect(state.columnWidthStep).toBe(0.01);
+    expect(controller.setColumnWidthStepPercent(50)).toBe(true);
+    expect(state.columnWidthStep).toBe(0.5);
+    expect(controller.setColumnWidthStepPercent(17)).toBe(true);
+    expect(controller.setColumnWidthStepPercent(17)).toBe(false);
+    expect(state.columnWidthStep).toBe(0.17);
+
+    expect(geometryLookups).toBe(settledGeometryLookups);
+    expect(scheduler.pendingCount).toBe(0);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(before);
+    expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
+    expect(windows.map(({ writeCount }) => writeCount)).toEqual(writes);
+    expect(fixture.workspace.activeWindow).toBe(active);
+    expect(fixture.activationCount).toBe(activationCount);
+  });
+
   it("keeps existing tiled, hidden, floating, and excluded windows unchanged", () => {
     const output = createOutput("DP-1", 0);
     const visibleDesktop = { id: "desktop-1" };
@@ -15107,6 +15185,175 @@ describe("RuntimeController", () => {
     expect(fixture.activationCount).toBe(0);
   });
 
+  it("anchors a configured width step to the current default only for incremental actions", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const active = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [active.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    expect(controller.setDefaultColumnWidthPercent(40)).toBe(true);
+    expect(controller.setColumnWidthStepPercent(15)).toBe(true);
+    expect(controller.start()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "proportion",
+      value: 0.4,
+    });
+
+    expect(controller.increaseColumnWidth()).toBe(true);
+    let width = activeColumnWidth(controller, output, desktop);
+    expect(width?.kind).toBe("proportion");
+    expect(width?.value).toBeCloseTo(0.55, 12);
+
+    expect(controller.increaseColumnWidth()).toBe(true);
+    width = activeColumnWidth(controller, output, desktop);
+    expect(width?.kind).toBe("proportion");
+    expect(width?.value).toBeCloseTo(0.7, 12);
+
+    expect(controller.decreaseColumnWidth()).toBe(true);
+    width = activeColumnWidth(controller, output, desktop);
+    expect(width?.kind).toBe("proportion");
+    expect(width?.value).toBeCloseTo(0.55, 12);
+
+    expect(controller.switchPresetColumnWidth()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "proportion",
+      value: 2 / 3,
+    });
+    expect(controller.resetColumnWidth()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "proportion",
+      value: 0.4,
+    });
+
+    expect(controller.maximizeColumn()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "proportion",
+      value: 1,
+    });
+    expect(controller.maximizeColumn()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "proportion",
+      value: 0.4,
+    });
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+    expect(fixture.activationCount).toBe(0);
+  });
+
+  it("clamps a configured width step that crosses zero to the minimum", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const active = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [active.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    expect(controller.setColumnWidthStepPercent(50)).toBe(true);
+    expect(controller.start()).toBe(true);
+    expect(controller.decreaseColumnWidth()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "fixed",
+      value: 64,
+    });
+    expect(active.window.frameGeometry.width).toBe(64);
+    expect(controller.decreaseColumnWidth()).toBe(false);
+    expect(controller.resetColumnWidth()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "proportion",
+      value: 0.5,
+    });
+    expect(active.window.frameGeometry.width).toBe(485);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+    expect(fixture.activationCount).toBe(0);
+  });
+
+  it("uses a step changed behind a topology barrier only for a later action", () => {
+    const trackedOutput = createTrackedOutput("DP-1", 0);
+    const output = trackedOutput.output;
+    const desktop = { id: "desktop-1" };
+    const active = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [active.window],
+    );
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+    const state = controller as unknown as {
+      readonly columnWidthStep: number;
+      readonly topologyStabilizing: boolean;
+    };
+
+    expect(controller.start()).toBe(true);
+    const before = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const frame = { ...active.window.frameGeometry };
+    const writes = active.writeCount;
+    const activationCount = fixture.activationCount;
+
+    trackedOutput.geometryChanged.emit();
+    expect(state.topologyStabilizing).toBe(true);
+    expect(resumeScheduler.pendingCount).toBe(1);
+    expect(controller.setColumnWidthStepPercent(20)).toBe(true);
+    expect(state.columnWidthStep).toBe(0.2);
+    expect(resumeScheduler.pendingCount).toBe(1);
+    expect(workScheduler.pendingCount).toBe(0);
+    expect(controller.increaseColumnWidth()).toBe(false);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(before);
+    expect(active.window.frameGeometry).toEqual(frame);
+    expect(active.writeCount).toBe(writes);
+
+    flushTopologyRecovery(resumeScheduler, workScheduler);
+    expect(state.topologyStabilizing).toBe(false);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "proportion",
+      value: 0.5,
+    });
+    expect(active.window.frameGeometry).toEqual(frame);
+    expect(active.writeCount).toBe(writes);
+    expect(workScheduler.pendingCount).toBe(0);
+    expect(resumeScheduler.pendingCount).toBe(0);
+
+    expect(controller.increaseColumnWidth()).toBe(true);
+    const width = activeColumnWidth(controller, output, desktop);
+    expect(width?.kind).toBe("proportion");
+    expect(width?.value).toBeCloseTo(0.7, 12);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+    expect(fixture.activationCount).toBe(activationCount);
+  });
+
   it.each([0.1234567890123456, 3.9562697773230275])(
     "preserves proportional default %s across round trips",
     (defaultValue) => {
@@ -17052,6 +17299,7 @@ describe("RuntimeController", () => {
     });
 
     trackedOutput.setScale(1.25);
+    expect(controller.setColumnWidthStepPercent(5)).toBe(true);
     controller.start();
 
     expect(controller.increaseColumnWidth()).toBe(true);
@@ -17441,6 +17689,7 @@ describe("RuntimeController", () => {
     const warning = console.warn;
 
     controller.start();
+    expect(controller.setColumnWidthStepPercent(17)).toBe(true);
     const beforeLayout = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
@@ -17481,7 +17730,7 @@ describe("RuntimeController", () => {
     expect(controller.increaseColumnWidth()).toBe(true);
     expect(activeColumnWidth(controller, output, desktop)).toEqual({
       kind: "proportion",
-      value: 0.6,
+      value: 0.67,
     });
   });
 

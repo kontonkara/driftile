@@ -93,6 +93,7 @@ stop_x11_work_area_dock() {
 }
 
 cleanup() {
+  restore_layout_configuration >/dev/null 2>&1 || true
   stop_work_area_panel
   stop_x11_work_area_dock
   busctl --user call \
@@ -1992,9 +1993,16 @@ set_layout_configuration() {
   kwriteconfig6 \
     --file "$XDG_CONFIG_HOME/kwinrc" \
     --group "Script-${plugin_id}" \
-    --key Gap \
+    --key ColumnWidthStepPercent \
     --type int \
     "$2" || return 1
+
+  kwriteconfig6 \
+    --file "$XDG_CONFIG_HOME/kwinrc" \
+    --group "Script-${plugin_id}" \
+    --key Gap \
+    --type int \
+    "$3" || return 1
 
   busctl --user call \
     org.kde.KWin \
@@ -2002,6 +2010,10 @@ set_layout_configuration() {
     org.kde.KWin \
     reconfigure \
     >/dev/null
+}
+
+restore_layout_configuration() {
+  set_layout_configuration 50 10 16
 }
 
 start_qml_client() {
@@ -5940,7 +5952,7 @@ run_scenario() {
     fail "Driftile changed $protocol focus while restoring the window gap"
 
   # The gap transition is the observable barrier for the co-delivered width policy.
-  set_layout_configuration 70 24 || \
+  set_layout_configuration 70 10 24 || \
     fail "KWin could not apply the $protocol layout configuration"
   wait_for_layout \
     "$first_title" "-592,24,604,672" \
@@ -5959,7 +5971,7 @@ run_scenario() {
   wait_for_active "$third_title" || \
     fail "Driftile changed $protocol focus while resetting to the configured width"
 
-  set_layout_configuration 50 16 || \
+  set_layout_configuration 50 10 16 || \
     fail "KWin could not restore the $protocol layout configuration"
   wait_for_layout \
     "$first_title" "-853,16,616,688" \
@@ -5991,6 +6003,62 @@ run_scenario() {
     fail "Driftile did not restore the exact $protocol viewport after default-width acceptance: $(describe_layout "$first_title" "$second_title" "$third_title")"
   wait_for_active "$third_title" || \
     fail "Driftile changed $protocol focus after default-width acceptance"
+
+  # The temporary gap makes delivery of the co-configured resize step observable.
+  set_layout_configuration 50 20 24 || \
+    fail "KWin could not apply the $protocol column-width step configuration"
+  wait_for_layout \
+    "$first_title" "-592,24,604,672" \
+    "$second_title" "36,24,604,672" \
+    "$third_title" "664,24,604,672" || \
+    fail "Driftile changed existing $protocol width policies at the step configuration barrier: $(describe_layout "$first_title" "$second_title" "$third_title")"
+  wait_for_active "$third_title" || \
+    fail "Driftile changed $protocol focus at the step configuration barrier"
+  set_gap 16 || \
+    fail "KWin could not remove the temporary $protocol step configuration gap"
+  wait_for_layout \
+    "$first_title" "-600,16,616,688" \
+    "$second_title" "32,16,616,688" \
+    "$third_title" "664,16,616,688" || \
+    fail "Driftile did not preserve the exact $protocol layout before the configured step: $(describe_layout "$first_title" "$second_title" "$third_title")"
+  wait_for_active "$third_title" || \
+    fail "Driftile changed $protocol focus before the configured step"
+
+  invoke_shortcut "driftile_decrease_column_width" || \
+    fail "KGlobalAccel could not apply the configured $protocol decrease step"
+  wait_for_layout \
+    "$first_title" "-600,16,616,688" \
+    "$second_title" "32,16,616,688" \
+    "$third_title" "664,16,363,688" || \
+    fail "Driftile did not decrease the active $protocol column by exactly 20 percentage points: $(describe_layout "$first_title" "$second_title" "$third_title")"
+  wait_for_active "$third_title" || \
+    fail "Driftile changed $protocol focus after the configured decrease step"
+  invoke_shortcut "driftile_increase_column_width" || \
+    fail "KGlobalAccel could not apply the configured $protocol increase step"
+  wait_for_layout \
+    "$first_title" "-600,16,616,688" \
+    "$second_title" "32,16,616,688" \
+    "$third_title" "664,16,616,688" || \
+    fail "Driftile did not restore the exact $protocol layout after the configured step round trip: $(describe_layout "$first_title" "$second_title" "$third_title")"
+  wait_for_active "$third_title" || \
+    fail "Driftile changed $protocol focus after the configured step round trip"
+
+  set_layout_configuration 50 10 24 || \
+    fail "KWin could not restore the $protocol column-width step configuration"
+  wait_for_layout \
+    "$first_title" "-592,24,604,672" \
+    "$second_title" "36,24,604,672" \
+    "$third_title" "664,24,604,672" || \
+    fail "Driftile did not expose the restored $protocol step delivery barrier: $(describe_layout "$first_title" "$second_title" "$third_title")"
+  set_gap 16 || \
+    fail "KWin could not restore the default $protocol gap after the step acceptance"
+  wait_for_layout \
+    "$first_title" "-600,16,616,688" \
+    "$second_title" "32,16,616,688" \
+    "$third_title" "664,16,616,688" || \
+    fail "Driftile did not restore the exact $protocol baseline after the step acceptance: $(describe_layout "$first_title" "$second_title" "$third_title")"
+  wait_for_active "$third_title" || \
+    fail "Driftile changed $protocol focus while restoring the default step"
 
   if [[ "$protocol" == xwayland || "$protocol" == x11 ]]; then
     verify_xterm_resize_increment_policy \

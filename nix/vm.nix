@@ -1148,7 +1148,7 @@ let
           >/dev/null
       }
 
-      set_default_column_width_and_gap() {
+      set_layout_configuration() {
         ${pkgs.kdePackages.kconfig}/bin/kwriteconfig6 \
           --file "$HOME/.config/kwinrc" \
           --group "Script-${pluginId}" \
@@ -1159,9 +1159,16 @@ let
         ${pkgs.kdePackages.kconfig}/bin/kwriteconfig6 \
           --file "$HOME/.config/kwinrc" \
           --group "Script-${pluginId}" \
-          --key Gap \
+          --key ColumnWidthStepPercent \
           --type int \
           "$2" \
+          || return 1
+        ${pkgs.kdePackages.kconfig}/bin/kwriteconfig6 \
+          --file "$HOME/.config/kwinrc" \
+          --group "Script-${pluginId}" \
+          --key Gap \
+          --type int \
+          "$3" \
           || return 1
 
         busctl --user call \
@@ -1170,6 +1177,10 @@ let
           org.kde.KWin \
           reconfigure \
           >/dev/null
+      }
+
+      restore_layout_configuration() {
+        set_layout_configuration 50 10 16
       }
 
       window_fullscreen_state() {
@@ -3671,6 +3682,7 @@ let
       }
 
       cleanup_temporary_windows() {
+        restore_layout_configuration >/dev/null 2>&1 || true
         cleanup_fourth_window || true
         cleanup_fifth_window
         cleanup_desktop_window
@@ -4912,6 +4924,9 @@ let
         local configured_default_second_frame
         local configured_default_third_frame
         local configured_default_width
+        local configured_step_second_frame
+        local configured_step_third_frame
+        local configured_step_width
         local consume_fixture_rebuilt
         local default_width_delivery_first_frame
         local default_width_delivery_second_frame
@@ -5109,11 +5124,16 @@ let
         configured_default_first_frame=$stable_first_frame
         configured_default_second_frame="$baseline_second_x,$baseline_second_y,$configured_default_width,$baseline_second_height"
         configured_default_third_frame="$((baseline_third_x + configured_default_width - baseline_second_width)),$baseline_third_y,$baseline_third_width,$baseline_third_height"
+        configured_step_width=$((
+          (60 * (baseline_second_width + 16) + 50) / 100 - 16
+        ))
+        configured_step_second_frame="$baseline_second_x,$baseline_second_y,$configured_step_width,$baseline_second_height"
+        configured_step_third_frame="$((baseline_third_x + configured_step_width - baseline_second_width)),$baseline_third_y,$baseline_third_width,$baseline_third_height"
         default_width_restore_first_frame=$default_width_delivery_first_frame
         default_width_restore_second_frame="$((baseline_second_x + 4)),$((baseline_second_y + 8)),$((configured_default_width - 14)),$((baseline_second_height - 16))"
         default_width_restore_third_frame="$((baseline_third_x + configured_default_width - baseline_second_width - 2)),$((baseline_third_y + 8)),$((baseline_third_width - 12)),$((baseline_third_height - 16))"
 
-        if ! set_default_column_width_and_gap 70 24 \
+        if ! set_layout_configuration 70 10 24 \
           || ! wait_for_frames \
             "$default_width_delivery_first_frame" \
             "$default_width_delivery_second_frame" \
@@ -5124,7 +5144,7 @@ let
             "$stable_second_frame" \
             "$stable_third_frame" \
           || ! wait_for_active "$title_b"; then
-          set_default_column_width_and_gap 50 16 >/dev/null 2>&1 || true
+          restore_layout_configuration >/dev/null 2>&1 || true
           record_focus_state "configured default column width delivery failed"
           return 1
         fi
@@ -5137,14 +5157,14 @@ let
             "$configured_default_second_frame" \
             "$configured_default_third_frame" \
           || ! wait_for_active "$title_b"; then
-          set_default_column_width_and_gap 50 16 >/dev/null 2>&1 || true
+          restore_layout_configuration >/dev/null 2>&1 || true
           record_focus_state "configured default column width reset failed"
           return 1
         fi
         record_focus_state \
           "configured default column width reset exactly to 70 percent"
 
-        if ! set_default_column_width_and_gap 50 24 \
+        if ! set_layout_configuration 50 10 24 \
           || ! wait_for_frames \
             "$default_width_restore_first_frame" \
             "$default_width_restore_second_frame" \
@@ -5160,11 +5180,67 @@ let
             "$stable_second_frame" \
             "$stable_third_frame" \
           || ! wait_for_active "$title_b"; then
-          set_default_column_width_and_gap 50 16 >/dev/null 2>&1 || true
+          restore_layout_configuration >/dev/null 2>&1 || true
           record_focus_state "default column width restoration failed"
           return 1
         fi
         record_focus_state "default column width restored exact baseline frames"
+
+        if ! set_layout_configuration 50 20 24 \
+          || ! wait_for_frames \
+            "$default_width_delivery_first_frame" \
+            "$default_width_delivery_second_frame" \
+            "$default_width_delivery_third_frame" \
+          || ! wait_for_active "$title_b" \
+          || ! set_gap 16 \
+          || ! wait_for_frames \
+            "$stable_first_frame" \
+            "$stable_second_frame" \
+            "$stable_third_frame" \
+          || ! wait_for_active "$title_b"; then
+          restore_layout_configuration >/dev/null 2>&1 || true
+          record_focus_state "configured column-width step delivery failed"
+          return 1
+        fi
+        record_focus_state \
+          "configured column-width step preserved exact frames before resize"
+
+        if ! invoke_shortcut "driftile_decrease_column_width" \
+          || ! wait_for_frames \
+            "$stable_first_frame" \
+            "$configured_step_second_frame" \
+            "$configured_step_third_frame" \
+          || ! wait_for_active "$title_b" \
+          || ! invoke_shortcut "driftile_increase_column_width" \
+          || ! wait_for_frames \
+            "$stable_first_frame" \
+            "$stable_second_frame" \
+            "$stable_third_frame" \
+          || ! wait_for_active "$title_b"; then
+          restore_layout_configuration >/dev/null 2>&1 || true
+          record_focus_state "configured column-width step round trip failed"
+          return 1
+        fi
+        record_focus_state \
+          "configured column-width step completed an exact 20-point round trip"
+
+        if ! set_layout_configuration 50 10 24 \
+          || ! wait_for_frames \
+            "$default_width_delivery_first_frame" \
+            "$default_width_delivery_second_frame" \
+            "$default_width_delivery_third_frame" \
+          || ! wait_for_active "$title_b" \
+          || ! set_gap 16 \
+          || ! wait_for_frames \
+            "$stable_first_frame" \
+            "$stable_second_frame" \
+            "$stable_third_frame" \
+          || ! wait_for_active "$title_b"; then
+          restore_layout_configuration >/dev/null 2>&1 || true
+          record_focus_state "default column-width step restoration failed"
+          return 1
+        fi
+        record_focus_state "default column-width step restored exact baseline frames"
 
         invoke_shortcut "driftile_increase_column_width" \
           && wait_for_middle_width \
@@ -7615,6 +7691,7 @@ let
     ${pluginId}Enabled=true
 
     [Script-${pluginId}]
+    ColumnWidthStepPercent=10
     DefaultColumnWidthPercent=50
     Gap=16
   '';

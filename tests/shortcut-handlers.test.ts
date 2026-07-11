@@ -20,6 +20,10 @@ const configurationUi = readFileSync(
   new URL("../packaging/kwin-script/contents/ui/config.ui", import.meta.url),
   "utf8",
 );
+const runtime = readFileSync(
+  new URL("../src/runtime.ts", import.meta.url),
+  "utf8",
+);
 const metadata = JSON.parse(
   readFileSync(
     new URL("../packaging/kwin-script/metadata.json", import.meta.url),
@@ -582,6 +586,52 @@ describe("KWin shortcut handlers", () => {
     ).toHaveLength(2);
     expect(qml).toMatch(
       /Runtime\.DriftileRuntime\.setDefaultColumnWidthPercent\(\s*KWin\.readConfig\("DefaultColumnWidthPercent", 50\)\)/,
+    );
+  });
+
+  it("exposes the column width step as a live bounded user setting", () => {
+    const stepEntry = configuration.match(
+      /<entry name="ColumnWidthStepPercent" type="Int">([\s\S]*?)<\/entry>/,
+    )?.[1];
+    const stepLabel = configurationUi.match(
+      /<widget class="QLabel" name="columnWidthStepLabel">([\s\S]*?)<\/widget>/,
+    )?.[1];
+    const stepWidget = configurationUi.match(
+      /<widget class="QSpinBox" name="kcfg_ColumnWidthStepPercent">([\s\S]*?)<\/widget>/,
+    )?.[1];
+
+    expect(stepEntry).toContain("<label>Column width step in percent</label>");
+    expect(stepEntry).toContain("<default>10</default>");
+    expect(stepEntry).toContain("<min>1</min>");
+    expect(stepEntry).toContain("<max>50</max>");
+    expect(stepLabel).toContain("<string>Column width step:</string>");
+    expect(stepLabel).toContain(
+      "<cstring>kcfg_ColumnWidthStepPercent</cstring>",
+    );
+    expect(stepWidget).toContain("<string> %</string>");
+    expect(stepWidget).toMatch(
+      /<property name="minimum">\s*<number>1<\/number>/,
+    );
+    expect(stepWidget).toMatch(
+      /<property name="maximum">\s*<number>50<\/number>/,
+    );
+    expect(stepWidget).toMatch(
+      /<property name="value">\s*<number>10<\/number>/,
+    );
+    expect(
+      qml.match(/KWin\.readConfig\("ColumnWidthStepPercent", 10\)/g),
+    ).toHaveLength(2);
+    expect(qml).toMatch(
+      /Runtime\.DriftileRuntime\.setColumnWidthStepPercent\(\s*KWin\.readConfig\("ColumnWidthStepPercent", 10\)\)/,
+    );
+    expect(qml).toMatch(
+      /KWin\.readConfig\("DefaultColumnWidthPercent", 50\),\s*KWin\.readConfig\("ColumnWidthStepPercent", 10\)\)/,
+    );
+    expect(runtime).toMatch(
+      /nextController\.setDefaultColumnWidthPercent\(defaultColumnWidthPercent\);\s*nextController\.setColumnWidthStepPercent\(columnWidthStepPercent\);\s*if \(!nextController\.start\(\)\)/,
+    );
+    expect(runtime).toMatch(
+      /export function setColumnWidthStepPercent\(percent: number\): void \{\s*controller\?\.setColumnWidthStepPercent\(percent\);\s*\}/,
     );
   });
 });
