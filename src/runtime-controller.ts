@@ -87,6 +87,8 @@ type ColumnResizeAction =
   "decrease" | "increase" | "preset-next" | "preset-previous" | "reset";
 type WindowHeightResizeAction = ColumnResizeAction;
 type DesktopTransferDirection = -1 | 1;
+type FloatingFocusDestination =
+  HorizontalDirection | HorizontalEdge | VerticalDirection;
 type WindowLayer = "floating" | "tiling";
 
 interface ManagedContext {
@@ -1917,9 +1919,147 @@ export class RuntimeController {
     return true;
   }
 
+  private focusFloatingWindow(
+    destination: FloatingFocusDestination,
+  ): boolean | null {
+    const active = this.workspace.activeWindow;
+
+    if (!active) {
+      return null;
+    }
+
+    const activeId = windowId(String(active.internalId));
+    const context = layerFocusContext(active);
+
+    if (!context || this.observer.source(activeId) !== active) {
+      return null;
+    }
+
+    const key = contextKey(context);
+
+    if (this.windowLayer(activeId, active, key) !== "floating") {
+      return null;
+    }
+
+    if (
+      !this.started ||
+      this.windowTransferOperation ||
+      this.startupStabilizationToken !== null ||
+      this.hasTopologyBarrier()
+    ) {
+      return false;
+    }
+
+    const target = this.floatingNavigationTarget(
+      active,
+      activeId,
+      key,
+      destination,
+    );
+
+    if (!target || target === active) {
+      return false;
+    }
+
+    this.lastWrites = 0;
+
+    try {
+      this.workspace.activeWindow = target;
+    } catch {
+      return false;
+    }
+
+    if (this.workspace.activeWindow !== target) {
+      return false;
+    }
+
+    this.rememberLayerFocus(windowId(String(target.internalId)), target);
+    return true;
+  }
+
+  private floatingNavigationTarget(
+    active: KWinWindow,
+    activeId: WindowId,
+    key: string,
+    destination: FloatingFocusDestination,
+  ): KWinWindow | null {
+    const activeFrame = active.frameGeometry;
+    const activeCenterX = activeFrame.x + activeFrame.width / 2;
+    const activeCenterY = activeFrame.y + activeFrame.height / 2;
+    let target: KWinWindow | null = null;
+    let best = Number.POSITIVE_INFINITY;
+
+    for (
+      let index = this.workspace.stackingOrder.length - 1;
+      index >= 0;
+      index -= 1
+    ) {
+      const candidate = this.workspace.stackingOrder[index];
+
+      if (!candidate) {
+        continue;
+      }
+
+      const candidateId = windowId(String(candidate.internalId));
+
+      if (
+        this.observer.source(candidateId) !== candidate ||
+        this.windowLayer(candidateId, candidate, key) !== "floating"
+      ) {
+        continue;
+      }
+
+      const frame = candidate.frameGeometry;
+
+      if (destination === "first") {
+        if (!target || frame.x < best) {
+          target = candidate;
+          best = frame.x;
+        }
+        continue;
+      }
+
+      if (destination === "last") {
+        if (!target || frame.x >= best) {
+          target = candidate;
+          best = frame.x;
+        }
+        continue;
+      }
+
+      if (candidateId === activeId) {
+        continue;
+      }
+
+      const candidateCenterX = frame.x + frame.width / 2;
+      const candidateCenterY = frame.y + frame.height / 2;
+      const distance =
+        destination === "left"
+          ? activeCenterX - candidateCenterX
+          : destination === "right"
+            ? candidateCenterX - activeCenterX
+            : destination === "up"
+              ? activeCenterY - candidateCenterY
+              : candidateCenterY - activeCenterY;
+
+      if (distance > 0 && distance < best) {
+        target = candidate;
+        best = distance;
+      }
+    }
+
+    return target;
+  }
+
   private focusHorizontal(
     destination: HorizontalDirection | HorizontalEdge,
   ): boolean {
+    const floatingResult = this.focusFloatingWindow(destination);
+
+    if (floatingResult !== null) {
+      return floatingResult;
+    }
+
     const command = this.prepareActiveColumnCommand();
 
     if (!command) {
@@ -1973,6 +2113,12 @@ export class RuntimeController {
   }
 
   private focusWithinActiveColumn(direction: VerticalDirection): boolean {
+    const floatingResult = this.focusFloatingWindow(direction);
+
+    if (floatingResult !== null) {
+      return floatingResult;
+    }
+
     const command = this.prepareActiveColumnCommand();
 
     if (!command) {

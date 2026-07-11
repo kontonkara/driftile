@@ -19,6 +19,7 @@ readonly automatic_floating_probe_verified_shortcut_prefix="Driftile Integration
 readonly automatic_floating_probe_verify_shortcut="Driftile Integration Automatic Floating Verify"
 readonly desktop_state_probe_plugin_id="io.github.kontonkara.driftile.integration-desktop-state-probe"
 readonly desktop_state_verified_shortcut_prefix="Driftile Integration Desktop State Verified"
+readonly floating_navigation_arranger_plugin_id="io.github.kontonkara.driftile.integration-floating-navigation-arranger"
 readonly native_tile_toggle_plugin_id="io.github.kontonkara.driftile.integration-native-tile-toggle"
 readonly output_router_plugin_id="io.github.kontonkara.driftile.integration-output-router"
 readonly output_transfer_state_probe_plugin_id="io.github.kontonkara.driftile.integration-output-transfer-state-probe"
@@ -1219,6 +1220,12 @@ run_one_shot_script() {
   wait_for_named_script_state "$name" false
 }
 
+arrange_floating_navigation_windows() {
+  run_one_shot_script \
+    "$DRIFTILE_SMOKE_FLOATING_NAVIGATION_ARRANGER" \
+    "$floating_navigation_arranger_plugin_id"
+}
+
 load_automatic_floating_probe() {
   local load_result
   local script_id
@@ -2411,6 +2418,146 @@ verify_focus_layer_roundtrip() {
     fail "Driftile changed the $protocol layout during direct tiled focus: $(describe_layout "${window_titles[@]}")"
 }
 
+verify_floating_navigation_step() {
+  local protocol=$1
+  local shortcut=$2
+  local expected_title=$3
+  local index
+  local -a geometry_pairs
+  local -a window_titles=()
+
+  shift 3
+  geometry_pairs=("$@")
+
+  for ((index = 0; index < ${#geometry_pairs[@]}; index += 2)); do
+    window_titles+=("${geometry_pairs[index]}")
+  done
+
+  invoke_shortcut "$shortcut" || \
+    fail "KGlobalAccel could not invoke $shortcut for floating $protocol navigation"
+  wait_for_active "$expected_title" || \
+    fail "Driftile did not focus $expected_title after $shortcut"
+  wait_for_geometries "${geometry_pairs[@]}" || \
+    fail "Driftile changed floating $protocol frames after $shortcut: $(describe_layout "${window_titles[@]}")"
+}
+
+verify_manual_floating_navigation() {
+  local protocol=$1
+  local first_tiled_title=$2
+  local active_tiled_title=$3
+  local right_tiled_title=$4
+  local title
+  local -a navigation_pids=()
+  local -a navigation_titles=(
+    "driftile-floating-navigation-${protocol}-a"
+    "driftile-floating-navigation-${protocol}-b"
+    "driftile-floating-navigation-${protocol}-c"
+  )
+  local -a geometry_pairs=(
+    "${navigation_titles[0]}" "80,80,360,240"
+    "${navigation_titles[1]}" "460,240,360,240"
+    "${navigation_titles[2]}" "840,440,360,240"
+  )
+  local -a shortcuts=(
+    "driftile_focus_column_left"
+    "driftile_focus_column_right"
+    "driftile_focus_window_up"
+    "driftile_focus_window_down"
+    "driftile_focus_column_first"
+    "driftile_focus_column_last"
+  )
+
+  for title in "${shortcuts[@]}"; do
+    wait_for_shortcut "$title" || \
+      fail "KGlobalAccel did not register $title for floating navigation"
+  done
+
+  for title in "${navigation_titles[@]}"; do
+    start_client "$protocol" "$title" true
+    navigation_pids+=("${client_pids[${#client_pids[@]}-1]}")
+    capture_stable_geometry "$title" >/dev/null || \
+      fail "the floating-navigation $protocol window $title did not stabilize"
+    activate_window "$title" || \
+      fail "KWin could not focus $title before floating navigation setup"
+    wait_for_active "$title" || \
+      fail "KWin did not focus $title before floating navigation setup"
+    invoke_shortcut "driftile_toggle_floating" || \
+      fail "KGlobalAccel could not float $title for navigation acceptance"
+    wait_for_active "$title" || \
+      fail "Driftile changed focus while floating $title for navigation acceptance"
+  done
+
+  arrange_floating_navigation_windows || \
+    fail "KWin could not arrange the $protocol floating-navigation windows"
+  wait_for_geometries "${geometry_pairs[@]}" || \
+    fail "KWin did not place the $protocol floating-navigation windows: $(describe_layout "${navigation_titles[@]}")"
+  activate_window "${navigation_titles[1]}" || \
+    fail "KWin could not focus the center $protocol floating window"
+  wait_for_active "${navigation_titles[1]}" || \
+    fail "KWin did not focus the center $protocol floating window"
+
+  verify_floating_navigation_step \
+    "$protocol" "driftile_focus_column_left" "${navigation_titles[0]}" \
+    "${geometry_pairs[@]}"
+  verify_floating_navigation_step \
+    "$protocol" "driftile_focus_column_right" "${navigation_titles[1]}" \
+    "${geometry_pairs[@]}"
+  verify_floating_navigation_step \
+    "$protocol" "driftile_focus_window_up" "${navigation_titles[0]}" \
+    "${geometry_pairs[@]}"
+  verify_floating_navigation_step \
+    "$protocol" "driftile_focus_window_down" "${navigation_titles[1]}" \
+    "${geometry_pairs[@]}"
+  verify_floating_navigation_step \
+    "$protocol" "driftile_focus_column_first" "${navigation_titles[0]}" \
+    "${geometry_pairs[@]}"
+  verify_floating_navigation_step \
+    "$protocol" "driftile_focus_column_last" "${navigation_titles[2]}" \
+    "${geometry_pairs[@]}"
+
+  for title in "${navigation_pids[@]}"; do
+    stop_client "$title"
+  done
+
+  for title in "${navigation_titles[@]}"; do
+    wait_for_window_gone "$title" || \
+      fail "the floating-navigation $protocol window $title did not close"
+  done
+
+  activate_window "$active_tiled_title" || \
+    fail "KWin could not restore tiled $protocol focus after floating navigation"
+  wait_for_active "$active_tiled_title" || \
+    fail "KWin did not restore tiled $protocol focus after floating navigation"
+  wait_for_geometries \
+    "$first_tiled_title" "16,16,616,336" \
+    "$active_tiled_title" "16,368,616,336" \
+    "$right_tiled_title" "648,16,616,688" || \
+    fail "Driftile changed the tiled $protocol layout during floating navigation: $(describe_layout "$first_tiled_title" "$active_tiled_title" "$right_tiled_title")"
+}
+
+verify_isolated_floating_navigation() {
+  local protocol=$1
+  local active_title=$2
+  local shortcut
+  local -a geometry_pairs
+
+  shift 2
+  geometry_pairs=("$@")
+
+  for shortcut in \
+    driftile_focus_column_left \
+    driftile_focus_column_right \
+    driftile_focus_window_up \
+    driftile_focus_window_down \
+    driftile_focus_column_first \
+    driftile_focus_column_last; do
+    wait_for_shortcut "$shortcut" || \
+      fail "KGlobalAccel did not register $shortcut for isolated floating navigation"
+    verify_floating_navigation_step \
+      "$protocol" "$shortcut" "$active_title" "${geometry_pairs[@]}"
+  done
+}
+
 verify_automatic_floating() {
   local protocol=$1
   local first_title=$2
@@ -2433,6 +2580,11 @@ verify_automatic_floating() {
   local verification_index=0
   local -a no_op_shortcuts=(
     "driftile_focus_column_left"
+    "driftile_focus_column_right"
+    "driftile_focus_column_first"
+    "driftile_focus_column_last"
+    "driftile_focus_window_up"
+    "driftile_focus_window_down"
     "driftile_move_window_left"
     "driftile_toggle_floating"
     "driftile_move_column_to_next_desktop"
@@ -3030,6 +3182,12 @@ run_scenario() {
   wait_for_active "$second_title" || \
     fail "Driftile changed $protocol focus after restoring the lower stack member"
 
+  verify_manual_floating_navigation \
+    "$protocol" \
+    "$first_title" \
+    "$second_title" \
+    "$third_title"
+
   verify_desktop_transfer \
     "$protocol" \
     "$first_title" \
@@ -3474,6 +3632,7 @@ run_multi_output_scenario() {
   local index
   local scaled_left_first="16,16,402.666667,448"
   local scaled_left_second="434.666667,16,402.666667,448"
+  local right_floating_frame
   local side
   local temporary_left_pid
   local -a baselines=("" "" "" "" "" "")
@@ -3672,6 +3831,58 @@ run_multi_output_scenario() {
     "${titles[1]}" "16,16,616,688" \
     "${titles[3]}" "1296,16,616,688" \
     "${titles[4]}" "1928,16,616,688"
+
+  activate_window "${titles[3]}" || \
+    fail "KWin could not focus the right $protocol window for floating-navigation isolation"
+  wait_for_active "${titles[3]}" || \
+    fail "KWin did not focus the right $protocol window for floating-navigation isolation"
+  invoke_shortcut "driftile_toggle_floating" || \
+    fail "KGlobalAccel could not float the right $protocol isolation window"
+  wait_for_active "${titles[3]}" || \
+    fail "Driftile changed focus while floating the right $protocol isolation window"
+  right_floating_frame=$(capture_stable_geometry "${titles[3]}") || \
+    fail "the right $protocol isolation window did not stabilize while floating"
+  wait_for_geometries \
+    "${titles[0]}" "${baselines[0]}" \
+    "${titles[1]}" "16,16,616,688" \
+    "${titles[3]}" "$right_floating_frame" \
+    "${titles[4]}" "1296,16,616,688" || \
+    fail "Driftile did not isolate floating windows across $protocol outputs: $(describe_layout "${titles[0]}" "${titles[1]}" "${titles[3]}" "${titles[4]}")"
+
+  activate_window "${titles[0]}" || \
+    fail "KWin could not focus the left $protocol floating isolation window"
+  wait_for_active "${titles[0]}" || \
+    fail "KWin did not focus the left $protocol floating isolation window"
+  verify_isolated_floating_navigation \
+    "$protocol" \
+    "${titles[0]}" \
+    "${titles[0]}" "${baselines[0]}" \
+    "${titles[1]}" "16,16,616,688" \
+    "${titles[3]}" "$right_floating_frame" \
+    "${titles[4]}" "1296,16,616,688"
+
+  activate_window "${titles[3]}" || \
+    fail "KWin could not focus the right $protocol floating isolation window"
+  wait_for_active "${titles[3]}" || \
+    fail "KWin did not focus the right $protocol floating isolation window"
+  verify_isolated_floating_navigation \
+    "$protocol" \
+    "${titles[3]}" \
+    "${titles[0]}" "${baselines[0]}" \
+    "${titles[1]}" "16,16,616,688" \
+    "${titles[3]}" "$right_floating_frame" \
+    "${titles[4]}" "1296,16,616,688"
+
+  invoke_shortcut "driftile_toggle_floating" || \
+    fail "KGlobalAccel could not retile the right $protocol isolation window"
+  wait_for_geometries \
+    "${titles[0]}" "${baselines[0]}" \
+    "${titles[1]}" "16,16,616,688" \
+    "${titles[3]}" "1296,16,616,688" \
+    "${titles[4]}" "1928,16,616,688" || \
+    fail "Driftile did not restore the right $protocol isolation window: $(describe_layout "${titles[0]}" "${titles[1]}" "${titles[3]}" "${titles[4]}")"
+  wait_for_active "${titles[3]}" || \
+    fail "Driftile changed focus after restoring the right $protocol isolation window"
 
   activate_window "${titles[0]}" || \
     fail "KWin could not restore floating $protocol focus before the multi-output retile"

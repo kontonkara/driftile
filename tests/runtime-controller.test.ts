@@ -4287,6 +4287,406 @@ describe("RuntimeController", () => {
     expect(fixture.workspace.activeWindow).toBe(secondTiled.window);
   });
 
+  it.each([
+    {
+      decoyFrame: { height: 100, width: 20, x: 450, y: 450 },
+      direction: "left",
+      expectedFrame: { height: 100, width: 980, x: 0, y: 5_000 },
+    },
+    {
+      decoyFrame: { height: 100, width: 100, x: 501, y: 450 },
+      direction: "right",
+      expectedFrame: { height: 100, width: 20, x: 510, y: -5_000 },
+    },
+    {
+      decoyFrame: { height: 20, width: 100, x: 450, y: 450 },
+      direction: "up",
+      expectedFrame: { height: 980, width: 100, x: 5_000, y: 0 },
+    },
+    {
+      decoyFrame: { height: 100, width: 100, x: 450, y: 501 },
+      direction: "down",
+      expectedFrame: { height: 20, width: 100, x: -5_000, y: 510 },
+    },
+  ] as const)(
+    "focuses the closest floating center on the $direction axis",
+    ({ decoyFrame, direction, expectedFrame }) => {
+      const output = createOutput("DP-1", 0);
+      const desktop = { id: "desktop-1" };
+      const tiled = createTrackedWindow("tiled", output, desktop);
+      const expected = createTrackedWindow("expected", output, desktop);
+      const decoy = createTrackedWindow("decoy", output, desktop);
+      const active = createTrackedWindow("active", output, desktop);
+      const windows = [tiled, expected, decoy, active];
+      const fixture = createWorkspace(
+        output,
+        desktop,
+        [output],
+        [desktop],
+        windows.map(({ window }) => window),
+      );
+      const controller = new RuntimeController(fixture.workspace, {
+        clientAreaOption: 2,
+        columnWidth: { kind: "fixed", value: 300 },
+        gap: 10,
+      });
+
+      expect(controller.start()).toBe(true);
+
+      for (const floating of [expected, decoy, active]) {
+        fixture.workspace.activeWindow = floating.window;
+        expect(controller.toggleFloating()).toBe(true);
+      }
+
+      active.setFrameGeometry({ height: 200, width: 200, x: 400, y: 400 });
+      expected.setFrameGeometry(expectedFrame);
+      decoy.setFrameGeometry(decoyFrame);
+      fixture.workspace.activeWindow = active.window;
+      const layout = runtimeLayout(controller);
+      layout.setViewportOffset(
+        outputId(output.name),
+        desktopId(desktop.id),
+        -37,
+      );
+      controller.reconcile();
+      const before = layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      );
+      const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
+      const writes = windows.map(({ writeCount }) => writeCount);
+      const activationCount = fixture.activationCount;
+      const focused =
+        direction === "left"
+          ? controller.focusLeft()
+          : direction === "right"
+            ? controller.focusRight()
+            : direction === "up"
+              ? controller.focusUp()
+              : controller.focusDown();
+
+      expect(focused).toBe(true);
+      expect(fixture.workspace.activeWindow).toBe(expected.window);
+      expect(fixture.activationCount).toBe(activationCount + 1);
+      expect(
+        layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+      ).toEqual(before);
+      expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
+      expect(windows.map(({ writeCount }) => writeCount)).toEqual(writes);
+    },
+  );
+
+  it("navigates between manual and automatic floating windows and remembers the result", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const tiled = createTrackedWindow("tiled", output, desktop);
+    const manual = createTrackedWindow("manual", output, desktop);
+    const automatic = createTrackedWindow("automatic", output, desktop, {
+      clientGeometry: { height: 100, width: 100, x: 550, y: 450 },
+      frameGeometry: { height: 100, width: 100, x: 550, y: 450 },
+      maxSize: { height: 100, width: 100 },
+      minSize: { height: 100, width: 100 },
+    });
+    const windows = [tiled, manual, automatic];
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map(({ window }) => window),
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+    });
+
+    expect(controller.start()).toBe(true);
+    fixture.workspace.activeWindow = manual.window;
+    expect(controller.toggleFloating()).toBe(true);
+    manual.setFrameGeometry({ height: 100, width: 100, x: 350, y: 450 });
+    automatic.setFrameGeometry({
+      height: 100,
+      width: 100,
+      x: 550,
+      y: 450,
+    });
+    fixture.workspace.activeWindow = manual.window;
+    const layout = runtimeLayout(controller);
+    const before = layout.snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
+    const writes = windows.map(({ writeCount }) => writeCount);
+    const activationCount = fixture.activationCount;
+
+    expect(controller.focusRight()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(automatic.window);
+    expect(controller.focusTiling()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(tiled.window);
+    expect(controller.focusFloating()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(automatic.window);
+    expect(controller.focusLeft()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(manual.window);
+
+    expect(fixture.activationCount).toBe(activationCount + 4);
+    expect(
+      layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+    ).toEqual(before);
+    expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
+    expect(windows.map(({ writeCount }) => writeCount)).toEqual(writes);
+  });
+
+  it("uses floating stack order for directional ties and does not wrap", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const tiled = createTrackedWindow("tiled", output, desktop);
+    const bottomTie = createTrackedWindow("bottom-tie", output, desktop);
+    const overlap = createTrackedWindow("overlap", output, desktop);
+    const active = createTrackedWindow("active", output, desktop);
+    const topTie = createTrackedWindow("top-tie", output, desktop);
+    const floating = [bottomTie, overlap, active, topTie];
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [tiled.window, ...floating.map(({ window }) => window)],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+    });
+
+    expect(controller.start()).toBe(true);
+
+    for (const candidate of floating) {
+      fixture.workspace.activeWindow = candidate.window;
+      expect(controller.toggleFloating()).toBe(true);
+    }
+
+    bottomTie.setFrameGeometry({ height: 100, width: 100, x: 350, y: 100 });
+    overlap.setFrameGeometry({ height: 100, width: 100, x: 450, y: 450 });
+    active.setFrameGeometry({ height: 100, width: 100, x: 450, y: 450 });
+    topTie.setFrameGeometry({ height: 100, width: 100, x: 350, y: 700 });
+    fixture.workspace.activeWindow = active.window;
+
+    expect(controller.focusLeft()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(topTie.window);
+
+    fixture.workspace.activeWindow = bottomTie.window;
+    const activationCount = fixture.activationCount;
+    expect(controller.focusLeft()).toBe(false);
+    expect(fixture.workspace.activeWindow).toBe(bottomTie.window);
+    expect(fixture.activationCount).toBe(activationCount);
+  });
+
+  it("uses floating left edges for Home and right edges for End", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const tiled = createTrackedWindow("tiled", output, desktop);
+    const leftBottom = createTrackedWindow("left-bottom", output, desktop);
+    const rightBottom = createTrackedWindow("right-bottom", output, desktop);
+    const leftByCenter = createTrackedWindow("left-by-center", output, desktop);
+    const rightByCenter = createTrackedWindow(
+      "right-by-center",
+      output,
+      desktop,
+    );
+    const active = createTrackedWindow("active", output, desktop);
+    const leftTop = createTrackedWindow("left-top", output, desktop);
+    const rightTop = createTrackedWindow("right-top", output, desktop);
+    const floating = [
+      leftBottom,
+      rightBottom,
+      leftByCenter,
+      rightByCenter,
+      active,
+      leftTop,
+      rightTop,
+    ];
+    const windows = [tiled, ...floating];
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map(({ window }) => window),
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+    });
+
+    expect(controller.start()).toBe(true);
+
+    for (const candidate of floating) {
+      fixture.workspace.activeWindow = candidate.window;
+      expect(controller.toggleFloating()).toBe(true);
+    }
+
+    leftBottom.setFrameGeometry({ height: 100, width: 1_000, x: 0, y: 100 });
+    leftTop.setFrameGeometry({ height: 100, width: 1_000, x: 0, y: 200 });
+    leftByCenter.setFrameGeometry({ height: 100, width: 10, x: 10, y: 300 });
+    rightBottom.setFrameGeometry({ height: 100, width: 10, x: 900, y: 400 });
+    rightTop.setFrameGeometry({ height: 100, width: 10, x: 900, y: 500 });
+    rightByCenter.setFrameGeometry({
+      height: 100,
+      width: 1_000,
+      x: 890,
+      y: 600,
+    });
+    active.setFrameGeometry({ height: 100, width: 100, x: 400, y: 700 });
+    fixture.workspace.activeWindow = active.window;
+    const layout = runtimeLayout(controller);
+    const before = layout.snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
+    const writes = windows.map(({ writeCount }) => writeCount);
+
+    expect(controller.focusFirstColumn()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(leftTop.window);
+    expect(controller.focusLastColumn()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(rightBottom.window);
+    expect(
+      layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+    ).toEqual(before);
+    expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
+    expect(windows.map(({ writeCount }) => writeCount)).toEqual(writes);
+  });
+
+  it("excludes minimized and foreign-context floating candidates", () => {
+    const firstOutput = createOutput("DP-1", 0);
+    const secondOutput = createOutput("HDMI-A-1", 1_000);
+    const firstDesktop = { id: "desktop-1" };
+    const secondDesktop = { id: "desktop-2" };
+    const tiled = createTrackedWindow("tiled", firstOutput, firstDesktop);
+    const eligible = createTrackedWindow(
+      "eligible",
+      firstOutput,
+      firstDesktop,
+      { dialog: true, normalWindow: false },
+    );
+    const active = createTrackedWindow("active", firstOutput, firstDesktop);
+    const minimized = createTrackedWindow(
+      "minimized",
+      firstOutput,
+      firstDesktop,
+      { dialog: true, minimized: true, normalWindow: false },
+    );
+    const foreignOutput = createTrackedWindow(
+      "foreign-output",
+      secondOutput,
+      firstDesktop,
+      { dialog: true, normalWindow: false },
+    );
+    const foreignDesktop = createTrackedWindow(
+      "foreign-desktop",
+      firstOutput,
+      secondDesktop,
+      { dialog: true, normalWindow: false },
+    );
+    const windows = [
+      tiled,
+      eligible,
+      active,
+      minimized,
+      foreignOutput,
+      foreignDesktop,
+    ];
+    const fixture = createWorkspace(
+      firstOutput,
+      firstDesktop,
+      [firstOutput, secondOutput],
+      [firstDesktop, secondDesktop],
+      windows.map(({ window }) => window),
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+    });
+
+    expect(controller.start()).toBe(true);
+    fixture.workspace.activeWindow = active.window;
+    expect(controller.toggleFloating()).toBe(true);
+    active.setFrameGeometry({ height: 100, width: 100, x: 400, y: 400 });
+    eligible.setFrameGeometry({ height: 100, width: 100, x: 600, y: 400 });
+    minimized.setFrameGeometry({ height: 100, width: 100, x: 501, y: 400 });
+    foreignOutput.setFrameGeometry({
+      height: 100,
+      width: 100,
+      x: 502,
+      y: 400,
+    });
+    foreignDesktop.setFrameGeometry({
+      height: 100,
+      width: 100,
+      x: 503,
+      y: 400,
+    });
+    fixture.workspace.activeWindow = active.window;
+
+    expect(controller.focusRight()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(eligible.window);
+  });
+
+  it("keeps tiled directional focus behavior when floating windows exist", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const stackTop = createTrackedWindow("stack-top", output, desktop);
+    const stackBottom = createTrackedWindow("stack-bottom", output, desktop);
+    const right = createTrackedWindow("right", output, desktop);
+    const floating = createTrackedWindow("floating", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [stackTop.window, stackBottom.window, right.window, floating.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(controller.toggleFloating()).toBe(true);
+    installTestLayout(controller, output, desktop, "column:stack", [
+      {
+        id: "column:stack",
+        width: { kind: "fixed", value: 300 },
+        windowIds: ["stack-top", "stack-bottom"],
+      },
+      {
+        id: "column:right",
+        width: { kind: "fixed", value: 300 },
+        windowIds: ["right"],
+      },
+    ]);
+    floating.setFrameGeometry({ height: 100, width: 100, x: 1, y: 1 });
+    fixture.workspace.activeWindow = stackTop.window;
+    const floatingFrame = { ...floating.window.frameGeometry };
+    const floatingWrites = floating.writeCount;
+
+    expect(controller.focusDown()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(stackBottom.window);
+    expect(controller.focusUp()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(stackTop.window);
+    expect(controller.focusRight()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(right.window);
+    expect(controller.focusLeft()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(stackTop.window);
+    expect(floating.window.frameGeometry).toEqual(floatingFrame);
+    expect(floating.writeCount).toBe(floatingWrites);
+  });
+
   it("keeps external floating geometry and uses it as the next baseline", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
