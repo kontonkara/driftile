@@ -2264,7 +2264,6 @@ function validTransferContextSnapshot(
 ): boolean {
   if (
     !Number.isFinite(snapshot.viewportOffset) ||
-    snapshot.viewportOffset < 0 ||
     (snapshot.columns.length === 0 &&
       (snapshot.activeColumnId !== null || snapshot.viewportOffset !== 0))
   ) {
@@ -2281,8 +2280,7 @@ function validTransferContextSnapshot(
 function validContextSnapshot(snapshot: LayoutContextSnapshot): boolean {
   if (
     snapshot.columns.length === 0 ||
-    !Number.isFinite(snapshot.viewportOffset) ||
-    snapshot.viewportOffset < 0
+    !Number.isFinite(snapshot.viewportOffset)
   ) {
     return false;
   }
@@ -2579,7 +2577,7 @@ function validWindowHeight(height: unknown): height is WindowHeight {
 }
 
 function assertValidViewportOffset(viewportOffset: number): void {
-  if (!Number.isFinite(viewportOffset) || viewportOffset < 0) {
-    throw new RangeError("viewport offset must be finite and non-negative");
+  if (!Number.isFinite(viewportOffset)) {
+    throw new RangeError("viewport offset must be finite");
   }
 }

@@ -208,6 +208,14 @@ interface ActiveColumnCommand {
   readonly sampledGeometries: ReadonlyMap<string, ContextGeometry>;
 }
 
+interface VisibleColumnGroup {
+  readonly activeFrame: Rect;
+  readonly layout: ReturnType<typeof solveStripGeometry>;
+  readonly leftmostFrame: Rect;
+  readonly nonActiveCount: number;
+  readonly widthTaken: number;
+}
+
 interface ActiveWindowCommand {
   readonly activeId: WindowId;
   readonly activeWindow: KWinWindow;
@@ -752,17 +760,24 @@ export class RuntimeController {
     }
 
     const workArea = command.contextGeometry.workArea;
-    const desiredOffset = clamp(
-      roundToPhysicalPixel(
-        currentLayout.viewportOffset +
-          active.frame.x +
-          active.frame.width / 2 -
-          (workArea.x + workArea.width / 2),
-        command.contextGeometry.devicePixelRatio,
-      ),
-      0,
-      currentLayout.maxViewportOffset,
+    const requestedOffset = roundToPhysicalPixel(
+      currentLayout.viewportOffset +
+        active.frame.x +
+        active.frame.width / 2 -
+        (workArea.x + workArea.width / 2),
+      command.contextGeometry.devicePixelRatio,
     );
+    const preview = this.previewActiveColumnView(
+      command,
+      command.activeColumn.width,
+      requestedOffset,
+    );
+
+    if (!preview) {
+      return false;
+    }
+
+    const desiredOffset = preview.viewportOffset;
 
     if (
       Math.abs(desiredOffset - currentLayout.viewportOffset) <=
@@ -783,6 +798,210 @@ export class RuntimeController {
           command.context.outputId,
           command.context.desktopId,
           desiredOffset,
+        ),
+      () =>
+        this.layout.setViewportOffset(
+          command.context.outputId,
+          command.context.desktopId,
+          command.before.viewportOffset,
+        ),
+    );
+  }
+
+  expandColumnToAvailableWidth(): boolean {
+    const command = this.prepareActiveColumnCommand();
+
+    if (!command || this.hasCapacityMutationInFlight(command.context.key)) {
+      return false;
+    }
+
+    const visible = this.visibleColumnGroup(command);
+
+    if (
+      !visible ||
+      this.columnFullWidthRestoreWidth(
+        command.context.key,
+        command.activeColumn.id,
+      )
+    ) {
+      return false;
+    }
+
+    const availableWidth =
+      command.contextGeometry.workArea.width - this.gap - visible.widthTaken;
+
+    if (
+      availableWidth <=
+      floatingPointTolerance(
+        availableWidth,
+        command.contextGeometry.workArea.width,
+      )
+    ) {
+      return false;
+    }
+
+    if (visible.nonActiveCount === 0) {
+      return this.maximizeColumn();
+    }
+
+    const maximumWidth = this.activeColumnMaximumWidth(command);
+
+    if (maximumWidth === null) {
+      return false;
+    }
+
+    const targetWidth = floorToPhysicalPixel(
+      Math.max(
+        visible.activeFrame.width,
+        Math.min(visible.activeFrame.width + availableWidth, maximumWidth),
+      ),
+      command.contextGeometry.devicePixelRatio,
+    );
+
+    const desiredOffset = roundToPhysicalPixel(
+      visible.layout.viewportOffset +
+        visible.leftmostFrame.x -
+        (command.contextGeometry.workArea.x + this.gap),
+      command.contextGeometry.devicePixelRatio,
+    );
+    const target: ColumnWidth = { kind: "fixed", value: targetWidth };
+    const preview = this.previewActiveColumnView(
+      command,
+      target,
+      desiredOffset,
+    );
+
+    if (!preview) {
+      return false;
+    }
+
+    const widthChanges = !sameColumnWidth(command.activeColumn.width, target);
+    const viewportChanges = !nearlyEqual(
+      preview.viewportOffset,
+      command.before.viewportOffset,
+    );
+
+    if (!widthChanges && !viewportChanges) {
+      return false;
+    }
+
+    let previousWidth: ColumnWidth | null = null;
+    const expanded = this.applyActiveColumnMutation(
+      command,
+      "column available-width expansion",
+      () => {
+        if (widthChanges) {
+          previousWidth = this.layout.setActiveColumnWidth(
+            command.activeId,
+            target,
+          );
+
+          if (previousWidth === null) {
+            return false;
+          }
+        }
+
+        if (
+          viewportChanges &&
+          !this.layout.setViewportOffset(
+            command.context.outputId,
+            command.context.desktopId,
+            preview.viewportOffset,
+          )
+        ) {
+          if (previousWidth !== null) {
+            this.layout.setActiveColumnWidth(command.activeId, previousWidth);
+            previousWidth = null;
+          }
+
+          return false;
+        }
+
+        return true;
+      },
+      () => {
+        let restored = true;
+
+        if (previousWidth !== null) {
+          restored =
+            this.layout.setActiveColumnWidth(
+              command.activeId,
+              previousWidth,
+            ) !== null;
+        }
+
+        if (viewportChanges) {
+          restored =
+            this.layout.setViewportOffset(
+              command.context.outputId,
+              command.context.desktopId,
+              command.before.viewportOffset,
+            ) && restored;
+        }
+
+        return restored;
+      },
+    );
+
+    if (!expanded) {
+      return false;
+    }
+
+    this.deleteColumnFullWidthRestore(
+      command.context.key,
+      command.activeColumn.id,
+    );
+    this.finishColumnWidthChange(command.context.key);
+    return true;
+  }
+
+  centerVisibleColumns(): boolean {
+    const command = this.prepareActiveColumnCommand();
+
+    if (!command || this.hasCapacityMutationInFlight(command.context.key)) {
+      return false;
+    }
+
+    const visible = this.visibleColumnGroup(command);
+
+    if (!visible) {
+      return false;
+    }
+
+    const freeSpace =
+      command.contextGeometry.workArea.width - visible.widthTaken + this.gap;
+    const desiredLeft =
+      command.contextGeometry.workArea.x + Math.max(0, freeSpace) / 2;
+    const desiredOffset = roundToPhysicalPixel(
+      visible.layout.viewportOffset + visible.leftmostFrame.x - desiredLeft,
+      command.contextGeometry.devicePixelRatio,
+    );
+    const preview = this.previewActiveColumnView(
+      command,
+      command.activeColumn.width,
+      desiredOffset,
+    );
+
+    if (
+      !preview ||
+      Math.abs(preview.viewportOffset - visible.layout.viewportOffset) <=
+        floatingPointTolerance(
+          preview.viewportOffset,
+          visible.layout.viewportOffset,
+          command.contextGeometry.workArea.width,
+        )
+    ) {
+      return false;
+    }
+
+    return this.applyActiveColumnMutation(
+      command,
+      "visible columns center",
+      () =>
+        this.layout.setViewportOffset(
+          command.context.outputId,
+          command.context.desktopId,
+          preview.viewportOffset,
         ),
       () =>
         this.layout.setViewportOffset(
@@ -5217,6 +5436,118 @@ export class RuntimeController {
       windowHeightBounds,
       windowHeightPresets: this.windowHeightPresets,
     });
+  }
+
+  private visibleColumnGroup(
+    command: ActiveColumnCommand,
+  ): VisibleColumnGroup | null {
+    let layout: ReturnType<typeof solveStripGeometry>;
+
+    try {
+      layout = this.solveContextGeometry(
+        command.before,
+        command.contextGeometry,
+      );
+    } catch {
+      return null;
+    }
+
+    const frames = new Map<ColumnId, Rect>();
+
+    for (const window of layout.windows) {
+      if (!frames.has(window.columnId)) {
+        frames.set(window.columnId, window.frame);
+      }
+    }
+
+    const workArea = command.contextGeometry.workArea;
+    const minimumLeft = workArea.x + this.gap;
+    const maximumRight = workArea.x + workArea.width;
+    const tolerance =
+      floatingPointTolerance(minimumLeft, maximumRight, workArea.width) +
+      0.5 / command.contextGeometry.devicePixelRatio;
+    let activeFrame: Rect | null = null;
+    let leftmostFrame: Rect | null = null;
+    let nonActiveCount = 0;
+    let widthTaken = 0;
+
+    for (const column of command.before.columns) {
+      const frame = frames.get(column.id);
+
+      if (!frame) {
+        return null;
+      }
+
+      if (frame.x < minimumLeft - tolerance) {
+        continue;
+      }
+
+      if (frame.x + frame.width + this.gap > maximumRight + tolerance) {
+        break;
+      }
+
+      leftmostFrame ??= frame;
+      widthTaken += frame.width + this.gap;
+
+      if (column.id === command.activeColumn.id) {
+        activeFrame = frame;
+      } else {
+        nonActiveCount += 1;
+      }
+    }
+
+    return activeFrame && leftmostFrame
+      ? {
+          activeFrame,
+          layout,
+          leftmostFrame,
+          nonActiveCount,
+          widthTaken,
+        }
+      : null;
+  }
+
+  private activeColumnMaximumWidth(
+    command: ActiveColumnCommand,
+  ): number | null {
+    let maximum = Number.POSITIVE_INFINITY;
+
+    for (const id of command.activeColumn.windowIds) {
+      const source = this.observer.source(id);
+      const bounds = source ? frameSizeConstraintBounds(source) : null;
+
+      if (!source || this.automaticallyFloats(source) || !bounds) {
+        return null;
+      }
+
+      maximum = Math.min(maximum, bounds.maximumWidth);
+    }
+
+    return Number.isFinite(maximum)
+      ? floorToPhysicalPixel(maximum, command.contextGeometry.devicePixelRatio)
+      : maximum;
+  }
+
+  private previewActiveColumnView(
+    command: ActiveColumnCommand,
+    width: ColumnWidth,
+    viewportOffset: number,
+  ): ReturnType<typeof solveStripGeometry> | null {
+    const preview: LayoutContextSnapshot = {
+      ...command.before,
+      columns: command.before.columns.map((column) =>
+        column.id === command.activeColumn.id
+          ? { ...column, width: { ...width } }
+          : column,
+      ),
+      viewportOffset,
+    };
+
+    try {
+      return this.solveContextGeometry(preview, command.contextGeometry);
+    } catch {
+      return null;
+    }
   }
 
   private prepareActiveColumnCommand(): ActiveColumnCommand | null {

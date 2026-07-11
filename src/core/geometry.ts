@@ -87,10 +87,9 @@ export function solveStripGeometry(input: StripGeometryInput): StripGeometry {
     initialMaxViewportOffset,
     input,
   );
-  const viewportOffset = clamp(
-    snapToPixelGrid(input.context.viewportOffset, input.devicePixelRatio),
-    0,
-    maxViewportOffset,
+  const viewportOffset = snapToPixelGrid(
+    input.context.viewportOffset,
+    input.devicePixelRatio,
   );
   const revealedViewportOffset = revealActiveColumn(
     input.context,
@@ -207,7 +206,7 @@ function revealActiveColumn(
   gap: number,
   devicePixelRatio: number,
 ): number {
-  if (context.activeColumnId === null || maxViewportOffset === 0) {
+  if (context.activeColumnId === null) {
     return viewportOffset;
   }
 

@@ -774,6 +774,32 @@ wait_for_x11_work_area() {
   return 1
 }
 
+single_output_work_area() {
+  local protocol=$1
+
+  if [[ "$protocol" == "x11" ]]; then
+    xprop -root -notype _NET_WORKAREA 2>/dev/null |
+      sed -n 's/^_NET_WORKAREA = //p' |
+      cut -d, -f1-4 |
+      tr -d ' '
+    return
+  fi
+
+  kscreen-doctor -j 2>/dev/null | jq --exit-status --raw-output '
+    [.outputs[] | select(.enabled)]
+    | select(length == 1)
+    | .[0]
+    | [
+        .pos.x,
+        .pos.y,
+        (.size.width / .scale),
+        (.size.height / .scale)
+      ]
+    | map(tostring)
+    | join(",")
+  '
+}
+
 wait_for_x11_window() {
   local window_title=$1
   local attempt
@@ -982,6 +1008,150 @@ describe_layout() {
     window_frame=$(window_frame_geometry "$window_title" 2>/dev/null || true)
     printf '%s=%s ' "$window_title" "${window_frame:-missing}"
   done
+}
+
+frame_horizontal_gap() {
+  local left_frame=$1
+  local right_frame=$2
+
+  jq --null-input --raw-output \
+    --arg left "$left_frame" \
+    --arg right "$right_frame" '
+      def rect($raw):
+        ($raw | split(",") | map(tonumber)) as $values
+        | {
+            x: $values[0],
+            width: $values[2]
+          };
+      (rect($left)) as $left_rect
+      | (rect($right)) as $right_rect
+      | $right_rect.x - ($left_rect.x + $left_rect.width)
+    '
+}
+
+expanded_column_geometry_matches() {
+  local work_area=$1
+  local gap=$2
+  local before_first=$3
+  local before_active=$4
+  local before_right=$5
+  local after_first=$6
+  local after_active=$7
+  local after_right=$8
+
+  jq --exit-status --null-input \
+    --arg workArea "$work_area" \
+    --argjson gap "$gap" \
+    --arg beforeFirst "$before_first" \
+    --arg beforeActive "$before_active" \
+    --arg beforeRight "$before_right" \
+    --arg afterFirst "$after_first" \
+    --arg afterActive "$after_active" \
+    --arg afterRight "$after_right" '
+      def rect($raw):
+        ($raw | split(",") | map(tonumber)) as $values
+        | {
+            x: $values[0],
+            y: $values[1],
+            width: $values[2],
+            height: $values[3]
+          };
+      def magnitude: if . < 0 then -. else . end;
+      def near($left; $right): (($left - $right) | magnitude) <= 1.01;
+      (rect($workArea)) as $work
+      | (rect($beforeFirst)) as $before_first
+      | (rect($beforeActive)) as $before_active
+      | (rect($beforeRight)) as $before_right
+      | (rect($afterFirst)) as $after_first
+      | (rect($afterActive)) as $after_active
+      | (rect($afterRight)) as $after_right
+      | ($work.x + $work.width) as $work_right
+      | ($before_first.x < $before_active.x and $before_active.x < $before_right.x)
+        and ($after_first.x < $after_active.x and $after_active.x < $after_right.x)
+        and near($before_active.x - ($before_first.x + $before_first.width); $gap)
+        and near($before_right.x - ($before_active.x + $before_active.width); $gap)
+        and near($after_active.x - ($after_first.x + $after_first.width); $gap)
+        and near($after_right.x - ($after_active.x + $after_active.width); $gap)
+        and near($after_first.width; $before_first.width)
+        and near($after_right.width; $before_right.width)
+        and ($after_active.width > $before_active.width + 1.01)
+        and near($after_first.y; $before_first.y)
+        and near($after_active.y; $before_active.y)
+        and near($after_right.y; $before_right.y)
+        and near($after_first.height; $before_first.height)
+        and near($after_active.height; $before_active.height)
+        and near($after_right.height; $before_right.height)
+        and near($after_active.x; $work.x + $gap)
+        and near($after_right.x + $after_right.width; $work_right - $gap)
+    ' >/dev/null
+}
+
+centered_visible_geometry_matches() {
+  local work_area=$1
+  local gap=$2
+  local before_first=$3
+  local before_active=$4
+  local before_right=$5
+  local after_first=$6
+  local after_active=$7
+  local after_right=$8
+
+  jq --exit-status --null-input \
+    --arg workArea "$work_area" \
+    --argjson gap "$gap" \
+    --arg beforeFirst "$before_first" \
+    --arg beforeActive "$before_active" \
+    --arg beforeRight "$before_right" \
+    --arg afterFirst "$after_first" \
+    --arg afterActive "$after_active" \
+    --arg afterRight "$after_right" '
+      def rect($raw):
+        ($raw | split(",") | map(tonumber)) as $values
+        | {
+            x: $values[0],
+            y: $values[1],
+            width: $values[2],
+            height: $values[3]
+          };
+      def magnitude: if . < 0 then -. else . end;
+      def near($left; $right): (($left - $right) | magnitude) <= 1.01;
+      (rect($workArea)) as $work
+      | (rect($beforeFirst)) as $before_first
+      | (rect($beforeActive)) as $before_active
+      | (rect($beforeRight)) as $before_right
+      | (rect($afterFirst)) as $after_first
+      | (rect($afterActive)) as $after_active
+      | (rect($afterRight)) as $after_right
+      | ($work.x + $work.width) as $work_right
+      | ($after_first.x - $before_first.x) as $translation
+      | ($after_active.x - $before_active.x) as $active_translation
+      | ($after_right.x - $before_right.x) as $right_translation
+      | ($after_active.x - $work.x) as $left_margin
+      | ($work_right - ($after_right.x + $after_right.width)) as $right_margin
+      | (($translation | magnitude) > 1.01)
+        and near($translation; $active_translation)
+        and near($translation; $right_translation)
+        and ($before_first.x < $before_active.x and $before_active.x < $before_right.x)
+        and ($after_first.x < $after_active.x and $after_active.x < $after_right.x)
+        and near($before_active.x - ($before_first.x + $before_first.width); $gap)
+        and near($before_right.x - ($before_active.x + $before_active.width); $gap)
+        and near($after_active.x - ($after_first.x + $after_first.width); $gap)
+        and near($after_right.x - ($after_active.x + $after_active.width); $gap)
+        and near($after_first.width; $before_first.width)
+        and near($after_active.width; $before_active.width)
+        and near($after_right.width; $before_right.width)
+        and near($after_first.y; $before_first.y)
+        and near($after_active.y; $before_active.y)
+        and near($after_right.y; $before_right.y)
+        and near($after_first.height; $before_first.height)
+        and near($after_active.height; $before_active.height)
+        and near($after_right.height; $before_right.height)
+        and ($before_active.x >= $work.x + $gap - 1.01)
+        and ($before_right.x + $before_right.width + $gap <= $work_right + 1.01)
+        and ($before_first.x < $work.x + $gap - 1.01)
+        and near($left_margin; $right_margin)
+        and ($left_margin >= $gap - 1.01)
+    ' >/dev/null
 }
 
 wait_for_script_state() {
@@ -2180,6 +2350,8 @@ verify_automatic_floating() {
     "driftile_toggle_floating"
     "driftile_move_column_to_next_desktop"
     "driftile_move_column_to_output_right"
+    "driftile_expand_column_to_available_width"
+    "driftile_center_visible_columns"
   )
 
   for shortcut in "${no_op_shortcuts[@]}"; do
@@ -2319,6 +2491,138 @@ verify_automatic_floating() {
     fail "Driftile changed the $protocol layout after fixed-size cleanup"
   wait_for_active "$second_title" || \
     fail "KWin did not restore $protocol focus after fixed-size cleanup"
+}
+
+verify_advanced_column_view() {
+  local protocol=$1
+  local first_title=$2
+  local active_title=$3
+  local right_title=$4
+  local canonical_first
+  local canonical_active
+  local canonical_right
+  local compact_first
+  local compact_active
+  local compact_right
+  local expanded_first
+  local expanded_active
+  local expanded_right
+  local center_before_first
+  local center_before_active
+  local center_before_right
+  local centered_first
+  local centered_active
+  local centered_right
+  local gap
+  local work_area
+
+  wait_for_active "$active_title" || \
+    fail "KWin did not preserve $protocol focus before advanced column-view acceptance"
+  canonical_first=$(capture_stable_geometry "$first_title") || \
+    fail "the first $protocol column did not stabilize before advanced column-view acceptance"
+  canonical_active=$(capture_stable_geometry "$active_title") || \
+    fail "the active $protocol column did not stabilize before advanced column-view acceptance"
+  canonical_right=$(capture_stable_geometry "$right_title") || \
+    fail "the right $protocol column did not stabilize before advanced column-view acceptance"
+  wait_for_geometries \
+    "$first_title" "$canonical_first" \
+    "$active_title" "$canonical_active" \
+    "$right_title" "$canonical_right" || \
+    fail "the canonical $protocol layout did not settle before advanced column-view acceptance"
+  work_area=$(single_output_work_area "$protocol") || \
+    fail "KWin did not expose the single-output $protocol work area"
+
+  invoke_shortcut "driftile_decrease_column_width" || \
+    fail "KGlobalAccel could not prepare the $protocol available-width layout"
+  compact_first=$(capture_stable_geometry "$first_title") || \
+    fail "the first $protocol column did not settle before available-width expansion"
+  compact_active=$(capture_stable_geometry "$active_title") || \
+    fail "the active $protocol column did not settle before available-width expansion"
+  compact_right=$(capture_stable_geometry "$right_title") || \
+    fail "the right $protocol column did not settle before available-width expansion"
+  wait_for_geometries \
+    "$first_title" "$compact_first" \
+    "$active_title" "$compact_active" \
+    "$right_title" "$compact_right" || \
+    fail "the compact $protocol layout did not settle before available-width expansion"
+  gap=$(frame_horizontal_gap "$compact_active" "$compact_right") || \
+    fail "the $protocol column gap could not be measured"
+  jq --exit-status --null-input --argjson gap "$gap" '$gap > 0' >/dev/null || \
+    fail "the measured $protocol column gap is not positive: $gap"
+
+  invoke_shortcut "driftile_expand_column_to_available_width" || \
+    fail "KGlobalAccel could not invoke the $protocol available-width shortcut"
+  expanded_first=$(capture_stable_geometry "$first_title") || \
+    fail "the first $protocol column did not settle after available-width expansion"
+  expanded_active=$(capture_stable_geometry "$active_title") || \
+    fail "the active $protocol column did not settle after available-width expansion"
+  expanded_right=$(capture_stable_geometry "$right_title") || \
+    fail "the right $protocol column did not settle after available-width expansion"
+  wait_for_geometries \
+    "$first_title" "$expanded_first" \
+    "$active_title" "$expanded_active" \
+    "$right_title" "$expanded_right" || \
+    fail "the expanded $protocol layout did not settle together"
+  expanded_column_geometry_matches \
+    "$work_area" "$gap" \
+    "$compact_first" "$compact_active" "$compact_right" \
+    "$expanded_first" "$expanded_active" "$expanded_right" || \
+    fail "the $protocol available-width action did not preserve order, heights, sibling widths, and the usable span: $(describe_layout "$first_title" "$active_title" "$right_title")"
+  wait_for_active "$active_title" || \
+    fail "Driftile changed $protocol focus after available-width expansion"
+
+  invoke_shortcut "driftile_decrease_column_width" || \
+    fail "KGlobalAccel could not prepare the $protocol visible-column centering layout"
+  center_before_first=$(capture_stable_geometry "$first_title") || \
+    fail "the first $protocol column did not settle before visible-column centering"
+  center_before_active=$(capture_stable_geometry "$active_title") || \
+    fail "the active $protocol column did not settle before visible-column centering"
+  center_before_right=$(capture_stable_geometry "$right_title") || \
+    fail "the right $protocol column did not settle before visible-column centering"
+  wait_for_geometries \
+    "$first_title" "$center_before_first" \
+    "$active_title" "$center_before_active" \
+    "$right_title" "$center_before_right" || \
+    fail "the uncentered $protocol column group did not settle"
+
+  invoke_shortcut "driftile_center_visible_columns" || \
+    fail "KGlobalAccel could not invoke the $protocol visible-columns shortcut"
+  centered_first=$(capture_stable_geometry "$first_title") || \
+    fail "the first $protocol column did not settle after visible-column centering"
+  centered_active=$(capture_stable_geometry "$active_title") || \
+    fail "the active $protocol column did not settle after visible-column centering"
+  centered_right=$(capture_stable_geometry "$right_title") || \
+    fail "the right $protocol column did not settle after visible-column centering"
+  wait_for_geometries \
+    "$first_title" "$centered_first" \
+    "$active_title" "$centered_active" \
+    "$right_title" "$centered_right" || \
+    fail "the centered $protocol layout did not settle together"
+  centered_visible_geometry_matches \
+    "$work_area" "$gap" \
+    "$center_before_first" "$center_before_active" "$center_before_right" \
+    "$centered_first" "$centered_active" "$centered_right" || \
+    fail "the $protocol visible-columns action was not a common viewport translation with equal outer margins: $(describe_layout "$first_title" "$active_title" "$right_title")"
+  wait_for_active "$active_title" || \
+    fail "Driftile changed $protocol focus after visible-column centering"
+
+  invoke_shortcut "driftile_reset_column_width" || \
+    fail "KGlobalAccel could not restore the canonical $protocol column width"
+  capture_stable_geometry "$active_title" >/dev/null || \
+    fail "the active $protocol column did not settle while restoring its canonical width"
+  activate_window "$right_title" || \
+    fail "KWin could not reveal the right $protocol column during canonical restoration"
+  capture_stable_geometry "$right_title" >/dev/null || \
+    fail "the right $protocol column did not settle during canonical restoration"
+  activate_window "$active_title" || \
+    fail "KWin could not restore canonical $protocol focus"
+  wait_for_active "$active_title" || \
+    fail "KWin did not restore canonical $protocol focus"
+  wait_for_geometries \
+    "$first_title" "$canonical_first" \
+    "$active_title" "$canonical_active" \
+    "$right_title" "$canonical_right" || \
+    fail "Driftile did not restore the canonical $protocol layout after advanced column-view acceptance: $(describe_layout "$first_title" "$active_title" "$right_title")"
 }
 
 run_scenario() {
@@ -2855,10 +3159,10 @@ run_scenario() {
   invoke_shortcut "driftile_toggle_floating" || \
     fail "KGlobalAccel could not float the middle $protocol window"
   wait_for_layout \
-    "$first_title" "16,16,616,688" \
+    "$first_title" "-600,16,616,688" \
     "$second_title" "$second_baseline" \
-    "$third_title" "648,16,616,688" || \
-    fail "Driftile did not reflow around the floating middle $protocol window: $(describe_layout "$first_title" "$second_title" "$third_title")"
+    "$third_title" "32,16,616,688" || \
+    fail "Driftile did not preserve the tiled view while floating the middle $protocol window: $(describe_layout "$first_title" "$second_title" "$third_title")"
   wait_for_active "$second_title" || \
     fail "Driftile changed $protocol focus after floating the middle window"
 
@@ -2886,6 +3190,13 @@ run_scenario() {
     fail "KGlobalAccel did not register the maximize-column shortcut"
   wait_for_shortcut "driftile_center_column" || \
     fail "KGlobalAccel did not register the center-column shortcut"
+  wait_for_shortcut "driftile_expand_column_to_available_width" || \
+    fail "KGlobalAccel did not register the available-width shortcut"
+  wait_for_shortcut "driftile_center_visible_columns" || \
+    fail "KGlobalAccel did not register the visible-columns shortcut"
+
+  verify_advanced_column_view \
+    "$protocol" "$first_title" "$second_title" "$third_title"
 
   invoke_shortcut "driftile_increase_column_width" || \
     fail "KGlobalAccel could not invoke the increase-width shortcut"
@@ -2910,9 +3221,9 @@ run_scenario() {
   invoke_shortcut "driftile_decrease_column_width" || \
     fail "KGlobalAccel could not invoke the decrease-width shortcut"
   wait_for_layout \
-    "$first_title" "-490,16,616,688" \
-    "$second_title" "142,16,490,688" \
-    "$third_title" "648,16,616,688" || \
+    "$first_title" "-600,16,616,688" \
+    "$second_title" "32,16,490,688" \
+    "$third_title" "538,16,616,688" || \
     fail "Driftile did not decrease the active $protocol column width: $(describe_layout "$first_title" "$second_title" "$third_title")"
   wait_for_active "$second_title" || \
     fail "Driftile changed $protocol focus after decreasing column width"
@@ -2920,9 +3231,9 @@ run_scenario() {
   invoke_shortcut "driftile_reset_column_width" || \
     fail "KGlobalAccel could not invoke the reset-width shortcut"
   wait_for_layout \
-    "$first_title" "-490,16,616,688" \
-    "$second_title" "142,16,616,688" \
-    "$third_title" "774,16,616,688" || \
+    "$first_title" "-600,16,616,688" \
+    "$second_title" "32,16,616,688" \
+    "$third_title" "664,16,616,688" || \
     fail "Driftile did not reset the active $protocol column width: $(describe_layout "$first_title" "$second_title" "$third_title")"
   wait_for_active "$second_title" || \
     fail "Driftile changed $protocol focus after resetting column width"
@@ -2930,9 +3241,9 @@ run_scenario() {
   invoke_shortcut "driftile_switch_preset_column_width" || \
     fail "KGlobalAccel could not invoke the preset-width shortcut"
   wait_for_layout \
-    "$first_title" "-490,16,616,688" \
-    "$second_title" "142,16,827,688" \
-    "$third_title" "985,16,616,688" || \
+    "$first_title" "-600,16,616,688" \
+    "$second_title" "32,16,827,688" \
+    "$third_title" "875,16,616,688" || \
     fail "Driftile did not select the next $protocol preset width: $(describe_layout "$first_title" "$second_title" "$third_title")"
   wait_for_active "$second_title" || \
     fail "Driftile changed $protocol focus after selecting a preset width"
@@ -2940,9 +3251,9 @@ run_scenario() {
   invoke_shortcut "driftile_switch_preset_column_width_back" || \
     fail "KGlobalAccel could not invoke the reverse preset-width shortcut"
   wait_for_layout \
-    "$first_title" "-490,16,616,688" \
-    "$second_title" "142,16,616,688" \
-    "$third_title" "774,16,616,688" || \
+    "$first_title" "-600,16,616,688" \
+    "$second_title" "32,16,616,688" \
+    "$third_title" "664,16,616,688" || \
     fail "Driftile did not restore the previous $protocol preset width: $(describe_layout "$first_title" "$second_title" "$third_title")"
 
   invoke_shortcut "driftile_maximize_column" || \

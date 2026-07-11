@@ -219,6 +219,14 @@ export function centerColumn(): void {
   controller?.centerColumn();
 }
 
+export function expandColumnToAvailableWidth(): void {
+  controller?.expandColumnToAvailableWidth();
+}
+
+export function centerVisibleColumns(): void {
+  controller?.centerVisibleColumns();
+}
+
 export function probeTopology(): void {
   controller?.probeTopology();
 }

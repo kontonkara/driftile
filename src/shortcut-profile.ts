@@ -286,9 +286,19 @@ const definitions: readonly ShortcutDefinition[] = [
     sequence: "Meta+F",
   },
   {
+    name: "driftile_expand_column_to_available_width",
+    text: "Driftile: Expand column to available width",
+    sequence: "Meta+Ctrl+F",
+  },
+  {
     name: "driftile_center_column",
     text: "Driftile: Center column",
     sequence: "Meta+C",
+  },
+  {
+    name: "driftile_center_visible_columns",
+    text: "Driftile: Center visible columns",
+    sequence: "Meta+Ctrl+C",
   },
   {
     name: "driftile_decrease_column_width",

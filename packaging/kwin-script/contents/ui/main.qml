@@ -424,11 +424,23 @@ QtObject {
         sequence: "Meta+F"
         onActivated: Runtime.DriftileRuntime.maximizeColumn()
     }
+    readonly property ShortcutHandler expandColumnToAvailableWidthShortcut: ShortcutHandler {
+        name: "driftile_expand_column_to_available_width"
+        text: "Driftile: Expand column to available width"
+        sequence: "Meta+Ctrl+F"
+        onActivated: Runtime.DriftileRuntime.expandColumnToAvailableWidth()
+    }
     readonly property ShortcutHandler centerColumnShortcut: ShortcutHandler {
         name: "driftile_center_column"
         text: "Driftile: Center column"
         sequence: "Meta+C"
         onActivated: Runtime.DriftileRuntime.centerColumn()
+    }
+    readonly property ShortcutHandler centerVisibleColumnsShortcut: ShortcutHandler {
+        name: "driftile_center_visible_columns"
+        text: "Driftile: Center visible columns"
+        sequence: "Meta+Ctrl+C"
+        onActivated: Runtime.DriftileRuntime.centerVisibleColumns()
     }
     readonly property ShortcutHandler decreaseColumnWidthShortcut: ShortcutHandler {
         name: "driftile_decrease_column_width"

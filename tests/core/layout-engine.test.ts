@@ -2018,12 +2018,14 @@ describe("LayoutEngine", () => {
 
     expect(engine.snapshot(output, desktop).viewportOffset).toBe(936);
     expect(engine.snapshot(secondOutput, desktop).viewportOffset).toBe(0);
+    expect(engine.setViewportOffset(output, desktop, -250)).toBe(true);
+    expect(engine.snapshot(output, desktop).viewportOffset).toBe(-250);
     expect(engine.setViewportOffset(outputId("unknown"), desktop, 10)).toBe(
       false,
     );
   });
 
-  it.each([-1, Number.NaN, Number.POSITIVE_INFINITY])(
+  it.each([Number.NEGATIVE_INFINITY, Number.NaN, Number.POSITIVE_INFINITY])(
     "rejects an invalid viewport offset of %s",
     (viewportOffset) => {
       const engine = new LayoutEngine();
@@ -2345,7 +2347,7 @@ describe("LayoutEngine", () => {
       ],
       desktopId: desktop,
       outputId: output,
-      viewportOffset: 120,
+      viewportOffset: -120,
     });
     engine.restoreColumns({
       activeColumnId: columnId("target-a"),
@@ -2369,7 +2371,7 @@ describe("LayoutEngine", () => {
       ],
       desktopId: desktop,
       outputId: targetOutput,
-      viewportOffset: 75,
+      viewportOffset: -75,
     });
     const sourceBefore = engine.snapshot(output, desktop);
     const targetBefore = engine.snapshot(targetOutput, desktop);
@@ -2401,7 +2403,7 @@ describe("LayoutEngine", () => {
       ],
       desktopId: "desktop-1",
       outputId: "DP-1",
-      viewportOffset: 120,
+      viewportOffset: -120,
     });
     expect(preview.targetLayout).toEqual({
       activeColumnId: "transferred",
@@ -2424,7 +2426,7 @@ describe("LayoutEngine", () => {
       ],
       desktopId: "desktop-1",
       outputId: "HDMI-A-1",
-      viewportOffset: 75,
+      viewportOffset: -75,
     });
     expect(Object.isFrozen(preview)).toBe(true);
     expect(Object.isFrozen(preview.sourceLayout)).toBe(true);

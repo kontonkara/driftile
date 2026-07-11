@@ -39,6 +39,31 @@ describe("solveStripGeometry", () => {
     });
   });
 
+  it("preserves a signed offset that centers a visible column", () => {
+    const result = solve([{ kind: "fixed", value: 600 }], {
+      viewportOffset: -644,
+    });
+
+    expect(result.viewportOffset).toBe(-644);
+    expect(result.windows[0]?.frame.x).toBe(760);
+  });
+
+  it.each([-4_000, 4_000])(
+    "corrects a stale signed offset of %s when the active column is off-screen",
+    (viewportOffset) => {
+      const result = solve([{ kind: "fixed", value: 600 }], {
+        viewportOffset,
+      });
+
+      expect(result.maxViewportOffset).toBe(0);
+      expect(result.viewportOffset).toBe(0);
+      expect(result.windows[0]?.frame).toMatchObject({
+        width: 600,
+        x: 116,
+      });
+    },
+  );
+
   it("fits proportional columns together with their gaps", () => {
     const result = solve([
       { kind: "proportion", value: 0.5 },

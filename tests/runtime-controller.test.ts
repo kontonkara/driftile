@@ -5468,6 +5468,624 @@ describe("RuntimeController", () => {
     expect(controller.centerColumn()).toBe(false);
   });
 
+  it("centers a lone column with a signed viewport offset", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const active = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [active.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+    });
+
+    controller.start();
+
+    expect(controller.centerColumn()).toBe(true);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ).viewportOffset,
+    ).toBe(-340);
+    expect(active.window.frameGeometry).toMatchObject({ width: 300, x: 350 });
+    expect(controller.centerColumn()).toBe(false);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+    expect(fixture.activationCount).toBe(0);
+  });
+
+  it("centers the first and last columns beyond normal strip bounds", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const windows = Array.from({ length: 3 }, (_value, index) =>
+      createTrackedWindow(`window-${String(index + 1)}`, output, desktop),
+    );
+    const first = windows[0];
+    const last = windows[2];
+
+    if (!first || !last) {
+      throw new Error("missing edge column fixture");
+    }
+
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map((window) => window.window),
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+    });
+
+    controller.start();
+    fixture.workspace.activeWindow = first.window;
+    const order = testLayoutColumns(controller, output, desktop);
+    const activationCount = fixture.activationCount;
+
+    expect(controller.centerColumn()).toBe(true);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ).viewportOffset,
+    ).toBe(-340);
+    expect(first.window.frameGeometry.x).toBe(350);
+
+    fixture.workspace.activeWindow = last.window;
+    expect(controller.centerColumn()).toBe(true);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ).viewportOffset,
+    ).toBe(280);
+    expect(last.window.frameGeometry.x).toBe(350);
+    expect(testLayoutColumns(controller, output, desktop)).toEqual(order);
+    expect(fixture.workspace.activeWindow).toBe(last.window);
+    expect(fixture.activationCount).toBe(activationCount + 1);
+  });
+
+  it("expands a visible column to fill the remaining width", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const windows = Array.from({ length: 3 }, (_value, index) =>
+      createTrackedWindow(`window-${String(index + 1)}`, output, desktop),
+    );
+    const active = windows[1];
+
+    if (!active) {
+      throw new Error("missing active column fixture");
+    }
+
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map((window) => window.window),
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 250 },
+      gap: 10,
+    });
+
+    controller.start();
+    fixture.workspace.activeWindow = active.window;
+    const before = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const activationCount = fixture.activationCount;
+
+    expect(controller.expandColumnToAvailableWidth()).toBe(true);
+    const after = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    expect(after.viewportOffset).toBe(0);
+    expect(after.columns.map((column) => column.id)).toEqual(
+      before.columns.map((column) => column.id),
+    );
+    expect(after.columns.map((column) => column.windowIds)).toEqual(
+      before.columns.map((column) => column.windowIds),
+    );
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "fixed",
+      value: 460,
+    });
+    expect(windows.map((window) => window.window.frameGeometry)).toEqual([
+      { height: 780, width: 250, x: 10, y: 10 },
+      { height: 780, width: 460, x: 270, y: 10 },
+      { height: 780, width: 250, x: 740, y: 10 },
+    ]);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+    expect(fixture.activationCount).toBe(activationCount);
+  });
+
+  it("enters full width from a lone visible column without toggling back", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const active = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [active.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+    });
+
+    controller.start();
+
+    expect(controller.expandColumnToAvailableWidth()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "proportion",
+      value: 1,
+    });
+    expect(active.window.frameGeometry).toMatchObject({ width: 980, x: 10 });
+    expect(controller.expandColumnToAvailableWidth()).toBe(false);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "proportion",
+      value: 1,
+    });
+
+    expect(controller.maximizeColumn()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "fixed",
+      value: 300,
+    });
+    expect(active.window.frameGeometry).toMatchObject({ width: 300, x: 10 });
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+    expect(fixture.activationCount).toBe(0);
+  });
+
+  it("does not expand when visible columns already consume the work area", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const windows = [
+      createTrackedWindow("window-1", output, desktop),
+      createTrackedWindow("window-2", output, desktop),
+    ];
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map((window) => window.window),
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    controller.start();
+    const beforeLayout = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const beforeFrames = windows.map((window) => ({
+      ...window.window.frameGeometry,
+    }));
+
+    expect(controller.expandColumnToAvailableWidth()).toBe(false);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(beforeLayout);
+    expect(windows.map((window) => window.window.frameGeometry)).toEqual(
+      beforeFrames,
+    );
+  });
+
+  it("does not change column view actions when the active column is partial", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const active = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [active.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 1200 },
+      gap: 10,
+    });
+
+    controller.start();
+    const beforeLayout = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const beforeFrame = { ...active.window.frameGeometry };
+
+    expect(controller.expandColumnToAvailableWidth()).toBe(false);
+    expect(controller.centerVisibleColumns()).toBe(false);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(beforeLayout);
+    expect(active.window.frameGeometry).toEqual(beforeFrame);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+    expect(fixture.activationCount).toBe(0);
+  });
+
+  it("aligns visible columns when the active width is already at its maximum", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const windows = Array.from({ length: 4 }, (_value, index) =>
+      createTrackedWindow(`window-${String(index + 1)}`, output, desktop, {
+        ...(index === 2 ? { maxSize: { height: 10_000, width: 300 } } : {}),
+      }),
+    );
+    const active = windows[2];
+    const leftmost = windows[1];
+
+    if (!active || !leftmost) {
+      throw new Error("missing maximum-width fixture");
+    }
+
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map((window) => window.window),
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+    });
+
+    controller.start();
+    fixture.workspace.activeWindow = active.window;
+    expect(
+      runtimeLayout(controller).setViewportOffset(
+        outputId(output.name),
+        desktopId(desktop.id),
+        100,
+      ),
+    ).toBe(true);
+    controller.reconcile();
+    const before = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const activationCount = fixture.activationCount;
+
+    expect(controller.expandColumnToAvailableWidth()).toBe(true);
+    const after = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    expect(after.viewportOffset).toBe(310);
+    expect(after.columns).toEqual(before.columns);
+    expect(leftmost.window.frameGeometry).toMatchObject({ width: 300, x: 10 });
+    expect(active.window.frameGeometry).toMatchObject({ width: 300, x: 320 });
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+    expect(fixture.activationCount).toBe(activationCount);
+  });
+
+  it("rolls back available-width expansion after a partial geometry failure", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const windows = Array.from({ length: 4 }, (_value, index) =>
+      createTrackedWindow(`window-${String(index + 1)}`, output, desktop),
+    );
+    const active = windows[2];
+    const rejecting = windows[3];
+
+    if (!active || !rejecting) {
+      throw new Error("missing rollback fixture");
+    }
+
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map((window) => window.window),
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 250 },
+      gap: 10,
+    });
+    const warning = console.warn;
+
+    controller.start();
+    fixture.workspace.activeWindow = active.window;
+    expect(
+      runtimeLayout(controller).setViewportOffset(
+        outputId(output.name),
+        desktopId(desktop.id),
+        100,
+      ),
+    ).toBe(true);
+    controller.reconcile();
+    const beforeLayout = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const beforeFrames = windows.map((window) => ({
+      ...window.window.frameGeometry,
+    }));
+    const activationCount = fixture.activationCount;
+    let rejectNextWrite = true;
+    rejecting.setWriteBehavior((_frame, commit) => {
+      if (rejectNextWrite) {
+        rejectNextWrite = false;
+        throw new Error("geometry rejected");
+      }
+
+      commit();
+    });
+    console.warn = () => undefined;
+
+    try {
+      expect(controller.expandColumnToAvailableWidth()).toBe(false);
+    } finally {
+      console.warn = warning;
+      rejecting.setWriteBehavior(null);
+    }
+
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(beforeLayout);
+    expect(windows.map((window) => window.window.frameGeometry)).toEqual(
+      beforeFrames,
+    );
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+    expect(fixture.activationCount).toBe(activationCount);
+
+    expect(controller.expandColumnToAvailableWidth()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "fixed",
+      value: 460,
+    });
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ).viewportOffset,
+    ).toBe(260);
+  });
+
+  it("centers a lone visible column with a signed viewport offset", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const active = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [active.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+    });
+
+    controller.start();
+    const before = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+
+    expect(controller.centerVisibleColumns()).toBe(true);
+    const after = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    expect(after.viewportOffset).toBe(-340);
+    expect(after.columns).toEqual(before.columns);
+    expect(active.window.frameGeometry).toMatchObject({ width: 300, x: 350 });
+    expect(controller.centerVisibleColumns()).toBe(false);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+    expect(fixture.activationCount).toBe(0);
+  });
+
+  it("centers every fully visible fitting column as one group", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const windows = Array.from({ length: 3 }, (_value, index) =>
+      createTrackedWindow(`window-${String(index + 1)}`, output, desktop),
+    );
+    const active = windows[1];
+
+    if (!active) {
+      throw new Error("missing visible-group fixture");
+    }
+
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map((window) => window.window),
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 250 },
+      gap: 10,
+    });
+
+    controller.start();
+    fixture.workspace.activeWindow = active.window;
+    const before = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const activationCount = fixture.activationCount;
+
+    expect(controller.centerVisibleColumns()).toBe(true);
+    const after = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    expect(after.viewportOffset).toBe(-105);
+    expect(after.columns).toEqual(before.columns);
+    expect(windows.map((window) => window.window.frameGeometry.x)).toEqual([
+      115, 375, 635,
+    ]);
+    expect(windows[0]?.window.frameGeometry.x).toBe(
+      1000 -
+        ((windows[2]?.window.frameGeometry.x ?? 0) +
+          (windows[2]?.window.frameGeometry.width ?? 0)),
+    );
+    expect(controller.centerVisibleColumns()).toBe(false);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+    expect(fixture.activationCount).toBe(activationCount);
+  });
+
+  it("centers an interior fully visible subset without changing its columns", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const windows = Array.from({ length: 5 }, (_value, index) =>
+      createTrackedWindow(`window-${String(index + 1)}`, output, desktop),
+    );
+    const active = windows[2];
+
+    if (!active) {
+      throw new Error("missing interior visible-group fixture");
+    }
+
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map((window) => window.window),
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+    });
+
+    controller.start();
+    fixture.workspace.activeWindow = active.window;
+    expect(
+      runtimeLayout(controller).setViewportOffset(
+        outputId(output.name),
+        desktopId(desktop.id),
+        300,
+      ),
+    ).toBe(true);
+    controller.reconcile();
+    const before = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const activationCount = fixture.activationCount;
+
+    expect(controller.centerVisibleColumns()).toBe(true);
+    const after = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    expect(after.viewportOffset).toBe(280);
+    expect(after.columns).toEqual(before.columns);
+    expect(windows.map((window) => window.window.frameGeometry.x)).toEqual([
+      -270, 40, 350, 660, 970,
+    ]);
+    expect(windows[1]?.window.frameGeometry.x).toBe(
+      1000 -
+        ((windows[3]?.window.frameGeometry.x ?? 0) +
+          (windows[3]?.window.frameGeometry.width ?? 0)),
+    );
+    expect(controller.centerVisibleColumns()).toBe(false);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+    expect(fixture.activationCount).toBe(activationCount);
+  });
+
+  it("recognizes snapped edge columns when centering at fractional scale", () => {
+    const trackedOutput = createTrackedOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    trackedOutput.setScale(1.25);
+    const windows = Array.from({ length: 5 }, (_value, index) =>
+      createTrackedWindow(
+        `window-${String(index + 1)}`,
+        trackedOutput.output,
+        desktop,
+      ),
+    );
+    const active = windows[4];
+
+    if (!active) {
+      throw new Error("missing fractional-scale fixture");
+    }
+
+    const fixture = createWorkspace(
+      trackedOutput.output,
+      desktop,
+      [trackedOutput.output],
+      [desktop],
+      windows.map((window) => window.window),
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 200 },
+      gap: 10,
+    });
+
+    controller.start();
+    expect(
+      runtimeLayout(controller).setViewportOffset(
+        outputId(trackedOutput.output.name),
+        desktopId(desktop.id),
+        60,
+      ),
+    ).toBe(true);
+    controller.reconcile();
+    expect(
+      active.window.frameGeometry.x + active.window.frameGeometry.width,
+    ).toBe(990.4);
+
+    expect(controller.centerVisibleColumns()).toBe(true);
+    const after = runtimeLayout(controller).snapshot(
+      outputId(trackedOutput.output.name),
+      desktopId(desktop.id),
+    );
+    const left = windows[1]?.window.frameGeometry.x ?? 0;
+    const right =
+      (windows[4]?.window.frameGeometry.x ?? 0) +
+      (windows[4]?.window.frameGeometry.width ?? 0);
+    expect(after.viewportOffset).toBeCloseTo(135.2, 10);
+    expect(left).toBeCloseTo(84.8, 10);
+    expect(right).toBeCloseTo(915.2, 10);
+    expect(left).toBeCloseTo(1000 - right, 10);
+    expect(controller.centerVisibleColumns()).toBe(false);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+    expect(fixture.activationCount).toBe(0);
+  });
+
   it("converts a fixed column for percentage adjustments and resets it", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
@@ -7999,8 +8617,14 @@ describe("RuntimeController", () => {
     fixture.windowRemoved.emit(first.window);
     scheduler.flush();
     expect(controller.lastWriteCount).toBe(2);
-    expect(second.window.frameGeometry.x).toBe(10);
-    expect(third.window.frameGeometry.x).toBe(505);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ).viewportOffset,
+    ).toBe(485);
+    expect(second.window.frameGeometry.x).toBe(-475);
+    expect(third.window.frameGeometry.x).toBe(20);
   });
 
   it("reconciles each dirty output context in one scheduled batch", () => {

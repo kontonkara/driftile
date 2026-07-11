@@ -37,6 +37,10 @@ const expectedHandlers: Readonly<
     activated: "Runtime.DriftileRuntime.centerColumn()",
     sequence: "Meta+C",
   },
+  driftile_center_visible_columns: {
+    activated: "Runtime.DriftileRuntime.centerVisibleColumns()",
+    sequence: "Meta+Ctrl+C",
+  },
   driftile_decrease_column_width: {
     activated: "Runtime.DriftileRuntime.decreaseColumnWidth()",
     sequence: "Meta+-",
@@ -150,6 +154,10 @@ const expectedHandlers: Readonly<
   driftile_maximize_column: {
     activated: "Runtime.DriftileRuntime.maximizeColumn()",
     sequence: "Meta+F",
+  },
+  driftile_expand_column_to_available_width: {
+    activated: "Runtime.DriftileRuntime.expandColumnToAvailableWidth()",
+    sequence: "Meta+Ctrl+F",
   },
   driftile_move_column_left: {
     activated: "Runtime.DriftileRuntime.moveColumnLeft()",
