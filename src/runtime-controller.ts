@@ -139,7 +139,7 @@ interface FloatingWindow {
 interface WindowTransferOperation {
   readonly activeId: WindowId;
   desktopChangeSuppressed: boolean;
-  desktopMemberStateInvalidated?: boolean;
+  memberStateInvalidated?: boolean;
   readonly kind:
     "desktop" | "floating-desktop" | "output" | "stack-native-state";
   readonly movingIds: ReadonlySet<WindowId>;
@@ -1830,16 +1830,17 @@ export class RuntimeController {
     this.cancelInvalidPendingExpelFocusHandoff();
 
     if (this.windowTransferOperation) {
-      const movingDesktopMember =
-        this.windowTransferOperation.kind === "desktop" &&
+      const movingContextTransferMember =
+        (this.windowTransferOperation.kind === "desktop" ||
+          this.windowTransferOperation.kind === "output") &&
         this.windowTransferOperation.movingIds.has(changedId);
 
-      if (movingDesktopMember) {
-        this.windowTransferOperation.desktopMemberStateInvalidated = true;
+      if (movingContextTransferMember) {
+        this.windowTransferOperation.memberStateInvalidated = true;
       }
 
       if (
-        movingDesktopMember ||
+        movingContextTransferMember ||
         !this.windowTransferOperation.movingIds.has(changedId) ||
         (source &&
           (this.automaticFloatingWindows.has(changedId) ||
@@ -4785,7 +4786,7 @@ export class RuntimeController {
     const operation: WindowTransferOperation = {
       activeId: active.activeId,
       desktopChangeSuppressed: false,
-      desktopMemberStateInvalidated: false,
+      memberStateInvalidated: false,
       kind: "desktop",
       movingIds: selection.memberIds,
       sourceContextKey: active.contextKey,
@@ -4818,7 +4819,7 @@ export class RuntimeController {
       return transferred;
     } finally {
       this.discardContextTransferPreview(preview);
-      this.queueChangedDesktopTransferMembers(command);
+      this.queueChangedTransferMembers(command);
 
       if (this.windowTransferOperation === operation) {
         this.windowTransferOperation = null;
@@ -4944,10 +4945,7 @@ export class RuntimeController {
       }
 
       if (moving && geometryPassiveIds?.has(window.windowId) === true) {
-        return this.desktopTransferMemberIsSettledMinimized(
-          window.windowId,
-          source,
-        );
+        return this.transferMemberIsSettledMinimized(window.windowId, source);
       }
 
       return (
@@ -4990,7 +4988,7 @@ export class RuntimeController {
     ];
   }
 
-  private desktopTransferMemberIsSettledMinimized(
+  private transferMemberIsSettledMinimized(
     id: WindowId,
     source: KWinWindow,
   ): boolean {
@@ -5015,21 +5013,19 @@ export class RuntimeController {
     );
   }
 
-  private desktopTransferMemberStatesAreCurrent(
-    command: DesktopTransferCommand,
+  private transferMemberStatesAreCurrent(
+    command: DesktopTransferCommand | OutputTransferCommand,
     operation: WindowTransferOperation,
   ): boolean {
     return (
-      operation.desktopMemberStateInvalidated !== true &&
+      operation.memberStateInvalidated !== true &&
       command.members.every((member) =>
-        this.desktopTransferMemberStateIsCurrent(member),
+        this.transferMemberStateIsCurrent(member),
       )
     );
   }
 
-  private desktopTransferMemberStateIsCurrent(
-    member: ColumnTransferMember,
-  ): boolean {
+  private transferMemberStateIsCurrent(member: ColumnTransferMember): boolean {
     if (
       this.observer.source(member.id) !== member.window ||
       member.window.minimized !== member.minimized
@@ -5038,10 +5034,7 @@ export class RuntimeController {
     }
 
     if (member.minimized) {
-      return this.desktopTransferMemberIsSettledMinimized(
-        member.id,
-        member.window,
-      );
+      return this.transferMemberIsSettledMinimized(member.id, member.window);
     }
 
     return (
@@ -5055,8 +5048,8 @@ export class RuntimeController {
     );
   }
 
-  private queueChangedDesktopTransferMembers(
-    command: DesktopTransferCommand,
+  private queueChangedTransferMembers(
+    command: DesktopTransferCommand | OutputTransferCommand,
   ): void {
     for (const member of command.members) {
       const source = this.observer.source(member.id);
@@ -5067,8 +5060,8 @@ export class RuntimeController {
     }
   }
 
-  private desktopTransferPassiveFramesMatch(
-    command: DesktopTransferCommand,
+  private transferPassiveFramesMatch(
+    command: DesktopTransferCommand | OutputTransferCommand,
     destinationBaselines: ReadonlyMap<WindowId, RestoreBaseline>,
   ): boolean {
     return command.members.every((member) => {
@@ -5138,7 +5131,7 @@ export class RuntimeController {
 
     try {
       if (
-        !this.desktopTransferMemberStatesAreCurrent(command, operation) ||
+        !this.transferMemberStatesAreCurrent(command, operation) ||
         !this.transferLayoutsOwnershipIsCurrent(sourceLayout, targetLayout)
       ) {
         throw new Error("desktop transfer ownership changed");
@@ -5151,7 +5144,7 @@ export class RuntimeController {
             operation,
             topologyRevision,
           ) ||
-          !this.desktopTransferMemberStatesAreCurrent(command, operation)
+          !this.transferMemberStatesAreCurrent(command, operation)
         ) {
           throw new Error("desktop transfer context changed");
         }
@@ -5169,7 +5162,7 @@ export class RuntimeController {
             operation,
             topologyRevision,
           ) ||
-          !this.desktopTransferMemberStatesAreCurrent(command, operation) ||
+          !this.transferMemberStatesAreCurrent(command, operation) ||
           !this.transferLayoutsOwnershipIsCurrent(sourceLayout, targetLayout)
         ) {
           throw new Error("window desktop assignment was rejected");
@@ -5186,7 +5179,7 @@ export class RuntimeController {
           operation,
           topologyRevision,
         ) ||
-        !this.desktopTransferMemberStatesAreCurrent(command, operation) ||
+        !this.transferMemberStatesAreCurrent(command, operation) ||
         !this.transferLayoutsOwnershipIsCurrent(sourceLayout, targetLayout)
       ) {
         throw new Error("desktop switch was rejected");
@@ -5198,13 +5191,13 @@ export class RuntimeController {
 
       if (
         this.workspace.activeWindow !== command.activeWindow ||
-        !this.desktopTransferMemberStatesAreCurrent(command, operation)
+        !this.transferMemberStatesAreCurrent(command, operation)
       ) {
         throw new Error("window focus was rejected");
       }
 
       if (
-        !this.desktopTransferMemberStatesAreCurrent(command, operation) ||
+        !this.transferMemberStatesAreCurrent(command, operation) ||
         !this.transferLayoutsOwnershipIsCurrent(sourceLayout, targetLayout)
       ) {
         throw new Error("desktop transfer ownership changed");
@@ -5321,10 +5314,7 @@ export class RuntimeController {
           changedWindowIds,
           command.geometryPassiveIds,
         ) ||
-        !this.desktopTransferPassiveFramesMatch(
-          command,
-          destinationBaselines,
-        ) ||
+        !this.transferPassiveFramesMatch(command, destinationBaselines) ||
         !this.desktopTransferOperationIsCurrent(
           command,
           operation,
@@ -5399,7 +5389,7 @@ export class RuntimeController {
         operation,
         topologyRevision,
       ) &&
-      this.desktopTransferMemberStatesAreCurrent(command, operation) &&
+      this.transferMemberStatesAreCurrent(command, operation) &&
       this.desktopTransferMechanismAtTarget(command) &&
       this.workspace.activeWindow === command.activeWindow
     );
@@ -5523,7 +5513,7 @@ export class RuntimeController {
         const forwardFrame = forwardFrames.get(target.windowId);
 
         if (
-          (member && !this.desktopTransferMemberStateIsCurrent(member)) ||
+          (member && !this.transferMemberStateIsCurrent(member)) ||
           !source ||
           !forwardFrame ||
           this.automaticFloatingWindows.has(target.windowId) ||
@@ -5544,7 +5534,7 @@ export class RuntimeController {
               operation,
               topologyRevision,
             ) &&
-            (!member || this.desktopTransferMemberStateIsCurrent(member)) &&
+            (!member || this.transferMemberStateIsCurrent(member)) &&
             this.desktopTransferMechanismAtTarget(command) &&
             !this.automaticallyFloats(source),
         );
@@ -5593,8 +5583,7 @@ export class RuntimeController {
       ].some((frame) => frame && rectsEqual(sourceLiveFrame, frame));
       const observed = normalizeWindow(member.window);
       const liveContext = observed ? managedContext(observed) : null;
-      const memberStateCurrent =
-        this.desktopTransferMemberStateIsCurrent(member);
+      const memberStateCurrent = this.transferMemberStateIsCurrent(member);
 
       if (
         !command.geometryPassiveIds.has(member.id) &&
@@ -5915,6 +5904,7 @@ export class RuntimeController {
       sourceRuntimeContext,
       sourceBefore,
       wholeColumn,
+      wholeColumn,
     );
 
     if (!selection) {
@@ -5994,6 +5984,8 @@ export class RuntimeController {
         selection.memberIds,
         active.contextKey,
         active.contextKey,
+        undefined,
+        selection.geometryPassiveIds,
       )
     ) {
       this.discardContextTransferPreview(preview);
@@ -6004,6 +5996,7 @@ export class RuntimeController {
       activeId: active.activeId,
       desktopChangeSuppressed: false,
       kind: "output",
+      memberStateInvalidated: false,
       movingIds: selection.memberIds,
       sourceContextKey: active.contextKey,
       targetContextKey,
@@ -6035,6 +6028,7 @@ export class RuntimeController {
       return transferred;
     } finally {
       this.discardContextTransferPreview(preview);
+      this.queueChangedTransferMembers(command);
 
       if (this.windowTransferOperation === operation) {
         this.windowTransferOperation = null;
@@ -6097,7 +6091,10 @@ export class RuntimeController {
     let failure: string;
 
     try {
-      if (!this.transferLayoutsOwnershipIsCurrent(sourceLayout, targetLayout)) {
+      if (
+        !this.transferMemberStatesAreCurrent(command, operation) ||
+        !this.transferLayoutsOwnershipIsCurrent(sourceLayout, targetLayout)
+      ) {
         throw new Error("output transfer ownership changed");
       }
 
@@ -6107,7 +6104,8 @@ export class RuntimeController {
             command,
             operation,
             topologyRevision,
-          )
+          ) ||
+          !this.transferMemberStatesAreCurrent(command, operation)
         ) {
           throw new Error("output transfer context changed");
         }
@@ -6134,7 +6132,8 @@ export class RuntimeController {
               command,
               operation,
               topologyRevision,
-            )
+            ) ||
+            !this.transferMemberStatesAreCurrent(command, operation)
           ) {
             throw new Error("window desktop assignment was rejected");
           }
@@ -6162,6 +6161,7 @@ export class RuntimeController {
             operation,
             topologyRevision,
           ) ||
+          !this.transferMemberStatesAreCurrent(command, operation) ||
           !this.transferLayoutsOwnershipIsCurrent(sourceLayout, targetLayout)
         ) {
           throw new Error("window output assignment was rejected");
@@ -6180,7 +6180,8 @@ export class RuntimeController {
               command,
               operation,
               topologyRevision,
-            )
+            ) ||
+            !this.transferMemberStatesAreCurrent(command, operation)
           ) {
             throw new Error("window desktop assignment was rejected");
           }
@@ -6191,11 +6192,17 @@ export class RuntimeController {
         this.workspace.activeWindow = command.activeWindow;
       }
 
-      if (this.workspace.activeWindow !== command.activeWindow) {
+      if (
+        this.workspace.activeWindow !== command.activeWindow ||
+        !this.transferMemberStatesAreCurrent(command, operation)
+      ) {
         throw new Error("window focus was rejected");
       }
 
-      if (!this.transferLayoutsOwnershipIsCurrent(sourceLayout, targetLayout)) {
+      if (
+        !this.transferMemberStatesAreCurrent(command, operation) ||
+        !this.transferLayoutsOwnershipIsCurrent(sourceLayout, targetLayout)
+      ) {
         throw new Error("output transfer ownership changed");
       }
 
@@ -6235,7 +6242,10 @@ export class RuntimeController {
       const changes: TransferGeometryChange[] = [];
 
       for (const plan of plans) {
-        const windowIds = plan.layout.windows.map((window) => window.windowId);
+        const geometryLayout = plan.layout.windows.filter(
+          (window) => !command.geometryPassiveIds.has(window.windowId),
+        );
+        const windowIds = geometryLayout.map((window) => window.windowId);
         const observedBefore = this.geometry.observedFrames(
           windowIds,
           plan.context,
@@ -6243,7 +6253,7 @@ export class RuntimeController {
 
         if (
           observedBefore.size !== windowIds.length ||
-          plan.layout.windows.some(
+          geometryLayout.some(
             (window) =>
               !this.geometry.canApplyFrame(
                 window.windowId,
@@ -6256,7 +6266,7 @@ export class RuntimeController {
         }
 
         for (const change of diffWindowGeometries(
-          plan.layout.windows,
+          geometryLayout,
           observedBefore,
         )) {
           const frame = observedBefore.get(change.windowId);
@@ -6321,6 +6331,7 @@ export class RuntimeController {
         destinationBaselines.size !== command.members.length ||
         appliedChanges.length !== changes.length ||
         !this.transferChangedFramesAreOwned(changes, rollbackTargets) ||
+        !this.transferPassiveFramesMatch(command, destinationBaselines) ||
         !this.outputTransferOperationIsCurrent(
           command,
           operation,
@@ -6422,6 +6433,7 @@ export class RuntimeController {
         operation,
         topologyRevision,
       ) &&
+      this.transferMemberStatesAreCurrent(command, operation) &&
       this.outputTransferMechanismAtTarget(command) &&
       this.workspace.activeWindow === command.activeWindow
     );
@@ -6475,7 +6487,11 @@ export class RuntimeController {
       !this.waitingWindowIds.has(command.contextKey) &&
       !this.waitingWindowIds.has(command.targetContextKey) &&
       this.transferUnchangedFramesMatch(sourceLayout, changedWindowIds) &&
-      this.transferUnchangedFramesMatch(targetLayout, changedWindowIds) &&
+      this.transferUnchangedFramesMatch(
+        targetLayout,
+        changedWindowIds,
+        command.geometryPassiveIds,
+      ) &&
       this.transferLayoutIsSafe(
         sourceLayout,
         command.context,
@@ -6493,6 +6509,7 @@ export class RuntimeController {
         command.contextKey,
         command.targetContextKey,
         command.targetContextKey,
+        command.geometryPassiveIds,
       )
     );
   }
@@ -6540,6 +6557,9 @@ export class RuntimeController {
     const compensationTargets = rollbackTargets.filter((window) =>
       attemptedIds.has(window.windowId),
     );
+    const membersById = new Map(
+      command.members.map((member) => [member.id, member]),
+    );
     let compensationWrites = 0;
     let sourceRestored = true;
     let targetRestored = true;
@@ -6554,11 +6574,13 @@ export class RuntimeController {
       this.outputTransferFingerprintsMatch(command)
     ) {
       for (const target of compensationTargets) {
+        const member = membersById.get(target.windowId);
         const source = this.observer.source(target.windowId);
         const forwardFrame = forwardFrames.get(target.windowId);
         let restored = false;
 
         if (
+          (!member || this.transferMemberStateIsCurrent(member)) &&
           source &&
           forwardFrame &&
           !this.automaticFloatingWindows.has(target.windowId) &&
@@ -6575,6 +6597,7 @@ export class RuntimeController {
                 operation,
                 topologyRevision,
               ) &&
+              (!member || this.transferMemberStateIsCurrent(member)) &&
               this.outputTransferMechanismAtTarget(command) &&
               !this.automaticallyFloats(source),
           );
@@ -6656,8 +6679,11 @@ export class RuntimeController {
         ownedFrames.some(
           (frame) => frame && rectsEqual(member.window.frameGeometry, frame),
         );
+      const memberStateCurrent = this.transferMemberStateIsCurrent(member);
 
       if (
+        !command.geometryPassiveIds.has(member.id) &&
+        memberStateCurrent &&
         sourceFrame &&
         mechanismRestoreAllowed &&
         this.transferOperationIdentityIsCurrent(
@@ -6692,6 +6718,13 @@ export class RuntimeController {
         } else {
           sourceRestored = false;
         }
+      } else if (
+        !memberStateCurrent ||
+        (command.geometryPassiveIds.has(member.id) &&
+          (!sourceFrame ||
+            !rectsEqual(member.window.frameGeometry, sourceFrame)))
+      ) {
+        sourceRestored = false;
       } else if (
         !sourceFrame ||
         !rectsEqual(member.window.frameGeometry, sourceFrame)
@@ -8129,7 +8162,7 @@ export class RuntimeController {
         if (
           !allowSettledMinimizedPassive ||
           id === active.activeId ||
-          !this.desktopTransferMemberIsSettledMinimized(id, source)
+          !this.transferMemberIsSettledMinimized(id, source)
         ) {
           return null;
         }
