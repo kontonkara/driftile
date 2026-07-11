@@ -8,6 +8,7 @@ let
   pluginId = "io.github.kontonkara.driftile";
   demoClient = ../tools/integration/client.qml;
   fixedSizeClient = ../tools/integration/fixed-size-client.qml;
+  floatingNavigationProbe = ../tools/vm/floating-navigation-probe.js;
   firefoxPage = pkgs.writeText "driftile-vm-firefox.html" ''
     <!doctype html>
     <html lang="en">
@@ -48,6 +49,8 @@ let
       pkgs.xprop
     ];
     text = ''
+      floating_navigation_probe_id="io.github.kontonkara.driftile.vm-floating-navigation"
+
       window_match_id() {
         local title=$1
 
@@ -102,6 +105,50 @@ let
         done
 
         return 1
+      }
+
+      arrange_floating_navigation_windows() {
+        local load_result
+        local script_id
+        local unload_result
+
+        busctl --user call \
+          org.kde.KWin \
+          /Scripting \
+          org.kde.kwin.Scripting \
+          unloadScript \
+          s "$floating_navigation_probe_id" \
+          >/dev/null 2>&1 || true
+
+        load_result=$(busctl --user call \
+          org.kde.KWin \
+          /Scripting \
+          org.kde.kwin.Scripting \
+          loadScript \
+          ss ${floatingNavigationProbe} "$floating_navigation_probe_id" \
+          2>/dev/null) || return 1
+
+        if [[ ! "$load_result" =~ ^i\ ([0-9]+)$ ]]; then
+          return 1
+        fi
+
+        script_id=''${BASH_REMATCH[1]}
+        busctl --user call \
+          org.kde.KWin \
+          "/Scripting/Script$script_id" \
+          org.kde.kwin.Script \
+          run \
+          >/dev/null || return 1
+
+        unload_result=$(busctl --user call \
+          org.kde.KWin \
+          /Scripting \
+          org.kde.kwin.Scripting \
+          unloadScript \
+          s "$floating_navigation_probe_id" \
+          2>/dev/null) || return 1
+
+        [[ "$unload_result" == "b true" ]]
       }
 
       activate_window() {
@@ -543,6 +590,46 @@ let
             | map(round | tostring)
               | join(",")
           '
+      }
+
+      wait_for_named_frames() {
+        local attempt
+        local current
+        local index
+        local matches
+        local -a pairs=("$@")
+        local stable_samples=0
+
+        if (( ''${#pairs[@]} == 0 || ''${#pairs[@]} % 2 != 0 )); then
+          return 1
+        fi
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          matches=true
+
+          for ((index = 0; index < ''${#pairs[@]}; index += 2)); do
+            current=$(window_frame "''${pairs[index]}" 2>/dev/null || true)
+
+            if [[ "$current" != "''${pairs[index + 1]}" ]]; then
+              matches=false
+              break
+            fi
+          done
+
+          if [[ "$matches" == true ]]; then
+            stable_samples=$((stable_samples + 1))
+
+            if ((stable_samples >= 2)); then
+              return 0
+            fi
+          else
+            stable_samples=0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
       }
 
       window_fullscreen_state() {
@@ -3340,6 +3427,115 @@ let
         fi
       }
 
+      verify_physical_floating_navigation_shortcuts() {
+        local center_frame="650,120,360,240"
+        local center_pid=""
+        local center_title="Driftile VM Floating Navigation center"
+        local first_frame
+        local left_frame="120,380,360,240"
+        local left_pid=""
+        local left_title="Driftile VM Floating Navigation left"
+        local restored=false
+        local right_frame="1100,650,360,240"
+        local right_pid=""
+        local right_title="Driftile VM Floating Navigation right"
+        local second_frame
+        local third_frame
+        local verified=false
+
+        if ! capture_stable_frames; then
+          record_focus_state "physical floating navigation baseline capture failed"
+          return 1
+        fi
+
+        first_frame=$stable_first_frame
+        second_frame=$stable_second_frame
+        third_frame=$stable_third_frame
+
+        qml ${fixedSizeClient} -- "$left_title" &
+        left_pid=$!
+        qml ${fixedSizeClient} -- "$center_title" &
+        center_pid=$!
+        qml ${fixedSizeClient} -- "$right_title" &
+        right_pid=$!
+
+        if wait_for_window "$left_title" \
+          && wait_for_window "$center_title" \
+          && wait_for_window "$right_title" \
+          && wait_for_real_window_borderless "$left_title" \
+          && wait_for_real_window_borderless "$center_title" \
+          && wait_for_real_window_borderless "$right_title" \
+          && arrange_floating_navigation_windows \
+          && wait_for_named_frames \
+            "$left_title" "$left_frame" \
+            "$center_title" "$center_frame" \
+            "$right_title" "$right_frame" \
+          && wait_for_frames "$first_frame" "$second_frame" "$third_frame" \
+          && activate_window "$center_title" \
+          && wait_for_active "$center_title" \
+          && request_physical_shortcut floating-home \
+          && wait_for_active "$left_title" \
+          && request_physical_shortcut floating-end \
+          && wait_for_active "$right_title" \
+          && request_physical_shortcut floating-left \
+          && wait_for_active "$center_title" \
+          && request_physical_shortcut floating-right \
+          && wait_for_active "$right_title" \
+          && request_physical_shortcut floating-up \
+          && wait_for_active "$left_title" \
+          && request_physical_shortcut floating-down \
+          && wait_for_active "$right_title" \
+          && wait_for_named_frames \
+            "$left_title" "$left_frame" \
+            "$center_title" "$center_frame" \
+            "$right_title" "$right_frame" \
+          && wait_for_frames "$first_frame" "$second_frame" "$third_frame"; then
+          verified=true
+          record_focus_state \
+            "physical floating navigation selected geometric targets without moving windows"
+        else
+          record_focus_state "physical floating navigation failed"
+          {
+            printf 'expected floating frames: %s | %s | %s\n' \
+              "$left_frame" "$center_frame" "$right_frame"
+            printf 'actual floating frames: %s | %s | %s\n' \
+              "$(window_frame "$left_title" 2>/dev/null || printf missing)" \
+              "$(window_frame "$center_title" 2>/dev/null || printf missing)" \
+              "$(window_frame "$right_title" 2>/dev/null || printf missing)"
+          } >> /tmp/shared/driftile-focus-diagnostics
+        fi
+
+        [[ -z "$left_pid" ]] || terminate_process "$left_pid"
+        [[ -z "$center_pid" ]] || terminate_process "$center_pid"
+        [[ -z "$right_pid" ]] || terminate_process "$right_pid"
+
+        if wait_for_window_gone "$left_title" \
+          && wait_for_window_gone "$center_title" \
+          && wait_for_window_gone "$right_title" \
+          && activate_window "$title_b" \
+          && wait_for_active "$title_b" \
+          && wait_for_frames "$first_frame" "$second_frame" "$third_frame"; then
+          restored=true
+          record_focus_state "physical floating navigation cleanup restored tiled state"
+        else
+          record_focus_state "physical floating navigation cleanup failed"
+          {
+            printf 'remaining floating captions: %s | %s | %s\n' \
+              "$(window_match_id "$left_title" 2>/dev/null || printf gone)" \
+              "$(window_match_id "$center_title" 2>/dev/null || printf gone)" \
+              "$(window_match_id "$right_title" 2>/dev/null || printf gone)"
+            printf 'expected tiled frames: %s | %s | %s\n' \
+              "$first_frame" "$second_frame" "$third_frame"
+            printf 'actual tiled frames: %s | %s | %s\n' \
+              "$(window_frame "$title_a" 2>/dev/null || printf missing)" \
+              "$(window_frame "$title_b" 2>/dev/null || printf missing)" \
+              "$(window_frame "$title_c" 2>/dev/null || printf missing)"
+          } >> /tmp/shared/driftile-focus-diagnostics
+        fi
+
+        [[ "$verified" == true && "$restored" == true ]]
+      }
+
       verify_physical_edge_shortcuts() {
         request_physical_shortcut home \
           && wait_for_active "$title_a" \
@@ -4161,6 +4357,7 @@ let
       if [[ "$loaded" == true && "$desktops_ready" == true ]] \
         && verify_focus \
         && verify_physical_layer_focus_shortcut \
+        && verify_physical_floating_navigation_shortcuts \
         && verify_physical_width_shortcuts \
         && verify_physical_height_shortcuts \
         && verify_physical_column_view_shortcuts \

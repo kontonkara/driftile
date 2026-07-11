@@ -85,6 +85,12 @@ monitor_guest() {
     [ctrl-shift-r]=false
     [end]=false
     [equal]=false
+    [floating-down]=false
+    [floating-end]=false
+    [floating-home]=false
+    [floating-left]=false
+    [floating-right]=false
+    [floating-up]=false
     [home]=false
     [m-enter]=false
     [m-exit]=false
@@ -113,6 +119,12 @@ monitor_guest() {
       ctrl-c \
       shift-v-floating \
       shift-v-tiling \
+      floating-home \
+      floating-end \
+      floating-left \
+      floating-right \
+      floating-up \
+      floating-down \
       shift-f-enter \
       shift-f-exit \
       m-enter \
@@ -141,9 +153,9 @@ monitor_guest() {
       fi
 
       if [[ "$(<"$focus_file")" == true ]]; then
-        printf 'The VM verified physical shortcut routing, native fullscreen and maximize, borderless ownership, dynamic desktops, transfers, floating, focus, stack editing, advanced column view, column and window sizing, scrolling, and Firefox, KDE Calculator, and XWayland xterm lifecycles.\n'
+        printf 'The VM verified physical shortcut routing, native fullscreen and maximize, borderless ownership, dynamic desktops, transfers, floating-layer navigation, focus, stack editing, advanced column view, column and window sizing, scrolling, and Firefox, KDE Calculator, and XWayland xterm lifecycles.\n'
       else
-        printf 'The VM failed to verify physical shortcut routing, native fullscreen or maximize, borderless ownership, dynamic desktops, transfers, floating, focus, stack editing, advanced column view, column or window sizing, scrolling, or the real-application lifecycle pool.\n' >&2
+        printf 'The VM failed to verify physical shortcut routing, native fullscreen or maximize, borderless ownership, dynamic desktops, transfers, floating-layer navigation, focus, stack editing, advanced column view, column or window sizing, scrolling, or the real-application lifecycle pool.\n' >&2
         failed=true
 
         if [[ -f "$diagnostics_file" ]]; then
@@ -174,10 +186,10 @@ send_physical_shortcut() {
   local input
 
   case "$key_name" in
-    home)
+    home|floating-home)
       input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"home"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"home"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
       ;;
-    end)
+    end|floating-end)
       input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"end"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"end"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
       ;;
     ctrl-home)
@@ -185,6 +197,18 @@ send_physical_shortcut() {
       ;;
     ctrl-end)
       input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"ctrl"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"end"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"end"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"ctrl"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
+      ;;
+    floating-left)
+      input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"h"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"h"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
+      ;;
+    floating-right)
+      input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"l"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"l"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
+      ;;
+    floating-up)
+      input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"k"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"k"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
+      ;;
+    floating-down)
+      input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"j"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"j"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
       ;;
     minus)
       input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"minus"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"minus"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
