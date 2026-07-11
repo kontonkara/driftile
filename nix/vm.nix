@@ -3937,6 +3937,179 @@ let
           "physical Meta+Ctrl+K reconstructed the exact minimized-peer fixture"
       }
 
+      verify_physical_horizontal_extraction_past_minimized_peer() {
+        local direct_first_height
+        local direct_first_width
+        local direct_first_x
+        local direct_first_y
+        local direct_fourth_height
+        local direct_fourth_width
+        local direct_fourth_x
+        local direct_fourth_y
+        local direct_second_width
+        local direct_second_x
+        local direct_second_y
+        local direct_third_height
+        local direct_third_width
+        local direct_third_x
+        local direct_third_y
+        local horizontal_gap
+        local remaining_available_height
+        local remaining_first_frame
+        local remaining_first_height
+        local remaining_last_frame
+        local remaining_last_height
+        local shifted_unrelated_frame
+        local singleton_frame
+        local stack_height
+        local vertical_gap
+
+        frame_is_valid "$direct_first_frame" \
+          && frame_is_valid "$direct_second_frame" \
+          && frame_is_valid "$direct_third_frame" \
+          && frame_is_valid "$direct_fourth_frame" \
+          || return 1
+        IFS=, read -r \
+          direct_first_x \
+          direct_first_y \
+          direct_first_width \
+          direct_first_height \
+          <<< "$direct_first_frame"
+        IFS=, read -r \
+          direct_second_x \
+          direct_second_y \
+          direct_second_width \
+          _ \
+          <<< "$direct_second_frame"
+        IFS=, read -r \
+          direct_third_x \
+          direct_third_y \
+          direct_third_width \
+          direct_third_height \
+          <<< "$direct_third_frame"
+        IFS=, read -r \
+          direct_fourth_x \
+          direct_fourth_y \
+          direct_fourth_width \
+          direct_fourth_height \
+          <<< "$direct_fourth_frame"
+        vertical_gap=$((
+          direct_second_y - direct_first_y - direct_first_height
+        ))
+        horizontal_gap=$((
+          direct_third_x - direct_first_x - direct_first_width
+        ))
+        stack_height=$((
+          direct_fourth_y + direct_fourth_height - direct_first_y
+        ))
+        remaining_available_height=$((stack_height - vertical_gap))
+        remaining_first_height=$((remaining_available_height / 2))
+        remaining_last_height=$((
+          remaining_available_height - remaining_first_height
+        ))
+        printf -v remaining_first_frame '%s,%s,%s,%s' \
+          "$direct_first_x" \
+          "$direct_first_y" \
+          "$direct_first_width" \
+          "$remaining_first_height"
+        printf -v remaining_last_frame '%s,%s,%s,%s' \
+          "$direct_first_x" \
+          "$((direct_first_y + remaining_first_height + vertical_gap))" \
+          "$direct_first_width" \
+          "$remaining_last_height"
+        printf -v singleton_frame '%s,%s,%s,%s' \
+          "$direct_third_x" \
+          "$direct_first_y" \
+          "$direct_first_width" \
+          "$stack_height"
+        printf -v shifted_unrelated_frame '%s,%s,%s,%s' \
+          "$((direct_third_x + direct_first_width + horizontal_gap))" \
+          "$direct_third_y" \
+          "$direct_third_width" \
+          "$direct_third_height"
+
+        if ((vertical_gap <= 0 \
+          || horizontal_gap <= 0 \
+          || remaining_first_height <= 0 \
+          || remaining_last_height <= 0 \
+          || direct_first_x != direct_second_x \
+          || direct_second_x != direct_fourth_x \
+          || direct_first_width != direct_second_width \
+          || direct_second_width != direct_fourth_width)); then
+          record_focus_state "physical horizontal extraction geometry was invalid"
+          return 1
+        fi
+
+        if ! activate_window "$title_b" \
+          || ! wait_for_active "$title_b" \
+          || ! wait_for_four_frames \
+            "$direct_first_frame" \
+            "$direct_second_frame" \
+            "$direct_third_frame" \
+            "$direct_fourth_frame"; then
+          record_focus_state "physical horizontal extraction setup failed"
+          return 1
+        fi
+
+        if ! set_external_window_minimized "$title_d" true \
+          || ! wait_for_window_minimized_state "$title_d" true \
+          || ! wait_for_four_frames \
+            "$direct_first_frame" \
+            "$direct_second_frame" \
+            "$direct_third_frame" \
+            "$direct_fourth_frame" \
+          || ! activate_window "$title_b" \
+          || ! wait_for_active "$title_b"; then
+          record_focus_state "physical horizontal extraction peer settle failed"
+          return 1
+        fi
+
+        if ! request_physical_shortcut bracket-right \
+          || ! wait_for_active "$title_b" \
+          || ! wait_for_four_frames \
+            "$remaining_first_frame" \
+            "$singleton_frame" \
+            "$shifted_unrelated_frame" \
+            "$direct_fourth_frame" \
+          || ! wait_for_window_minimized_state "$title_d" true \
+          || [[ "$(window_frame "$title_d" 2>/dev/null || true)" \
+            != "$direct_fourth_frame" ]]; then
+          record_focus_state "physical minimized-peer horizontal extraction failed"
+          return 1
+        fi
+        record_focus_state \
+          "physical Meta+] extracted an immediate-right singleton past a minimized peer"
+
+        if ! invoke_shortcut "driftile_move_window_left" \
+          || ! wait_for_active "$title_b" \
+          || ! wait_for_four_frames \
+            "$direct_first_frame" \
+            "$direct_fourth_frame" \
+            "$direct_third_frame" \
+            "$direct_fourth_frame" \
+          || ! wait_for_window_minimized_state "$title_d" true \
+          || ! invoke_shortcut "driftile_move_window_up" \
+          || ! wait_for_active "$title_b" \
+          || ! wait_for_four_frames \
+            "$direct_first_frame" \
+            "$direct_second_frame" \
+            "$direct_third_frame" \
+            "$direct_fourth_frame" \
+          || ! wait_for_window_minimized_state "$title_d" true \
+          || ! set_external_window_minimized "$title_d" false \
+          || ! wait_for_window_minimized_state "$title_d" false \
+          || ! wait_for_four_frames \
+            "$direct_first_frame" \
+            "$direct_second_frame" \
+            "$direct_third_frame" \
+            "$direct_fourth_frame"; then
+          record_focus_state "physical horizontal extraction fixture reconstruction failed"
+          return 1
+        fi
+        record_focus_state \
+          "horizontal extraction cleanup reconstructed the exact fixture"
+      }
+
       verify_focus() {
         local baseline_first_width
         local baseline_second_width
@@ -3947,6 +4120,7 @@ let
         local direct_insert_verified
         local first_trailing_desktop_id=""
         local floating_second_frame
+        local horizontal_extraction_verified
         local merged_first_frame
         local merged_second_frame
         local merged_third_frame
@@ -4429,6 +4603,13 @@ let
           minimized_reorder_verified=true
         fi
 
+        horizontal_extraction_verified=false
+
+        if [[ "$minimized_reorder_verified" == true ]] \
+          && verify_physical_horizontal_extraction_past_minimized_peer; then
+          horizontal_extraction_verified=true
+        fi
+
         kill "$fourth_window" >/dev/null 2>&1 || true
         wait "$fourth_window" >/dev/null 2>&1 || true
         fourth_window=""
@@ -4447,7 +4628,8 @@ let
           && "$stacked_maximize_verified" == true \
           && "$stacked_fullscreen_verified" == true \
           && "$minimized_slots_verified" == true \
-          && "$minimized_reorder_verified" == true ]] || return 1
+          && "$minimized_reorder_verified" == true \
+          && "$horizontal_extraction_verified" == true ]] || return 1
 
         if ! invoke_shortcut "driftile_toggle_floating" \
           || ! wait_for_floating_layout \
