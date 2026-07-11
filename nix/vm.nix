@@ -6,9 +6,6 @@
 
 let
   pluginId = "io.github.kontonkara.driftile";
-  activeWindowProbe = ../tools/vm/active-window-probe.js;
-  demoClient = ../tools/integration/client.qml;
-  fixedSizeClient = ../tools/integration/fixed-size-client.qml;
   floatingNavigationProbe = ../tools/vm/floating-navigation-probe.js;
   firefoxPage = pkgs.writeText "driftile-vm-firefox.html" ''
     <!doctype html>
@@ -44,14 +41,14 @@ let
       pkgs.coreutils
       pkgs.gnugrep
       pkgs.jq
+      pkgs.kdotool
       pkgs.kdePackages.libkscreen
-      pkgs.kdePackages.qtdeclarative
+      pkgs.kdePackages.konsole
       pkgs.systemd
+      pkgs.xmessage
       pkgs.xprop
     ];
     text = ''
-      active_window_probe_id="io.github.kontonkara.driftile.vm-active-window"
-      active_window_shortcut_prefix="_k_session:Driftile VM Active Window "
       floating_navigation_probe_id="io.github.kontonkara.driftile.vm-floating-navigation"
 
       window_match_id() {
@@ -66,7 +63,7 @@ let
           | jq --exit-status --raw-output --arg title "$title" '
             [
               .data[0][]
-              | select(.[1] == $title or .[1] == ($title + " [active]"))
+              | select(.[1] == $title)
             ] as $matches
             | select($matches | length == 1)
             | $matches[0][0]
@@ -93,7 +90,7 @@ let
           | jq --exit-status --raw-output --arg title "$title" '
             [
               .data[0][]
-              | select(.[1] == $title or .[1] == ($title + " [active]"))
+              | select(.[1] == $title)
             ] as $matches
             | select($matches | length == 1)
             | $matches[0][0]
@@ -200,18 +197,16 @@ let
           >/dev/null
       }
 
+      active_window_caption() {
+        kdotool getactivewindow getwindowname 2>/dev/null
+      }
+
       window_is_active() {
+        local active_title
         local title=$1
 
-        busctl --user --json=short call \
-          org.kde.KWin \
-          /WindowsRunner \
-          org.kde.krunner1 \
-          Match \
-          s "$title" 2>/dev/null \
-          | jq --exit-status --arg active_title "$title [active]" \
-            '[.data[0][] | select(.[1] == $active_title)] | length == 1' \
-            >/dev/null
+        active_title=$(active_window_caption) || return 1
+        [[ "$active_title" == "$title" ]]
       }
 
       wait_for_active() {
@@ -230,99 +225,11 @@ let
       }
 
       window_is_active_contains() {
-        local attempt
         local caption
-        local load_result
         local needle=$1
-        local script_id
-        local shortcuts
-        local verified=false
 
-        active_window_probe_result=""
-        cleanup_active_window_probe || return 1
-
-        load_result=$(busctl --user call \
-          org.kde.KWin \
-          /Scripting \
-          org.kde.kwin.Scripting \
-          loadScript \
-          ss ${activeWindowProbe} "$active_window_probe_id" \
-          2>/dev/null) || return 1
-        script_id=''${load_result#i }
-
-        if [[ "$script_id" =~ ^[0-9]+$ ]] \
-          && busctl --user call \
-            org.kde.KWin \
-            "/Scripting/Script$script_id" \
-            org.kde.kwin.Script \
-            run \
-            >/dev/null; then
-          for ((attempt = 0; attempt < 10; attempt += 1)); do
-            shortcuts=$(busctl --user --json=short call \
-              org.kde.kglobalaccel \
-              /component/kwin \
-              org.kde.kglobalaccel.Component \
-              shortcutNames 2>/dev/null) || break
-            caption=$(jq --exit-status --raw-output \
-              --arg prefix "$active_window_shortcut_prefix" '
-                [.data[0][] | select(startswith($prefix))]
-                | select(length == 1)
-                | .[0]
-                | ltrimstr($prefix)
-              ' <<< "$shortcuts" 2>/dev/null || true)
-
-            if [[ -n "$caption" ]]; then
-              active_window_probe_result="$caption"
-              [[ "$caption" == *"$needle"* ]] && verified=true
-              break
-            fi
-
-            sleep 0.02
-          done
-        fi
-
-        cleanup_active_window_probe || verified=false
-        [[ "$verified" == true ]]
-      }
-
-      cleanup_active_window_probe() {
-        local action_count
-        local attempt
-        local script_state
-
-        busctl --user call \
-          org.kde.KWin \
-          /Scripting \
-          org.kde.kwin.Scripting \
-          unloadScript \
-          s "$active_window_probe_id" \
-          >/dev/null 2>&1 || true
-
-        for ((attempt = 0; attempt < 50; attempt += 1)); do
-          script_state=$(busctl --user call \
-            org.kde.KWin \
-            /Scripting \
-            org.kde.kwin.Scripting \
-            isScriptLoaded \
-            s "$active_window_probe_id" 2>/dev/null || true)
-          action_count=$(busctl --user --json=short call \
-            org.kde.kglobalaccel \
-            /component/kwin \
-            org.kde.kglobalaccel.Component \
-            shortcutNames 2>/dev/null \
-            | jq --exit-status --raw-output \
-              --arg prefix "$active_window_shortcut_prefix" '
-                [.data[0][] | select(startswith($prefix))] | length
-              ' 2>/dev/null || true)
-
-          if [[ "$script_state" == "b false" && "$action_count" == 0 ]]; then
-            return 0
-          fi
-
-          sleep 0.02
-        done
-
-        return 1
+        caption=$(active_window_caption) || return 1
+        [[ "$caption" == *"$needle"* ]]
       }
 
       wait_for_active_contains() {
@@ -352,10 +259,7 @@ let
           | jq --exit-status --raw-output --arg needle "$needle" '
             [
               .data[0][]
-              | select(
-                  (.[1] | sub(" \\[active\\]$"; ""))
-                  | contains($needle)
-                )
+              | select(.[1] | contains($needle))
             ]
             | unique_by(.[0])
             | select(length == 1)
@@ -376,10 +280,7 @@ let
           | jq --exit-status --raw-output --arg needle "$needle" '
             [
               .data[0][]
-              | select(
-                  (.[1] | sub(" \\[active\\]$"; ""))
-                  | contains($needle)
-                )
+              | select(.[1] | contains($needle))
             ]
             | unique_by(.[0])
             | select(length == 1)
@@ -417,6 +318,120 @@ let
           org.kde.KWin \
           getWindowInfo \
           s "$id" 2>/dev/null
+      }
+
+      window_caption_contains() {
+        window_info_contains "$1" \
+          | jq --exit-status --raw-output '
+              .data[0].caption.data
+              | select(type == "string" and length > 0)
+            '
+      }
+
+      wait_for_window_caption() {
+        local result_variable=$1
+        local needle=$2
+        local attempt
+        local current_caption
+        local previous_caption=""
+        local stable_samples=0
+
+        for ((attempt = 0; attempt < 200; attempt += 1)); do
+          current_caption=$(window_caption_contains "$needle" 2>/dev/null || true)
+
+          if [[ -n "$current_caption" && "$current_caption" == "$previous_caption" ]]; then
+            stable_samples=$((stable_samples + 1))
+          else
+            previous_caption=$current_caption
+            stable_samples=1
+          fi
+
+          if [[ -n "$current_caption" && "$stable_samples" -ge 2 ]]; then
+            printf -v "$result_variable" '%s' "$current_caption"
+            return 0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      start_konsole_window() {
+        local pid_variable=$1
+        local title_variable=$2
+        local base_title=$3
+        local process_pid
+        local resolved_title
+
+        QT_QPA_PLATFORM=wayland \
+          ${pkgs.kdePackages.konsole}/bin/konsole \
+          --separate \
+          --builtin-profile \
+          --hide-menubar \
+          --hide-tabbar \
+          --notransparency \
+          --qwindowtitle "$base_title" \
+          -p "tabtitle=$base_title" \
+          -p "LocalTabTitleFormat=$base_title" \
+          -p "RemoteTabTitleFormat=$base_title" \
+          -e ${pkgs.coreutils}/bin/sleep 300 \
+          >>/tmp/driftile-vm-konsole.log 2>&1 &
+        process_pid=$!
+        printf -v "$pid_variable" '%s' "$process_pid"
+
+        if ! wait_for_window_caption resolved_title "$base_title"; then
+          terminate_process "$process_pid"
+          printf -v "$pid_variable" '%s' ""
+          return 1
+        fi
+
+        if ! real_window_is_normal "$resolved_title" \
+          || ! real_window_identity_matches "$resolved_title" konsole \
+          || ! real_window_protocol_matches "$resolved_title" konsole false; then
+          terminate_process "$process_pid"
+          printf -v "$pid_variable" '%s' ""
+          return 1
+        fi
+
+        printf -v "$title_variable" '%s' "$resolved_title"
+      }
+
+      start_fixed_xmessage_window() {
+        local pid_variable=$1
+        local title_variable=$2
+        local base_title=$3
+        local process_pid
+        local resolved_title
+
+        DISPLAY="''${DISPLAY:-:0}" \
+          ${pkgs.xmessage}/bin/xmessage \
+          -title "$base_title" \
+          -geometry 360x240 \
+          -xrm '*minWidth: 360' \
+          -xrm '*maxWidth: 360' \
+          -xrm '*minHeight: 240' \
+          -xrm '*maxHeight: 240' \
+          "$base_title" \
+          >>/tmp/driftile-vm-xmessage.log 2>&1 &
+        process_pid=$!
+        printf -v "$pid_variable" '%s' "$process_pid"
+
+        if ! wait_for_window_caption resolved_title "$base_title"; then
+          terminate_process "$process_pid"
+          printf -v "$pid_variable" '%s' ""
+          return 1
+        fi
+
+        if ! real_window_is_normal "$resolved_title" \
+          || ! real_window_identity_matches "$resolved_title" xmessage \
+          || ! real_window_protocol_matches "$resolved_title" xmessage true; then
+          terminate_process "$process_pid"
+          printf -v "$pid_variable" '%s' ""
+          return 1
+        fi
+
+        printf -v "$title_variable" '%s' "$resolved_title"
       }
 
       wait_for_window_query() {
@@ -3012,8 +3027,8 @@ let
           printf 'expected identity: %s\n' "$expected_identity"
           printf 'expected X11: %s\n' "$expected_x11"
           printf 'matching X11 windows: %s\n' "$x11_matches"
-          printf 'active-window probe: %s\n' \
-            "''${active_window_probe_result:-unavailable}"
+          printf 'active window: %s\n' \
+            "$(active_window_caption 2>/dev/null || printf unavailable)"
         } >> /tmp/shared/driftile-focus-diagnostics
         record_real_application_state "$label acceptance state" "$query"
       }
@@ -3411,8 +3426,9 @@ let
       verify_automatic_floating() {
         local first_frame
         local fixed_frame
-        local fixed_title="$status - fixed-size automatic floating"
-        local fixed_window
+        local fixed_base_title="$status - fixed-size automatic floating"
+        local fixed_title="$fixed_base_title"
+        local fixed_window=""
         local restored=false
         local second_frame
         local third_frame
@@ -3423,10 +3439,11 @@ let
         second_frame=$stable_second_frame
         third_frame=$stable_third_frame
 
-        qml ${fixedSizeClient} -- "$fixed_title" &
-        fixed_window=$!
-
-        if wait_for_window "$fixed_title" \
+        if start_fixed_xmessage_window \
+          fixed_window \
+          fixed_title \
+          "$fixed_base_title" \
+          && wait_for_window "$fixed_title" \
           && activate_window "$fixed_title" \
           && wait_for_active "$fixed_title" \
           && wait_for_real_window_borderless "$fixed_title" \
@@ -3475,8 +3492,7 @@ let
           verified=true
         fi
 
-        kill "$fixed_window" >/dev/null 2>&1 || true
-        wait "$fixed_window" >/dev/null 2>&1 || true
+        [[ -z "$fixed_window" ]] || terminate_process "$fixed_window"
 
         if wait_for_window_gone "$fixed_title" \
           && set_current_desktop "$primary_desktop_id" \
@@ -3788,10 +3804,11 @@ let
         local fixture_restored=false
         local verified=false
 
-        qml ${demoClient} -- --mark-active "$title_e" &
-        fifth_window=$!
-
-        if wait_for_window "$title_e" \
+        if start_konsole_window \
+          fifth_window \
+          title_e \
+          "$base_title_e" \
+          && wait_for_window "$title_e" \
           && activate_window "$title_a" \
           && wait_for_active "$title_a" \
           && capture_minimized_fixture_frames; then
@@ -3816,8 +3833,7 @@ let
         set_external_window_minimized "$title_c" false >/dev/null 2>&1 || true
         set_external_window_minimized "$title_d" false >/dev/null 2>&1 || true
         set_external_window_minimized "$title_e" false >/dev/null 2>&1 || true
-        kill "$fifth_window" >/dev/null 2>&1 || true
-        wait "$fifth_window" >/dev/null 2>&1 || true
+        [[ -z "$fifth_window" ]] || terminate_process "$fifth_window"
         fifth_window=""
 
         IFS=, read -r \
@@ -4440,7 +4456,7 @@ let
         local baseline_third_width
         local border_query
         local desktop_source_width
-        local desktop_window
+        local desktop_window=""
         local direct_insert_verified
         local first_trailing_desktop_id=""
         local floating_second_frame
@@ -4687,10 +4703,11 @@ let
         fi
 
         set_current_desktop "$secondary_desktop_id" || return 1
-        qml ${demoClient} -- --mark-active "$title_desktop_destination" &
-        desktop_window=$!
-
-        wait_for_window "$title_desktop_destination" \
+        start_konsole_window \
+          desktop_window \
+          title_desktop_destination \
+          "$base_title_desktop_destination" \
+          && wait_for_window "$title_desktop_destination" \
           && wait_for_active "$title_desktop_destination" \
           && capture_stable_window_frame "$title_desktop_destination" >/dev/null \
           && wait_for_window_desktop \
@@ -4837,8 +4854,7 @@ let
           && wait_for_active "$title_b" \
           || return 1
 
-        kill "$desktop_window" >/dev/null 2>&1 || true
-        wait "$desktop_window" >/dev/null 2>&1 || true
+        [[ -z "$desktop_window" ]] || terminate_process "$desktop_window"
         desktop_window=""
         wait_for_window_gone "$title_desktop_destination" || return 1
         wait_for_desktop_sequence \
@@ -4856,11 +4872,13 @@ let
           || return 1
         record_focus_state "window C activated before direct insertion"
 
-        qml ${demoClient} -- --mark-active "$title_d" &
-        fourth_window=$!
         direct_insert_verified=false
 
-        if wait_for_window "$title_d" \
+        if start_konsole_window \
+          fourth_window \
+          title_d \
+          "$base_title_d" \
+          && wait_for_window "$title_d" \
           && activate_window "$title_d" \
           && wait_for_active "$title_d" \
           && wait_for_direct_insertion_source \
@@ -4950,8 +4968,7 @@ let
           minimized_expel_verified=true
         fi
 
-        kill "$fourth_window" >/dev/null 2>&1 || true
-        wait "$fourth_window" >/dev/null 2>&1 || true
+        [[ -z "$fourth_window" ]] || terminate_process "$fourth_window"
         fourth_window=""
 
         wait_for_window_gone "$title_d" \
@@ -5514,15 +5531,18 @@ let
       verify_physical_floating_navigation_shortcuts() {
         local center_frame="650,120,360,240"
         local center_pid=""
-        local center_title="Driftile VM Floating Navigation center"
+        local center_base_title="Driftile VM Floating Navigation center"
+        local center_title="$center_base_title"
         local first_frame
         local left_frame="120,380,360,240"
         local left_pid=""
-        local left_title="Driftile VM Floating Navigation left"
+        local left_base_title="Driftile VM Floating Navigation left"
+        local left_title="$left_base_title"
         local restored=false
         local right_frame="1100,650,360,240"
         local right_pid=""
-        local right_title="Driftile VM Floating Navigation right"
+        local right_base_title="Driftile VM Floating Navigation right"
+        local right_title="$right_base_title"
         local second_frame
         local third_frame
         local verified=false
@@ -5536,14 +5556,19 @@ let
         second_frame=$stable_second_frame
         third_frame=$stable_third_frame
 
-        qml ${fixedSizeClient} -- "$left_title" &
-        left_pid=$!
-        qml ${fixedSizeClient} -- "$center_title" &
-        center_pid=$!
-        qml ${fixedSizeClient} -- "$right_title" &
-        right_pid=$!
-
-        if wait_for_window "$left_title" \
+        if start_fixed_xmessage_window \
+          left_pid \
+          left_title \
+          "$left_base_title" \
+          && start_fixed_xmessage_window \
+            center_pid \
+            center_title \
+            "$center_base_title" \
+          && start_fixed_xmessage_window \
+            right_pid \
+            right_title \
+            "$right_base_title" \
+          && wait_for_window "$left_title" \
           && wait_for_window "$center_title" \
           && wait_for_window "$right_title" \
           && wait_for_real_window_borderless "$left_title" \
@@ -6658,7 +6683,6 @@ let
       }
 
       loaded=false
-      active_window_probe_result=""
 
       for _ in $(seq 1 200); do
         state=$(busctl --user call \
@@ -6697,34 +6721,38 @@ let
         desktops_ready=true
       fi
 
-      title_a="$status - window A - Meta+H"
-      title_b="$status - window B - middle column"
-      title_c="$status - window C - Meta+L"
-      title_d="$status - window D - direct insertion"
-      title_e="$status - window E - minimized edge"
-      title_desktop_destination="$status - desktop destination"
+      base_title_a="$status - Konsole A - Meta+H"
+      base_title_b="$status - Konsole B - middle column"
+      base_title_c="$status - Konsole C - Meta+L"
+      base_title_d="$status - Konsole D - direct insertion"
+      base_title_e="$status - Konsole E - minimized edge"
+      base_title_desktop_destination="$status - Konsole desktop destination"
+      title_a="$base_title_a"
+      title_b="$base_title_b"
+      title_c="$base_title_c"
+      title_d="$base_title_d"
+      title_e="$base_title_e"
+      title_desktop_destination="$base_title_desktop_destination"
+      first_window=""
+      second_window=""
+      third_window=""
       fifth_window=""
       fourth_window=""
       : > /tmp/shared/driftile-focus-diagnostics
 
-      qml ${demoClient} -- --mark-active "$title_a" &
-      first_window=$!
-
-      wait_for_window "$title_a" \
+      start_konsole_window first_window title_a "$base_title_a" \
+        && wait_for_window "$title_a" \
         && activate_window "$title_a" \
         && wait_for_active "$title_a" \
         || true
 
-      qml ${demoClient} -- --mark-active "$title_b" &
-      second_window=$!
-
-      wait_for_window "$title_b" \
+      start_konsole_window second_window title_b "$base_title_b" \
+        && wait_for_window "$title_b" \
         && activate_window "$title_b" \
         && wait_for_active "$title_b" \
         || true
 
-      qml ${demoClient} -- --mark-active "$title_c" &
-      third_window=$!
+      start_konsole_window third_window title_c "$base_title_c" || true
 
       focus_verified=false
 
@@ -6748,7 +6776,9 @@ let
 
       printf '%s\n' "$focus_verified" > /tmp/shared/driftile-focus-verified
 
-      wait "$first_window" "$second_window" "$third_window"
+      if [[ -n "$first_window" && -n "$second_window" && -n "$third_window" ]]; then
+        wait "$first_window" "$second_window" "$third_window"
+      fi
     '';
   };
   kwinConfig = pkgs.writeText "driftile-vm-kwinrc" ''
