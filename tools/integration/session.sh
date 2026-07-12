@@ -34,6 +34,8 @@ readonly settings_persistence_probe_file="$XDG_CONFIG_HOME/driftile-settings-per
 readonly stable_sample_count=2
 readonly wait_attempts=200
 
+export QT_QUICK_BACKEND=software
+
 client_pids=()
 primary_desktop_id=""
 qml_options=(--software)

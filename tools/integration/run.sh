@@ -41,6 +41,16 @@ find_dbus_session_config() {
   return 1
 }
 
+ensure_x11_socket_directory() {
+  local path=/tmp/.X11-unix
+
+  if [[ ! -d "$path" ]]; then
+    mkdir -m 1777 "$path" || [[ -d "$path" ]] || return 1
+  fi
+
+  [[ -d "$path" && -k "$path" && -w "$path" ]]
+}
+
 fail() {
   local message=$1
 
@@ -139,6 +149,8 @@ run_backend() (
 
   dbus_session_config=$(find_dbus_session_config) || \
     fail "D-Bus session configuration is unavailable."
+  ensure_x11_socket_directory || \
+    fail "The X11 socket directory is unavailable or unsafe."
 
   qml_binary=$(readlink -f "$(command -v qml)")
   qml_prefix=$(dirname "$(dirname "$qml_binary")")
