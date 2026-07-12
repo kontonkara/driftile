@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   planExactLayoutHydration,
+  planLayoutHydration,
   type LayoutPersistenceHydrationInput,
 } from "../../src/core/layout-persistence-hydration";
 import {
@@ -549,6 +550,534 @@ describe("exact layout persistence hydration", () => {
   });
 });
 
+describe("layout persistence hydration identity fallback", () => {
+  it("remaps a renamed output and a replaced window without changing the layout", () => {
+    const baseState = representativeState();
+    const state: LayoutPersistenceV1 = {
+      ...baseState,
+      outputs: baseState.outputs.map((output) =>
+        output.key === "primary-output"
+          ? {
+              ...output,
+              manufacturer: "Example",
+              model: "Panel",
+              serialNumber: "primary-serial",
+            }
+          : output,
+      ),
+      windows: baseState.windows.map((window) =>
+        window.key === "tiled-b"
+          ? {
+              ...window,
+              liveId: "stale-live-b",
+              sessionMatch: editorWindowMatch("secondary"),
+            }
+          : window,
+      ),
+    };
+    const baseInput = representativeInput();
+    const input: LayoutPersistenceHydrationInput = {
+      ...baseInput,
+      outputs: baseInput.outputs.map((output) =>
+        output.name === "DP-1"
+          ? {
+              manufacturer: "Example",
+              model: "Panel",
+              name: "DP-9",
+              serialNumber: "primary-serial",
+            }
+          : output,
+      ),
+      windows: baseInput.windows.map((window) => {
+        const outputName =
+          window.outputName === "DP-1" ? "DP-9" : window.outputName;
+
+        return window.liveId === "live-b"
+          ? {
+              ...window,
+              ...editorWindowMatch("secondary"),
+              liveId: "restored-live-b",
+              outputName,
+            }
+          : { ...window, outputName };
+      }),
+    };
+    const result = planLayoutHydration(state, input);
+
+    expect(result.ok).toBe(true);
+
+    if (!result.ok) {
+      return;
+    }
+
+    const primary = required(
+      result.value.contexts.find(
+        (context) => context.layout.desktopId === "desktop-1",
+      ),
+    );
+    const anchored = required(
+      result.value.floatingWindows.find(
+        (floating) => floating.placement.windowId === "live-floating-anchored",
+      ),
+    );
+
+    expect(primary.key).toBe("DP-9\u0000desktop-1");
+    expect(primary.layout.outputId).toBe("DP-9");
+    expect(primary.layout.viewportOffset).toBe(-140);
+    expect(primary.layout.columns[0]?.windowIds).toEqual([
+      "live-a",
+      "restored-live-b",
+      "live-c",
+    ]);
+    expect(anchored.contextKey).toBe("DP-9\u0000desktop-1");
+    expect(anchored.placement.nextWindowId).toBe("restored-live-b");
+  });
+
+  it("prefers exact identities even when optional metadata conflicts", () => {
+    const baseState = representativeState();
+    const state: LayoutPersistenceV1 = {
+      ...baseState,
+      outputs: baseState.outputs.map((output) =>
+        output.key === "primary-output"
+          ? { ...output, serialNumber: "persisted-serial" }
+          : output,
+      ),
+      windows: baseState.windows.map((window) =>
+        window.key === "tiled-a"
+          ? {
+              ...window,
+              sessionMatch: editorWindowMatch("persisted-tag"),
+            }
+          : window,
+      ),
+    };
+    const baseInput = representativeInput();
+    const input: LayoutPersistenceHydrationInput = {
+      ...baseInput,
+      outputs: baseInput.outputs.map((output) =>
+        output.name === "DP-1"
+          ? { ...output, serialNumber: "different-serial" }
+          : output,
+      ),
+      windows: baseInput.windows.map((window) =>
+        window.liveId === "live-a"
+          ? {
+              ...window,
+              desktopFileName: "org.example.Other",
+              tag: "",
+            }
+          : window,
+      ),
+    };
+
+    expect(planLayoutHydration(state, input)).toEqual(
+      planExactLayoutHydration(state, input),
+    );
+    expect(planLayoutHydration(state, input).ok).toBe(true);
+  });
+
+  it("retains exact restore baselines and drops session-matched baselines", () => {
+    const baseState = representativeState();
+    const state: LayoutPersistenceV1 = {
+      ...baseState,
+      contexts: baseState.contexts.map((context) =>
+        context.outputKey === "primary-output"
+          ? {
+              ...context,
+              columns: context.columns.map((column, columnIndex) =>
+                columnIndex === 0
+                  ? {
+                      ...column,
+                      members: column.members.map((member) =>
+                        member.windowKey === "tiled-b"
+                          ? { ...member, restoreBaseline: restoreBaseline() }
+                          : member,
+                      ),
+                    }
+                  : column,
+              ),
+            }
+          : context,
+      ),
+      windows: baseState.windows.map((window) =>
+        window.key === "tiled-b"
+          ? {
+              ...window,
+              liveId: "stale-live-b",
+              sessionMatch: editorWindowMatch("secondary"),
+            }
+          : window,
+      ),
+    };
+    const input = replaceWindowIdentity(
+      representativeInput(),
+      "live-b",
+      "restored-live-b",
+      editorWindowMatch("secondary"),
+    );
+    const result = planLayoutHydration(state, input);
+
+    expect(result.ok).toBe(true);
+
+    if (result.ok) {
+      expect(
+        result.value.restoreBaselines.map((baseline) => baseline.windowId),
+      ).toEqual(["live-a"]);
+    }
+  });
+
+  it("drops every restore baseline when all baseline owners use session identities", () => {
+    const baseState = representativeState();
+    const sessionKeys = new Set(["tiled-a", "tiled-b", "tiled-c", "tiled-d"]);
+    const state: LayoutPersistenceV1 = {
+      ...baseState,
+      contexts: baseState.contexts.map((context) =>
+        context.outputKey === "primary-output"
+          ? {
+              ...context,
+              columns: context.columns.map((column) => ({
+                ...column,
+                members: column.members.map((member) => ({
+                  ...member,
+                  restoreBaseline: restoreBaseline(),
+                })),
+              })),
+            }
+          : context,
+      ),
+      windows: baseState.windows.map((window) =>
+        sessionKeys.has(window.key)
+          ? {
+              ...window,
+              liveId: `stale-${window.key}`,
+              sessionMatch: editorWindowMatch(window.key),
+            }
+          : window,
+      ),
+    };
+    const input: LayoutPersistenceHydrationInput = {
+      ...representativeInput(),
+      windows: representativeInput().windows.map((window) => {
+        const key = window.liveId.replace("live-", "tiled-");
+
+        return sessionKeys.has(key)
+          ? {
+              ...window,
+              ...editorWindowMatch(key),
+              liveId: `restored-${key}`,
+            }
+          : window;
+      }),
+    };
+    const result = planLayoutHydration(state, input);
+
+    expect(result.ok).toBe(true);
+
+    if (result.ok) {
+      expect(result.value.restoreBaselines).toEqual([]);
+      expect(
+        result.value.contexts[0]?.layout.columns.flatMap(
+          (column) => column.windowIds,
+        ),
+      ).toEqual([
+        "restored-tiled-a",
+        "restored-tiled-b",
+        "restored-tiled-c",
+        "restored-tiled-d",
+      ]);
+    }
+  });
+
+  it("rejects ambiguous replacement windows", () => {
+    const state = withStaleWindow(
+      representativeState(),
+      "tiled-a",
+      editorWindowMatch("primary"),
+    );
+    const baseInput = representativeInput();
+    const withoutExact = baseInput.windows.filter(
+      (window) => window.liveId !== "live-a",
+    );
+    const original = required(
+      baseInput.windows.find((window) => window.liveId === "live-a"),
+    );
+    const descriptor = editorWindowMatch("primary");
+
+    expect(
+      planLayoutHydration(state, {
+        ...baseInput,
+        windows: [
+          ...withoutExact,
+          { ...original, ...descriptor, liveId: "restored-a" },
+          { ...original, ...descriptor, liveId: "restored-a-duplicate" },
+        ],
+      }),
+    ).toEqual({ ok: false, reason: "unresolved-live-window" });
+  });
+
+  it("does not use resource names to disambiguate a shared strong identity", () => {
+    const baseState = representativeState();
+    const state: LayoutPersistenceV1 = {
+      ...baseState,
+      windows: baseState.windows.map((window) => {
+        if (window.key !== "tiled-a" && window.key !== "tiled-b") {
+          return window;
+        }
+
+        return {
+          ...window,
+          liveId: `stale-${window.key}`,
+          sessionMatch: {
+            desktopFileName: "org.example.Editor",
+            resourceName: window.key,
+            tag: "shared-document",
+          },
+        };
+      }),
+    };
+    const baseInput = representativeInput();
+    const input: LayoutPersistenceHydrationInput = {
+      ...baseInput,
+      windows: baseInput.windows.map((window) => {
+        if (window.liveId !== "live-a" && window.liveId !== "live-b") {
+          return window;
+        }
+
+        return {
+          ...window,
+          desktopFileName: "org.example.Editor",
+          liveId: `restored-${window.liveId}`,
+          resourceName: window.liveId === "live-a" ? "tiled-a" : "tiled-b",
+          tag: "shared-document",
+        };
+      }),
+    };
+
+    expect(planLayoutHydration(state, input)).toEqual({
+      ok: false,
+      reason: "unresolved-live-window",
+    });
+  });
+
+  it("rejects a replacement window without a strong discriminator", () => {
+    const weakMatch = { desktopFileName: "org.example.Editor" };
+    const state = withStaleWindow(representativeState(), "tiled-a", weakMatch);
+    const input = replaceWindowIdentity(
+      representativeInput(),
+      "live-a",
+      "restored-a",
+      weakMatch,
+    );
+
+    expect(planLayoutHydration(state, input)).toEqual({
+      ok: false,
+      reason: "unresolved-live-window",
+    });
+  });
+
+  it("rejects invalid optional metadata before fallback matching", () => {
+    const state = withStaleWindow(
+      representativeState(),
+      "tiled-a",
+      editorWindowMatch("primary"),
+    );
+    const input = replaceWindowIdentity(
+      representativeInput(),
+      "live-a",
+      "restored-a",
+      { desktopFileName: "org.example.Editor", tag: "" },
+    );
+
+    expect(planLayoutHydration(state, input)).toEqual({
+      ok: false,
+      reason: "invalid-live-descriptor",
+    });
+  });
+
+  it("does not reuse output metadata that conflicts during fallback", () => {
+    const baseState = withStaleWindow(
+      representativeState(),
+      "tiled-a",
+      editorWindowMatch("primary"),
+    );
+    const state: LayoutPersistenceV1 = {
+      ...baseState,
+      outputs: baseState.outputs.map((output) =>
+        output.key === "primary-output"
+          ? { ...output, serialNumber: "persisted-serial" }
+          : output,
+      ),
+    };
+    const baseInput = replaceWindowIdentity(
+      representativeInput(),
+      "live-a",
+      "restored-a",
+      editorWindowMatch("primary"),
+    );
+    const input: LayoutPersistenceHydrationInput = {
+      ...baseInput,
+      outputs: baseInput.outputs.map((output) =>
+        output.name === "DP-1"
+          ? { ...output, serialNumber: "different-serial" }
+          : output,
+      ),
+    };
+
+    expect(planLayoutHydration(state, input)).toEqual({
+      ok: false,
+      reason: "unresolved-live-output",
+    });
+  });
+
+  it("does not sanitize duplicate persisted output names during fallback", () => {
+    const baseState = representativeState();
+    const state: LayoutPersistenceV1 = {
+      ...baseState,
+      outputs: baseState.outputs.map((output) => ({
+        ...output,
+        name: "stale-connector",
+        serialNumber:
+          output.key === "primary-output" ? "primary-serial" : "other-serial",
+      })),
+    };
+    const baseInput = representativeInput();
+    const input: LayoutPersistenceHydrationInput = {
+      ...baseInput,
+      outputs: baseInput.outputs.map((output) => {
+        if (output.name === "DP-1") {
+          return { name: "DP-9", serialNumber: "primary-serial" };
+        }
+
+        if (output.name === "HDMI-A-1") {
+          return { name: "HDMI-A-9", serialNumber: "other-serial" };
+        }
+
+        return output;
+      }),
+      windows: baseInput.windows.map((window) => ({
+        ...window,
+        outputName:
+          window.outputName === "DP-1"
+            ? "DP-9"
+            : window.outputName === "HDMI-A-1"
+              ? "HDMI-A-9"
+              : window.outputName,
+      })),
+    };
+
+    expect(planLayoutHydration(state, input)).toEqual({
+      ok: false,
+      reason: "non-unique-output-match",
+    });
+  });
+
+  it("does not sanitize duplicate persisted window identities during fallback", () => {
+    const baseState = representativeState();
+    const state: LayoutPersistenceV1 = {
+      ...baseState,
+      windows: baseState.windows.map((window) => {
+        if (window.key === "tiled-a") {
+          return {
+            ...window,
+            liveId: "stale-duplicate",
+            sessionMatch: editorWindowMatch("primary"),
+          };
+        }
+
+        if (window.key === "tiled-b") {
+          return {
+            ...window,
+            liveId: "stale-duplicate",
+            sessionMatch: editorWindowMatch("secondary"),
+          };
+        }
+
+        return window;
+      }),
+    };
+    const firstReplacement = replaceWindowIdentity(
+      representativeInput(),
+      "live-a",
+      "restored-a",
+      editorWindowMatch("primary"),
+    );
+    const input = replaceWindowIdentity(
+      firstReplacement,
+      "live-b",
+      "restored-b",
+      editorWindowMatch("secondary"),
+    );
+
+    expect(planLayoutHydration(state, input)).toEqual({
+      ok: false,
+      reason: "invalid-persisted-state",
+    });
+  });
+
+  it("does not repair an invalid restore fingerprint invariant", () => {
+    const baseState = withStaleWindow(
+      representativeState(),
+      "tiled-a",
+      editorWindowMatch("primary"),
+    );
+    const state: LayoutPersistenceV1 = {
+      ...baseState,
+      contexts: baseState.contexts.map((context) =>
+        context.outputKey === "primary-output"
+          ? {
+              activeColumnIndex: context.activeColumnIndex,
+              columns: context.columns,
+              desktopId: context.desktopId,
+              outputKey: context.outputKey,
+              viewportOffset: context.viewportOffset,
+            }
+          : context,
+      ),
+    };
+    const input = replaceWindowIdentity(
+      representativeInput(),
+      "live-a",
+      "restored-a",
+      editorWindowMatch("primary"),
+    );
+
+    expect(planLayoutHydration(state, input)).toEqual({
+      ok: false,
+      reason: "invalid-persisted-state",
+    });
+  });
+
+  it.each([
+    [
+      "an ineligible replacement",
+      { eligible: false },
+      "ineligible-live-window",
+    ],
+    [
+      "a replacement on another desktop",
+      { desktopId: "desktop-2" },
+      "live-window-context-mismatch",
+    ],
+    [
+      "a replacement on another output",
+      { outputName: "HDMI-A-1" },
+      "live-window-context-mismatch",
+    ],
+  ] as const)("preserves ownership guards for %s", (_name, change, reason) => {
+    const descriptor = editorWindowMatch("primary");
+    const state = withStaleWindow(representativeState(), "tiled-a", descriptor);
+    const input = replaceWindowIdentity(
+      representativeInput(),
+      "live-a",
+      "restored-a",
+      descriptor,
+      change,
+    );
+
+    expect(planLayoutHydration(state, input)).toEqual({ ok: false, reason });
+  });
+});
+
 function representativeState(): LayoutPersistenceV1 {
   return {
     contexts: [
@@ -680,6 +1209,49 @@ function restoreBaseline() {
     frame: { height: 360, width: 520, x: 100, y: 70 },
     kind: "client" as const,
     noBorder: false,
+  };
+}
+
+function editorWindowMatch(tag: string) {
+  return {
+    desktopFileName: "org.example.Editor",
+    tag,
+  } as const;
+}
+
+function withStaleWindow(
+  state: LayoutPersistenceV1,
+  key: string,
+  sessionMatch: NonNullable<
+    LayoutPersistenceV1["windows"][number]["sessionMatch"]
+  >,
+): LayoutPersistenceV1 {
+  return {
+    ...state,
+    windows: state.windows.map((window) =>
+      window.key === key
+        ? { ...window, liveId: `stale-${key}`, sessionMatch }
+        : window,
+    ),
+  };
+}
+
+function replaceWindowIdentity(
+  input: LayoutPersistenceHydrationInput,
+  currentLiveId: string,
+  liveId: string,
+  descriptor: NonNullable<
+    LayoutPersistenceV1["windows"][number]["sessionMatch"]
+  >,
+  change: Partial<LayoutPersistenceHydrationInput["windows"][number]> = {},
+): LayoutPersistenceHydrationInput {
+  return {
+    ...input,
+    windows: input.windows.map((window) =>
+      window.liveId === currentLiveId
+        ? { ...window, ...descriptor, ...change, liveId }
+        : window,
+    ),
   };
 }
 

@@ -116,7 +116,7 @@ Harden recovery and finish user-facing integration.
 
 These features were outside the 0.1.0 scope and remain planned work.
 
-Persistence foundation complete: core has a strict versioned logical-state codec, fail-closed window and output matching, side-effect-free canonical runtime capture, and an all-or-nothing exact same-session hydration plan. Stable changed snapshots reach the debounced opaque `QtCore.Settings` store. Runtime startup now applies an exact plan atomically after live-state revalidation, including context-safe original window restore baselines, and isolated Wayland and X11 sessions verify idempotent script reloads. Cross-session matcher integration and known-topology restoration remain.
+Persistence foundation complete: core has a strict versioned logical-state codec, fail-closed window and output matching, side-effect-free canonical runtime capture, and all-or-nothing hydration. Stable changed snapshots reach the debounced opaque `QtCore.Settings` store. Runtime startup applies exact reload state or a complete strong-descriptor cross-session match atomically after live-state revalidation. Replaced window objects receive fresh restore baselines. Isolated Wayland and X11 sessions verify idempotent script reloads. Bounded late-window discovery and known-topology restoration remain.
 
 - Persist logical order, widths, viewport offsets, and floating overrides.
 - Restore layouts across sessions and known output topologies.

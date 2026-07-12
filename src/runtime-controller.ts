@@ -33,7 +33,7 @@ import {
   type WindowHeightEditRollback,
 } from "./core/layout-engine";
 import {
-  planExactLayoutHydration,
+  planLayoutHydration,
   type LayoutPersistenceHydrationPlan,
   type LayoutPersistenceHydrationRestoreBaselineValue,
 } from "./core/layout-persistence-hydration";
@@ -11254,6 +11254,10 @@ export class RuntimeController {
         const liveWindows = this.observer.snapshot().map((observed) => {
           const source = this.observer.source(observed.id);
           const liveContext = managedContext(observed);
+          const identity = layoutPersistenceWindowDescriptor(
+            observed.id,
+            source,
+          );
 
           return {
             desktopId: String(liveContext?.desktopId ?? ""),
@@ -11263,17 +11267,18 @@ export class RuntimeController {
               !this.automaticFloatingWindows.has(windowId(observed.id)) &&
               !this.automaticallyFloats(source),
             ),
-            liveId: observed.id,
+            liveId: identity.liveId,
             outputName: observed.outputId,
+            ...(identity.sessionMatch ?? {}),
           };
         });
-        const planned = planExactLayoutHydration(decoded.value, {
+        const planned = planLayoutHydration(decoded.value, {
           desktops: this.workspace.desktops.map((desktop) => ({
             id: desktop.id,
           })),
-          outputs: this.workspace.screens.map((output) => ({
-            name: output.name,
-          })),
+          outputs: this.workspace.screens.map(
+            layoutPersistenceOutputDescriptor,
+          ),
           windows: liveWindows,
         });
 
@@ -11666,7 +11671,10 @@ export class RuntimeController {
           x: output.geometry.x,
           y: output.geometry.y,
         },
+        manufacturer: output.manufacturer ?? null,
+        model: output.model ?? null,
         name: output.name,
+        serialNumber: output.serialNumber ?? null,
       })),
       outputInstances: [...this.topologyObserver.outputInstances()],
       revision: this.topologyRevision,
@@ -16471,6 +16479,7 @@ function layoutHydrationWindowFingerprint(source: KWinWindow): string {
       y: source.clientGeometry.y,
     },
     deleted: source.deleted,
+    desktopFileName: source.desktopFileName ?? null,
     desktops: source.desktops.map((desktop) => desktop.id),
     dialog: source.dialog,
     frameGeometry: {
@@ -16499,12 +16508,16 @@ function layoutHydrationWindowFingerprint(source: KWinWindow): string {
     normalWindow: source.normalWindow,
     onAllDesktops: source.onAllDesktops,
     outputName: source.output?.name ?? null,
+    resourceClass: source.resourceClass ?? null,
+    resourceName: source.resourceName ?? null,
     resize: source.resize,
     resizeable: source.resizeable,
     specialWindow: source.specialWindow,
+    tag: source.tag ?? null,
     tile: source.tile !== null,
     transient: source.transient,
     transientFor: source.transientFor !== null,
+    windowRole: source.windowRole ?? null,
   });
 }
 

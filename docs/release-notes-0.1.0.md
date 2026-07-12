@@ -39,5 +39,8 @@ assign its shortcuts after the upgrade.
   uses virtual output removal and reattachment.
 - Native X11 is verified on one output. Native X11 multi-output remains
   unverified.
-- Layout persistence is disabled. Logical order, sizes, viewport state, and
-  floating state are not restored across sessions or extension reloads.
+- Exact extension reloads restore logical order, sizes, viewport state, and
+  floating anchors. Cross-session restore requires a complete uniquely
+  identified window set at startup; otherwise the stored snapshot is skipped.
+- Reconnecting an absent output does not yet restore a known historical
+  topology.

@@ -1309,6 +1309,398 @@ describe("RuntimeController", () => {
     },
   );
 
+  it("restores a uniquely identified window stack across live ID changes", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const sourceWindows = [
+      createTrackedWindow("source-window-1", output, desktop, {
+        desktopFileName: "org.example.Editor",
+        frameGeometry: { height: 310, width: 420, x: 40, y: 50 },
+        resourceClass: "example-editor",
+        tag: "document-1",
+      }),
+      createTrackedWindow("source-window-2", output, desktop, {
+        desktopFileName: "org.example.Editor",
+        frameGeometry: { height: 340, width: 430, x: 500, y: 80 },
+        resourceClass: "example-editor",
+        tag: "document-2",
+      }),
+    ];
+    const sourceFixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      sourceWindows.map(({ window }) => window),
+    );
+    const source = new RuntimeController(sourceFixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 360 },
+      gap: 10,
+    });
+
+    expect(source.start()).toBe(true);
+    expect(source.moveWindowLeft()).toBe(true);
+    const document = requiredLayoutDocument(source);
+    source.stop();
+
+    const currentFrames = [
+      { height: 360, width: 520, x: 90, y: 70 },
+      { height: 380, width: 540, x: 280, y: 130 },
+    ] as const;
+    const liveWindows = [
+      createTrackedWindow("live-window-1", output, desktop, {
+        desktopFileName: "org.example.Editor",
+        frameGeometry: currentFrames[0],
+        resourceClass: "example-editor",
+        tag: "document-1",
+      }),
+      createTrackedWindow("live-window-2", output, desktop, {
+        desktopFileName: "org.example.Editor",
+        frameGeometry: currentFrames[1],
+        resourceClass: "example-editor",
+        tag: "document-2",
+      }),
+    ];
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      liveWindows.map(({ window }) => window),
+    );
+    const published: string[] = [];
+    const restored = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 700 },
+      gap: 10,
+      onLayoutStateChanged: (canonicalState) => {
+        published.push(canonicalState);
+      },
+    });
+
+    expect(restored.start(document)).toBe(true);
+    expect(restored.managedCount).toBe(2);
+    expect(
+      runtimeLayout(restored).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ),
+    ).toMatchObject({
+      columns: [
+        {
+          width: { kind: "fixed", value: 360 },
+          windowIds: [windowId("live-window-1"), windowId("live-window-2")],
+        },
+      ],
+    });
+
+    const canonicalDocument = requiredLayoutDocument(restored);
+    expect(decodeLayoutPersistence(canonicalDocument)).toMatchObject({
+      ok: true,
+      value: {
+        contexts: [
+          {
+            columns: [
+              {
+                members: [
+                  { windowKey: "live-window-1" },
+                  { windowKey: "live-window-2" },
+                ],
+                width: { kind: "fixed", value: 360 },
+              },
+            ],
+          },
+        ],
+        windows: [
+          {
+            key: "live-window-1",
+            liveId: "live-window-1",
+            sessionMatch: {
+              desktopFileName: "org.example.Editor",
+              resourceClass: "example-editor",
+              tag: "document-1",
+            },
+          },
+          {
+            key: "live-window-2",
+            liveId: "live-window-2",
+            sessionMatch: {
+              desktopFileName: "org.example.Editor",
+              resourceClass: "example-editor",
+              tag: "document-2",
+            },
+          },
+        ],
+      },
+    });
+    expect(published).toEqual([canonicalDocument]);
+
+    const runtime = restored as unknown as {
+      readonly managedWindows: ReadonlyMap<
+        WindowId,
+        {
+          readonly restoreBaseline: {
+            readonly frame: KWinWindow["frameGeometry"];
+          } | null;
+        }
+      >;
+    };
+    expect(
+      liveWindows.map(
+        ({ window }) =>
+          runtime.managedWindows.get(windowId(String(window.internalId)))
+            ?.restoreBaseline?.frame,
+      ),
+    ).toEqual(currentFrames);
+    expect(liveWindows.map(({ window }) => window.frameGeometry)).not.toEqual(
+      currentFrames,
+    );
+
+    restored.stop();
+    expect(liveWindows.map(({ window }) => window.frameGeometry)).toEqual(
+      currentFrames,
+    );
+  });
+
+  it("rejects ambiguous cross-session window identity without partial hydration", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const identity = {
+      desktopFileName: "org.example.Editor",
+      resourceClass: "example-editor",
+      tag: "shared-document",
+    } as const;
+    const sourceWindows = [
+      createTrackedWindow("source-window-1", output, desktop, identity),
+      createTrackedWindow("source-window-2", output, desktop, identity),
+    ];
+    const sourceFixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      sourceWindows.map(({ window }) => window),
+    );
+    const source = new RuntimeController(sourceFixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 360 },
+      gap: 10,
+    });
+
+    expect(source.start()).toBe(true);
+    expect(source.moveWindowLeft()).toBe(true);
+    const document = requiredLayoutDocument(source);
+    source.stop();
+
+    const liveWindows = [
+      createTrackedWindow("live-window-1", output, desktop, identity),
+      createTrackedWindow("live-window-2", output, desktop, identity),
+    ];
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      liveWindows.map(({ window }) => window),
+    );
+    const published: string[] = [];
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const restored = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      onLayoutStateChanged: (canonicalState) => {
+        published.push(canonicalState);
+      },
+    });
+
+    try {
+      expect(restored.start(document)).toBe(true);
+      expect(warning).toHaveBeenCalledWith(
+        expect.stringContaining("unresolved-live-window"),
+      );
+      expect(restored.managedCount).toBe(2);
+      expect(testLayoutColumns(restored, output, desktop)).toEqual([
+        {
+          id: "column:live-window-1",
+          windowIds: ["live-window-1"],
+        },
+        {
+          id: "column:live-window-2",
+          windowIds: ["live-window-2"],
+        },
+      ]);
+      expect(published).toEqual([]);
+      expect(restored.finalizeLayoutStatePublication()).toBe(false);
+      expect(published).toEqual([]);
+    } finally {
+      warning.mockRestore();
+      restored.stop();
+    }
+  });
+
+  it("rejects an identity change between hydration planning and commit", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const sourceWindow = createTrackedWindow("source-window", output, desktop, {
+      desktopFileName: "org.example.Editor",
+      tag: "document-1",
+    });
+    const sourceFixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [sourceWindow.window],
+    );
+    const source = new RuntimeController(sourceFixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 360 },
+      gap: 10,
+    });
+
+    expect(source.start()).toBe(true);
+    const document = requiredLayoutDocument(source);
+    source.stop();
+
+    const liveWindow = createTrackedWindow("live-window", output, desktop, {
+      desktopFileName: "org.example.Editor",
+      tag: "document-1",
+    });
+    let desktopFileName = "org.example.Editor";
+    let identityReads = 0;
+    Object.defineProperty(liveWindow.window, "desktopFileName", {
+      configurable: true,
+      enumerable: true,
+      get: () => {
+        identityReads += 1;
+        const current = desktopFileName;
+
+        if (identityReads === 2) {
+          desktopFileName = "org.example.Replaced";
+        }
+
+        return current;
+      },
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [liveWindow.window],
+    );
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const restored = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    try {
+      expect(restored.start(document)).toBe(true);
+      expect(warning).toHaveBeenCalledWith(
+        expect.stringContaining("live-state-changed"),
+      );
+      expect(identityReads).toBeGreaterThanOrEqual(3);
+      expect(restored.managedCount).toBe(1);
+      expect(testLayoutColumns(restored, output, desktop)).toEqual([
+        {
+          id: "column:live-window",
+          windowIds: ["live-window"],
+        },
+      ]);
+    } finally {
+      warning.mockRestore();
+      restored.stop();
+    }
+  });
+
+  it("rejects an output identity change before hydration commit", () => {
+    const sourceOutput = createOutput("DP-1", 0);
+    Object.defineProperty(sourceOutput, "serialNumber", {
+      configurable: true,
+      enumerable: true,
+      value: "panel-serial",
+    });
+    const desktop = { id: "desktop-1" };
+    const sourceWindow = createTrackedWindow(
+      "source-window",
+      sourceOutput,
+      desktop,
+      {
+        desktopFileName: "org.example.Editor",
+        tag: "document-1",
+      },
+    );
+    const sourceFixture = createWorkspace(
+      sourceOutput,
+      desktop,
+      [sourceOutput],
+      [desktop],
+      [sourceWindow.window],
+    );
+    const source = new RuntimeController(sourceFixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 360 },
+      gap: 10,
+    });
+
+    expect(source.start()).toBe(true);
+    const document = requiredLayoutDocument(source);
+    source.stop();
+
+    const liveOutput = createOutput("DP-1", 0);
+    let serialNumber = "panel-serial";
+    let identityReads = 0;
+    Object.defineProperty(liveOutput, "serialNumber", {
+      configurable: true,
+      enumerable: true,
+      get: () => {
+        identityReads += 1;
+        const current = serialNumber;
+
+        if (identityReads === 2) {
+          serialNumber = "replacement-serial";
+        }
+
+        return current;
+      },
+    });
+    const liveWindow = createTrackedWindow("live-window", liveOutput, desktop, {
+      desktopFileName: "org.example.Editor",
+      tag: "document-1",
+    });
+    const fixture = createWorkspace(
+      liveOutput,
+      desktop,
+      [liveOutput],
+      [desktop],
+      [liveWindow.window],
+    );
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const restored = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    try {
+      expect(restored.start(document)).toBe(true);
+      expect(warning).toHaveBeenCalledWith(
+        expect.stringContaining("live-state-changed"),
+      );
+      expect(identityReads).toBeGreaterThanOrEqual(3);
+      expect(restored.managedCount).toBe(1);
+      expect(testLayoutColumns(restored, liveOutput, desktop)).toEqual([
+        {
+          id: "column:live-window",
+          windowIds: ["live-window"],
+        },
+      ]);
+    } finally {
+      warning.mockRestore();
+      restored.stop();
+    }
+  });
+
   it("discovers late stacking-order windows before delayed hydration", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
@@ -1498,7 +1890,7 @@ describe("RuntimeController", () => {
       expect(published).toEqual([]);
       expect(warning).toHaveBeenCalledTimes(1);
       expect(warning).toHaveBeenCalledWith(
-        expect.stringContaining("missing-live-window"),
+        expect.stringContaining("unresolved-live-window"),
       );
 
       const fallback = decodeLayoutPersistence(
@@ -1638,7 +2030,7 @@ describe("RuntimeController", () => {
       expect(restored.start(document)).toBe(true);
       flushManualScheduler(scheduler);
       expect(warning).toHaveBeenCalledWith(
-        expect.stringContaining("missing-live-window"),
+        expect.stringContaining("unresolved-live-window"),
       );
       expect(restored.managedCount).toBe(1);
       expect(published).toEqual([]);

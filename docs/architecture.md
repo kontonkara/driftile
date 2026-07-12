@@ -155,9 +155,15 @@ index fallback.
 
 The runtime publishes changed canonical snapshots only after stable work. Teardown consumes one already-queued runtime pass through normal reconciliation before the final capture; remaining blockers preserve the previous document. The QML package queues snapshots in an opaque `QtCore.Settings` store with an explicit file location, one-shot write debounce, duplicate suppression, and synchronous final flush before runtime teardown. An isolated real-KWin probe imports the store and verifies an escaped Unicode JSON document with its trailing newline across immediate declarative-script unload and reload on Wayland and X11.
 
-The pure same-session hydration planner resolves every persisted window and
-output by its unique exact live identity, reconstructs an immutable complete
-layout plan in linear time, and rejects the whole document on any mismatch.
+The hydration planner first resolves every persisted window and output by exact
+live identity. If an identity is missing, it attempts one complete descriptor
+match. A window fallback requires at least one globally unique pair formed from
+a stable application namespace and a tag or window role; incidental resource
+names cannot make a duplicated pair safe. Output fallback requires the unique
+serial tuple when one exists, otherwise the exact connector and available
+metadata. Ambiguous, weak, partial, or conflicting matches reject the whole
+document. Restore baselines belonging to replaced window objects are discarded,
+while exact-ID baselines remain eligible.
 After bounded startup stabilization, the runtime builds that plan and a fresh
 layout model off-side. It revalidates live window identity, ownership,
 constraints, context geometry, and topology immediately before an atomic
@@ -172,7 +178,7 @@ ownership or replace its stored source during automatic startup work.
 Unsupported future versions remain write-locked for the run. Oversized
 documents use the same conservative lock because their version cannot be
 inspected safely within the codec bound.
-Descriptor matching across sessions and known-topology restoration are not
+Late cross-session window discovery and known-topology restoration are not
 connected yet.
 
 ## Reconciliation rules

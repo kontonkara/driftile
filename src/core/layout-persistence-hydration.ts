@@ -13,25 +13,39 @@ import type {
   LayoutContextSnapshot,
   WindowHeight,
 } from "./layout-engine";
-import type {
-  LayoutPersistenceV1,
-  PersistedRectV1,
-  PersistedRestoreBaselineV1,
+import {
+  LAYOUT_PERSISTENCE_LIMITS,
+  type LayoutPersistenceV1,
+  type PersistedRectV1,
+  type PersistedRestoreBaselineV1,
+  type PersistedWindowMatchV1,
 } from "./layout-persistence";
+import {
+  matchPersistedOutputs,
+  matchPersistedWindows,
+} from "./layout-persistence-match";
 
 export interface LiveLayoutHydrationDesktop {
   readonly id: string;
 }
 
 export interface LiveLayoutHydrationOutput {
+  readonly manufacturer?: string;
+  readonly model?: string;
   readonly name: string;
+  readonly serialNumber?: string;
 }
 
 export interface LiveLayoutHydrationWindow {
+  readonly desktopFileName?: string;
   readonly desktopId: string;
   readonly eligible: boolean;
   readonly liveId: string;
   readonly outputName: string;
+  readonly resourceClass?: string;
+  readonly resourceName?: string;
+  readonly tag?: string;
+  readonly windowRole?: string;
 }
 
 export interface LayoutPersistenceHydrationInput {
@@ -88,7 +102,9 @@ export type LayoutPersistenceHydrationFailure =
   | "missing-live-desktop"
   | "missing-live-output"
   | "missing-live-window"
-  | "non-unique-output-match";
+  | "non-unique-output-match"
+  | "unresolved-live-output"
+  | "unresolved-live-window";
 
 export type LayoutPersistenceHydrationResult =
   | {
@@ -110,6 +126,73 @@ interface TiledPosition {
 interface PlannedContextIndex {
   readonly context: LayoutPersistenceHydrationContext;
   readonly positions: ReadonlyMap<string, TiledPosition>;
+}
+
+const STRONG_WINDOW_APP_FIELDS = ["desktopFileName", "resourceClass"] as const;
+const STRONG_WINDOW_DISCRIMINATOR_FIELDS = ["tag", "windowRole"] as const;
+
+type RemappedPersistenceResult =
+  | {
+      readonly ok: false;
+      readonly reason: LayoutPersistenceHydrationFailure;
+    }
+  | {
+      readonly ok: true;
+      readonly value: LayoutPersistenceV1;
+    };
+
+export function planLayoutHydration(
+  state: LayoutPersistenceV1,
+  input: LayoutPersistenceHydrationInput,
+): LayoutPersistenceHydrationResult {
+  const structuralFailure = remappableStructureFailure(state);
+
+  if (structuralFailure) {
+    return failure(structuralFailure);
+  }
+
+  const exact = planExactLayoutHydration(state, input);
+
+  if (
+    exact.ok ||
+    (exact.reason !== "missing-live-output" &&
+      exact.reason !== "missing-live-window")
+  ) {
+    return exact;
+  }
+
+  const remapped = remapPersistenceIdentities(state, input);
+  return remapped.ok
+    ? planExactLayoutHydration(remapped.value, input)
+    : failure(remapped.reason);
+}
+
+function remappableStructureFailure(
+  state: LayoutPersistenceV1,
+): LayoutPersistenceHydrationFailure | null {
+  if (
+    hasDuplicateBy(state.outputs, (output) => output.key) ||
+    hasDuplicateBy(state.windows, (window) => window.key) ||
+    hasDuplicateBy(state.windows, (window) => window.liveId)
+  ) {
+    return "invalid-persisted-state";
+  }
+
+  if (hasDuplicateBy(state.outputs, (output) => output.name)) {
+    return "non-unique-output-match";
+  }
+
+  for (const context of state.contexts) {
+    const hasRestoreBaseline = context.columns.some((column) =>
+      column.members.some((member) => member.restoreBaseline !== undefined),
+    );
+
+    if (hasRestoreBaseline !== (context.restoreFingerprint !== undefined)) {
+      return "invalid-persisted-state";
+    }
+  }
+
+  return null;
 }
 
 export function planExactLayoutHydration(
@@ -439,6 +522,350 @@ export function planExactLayoutHydration(
       restoreBaselines: immutableArray(restoreBaselines),
     }),
   };
+}
+
+function remapPersistenceIdentities(
+  state: LayoutPersistenceV1,
+  input: LayoutPersistenceHydrationInput,
+): RemappedPersistenceResult {
+  if (!validLiveIdentityDescriptors(input)) {
+    return { ok: false, reason: "invalid-live-descriptor" };
+  }
+
+  const outputMatches = matchPersistedOutputs(
+    state.outputs,
+    input.outputs.map((output) => ({
+      liveId: output.name,
+      ...(output.manufacturer === undefined
+        ? {}
+        : { manufacturer: output.manufacturer }),
+      ...(output.model === undefined ? {} : { model: output.model }),
+      name: output.name,
+      ...(output.serialNumber === undefined
+        ? {}
+        : { serialNumber: output.serialNumber }),
+    })),
+  );
+
+  if (outputMatches.unmatchedPersistedKeys.length !== 0) {
+    return { ok: false, reason: "unresolved-live-output" };
+  }
+
+  const windowMatches = matchPersistedWindows(
+    state.windows,
+    input.windows.map((window) => ({
+      ...(window.desktopFileName === undefined
+        ? {}
+        : { desktopFileName: window.desktopFileName }),
+      liveId: window.liveId,
+      ...(window.resourceClass === undefined
+        ? {}
+        : { resourceClass: window.resourceClass }),
+      ...(window.resourceName === undefined
+        ? {}
+        : { resourceName: window.resourceName }),
+      ...(window.tag === undefined ? {} : { tag: window.tag }),
+      ...(window.windowRole === undefined
+        ? {}
+        : { windowRole: window.windowRole }),
+    })),
+  );
+
+  if (windowMatches.unmatchedPersistedKeys.length !== 0) {
+    return { ok: false, reason: "unresolved-live-window" };
+  }
+
+  const persistedWindows = new Map(
+    state.windows.map((window) => [window.key, window]),
+  );
+  const liveWindows = new Map(
+    input.windows.map((window) => [window.liveId, window]),
+  );
+  const exactPersistedWindowKeys = new Set<string>();
+  const exactLiveWindowIds = new Set<string>();
+
+  for (const match of windowMatches.matches) {
+    if (match.basis === "live-id") {
+      exactPersistedWindowKeys.add(match.persistedKey);
+      exactLiveWindowIds.add(match.liveId);
+    }
+  }
+
+  const persistedStrongProjectionCounts = new Map<string, number>();
+  const liveStrongProjectionCounts = new Map<string, number>();
+
+  for (const persisted of state.windows) {
+    if (
+      !exactPersistedWindowKeys.has(persisted.key) &&
+      persisted.sessionMatch !== undefined
+    ) {
+      countStrongProjections(
+        persisted.sessionMatch,
+        persistedStrongProjectionCounts,
+      );
+    }
+  }
+
+  for (const live of input.windows) {
+    if (!exactLiveWindowIds.has(live.liveId)) {
+      countStrongProjections(live, liveStrongProjectionCounts);
+    }
+  }
+
+  const sessionMatchedWindowKeys = new Set<string>();
+
+  for (const match of windowMatches.matches) {
+    if (match.basis !== "session") {
+      continue;
+    }
+
+    const descriptor = persistedWindows.get(match.persistedKey)?.sessionMatch;
+    const live = liveWindows.get(match.liveId);
+
+    if (
+      !descriptor ||
+      !live ||
+      !hasMutuallyUniqueStrongProjection(
+        descriptor,
+        live,
+        persistedStrongProjectionCounts,
+        liveStrongProjectionCounts,
+      )
+    ) {
+      return { ok: false, reason: "unresolved-live-window" };
+    }
+
+    sessionMatchedWindowKeys.add(match.persistedKey);
+  }
+
+  const outputNames = new Map(
+    outputMatches.matches.map((match) => [match.persistedKey, match.liveId]),
+  );
+  const windowIds = new Map(
+    windowMatches.matches.map((match) => [match.persistedKey, match.liveId]),
+  );
+
+  return {
+    ok: true,
+    value: {
+      ...state,
+      contexts: state.contexts.map((context) =>
+        contextWithoutStaleRestoreBaselines(context, sessionMatchedWindowKeys),
+      ),
+      outputs: state.outputs.map((output) => ({
+        ...output,
+        name: requiredIdentity(outputNames.get(output.key)),
+      })),
+      windows: state.windows.map((window) => ({
+        ...window,
+        liveId: requiredIdentity(windowIds.get(window.key)),
+      })),
+    },
+  };
+}
+
+function contextWithoutStaleRestoreBaselines(
+  context: LayoutPersistenceV1["contexts"][number],
+  sessionMatchedWindowKeys: ReadonlySet<string>,
+): LayoutPersistenceV1["contexts"][number] {
+  const removesBaseline = context.columns.some((column) =>
+    column.members.some(
+      (member) =>
+        member.restoreBaseline !== undefined &&
+        sessionMatchedWindowKeys.has(member.windowKey),
+    ),
+  );
+
+  if (!removesBaseline) {
+    return context;
+  }
+
+  const columns = context.columns.map((column) => ({
+    ...column,
+    members: column.members.map((member) => {
+      if (
+        member.restoreBaseline === undefined ||
+        !sessionMatchedWindowKeys.has(member.windowKey)
+      ) {
+        return member;
+      }
+
+      return {
+        ...(member.height === undefined ? {} : { height: member.height }),
+        windowKey: member.windowKey,
+      };
+    }),
+  }));
+  const retainedBaseline = columns.some((column) =>
+    column.members.some((member) => member.restoreBaseline !== undefined),
+  );
+
+  return {
+    activeColumnIndex: context.activeColumnIndex,
+    columns,
+    desktopId: context.desktopId,
+    outputKey: context.outputKey,
+    ...(retainedBaseline && context.restoreFingerprint !== undefined
+      ? { restoreFingerprint: context.restoreFingerprint }
+      : {}),
+    viewportOffset: context.viewportOffset,
+  };
+}
+
+function countStrongProjections(
+  descriptor: PersistedWindowMatchV1,
+  counts: Map<string, number>,
+): void {
+  forEachStrongProjection(descriptor, (key) => {
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  });
+}
+
+function hasMutuallyUniqueStrongProjection(
+  persisted: PersistedWindowMatchV1,
+  live: PersistedWindowMatchV1,
+  persistedCounts: ReadonlyMap<string, number>,
+  liveCounts: ReadonlyMap<string, number>,
+): boolean {
+  let unique = false;
+
+  forEachStrongProjection(
+    persisted,
+    (key, appField, appValue, discriminatorField, discriminatorValue) => {
+      if (unique) {
+        return;
+      }
+
+      if (
+        live[appField] === appValue &&
+        live[discriminatorField] === discriminatorValue &&
+        persistedCounts.get(key) === 1 &&
+        liveCounts.get(key) === 1
+      ) {
+        unique = true;
+      }
+    },
+  );
+
+  return unique;
+}
+
+function forEachStrongProjection(
+  descriptor: PersistedWindowMatchV1,
+  visit: (
+    key: string,
+    appField: (typeof STRONG_WINDOW_APP_FIELDS)[number],
+    appValue: string,
+    discriminatorField: (typeof STRONG_WINDOW_DISCRIMINATOR_FIELDS)[number],
+    discriminatorValue: string,
+  ) => void,
+): void {
+  for (const appField of STRONG_WINDOW_APP_FIELDS) {
+    const appValue = descriptor[appField];
+
+    if (appValue === undefined) {
+      continue;
+    }
+
+    for (const discriminatorField of STRONG_WINDOW_DISCRIMINATOR_FIELDS) {
+      const discriminatorValue = descriptor[discriminatorField];
+
+      if (discriminatorValue !== undefined) {
+        visit(
+          strongProjectionKey(
+            appField,
+            appValue,
+            discriminatorField,
+            discriminatorValue,
+          ),
+          appField,
+          appValue,
+          discriminatorField,
+          discriminatorValue,
+        );
+      }
+    }
+  }
+}
+
+function strongProjectionKey(
+  appField: (typeof STRONG_WINDOW_APP_FIELDS)[number],
+  appValue: string,
+  discriminatorField: (typeof STRONG_WINDOW_DISCRIMINATOR_FIELDS)[number],
+  discriminatorValue: string,
+): string {
+  return `${appField}\u0000${appValue}\u0000${discriminatorField}\u0000${discriminatorValue}`;
+}
+
+function validLiveIdentityDescriptors(
+  input: LayoutPersistenceHydrationInput,
+): boolean {
+  return (
+    input.outputs.every(
+      (output) =>
+        validOptionalIdentifier(output.manufacturer) &&
+        validOptionalIdentifier(output.model) &&
+        validOptionalIdentifier(output.serialNumber),
+    ) &&
+    input.windows.every(
+      (window) =>
+        validOptionalIdentifier(window.desktopFileName) &&
+        validOptionalIdentifier(window.resourceClass) &&
+        validOptionalIdentifier(window.resourceName) &&
+        validOptionalIdentifier(window.tag) &&
+        validOptionalIdentifier(window.windowRole),
+    )
+  );
+}
+
+function validOptionalIdentifier(value: string | undefined): boolean {
+  if (value === undefined) {
+    return true;
+  }
+
+  if (
+    value.length === 0 ||
+    value.length > LAYOUT_PERSISTENCE_LIMITS.identifierCharacters
+  ) {
+    return false;
+  }
+
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+
+    if (code <= 31 || code === 127) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function requiredIdentity(value: string | undefined): string {
+  if (value === undefined) {
+    throw new Error("matched persistence identity is missing");
+  }
+
+  return value;
+}
+
+function hasDuplicateBy<T>(
+  values: readonly T[],
+  identity: (value: T) => string,
+): boolean {
+  const seen = new Set<string>();
+
+  for (const value of values) {
+    const key = identity(value);
+
+    if (seen.has(key)) {
+      return true;
+    }
+
+    seen.add(key);
+  }
+
+  return false;
 }
 
 function validateWindowOwnership(
