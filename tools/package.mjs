@@ -1,5 +1,12 @@
 import { createHash } from "node:crypto";
-import { readFile, readdir, rm, utimes, writeFile } from "node:fs/promises";
+import {
+  copyFile,
+  readFile,
+  readdir,
+  rm,
+  utimes,
+  writeFile,
+} from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -9,6 +16,7 @@ import { releaseVersion } from "./release-version.mjs";
 const rootDirectory = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const packageDirectory = resolve(rootDirectory, "dist/kwin-script");
 const outputDirectory = resolve(rootDirectory, "dist");
+const shortcutTool = resolve(outputDirectory, "bin/driftile-shortcuts.mjs");
 const minimumZipTimestamp = 315_532_800;
 
 export async function packageProject() {
@@ -16,6 +24,10 @@ export async function packageProject() {
   const artifactPath = resolve(
     outputDirectory,
     `driftile-${version}.kwinscript`,
+  );
+  const shortcutArtifactPath = resolve(
+    outputDirectory,
+    `driftile-shortcuts-${version}.mjs`,
   );
   await buildProject();
   await removeOldArtifacts();
@@ -43,12 +55,21 @@ export async function packageProject() {
     throw new Error(`zip exited with status ${String(result.status)}`);
   }
 
-  const checksum = createHash("sha256")
-    .update(await readFile(artifactPath))
-    .digest("hex");
+  await copyFile(shortcutTool, shortcutArtifactPath);
+
+  const releaseArtifacts = [artifactPath, shortcutArtifactPath].sort();
+  const checksumLines = await Promise.all(
+    releaseArtifacts.map(async (releaseArtifact) => {
+      const checksum = createHash("sha256")
+        .update(await readFile(releaseArtifact))
+        .digest("hex");
+
+      return `${checksum}  ${basename(releaseArtifact)}\n`;
+    }),
+  );
   await writeFile(
     resolve(outputDirectory, "SHA256SUMS"),
-    `${checksum}  ${basename(artifactPath)}\n`,
+    checksumLines.join(""),
     "utf8",
   );
 
@@ -59,7 +80,8 @@ async function removeOldArtifacts() {
   for (const entry of await readdir(outputDirectory, { withFileTypes: true })) {
     if (
       entry.isFile() &&
-      /^driftile(?:-[^/]+)?\.kwinscript$/u.test(entry.name)
+      (/^driftile(?:-[^/]+)?\.kwinscript$/u.test(entry.name) ||
+        /^driftile-shortcuts-[^/]+\.mjs$/u.test(entry.name))
     ) {
       await rm(resolve(outputDirectory, entry.name), { force: true });
     }
