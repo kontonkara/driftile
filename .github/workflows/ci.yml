@@ -1,0 +1,121 @@
+name: ci
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+jobs:
+  quality:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@a49548c11d9846ad46ecc0115273879b045f001c # v31.10.7
+
+      - name: Install JavaScript dependencies
+        run: nix develop --no-update-lock-file --command npm ci
+
+      - name: Run fast checks
+        run: nix develop --no-update-lock-file --command npm run check
+
+      - name: Verify release package
+        run: nix develop --no-update-lock-file --command npm run package:check
+
+      - name: Check flake outputs
+        run: nix flake check --no-update-lock-file
+
+      - name: Build Nix package
+        run: nix build --no-update-lock-file .#packages.x86_64-linux.default
+
+      - name: Verify release tag
+        if: github.ref_type == 'tag'
+        run: >-
+          nix develop --no-update-lock-file --command
+          node tools/release-version.mjs "$GITHUB_REF_NAME"
+
+      - name: Upload release assets
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-assets
+          path: |
+            dist/LICENSE
+            dist/SHA256SUMS
+            dist/driftile-*.kwinscript
+            dist/driftile-shortcuts-*.mjs
+          if-no-files-found: error
+          retention-days: 7
+
+  integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        backend:
+          - wayland
+          - x11
+    steps:
+      - name: Check out source
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@a49548c11d9846ad46ecc0115273879b045f001c # v31.10.7
+
+      - name: Install JavaScript dependencies
+        run: nix develop --no-update-lock-file .#integration --command npm ci
+
+      - name: Run ${{ matrix.backend }} integration
+        run: >-
+          nix develop --no-update-lock-file .#integration --command
+          npm run test:integration -- "${{ matrix.backend }}"
+
+  release:
+    if: github.ref_type == 'tag'
+    needs:
+      - quality
+      - integration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Check out release notes
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Download release assets
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-assets
+          path: dist
+
+      - name: Verify release assets
+        working-directory: dist
+        run: sha256sum --check SHA256SUMS
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "$GITHUB_REF_NAME"
+          dist/LICENSE
+          dist/SHA256SUMS
+          dist/driftile-*.kwinscript
+          dist/driftile-shortcuts-*.mjs
+          --notes-file "docs/release-notes-${GITHUB_REF_NAME#v}.md"
+          --repo "$GITHUB_REPOSITORY"
+          --verify-tag
