@@ -58,6 +58,7 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Applies default-width changes before admission without changing existing column width policies; newly admitted columns, fresh cross-context retiles, and explicit reset read the current policy.
 - Applies width- and height-step changes in constant time without scheduling layout work; only later matching decrease and increase actions read each value.
 - Rolls back speculative startup admission as one batch when settled work-area geometry cannot produce valid frames, then keeps fingerprinted waiting ownership for a later topology recovery.
+- Isolates failed context solves at public and scheduled reconcile boundaries, keeps each blocked context dirty without immediate retry, and continues reconciling healthy contexts.
 - Owns startup, reconfiguration, and shutdown sequencing.
 
 ### Core
@@ -173,6 +174,7 @@ RuntimeState
 - Commit a default-width change only at the same safe runtime boundary and leave existing managed width policies unchanged. Retrying a waiting admission may add a constrained column and update that viewport and its frames.
 - Treat resize-step changes as future command policy: preserve every current model value, frame, viewport, and focus target.
 - Never leave partial layout ownership after a failed startup solve, and never immediately reschedule an unchanged unusable work area.
+- Keep a managed context unchanged and dirty when its settled work area cannot produce valid frames; a failure in one context must not block another.
 - Do not write unchanged properties.
 - Keep core operations linear in the affected context, not the whole workspace.
 
