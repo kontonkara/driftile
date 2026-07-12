@@ -50,7 +50,7 @@ npm run shortcuts:claim
 
 On systems with Nix, `nix develop` provides the source toolchain, and `nix build` builds the KWin package. Use `nix develop .#integration` for the isolated KWin tests.
 
-The generated KWin package is written to `dist/driftile.kwinscript`.
+The generated KWin package is written to `dist/driftile-0.1.0.kwinscript`.
 
 Run `npm run test:integration` for isolated KWin lifecycle tests. A visible NixOS Plasma VM is also available. See [Testing](docs/testing.md) for coverage and commands.
 
