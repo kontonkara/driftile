@@ -36,6 +36,7 @@ Exit criteria:
 The current runtime already:
 
 - Settles output and work-area event bursts behind two matching delayed snapshots.
+- Keeps singleton and grouped startup windows waiting when a settled work area cannot produce a valid tile, then retries after topology recovery without stopping the runtime.
 - Observes output-list, geometry, scale, and dock invalidations.
 - Checks visible client areas and non-minimized tracked-window hard constraints every two seconds to cover missing complete KWin signals.
 - Maintains independent layout state for every `(output, desktop)` context.

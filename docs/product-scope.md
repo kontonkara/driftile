@@ -72,6 +72,7 @@ Driftile must integrate with, not duplicate:
 - Entering fullscreen for a member of a regular stack extracts it into an immediate right singleton before calling KWin; leaving fullscreen keeps it separate.
 - Maximizing a member of a regular stack extracts it into an immediate right singleton before calling KWin; unmaximizing leaves it separate.
 - No layout write occurs while a topology snapshot is unsettled.
+- A temporarily unusable settled work area leaves eligible startup windows waiting without writes or retry loops; a later settled geometry change admits them normally.
 - Focusing a non-minimized managed window makes it fully visible with the smallest required scroll.
 - Reordering moves one whole active column left, right, first, or last inside its context without changing focus or widths.
 - Column-width resizing changes one whole active column, translates client limits to decorated frame bounds, respects every member's width constraints, and preserves focus and grouping.
