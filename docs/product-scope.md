@@ -36,14 +36,17 @@ The ownership rule is strict:
 - Single-window floating desktop transfer with exact frame and tiled-layout preservation.
 - Event-driven, incremental reconciliation; only visible context geometry and non-minimized tracked-window hard constraints are checked periodically, while a settled structural output change permits one bounded workspace resynchronization.
 
-## Later
+## Beyond v1
 
-- Touchpad navigation and tabbed columns.
+- Wheel and touchpad navigation.
 - Cross-desktop pointer rearrangement and visual drop feedback.
+- Tabbed columns and matching pointer navigation.
 - Driftile-specific application overrides.
-- Optional visual transitions and layout indicators.
+- Expanded settings UI.
+- Optional visual transitions, layout indicators, and concise diagnostics.
+- An optional Driftile layout overview that remains removable and preserves
+  Plasma's built-in Overview as the compatible fallback.
 - Activity-aware layouts.
-- Polished configuration and diagnostics.
 
 ## Compatibility
 

@@ -119,34 +119,41 @@ compatibility, and known limits.
 
 ## v1
 
-Harden recovery and finish user-facing integration. This work is outside the
-published 0.1.0 scope; the persistence foundation is complete and the remaining
-items are still planned.
+Version 1 hardens persistence, recovery, supported pointer insertion, and the
+release lifecycle. It does not add new navigation or presentation modes. This
+work is outside the published 0.1.0 scope; the persistence foundation is
+complete and the remaining items are still planned.
 
 Persistence foundation complete: core has a strict logical-state codec, a bounded four-entry v2 topology catalog, fail-closed window and output matching, side-effect-free canonical runtime capture, and all-or-nothing hydration. Stable changed snapshots reach the debounced opaque `QtCore.Settings` store; bare v1 state migrates without changing the storage key. Runtime startup reselects a complete settled topology, applies exact reload state or a complete strong-descriptor cross-session match atomically, waits boundedly for late windows behind a no-admission barrier, and requires a quiet candidate before commit. An additive known-output return restores an exact tiled layout per output without repatriating windows or rebuilding unchanged contexts; unsafe plans use normal topology recovery. Replaced window objects receive fresh restore baselines. Isolated Wayland and X11 sessions verify idempotent script reloads.
 
 Cross-output pointer adoption is complete for one active normal tiled window and
 one exact visible tiled target.
 
-- Complete wheel navigation, cross-desktop pointer rearrangement, and visual
-  drop feedback.
-- Add tabbed column presentation and matching pointer navigation.
-- Add Driftile-specific application overrides and a complete settings UI.
-- Add optional visual transitions and concise diagnostics.
+- Finish recovery validation for reload, session restoration, late windows, and
+  known-output return.
+- Harden same-context pointer reinsertion and KWin-owned cross-output adoption
+  without extending the supported pointer interaction set.
 - Publish compatibility, migration, and troubleshooting guidance.
 
 Exit criteria:
 
 - Reload and session restoration converge without scrambling visible layouts.
 - Reconnecting a known output restores its contexts without disturbing active outputs.
-- Keyboard and mouse operations produce the same layout model.
+- Supported pointer operations and equivalent keyboard actions converge on the
+  same layout model.
 - Performance budgets pass on the documented reference scenario.
 - Installation, upgrade, disable, and uninstall paths leave Plasma usable.
 
 ## Post-v1
 
-Extend visual shell integration without taking over compositor mechanisms.
+Add interaction and presentation features outside the frozen v1 scope without
+taking over compositor mechanisms.
 
+- Add wheel and touchpad navigation, cross-desktop pointer rearrangement, and
+  visual drop feedback.
+- Add tabbed column presentation and matching pointer navigation.
+- Add Driftile-specific application overrides and an expanded settings UI.
+- Add optional visual transitions, layout indicators, and concise diagnostics.
 - Keep Plasma's built-in Overview as the compatible baseline.
 - Explore an optional Driftile overview that presents the horizontal desktop strip, columns, stacks, and current viewport from the shared layout model.
 - Add focus, desktop selection, and pointer-driven rearrangement only through public KWin and Plasma extension APIs.
