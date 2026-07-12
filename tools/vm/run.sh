@@ -5,7 +5,7 @@ set -euo pipefail
 vm_mode=${1:-full}
 
 if (($# > 1)); then
-  printf 'Usage: %s [full|two-head]\n' "$0" >&2
+  printf 'Usage: %s [full|two-head|lifecycle]\n' "$0" >&2
   exit 2
 fi
 
@@ -18,8 +18,12 @@ case "$vm_mode" in
     flake_configuration=driftile-vm-two-head
     vm_runner=run-driftile-vm-two-head-vm
     ;;
+  lifecycle)
+    flake_configuration=driftile-vm-lifecycle
+    vm_runner=run-driftile-vm-lifecycle-vm
+    ;;
   *)
-    printf 'Usage: %s [full|two-head]\n' "$0" >&2
+    printf 'Usage: %s [full|two-head|lifecycle]\n' "$0" >&2
     exit 2
     ;;
 esac
@@ -349,6 +353,79 @@ monitor_two_head_guest() {
   done
 
   printf 'The two-output VM did not report status within 360 seconds.\n' >&2
+  stop_vm || true
+  return 1
+}
+
+report_lifecycle_progress() {
+  local diagnostics_file=$1
+  local first_line=$2
+  local last_line=$3
+
+  if ((last_line < first_line)); then
+    return
+  fi
+
+  sed -n "${first_line},${last_line}p" "$diagnostics_file" \
+    | sed 's/^/Lifecycle VM: /'
+}
+
+monitor_lifecycle_guest() {
+  local attempt
+  local current_lines
+  local diagnostics_file="$temporary_directory/xchg/driftile-lifecycle-diagnostics"
+  local reported_lines=0
+  local result_file="$temporary_directory/xchg/driftile-lifecycle-verified"
+
+  for ((attempt = 0; attempt < 1800; attempt += 1)); do
+    if [[ -f "$diagnostics_file" ]]; then
+      current_lines=$(wc -l < "$diagnostics_file")
+
+      if ((current_lines > reported_lines)); then
+        report_lifecycle_progress \
+          "$diagnostics_file" \
+          "$((reported_lines + 1))" \
+          "$current_lines"
+        reported_lines=$current_lines
+      fi
+    fi
+
+    if [[ -f "$result_file" ]]; then
+      if [[ -f "$diagnostics_file" ]]; then
+        current_lines=$(wc -l < "$diagnostics_file")
+
+        if ((current_lines > reported_lines)); then
+          report_lifecycle_progress \
+            "$diagnostics_file" \
+            "$((reported_lines + 1))" \
+            "$current_lines"
+          reported_lines=$current_lines
+        fi
+      fi
+
+      if [[ "$(<"$result_file")" == true ]]; then
+        printf 'The release lifecycle VM checkpoint passed.\n'
+        stop_vm || true
+        return 0
+      fi
+
+      printf 'The release lifecycle VM checkpoint failed.\n' >&2
+      stop_vm || true
+      return 1
+    fi
+
+    sleep 0.2
+  done
+
+  printf 'The release lifecycle VM did not report status within 360 seconds.\n' >&2
+
+  if [[ -f "$diagnostics_file" ]]; then
+    report_lifecycle_progress \
+      "$diagnostics_file" \
+      "$((reported_lines + 1))" \
+      "$(wc -l < "$diagnostics_file")" >&2
+  fi
+
   stop_vm || true
   return 1
 }
@@ -801,11 +878,11 @@ if ! prepare_host_window; then
   printf 'Could not request the initial VM window size from host KWin.\n' >&2
 fi
 
-if [[ "$vm_mode" == two-head ]]; then
-  monitor_two_head_guest &
-else
-  monitor_guest &
-fi
+case "$vm_mode" in
+  lifecycle) monitor_lifecycle_guest & ;;
+  two-head) monitor_two_head_guest & ;;
+  *) monitor_guest & ;;
+esac
 status_monitor_pid=$!
 
 vm_status=0

@@ -211,5 +211,11 @@
           ./nix/vm.nix
         ];
       };
+
+      nixosConfigurations.driftile-vm-lifecycle = nixpkgs.lib.nixosSystem {
+        system = "x86_64-linux";
+        specialArgs.driftileCurrentPackage = self.packages.x86_64-linux.driftile;
+        modules = [ ./nix/lifecycle-vm.nix ];
+      };
     };
 }

@@ -23,6 +23,23 @@ QtObject {
         return window.caption.indexOf("QEMU (driftile-vm-two-head)") === 0;
     }
 
+    function resizeLifecycleWindow(window) {
+        if (window.caption !== "QEMU (driftile-vm-lifecycle)") {
+            return;
+        }
+
+        const area = Workspace.clientArea(Workspace.MaximizeArea, window);
+        const width = 1366;
+        const height = 768;
+
+        window.frameGeometry = Qt.rect(
+            area.x + Math.max(0, Math.round((area.width - width) / 2)),
+            area.y + Math.max(0, Math.round((area.height - height) / 2)),
+            width,
+            height
+        );
+    }
+
     function arrangeTwoHeadWindows() {
         const windows = Workspace.stackingOrder
             .filter(isTwoHeadWindow)
@@ -50,7 +67,9 @@ QtObject {
 
     function placeWindow(window) {
         resizeFullWindow(window);
+        resizeLifecycleWindow(window);
         arrangeTwoHeadWindows();
+        Qt.callLater(resizeLifecycleWindow, window);
         Qt.callLater(arrangeTwoHeadWindows);
     }
 
