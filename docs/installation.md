@@ -33,8 +33,9 @@ the gap, width, height, and decoration settings described in
 
 ## Configure shortcuts
 
-Driftile works without the companion helper. Use either path below for the
-default profile. Actions without default keys can still be assigned manually.
+Driftile works without the companion helper. The published 0.1.0 helper claims
+the bundled defaults; current source also accepts custom profiles. Any action
+can instead be assigned manually.
 
 ### Reversible helper
 
@@ -56,7 +57,19 @@ node ./driftile-shortcuts-0.1.0.mjs release
 ```
 
 Do not use `--force` unless replacing later manual edits is intentional. See
-[Shortcuts](shortcuts.md) for the complete profile and recovery details.
+[Shortcuts](shortcuts.md) for the complete default profile, custom JSON v1
+schema, and recovery details.
+
+With a current source build, pass the same custom file to `claim` and `check`.
+`release` reads the saved transaction and rejects `--profile`:
+
+```bash
+npm run shortcuts:claim -- --profile ./shortcuts.json
+npm run shortcuts:check -- --profile ./shortcuts.json
+npm run shortcuts:release
+```
+
+Release the current claim before claiming a changed profile.
 
 ### Manual assignment
 
@@ -135,6 +148,30 @@ modules = [
   }
 ];
 ```
+
+The current Home Manager module can also generate a custom shortcut profile:
+
+```nix
+programs.driftile.shortcuts = {
+  driftile_focus_column_left = [ "Meta+A" "Meta+Left" ];
+  driftile_reset_column_width = [ ];
+};
+```
+
+This writes JSON v1 to `$XDG_CONFIG_HOME/driftile/shortcuts.json` (normally
+`~/.config/driftile/shortcuts.json`). It does not claim shortcuts
+automatically. After rebuilding, enable Driftile and run:
+
+```bash
+profile="${XDG_CONFIG_HOME:-$HOME/.config}/driftile/shortcuts.json"
+driftile-shortcuts claim --profile "$profile"
+driftile-shortcuts check --profile "$profile"
+```
+
+For a system-wide NixOS installation, import the Home Manager module only for
+this profile and leave Home Manager's `programs.driftile.enable` false. The
+system package supplies `driftile-shortcuts`, while Home Manager manages only
+the JSON file; this avoids installing the KWin package twice.
 
 `programs.driftile.package` can override the package in either module. Choose
 one installation scope for each user instead of also installing the

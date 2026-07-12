@@ -4,7 +4,9 @@ import {
   applyShortcutClaimPlan,
   bindingAction,
   buildShortcutClaimPlan,
+  buildShortcutReplacementPlan,
   inspectShortcutProfile,
+  inspectShortcutReplacements,
   releaseShortcutClaim,
   rollbackShortcutClaim,
   singleKeySequence,
@@ -12,6 +14,8 @@ import {
   type ShortcutBackend,
   type ShortcutClaimState,
   type ShortcutMatchType,
+  type ShortcutMutation,
+  type ShortcutReplacement,
   type ShortcutSequence,
 } from "../src/shortcut-ownership";
 import { encodeShortcut, type ShortcutBinding } from "../src/shortcut-profile";
@@ -22,9 +26,22 @@ const stockAction: ShortcutActionId = [
   "KWin",
   "Stock action",
 ];
+const contextAction: ShortcutActionId = [
+  "kwin|alternate",
+  "context_action",
+  "KWin",
+  "Context action",
+];
+const newAction: ShortcutActionId = [
+  "kwin",
+  "new_action",
+  "KWin",
+  "New action",
+];
 const extraKey = encodeShortcut("Meta+X");
 const changedKey = encodeShortcut("Meta+Y");
 const extraSequence: ShortcutSequence = [extraKey, changedKey, 0, 0];
+const emptySequence: ShortcutSequence = [0, 0, 0, 0];
 
 describe("shortcut ownership", () => {
   it("encodes Qt key sequences including shifted symbols and navigation keys", () => {
@@ -116,6 +133,242 @@ describe("shortcut ownership", () => {
     expect(await inspectShortcutProfile(backend, [left, right])).toEqual([]);
   });
 
+  it("orders additive default dependencies before their desired owners", async () => {
+    const left = binding("left", "Meta+Left");
+    const right = binding("right", "Meta+Right");
+    const backend = new FakeBackend([left, right]);
+    backend.setInitial(bindingAction(left), [extraSequence]);
+    backend.setInitial(bindingAction(right), [singleKeySequence(left.key)]);
+    backend.setInitial(stockAction, [singleKeySequence(right.key)]);
+
+    const plan = await buildShortcutClaimPlan(backend, [left, right]);
+
+    expect(plan.mutations.map(({ action }) => action)).toEqual([
+      stockAction,
+      bindingAction(right),
+      bindingAction(left),
+    ]);
+    await applyShortcutClaimPlan(backend, plan);
+    expect(await backend.getShortcuts(bindingAction(left))).toEqual([
+      extraSequence,
+      singleKeySequence(left.key),
+    ]);
+    expect(await backend.getShortcuts(bindingAction(right))).toEqual([
+      singleKeySequence(right.key),
+    ]);
+    expect(await inspectShortcutProfile(backend, [left, right])).toEqual([]);
+  });
+
+  it("rejects an additive default reassignment cycle before writing", async () => {
+    const left = binding("left", "Meta+Left");
+    const right = binding("right", "Meta+Right");
+    const backend = new FakeBackend([left, right]);
+    backend.setInitial(bindingAction(left), [singleKeySequence(right.key)]);
+    backend.setInitial(bindingAction(right), [singleKeySequence(left.key)]);
+
+    await expect(
+      buildShortcutClaimPlan(backend, [left, right]),
+    ).rejects.toThrow("Shortcut reassignment cycle");
+    expect(backend.writes).toEqual([]);
+  });
+
+  it("replaces listed action shortcuts exactly", async () => {
+    const target = binding("left", "Meta+Left");
+    const backend = new FakeBackend([target]);
+    backend.setInitial(bindingAction(target), [
+      extraSequence,
+      singleKeySequence(target.key),
+    ]);
+    const replacement = replace(target, [changedKey, extraKey]);
+
+    const plan = await buildShortcutReplacementPlan(backend, [replacement]);
+
+    expect(plan.mutations).toEqual([
+      {
+        action: bindingAction(target),
+        before: [extraSequence, singleKeySequence(target.key)],
+        after: [singleKeySequence(extraKey), singleKeySequence(changedKey)],
+      },
+    ]);
+    await applyShortcutClaimPlan(backend, plan);
+    expect(await inspectShortcutReplacements(backend, [replacement])).toEqual(
+      [],
+    );
+  });
+
+  it("unbinds a listed action while leaving omitted actions untouched", async () => {
+    const target = binding("left", "Meta+Left");
+    const omitted = binding("right", "Meta+Right");
+    const backend = new FakeBackend([target, omitted]);
+    backend.setInitial(bindingAction(target), [singleKeySequence(target.key)]);
+    backend.setInitial(bindingAction(omitted), [
+      singleKeySequence(omitted.key),
+    ]);
+
+    const plan = await buildShortcutReplacementPlan(backend, [
+      replace(target, []),
+    ]);
+    await applyShortcutClaimPlan(backend, plan);
+
+    expect(await backend.getShortcuts(bindingAction(target))).toEqual([]);
+    expect(await backend.getShortcuts(bindingAction(omitted))).toEqual([
+      singleKeySequence(omitted.key),
+    ]);
+    expect(
+      await inspectShortcutReplacements(backend, [replace(target, [])]),
+    ).toEqual([]);
+  });
+
+  it("normalizes KGlobalAccel's empty sequence as an unbound action", async () => {
+    const target = binding("left", "Meta+Left");
+    const desired = bindingAction(target);
+    const backend = new FakeBackend([target]);
+    backend.setInitial(desired, [emptySequence]);
+
+    const plan = await buildShortcutReplacementPlan(backend, [
+      replace(target, []),
+    ]);
+
+    expect(plan.mutations).toEqual([
+      { action: desired, before: [], after: [] },
+    ]);
+    await applyShortcutClaimPlan(backend, plan);
+    expect(backend.writes).toEqual([]);
+    expect(
+      await inspectShortcutReplacements(backend, [replace(target, [])]),
+    ).toEqual([]);
+  });
+
+  it("removes only a requested key from an omitted conflict owner", async () => {
+    const target = binding("left", "Meta+Left");
+    const backend = new FakeBackend([target]);
+    backend.setInitial(stockAction, [
+      extraSequence,
+      singleKeySequence(target.key),
+    ]);
+
+    const plan = await buildShortcutReplacementPlan(backend, [
+      replace(target, [target.key]),
+    ]);
+    await applyShortcutClaimPlan(backend, plan);
+
+    expect(await backend.getShortcuts(stockAction)).toEqual([extraSequence]);
+    expect(await backend.getShortcuts(bindingAction(target))).toEqual([
+      singleKeySequence(target.key),
+    ]);
+  });
+
+  it("snapshots an unchanged replacement target for reversible duplicates", async () => {
+    const target = binding("left", "Meta+Left");
+    const desired = bindingAction(target);
+    const backend = new FakeBackend([target]);
+    backend.setInitial(desired, [singleKeySequence(target.key)]);
+    backend.setInitial(stockAction, [singleKeySequence(target.key)]);
+
+    const plan = await buildShortcutReplacementPlan(backend, [
+      replace(target, [target.key]),
+    ]);
+
+    expect(plan.mutations).toEqual([
+      {
+        action: stockAction,
+        before: [singleKeySequence(target.key)],
+        after: [],
+      },
+      {
+        action: desired,
+        before: [singleKeySequence(target.key)],
+        after: [singleKeySequence(target.key)],
+      },
+    ]);
+    await applyShortcutClaimPlan(backend, plan);
+    expect(backend.writes).toEqual([stockAction]);
+
+    const result = await releaseShortcutClaim(backend, {
+      mutations: plan.mutations,
+      profile: "custom-v1:sha256:test",
+      status: "claimed",
+      version: 1,
+    });
+
+    expect(result.pending).toEqual([]);
+    expect(await backend.getShortcuts(stockAction)).toEqual([
+      singleKeySequence(target.key),
+    ]);
+    expect(await backend.getShortcuts(desired)).toEqual([
+      singleKeySequence(target.key),
+    ]);
+    expect(backend.writes).toEqual([stockAction, stockAction]);
+  });
+
+  it("orders an acyclic reassignment before each dependent owner", async () => {
+    const left = binding("left", "Meta+Left");
+    const right = binding("right", "Meta+Right");
+    const backend = new FakeBackend([left, right]);
+    backend.setInitial(bindingAction(left), [singleKeySequence(left.key)]);
+    backend.setInitial(bindingAction(right), [singleKeySequence(right.key)]);
+    backend.setInitial(stockAction, [singleKeySequence(changedKey)]);
+
+    const plan = await buildShortcutReplacementPlan(backend, [
+      replace(left, [right.key]),
+      replace(right, [changedKey]),
+    ]);
+
+    expect(plan.mutations.map(({ action }) => action)).toEqual([
+      stockAction,
+      bindingAction(right),
+      bindingAction(left),
+    ]);
+    await applyShortcutClaimPlan(backend, plan);
+    expect(await backend.getShortcuts(bindingAction(left))).toEqual([
+      singleKeySequence(right.key),
+    ]);
+    expect(await backend.getShortcuts(bindingAction(right))).toEqual([
+      singleKeySequence(changedKey),
+    ]);
+  });
+
+  it("rejects a reassignment cycle before writing shortcuts", async () => {
+    const left = binding("left", "Meta+Left");
+    const right = binding("right", "Meta+Right");
+    const backend = new FakeBackend([left, right]);
+    backend.setInitial(bindingAction(left), [singleKeySequence(left.key)]);
+    backend.setInitial(bindingAction(right), [singleKeySequence(right.key)]);
+
+    await expect(
+      buildShortcutReplacementPlan(backend, [
+        replace(left, [right.key]),
+        replace(right, [left.key]),
+      ]),
+    ).rejects.toThrow("Shortcut reassignment cycle");
+    expect(backend.writes).toEqual([]);
+  });
+
+  it("checks exact replacement lists including unbound actions", async () => {
+    const bound = binding("left", "Meta+Left");
+    const unbound = binding("right", "Meta+Right");
+    const backend = new FakeBackend([bound, unbound]);
+    backend.setInitial(bindingAction(bound), [
+      singleKeySequence(bound.key),
+      singleKeySequence(extraKey),
+    ]);
+
+    expect(
+      await inspectShortcutReplacements(backend, [
+        replace(bound, [bound.key]),
+        replace(unbound, []),
+      ]),
+    ).toEqual([expect.objectContaining({ action: bindingAction(bound) })]);
+
+    backend.setInitial(bindingAction(bound), [singleKeySequence(bound.key)]);
+    expect(
+      await inspectShortcutReplacements(backend, [
+        replace(bound, [bound.key]),
+        replace(unbound, []),
+      ]),
+    ).toEqual([]);
+  });
+
   it("rolls applied mutations back when KGlobalAccel rejects a write", async () => {
     const target = binding("left", "Meta+Left");
     const backend = new FakeBackend([target]);
@@ -175,6 +428,212 @@ describe("shortcut ownership", () => {
     expect(await backend.getShortcuts(desired)).toEqual([]);
   });
 
+  it("does not restore a shortcut while a preserved action still owns it", async () => {
+    const target = binding("left", "Meta+Left");
+    const desired = bindingAction(target);
+    const backend = new FakeBackend([target]);
+    backend.setInitial(desired, [
+      singleKeySequence(target.key),
+      singleKeySequence(changedKey),
+    ]);
+    const displaced: ShortcutMutation = {
+      action: stockAction,
+      before: [singleKeySequence(target.key)],
+      after: [],
+    };
+    const claimed: ShortcutMutation = {
+      action: desired,
+      before: [],
+      after: [singleKeySequence(target.key)],
+    };
+    const state: ShortcutClaimState = {
+      mutations: [displaced, claimed],
+      profile: `${target.name}:${String(target.key)}`,
+      status: "claimed",
+      version: 1,
+    };
+
+    const result = await releaseShortcutClaim(backend, state);
+
+    expect(result.pending).toEqual([displaced, claimed]);
+    expect(await backend.getShortcuts(stockAction)).toEqual([]);
+    expect(await backend.getShortcuts(desired)).toEqual([
+      singleKeySequence(changedKey),
+      singleKeySequence(target.key),
+    ]);
+    expect(backend.writes).toEqual([]);
+  });
+
+  it("preserves edits to topology-only replacement snapshots", async () => {
+    const target = binding("left", "Meta+Left");
+    const desired = bindingAction(target);
+    const backend = new FakeBackend([target]);
+    backend.setInitial(desired, [singleKeySequence(changedKey)]);
+    const snapshot: ShortcutMutation = {
+      action: desired,
+      before: [singleKeySequence(target.key)],
+      after: [singleKeySequence(target.key)],
+    };
+    const state: ShortcutClaimState = {
+      mutations: [snapshot],
+      profile: "custom-v1:sha256:test",
+      status: "claimed",
+      version: 1,
+    };
+
+    const result = await releaseShortcutClaim(backend, state, true);
+
+    expect(result.pending).toEqual([]);
+    expect(result.restored).toEqual([snapshot]);
+    expect(await backend.getShortcuts(desired)).toEqual([
+      singleKeySequence(changedKey),
+    ]);
+    expect(backend.writes).toEqual([]);
+
+    await expect(
+      rollbackShortcutClaim(backend, state),
+    ).resolves.toBeUndefined();
+    expect(await backend.getShortcuts(desired)).toEqual([
+      singleKeySequence(changedKey),
+    ]);
+    expect(backend.writes).toEqual([]);
+  });
+
+  it("restores duplicate owners recorded by an old default profile", async () => {
+    const target = binding("left", "Meta+Left");
+    const desired = bindingAction(target);
+    const backend = new FakeBackend([target]);
+    backend.setInitial(desired, [singleKeySequence(target.key)]);
+    backend.setInitial(stockAction, []);
+    const displaced: ShortcutMutation = {
+      action: stockAction,
+      before: [singleKeySequence(target.key)],
+      after: [],
+    };
+    const state: ShortcutClaimState = {
+      mutations: [displaced],
+      profile: `${target.name}:${String(target.key)}`,
+      status: "claimed",
+      version: 1,
+    };
+
+    const result = await releaseShortcutClaim(backend, state);
+
+    expect(result.pending).toEqual([]);
+    expect(result.restored).toEqual([displaced]);
+    expect(await backend.getShortcuts(stockAction)).toEqual([
+      singleKeySequence(target.key),
+    ]);
+    expect(await backend.getShortcuts(desired)).toEqual([
+      singleKeySequence(target.key),
+    ]);
+  });
+
+  it("restores every context that shared a shortcut before claiming", async () => {
+    const target = binding("left", "Meta+Left");
+    const desired = bindingAction(target);
+    const backend = new FakeBackend([target]);
+    backend.setInitial(stockAction, []);
+    backend.setInitial(contextAction, []);
+    backend.setInitial(desired, [singleKeySequence(target.key)]);
+    const state: ShortcutClaimState = {
+      mutations: [
+        {
+          action: stockAction,
+          before: [singleKeySequence(target.key)],
+          after: [],
+        },
+        {
+          action: contextAction,
+          before: [singleKeySequence(target.key)],
+          after: [],
+        },
+        {
+          action: desired,
+          before: [],
+          after: [singleKeySequence(target.key)],
+        },
+      ],
+      profile: "test",
+      status: "claimed",
+      version: 1,
+    };
+
+    const result = await releaseShortcutClaim(backend, state);
+
+    expect(result.pending).toEqual([]);
+    expect(await backend.getShortcuts(desired)).toEqual([]);
+    expect(await backend.getShortcuts(stockAction)).toEqual([
+      singleKeySequence(target.key),
+    ]);
+    expect(await backend.getShortcuts(contextAction)).toEqual([
+      singleKeySequence(target.key),
+    ]);
+  });
+
+  it("preserves a new equal owner and lets force finish restoration", async () => {
+    const target = binding("left", "Meta+Left");
+    const backend = new FakeBackend([target]);
+    backend.setInitial(stockAction, []);
+    backend.setInitial(newAction, [singleKeySequence(target.key)]);
+    const mutation: ShortcutMutation = {
+      action: stockAction,
+      before: [singleKeySequence(target.key)],
+      after: [],
+    };
+    const state: ShortcutClaimState = {
+      mutations: [mutation],
+      profile: "test",
+      status: "claimed",
+      version: 1,
+    };
+
+    const first = await releaseShortcutClaim(backend, state);
+
+    expect(first.pending).toEqual([mutation]);
+    expect(backend.writes).toEqual([]);
+
+    const forced = await releaseShortcutClaim(backend, state, true);
+
+    expect(forced.pending).toEqual([]);
+    expect(await backend.getShortcuts(stockAction)).toEqual([
+      singleKeySequence(target.key),
+    ]);
+    expect(await backend.getShortcuts(newAction)).toEqual([
+      singleKeySequence(target.key),
+    ]);
+  });
+
+  it("detects new multi-step owners before release and lets force finish", async () => {
+    const target = binding("left", "Meta+Left");
+    const backend = new FakeBackend([target]);
+    backend.setInitial(stockAction, []);
+    backend.setMatchOwners(target.key, 2, [newAction]);
+    const mutation: ShortcutMutation = {
+      action: stockAction,
+      before: [singleKeySequence(target.key)],
+      after: [],
+    };
+    const state: ShortcutClaimState = {
+      mutations: [mutation],
+      profile: "test",
+      status: "claimed",
+      version: 1,
+    };
+
+    const first = await releaseShortcutClaim(backend, state);
+
+    expect(first.pending).toEqual([mutation]);
+    expect(backend.writes).toEqual([]);
+
+    const forced = await releaseShortcutClaim(backend, state, true);
+
+    expect(forced.pending).toEqual([]);
+    expect(await backend.getShortcuts(stockAction)).toEqual([
+      singleKeySequence(target.key),
+    ]);
+  });
+
   it("treats an already restored assignment as released", async () => {
     const target = binding("left", "Meta+Left");
     const backend = new FakeBackend([target]);
@@ -196,6 +655,30 @@ describe("shortcut ownership", () => {
     expect(result.pending).toEqual([]);
     expect(result.restored).toEqual([mutation]);
     expect(backend.writes).toEqual([]);
+  });
+
+  it("releases legacy state containing an empty sequence sentinel", async () => {
+    const target = binding("left", "Meta+Left");
+    const desired = bindingAction(target);
+    const backend = new FakeBackend([target]);
+    backend.setInitial(desired, [singleKeySequence(target.key)]);
+    const mutation: ShortcutMutation = {
+      action: desired,
+      before: [emptySequence],
+      after: [emptySequence, singleKeySequence(target.key)],
+    };
+    const state: ShortcutClaimState = {
+      mutations: [mutation],
+      profile: `${target.name}:${String(target.key)}`,
+      status: "claimed",
+      version: 1,
+    };
+
+    const result = await releaseShortcutClaim(backend, state);
+
+    expect(result.pending).toEqual([]);
+    expect(await backend.getShortcuts(desired)).toEqual([]);
+    expect(backend.writes).toEqual([desired]);
   });
 
   it("does not overwrite a divergent assignment during crash recovery", async () => {
@@ -290,19 +773,22 @@ class FakeBackend implements ShortcutBackend {
   }
 
   getOwners(
-    key: number,
+    shortcut: number | ShortcutSequence,
     matchType: ShortcutMatchType = 0,
   ): Promise<readonly ShortcutActionId[]> {
+    const sequence =
+      typeof shortcut === "number" ? singleKeySequence(shortcut) : shortcut;
+
     if (matchType !== 0) {
       return Promise.resolve(
-        this.#matchOwners.get(matchOwnerKey(key, matchType)) ?? [],
+        this.#matchOwners.get(matchOwnerKey(sequence, matchType)) ?? [],
       );
     }
 
     return Promise.resolve(
       [...this.#actions.values()].filter((action) =>
-        (this.#shortcuts.get(actionKey(action)) ?? []).some((sequence) =>
-          sameSequence(sequence, singleKeySequence(key)),
+        (this.#shortcuts.get(actionKey(action)) ?? []).some((candidate) =>
+          sameSequence(candidate, sequence),
         ),
       ),
     );
@@ -354,7 +840,10 @@ class FakeBackend implements ShortcutBackend {
     matchType: Exclude<ShortcutMatchType, 0>,
     owners: readonly ShortcutActionId[],
   ): void {
-    this.#matchOwners.set(matchOwnerKey(key, matchType), owners);
+    this.#matchOwners.set(
+      matchOwnerKey(singleKeySequence(key), matchType),
+      owners,
+    );
   }
 
   setRuntimeActive(active: boolean): void {
@@ -371,8 +860,21 @@ function binding(name: string, sequence: string): ShortcutBinding {
   };
 }
 
-function matchOwnerKey(key: number, matchType: ShortcutMatchType): string {
-  return `${String(key)}:${String(matchType)}`;
+function replace(
+  binding: ShortcutBinding,
+  keys: readonly number[],
+): ShortcutReplacement {
+  return {
+    action: bindingAction(binding),
+    shortcuts: keys.map(singleKeySequence),
+  };
+}
+
+function matchOwnerKey(
+  sequence: ShortcutSequence,
+  matchType: ShortcutMatchType,
+): string {
+  return `${sequence.join(":")}:${String(matchType)}`;
 }
 
 function sameSequence(

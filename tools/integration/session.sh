@@ -37,6 +37,7 @@ readonly wait_attempts=200
 export QT_QUICK_BACKEND=software
 
 client_pids=()
+custom_shortcut_profile_owned=false
 primary_desktop_id=""
 qml_options=(--software)
 secondary_desktop_id=""
@@ -97,6 +98,11 @@ stop_x11_work_area_dock() {
 }
 
 cleanup() {
+  if [[ "$custom_shortcut_profile_owned" == true ]]; then
+    node "$DRIFTILE_SMOKE_SHORTCUT_TOOL" release >/dev/null 2>&1 || true
+    custom_shortcut_profile_owned=false
+  fi
+
   restore_layout_configuration >/dev/null 2>&1 || true
   stop_work_area_panel
   stop_x11_work_area_dock
@@ -441,6 +447,143 @@ release_shortcut_profile() {
       '.data[0] | any(.[0] == "Window Quick Tile Left" and .[2] == "kwin")' \
       >/dev/null \
     || fail "Driftile did not restore the Meta+Left KWin assignment"
+}
+
+shortcut_keys() {
+  local shortcut_name=$1
+  local shortcut_text=$2
+
+  busctl --user --json=short call \
+    org.kde.kglobalaccel \
+    /kglobalaccel \
+    org.kde.KGlobalAccel \
+    shortcutKeys \
+    as \
+    4 kwin "$shortcut_name" KWin "$shortcut_text" \
+    | jq --compact-output \
+      '.data[0] | map(.[0]) | map(select(. != [0, 0, 0, 0])) | sort'
+}
+
+verify_custom_shortcut_profile() {
+  local changed_profile_path="$XDG_CONFIG_HOME/driftile-integration-changed-shortcuts.json"
+  local invalid_profile_path="$XDG_CONFIG_HOME/driftile-integration-invalid-shortcuts.json"
+  local profile_path="$XDG_CONFIG_HOME/driftile-integration-shortcuts.json"
+  local focus_left_before
+  local focus_right_before
+  local insert_left_before
+
+  set_plugin_state true
+  wait_for_script_state true || \
+    fail "KWin did not reload Driftile for custom shortcut verification"
+
+  focus_left_before=$(shortcut_keys \
+    "driftile_focus_column_left" \
+    "Driftile: Focus left") || \
+    fail "KGlobalAccel did not expose the focus-left shortcut assignment"
+  focus_right_before=$(shortcut_keys \
+    "driftile_focus_column_right" \
+    "Driftile: Focus right") || \
+    fail "KGlobalAccel did not expose the focus-right shortcut assignment"
+  insert_left_before=$(shortcut_keys \
+    "driftile_insert_window_into_stack_left" \
+    "Driftile: Insert window into stack left") || \
+    fail "KGlobalAccel did not expose the unbound insert-left shortcut assignment"
+
+  [[ "$focus_left_before" != "[]" ]] || \
+    fail "the normally bound focus-left action was unexpectedly unbound"
+  [[ "$insert_left_before" == "[]" ]] || \
+    fail "the insert-left action was unexpectedly bound before the custom profile: $insert_left_before"
+
+  mkdir -p "$XDG_CONFIG_HOME"
+  printf '%s\n' \
+    '{"bindings":{"driftile_unknown_action":["Meta+Alt+A"]},"version":1}' \
+    > "$invalid_profile_path"
+
+  if node "$DRIFTILE_SMOKE_SHORTCUT_TOOL" claim \
+    --profile "$invalid_profile_path" >/dev/null 2>&1; then
+    fail "Driftile accepted an invalid custom shortcut profile"
+  fi
+
+  [[ "$(shortcut_keys \
+    "driftile_focus_column_left" \
+    "Driftile: Focus left")" == "$focus_left_before" ]] || \
+    fail "an invalid custom profile changed the focus-left assignment"
+  [[ "$(shortcut_keys \
+    "driftile_focus_column_right" \
+    "Driftile: Focus right")" == "$focus_right_before" ]] || \
+    fail "an invalid custom profile changed the focus-right assignment"
+  [[ ! -e "$XDG_STATE_HOME/driftile/shortcut-claim.json" ]] || \
+    fail "an invalid custom profile created shortcut recovery state"
+
+  printf '%s\n' \
+    '{' \
+    '  "bindings": {' \
+    '    "driftile_focus_column_left": ["Meta+Alt+A", "Meta+Ctrl+B"],' \
+    '    "driftile_focus_column_right": [],' \
+    '    "driftile_insert_window_into_stack_left": ["Meta+Alt+Z"]' \
+    '  },' \
+    '  "version": 1' \
+    '}' \
+    > "$profile_path"
+
+  node "$DRIFTILE_SMOKE_SHORTCUT_TOOL" claim --profile "$profile_path" || \
+    fail "Driftile could not claim the custom shortcut profile"
+  custom_shortcut_profile_owned=true
+
+  node "$DRIFTILE_SMOKE_SHORTCUT_TOOL" check --profile "$profile_path" || \
+    fail "Driftile does not own the custom shortcut profile after claiming"
+  node "$DRIFTILE_SMOKE_SHORTCUT_TOOL" claim --profile "$profile_path" || \
+    fail "Driftile custom shortcut claiming is not idempotent"
+
+  [[ "$(shortcut_keys \
+    "driftile_focus_column_left" \
+    "Driftile: Focus left")" == \
+    "[[335544386,0,0,0],[402653249,0,0,0]]" ]] || \
+    fail "KGlobalAccel did not apply both exact focus-left alternatives"
+  [[ "$(shortcut_keys \
+    "driftile_focus_column_right" \
+    "Driftile: Focus right")" == "[]" ]] || \
+    fail "KGlobalAccel did not explicitly unbind the focus-right action"
+  [[ "$(shortcut_keys \
+    "driftile_insert_window_into_stack_left" \
+    "Driftile: Insert window into stack left")" == \
+    "[[402653274,0,0,0]]" ]] || \
+    fail "KGlobalAccel did not bind the custom insert-left shortcut"
+
+  printf '%s\n' \
+    '{"bindings":{"driftile_focus_column_left":["Meta+Alt+X"]},"version":1}' \
+    > "$changed_profile_path"
+
+  if node "$DRIFTILE_SMOKE_SHORTCUT_TOOL" claim \
+    --profile "$changed_profile_path" >/dev/null 2>&1; then
+    fail "Driftile replaced a custom shortcut profile without release or force"
+  fi
+
+  node "$DRIFTILE_SMOKE_SHORTCUT_TOOL" check --profile "$profile_path" || \
+    fail "a rejected custom profile changed the active shortcut assignments"
+
+  rm -f "$profile_path"
+  node "$DRIFTILE_SMOKE_SHORTCUT_TOOL" release || \
+    fail "Driftile could not release a custom profile without its source file"
+  custom_shortcut_profile_owned=false
+  rm -f "$changed_profile_path" "$invalid_profile_path"
+
+  [[ "$(shortcut_keys \
+    "driftile_focus_column_left" \
+    "Driftile: Focus left")" == "$focus_left_before" ]] || \
+    fail "Driftile did not restore the previous focus-left shortcut assignment"
+  [[ "$(shortcut_keys \
+    "driftile_focus_column_right" \
+    "Driftile: Focus right")" == "$focus_right_before" ]] || \
+    fail "Driftile did not restore the previous focus-right shortcut assignment"
+  [[ "$(shortcut_keys \
+    "driftile_insert_window_into_stack_left" \
+    "Driftile: Insert window into stack left")" == "$insert_left_before" ]] || \
+    fail "Driftile did not restore the previous insert-left shortcut assignment"
+
+  set_plugin_state false
+  wait_for_script_state false || \
+    fail "KWin did not unload Driftile after custom shortcut verification"
 }
 
 activate_window() {
@@ -7923,4 +8066,5 @@ case "${DRIFTILE_SMOKE_SCENARIO:-single-output}" in
 esac
 
 release_shortcut_profile
+verify_custom_shortcut_profile
 touch "$DRIFTILE_SMOKE_RESULT"

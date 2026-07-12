@@ -1,20 +1,38 @@
 import { spawnSync } from "node:child_process";
-import { chmod, mkdir, open, readFile, rename, unlink } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  open,
+  readFile,
+  rename,
+  stat,
+  unlink,
+} from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   applyShortcutClaimPlan,
+  bindingAction,
   buildShortcutClaimPlan,
+  buildShortcutReplacementPlan,
   inspectShortcutProfile,
+  inspectShortcutReplacements,
   releaseShortcutClaim,
   rollbackShortcutClaim,
+  singleKeySequence,
   type ShortcutActionId,
   type ShortcutBackend,
   type ShortcutClaimState,
   type ShortcutMutation,
   type ShortcutMatchType,
+  type ShortcutReplacement,
   type ShortcutSequence,
 } from "./shortcut-ownership";
+import { parseShortcutCommandOptions } from "./shortcut-command-options";
+import {
+  parseShortcutConfig,
+  type CustomShortcutProfile,
+} from "./shortcut-config";
 import { shortcutBindings, shortcutProfileId } from "./shortcut-profile";
 
 interface BusctlReply {
@@ -26,6 +44,7 @@ const service = "org.kde.kglobalaccel";
 const objectPath = "/kglobalaccel";
 const dbusInterface = "org.kde.KGlobalAccel";
 const lockEnvironment = "DRIFTILE_SHORTCUT_LOCKED";
+const maxShortcutConfigBytes = 1024 * 1024;
 const pluginId = "io.github.kontonkara.driftile";
 const statePath = shortcutStatePath();
 
@@ -33,15 +52,14 @@ class BusctlShortcutBackend implements ShortcutBackend {
   readonly #executable = process.env.DRIFTILE_BUSCTL || "busctl";
 
   getOwners(
-    key: number,
+    shortcut: number | ShortcutSequence,
     matchType: ShortcutMatchType = 0,
   ): readonly ShortcutActionId[] {
+    const sequence =
+      typeof shortcut === "number" ? ([shortcut, 0, 0, 0] as const) : shortcut;
     const value = this.#call("globalShortcutsByKey", "(ai)(i)", [
       "4",
-      String(key),
-      "0",
-      "0",
-      "0",
+      ...sequence.map(String),
       String(matchType),
     ]);
 
@@ -222,24 +240,22 @@ async function main(): Promise<void> {
     return;
   }
 
-  const command = process.argv[2];
-  const force = process.argv.slice(3).includes("--force");
-
-  if (!command || !["check", "claim", "release"].includes(command)) {
-    throw new Error("Expected one of: check, claim, release");
-  }
+  const options = parseShortcutCommandOptions(process.argv.slice(2));
+  const profile = options.profilePath
+    ? await readShortcutConfig(options.profilePath)
+    : undefined;
 
   const backend = new BusctlShortcutBackend();
 
-  switch (command) {
+  switch (options.command) {
     case "check":
-      await checkProfile(backend);
+      await checkProfile(backend, profile);
       break;
     case "claim":
-      await claimProfile(backend, force);
+      await claimProfile(backend, options.force, profile);
       break;
     case "release":
-      await releaseProfile(backend, force);
+      await releaseProfile(backend, options.force);
       break;
   }
 }
@@ -283,7 +299,10 @@ async function runUnderLock(): Promise<void> {
 async function claimProfile(
   backend: ShortcutBackend,
   force: boolean,
+  profile?: CustomShortcutProfile,
 ): Promise<void> {
+  const replacements = profile ? customReplacements(profile) : undefined;
+  const profileId = profile?.id ?? shortcutProfileId;
   const existing = await readState();
 
   if (existing) {
@@ -299,16 +318,20 @@ async function claimProfile(
       await rollbackShortcutClaim(backend, existing);
       await removeState();
     } else {
-      if (existing.profile !== shortcutProfileId) {
+      if (existing.profile !== profileId) {
         throw new Error(
           "The shortcut profile changed; release it before claiming the new profile",
         );
       }
 
-      const issues = await inspectShortcutProfile(backend, shortcutBindings);
+      const issue = await inspectSelectedProfile(backend, replacements);
 
-      if (issues.length === 0) {
-        console.log("Driftile already owns the shortcut profile.");
+      if (!issue) {
+        console.log(
+          profile
+            ? "Driftile already owns the configured shortcut profile."
+            : "Driftile already owns the shortcut profile.",
+        );
         return;
       }
 
@@ -318,10 +341,12 @@ async function claimProfile(
     }
   }
 
-  const plan = await buildShortcutClaimPlan(backend, shortcutBindings);
+  const plan = replacements
+    ? await buildShortcutReplacementPlan(backend, replacements)
+    : await buildShortcutClaimPlan(backend, shortcutBindings);
   const claimingState: ShortcutClaimState = {
     mutations: plan.mutations,
-    profile: shortcutProfileId,
+    profile: profileId,
     status: "claiming",
     version: 1,
   };
@@ -329,10 +354,10 @@ async function claimProfile(
 
   try {
     await applyShortcutClaimPlan(backend, plan);
-    const issues = await inspectShortcutProfile(backend, shortcutBindings);
+    const issue = await inspectSelectedProfile(backend, replacements);
 
-    if (issues.length > 0) {
-      throw new Error(describeIssues(issues));
+    if (issue) {
+      throw new Error(issue);
     }
 
     await writeState({ ...claimingState, status: "claimed" });
@@ -353,19 +378,29 @@ async function claimProfile(
   }
 
   console.log(
-    `Driftile claimed ${String(shortcutBindings.length)} shortcuts and saved the previous assignments.`,
+    profile
+      ? `Driftile configured ${String(profile.targets.length)} shortcut actions and saved the previous assignments.`
+      : `Driftile claimed ${String(shortcutBindings.length)} shortcuts and saved the previous assignments.`,
   );
 }
 
-async function checkProfile(backend: ShortcutBackend): Promise<void> {
-  const issues = await inspectShortcutProfile(backend, shortcutBindings);
+async function checkProfile(
+  backend: ShortcutBackend,
+  profile?: CustomShortcutProfile,
+): Promise<void> {
+  const issue = await inspectSelectedProfile(
+    backend,
+    profile ? customReplacements(profile) : undefined,
+  );
 
-  if (issues.length > 0) {
-    throw new Error(describeIssues(issues));
+  if (issue) {
+    throw new Error(issue);
   }
 
   console.log(
-    `Driftile owns all ${String(shortcutBindings.length)} shortcuts.`,
+    profile
+      ? `Driftile matches ${String(profile.targets.length)} configured shortcut actions.`
+      : `Driftile owns all ${String(shortcutBindings.length)} shortcuts.`,
   );
 }
 
@@ -405,6 +440,58 @@ function describeIssues(
       return `${binding.sequence}: ${ownerNames || "unassigned"}`;
     })
     .join("\n");
+}
+
+async function inspectSelectedProfile(
+  backend: ShortcutBackend,
+  replacements?: readonly ShortcutReplacement[],
+): Promise<string | undefined> {
+  if (!replacements) {
+    const issues = await inspectShortcutProfile(backend, shortcutBindings);
+    return issues.length > 0 ? describeIssues(issues) : undefined;
+  }
+
+  const issues = await inspectShortcutReplacements(backend, replacements);
+
+  return issues.length > 0
+    ? issues
+        .map(
+          ({ action }) =>
+            `${action[1]}: configured shortcut list is not active`,
+        )
+        .join("\n")
+    : undefined;
+}
+
+function customReplacements(
+  profile: CustomShortcutProfile,
+): readonly ShortcutReplacement[] {
+  return profile.targets.map((target) => ({
+    action: bindingAction(target.action),
+    shortcuts: target.shortcuts.map(({ key }) => singleKeySequence(key)),
+  }));
+}
+
+async function readShortcutConfig(
+  path: string,
+): Promise<CustomShortcutProfile> {
+  const metadata = await stat(path);
+
+  if (!metadata.isFile()) {
+    throw new Error(`Shortcut configuration is not a file: ${path}`);
+  }
+
+  if (metadata.size > maxShortcutConfigBytes) {
+    throw new Error(`Shortcut configuration exceeds 1 MiB: ${path}`);
+  }
+
+  const contents = await readFile(path, "utf8");
+
+  if (Buffer.byteLength(contents, "utf8") > maxShortcutConfigBytes) {
+    throw new Error(`Shortcut configuration exceeds 1 MiB: ${path}`);
+  }
+
+  return parseShortcutConfig(contents);
 }
 
 function actionArguments(action: ShortcutActionId): readonly string[] {

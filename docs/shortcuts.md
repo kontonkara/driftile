@@ -121,9 +121,16 @@ causes Driftile to append a new empty tail through KWin.
 `Meta+.` creates a new right column from the active column's bottom window.
 Both keep focus in the active column and stop at an unavailable boundary.
 
-Plasma already owns some listed sequences. A release provides the optional
+## Shortcut ownership
+
+KGlobalAccel is the live source of truth for shortcuts. Assignments changed in
+**System Settings > Keyboard > Shortcuts** take effect immediately. The
+optional helper performs one explicit transaction; it does not watch a profile
+file or override later System Settings changes.
+
+Plasma already owns some default sequences. A release provides the optional
 versioned helper documented in [Installation](installation.md). From a source
-checkout, enable Driftile and claim the complete profile explicitly:
+checkout, enable Driftile and claim the complete default profile explicitly:
 
 ```bash
 npm run shortcuts:claim
@@ -144,6 +151,60 @@ package; claim the current profile again after enabling the script.
 Release it manually before disabling Driftile or uninstalling through another
 tool. Use `-- --force` with a claim or release only when replacing later manual
 edits is intentional.
+
+## Custom profiles
+
+A custom profile is strict JSON with exactly `version` and `bindings` at the
+root:
+
+```json
+{
+  "version": 1,
+  "bindings": {
+    "driftile_focus_column_left": ["Meta+A", "Meta+Left"],
+    "driftile_reset_column_width": []
+  }
+}
+```
+
+`bindings` must contain at least one registered Driftile action ID. Each listed
+action is replaced with exactly the normalized alternatives in its array;
+`[]` unbinds the action. Omitted action lists remain untouched unless they own a
+chord requested by a listed action, in which case only that chord is displaced.
+Unknown fields, action IDs, and duplicate normalized shortcuts are rejected.
+The [shortcut action catalog](../src/shortcut-actions.ts) contains the action
+IDs accepted by the current source.
+
+Each string must be one chord. It may use the case-sensitive modifiers `Meta`,
+`Ctrl`, `Alt`, and `Shift` in any order, followed by one character or one of
+`Up`, `Down`, `Left`, `Right`, `Home`, `End`, `PgUp`, and `PgDown`. Letter keys
+normalize to uppercase. Multi-step sequences and duplicate modifiers are not
+supported. With a shifted digit or punctuation key, write the produced
+character without `Shift`, such as `Meta+_` or `Meta++`; layout-dependent
+spellings such as `Meta+Shift+-` are rejected.
+
+Pass the same file to `claim` and `check`. Release uses the saved transaction,
+so it takes no profile argument:
+
+```bash
+npm run shortcuts:claim -- --profile ./shortcuts.json
+npm run shortcuts:check -- --profile ./shortcuts.json
+npm run shortcuts:release
+```
+
+`check --profile` compares the listed arrays with live KGlobalAccel state; it
+does not require or inspect a saved claim.
+
+The helper parses the file and validates the replacement plan before applying
+that plan. It removes requested chords from their current owners, preserves
+those owners' other chords, and rolls back a failed claim. A reassignment cycle
+is rejected before the claim writes shortcuts; first unbind one participating
+action in System Settings, then claim again.
+
+A claimed profile is identified by its normalized contents. To change it,
+release the saved claim first, then claim the new file. Normal release restores
+unchanged displaced assignments and preserves later System Settings edits;
+`--force` is the explicit overwrite path.
 
 Release before removing the Nix package because its recovery command is shipped
 with that package.

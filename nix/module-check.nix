@@ -39,6 +39,18 @@ let
             }
           );
         }
+        {
+          options.xdg.configFile = lib.mkOption {
+            type = lib.types.attrsOf (
+              lib.types.submodule {
+                options.text = lib.mkOption {
+                  type = lib.types.str;
+                };
+              }
+            );
+            default = { };
+          };
+        }
         module
         configuration
       ];
@@ -81,6 +93,53 @@ let
       {
         programs.driftile.enable = true;
       };
+  homeManagerEmptyProfile =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.shortcuts = { };
+      }
+      { };
+  homeManagerProfile =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.shortcuts = {
+          driftile_focus_column_left = [ "Meta+A" ];
+          driftile_reset_column_width = [ ];
+        };
+      }
+      { };
+  homeManagerProfileWithSystemInstall =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.shortcuts = {
+          driftile_focus_column_left = [ "Meta+A" ];
+        };
+      }
+      {
+        programs.driftile.enable = true;
+      };
+  homeManagerWithoutProfile =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.shortcuts = null;
+      }
+      { };
   homeManagerValid = verifyModule homeManagerModule [
     "home"
     "packages"
@@ -92,6 +151,15 @@ let
 in
 assert homeManagerValid;
 assert map (entry: entry.assertion) homeManagerCollision.config.assertions == [ false ];
+assert map (entry: entry.assertion) homeManagerEmptyProfile.config.assertions == [ false ];
+assert packagePaths [ "home" "packages" ] homeManagerProfile == [ ];
+assert packagePaths [ "home" "packages" ] homeManagerProfileWithSystemInstall == [ ];
+assert homeManagerProfileWithSystemInstall.config.xdg.configFile ? "driftile/shortcuts.json";
+assert homeManagerWithoutProfile.config.xdg.configFile == { };
+assert
+  homeManagerProfile.config.xdg.configFile."driftile/shortcuts.json".text == ''
+    {"bindings":{"driftile_focus_column_left":["Meta+A"],"driftile_reset_column_width":[]},"version":1}
+  '';
 assert nixosValid;
 pkgs.runCommand "driftile-module-check" { } ''
   touch "$out"

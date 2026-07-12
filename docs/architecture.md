@@ -15,11 +15,26 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Loads the compiled runtime in the KWin script environment.
 - Passes the KWin workspace object to the runtime.
 - Hosts QML-only shortcut handlers.
-- Ships a separate setup helper that transactionally claims KGlobalAccel keys
-  and restores displaced assignments; it is not part of the KWin runtime.
 - Provides event-loop and minimum-delay schedulers for batched work and transition stabilization.
 - Runs a two-second watchdog for visible-context geometry and non-minimized tracked-window hard constraints.
 - Contains no layout policy; its currently unwired state store handles only opaque canonical strings.
+
+### Shortcut helper
+
+- Runs outside the KWin runtime and treats KGlobalAccel, including edits made
+  through System Settings, as the live shortcut authority.
+- Claims either the bundled defaults or a strict JSON v1 profile. Custom
+  profiles replace listed action shortcut arrays exactly; omitted actions
+  participate only when they must release a requested chord.
+- Parses and normalizes a profile before contacting KGlobalAccel, then builds a
+  dependency-ordered replacement plan before applying that plan. Cyclic
+  reassignment is rejected before the claim writes shortcuts.
+- Saves the required before and after topology under `$XDG_STATE_HOME`, verifies
+  every write, and rolls an incomplete claim back.
+- Releases mutations in reverse order, restores only assignments still matching
+  the claim, and preserves later external edits unless forced.
+- Does not watch JSON files. A Home Manager profile is portable input to an
+  explicit `claim --profile`, not a second live source of shortcut state.
 
 ### TypeScript runtime
 
@@ -196,6 +211,11 @@ The QML package includes an opaque `QtCore.Settings` store with an explicit file
 
 ## Verification
 
+- Verify strict shortcut-profile decoding, semantic identities, exact listed
+  replacements and unbinds, omitted-action handling, dependency ordering,
+  cycle rejection, rollback, release, and CLI option boundaries.
+- Evaluate Home Manager's profile-only mode and exact generated JSON without
+  adding the package to the user's environment.
 - Unit-test core policies with plain fixtures.
 - Test reconcile output for minimality and idempotence.
 - Replay window lifecycle and output or desktop transfer sequences.

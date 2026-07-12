@@ -18,6 +18,7 @@
           "packages"
         ];
         preventSystemInstall = true;
+        shortcutConfigFile = true;
       };
       nixosModule = import ./nix/modules/install.nix {
         inherit self;

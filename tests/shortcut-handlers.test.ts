@@ -1,12 +1,19 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_DRIFTILE_SETTINGS } from "../src/settings";
-import { shortcutBindings } from "../src/shortcut-profile";
+import { shortcutActions } from "../src/shortcut-actions";
+import {
+  encodeShortcut,
+  shortcutBindings,
+  shortcutProfileId,
+} from "../src/shortcut-profile";
 
 interface ShortcutHandler {
   readonly activated: string;
   readonly name: string;
   readonly sequence?: string;
+  readonly text: string;
 }
 
 const qml = readFileSync(
@@ -36,7 +43,7 @@ const packageMetadata = JSON.parse(
 ) as { readonly scripts?: Readonly<Record<string, string>> };
 
 const expectedHandlers: Readonly<
-  Record<string, Omit<ShortcutHandler, "name">>
+  Record<string, Pick<ShortcutHandler, "activated" | "sequence">>
 > = {
   driftile_center_column: {
     activated: "Runtime.DriftileRuntime.centerColumn()",
@@ -444,9 +451,32 @@ describe("KWin shortcut handlers", () => {
   it("registers the expected stable actions and bindings", () => {
     expect(
       Object.fromEntries(
-        handlers.map(({ name, ...handler }) => [name, handler]),
+        handlers.map(({ activated, name, sequence }) => [
+          name,
+          {
+            activated,
+            ...(sequence === undefined ? {} : { sequence }),
+          },
+        ]),
       ),
     ).toEqual(expectedHandlers);
+  });
+
+  it("keeps the canonical action catalog synchronized with QML", () => {
+    expect(shortcutActions).toHaveLength(104);
+    expect(shortcutActions).toEqual(
+      handlers.map(({ name, sequence, text }) => ({
+        name,
+        text,
+        ...(sequence === undefined ? {} : { defaultSequence: sequence }),
+      })),
+    );
+    expect(
+      shortcutActions.filter((action) => action.defaultSequence !== undefined),
+    ).toHaveLength(86);
+    expect(
+      shortcutActions.filter((action) => action.defaultSequence === undefined),
+    ).toHaveLength(18);
   });
 
   it("uses unique lowercase action identifiers and key sequences", () => {
@@ -474,10 +504,25 @@ describe("KWin shortcut handlers", () => {
       shortcutBindings.map(({ name, sequence }) => ({ name, sequence })),
     );
 
-    for (const binding of shortcutBindings) {
-      const block = shortcutHandlerBlock(qml, binding.name);
-      expect(stringProperty(block, "text")).toBe(binding.text);
-    }
+    expect(shortcutBindings).toHaveLength(86);
+    expect(shortcutBindings).toEqual(
+      shortcutActions.flatMap((action) =>
+        action.defaultSequence === undefined
+          ? []
+          : [
+              {
+                key: encodeShortcut(action.defaultSequence),
+                name: action.name,
+                sequence: action.defaultSequence,
+                text: action.text,
+              },
+            ],
+      ),
+    );
+    expect(shortcutProfileId).toHaveLength(3604);
+    expect(
+      createHash("sha256").update(shortcutProfileId, "utf8").digest("hex"),
+    ).toBe("c1cbd4bca194a60b832538fab44c7495e62d837c0ec68b00036bbe9f8e31d126");
   });
 
   it("leaves operations without an equivalent default unbound", () => {
@@ -706,35 +751,22 @@ function parseShortcutHandlers(source: string): ShortcutHandler[] {
 
     const name = stringProperty(block, "name");
     const sequence = stringProperty(block, "sequence", false);
+    const text = stringProperty(block, "text");
     const activated = block.match(/^\s*onActivated:\s*(\S.*)$/m)?.[1];
 
-    if (!name || !activated) {
-      throw new Error("ShortcutHandler requires name and onActivated");
+    if (!name || !text || !activated) {
+      throw new Error("ShortcutHandler requires name, text, and onActivated");
     }
 
     handlers.push({
       activated,
       name,
       ...(sequence ? { sequence } : {}),
+      text,
     });
   }
 
   return handlers;
-}
-
-function shortcutHandlerBlock(source: string, name: string): string {
-  const blockPattern =
-    /^\s*readonly property ShortcutHandler \w+: ShortcutHandler \{([\s\S]*?)^\s{4}\}/gm;
-
-  for (const match of source.matchAll(blockPattern)) {
-    const block = match[1];
-
-    if (block && stringProperty(block, "name") === name) {
-      return block;
-    }
-  }
-
-  throw new Error(`ShortcutHandler not found: ${name}`);
 }
 
 function stringProperty(

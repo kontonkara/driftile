@@ -18,8 +18,8 @@ leaving window, output, and desktop mechanisms to KWin.
 - Settled recovery for output, scale, work-area, and window-constraint changes.
 - Configurable gaps, default column width, resize steps, and optional
   borderless presentation.
-- An optional helper that claims the default shortcut profile and restores
-  displaced assignments.
+- An optional reversible shortcut helper, with custom JSON profiles in current
+  source.
 
 ## Status
 
@@ -40,8 +40,8 @@ See [Product scope](docs/product-scope.md) for the complete behavior boundary.
 Install the versioned `.kwinscript`, enable Driftile in **System Settings >
 Window Management > KWin Scripts**, then assign shortcuts manually or with the
 optional reversible helper. See [Installation](docs/installation.md) for
-artifact verification, upgrades, NixOS and Home Manager modules, and safe
-removal.
+artifact verification, custom shortcut profiles, NixOS and Home Manager
+modules, upgrades, and safe removal.
 
 ## Development
 

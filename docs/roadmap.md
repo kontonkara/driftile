@@ -1,6 +1,10 @@
 # Roadmap
 
-## Foundation
+Version 0.1.0 is released. The early milestones and 0.1 criteria below are a
+historical record; the v1 and post-v1 sections describe future direction, not a
+committed release schedule.
+
+## Foundation (delivered)
 
 - Build and package a declarative KWin script with a TypeScript runtime.
 - Observe eligible windows without changing their state.
@@ -12,9 +16,9 @@ Exit criteria:
 - The generated KPackage contains the QML bridge and runtime bundle.
 - Enabling or disabling the script does not move windows.
 
-## Walking skeleton
+## Walking skeleton (delivered)
 
-Build one complete path through every layer.
+This milestone connected one complete path through every layer.
 
 - Package and load the QML bridge and compiled TypeScript runtime.
 - Snapshot outputs, desktops, and eligible windows.
@@ -31,7 +35,7 @@ Exit criteria:
 - Other outputs and desktops remain untouched.
 - The runtime performs no periodic workspace or stacking-order rescans.
 
-## Recovery base
+## Current baseline
 
 The current runtime already:
 
@@ -74,18 +78,24 @@ The current runtime already:
 - Runs a deterministic 128-cycle add, focus, minimize, restore, and remove regression with synchronous geometry acknowledgements and bounded scheduler settlement.
 - Keeps one shared trailing desktop empty and removes only redundant tails created by the current run.
 - Registers compact default shortcuts with `H/J/K/L`, arrow, Home/End, and Page Up/Down aliases.
-- Provides a reversible development helper for claiming shortcuts already used
-  by Plasma; a release UI without a Node.js dependency remains future work.
+- Provides a reversible shortcut helper for the bundled defaults and explicit
+  JSON v1 profiles; a UI without a Node.js dependency remains future work.
+- Lets Home Manager generate a portable profile without installing a second
+  KWin package or claiming live shortcuts automatically.
 - Leaves dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows outside layout ownership, separate from manual floating.
 - Translates client minimum and maximum sizes to decorated frame bounds for layout validation and column resizing.
 
-The automatic-floating base and the script-visible hard-constraint policy are complete. More toolkit coverage, a future KWin oracle for strict X11 geometry hints, physical connector hot-plug, and a wider hardware matrix are deferred beyond 0.1.
+The automatic-floating base and the script-visible hard-constraint policy are
+part of the current baseline. More toolkit coverage, a future KWin oracle for
+strict X11 geometry hints, physical connector hot-plug, and a wider hardware
+matrix remain deferred.
 
-## MVP / 0.1
+## 0.1.0 (released)
 
-The 0.1 behavior scope is frozen at the current keyboard-driven workflow and five existing layout settings. No additional layout commands, settings, toolkit matrices, or hardware-specific behavior enter this release.
+Version 0.1.0 shipped the frozen keyboard-driven workflow and five layout
+settings. Later work does not change that published release scope.
 
-Frozen exit criteria:
+Release criteria:
 
 - Commands affect only their target context.
 - Default transfer shortcuts preserve every member and the width of the active column.
@@ -96,13 +106,15 @@ Frozen exit criteria:
 - Dynamic workspace changes never remove an occupied or visible desktop.
 - A sustained lifecycle test produces no exceptions or geometry feedback loop.
 
-All frozen criteria have direct automated coverage. Remaining 0.1 work is release engineering: deterministic artifacts, portable installation and shortcut setup, CI gates, concise compatibility notes, one release-candidate VM run, and publishing.
+These criteria have direct automated coverage in the 0.1.0 source. See the
+[0.1.0 release notes](release-notes-0.1.0.md) for shipped artifacts,
+compatibility, and known limits.
 
 ## v1
 
 Harden recovery and finish user-facing integration.
 
-These features are outside the frozen 0.1 scope.
+These features were outside the 0.1.0 scope and remain planned work.
 
 Persistence foundation complete: core has a strict versioned logical-state codec plus fail-closed window and output matching, while the QML package has a debounced opaque `QtCore.Settings` store. Isolated Wayland and X11 sessions verify exact destruction-time persistence across script reloads. Runtime capture, same-session hydration, write notifications, matcher integration, and known-topology restoration remain.
 
