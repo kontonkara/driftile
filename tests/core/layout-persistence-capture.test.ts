@@ -5,6 +5,7 @@ import {
   type LayoutPersistenceCaptureContext,
   type LayoutPersistenceCaptureFloatingWindow,
   type LayoutPersistenceCaptureInput,
+  type LayoutPersistenceCaptureRestoreBaseline,
 } from "../../src/core/layout-persistence-capture";
 import type {
   DetachedWindowPlacement,
@@ -16,6 +17,8 @@ const firstOutput = outputId("DP-1");
 const secondOutput = outputId("HDMI-A-1");
 const firstDesktop = desktopId("desktop-1");
 const secondDesktop = desktopId("desktop-2");
+const contextFingerprint =
+  "1\u00000\u00000\u00001000\u0000800\u00000\u00000\u00001000\u0000800";
 
 describe("layout persistence capture", () => {
   it("captures every durable runtime policy as one canonical document", () => {
@@ -117,8 +120,78 @@ describe("layout persistence capture", () => {
     );
   });
 
+  it("attaches restore baselines to their exact tiled context", () => {
+    const input = representativeInput();
+    const document = captureLayoutPersistence({
+      ...input,
+      restoreBaselines: [
+        capturedRestoreBaseline("context-1", "window-2"),
+        capturedRestoreBaseline("context-1", "window-1"),
+      ],
+    });
+    const decoded = decodeLayoutPersistence(document);
+
+    expect(decoded.ok).toBe(true);
+
+    if (!decoded.ok) {
+      return;
+    }
+
+    const context = decoded.value.contexts.find(
+      (candidate) => candidate.outputKey === "DP-1",
+    );
+
+    expect(context?.restoreFingerprint).toBe(contextFingerprint);
+    expect(context?.columns[0]?.members).toMatchObject([
+      { restoreBaseline: restoreBaseline() },
+      { restoreBaseline: restoreBaseline() },
+    ]);
+    expect(document.match(/restoreFingerprint/g)).toHaveLength(1);
+  });
+
+  it("copies only canonical rectangle fields from restore baselines", () => {
+    const input = representativeInput();
+    const captured = capturedRestoreBaseline("context-1", "window-1");
+    const restoreWithPlatformFields = {
+      ...captured,
+      baseline: {
+        ...captured.baseline,
+        clientFrame: {
+          ...captured.baseline.clientFrame,
+          bottom: 420,
+          right: 610,
+        },
+        frame: {
+          ...captured.baseline.frame,
+          bottom: 430,
+          right: 620,
+        },
+      },
+    };
+    const document = captureLayoutPersistence({
+      ...input,
+      restoreBaselines: [restoreWithPlatformFields],
+    });
+    const decoded = decodeLayoutPersistence(document);
+
+    expect(decoded.ok).toBe(true);
+
+    if (!decoded.ok) {
+      return;
+    }
+
+    expect(decoded.value.contexts[0]?.columns[0]?.members[0]).toMatchObject({
+      restoreBaseline: restoreBaseline(),
+      windowKey: "window-1",
+    });
+    expect(document).not.toMatch(/bottom|right/);
+  });
+
   it("does not mutate frozen runtime snapshots", () => {
-    const input = freezeCaptureInput(representativeInput());
+    const input = freezeCaptureInput({
+      ...representativeInput(),
+      restoreBaselines: [capturedRestoreBaseline("context-1", "window-1")],
+    });
 
     expect(() => captureLayoutPersistence(input)).not.toThrow();
     expect(captureLayoutPersistence(input)).toBe(
@@ -312,6 +385,44 @@ describe("layout persistence capture", () => {
       }),
     ],
     [
+      "duplicate restore baselines",
+      (input: LayoutPersistenceCaptureInput) => ({
+        ...input,
+        restoreBaselines: [
+          capturedRestoreBaseline("context-1", "window-1"),
+          capturedRestoreBaseline("context-1", "window-1"),
+        ],
+      }),
+    ],
+    [
+      "a restore baseline in another tiled context",
+      (input: LayoutPersistenceCaptureInput) => ({
+        ...input,
+        restoreBaselines: [capturedRestoreBaseline("context-2", "window-1")],
+      }),
+    ],
+    [
+      "a restore baseline for a floating window",
+      (input: LayoutPersistenceCaptureInput) => ({
+        ...input,
+        restoreBaselines: [capturedRestoreBaseline("context-1", "floating-1")],
+      }),
+    ],
+    [
+      "different restore fingerprints in one context",
+      (input: LayoutPersistenceCaptureInput) => ({
+        ...input,
+        restoreBaselines: [
+          capturedRestoreBaseline("context-1", "window-1"),
+          capturedRestoreBaseline(
+            "context-1",
+            "window-2",
+            "2\u00000\u00000\u00001000\u0000800\u00000\u00000\u00001000\u0000800",
+          ),
+        ],
+      }),
+    ],
+    [
       "a mismatched floating registry key",
       (input: LayoutPersistenceCaptureInput) => ({
         ...input,
@@ -495,6 +606,30 @@ function capturedFloating(
   };
 }
 
+function capturedRestoreBaseline(
+  contextKey: string,
+  liveId: string,
+  fingerprint = contextFingerprint,
+): LayoutPersistenceCaptureRestoreBaseline {
+  return {
+    baseline: {
+      ...restoreBaseline(),
+      fingerprint,
+    },
+    contextKey,
+    liveId,
+  };
+}
+
+function restoreBaseline() {
+  return {
+    clientFrame: { height: 330, width: 500, x: 110, y: 90 },
+    frame: { height: 360, width: 520, x: 100, y: 70 },
+    kind: "client" as const,
+    noBorder: false,
+  };
+}
+
 function freezeCaptureInput(
   input: LayoutPersistenceCaptureInput,
 ): LayoutPersistenceCaptureInput {
@@ -524,10 +659,18 @@ function freezeCaptureInput(
     Object.freeze(restore);
   }
 
+  for (const restore of input.restoreBaselines ?? []) {
+    Object.freeze(restore.baseline.clientFrame);
+    Object.freeze(restore.baseline.frame);
+    Object.freeze(restore.baseline);
+    Object.freeze(restore);
+  }
+
   Object.freeze(input.contexts);
   Object.freeze(input.floatingWindows);
   Object.freeze(input.fullWidthRestores);
   Object.freeze(input.liveOutputNames);
   Object.freeze(input.liveWindowIds);
+  Object.freeze(input.restoreBaselines);
   return Object.freeze(input);
 }

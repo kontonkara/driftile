@@ -5,8 +5,9 @@ export const LAYOUT_PERSISTENCE_VERSION = 1;
 
 export const LAYOUT_PERSISTENCE_LIMITS = Object.freeze({
   columnsPerContext: 512,
+  contextFingerprintCharacters: 256,
   contexts: 512,
-  documentCharacters: 1_048_576,
+  documentCharacters: 4_194_304,
   floatingWindows: 4_096,
   identifierCharacters: 256,
   membersPerColumn: 256,
@@ -38,8 +39,23 @@ export interface PersistedWindowV1 {
   readonly sessionMatch?: PersistedWindowMatchV1;
 }
 
+export interface PersistedRectV1 {
+  readonly height: number;
+  readonly width: number;
+  readonly x: number;
+  readonly y: number;
+}
+
+export interface PersistedRestoreBaselineV1 {
+  readonly clientFrame: PersistedRectV1;
+  readonly frame: PersistedRectV1;
+  readonly kind: "client" | "frame";
+  readonly noBorder: boolean | null;
+}
+
 export interface PersistedColumnMemberV1 {
   readonly height?: WindowHeight;
+  readonly restoreBaseline?: PersistedRestoreBaselineV1;
   readonly windowKey: string;
 }
 
@@ -54,6 +70,7 @@ export interface PersistedContextV1 {
   readonly columns: readonly PersistedColumnV1[];
   readonly desktopId: string;
   readonly outputKey: string;
+  readonly restoreFingerprint?: string;
   readonly viewportOffset: number;
 }
 
@@ -261,7 +278,7 @@ function parseContext(value: unknown): PersistedContextV1 {
       "outputKey",
       "viewportOffset",
     ],
-    [],
+    ["restoreFingerprint"],
   );
   const columns = boundedArray(
     context["columns"],
@@ -272,12 +289,24 @@ function parseContext(value: unknown): PersistedContextV1 {
     context["activeColumnIndex"],
     columns.length,
   );
+  const restoreFingerprint =
+    context["restoreFingerprint"] === undefined
+      ? undefined
+      : contextFingerprint(context["restoreFingerprint"]);
+  const hasRestoreBaseline = columns.some((column) =>
+    column.members.some((member) => member.restoreBaseline !== undefined),
+  );
+
+  if (hasRestoreBaseline !== (restoreFingerprint !== undefined)) {
+    invalid();
+  }
 
   return {
     activeColumnIndex,
     columns,
     desktopId: identifier(context["desktopId"]),
     outputKey: identifier(context["outputKey"]),
+    ...(restoreFingerprint === undefined ? {} : { restoreFingerprint }),
     viewportOffset: boundedNumber(context["viewportOffset"], true),
   };
 }
@@ -322,16 +351,61 @@ function parseColumn(value: unknown): PersistedColumnV1 {
 }
 
 function parseColumnMember(value: unknown): PersistedColumnMemberV1 {
-  const member = recordWithKeys(value, ["windowKey"], ["height"]);
+  const member = recordWithKeys(
+    value,
+    ["windowKey"],
+    ["height", "restoreBaseline"],
+  );
   const parsedHeight =
     member["height"] === undefined
       ? undefined
       : parseWindowHeight(member["height"]);
   const height = isDefaultWindowHeight(parsedHeight) ? undefined : parsedHeight;
+  const restoreBaseline =
+    member["restoreBaseline"] === undefined
+      ? undefined
+      : parseRestoreBaseline(member["restoreBaseline"]);
 
   return {
     ...(height === undefined ? {} : { height }),
+    ...(restoreBaseline === undefined ? {} : { restoreBaseline }),
     windowKey: identifier(member["windowKey"]),
+  };
+}
+
+function parseRestoreBaseline(value: unknown): PersistedRestoreBaselineV1 {
+  const baseline = recordWithKeys(
+    value,
+    ["clientFrame", "frame", "kind", "noBorder"],
+    [],
+  );
+  const kind = baseline["kind"];
+  const noBorder = baseline["noBorder"];
+
+  if (kind !== "client" && kind !== "frame") {
+    invalid();
+  }
+
+  if (noBorder !== null && typeof noBorder !== "boolean") {
+    invalid();
+  }
+
+  return {
+    clientFrame: parseRect(baseline["clientFrame"]),
+    frame: parseRect(baseline["frame"]),
+    kind,
+    noBorder,
+  };
+}
+
+function parseRect(value: unknown): PersistedRectV1 {
+  const rect = recordWithKeys(value, ["height", "width", "x", "y"], []);
+
+  return {
+    height: boundedNumber(rect["height"], false),
+    width: boundedNumber(rect["width"], false),
+    x: boundedNumber(rect["x"], true),
+    y: boundedNumber(rect["y"], true),
   };
 }
 
@@ -651,6 +725,40 @@ function boundedNumber(value: unknown, allowZero: boolean): number {
 
 function optionalIdentifier(value: unknown): string | undefined {
   return value === undefined ? undefined : identifier(value);
+}
+
+function contextFingerprint(value: unknown): string {
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    value.length > LAYOUT_PERSISTENCE_LIMITS.contextFingerprintCharacters
+  ) {
+    invalid();
+  }
+
+  const components = value.split("\u0000");
+
+  if (components.length !== 9) {
+    invalid();
+  }
+
+  for (const [index, component] of components.entries()) {
+    const numeric = Number(component);
+    const mustBePositive =
+      index === 0 || index === 3 || index === 4 || index === 7 || index === 8;
+
+    if (
+      component.length === 0 ||
+      !Number.isFinite(numeric) ||
+      Math.abs(numeric) > LAYOUT_PERSISTENCE_LIMITS.numericMagnitude ||
+      String(numeric) !== component ||
+      (mustBePositive && numeric <= 0)
+    ) {
+      invalid();
+    }
+  }
+
+  return value;
 }
 
 function identifier(value: unknown): string {

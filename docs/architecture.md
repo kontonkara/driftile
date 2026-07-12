@@ -17,7 +17,7 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Hosts QML-only shortcut handlers.
 - Provides event-loop and minimum-delay schedulers for batched work and transition stabilization.
 - Runs a two-second watchdog for visible-context geometry and non-minimized tracked-window hard constraints.
-- Contains no layout policy; its currently unwired state store handles only opaque canonical strings.
+- Contains no layout policy; its state store handles only opaque canonical strings.
 
 ### Shortcut helper
 
@@ -128,9 +128,20 @@ RuntimeState
 
 ## Persistence boundary
 
-The persistence foundation is a bounded, versioned JSON codec in core. It stores logical output and window descriptors, column and stack order, width and height policies, viewport offsets, full-width restore values, and manual-floating reinsertion anchors. It rejects unknown fields, invalid references, impossible layout policies, oversized input, and unsupported versions without mutating live state.
+The persistence foundation is a bounded, versioned JSON codec in core. It stores logical output and window descriptors, column and stack order, width and height policies, viewport offsets, full-width restore values, manual-floating reinsertion anchors, and context-guarded tiled restore baselines. It rejects unknown fields, invalid references, impossible layout policies, oversized input, and unsupported versions without mutating live state.
 
-Transient runtime state is never durable: geometry fingerprints, expected frames, original-frame and decoration ownership, focus caches, waiting and suspension state, schedulers, probes, and transaction tokens are excluded. A window `liveId` is an exact same-session reload hint only. The pure matcher gives that identity precedence, then accepts public KWin session descriptors only when both sides are globally unique; missing, duplicate, or overlapping matches remain unmatched. Output matching prefers a unique display serial tuple and otherwise requires the available connector metadata exactly. Desktops require their exact KWin IDs.
+Transient runtime state is never durable: expected layout frames, decoration ownership, focus caches, waiting and suspension state, schedulers, probes, and transaction tokens are excluded. A context fingerprint is stored only with original client and frame restore baselines; a mismatch discards those baselines without rejecting the logical layout. A window `liveId` is an exact same-session reload hint only. The pure matcher gives that identity precedence, then accepts public KWin session descriptors only when both sides are globally unique; missing, duplicate, or overlapping matches remain unmatched. Output matching prefers a unique display serial tuple and otherwise requires the available connector metadata exactly. Desktops require their exact KWin IDs.
+
+A matching restore baseline is accepted only when its client frame, frame, and
+border-adjusted restore frame remain inside the current work area and the final
+frame satisfies the live size constraints. An unsafe baseline is discarded
+without rejecting the logical layout.
+
+A manually floating window tracks its live context separately from its original
+reinsertion anchor. When it is captured in another context, persistence derives
+a deterministic local fallback without mutating the runtime anchor. The
+historical cross-context anchor remains runtime-only and is not recovered across
+a reload made while the window is away.
 
 At a stable runtime boundary, Driftile can now capture the complete durable
 model as one canonical codec document without changing layout or KWin state.
@@ -138,12 +149,27 @@ Invalid ownership, stale live references, and in-flight structural work fail
 closed. Stale floating neighbors are reduced to safe surviving anchors and the
 index fallback.
 
-The runtime publishes changed canonical snapshots only after stable work. Teardown consumes one already-queued runtime pass through normal reconciliation before the final capture; remaining blockers preserve the previous document. The QML package queues snapshots in an opaque `QtCore.Settings` store with an explicit file location, one-shot write debounce, duplicate suppression, and synchronous final flush before runtime teardown. A non-empty stored document is preserved until hydration can consume it. An isolated real-KWin probe imports the store and verifies an escaped Unicode JSON document with its trailing newline across immediate declarative-script unload and reload on Wayland and X11. Hydration and matcher integration are not connected yet.
+The runtime publishes changed canonical snapshots only after stable work. Teardown consumes one already-queued runtime pass through normal reconciliation before the final capture; remaining blockers preserve the previous document. The QML package queues snapshots in an opaque `QtCore.Settings` store with an explicit file location, one-shot write debounce, duplicate suppression, and synchronous final flush before runtime teardown. An isolated real-KWin probe imports the store and verifies an escaped Unicode JSON document with its trailing newline across immediate declarative-script unload and reload on Wayland and X11.
 
 The pure same-session hydration planner resolves every persisted window and
 output by its unique exact live identity, reconstructs an immutable complete
 layout plan in linear time, and rejects the whole document on any mismatch.
-Runtime application of that plan is not connected yet.
+After bounded startup stabilization, the runtime builds that plan and a fresh
+layout model off-side. It revalidates live window identity, ownership,
+constraints, context geometry, and topology immediately before an atomic
+in-memory commit; KWin geometry writes begin only through normal reconciliation
+after the commit. Extra live windows then use normal admission. Minimized or
+otherwise suspended windows and hidden contexts retain logical ownership
+without startup frame writes. A suspended tiled window acquires a new per-run
+restore baseline only when no context-compatible durable baseline exists. The
+fallback requires two stable writable resume samples and runs before the first
+layout write. A corrupt, stale, or incompatible document cannot leak partial
+ownership or replace its stored source during automatic startup work.
+Unsupported future versions remain write-locked for the run. Oversized
+documents use the same conservative lock because their version cannot be
+inspected safely within the codec bound.
+Descriptor matching across sessions and known-topology restoration are not
+connected yet.
 
 ## Reconciliation rules
 
@@ -199,7 +225,7 @@ Runtime application of that plan is not connected yet.
 
 ## Engineering constraints
 
-- No periodic workspace or stacking-order rescan. Lifecycle is signal-driven, with one bounded startup grace, bounded per-window state and floating-transition probes, and a two-second client-area plus hard-constraint fingerprint check limited to visible tracked windows and contexts because KWin exposes no complete change signal for either surface.
+- No periodic workspace or stacking-order rescan. Lifecycle is signal-driven, with an initial snapshot and one additive discovery at the end of the bounded startup grace, bounded per-window state and floating-transition probes, and a two-second client-area plus hard-constraint fingerprint check limited to visible tracked windows and contexts because KWin exposes no complete change signal for either surface.
 - Desktop lifecycle snapshots scan observed windows only after relevant signals; they never run on a timer.
 - Structural output recovery performs one bounded workspace resynchronization after the topology settles.
 - Coalesce each event burst into at most one reconcile pass per dirty context.

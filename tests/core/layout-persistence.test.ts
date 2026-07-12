@@ -9,6 +9,9 @@ import {
   type LayoutPersistenceV1,
 } from "../../src/core/layout-persistence";
 
+const CONTEXT_FINGERPRINT =
+  "1\u00000\u00000\u00001000\u0000800\u00000\u00000\u00001000\u0000800";
+
 function required<T>(value: T | undefined): T {
   if (value === undefined) {
     throw new Error("test fixture is incomplete");
@@ -24,7 +27,12 @@ function persistedState(): LayoutPersistenceV1 {
         activeColumnIndex: 1,
         columns: [
           {
-            members: [{ windowKey: "window-1" }],
+            members: [
+              {
+                restoreBaseline: restoreBaseline(),
+                windowKey: "window-1",
+              },
+            ],
             width: { kind: "proportion", value: 0.5 },
           },
           {
@@ -44,6 +52,7 @@ function persistedState(): LayoutPersistenceV1 {
         ],
         desktopId: "desktop-1",
         outputKey: "output-1",
+        restoreFingerprint: CONTEXT_FINGERPRINT,
         viewportOffset: -140,
       },
     ],
@@ -102,6 +111,15 @@ function persistedState(): LayoutPersistenceV1 {
   };
 }
 
+function restoreBaseline() {
+  return {
+    clientFrame: { height: 330, width: 500, x: 110, y: 90 },
+    frame: { height: 360, width: 520, x: 100, y: 70 },
+    kind: "client" as const,
+    noBorder: false,
+  };
+}
+
 describe("layout persistence codec", () => {
   it("round trips every durable v1 policy without runtime state", () => {
     const state = persistedState();
@@ -110,6 +128,36 @@ describe("layout persistence codec", () => {
     expect(decodeLayoutPersistence(document)).toEqual({
       ok: true,
       value: state,
+    });
+  });
+
+  it("keeps legacy v1 column members without restore baselines valid", () => {
+    const state = persistedState();
+    const context = required(state.contexts[0]);
+    const column = required(context.columns[0]);
+    const member = required(column.members[0]);
+    const legacy: LayoutPersistenceV1 = {
+      ...state,
+      contexts: [
+        {
+          activeColumnIndex: context.activeColumnIndex,
+          columns: [
+            {
+              ...column,
+              members: [{ windowKey: member.windowKey }],
+            },
+            required(context.columns[1]),
+          ],
+          desktopId: context.desktopId,
+          outputKey: context.outputKey,
+          viewportOffset: context.viewportOffset,
+        },
+      ],
+    };
+
+    expect(decodeLayoutPersistence(encodeLayoutPersistence(legacy))).toEqual({
+      ok: true,
+      value: legacy,
     });
   });
 
@@ -170,6 +218,8 @@ describe("layout persistence codec", () => {
               members: [
                 {
                   height: { kind: "auto", weight: 1 },
+                  restoreBaseline: required(firstColumn.members[0])
+                    .restoreBaseline,
                   windowKey: "window-1",
                 },
               ],
@@ -200,7 +250,7 @@ describe("layout persistence codec", () => {
       throw new Error("normalized state did not decode");
     }
 
-    expect(decoded.value.contexts[0]?.columns[0]?.members[0]).toEqual({
+    expect(decoded.value.contexts[0]?.columns[0]?.members[0]).toMatchObject({
       windowKey: "window-1",
     });
   });
@@ -235,6 +285,77 @@ describe("layout persistence codec", () => {
       error: "document-too-large",
       ok: false,
     });
+  });
+
+  it("encodes the complete tiled window limit with restore baselines", () => {
+    const windowCount = LAYOUT_PERSISTENCE_LIMITS.windows;
+    const membersPerColumn = LAYOUT_PERSISTENCE_LIMITS.membersPerColumn;
+    const windows = Array.from({ length: windowCount }, (_value, index) => ({
+      key: `window-${String(index)}`,
+      liveId: `live-${String(index)}`,
+    }));
+    const baseline = {
+      clientFrame: {
+        height: 1_000_000,
+        width: 1_000_000,
+        x: -1_000_000,
+        y: -1_000_000,
+      },
+      frame: {
+        height: 1_000_000,
+        width: 1_000_000,
+        x: -1_000_000,
+        y: -1_000_000,
+      },
+      kind: "client" as const,
+      noBorder: false,
+    };
+    const state: LayoutPersistenceV1 = {
+      contexts: [
+        {
+          activeColumnIndex: 0,
+          columns: Array.from(
+            { length: windowCount / membersPerColumn },
+            (_column, columnIndex) => ({
+              members: Array.from(
+                { length: membersPerColumn },
+                (_member, memberIndex) => ({
+                  restoreBaseline: baseline,
+                  windowKey: required(
+                    windows[columnIndex * membersPerColumn + memberIndex],
+                  ).key,
+                }),
+              ),
+              width: { kind: "fixed" as const, value: 1_000_000 },
+            }),
+          ),
+          desktopId: "desktop-1",
+          outputKey: "output",
+          restoreFingerprint:
+            "1\u0000-1000000\u0000-1000000\u00001000000\u00001000000\u0000-1000000\u0000-1000000\u00001000000\u00001000000",
+          viewportOffset: -1_000_000,
+        },
+      ],
+      floatingWindows: [],
+      format: LAYOUT_PERSISTENCE_FORMAT,
+      outputs: [{ key: "output", name: "DP-1" }],
+      version: LAYOUT_PERSISTENCE_VERSION,
+      windows,
+    };
+    const document = encodeLayoutPersistence(state);
+    const decoded = decodeLayoutPersistence(document);
+
+    expect(document.length).toBeLessThanOrEqual(
+      LAYOUT_PERSISTENCE_LIMITS.documentCharacters,
+    );
+    expect(decoded.ok).toBe(true);
+
+    if (decoded.ok) {
+      expect(decoded.value.windows).toHaveLength(windowCount);
+      expect(
+        decoded.value.contexts[0]?.columns.flatMap((column) => column.members),
+      ).toHaveLength(windowCount);
+    }
   });
 
   it("rejects duplicate, missing, and multiply owned window references", () => {
@@ -440,6 +561,131 @@ describe("layout persistence codec", () => {
 
     expect(() => encodeLayoutPersistence(longIdentifier)).toThrow();
     expect(() => encodeLayoutPersistence(hugeViewport)).toThrow();
+  });
+
+  it("strictly validates restore baseline geometry and metadata", () => {
+    const state = persistedState();
+    const context = required(state.contexts[0]);
+    const column = required(context.columns[0]);
+    const member = required(column.members[0]);
+    const baseline = required(member.restoreBaseline);
+    const invalidBaselines: readonly unknown[] = [
+      { ...baseline, frame: { ...baseline.frame, width: 0 } },
+      { ...baseline, kind: "other" },
+      { ...baseline, noBorder: "false" },
+      { ...baseline, unexpected: true },
+    ];
+
+    for (const restoreBaseline of invalidBaselines) {
+      const invalid = {
+        ...state,
+        contexts: [
+          {
+            ...context,
+            columns: [
+              {
+                ...column,
+                members: [{ ...member, restoreBaseline }],
+              },
+              required(context.columns[1]),
+            ],
+          },
+        ],
+      };
+
+      expect(decodeLayoutPersistence(JSON.stringify(invalid))).toEqual({
+        error: "invalid-state",
+        ok: false,
+      });
+    }
+  });
+
+  it("requires a canonical positive-dimension fingerprint for baselines", () => {
+    const state = persistedState();
+    const context = required(state.contexts[0]);
+    const invalidFingerprints = [
+      "1\u00000\u00000\u00001000\u0000800\u00000\u00000\u00001000",
+      "01\u00000\u00000\u00001000\u0000800\u00000\u00000\u00001000\u0000800",
+      `${String(
+        LAYOUT_PERSISTENCE_LIMITS.numericMagnitude + 1,
+      )}\u00000\u00000\u00001000\u0000800\u00000\u00000\u00001000\u0000800`,
+      "0\u00000\u00000\u00001000\u0000800\u00000\u00000\u00001000\u0000800",
+      "1\u00000\u00000\u00000\u0000800\u00000\u00000\u00001000\u0000800",
+      "1\u00000\u00000\u00001000\u0000800\u00000\u00000\u00001000\u00000",
+    ];
+
+    for (const restoreFingerprint of invalidFingerprints) {
+      expect(
+        decodeLayoutPersistence(
+          JSON.stringify({
+            ...state,
+            contexts: [{ ...context, restoreFingerprint }],
+          }),
+        ),
+      ).toEqual({ error: "invalid-state", ok: false });
+    }
+  });
+
+  it("requires context fingerprints and member baselines together", () => {
+    const state = persistedState();
+    const context = required(state.contexts[0]);
+    const column = required(context.columns[0]);
+    const member = required(column.members[0]);
+    const fingerprintWithoutBaseline = {
+      ...state,
+      contexts: [
+        {
+          ...context,
+          columns: [
+            {
+              ...column,
+              members: [{ windowKey: member.windowKey }],
+            },
+            required(context.columns[1]),
+          ],
+        },
+      ],
+    };
+    const baselineWithoutFingerprint = {
+      ...state,
+      contexts: [
+        {
+          activeColumnIndex: context.activeColumnIndex,
+          columns: context.columns,
+          desktopId: context.desktopId,
+          outputKey: context.outputKey,
+          viewportOffset: context.viewportOffset,
+        },
+      ],
+    };
+
+    for (const invalid of [
+      fingerprintWithoutBaseline,
+      baselineWithoutFingerprint,
+    ]) {
+      expect(decodeLayoutPersistence(JSON.stringify(invalid))).toEqual({
+        error: "invalid-state",
+        ok: false,
+      });
+    }
+  });
+
+  it("allows restore baselines only on tiled column members", () => {
+    const state = persistedState();
+    const invalid = {
+      ...state,
+      floatingWindows: [
+        {
+          ...required(state.floatingWindows[0]),
+          restoreBaseline: restoreBaseline(),
+        },
+      ],
+    };
+
+    expect(decodeLayoutPersistence(JSON.stringify(invalid))).toEqual({
+      error: "invalid-state",
+      ok: false,
+    });
   });
 
   it("never throws while decoding arbitrary JSON values", () => {

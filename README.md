@@ -18,6 +18,8 @@ leaving window, output, and desktop mechanisms to KWin.
 - Settled recovery for output, scale, work-area, and window-constraint changes.
 - Configurable gaps, default column width, resize steps, and optional
   borderless presentation.
+- Exact same-session layout restoration across extension reloads in current
+  source.
 - An optional reversible shortcut helper, with custom JSON profiles in current
   source.
 
@@ -29,7 +31,8 @@ sessions.
 
 Known limits:
 
-- Layout state is not restored across sessions or extension reloads.
+- The 0.1.0 release does not restore layout state. Current source supports
+  same-session extension reloads; cross-session restoration remains unavailable.
 - Physical connector hot-plugging has not been verified.
 - Native X11 multi-output layouts remain unverified.
 

@@ -58,3 +58,10 @@ workspace.screensChanged.connect(function () {
   routeWindows();
 });
 routeWindows();
+
+registerShortcut(
+  "Driftile Integration Output Router Ready",
+  "Driftile integration output router ready",
+  "",
+  function () {},
+);

@@ -38,6 +38,8 @@ export function init(
     loadedLayoutState,
     onLayoutStateChanged,
   );
+  const initialLayoutState =
+    typeof loadedLayoutState === "string" ? loadedLayoutState : "";
   const nextController = new RuntimeController(workspace, {
     borderlessWindows: settings.borderlessWindows,
     clientAreaOption,
@@ -56,18 +58,13 @@ export function init(
   nextController.setColumnWidthStepPercent(settings.columnWidthStepPercent);
   nextController.setWindowHeightStepPercent(settings.windowHeightStepPercent);
 
-  if (!nextController.start()) {
+  if (!nextController.start(initialLayoutState)) {
     console.warn("[driftile] no output or virtual desktop available");
     return;
   }
 
   controller = nextController;
   appliedSettings = settings;
-
-  if (layoutStateChanged !== undefined) {
-    controller.requestLayoutStatePublication();
-    controller.flushLayoutStatePublication();
-  }
   console.info(
     `[driftile] managed=${String(controller.managedCount)} writes=${String(controller.lastWriteCount)}`,
   );
@@ -128,10 +125,6 @@ function writableLayoutStateSink(
 ): LayoutStateChanged | undefined {
   if (typeof loadedLayoutState !== "string") {
     console.warn("[driftile] invalid loaded layout state ignored");
-    return undefined;
-  }
-
-  if (loadedLayoutState !== "") {
     return undefined;
   }
 

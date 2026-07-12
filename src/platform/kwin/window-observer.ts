@@ -80,6 +80,14 @@ export class WindowObserver {
     this.workspace.windowAdded.connect(this.handleWindowAdded);
     this.workspace.windowRemoved.connect(this.handleWindowRemoved);
 
+    this.discoverWindows();
+  }
+
+  discoverWindows(): void {
+    if (!this.started) {
+      return;
+    }
+
     for (const window of this.workspace.stackingOrder) {
       this.add(window);
     }

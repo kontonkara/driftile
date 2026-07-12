@@ -748,7 +748,10 @@ describe("KWin shortcut handlers", () => {
     expect(qml).toMatch(
       /Component\.onDestruction:[\s\S]*flushLayoutState\(\);[\s\S]*layoutStateStore\.flush\(\);[\s\S]*Runtime\.DriftileRuntime\.destroy\(\);/,
     );
-    expect(runtime).toContain('if (loadedLayoutState !== "")');
+    expect(runtime).toContain(
+      'typeof loadedLayoutState === "string" ? loadedLayoutState : ""',
+    );
+    expect(runtime).toContain("nextController.start(initialLayoutState)");
     expect(runtime).toContain(
       "activeController.requestLayoutStatePublication()",
     );

@@ -13,7 +13,11 @@ import type {
   LayoutContextSnapshot,
   WindowHeight,
 } from "./layout-engine";
-import type { LayoutPersistenceV1 } from "./layout-persistence";
+import type {
+  LayoutPersistenceV1,
+  PersistedRectV1,
+  PersistedRestoreBaselineV1,
+} from "./layout-persistence";
 
 export interface LiveLayoutHydrationDesktop {
   readonly id: string;
@@ -52,10 +56,25 @@ export interface LayoutPersistenceHydrationFloatingWindow {
   readonly placement: DetachedWindowPlacement;
 }
 
+export interface LayoutPersistenceHydrationRestoreBaseline {
+  readonly baseline: LayoutPersistenceHydrationRestoreBaselineValue;
+  readonly contextKey: string;
+  readonly windowId: WindowId;
+}
+
+export interface LayoutPersistenceHydrationRestoreBaselineValue {
+  readonly clientFrame: PersistedRectV1;
+  readonly fingerprint: string;
+  readonly frame: PersistedRectV1;
+  readonly kind: PersistedRestoreBaselineV1["kind"];
+  readonly noBorder: boolean | null;
+}
+
 export interface LayoutPersistenceHydrationPlan {
   readonly contexts: readonly LayoutPersistenceHydrationContext[];
   readonly floatingWindows: readonly LayoutPersistenceHydrationFloatingWindow[];
   readonly fullWidthRestores: readonly LayoutPersistenceHydrationFullWidthRestore[];
+  readonly restoreBaselines: readonly LayoutPersistenceHydrationRestoreBaseline[];
 }
 
 export type LayoutPersistenceHydrationFailure =
@@ -182,6 +201,7 @@ export function planExactLayoutHydration(
 
   const contexts: LayoutPersistenceHydrationContext[] = [];
   const fullWidthRestores: LayoutPersistenceHydrationFullWidthRestore[] = [];
+  const restoreBaselines: LayoutPersistenceHydrationRestoreBaseline[] = [];
   const contextIndices = new Map<string, PlannedContextIndex>();
   const ownedWindowKeys = new Set<string>();
 
@@ -197,6 +217,13 @@ export function planExactLayoutHydration(
     }
 
     const key = contextKey(outputName, persisted.desktopId);
+    const hasRestoreBaseline = persisted.columns.some((column) =>
+      column.members.some((member) => member.restoreBaseline !== undefined),
+    );
+
+    if (hasRestoreBaseline !== (persisted.restoreFingerprint !== undefined)) {
+      return failure("invalid-persisted-state");
+    }
 
     if (contextIndices.has(key)) {
       return failure("invalid-persisted-state");
@@ -251,6 +278,25 @@ export function planExactLayoutHydration(
           liveId: plannedWindowId,
           memberIndex,
         });
+
+        if (member.restoreBaseline) {
+          const contextFingerprint = persisted.restoreFingerprint;
+
+          if (contextFingerprint === undefined) {
+            return failure("invalid-persisted-state");
+          }
+
+          restoreBaselines.push(
+            Object.freeze({
+              baseline: immutableRestoreBaseline(
+                member.restoreBaseline,
+                contextFingerprint,
+              ),
+              contextKey: key,
+              windowId: plannedWindowId,
+            }),
+          );
+        }
 
         if (hasPersistedHeights) {
           plannedHeights.push(
@@ -390,6 +436,7 @@ export function planExactLayoutHydration(
       contexts: immutableArray(contexts),
       floatingWindows: immutableArray(floatingWindows),
       fullWidthRestores: immutableArray(fullWidthRestores),
+      restoreBaselines: immutableArray(restoreBaselines),
     }),
   };
 }
@@ -444,6 +491,19 @@ function immutableHeight(height: WindowHeight): WindowHeight {
     case "preset":
       return Object.freeze({ index: height.index, kind: height.kind });
   }
+}
+
+function immutableRestoreBaseline(
+  baseline: PersistedRestoreBaselineV1,
+  fingerprint: string,
+): LayoutPersistenceHydrationRestoreBaselineValue {
+  return Object.freeze({
+    clientFrame: Object.freeze({ ...baseline.clientFrame }),
+    fingerprint,
+    frame: Object.freeze({ ...baseline.frame }),
+    kind: baseline.kind,
+    noBorder: baseline.noBorder,
+  });
 }
 
 function immutableArray<T>(values: T[]): readonly T[] {

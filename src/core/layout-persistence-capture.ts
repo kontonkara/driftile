@@ -13,6 +13,8 @@ import {
   type PersistedColumnMemberV1,
   type PersistedContextV1,
   type PersistedFloatingWindowV1,
+  type PersistedRectV1,
+  type PersistedRestoreBaselineV1,
 } from "./layout-persistence";
 
 export interface LayoutPersistenceCaptureContext {
@@ -31,17 +33,37 @@ export interface LayoutPersistenceCaptureFullWidthRestore {
   readonly width: ColumnWidth;
 }
 
+export interface LayoutPersistenceCaptureRestoreBaseline {
+  readonly baseline: LayoutPersistenceCaptureRestoreBaselineValue;
+  readonly contextKey: string;
+  readonly liveId: string;
+}
+
+export interface LayoutPersistenceCaptureRestoreBaselineValue {
+  readonly clientFrame: PersistedRectV1;
+  readonly fingerprint: string;
+  readonly frame: PersistedRectV1;
+  readonly kind: PersistedRestoreBaselineV1["kind"];
+  readonly noBorder: boolean | null;
+}
+
 export interface LayoutPersistenceCaptureInput {
   readonly contexts: readonly LayoutPersistenceCaptureContext[];
   readonly floatingWindows: readonly LayoutPersistenceCaptureFloatingWindow[];
   readonly fullWidthRestores: readonly LayoutPersistenceCaptureFullWidthRestore[];
   readonly liveOutputNames: readonly string[];
   readonly liveWindowIds: readonly string[];
+  readonly restoreBaselines?: readonly LayoutPersistenceCaptureRestoreBaseline[];
 }
 
 interface TiledPosition {
   readonly columnIndex: number;
   readonly memberIndex: number;
+}
+
+interface IndexedRestoreBaselines {
+  readonly baselinesByWindow: ReadonlyMap<string, PersistedRestoreBaselineV1>;
+  readonly fingerprintByContext: ReadonlyMap<string, string>;
 }
 
 export function captureLayoutPersistence(
@@ -54,6 +76,7 @@ export function captureLayoutPersistence(
   const liveWindowIds = uniqueStrings(input.liveWindowIds, "live window ID");
   const contextsByKey = new Map<string, LayoutPersistenceCaptureContext>();
   const columnsByContext = new Map<string, ReadonlySet<ColumnId>>();
+  const tiledContextByWindow = new Map<string, string>();
   const tiledPositionsByContext = new Map<
     string,
     ReadonlyMap<string, TiledPosition>
@@ -86,11 +109,12 @@ export function captureLayoutPersistence(
       for (const [memberIndex, id] of column.windowIds.entries()) {
         const liveId = String(id);
 
-        if (positions.has(liveId)) {
+        if (positions.has(liveId) || tiledContextByWindow.has(liveId)) {
           invalid("a tiled window can occupy only one layout slot");
         }
 
         positions.set(liveId, { columnIndex, memberIndex });
+        tiledContextByWindow.set(liveId, context.key);
       }
     }
 
@@ -103,6 +127,12 @@ export function captureLayoutPersistence(
     input.fullWidthRestores,
     contextsByKey,
     columnsByContext,
+  );
+  const restoreBaselines = indexRestoreBaselines(
+    input.restoreBaselines ?? [],
+    contextsByKey,
+    liveWindowIds,
+    tiledContextByWindow,
   );
   const outputs = new Map<
     string,
@@ -120,6 +150,9 @@ export function captureLayoutPersistence(
     registerOutput(outputName, liveOutputNames, outputs);
     const activeColumnIndex = resolveActiveColumnIndex(context.layout);
     const contextRestores = fullWidthRestores.get(context.key);
+    const restoreFingerprint = restoreBaselines.fingerprintByContext.get(
+      context.key,
+    );
 
     contexts.push({
       activeColumnIndex,
@@ -142,7 +175,11 @@ export function captureLayoutPersistence(
             invalid("window height state cannot contain an empty member");
           }
 
-          return persistedMember(liveId, height);
+          return persistedMember(
+            liveId,
+            height,
+            restoreBaselines.baselinesByWindow.get(liveId),
+          );
         });
         const fullWidthRestore = contextRestores?.get(column.id);
 
@@ -156,6 +193,7 @@ export function captureLayoutPersistence(
       }),
       desktopId: String(context.layout.desktopId),
       outputKey: outputName,
+      ...(restoreFingerprint === undefined ? {} : { restoreFingerprint }),
       viewportOffset: context.layout.viewportOffset,
     });
   }
@@ -239,6 +277,48 @@ function indexFullWidthRestores(
   return indexed;
 }
 
+function indexRestoreBaselines(
+  baselines: readonly LayoutPersistenceCaptureRestoreBaseline[],
+  contexts: ReadonlyMap<string, LayoutPersistenceCaptureContext>,
+  liveWindowIds: ReadonlySet<string>,
+  tiledContextByWindow: ReadonlyMap<string, string>,
+): IndexedRestoreBaselines {
+  const baselinesByWindow = new Map<string, PersistedRestoreBaselineV1>();
+  const fingerprintByContext = new Map<string, string>();
+
+  for (const entry of baselines) {
+    if (!contexts.has(entry.contextKey)) {
+      invalid("a restore baseline must reference a captured context");
+    }
+
+    if (!liveWindowIds.has(entry.liveId)) {
+      invalid("a restore baseline must reference a live window");
+    }
+
+    if (tiledContextByWindow.get(entry.liveId) !== entry.contextKey) {
+      invalid("a restore baseline must reference its tiled owner context");
+    }
+
+    if (baselinesByWindow.has(entry.liveId)) {
+      invalid("a tiled window can have only one restore baseline");
+    }
+
+    const contextFingerprint = fingerprintByContext.get(entry.contextKey);
+
+    if (
+      contextFingerprint !== undefined &&
+      contextFingerprint !== entry.baseline.fingerprint
+    ) {
+      invalid("restore baselines in one context must share a fingerprint");
+    }
+
+    fingerprintByContext.set(entry.contextKey, entry.baseline.fingerprint);
+    baselinesByWindow.set(entry.liveId, cloneRestoreBaseline(entry.baseline));
+  }
+
+  return { baselinesByWindow, fingerprintByContext };
+}
+
 function resolveActiveColumnIndex(
   layout: LayoutContextSnapshot,
 ): number | null {
@@ -299,9 +379,11 @@ function survivingWindowAnchors(
 function persistedMember(
   liveId: string,
   height: WindowHeight | undefined,
+  restoreBaseline: PersistedRestoreBaselineV1 | undefined,
 ): PersistedColumnMemberV1 {
   return {
     ...(height === undefined ? {} : { height: cloneHeight(height) }),
+    ...(restoreBaseline === undefined ? {} : { restoreBaseline }),
     windowKey: liveId,
   };
 }
@@ -368,6 +450,26 @@ function cloneHeight(height: WindowHeight): WindowHeight {
     case "preset":
       return { index: height.index, kind: height.kind };
   }
+}
+
+function cloneRestoreBaseline(
+  baseline: LayoutPersistenceCaptureRestoreBaselineValue,
+): PersistedRestoreBaselineV1 {
+  return {
+    clientFrame: cloneRect(baseline.clientFrame),
+    frame: cloneRect(baseline.frame),
+    kind: baseline.kind,
+    noBorder: baseline.noBorder,
+  };
+}
+
+function cloneRect(rect: PersistedRectV1): PersistedRectV1 {
+  return {
+    height: rect.height,
+    width: rect.width,
+    x: rect.x,
+    y: rect.y,
+  };
 }
 
 function nullableString(value: string | null): string | undefined {

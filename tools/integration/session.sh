@@ -25,10 +25,13 @@ readonly desktop_reorder_unavailable_shortcut="Driftile Integration Desktop Reor
 readonly desktop_reorder_state_plugin_id="io.github.kontonkara.driftile.integration-desktop-reorder-state"
 readonly desktop_reorder_state_verified_shortcut_prefix="Driftile Integration Desktop Reorder State Verified"
 readonly floating_navigation_arranger_plugin_id="io.github.kontonkara.driftile.integration-floating-navigation-arranger"
+readonly layout_state_file="$XDG_CONFIG_HOME/driftile-layout-state.ini"
 readonly native_tile_toggle_plugin_id="io.github.kontonkara.driftile.integration-native-tile-toggle"
 readonly output_router_plugin_id="io.github.kontonkara.driftile.integration-output-router"
+readonly output_router_ready_shortcut="Driftile Integration Output Router Ready"
 readonly output_transfer_state_probe_plugin_id="io.github.kontonkara.driftile.integration-output-transfer-state-probe"
 readonly output_transfer_state_verified_shortcut_prefix="Driftile Integration Output Transfer State Verified"
+readonly plugin_main_qml="$XDG_DATA_HOME/kwin/scripts/$plugin_id/contents/ui/main.qml"
 readonly settings_persistence_probe_plugin_id="io.github.kontonkara.driftile.integration-settings-persistence-probe"
 readonly settings_persistence_probe_file="$XDG_CONFIG_HOME/driftile-settings-persistence-probe.ini"
 readonly stable_sample_count=2
@@ -140,6 +143,13 @@ cleanup() {
     org.kde.kwin.Scripting \
     unloadScript \
     s "$desktop_reorder_state_plugin_id" \
+    >/dev/null 2>&1 || true
+  busctl --user call \
+    org.kde.KWin \
+    /Scripting \
+    org.kde.kwin.Scripting \
+    unloadScript \
+    s "$floating_navigation_arranger_plugin_id" \
     >/dev/null 2>&1 || true
   busctl --user call \
     org.kde.KWin \
@@ -1712,12 +1722,117 @@ wait_for_named_script_state() {
   return 1
 }
 
+start_loaded_scripts() {
+  # KWin can reuse an occupied D-Bus script ID after a lower ID is unloaded.
+  # The global start method runs the loaded script objects without that path.
+  busctl --user call \
+    org.kde.KWin \
+    /Scripting \
+    org.kde.kwin.Scripting \
+    start \
+    >/dev/null
+}
+
+unload_driftile_script() {
+  local unload_result
+
+  unload_result=$(busctl --user call \
+    org.kde.KWin \
+    /Scripting \
+    org.kde.kwin.Scripting \
+    unloadScript \
+    s "$plugin_id") || return 1
+
+  [[ "$unload_result" == "b true" ]] || return 1
+  wait_for_script_state false
+}
+
+load_driftile_script() {
+  local load_result
+
+  [[ -f "$plugin_main_qml" ]] || return 1
+  load_result=$(busctl --user call \
+    org.kde.KWin \
+    /Scripting \
+    org.kde.kwin.Scripting \
+    loadDeclarativeScript \
+    ss "$plugin_main_qml" "$plugin_id") || return 1
+
+  if [[ ! "$load_result" =~ ^i\ [0-9]+$ ]]; then
+    return 1
+  fi
+
+  start_loaded_scripts || return 1
+
+  wait_for_script_state true
+}
+
+read_persisted_layout_state() {
+  local attempt
+  local decoded_state
+  local state
+
+  for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
+    state=$(kreadconfig6 \
+      --file "$layout_state_file" \
+      --group Layout \
+      --key layout-v1 \
+      --default "" 2>/dev/null || true)
+
+    if [[ -n "$state" ]] && decoded_state=$(jq \
+      --compact-output \
+      --exit-status \
+      --slurp '
+        select(length == 1)
+        | .[0]
+        | if type == "string" then fromjson
+          elif type == "object" then .
+          else empty
+          end
+        | select(
+            type == "object" and
+            .format == "driftile-layout" and
+            .version == 1
+          )
+      ' <<< "$state" 2>/dev/null); then
+      printf '%s' "$decoded_state"
+      return 0
+    fi
+
+    sleep 0.05
+  done
+
+  return 1
+}
+
 run_one_shot_script() {
   local script_path=$1
   local name=$2
   local load_result
-  local script_id
+  local state
   local unload_result
+
+  state=$(busctl --user call \
+    org.kde.KWin \
+    /Scripting \
+    org.kde.kwin.Scripting \
+    isScriptLoaded \
+    s "$name") || return 1
+
+  case "$state" in
+    "b true")
+      unload_result=$(busctl --user call \
+        org.kde.KWin \
+        /Scripting \
+        org.kde.kwin.Scripting \
+        unloadScript \
+        s "$name") || return 1
+      [[ "$unload_result" == "b true" ]] || return 1
+      wait_for_named_script_state "$name" false || return 1
+      ;;
+    "b false") ;;
+    *) return 1 ;;
+  esac
 
   load_result=$(busctl --user call \
     org.kde.KWin \
@@ -1725,33 +1840,20 @@ run_one_shot_script() {
     org.kde.kwin.Scripting \
     loadScript \
     ss "$script_path" "$name") || return 1
-  script_id=${load_result#i }
-
-  if [[ ! "$script_id" =~ ^[0-9]+$ ]]; then
+  if [[ ! "$load_result" =~ ^i\ [0-9]+$ ]]; then
     return 1
   fi
 
-  busctl --user call \
-    org.kde.KWin \
-    "/Scripting/Script${script_id}" \
-    org.kde.kwin.Script \
-    run \
-    >/dev/null || return 1
+  start_loaded_scripts || return 1
 
-  unload_result=$(busctl --user call \
-    org.kde.KWin \
-    /Scripting \
-    org.kde.kwin.Scripting \
-    unloadScript \
-    s "$name") || return 1
-
-  [[ "$unload_result" == "b true" ]] || return 1
-  wait_for_named_script_state "$name" false
+  # Global start launches plain JavaScript asynchronously. Keep this instance
+  # alive until the caller observes its side effect; the next call or cleanup
+  # removes it.
+  wait_for_named_script_state "$name" true
 }
 
 load_settings_persistence_probe() {
   local load_result
-  local script_id
 
   load_result=$(busctl --user call \
     org.kde.KWin \
@@ -1761,18 +1863,11 @@ load_settings_persistence_probe() {
     ss \
     "$DRIFTILE_SMOKE_SETTINGS_PERSISTENCE_PROBE" \
     "$settings_persistence_probe_plugin_id") || return 1
-  script_id=${load_result#i }
-
-  if [[ ! "$script_id" =~ ^[0-9]+$ ]]; then
+  if [[ ! "$load_result" =~ ^i\ [0-9]+$ ]]; then
     return 1
   fi
 
-  busctl --user call \
-    org.kde.KWin \
-    "/Scripting/Script${script_id}" \
-    org.kde.kwin.Script \
-    run \
-    >/dev/null || return 1
+  start_loaded_scripts || return 1
 
   wait_for_named_script_state "$settings_persistence_probe_plugin_id" true
 }
@@ -1868,10 +1963,274 @@ verify_settings_persistence_transport() {
   unload_settings_persistence_probe || return 1
 }
 
+single_output_reload_state_matches() {
+  local first_id=$1
+  local second_id=$2
+  local third_id=$3
+  local fourth_id=$4
+
+  jq --exit-status \
+    --arg first "$first_id" \
+    --arg second "$second_id" \
+    --arg third "$third_id" \
+    --arg fourth "$fourth_id" '
+      def windowKey($liveId):
+        [.windows[] | select(.liveId == $liveId) | .key] as $keys
+        | select(($keys | length) == 1)
+        | $keys[0];
+      (windowKey($first)) as $firstKey
+      | (windowKey($second)) as $secondKey
+      | (windowKey($third)) as $thirdKey
+      | (windowKey($fourth)) as $fourthKey
+      | [
+          .contexts[]
+          | select(
+              .activeColumnIndex == 0
+              and [
+                .columns[]
+                | (.members | map(.windowKey))
+              ] == [
+                [$firstKey, $secondKey, $fourthKey],
+                [$thirdKey]
+              ]
+            )
+        ]
+      | length == 1
+    ' >/dev/null
+}
+
+multi_output_reload_state_matches() {
+  local left_floating_id=$1
+  local left_tiled_id=$2
+  local right_floating_id=$3
+  local right_tiled_id=$4
+
+  jq --exit-status \
+    --arg leftFloating "$left_floating_id" \
+    --arg leftTiled "$left_tiled_id" \
+    --arg rightFloating "$right_floating_id" \
+    --arg rightTiled "$right_tiled_id" '
+      def windowKey($liveId):
+        [.windows[] | select(.liveId == $liveId) | .key] as $keys
+        | select(($keys | length) == 1)
+        | $keys[0];
+      (windowKey($leftFloating)) as $leftFloatingKey
+      | (windowKey($leftTiled)) as $leftTiledKey
+      | (windowKey($rightFloating)) as $rightFloatingKey
+      | (windowKey($rightTiled)) as $rightTiledKey
+      | [
+          .contexts[]
+          | select(
+              [.columns[] | (.members | map(.windowKey))]
+              == [[$leftTiledKey]]
+            )
+          | {desktopId, outputKey}
+        ] as $leftContexts
+      | [
+          .contexts[]
+          | select(
+              [.columns[] | (.members | map(.windowKey))]
+              == [[$rightTiledKey]]
+            )
+          | {desktopId, outputKey}
+        ] as $rightContexts
+      | ($leftContexts | length) == 1
+        and ($rightContexts | length) == 1
+        and $leftContexts[0].outputKey != $rightContexts[0].outputKey
+        and (.floatingWindows | length) == 2
+        and any(
+          .floatingWindows[];
+          .windowKey == $leftFloatingKey
+          and .outputKey == $leftContexts[0].outputKey
+          and .desktopId == $leftContexts[0].desktopId
+        )
+        and any(
+          .floatingWindows[];
+          .windowKey == $rightFloatingKey
+          and .outputKey == $rightContexts[0].outputKey
+          and .desktopId == $rightContexts[0].desktopId
+        )
+    ' >/dev/null
+}
+
+wait_for_single_output_reload_fixture() {
+  local protocol=$1
+  local first_id=$2
+  local second_id=$3
+  local first_title=$4
+  local second_title=$5
+  local third_title=$6
+  local fourth_title=$7
+  local first_frame=$8
+  local second_frame=$9
+
+  if [[ "$protocol" == x11 ]]; then
+    # KWin can reposition minimized X11 frames while decoration ownership is
+    # released and reclaimed. Their logical slots and minimized state remain
+    # durable, and the first visible reconcile verifies their exact layout.
+    wait_for_state_and_geometries \
+      "$first_id" minimized true \
+      "$third_title" "648,16,616,688" \
+      "$fourth_title" "16,485,616,219" && \
+      wait_for_window_state "$second_id" minimized true && \
+      wait_for_active "$fourth_title"
+    return
+  fi
+
+  wait_for_state_and_geometries \
+    "$first_id" minimized true \
+    "$first_title" "$first_frame" \
+    "$second_title" "$second_frame" \
+    "$third_title" "648,16,616,688" \
+    "$fourth_title" "16,485,616,219" && \
+    wait_for_window_state "$second_id" minimized true && \
+    wait_for_active "$fourth_title"
+}
+
+verify_single_output_layout_reload() {
+  local protocol=$1
+  local first_title=$2
+  local second_title=$3
+  local third_title=$4
+  local fourth_title=$5
+  local first_frame=$6
+  local second_frame=$7
+  local first_id
+  local second_id
+  local third_id
+  local fourth_id
+  local first_state
+  local second_state
+
+  first_id=$(window_id "$first_title") || \
+    fail "KWin did not expose the first $protocol reload window"
+  second_id=$(window_id "$second_title") || \
+    fail "KWin did not expose the second $protocol reload window"
+  third_id=$(window_id "$third_title") || \
+    fail "KWin did not expose the third $protocol reload window"
+  fourth_id=$(window_id "$fourth_title") || \
+    fail "KWin did not expose the fourth $protocol reload window"
+
+  unload_driftile_script || \
+    fail "KWin could not unload Driftile for the first $protocol layout reload"
+  first_state=$(read_persisted_layout_state) || \
+    fail "Driftile did not persist canonical $protocol layout state before reload"
+  single_output_reload_state_matches \
+    "$first_id" "$second_id" "$third_id" "$fourth_id" \
+    <<< "$first_state" || \
+    fail "Driftile persisted the wrong $protocol stack order before reload"
+
+  load_driftile_script || \
+    fail "KWin could not load Driftile for the first $protocol layout reload"
+  wait_for_single_output_reload_fixture \
+    "$protocol" "$first_id" "$second_id" \
+    "$first_title" "$second_title" "$third_title" "$fourth_title" \
+    "$first_frame" "$second_frame" || \
+    fail "Driftile did not hydrate the first $protocol layout reload: $(describe_layout "$first_title" "$second_title" "$third_title" "$fourth_title")"
+
+  unload_driftile_script || \
+    fail "KWin could not unload Driftile for the second $protocol layout reload"
+  second_state=$(read_persisted_layout_state) || \
+    fail "Driftile did not persist canonical $protocol layout state after reload"
+  single_output_reload_state_matches \
+    "$first_id" "$second_id" "$third_id" "$fourth_id" \
+    <<< "$second_state" || \
+    fail "Driftile changed the persisted $protocol stack order after reload"
+  [[ "$second_state" == "$first_state" ]] || \
+    fail "Driftile changed canonical $protocol layout state across an idempotent reload"
+
+  load_driftile_script || \
+    fail "KWin could not load Driftile for the second $protocol layout reload"
+  wait_for_single_output_reload_fixture \
+    "$protocol" "$first_id" "$second_id" \
+    "$first_title" "$second_title" "$third_title" "$fourth_title" \
+    "$first_frame" "$second_frame" || \
+    fail "Driftile did not hydrate the second $protocol layout reload: $(describe_layout "$first_title" "$second_title" "$third_title" "$fourth_title")"
+}
+
+wait_for_multi_output_reload_fixture() {
+  local active_title=$1
+  local left_floating_title=$2
+  local left_floating_frame=$3
+  local left_tiled_title=$4
+  local right_floating_title=$5
+  local right_floating_frame=$6
+  local right_tiled_title=$7
+
+  wait_for_geometries \
+    "$left_floating_title" "$left_floating_frame" \
+    "$left_tiled_title" "16,16,616,688" \
+    "$right_floating_title" "$right_floating_frame" \
+    "$right_tiled_title" "1296,16,616,688" && \
+    wait_for_active "$active_title"
+}
+
+verify_multi_output_layout_reload() {
+  local protocol=$1
+  local left_floating_title=$2
+  local left_floating_frame=$3
+  local left_tiled_title=$4
+  local right_floating_title=$5
+  local right_floating_frame=$6
+  local right_tiled_title=$7
+  local left_floating_id
+  local left_tiled_id
+  local right_floating_id
+  local right_tiled_id
+  local first_state
+  local second_state
+
+  left_floating_id=$(window_id "$left_floating_title") || \
+    fail "KWin did not expose the left floating $protocol reload window"
+  left_tiled_id=$(window_id "$left_tiled_title") || \
+    fail "KWin did not expose the left tiled $protocol reload window"
+  right_floating_id=$(window_id "$right_floating_title") || \
+    fail "KWin did not expose the right floating $protocol reload window"
+  right_tiled_id=$(window_id "$right_tiled_title") || \
+    fail "KWin did not expose the right tiled $protocol reload window"
+
+  unload_driftile_script || \
+    fail "KWin could not unload Driftile for the first multi-output $protocol layout reload"
+  first_state=$(read_persisted_layout_state) || \
+    fail "Driftile did not persist canonical multi-output $protocol layout state before reload"
+  multi_output_reload_state_matches \
+    "$left_floating_id" "$left_tiled_id" \
+    "$right_floating_id" "$right_tiled_id" \
+    <<< "$first_state" || \
+    fail "Driftile persisted the wrong multi-output $protocol ownership before reload"
+
+  load_driftile_script || \
+    fail "KWin could not load Driftile for the first multi-output $protocol layout reload"
+  wait_for_multi_output_reload_fixture \
+    "$right_floating_title" \
+    "$left_floating_title" "$left_floating_frame" "$left_tiled_title" \
+    "$right_floating_title" "$right_floating_frame" "$right_tiled_title" || \
+    fail "Driftile did not hydrate the first multi-output $protocol layout reload: $(describe_layout "$left_floating_title" "$left_tiled_title" "$right_floating_title" "$right_tiled_title")"
+
+  unload_driftile_script || \
+    fail "KWin could not unload Driftile for the second multi-output $protocol layout reload"
+  second_state=$(read_persisted_layout_state) || \
+    fail "Driftile did not persist canonical multi-output $protocol layout state after reload"
+  multi_output_reload_state_matches \
+    "$left_floating_id" "$left_tiled_id" \
+    "$right_floating_id" "$right_tiled_id" \
+    <<< "$second_state" || \
+    fail "Driftile changed multi-output $protocol ownership after reload"
+  [[ "$second_state" == "$first_state" ]] || \
+    fail "Driftile changed canonical multi-output $protocol state across an idempotent reload"
+
+  load_driftile_script || \
+    fail "KWin could not load Driftile for the second multi-output $protocol layout reload"
+  wait_for_multi_output_reload_fixture \
+    "$right_floating_title" \
+    "$left_floating_title" "$left_floating_frame" "$left_tiled_title" \
+    "$right_floating_title" "$right_floating_frame" "$right_tiled_title" || \
+    fail "Driftile did not hydrate the second multi-output $protocol layout reload: $(describe_layout "$left_floating_title" "$left_tiled_title" "$right_floating_title" "$right_tiled_title")"
+}
+
 detect_desktop_reorder_capability() {
   local attempt
   local load_result
-  local script_id
   local detected=""
 
   wait_for_shortcut_absent "$desktop_reorder_supported_shortcut" || return 1
@@ -1884,18 +2243,11 @@ detect_desktop_reorder_capability() {
     ss \
     "$DRIFTILE_SMOKE_DESKTOP_REORDER_CAPABILITY_PROBE" \
     "$desktop_reorder_capability_plugin_id") || return 1
-  script_id=${load_result#i }
-
-  if [[ ! "$script_id" =~ ^[0-9]+$ ]]; then
+  if [[ ! "$load_result" =~ ^i\ [0-9]+$ ]]; then
     return 1
   fi
 
-  busctl --user call \
-    org.kde.KWin \
-    "/Scripting/Script${script_id}" \
-    org.kde.kwin.Script \
-    run \
-    >/dev/null || return 1
+  start_loaded_scripts || return 1
 
   for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
     if shortcut_is_registered "$desktop_reorder_supported_shortcut"; then
@@ -1942,7 +2294,6 @@ arrange_floating_navigation_windows() {
 
 load_automatic_floating_probe() {
   local load_result
-  local script_id
   local state
 
   state=$(busctl --user call \
@@ -1973,18 +2324,11 @@ load_automatic_floating_probe() {
     ss \
     "$DRIFTILE_SMOKE_AUTOMATIC_FLOATING_PROBE" \
     "$automatic_floating_probe_plugin_id") || return 1
-  script_id=${load_result#i }
-
-  if [[ ! "$script_id" =~ ^[0-9]+$ ]]; then
+  if [[ ! "$load_result" =~ ^i\ [0-9]+$ ]]; then
     return 1
   fi
 
-  busctl --user call \
-    org.kde.KWin \
-    "/Scripting/Script${script_id}" \
-    org.kde.kwin.Script \
-    run \
-    >/dev/null || return 1
+  start_loaded_scripts || return 1
 
   wait_for_named_script_state "$automatic_floating_probe_plugin_id" true && \
     wait_for_shortcut "$automatic_floating_probe_arm_shortcut" && \
@@ -2067,7 +2411,6 @@ toggle_native_tile() {
 verify_multi_output_desktop_state() {
   local desktop_label=$2
   local load_result
-  local script_id
   local verified=false
   local verified_shortcut="$desktop_state_verified_shortcut_prefix $1 $desktop_label"
 
@@ -2078,15 +2421,8 @@ verify_multi_output_desktop_state() {
     org.kde.kwin.Scripting \
     loadScript \
     ss "$DRIFTILE_SMOKE_DESKTOP_STATE_PROBE" "$desktop_state_probe_plugin_id") || return 1
-  script_id=${load_result#i }
-
-  if [[ "$script_id" =~ ^[0-9]+$ ]]; then
-    if busctl --user call \
-      org.kde.KWin \
-      "/Scripting/Script${script_id}" \
-      org.kde.kwin.Script \
-      run \
-      >/dev/null && \
+  if [[ "$load_result" =~ ^i\ [0-9]+$ ]]; then
+    if start_loaded_scripts &&
       wait_for_shortcut "$verified_shortcut"; then
       verified=true
     fi
@@ -2108,7 +2444,6 @@ verify_multi_output_desktop_reorder_state() {
   local active_title=$1
   local order=$2
   local load_result
-  local script_id
   local verified=false
   local verified_shortcut="$desktop_reorder_state_verified_shortcut_prefix $active_title $order"
 
@@ -2121,15 +2456,8 @@ verify_multi_output_desktop_reorder_state() {
     ss \
     "$DRIFTILE_SMOKE_DESKTOP_REORDER_STATE_PROBE" \
     "$desktop_reorder_state_plugin_id") || return 1
-  script_id=${load_result#i }
-
-  if [[ "$script_id" =~ ^[0-9]+$ ]]; then
-    if busctl --user call \
-      org.kde.KWin \
-      "/Scripting/Script${script_id}" \
-      org.kde.kwin.Script \
-      run \
-      >/dev/null && \
+  if [[ "$load_result" =~ ^i\ [0-9]+$ ]]; then
+    if start_loaded_scripts &&
       wait_for_shortcut "$verified_shortcut"; then
       verified=true
     fi
@@ -2151,7 +2479,6 @@ verify_multi_output_desktop_reorder_state() {
 verify_multi_output_output_transfer_state() {
   local state_label=$2
   local load_result
-  local script_id
   local verified=false
   local verified_shortcut="$output_transfer_state_verified_shortcut_prefix $1 $state_label"
 
@@ -2162,15 +2489,8 @@ verify_multi_output_output_transfer_state() {
     org.kde.kwin.Scripting \
     loadScript \
     ss "$DRIFTILE_SMOKE_OUTPUT_TRANSFER_STATE_PROBE" "$output_transfer_state_probe_plugin_id") || return 1
-  script_id=${load_result#i }
-
-  if [[ "$script_id" =~ ^[0-9]+$ ]]; then
-    if busctl --user call \
-      org.kde.KWin \
-      "/Scripting/Script${script_id}" \
-      org.kde.kwin.Script \
-      run \
-      >/dev/null && \
+  if [[ "$load_result" =~ ^i\ [0-9]+$ ]]; then
+    if start_loaded_scripts &&
       wait_for_shortcut "$verified_shortcut"; then
       verified=true
     fi
@@ -2190,7 +2510,6 @@ verify_multi_output_output_transfer_state() {
 
 load_output_router() {
   local load_result
-  local script_id
 
   load_result=$(busctl --user call \
     org.kde.KWin \
@@ -2198,20 +2517,14 @@ load_output_router() {
     org.kde.kwin.Scripting \
     loadScript \
     ss "$DRIFTILE_SMOKE_OUTPUT_ROUTER" "$output_router_plugin_id") || return 1
-  script_id=${load_result#i }
-
-  if [[ ! "$script_id" =~ ^[0-9]+$ ]]; then
+  if [[ ! "$load_result" =~ ^i\ [0-9]+$ ]]; then
     return 1
   fi
 
-  busctl --user call \
-    org.kde.KWin \
-    "/Scripting/Script${script_id}" \
-    org.kde.kwin.Script \
-    run \
-    >/dev/null || return 1
+  start_loaded_scripts || return 1
 
-  wait_for_named_script_state "$output_router_plugin_id" true
+  wait_for_named_script_state "$output_router_plugin_id" true &&
+    wait_for_shortcut "$output_router_ready_shortcut"
 }
 
 unload_output_router() {
@@ -6809,6 +7122,17 @@ run_scenario() {
   wait_for_active "$fourth_title" || \
     fail "Driftile changed $protocol focus after direct stack insertion"
 
+  if [[ "$protocol" == wayland || "$protocol" == x11 ]]; then
+    verify_single_output_layout_reload \
+      "$protocol" \
+      "$first_title" \
+      "$second_title" \
+      "$third_title" \
+      "$fourth_title" \
+      "$direct_passive_frame" \
+      "$direct_second_passive_frame"
+  fi
+
   set_external_window_minimized "$first_title" false || \
     fail "KWin could not restore the passive direct-insertion $protocol peer"
   set_external_window_minimized "$second_title" false || \
@@ -7805,6 +8129,13 @@ run_multi_output_scenario() {
     "${titles[1]}" "16,16,616,688" \
     "${titles[3]}" "$right_floating_frame" \
     "${titles[4]}" "1296,16,616,688"
+
+  if [[ "$protocol" == wayland ]]; then
+    verify_multi_output_layout_reload \
+      "$protocol" \
+      "${titles[0]}" "${baselines[0]}" "${titles[1]}" \
+      "${titles[3]}" "$right_floating_frame" "${titles[4]}"
+  fi
 
   invoke_shortcut "driftile_toggle_floating" || \
     fail "KGlobalAccel could not retile the right $protocol isolation window"

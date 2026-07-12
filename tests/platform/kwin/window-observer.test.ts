@@ -165,6 +165,29 @@ describe("normalizeWindow", () => {
 });
 
 describe("WindowObserver", () => {
+  it("discovers a late stacking-order window without an added signal", () => {
+    const stackingOrder: KWinWindow[] = [];
+    const added: string[] = [];
+    const observer = new WindowObserver(createWorkspace(stackingOrder), {
+      added: (window) => added.push(window.id),
+    });
+    const lateWindow = createWindow();
+
+    observer.start();
+    expect(observer.size).toBe(0);
+
+    stackingOrder.push(lateWindow);
+    observer.discoverWindows();
+    observer.discoverWindows();
+
+    expect(observer.size).toBe(1);
+    expect(observer.source("window-1")).toBe(lateWindow);
+    expect(observer.snapshot().map((window) => window.id)).toEqual([
+      "window-1",
+    ]);
+    expect(added).toEqual(["window-1"]);
+  });
+
   it("tracks lifecycle signals without polling", () => {
     const windowAdded = new Signal<[window: KWinWindow]>();
     const windowRemoved = new Signal<[window: KWinWindow]>();

@@ -116,10 +116,10 @@ Harden recovery and finish user-facing integration.
 
 These features were outside the 0.1.0 scope and remain planned work.
 
-Persistence foundation complete: core has a strict versioned logical-state codec, fail-closed window and output matching, side-effect-free canonical runtime capture, and an all-or-nothing exact same-session hydration plan. Stable changed snapshots now reach the debounced opaque `QtCore.Settings` store, and isolated Wayland and X11 sessions verify its exact destruction-time transport across script reloads. Runtime hydration, matcher integration, and known-topology restoration remain.
+Persistence foundation complete: core has a strict versioned logical-state codec, fail-closed window and output matching, side-effect-free canonical runtime capture, and an all-or-nothing exact same-session hydration plan. Stable changed snapshots reach the debounced opaque `QtCore.Settings` store. Runtime startup now applies an exact plan atomically after live-state revalidation, including context-safe original window restore baselines, and isolated Wayland and X11 sessions verify idempotent script reloads. Cross-session matcher integration and known-topology restoration remain.
 
 - Persist logical order, widths, viewport offsets, and floating overrides.
-- Restore layouts across script reloads, sessions, and known output topologies.
+- Restore layouts across sessions and known output topologies.
 - Add mouse-driven reinsertion and rearrangement.
 - Add tabbed column presentation and matching pointer navigation.
 - Add Driftile-specific application overrides and a complete settings UI.

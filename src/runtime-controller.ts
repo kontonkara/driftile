@@ -32,7 +32,16 @@ import {
   type WindowHeight,
   type WindowHeightEditRollback,
 } from "./core/layout-engine";
-import { captureLayoutPersistence } from "./core/layout-persistence-capture";
+import {
+  planExactLayoutHydration,
+  type LayoutPersistenceHydrationPlan,
+  type LayoutPersistenceHydrationRestoreBaselineValue,
+} from "./core/layout-persistence-hydration";
+import {
+  captureLayoutPersistence,
+  type LayoutPersistenceCaptureRestoreBaseline,
+} from "./core/layout-persistence-capture";
+import { decodeLayoutPersistence } from "./core/layout-persistence";
 import {
   findAdjacentOutput,
   type OutputDirection,
@@ -141,6 +150,7 @@ interface RestoreBaseline {
 }
 
 interface FloatingWindow {
+  readonly currentContextKey: string;
   readonly expectedFrame: KWinWindow["frameGeometry"];
   readonly placement: DetachedWindowPlacement;
   readonly restoreBaseline: RestoreBaseline;
@@ -436,6 +446,33 @@ type AdmissionDecision =
   | { readonly fingerprint?: string; readonly kind: "deferred" }
   | { readonly kind: "rejected" };
 
+type InitialLayoutHydrationStatus = "failed" | "none" | "pending" | "succeeded";
+
+interface LayoutHydrationWindowSnapshot {
+  readonly contextKey: string;
+  readonly fingerprint: string;
+  readonly source: KWinWindow;
+  readonly suspended: boolean;
+  readonly targetFrame: Rect | null;
+}
+
+interface LayoutHydrationCandidate {
+  readonly contextGeometryFingerprints: ReadonlyMap<string, string>;
+  readonly contexts: ReadonlyMap<string, RuntimeContext>;
+  readonly floatingWindows: ReadonlyMap<WindowId, FloatingWindow>;
+  readonly fullWidthRestores: ReadonlyMap<
+    string,
+    ReadonlyMap<ColumnId, ColumnWidth>
+  >;
+  readonly hydratedWindowIds: ReadonlySet<WindowId>;
+  readonly layout: LayoutEngine;
+  readonly managedWindows: ReadonlyMap<WindowId, ManagedWindow>;
+  readonly restoreBaselinePendingWindowIds: ReadonlySet<WindowId>;
+  readonly suspendedWindowIds: ReadonlySet<WindowId>;
+  readonly topologyFingerprint: string;
+  readonly windows: ReadonlyMap<WindowId, LayoutHydrationWindowSnapshot>;
+}
+
 export interface RuntimeControllerOptions {
   readonly borderlessWindows?: boolean;
   readonly clientAreaOption: number;
@@ -500,6 +537,9 @@ export class RuntimeController {
   >();
   private readonly geometry: KWinGeometryAdapter;
   private gap: number;
+  private hydrationInProgress = false;
+  private initialLayoutHydrationStatus: InitialLayoutHydrationStatus = "none";
+  private initialLayoutStateDocument: string | null = null;
   private initializing = false;
   private readonly lastFloatingFocus = new Map<string, WindowId>();
   private readonly lastTiledFocus = new Map<string, WindowId>();
@@ -510,9 +550,13 @@ export class RuntimeController {
   private lastWrites = 0;
   private lastPublishedLayoutState: string | null = null;
   private layout = new LayoutEngine();
+  private layoutStatePublicationLocked = false;
   private layoutStatePublicationPending = false;
+  private preserveLoadedLayoutState = false;
+  private preservedFallbackLayoutState: string | null = null;
   private readonly managedWindows = new Map<WindowId, ManagedWindow>();
   private readonly pendingFullscreenTargets = new Map<WindowId, boolean>();
+  private readonly pendingHydratedRestoreBaselines = new Set<WindowId>();
   private readonly observer: WindowObserver;
   private readonly onLayoutStateChanged:
     ((canonicalState: string) => void) | undefined;
@@ -680,22 +724,38 @@ export class RuntimeController {
         }
       }
 
-      const floatingWindows = [...this.floatingWindows].map(
-        ([liveId, floating]) => {
-          if (
-            floating.sourceContextKey !==
-            contextKey({
-              desktopId: floating.placement.desktopId,
-              outputId: floating.placement.outputId,
-            })
-          ) {
-            throw new Error(
-              "Cannot capture layout persistence while floating ownership is inconsistent",
-            );
-          }
+      const restoreBaselines: LayoutPersistenceCaptureRestoreBaseline[] = [];
 
-          return { liveId: String(liveId), placement: floating.placement };
-        },
+      for (const [liveId, managed] of this.managedWindows) {
+        const baseline = managed.restoreBaseline;
+        const context = this.contexts.get(managed.contextKey);
+
+        if (
+          !baseline ||
+          !context ||
+          baseline.fingerprint !== context.geometryFingerprint
+        ) {
+          continue;
+        }
+
+        restoreBaselines.push({
+          baseline: {
+            clientFrame: snapshotRect(baseline.clientFrame),
+            fingerprint: baseline.fingerprint,
+            frame: snapshotRect(baseline.frame),
+            kind: baseline.kind,
+            noBorder: baseline.noBorder ?? null,
+          },
+          contextKey: managed.contextKey,
+          liveId: String(liveId),
+        });
+      }
+
+      const floatingWindows = [...this.floatingWindows].map(
+        ([liveId, floating]) => ({
+          liveId: String(liveId),
+          placement: this.captureFloatingWindowPlacement(liveId, floating),
+        }),
       );
 
       this.validateCapturedOwnership(contexts, floatingWindows);
@@ -705,6 +765,7 @@ export class RuntimeController {
         fullWidthRestores,
         liveOutputNames: this.workspace.screens.map((output) => output.name),
         liveWindowIds: this.observer.snapshot().map((window) => window.id),
+        restoreBaselines,
       });
     } catch (error) {
       console.warn(
@@ -714,20 +775,92 @@ export class RuntimeController {
     }
   }
 
+  private captureFloatingWindowPlacement(
+    id: WindowId,
+    floating: FloatingWindow,
+  ): DetachedWindowPlacement {
+    const anchorContextKey = contextKey({
+      desktopId: floating.placement.desktopId,
+      outputId: floating.placement.outputId,
+    });
+
+    if (floating.sourceContextKey !== anchorContextKey) {
+      throw new Error(
+        "Cannot capture layout persistence while a floating anchor is inconsistent",
+      );
+    }
+
+    const source = this.observer.source(id);
+    const observed = source ? normalizeWindow(source) : null;
+    const liveContext = observed ? managedContext(observed) : null;
+    const liveContextKey = liveContext ? contextKey(liveContext) : null;
+
+    if (
+      !source ||
+      !liveContext ||
+      floating.currentContextKey !== liveContextKey ||
+      this.managedWindows.has(id) ||
+      this.automaticFloatingWindows.has(id) ||
+      this.waitingWindowContexts.has(id) ||
+      this.automaticallyFloats(source)
+    ) {
+      const caption = (source as { readonly caption?: unknown } | undefined)
+        ?.caption;
+      throw new Error(
+        `Cannot capture layout persistence with stale floating ownership window=${String(id)} caption=${JSON.stringify(typeof caption === "string" ? caption : null)} liveContext=${JSON.stringify(liveContextKey)} currentContext=${JSON.stringify(floating.currentContextKey)} anchorContext=${JSON.stringify(anchorContextKey)}`,
+      );
+    }
+
+    if (floating.sourceContextKey === liveContextKey) {
+      return floating.placement;
+    }
+
+    const contextGeometry = this.geometry.contextGeometry(
+      liveContext.outputId,
+      liveContext.desktopId,
+    );
+
+    if (!contextGeometry) {
+      throw new Error(
+        "Cannot capture layout persistence without floating context geometry",
+      );
+    }
+
+    const placement = this.freshDetachedWindowPlacement(
+      id,
+      source,
+      liveContext,
+      contextGeometry,
+      this.layout.snapshot(liveContext.outputId, liveContext.desktopId),
+    );
+
+    if (!placement) {
+      throw new Error(
+        "Cannot capture layout persistence without a safe floating placement",
+      );
+    }
+
+    return placement;
+  }
+
   requestLayoutStatePublication(): void {
     if (
       this.onLayoutStateChanged === undefined ||
       !this.started ||
-      !this.startupCompleted
+      !this.startupCompleted ||
+      this.layoutStatePublicationLocked
     ) {
       return;
     }
 
+    this.preserveLoadedLayoutState = false;
+    this.preservedFallbackLayoutState = null;
     this.layoutStatePublicationPending = true;
   }
 
   flushLayoutStatePublication(): boolean {
     if (
+      this.layoutStatePublicationLocked ||
       !this.layoutStatePublicationPending ||
       this.onLayoutStateChanged === undefined
     ) {
@@ -763,7 +896,8 @@ export class RuntimeController {
     if (
       this.onLayoutStateChanged === undefined ||
       !this.started ||
-      !this.startupCompleted
+      !this.startupCompleted ||
+      this.layoutStatePublicationLocked
     ) {
       return false;
     }
@@ -774,6 +908,13 @@ export class RuntimeController {
       if (this.workScheduled) {
         this.workScheduled = false;
         this.flushScheduledWork();
+      }
+
+      if (
+        this.preserveLoadedLayoutState &&
+        !this.layoutStatePublicationPending
+      ) {
+        return false;
       }
 
       this.requestLayoutStatePublication();
@@ -812,6 +953,7 @@ export class RuntimeController {
   private layoutCaptureReady(): boolean {
     return !(
       !this.started ||
+      this.hydrationInProgress ||
       this.initializing ||
       this.startupStabilizationRemaining > 0 ||
       this.startupStabilizationToken !== null ||
@@ -931,6 +1073,8 @@ export class RuntimeController {
         desktopId: floating.placement.desktopId,
         outputId: floating.placement.outputId,
       });
+      const caption = (source as { readonly caption?: unknown } | undefined)
+        ?.caption;
 
       if (
         String(floating.placement.windowId) !== floating.liveId ||
@@ -942,7 +1086,7 @@ export class RuntimeController {
         (source !== undefined && this.automaticallyFloats(source))
       ) {
         throw new Error(
-          "Cannot capture layout persistence with stale floating ownership",
+          `Cannot capture layout persistence with stale floating ownership window=${String(id)} caption=${JSON.stringify(typeof caption === "string" ? caption : null)} liveContext=${JSON.stringify(liveContext ? contextKey(liveContext) : null)} expectedContext=${JSON.stringify(expectedContextKey)} managed=${String(this.managedWindows.has(id))} automatic=${String(this.automaticFloatingWindows.has(id))} waiting=${String(this.waitingWindowContexts.has(id))}`,
         );
       }
     }
@@ -1870,7 +2014,7 @@ export class RuntimeController {
     this.sampleSettledVisibleContextGeometries();
   }
 
-  start(): boolean {
+  start(loadedLayoutState = ""): boolean {
     if (this.started) {
       return true;
     }
@@ -1883,8 +2027,16 @@ export class RuntimeController {
     }
 
     try {
+      this.initialLayoutStateDocument =
+        loadedLayoutState.length === 0 ? null : loadedLayoutState;
+      this.initialLayoutHydrationStatus =
+        this.initialLayoutStateDocument === null ? "none" : "pending";
+      this.hydrationInProgress = this.initialLayoutStateDocument !== null;
+      this.preserveLoadedLayoutState = this.initialLayoutStateDocument !== null;
       this.lastPublishedLayoutState = null;
+      this.layoutStatePublicationLocked = false;
       this.layoutStatePublicationPending = false;
+      this.preservedFallbackLayoutState = null;
       this.startupCompleted = false;
       this.runGeneration += 1;
       this.started = true;
@@ -1914,8 +2066,7 @@ export class RuntimeController {
           this.startupStabilizationRemaining = this.startupStabilizationProbes;
           this.scheduleStartupStabilization();
         } else {
-          this.synchronizePendingWindows();
-          this.handleWindowActivated(this.workspace.activeWindow);
+          this.initializeStartupWindows();
         }
       } finally {
         this.initializing = false;
@@ -1923,7 +2074,11 @@ export class RuntimeController {
 
       this.desktopLifecycle.reconcile(this.desktopLifecycleCanMutate());
       this.reconcile();
-      this.startupCompleted = true;
+
+      if (this.startupStabilizationProbes === 0) {
+        this.completeStartup();
+      }
+
       return true;
     } catch (error) {
       this.stop();
@@ -1936,20 +2091,29 @@ export class RuntimeController {
       return;
     }
 
+    const hydrationWasPending = this.initialLayoutHydrationStatus === "pending";
     this.started = false;
     this.startupCompleted = false;
+    this.hydrationInProgress = false;
+    this.initialLayoutHydrationStatus = "none";
+    this.initialLayoutStateDocument = null;
+    this.layoutStatePublicationLocked = false;
+    this.preserveLoadedLayoutState = false;
+    this.preservedFallbackLayoutState = null;
     this.workScheduled = false;
     this.runGeneration += 1;
     this.pendingExpelFocusHandoff = null;
     this.stackEditOperation = null;
 
     try {
-      try {
-        this.synchronizePendingWindows();
-      } catch (error) {
-        console.warn(
-          `[driftile] pending window synchronization skipped during stop error=${String(error)}`,
-        );
+      if (!hydrationWasPending) {
+        try {
+          this.synchronizePendingWindows();
+        } catch (error) {
+          console.warn(
+            `[driftile] pending window synchronization skipped during stop error=${String(error)}`,
+          );
+        }
       }
 
       try {
@@ -1979,6 +2143,7 @@ export class RuntimeController {
       this.pendingExternalFullscreenExtractions.clear();
       this.fullscreenRequestProbes.clear();
       this.pendingFullscreenTargets.clear();
+      this.pendingHydratedRestoreBaselines.clear();
       this.unconfirmedFullscreenRetentions.clear();
       this.unconfirmedFullscreenTargets.clear();
       this.dirtyContexts.clear();
@@ -2461,6 +2626,7 @@ export class RuntimeController {
 
     if (floating) {
       affectedContextKeys.add(floating.sourceContextKey);
+      affectedContextKeys.add(floating.currentContextKey);
     }
 
     if (transition) {
@@ -2475,6 +2641,7 @@ export class RuntimeController {
     this.pendingExternalFullscreenExtractions.delete(managedId);
     this.fullscreenRequestProbes.delete(managedId);
     this.pendingFullscreenTargets.delete(managedId);
+    this.pendingHydratedRestoreBaselines.delete(managedId);
     this.deleteUnconfirmedFullscreenTarget(managedId);
     this.pendingWindowSyncs.delete(managedId);
     this.forgetWaitingWindow(managedId);
@@ -3086,11 +3253,17 @@ export class RuntimeController {
       return null;
     }
 
+    const floating = this.floatingWindows.get(id);
+
     if (
-      this.floatingWindows.has(id) ||
+      floating?.currentContextKey === key ||
       this.automaticFloatingOwnershipApplies(id, source)
     ) {
       return "floating";
+    }
+
+    if (floating) {
+      return null;
     }
 
     const owner = this.managedWindows.get(id);
@@ -4508,7 +4681,8 @@ export class RuntimeController {
       this.hasTopologyBarrier() ||
       this.observer.source(activeId) !== activeWindow ||
       (manualFloating !== undefined &&
-        this.automaticallyFloats(activeWindow)) ||
+        (manualFloating.currentContextKey !== sourceContextKey ||
+          this.automaticallyFloats(activeWindow))) ||
       this.windowLayer(activeId, activeWindow, sourceContextKey) !==
         "floating" ||
       this.floatingDesktopTransferHasRelations(activeWindow) ||
@@ -4725,6 +4899,13 @@ export class RuntimeController {
         command.activeId
       ) {
         this.lastFloatingFocus.delete(command.sourceContextKey);
+      }
+
+      if (command.classification.kind === "manual") {
+        this.floatingWindows.set(command.activeId, {
+          ...command.classification.floating,
+          currentContextKey: command.targetContextKey,
+        });
       }
 
       this.lastFloatingFocus.set(command.targetContextKey, command.activeId);
@@ -7532,9 +7713,11 @@ export class RuntimeController {
           before,
           preview.layout,
         );
+        this.pendingHydratedRestoreBaselines.delete(command.activeId);
         this.managedWindows.delete(command.activeId);
         context.windowIds.delete(command.activeId);
         this.floatingWindows.set(command.activeId, {
+          currentContextKey: command.contextKey,
           expectedFrame: { ...safeBaseline },
           placement: preview.placement,
           restoreBaseline: floatingRestoreBaseline,
@@ -7563,6 +7746,7 @@ export class RuntimeController {
     floating: FloatingWindow,
   ): boolean {
     if (
+      floating.currentContextKey !== command.contextKey ||
       this.managedWindows.has(command.activeId) ||
       this.hasStructuralCapacityState(command.contextKey)
     ) {
@@ -7576,7 +7760,13 @@ export class RuntimeController {
     const placement =
       floating.sourceContextKey === command.contextKey
         ? floating.placement
-        : this.freshDetachedWindowPlacement(command, before);
+        : this.freshDetachedWindowPlacement(
+            command.activeId,
+            command.activeWindow,
+            command.context,
+            command.contextGeometry,
+            before,
+          );
 
     if (!placement) {
       return false;
@@ -8438,15 +8628,18 @@ export class RuntimeController {
   }
 
   private freshDetachedWindowPlacement(
-    command: ActiveWindowCommand,
+    activeId: WindowId,
+    activeWindow: KWinWindow,
+    managedContext: ManagedContext,
+    contextGeometry: ContextGeometry,
     context: LayoutContextSnapshot,
   ): DetachedWindowPlacement | null {
     const columnIds = new Set(context.columns.map((column) => column.id));
-    const canonical = columnId(`column:${String(command.activeId)}`);
+    const canonical = columnId(`column:${String(activeId)}`);
     let detachedColumnId = canonical;
 
     if (columnIds.has(detachedColumnId)) {
-      const base = `column:floating:${String(command.activeId)}`;
+      const base = `column:floating:${String(activeId)}`;
 
       for (let index = 0; index <= context.columns.length; index += 1) {
         const candidate = columnId(
@@ -8470,8 +8663,8 @@ export class RuntimeController {
     const columnIndex =
       activeIndex < 0 ? context.columns.length : activeIndex + 1;
     const width = this.constrainedDefaultColumnWidth(
-      [command.activeWindow],
-      command.contextGeometry,
+      [activeWindow],
+      contextGeometry,
     );
 
     if (!width) {
@@ -8482,14 +8675,14 @@ export class RuntimeController {
       columnId: detachedColumnId,
       columnIndex,
       columnWidth: width,
-      desktopId: command.context.desktopId,
+      desktopId: managedContext.desktopId,
       memberIndex: 0,
       nextColumnId: context.columns[columnIndex]?.id ?? null,
       nextWindowId: null,
-      outputId: command.context.outputId,
+      outputId: managedContext.outputId,
       previousColumnId: context.columns[columnIndex - 1]?.id ?? null,
       previousWindowId: null,
-      windowId: command.activeId,
+      windowId: activeId,
     };
   }
 
@@ -10977,10 +11170,575 @@ export class RuntimeController {
   private desktopLifecycleCanMutate(): boolean {
     return (
       this.started &&
+      !this.hydrationInProgress &&
       !this.initializing &&
       !this.windowTransferOperation &&
       !this.hasTopologyBarrier()
     );
+  }
+
+  private initializeStartupWindows(): void {
+    this.observer.discoverWindows();
+    this.tryHydrateInitialLayoutState();
+    const topologyBatchPending = this.topologyWindowOrder !== null;
+    const topologyBatchConsumed = this.synchronizePendingWindows(
+      topologyBatchPending && this.topologyAllowsOverflowAdmissions,
+    );
+
+    if (topologyBatchPending && topologyBatchConsumed) {
+      this.topologyColumnByWindow.clear();
+      this.topologyAllowsOverflowAdmissions = false;
+      this.topologyWindowOrder = null;
+    }
+
+    this.handleWindowActivated(
+      this.workspace.activeWindow,
+      topologyBatchPending && topologyBatchConsumed,
+    );
+    this.synchronizeWindowBorders();
+  }
+
+  private completeStartup(): void {
+    if (this.startupCompleted) {
+      return;
+    }
+
+    this.startupCompleted = true;
+
+    if (this.initialLayoutHydrationStatus === "failed") {
+      this.preservedFallbackLayoutState = this.captureLayoutState();
+      return;
+    }
+
+    this.preserveLoadedLayoutState = false;
+    this.requestLayoutStatePublication();
+    this.flushLayoutStatePublication();
+  }
+
+  private tryHydrateInitialLayoutState(): boolean {
+    const document = this.initialLayoutStateDocument;
+
+    if (document === null || this.initialLayoutHydrationStatus !== "pending") {
+      this.hydrationInProgress = false;
+      return false;
+    }
+
+    this.initialLayoutStateDocument = null;
+    let failureReason: string | null = null;
+
+    try {
+      const decoded = decodeLayoutPersistence(document);
+
+      if (!decoded.ok) {
+        failureReason = decoded.error;
+        this.layoutStatePublicationLocked =
+          decoded.error === "unsupported-version" ||
+          decoded.error === "document-too-large";
+      } else if (this.topologyRecoveryPending || this.hasTopologyBarrier()) {
+        failureReason = "topology-unsettled";
+      } else {
+        const liveWindows = this.observer.snapshot().map((observed) => {
+          const source = this.observer.source(observed.id);
+          const liveContext = managedContext(observed);
+
+          return {
+            desktopId: String(liveContext?.desktopId ?? ""),
+            eligible: Boolean(
+              source &&
+              liveContext &&
+              !this.automaticFloatingWindows.has(windowId(observed.id)) &&
+              !this.automaticallyFloats(source),
+            ),
+            liveId: observed.id,
+            outputName: observed.outputId,
+          };
+        });
+        const planned = planExactLayoutHydration(decoded.value, {
+          desktops: this.workspace.desktops.map((desktop) => ({
+            id: desktop.id,
+          })),
+          outputs: this.workspace.screens.map((output) => ({
+            name: output.name,
+          })),
+          windows: liveWindows,
+        });
+
+        if (!planned.ok) {
+          failureReason = planned.reason;
+        } else {
+          const candidate = this.prepareLayoutHydrationCandidate(planned.value);
+
+          if (!candidate) {
+            failureReason = "runtime-preflight";
+          } else if (!this.layoutHydrationCandidateIsCurrent(candidate)) {
+            failureReason = "live-state-changed";
+          } else if (!this.commitLayoutHydrationCandidate(candidate)) {
+            failureReason = "runtime-state-changed";
+          }
+        }
+      }
+    } catch (error) {
+      failureReason = `runtime-error:${String(error)}`;
+    } finally {
+      this.hydrationInProgress = false;
+    }
+
+    if (failureReason !== null) {
+      this.initialLayoutHydrationStatus = "failed";
+      console.warn(
+        `[driftile] initial layout hydration skipped reason=${failureReason}`,
+      );
+      return false;
+    }
+
+    this.initialLayoutHydrationStatus = "succeeded";
+    this.preserveLoadedLayoutState = false;
+    return true;
+  }
+
+  private prepareLayoutHydrationCandidate(
+    plan: LayoutPersistenceHydrationPlan,
+  ): LayoutHydrationCandidate | null {
+    if (
+      this.contexts.size > 0 ||
+      this.managedWindows.size > 0 ||
+      this.floatingWindows.size > 0 ||
+      this.columnFullWidthRestore.size > 0 ||
+      this.waitingWindowContexts.size > 0
+    ) {
+      return null;
+    }
+
+    const candidateLayout = new LayoutEngine();
+    const candidateContexts = new Map<string, RuntimeContext>();
+    const candidateManagedWindows = new Map<WindowId, ManagedWindow>();
+    const candidateFloatingWindows = new Map<WindowId, FloatingWindow>();
+    const candidateFullWidthRestores = new Map<
+      string,
+      Map<ColumnId, ColumnWidth>
+    >();
+    const candidateSuspendedWindowIds = new Set<WindowId>();
+    const candidateRestoreBaselinePendingWindowIds = new Set<WindowId>();
+    const candidateHydratedWindowIds = new Set<WindowId>();
+    const candidateWindows = new Map<WindowId, LayoutHydrationWindowSnapshot>();
+    const plannedRestoreBaselines = new Map(
+      plan.restoreBaselines.map((restore) => [restore.windowId, restore]),
+    );
+    const contextGeometryFingerprints = new Map<string, string>();
+    const topologyFingerprint = this.layoutHydrationTopologyFingerprint();
+
+    for (const planned of plan.contexts) {
+      const contextGeometry = this.geometry.contextGeometry(
+        planned.layout.outputId,
+        planned.layout.desktopId,
+      );
+
+      if (!contextGeometry) {
+        return null;
+      }
+
+      const restored = candidateLayout.restoreColumns({
+        activeColumnId: planned.layout.activeColumnId,
+        columns: planned.layout.columns.map((column, index) => ({
+          column,
+          index,
+        })),
+        desktopId: planned.layout.desktopId,
+        outputId: planned.layout.outputId,
+        viewportOffset: planned.layout.viewportOffset,
+      });
+
+      if (!restored) {
+        return null;
+      }
+
+      const solved = this.solveContextGeometry(planned.layout, contextGeometry);
+
+      if (!this.canApplyLayout(solved.maxViewportOffset)) {
+        return null;
+      }
+
+      const targetFrames = new Map(
+        solved.windows.map((window) => [window.windowId, window.frame]),
+      );
+      const windowIds = new Set<WindowId>();
+      const runtimeContext: RuntimeContext = {
+        desktopId: planned.layout.desktopId,
+        geometryFingerprint: contextGeometry.fingerprint,
+        key: planned.key,
+        outputId: planned.layout.outputId,
+        windowIds,
+      };
+
+      for (const column of planned.layout.columns) {
+        for (const id of column.windowIds) {
+          const source = this.observer.source(id);
+          const targetFrame = targetFrames.get(id);
+
+          if (
+            !source ||
+            !targetFrame ||
+            candidateHydratedWindowIds.has(id) ||
+            !this.layoutHydrationSourceBelongsToContext(id, source, planned.key)
+          ) {
+            return null;
+          }
+
+          const suspended =
+            hasGeometryAuthorityBlocker(source) ||
+            this.requestedSuspensions.has(id);
+
+          if (
+            !respectsSizeConstraints(targetFrame, source) ||
+            (!suspended &&
+              (!isGeometryWritable(source) ||
+                !this.geometry.canApplyFrame(id, targetFrame, runtimeContext)))
+          ) {
+            return null;
+          }
+
+          candidateHydratedWindowIds.add(id);
+          windowIds.add(id);
+          const plannedRestore = plannedRestoreBaselines.get(id);
+
+          if (plannedRestore && plannedRestore.contextKey !== planned.key) {
+            return null;
+          }
+
+          const restoredBaseline = this.restoreBaselineFromHydration(
+            id,
+            plannedRestore?.baseline,
+            contextGeometry,
+            source,
+          );
+          candidateManagedWindows.set(id, {
+            contextKey: planned.key,
+            restoreBaseline:
+              restoredBaseline ??
+              (suspended
+                ? null
+                : this.captureRestoreBaseline(
+                    source,
+                    contextGeometry.fingerprint,
+                    "client",
+                  )),
+          });
+
+          if (suspended) {
+            candidateSuspendedWindowIds.add(id);
+            candidateRestoreBaselinePendingWindowIds.add(id);
+          }
+
+          candidateWindows.set(id, {
+            contextKey: planned.key,
+            fingerprint: layoutHydrationWindowFingerprint(source),
+            source,
+            suspended,
+            targetFrame: { ...targetFrame },
+          });
+        }
+      }
+
+      candidateContexts.set(planned.key, runtimeContext);
+      contextGeometryFingerprints.set(planned.key, contextGeometry.fingerprint);
+    }
+
+    for (const restore of plan.fullWidthRestores) {
+      if (!candidateContexts.has(restore.contextKey)) {
+        return null;
+      }
+
+      let contextRestores = candidateFullWidthRestores.get(restore.contextKey);
+
+      if (!contextRestores) {
+        contextRestores = new Map<ColumnId, ColumnWidth>();
+        candidateFullWidthRestores.set(restore.contextKey, contextRestores);
+      }
+
+      if (contextRestores.has(restore.columnId)) {
+        return null;
+      }
+
+      contextRestores.set(restore.columnId, { ...restore.width });
+    }
+
+    for (const planned of plan.floatingWindows) {
+      const id = planned.placement.windowId;
+      const source = this.observer.source(id);
+
+      if (
+        !source ||
+        candidateHydratedWindowIds.has(id) ||
+        !this.layoutHydrationSourceBelongsToContext(
+          id,
+          source,
+          planned.contextKey,
+        )
+      ) {
+        return null;
+      }
+
+      const contextGeometry = this.geometry.contextGeometry(
+        planned.placement.outputId,
+        planned.placement.desktopId,
+      );
+
+      if (!contextGeometry) {
+        return null;
+      }
+
+      const suspended =
+        hasGeometryAuthorityBlocker(source) ||
+        this.requestedSuspensions.has(id);
+      const currentFrame = snapshotRect(source.frameGeometry);
+      candidateHydratedWindowIds.add(id);
+      candidateFloatingWindows.set(id, {
+        currentContextKey: planned.contextKey,
+        expectedFrame: currentFrame,
+        placement: planned.placement,
+        restoreBaseline: this.captureRestoreBaseline(
+          source,
+          contextGeometry.fingerprint,
+          "client",
+        ),
+        sourceContextKey: planned.contextKey,
+      });
+
+      if (suspended) {
+        candidateSuspendedWindowIds.add(id);
+      }
+
+      candidateWindows.set(id, {
+        contextKey: planned.contextKey,
+        fingerprint: layoutHydrationWindowFingerprint(source),
+        source,
+        suspended,
+        targetFrame: null,
+      });
+      contextGeometryFingerprints.set(
+        planned.contextKey,
+        contextGeometry.fingerprint,
+      );
+    }
+
+    return {
+      contextGeometryFingerprints,
+      contexts: candidateContexts,
+      floatingWindows: candidateFloatingWindows,
+      fullWidthRestores: candidateFullWidthRestores,
+      hydratedWindowIds: candidateHydratedWindowIds,
+      layout: candidateLayout,
+      managedWindows: candidateManagedWindows,
+      restoreBaselinePendingWindowIds: candidateRestoreBaselinePendingWindowIds,
+      suspendedWindowIds: candidateSuspendedWindowIds,
+      topologyFingerprint,
+      windows: candidateWindows,
+    };
+  }
+
+  private restoreBaselineFromHydration(
+    id: WindowId,
+    baseline: LayoutPersistenceHydrationRestoreBaselineValue | undefined,
+    contextGeometry: ContextGeometry,
+    source: KWinWindow,
+  ): RestoreBaseline | null {
+    if (!baseline || baseline.fingerprint !== contextGeometry.fingerprint) {
+      return null;
+    }
+
+    const candidate: RestoreBaseline = {
+      clientFrame: snapshotRect(baseline.clientFrame),
+      fingerprint: baseline.fingerprint,
+      frame: snapshotRect(baseline.frame),
+      kind: baseline.kind,
+      noBorder: baseline.noBorder ?? undefined,
+    };
+    const restoredFrame = this.frameForRestoreBaseline(id, candidate);
+
+    if (
+      !rectIsContainedInWorkArea(
+        candidate.clientFrame,
+        contextGeometry.workArea,
+      ) ||
+      !rectIsContainedInWorkArea(candidate.frame, contextGeometry.workArea) ||
+      !rectIsContainedInWorkArea(restoredFrame, contextGeometry.workArea) ||
+      !respectsSizeConstraints(restoredFrame, source)
+    ) {
+      return null;
+    }
+
+    return candidate;
+  }
+
+  private layoutHydrationCandidateIsCurrent(
+    candidate: LayoutHydrationCandidate,
+  ): boolean {
+    if (
+      this.topologyRecoveryPending ||
+      this.hasTopologyBarrier() ||
+      candidate.topologyFingerprint !==
+        this.layoutHydrationTopologyFingerprint()
+    ) {
+      return false;
+    }
+
+    for (const [key, fingerprint] of candidate.contextGeometryFingerprints) {
+      const context = managedContextFromKey(key);
+      const geometry = context
+        ? this.geometry.contextGeometry(context.outputId, context.desktopId)
+        : null;
+
+      if (!geometry || geometry.fingerprint !== fingerprint) {
+        return false;
+      }
+    }
+
+    for (const [id, window] of candidate.windows) {
+      if (
+        this.observer.source(id) !== window.source ||
+        layoutHydrationWindowFingerprint(window.source) !==
+          window.fingerprint ||
+        !this.layoutHydrationSourceBelongsToContext(
+          id,
+          window.source,
+          window.contextKey,
+        ) ||
+        (hasGeometryAuthorityBlocker(window.source) ||
+          this.requestedSuspensions.has(id)) !== window.suspended
+      ) {
+        return false;
+      }
+
+      const context = managedContextFromKey(window.contextKey);
+
+      if (
+        window.targetFrame &&
+        (!respectsSizeConstraints(window.targetFrame, window.source) ||
+          (!window.suspended &&
+            (!context ||
+              !this.geometry.canApplyFrame(id, window.targetFrame, context))))
+      ) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  private layoutHydrationSourceBelongsToContext(
+    id: WindowId,
+    source: KWinWindow,
+    key: string,
+  ): boolean {
+    const observed = normalizeWindow(source);
+    const context = observed ? managedContext(observed) : null;
+
+    return Boolean(
+      context &&
+      contextKey(context) === key &&
+      !this.automaticFloatingWindows.has(id) &&
+      !this.automaticallyFloats(source),
+    );
+  }
+
+  private layoutHydrationTopologyFingerprint(): string {
+    return JSON.stringify({
+      desktops: this.workspace.desktops.map((desktop) => desktop.id),
+      outputs: this.workspace.screens.map((output) => ({
+        devicePixelRatio: output.devicePixelRatio,
+        geometry: {
+          height: output.geometry.height,
+          width: output.geometry.width,
+          x: output.geometry.x,
+          y: output.geometry.y,
+        },
+        name: output.name,
+      })),
+      outputInstances: [...this.topologyObserver.outputInstances()],
+      revision: this.topologyRevision,
+    });
+  }
+
+  private commitLayoutHydrationCandidate(
+    candidate: LayoutHydrationCandidate,
+  ): boolean {
+    if (
+      this.contexts.size > 0 ||
+      this.managedWindows.size > 0 ||
+      this.floatingWindows.size > 0 ||
+      this.columnFullWidthRestore.size > 0 ||
+      this.waitingWindowContexts.size > 0
+    ) {
+      return false;
+    }
+
+    const previousLayout = this.layout;
+    const previousDirtyContexts = new Set(this.dirtyContexts);
+    const previousPendingWindowSyncs = new Set(this.pendingWindowSyncs);
+    const previousPendingHydratedRestoreBaselines = new Set(
+      this.pendingHydratedRestoreBaselines,
+    );
+    const previousSuspendedWindows = new Set(this.suspendedWindows);
+    const previousWindowAdmissionHistory = new Set(this.windowAdmissionHistory);
+
+    try {
+      this.layout = candidate.layout;
+      this.contexts.clear();
+      this.managedWindows.clear();
+      this.floatingWindows.clear();
+      this.columnFullWidthRestore.clear();
+      this.dirtyContexts.clear();
+      this.pendingHydratedRestoreBaselines.clear();
+
+      for (const [key, context] of candidate.contexts) {
+        this.contexts.set(key, context);
+        this.dirtyContexts.add(key);
+      }
+
+      for (const [id, managed] of candidate.managedWindows) {
+        this.managedWindows.set(id, managed);
+      }
+
+      for (const [id, floating] of candidate.floatingWindows) {
+        this.floatingWindows.set(id, floating);
+      }
+
+      for (const [key, restores] of candidate.fullWidthRestores) {
+        this.columnFullWidthRestore.set(key, new Map(restores));
+      }
+
+      for (const id of candidate.hydratedWindowIds) {
+        this.pendingWindowSyncs.delete(id);
+        this.suspendedWindows.delete(id);
+        this.windowAdmissionHistory.add(id);
+      }
+
+      for (const id of candidate.suspendedWindowIds) {
+        this.suspendedWindows.add(id);
+      }
+
+      for (const id of candidate.restoreBaselinePendingWindowIds) {
+        this.pendingHydratedRestoreBaselines.add(id);
+      }
+
+      return true;
+    } catch {
+      this.layout = previousLayout;
+      this.contexts.clear();
+      this.managedWindows.clear();
+      this.floatingWindows.clear();
+      this.columnFullWidthRestore.clear();
+      this.dirtyContexts.clear();
+      replaceSet(this.dirtyContexts, previousDirtyContexts);
+      replaceSet(this.pendingWindowSyncs, previousPendingWindowSyncs);
+      replaceSet(
+        this.pendingHydratedRestoreBaselines,
+        previousPendingHydratedRestoreBaselines,
+      );
+      replaceSet(this.suspendedWindows, previousSuspendedWindows);
+      replaceSet(this.windowAdmissionHistory, previousWindowAdmissionHistory);
+      return false;
+    }
   }
 
   private scheduleStartupStabilization(): void {
@@ -11015,23 +11773,10 @@ export class RuntimeController {
 
       try {
         this.initializing = true;
-        const topologyBatchPending = this.topologyWindowOrder !== null;
-        const topologyBatchConsumed = this.synchronizePendingWindows(
-          topologyBatchPending && this.topologyAllowsOverflowAdmissions,
-        );
-
-        if (topologyBatchPending && topologyBatchConsumed) {
-          this.topologyColumnByWindow.clear();
-          this.topologyAllowsOverflowAdmissions = false;
-          this.topologyWindowOrder = null;
-        }
-
-        this.handleWindowActivated(
-          this.workspace.activeWindow,
-          topologyBatchPending && topologyBatchConsumed,
-        );
+        this.initializeStartupWindows();
         this.initializing = false;
         this.flushScheduledWork();
+        this.completeStartup();
       } catch (error) {
         console.warn(
           `[driftile] delayed startup failed error=${String(error)}`,
@@ -11876,7 +12621,9 @@ export class RuntimeController {
       return;
     }
 
-    this.requestLayoutStatePublication();
+    if (!this.preserveLoadedLayoutState) {
+      this.requestLayoutStatePublication();
+    }
 
     if (this.workScheduled) {
       return;
@@ -12017,7 +12764,33 @@ export class RuntimeController {
       this.scheduleWork();
     }
 
+    this.detectPreservedFallbackLayoutMutation();
     this.flushLayoutStatePublication();
+  }
+
+  private detectPreservedFallbackLayoutMutation(): void {
+    if (
+      !this.preserveLoadedLayoutState ||
+      this.layoutStatePublicationLocked ||
+      !this.startupCompleted
+    ) {
+      return;
+    }
+
+    const canonicalState = this.captureLayoutState();
+
+    if (canonicalState === null) {
+      return;
+    }
+
+    if (this.preservedFallbackLayoutState === null) {
+      this.preservedFallbackLayoutState = canonicalState;
+      return;
+    }
+
+    if (canonicalState !== this.preservedFallbackLayoutState) {
+      this.requestLayoutStatePublication();
+    }
   }
 
   private applyPendingDefaultColumnWidth(): void {
@@ -12142,6 +12915,20 @@ export class RuntimeController {
       const changedContext = Boolean(
         owner && (!nextContext || contextKey(nextContext) !== owner.contextKey),
       );
+      const floating = this.floatingWindows.get(id);
+
+      if (floating && nextContext) {
+        const nextContextKey = contextKey(nextContext);
+
+        if (floating.currentContextKey !== nextContextKey) {
+          this.floatingWindows.set(id, {
+            ...floating,
+            currentContextKey: nextContextKey,
+          });
+          this.refreshRememberedLayerFocus(id, source);
+        }
+      }
+
       const geometryBlocked = Boolean(
         this.suspendedWindows.has(id) ||
         requests ||
@@ -12210,13 +12997,22 @@ export class RuntimeController {
         }
 
         resumed = true;
+
+        if (owner && nextContext && !changedContext) {
+          this.captureHydratedRestoreBaselineAfterResume(
+            id,
+            source,
+            owner,
+            nextContext,
+          );
+        }
       }
 
       if (!source) {
         continue;
       }
 
-      if (this.floatingWindows.has(id)) {
+      if (floating) {
         this.forgetWaitingWindow(id);
 
         if (capacityLease) {
@@ -12366,6 +13162,7 @@ export class RuntimeController {
       }
 
       for (const id of release.ids) {
+        this.pendingHydratedRestoreBaselines.delete(id);
         this.managedWindows.delete(id);
         release.context.windowIds.delete(id);
       }
@@ -13571,6 +14368,7 @@ export class RuntimeController {
 
     if (floating) {
       affectedContextKeys.add(floating.sourceContextKey);
+      affectedContextKeys.add(floating.currentContextKey);
     }
 
     if (transition) {
@@ -13665,6 +14463,7 @@ export class RuntimeController {
   private releaseWindow(id: WindowId): string | null {
     this.cancelCapacityParkForWindow(id, true);
     this.invalidateCapacityLeaseForWindow(id);
+    this.pendingHydratedRestoreBaselines.delete(id);
     const owner = this.managedWindows.get(id);
 
     if (!owner) {
@@ -13731,6 +14530,10 @@ export class RuntimeController {
     id: WindowId,
     source: KWinWindow | undefined,
   ): void {
+    if (this.hydrationInProgress) {
+      return;
+    }
+
     if (!source || !this.windowUsesBorderlessMode(source)) {
       this.restoreWindowBorder(id);
       return;
@@ -13796,9 +14599,9 @@ export class RuntimeController {
     kind: RestoreBaseline["kind"] = "frame",
   ): RestoreBaseline {
     return {
-      clientFrame: { ...source.clientGeometry },
+      clientFrame: snapshotRect(source.clientGeometry),
       fingerprint,
-      frame: { ...source.frameGeometry },
+      frame: snapshotRect(source.frameGeometry),
       kind,
       noBorder: source.noBorder,
     };
@@ -13816,9 +14619,9 @@ export class RuntimeController {
     if (borderRestore?.admissionBaselinePending) {
       borderRestore.admissionBaselinePending = false;
       return {
-        clientFrame: { ...borderRestore.clientFrame },
+        clientFrame: snapshotRect(borderRestore.clientFrame),
         fingerprint,
-        frame: { ...borderRestore.frame },
+        frame: snapshotRect(borderRestore.frame),
         kind: "client",
         noBorder: borderRestore.noBorder,
       };
@@ -13875,8 +14678,10 @@ export class RuntimeController {
     const alreadyOwned = this.windowBorderRestore.has(id);
     const originalClientFrame = alreadyOwned
       ? null
-      : { ...source.clientGeometry };
-    const originalFrame = alreadyOwned ? null : { ...source.frameGeometry };
+      : snapshotRect(source.clientGeometry);
+    const originalFrame = alreadyOwned
+      ? null
+      : snapshotRect(source.frameGeometry);
     let failure: string | undefined;
 
     try {
@@ -14143,6 +14948,39 @@ export class RuntimeController {
     this.suspendedWindows.delete(id);
     this.transientResumeProbes.delete(id);
     return true;
+  }
+
+  private captureHydratedRestoreBaselineAfterResume(
+    id: WindowId,
+    source: KWinWindow,
+    owner: ManagedWindow,
+    context: ManagedContext,
+  ): void {
+    if (
+      !this.pendingHydratedRestoreBaselines.has(id) ||
+      this.managedWindows.get(id) !== owner ||
+      owner.contextKey !== contextKey(context)
+    ) {
+      return;
+    }
+
+    if (owner.restoreBaseline !== null) {
+      this.pendingHydratedRestoreBaselines.delete(id);
+      return;
+    }
+
+    const runtimeContext = this.contexts.get(owner.contextKey);
+
+    if (!runtimeContext?.windowIds.has(id)) {
+      return;
+    }
+
+    owner.restoreBaseline = this.captureRestoreBaseline(
+      source,
+      runtimeContext.geometryFingerprint,
+      "client",
+    );
+    this.pendingHydratedRestoreBaselines.delete(id);
   }
 
   private scheduleTransientResumeProbe(id: WindowId): void {
@@ -14826,6 +15664,7 @@ export class RuntimeController {
       this.registerCapacityLease(lease);
 
       for (const window of lease.windows) {
+        this.pendingHydratedRestoreBaselines.delete(window.windowId);
         this.managedWindows.delete(window.windowId);
         context.windowIds.delete(window.windowId);
         this.deferWindow(
@@ -15609,6 +16448,60 @@ export class RuntimeController {
   }
 }
 
+function layoutHydrationWindowFingerprint(source: KWinWindow): string {
+  return JSON.stringify({
+    clientGeometry: {
+      height: source.clientGeometry.height,
+      width: source.clientGeometry.width,
+      x: source.clientGeometry.x,
+      y: source.clientGeometry.y,
+    },
+    deleted: source.deleted,
+    desktops: source.desktops.map((desktop) => desktop.id),
+    dialog: source.dialog,
+    frameGeometry: {
+      height: source.frameGeometry.height,
+      width: source.frameGeometry.width,
+      x: source.frameGeometry.x,
+      y: source.frameGeometry.y,
+    },
+    fullScreen: source.fullScreen,
+    internalId: String(source.internalId),
+    managed: source.managed,
+    maxSize: {
+      height: source.maxSize.height,
+      width: source.maxSize.width,
+    },
+    maximizeMode: source.maximizeMode,
+    minSize: {
+      height: source.minSize.height,
+      width: source.minSize.width,
+    },
+    minimized: source.minimized,
+    modal: source.modal,
+    move: source.move,
+    moveable: source.moveable,
+    noBorder: source.noBorder,
+    normalWindow: source.normalWindow,
+    onAllDesktops: source.onAllDesktops,
+    outputName: source.output?.name ?? null,
+    resize: source.resize,
+    resizeable: source.resizeable,
+    specialWindow: source.specialWindow,
+    tile: source.tile !== null,
+    transient: source.transient,
+    transientFor: source.transientFor !== null,
+  });
+}
+
+function replaceSet<T>(target: Set<T>, values: ReadonlySet<T>): void {
+  target.clear();
+
+  for (const value of values) {
+    target.add(value);
+  }
+}
+
 function managedContext(window: ObservedWindow): ManagedContext | null {
   const desktop = window.desktopIds[0];
 
@@ -15674,13 +16567,22 @@ function cloneRestoreBaseline(
 ): RestoreBaseline | null {
   return baseline
     ? {
-        clientFrame: { ...baseline.clientFrame },
+        clientFrame: snapshotRect(baseline.clientFrame),
         fingerprint: baseline.fingerprint,
-        frame: { ...baseline.frame },
+        frame: snapshotRect(baseline.frame),
         kind: baseline.kind,
         noBorder: baseline.noBorder,
       }
     : null;
+}
+
+function snapshotRect(rect: Rect): Rect {
+  return {
+    height: rect.height,
+    width: rect.width,
+    x: rect.x,
+    y: rect.y,
+  };
 }
 
 function rectsEqual(left: Rect, right: Rect): boolean {
@@ -15986,6 +16888,21 @@ function clampFrameToWorkArea(frame: Rect, workArea: Rect): Rect {
     x: clamp(frame.x, workArea.x, maximumX),
     y: clamp(frame.y, workArea.y, maximumY),
   };
+}
+
+function rectIsContainedInWorkArea(frame: Rect, workArea: Rect): boolean {
+  return (
+    Number.isFinite(frame.x) &&
+    Number.isFinite(frame.y) &&
+    Number.isFinite(frame.width) &&
+    Number.isFinite(frame.height) &&
+    frame.width > 0 &&
+    frame.height > 0 &&
+    frame.x >= workArea.x - 1e-6 &&
+    frame.y >= workArea.y - 1e-6 &&
+    frame.x + frame.width <= workArea.x + workArea.width + 1e-6 &&
+    frame.y + frame.height <= workArea.y + workArea.height + 1e-6
+  );
 }
 
 function clamp(value: number, minimum: number, maximum: number): number {

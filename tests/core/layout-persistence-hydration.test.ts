@@ -10,6 +10,9 @@ import {
 } from "../../src/core/layout-persistence";
 import { LayoutEngine } from "../../src/core/layout-engine";
 
+const contextFingerprint =
+  "1\u00000\u00000\u00001000\u0000800\u00000\u00000\u00001000\u0000800";
+
 describe("exact layout persistence hydration", () => {
   it("plans the complete durable model with exact remapped identities", () => {
     const state = representativeState();
@@ -107,6 +110,16 @@ describe("exact layout persistence hydration", () => {
             width: { kind: "fixed", value: 720 },
           },
         ],
+        restoreBaselines: [
+          {
+            baseline: {
+              ...restoreBaseline(),
+              fingerprint: contextFingerprint,
+            },
+            contextKey: "DP-1\u0000desktop-1",
+            windowId: "live-a",
+          },
+        ],
       },
     });
     expect(JSON.stringify(state)).toBe(beforeState);
@@ -128,6 +141,7 @@ describe("exact layout persistence hydration", () => {
     const context = result.value.contexts[0];
     const column = context?.layout.columns[0];
     const floating = result.value.floatingWindows[0];
+    const restore = result.value.restoreBaselines[0];
 
     expect(Object.isFrozen(result.value)).toBe(true);
     expect(Object.isFrozen(result.value.contexts)).toBe(true);
@@ -146,6 +160,11 @@ describe("exact layout persistence hydration", () => {
     expect(Object.isFrozen(result.value.fullWidthRestores[0]?.width)).toBe(
       true,
     );
+    expect(Object.isFrozen(result.value.restoreBaselines)).toBe(true);
+    expect(Object.isFrozen(restore)).toBe(true);
+    expect(Object.isFrozen(restore?.baseline)).toBe(true);
+    expect(Object.isFrozen(restore?.baseline.clientFrame)).toBe(true);
+    expect(Object.isFrozen(restore?.baseline.frame)).toBe(true);
   });
 
   it("produces contexts and floating placements consumable by LayoutEngine", () => {
@@ -319,6 +338,7 @@ describe("exact layout persistence hydration", () => {
           },
         ],
         fullWidthRestores: [],
+        restoreBaselines: [],
       },
     });
   });
@@ -539,6 +559,7 @@ function representativeState(): LayoutPersistenceV1 {
             members: [
               {
                 height: { kind: "auto", weight: 2 },
+                restoreBaseline: restoreBaseline(),
                 windowKey: "tiled-a",
               },
               { windowKey: "tiled-b" },
@@ -557,6 +578,7 @@ function representativeState(): LayoutPersistenceV1 {
         ],
         desktopId: "desktop-1",
         outputKey: "primary-output",
+        restoreFingerprint: contextFingerprint,
         viewportOffset: -140,
       },
       {
@@ -649,6 +671,15 @@ function liveWindow(
     eligible: true,
     liveId,
     outputName,
+  };
+}
+
+function restoreBaseline() {
+  return {
+    clientFrame: { height: 330, width: 500, x: 110, y: 90 },
+    frame: { height: 360, width: 520, x: 100, y: 70 },
+    kind: "client" as const,
+    noBorder: false,
   };
 }
 

@@ -11,7 +11,10 @@ import {
   LayoutEngine,
   type WindowHeight,
 } from "../src/core/layout-engine";
-import { decodeLayoutPersistence } from "../src/core/layout-persistence";
+import {
+  decodeLayoutPersistence,
+  LAYOUT_PERSISTENCE_LIMITS,
+} from "../src/core/layout-persistence";
 import type {
   KWinOutput,
   KWinSignal,
@@ -1097,8 +1100,9 @@ describe("RuntimeController", () => {
     });
 
     expect(controller.start()).toBe(true);
+    expect(published).toHaveLength(1);
     controller.requestLayoutStatePublication();
-    expect(controller.flushLayoutStatePublication()).toBe(true);
+    expect(controller.flushLayoutStatePublication()).toBe(false);
     controller.requestLayoutStatePublication();
     expect(controller.flushLayoutStatePublication()).toBe(false);
     expect(published).toHaveLength(1);
@@ -1138,8 +1142,8 @@ describe("RuntimeController", () => {
 
     try {
       expect(controller.start()).toBe(true);
+      expect(attempts).toBe(1);
       controller.requestLayoutStatePublication();
-      expect(controller.flushLayoutStatePublication()).toBe(false);
       expect(controller.flushLayoutStatePublication()).toBe(true);
       expect(attempts).toBe(2);
       expect(published).toHaveLength(1);
@@ -1176,8 +1180,9 @@ describe("RuntimeController", () => {
 
     expect(controller.start()).toBe(true);
     flushManualScheduler(scheduler);
+    expect(published).toHaveLength(1);
     controller.requestLayoutStatePublication();
-    expect(controller.flushLayoutStatePublication()).toBe(true);
+    expect(controller.flushLayoutStatePublication()).toBe(false);
 
     fixture.windowAdded.emit(second.window);
     flushManualScheduler(scheduler);
@@ -1225,8 +1230,9 @@ describe("RuntimeController", () => {
 
     expect(controller.start()).toBe(true);
     flushManualScheduler(scheduler);
+    expect(published).toHaveLength(1);
     controller.requestLayoutStatePublication();
-    expect(controller.flushLayoutStatePublication()).toBe(true);
+    expect(controller.flushLayoutStatePublication()).toBe(false);
     expect(decodeLayoutPersistence(published[0] ?? "")).toMatchObject({
       ok: true,
       value: { contexts: [{ activeColumnIndex: 1 }] },
@@ -1245,6 +1251,1208 @@ describe("RuntimeController", () => {
     controller.stop();
     flushManualScheduler(scheduler);
     expect(published).toHaveLength(publicationCount);
+  });
+
+  it.each([0, 2])(
+    "hydrates and republishes an exact canonical layout with %i startup probes",
+    (startupStabilizationProbes) => {
+      const output = createOutput("DP-1", 0);
+      const desktop = { id: "desktop-1" };
+      const windows = [
+        createTrackedWindow("window-1", output, desktop),
+        createTrackedWindow("window-2", output, desktop),
+      ];
+      const fixture = createWorkspace(
+        output,
+        desktop,
+        [output],
+        [desktop],
+        windows.map(({ window }) => window),
+      );
+      const source = new RuntimeController(fixture.workspace, {
+        clientAreaOption: 2,
+        columnWidth: { kind: "fixed", value: 400 },
+        gap: 10,
+      });
+
+      expect(source.start()).toBe(true);
+      const document = requiredLayoutDocument(source);
+      source.stop();
+
+      const scheduler = new ManualScheduler();
+      const published: string[] = [];
+      const restored = new RuntimeController(fixture.workspace, {
+        clientAreaOption: 2,
+        columnWidth: { kind: "fixed", value: 700 },
+        gap: 10,
+        onLayoutStateChanged: (canonicalState) => {
+          published.push(canonicalState);
+        },
+        scheduleResume: scheduler.schedule,
+        startupStabilizationProbes,
+      });
+
+      expect(restored.start(document)).toBe(true);
+
+      if (startupStabilizationProbes > 0) {
+        expect(restored.managedCount).toBe(0);
+        expect(restored.captureLayoutState()).toBeNull();
+        expect(published).toEqual([]);
+        flushManualScheduler(scheduler);
+      }
+
+      expect(restored.managedCount).toBe(2);
+      expect(restored.captureLayoutState()).toBe(document);
+      expect(published).toEqual([document]);
+      restored.stop();
+      flushManualScheduler(scheduler);
+    },
+  );
+
+  it("discovers late stacking-order windows before delayed hydration", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const windows = [
+      createTrackedWindow("window-1", output, desktop),
+      createTrackedWindow("window-2", output, desktop),
+    ];
+    const liveWindows = windows.map(({ window }) => window);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      liveWindows,
+    );
+    const source = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 400 },
+      gap: 10,
+    });
+
+    expect(source.start()).toBe(true);
+    const document = requiredLayoutDocument(source);
+    const expectedFrames = liveWindows.map((window) => ({
+      ...window.frameGeometry,
+    }));
+    source.stop();
+    const writesBeforeHydration = windows.map(({ writeCount }) => writeCount);
+    Object.defineProperty(fixture.workspace, "stackingOrder", {
+      configurable: true,
+      value: [],
+    });
+    const scheduler = new ManualScheduler();
+    const restored = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      scheduleResume: scheduler.schedule,
+      startupStabilizationProbes: 2,
+    });
+
+    expect(restored.start(document)).toBe(true);
+    expect(restored.managedCount).toBe(0);
+    scheduler.flush();
+    Object.defineProperty(fixture.workspace, "stackingOrder", {
+      configurable: true,
+      value: liveWindows,
+    });
+    flushManualScheduler(scheduler);
+
+    expect(restored.managedCount).toBe(2);
+    expect(restored.captureLayoutState()).toBe(document);
+    expect(liveWindows.map((window) => window.frameGeometry)).toEqual(
+      expectedFrames,
+    );
+    expect(windows.map(({ writeCount }) => writeCount)).toEqual(
+      writesBeforeHydration.map((writes) => writes + 1),
+    );
+    restored.stop();
+    flushManualScheduler(scheduler);
+  });
+
+  it("rejects delayed hydration behind a final-probe topology barrier", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const second = createTrackedWindow("window-2", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window, second.window],
+    );
+    const source = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 320 },
+      gap: 10,
+    });
+
+    expect(source.start()).toBe(true);
+    expect(source.toggleFloating()).toBe(true);
+    const document = requiredLayoutDocument(source);
+    source.stop();
+
+    const scheduler = new ManualScheduler();
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const restored = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      scheduleResume: scheduler.schedule,
+      startupStabilizationProbes: 2,
+    });
+
+    try {
+      expect(restored.start(document)).toBe(true);
+      expect(restored.managedCount).toBe(0);
+      expect(restored.floatingCount).toBe(0);
+      scheduler.flush();
+
+      fixture.setScreens([output, createOutput("HDMI-A-1", 1000)]);
+      fixture.screensChanged.emit();
+      expect(restored.captureLayoutState()).toBeNull();
+      scheduler.flush();
+
+      expect(warning).toHaveBeenCalledWith(
+        expect.stringContaining("topology-unsettled"),
+      );
+      expect(restored.managedCount).toBe(0);
+      expect(restored.floatingCount).toBe(0);
+      expect(restored.captureLayoutState()).toBeNull();
+      flushManualScheduler(scheduler);
+
+      expect(restored.managedCount).toBe(2);
+      expect(restored.floatingCount).toBe(0);
+      expect(
+        runtimeLayout(restored).snapshot(
+          outputId(output.name),
+          desktopId(desktop.id),
+        ),
+      ).toMatchObject({
+        columns: [
+          {
+            width: { kind: "proportion", value: 0.5 },
+            windowIds: [windowId("window-1")],
+          },
+          {
+            width: { kind: "proportion", value: 0.5 },
+            windowIds: [windowId("window-2")],
+          },
+        ],
+      });
+    } finally {
+      warning.mockRestore();
+      restored.stop();
+      flushManualScheduler(scheduler);
+    }
+  });
+
+  it("rejects one stale entry without leaking partial persisted ownership", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop, {
+      noBorder: false,
+    });
+    const missing = createTrackedWindow("window-missing", output, desktop);
+    const sourceFixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window, missing.window],
+    );
+    const source = new RuntimeController(sourceFixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 320 },
+      gap: 10,
+    });
+
+    expect(source.start()).toBe(true);
+    const document = requiredLayoutDocument(source);
+    source.stop();
+
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window],
+    );
+    const scheduler = new ManualScheduler();
+    const published: string[] = [];
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const restored = new RuntimeController(fixture.workspace, {
+      borderlessWindows: true,
+      clientAreaOption: 2,
+      gap: 10,
+      onLayoutStateChanged: (canonicalState) => {
+        published.push(canonicalState);
+      },
+      scheduleResume: scheduler.schedule,
+    });
+
+    try {
+      expect(restored.start(document)).toBe(true);
+      expect(restored.managedCount).toBe(1);
+      expect(restored.floatingCount).toBe(0);
+      expect(published).toEqual([]);
+      expect(warning).toHaveBeenCalledTimes(1);
+      expect(warning).toHaveBeenCalledWith(
+        expect.stringContaining("missing-live-window"),
+      );
+
+      const fallback = decodeLayoutPersistence(
+        requiredLayoutDocument(restored),
+      );
+      expect(fallback).toMatchObject({
+        ok: true,
+        value: {
+          contexts: [
+            { columns: [{ width: { kind: "proportion", value: 0.5 } }] },
+          ],
+          windows: [{ liveId: "window-1" }],
+        },
+      });
+
+      expect(restored.finalizeLayoutStatePublication()).toBe(false);
+      flushManualScheduler(scheduler);
+      expect(restored.finalizeLayoutStatePublication()).toBe(false);
+      expect(published).toEqual([]);
+
+      expect(restored.increaseColumnWidth()).toBe(true);
+      restored.requestLayoutStatePublication();
+      expect(restored.flushLayoutStatePublication()).toBe(true);
+      expect(published).toHaveLength(1);
+    } finally {
+      warning.mockRestore();
+      restored.stop();
+      flushManualScheduler(scheduler);
+    }
+  });
+
+  it("rejects all hydration when a minimized target violates live bounds", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const second = createTrackedWindow("window-2", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window, second.window],
+    );
+    const source = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 320 },
+      gap: 10,
+    });
+
+    expect(source.start()).toBe(true);
+    const document = requiredLayoutDocument(source);
+    source.stop();
+
+    Object.defineProperty(first.window, "minimized", {
+      configurable: true,
+      value: true,
+    });
+    const constraints = first.window as unknown as {
+      minSize: KWinWindow["minSize"];
+    };
+    constraints.minSize = { height: 1, width: 450 };
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const restored = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    try {
+      expect(restored.start(document)).toBe(true);
+      expect(warning).toHaveBeenCalledWith(
+        expect.stringContaining("runtime-preflight"),
+      );
+      expect(restored.managedCount).toBe(1);
+      expect(restored.floatingCount).toBe(0);
+      expect(
+        decodeLayoutPersistence(requiredLayoutDocument(restored)),
+      ).toMatchObject({
+        ok: true,
+        value: {
+          contexts: [
+            {
+              columns: [{ width: { kind: "proportion", value: 0.5 } }],
+            },
+          ],
+          windows: [{ liveId: "window-2" }],
+        },
+      });
+    } finally {
+      warning.mockRestore();
+      restored.stop();
+    }
+  });
+
+  it("publishes an eligible window added after failed hydration", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const missing = createTrackedWindow("window-missing", output, desktop);
+    const sourceFixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window, missing.window],
+    );
+    const source = new RuntimeController(sourceFixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    expect(source.start()).toBe(true);
+    const document = requiredLayoutDocument(source);
+    source.stop();
+
+    const extra = createTrackedWindow("window-extra", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window],
+    );
+    const scheduler = new ManualScheduler();
+    const published: string[] = [];
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const restored = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      onLayoutStateChanged: (canonicalState) => {
+        published.push(canonicalState);
+      },
+      schedule: scheduler.schedule,
+      scheduleResume: scheduler.schedule,
+      startupStabilizationProbes: 2,
+    });
+
+    try {
+      expect(restored.start(document)).toBe(true);
+      flushManualScheduler(scheduler);
+      expect(warning).toHaveBeenCalledWith(
+        expect.stringContaining("missing-live-window"),
+      );
+      expect(restored.managedCount).toBe(1);
+      expect(published).toEqual([]);
+      expect(restored.finalizeLayoutStatePublication()).toBe(false);
+      expect(published).toEqual([]);
+
+      fixture.windowAdded.emit(extra.window);
+      flushManualScheduler(scheduler);
+
+      expect(restored.managedCount).toBe(2);
+      expect(published).toHaveLength(1);
+      expect(decodeLayoutPersistence(published[0] ?? "")).toMatchObject({
+        ok: true,
+        value: {
+          windows: [{ liveId: "window-1" }, { liveId: "window-extra" }],
+        },
+      });
+    } finally {
+      warning.mockRestore();
+      restored.stop();
+      flushManualScheduler(scheduler);
+    }
+  });
+
+  it("admits extra live windows after restoring every persisted column", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const second = createTrackedWindow("window-2", output, desktop);
+    const sourceFixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window, second.window],
+    );
+    const source = new RuntimeController(sourceFixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 360 },
+      gap: 10,
+    });
+
+    expect(source.start()).toBe(true);
+    const document = requiredLayoutDocument(source);
+    source.stop();
+
+    const extra = createTrackedWindow("window-extra", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window, second.window, extra.window],
+    );
+    const restored = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 600 },
+      gap: 10,
+    });
+
+    expect(restored.start(document)).toBe(true);
+    const decoded = decodeLayoutPersistence(requiredLayoutDocument(restored));
+    expect(decoded).toMatchObject({
+      ok: true,
+      value: {
+        contexts: [
+          {
+            columns: [
+              { members: [{ windowKey: "window-1" }] },
+              { members: [{ windowKey: "window-2" }] },
+              { members: [{ windowKey: "window-extra" }] },
+            ],
+          },
+        ],
+      },
+    });
+    restored.stop();
+  });
+
+  it("restores minimized tiling and manual floating without frame writes", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const tiled = createTrackedWindow("window-tiled", output, desktop);
+    const floating = createTrackedWindow("window-floating", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [tiled.window, floating.window],
+    );
+    const source = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 400 },
+      gap: 10,
+    });
+
+    expect(source.start()).toBe(true);
+    expect(source.toggleFloating()).toBe(true);
+    const document = requiredLayoutDocument(source);
+    source.stop();
+    Object.defineProperty(tiled.window, "minimized", {
+      configurable: true,
+      value: true,
+    });
+    const writesBefore = [tiled.writeCount, floating.writeCount];
+    const framesBefore = [
+      { ...tiled.window.frameGeometry },
+      { ...floating.window.frameGeometry },
+    ];
+    exposeValueTypeGeometry(floating.window, "frameGeometry");
+    const restored = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    expect(restored.start(document)).toBe(true);
+    expect(restored.managedCount).toBe(1);
+    expect(restored.floatingCount).toBe(1);
+    const runtime = restored as unknown as {
+      readonly floatingWindows: ReadonlyMap<
+        WindowId,
+        { readonly expectedFrame: KWinWindow["frameGeometry"] }
+      >;
+    };
+    expect(
+      runtime.floatingWindows.get(windowId("window-floating"))?.expectedFrame,
+    ).toEqual(framesBefore[1]);
+    expect([tiled.writeCount, floating.writeCount]).toEqual(writesBefore);
+    expect([
+      { ...tiled.window.frameGeometry },
+      snapshotTestRect(floating.window.frameGeometry),
+    ]).toEqual(framesBefore);
+    expect(restored.captureLayoutState()).toBe(document);
+    restored.stop();
+    expect([tiled.writeCount, floating.writeCount]).toEqual(writesBefore);
+  });
+
+  it("preserves the original minimized restore baseline across idempotent reloads", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const originalFrame = { height: 360, width: 520, x: 70, y: 60 };
+    const originalClientFrame = { height: 325, width: 510, x: 75, y: 90 };
+    const tracked = createTrackedWindow("window-1", output, desktop, {
+      clientGeometry: originalClientFrame,
+      frameGeometry: originalFrame,
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [tracked.window],
+    );
+    const source = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 400 },
+      gap: 10,
+    });
+
+    expect(source.start()).toBe(true);
+    const canonicalDocument = requiredLayoutDocument(source);
+    const tiledFrame = { ...tracked.window.frameGeometry };
+    expect(tiledFrame).not.toEqual(originalFrame);
+
+    setWindowState("minimized", tracked, true);
+    source.stop();
+    expect(tracked.window.frameGeometry).toEqual(tiledFrame);
+
+    const firstScheduler = new ManualScheduler();
+    const firstReload = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: firstScheduler.schedule,
+      scheduleResume: firstScheduler.schedule,
+    });
+
+    expect(firstReload.start(canonicalDocument)).toBe(true);
+    flushManualScheduler(firstScheduler);
+    const firstReloadDocument = requiredLayoutDocument(firstReload);
+    expect(firstReloadDocument).toBe(canonicalDocument);
+    firstReload.stop();
+    flushManualScheduler(firstScheduler);
+    expect(tracked.window.frameGeometry).toEqual(tiledFrame);
+
+    const secondScheduler = new ManualScheduler();
+    const secondReload = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: secondScheduler.schedule,
+      scheduleResume: secondScheduler.schedule,
+    });
+
+    expect(secondReload.start(firstReloadDocument)).toBe(true);
+    flushManualScheduler(secondScheduler);
+    expect(requiredLayoutDocument(secondReload)).toBe(canonicalDocument);
+
+    setWindowState("minimized", tracked, false);
+    flushManualScheduler(secondScheduler);
+    expect(secondReload.toggleFloating()).toBe(true);
+    flushManualScheduler(secondScheduler);
+
+    expect({
+      clientFrame: tracked.window.clientGeometry,
+      frame: tracked.window.frameGeometry,
+    }).toEqual({ clientFrame: originalClientFrame, frame: originalFrame });
+    secondReload.stop();
+    flushManualScheduler(secondScheduler);
+  });
+
+  it("discards an off-screen persisted restore baseline without rejecting hydration", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const safeFrame = { height: 360, width: 520, x: 70, y: 60 };
+    const safeClientFrame = { height: 325, width: 510, x: 75, y: 90 };
+    const tracked = createTrackedWindow("window-1", output, desktop, {
+      clientGeometry: safeClientFrame,
+      frameGeometry: safeFrame,
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [tracked.window],
+    );
+    const source = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 400 },
+      gap: 10,
+    });
+
+    expect(source.start()).toBe(true);
+    const persisted = JSON.parse(requiredLayoutDocument(source)) as {
+      contexts: Array<{
+        columns: Array<{
+          members: Array<{
+            restoreBaseline?: {
+              clientFrame: KWinWindow["clientGeometry"];
+              frame: KWinWindow["frameGeometry"];
+            };
+          }>;
+        }>;
+        restoreFingerprint?: string;
+      }>;
+    };
+    source.stop();
+    const context = persisted.contexts[0];
+    const baseline = context?.columns[0]?.members[0]?.restoreBaseline;
+
+    if (!context?.restoreFingerprint || !baseline) {
+      throw new Error("persisted restore baseline is missing");
+    }
+
+    const offScreenFrame = { ...baseline.frame, x: 900_000, y: 900_000 };
+    const offScreenClientFrame = {
+      ...baseline.clientFrame,
+      x: 900_005,
+      y: 900_030,
+    };
+    baseline.frame = offScreenFrame;
+    baseline.clientFrame = offScreenClientFrame;
+    const unsafeDocument = `${JSON.stringify(persisted)}\n`;
+
+    expect(decodeLayoutPersistence(unsafeDocument).ok).toBe(true);
+    const writtenFrames: KWinWindow["frameGeometry"][] = [];
+    tracked.setWriteBehavior((frame, commit) => {
+      writtenFrames.push({ ...frame });
+      commit();
+    });
+    const toggled = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 700 },
+      gap: 10,
+    });
+
+    expect(toggled.start(unsafeDocument)).toBe(true);
+    expect(toggled.managedCount).toBe(1);
+    expect(
+      runtimeLayout(toggled).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ).columns[0]?.width,
+    ).toEqual({ kind: "fixed", value: 400 });
+    const id = windowId("window-1");
+    const state = toggled as unknown as {
+      readonly managedWindows: ReadonlyMap<
+        WindowId,
+        {
+          readonly restoreBaseline: {
+            readonly frame: KWinWindow["frameGeometry"];
+          } | null;
+        }
+      >;
+    };
+
+    expect(state.managedWindows.get(id)?.restoreBaseline?.frame).toEqual(
+      safeFrame,
+    );
+    expect(toggled.toggleFloating()).toBe(true);
+    expect(tracked.window.frameGeometry).toEqual(safeFrame);
+    toggled.stop();
+
+    const stopped = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    expect(stopped.start(unsafeDocument)).toBe(true);
+    expect(stopped.managedCount).toBe(1);
+    stopped.stop();
+
+    const workArea = fixture.workspace.clientArea(2, output, desktop);
+    expect(writtenFrames.length).toBeGreaterThan(0);
+    expect(
+      writtenFrames.every(
+        (frame) =>
+          frame.x >= workArea.x &&
+          frame.y >= workArea.y &&
+          frame.x + frame.width <= workArea.x + workArea.width &&
+          frame.y + frame.height <= workArea.y + workArea.height,
+      ),
+    ).toBe(true);
+    expect(writtenFrames).not.toContainEqual(offScreenFrame);
+    expect(tracked.window.frameGeometry).toEqual(safeFrame);
+    tracked.setWriteBehavior(null);
+  });
+
+  it("adopts a stable resumed frame after suspended hydration", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const tracked = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [tracked.window],
+    );
+    const source = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 400 },
+      gap: 10,
+    });
+
+    expect(source.start()).toBe(true);
+    const document = withoutRestoreBaselines(requiredLayoutDocument(source));
+    source.stop();
+    Object.defineProperty(tracked.window, "minimized", {
+      configurable: true,
+      value: true,
+    });
+
+    const scheduler = new ManualScheduler();
+    const restored = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+      scheduleResume: scheduler.schedule,
+    });
+    const id = windowId("window-1");
+    const state = restored as unknown as {
+      readonly managedWindows: ReadonlyMap<
+        WindowId,
+        {
+          readonly restoreBaseline: {
+            readonly frame: KWinWindow["frameGeometry"];
+          } | null;
+        }
+      >;
+      readonly suspendedWindows: ReadonlySet<WindowId>;
+    };
+
+    expect(restored.start(document)).toBe(true);
+    flushManualScheduler(scheduler);
+    expect(state.suspendedWindows.has(id)).toBe(true);
+    expect(state.managedWindows.get(id)?.restoreBaseline).toBeNull();
+
+    const preResumeOwnedFrame = {
+      height: 360,
+      width: 540,
+      x: 80,
+      y: 70,
+    };
+    tracked.setFrameGeometry(preResumeOwnedFrame);
+    Object.defineProperty(tracked.window, "minimized", {
+      configurable: true,
+      value: false,
+    });
+    tracked.minimizedChanged.emit();
+    flushManualScheduler(scheduler);
+
+    expect(state.suspendedWindows.has(id)).toBe(false);
+    expect(state.managedWindows.get(id)?.restoreBaseline).toMatchObject({
+      frame: preResumeOwnedFrame,
+    });
+    expect(tracked.window.frameGeometry).not.toEqual(preResumeOwnedFrame);
+    expect(restored.setGap(20)).toBe(true);
+    flushManualScheduler(scheduler);
+    const reflowedFrame = { ...tracked.window.frameGeometry };
+    const writesBeforeStop = tracked.writeCount;
+
+    expect(reflowedFrame).not.toEqual(preResumeOwnedFrame);
+    restored.stop();
+    flushManualScheduler(scheduler);
+    expect(tracked.writeCount).toBe(writesBeforeStop + 1);
+    expect(tracked.window.frameGeometry).toEqual(preResumeOwnedFrame);
+  });
+
+  it("preserves pending baseline acquisition across topology invalidation", () => {
+    const trackedOutput = createTrackedOutput("DP-1", 0);
+    const output = trackedOutput.output;
+    const desktop = { id: "desktop-1" };
+    const tracked = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [tracked.window],
+    );
+    let workArea = { height: 800, width: 1000, x: 0, y: 0 };
+    Object.defineProperty(fixture.workspace, "clientArea", {
+      configurable: true,
+      value: () => workArea,
+    });
+    const source = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 400 },
+      gap: 10,
+    });
+
+    expect(source.start()).toBe(true);
+    const document = withoutRestoreBaselines(requiredLayoutDocument(source));
+    source.stop();
+    Object.defineProperty(tracked.window, "minimized", {
+      configurable: true,
+      value: true,
+    });
+
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const restored = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+    const id = windowId("window-1");
+    const state = restored as unknown as {
+      readonly managedWindows: ReadonlyMap<
+        WindowId,
+        {
+          readonly restoreBaseline: {
+            readonly frame: KWinWindow["frameGeometry"];
+          } | null;
+        }
+      >;
+      readonly pendingHydratedRestoreBaselines: ReadonlySet<WindowId>;
+      readonly suspendedWindows: ReadonlySet<WindowId>;
+      readonly topologyStabilizing: boolean;
+    };
+
+    expect(restored.start(document)).toBe(true);
+    expect(state.suspendedWindows.has(id)).toBe(true);
+    expect(state.pendingHydratedRestoreBaselines.has(id)).toBe(true);
+    expect(state.managedWindows.get(id)?.restoreBaseline).toBeNull();
+    const writesBeforeTopology = tracked.writeCount;
+
+    workArea = { height: 760, width: 900, x: 100, y: 20 };
+    trackedOutput.geometryChanged.emit();
+    expect(state.topologyStabilizing).toBe(true);
+    flushTopologyRecovery(resumeScheduler, workScheduler);
+
+    expect(state.topologyStabilizing).toBe(false);
+    expect(restored.managedCount).toBe(1);
+    expect(state.suspendedWindows.has(id)).toBe(true);
+    expect(state.pendingHydratedRestoreBaselines.has(id)).toBe(true);
+    expect(state.managedWindows.get(id)?.restoreBaseline).toBeNull();
+    expect(tracked.writeCount).toBe(writesBeforeTopology);
+
+    const entryFrame = { height: 360, width: 540, x: 180, y: 90 };
+    tracked.setFrameGeometry(entryFrame);
+    Object.defineProperty(tracked.window, "minimized", {
+      configurable: true,
+      value: false,
+    });
+    tracked.minimizedChanged.emit();
+    workScheduler.flush();
+    resumeScheduler.flush();
+    workScheduler.flush();
+
+    expect(state.suspendedWindows.has(id)).toBe(false);
+    expect(state.pendingHydratedRestoreBaselines.has(id)).toBe(false);
+    expect(state.managedWindows.get(id)?.restoreBaseline).toMatchObject({
+      frame: entryFrame,
+    });
+    expect(tracked.window.frameGeometry).not.toEqual(entryFrame);
+    expect(restored.setGap(20)).toBe(true);
+    workScheduler.flush();
+    const reflowedFrame = { ...tracked.window.frameGeometry };
+    const writesBeforeStop = tracked.writeCount;
+
+    expect(reflowedFrame).not.toEqual(entryFrame);
+    restored.stop();
+    flushManualScheduler(workScheduler);
+    flushManualScheduler(resumeScheduler);
+    expect(tracked.writeCount).toBe(writesBeforeStop + 1);
+    expect(tracked.window.frameGeometry).toEqual(entryFrame);
+  });
+
+  it("restores the full-width toggle's prior column width", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const active = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [active.window],
+    );
+    const source = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 400 },
+      gap: 10,
+    });
+
+    expect(source.start()).toBe(true);
+    expect(source.maximizeColumn()).toBe(true);
+    const document = requiredLayoutDocument(source);
+    source.stop();
+
+    const restored = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+    expect(restored.start(document)).toBe(true);
+    expect(restored.maximizeColumn()).toBe(true);
+    expect(
+      decodeLayoutPersistence(requiredLayoutDocument(restored)),
+    ).toMatchObject({
+      ok: true,
+      value: {
+        contexts: [
+          {
+            columns: [{ width: { kind: "fixed", value: 400 } }],
+          },
+        ],
+      },
+    });
+    restored.stop();
+  });
+
+  it("does not write restored hidden-context frames", () => {
+    const output = createOutput("DP-1", 0);
+    const visibleDesktop = { id: "desktop-visible" };
+    const hiddenDesktop = { id: "desktop-hidden" };
+    const hidden = createTrackedWindow("window-hidden", output, hiddenDesktop);
+    const visible = createTrackedWindow(
+      "window-visible",
+      output,
+      visibleDesktop,
+    );
+    const fixture = createWorkspace(
+      output,
+      visibleDesktop,
+      [output],
+      [visibleDesktop, hiddenDesktop],
+      [hidden.window, visible.window],
+    );
+    const source = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 400 },
+      gap: 10,
+    });
+
+    expect(source.start()).toBe(true);
+    const document = requiredLayoutDocument(source);
+    source.stop();
+    const hiddenWrites = hidden.writeCount;
+    const restored = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    expect(restored.start(document)).toBe(true);
+    expect(hidden.writeCount).toBe(hiddenWrites);
+    expect(restored.managedCount).toBe(2);
+    restored.stop();
+  });
+
+  it("keeps hydration state unobservable until the logical commit completes", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const tracked = createTrackedWindow("window-1", output, desktop, {
+      noBorder: false,
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [tracked.window],
+    );
+    const source = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    expect(source.start()).toBe(true);
+    const document = requiredLayoutDocument(source);
+    source.stop();
+
+    const reentrantCaptures: Array<string | null> = [];
+    const restored = new RuntimeController(fixture.workspace, {
+      borderlessWindows: true,
+      clientAreaOption: 2,
+      gap: 10,
+    });
+    tracked.decorationPolicyChanged.connect(() => {
+      reentrantCaptures.push(restored.captureLayoutState());
+    });
+
+    expect(restored.start(document)).toBe(true);
+    expect(reentrantCaptures.length).toBeGreaterThan(0);
+    expect(reentrantCaptures.every((capture) => capture === null)).toBe(true);
+    expect(restored.captureLayoutState()).toBe(document);
+    restored.stop();
+  });
+
+  it("preserves invalid state until a genuine publication request", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const tracked = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [tracked.window],
+    );
+    const published: string[] = [];
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      onLayoutStateChanged: (canonicalState) => {
+        published.push(canonicalState);
+      },
+    });
+
+    try {
+      expect(controller.start("{")).toBe(true);
+      expect(published).toEqual([]);
+      expect(controller.finalizeLayoutStatePublication()).toBe(false);
+      expect(warning).toHaveBeenCalledTimes(1);
+      expect(warning).toHaveBeenCalledWith(
+        expect.stringContaining("invalid-json"),
+      );
+
+      controller.requestLayoutStatePublication();
+      expect(controller.flushLayoutStatePublication()).toBe(true);
+      expect(published).toHaveLength(1);
+    } finally {
+      warning.mockRestore();
+      controller.stop();
+    }
+  });
+
+  it("write-locks an oversized persisted document against downgrade", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const tracked = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [tracked.window],
+    );
+    const published: string[] = [];
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      onLayoutStateChanged: (canonicalState) => {
+        published.push(canonicalState);
+      },
+    });
+    const oversizedDocument = JSON.stringify({
+      format: "driftile-layout",
+      padding: "x".repeat(LAYOUT_PERSISTENCE_LIMITS.documentCharacters + 1),
+      version: 2,
+    });
+
+    try {
+      expect(oversizedDocument.length).toBeGreaterThan(
+        LAYOUT_PERSISTENCE_LIMITS.documentCharacters,
+      );
+      expect(controller.start(oversizedDocument)).toBe(true);
+      expect(warning).toHaveBeenCalledWith(
+        expect.stringContaining("document-too-large"),
+      );
+      expect(controller.increaseColumnWidth()).toBe(true);
+      controller.requestLayoutStatePublication();
+      expect(controller.flushLayoutStatePublication()).toBe(false);
+      expect(controller.finalizeLayoutStatePublication()).toBe(false);
+      expect(published).toEqual([]);
+    } finally {
+      warning.mockRestore();
+      controller.stop();
+    }
+  });
+
+  it("write-locks a future version behind a startup topology barrier", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const tracked = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [tracked.window],
+    );
+    const scheduler = new ManualScheduler();
+    const published: string[] = [];
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      onLayoutStateChanged: (canonicalState) => {
+        published.push(canonicalState);
+      },
+      scheduleResume: scheduler.schedule,
+      startupStabilizationProbes: 2,
+    });
+    const futureDocument = JSON.stringify({
+      contexts: [],
+      floatingWindows: [],
+      format: "driftile-layout",
+      outputs: [],
+      version: 2,
+      windows: [],
+    });
+    const state = controller as unknown as {
+      readonly layoutStatePublicationLocked: boolean;
+    };
+
+    try {
+      expect(controller.start(futureDocument)).toBe(true);
+      scheduler.flush();
+      fixture.setScreens([output, createOutput("HDMI-A-1", 1000)]);
+      fixture.screensChanged.emit();
+      scheduler.flush();
+
+      expect(warning).toHaveBeenCalledWith(
+        expect.stringContaining("unsupported-version"),
+      );
+      expect(state.layoutStatePublicationLocked).toBe(true);
+      flushManualScheduler(scheduler);
+      expect(controller.managedCount).toBe(1);
+      expect(controller.increaseColumnWidth()).toBe(true);
+      controller.requestLayoutStatePublication();
+      expect(controller.flushLayoutStatePublication()).toBe(false);
+      expect(controller.finalizeLayoutStatePublication()).toBe(false);
+      expect(published).toEqual([]);
+    } finally {
+      warning.mockRestore();
+      controller.stop();
+      flushManualScheduler(scheduler);
+    }
+  });
+
+  it("write-locks a persisted future layout version", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const tracked = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [tracked.window],
+    );
+    const published: string[] = [];
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      onLayoutStateChanged: (canonicalState) => {
+        published.push(canonicalState);
+      },
+    });
+    const futureDocument = JSON.stringify({
+      contexts: [],
+      floatingWindows: [],
+      format: "driftile-layout",
+      outputs: [],
+      version: 2,
+      windows: [],
+    });
+
+    try {
+      expect(controller.start(futureDocument)).toBe(true);
+      controller.requestLayoutStatePublication();
+      expect(controller.flushLayoutStatePublication()).toBe(false);
+      expect(controller.finalizeLayoutStatePublication()).toBe(false);
+      expect(published).toEqual([]);
+      expect(warning).toHaveBeenCalledTimes(1);
+      expect(warning).toHaveBeenCalledWith(
+        expect.stringContaining("unsupported-version"),
+      );
+    } finally {
+      warning.mockRestore();
+      controller.stop();
+    }
   });
 
   it("captures stable durable layout state without runtime side effects", () => {
@@ -1329,6 +2537,56 @@ describe("RuntimeController", () => {
     controller.stop();
     expect(controller.captureLayoutState()).toBeNull();
   });
+
+  it.each([false, true])(
+    "captures KWin value-type geometry with borderless mode set to %s",
+    (borderlessWindows) => {
+      const output = createOutput("DP-1", 0);
+      const desktop = { id: "desktop-1" };
+      const clientFrame = { height: 330, width: 500, x: 110, y: 90 };
+      const frame = { height: 360, width: 520, x: 100, y: 70 };
+      const tracked = createTrackedWindow("window-1", output, desktop, {
+        clientGeometry: clientFrame,
+        frameGeometry: frame,
+        noBorder: false,
+      });
+      exposeValueTypeGeometry(tracked.window, "clientGeometry");
+      exposeValueTypeGeometry(tracked.window, "frameGeometry");
+      const fixture = createWorkspace(
+        output,
+        desktop,
+        [output],
+        [desktop],
+        [tracked.window],
+      );
+      const controller = new RuntimeController(fixture.workspace, {
+        borderlessWindows,
+        clientAreaOption: 2,
+        gap: 10,
+      });
+
+      expect(controller.start()).toBe(true);
+      const decoded = decodeLayoutPersistence(
+        requiredLayoutDocument(controller),
+      );
+
+      expect(decoded.ok).toBe(true);
+
+      if (!decoded.ok) {
+        throw new Error("value-type geometry persistence was rejected");
+      }
+
+      expect(
+        decoded.value.contexts[0]?.columns[0]?.members[0]?.restoreBaseline,
+      ).toEqual({
+        clientFrame,
+        frame,
+        kind: "client",
+        noBorder: false,
+      });
+      controller.stop();
+    },
+  );
 
   it("does not capture while a topology transaction is unsettled", () => {
     const output = createOutput("DP-1", 0);
@@ -14168,6 +15426,15 @@ describe("RuntimeController", () => {
     }
 
     expect(controller.toggleFloating()).toBe(true);
+    const sourceContextKey = `${output.name}\u0000${desktop.id}`;
+    const targetContextKey = `${otherOutput.name}\u0000${otherDesktop.id}`;
+    const activeId = windowId("window-2");
+    const focusState = controller as unknown as {
+      floatingFocusTarget(key: string): KWinWindow | null;
+      readonly lastFloatingFocus: ReadonlyMap<string, WindowId>;
+    };
+
+    expect(focusState.lastFloatingFocus.get(sourceContextKey)).toBe(activeId);
     const externalFrame = { height: 360, width: 440, x: 1210, y: 120 };
     const priorFrame = { ...active.window.frameGeometry };
     active.setFrameGeometry(externalFrame);
@@ -14195,6 +15462,21 @@ describe("RuntimeController", () => {
     expect(testLayoutColumns(controller, otherOutput, otherDesktop)).toEqual(
       [],
     );
+    expect(focusState.lastFloatingFocus.has(sourceContextKey)).toBe(false);
+    expect(focusState.lastFloatingFocus.has(targetContextKey)).toBe(false);
+    expect(
+      decodeLayoutPersistence(requiredLayoutDocument(controller)),
+    ).toMatchObject({
+      ok: true,
+      value: {
+        floatingWindows: [
+          {
+            desktopId: otherDesktop.id,
+            outputKey: otherOutput.name,
+          },
+        ],
+      },
+    });
 
     setWindowState("fullscreen", active, false);
     setWindowState("minimized", active, false);
@@ -14212,6 +15494,11 @@ describe("RuntimeController", () => {
     expect(active.window.frameGeometry).toEqual(externalFrame);
     expect(testLayoutColumns(controller, otherOutput, otherDesktop)).toEqual(
       [],
+    );
+    expect(focusState.lastFloatingFocus.has(sourceContextKey)).toBe(false);
+    expect(focusState.lastFloatingFocus.get(targetContextKey)).toBe(activeId);
+    expect(focusState.floatingFocusTarget(targetContextKey)).toBe(
+      active.window,
     );
   });
 
@@ -26396,6 +27683,14 @@ describe("RuntimeController desktop transfers", () => {
       transfer.source.writeCount,
       transfer.destination.writeCount,
     ]).toEqual(tiledWrites);
+    expect(
+      decodeLayoutPersistence(requiredLayoutDocument(transfer.controller)),
+    ).toMatchObject({
+      ok: true,
+      value: {
+        floatingWindows: [{ desktopId: transfer.desktops[1].id }],
+      },
+    });
     const desktopWrites = transfer.moved.desktopWriteCount;
     expect(transfer.controller.moveColumnToDesktop(2)).toBe(false);
     expect(transfer.moved.desktopWriteCount).toBe(desktopWrites);
@@ -26630,6 +27925,14 @@ describe("RuntimeController desktop transfers", () => {
       outputId(transfer.output.name),
       desktopId(transfer.desktops[1].id),
     );
+    const persistedBefore = requiredLayoutDocument(transfer.controller);
+
+    expect(decodeLayoutPersistence(persistedBefore)).toMatchObject({
+      ok: true,
+      value: {
+        floatingWindows: [{ desktopId: transfer.desktops[0].id }],
+      },
+    });
     transfer.moved.setDesktopWriteBehavior((next, commit) => {
       commit();
 
@@ -26663,6 +27966,7 @@ describe("RuntimeController desktop transfers", () => {
         desktopId(transfer.desktops[1].id),
       ),
     ).toEqual(targetBefore);
+    expect(requiredLayoutDocument(transfer.controller)).toBe(persistedBefore);
   });
 
   it("rejects suspension, topology, capacity, and waiting barriers", () => {
@@ -30389,6 +31693,93 @@ function flushManualScheduler(scheduler: ManualScheduler): void {
   if (scheduler.pendingCount > 0) {
     throw new Error("manual scheduler did not settle");
   }
+}
+
+function withoutRestoreBaselines(document: string): string {
+  const state = JSON.parse(document) as {
+    contexts: Array<{
+      columns: Array<{
+        members: Array<{ restoreBaseline?: unknown }>;
+      }>;
+      restoreFingerprint?: unknown;
+    }>;
+  };
+
+  for (const context of state.contexts) {
+    delete context.restoreFingerprint;
+
+    for (const column of context.columns) {
+      for (const member of column.members) {
+        delete member.restoreBaseline;
+      }
+    }
+  }
+
+  return `${JSON.stringify(state)}\n`;
+}
+
+function requiredLayoutDocument(controller: RuntimeController): string {
+  const document = controller.captureLayoutState();
+
+  if (document === null) {
+    throw new Error("stable layout document is unavailable");
+  }
+
+  return document;
+}
+
+function exposeValueTypeGeometry(
+  window: KWinWindow,
+  property: "clientGeometry" | "frameGeometry",
+): void {
+  const descriptor = Object.getOwnPropertyDescriptor(window, property);
+
+  if (!descriptor?.get) {
+    throw new Error(`missing ${property} getter`);
+  }
+
+  const readGeometry = descriptor.get.bind(
+    window,
+  ) as () => KWinWindow[typeof property];
+  const replacement: PropertyDescriptor = {
+    configurable: true,
+    enumerable: true,
+    get: () => inheritedRect(readGeometry()),
+  };
+
+  if (descriptor.set) {
+    replacement.set = (value: KWinWindow[typeof property]): void => {
+      descriptor.set?.call(window, value);
+    };
+  }
+
+  Object.defineProperty(window, property, replacement);
+}
+
+function inheritedRect(
+  rect: KWinWindow["frameGeometry"] | undefined,
+): KWinWindow["frameGeometry"] {
+  if (!rect) {
+    throw new Error("missing source geometry");
+  }
+
+  return Object.create({
+    height: rect.height,
+    width: rect.width,
+    x: rect.x,
+    y: rect.y,
+  }) as KWinWindow["frameGeometry"];
+}
+
+function snapshotTestRect(
+  rect: KWinWindow["frameGeometry"],
+): KWinWindow["frameGeometry"] {
+  return {
+    height: rect.height,
+    width: rect.width,
+    x: rect.x,
+    y: rect.y,
+  };
 }
 
 function stackedExtractionRuntimeState(controller: RuntimeController): unknown {
