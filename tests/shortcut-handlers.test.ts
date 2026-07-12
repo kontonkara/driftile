@@ -706,6 +706,38 @@ describe("KWin shortcut handlers", () => {
     );
   });
 
+  it("exposes a bounded custom column-width preset cycle", () => {
+    const presetsEntry = configuration.match(
+      /<entry name="ColumnWidthPresets" type="String">([\s\S]*?)<\/entry>/,
+    )?.[1];
+    const presetsLabel = configurationUi.match(
+      /<widget class="QLabel" name="columnWidthPresetsLabel">([\s\S]*?)<\/widget>/,
+    )?.[1];
+    const presetsWidget = configurationUi.match(
+      /<widget class="QLineEdit" name="kcfg_ColumnWidthPresets">([\s\S]*?)<\/widget>/,
+    )?.[1];
+
+    expect(presetsEntry).toContain(
+      "<label>Column width presets in percent</label>",
+    );
+    expect(presetsEntry).toContain("<default></default>");
+    expect(presetsLabel).toContain("<string>Column width presets:</string>");
+    expect(presetsLabel).toContain(
+      "<cstring>kcfg_ColumnWidthPresets</cstring>",
+    );
+    expect(presetsWidget).toContain("Comma-separated");
+    expect(presetsWidget).toContain("Blank uses the built-in thirds.");
+    expect(qml).toContain(
+      'columnWidthPresets: KWin.readConfig("ColumnWidthPresets", "")',
+    );
+    expect(runtime).toContain(
+      "nextController.setColumnWidthPresets(settings.columnWidthPresets.percentages)",
+    );
+    expect(runtime).toContain(
+      "controller.setColumnWidthPresets(settings.columnWidthPresets.percentages)",
+    );
+  });
+
   it("exposes the window height step as a live bounded user setting", () => {
     const stepEntry = configuration.match(
       /<entry name="WindowHeightStepPercent" type="Int">([\s\S]*?)<\/entry>/,

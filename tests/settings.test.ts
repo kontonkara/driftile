@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { decodeApplicationColumnWidthOverrides } from "../src/application-overrides";
+import { decodeColumnWidthPresetPercentages } from "../src/column-width-presets";
 import {
   decodeDriftileSettings,
   DEFAULT_DRIFTILE_SETTINGS,
@@ -15,9 +16,16 @@ if (!validApplicationColumnWidths) {
   throw new Error("application override fixture is invalid");
 }
 
+const validColumnWidthPresets = decodeColumnWidthPresetPercentages("20,50,80");
+
+if (!validColumnWidthPresets) {
+  throw new Error("column-width preset fixture is invalid");
+}
+
 const validSettings: DriftileSettings = {
   applicationColumnWidths: validApplicationColumnWidths,
   borderlessWindows: false,
+  columnWidthPresets: validColumnWidthPresets,
   columnWidthStepPercent: 25,
   defaultColumnWidthPercent: 75,
   gap: 32,
@@ -27,6 +35,7 @@ const validSettings: DriftileSettings = {
 const validSettingsInput = {
   applicationColumnWidths: "org.example.Editor=75",
   borderlessWindows: validSettings.borderlessWindows,
+  columnWidthPresets: validSettings.columnWidthPresets.canonicalValue,
   columnWidthStepPercent: validSettings.columnWidthStepPercent,
   defaultColumnWidthPercent: validSettings.defaultColumnWidthPercent,
   gap: validSettings.gap,
@@ -45,6 +54,12 @@ describe("Driftile settings", () => {
     expect(
       DEFAULT_DRIFTILE_SETTINGS.applicationColumnWidths.canonicalEntries,
     ).toEqual([]);
+    expect(DEFAULT_DRIFTILE_SETTINGS.columnWidthPresets.canonicalValue).toBe(
+      "",
+    );
+    expect(DEFAULT_DRIFTILE_SETTINGS.columnWidthPresets.percentages).toEqual(
+      [],
+    );
     expect(Object.isFrozen(DEFAULT_DRIFTILE_SETTINGS)).toBe(true);
   });
 
@@ -54,6 +69,7 @@ describe("Driftile settings", () => {
 
     expect(decoded).toMatchObject({
       borderlessWindows: validSettings.borderlessWindows,
+      columnWidthPresets: validSettings.columnWidthPresets,
       columnWidthStepPercent: validSettings.columnWidthStepPercent,
       defaultColumnWidthPercent: validSettings.defaultColumnWidthPercent,
       gap: validSettings.gap,
@@ -71,6 +87,7 @@ describe("Driftile settings", () => {
     {
       applicationColumnWidths: "",
       borderlessWindows: true,
+      columnWidthPresets: "10",
       columnWidthStepPercent: 1,
       defaultColumnWidthPercent: 10,
       gap: 0,
@@ -79,6 +96,7 @@ describe("Driftile settings", () => {
     {
       applicationColumnWidths: "org.example.Browser=80",
       borderlessWindows: false,
+      columnWidthPresets: "100",
       columnWidthStepPercent: 50,
       defaultColumnWidthPercent: 100,
       gap: 64,
@@ -91,6 +109,9 @@ describe("Driftile settings", () => {
     expect(decoded?.applicationColumnWidths.canonicalEntries.join("\n")).toBe(
       settings.applicationColumnWidths,
     );
+    expect(decoded?.columnWidthPresets.canonicalValue).toBe(
+      settings.columnWidthPresets,
+    );
     expect(decoded).toMatchObject({
       borderlessWindows: settings.borderlessWindows,
       columnWidthStepPercent: settings.columnWidthStepPercent,
@@ -102,6 +123,7 @@ describe("Driftile settings", () => {
 
   it.each([
     ["a non-boolean borderless setting", { borderlessWindows: 1 }],
+    ["invalid column-width presets", { columnWidthPresets: "50,40" }],
     [
       "invalid application overrides",
       { applicationColumnWidths: "org.example.Editor=9" },
@@ -148,6 +170,7 @@ describe("Driftile settings", () => {
     const incomplete = {
       applicationColumnWidths: validSettingsInput.applicationColumnWidths,
       borderlessWindows: validSettings.borderlessWindows,
+      columnWidthPresets: validSettingsInput.columnWidthPresets,
       columnWidthStepPercent: validSettings.columnWidthStepPercent,
       defaultColumnWidthPercent: validSettings.defaultColumnWidthPercent,
       windowHeightStepPercent: validSettings.windowHeightStepPercent,
@@ -174,9 +197,17 @@ describe("Driftile settings", () => {
       throw new Error("application override fixture is invalid");
     }
 
+    const changedColumnWidthPresets =
+      decodeColumnWidthPresetPercentages("20,50,90");
+
+    if (!changedColumnWidthPresets) {
+      throw new Error("column-width preset fixture is invalid");
+    }
+
     for (const changed of [
       { applicationColumnWidths: changedApplicationColumnWidths },
       { borderlessWindows: true },
+      { columnWidthPresets: changedColumnWidthPresets },
       { columnWidthStepPercent: 26 },
       { defaultColumnWidthPercent: 76 },
       { gap: 33 },

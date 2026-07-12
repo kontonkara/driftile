@@ -26,6 +26,10 @@
       <min>1</min>
       <max>50</max>
     </entry>
+    <entry name="ColumnWidthPresets" type="String">
+      <label>Column width presets in percent</label>
+      <default></default>
+    </entry>
     <entry name="WindowHeightStepPercent" type="Int">
       <label>Window height step in percent</label>
       <default>10</default>

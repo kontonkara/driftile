@@ -169,6 +169,7 @@ let
             "org.example.Editor" = 60;
           };
           borderlessWindows = false;
+          columnWidthPresets = [ 20 50 80 ];
           columnWidthStepPercent = 13;
           defaultColumnWidthPercent = 65;
           gap = 7;
@@ -202,6 +203,17 @@ let
             value = 50;
           }) 128
         );
+      }
+      { };
+  homeManagerMaximumPresets =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.settings.columnWidthPresets =
+          builtins.genList (index: index + 10) 16;
       }
       { };
   homeManagerSettingsWithSystemInstall =
@@ -241,6 +253,13 @@ let
     { defaultColumnWidthPercent = 101; }
     { columnWidthStepPercent = 0; }
     { columnWidthStepPercent = 51; }
+    { columnWidthPresets = [ 9 ]; }
+    { columnWidthPresets = [ 101 ]; }
+    { columnWidthPresets = [ 50.5 ]; }
+    { columnWidthPresets = [ "50" ]; }
+    { columnWidthPresets = [ 50 50 ]; }
+    { columnWidthPresets = [ 50 40 ]; }
+    { columnWidthPresets = builtins.genList (index: index + 10) 17; }
     { windowHeightStepPercent = 0; }
     { windowHeightStepPercent = 51; }
     { applicationColumnWidths."org.example.Editor" = 9; }
@@ -294,6 +313,7 @@ let
         org.example.Browser=80
         org.example.Editor=60'';
       BorderlessWindows = false;
+      ColumnWidthPresets = "20,50,80";
       ColumnWidthStepPercent = 13;
       DefaultColumnWidthPercent = 65;
       Gap = 7;
@@ -304,6 +324,7 @@ let
     kwinrc."Script-io.github.kontonkara.driftile" = {
       ApplicationColumnWidths = "";
       BorderlessWindows = true;
+      ColumnWidthPresets = "";
       ColumnWidthStepPercent = 10;
       DefaultColumnWidthPercent = 50;
       Gap = 16;
@@ -341,10 +362,14 @@ assert
       homeManagerMaximumOverrides.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ApplicationColumnWidths
   ) == 128;
 assert
+  homeManagerMaximumPresets.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ColumnWidthPresets
+  == "10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25";
+assert
   homeManagerSettingsWithSystemInstall.config.qt.kde.settings == {
     kwinrc."Script-io.github.kontonkara.driftile" = {
       ApplicationColumnWidths = "";
       BorderlessWindows = true;
+      ColumnWidthPresets = "";
       ColumnWidthStepPercent = 10;
       DefaultColumnWidthPercent = 50;
       Gap = 8;

@@ -75,6 +75,8 @@ The current runtime already:
 - Configures up to 128 exact `desktopFileName` initial singleton widths, with a
   constant-time admission lookup, global-default fallback, and normal
   constraint clamping. Existing columns remain unchanged.
+- Configures up to 16 strictly increasing column-width presets without changing
+  existing widths; a blank configuration retains the built-in exact thirds.
 - Configures a 1–50 percentage-point explicit column-width step without reflowing existing layouts.
 - Configures a 1–50 percentage-point explicit window-height step without reflowing existing layouts.
 - Treats exposed client minimum and maximum sizes as hard bounds, detects silent changes on visible tracked windows, does not model unexposed X11 increment and aspect hints, and leaves backend enforcement to KWin.
@@ -83,7 +85,7 @@ The current runtime already:
 - Registers compact default shortcuts with `H/J/K/L`, arrow, Home/End, and Page Up/Down aliases.
 - Provides a reversible shortcut helper for the bundled defaults and explicit
   JSON v1 profiles; a UI without a Node.js dependency remains future work.
-- Lets Home Manager write the six typed settings or generate a portable
+- Lets Home Manager write the seven typed settings or generate a portable
   shortcut profile without installing a second KWin package; shortcut claiming
   remains explicit.
 - Leaves dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows outside layout ownership, separate from manual floating.
@@ -153,12 +155,18 @@ Release criteria (met):
 
 ## 1.1.0 (in development)
 
-The current bounded slice adds application-specific initial column widths.
+The current bounded slice adds application-specific initial column widths and
+a configurable column-width preset cycle.
 Each 10%–100% rule occupies one line and matches the exact KWin
 `desktopFileName`; at most 128 rules are accepted. Newly created and fresh
 singleton columns use an O(1) lookup, fall back to the global default when no
 rule matches, and remain subject to live window constraints. Existing columns
 are never resized by a rule change.
+
+A preset profile contains at most 16 strictly increasing integer percentages
+from 10 to 100. Reconfiguration preserves every existing width, frame,
+viewport, focus target, and persisted layout; later preset actions use the new
+cycle. A blank profile retains the built-in exact thirds.
 
 Global wheel input remains deferred because KWin 6.7 has no public script axis
 API. This milestone does not add a private input path.

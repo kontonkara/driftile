@@ -18478,6 +18478,159 @@ describe("RuntimeController", () => {
     expect(fixture.activationCount).toBe(0);
   });
 
+  it("reconfigures later column preset cycles without live writes", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const active = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [active.window],
+    );
+    const published: string[] = [];
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      onLayoutStateChanged: (document) => published.push(document),
+    });
+
+    expect(controller.start()).toBe(true);
+    const before = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const frame = { ...active.window.frameGeometry };
+    const writes = active.writeCount;
+    const activations = fixture.activationCount;
+    const publications = published.length;
+
+    expect(controller.setColumnWidthPresets([25, 60, 90])).toBe(true);
+    expect(controller.setColumnWidthPresets([25, 60, 90])).toBe(false);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(before);
+    expect(active.window.frameGeometry).toEqual(frame);
+    expect(active.writeCount).toBe(writes);
+    expect(fixture.activationCount).toBe(activations);
+    expect(published).toHaveLength(publications);
+
+    expect(controller.switchPresetColumnWidth()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "proportion",
+      value: 0.6,
+    });
+    expect(controller.switchPresetColumnWidthBack()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "proportion",
+      value: 0.25,
+    });
+    expect(controller.switchPresetColumnWidthBack()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "proportion",
+      value: 0.9,
+    });
+  });
+
+  it("restores exact legacy thirds from an empty preset list", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const active = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [active.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    expect(controller.setColumnWidthPresets([25, 90])).toBe(true);
+    expect(controller.start()).toBe(true);
+    expect(controller.switchPresetColumnWidth()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "proportion",
+      value: 0.9,
+    });
+
+    const frame = { ...active.window.frameGeometry };
+    const writes = active.writeCount;
+    const activations = fixture.activationCount;
+
+    expect(controller.setColumnWidthPresets([])).toBe(true);
+    expect(active.window.frameGeometry).toEqual(frame);
+    expect(active.writeCount).toBe(writes);
+    expect(fixture.activationCount).toBe(activations);
+    expect(controller.setColumnWidthPresets([])).toBe(false);
+
+    expect(controller.switchPresetColumnWidth()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "proportion",
+      value: 1 / 3,
+    });
+    expect(controller.switchPresetColumnWidthBack()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "proportion",
+      value: 2 / 3,
+    });
+  });
+
+  it("rejects invalid direct column preset inputs without changing behavior", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const active = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [active.window],
+    );
+    const published: string[] = [];
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      onLayoutStateChanged: (document) => published.push(document),
+    });
+
+    expect(controller.setColumnWidthPresets([25, 60, 90])).toBe(true);
+    expect(controller.start()).toBe(true);
+    const frame = { ...active.window.frameGeometry };
+    const writes = active.writeCount;
+    const publications = published.length;
+    const invalidInputs: readonly (readonly number[])[] = [
+      [9],
+      [101],
+      [10.5],
+      [10, Number.NaN],
+      [10, Number.POSITIVE_INFINITY],
+      [10, 10],
+      [20, 10],
+      Array.from({ length: 17 }, (_, index) => 10 + index),
+      null as unknown as readonly number[],
+    ];
+
+    for (const invalid of invalidInputs) {
+      expect(controller.setColumnWidthPresets(invalid)).toBe(false);
+    }
+
+    expect(active.window.frameGeometry).toEqual(frame);
+    expect(active.writeCount).toBe(writes);
+    expect(published).toHaveLength(publications);
+    expect(controller.switchPresetColumnWidth()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "proportion",
+      value: 0.6,
+    });
+  });
+
   it("selects the nearest preset in the requested direction", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };

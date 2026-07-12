@@ -25,6 +25,8 @@ The ownership rule is strict:
 - Up to 128 application-specific 10%–100% initial singleton widths, matched by
   exact KWin `desktopFileName` with global-default fallback and live constraint
   clamping.
+- Up to 16 configurable, strictly increasing 10%–100% column-width presets;
+  an empty configuration retains the built-in exact thirds.
 - Configurable 1–50 percentage-point step for explicit column-width decrease and increase actions.
 - Configurable 1–50 percentage-point step for explicit active-window height decrease and increase actions.
 - Output-local commands unless a transfer is explicit.
@@ -141,5 +143,8 @@ Driftile must integrate with, not duplicate:
   setting. Only newly created or freshly admitted singleton columns consult the
   bounded lookup; existing columns keep their width, missing matches use the
   global default, and normal constraints may clamp the result.
+- A column-width preset change performs no layout, frame, viewport, focus, or
+  persistence write. Existing columns keep their concrete width; later preset
+  actions use the replacement cycle and retain normal constraint clamping.
 - A width-step change performs no layout, frame, viewport, or focus write. It affects only later explicit decrease and increase actions; reset, presets, full width, and available-width expansion remain independent.
 - A height-step change performs no layout, frame, viewport, or focus write. It affects only later explicit decrease and increase actions; reset and height presets remain independent.

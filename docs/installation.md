@@ -124,7 +124,8 @@ steps above, then remove Driftile's stored KConfig values and layout snapshot:
 ```bash
 kwriteconfig6 --file kwinrc --group Plugins \
   --key io.github.kontonkara.driftileEnabled --delete ""
-for key in BorderlessWindows ColumnWidthStepPercent \
+for key in ApplicationColumnWidths BorderlessWindows \
+  ColumnWidthPresets ColumnWidthStepPercent \
   DefaultColumnWidthPercent Gap WindowHeightStepPercent; do
   kwriteconfig6 --file kwinrc \
     --group Script-io.github.kontonkara.driftile \
@@ -169,7 +170,7 @@ modules = [
 ];
 ```
 
-Home Manager can also own the complete six-setting profile from the main
+Home Manager can also own the complete seven-setting profile from the main
 branch:
 
 ```nix
@@ -178,6 +179,7 @@ programs.driftile.settings = {
     "org.kde.konsole" = 60;
   };
   borderlessWindows = true;
+  columnWidthPresets = [ 20 50 80 ];
   gap = 16;
   defaultColumnWidthPercent = 50;
   columnWidthStepPercent = 10;

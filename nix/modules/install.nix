@@ -74,6 +74,17 @@ let
         builtins.sort builtins.lessThan (builtins.attrNames widths)
       )
     );
+  strictlyIncreasing = values:
+    builtins.length values < 2
+    || (
+      builtins.head values < builtins.head (builtins.tail values)
+      && strictlyIncreasing (builtins.tail values)
+    );
+  columnWidthPresetType = lib.types.addCheck
+    (lib.types.listOf (lib.types.ints.between 10 100))
+    (presets: builtins.length presets <= 16 && strictlyIncreasing presets);
+  renderColumnWidthPresets = presets:
+    lib.concatStringsSep "," (map toString presets);
   systemInstallEnabled = lib.attrByPath [
     "programs"
     "driftile"
@@ -113,6 +124,12 @@ in
               type = lib.types.bool;
               default = true;
               description = "Whether to hide KWin borders and title bars.";
+            };
+
+            columnWidthPresets = lib.mkOption {
+              type = columnWidthPresetType;
+              default = [ ];
+              description = "Strictly increasing column width presets in percent; an empty list uses the built-in thirds.";
             };
 
             gap = lib.mkOption {
@@ -181,6 +198,7 @@ in
         qt.kde.settings.kwinrc."Script-${pluginId}" = {
           ApplicationColumnWidths = renderApplicationColumnWidths cfg.settings.applicationColumnWidths;
           BorderlessWindows = cfg.settings.borderlessWindows;
+          ColumnWidthPresets = renderColumnWidthPresets cfg.settings.columnWidthPresets;
           ColumnWidthStepPercent = cfg.settings.columnWidthStepPercent;
           DefaultColumnWidthPercent = cfg.settings.defaultColumnWidthPercent;
           Gap = cfg.settings.gap;

@@ -2,7 +2,7 @@
 
 Open **System Settings > Window Management > KWin Scripts** and configure Driftile.
 
-Driftile validates all six settings as one snapshot. Applying an invalid value
+Driftile validates all seven settings as one snapshot. Applying an invalid value
 through an external configuration tool rejects the entire update and preserves
 the active settings; valid changes apply without reloading the extension.
 
@@ -10,15 +10,16 @@ the active settings; valid changes apply without reloading the extension.
 
 `programs.driftile.settings` is `null` by default, so Home Manager writes no
 Driftile setting. A non-null value is one complete typed profile: omitted fields
-take the defaults documented below, and Home Manager writes all six values.
+take the defaults documented below, and Home Manager writes all seven values.
 This profile works with `programs.driftile.enable = false` when the package is
 installed system-wide.
 
 The activation writes only `ApplicationColumnWidths`, `BorderlessWindows`,
-`Gap`, `DefaultColumnWidthPercent`, `ColumnWidthStepPercent`, and
-`WindowHeightStepPercent` in Driftile's `kwinrc` group. It does not replace the
-file or manage shortcuts. A running KWin session is asked to reconfigure on a
-best-effort basis; otherwise the values apply on its next reload or start.
+`Gap`, `DefaultColumnWidthPercent`, `ColumnWidthPresets`,
+`ColumnWidthStepPercent`, and `WindowHeightStepPercent` in Driftile's `kwinrc`
+group. It does not replace the file or manage shortcuts. A running KWin session
+is asked to reconfigure on a best-effort basis; otherwise the values apply on
+its next reload or start.
 
 Declare application overrides as a typed attribute set. Home Manager sorts the
 desktop-file IDs before writing the newline-delimited KConfig value.
@@ -28,6 +29,8 @@ programs.driftile.settings.applicationColumnWidths = {
   "org.kde.konsole" = 60;
   "org.mozilla.firefox" = 80;
 };
+
+programs.driftile.settings.columnWidthPresets = [ 20 50 80 ];
 ```
 
 Widths must be `10`–`100`. IDs are exact, may not contain `=` or control
@@ -76,6 +79,16 @@ window constraints and physical-pixel grid.
 **Column width step** controls the **Decrease column width** and **Increase column width** actions. The default is `10%`; the range is `1%`–`50%`.
 
 The value is a percentage-point step of the gap-adjusted work-area span, not a percentage of the current frame. Changing it does not resize or move any window; the next explicit decrease or increase uses the new step. Reset, presets, full width, and available-width expansion are unchanged. Hard window constraints can clamp the result to a fixed boundary.
+
+## Column width presets
+
+**Column width presets** controls the forward and backward preset actions.
+Enter up to 16 comma-separated, strictly increasing integer percentages from
+`10` to `100`. A blank value keeps the built-in exact thirds.
+
+Changing the list performs no layout work and preserves existing column widths,
+focus, and viewport state. The next preset action reads the new list and still
+applies the shared window constraints.
 
 ## Window height step
 

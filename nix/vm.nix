@@ -1197,6 +1197,25 @@ let
           >/dev/null
       }
 
+      set_column_width_presets() {
+        local value=$1
+
+        ${pkgs.kdePackages.kconfig}/bin/kwriteconfig6 \
+          --file "$HOME/.config/kwinrc" \
+          --group "Script-${pluginId}" \
+          --key ColumnWidthPresets \
+          --type string \
+          "$value" \
+          || return 1
+
+        busctl --user call \
+          org.kde.KWin \
+          /KWin \
+          org.kde.KWin \
+          reconfigure \
+          >/dev/null
+      }
+
       set_layout_configuration() {
         ${pkgs.kdePackages.kconfig}/bin/kwriteconfig6 \
           --file "$HOME/.config/kwinrc" \
@@ -3470,6 +3489,38 @@ let
 
           if ((stable_samples >= 2)); then
             return 0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      wait_for_window_width_near() {
+        local attempt
+        local current
+        local expected=$2
+        local stable_samples=0
+        local title=$1
+        local tolerance=$3
+
+        [[ "$expected" =~ ^[1-9][0-9]*$ \
+          && "$tolerance" =~ ^[0-9]+$ ]] || return 1
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          current=$(window_frame_width "$title" 2>/dev/null || true)
+
+          if [[ "$current" =~ ^[1-9][0-9]*$ ]] \
+            && ((current >= expected - tolerance \
+              && current <= expected + tolerance)); then
+            stable_samples=$((stable_samples + 1))
+
+            if ((stable_samples >= 2)); then
+              return 0
+            fi
+          else
+            stable_samples=0
           fi
 
           sleep 0.1
@@ -6832,6 +6883,120 @@ let
         return 0
       }
 
+      verify_configured_column_width_presets() {
+        local backward_wrap_width=""
+        local baseline_first
+        local baseline_second
+        local baseline_third
+        local baseline_third_y
+        local cleanup_verified=false
+        local expected_narrow_width
+        local expected_wide_width
+        local forward_wrap_width=""
+        local gap
+        local output_frame=""
+        local output_width
+        local output_y
+        local presets_verified=false
+        local wide_width=""
+
+        if ! activate_window "$title_c" \
+          || ! wait_for_active "$title_c" \
+          || ! invoke_shortcut "driftile_reset_column_width" \
+          || ! capture_stable_frames; then
+          record_focus_state "configured column-width preset baseline failed"
+          return 1
+        fi
+        baseline_first=$stable_first_frame
+        baseline_second=$stable_second_frame
+        baseline_third=$stable_third_frame
+        output_frame=$(single_enabled_output_frame 2>/dev/null || true)
+
+        if frame_is_valid "$output_frame" \
+          && frame_is_valid "$baseline_third"; then
+          IFS=, read -r \
+            _ \
+            output_y \
+            output_width \
+            _ \
+            <<< "$output_frame"
+          IFS=, read -r _ baseline_third_y _ _ <<< "$baseline_third"
+          gap=$((baseline_third_y - output_y))
+          expected_narrow_width=$((
+            (25 * (output_width - gap) + 50) / 100 - gap
+          ))
+          expected_wide_width=$((
+            (75 * (output_width - gap) + 50) / 100 - gap
+          ))
+
+          if ((gap >= 0 \
+            && expected_narrow_width > 0 \
+            && expected_wide_width > expected_narrow_width)) \
+            && set_column_width_presets "25,75" \
+            && request_physical_shortcut preset-next \
+            && wait_for_window_width_near \
+              "$title_c" "$expected_wide_width" 2 \
+            && wait_for_active "$title_c"; then
+            wide_width=$(window_frame_width "$title_c" 2>/dev/null || true)
+
+            if request_physical_shortcut preset-next-wrap \
+              && wait_for_window_width_near \
+                "$title_c" "$expected_narrow_width" 2 \
+              && wait_for_active "$title_c"; then
+              forward_wrap_width=$(
+                window_frame_width "$title_c" 2>/dev/null || true
+              )
+
+              if request_physical_shortcut preset-back-wrap \
+                && wait_for_window_width_near \
+                  "$title_c" "$expected_wide_width" 2 \
+                && wait_for_active "$title_c"; then
+                backward_wrap_width=$(
+                  window_frame_width "$title_c" 2>/dev/null || true
+                )
+                presets_verified=true
+              fi
+            fi
+          fi
+        fi
+
+        if set_column_width_presets "" \
+          && invoke_shortcut "driftile_reset_column_width" \
+          && activate_window "$title_a" \
+          && wait_for_active "$title_a" \
+          && activate_window "$title_c" \
+          && wait_for_active "$title_c" \
+          && wait_for_frames \
+            "$baseline_first" \
+            "$baseline_second" \
+            "$baseline_third"; then
+          cleanup_verified=true
+        fi
+
+        if [[ "$presets_verified" == true \
+          && "$cleanup_verified" == true ]]; then
+          record_focus_state \
+            "configured column-width presets wrapped through physical shortcuts"
+          return 0
+        fi
+
+        record_focus_state "configured column-width preset verification failed"
+        {
+          printf 'output frame: %s\n' "$output_frame"
+          printf 'derived gap: %s\n' "''${gap:-unavailable}"
+          printf 'expected 25 percent width: %s\n' \
+            "''${expected_narrow_width:-unavailable}"
+          printf 'expected 75 percent width: %s\n' \
+            "''${expected_wide_width:-unavailable}"
+          printf 'first forward width: %s\n' "''${wide_width:-missing}"
+          printf 'forward wrap width: %s\n' "''${forward_wrap_width:-missing}"
+          printf 'backward wrap width: %s\n' "''${backward_wrap_width:-missing}"
+          printf 'preset sequence verified: %s\n' "$presets_verified"
+          printf 'configuration cleanup verified: %s\n' "$cleanup_verified"
+        } >> /tmp/shared/driftile-focus-diagnostics
+        return 1
+      }
+
       verify_physical_height_shortcuts() {
         local singleton_first_frame
         local singleton_second_frame
@@ -8311,6 +8476,7 @@ let
         && verify_physical_layer_focus_shortcut \
         && verify_physical_floating_navigation_shortcuts \
         && verify_physical_width_shortcuts \
+        && verify_configured_column_width_presets \
         && verify_physical_height_shortcuts \
         && verify_physical_column_view_shortcuts \
         && verify_physical_fullscreen_shortcut \

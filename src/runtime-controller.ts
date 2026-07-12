@@ -3,6 +3,7 @@ import {
   sameApplicationColumnWidthOverrides,
   type ApplicationColumnWidthOverrides,
 } from "./application-overrides";
+import { COLUMN_WIDTH_PRESET_LIMITS } from "./column-width-presets";
 import {
   DEFAULT_WINDOW_HEIGHT_PRESETS,
   solveStripGeometry,
@@ -619,7 +620,7 @@ export class RuntimeController {
     Map<ColumnId, ColumnWidth>
   >();
   private columnWidthStep = DEFAULT_COLUMN_WIDTH_STEP_PERCENT / 100;
-  private readonly columnWidthPresets: readonly ColumnWidth[];
+  private columnWidthPresets: readonly ColumnWidth[];
   private readonly contexts = new Map<string, RuntimeContext>();
   private readonly createRect: KWinRectFactory;
   private readonly dirtyContexts = new Set<string>();
@@ -1322,6 +1323,17 @@ export class RuntimeController {
     }
 
     this.columnWidthStep = step;
+    return true;
+  }
+
+  setColumnWidthPresets(percentages: readonly number[]): boolean {
+    const presets = columnWidthPresetsFromPercentages(percentages);
+
+    if (!presets || sameColumnWidths(this.columnWidthPresets, presets)) {
+      return false;
+    }
+
+    this.columnWidthPresets = presets;
     return true;
   }
 
@@ -19439,6 +19451,19 @@ function sameColumnWidth(left: ColumnWidth, right: ColumnWidth): boolean {
   return left.kind === right.kind && nearlyEqual(left.value, right.value);
 }
 
+function sameColumnWidths(
+  left: readonly ColumnWidth[],
+  right: readonly ColumnWidth[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((width, index) => {
+      const candidate = right[index];
+      return candidate !== undefined && sameColumnWidth(width, candidate);
+    })
+  );
+}
+
 function fixedFrameSizeConstraintState(
   window: KWinWindow,
 ):
@@ -19693,6 +19718,44 @@ function normalizeResizeStepPercent(value: number): number | null {
     value <= MAX_RESIZE_STEP_PERCENT
     ? value
     : null;
+}
+
+function columnWidthPresetsFromPercentages(
+  percentages: readonly number[],
+): readonly ColumnWidth[] | null {
+  if (
+    !Array.isArray(percentages) ||
+    percentages.length > COLUMN_WIDTH_PRESET_LIMITS.entries
+  ) {
+    return null;
+  }
+
+  const candidates = percentages as readonly unknown[];
+
+  if (candidates.length === 0) {
+    return DEFAULT_COLUMN_WIDTH_PRESETS.map((width) => ({ ...width }));
+  }
+
+  const presets: ColumnWidth[] = [];
+  let previous = COLUMN_WIDTH_PRESET_LIMITS.minimumPercent - 1;
+
+  for (const candidate of candidates) {
+    if (
+      typeof candidate !== "number" ||
+      !Number.isFinite(candidate) ||
+      !Number.isInteger(candidate) ||
+      candidate < COLUMN_WIDTH_PRESET_LIMITS.minimumPercent ||
+      candidate > COLUMN_WIDTH_PRESET_LIMITS.maximumPercent ||
+      candidate <= previous
+    ) {
+      return null;
+    }
+
+    presets.push({ kind: "proportion", value: candidate / 100 });
+    previous = candidate;
+  }
+
+  return presets;
 }
 
 function normalizeGap(value: number): number | null {

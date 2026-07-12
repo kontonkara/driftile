@@ -36,6 +36,7 @@ let
           "org.example.Editor" = 60;
         };
         borderlessWindows = false;
+        columnWidthPresets = [ 20 50 80 ];
         columnWidthStepPercent = 13;
         defaultColumnWidthPercent = 65;
         gap = 7;
@@ -85,6 +86,7 @@ assert standalone.config.qt.kde.settings == {
       org.example.Browser=80
       org.example.Editor=60'';
     BorderlessWindows = false;
+    ColumnWidthPresets = "20,50,80";
     ColumnWidthStepPercent = 13;
     DefaultColumnWidthPercent = 65;
     Gap = 7;
@@ -102,6 +104,7 @@ assert settingsOnly.config.qt.kde.settings == {
   kwinrc."Script-io.github.kontonkara.driftile" = {
     ApplicationColumnWidths = "";
     BorderlessWindows = true;
+    ColumnWidthPresets = "";
     ColumnWidthStepPercent = 10;
     DefaultColumnWidthPercent = 50;
     Gap = 8;
