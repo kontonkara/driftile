@@ -79,31 +79,30 @@ The current runtime already:
 - Leaves dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows outside layout ownership, separate from manual floating.
 - Translates client minimum and maximum sizes to decorated frame bounds for layout validation and column resizing.
 
-The automatic-floating base and the script-visible hard-constraint policy are complete. Live constraint changes across more toolkits, a future KWin oracle for strict X11 geometry hints, physical connector hot-plug, and a wider rotation matrix remain MVP hardening work.
+The automatic-floating base and the script-visible hard-constraint policy are complete. More toolkit coverage, a future KWin oracle for strict X11 geometry hints, physical connector hot-plug, and a wider hardware matrix are deferred beyond 0.1.
 
-## MVP
+## MVP / 0.1
 
-Complete the daily keyboard-driven workflow.
+The 0.1 behavior scope is frozen at the current keyboard-driven workflow and five existing layout settings. No additional layout commands, settings, toolkit matrices, or hardware-specific behavior enter this release.
 
-- Harden operation-specific fail-closed policies for unsupported minimized-member source and target combinations.
-- Expand live hard-constraint coverage across toolkits and track a public KWin constraint oracle for optional strict X11 hint compliance.
-- Harden the existing topology recovery for rotation, rapid physical hot-plug sequences, and more hardware configurations.
-- Add the remaining essential layout settings.
-
-Exit criteria:
+Frozen exit criteria:
 
 - Commands affect only their target context.
 - Default transfer shortcuts preserve every member and the width of the active column.
 - Opening, closing, moving, and resizing windows preserves unrelated layout state.
 - Fullscreen and maximized windows retain their extracted singleton position.
 - Structural commands involving minimized members have tested behavior or an explicit fail-closed policy.
-- Hot-plug recovery leaves every window reachable.
+- Virtual output disable and re-enable recovery leaves every window reachable.
 - Dynamic workspace changes never remove an occupied or visible desktop.
 - A sustained lifecycle test produces no exceptions or geometry feedback loop.
+
+All frozen criteria have direct automated coverage. Remaining 0.1 work is release engineering: deterministic artifacts, portable installation and shortcut setup, CI gates, concise compatibility notes, one release-candidate VM run, and publishing.
 
 ## v1
 
 Harden recovery and finish user-facing integration.
+
+These features are outside the frozen 0.1 scope.
 
 Persistence foundation complete: core has a strict versioned logical-state codec plus fail-closed window and output matching, while the QML package has a debounced opaque `QtCore.Settings` store. Isolated Wayland and X11 sessions verify exact destruction-time persistence across script reloads. Runtime capture, same-session hydration, write notifications, matcher integration, and known-topology restoration remain.
 

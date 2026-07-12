@@ -23,7 +23,7 @@ The ownership rule is strict:
 - Configurable 1–50 percentage-point step for explicit column-width decrease and increase actions.
 - Configurable 1–50 percentage-point step for explicit active-window height decrease and increase actions.
 - Output-local commands unless a transfer is explicit.
-- Work-area, size-constraint, fullscreen, minimized-window compatibility, dialog, and hot-plug handling.
+- Work-area, size-constraint, fullscreen, minimized-window compatibility, dialog handling, and settled virtual-output recovery.
 - Hard client minimum and maximum bounds with cached detection of silent visible-window changes; unexposed increment and aspect hints do not alter Driftile's tiled model, while applied frames remain subject to KWin.
 - Native fullscreen control through KWin with stack-aware extraction.
 - Native maximize-to-edges control through KWin with stack-aware extraction.
@@ -49,7 +49,7 @@ The ownership rule is strict:
 - Plasma 6.7 or newer is the primary target.
 - Wayland and XWayland windows share the same layout model.
 - The Plasma 6.7 X11 session uses a global-workspace fallback.
-- Desktop reordering is fail-closed on KWin X11 builds that do not expose the reorder method; all other X11 layout behavior remains available.
+- Desktop reordering is fail-closed on KWin X11 builds that do not expose the reorder method. The documented native X11 checks cover one output; native X11 multi-output remains unverified.
 - X11 and XWayland resize increments, base size, aspect bounds, and strict-geometry rules are not visible through the Plasma 6.7 workspace `KWin::Window` API used by Driftile. XWayland accepts the tested exact off-lattice frames; native X11 may quantize applied frames, so compatibility tests use grid-aligned geometry.
 
 ## KDE-owned
