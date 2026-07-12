@@ -49,6 +49,8 @@ QtObject {
                 KWin.readConfig("DefaultColumnWidthPercent", 50))
             Runtime.DriftileRuntime.setColumnWidthStepPercent(
                 KWin.readConfig("ColumnWidthStepPercent", 10))
+            Runtime.DriftileRuntime.setWindowHeightStepPercent(
+                KWin.readConfig("WindowHeightStepPercent", 10))
         }
     }
 
@@ -691,6 +693,7 @@ QtObject {
                                                         KWin.readConfig("BorderlessWindows", true),
                                                         KWin.readConfig("Gap", 16),
                                                         KWin.readConfig("DefaultColumnWidthPercent", 50),
-                                                        KWin.readConfig("ColumnWidthStepPercent", 10))
+                                                        KWin.readConfig("ColumnWidthStepPercent", 10),
+                                                        KWin.readConfig("WindowHeightStepPercent", 10))
     Component.onDestruction: Runtime.DriftileRuntime.destroy()
 }

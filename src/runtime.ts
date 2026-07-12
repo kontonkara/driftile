@@ -16,6 +16,7 @@ export function init(
   gap: number,
   defaultColumnWidthPercent: number,
   columnWidthStepPercent: number,
+  windowHeightStepPercent: number,
 ): void {
   if (controller) {
     return;
@@ -32,6 +33,7 @@ export function init(
   });
   nextController.setDefaultColumnWidthPercent(defaultColumnWidthPercent);
   nextController.setColumnWidthStepPercent(columnWidthStepPercent);
+  nextController.setWindowHeightStepPercent(windowHeightStepPercent);
 
   if (!nextController.start()) {
     console.warn("[driftile] no output or virtual desktop available");
@@ -59,6 +61,10 @@ export function setDefaultColumnWidthPercent(percent: number): void {
 
 export function setColumnWidthStepPercent(percent: number): void {
   controller?.setColumnWidthStepPercent(percent);
+}
+
+export function setWindowHeightStepPercent(percent: number): void {
+  controller?.setWindowHeightStepPercent(percent);
 }
 
 export function setGap(gap: number): void {

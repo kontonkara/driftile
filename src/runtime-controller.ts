@@ -66,10 +66,11 @@ import { TopologyObserver } from "./platform/kwin/topology-observer";
 
 const DEFAULT_COLUMN_WIDTH_PERCENT = 50;
 const DEFAULT_COLUMN_WIDTH_STEP_PERCENT = 10;
+const DEFAULT_WINDOW_HEIGHT_STEP_PERCENT = 10;
 const MAX_DEFAULT_COLUMN_WIDTH_PERCENT = 100;
-const MAX_COLUMN_WIDTH_STEP_PERCENT = 50;
+const MAX_RESIZE_STEP_PERCENT = 50;
 const MIN_DEFAULT_COLUMN_WIDTH_PERCENT = 10;
-const MIN_COLUMN_WIDTH_STEP_PERCENT = 1;
+const MIN_RESIZE_STEP_PERCENT = 1;
 const DEFAULT_COLUMN_WIDTH: ColumnWidth = {
   kind: "proportion",
   value: DEFAULT_COLUMN_WIDTH_PERCENT / 100,
@@ -93,7 +94,6 @@ const MAX_STACK_EDIT_FOCUS_PROBES = 20;
 const MAX_TOPOLOGY_SAMPLE_ATTEMPTS = 20;
 const MAX_TRANSIENT_RESUME_PROBES = 20;
 const MINIMUM_COLUMN_WIDTH = 64;
-const PROPORTIONAL_WINDOW_HEIGHT_STEP = 0.1;
 const REQUIRED_CAPACITY_PARK_SAMPLES = 2;
 const WINDOW_HEIGHT_PRESET_CYCLE_TOLERANCE = 1;
 
@@ -523,6 +523,7 @@ export class RuntimeController {
   private startupStabilizationToken: object | null = null;
   private started = false;
   private defaultColumnWidth: ColumnWidth;
+  private windowHeightStep = DEFAULT_WINDOW_HEIGHT_STEP_PERCENT / 100;
   private readonly windowHeightPresets: readonly ColumnWidth[];
   private readonly requestedSuspensions = new Map<
     WindowId,
@@ -707,7 +708,7 @@ export class RuntimeController {
   }
 
   setColumnWidthStepPercent(value: number): boolean {
-    const percent = normalizeColumnWidthStepPercent(value);
+    const percent = normalizeResizeStepPercent(value);
 
     if (percent === null) {
       return false;
@@ -720,6 +721,23 @@ export class RuntimeController {
     }
 
     this.columnWidthStep = step;
+    return true;
+  }
+
+  setWindowHeightStepPercent(value: number): boolean {
+    const percent = normalizeResizeStepPercent(value);
+
+    if (percent === null) {
+      return false;
+    }
+
+    const step = percent / 100;
+
+    if (step === this.windowHeightStep) {
+      return false;
+    }
+
+    this.windowHeightStep = step;
     return true;
   }
 
@@ -7512,7 +7530,7 @@ export class RuntimeController {
 
         const requested =
           currentActiveFrame.height +
-          direction * PROPORTIONAL_WINDOW_HEIGHT_STEP * denominator;
+          direction * this.windowHeightStep * denominator;
         const targetFrameHeight = clamp(
           roundToPhysicalPixel(
             requested,
@@ -7535,11 +7553,14 @@ export class RuntimeController {
           direction > 0
             ? targetFrameHeight > currentActiveFrame.height + tolerance
             : targetFrameHeight < currentActiveFrame.height - tolerance;
+        const movesInOppositeDirection =
+          direction > 0
+            ? targetFrameHeight < currentActiveFrame.height - tolerance
+            : targetFrameHeight > currentActiveFrame.height + tolerance;
 
         if (
-          !movesInRequestedDirection &&
-          currentActiveHeight.kind === "fixed" &&
-          nearlyEqual(currentActiveHeight.clientHeight, targetClientHeight)
+          movesInOppositeDirection ||
+          (!movesInRequestedDirection && currentActiveHeight.kind !== "auto")
         ) {
           return false;
         }
@@ -15544,11 +15565,11 @@ function normalizeDefaultColumnWidthPercent(value: number): number | null {
     : null;
 }
 
-function normalizeColumnWidthStepPercent(value: number): number | null {
+function normalizeResizeStepPercent(value: number): number | null {
   return Number.isFinite(value) &&
     Number.isInteger(value) &&
-    value >= MIN_COLUMN_WIDTH_STEP_PERCENT &&
-    value <= MAX_COLUMN_WIDTH_STEP_PERCENT
+    value >= MIN_RESIZE_STEP_PERCENT &&
+    value <= MAX_RESIZE_STEP_PERCENT
     ? value
     : null;
 }
