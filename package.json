@@ -9,7 +9,7 @@
   },
   "scripts": {
     "build": "node tools/build.mjs",
-    "check": "npm run format:check && npm run typecheck && npm run lint && npm run lint:shell && npm test",
+    "check": "npm run format:check && npm run version:check && npm run typecheck && npm run lint && npm run lint:shell && npm test",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "install:dev": "node tools/install.mjs install",
@@ -24,7 +24,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "uninstall:dev": "node tools/install.mjs remove",
-    "upgrade:dev": "npm run shortcuts:release && node tools/install.mjs upgrade"
+    "upgrade:dev": "npm run shortcuts:release && node tools/install.mjs upgrade",
+    "version:check": "node tools/release-version.mjs"
   },
   "license": "GPL-3.0-or-later",
   "devDependencies": {

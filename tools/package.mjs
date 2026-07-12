@@ -3,15 +3,21 @@ import { dirname, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { buildProject } from "./build.mjs";
+import { releaseVersion } from "./release-version.mjs";
 
 const rootDirectory = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const packageDirectory = resolve(rootDirectory, "dist/kwin-script");
-const artifactPath = resolve(rootDirectory, "dist/driftile.kwinscript");
+const outputDirectory = resolve(rootDirectory, "dist");
 const minimumZipTimestamp = 315_532_800;
 
 export async function packageProject() {
+  const version = await releaseVersion(rootDirectory);
+  const artifactPath = resolve(
+    outputDirectory,
+    `driftile-${version}.kwinscript`,
+  );
   await buildProject();
-  await rm(artifactPath, { force: true });
+  await removeOldArtifacts();
 
   const entries = await archiveEntries(packageDirectory);
   const timestamp = archiveTimestamp();
@@ -34,6 +40,19 @@ export async function packageProject() {
 
   if (result.status !== 0) {
     throw new Error(`zip exited with status ${String(result.status)}`);
+  }
+
+  return artifactPath;
+}
+
+async function removeOldArtifacts() {
+  for (const entry of await readdir(outputDirectory, { withFileTypes: true })) {
+    if (
+      entry.isFile() &&
+      /^driftile(?:-[^/]+)?\.kwinscript$/u.test(entry.name)
+    ) {
+      await rm(resolve(outputDirectory, entry.name), { force: true });
+    }
   }
 }
 
