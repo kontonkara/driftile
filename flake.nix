@@ -110,6 +110,7 @@
               "${pkgs.kdePackages.layer-shell-qt}/lib/qt-6/qml";
             DRIFTILE_SMOKE_KGLOBALACCELD =
               "${pkgs.kdePackages.kglobalacceld}/libexec/kglobalacceld";
+            DRIFTILE_SMOKE_XWAYLAND = "${pkgs.xwayland}/bin/Xwayland";
             GI_TYPELIB_PATH = pkgs.lib.makeSearchPath "lib/girepository-1.0" [
               pkgs.atk
               pkgs.gdk-pixbuf

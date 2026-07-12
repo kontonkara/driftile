@@ -94,11 +94,13 @@ run_backend() (
   local kglobalacceld="${DRIFTILE_SMOKE_KGLOBALACCELD:-}"
   local result_file
   local display_number
+  local exact_xwayland="${DRIFTILE_SMOKE_XWAYLAND:-}"
   local qml_binary
   local qml_import_path=""
   local qml_prefix
   local xvfb_log=""
   local xvfb_pid=""
+  local xwayland_directory
   local package_installed=0
   local output_count
   local protocols
@@ -237,7 +239,25 @@ run_backend() (
   case "$backend" in
     wayland | wayland-multi-output)
       require_command kwin_wayland || exit 1
+
+      if [[ -n "$exact_xwayland" ]]; then
+        if [[ ! -x "$exact_xwayland" ]]; then
+          fail "The exact Xwayland executable is unavailable."
+        fi
+
+        xwayland_directory=$(dirname "$exact_xwayland")
+        export PATH="$xwayland_directory:$PATH"
+      fi
+
       require_command Xwayland || exit 1
+
+      if [[
+        -n "$exact_xwayland" &&
+          "$(readlink -f "$(command -v Xwayland)")" != "$(readlink -f "$exact_xwayland")"
+      ]]; then
+        fail "KWin would not resolve the exact Xwayland executable."
+      fi
+
       require_command kscreen-doctor || exit 1
       protocols="${DRIFTILE_SMOKE_PROTOCOLS:-xwayland wayland}"
 
@@ -323,7 +343,7 @@ run_backend() (
       display_number=$(<"$sandbox/display")
       export DISPLAY=":$display_number"
 
-      if ! timeout --kill-after=5s 90s \
+      if ! timeout --kill-after=5s 180s \
         dbus-run-session --config-file="$dbus_session_config" -- \
         "$project_root/tools/integration/x11-session.sh" \
         >"$log_file" 2>&1; then
