@@ -16,6 +16,8 @@ import { releaseVersion } from "./release-version.mjs";
 const rootDirectory = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const packageDirectory = resolve(rootDirectory, "dist/kwin-script");
 const outputDirectory = resolve(rootDirectory, "dist");
+const licenseSource = resolve(rootDirectory, "LICENSE");
+const licenseArtifact = resolve(outputDirectory, "LICENSE");
 const shortcutTool = resolve(outputDirectory, "bin/driftile-shortcuts.mjs");
 const minimumZipTimestamp = 315_532_800;
 
@@ -55,9 +57,16 @@ export async function packageProject() {
     throw new Error(`zip exited with status ${String(result.status)}`);
   }
 
-  await copyFile(shortcutTool, shortcutArtifactPath);
+  await Promise.all([
+    copyFile(licenseSource, licenseArtifact),
+    copyFile(shortcutTool, shortcutArtifactPath),
+  ]);
 
-  const releaseArtifacts = [artifactPath, shortcutArtifactPath].sort();
+  const releaseArtifacts = [
+    artifactPath,
+    licenseArtifact,
+    shortcutArtifactPath,
+  ].sort(compareFilenames);
   const checksumLines = await Promise.all(
     releaseArtifacts.map(async (releaseArtifact) => {
       const checksum = createHash("sha256")
@@ -79,13 +88,28 @@ export async function packageProject() {
 async function removeOldArtifacts() {
   for (const entry of await readdir(outputDirectory, { withFileTypes: true })) {
     if (
-      entry.isFile() &&
-      (/^driftile(?:-[^/]+)?\.kwinscript$/u.test(entry.name) ||
-        /^driftile-shortcuts-[^/]+\.mjs$/u.test(entry.name))
+      entry.name === "LICENSE" ||
+      entry.name === "SHA256SUMS" ||
+      /^driftile(?:-[^/]+)?\.kwinscript$/u.test(entry.name) ||
+      /^driftile-shortcuts-[^/]+\.mjs$/u.test(entry.name)
     ) {
-      await rm(resolve(outputDirectory, entry.name), { force: true });
+      await rm(resolve(outputDirectory, entry.name), {
+        force: true,
+        recursive: entry.isDirectory(),
+      });
     }
   }
+}
+
+function compareFilenames(left, right) {
+  const leftName = basename(left);
+  const rightName = basename(right);
+
+  if (leftName < rightName) {
+    return -1;
+  }
+
+  return leftName > rightName ? 1 : 0;
 }
 
 async function archiveEntries(directory, prefix = "") {
