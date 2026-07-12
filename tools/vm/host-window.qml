@@ -2,7 +2,7 @@ import QtQuick
 import org.kde.kwin
 
 QtObject {
-    function resizeWindow(window) {
+    function resizeFullWindow(window) {
         if (window.caption !== "QEMU (driftile-vm)") {
             return;
         }
@@ -19,13 +19,48 @@ QtObject {
         );
     }
 
-    Component.onCompleted: {
-        Workspace.windowAdded.connect(resizeWindow);
+    function isTwoHeadWindow(window) {
+        return window.caption.indexOf("QEMU (driftile-vm-two-head)") === 0;
+    }
 
-        for (const window of Workspace.stackingOrder) {
-            resizeWindow(window);
+    function arrangeTwoHeadWindows() {
+        const windows = Workspace.stackingOrder
+            .filter(isTwoHeadWindow)
+            .sort((left, right) => left.caption.localeCompare(right.caption));
+
+        if (windows.length !== 2) {
+            return;
+        }
+
+        const area = Workspace.clientArea(Workspace.MaximizeArea, windows[0]);
+        const gap = 8;
+        const combinedWidth = windows[0].frameGeometry.width
+            + gap
+            + windows[1].frameGeometry.width;
+        let x = area.x + Math.round((area.width - combinedWidth) / 2);
+
+        for (const window of windows) {
+            const geometry = window.frameGeometry;
+            const y = area.y + Math.max(0, Math.round((area.height - geometry.height) / 2));
+
+            window.frameGeometry = Qt.rect(x, y, geometry.width, geometry.height);
+            x += geometry.width + gap;
         }
     }
 
-    Component.onDestruction: Workspace.windowAdded.disconnect(resizeWindow)
+    function placeWindow(window) {
+        resizeFullWindow(window);
+        arrangeTwoHeadWindows();
+        Qt.callLater(arrangeTwoHeadWindows);
+    }
+
+    Component.onCompleted: {
+        Workspace.windowAdded.connect(placeWindow);
+
+        for (const window of Workspace.stackingOrder) {
+            placeWindow(window);
+        }
+    }
+
+    Component.onDestruction: Workspace.windowAdded.disconnect(placeWindow)
 }

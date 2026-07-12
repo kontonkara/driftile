@@ -72,8 +72,11 @@ The unit suite also covers shortcut manifests, live gap bounds, coalescing, exac
 
 Pointer coverage includes strict visible-target planning, midpoint selection,
 same-stack height retention, cross-column automatic height, destination-width
-inheritance, exact rollback, move-versus-resize observation, delayed authority
-resumption, cancelled and outside drops, and target-state invalidation.
+inheritance, and exact same-context rollback. Cross-output cases cover both
+KWin signal orders, before-and-after insertion, source cleanup, retained
+destination width, automatic moved height, partial-frame compensation, no
+output or desktop mechanism writes, and ordinary singleton admission for
+empty, stale, ambiguous, or raced targets.
 
 The isolated two-output Wayland scenario uses KScreen to verify scale and
 position changes, exact known-output history restoration over a deliberately
@@ -95,6 +98,16 @@ On NixOS, run the VM from a graphical session with KVM available:
 ```bash
 tools/vm/run.sh
 ```
+
+For the focused two-output pointer checkpoint, run:
+
+```bash
+tools/vm/run.sh two-head
+```
+
+This separate mode opens two non-fullscreen `688x768` SDL scanouts, verifies
+native Wayland Firefox and XWayland xterm, injects physical cross-output drags,
+checks targeted insertion and empty-output fallback, then closes immediately.
 
 The script builds `nixosConfigurations.driftile-vm` through `nixos-rebuild build-vm` and asks host KWin for a centered `1440x900` QEMU window with a `1680x1050` guest display. The guest receives 8 virtual CPUs and 8 GiB of memory. Plasma starts a Wayland session, enables Driftile, claims its shortcut profile, and runs the acceptance pool. Separate Konsole processes provide a stable baseline, while the primary structural workflow uses offline Firefox for direct insertion and as a passive peer during stacked maximize, XWayland xterm for minimized-edge navigation, KDE Calculator as a numbered-desktop destination, and fixed-size XWayland `xmessage` for automatic-floating constraints. A final lifecycle pool repeats Firefox, KDE Calculator, and xterm checks after all physical shortcut scenarios. The VM requires borderless state for tiled, fixed-size, manually floating, and application windows. It focuses, minimizes, restores, resizes, and closes real applications while checking their slots, neighboring frames, and exact layout reflow. The desktop workflow also transfers a visible active Konsole while a settled minimized source-column peer retains its slot, state, and frame without writes. `kdotool` reads the active KWin window during these checks.
 

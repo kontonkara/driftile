@@ -173,6 +173,16 @@
 
       nixosConfigurations.driftile-vm = nixpkgs.lib.nixosSystem {
         system = "x86_64-linux";
+        specialArgs.driftileVmTwoHead = false;
+        modules = [
+          self.nixosModules.default
+          ./nix/vm.nix
+        ];
+      };
+
+      nixosConfigurations.driftile-vm-two-head = nixpkgs.lib.nixosSystem {
+        system = "x86_64-linux";
+        specialArgs.driftileVmTwoHead = true;
         modules = [
           self.nixosModules.default
           ./nix/vm.nix

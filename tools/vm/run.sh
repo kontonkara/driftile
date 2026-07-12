@@ -2,11 +2,37 @@
 
 set -euo pipefail
 
+vm_mode=${1:-full}
+
+if (($# > 1)); then
+  printf 'Usage: %s [full|two-head]\n' "$0" >&2
+  exit 2
+fi
+
+case "$vm_mode" in
+  full)
+    flake_configuration=driftile-vm
+    vm_runner=run-driftile-vm-vm
+    ;;
+  two-head)
+    flake_configuration=driftile-vm-two-head
+    vm_runner=run-driftile-vm-two-head-vm
+    ;;
+  *)
+    printf 'Usage: %s [full|two-head]\n' "$0" >&2
+    exit 2
+    ;;
+esac
+
 root_directory=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
 temporary_directory=$(mktemp -d -t driftile-vm.XXXXXXXXXX)
 host_script_loaded=false
 readonly host_script_name="io.github.kontonkara.driftile.vm-window"
 readonly qmp_socket="$temporary_directory/qmp.sock"
+readonly two_head_desktop_height=768
+readonly two_head_desktop_width=1376
+readonly two_head_desktop_x=0
+readonly two_head_desktop_y=0
 status_monitor_pid=""
 
 # shellcheck disable=SC2329
@@ -250,6 +276,83 @@ monitor_guest() {
   return 1
 }
 
+monitor_two_head_guest() {
+  local attempt
+  local diagnostics_file="$temporary_directory/xchg/driftile-two-head-diagnostics"
+  local drag_name
+  local probe_name
+  local ready_file
+  local result_file="$temporary_directory/xchg/driftile-two-head-verified"
+  local sent_file
+  local -A drags_sent=(
+    [fallback]=false
+    [insert]=false
+  )
+  local -A probes_sent=(
+    [left]=false
+    [right]=false
+  )
+
+  for ((attempt = 0; attempt < 1800; attempt += 1)); do
+    for probe_name in left right; do
+      ready_file="$temporary_directory/xchg/driftile-two-head-pointer-probe-$probe_name-ready"
+      sent_file="$temporary_directory/xchg/driftile-two-head-pointer-probe-$probe_name-sent"
+
+      if [[ "${probes_sent[$probe_name]}" == false && -f "$ready_file" ]]; then
+        if ! send_two_head_pointer_probe "$ready_file"; then
+          printf 'Could not map the absolute pointer on the %s VM output.\n' \
+            "$probe_name" >&2
+          stop_vm || true
+          return 1
+        fi
+
+        : > "$sent_file"
+        probes_sent[$probe_name]=true
+      fi
+    done
+
+    for drag_name in insert fallback; do
+      ready_file="$temporary_directory/xchg/driftile-two-head-pointer-drag-$drag_name-ready"
+      sent_file="$temporary_directory/xchg/driftile-two-head-pointer-drag-$drag_name-sent"
+
+      if [[ "${drags_sent[$drag_name]}" == false && -f "$ready_file" ]]; then
+        if ! send_two_head_pointer_drag "$ready_file"; then
+          printf 'Could not send the two-output physical pointer drag: %s.\n' \
+            "$drag_name" >&2
+          stop_vm || true
+          return 1
+        fi
+
+        : > "$sent_file"
+        drags_sent[$drag_name]=true
+      fi
+    done
+
+    if [[ -f "$result_file" ]]; then
+      if [[ "$(<"$result_file")" == true ]]; then
+        printf 'The two-output VM verified targeted insertion and empty-output fallback.\n'
+        stop_vm || true
+        return 0
+      fi
+
+      printf 'The two-output VM checkpoint failed.\n' >&2
+
+      if [[ -f "$diagnostics_file" ]]; then
+        sed 's/^/  /' "$diagnostics_file" >&2
+      fi
+
+      stop_vm || true
+      return 1
+    fi
+
+    sleep 0.2
+  done
+
+  printf 'The two-output VM did not report status within 360 seconds.\n' >&2
+  stop_vm || true
+  return 1
+}
+
 qmp_command_response() {
   [[ -S "$qmp_socket" ]] || return 1
   printf '%s\n' "$@" \
@@ -317,6 +420,151 @@ send_absolute_pointer_position() {
   ((x >= 0 && x <= 32767 && y >= 0 && y <= 32767)) || return 1
   input="{\"execute\":\"input-send-event\",\"arguments\":{\"events\":[{\"type\":\"abs\",\"data\":{\"axis\":\"x\",\"value\":$x}},{\"type\":\"abs\",\"data\":{\"axis\":\"y\",\"value\":$y}}]}}"
   send_qmp_commands "$capabilities" "$input"
+}
+
+send_two_head_pointer_probe() {
+  local absolute_x
+  local absolute_y
+  local coordinate_file=$1
+  local extra
+  local head
+  local output_height
+  local output_width
+  local output_x
+  local output_y
+  local x
+  local y
+
+  IFS=' ' read -r \
+    head \
+    x \
+    y \
+    output_x \
+    output_y \
+    output_width \
+    output_height \
+    extra < "$coordinate_file" || return 1
+  [[ -z "${extra:-}" ]] || return 1
+  [[ "$head" =~ ^[01]$ ]] || return 1
+  absolute_x=$(absolute_pointer_coordinate \
+    "$x" "$two_head_desktop_x" "$two_head_desktop_width") || return 1
+  absolute_y=$(absolute_pointer_coordinate \
+    "$y" "$two_head_desktop_y" "$two_head_desktop_height") || return 1
+
+  ((x >= output_x && x < output_x + output_width \
+    && y >= output_y && y < output_y + output_height)) || return 1
+
+  absolute_pointer_available \
+    && send_absolute_pointer_position "$absolute_x" "$absolute_y"
+}
+
+send_two_head_pointer_drag() {
+  local coordinate_file=$1
+  local destination_absolute_x
+  local destination_absolute_y
+  local destination_head
+  local destination_height
+  local destination_width
+  local destination_x
+  local destination_y
+  local destination_output_x
+  local destination_output_y
+  local edge_absolute_x
+  local edge_absolute_y
+  local edge_x
+  local edge_y
+  local extra
+  local result=0
+  local source_absolute_x
+  local source_absolute_y
+  local source_head
+  local source_height
+  local source_width
+  local source_x
+  local source_y
+  local source_output_x
+  local source_output_y
+
+  IFS=' ' read -r \
+    source_head \
+    source_x \
+    source_y \
+    source_output_x \
+    source_output_y \
+    source_width \
+    source_height \
+    destination_head \
+    destination_x \
+    destination_y \
+    destination_output_x \
+    destination_output_y \
+    destination_width \
+    destination_height \
+    extra < "$coordinate_file" || return 1
+  [[ -z "${extra:-}" ]] || return 1
+  [[ "$source_head" =~ ^[01]$ \
+    && "$destination_head" =~ ^[01]$ ]] || return 1
+
+  source_absolute_x=$(absolute_pointer_coordinate \
+    "$source_x" "$two_head_desktop_x" "$two_head_desktop_width") || return 1
+  source_absolute_y=$(absolute_pointer_coordinate \
+    "$source_y" "$two_head_desktop_y" "$two_head_desktop_height") || return 1
+  destination_absolute_x=$(absolute_pointer_coordinate \
+    "$destination_x" "$two_head_desktop_x" "$two_head_desktop_width") \
+    || return 1
+  destination_absolute_y=$(absolute_pointer_coordinate \
+    "$destination_y" "$two_head_desktop_y" "$two_head_desktop_height") \
+    || return 1
+
+  ((source_x >= source_output_x \
+    && source_x < source_output_x + source_width \
+    && source_y >= source_output_y \
+    && source_y < source_output_y + source_height \
+    && destination_x >= destination_output_x \
+    && destination_x < destination_output_x + destination_width \
+    && destination_y >= destination_output_y \
+    && destination_y < destination_output_y + destination_height)) || return 1
+
+  if ((destination_x > source_x)); then
+    edge_x=$((source_output_x + source_width - 2))
+  else
+    edge_x=$((source_output_x + 1))
+  fi
+
+  edge_y=$source_y
+  edge_absolute_x=$(absolute_pointer_coordinate \
+    "$edge_x" "$two_head_desktop_x" "$two_head_desktop_width") || return 1
+  edge_absolute_y=$(absolute_pointer_coordinate \
+    "$edge_y" "$two_head_desktop_y" "$two_head_desktop_height") || return 1
+
+  absolute_pointer_available || return 1
+  set_physical_pointer_drag_state false || return 1
+  send_absolute_pointer_position \
+    "$source_absolute_x" "$source_absolute_y" \
+    || result=1
+  sleep 0.1
+
+  if ((result == 0)); then
+    set_physical_pointer_drag_state true || result=1
+  fi
+  sleep 0.1
+
+  if ((result == 0)); then
+    send_absolute_pointer_position \
+      "$edge_absolute_x" "$edge_absolute_y" \
+      || result=1
+  fi
+  sleep 0.1
+
+  if ((result == 0)); then
+    send_absolute_pointer_position \
+      "$destination_absolute_x" "$destination_absolute_y" \
+      || result=1
+  fi
+  sleep 0.1
+
+  set_physical_pointer_drag_state false || result=1
+  return "$result"
 }
 
 set_physical_pointer_drag_state() {
@@ -547,21 +795,32 @@ if [[ -z "${DISPLAY:-}" && -z "${WAYLAND_DISPLAY:-}" ]]; then
 fi
 
 cd -- "$root_directory"
-nixos-rebuild build-vm --flake .#driftile-vm
+nixos-rebuild build-vm --flake ".#$flake_configuration"
 
 if ! prepare_host_window; then
   printf 'Could not request the initial VM window size from host KWin.\n' >&2
 fi
 
-monitor_guest &
+if [[ "$vm_mode" == two-head ]]; then
+  monitor_two_head_guest &
+else
+  monitor_guest &
+fi
 status_monitor_pid=$!
 
 vm_status=0
 
 set +e
-QEMU_OPTS="-qmp unix:$qmp_socket,server=on,wait=off" \
-  USE_TMPDIR=1 TMPDIR="$temporary_directory" \
-  ./result/bin/run-driftile-vm-vm
+if [[ "$vm_mode" == two-head ]]; then
+  QEMU_OPTS="-qmp unix:$qmp_socket,server=on,wait=off" \
+    SDL_VIDEO_MINIMIZE_ON_FOCUS_LOSS=0 \
+    USE_TMPDIR=1 TMPDIR="$temporary_directory" \
+    "./result/bin/$vm_runner"
+else
+  QEMU_OPTS="-qmp unix:$qmp_socket,server=on,wait=off" \
+    USE_TMPDIR=1 TMPDIR="$temporary_directory" \
+    "./result/bin/$vm_runner"
+fi
 vm_status=$?
 wait "$status_monitor_pid"
 monitor_status=$?

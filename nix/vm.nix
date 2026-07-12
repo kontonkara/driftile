@@ -1,10 +1,28 @@
 {
+  driftileVmTwoHead ? false,
   pkgs,
   ...
 }:
 
 let
   pluginId = "io.github.kontonkara.driftile";
+  twoHeadGpu = builtins.toJSON {
+    driver = "virtio-gpu-pci";
+    id = "video0";
+    max_outputs = 2;
+    outputs = [
+      {
+        name = "Driftile-L";
+        xres = 688;
+        yres = 768;
+      }
+      {
+        name = "Driftile-R";
+        xres = 688;
+        yres = 768;
+      }
+    ];
+  };
   floatingNavigationProbe = ../tools/vm/floating-navigation-probe.js;
   firefoxPage = pkgs.writeText "driftile-vm-firefox.html" ''
     <!doctype html>
@@ -18,6 +36,19 @@ let
       </body>
     </html>
   '';
+  firefoxWindowState = pkgs.writeText "driftile-vm-firefox-xulstore.json" (
+    builtins.toJSON {
+      "chrome://browser/content/browser.xhtml" = {
+        "main-window" = {
+          height = "650";
+          screenX = "16";
+          screenY = "16";
+          sizemode = "normal";
+          width = "640";
+        };
+      };
+    }
+  );
   firefoxPreferences = pkgs.writeText "driftile-vm-firefox-user.js" ''
     user_pref("app.normandy.enabled", false);
     user_pref("app.shield.optoutstudies.enabled", false);
@@ -8099,6 +8130,818 @@ let
       fi
     '';
   };
+  twoHeadDemo = pkgs.writeShellApplication {
+    name = "driftile-two-head-demo";
+    runtimeInputs = [
+      pkgs.coreutils
+      pkgs.gnugrep
+      pkgs.jq
+      pkgs.kdotool
+      pkgs.kdePackages.libkscreen
+      pkgs.systemd
+      pkgs.xterm
+      pkgs.xprop
+    ];
+    text = ''
+      readonly diagnostics_file=/tmp/shared/driftile-two-head-diagnostics
+      readonly result_file=/tmp/shared/driftile-two-head-verified
+      firefox_pid=""
+      firefox_profile=""
+      firefox_title="Driftile VM Firefox"
+      left_frame=""
+      left_id=""
+      right_frame=""
+      right_id=""
+      xterm_pid=""
+      xterm_title="Driftile VM Two-head XWayland"
+
+      write_result() {
+        local temporary_file="$result_file.tmp"
+
+        printf '%s\n' "$1" > "$temporary_file"
+        mv "$temporary_file" "$result_file"
+      }
+
+      fail_test() {
+        {
+          printf '%s\n' "$1"
+          printf '\nKWin matches:\n'
+          busctl --user --json=short call \
+            org.kde.KWin \
+            /WindowsRunner \
+            org.kde.krunner1 \
+            Match \
+            s Driftile \
+            2>&1 || true
+          printf '\nActive window:\n'
+          kdotool getactivewindow getwindowname 2>&1 || true
+          printf '\nFirefox frame:\n'
+          window_frame_contains "$firefox_title" 2>&1 || true
+          printf '\nFirefox info:\n'
+          window_info_contains "$firefox_title" 2>&1 || true
+          printf '\nxterm frame:\n'
+          window_frame_contains "$xterm_title" 2>&1 || true
+
+          for log_file in \
+            /tmp/driftile-vm-two-head-firefox.log \
+            /tmp/driftile-vm-two-head-xterm.log; do
+            if [[ -s "$log_file" ]]; then
+              printf '\n%s:\n' "$log_file"
+              tail -n 100 "$log_file"
+            fi
+          done
+        } >> "$diagnostics_file"
+        write_result false
+        exit 1
+      }
+
+      cleanup() {
+        if [[ -n "$xterm_pid" ]]; then
+          kill "$xterm_pid" >/dev/null 2>&1 || true
+        fi
+
+        if [[ -n "$firefox_pid" ]]; then
+          kill "$firefox_pid" >/dev/null 2>&1 || true
+        fi
+
+        if [[ -n "$firefox_profile" ]]; then
+          rm -rf -- "$firefox_profile"
+        fi
+      }
+
+      wait_for_extension() {
+        local attempt
+        local state
+
+        for ((attempt = 0; attempt < 200; attempt += 1)); do
+          state=$(busctl --user call \
+            org.kde.KWin \
+            /Scripting \
+            org.kde.kwin.Scripting \
+            isScriptLoaded \
+            s ${pluginId} 2>/dev/null || true)
+
+          if [[ "$state" == "b true" ]]; then
+            return 0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      configure_outputs() {
+        local attempt
+        local json
+        local left_mode
+        local right_mode
+        local -a output_ids=()
+
+        for ((attempt = 0; attempt < 200; attempt += 1)); do
+          json=$(kscreen-doctor -j 2>/dev/null || true)
+          mapfile -t output_ids < <(
+            jq --raw-output '
+              [
+                .outputs[]
+                | select(.connected == true)
+              ]
+              | sort_by(.id | tonumber)
+              | .[].id
+            ' <<< "$json" 2>/dev/null || true
+          )
+
+          if ((''${#output_ids[@]} == 2)); then
+            left_id=''${output_ids[0]}
+            right_id=''${output_ids[1]}
+            break
+          fi
+
+          sleep 0.1
+        done
+
+        [[ -n "$left_id" && -n "$right_id" ]] || return 1
+        left_mode=$(jq --exit-status --raw-output \
+          --arg id "$left_id" '
+            .outputs[]
+            | select((.id | tostring) == $id)
+            | .modes[]
+            | select(.size.width == 688 and .size.height == 768)
+            | .id
+          ' <<< "$json" | head -n 1) || return 1
+        right_mode=$(jq --exit-status --raw-output \
+          --arg id "$right_id" '
+            .outputs[]
+            | select((.id | tostring) == $id)
+            | .modes[]
+            | select(.size.width == 688 and .size.height == 768)
+            | .id
+          ' <<< "$json" | head -n 1) || return 1
+
+        kscreen-doctor \
+          "output.$left_id.mode.$left_mode" \
+          "output.$left_id.scale.1" \
+          "output.$left_id.position.0,0" \
+          "output.$left_id.enable" \
+          "output.$right_id.mode.$right_mode" \
+          "output.$right_id.scale.1" \
+          "output.$right_id.position.688,0" \
+          "output.$right_id.enable" \
+          >/dev/null || return 1
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          json=$(kscreen-doctor -j 2>/dev/null || true)
+          left_frame=$(jq --exit-status --raw-output \
+            --arg id "$left_id" '
+              .outputs[]
+              | select((.id | tostring) == $id and .enabled == true)
+              | [
+                  .pos.x,
+                  .pos.y,
+                  (.size.width / (.scale // 1)),
+                  (.size.height / (.scale // 1))
+                ]
+              | map(round | tostring)
+              | join(",")
+            ' <<< "$json" 2>/dev/null || true)
+          right_frame=$(jq --exit-status --raw-output \
+            --arg id "$right_id" '
+              .outputs[]
+              | select((.id | tostring) == $id and .enabled == true)
+              | [
+                  .pos.x,
+                  .pos.y,
+                  (.size.width / (.scale // 1)),
+                  (.size.height / (.scale // 1))
+                ]
+              | map(round | tostring)
+              | join(",")
+            ' <<< "$json" 2>/dev/null || true)
+
+          if [[ "$left_frame" == "0,0,688,768" \
+            && "$right_frame" == "688,0,688,768" ]]; then
+            return 0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      request_pointer_probe() {
+        local attempt
+        local expected_x=$3
+        local expected_y=$4
+        local extra
+        local head=$2
+        local location
+        local name=$1
+        local output_height
+        local output_width
+        local output_x
+        local output_y
+        local ready_file="/tmp/shared/driftile-two-head-pointer-probe-$name-ready"
+        local sent_file="/tmp/shared/driftile-two-head-pointer-probe-$name-sent"
+        local temporary_file="$ready_file.tmp"
+        local x
+        local y
+
+        case "$name" in
+          left|right) ;;
+          *) return 1 ;;
+        esac
+
+        IFS=, read -r \
+          output_x output_y output_width output_height extra \
+          <<< "$5"
+        [[ -z "''${extra:-}" ]] || return 1
+        rm -f "$ready_file" "$sent_file" "$temporary_file"
+        printf '%s %s %s %s %s %s %s\n' \
+          "$head" \
+          "$expected_x" \
+          "$expected_y" \
+          "$output_x" \
+          "$output_y" \
+          "$output_width" \
+          "$output_height" \
+          > "$temporary_file"
+        mv "$temporary_file" "$ready_file"
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          if [[ -f "$sent_file" ]]; then
+            break
+          fi
+
+          sleep 0.1
+        done
+
+        [[ -f "$sent_file" ]] || return 1
+
+        for ((attempt = 0; attempt < 50; attempt += 1)); do
+          location=$(kdotool getmouselocation 2>/dev/null || true)
+
+          if [[ "$location" =~ x:([-0-9]+)[[:space:]]y:([-0-9]+) ]]; then
+            x=''${BASH_REMATCH[1]}
+            y=''${BASH_REMATCH[2]}
+
+            if ((x >= expected_x - 2 && x <= expected_x + 2 \
+              && y >= expected_y - 2 && y <= expected_y + 2)); then
+              return 0
+            fi
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      window_match_id_contains() {
+        local needle=$1
+
+        busctl --user --json=short call \
+          org.kde.KWin \
+          /WindowsRunner \
+          org.kde.krunner1 \
+          Match \
+          s "$needle" 2>/dev/null \
+          | jq --exit-status --raw-output --arg needle "$needle" '
+            [
+              .data[0][]
+              | select(.[1] | contains($needle))
+            ]
+            | unique_by(.[0])
+            | select(length == 1)
+            | .[0][0]
+          '
+      }
+
+      window_id_contains() {
+        local match_id
+
+        match_id=$(window_match_id_contains "$1") || return 1
+        printf '%s' "''${match_id#*_}"
+      }
+
+      window_info_contains() {
+        local id
+
+        id=$(window_id_contains "$1") || return 1
+        busctl --user --json=short call \
+          org.kde.KWin \
+          /KWin \
+          org.kde.KWin \
+          getWindowInfo \
+          s "$id" 2>/dev/null
+      }
+
+      window_frame_contains() {
+        window_info_contains "$1" \
+          | jq --exit-status --raw-output '
+            .data[0] as $window
+            | [
+                $window.x.data,
+                $window.y.data,
+                $window.width.data,
+                $window.height.data
+              ]
+            | select(map(type == "number") | all)
+            | map(round | tostring)
+            | join(",")
+          '
+      }
+
+      window_protocol_matches() {
+        local attempt
+        local expected=$2
+        local matches
+        local stable_samples=0
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          matches=$(x11_window_match_count "$1") || return 1
+
+          if { [[ "$expected" == true ]] && ((matches == 1)); } \
+            || { [[ "$expected" == false ]] && ((matches == 0)); }; then
+            stable_samples=$((stable_samples + 1))
+          else
+            stable_samples=0
+          fi
+
+          if ((stable_samples >= 2)); then
+            return 0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      x11_window_match_count() {
+        local client_list
+        local display="''${DISPLAY:-:0}"
+        local id
+        local matches=0
+        local query=$1
+        local title_properties
+
+        client_list=$(xprop -display "$display" -root _NET_CLIENT_LIST 2>/dev/null) \
+          || return 1
+
+        while IFS= read -r id; do
+          [[ -n "$id" ]] || continue
+          title_properties=$(xprop -display "$display" -id "$id" \
+            _NET_WM_NAME WM_NAME 2>/dev/null || true)
+
+          if [[ "$title_properties" == *"$query"* ]]; then
+            matches=$((matches + 1))
+          fi
+        done < <(
+          grep --only-matching --extended-regexp \
+            '0x[0-9a-fA-F]+' <<< "$client_list" \
+            || true
+        )
+
+        printf '%s' "$matches"
+      }
+
+      wait_for_window() {
+        local attempt
+
+        for ((attempt = 0; attempt < 200; attempt += 1)); do
+          if window_info_contains "$1" >/dev/null 2>&1; then
+            return 0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      capture_stable_window_frame() {
+        local attempt
+        local current
+        local previous=""
+        local query=$1
+        local stable_samples=0
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          current=$(window_frame_contains "$query" 2>/dev/null || true)
+
+          if [[ "$current" =~ ^-?[0-9]+,-?[0-9]+,[1-9][0-9]*,[1-9][0-9]*$ \
+            && "$current" == "$previous" ]]; then
+            stable_samples=$((stable_samples + 1))
+          else
+            stable_samples=0
+          fi
+
+          if ((stable_samples >= 2)); then
+            printf '%s' "$current"
+            return 0
+          fi
+
+          previous=$current
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      window_is_active() {
+        local caption
+
+        caption=$(kdotool getactivewindow getwindowname 2>/dev/null) || return 1
+        [[ "$caption" == *"$1"* ]]
+      }
+
+      activate_window() {
+        local match_id
+
+        match_id=$(window_match_id_contains "$1") || return 1
+        busctl --user call \
+          org.kde.KWin \
+          /WindowsRunner \
+          org.kde.krunner1 \
+          Run \
+          ss "$match_id" "" \
+          >/dev/null
+      }
+
+      wait_for_active() {
+        local attempt
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          if window_is_active "$1"; then
+            return 0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      invoke_shortcut() {
+        busctl --user call \
+          org.kde.kglobalaccel \
+          /component/kwin \
+          org.kde.kglobalaccel.Component \
+          invokeShortcut \
+          s "$1" \
+          >/dev/null
+      }
+
+      frame_is_valid() {
+        [[ "$1" =~ ^-?[0-9]+,-?[0-9]+,[1-9][0-9]*,[1-9][0-9]*$ ]]
+      }
+
+      frame_center_is_in_output() {
+        local frame_height
+        local frame_width
+        local frame_x
+        local frame_y
+        local output_height
+        local output_width
+        local output_x
+        local output_y
+
+        if ! frame_is_valid "$1" || ! frame_is_valid "$2"; then
+          return 1
+        fi
+        IFS=, read -r frame_x frame_y frame_width frame_height <<< "$1"
+        IFS=, read -r output_x output_y output_width output_height <<< "$2"
+        ((frame_x + frame_width / 2 >= output_x \
+          && frame_x + frame_width / 2 < output_x + output_width \
+          && frame_y + frame_height / 2 >= output_y \
+          && frame_y + frame_height / 2 < output_y + output_height))
+      }
+
+      ensure_window_on_output() {
+        local attempt
+        local frame
+        local output=$2
+        local query=$1
+        local shortcut=$3
+
+        frame=$(capture_stable_window_frame "$query" 2>/dev/null || true)
+
+        if frame_center_is_in_output "$frame" "$output"; then
+          return 0
+        fi
+
+        activate_window "$query" \
+          && wait_for_active "$query" \
+          && invoke_shortcut "$shortcut" \
+          || return 1
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          frame=$(window_frame_contains "$query" 2>/dev/null || true)
+
+          if frame_center_is_in_output "$frame" "$output"; then
+            return 0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      start_firefox() {
+        firefox_profile=$(mktemp -d -t driftile-firefox.XXXXXXXXXX) \
+          || return 1
+        cp ${firefoxPreferences} "$firefox_profile/user.js" || return 1
+        cp ${firefoxWindowState} "$firefox_profile/xulstore.json" || return 1
+        env \
+          MOZ_CRASHREPORTER_DISABLE=1 \
+          MOZ_DATA_REPORTING=0 \
+          MOZ_ENABLE_WAYLAND=1 \
+          ${pkgs.firefox}/bin/firefox \
+          --new-instance \
+          --no-remote \
+          --profile "$firefox_profile" \
+          --new-window "file://${firefoxPage}" \
+          >>/tmp/driftile-vm-two-head-firefox.log 2>&1 &
+        firefox_pid=$!
+        wait_for_window "$firefox_title" \
+          && window_protocol_matches "$firefox_title" false
+      }
+
+      start_xterm() {
+        DISPLAY="''${DISPLAY:-:0}" \
+          ${pkgs.xterm}/bin/xterm \
+          -T "$xterm_title" \
+          -class DriftileXTerm \
+          -e ${pkgs.coreutils}/bin/sleep 180 \
+          >>/tmp/driftile-vm-two-head-xterm.log 2>&1 &
+        xterm_pid=$!
+        wait_for_window "$xterm_title" \
+          && window_protocol_matches "$xterm_title" true
+      }
+
+      request_pointer_drag() {
+        local attempt
+        local destination_frame=$9
+        local destination_head=$6
+        local destination_height
+        local destination_output_height
+        local destination_output_width
+        local destination_output_x
+        local destination_output_y
+        local destination_width
+        local destination_x=$7
+        local destination_y=$8
+        local drag_name=$1
+        local extra
+        local ready_file="/tmp/shared/driftile-two-head-pointer-drag-$drag_name-ready"
+        local sent_file="/tmp/shared/driftile-two-head-pointer-drag-$drag_name-sent"
+        local source_frame=$5
+        local source_head=$2
+        local source_height
+        local source_output_height
+        local source_output_width
+        local source_output_x
+        local source_output_y
+        local source_width
+        local source_x=$3
+        local source_y=$4
+        local temporary_file="$ready_file.tmp"
+
+        case "$drag_name" in
+          insert|fallback) ;;
+          *) return 1 ;;
+        esac
+
+        IFS=, read -r \
+          destination_output_x \
+          destination_output_y \
+          destination_output_width \
+          destination_output_height \
+          extra \
+          <<< "$destination_frame"
+        [[ -z "''${extra:-}" ]] || return 1
+        IFS=, read -r \
+          source_output_x \
+          source_output_y \
+          source_output_width \
+          source_output_height \
+          extra \
+          <<< "$source_frame"
+        [[ -z "''${extra:-}" ]] || return 1
+        destination_width=$destination_output_width
+        destination_height=$destination_output_height
+        source_width=$source_output_width
+        source_height=$source_output_height
+        ((destination_width > 1 && destination_height > 1 \
+          && source_width > 1 && source_height > 1)) || return 1
+
+        rm -f "$ready_file" "$sent_file" "$temporary_file"
+        printf '%s %s %s %s %s %s %s %s %s %s %s %s %s %s\n' \
+          "$source_head" \
+          "$source_x" \
+          "$source_y" \
+          "$source_output_x" \
+          "$source_output_y" \
+          "$source_output_width" \
+          "$source_output_height" \
+          "$destination_head" \
+          "$destination_x" \
+          "$destination_y" \
+          "$destination_output_x" \
+          "$destination_output_y" \
+          "$destination_output_width" \
+          "$destination_output_height" \
+          > "$temporary_file"
+        mv "$temporary_file" "$ready_file"
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          if [[ -f "$sent_file" ]]; then
+            return 0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      verify_targeted_insertion() {
+        local attempt
+        local firefox_frame
+        local firefox_height
+        local firefox_width
+        local firefox_x
+        local firefox_y
+        local stable_samples=0
+        local target_width=$1
+        local xterm_frame
+        local xterm_height
+        local xterm_width
+        local xterm_x
+        local xterm_y
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          firefox_frame=$(window_frame_contains "$firefox_title" 2>/dev/null || true)
+          xterm_frame=$(window_frame_contains "$xterm_title" 2>/dev/null || true)
+          IFS=, read -r firefox_x firefox_y firefox_width firefox_height \
+            <<< "$firefox_frame"
+          IFS=, read -r xterm_x xterm_y xterm_width xterm_height \
+            <<< "$xterm_frame"
+
+          if frame_center_is_in_output "$firefox_frame" "$right_frame" \
+            && frame_center_is_in_output "$xterm_frame" "$right_frame" \
+            && ((firefox_x == xterm_x \
+              && firefox_width == target_width \
+              && xterm_width == target_width \
+              && xterm_y + xterm_height < firefox_y)) \
+            && window_is_active "$firefox_title"; then
+            stable_samples=$((stable_samples + 1))
+
+            if ((stable_samples >= 2)); then
+              return 0
+            fi
+          else
+            stable_samples=0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      verify_empty_output_fallback() {
+        local attempt
+        local firefox_frame
+        local stable_samples=0
+        local xterm_frame
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          firefox_frame=$(window_frame_contains "$firefox_title" 2>/dev/null || true)
+          xterm_frame=$(window_frame_contains "$xterm_title" 2>/dev/null || true)
+
+          if frame_center_is_in_output "$firefox_frame" "$left_frame" \
+            && frame_center_is_in_output "$xterm_frame" "$right_frame" \
+            && window_is_active "$firefox_title"; then
+            stable_samples=$((stable_samples + 1))
+
+            if ((stable_samples >= 2)); then
+              return 0
+            fi
+          else
+            stable_samples=0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      rm -f \
+        "$result_file" \
+        "$result_file.tmp" \
+        /tmp/shared/driftile-two-head-pointer-*-ready \
+        /tmp/shared/driftile-two-head-pointer-*-sent
+      : > "$diagnostics_file"
+      trap cleanup EXIT
+
+      wait_for_extension \
+        || fail_test "The extension did not load."
+      configure_outputs \
+        || fail_test "KScreen did not expose two 688x768 connected outputs."
+
+      IFS=, read -r left_x left_y left_width left_height <<< "$left_frame"
+      IFS=, read -r right_x right_y right_width right_height <<< "$right_frame"
+      left_probe_x=$((left_x + left_width / 2))
+      left_probe_y=$((left_y + left_height / 2))
+      right_probe_x=$((right_x + right_width / 2))
+      right_probe_y=$((right_y + right_height / 2))
+
+      request_pointer_probe left 0 "$left_probe_x" "$left_probe_y" "$left_frame" \
+        || fail_test "Absolute QMP pointer mapping failed on the left output."
+      start_firefox \
+        || fail_test "The native Wayland Firefox fixture did not start."
+      ensure_window_on_output \
+        "$firefox_title" \
+        "$left_frame" \
+        driftile_move_window_to_output_left \
+        || fail_test "Firefox did not settle on the left output."
+
+      request_pointer_probe right 1 "$right_probe_x" "$right_probe_y" "$right_frame" \
+        || fail_test "Absolute QMP pointer mapping failed on the right output."
+      start_xterm \
+        || fail_test "The XWayland xterm fixture did not start."
+      ensure_window_on_output \
+        "$xterm_title" \
+        "$right_frame" \
+        driftile_move_window_to_output_right \
+        || fail_test "xterm did not settle on the right output."
+
+      firefox_frame=$(capture_stable_window_frame "$firefox_title" 2>/dev/null || true)
+      xterm_frame=$(capture_stable_window_frame "$xterm_title" 2>/dev/null || true)
+      if ! frame_is_valid "$firefox_frame" \
+        || ! frame_is_valid "$xterm_frame"; then
+        fail_test "The initial application frames were invalid."
+      fi
+      IFS=, read -r \
+        firefox_x firefox_y firefox_width firefox_height \
+        <<< "$firefox_frame"
+      IFS=, read -r xterm_x xterm_y xterm_width xterm_height <<< "$xterm_frame"
+      source_x=$((firefox_x + firefox_width / 2))
+      source_y=$((firefox_y + firefox_height / 2))
+      destination_x=$((xterm_x + xterm_width / 2))
+      destination_y=$((xterm_y + 3 * xterm_height / 4))
+      activate_window "$firefox_title" \
+        || fail_test "Firefox could not be activated before the insertion drag."
+      wait_for_active "$firefox_title" \
+        || fail_test "Firefox focus did not settle before the insertion drag."
+      request_pointer_drag \
+        insert \
+        0 \
+        "$source_x" \
+        "$source_y" \
+        "$left_frame" \
+        1 \
+        "$destination_x" \
+        "$destination_y" \
+        "$right_frame" \
+        || fail_test "The physical cross-output insertion drag was not delivered."
+      verify_targeted_insertion "$xterm_width" \
+        || fail_test "The cross-output target insertion layout was not adopted."
+
+      firefox_frame=$(capture_stable_window_frame "$firefox_title" 2>/dev/null || true)
+      frame_is_valid "$firefox_frame" \
+        || fail_test "The inserted Firefox frame was invalid."
+      IFS=, read -r \
+        firefox_x firefox_y firefox_width firefox_height \
+        <<< "$firefox_frame"
+      source_x=$((firefox_x + firefox_width / 2))
+      source_y=$((firefox_y + firefox_height / 2))
+      destination_x=$left_probe_x
+      destination_y=$left_probe_y
+      request_pointer_drag \
+        fallback \
+        1 \
+        "$source_x" \
+        "$source_y" \
+        "$right_frame" \
+        0 \
+        "$destination_x" \
+        "$destination_y" \
+        "$left_frame" \
+        || fail_test "The physical empty-output fallback drag was not delivered."
+      verify_empty_output_fallback \
+        || fail_test "The empty-output drop did not use ordinary admission."
+
+      printf '%s\n' \
+        "two real outputs, native Wayland Firefox, XWayland xterm, targeted insertion, and empty-output fallback passed" \
+        >> "$diagnostics_file"
+      write_result true
+    '';
+  };
   kwinConfig = pkgs.writeText "driftile-vm-kwinrc" ''
     [MouseBindings]
     CommandAll1=Move
@@ -8109,8 +8952,8 @@ let
 
     [Script-${pluginId}]
     ColumnWidthStepPercent=10
-    DefaultColumnWidthPercent=50
-    Gap=16
+    DefaultColumnWidthPercent=${if driftileVmTwoHead then "100" else "50"}
+    Gap=${if driftileVmTwoHead then "8" else "16"}
     WindowHeightStepPercent=10
   '';
   screenLockerConfig = pkgs.writeText "driftile-vm-kscreenlockerrc" ''
@@ -8154,7 +8997,7 @@ let
   '';
 in
 {
-  networking.hostName = "driftile-vm";
+  networking.hostName = if driftileVmTwoHead then "driftile-vm-two-head" else "driftile-vm";
   programs.driftile.enable = true;
   system.stateVersion = "26.05";
   system.switch.enable = false;
@@ -8203,7 +9046,7 @@ in
   };
 
   environment.systemPackages = [
-    demo
+    (if driftileVmTwoHead then twoHeadDemo else demo)
   ];
 
   system.activationScripts.driftileVmUserConfig = {
@@ -8231,7 +9074,12 @@ in
     [Desktop Entry]
     Type=Application
     Name=Driftile VM demo
-    Exec=${demo}/bin/driftile-demo
+    Exec=${
+      if driftileVmTwoHead then
+        "${twoHeadDemo}/bin/driftile-two-head-demo"
+      else
+        "${demo}/bin/driftile-demo"
+    }
     OnlyShowIn=KDE;
     X-KDE-autostart-after=panel
   '';
@@ -8241,18 +9089,33 @@ in
     diskImage = null;
     graphics = true;
     memorySize = 8192;
-    resolution = {
-      x = 1680;
-      y = 1050;
-    };
+    resolution =
+      if driftileVmTwoHead then
+        {
+          x = 688;
+          y = 768;
+        }
+      else
+        {
+          x = 1680;
+          y = 1050;
+        };
     restrictNetwork = true;
     qemu = {
       forceAccel = true;
-      options = [
-        "-display gtk,gl=off"
-        "-vga none"
-        "-device virtio-gpu-pci,xres=1680,yres=1050"
-      ];
+      options =
+        if driftileVmTwoHead then
+          [
+            "-display sdl,gl=off,show-cursor=on,window-close=off"
+            "-vga none"
+            "-device '${twoHeadGpu}'"
+          ]
+        else
+          [
+            "-display gtk,gl=off"
+            "-vga none"
+            "-device virtio-gpu-pci,xres=1680,yres=1050"
+          ];
     };
   };
 }
