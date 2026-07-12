@@ -25,6 +25,18 @@ import type {
 } from "../src/platform/kwin/api";
 import { RuntimeController } from "../src/runtime-controller";
 
+const PERFORMANCE_REFERENCE = Object.freeze({
+  classificationWindows: 96,
+  classificationReadsPerWindow: 8,
+  dirtyContextSchedulerCallbacks: 1,
+  lifecycleCycles: 128,
+  lifecycleSchedulerCallbacks: 1_024,
+  startupGeometryLookups: 2,
+  startupSchedulerCallbacks: 2,
+  startupWindows: 1_000,
+});
+const MAX_SCHEDULED_SETTLEMENT_CALLBACKS = 100;
+
 class Signal<TArguments extends unknown[]> implements KWinSignal<TArguments> {
   private readonly handlers = new Set<(...arguments_: TArguments) => void>();
 
@@ -45,6 +57,11 @@ class Signal<TArguments extends unknown[]> implements KWinSignal<TArguments> {
 
 class ManualScheduler {
   private readonly callbacks: Array<() => void> = [];
+  private executed = 0;
+
+  get executedCount(): number {
+    return this.executed;
+  }
 
   get pendingCount(): number {
     return this.callbacks.length;
@@ -61,6 +78,7 @@ class ManualScheduler {
       throw new Error("no scheduled callback");
     }
 
+    this.executed += 1;
     callback();
   }
 }
@@ -21356,11 +21374,13 @@ describe("RuntimeController", () => {
     expect(windows.map((window) => window.writeCount)).toEqual(writes);
   });
 
-  it("plans a large startup context with constant geometry lookups", () => {
+  it("performance budget: bounds large startup planning", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
-    const windows = Array.from({ length: 1000 }, (_, index) =>
-      createTrackedWindow(`window-${String(index)}`, output, desktop),
+    const windows = Array.from(
+      { length: PERFORMANCE_REFERENCE.startupWindows },
+      (_, index) =>
+        createTrackedWindow(`window-${String(index)}`, output, desktop),
     );
     const fixture = createWorkspace(
       output,
@@ -21387,12 +21407,39 @@ describe("RuntimeController", () => {
 
     controller.start();
     expect(controller.managedCount).toBe(0);
-    scheduler.flush();
-    scheduler.flush();
 
-    expect(controller.managedCount).toBe(1000);
-    expect(controller.lastWriteCount).toBe(1000);
-    expect(geometryLookupCount).toBe(2);
+    while (
+      scheduler.pendingCount > 0 &&
+      scheduler.executedCount < PERFORMANCE_REFERENCE.startupSchedulerCallbacks
+    ) {
+      scheduler.flush();
+    }
+
+    expect(controller.managedCount).toBe(PERFORMANCE_REFERENCE.startupWindows);
+    expect(controller.lastWriteCount).toBe(
+      PERFORMANCE_REFERENCE.startupWindows,
+    );
+    expect(
+      windows.reduce((total, window) => total + window.writeCount, 0),
+    ).toBe(PERFORMANCE_REFERENCE.startupWindows);
+    expect(windows.every((window) => window.writeCount === 1)).toBe(true);
+    const startupLayout = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    expect(startupLayout.columns).toHaveLength(
+      PERFORMANCE_REFERENCE.startupWindows,
+    );
+    expect(
+      startupLayout.columns.every((column) => column.windowIds.length === 1),
+    ).toBe(true);
+    expect(geometryLookupCount).toBe(
+      PERFORMANCE_REFERENCE.startupGeometryLookups,
+    );
+    expect(scheduler.executedCount).toBeLessThanOrEqual(
+      PERFORMANCE_REFERENCE.startupSchedulerCallbacks,
+    );
+    expect(scheduler.pendingCount).toBe(0);
   });
 
   it("keeps an unusable startup group waiting until its work area recovers", () => {
@@ -21821,10 +21868,10 @@ describe("RuntimeController", () => {
     expect(resumeScheduler.pendingCount).toBe(0);
   });
 
-  it("keeps live ownership classification linear during reconcile writes", () => {
+  it("performance budget: keeps ownership classification linear", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
-    const windowCount = 96;
+    const windowCount = PERFORMANCE_REFERENCE.classificationWindows;
     let classificationReads = 0;
     const windows = Array.from({ length: windowCount }, (_, index) => {
       const tracked = createTrackedWindow(
@@ -21865,7 +21912,9 @@ describe("RuntimeController", () => {
 
     expect(controller.reconcile()).toBe(windowCount);
     expect(classificationReads).toBeGreaterThanOrEqual(windowCount);
-    expect(classificationReads).toBeLessThanOrEqual(windowCount * 8);
+    expect(classificationReads).toBeLessThanOrEqual(
+      windowCount * PERFORMANCE_REFERENCE.classificationReadsPerWindow,
+    );
   });
 
   it("queues windows added during startup stabilization", () => {
@@ -23260,7 +23309,7 @@ describe("RuntimeController", () => {
     expect(third.window.frameGeometry.x).toBe(20);
   });
 
-  it("settles sustained window lifecycles without geometry feedback", () => {
+  it("performance budget: settles sustained lifecycle changes", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
     const first = createTrackedWindow("window-1", output, desktop);
@@ -23312,7 +23361,11 @@ describe("RuntimeController", () => {
       expect(fixture.workspace.activeWindow).toBe(second.window);
       expect(scheduler.pendingCount).toBe(0);
 
-      for (let cycle = 0; cycle < 128; cycle += 1) {
+      for (
+        let cycle = 0;
+        cycle < PERFORMANCE_REFERENCE.lifecycleCycles;
+        cycle += 1
+      ) {
         const candidate = createTrackedWindow(
           `lifecycle-window-${String(cycle)}`,
           output,
@@ -23387,6 +23440,9 @@ describe("RuntimeController", () => {
       }
 
       expect(warnings).toEqual([]);
+      expect(scheduler.executedCount).toBeLessThanOrEqual(
+        PERFORMANCE_REFERENCE.lifecycleSchedulerCallbacks,
+      );
     } finally {
       console.warn = warning;
       first.setWriteBehavior(null);
@@ -23394,7 +23450,7 @@ describe("RuntimeController", () => {
     }
   });
 
-  it("reconciles each dirty output context in one scheduled batch", () => {
+  it("performance budget: coalesces dirty visible contexts", () => {
     const output = createOutput("DP-1", 0);
     const otherOutput = createOutput("HDMI-A-1", 1000);
     const desktop = { id: "desktop-1" };
@@ -23427,11 +23483,17 @@ describe("RuntimeController", () => {
     expect(scheduler.pendingCount).toBe(1);
     scheduler.flush();
 
+    expect(scheduler.executedCount).toBeLessThanOrEqual(
+      PERFORMANCE_REFERENCE.dirtyContextSchedulerCallbacks,
+    );
+    expect(scheduler.pendingCount).toBe(0);
     expect(controller.lastWriteCount).toBe(2);
     expect(second.window.frameGeometry.x).toBe(505);
     expect(otherSecond.window.frameGeometry.x).toBe(1505);
     expect(first.writeCount).toBe(1);
     expect(otherFirst.writeCount).toBe(1);
+    expect(second.writeCount).toBe(1);
+    expect(otherSecond.writeCount).toBe(1);
   });
 
   it("rebases a transferred window before the batched reconcile", () => {
@@ -33939,7 +34001,10 @@ function createStackedMaximizeFixture(
 function flushManualScheduler(scheduler: ManualScheduler): void {
   let callbacks = 0;
 
-  while (scheduler.pendingCount > 0 && callbacks < 100) {
+  while (
+    scheduler.pendingCount > 0 &&
+    callbacks < MAX_SCHEDULED_SETTLEMENT_CALLBACKS
+  ) {
     scheduler.flush();
     callbacks += 1;
   }

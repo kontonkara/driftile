@@ -85,6 +85,7 @@ The current runtime already:
 - Leaves dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows outside layout ownership, separate from manual floating.
 - Translates client minimum and maximum sizes to decorated frame bounds for layout validation and column resizing.
 - Reinserts an active tiled window before or after a visible same-context target on mouse release, using the same transactional stack model as keyboard edits.
+- Gates startup scale, ownership classification, lifecycle settlement, multi-context batching, and automatic-height allocation with deterministic operation-count budgets.
 
 The automatic-floating base and the script-visible hard-constraint policy are
 part of the current baseline. More toolkit coverage, a future KWin oracle for
@@ -123,7 +124,7 @@ Persistence foundation complete: core has a strict logical-state codec, a bounde
 - Add tabbed column presentation and matching pointer navigation.
 - Add Driftile-specific application overrides and a complete settings UI.
 - Add optional visual transitions and concise diagnostics.
-- Publish compatibility, migration, troubleshooting, and performance guidance.
+- Publish compatibility, migration, and troubleshooting guidance.
 
 Exit criteria:
 

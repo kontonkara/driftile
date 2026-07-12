@@ -507,7 +507,10 @@ function distributeAutomaticWindowHeights(
   bounds: readonly ResolvedWindowHeightBounds[],
   budget: number,
 ): void {
-  const active = new Set<number>();
+  const constraints = new Array<AutomaticHeightConstraint | undefined>(
+    policies.length,
+  );
+  let activeCount = 0;
   const initialBudget = budget;
   let minimumTotal = 0;
   let totalWeight = 0;
@@ -523,12 +526,22 @@ function distributeAutomaticWindowHeights(
       throw new Error("window height bounds are missing");
     }
 
-    active.add(index);
+    constraints[index] = {
+      index,
+      maximumHeight: candidateBounds.maximumFrameHeight,
+      maximumLogWaterLevel:
+        Math.log(candidateBounds.maximumFrameHeight) - Math.log(policy.weight),
+      minimumHeight: candidateBounds.minimumFrameHeight,
+      minimumLogWaterLevel:
+        Math.log(candidateBounds.minimumFrameHeight) - Math.log(policy.weight),
+      weight: policy.weight,
+    };
+    activeCount += 1;
     minimumTotal += candidateBounds.minimumFrameHeight;
     totalWeight += policy.weight;
   }
 
-  if (active.size === 0) {
+  if (activeCount === 0) {
     return;
   }
 
@@ -541,45 +554,32 @@ function distributeAutomaticWindowHeights(
   }
 
   let remaining = budget;
+  const constraintIndex = new AutomaticHeightConstraintIndex(constraints);
 
-  while (active.size > 0) {
-    let constrainedIndex = -1;
-    let constrainedHeight = 0;
-
-    for (const index of active) {
-      const policy = policies[index];
-      const candidateBounds = bounds[index];
-
-      if (policy?.kind !== "auto" || !candidateBounds) {
-        throw new Error("window height state is out of sync");
-      }
-
-      const candidate = remaining * (policy.weight / totalWeight);
-
-      if (candidate < candidateBounds.minimumFrameHeight) {
-        constrainedIndex = index;
-        constrainedHeight = candidateBounds.minimumFrameHeight;
-        break;
-      }
-
-      if (candidate > candidateBounds.maximumFrameHeight) {
-        constrainedIndex = index;
-        constrainedHeight = candidateBounds.maximumFrameHeight;
-        break;
-      }
-    }
+  while (activeCount > 0) {
+    const logWaterLevel =
+      remaining > 0
+        ? Math.log(remaining) - Math.log(totalWeight)
+        : Number.NEGATIVE_INFINITY;
+    const constrainedIndex = constraintIndex.firstViolation(logWaterLevel);
 
     if (constrainedIndex >= 0) {
-      const policy = policies[constrainedIndex];
+      const constraint = constraints[constrainedIndex];
 
-      if (policy?.kind !== "auto") {
+      if (!constraint) {
         throw new Error("window height state is out of sync");
       }
 
+      const constrainedHeight =
+        logWaterLevel < constraint.minimumLogWaterLevel
+          ? constraint.minimumHeight
+          : constraint.maximumHeight;
       output[constrainedIndex] = constrainedHeight;
-      active.delete(constrainedIndex);
+      constraints[constrainedIndex] = undefined;
+      activeCount -= 1;
+      constraintIndex.remove(constrainedIndex);
       remaining -= constrainedHeight;
-      totalWeight -= policy.weight;
+      totalWeight -= constraint.weight;
 
       if (remaining < -floatingPointTolerance(remaining, constrainedHeight)) {
         throw new RangeError("window minimum heights exceed the work area");
@@ -590,24 +590,113 @@ function distributeAutomaticWindowHeights(
 
     let remainingWeight = totalWeight;
 
-    for (const index of active) {
-      const policy = policies[index];
-
-      if (policy?.kind !== "auto") {
-        throw new Error("window height state is out of sync");
+    for (const [index, constraint] of constraints.entries()) {
+      if (!constraint) {
+        continue;
       }
 
-      const height = remaining * (policy.weight / remainingWeight);
+      const height = remaining * (constraint.weight / remainingWeight);
       output[index] = height;
       remaining -= height;
-      remainingWeight -= policy.weight;
+      remainingWeight -= constraint.weight;
     }
 
-    active.clear();
+    activeCount = 0;
   }
 
   if (remaining > floatingPointTolerance(initialBudget, remaining)) {
     throw new RangeError("window maximum heights cannot fill the work area");
+  }
+}
+
+interface AutomaticHeightConstraint {
+  readonly index: number;
+  readonly maximumHeight: number;
+  readonly maximumLogWaterLevel: number;
+  readonly minimumHeight: number;
+  readonly minimumLogWaterLevel: number;
+  readonly weight: number;
+}
+
+class AutomaticHeightConstraintIndex {
+  private readonly leafCount: number;
+  private readonly maximumMinimumLogWaterLevels: Float64Array;
+  private readonly minimumMaximumLogWaterLevels: Float64Array;
+
+  constructor(constraints: readonly (AutomaticHeightConstraint | undefined)[]) {
+    let leafCount = 1;
+
+    while (leafCount < constraints.length) {
+      leafCount *= 2;
+    }
+
+    this.leafCount = leafCount;
+    this.maximumMinimumLogWaterLevels = new Float64Array(leafCount * 2);
+    this.maximumMinimumLogWaterLevels.fill(Number.NEGATIVE_INFINITY);
+    this.minimumMaximumLogWaterLevels = new Float64Array(leafCount * 2);
+    this.minimumMaximumLogWaterLevels.fill(Number.POSITIVE_INFINITY);
+
+    for (const constraint of constraints) {
+      if (!constraint) {
+        continue;
+      }
+
+      const leaf = leafCount + constraint.index;
+      this.maximumMinimumLogWaterLevels[leaf] = constraint.minimumLogWaterLevel;
+      this.minimumMaximumLogWaterLevels[leaf] = constraint.maximumLogWaterLevel;
+    }
+
+    for (let node = leafCount - 1; node > 0; node -= 1) {
+      this.updateNode(node);
+    }
+  }
+
+  firstViolation(logWaterLevel: number): number {
+    if (!this.nodeHasViolation(1, logWaterLevel)) {
+      return -1;
+    }
+
+    let node = 1;
+
+    while (node < this.leafCount) {
+      const left = node * 2;
+      node = this.nodeHasViolation(left, logWaterLevel) ? left : left + 1;
+    }
+
+    return node - this.leafCount;
+  }
+
+  remove(index: number): void {
+    let node = this.leafCount + index;
+    this.maximumMinimumLogWaterLevels[node] = Number.NEGATIVE_INFINITY;
+    this.minimumMaximumLogWaterLevels[node] = Number.POSITIVE_INFINITY;
+
+    while (node > 1) {
+      node = Math.floor(node / 2);
+      this.updateNode(node);
+    }
+  }
+
+  private nodeHasViolation(node: number, logWaterLevel: number): boolean {
+    return (
+      (this.maximumMinimumLogWaterLevels[node] ?? Number.NEGATIVE_INFINITY) >
+        logWaterLevel ||
+      (this.minimumMaximumLogWaterLevels[node] ?? Number.POSITIVE_INFINITY) <
+        logWaterLevel
+    );
+  }
+
+  private updateNode(node: number): void {
+    const left = node * 2;
+    const right = left + 1;
+    this.maximumMinimumLogWaterLevels[node] = Math.max(
+      this.maximumMinimumLogWaterLevels[left] ?? Number.NEGATIVE_INFINITY,
+      this.maximumMinimumLogWaterLevels[right] ?? Number.NEGATIVE_INFINITY,
+    );
+    this.minimumMaximumLogWaterLevels[node] = Math.min(
+      this.minimumMaximumLogWaterLevels[left] ?? Number.POSITIVE_INFINITY,
+      this.minimumMaximumLogWaterLevels[right] ?? Number.POSITIVE_INFINITY,
+    );
   }
 }
 

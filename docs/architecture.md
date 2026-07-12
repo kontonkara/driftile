@@ -283,7 +283,11 @@ inspected safely within the codec bound.
 - Never leave partial layout ownership after a failed startup solve, and never immediately reschedule an unchanged unusable work area.
 - Keep a managed context unchanged and dirty when its settled work area cannot produce valid frames; a failure in one context must not block another.
 - Do not write unchanged properties.
-- Keep core operations linear in the affected context, not the whole workspace.
+- Keep default core operations linear in the affected context, not the whole
+  workspace. Automatic-height allocation indexes member bounds once before
+  distributing the affected stack.
+- Gate critical runtime and geometry paths with the deterministic operation
+  counts documented in [Performance](performance.md).
 
 ## Current constraint limits
 

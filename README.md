@@ -86,6 +86,7 @@ checks.
 - [Product scope](docs/product-scope.md)
 - [Architecture](docs/architecture.md)
 - [Testing](docs/testing.md)
+- [Performance](docs/performance.md)
 - [Roadmap](docs/roadmap.md)
 - [0.1.0 release notes](docs/release-notes-0.1.0.md)
 

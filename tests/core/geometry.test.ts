@@ -8,6 +8,7 @@ import { columnId, desktopId, outputId, windowId } from "../../src/core/ids";
 import type {
   ColumnWidth,
   LayoutContextSnapshot,
+  WindowHeight,
 } from "../../src/core/layout-engine";
 
 const output = outputId("DP-1");
@@ -628,6 +629,180 @@ describe("solveStripGeometry", () => {
       400, 360, 200,
     ]);
     expect(result.windows[2]?.frame.y).toBe(790);
+  });
+
+  it("water-fills across several lower and upper height bounds", () => {
+    const context = createContext([{ kind: "fixed", value: 600 }]);
+    const column = context.columns[0];
+
+    if (!column) {
+      throw new Error("expected a column fixture");
+    }
+
+    const first = windowId("window-1");
+    const second = windowId("window-2");
+    const third = windowId("window-3");
+    const fourth = windowId("window-4");
+    const fifth = windowId("window-5");
+    const windows = [first, second, third, fourth, fifth];
+    const result = solveStripGeometry({
+      context: {
+        ...context,
+        columns: [
+          {
+            ...column,
+            windowHeights: [
+              { kind: "auto", weight: 1 },
+              { kind: "auto", weight: 2 },
+              { kind: "auto", weight: 1 },
+              { kind: "auto", weight: 3 },
+              { kind: "auto", weight: 1 },
+            ],
+            windowIds: windows,
+          },
+        ],
+      },
+      devicePixelRatio: 1,
+      gap: 0,
+      pixelGridOrigin: { x: 0, y: 0 },
+      windowHeightBounds: new Map([
+        [first, { minimumClientHeight: 200 }],
+        [second, { maximumClientHeight: 150 }],
+        [fourth, { maximumClientHeight: 300 }],
+        [fifth, { minimumClientHeight: 100 }],
+      ]),
+      workArea: { height: 1000, width: 1000, x: 0, y: 0 },
+    });
+
+    expect(result.windows.map((window) => window.frame)).toEqual([
+      { height: 200, width: 600, x: 0, y: 0 },
+      { height: 150, width: 600, x: 0, y: 200 },
+      { height: 175, width: 600, x: 0, y: 350 },
+      { height: 300, width: 600, x: 0, y: 525 },
+      { height: 175, width: 600, x: 0, y: 825 },
+    ]);
+  });
+
+  it("honors height bounds with subnormal automatic weights", () => {
+    const context = createContext([{ kind: "fixed", value: 600 }]);
+    const column = context.columns[0];
+
+    if (!column) {
+      throw new Error("expected a column fixture");
+    }
+
+    const first = windowId("window-1");
+    const second = windowId("window-2");
+    const solveWithBounds = (
+      windowHeightBounds: NonNullable<
+        Parameters<typeof solveStripGeometry>[0]["windowHeightBounds"]
+      >,
+    ) =>
+      solveStripGeometry({
+        context: {
+          ...context,
+          columns: [
+            {
+              ...column,
+              windowHeights: [
+                { kind: "auto", weight: Number.MIN_VALUE },
+                { kind: "auto", weight: Number.MIN_VALUE },
+              ],
+              windowIds: [first, second],
+            },
+          ],
+        },
+        devicePixelRatio: 1,
+        gap: 0,
+        pixelGridOrigin: { x: 0, y: 0 },
+        windowHeightBounds,
+        workArea: { height: 1000, width: 1000, x: 0, y: 0 },
+      });
+
+    expect(
+      solveWithBounds(
+        new Map([[first, { minimumClientHeight: 600 }]]),
+      ).windows.map((window) => window.frame.height),
+    ).toEqual([600, 400]);
+    expect(() =>
+      solveWithBounds(
+        new Map([
+          [first, { maximumClientHeight: 1 }],
+          [second, { maximumClientHeight: 1 }],
+        ]),
+      ),
+    ).toThrow("maximum heights cannot fill");
+  });
+
+  it("performance budget: bounds automatic height policy reads", () => {
+    const context = createContext([{ kind: "fixed", value: 600 }]);
+    const column = context.columns[0];
+
+    if (!column) {
+      throw new Error("expected a column fixture");
+    }
+
+    const windowCount = 128;
+    const constrainedWindowCount = windowCount / 2;
+    const windows = Array.from({ length: windowCount }, (_value, index) =>
+      windowId(`window-${String(index + 1)}`),
+    );
+    const policies: WindowHeight[] = Array.from(
+      { length: windowCount },
+      () => ({ kind: "auto", weight: 1 }),
+    );
+    let policyReads = 0;
+    const observedPolicies = new Proxy(policies, {
+      get: (target, property, receiver) => {
+        if (typeof property === "string") {
+          const index = Number(property);
+
+          if (
+            Number.isInteger(index) &&
+            index >= 0 &&
+            String(index) === property
+          ) {
+            policyReads += 1;
+          }
+        }
+
+        return Reflect.get(target, property, receiver) as unknown;
+      },
+    });
+    const result = solveStripGeometry({
+      context: {
+        ...context,
+        columns: [
+          {
+            ...column,
+            windowHeights: observedPolicies,
+            windowIds: windows,
+          },
+        ],
+      },
+      devicePixelRatio: 1_000_000_000,
+      gap: 0,
+      pixelGridOrigin: { x: 0, y: 0 },
+      windowHeightBounds: new Map(
+        windows
+          .slice(windowCount - constrainedWindowCount)
+          .map((id) => [id, { minimumClientHeight: 1500 }]),
+      ),
+      workArea: {
+        height: windowCount * 1000,
+        width: 1000,
+        x: 0,
+        y: 0,
+      },
+    });
+
+    expect(policyReads).toBeLessThanOrEqual(windowCount * 3);
+
+    for (const [index, window] of result.windows.entries()) {
+      expect(window.frame.height).toBe(
+        index < windowCount - constrainedWindowCount ? 500 : 1500,
+      );
+    }
   });
 
   it("reserves a physical-pixel-aligned sibling minimum", () => {

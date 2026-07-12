@@ -13,6 +13,9 @@ nix flake check --all-systems --no-build
 versioned asset twice, compares exact bytes, and validates `SHA256SUMS`.
 The flake check evaluates the NixOS and Home Manager modules for every supported
 architecture; the normal `nix flake check` also builds checks for the host.
+To run only the deterministic budgets documented in
+[Performance](performance.md), use `npm run performance:check`. The same tests
+are already part of `check`.
 
 ## Isolated KWin smoke test
 
