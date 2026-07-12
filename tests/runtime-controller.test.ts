@@ -75,6 +75,7 @@ interface TrackedWindow {
   readonly fullScreenChanged: Signal<[]>;
   readonly hiddenChanged: Signal<[]>;
   readonly interactiveMoveResizeFinished: Signal<[]>;
+  readonly interactiveMoveResizeStarted: Signal<[]>;
   readonly maximizedAboutToChange: Signal<[mode: number]>;
   readonly maximizeableChanged: Signal<[maximizeable: boolean]>;
   readonly maximizedChanged: Signal<[]>;
@@ -179,6 +180,7 @@ function createTrackedWindow(
     | ((desktops: readonly KWinVirtualDesktop[], commit: () => void) => void)
     | null = null;
   const interactiveMoveResizeFinished = new Signal<[]>();
+  const interactiveMoveResizeStarted = new Signal<[]>();
   const maximizedAboutToChange = new Signal<[mode: number]>();
   const maximizeableChanged = new Signal<[maximizeable: boolean]>();
   const maximizedChanged = new Signal<[]>();
@@ -209,6 +211,7 @@ function createTrackedWindow(
     hiddenChanged,
     internalId: id,
     interactiveMoveResizeFinished,
+    interactiveMoveResizeStarted,
     managed: true,
     maxSize: { height: 10_000, width: 10_000 },
     maximizedAboutToChange,
@@ -318,6 +321,7 @@ function createTrackedWindow(
     fullScreenChanged,
     hiddenChanged,
     interactiveMoveResizeFinished,
+    interactiveMoveResizeStarted,
     maximizedAboutToChange,
     maximizeableChanged,
     maximizedChanged,
@@ -380,6 +384,7 @@ interface WorkspaceFixture {
       | ((window: KWinWindow, output: KWinOutput, commit: () => void) => void)
       | null,
   ): void;
+  setCursorPosition(x: number, y: number): void;
   setScreens(outputs: readonly KWinOutput[]): void;
   readonly virtualScreenGeometryChanged: Signal<[]>;
   readonly windowActivated: Signal<[window: KWinWindow | null]>;
@@ -426,6 +431,7 @@ function createWorkspace(
   let activeWindow = windows[windows.length - 1] ?? null;
   let currentDesktop = activeDesktop;
   let currentOutputs = [...outputs];
+  let cursorPosition = { x: 0, y: 0 };
   const currentDesktops = new Map(
     outputs.map((output) => [output.name, activeDesktop]),
   );
@@ -518,6 +524,7 @@ function createWorkspace(
     }),
     currentDesktop,
     currentDesktopChanged,
+    cursorPos: cursorPosition,
     desktops,
     screens: currentOutputs,
     screensChanged,
@@ -557,6 +564,11 @@ function createWorkspace(
       }
     },
   });
+  Object.defineProperty(workspace, "cursorPos", {
+    configurable: true,
+    enumerable: true,
+    get: () => cursorPosition,
+  });
   Object.defineProperty(workspace, "screens", {
     configurable: true,
     enumerable: true,
@@ -575,6 +587,9 @@ function createWorkspace(
       return outputTransferCount;
     },
     screensChanged,
+    setCursorPosition: (x, y) => {
+      cursorPosition = { x, y };
+    },
     setActivationBehavior: (behavior) => {
       activationBehavior = behavior;
     },
@@ -23617,6 +23632,317 @@ describe("RuntimeController", () => {
     expect(dragged.window.frameGeometry.x).toBe(10);
     expect(remaining.window.frameGeometry.x).toBe(505);
     expect(waiting.writeCount).toBe(0);
+  });
+
+  it("reinserts a dragged tiled window into a target column and stack slot", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const target = createTrackedWindow("target", output, desktop);
+    const dragged = createTrackedWindow("dragged", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [target.window, dragged.window],
+    );
+    const scheduler = new ManualScheduler();
+    const published: string[] = [];
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      onLayoutStateChanged: (document) => published.push(document),
+      schedule: scheduler.schedule,
+    });
+
+    controller.start();
+    expect(testLayoutColumns(controller, output, desktop)).toEqual([
+      { id: "column:target", windowIds: ["target"] },
+      { id: "column:dragged", windowIds: ["dragged"] },
+    ]);
+    Object.defineProperty(dragged.window, "move", {
+      configurable: true,
+      value: true,
+    });
+    dragged.moveResizedChanged.emit();
+    dragged.interactiveMoveResizeStarted.emit();
+    dragged.setFrameGeometry({ height: 780, width: 485, x: 80, y: 400 });
+    fixture.setCursorPosition(200, 650);
+    Object.defineProperty(dragged.window, "move", {
+      configurable: true,
+      value: false,
+    });
+    dragged.moveResizedChanged.emit();
+    dragged.interactiveMoveResizeFinished.emit();
+    flushManualScheduler(scheduler);
+
+    expect(testLayoutColumns(controller, output, desktop)).toEqual([
+      { id: "column:target", windowIds: ["target", "dragged"] },
+    ]);
+    expect(target.window.frameGeometry.x).toBe(10);
+    expect(dragged.window.frameGeometry.x).toBe(10);
+    expect(dragged.window.frameGeometry.width).toBe(
+      target.window.frameGeometry.width,
+    );
+    expect(target.window.frameGeometry.y).toBeLessThan(
+      dragged.window.frameGeometry.y,
+    );
+    expect(fixture.workspace.activeWindow).toBe(dragged.window);
+    expect(controller.lastWriteCount).toBeGreaterThan(0);
+    expect(published).toHaveLength(2);
+
+    Object.defineProperty(dragged.window, "move", {
+      configurable: true,
+      value: true,
+    });
+    dragged.moveResizedChanged.emit();
+    dragged.interactiveMoveResizeStarted.emit();
+    dragged.setFrameGeometry({
+      ...dragged.window.frameGeometry,
+      x: 120,
+      y: 80,
+    });
+    fixture.setCursorPosition(200, 100);
+    Object.defineProperty(dragged.window, "move", {
+      configurable: true,
+      value: false,
+    });
+    dragged.moveResizedChanged.emit();
+    dragged.interactiveMoveResizeFinished.emit();
+    flushManualScheduler(scheduler);
+
+    expect(testLayoutColumns(controller, output, desktop)).toEqual([
+      { id: "column:target", windowIds: ["dragged", "target"] },
+    ]);
+    expect(dragged.window.frameGeometry.y).toBeLessThan(
+      target.window.frameGeometry.y,
+    );
+    expect(published).toHaveLength(3);
+  });
+
+  it("restores the original tiled slot after an invalid pointer drop", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const target = createTrackedWindow("target", output, desktop);
+    const dragged = createTrackedWindow("dragged", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [target.window, dragged.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+
+    controller.start();
+    const initialColumns = testLayoutColumns(controller, output, desktop);
+    const expectedFrame = { ...dragged.window.frameGeometry };
+    Object.defineProperty(dragged.window, "move", {
+      configurable: true,
+      value: true,
+    });
+    dragged.interactiveMoveResizeStarted.emit();
+    dragged.setFrameGeometry({ ...expectedFrame, x: 200, y: 300 });
+    fixture.setCursorPosition(500, 400);
+    Object.defineProperty(dragged.window, "move", {
+      configurable: true,
+      value: false,
+    });
+    dragged.interactiveMoveResizeFinished.emit();
+    flushManualScheduler(scheduler);
+
+    expect(testLayoutColumns(controller, output, desktop)).toEqual(
+      initialColumns,
+    );
+    expect(dragged.window.frameGeometry).toEqual(expectedFrame);
+
+    const writesAfterInvalidDrop = dragged.writeCount;
+    Object.defineProperty(dragged.window, "move", {
+      configurable: true,
+      value: true,
+    });
+    dragged.interactiveMoveResizeStarted.emit();
+    fixture.setCursorPosition(200, 650);
+    Object.defineProperty(dragged.window, "move", {
+      configurable: true,
+      value: false,
+    });
+    dragged.interactiveMoveResizeFinished.emit();
+    flushManualScheduler(scheduler);
+
+    expect(testLayoutColumns(controller, output, desktop)).toEqual(
+      initialColumns,
+    );
+    expect(dragged.window.frameGeometry).toEqual(expectedFrame);
+    expect(dragged.writeCount).toBe(writesAfterInvalidDrop);
+  });
+
+  it("cancels pointer reinsertion when a target changes state", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const target = createTrackedWindow("target", output, desktop);
+    const dragged = createTrackedWindow("dragged", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [target.window, dragged.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+
+    controller.start();
+    const initialColumns = testLayoutColumns(controller, output, desktop);
+    const expectedFrame = { ...dragged.window.frameGeometry };
+    Object.defineProperty(dragged.window, "move", {
+      configurable: true,
+      value: true,
+    });
+    dragged.interactiveMoveResizeStarted.emit();
+    dragged.setFrameGeometry({ ...expectedFrame, x: 200, y: 300 });
+    Object.defineProperty(target.window, "minimized", {
+      configurable: true,
+      value: true,
+    });
+    target.minimizedChanged.emit();
+    fixture.setCursorPosition(200, 650);
+    Object.defineProperty(dragged.window, "move", {
+      configurable: true,
+      value: false,
+    });
+    dragged.interactiveMoveResizeFinished.emit();
+    flushManualScheduler(scheduler);
+
+    expect(testLayoutColumns(controller, output, desktop)).toEqual(
+      initialColumns,
+    );
+    expect(dragged.window.frameGeometry).toEqual(expectedFrame);
+  });
+
+  it("rejects a drag that starts during an existing suspension", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const target = createTrackedWindow("target", output, desktop);
+    const dragged = createTrackedWindow("dragged", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [target.window, dragged.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+
+    controller.start();
+    const initialColumns = testLayoutColumns(controller, output, desktop);
+    const expectedFrame = { ...dragged.window.frameGeometry };
+    const runtimeState = controller as unknown as {
+      requestedSuspensions: Map<WindowId, Set<string>>;
+    };
+    runtimeState.requestedSuspensions.set(
+      windowId("dragged"),
+      new Set(["maximized-settling"]),
+    );
+    Object.defineProperty(dragged.window, "move", {
+      configurable: true,
+      value: true,
+    });
+    dragged.moveResizedChanged.emit();
+    dragged.interactiveMoveResizeStarted.emit();
+    runtimeState.requestedSuspensions.delete(windowId("dragged"));
+    dragged.setFrameGeometry({ ...expectedFrame, x: 200, y: 300 });
+    fixture.setCursorPosition(200, 650);
+    Object.defineProperty(dragged.window, "move", {
+      configurable: true,
+      value: false,
+    });
+    dragged.moveResizedChanged.emit();
+    dragged.interactiveMoveResizeFinished.emit();
+    flushManualScheduler(scheduler);
+
+    expect(testLayoutColumns(controller, output, desktop)).toEqual(
+      initialColumns,
+    );
+    expect(dragged.window.frameGeometry).toEqual(expectedFrame);
+  });
+
+  it("commits a pointer drop while an unrelated context changes state", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const otherDesktop = { id: "desktop-2" };
+    const unrelated = createTrackedWindow("unrelated", output, otherDesktop);
+    const target = createTrackedWindow("target", output, desktop);
+    const dragged = createTrackedWindow("dragged", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop, otherDesktop],
+      [unrelated.window, target.window, dragged.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+
+    controller.start();
+    let stateChanged = false;
+    target.setWriteBehavior((_frame, commit) => {
+      commit();
+
+      if (!stateChanged) {
+        stateChanged = true;
+        Object.defineProperty(unrelated.window, "minimized", {
+          configurable: true,
+          value: true,
+        });
+        unrelated.minimizedChanged.emit();
+      }
+    });
+    Object.defineProperty(dragged.window, "move", {
+      configurable: true,
+      value: true,
+    });
+    dragged.moveResizedChanged.emit();
+    dragged.interactiveMoveResizeStarted.emit();
+    dragged.setFrameGeometry({
+      ...dragged.window.frameGeometry,
+      x: 200,
+      y: 300,
+    });
+    fixture.setCursorPosition(200, 650);
+    Object.defineProperty(dragged.window, "move", {
+      configurable: true,
+      value: false,
+    });
+    dragged.moveResizedChanged.emit();
+    dragged.interactiveMoveResizeFinished.emit();
+    flushManualScheduler(scheduler);
+
+    expect(stateChanged).toBe(true);
+    expect(testLayoutColumns(controller, output, desktop)).toEqual([
+      { id: "column:target", windowIds: ["target", "dragged"] },
+    ]);
+    expect(testLayoutColumns(controller, output, otherDesktop)).toEqual([
+      { id: "column:unrelated", windowIds: ["unrelated"] },
+    ]);
   });
 
   it("keeps an all-desktop application borderless while layout ownership changes", () => {

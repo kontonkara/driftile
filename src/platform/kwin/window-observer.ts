@@ -19,6 +19,8 @@ export interface WindowObserverEvents {
   readonly added?: (window: ObservedWindow) => void;
   readonly changed?: (windowId: string) => void;
   readonly fullScreenChanged?: (windowId: string, fullScreen: boolean) => void;
+  readonly interactiveMoveFinished?: (windowId: string) => void;
+  readonly interactiveMoveStarted?: (windowId: string) => void;
   readonly maximizedAboutToChange?: (windowId: string, mode: number) => void;
   readonly removed?: (windowId: string) => void;
   readonly suspensionSettled?: (
@@ -41,6 +43,8 @@ interface WindowEntry {
   readonly handleDesktopsChanged: () => void;
   readonly handleFullScreenChanged: () => void;
   readonly handleFrameGeometryChanged: (oldGeometry: KWinRect) => void;
+  readonly handleInteractiveMoveFinished: () => void;
+  readonly handleInteractiveMoveStarted: () => void;
   readonly handleInteractiveStateChanged: () => void;
   readonly handleMaximizedAboutToChange: (mode: number) => void;
   readonly handleMaximizedChanged: () => void;
@@ -216,6 +220,7 @@ export class WindowObserver {
     const refreshAutomaticFloating = (): void => {
       this.refresh(id, window, true);
     };
+    let interactiveMoveActive = false;
     let committedTile: object | null | undefined;
     let maximizeRequested = window.maximizeMode !== 0;
     let tileRequested = window.tile !== null;
@@ -230,6 +235,25 @@ export class WindowObserver {
         refreshState();
       },
       handleFrameGeometryChanged: refreshFrameGeometry,
+      handleInteractiveMoveFinished: () => {
+        const moved = interactiveMoveActive;
+        interactiveMoveActive = false;
+
+        if (moved) {
+          this.events.interactiveMoveFinished?.(id);
+        }
+
+        refreshInteractiveState();
+      },
+      handleInteractiveMoveStarted: () => {
+        interactiveMoveActive = window.move;
+
+        if (interactiveMoveActive) {
+          this.events.interactiveMoveStarted?.(id);
+        }
+
+        refreshInteractiveState();
+      },
       handleInteractiveStateChanged: refreshInteractiveState,
       handleMaximizedAboutToChange: (mode) => {
         if (mode !== 0) {
@@ -323,8 +347,11 @@ export class WindowObserver {
     window.desktopsChanged?.connect(entry.handleDesktopsChanged);
     window.frameGeometryChanged?.connect(entry.handleFrameGeometryChanged);
     window.fullScreenChanged?.connect(entry.handleFullScreenChanged);
+    window.interactiveMoveResizeStarted?.connect(
+      entry.handleInteractiveMoveStarted,
+    );
     window.interactiveMoveResizeFinished?.connect(
-      entry.handleInteractiveStateChanged,
+      entry.handleInteractiveMoveFinished,
     );
     window.maximizedAboutToChange?.connect(entry.handleMaximizedAboutToChange);
     window.maximizeableChanged?.connect(entry.handleConstraintChanged);
@@ -496,8 +523,11 @@ function disconnectWindowSignals(entry: WindowEntry): void {
     entry.handleFrameGeometryChanged,
   );
   entry.source.fullScreenChanged?.disconnect(entry.handleFullScreenChanged);
+  entry.source.interactiveMoveResizeStarted?.disconnect(
+    entry.handleInteractiveMoveStarted,
+  );
   entry.source.interactiveMoveResizeFinished?.disconnect(
-    entry.handleInteractiveStateChanged,
+    entry.handleInteractiveMoveFinished,
   );
   entry.source.maximizedAboutToChange?.disconnect(
     entry.handleMaximizedAboutToChange,

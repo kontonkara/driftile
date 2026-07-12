@@ -14,6 +14,7 @@ The ownership rule is strict:
 
 - One horizontal strip of columns per `(output, desktop)` context.
 - Deterministic window insertion, ordering, focus, movement, resizing, and scrolling.
+- Finish-only same-context pointer reinsertion for active tiled windows.
 - Vertical window stacks within columns.
 - Per-window height adjustment, weighted automatic stack distribution, and height presets.
 - Managed, manually floating, automatically layout-excluded, and ignored window states.
@@ -36,9 +37,8 @@ The ownership rule is strict:
 
 ## Later
 
-- Persistent layout and output-topology restoration.
 - Touchpad navigation and tabbed columns.
-- Mouse-driven insertion and rearrangement.
+- Cross-context pointer rearrangement and visual drop feedback.
 - Driftile-specific application overrides.
 - Optional visual transitions and layout indicators.
 - Activity-aware layouts.
@@ -85,6 +85,7 @@ Driftile must integrate with, not duplicate:
 - Resetting a window height returns that member to automatic sizing. A failed stack reflow restores every prior height state and frame.
 - Horizontal window movement merges a singleton into its neighbor or extracts a stacked member into a new adjacent singleton column.
 - Merge preserves the destination width; extraction copies the source width; both preserve focus and member order.
+- A tiled pointer drop targets one visible same-context window. Its vertical midpoint selects before or after; cross-column insertion adopts automatic height and the destination width, while same-stack reorder retains height policy. Invalidated or ambiguous intent restores the original slot.
 - Direct insertion appends the active window to the nearest existing stack in its direction, skips singleton columns as nonparticipants without wrapping, and preserves the target width.
 - Direct insertion may cross settled minimized passive peers in the participating source and target columns, including a fully minimized target stack. Those peers retain logical order, height state, minimized state, and externally changed frames without geometry writes. Fullscreen, maximized, native-tiled, restore- or toggle-settling, and other blockers in either participating column fail closed; a state round trip during reflow cancels and rolls back the edit.
 - Explicit consume appends the immediate right column's visible top member to the active column; explicit expel moves the active column's visible bottom member into a new right column. Focus remains in the active column.

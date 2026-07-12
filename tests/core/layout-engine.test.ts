@@ -3656,4 +3656,388 @@ describe("LayoutEngine", () => {
     expect(engine.snapshot(targetOutput, desktop)).toEqual(targetChanged);
     expect(engine.commitWindowTransfer(preview)).toBe(false);
   });
+
+  it("reorders a stack member atomically while retaining its height policy", () => {
+    const engine = new LayoutEngine();
+
+    engine.restoreColumns({
+      activeColumnId: columnId("stack"),
+      columns: [
+        {
+          column: {
+            id: columnId("stack"),
+            width: { kind: "proportion", value: 0.45 },
+            windowHeights: [
+              { kind: "auto", weight: 2 },
+              { clientHeight: 320, kind: "fixed" },
+              { kind: "auto", weight: 4 },
+            ],
+            windowIds: [
+              windowId("window-a"),
+              windowId("window-b"),
+              windowId("window-c"),
+            ],
+          },
+          index: 0,
+        },
+      ],
+      desktopId: desktop,
+      outputId: output,
+      viewportOffset: 73,
+    });
+    const before = engine.snapshot(output, desktop);
+    const edit = engine.reinsertWindow(windowId("window-b"), {
+      position: "after",
+      targetWindowId: windowId("window-c"),
+    });
+
+    expect(edit?.kind).toBe("reorder");
+    expect(engine.snapshot(output, desktop)).toEqual({
+      ...before,
+      columns: [
+        {
+          ...before.columns[0],
+          windowHeights: [
+            { kind: "auto", weight: 2 },
+            { kind: "auto", weight: 4 },
+            { clientHeight: 320, kind: "fixed" },
+          ],
+          windowIds: ["window-a", "window-c", "window-b"],
+        },
+      ],
+    });
+    expect(edit && engine.rollbackStackEdit(edit.rollback)).toBe(true);
+    expect(engine.snapshot(output, desktop)).toEqual(before);
+  });
+
+  it("reinserts a member at a cross-column anchor with automatic height", () => {
+    const engine = new LayoutEngine();
+
+    engine.restoreColumns({
+      activeColumnId: columnId("source"),
+      columns: [
+        {
+          column: {
+            id: columnId("source"),
+            width: { kind: "fixed", value: 360 },
+            windowHeights: [
+              { kind: "auto", weight: 2 },
+              { clientHeight: 330, kind: "fixed" },
+            ],
+            windowIds: [windowId("source-a"), windowId("moved")],
+          },
+          index: 0,
+        },
+        {
+          column: {
+            id: columnId("destination"),
+            width: { kind: "fixed", value: 700 },
+            windowHeights: [
+              { index: 0, kind: "preset" },
+              { kind: "auto", weight: 3 },
+            ],
+            windowIds: [windowId("target-a"), windowId("target-b")],
+          },
+          index: 1,
+        },
+      ],
+      desktopId: desktop,
+      outputId: output,
+      viewportOffset: 115,
+    });
+    const before = engine.snapshot(output, desktop);
+    const edit = engine.reinsertWindow(windowId("moved"), {
+      position: "before",
+      targetWindowId: windowId("target-b"),
+    });
+
+    expect(edit?.kind).toBe("insert");
+    expect(engine.snapshot(output, desktop)).toEqual({
+      activeColumnId: "destination",
+      columns: [
+        {
+          id: "source",
+          width: { kind: "fixed", value: 360 },
+          windowIds: ["source-a"],
+        },
+        {
+          id: "destination",
+          width: { kind: "fixed", value: 700 },
+          windowHeights: [
+            { index: 0, kind: "preset" },
+            { kind: "auto", weight: 1 },
+            { kind: "auto", weight: 3 },
+          ],
+          windowIds: ["target-a", "moved", "target-b"],
+        },
+      ],
+      desktopId: "desktop-1",
+      outputId: "DP-1",
+      viewportOffset: 115,
+    });
+    expect(edit && engine.rollbackStackEdit(edit.rollback)).toBe(true);
+    expect(engine.snapshot(output, desktop)).toEqual(before);
+  });
+
+  it("removes an emptied source column during pointer reinsertion", () => {
+    const engine = new LayoutEngine();
+
+    engine.restoreColumns({
+      activeColumnId: columnId("source"),
+      columns: [
+        {
+          column: {
+            id: columnId("source"),
+            width: { kind: "fixed", value: 310 },
+            windowHeights: [{ clientHeight: 280, kind: "fixed" }],
+            windowIds: [windowId("moved")],
+          },
+          index: 0,
+        },
+        {
+          column: {
+            id: columnId("destination"),
+            width: { kind: "proportion", value: 0.6 },
+            windowIds: [windowId("target")],
+          },
+          index: 1,
+        },
+      ],
+      desktopId: desktop,
+      outputId: output,
+      viewportOffset: -52,
+    });
+    const before = engine.snapshot(output, desktop);
+    const edit = engine.reinsertWindow(windowId("moved"), {
+      position: "after",
+      targetWindowId: windowId("target"),
+    });
+
+    expect(edit?.kind).toBe("merge");
+    expect(engine.snapshot(output, desktop)).toEqual({
+      activeColumnId: "destination",
+      columns: [
+        {
+          id: "destination",
+          width: { kind: "proportion", value: 0.6 },
+          windowIds: ["target", "moved"],
+        },
+      ],
+      desktopId: "desktop-1",
+      outputId: "DP-1",
+      viewportOffset: -52,
+    });
+    expect(edit && engine.rollbackStackEdit(edit.rollback)).toBe(true);
+    expect(engine.snapshot(output, desktop)).toEqual(before);
+  });
+
+  it("rejects invalid and ineffective window reinsertions without mutation", () => {
+    const engine = new LayoutEngine();
+    const otherDesktop = desktopId("desktop-2");
+
+    engine.restoreColumns({
+      activeColumnId: columnId("stack"),
+      columns: [
+        {
+          column: {
+            id: columnId("stack"),
+            width: { kind: "fixed", value: 400 },
+            windowIds: [windowId("window-a"), windowId("window-b")],
+          },
+          index: 0,
+        },
+      ],
+      desktopId: desktop,
+      outputId: output,
+    });
+    engine.manageWindow({
+      columnId: columnId("other"),
+      desktopId: otherDesktop,
+      outputId: output,
+      width: { kind: "fixed", value: 300 },
+      windowId: windowId("other-window"),
+    });
+    const before = engine.snapshot(output, desktop);
+    const otherBefore = engine.snapshot(output, otherDesktop);
+
+    expect(
+      engine.reinsertWindow(windowId("window-a"), {
+        position: "before",
+        targetWindowId: windowId("window-b"),
+      }),
+    ).toBeNull();
+    expect(
+      engine.reinsertWindow(windowId("window-a"), {
+        position: "after",
+        targetWindowId: windowId("window-a"),
+      }),
+    ).toBeNull();
+    expect(
+      engine.reinsertWindow(windowId("window-a"), {
+        position: "after",
+        targetWindowId: windowId("missing"),
+      }),
+    ).toBeNull();
+    expect(
+      engine.reinsertWindow(windowId("window-a"), {
+        position: "after",
+        targetWindowId: windowId("other-window"),
+      }),
+    ).toBeNull();
+    expect(
+      engine.reinsertWindow(windowId("window-a"), {
+        position: "middle",
+        targetWindowId: windowId("window-b"),
+      } as never),
+    ).toBeNull();
+    expect(
+      engine.reinsertWindow(
+        windowId("window-a"),
+        null as unknown as Parameters<LayoutEngine["reinsertWindow"]>[1],
+      ),
+    ).toBeNull();
+    expect(engine.snapshot(output, desktop)).toEqual(before);
+    expect(engine.snapshot(output, otherDesktop)).toEqual(otherBefore);
+  });
+
+  it("rejects reinsertion from an inactive column", () => {
+    const engine = new LayoutEngine();
+
+    engine.restoreColumns({
+      activeColumnId: columnId("active"),
+      columns: [
+        {
+          column: {
+            id: columnId("source"),
+            width: { kind: "fixed", value: 400 },
+            windowIds: [windowId("moved"), windowId("source-peer")],
+          },
+          index: 0,
+        },
+        {
+          column: {
+            id: columnId("active"),
+            width: { kind: "fixed", value: 400 },
+            windowIds: [windowId("active-window")],
+          },
+          index: 1,
+        },
+      ],
+      desktopId: desktop,
+      outputId: output,
+    });
+    const before = engine.snapshot(output, desktop);
+
+    expect(
+      engine.reinsertWindow(windowId("moved"), {
+        position: "after",
+        targetWindowId: windowId("source-peer"),
+      }),
+    ).toBeNull();
+    expect(engine.snapshot(output, desktop)).toEqual(before);
+  });
+
+  it("handles every same-stack source, target, and edge combination", () => {
+    const ids = ["", "window-b", "window-c", "window-d"];
+
+    for (const [sourceIndex, moved] of ids.entries()) {
+      for (const [targetIndex, target] of ids.entries()) {
+        if (sourceIndex === targetIndex) {
+          continue;
+        }
+
+        for (const position of ["before", "after"] as const) {
+          const engine = new LayoutEngine();
+
+          engine.restoreColumns({
+            activeColumnId: columnId("stack"),
+            columns: [
+              {
+                column: {
+                  id: columnId("stack"),
+                  width: { kind: "fixed", value: 400 },
+                  windowIds: ids.map(windowId),
+                },
+                index: 0,
+              },
+            ],
+            desktopId: desktop,
+            outputId: output,
+          });
+          const before = engine.snapshot(output, desktop);
+          const expected = [...ids];
+          expected.splice(sourceIndex, 1);
+          const targetIndexAfterRemoval = expected.indexOf(target);
+          const insertionIndex =
+            targetIndexAfterRemoval + (position === "after" ? 1 : 0);
+          expected.splice(insertionIndex, 0, moved);
+          const edit = engine.reinsertWindow(windowId(moved), {
+            position,
+            targetWindowId: windowId(target),
+          });
+
+          if (expected.every((id, index) => id === ids[index])) {
+            expect(edit).toBeNull();
+            expect(engine.snapshot(output, desktop)).toEqual(before);
+          } else {
+            expect(edit?.kind).toBe("reorder");
+            expect(
+              engine.snapshot(output, desktop).columns[0]?.windowIds,
+            ).toEqual(expected);
+            expect(edit && engine.rollbackStackEdit(edit.rollback)).toBe(true);
+            expect(engine.snapshot(output, desktop)).toEqual(before);
+          }
+        }
+      }
+    }
+  });
+
+  it("reinserts into a destination before the source column", () => {
+    const engine = new LayoutEngine();
+
+    engine.restoreColumns({
+      activeColumnId: columnId("source"),
+      columns: [
+        {
+          column: {
+            id: columnId("destination"),
+            width: { kind: "fixed", value: 640 },
+            windowIds: [windowId("target")],
+          },
+          index: 0,
+        },
+        {
+          column: {
+            id: columnId("source"),
+            width: { kind: "fixed", value: 320 },
+            windowIds: [windowId("moved"), windowId("source-peer")],
+          },
+          index: 1,
+        },
+      ],
+      desktopId: desktop,
+      outputId: output,
+    });
+    const edit = engine.reinsertWindow(windowId("moved"), {
+      position: "before",
+      targetWindowId: windowId("target"),
+    });
+
+    expect(edit?.kind).toBe("insert");
+    expect(engine.snapshot(output, desktop)).toMatchObject({
+      activeColumnId: "destination",
+      columns: [
+        {
+          id: "destination",
+          width: { kind: "fixed", value: 640 },
+          windowIds: ["moved", "target"],
+        },
+        {
+          id: "source",
+          width: { kind: "fixed", value: 320 },
+          windowIds: ["source-peer"],
+        },
+      ],
+    });
+  });
 });

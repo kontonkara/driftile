@@ -84,6 +84,7 @@ The current runtime already:
   KWin package or claiming live shortcuts automatically.
 - Leaves dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows outside layout ownership, separate from manual floating.
 - Translates client minimum and maximum sizes to decorated frame bounds for layout validation and column resizing.
+- Reinserts an active tiled window before or after a visible same-context target on mouse release, using the same transactional stack model as keyboard edits.
 
 The automatic-floating base and the script-visible hard-constraint policy are
 part of the current baseline. More toolkit coverage, a future KWin oracle for
@@ -118,7 +119,7 @@ items are still planned.
 
 Persistence foundation complete: core has a strict logical-state codec, a bounded four-entry v2 topology catalog, fail-closed window and output matching, side-effect-free canonical runtime capture, and all-or-nothing hydration. Stable changed snapshots reach the debounced opaque `QtCore.Settings` store; bare v1 state migrates without changing the storage key. Runtime startup reselects a complete settled topology, applies exact reload state or a complete strong-descriptor cross-session match atomically, waits boundedly for late windows behind a no-admission barrier, and requires a quiet candidate before commit. An additive known-output return restores an exact tiled layout per output without repatriating windows or rebuilding unchanged contexts; unsafe plans use normal topology recovery. Replaced window objects receive fresh restore baselines. Isolated Wayland and X11 sessions verify idempotent script reloads.
 
-- Add mouse-driven reinsertion and rearrangement.
+- Complete pointer navigation and extend rearrangement beyond same-context window targets.
 - Add tabbed column presentation and matching pointer navigation.
 - Add Driftile-specific application overrides and a complete settings UI.
 - Add optional visual transitions and concise diagnostics.

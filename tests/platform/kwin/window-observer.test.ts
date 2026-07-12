@@ -59,6 +59,7 @@ function createWindow(overrides: Partial<KWinWindow> = {}): KWinWindow {
     fullScreenChanged: new Signal<[]>(),
     internalId: "window-1",
     interactiveMoveResizeFinished: new Signal<[]>(),
+    interactiveMoveResizeStarted: new Signal<[]>(),
     managed: true,
     maxSize: { height: 10_000, width: 10_000 },
     maximizedAboutToChange: new Signal<[mode: number]>(),
@@ -651,6 +652,66 @@ describe("WindowObserver", () => {
     expect(changed).toEqual(Array.from({ length: 6 }, () => "window-1"));
   });
 
+  it("orders interactive move lifecycle callbacks before state refreshes", () => {
+    const source = createWindow({ move: true });
+    const started = source.interactiveMoveResizeStarted as Signal<[]>;
+    const finished = source.interactiveMoveResizeFinished as Signal<[]>;
+    const events: string[] = [];
+    const observer = new WindowObserver(createWorkspace([source]), {
+      changed: (windowId) => events.push(`changed:${windowId}`),
+      interactiveMoveFinished: (windowId) =>
+        events.push(`finished:${windowId}`),
+      interactiveMoveStarted: (windowId) => events.push(`started:${windowId}`),
+      stateChanged: (windowId) => events.push(`state:${windowId}`),
+    });
+
+    observer.start();
+    Object.defineProperty(source, "minSize", {
+      configurable: true,
+      value: { height: 2, width: 3 },
+    });
+    started.emit();
+    Object.defineProperty(source, "move", {
+      configurable: true,
+      value: false,
+    });
+    finished.emit();
+
+    expect(events).toEqual([
+      "started:window-1",
+      "changed:window-1",
+      "state:window-1",
+      "finished:window-1",
+      "state:window-1",
+    ]);
+  });
+
+  it("keeps resize-only sessions out of interactive move callbacks", () => {
+    const source = createWindow({ resize: true });
+    const started = source.interactiveMoveResizeStarted as Signal<[]>;
+    const finished = source.interactiveMoveResizeFinished as Signal<[]>;
+    const lifecycle: string[] = [];
+    const states: string[] = [];
+    const observer = new WindowObserver(createWorkspace([source]), {
+      interactiveMoveFinished: (windowId) =>
+        lifecycle.push(`finished:${windowId}`),
+      interactiveMoveStarted: (windowId) =>
+        lifecycle.push(`started:${windowId}`),
+      stateChanged: (windowId) => states.push(windowId),
+    });
+
+    observer.start();
+    started.emit();
+    Object.defineProperty(source, "resize", {
+      configurable: true,
+      value: false,
+    });
+    finished.emit();
+
+    expect(lifecycle).toEqual([]);
+    expect(states).toEqual(["window-1", "window-1"]);
+  });
+
   it("publishes committed fullscreen state before the generic state refresh", () => {
     const source = createWindow();
     const fullScreenChanged = source.fullScreenChanged as Signal<[]>;
@@ -912,6 +973,8 @@ describe("WindowObserver", () => {
       [oldGeometry: KWinRect]
     >;
     const removedFullScreen = removedSource.fullScreenChanged as Signal<[]>;
+    const removedMoveResizeStarted =
+      removedSource.interactiveMoveResizeStarted as Signal<[]>;
     const removedMoveResize = removedSource.moveResizedChanged as Signal<[]>;
     const removedOutput = removedSource.outputChanged as Signal<
       [oldOutput?: KWinOutput | null]
@@ -926,6 +989,8 @@ describe("WindowObserver", () => {
     >;
     const stoppedMoveResize =
       stoppedSource.interactiveMoveResizeFinished as Signal<[]>;
+    const stoppedMoveResizeStarted =
+      stoppedSource.interactiveMoveResizeStarted as Signal<[]>;
     const stoppedOutput = stoppedSource.outputChanged as Signal<
       [oldOutput?: KWinOutput | null]
     >;
@@ -953,6 +1018,7 @@ describe("WindowObserver", () => {
       removedDesktops.size,
       removedFrameGeometry.size,
       removedFullScreen.size,
+      removedMoveResizeStarted.size,
       removedMoveResize.size,
       removedOutput.size,
       stoppedClientGeometry.size,
@@ -960,12 +1026,13 @@ describe("WindowObserver", () => {
       stoppedDesktops.size,
       stoppedFrameGeometry.size,
       stoppedMoveResize.size,
+      stoppedMoveResizeStarted.size,
       stoppedOutput.size,
       stoppedTile.size,
       stoppedModal.size,
       stoppedMaximizeable.size,
       stoppedTransient.size,
-    ]).toEqual(Array.from({ length: 16 }, () => 1));
+    ]).toEqual(Array.from({ length: 18 }, () => 1));
 
     windowRemoved.emit(removedSource);
     expect([
@@ -973,9 +1040,10 @@ describe("WindowObserver", () => {
       removedDesktops.size,
       removedFrameGeometry.size,
       removedFullScreen.size,
+      removedMoveResizeStarted.size,
       removedMoveResize.size,
       removedOutput.size,
-    ]).toEqual([0, 0, 0, 0, 0, 0]);
+    ]).toEqual([0, 0, 0, 0, 0, 0, 0]);
 
     observer.stop();
     expect([
@@ -984,17 +1052,19 @@ describe("WindowObserver", () => {
       stoppedDesktops.size,
       stoppedFrameGeometry.size,
       stoppedMoveResize.size,
+      stoppedMoveResizeStarted.size,
       stoppedOutput.size,
       stoppedTile.size,
       stoppedModal.size,
       stoppedMaximizeable.size,
       stoppedTransient.size,
-    ]).toEqual(Array.from({ length: 10 }, () => 0));
+    ]).toEqual(Array.from({ length: 11 }, () => 0));
 
     removedClientGeometry.emit({ ...removedSource.clientGeometry });
     removedDesktops.emit();
     removedFrameGeometry.emit({ ...removedSource.frameGeometry });
     removedFullScreen.emit();
+    removedMoveResizeStarted.emit();
     removedMoveResize.emit();
     removedOutput.emit();
     stoppedClientGeometry.emit({ ...stoppedSource.clientGeometry });
@@ -1002,6 +1072,7 @@ describe("WindowObserver", () => {
     stoppedDesktops.emit();
     stoppedFrameGeometry.emit({ ...stoppedSource.frameGeometry });
     stoppedMoveResize.emit();
+    stoppedMoveResizeStarted.emit();
     stoppedOutput.emit();
     stoppedTile.emit(null);
     stoppedModal.emit();

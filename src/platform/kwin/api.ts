@@ -14,6 +14,11 @@ export interface KWinRect {
   readonly y: number;
 }
 
+export interface KWinPoint {
+  readonly x: number;
+  readonly y: number;
+}
+
 export interface KWinSize {
   readonly height: number;
   readonly width: number;
@@ -50,6 +55,7 @@ export interface KWinWindow {
   readonly hiddenChanged?: KWinSignal<[]>;
   readonly internalId: string | { toString(): string };
   readonly interactiveMoveResizeFinished?: KWinSignal<[]>;
+  readonly interactiveMoveResizeStarted?: KWinSignal<[]>;
   readonly managed: boolean;
   readonly maximizedAboutToChange?: KWinSignal<[mode: number]>;
   readonly maximizeableChanged?: KWinSignal<[maximizeable: boolean]>;
@@ -90,6 +96,7 @@ export interface KWinWindow {
 export interface KWinWorkspace {
   activeWindow: KWinWindow | null;
   readonly activeScreen: KWinOutput | null;
+  readonly cursorPos?: KWinPoint;
   currentDesktop: KWinVirtualDesktop | null;
   readonly desktops: readonly KWinVirtualDesktop[];
   readonly screens: readonly KWinOutput[];

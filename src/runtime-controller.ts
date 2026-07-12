@@ -1,6 +1,7 @@
 import {
   DEFAULT_WINDOW_HEIGHT_PRESETS,
   solveStripGeometry,
+  type Point,
   type Rect,
   type WindowHeightBounds,
   type WindowGeometry,
@@ -58,6 +59,10 @@ import {
   type OutputDirection,
 } from "./core/output-navigation";
 import { diffWindowGeometries } from "./core/reconcile";
+import {
+  planPointerWindowDrop,
+  type PointerWindowDropTarget,
+} from "./core/pointer-reinsertion";
 import type {
   KWinOutput,
   KWinVirtualDesktop,
@@ -323,6 +328,28 @@ interface ActiveColumnCommand {
   readonly context: RuntimeContext;
   readonly contextGeometry: ContextGeometry;
   readonly sampledGeometries: ReadonlyMap<string, ContextGeometry>;
+}
+
+interface PointerMoveParticipant {
+  readonly id: WindowId;
+  readonly stateRevision: number;
+  readonly window: KWinWindow;
+}
+
+interface PointerMoveIntent {
+  readonly before: LayoutContextSnapshot;
+  readonly contextFingerprint: string;
+  readonly contextKey: string;
+  readonly initialFrame: Rect;
+  readonly draggedWindowId: WindowId;
+  readonly finishedFrame: Rect | null;
+  readonly finalCursor: Point | null;
+  readonly gap: number;
+  readonly generation: number;
+  readonly participants: readonly PointerMoveParticipant[];
+  readonly phase: "dragging" | "finished";
+  readonly source: KWinWindow;
+  readonly topologyRevision: number;
 }
 
 interface StackTransferAcceptance {
@@ -619,12 +646,14 @@ export class RuntimeController {
   private readonly onLayoutStateChanged:
     ((canonicalState: string) => void) | undefined;
   private readonly pendingAdmissionContexts = new Set<string>();
+  private pointerMoveIntent: PointerMoveIntent | null = null;
   private pendingDefaultColumnWidth: ColumnWidth | null = null;
   private pendingGap: number | null = null;
   private readonly pendingWindowSyncs = new Set<WindowId>();
   private readonly resumeSamples = new Map<WindowId, ResumeSample>();
   private readonly schedule: (callback: () => void) => void;
   private readonly scheduleResume: (callback: () => void) => void;
+  private scheduledMutationWrites = 0;
   private runGeneration = 0;
   private readonly startupStabilizationProbes: number;
   private startupStabilizationRemaining = 0;
@@ -737,6 +766,8 @@ export class RuntimeController {
       added: this.handleWindowAdded,
       changed: this.handleWindowChanged,
       fullScreenChanged: this.handleFullScreenChanged,
+      interactiveMoveFinished: this.handleInteractiveMoveFinished,
+      interactiveMoveStarted: this.handleInteractiveMoveStarted,
       maximizedAboutToChange: this.handleMaximizedAboutToChange,
       removed: this.handleWindowRemoved,
       stateChanged: this.handleWindowStateChanged,
@@ -2138,6 +2169,7 @@ export class RuntimeController {
       this.layoutStatePublicationPending = false;
       this.layoutTopologyPublicationPending = false;
       this.preservedFallbackLayoutState = null;
+      this.pointerMoveIntent = null;
       this.startupCompleted = false;
       this.runGeneration += 1;
       this.started = true;
@@ -2210,6 +2242,7 @@ export class RuntimeController {
     this.workScheduled = false;
     this.runGeneration += 1;
     this.pendingExpelFocusHandoff = null;
+    this.pointerMoveIntent = null;
     this.stackEditOperation = null;
 
     try {
@@ -2245,6 +2278,7 @@ export class RuntimeController {
       this.lastSettledTopology = null;
       this.contexts.clear();
       this.pendingExpelFocusHandoff = null;
+      this.pointerMoveIntent = null;
       this.stackEditOperation = null;
       this.windowTransferOperation = null;
       this.stackedNativeStateOperation = null;
@@ -2269,6 +2303,7 @@ export class RuntimeController {
       this.ownershipRefreshInProgress = false;
       this.requestedSuspensions.clear();
       this.resumeSamples.clear();
+      this.scheduledMutationWrites = 0;
       this.suspendedWindows.clear();
       this.startupStabilizationRemaining = 0;
       this.startupStabilizationToken = null;
@@ -2471,9 +2506,249 @@ export class RuntimeController {
     this.synchronizeWindowBorder(windowId(id), this.observer.source(id));
   };
 
+  private readonly handleInteractiveMoveStarted = (id: string): void => {
+    this.pointerMoveIntent = null;
+    const draggedWindowId = windowId(id);
+    const source = this.observer.source(id);
+
+    if (
+      !this.started ||
+      !this.startupCompleted ||
+      this.initializing ||
+      this.hydrationInProgress ||
+      this.stackEditOperation ||
+      this.windowTransferOperation ||
+      this.stackedNativeStateOperation ||
+      this.startupStabilizationToken !== null ||
+      this.hasTopologyBarrier() ||
+      !source ||
+      this.workspace.activeWindow !== source ||
+      !this.interactiveMoveSourceIsEligible(source) ||
+      this.automaticFloatingWindows.has(draggedWindowId) ||
+      this.floatingWindows.has(draggedWindowId) ||
+      this.waitingWindowContexts.has(draggedWindowId) ||
+      this.requestedSuspensions.has(draggedWindowId) ||
+      this.pendingHydratedRestoreBaselines.has(draggedWindowId) ||
+      !this.toggleGeometrySettled(draggedWindowId)
+    ) {
+      return;
+    }
+
+    const owner = this.managedWindows.get(draggedWindowId);
+    const context = owner ? this.contexts.get(owner.contextKey) : undefined;
+    const observed = normalizeWindow(source);
+    const liveContext = observed ? managedContext(observed) : null;
+
+    if (
+      !owner ||
+      !context ||
+      !liveContext ||
+      contextKey(liveContext) !== context.key ||
+      !this.isContextVisible(context) ||
+      this.dirtyContexts.has(context.key) ||
+      this.hasStructuralCapacityState(context.key) ||
+      this.toggleTransitionPending(context.key)
+    ) {
+      return;
+    }
+
+    const sampledGeometries = this.sampleSettledVisibleContextGeometries();
+    const contextGeometry = sampledGeometries?.get(context.key);
+
+    if (
+      !sampledGeometries ||
+      !contextGeometry ||
+      contextGeometry.fingerprint !== context.geometryFingerprint
+    ) {
+      return;
+    }
+
+    const before = this.layout.snapshot(context.outputId, context.desktopId);
+    const activeColumn = before.columns.find((column) =>
+      column.windowIds.includes(draggedWindowId),
+    );
+
+    if (
+      !activeColumn ||
+      before.activeColumnId !== activeColumn.id ||
+      !this.columnMembersBelongToContext(activeColumn, context)
+    ) {
+      return;
+    }
+
+    const participants: PointerMoveParticipant[] = [];
+
+    for (const column of before.columns) {
+      for (const participantId of column.windowIds) {
+        const participant = this.observer.source(participantId);
+
+        if (
+          !participant ||
+          (participantId !== draggedWindowId &&
+            this.pendingWindowSyncs.has(participantId)) ||
+          (participantId === draggedWindowId
+            ? participant !== source ||
+              !this.interactiveMoveSourceIsEligible(participant)
+            : !this.stackTransferMemberIsEligible(
+                participantId,
+                participant,
+                context,
+                false,
+              ))
+        ) {
+          return;
+        }
+
+        participants.push({
+          id: participantId,
+          stateRevision: this.windowStateRevisions.get(participantId) ?? 0,
+          window: participant,
+        });
+      }
+    }
+
+    if (
+      participants.length !== context.windowIds.size ||
+      participants.length < 2
+    ) {
+      return;
+    }
+
+    let solved: ReturnType<typeof solveStripGeometry>;
+
+    try {
+      solved = this.solveContextGeometry(before, contextGeometry);
+    } catch {
+      return;
+    }
+
+    const dragged = solved.windows.find(
+      (window) => window.windowId === draggedWindowId,
+    );
+
+    if (!dragged || solved.windows.length !== participants.length) {
+      return;
+    }
+
+    this.pointerMoveIntent = {
+      before,
+      contextFingerprint: contextGeometry.fingerprint,
+      contextKey: context.key,
+      draggedWindowId,
+      finalCursor: null,
+      finishedFrame: null,
+      gap: this.gap,
+      generation: this.runGeneration,
+      initialFrame: snapshotRect(source.frameGeometry),
+      participants,
+      phase: "dragging",
+      source,
+      topologyRevision: this.topologyRevision,
+    };
+  };
+
+  private readonly handleInteractiveMoveFinished = (id: string): void => {
+    const intent = this.pointerMoveIntent;
+
+    if (!intent || String(intent.draggedWindowId) !== id) {
+      return;
+    }
+
+    const source = this.observer.source(id);
+    const cursor = this.workspace.cursorPos;
+    const observed = source ? normalizeWindow(source) : null;
+    const liveContext = observed ? managedContext(observed) : null;
+
+    if (
+      intent.phase !== "dragging" ||
+      !source ||
+      source !== intent.source ||
+      this.workspace.activeWindow !== source ||
+      source.move ||
+      !this.settledPointerMoveSourceIsEligible(source) ||
+      !liveContext ||
+      contextKey(liveContext) !== intent.contextKey ||
+      !cursor ||
+      !Number.isFinite(cursor.x) ||
+      !Number.isFinite(cursor.y) ||
+      rectsEqual(source.frameGeometry, intent.initialFrame)
+    ) {
+      this.pointerMoveIntent = null;
+      return;
+    }
+
+    this.pointerMoveIntent = {
+      ...intent,
+      finalCursor: { x: cursor.x, y: cursor.y },
+      finishedFrame: snapshotRect(source.frameGeometry),
+      phase: "finished",
+    };
+  };
+
+  private interactiveMoveSourceIsEligible(source: KWinWindow): boolean {
+    return source.move && this.pointerMoveSourceHasStableOwnership(source);
+  }
+
+  private settledPointerMoveSourceIsEligible(source: KWinWindow): boolean {
+    return !source.move && this.pointerMoveSourceHasStableOwnership(source);
+  }
+
+  private pointerMoveSourceHasStableOwnership(source: KWinWindow): boolean {
+    return (
+      source.managed &&
+      !source.deleted &&
+      !source.fullScreen &&
+      !source.minimized &&
+      source.maximizeMode === 0 &&
+      !source.resize &&
+      source.moveable &&
+      source.resizeable &&
+      source.tile === null
+    );
+  }
+
+  private cancelPointerMoveForWindowChange(id: WindowId): void {
+    if (
+      this.pointerMoveIntent?.participants.some(
+        (participant) => participant.id === id,
+      )
+    ) {
+      this.pointerMoveIntent = null;
+    }
+  }
+
+  private cancelPointerMoveForInvalidState(
+    id: WindowId,
+    source: KWinWindow | undefined,
+  ): void {
+    const intent = this.pointerMoveIntent;
+
+    if (!intent) {
+      return;
+    }
+
+    const participant = intent.participants.find(
+      (candidate) => candidate.id === id,
+    );
+
+    if (!participant) {
+      return;
+    }
+
+    if (
+      id !== intent.draggedWindowId ||
+      !source ||
+      source !== intent.source ||
+      !this.pointerMoveSourceHasStableOwnership(source)
+    ) {
+      this.pointerMoveIntent = null;
+    }
+  }
+
   private readonly handleWindowChanged = (id: string): void => {
     const changedId = windowId(id);
     const source = this.observer.source(id);
+    this.cancelPointerMoveForWindowChange(changedId);
 
     if (source) {
       this.settleFullscreenRequest(changedId, source.fullScreen);
@@ -2529,6 +2804,7 @@ export class RuntimeController {
   private readonly handleWindowStateChanged = (id: string): void => {
     const changedId = windowId(id);
     const source = this.observer.source(id);
+    this.cancelPointerMoveForInvalidState(changedId, source);
     this.windowStateRevisions.set(
       changedId,
       (this.windowStateRevisions.get(changedId) ?? 0) + 1,
@@ -2619,6 +2895,7 @@ export class RuntimeController {
     request: WindowSuspensionRequest,
   ): void => {
     const suspendedId = windowId(id);
+    this.cancelPointerMoveForWindowChange(suspendedId);
 
     if (
       this.synchronizeAutomaticFloatingWindow(
@@ -2660,6 +2937,7 @@ export class RuntimeController {
     fullScreen: boolean,
   ): void => {
     const activeId = windowId(id);
+    this.cancelPointerMoveForWindowChange(activeId);
     const source = this.observer.source(id);
 
     if (!fullScreen) {
@@ -2705,6 +2983,8 @@ export class RuntimeController {
     id: string,
     mode: number,
   ): void => {
+    this.cancelPointerMoveForWindowChange(windowId(id));
+
     if (mode !== 3) {
       return;
     }
@@ -2736,6 +3016,7 @@ export class RuntimeController {
 
   private readonly handleWindowRemoved = (id: string): void => {
     const managedId = windowId(id);
+    this.cancelPointerMoveForWindowChange(managedId);
     this.cancelInvalidPendingExpelFocusHandoff();
     const affectedContextKeys = new Set<string>();
     const floating = this.floatingWindows.get(managedId);
@@ -2793,6 +3074,10 @@ export class RuntimeController {
     window: KWinWindow | null,
     allowSuspended = false,
   ): void => {
+    if (this.pointerMoveIntent && window !== this.pointerMoveIntent.source) {
+      this.pointerMoveIntent = null;
+    }
+
     const pendingHandoff = this.pendingExpelFocusHandoff;
 
     if (pendingHandoff) {
@@ -10826,6 +11111,195 @@ export class RuntimeController {
     }
   }
 
+  private commitFinishedPointerMove(
+    id: WindowId,
+    source: KWinWindow,
+    context: RuntimeContext,
+  ): boolean {
+    const intent = this.pointerMoveIntent;
+
+    if (!intent || intent.draggedWindowId !== id) {
+      return false;
+    }
+
+    const reject = (): false => {
+      if (this.pointerMoveIntent === intent) {
+        this.pointerMoveIntent = null;
+      }
+
+      return false;
+    };
+
+    if (
+      intent.phase !== "finished" ||
+      !intent.finalCursor ||
+      !intent.finishedFrame ||
+      intent.source !== source ||
+      intent.contextKey !== context.key ||
+      intent.generation !== this.runGeneration ||
+      intent.topologyRevision !== this.topologyRevision ||
+      intent.gap !== this.gap ||
+      intent.contextFingerprint !== context.geometryFingerprint ||
+      this.workspace.activeWindow !== source ||
+      !this.settledPointerMoveSourceIsEligible(source) ||
+      !rectsEqual(source.frameGeometry, intent.finishedFrame) ||
+      this.hasStructuralCapacityState(context.key) ||
+      this.toggleTransitionPending(context.key) ||
+      !this.pointerMoveParticipantsAreCurrent(intent, context)
+    ) {
+      return reject();
+    }
+
+    const command = this.prepareActiveColumnCommand();
+
+    if (
+      !command ||
+      command.activeId !== id ||
+      command.context !== context ||
+      command.contextGeometry.fingerprint !== intent.contextFingerprint ||
+      !layoutContextSnapshotsEqual(command.before, intent.before)
+    ) {
+      return reject();
+    }
+
+    let solved: ReturnType<typeof solveStripGeometry>;
+
+    try {
+      solved = this.solveContextGeometry(
+        command.before,
+        command.contextGeometry,
+      );
+    } catch {
+      return reject();
+    }
+
+    const target: PointerWindowDropTarget | null = planPointerWindowDrop({
+      context: command.before,
+      cursor: intent.finalCursor,
+      draggedWindowId: id,
+      visibleArea: command.contextGeometry.workArea,
+      windows: solved.windows,
+    });
+
+    if (!target) {
+      return reject();
+    }
+
+    const editState: { value: StackEditResult | null } = { value: null };
+    const applied = this.applyActiveColumnMutation(
+      command,
+      "pointer window drop",
+      () => {
+        editState.value = this.layout.reinsertWindow(id, target);
+        return editState.value !== null;
+      },
+      () =>
+        editState.value !== null &&
+        this.layout.rollbackStackEdit(editState.value.rollback),
+      () =>
+        this.pointerMoveIntent === intent &&
+        intent.generation === this.runGeneration &&
+        intent.topologyRevision === this.topologyRevision &&
+        intent.gap === this.gap &&
+        intent.contextFingerprint === context.geometryFingerprint &&
+        this.workspace.activeWindow === source &&
+        this.settledPointerMoveSourceIsEligible(source) &&
+        this.pointerMoveParticipantsAreCurrent(intent, context),
+    );
+    const edit = editState.value;
+    this.pointerMoveIntent = null;
+
+    if (!applied || !edit) {
+      return false;
+    }
+
+    this.scheduledMutationWrites += this.lastWrites;
+    this.layout.discardStackEditRollback(edit.rollback);
+    this.reconcileColumnFullWidthRestore(
+      context.key,
+      command.before,
+      this.layout.snapshot(context.outputId, context.desktopId),
+    );
+    this.capacityParkBackoffs.delete(context.key);
+
+    if (edit.kind === "merge" && this.waitingWindowIds.get(context.key)?.size) {
+      this.pendingAdmissionContexts.add(context.key);
+      this.scheduleWork();
+    }
+
+    this.requestLayoutStatePublication();
+    return true;
+  }
+
+  private pointerMoveParticipantsAreCurrent(
+    intent: PointerMoveIntent,
+    context: RuntimeContext,
+  ): boolean {
+    if (
+      intent.participants.length !== context.windowIds.size ||
+      this.pointerContextHasPendingSync(intent, context)
+    ) {
+      return false;
+    }
+
+    return intent.participants.every((participant) => {
+      const source = this.observer.source(participant.id);
+      const owner = this.managedWindows.get(participant.id);
+      const observed = source ? normalizeWindow(source) : null;
+      const liveContext = observed ? managedContext(observed) : null;
+
+      return Boolean(
+        source === participant.window &&
+        owner?.contextKey === context.key &&
+        liveContext &&
+        contextKey(liveContext) === context.key &&
+        (participant.id === intent.draggedWindowId ||
+          (this.windowStateRevisions.get(participant.id) ?? 0) ===
+            participant.stateRevision) &&
+        this.stackTransferMemberIsEligible(
+          participant.id,
+          participant.window,
+          context,
+          false,
+        ),
+      );
+    });
+  }
+
+  private pointerContextHasPendingSync(
+    intent: PointerMoveIntent,
+    context: RuntimeContext,
+  ): boolean {
+    if (this.pendingWindowSyncs.size === 0) {
+      return false;
+    }
+
+    const participantIds = new Set(
+      intent.participants.map((participant) => participant.id),
+    );
+
+    for (const id of this.pendingWindowSyncs) {
+      if (
+        participantIds.has(id) ||
+        this.managedWindows.get(id)?.contextKey === context.key ||
+        this.waitingWindowContexts.get(id) === context.key ||
+        this.capacityLeaseByWindow.get(id)?.contextKey === context.key
+      ) {
+        return true;
+      }
+
+      const source = this.observer.source(id);
+      const observed = source ? normalizeWindow(source) : null;
+      const liveContext = observed ? managedContext(observed) : null;
+
+      if (liveContext && contextKey(liveContext) === context.key) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   private applyActiveColumnMutation(
     command: ActiveColumnCommand,
     label: string,
@@ -12413,6 +12887,7 @@ export class RuntimeController {
       return;
     }
 
+    this.pointerMoveIntent = null;
     this.topologyKnownOutputRestorations.clear();
 
     const canceledTransitionKeys = new Set<string>();
@@ -13303,6 +13778,16 @@ export class RuntimeController {
   }
 
   private flushScheduledWork(): void {
+    this.scheduledMutationWrites = 0;
+
+    try {
+      this.flushScheduledWorkPass();
+    } finally {
+      this.scheduledMutationWrites = 0;
+    }
+  }
+
+  private flushScheduledWorkPass(): void {
     if (this.stackEditOperation) {
       return;
     }
@@ -13407,7 +13892,7 @@ export class RuntimeController {
       this.ownershipFollowUpRequired = true;
     }
 
-    this.lastWrites = writeCount;
+    this.lastWrites = writeCount + this.scheduledMutationWrites;
     this.retryPendingExternalFullscreenExtractions();
 
     if (this.ownershipFollowUpRequired) {
@@ -13702,14 +14187,27 @@ export class RuntimeController {
         const context = this.contexts.get(owner.contextKey);
 
         if (context) {
+          let pointerMoveCommitted = false;
+
+          if (resumed) {
+            pointerMoveCommitted = this.commitFinishedPointerMove(
+              id,
+              source,
+              context,
+            );
+          }
+
           if (
             resumed &&
+            !pointerMoveCommitted &&
             String(this.workspace.activeWindow?.internalId) === String(id)
           ) {
             this.layout.activateWindow(id);
           }
 
-          this.markContextDirty(context);
+          if (!pointerMoveCommitted) {
+            this.markContextDirty(context);
+          }
         }
       }
     }

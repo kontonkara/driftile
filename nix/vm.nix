@@ -1712,6 +1712,65 @@ let
         return 1
       }
 
+      wait_for_pointer_stack_order() {
+        local attempt
+        local bottom_frame
+        local bottom_height
+        local bottom_width
+        local bottom_x
+        local bottom_y
+        local expected_width=$3
+        local previous_layout=""
+        local stable_samples=0
+        local top_frame
+        local top_height
+        local top_width
+        local top_x
+        local top_y
+
+        [[ "$expected_width" =~ ^[1-9][0-9]*$ ]] || return 1
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          top_frame=$(window_frame_contains "$1" 2>/dev/null || true)
+          bottom_frame=$(window_frame_contains "$2" 2>/dev/null || true)
+
+          if frame_is_valid "$top_frame" && frame_is_valid "$bottom_frame"; then
+            IFS=, read -r top_x top_y top_width top_height <<< "$top_frame"
+            IFS=, read -r \
+              bottom_x \
+              bottom_y \
+              bottom_width \
+              bottom_height \
+              <<< "$bottom_frame"
+
+            if ((top_x == bottom_x \
+              && top_width == expected_width \
+              && bottom_width == expected_width \
+              && top_y + top_height < bottom_y \
+              && bottom_y + bottom_height > top_y + top_height)); then
+              if [[ "$top_frame|$bottom_frame" == "$previous_layout" ]]; then
+                stable_samples=$((stable_samples + 1))
+              else
+                stable_samples=1
+              fi
+
+              if ((stable_samples >= 2)); then
+                return 0
+              fi
+            else
+              stable_samples=0
+            fi
+          else
+            stable_samples=0
+          fi
+
+          previous_layout="$top_frame|$bottom_frame"
+          sleep 0.1
+        done
+
+        return 1
+      }
+
       verify_xterm_resize_increment_policy() {
         local query=$1
         local attempt
@@ -5894,6 +5953,55 @@ let
         return 1
       }
 
+      request_physical_pointer_drag() {
+        local attempt
+        local destination_x=$4
+        local destination_y=$5
+        local drag_name=$1
+        local output_frame=$6
+        local output_height
+        local output_width
+        local output_x
+        local output_y
+        local ready_file="/tmp/shared/driftile-pointer-drag-$drag_name-ready"
+        local sent_file="/tmp/shared/driftile-pointer-drag-$drag_name-sent"
+        local source_x=$2
+        local source_y=$3
+        local temporary_file="$ready_file.tmp"
+
+        case "$drag_name" in
+          cross-column|same-stack) ;;
+          *) return 1 ;;
+        esac
+
+        frame_is_valid "$output_frame" || return 1
+        IFS=, read -r \
+          output_x \
+          output_y \
+          output_width \
+          output_height \
+          <<< "$output_frame"
+        rm -f "$ready_file" "$sent_file" "$temporary_file"
+        printf '%s %s %s %s %s %s %s %s\n' \
+          "$source_x" \
+          "$source_y" \
+          "$destination_x" \
+          "$destination_y" \
+          "$output_x" \
+          "$output_y" \
+          "$output_width" \
+          "$output_height" \
+          > "$temporary_file"
+        mv "$temporary_file" "$ready_file"
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          [[ -f "$sent_file" ]] && return 0
+          sleep 0.1
+        done
+
+        return 1
+      }
+
       verify_physical_desktop_reorder_shortcuts() {
         local first_frame=$1
         local second_frame=$2
@@ -7450,6 +7558,236 @@ let
           "physical Meta+M restored the exact tiled layout and focus"
       }
 
+      verify_physical_pointer_reinsertion() {
+        local baseline_first
+        local baseline_second
+        local baseline_third
+        local cleanup_verified=true
+        local cross_column_verified=false
+        local destination_x
+        local destination_y
+        local firefox_frame=""
+        local firefox_height
+        local firefox_pid=""
+        local firefox_profile=""
+        local firefox_title="Driftile VM Firefox"
+        local firefox_width
+        local firefox_x
+        local firefox_y
+        local output_frame=""
+        local output_height
+        local output_width
+        local output_x
+        local output_y
+        local same_stack_verified=false
+        local source_x
+        local source_y
+        local target_width=""
+        local xterm_frame=""
+        local xterm_height
+        local xterm_pid=""
+        local xterm_title="Driftile VM Pointer XWayland"
+        local xterm_width
+        local xterm_x
+        local xterm_y
+
+        if ! activate_window "$title_c" \
+          || ! wait_for_active "$title_c" \
+          || ! capture_stable_frames; then
+          record_focus_state "physical pointer fixture baseline failed"
+          return 1
+        fi
+        baseline_first=$stable_first_frame
+        baseline_second=$stable_second_frame
+        baseline_third=$stable_third_frame
+
+        if start_firefox_window \
+            firefox_pid \
+            firefox_title \
+            firefox_profile \
+            "$firefox_title" \
+          && activate_window "$firefox_title" \
+          && wait_for_active "$firefox_title" \
+          && start_xterm_window xterm_pid xterm_title "$xterm_title" \
+          && activate_window "$xterm_title" \
+          && wait_for_active "$xterm_title" \
+          && activate_window "$firefox_title" \
+          && wait_for_active "$firefox_title"; then
+          output_frame=$(single_enabled_output_frame 2>/dev/null || true)
+          firefox_frame=$(
+            capture_stable_window_frame_contains "$firefox_title" \
+              || true
+          )
+          xterm_frame=$(
+            capture_stable_window_frame_contains "$xterm_title" \
+              || true
+          )
+
+          if frame_is_valid "$output_frame" \
+            && frame_is_valid "$firefox_frame" \
+            && frame_is_valid "$xterm_frame"; then
+            IFS=, read -r \
+              output_x \
+              output_y \
+              output_width \
+              output_height \
+              <<< "$output_frame"
+            IFS=, read -r \
+              firefox_x \
+              firefox_y \
+              firefox_width \
+              firefox_height \
+              <<< "$firefox_frame"
+            IFS=, read -r \
+              xterm_x \
+              xterm_y \
+              xterm_width \
+              xterm_height \
+              <<< "$xterm_frame"
+            source_x=$((firefox_x + (firefox_width / 2)))
+            source_y=$((firefox_y + (firefox_height / 2)))
+            destination_x=$((xterm_x + (xterm_width / 2)))
+            destination_y=$((xterm_y + ((3 * xterm_height) / 4)))
+            target_width=$xterm_width
+
+            if (((firefox_x + firefox_width < xterm_x \
+                || xterm_x + xterm_width < firefox_x) \
+              && source_x >= output_x \
+              && source_x < output_x + output_width \
+              && source_y >= output_y \
+              && source_y < output_y + output_height \
+              && destination_x >= output_x \
+              && destination_x < output_x + output_width \
+              && destination_y >= output_y \
+              && destination_y < output_y + output_height)) \
+              && request_physical_pointer_drag \
+                cross-column \
+                "$source_x" \
+                "$source_y" \
+                "$destination_x" \
+                "$destination_y" \
+                "$output_frame" \
+              && wait_for_pointer_stack_order \
+                "$xterm_title" \
+                "$firefox_title" \
+                "$target_width" \
+              && wait_for_active "$firefox_title"; then
+              cross_column_verified=true
+              record_focus_state \
+                "physical pointer cross-column reinsertion succeeded"
+            fi
+          fi
+        fi
+
+        if [[ "$cross_column_verified" == true ]] \
+          && activate_window "$xterm_title" \
+          && wait_for_active "$xterm_title"; then
+          xterm_frame=$(
+            capture_stable_window_frame_contains "$xterm_title" \
+              || true
+          )
+          firefox_frame=$(
+            capture_stable_window_frame_contains "$firefox_title" \
+              || true
+          )
+
+          if frame_is_valid "$xterm_frame" \
+            && frame_is_valid "$firefox_frame"; then
+            IFS=, read -r \
+              xterm_x \
+              xterm_y \
+              xterm_width \
+              xterm_height \
+              <<< "$xterm_frame"
+            IFS=, read -r \
+              firefox_x \
+              firefox_y \
+              firefox_width \
+              firefox_height \
+              <<< "$firefox_frame"
+            source_x=$((xterm_x + (xterm_width / 2)))
+            source_y=$((xterm_y + (xterm_height / 2)))
+            destination_x=$((firefox_x + (firefox_width / 2)))
+            destination_y=$((firefox_y + ((3 * firefox_height) / 4)))
+
+            if ((source_x >= output_x \
+              && source_x < output_x + output_width \
+              && source_y >= output_y \
+              && source_y < output_y + output_height \
+              && destination_x >= output_x \
+              && destination_x < output_x + output_width \
+              && destination_y >= output_y \
+              && destination_y < output_y + output_height)) \
+              && request_physical_pointer_drag \
+                same-stack \
+                "$source_x" \
+                "$source_y" \
+                "$destination_x" \
+                "$destination_y" \
+                "$output_frame" \
+              && wait_for_pointer_stack_order \
+                "$firefox_title" \
+                "$xterm_title" \
+                "$target_width" \
+              && wait_for_active "$xterm_title"; then
+              same_stack_verified=true
+              record_focus_state \
+                "physical pointer same-stack reorder succeeded"
+            fi
+          fi
+        fi
+
+        if [[ -n "$xterm_pid" ]]; then
+          terminate_process "$xterm_pid"
+
+          if ! wait_for_window_gone_contains "$xterm_title"; then
+            cleanup_verified=false
+          fi
+        fi
+
+        if [[ -n "$firefox_pid" ]]; then
+          terminate_process "$firefox_pid"
+
+          if ! wait_for_window_gone_contains "$firefox_title"; then
+            cleanup_verified=false
+          fi
+        fi
+
+        if [[ -n "$firefox_profile" ]] \
+          && ! rm -rf -- "$firefox_profile"; then
+          cleanup_verified=false
+        fi
+
+        if ! activate_window "$title_c" \
+          || ! wait_for_active "$title_c" \
+          || ! wait_for_singleton_layout \
+            "$baseline_first" \
+            "$baseline_second" \
+            "$baseline_third"; then
+          cleanup_verified=false
+        fi
+
+        if [[ "$cross_column_verified" == true \
+          && "$same_stack_verified" == true \
+          && "$cleanup_verified" == true ]]; then
+          record_focus_state \
+            "physical pointer fixture closed and restored the tiled layout"
+          return 0
+        fi
+
+        record_focus_state "physical pointer reinsertion verification failed"
+        {
+          printf 'output frame: %s\n' "$output_frame"
+          printf 'Firefox frame: %s\n' "$firefox_frame"
+          printf 'XWayland xterm frame: %s\n' "$xterm_frame"
+          printf 'target width: %s\n' "$target_width"
+          printf 'cross-column verified: %s\n' "$cross_column_verified"
+          printf 'same-stack verified: %s\n' "$same_stack_verified"
+          printf 'cleanup verified: %s\n' "$cleanup_verified"
+        } >> /tmp/shared/driftile-focus-diagnostics
+        return 1
+      }
+
       verify_real_applications() {
         local baseline_first
         local baseline_second
@@ -7743,7 +8081,8 @@ let
         && verify_physical_column_view_shortcuts \
         && verify_physical_fullscreen_shortcut \
         && verify_physical_maximize_shortcut \
-        && verify_real_applications; then
+        && verify_real_applications \
+        && verify_physical_pointer_reinsertion; then
         focus_verified=true
       fi
 
@@ -7761,6 +8100,10 @@ let
     '';
   };
   kwinConfig = pkgs.writeText "driftile-vm-kwinrc" ''
+    [MouseBindings]
+    CommandAll1=Move
+    CommandAllKey=Meta
+
     [Plugins]
     ${pluginId}Enabled=true
 

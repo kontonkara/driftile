@@ -11,6 +11,7 @@ leaving window, output, and desktop mechanisms to KWin.
 - Horizontal scrollable columns with optional vertical window stacks.
 - Keyboard-driven focus, movement, reordering, resizing, centering, and
   transfers between desktops and outputs.
+- Finish-only mouse reinsertion of tiled windows within one visible layout.
 - One shared trailing empty virtual desktop with conservative creation and
   cleanup.
 - Manual floating, automatic layout exclusions, minimized-slot retention, and

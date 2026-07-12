@@ -44,6 +44,7 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Holds initial admission through a one-second signal grace, then plans existing windows as one batch.
 - Defers external output and desktop transfers, then re-owns each window in its destination context.
 - Suspends geometry writes while KWin owns a window-state transition and resumes after its restored frame stabilizes.
+- Captures tiled move intent once, plans a same-context drop from the final cursor position, and commits the shared layout transaction only after geometry authority stabilizes.
 - Observes output list, geometry, scale, and dock invalidations, then holds writes until two delayed topology snapshots match.
 - Detects otherwise silent client-area and hard-constraint changes with visibility-limited fingerprints.
 - Replays structural output changes in a stable layout order independent of KWin window-signal order.
@@ -122,6 +123,7 @@ RuntimeState
   toggleGeometryTransitions: Map<WindowId, { contextKey, expectedFrame, settlementArmed }>
   desktopLifecycle: { ownedDesktopIds, pendingMutation }
   topologyBarrier: { revision, affectedOutputs, stableSample }
+  pointerMoveIntent: { contextKey, layoutSnapshot, participants, finalCursor }
 ```
 
 `LayoutContext` owns columns, per-window automatic weights or fixed/preset heights, viewport offset, and the last applied geometry fingerprint. A managed window owns an optional decoration-independent client restore baseline plus the exact frame observed at capture time. A manually floating window remains observed but has no layout or geometry owner; its detached placement records stable anchors for reinsertion. An automatically floating window has no layout slot, floating anchor, waiting entry, suspension, or retry state. A minimized tiled window remains suspended in its exact logical slot, while a minimized manually floating window keeps its exact detached frame. Reconcile excludes suspended windows until KWin releases geometry authority. Waiting windows have no layout owner. KWin objects never enter core state.
