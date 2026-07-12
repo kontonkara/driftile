@@ -18,8 +18,8 @@ leaving window, output, and desktop mechanisms to KWin.
 - Manual floating, automatic layout exclusions, minimized-slot retention, and
   native fullscreen and maximize integration.
 - Settled recovery for output, scale, work-area, and window-constraint changes.
-- Configurable gaps, default column width, resize steps, and optional
-  borderless presentation.
+- Configurable gaps, global and application-specific initial column widths,
+  resize steps, and optional borderless presentation.
 - Exact extension-reload restoration, conservative cross-session restoration,
   and fail-closed restoration when a known output returns.
 - An optional reversible shortcut helper with custom JSON profiles.

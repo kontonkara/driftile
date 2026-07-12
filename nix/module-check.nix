@@ -164,6 +164,10 @@ let
       ]
       {
         programs.driftile.settings = {
+          applicationColumnWidths = {
+            "org.example.Browser" = 80;
+            "org.example.Editor" = 60;
+          };
           borderlessWindows = false;
           columnWidthStepPercent = 13;
           defaultColumnWidthPercent = 65;
@@ -183,6 +187,21 @@ let
           enable = true;
           settings = { };
         };
+      }
+      { };
+  homeManagerMaximumOverrides =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.settings.applicationColumnWidths = builtins.listToAttrs (
+          builtins.genList (index: {
+            name = "org.example.App${toString index}";
+            value = 50;
+          }) 128
+        );
       }
       { };
   homeManagerSettingsWithSystemInstall =
@@ -224,6 +243,31 @@ let
     { columnWidthStepPercent = 51; }
     { windowHeightStepPercent = 0; }
     { windowHeightStepPercent = 51; }
+    { applicationColumnWidths."org.example.Editor" = 9; }
+    { applicationColumnWidths."org.example.Editor" = 101; }
+    { applicationColumnWidths."" = 50; }
+    { applicationColumnWidths." org.example.Editor" = 50; }
+    { applicationColumnWidths."org.example.Editor=" = 50; }
+    { applicationColumnWidths."org.example\nEditor" = 50; }
+    {
+      applicationColumnWidths = builtins.listToAttrs [
+        {
+          name = builtins.fromJSON ''"org.example.\u0080Editor"'';
+          value = 50;
+        }
+      ];
+    }
+    {
+      applicationColumnWidths.${builtins.concatStringsSep "" (builtins.genList (_: "a") 256)} = 50;
+    }
+    {
+      applicationColumnWidths = builtins.listToAttrs (
+        builtins.genList (index: {
+          name = "org.example.App${toString index}";
+          value = 50;
+        }) 129
+      );
+    }
   ];
   invalidSettingsRejected =
     settings:
@@ -246,6 +290,9 @@ let
     !evaluated.success;
   expectedSettings = {
     kwinrc."Script-io.github.kontonkara.driftile" = {
+      ApplicationColumnWidths = ''
+        org.example.Browser=80
+        org.example.Editor=60'';
       BorderlessWindows = false;
       ColumnWidthStepPercent = 13;
       DefaultColumnWidthPercent = 65;
@@ -255,6 +302,7 @@ let
   };
   expectedDefaultSettings = {
     kwinrc."Script-io.github.kontonkara.driftile" = {
+      ApplicationColumnWidths = "";
       BorderlessWindows = true;
       ColumnWidthStepPercent = 10;
       DefaultColumnWidthPercent = 50;
@@ -288,8 +336,14 @@ assert map (entry: entry.assertion) homeManagerSettingsCollision.config.assertio
 assert homeManagerSettings.config.qt.kde.settings == expectedSettings;
 assert homeManagerDefaultSettings.config.qt.kde.settings == expectedDefaultSettings;
 assert
+  builtins.length (
+    lib.splitString "\n"
+      homeManagerMaximumOverrides.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ApplicationColumnWidths
+  ) == 128;
+assert
   homeManagerSettingsWithSystemInstall.config.qt.kde.settings == {
     kwinrc."Script-io.github.kontonkara.driftile" = {
+      ApplicationColumnWidths = "";
       BorderlessWindows = true;
       ColumnWidthStepPercent = 10;
       DefaultColumnWidthPercent = 50;

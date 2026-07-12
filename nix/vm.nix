@@ -1178,6 +1178,25 @@ let
           >/dev/null
       }
 
+      set_application_column_widths() {
+        local value=$1
+
+        ${pkgs.kdePackages.kconfig}/bin/kwriteconfig6 \
+          --file "$HOME/.config/kwinrc" \
+          --group "Script-${pluginId}" \
+          --key ApplicationColumnWidths \
+          --type string \
+          "$value" \
+          || return 1
+
+        busctl --user call \
+          org.kde.KWin \
+          /KWin \
+          org.kde.KWin \
+          reconfigure \
+          >/dev/null
+      }
+
       set_layout_configuration() {
         ${pkgs.kdePackages.kconfig}/bin/kwriteconfig6 \
           --file "$HOME/.config/kwinrc" \
@@ -1443,6 +1462,14 @@ let
             | map(select(type == "string" and length > 0) | ascii_downcase)
             | (length > 0 and any(.[]; contains($expected)))
           ' >/dev/null
+      }
+
+      window_desktop_file_contains() {
+        window_info_contains "$1" \
+          | jq --exit-status --raw-output '
+              .data[0].desktopFile.data
+              | select(type == "string" and length > 0)
+            '
       }
 
       real_window_is_normal() {
@@ -3778,6 +3805,7 @@ let
       }
 
       cleanup_temporary_windows() {
+        set_application_column_widths "" >/dev/null 2>&1 || true
         restore_layout_configuration >/dev/null 2>&1 || true
         cleanup_fourth_window || true
         cleanup_fifth_window
@@ -8024,6 +8052,181 @@ let
         record_focus_state "XWayland terminal closed and the tiled layout reflowed"
       }
 
+      verify_application_column_width_override() {
+        local baseline_first
+        local baseline_second
+        local baseline_third
+        local cleanup_verified=true
+        local desktop_file_name="firefox"
+        local expected_first_width
+        local expected_second_width
+        local first_frame=""
+        local first_pid=""
+        local first_profile=""
+        local first_title="Driftile VM Firefox"
+        local first_verified=false
+        local first_width=0
+        local minimum_width_delta
+        local output_frame
+        local output_width
+        local override_cleared=false
+        local second_frame=""
+        local second_pid=""
+        local second_profile=""
+        local second_title="Driftile VM Firefox"
+        local second_verified=false
+        local second_width=0
+        local unchanged_frame=""
+
+        if ! activate_window "$title_c" \
+          || ! wait_for_active "$title_c" \
+          || ! capture_stable_frames; then
+          record_focus_state "application column-width override baseline failed"
+          set_application_column_widths "" >/dev/null 2>&1 || true
+          return 1
+        fi
+        baseline_first=$stable_first_frame
+        baseline_second=$stable_second_frame
+        baseline_third=$stable_third_frame
+        output_frame=$(single_enabled_output_frame 2>/dev/null || true)
+
+        if ! frame_is_valid "$output_frame"; then
+          record_focus_state "application column-width override output frame failed"
+          set_application_column_widths "" >/dev/null 2>&1 || true
+          return 1
+        fi
+        IFS=, read -r _ _ output_width _ <<< "$output_frame"
+        expected_first_width=$((
+          (60 * (output_width - 16) + 50) / 100 - 16
+        ))
+        expected_second_width=$((
+          (80 * (output_width - 16) + 50) / 100 - 16
+        ))
+        minimum_width_delta=$((output_width / 10))
+
+        if set_application_column_widths "$desktop_file_name=60" \
+          && start_firefox_window \
+            first_pid \
+            first_title \
+            first_profile \
+            "$first_title" \
+          && [[ "$(window_desktop_file_contains "$first_title" 2>/dev/null || true)" \
+            == "$desktop_file_name" ]] \
+          && first_frame=$(capture_stable_window_frame_contains "$first_title") \
+          && frame_is_valid "$first_frame"; then
+          IFS=, read -r _ _ first_width _ <<< "$first_frame"
+
+          if ((first_width >= expected_first_width - 2 \
+              && first_width <= expected_first_width + 2)) \
+            && set_application_column_widths "$desktop_file_name=80"; then
+            sleep 0.2
+            unchanged_frame=$(
+              capture_stable_window_frame_contains "$first_title" \
+                || true
+            )
+
+            if [[ "$unchanged_frame" == "$first_frame" ]]; then
+              first_verified=true
+              record_focus_state \
+                "application override preserved the existing Firefox column"
+            fi
+          fi
+        fi
+
+        if [[ -n "$first_pid" ]]; then
+          terminate_process "$first_pid"
+
+          if ! wait_for_window_gone_contains "$first_title"; then
+            cleanup_verified=false
+          fi
+        fi
+        if [[ -n "$first_profile" ]] \
+          && ! rm -rf -- "$first_profile"; then
+          cleanup_verified=false
+        fi
+        if ! activate_window "$title_c" \
+          || ! wait_for_active "$title_c" \
+          || ! wait_for_singleton_layout \
+            "$baseline_first" \
+            "$baseline_second" \
+            "$baseline_third"; then
+          cleanup_verified=false
+        fi
+
+        if [[ "$first_verified" == true \
+          && "$cleanup_verified" == true ]] \
+          && start_firefox_window \
+            second_pid \
+            second_title \
+            second_profile \
+            "$second_title" \
+          && [[ "$(window_desktop_file_contains "$second_title" 2>/dev/null || true)" \
+            == "$desktop_file_name" ]] \
+          && second_frame=$(capture_stable_window_frame_contains "$second_title") \
+          && frame_is_valid "$second_frame"; then
+          IFS=, read -r _ _ second_width _ <<< "$second_frame"
+
+          if ((second_width >= expected_second_width - 2 \
+            && second_width <= expected_second_width + 2 \
+            && second_width >= first_width + minimum_width_delta)); then
+            second_verified=true
+            record_focus_state \
+              "application override enlarged only the new Firefox column"
+          fi
+        fi
+
+        if [[ -n "$second_pid" ]]; then
+          terminate_process "$second_pid"
+
+          if ! wait_for_window_gone_contains "$second_title"; then
+            cleanup_verified=false
+          fi
+        fi
+        if [[ -n "$second_profile" ]] \
+          && ! rm -rf -- "$second_profile"; then
+          cleanup_verified=false
+        fi
+        if set_application_column_widths ""; then
+          override_cleared=true
+        else
+          cleanup_verified=false
+        fi
+        if ! activate_window "$title_c" \
+          || ! wait_for_active "$title_c" \
+          || ! wait_for_singleton_layout \
+            "$baseline_first" \
+            "$baseline_second" \
+            "$baseline_third"; then
+          cleanup_verified=false
+        fi
+
+        if [[ "$first_verified" == true \
+          && "$second_verified" == true \
+          && "$override_cleared" == true \
+          && "$cleanup_verified" == true ]]; then
+          record_focus_state \
+            "application column-width override verification passed"
+          return 0
+        fi
+
+        record_focus_state "application column-width override verification failed"
+        {
+          printf 'desktop-file ID: %s\n' "$desktop_file_name"
+          printf 'output frame: %s\n' "$output_frame"
+          printf '60 percent Firefox frame: %s\n' "$first_frame"
+          printf 'frame after the 80 percent reconfigure: %s\n' "$unchanged_frame"
+          printf '80 percent Firefox frame: %s\n' "$second_frame"
+          printf 'expected 60 percent width: %s\n' "$expected_first_width"
+          printf 'expected 80 percent width: %s\n' "$expected_second_width"
+          printf 'minimum material width delta: %s\n' "$minimum_width_delta"
+          printf 'first phase verified: %s\n' "$first_verified"
+          printf 'second phase verified: %s\n' "$second_verified"
+          printf 'override cleared: %s\n' "$override_cleared"
+          printf 'cleanup verified: %s\n' "$cleanup_verified"
+        } >> /tmp/shared/driftile-focus-diagnostics
+        return 1
+      }
+
       loaded=false
 
       for _ in $(seq 1 200); do
@@ -8113,6 +8316,7 @@ let
         && verify_physical_fullscreen_shortcut \
         && verify_physical_maximize_shortcut \
         && verify_real_applications \
+        && verify_application_column_width_override \
         && verify_physical_pointer_reinsertion; then
         focus_verified=true
       fi

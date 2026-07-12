@@ -18,6 +18,62 @@ let
   cfg = config.programs.driftile;
   pluginId = "io.github.kontonkara.driftile";
   system = pkgs.stdenv.hostPlatform.system;
+  c1ControlCharacters = map builtins.fromJSON [
+    ''"\u0080"''
+    ''"\u0081"''
+    ''"\u0082"''
+    ''"\u0083"''
+    ''"\u0084"''
+    ''"\u0085"''
+    ''"\u0086"''
+    ''"\u0087"''
+    ''"\u0088"''
+    ''"\u0089"''
+    ''"\u008a"''
+    ''"\u008b"''
+    ''"\u008c"''
+    ''"\u008d"''
+    ''"\u008e"''
+    ''"\u008f"''
+    ''"\u0090"''
+    ''"\u0091"''
+    ''"\u0092"''
+    ''"\u0093"''
+    ''"\u0094"''
+    ''"\u0095"''
+    ''"\u0096"''
+    ''"\u0097"''
+    ''"\u0098"''
+    ''"\u0099"''
+    ''"\u009a"''
+    ''"\u009b"''
+    ''"\u009c"''
+    ''"\u009d"''
+    ''"\u009e"''
+    ''"\u009f"''
+  ];
+  hasControlCharacter = value:
+    builtins.match ".*[[:cntrl:]].*" value != null
+    || lib.any (character: lib.hasInfix character value) c1ControlCharacters;
+  validDesktopFileName = value:
+    value != ""
+    && builtins.stringLength value <= 255
+    && value == lib.strings.trim value
+    && !lib.hasInfix "=" value
+    && !hasControlCharacter value;
+  applicationColumnWidthType = lib.types.addCheck
+    (lib.types.attrsOf (lib.types.ints.between 10 100))
+    (
+      widths:
+      builtins.length (builtins.attrNames widths) <= 128
+      && lib.all validDesktopFileName (builtins.attrNames widths)
+    );
+  renderApplicationColumnWidths = widths:
+    lib.concatStringsSep "\n" (
+      map (desktopFileName: "${desktopFileName}=${toString widths.${desktopFileName}}") (
+        builtins.sort builtins.lessThan (builtins.attrNames widths)
+      )
+    );
   systemInstallEnabled = lib.attrByPath [
     "programs"
     "driftile"
@@ -47,6 +103,12 @@ in
       type = lib.types.nullOr (
         lib.types.submodule {
           options = {
+            applicationColumnWidths = lib.mkOption {
+              type = applicationColumnWidthType;
+              default = { };
+              description = "Initial column widths keyed by exact desktop-file ID.";
+            };
+
             borderlessWindows = lib.mkOption {
               type = lib.types.bool;
               default = true;
@@ -117,6 +179,7 @@ in
     (lib.optionalAttrs homeSettings (
       lib.mkIf (cfg.settings != null) {
         qt.kde.settings.kwinrc."Script-${pluginId}" = {
+          ApplicationColumnWidths = renderApplicationColumnWidths cfg.settings.applicationColumnWidths;
           BorderlessWindows = cfg.settings.borderlessWindows;
           ColumnWidthStepPercent = cfg.settings.columnWidthStepPercent;
           DefaultColumnWidthPercent = cfg.settings.defaultColumnWidthPercent;

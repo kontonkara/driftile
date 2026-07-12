@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { decodeApplicationColumnWidthOverrides } from "../src/application-overrides";
 import {
   columnId,
   desktopId,
@@ -6581,6 +6582,118 @@ describe("RuntimeController", () => {
       kind: "proportion",
       value: 0.1,
     });
+  });
+
+  it("applies exact application width overrides only to new columns", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const editor = createTrackedWindow("editor", output, desktop, {
+      desktopFileName: "org.example.Editor",
+    });
+    const browser = createTrackedWindow("browser", output, desktop, {
+      desktopFileName: "org.example.Browser",
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [editor.window, browser.window],
+    );
+    const scheduler = new ManualScheduler();
+    const initialOverrides = decodeApplicationColumnWidthOverrides(
+      "org.example.Editor=60",
+    );
+
+    if (!initialOverrides) {
+      throw new Error("application override fixture is invalid");
+    }
+
+    const controller = new RuntimeController(fixture.workspace, {
+      applicationColumnWidths: initialOverrides,
+      clientAreaOption: 2,
+      columnWidth: { kind: "proportion", value: 0.4 },
+      schedule: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    const initial = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    expect(
+      initial.columns.map((column) => [column.windowIds[0], column.width]),
+    ).toEqual([
+      [windowId("editor"), { kind: "proportion", value: 0.6 }],
+      [windowId("browser"), { kind: "proportion", value: 0.4 }],
+    ]);
+    const initialFrames = [
+      { ...editor.window.frameGeometry },
+      { ...browser.window.frameGeometry },
+    ];
+    const initialWrites = [editor.writeCount, browser.writeCount];
+
+    const updatedOverrides = decodeApplicationColumnWidthOverrides(
+      "org.example.Editor=70\norg.example.Browser=80",
+    );
+    const reorderedOverrides = decodeApplicationColumnWidthOverrides(
+      "org.example.Browser=80\norg.example.Editor=70",
+    );
+
+    if (!updatedOverrides || !reorderedOverrides) {
+      throw new Error("application override fixture is invalid");
+    }
+
+    expect(controller.setApplicationColumnWidths(updatedOverrides)).toBe(true);
+    expect(controller.setApplicationColumnWidths(reorderedOverrides)).toBe(
+      false,
+    );
+    expect(scheduler.pendingCount).toBe(0);
+    expect([editor.window.frameGeometry, browser.window.frameGeometry]).toEqual(
+      initialFrames,
+    );
+    expect([editor.writeCount, browser.writeCount]).toEqual(initialWrites);
+
+    const secondBrowser = createTrackedWindow("browser-2", output, desktop, {
+      desktopFileName: "org.example.Browser",
+    });
+    fixture.windowAdded.emit(secondBrowser.window);
+    scheduler.flush();
+
+    const updated = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    expect(
+      updated.columns.find((column) =>
+        column.windowIds.includes(windowId("browser-2")),
+      )?.width,
+    ).toEqual({ kind: "proportion", value: 0.8 });
+    expect(
+      updated.columns.find((column) =>
+        column.windowIds.includes(windowId("editor")),
+      )?.width,
+    ).toEqual({ kind: "proportion", value: 0.6 });
+
+    const constrainedBrowser = createTrackedWindow(
+      "browser-constrained",
+      output,
+      desktop,
+      {
+        desktopFileName: "org.example.Browser",
+        maxSize: { height: 10_000, width: 250 },
+      },
+    );
+    fixture.windowAdded.emit(constrainedBrowser.window);
+    scheduler.flush();
+
+    expect(
+      runtimeLayout(controller)
+        .snapshot(outputId(output.name), desktopId(desktop.id))
+        .columns.find((column) =>
+          column.windowIds.includes(windowId("browser-constrained")),
+        )?.width,
+    ).toEqual({ kind: "fixed", value: 250 });
   });
 
   it("bounds column width step changes without scheduling layout work", () => {
@@ -21380,7 +21493,9 @@ describe("RuntimeController", () => {
     const windows = Array.from(
       { length: PERFORMANCE_REFERENCE.startupWindows },
       (_, index) =>
-        createTrackedWindow(`window-${String(index)}`, output, desktop),
+        createTrackedWindow(`window-${String(index)}`, output, desktop, {
+          desktopFileName: `org.example.App${String(index)}`,
+        }),
     );
     const fixture = createWorkspace(
       output,
@@ -21390,6 +21505,7 @@ describe("RuntimeController", () => {
       windows.map(({ window }) => window),
     );
     let geometryLookupCount = 0;
+    let applicationOverrideLookupCount = 0;
     Object.defineProperty(fixture.workspace, "clientArea", {
       configurable: true,
       value: () => {
@@ -21399,6 +21515,13 @@ describe("RuntimeController", () => {
     });
     const scheduler = new ManualScheduler();
     const controller = new RuntimeController(fixture.workspace, {
+      applicationColumnWidths: Object.freeze({
+        canonicalEntries: Object.freeze([]),
+        columnWidthPercentFor: () => {
+          applicationOverrideLookupCount += 1;
+          return undefined;
+        },
+      }),
       clientAreaOption: 2,
       gap: 10,
       scheduleResume: scheduler.schedule,
@@ -21435,6 +21558,9 @@ describe("RuntimeController", () => {
     ).toBe(true);
     expect(geometryLookupCount).toBe(
       PERFORMANCE_REFERENCE.startupGeometryLookups,
+    );
+    expect(applicationOverrideLookupCount).toBe(
+      PERFORMANCE_REFERENCE.startupWindows,
     );
     expect(scheduler.executedCount).toBeLessThanOrEqual(
       PERFORMANCE_REFERENCE.startupSchedulerCallbacks,

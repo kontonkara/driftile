@@ -1,8 +1,8 @@
 # Roadmap
 
 Versions 0.1.0 and 1.0.0 are released. The delivered milestones and release
-criteria below are a historical record; only the post-v1 section describes
-future direction, not a committed release schedule.
+criteria below are a historical record. Version 1.1.0 is in development; the
+remaining post-v1 direction is not a committed release schedule.
 
 ## Foundation (delivered)
 
@@ -72,6 +72,9 @@ The current runtime already:
 - Optionally removes application-window decorations independently of layout ownership while preserving pre-existing borderless state, reasserting owned policy, and restoring owned state on disable.
 - Applies a global 0–64 logical-pixel tiled-window gap live without mutating layout order, sizing policies, focus, floating frames, or minimized frames.
 - Configures a 10%–100% default width for newly admitted columns, fresh cross-context retiles, and explicit reset without changing existing column width policies.
+- Configures up to 128 exact `desktopFileName` initial singleton widths, with a
+  constant-time admission lookup, global-default fallback, and normal
+  constraint clamping. Existing columns remain unchanged.
 - Configures a 1–50 percentage-point explicit column-width step without reflowing existing layouts.
 - Configures a 1–50 percentage-point explicit window-height step without reflowing existing layouts.
 - Treats exposed client minimum and maximum sizes as hard bounds, detects silent changes on visible tracked windows, does not model unexposed X11 increment and aspect hints, and leaves backend enforcement to KWin.
@@ -80,7 +83,7 @@ The current runtime already:
 - Registers compact default shortcuts with `H/J/K/L`, arrow, Home/End, and Page Up/Down aliases.
 - Provides a reversible shortcut helper for the bundled defaults and explicit
   JSON v1 profiles; a UI without a Node.js dependency remains future work.
-- Lets Home Manager write the five typed settings or generate a portable
+- Lets Home Manager write the six typed settings or generate a portable
   shortcut profile without installing a second KWin package; shortcut claiming
   remains explicit.
 - Leaves dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows outside layout ownership, separate from manual floating.
@@ -148,15 +151,28 @@ Release criteria (met):
 - Performance budgets pass on the documented reference scenario.
 - Installation, upgrade, disable, and uninstall paths leave Plasma usable.
 
+## 1.1.0 (in development)
+
+The current bounded slice adds application-specific initial column widths.
+Each 10%–100% rule occupies one line and matches the exact KWin
+`desktopFileName`; at most 128 rules are accepted. Newly created and fresh
+singleton columns use an O(1) lookup, fall back to the global default when no
+rule matches, and remain subject to live window constraints. Existing columns
+are never resized by a rule change.
+
+Global wheel input remains deferred because KWin 6.7 has no public script axis
+API. This milestone does not add a private input path.
+
 ## Post-v1
 
 Add interaction and presentation features outside the frozen v1 scope without
 taking over compositor mechanisms.
 
-- Add wheel and touchpad navigation, cross-desktop pointer rearrangement, and
-  visual drop feedback.
+- Explore touchpad navigation through public extension APIs.
+- Add cross-desktop pointer rearrangement and visual drop feedback.
 - Add tabbed column presentation and matching pointer navigation.
-- Add Driftile-specific application overrides and an expanded settings UI.
+- Add application-specific policies beyond initial column widths and an
+  expanded settings UI.
 - Add optional visual transitions, layout indicators, and concise diagnostics.
 - Keep Plasma's built-in Overview as the compatible baseline.
 - Explore an optional Driftile overview that presents the horizontal desktop strip, columns, stacks, and current viewport from the shared layout model.

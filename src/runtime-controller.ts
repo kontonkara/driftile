@@ -1,4 +1,9 @@
 import {
+  EMPTY_APPLICATION_COLUMN_WIDTH_OVERRIDES,
+  sameApplicationColumnWidthOverrides,
+  type ApplicationColumnWidthOverrides,
+} from "./application-overrides";
+import {
   DEFAULT_WINDOW_HEIGHT_PRESETS,
   solveStripGeometry,
   type Point,
@@ -566,6 +571,7 @@ interface LayoutHydrationCandidate {
 }
 
 export interface RuntimeControllerOptions {
+  readonly applicationColumnWidths?: ApplicationColumnWidthOverrides;
   readonly borderlessWindows?: boolean;
   readonly clientAreaOption: number;
   readonly columnWidth?: ColumnWidth;
@@ -584,6 +590,7 @@ export interface RuntimeControllerOptions {
 }
 
 export class RuntimeController {
+  private applicationColumnWidths: ApplicationColumnWidthOverrides;
   private readonly automaticFloatingWindows = new Set<WindowId>();
   private readonly borderlessSettlementEnabled: boolean;
   private readonly borderlessSettlementTokens = new Map<WindowId, object>();
@@ -744,6 +751,9 @@ export class RuntimeController {
   private readonly workspace: KWinWorkspace;
 
   constructor(workspace: KWinWorkspace, options: RuntimeControllerOptions) {
+    this.applicationColumnWidths =
+      options.applicationColumnWidths ??
+      EMPTY_APPLICATION_COLUMN_WIDTH_OVERRIDES;
     this.borderlessSettlementEnabled = options.scheduleResume !== undefined;
     this.borderlessWindows = options.borderlessWindows ?? false;
     this.gap = normalizeGap(options.gap ?? DEFAULT_GAP) ?? DEFAULT_GAP;
@@ -1266,6 +1276,35 @@ export class RuntimeController {
 
     this.pendingDefaultColumnWidth = width;
     this.scheduleDeferredRuntimeWork();
+    return true;
+  }
+
+  setApplicationColumnWidths(
+    overrides: ApplicationColumnWidthOverrides,
+  ): boolean {
+    if (
+      sameApplicationColumnWidthOverrides(
+        this.applicationColumnWidths,
+        overrides,
+      )
+    ) {
+      return false;
+    }
+
+    this.applicationColumnWidths = overrides;
+
+    if (!this.started) {
+      return true;
+    }
+
+    for (const key of this.waitingWindowIds.keys()) {
+      this.pendingAdmissionContexts.add(key);
+    }
+
+    if (this.pendingAdmissionContexts.size > 0) {
+      this.scheduleDeferredRuntimeWork();
+    }
+
     return true;
   }
 
@@ -19029,10 +19068,11 @@ export class RuntimeController {
       return null;
     }
 
+    const width = this.initialColumnWidth(sources);
     let requestedWidth: number;
 
-    if (this.defaultColumnWidth.kind === "fixed") {
-      requestedWidth = this.defaultColumnWidth.value;
+    if (width.kind === "fixed") {
+      requestedWidth = width.value;
     } else {
       const denominator = contextGeometry.workArea.width - this.gap;
 
@@ -19040,7 +19080,7 @@ export class RuntimeController {
         return { kind: "fixed", value: minimum };
       }
 
-      requestedWidth = this.defaultColumnWidth.value * denominator - this.gap;
+      requestedWidth = width.value * denominator - this.gap;
     }
 
     if (!Number.isFinite(requestedWidth) || requestedWidth <= 0) {
@@ -19062,7 +19102,26 @@ export class RuntimeController {
       return { kind: "fixed", value: maximum };
     }
 
-    return { ...this.defaultColumnWidth };
+    return { ...width };
+  }
+
+  private initialColumnWidth(sources: readonly KWinWindow[]): ColumnWidth {
+    if (sources.length !== 1) {
+      return this.defaultColumnWidth;
+    }
+
+    const desktopFileName = sources[0]?.desktopFileName;
+
+    if (typeof desktopFileName !== "string") {
+      return this.defaultColumnWidth;
+    }
+
+    const percent =
+      this.applicationColumnWidths.columnWidthPercentFor(desktopFileName);
+
+    return percent === undefined
+      ? this.defaultColumnWidth
+      : { kind: "proportion", value: percent / 100 };
   }
 
   private canApplyLayout(maxViewportOffset: number): boolean {

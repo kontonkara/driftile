@@ -22,6 +22,9 @@ The ownership rule is strict:
 - Optional borderless presentation for application windows with exact decoration ownership.
 - Live global tiled-window gap from 0 to 64 logical pixels without changing layout state.
 - Configurable 10%–100% default width for newly admitted columns, fresh cross-context retiles, and explicit reset.
+- Up to 128 application-specific 10%–100% initial singleton widths, matched by
+  exact KWin `desktopFileName` with global-default fallback and live constraint
+  clamping.
 - Configurable 1–50 percentage-point step for explicit column-width decrease and increase actions.
 - Configurable 1–50 percentage-point step for explicit active-window height decrease and increase actions.
 - Output-local commands unless a transfer is explicit.
@@ -38,11 +41,12 @@ The ownership rule is strict:
 
 ## Beyond v1
 
-- Wheel and touchpad navigation.
+- Touchpad navigation remains exploratory; global wheel input is deferred
+  because KWin 6.7 exposes no public script axis API.
 - Cross-desktop pointer rearrangement and visual drop feedback.
 - Tabbed columns and matching pointer navigation.
-- Driftile-specific application overrides.
-- Expanded settings UI.
+- Application-specific policies beyond initial column widths and an expanded
+  settings UI.
 - Optional visual transitions, layout indicators, and concise diagnostics.
 - An optional Driftile layout overview that remains removable and preserves
   Plasma's built-in Overview as the compatible fallback.
@@ -53,6 +57,8 @@ The ownership rule is strict:
 - Plasma 6.7 or newer is the primary target.
 - Wayland and XWayland windows share the same layout model.
 - The Plasma 6.7 X11 session uses a global-workspace fallback.
+- KWin 6.7 has no public wheel-axis event API for declarative scripts; Driftile
+  therefore does not capture global wheel input.
 - Desktop reordering is fail-closed on KWin X11 builds that do not expose the reorder method. The documented native X11 checks cover one output; native X11 multi-output remains unverified.
 - X11 and XWayland resize increments, base size, aspect bounds, and strict-geometry rules are not visible through the Plasma 6.7 workspace `KWin::Window` API used by Driftile. XWayland accepts the tested exact off-lattice frames; native X11 may quantize applied frames, so compatibility tests use grid-aligned geometry.
 
@@ -130,5 +136,10 @@ Driftile must integrate with, not duplicate:
 - Borderless mode covers tiled, floating, dialog, transient, and utility windows, changes only decoration state claimed by Driftile, and restores it when disabled or unloaded.
 - A live gap change reflows visible tiled contexts only. It preserves logical order, widths, height policies, focus, floating frames, excluded windows, and minimized frames; hidden contexts adopt it when shown.
 - A default-width change leaves existing column width policies unchanged. Newly admitted columns, fresh cross-context retiles, and explicit reset use the new proportion subject to live window constraints. Retrying a waiting admission may add a column and update the affected viewport and frames; otherwise the policy change performs no frame writes.
+- Application-width rules use one exact, case-sensitive `desktopFileName` entry
+  per line and allow 10%–100%; more than 128 entries reject the complete
+  setting. Only newly created or freshly admitted singleton columns consult the
+  bounded lookup; existing columns keep their width, missing matches use the
+  global default, and normal constraints may clamp the result.
 - A width-step change performs no layout, frame, viewport, or focus write. It affects only later explicit decrease and increase actions; reset, presets, full width, and available-width expansion remain independent.
 - A height-step change performs no layout, frame, viewport, or focus write. It affects only later explicit decrease and increase actions; reset and height presets remain independent.

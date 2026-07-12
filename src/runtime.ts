@@ -48,6 +48,7 @@ export function init(
     layoutStateChanged,
   );
   const nextController = new RuntimeController(workspace, {
+    applicationColumnWidths: settings.applicationColumnWidths,
     borderlessWindows: settings.borderlessWindows,
     clientAreaOption,
     createRect,
@@ -112,6 +113,7 @@ export function applySettings(settingsSnapshot: unknown): boolean {
     return true;
   }
 
+  controller.setApplicationColumnWidths(settings.applicationColumnWidths);
   controller.setBorderlessWindows(settings.borderlessWindows);
   controller.setDefaultColumnWidthPercent(settings.defaultColumnWidthPercent);
   controller.setColumnWidthStepPercent(settings.columnWidthStepPercent);

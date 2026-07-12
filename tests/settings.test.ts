@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { decodeApplicationColumnWidthOverrides } from "../src/application-overrides";
 import {
   decodeDriftileSettings,
   DEFAULT_DRIFTILE_SETTINGS,
@@ -6,7 +7,16 @@ import {
   type DriftileSettings,
 } from "../src/settings";
 
+const validApplicationColumnWidths = decodeApplicationColumnWidthOverrides(
+  "org.example.Editor=75",
+);
+
+if (!validApplicationColumnWidths) {
+  throw new Error("application override fixture is invalid");
+}
+
 const validSettings: DriftileSettings = {
+  applicationColumnWidths: validApplicationColumnWidths,
   borderlessWindows: false,
   columnWidthStepPercent: 25,
   defaultColumnWidthPercent: 75,
@@ -14,30 +24,52 @@ const validSettings: DriftileSettings = {
   windowHeightStepPercent: 20,
 };
 
+const validSettingsInput = {
+  applicationColumnWidths: "org.example.Editor=75",
+  borderlessWindows: validSettings.borderlessWindows,
+  columnWidthStepPercent: validSettings.columnWidthStepPercent,
+  defaultColumnWidthPercent: validSettings.defaultColumnWidthPercent,
+  gap: validSettings.gap,
+  windowHeightStepPercent: validSettings.windowHeightStepPercent,
+};
+
 describe("Driftile settings", () => {
   it("exposes the current immutable defaults", () => {
-    expect(DEFAULT_DRIFTILE_SETTINGS).toEqual({
+    expect(DEFAULT_DRIFTILE_SETTINGS).toMatchObject({
       borderlessWindows: true,
       columnWidthStepPercent: 10,
       defaultColumnWidthPercent: 50,
       gap: 16,
       windowHeightStepPercent: 10,
     });
+    expect(
+      DEFAULT_DRIFTILE_SETTINGS.applicationColumnWidths.canonicalEntries,
+    ).toEqual([]);
     expect(Object.isFrozen(DEFAULT_DRIFTILE_SETTINGS)).toBe(true);
   });
 
   it("decodes a valid snapshot without retaining the input object", () => {
-    const input = { ...validSettings };
+    const input = { ...validSettingsInput };
     const decoded = decodeDriftileSettings(input);
 
-    expect(decoded).toEqual(validSettings);
+    expect(decoded).toMatchObject({
+      borderlessWindows: validSettings.borderlessWindows,
+      columnWidthStepPercent: validSettings.columnWidthStepPercent,
+      defaultColumnWidthPercent: validSettings.defaultColumnWidthPercent,
+      gap: validSettings.gap,
+      windowHeightStepPercent: validSettings.windowHeightStepPercent,
+    });
+    expect(decoded?.applicationColumnWidths.canonicalEntries).toEqual(
+      validApplicationColumnWidths.canonicalEntries,
+    );
     expect(decoded).not.toBe(input);
     expect(Object.isFrozen(decoded)).toBe(true);
-    expect(input).toEqual(validSettings);
+    expect(input).toEqual(validSettingsInput);
   });
 
   it.each([
     {
+      applicationColumnWidths: "",
       borderlessWindows: true,
       columnWidthStepPercent: 1,
       defaultColumnWidthPercent: 10,
@@ -45,6 +77,7 @@ describe("Driftile settings", () => {
       windowHeightStepPercent: 1,
     },
     {
+      applicationColumnWidths: "org.example.Browser=80",
       borderlessWindows: false,
       columnWidthStepPercent: 50,
       defaultColumnWidthPercent: 100,
@@ -52,11 +85,27 @@ describe("Driftile settings", () => {
       windowHeightStepPercent: 50,
     },
   ])("accepts the inclusive numeric bounds", (settings) => {
-    expect(decodeDriftileSettings(settings)).toEqual(settings);
+    const decoded = decodeDriftileSettings(settings);
+
+    expect(decoded).not.toBeNull();
+    expect(decoded?.applicationColumnWidths.canonicalEntries.join("\n")).toBe(
+      settings.applicationColumnWidths,
+    );
+    expect(decoded).toMatchObject({
+      borderlessWindows: settings.borderlessWindows,
+      columnWidthStepPercent: settings.columnWidthStepPercent,
+      defaultColumnWidthPercent: settings.defaultColumnWidthPercent,
+      gap: settings.gap,
+      windowHeightStepPercent: settings.windowHeightStepPercent,
+    });
   });
 
   it.each([
     ["a non-boolean borderless setting", { borderlessWindows: 1 }],
+    [
+      "invalid application overrides",
+      { applicationColumnWidths: "org.example.Editor=9" },
+    ],
     ["a non-numeric gap", { gap: "16" }],
     ["a non-finite gap", { gap: Number.NaN }],
     ["an infinite gap", { gap: Number.POSITIVE_INFINITY }],
@@ -82,10 +131,10 @@ describe("Driftile settings", () => {
     ["a height step below its range", { windowHeightStepPercent: 0 }],
     ["a height step above its range", { windowHeightStepPercent: 51 }],
   ])("rejects %s atomically", (_description, invalidField) => {
-    const input = { ...validSettings, ...invalidField };
+    const input = { ...validSettingsInput, ...invalidField };
 
     expect(decodeDriftileSettings(input)).toBeNull();
-    expect(input).toEqual({ ...validSettings, ...invalidField });
+    expect(input).toEqual({ ...validSettingsInput, ...invalidField });
   });
 
   it.each([null, [], "settings", 1, true])(
@@ -97,6 +146,7 @@ describe("Driftile settings", () => {
 
   it("rejects missing fields", () => {
     const incomplete = {
+      applicationColumnWidths: validSettingsInput.applicationColumnWidths,
       borderlessWindows: validSettings.borderlessWindows,
       columnWidthStepPercent: validSettings.columnWidthStepPercent,
       defaultColumnWidthPercent: validSettings.defaultColumnWidthPercent,
@@ -108,7 +158,7 @@ describe("Driftile settings", () => {
 
   it("rejects extra fields to expose incompatible snapshots and typos", () => {
     expect(
-      decodeDriftileSettings({ ...validSettings, unexpected: true }),
+      decodeDriftileSettings({ ...validSettingsInput, unexpected: true }),
     ).toBeNull();
   });
 
@@ -117,7 +167,15 @@ describe("Driftile settings", () => {
       true,
     );
 
+    const changedApplicationColumnWidths =
+      decodeApplicationColumnWidthOverrides("org.example.Editor=76");
+
+    if (!changedApplicationColumnWidths) {
+      throw new Error("application override fixture is invalid");
+    }
+
     for (const changed of [
+      { applicationColumnWidths: changedApplicationColumnWidths },
       { borderlessWindows: true },
       { columnWidthStepPercent: 26 },
       { defaultColumnWidthPercent: 76 },

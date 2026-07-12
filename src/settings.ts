@@ -1,12 +1,20 @@
+import {
+  decodeApplicationColumnWidthOverrides,
+  EMPTY_APPLICATION_COLUMN_WIDTH_OVERRIDES,
+  sameApplicationColumnWidthOverrides,
+  type ApplicationColumnWidthOverrides,
+} from "./application-overrides";
+
 const MIN_GAP = 0;
 const MAX_GAP = 64;
 const MIN_DEFAULT_COLUMN_WIDTH_PERCENT = 10;
 const MAX_DEFAULT_COLUMN_WIDTH_PERCENT = 100;
 const MIN_RESIZE_STEP_PERCENT = 1;
 const MAX_RESIZE_STEP_PERCENT = 50;
-const SETTINGS_FIELD_COUNT = 5;
+const SETTINGS_FIELD_COUNT = 6;
 
 export interface DriftileSettings {
+  readonly applicationColumnWidths: ApplicationColumnWidthOverrides;
   readonly borderlessWindows: boolean;
   readonly columnWidthStepPercent: number;
   readonly defaultColumnWidthPercent: number;
@@ -15,6 +23,7 @@ export interface DriftileSettings {
 }
 
 export const DEFAULT_DRIFTILE_SETTINGS: DriftileSettings = Object.freeze({
+  applicationColumnWidths: EMPTY_APPLICATION_COLUMN_WIDTH_OVERRIDES,
   borderlessWindows: true,
   columnWidthStepPercent: 10,
   defaultColumnWidthPercent: 50,
@@ -33,6 +42,7 @@ export function decodeDriftileSettings(
 
   if (
     Reflect.ownKeys(candidate).length !== SETTINGS_FIELD_COUNT ||
+    !owns(candidate, "applicationColumnWidths") ||
     !owns(candidate, "borderlessWindows") ||
     !owns(candidate, "columnWidthStepPercent") ||
     !owns(candidate, "defaultColumnWidthPercent") ||
@@ -42,6 +52,9 @@ export function decodeDriftileSettings(
     return null;
   }
 
+  const applicationColumnWidths = decodeApplicationColumnWidthOverrides(
+    candidate["applicationColumnWidths"],
+  );
   const borderlessWindows = candidate["borderlessWindows"];
   const columnWidthStepPercent = candidate["columnWidthStepPercent"];
   const defaultColumnWidthPercent = candidate["defaultColumnWidthPercent"];
@@ -49,6 +62,7 @@ export function decodeDriftileSettings(
   const windowHeightStepPercent = candidate["windowHeightStepPercent"];
 
   if (
+    !applicationColumnWidths ||
     typeof borderlessWindows !== "boolean" ||
     !isBoundedInteger(
       columnWidthStepPercent,
@@ -71,6 +85,7 @@ export function decodeDriftileSettings(
   }
 
   return Object.freeze({
+    applicationColumnWidths,
     borderlessWindows,
     columnWidthStepPercent,
     defaultColumnWidthPercent,
@@ -84,6 +99,10 @@ export function sameDriftileSettings(
   right: DriftileSettings,
 ): boolean {
   return (
+    sameApplicationColumnWidthOverrides(
+      left.applicationColumnWidths,
+      right.applicationColumnWidths,
+    ) &&
     left.borderlessWindows === right.borderlessWindows &&
     left.columnWidthStepPercent === right.columnWidthStepPercent &&
     left.defaultColumnWidthPercent === right.defaultColumnWidthPercent &&

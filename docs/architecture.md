@@ -84,6 +84,11 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Optionally claims borderless state for application windows independently of layout ownership, reasserts owned state after policy changes, and restores only decoration state that it owns.
 - Defers live gap changes across structural transactions, then reflows dirty visible contexts and retries capacity admissions under one settled value.
 - Applies default-width changes before admission without changing existing column width policies; newly admitted columns, fresh cross-context retiles, and explicit reset read the current policy.
+- Parses at most 128 application-width entries into an exact
+  `desktopFileName` lookup. A newly created or freshly admitted singleton reads
+  that map in constant time, falls back to the global default, and remains
+  subject to the normal window-constraint clamp. Existing columns do not read
+  the map again.
 - Applies width- and height-step changes in constant time without scheduling layout work; only later matching decrease and increase actions read each value.
 - Rolls back speculative startup admission as one batch when settled work-area geometry cannot produce valid frames, then keeps fingerprinted waiting ownership for a later topology recovery.
 - Isolates failed context solves at public and scheduled reconcile boundaries, keeps each blocked context dirty without immediate retry, and continues reconciling healthy contexts.
@@ -121,6 +126,7 @@ RuntimeState
   columnWidthStep: number
   windowHeightStep: number
   defaultColumnWidth: ColumnWidth
+  applicationColumnWidths: Map<desktopFileName, percent>
   pendingDefaultColumnWidth: ColumnWidth | null
   pendingGap: number | null
   pendingWindowSyncs: Set<WindowId>
@@ -297,6 +303,9 @@ inspected safely within the codec bound.
 - Reflow affected visible contexts only; defer hidden desktops until they become visible.
 - Treat a gap change as layout policy, not a model or topology mutation; preserve logical state and defer it until structural and capacity transactions settle.
 - Commit a default-width change only at the same safe runtime boundary and leave existing managed width policies unchanged. Retrying a waiting admission may add a constrained column and update that viewport and its frames.
+- Replace the bounded application-width lookup atomically on reconfiguration.
+  Do not revisit existing columns; schedule only contexts with waiting windows
+  that may create a fresh singleton.
 - Treat resize-step changes as future command policy: preserve every current model value, frame, viewport, and focus target.
 - Never leave partial layout ownership after a failed startup solve, and never immediately reschedule an unchanged unusable work area.
 - Keep a managed context unchanged and dirty when its settled work area cannot produce valid frames; a failure in one context must not block another.
@@ -314,6 +323,8 @@ inspected safely within the codec bound.
 - On Wayland, KWin captures restore geometry before notifying scripts about an application-driven maximize. Unmaximize can briefly expose the former stack frame before Driftile settles the extracted singleton.
 - The Plasma 6.7 workspace `KWin::Window` API used by Driftile does not expose X11 base size, resize increments, aspect bounds, the per-window strict-geometry rule, or a constraint oracle. Driftile therefore does not quantize its layout model to these hints. KWin can still constrain an applied frame according to backend policy, including native X11 character-cell sizing.
 - For Driftile to model strict tiled compliance with unexposed X11 hints, KWin must provide a future public API. Driftile does not infer them from application identity or observed sizes.
+- KWin 6.7 exposes no public wheel-axis event API to declarative scripts, so
+  global wheel input remains deferred.
 
 ## Verification
 
@@ -353,6 +364,10 @@ inspected safely within the codec bound.
 - Verify optional borderless ownership across tiled and floating windows, policy reassertion, live reconfigure handling, and unload restoration.
 - Verify live gap reflow, bounds, no-op coalescing, hidden-context deferral, capacity retry, and zero writes to minimized, floating, or excluded windows.
 - Verify default-width bounds, coalescing, structural deferral, existing-layout preservation, constrained waiting admission, newly admitted-column policy, and transactional reset.
+- Verify bounded one-entry-per-line application-width decoding, exact
+  `desktopFileName` lookup, duplicate rejection, global-default fallback,
+  constant-time admission lookup, existing-column preservation, and live
+  constraint clamps for new singleton columns.
 - Verify width-step bounds, no-write live changes, exact percentage-point actions, hard-bound clamps, and rollback.
 - Verify height-step bounds, no-write live changes, exact stack redistribution, decorated constraints, physical-pixel clamps, and rollback.
 - Verify one-step desktop reordering in both directions, all four default shortcut handlers, boundary and tail no-ops, unavailable or rejected mechanisms, wrong permutations, and the pinned tail. Unit and multi-output integration coverage preserve every output selection; integration and visible-VM coverage preserve live IDs, memberships, focus, and frames.

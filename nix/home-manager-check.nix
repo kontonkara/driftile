@@ -31,6 +31,10 @@ let
     programs.driftile = {
       enable = true;
       settings = {
+        applicationColumnWidths = {
+          "org.example.Browser" = 80;
+          "org.example.Editor" = 60;
+        };
         borderlessWindows = false;
         columnWidthStepPercent = 13;
         defaultColumnWidthPercent = 65;
@@ -77,6 +81,9 @@ in
 assert packageCount standalone == 1;
 assert standalone.config.qt.kde.settings == {
   kwinrc."Script-io.github.kontonkara.driftile" = {
+    ApplicationColumnWidths = ''
+      org.example.Browser=80
+      org.example.Editor=60'';
     BorderlessWindows = false;
     ColumnWidthStepPercent = 13;
     DefaultColumnWidthPercent = 65;
@@ -93,6 +100,7 @@ assert packageCount settingsOnly == 0;
 assert lib.all (assertion: assertion.assertion) settingsOnly.config.assertions;
 assert settingsOnly.config.qt.kde.settings == {
   kwinrc."Script-io.github.kontonkara.driftile" = {
+    ApplicationColumnWidths = "";
     BorderlessWindows = true;
     ColumnWidthStepPercent = 10;
     DefaultColumnWidthPercent = 50;

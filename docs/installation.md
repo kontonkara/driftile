@@ -169,10 +169,14 @@ modules = [
 ];
 ```
 
-Home Manager can also own the complete five-setting profile:
+Home Manager can also own the complete six-setting profile from the main
+branch:
 
 ```nix
 programs.driftile.settings = {
+  applicationColumnWidths = {
+    "org.kde.konsole" = 60;
+  };
   borderlessWindows = true;
   gap = 16;
   defaultColumnWidthPercent = 50;

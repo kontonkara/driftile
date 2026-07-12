@@ -642,6 +642,33 @@ describe("KWin shortcut handlers", () => {
     );
   });
 
+  it("exposes exact application width overrides as a bounded list", () => {
+    const overridesEntry = configuration.match(
+      /<entry name="ApplicationColumnWidths" type="String">([\s\S]*?)<\/entry>/,
+    )?.[1];
+    const overridesWidget = configurationUi.match(
+      /<widget class="QPlainTextEdit" name="kcfg_ApplicationColumnWidths">([\s\S]*?)<\/widget>/,
+    )?.[1];
+
+    expect(overridesEntry).toContain(
+      "<label>Initial column widths by desktop-file ID</label>",
+    );
+    expect(overridesEntry).toContain("<default></default>");
+    expect(configurationUi).toContain(
+      "<string>Application column widths:</string>",
+    );
+    expect(overridesWidget).toContain("org.kde.konsole=60");
+    expect(qml).toContain(
+      'applicationColumnWidths: KWin.readConfig("ApplicationColumnWidths", "")',
+    );
+    expect(runtime).toContain(
+      "applicationColumnWidths: settings.applicationColumnWidths",
+    );
+    expect(runtime).toContain(
+      "controller.setApplicationColumnWidths(settings.applicationColumnWidths)",
+    );
+  });
+
   it("exposes the column width step as a live bounded user setting", () => {
     const stepEntry = configuration.match(
       /<entry name="ColumnWidthStepPercent" type="Int">([\s\S]*?)<\/entry>/,

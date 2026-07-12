@@ -116,6 +116,32 @@
     </layout>
    </item>
    <item>
+    <widget class="QLabel" name="applicationColumnWidthsLabel">
+     <property name="text">
+      <string>Application column widths:</string>
+     </property>
+     <property name="buddy">
+      <cstring>kcfg_ApplicationColumnWidths</cstring>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QPlainTextEdit" name="kcfg_ApplicationColumnWidths">
+     <property name="toolTip">
+      <string>Enter one exact desktop-file ID and percentage per line, for example org.kde.konsole=60.</string>
+     </property>
+     <property name="whatsThis">
+      <string>Each nonempty line sets the initial width of new columns for one application. Use desktop-file-id=percent with a percentage from 10 to 100.</string>
+     </property>
+     <property name="minimumSize">
+      <size>
+       <width>0</width>
+       <height>140</height>
+      </size>
+     </property>
+    </widget>
+   </item>
+   <item>
     <widget class="QLabel" name="shortcutConfigurationHint">
      <property name="text">
       <string>Configure keyboard shortcuts in System Settings &gt; Keyboard &gt; Shortcuts.</string>
