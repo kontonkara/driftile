@@ -105,7 +105,7 @@ Exit criteria:
 
 Harden recovery and finish user-facing integration.
 
-Persistence foundation complete: core has a strict versioned logical-state codec plus fail-closed window and output matching, and isolated Wayland and X11 sessions verify an explicit declarative `QtCore.Settings` store across script reloads. Runtime capture, same-session hydration, debounced writes, matcher integration, and known-topology restoration remain.
+Persistence foundation complete: core has a strict versioned logical-state codec plus fail-closed window and output matching, while the QML package has a debounced opaque `QtCore.Settings` store. Isolated Wayland and X11 sessions verify exact destruction-time persistence across script reloads. Runtime capture, same-session hydration, write notifications, matcher integration, and known-topology restoration remain.
 
 - Persist logical order, widths, viewport offsets, and floating overrides.
 - Restore layouts across script reloads, sessions, and known output topologies.
