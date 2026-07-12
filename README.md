@@ -1,77 +1,85 @@
 # Driftile
 
-A KWin extension for KDE Plasma aiming to provide scrollable tiling and dynamic workspaces.
+A KWin extension for KDE Plasma that provides scrollable tiling and dynamic
+workspaces.
 
-> Driftile is in early development and has no usable release yet.
+Driftile keeps independent layouts for each output and virtual desktop while
+leaving window, output, and desktop mechanisms to KWin.
 
-The current prototype models eligible normal windows in independent `(output, desktop)` contexts. It supports scrollable columns, vertical stacks, focus and reorder commands, manual floating, layer switching and geometric floating-window focus, stack-aware native fullscreen and maximize, preset and incremental column sizing, available-width expansion, active and visible-group centering, per-window height adjustment with automatic reset and `1/3`, `1/2`, and `2/3` presets, and atomic whole-column transfers between desktops and outputs. Secondary single-window transfers remain available without default keys. Structural commands preserve focus, transfers do not wrap, and horizontal focus reveals its target with the smallest required scroll.
+## Features
 
-Driftile keeps one shared trailing virtual desktop empty. It appends a desktop when the tail becomes occupied and removes only a redundant, unselected tail created by the current run. Where KWin exposes desktop reordering, the currently selected desktop can move one position in the global list without wrapping; IDs, output selections, and window memberships stay unchanged, and the empty tail stays pinned. Current-desktop selection remains output-local where KWin supports it.
+- Horizontal scrollable columns with optional vertical window stacks.
+- Keyboard-driven focus, movement, reordering, resizing, centering, and
+  transfers between desktops and outputs.
+- One shared trailing empty virtual desktop with conservative creation and
+  cleanup.
+- Manual floating, automatic layout exclusions, minimized-slot retention, and
+  native fullscreen and maximize integration.
+- Settled recovery for output, scale, work-area, and window-constraint changes.
+- Configurable gaps, default column width, resize steps, and optional
+  borderless presentation.
+- An optional helper that claims the default shortcut profile and restores
+  displaced assignments.
 
-The default controls use compact `Meta` combinations with `H/J/K/L` and arrow aliases. Plasma reserves some of them, so Driftile provides a reversible shortcut-claim command. See [Shortcuts](docs/shortcuts.md).
+## Status
 
-Dialogs, modal or transient windows, non-resizable normal windows, and normal windows fixed on both axes remain outside layout ownership. Driftile does not admit them to a layout or write their geometry, desktop, or output; layout-mutating commands are no-ops while one is active, while focus-only floating and layer commands may select an available window. This automatic state is separate from manual floating. A managed window that becomes transient leaves its layout without restoring an old frame and can be admitted again after the transient role clears. Client size limits for other windows are translated to decorated frame limits before layout writes and column resizing.
+The current version is 0.1.0 and requires KDE Plasma with KWin 6.7 or newer. It
+targets native Wayland and XWayland windows, plus single-output native X11
+sessions.
 
-KWin owns minimization; Driftile provides no minimize action or default shortcut. A minimized tiled window keeps its exact logical slot, while a minimized manually floating window keeps its exact floating frame. Focus navigation and layer switching skip minimized windows and fully minimized columns without wrapping. A visible stack member can move across settled minimized slots or extract horizontally past them. Direct insertion may cross settled minimized peers in its participating source and target columns, including a fully minimized target stack; skipped singleton columns do not participate. Those peers retain their logical order, height state, minimized state, and externally changed frames without geometry writes. Fullscreen, maximized, native-tiled, restore- or toggle-settling, and other blockers in either participating column make insertion fail closed; state round trips during reflow cancel and roll back the edit. Consume can pull the visible top member of the immediate-right column past settled minimized passive peers in either column. Expel can move a visible bottom member past minimized passive peers when its retained focus target is also visible; an active bottom member moves only after KWin confirms the focus handoff. These operations do not write hidden frames. Native fullscreen and maximize may extract a visible member past minimized peers. Whole-column desktop and output transfers may carry settled minimized passive members without layout geometry writes. A secondary single-window transfer may extract the visible active member while settled minimized passive members in the same source column remain untouched. Those retained members keep their logical slots, height state, minimized state, and frames, and receive no desktop, output, or geometry writes. Minimized windows elsewhere in the source or target context and other hidden-member operations stay fail-closed unless documented otherwise.
+Known limits:
 
-KWin-decorated application windows are borderless by default, including tiled, floating, dialog, transient, and utility windows. The setting is optional, never claims windows that were already borderless, and restores owned decorations when disabled or unloaded. Tiled window gaps are configurable live from 0 to 64 logical pixels and default to 16. Newly admitted columns use a configurable 50% proportional width, while incremental column-width and window-height changes each use a configurable 10-percentage-point step. See [Configuration](docs/configuration.md).
+- Layout state is not restored across sessions or extension reloads.
+- Physical connector hot-plugging has not been verified.
+- Native X11 multi-output layouts remain unverified.
 
-Live output-list, geometry, scale, and work-area changes recover after two delayed topology snapshots agree. Output and dock signals trigger normal recovery; a two-second watchdog checks visible contexts and windows for client-area or hard size-constraint changes that KWin does not signal. Reconfigured contexts discard stale original-frame restore baselines for the rest of the run. If a multi-output context no longer fits, Driftile parks whole columns with a reachable anchor inside the work area, preferring non-active columns, and retries them when capacity returns.
-
-Persistence is not enabled yet. A versioned state codec, conservative matchers,
-and a tested KWin-local state store are complete; safe runtime hydration and
-store integration remain v1 work.
-
-## Goals
-
-- Independent scrollable window strips for every output and virtual desktop.
-- Horizontal columns with optional vertical window stacks.
-- Keyboard-first navigation and window management.
-- Dynamic workspace lifecycle with output-local selection where supported.
-- Portable installation through the standard KWin package format.
+See [Product scope](docs/product-scope.md) for the complete behavior boundary.
 
 ## Installation
 
-Driftile requires Plasma with KWin 6.7 or newer. Install the versioned
-`.kwinscript`, enable it in System Settings, then configure shortcuts manually
-or with the optional reversible helper. See [Installation](docs/installation.md)
-for checksums, upgrades, Nix packaging, and safe removal.
+Install the versioned `.kwinscript`, enable Driftile in **System Settings >
+Window Management > KWin Scripts**, then assign shortcuts manually or with the
+optional reversible helper. See [Installation](docs/installation.md) for
+artifact verification, upgrades, Nix packaging, and safe removal.
 
 ## Development
 
-Requirements: Node.js 22 or newer, npm, `zip`, ShellCheck, `busctl`, `flock`, and KDE Frameworks 6 KPackage tools.
+Requirements: Node.js 22 or newer, npm, `zip`, ShellCheck, `busctl`, `flock`,
+`kwriteconfig6`, and KDE Frameworks 6 KPackage tools.
 
 ```bash
 npm ci
 npm run check
-npm run package
+npm run package:check
 ```
 
-For a development install, enable the script in System Settings and claim its
-shortcut profile:
+Use the lifecycle commands from a running Plasma session:
 
 ```bash
 npm run install:dev
-npm run shortcuts:claim
+npm run upgrade:dev
+npm run uninstall:dev
 ```
 
-On systems with Nix, `nix develop` provides the source toolchain, and `nix build` builds the KWin package. Use `nix develop .#integration` for the isolated KWin tests.
+They release an owned shortcut profile and unload Driftile before changing the
+installed package. Install and upgrade leave the extension disabled; follow
+their printed steps to enable Driftile and optionally claim the default profile.
 
-The generated KWin package, optional shortcut helper, license, and checksum
-manifest are written to `dist/`.
-
-Run `npm run test:integration` for isolated KWin lifecycle tests. A visible NixOS Plasma VM is also available. See [Testing](docs/testing.md) for coverage and commands.
+`nix develop` provides the source toolchain, and `nix build` builds the KWin
+package. See [Testing](docs/testing.md) for unit, integration, and visible VM
+checks.
 
 ## Documentation
 
 - [Installation](docs/installation.md)
-- [Product scope](docs/product-scope.md)
-- [Interaction model](docs/interaction-model.md)
-- [Shortcuts](docs/shortcuts.md)
 - [Configuration](docs/configuration.md)
+- [Shortcuts](docs/shortcuts.md)
+- [Interaction model](docs/interaction-model.md)
+- [Product scope](docs/product-scope.md)
 - [Architecture](docs/architecture.md)
-- [Roadmap](docs/roadmap.md)
 - [Testing](docs/testing.md)
+- [Roadmap](docs/roadmap.md)
+- [0.1.0 release notes](docs/release-notes-0.1.0.md)
 
 ## License
 
