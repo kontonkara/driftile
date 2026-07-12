@@ -3836,6 +3836,87 @@ describe("RuntimeController", () => {
     expect(fixture.activationCount).toBe(activationCount);
   });
 
+  it("bounds window height step changes without scheduling layout work", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const windows = Array.from({ length: 3 }, (_value, index) =>
+      createTrackedWindow(`window-${String(index + 1)}`, output, desktop),
+    );
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map(({ window }) => window),
+    );
+    let geometryLookups = 0;
+    Object.defineProperty(fixture.workspace, "clientArea", {
+      configurable: true,
+      value: () => {
+        geometryLookups += 1;
+        return { height: 800, width: 1000, x: 0, y: 0 };
+      },
+    });
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+    const state = controller as unknown as {
+      readonly columnWidthStep: number;
+      readonly windowHeightStep: number;
+    };
+
+    expect(controller.start()).toBe(true);
+    const before = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
+    const writes = windows.map(({ writeCount }) => writeCount);
+    const active = fixture.workspace.activeWindow;
+    const activationCount = fixture.activationCount;
+    const settledGeometryLookups = geometryLookups;
+
+    expect(state.windowHeightStep).toBe(0.1);
+    expect(state.columnWidthStep).toBe(0.1);
+    expect(controller.setWindowHeightStepPercent(10)).toBe(false);
+
+    for (const invalid of [
+      0,
+      51,
+      1.5,
+      Number.NaN,
+      Number.NEGATIVE_INFINITY,
+      Number.POSITIVE_INFINITY,
+    ]) {
+      expect(controller.setWindowHeightStepPercent(invalid)).toBe(false);
+    }
+
+    expect(controller.setWindowHeightStepPercent(1)).toBe(true);
+    expect(state.windowHeightStep).toBe(0.01);
+    expect(controller.setWindowHeightStepPercent(50)).toBe(true);
+    expect(state.windowHeightStep).toBe(0.5);
+    expect(controller.setWindowHeightStepPercent(17)).toBe(true);
+    expect(controller.setWindowHeightStepPercent(17)).toBe(false);
+    expect(state.windowHeightStep).toBe(0.17);
+    expect(state.columnWidthStep).toBe(0.1);
+
+    expect(geometryLookups).toBe(settledGeometryLookups);
+    expect(scheduler.pendingCount).toBe(0);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(before);
+    expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
+    expect(windows.map(({ writeCount }) => writeCount)).toEqual(writes);
+    expect(fixture.workspace.activeWindow).toBe(active);
+    expect(fixture.activationCount).toBe(activationCount);
+  });
+
   it("keeps existing tiled, hidden, floating, and excluded windows unchanged", () => {
     const output = createOutput("DP-1", 0);
     const visibleDesktop = { id: "desktop-1" };
@@ -15522,6 +15603,124 @@ describe("RuntimeController", () => {
     expect(fixture.workspace.activeWindow).toBe(active.window);
   });
 
+  it("applies a configured height step to the work-area span only for incremental actions", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const active = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [active.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    expect(controller.setWindowHeightStepPercent(15)).toBe(true);
+    expect(controller.start()).toBe(true);
+    expect(controller.decreaseWindowHeight()).toBe(true);
+    expect(active.window.frameGeometry.height).toBe(662);
+    expect(activeColumnWindowHeights(controller, output, desktop)).toEqual([
+      { clientHeight: 662, kind: "fixed" },
+    ]);
+
+    expect(controller.increaseColumnWidth()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "proportion",
+      value: 0.6,
+    });
+    expect(active.window.frameGeometry.height).toBe(662);
+    expect(activeColumnWindowHeights(controller, output, desktop)).toEqual([
+      { clientHeight: 662, kind: "fixed" },
+    ]);
+
+    expect(controller.switchPresetWindowHeight()).toBe(true);
+    expect(active.window.frameGeometry.height).toBe(253);
+    expect(activeColumnWindowHeights(controller, output, desktop)).toEqual([
+      { index: 0, kind: "preset" },
+    ]);
+    expect(controller.resetWindowHeight()).toBe(true);
+    expect(active.window.frameGeometry.height).toBe(780);
+    expect(activeColumnWindowHeights(controller, output, desktop)).toEqual([
+      { kind: "auto", weight: 1 },
+    ]);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+    expect(fixture.activationCount).toBe(0);
+  });
+
+  it("uses a height step changed behind a topology barrier only for a later action", () => {
+    const trackedOutput = createTrackedOutput("DP-1", 0);
+    const output = trackedOutput.output;
+    const desktop = { id: "desktop-1" };
+    const active = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [active.window],
+    );
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+    const state = controller as unknown as {
+      readonly topologyStabilizing: boolean;
+      readonly windowHeightStep: number;
+    };
+
+    expect(controller.start()).toBe(true);
+    const before = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const frame = { ...active.window.frameGeometry };
+    const writes = active.writeCount;
+    const activationCount = fixture.activationCount;
+
+    trackedOutput.geometryChanged.emit();
+    expect(state.topologyStabilizing).toBe(true);
+    expect(resumeScheduler.pendingCount).toBe(1);
+    expect(controller.setWindowHeightStepPercent(20)).toBe(true);
+    expect(state.windowHeightStep).toBe(0.2);
+    expect(resumeScheduler.pendingCount).toBe(1);
+    expect(workScheduler.pendingCount).toBe(0);
+    expect(controller.decreaseWindowHeight()).toBe(false);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(before);
+    expect(active.window.frameGeometry).toEqual(frame);
+    expect(active.writeCount).toBe(writes);
+
+    flushTopologyRecovery(resumeScheduler, workScheduler);
+    expect(state.topologyStabilizing).toBe(false);
+    expect(activeColumnWindowHeights(controller, output, desktop)).toEqual([
+      { kind: "auto", weight: 1 },
+    ]);
+    expect(active.window.frameGeometry).toEqual(frame);
+    expect(active.writeCount).toBe(writes);
+    expect(workScheduler.pendingCount).toBe(0);
+    expect(resumeScheduler.pendingCount).toBe(0);
+
+    expect(controller.decreaseWindowHeight()).toBe(true);
+    expect(active.window.frameGeometry.height).toBe(622);
+    expect(activeColumnWindowHeights(controller, output, desktop)).toEqual([
+      { clientHeight: 622, kind: "fixed" },
+    ]);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+    expect(fixture.activationCount).toBe(activationCount);
+  });
+
   it("redistributes a two-window stack and resets it to automatic", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
@@ -15564,6 +15763,68 @@ describe("RuntimeController", () => {
     expect(
       [first, active].map((window) => window.window.frameGeometry.height),
     ).toEqual([385, 385]);
+    expect(activeColumnWindowHeights(controller, output, desktop)).toEqual([
+      { kind: "auto", weight: 1 },
+      { kind: "auto", weight: 1 },
+    ]);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+    expect(fixture.activationCount).toBe(0);
+  });
+
+  it("redistributes a decorated stack with a configured height step in frame coordinates", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const active = createTrackedWindow("window-2", output, desktop, {
+      clientGeometry: { height: 196, width: 280, x: 10, y: 12 },
+      frameGeometry: { height: 220, width: 300, x: 0, y: 0 },
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window, active.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    expect(controller.setWindowHeightStepPercent(20)).toBe(true);
+    expect(controller.start()).toBe(true);
+    installTestLayout(controller, output, desktop, "column:stack", [
+      {
+        id: "column:stack",
+        width: { kind: "fixed", value: 400 },
+        windowIds: ["window-1", "window-2"],
+      },
+    ]);
+    expect(
+      [first, active].map(({ window }) => window.frameGeometry.height),
+    ).toEqual([385, 385]);
+
+    expect(controller.increaseWindowHeight()).toBe(true);
+    expect(
+      [first, active].map(({ window }) => window.frameGeometry.height),
+    ).toEqual([227, 543]);
+    expect(active.window.clientGeometry.height).toBe(519);
+    expect(activeColumnWindowHeights(controller, output, desktop)).toEqual([
+      { kind: "auto", weight: 1 },
+      { clientHeight: 519, kind: "fixed" },
+    ]);
+
+    expect(controller.decreaseWindowHeight()).toBe(true);
+    expect(
+      [first, active].map(({ window }) => window.frameGeometry.height),
+    ).toEqual([385, 385]);
+    expect(active.window.clientGeometry.height).toBe(361);
+    expect(activeColumnWindowHeights(controller, output, desktop)).toEqual([
+      { kind: "auto", weight: 1 },
+      { clientHeight: 361, kind: "fixed" },
+    ]);
+
+    expect(controller.resetWindowHeight()).toBe(true);
     expect(activeColumnWindowHeights(controller, output, desktop)).toEqual([
       { kind: "auto", weight: 1 },
       { kind: "auto", weight: 1 },
@@ -15762,6 +16023,44 @@ describe("RuntimeController", () => {
     expect(controller.decreaseWindowHeight()).toBe(false);
   });
 
+  it("clamps a fifty-percent height step that crosses zero to one pixel", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const active = createTrackedWindow("window-1", output, desktop, {
+      minSize: { height: 0, width: 1 },
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [active.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    expect(controller.setWindowHeightStepPercent(50)).toBe(true);
+    expect(controller.start()).toBe(true);
+    expect(controller.decreaseWindowHeight()).toBe(true);
+    expect(active.window.frameGeometry.height).toBe(385);
+    expect(controller.decreaseWindowHeight()).toBe(true);
+    expect(active.window.frameGeometry.height).toBe(1);
+    expect(activeColumnWindowHeights(controller, output, desktop)).toEqual([
+      { clientHeight: 1, kind: "fixed" },
+    ]);
+    expect(controller.decreaseWindowHeight()).toBe(false);
+
+    expect(controller.increaseWindowHeight()).toBe(true);
+    expect(active.window.frameGeometry.height).toBe(396);
+    expect(activeColumnWindowHeights(controller, output, desktop)).toEqual([
+      { clientHeight: 396, kind: "fixed" },
+    ]);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+    expect(fixture.activationCount).toBe(0);
+  });
+
   it("aligns window-height constraints to physical pixels", () => {
     const trackedOutput = createTrackedOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
@@ -15787,24 +16086,119 @@ describe("RuntimeController", () => {
     };
 
     trackedOutput.setScale(1.25);
+    expect(controller.setWindowHeightStepPercent(5)).toBe(true);
     controller.start();
     expect(controller.decreaseWindowHeight()).toBe(true);
-    expect(active.window.frameGeometry.height).toBeCloseTo(700.8, 10);
+    expect(active.window.frameGeometry.height).toBeCloseTo(740.8, 10);
 
-    constraints.maxSize = { height: 730, width: 10_000 };
+    constraints.maxSize = { height: 760, width: 10_000 };
     expect(controller.increaseWindowHeight()).toBe(true);
-    expect(active.window.frameGeometry.height).toBeCloseTo(729.6, 10);
+    expect(active.window.frameGeometry.height).toBeCloseTo(760, 10);
     expect(
       activeColumnWindowHeights(controller, trackedOutput.output, desktop),
-    ).toEqual([{ clientHeight: 729.6, kind: "fixed" }]);
+    ).toEqual([{ clientHeight: 760, kind: "fixed" }]);
+    expect(controller.increaseWindowHeight()).toBe(false);
 
+    constraints.maxSize = { height: 10_000, width: 10_000 };
     constraints.minSize = { height: 711, width: 1 };
+    expect(controller.decreaseWindowHeight()).toBe(true);
+    expect(active.window.frameGeometry.height).toBeCloseTo(720.8, 10);
     expect(controller.decreaseWindowHeight()).toBe(true);
     expect(active.window.frameGeometry.height).toBeCloseTo(711.2, 10);
     expect(
       activeColumnWindowHeights(controller, trackedOutput.output, desktop),
     ).toEqual([{ clientHeight: 711.2, kind: "fixed" }]);
     expect(controller.decreaseWindowHeight()).toBe(false);
+  });
+
+  it("never reverses a fixed height action after constraints change", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const active = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [active.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+    const constraints = active.window as unknown as {
+      maxSize: KWinWindow["maxSize"];
+      minSize: KWinWindow["minSize"];
+    };
+
+    expect(controller.start()).toBe(true);
+    expect(controller.decreaseWindowHeight()).toBe(true);
+    expect(active.window.frameGeometry.height).toBe(701);
+    const before = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const frame = { ...active.window.frameGeometry };
+    const writes = active.writeCount;
+
+    constraints.minSize = { height: 750, width: 1 };
+    expect(controller.decreaseWindowHeight()).toBe(false);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(before);
+    expect(active.window.frameGeometry).toEqual(frame);
+    expect(active.writeCount).toBe(writes);
+
+    constraints.minSize = { height: 1, width: 1 };
+    constraints.maxSize = { height: 650, width: 10_000 };
+    expect(controller.increaseWindowHeight()).toBe(false);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(before);
+    expect(active.window.frameGeometry).toEqual(frame);
+    expect(active.writeCount).toBe(writes);
+
+    expect(controller.decreaseWindowHeight()).toBe(true);
+    expect(active.window.frameGeometry.height).toBe(571);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+    expect(fixture.activationCount).toBe(0);
+  });
+
+  it("can pin an automatic height at an unchanged hard boundary", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const active = createTrackedWindow("window-1", output, desktop, {
+      minSize: { height: 780, width: 1 },
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [active.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    expect(controller.start()).toBe(true);
+    const writes = active.writeCount;
+    expect(controller.decreaseWindowHeight()).toBe(true);
+    expect(active.window.frameGeometry.height).toBe(780);
+    expect(active.writeCount).toBe(writes);
+    expect(activeColumnWindowHeights(controller, output, desktop)).toEqual([
+      { clientHeight: 780, kind: "fixed" },
+    ]);
+    expect(controller.decreaseWindowHeight()).toBe(false);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+    expect(fixture.activationCount).toBe(0);
   });
 
   it("reserves fractional sibling minima before storing a fixed height", () => {
@@ -15887,6 +16281,7 @@ describe("RuntimeController", () => {
     });
     const warning = console.warn;
 
+    expect(controller.setWindowHeightStepPercent(17)).toBe(true);
     controller.start();
     installTestLayout(controller, output, desktop, "column:stack", [
       {
@@ -15941,6 +16336,15 @@ describe("RuntimeController", () => {
     ).toEqual(beforeFrames);
     expect(fixture.workspace.activeWindow).toBe(active.window);
     expect(fixture.activationCount).toBe(0);
+
+    expect(controller.decreaseWindowHeight()).toBe(true);
+    expect(
+      [first, active].map(({ window }) => window.frameGeometry.height),
+    ).toEqual([385, 385]);
+    expect(activeColumnWindowHeights(controller, output, desktop)).toEqual([
+      { kind: "auto", weight: 1 },
+      { clientHeight: 385, kind: "fixed" },
+    ]);
   });
 
   it("toggles full-width columns and discards the restore on manual resize", () => {

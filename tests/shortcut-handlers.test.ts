@@ -625,13 +625,59 @@ describe("KWin shortcut handlers", () => {
       /Runtime\.DriftileRuntime\.setColumnWidthStepPercent\(\s*KWin\.readConfig\("ColumnWidthStepPercent", 10\)\)/,
     );
     expect(qml).toMatch(
-      /KWin\.readConfig\("DefaultColumnWidthPercent", 50\),\s*KWin\.readConfig\("ColumnWidthStepPercent", 10\)\)/,
+      /KWin\.readConfig\("DefaultColumnWidthPercent", 50\),\s*KWin\.readConfig\("ColumnWidthStepPercent", 10\),/,
     );
     expect(runtime).toMatch(
-      /nextController\.setDefaultColumnWidthPercent\(defaultColumnWidthPercent\);\s*nextController\.setColumnWidthStepPercent\(columnWidthStepPercent\);\s*if \(!nextController\.start\(\)\)/,
+      /nextController\.setDefaultColumnWidthPercent\(defaultColumnWidthPercent\);\s*nextController\.setColumnWidthStepPercent\(columnWidthStepPercent\);/,
     );
     expect(runtime).toMatch(
       /export function setColumnWidthStepPercent\(percent: number\): void \{\s*controller\?\.setColumnWidthStepPercent\(percent\);\s*\}/,
+    );
+  });
+
+  it("exposes the window height step as a live bounded user setting", () => {
+    const stepEntry = configuration.match(
+      /<entry name="WindowHeightStepPercent" type="Int">([\s\S]*?)<\/entry>/,
+    )?.[1];
+    const stepLabel = configurationUi.match(
+      /<widget class="QLabel" name="windowHeightStepLabel">([\s\S]*?)<\/widget>/,
+    )?.[1];
+    const stepWidget = configurationUi.match(
+      /<widget class="QSpinBox" name="kcfg_WindowHeightStepPercent">([\s\S]*?)<\/widget>/,
+    )?.[1];
+
+    expect(stepEntry).toContain("<label>Window height step in percent</label>");
+    expect(stepEntry).toContain("<default>10</default>");
+    expect(stepEntry).toContain("<min>1</min>");
+    expect(stepEntry).toContain("<max>50</max>");
+    expect(stepLabel).toContain("<string>Window height step:</string>");
+    expect(stepLabel).toContain(
+      "<cstring>kcfg_WindowHeightStepPercent</cstring>",
+    );
+    expect(stepWidget).toContain("<string> %</string>");
+    expect(stepWidget).toMatch(
+      /<property name="minimum">\s*<number>1<\/number>/,
+    );
+    expect(stepWidget).toMatch(
+      /<property name="maximum">\s*<number>50<\/number>/,
+    );
+    expect(stepWidget).toMatch(
+      /<property name="value">\s*<number>10<\/number>/,
+    );
+    expect(
+      qml.match(/KWin\.readConfig\("WindowHeightStepPercent", 10\)/g),
+    ).toHaveLength(2);
+    expect(qml).toMatch(
+      /Runtime\.DriftileRuntime\.setWindowHeightStepPercent\(\s*KWin\.readConfig\("WindowHeightStepPercent", 10\)\)/,
+    );
+    expect(qml).toMatch(
+      /KWin\.readConfig\("ColumnWidthStepPercent", 10\),\s*KWin\.readConfig\("WindowHeightStepPercent", 10\)\)/,
+    );
+    expect(runtime).toMatch(
+      /nextController\.setColumnWidthStepPercent\(columnWidthStepPercent\);\s*nextController\.setWindowHeightStepPercent\(windowHeightStepPercent\);\s*if \(!nextController\.start\(\)\)/,
+    );
+    expect(runtime).toMatch(
+      /export function setWindowHeightStepPercent\(percent: number\): void \{\s*controller\?\.setWindowHeightStepPercent\(percent\);\s*\}/,
     );
   });
 });

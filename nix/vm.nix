@@ -1166,9 +1166,16 @@ let
         ${pkgs.kdePackages.kconfig}/bin/kwriteconfig6 \
           --file "$HOME/.config/kwinrc" \
           --group "Script-${pluginId}" \
-          --key Gap \
+          --key WindowHeightStepPercent \
           --type int \
           "$3" \
+          || return 1
+        ${pkgs.kdePackages.kconfig}/bin/kwriteconfig6 \
+          --file "$HOME/.config/kwinrc" \
+          --group "Script-${pluginId}" \
+          --key Gap \
+          --type int \
+          "$4" \
           || return 1
 
         busctl --user call \
@@ -1180,7 +1187,7 @@ let
       }
 
       restore_layout_configuration() {
-        set_layout_configuration 50 10 16
+        set_layout_configuration 50 10 10 16
       }
 
       window_fullscreen_state() {
@@ -4927,6 +4934,8 @@ let
         local configured_step_second_frame
         local configured_step_third_frame
         local configured_step_width
+        local configured_height_step_second_frame
+        local configured_height_step_value
         local consume_fixture_rebuilt
         local default_width_delivery_first_frame
         local default_width_delivery_second_frame
@@ -5129,11 +5138,15 @@ let
         ))
         configured_step_second_frame="$baseline_second_x,$baseline_second_y,$configured_step_width,$baseline_second_height"
         configured_step_third_frame="$((baseline_third_x + configured_step_width - baseline_second_width)),$baseline_third_y,$baseline_third_width,$baseline_third_height"
+        configured_height_step_value=$((
+          (80 * (baseline_second_height + 16) + 50) / 100 - 16
+        ))
+        configured_height_step_second_frame="$baseline_second_x,$baseline_second_y,$baseline_second_width,$configured_height_step_value"
         default_width_restore_first_frame=$default_width_delivery_first_frame
         default_width_restore_second_frame="$((baseline_second_x + 4)),$((baseline_second_y + 8)),$((configured_default_width - 14)),$((baseline_second_height - 16))"
         default_width_restore_third_frame="$((baseline_third_x + configured_default_width - baseline_second_width - 2)),$((baseline_third_y + 8)),$((baseline_third_width - 12)),$((baseline_third_height - 16))"
 
-        if ! set_layout_configuration 70 10 24 \
+        if ! set_layout_configuration 70 10 10 24 \
           || ! wait_for_frames \
             "$default_width_delivery_first_frame" \
             "$default_width_delivery_second_frame" \
@@ -5164,7 +5177,7 @@ let
         record_focus_state \
           "configured default column width reset exactly to 70 percent"
 
-        if ! set_layout_configuration 50 10 24 \
+        if ! set_layout_configuration 50 10 10 24 \
           || ! wait_for_frames \
             "$default_width_restore_first_frame" \
             "$default_width_restore_second_frame" \
@@ -5186,7 +5199,7 @@ let
         fi
         record_focus_state "default column width restored exact baseline frames"
 
-        if ! set_layout_configuration 50 20 24 \
+        if ! set_layout_configuration 50 20 10 24 \
           || ! wait_for_frames \
             "$default_width_delivery_first_frame" \
             "$default_width_delivery_second_frame" \
@@ -5224,7 +5237,7 @@ let
         record_focus_state \
           "configured column-width step completed an exact 20-point round trip"
 
-        if ! set_layout_configuration 50 10 24 \
+        if ! set_layout_configuration 50 10 10 24 \
           || ! wait_for_frames \
             "$default_width_delivery_first_frame" \
             "$default_width_delivery_second_frame" \
@@ -5241,6 +5254,68 @@ let
           return 1
         fi
         record_focus_state "default column-width step restored exact baseline frames"
+
+        if ! set_layout_configuration 50 10 20 24 \
+          || ! wait_for_frames \
+            "$default_width_delivery_first_frame" \
+            "$default_width_delivery_second_frame" \
+            "$default_width_delivery_third_frame" \
+          || ! wait_for_active "$title_b" \
+          || ! set_gap 16 \
+          || ! wait_for_frames \
+            "$stable_first_frame" \
+            "$stable_second_frame" \
+            "$stable_third_frame" \
+          || ! wait_for_active "$title_b"; then
+          restore_layout_configuration >/dev/null 2>&1 || true
+          record_focus_state "configured window-height step delivery failed"
+          return 1
+        fi
+        record_focus_state \
+          "configured window-height step preserved exact frames before resize"
+
+        if ! invoke_shortcut "driftile_decrease_window_height" \
+          || ! wait_for_frames \
+            "$stable_first_frame" \
+            "$configured_height_step_second_frame" \
+            "$stable_third_frame" \
+          || ! wait_for_active "$title_b" \
+          || ! invoke_shortcut "driftile_increase_window_height" \
+          || ! wait_for_frames \
+            "$stable_first_frame" \
+            "$stable_second_frame" \
+            "$stable_third_frame" \
+          || ! wait_for_active "$title_b" \
+          || ! invoke_shortcut "driftile_reset_window_height" \
+          || ! wait_for_frames \
+            "$stable_first_frame" \
+            "$stable_second_frame" \
+            "$stable_third_frame" \
+          || ! wait_for_active "$title_b"; then
+          restore_layout_configuration >/dev/null 2>&1 || true
+          record_focus_state "configured window-height step round trip failed"
+          return 1
+        fi
+        record_focus_state \
+          "configured window-height step completed an exact 20-point round trip"
+
+        if ! set_layout_configuration 50 10 10 24 \
+          || ! wait_for_frames \
+            "$default_width_delivery_first_frame" \
+            "$default_width_delivery_second_frame" \
+            "$default_width_delivery_third_frame" \
+          || ! wait_for_active "$title_b" \
+          || ! set_gap 16 \
+          || ! wait_for_frames \
+            "$stable_first_frame" \
+            "$stable_second_frame" \
+            "$stable_third_frame" \
+          || ! wait_for_active "$title_b"; then
+          restore_layout_configuration >/dev/null 2>&1 || true
+          record_focus_state "default window-height step restoration failed"
+          return 1
+        fi
+        record_focus_state "default window-height step restored exact baseline frames"
 
         invoke_shortcut "driftile_increase_column_width" \
           && wait_for_middle_width \
@@ -7694,6 +7769,7 @@ let
     ColumnWidthStepPercent=10
     DefaultColumnWidthPercent=50
     Gap=16
+    WindowHeightStepPercent=10
   '';
   screenLockerConfig = pkgs.writeText "driftile-vm-kscreenlockerrc" ''
     [Daemon]
