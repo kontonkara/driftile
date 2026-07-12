@@ -111,6 +111,14 @@ RuntimeState
 
 `LayoutContext` owns columns, per-window automatic weights or fixed/preset heights, viewport offset, and the last applied geometry fingerprint. A managed window owns an optional decoration-independent client restore baseline plus the exact frame observed at capture time. A manually floating window remains observed but has no layout or geometry owner; its detached placement records stable anchors for reinsertion. An automatically floating window has no layout slot, floating anchor, waiting entry, suspension, or retry state. A minimized tiled window remains suspended in its exact logical slot, while a minimized manually floating window keeps its exact detached frame. Reconcile excludes suspended windows until KWin releases geometry authority. Waiting windows have no layout owner. KWin objects never enter core state.
 
+## Persistence boundary
+
+The persistence foundation is a bounded, versioned JSON codec in core. It stores logical output and window descriptors, column and stack order, width and height policies, viewport offsets, full-width restore values, and manual-floating reinsertion anchors. It rejects unknown fields, invalid references, impossible layout policies, oversized input, and unsupported versions without mutating live state.
+
+Transient runtime state is never durable: geometry fingerprints, expected frames, original-frame and decoration ownership, focus caches, waiting and suspension state, schedulers, probes, and transaction tokens are excluded. A window `liveId` is an exact same-session reload hint only. Optional session descriptors use public KWin metadata and must match one live window uniquely; missing or ambiguous matches are admitted normally instead of disturbing another window. Outputs use connector and display metadata, while desktops require their exact KWin IDs.
+
+An isolated real-KWin probe verifies that `QtCore.Settings` at an explicit file location preserves the opaque JSON string across declarative-script unload and reload on Wayland and X11. Runtime capture, hydration, debounced writes, and cross-session matching are not connected yet.
+
 ## Reconciliation rules
 
 - Read usable geometry from KWin work areas; never infer panel bounds.

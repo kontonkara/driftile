@@ -18,7 +18,8 @@ KWin-decorated application windows are borderless by default, including tiled, f
 
 Live output-list, geometry, scale, and work-area changes recover after two delayed topology snapshots agree. Output and dock signals trigger normal recovery; a two-second watchdog checks visible contexts and windows for client-area or hard size-constraint changes that KWin does not signal. Reconfigured contexts discard stale original-frame restore baselines for the rest of the run. If a multi-output context no longer fits, Driftile parks whole columns with a reachable anchor inside the work area, preferring non-active columns, and retries them when capacity returns.
 
-Layout and workspace persistence are not implemented yet.
+Persistence is not enabled yet. A versioned state codec and KWin-local storage
+probe are complete; safe runtime hydration and window matching remain v1 work.
 
 ## Goals
 
