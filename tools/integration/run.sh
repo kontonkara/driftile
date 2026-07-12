@@ -100,7 +100,7 @@ run_backend() (
   local qml_prefix
   local xvfb_log=""
   local xvfb_pid=""
-  local xwayland_directory
+  local xwayland_wrapper_directory
   local package_installed=0
   local output_count
   local protocols
@@ -245,15 +245,20 @@ run_backend() (
           fail "The exact Xwayland executable is unavailable."
         fi
 
-        xwayland_directory=$(dirname "$exact_xwayland")
-        export PATH="$xwayland_directory:$PATH"
+        xwayland_wrapper_directory="$sandbox/xwayland-bin"
+        mkdir "$xwayland_wrapper_directory"
+        ln -s \
+          "$project_root/tools/integration/xwayland-wrapper.sh" \
+          "$xwayland_wrapper_directory/Xwayland"
+        export DRIFTILE_SMOKE_XWAYLAND="$exact_xwayland"
+        export PATH="$xwayland_wrapper_directory:$PATH"
       fi
 
       require_command Xwayland || exit 1
 
       if [[
         -n "$exact_xwayland" &&
-          "$(readlink -f "$(command -v Xwayland)")" != "$(readlink -f "$exact_xwayland")"
+          "$(readlink -f "$(command -v Xwayland)")" != "$project_root/tools/integration/xwayland-wrapper.sh"
       ]]; then
         fail "KWin would not resolve the exact Xwayland executable."
       fi
