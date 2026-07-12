@@ -1,8 +1,8 @@
 # Migration
 
-The latest stable release is 0.1.0; `main` currently builds 1.0.0-dev.0. Use
-the steps below for source testing now and for a tagged 1.x release when it is
-published. Never combine files from different releases.
+The latest stable release is 0.1.0; `main` currently builds the 1.0.0-rc.1
+candidate. Use the steps below for source testing and tagged 1.x releases.
+Never combine files from different releases.
 
 ## Upgrade from 0.1.0
 

@@ -121,8 +121,7 @@ compatibility, and known limits.
 
 Version 1 hardens persistence, recovery, supported pointer insertion, and the
 release lifecycle. It does not add new navigation or presentation modes. This
-work is outside the published 0.1.0 scope; the persistence foundation is
-complete and the remaining items are still planned.
+work is outside the published 0.1.0 scope; final 1.0.0 remains unreleased.
 
 Persistence foundation complete: core has a strict logical-state codec, a bounded four-entry v2 topology catalog, fail-closed window and output matching, side-effect-free canonical runtime capture, and all-or-nothing hydration. Stable changed snapshots reach the debounced opaque `QtCore.Settings` store; bare v1 state migrates without changing the storage key. Runtime startup reselects a complete settled topology, applies exact reload state or a complete strong-descriptor cross-session match atomically, waits boundedly for late windows behind a no-admission barrier, and requires a quiet candidate before commit. An additive known-output return restores an exact tiled layout per output without repatriating windows or rebuilding unchanged contexts; unsafe plans use normal topology recovery. Replaced window objects receive fresh restore baselines. Isolated Wayland and X11 sessions verify idempotent script reloads.
 
@@ -136,8 +135,8 @@ separate visible lifecycle VM verifies a clean published 0.1.0 install and
 load, upgrade to the current candidate, real Konsole and KDE Calculator
 lifecycles, disable, removal, and post-removal KWin usability.
 
-- Finish recovery validation for reload, session restoration, late windows, and
-  known-output return.
+Recovery validation is complete for reload, session restoration, late windows,
+and known-output return. The current prerelease checkpoint is `1.0.0-rc.1`.
 
 Exit criteria:
 
