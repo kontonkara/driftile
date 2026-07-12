@@ -1,17 +1,17 @@
 # Installation
 
 Driftile requires KDE Plasma with KWin 6.7 or newer and `kpackagetool6`.
-Version 0.1 targets Wayland, XWayland, and a single-output native X11 session.
+Version 1.0.0 targets Wayland, XWayland, and a single-output native X11 session.
 Run all commands as the desktop user, not with `sudo`.
 
 ## Install a release
 
 Download these files from the same release:
 
-- `driftile-0.1.0.kwinscript`
+- `driftile-1.0.0.kwinscript`
 - `SHA256SUMS`
 - `LICENSE`
-- `driftile-shortcuts-0.1.0.mjs` if using the optional shortcut helper
+- `driftile-shortcuts-1.0.0.mjs` if using the optional shortcut helper
 
 Verify every downloaded release asset before installing it:
 
@@ -23,7 +23,7 @@ Install the KWin package:
 
 ```bash
 kpackagetool6 --type=KWin/Script \
-  --install ./driftile-0.1.0.kwinscript
+  --install ./driftile-1.0.0.kwinscript
 ```
 
 Open **System Settings > Window Management > KWin Scripts**, enable
@@ -33,9 +33,9 @@ the gap, width, height, and decoration settings described in
 
 ## Configure shortcuts
 
-Driftile works without the companion helper. The published 0.1.0 helper claims
-the bundled defaults; current source also accepts custom profiles. Any action
-can instead be assigned manually.
+Driftile works without the companion helper. The 1.0.0 helper claims the
+bundled defaults and accepts custom profiles. Any action can instead be
+assigned manually.
 
 ### Reversible helper
 
@@ -44,8 +44,8 @@ Driftile before running it, and keep the helper until its saved claim has been
 released.
 
 ```bash
-node ./driftile-shortcuts-0.1.0.mjs claim
-node ./driftile-shortcuts-0.1.0.mjs check
+node ./driftile-shortcuts-1.0.0.mjs claim
+node ./driftile-shortcuts-1.0.0.mjs check
 ```
 
 `claim` transactionally saves and replaces active conflicting assignments.
@@ -53,20 +53,20 @@ node ./driftile-shortcuts-0.1.0.mjs check
 after the claim:
 
 ```bash
-node ./driftile-shortcuts-0.1.0.mjs release
+node ./driftile-shortcuts-1.0.0.mjs release
 ```
 
 Do not use `--force` unless replacing later manual edits is intentional. See
 [Shortcuts](shortcuts.md) for the complete default profile, custom JSON v1
 schema, and recovery details.
 
-With a current source build, pass the same custom file to `claim` and `check`.
-`release` reads the saved transaction and rejects `--profile`:
+Pass the same custom file to `claim` and `check`. `release` reads the saved
+transaction and rejects `--profile`:
 
 ```bash
-npm run shortcuts:claim -- --profile ./shortcuts.json
-npm run shortcuts:check -- --profile ./shortcuts.json
-npm run shortcuts:release
+node ./driftile-shortcuts-1.0.0.mjs claim --profile ./shortcuts.json
+node ./driftile-shortcuts-1.0.0.mjs check --profile ./shortcuts.json
+node ./driftile-shortcuts-1.0.0.mjs release
 ```
 
 Release the current claim before claiming a changed profile.
@@ -143,7 +143,7 @@ The flake exposes packages and installation modules for `x86_64-linux` and
 `aarch64-linux`. Add Driftile as an input:
 
 ```nix
-inputs.driftile.url = "github:kontonkara/driftile";
+inputs.driftile.url = "github:kontonkara/driftile/v1.0.0";
 ```
 
 For a system-wide NixOS installation, import the NixOS module:
@@ -239,16 +239,9 @@ them.
 Source builds use `nix build`; the development shell is available through
 `nix develop`.
 
-## Published 0.1.0 limits
+## Compatibility and migration
 
-These limits apply to the tagged 0.1.0 artifacts, not later source development.
-
-- Physical connector hot-plug has not been verified; automated coverage uses
-  virtual output removal and reattachment.
-- Native X11 is verified on one output, but native X11 multi-output remains
-  unverified.
-- Persistence is disabled. Logical order, sizes, viewport state, and floating
-  state are not restored across sessions or extension reloads.
-
-The release page also provides the exact tagged source for both executable
-artifacts. `LICENSE` contains their GPL-3.0-or-later terms.
+See [Compatibility](compatibility.md) for current platform, geometry, toolkit,
+and hardware limits. Read [Migration](migration.md) before changing release or
+installation generations. Historical 0.1.0 behavior remains documented in its
+[release notes](release-notes-0.1.0.md).

@@ -1,8 +1,20 @@
 # Migration
 
-The latest stable release is 0.1.0; `main` currently builds the 1.0.0-rc.1
-candidate. Use the steps below for source testing and tagged 1.x releases.
-Never combine files from different releases.
+The latest stable release is 1.0.0. Use the steps below when changing release
+generations, and never combine files from different releases.
+
+## Upgrade from 1.0.0-rc.1
+
+1. Release helper-owned shortcuts with the RC helper while it is still
+   available.
+2. Disable Driftile in **KWin Scripts** and select **Apply**.
+3. Upgrade the archive to `driftile-1.0.0.kwinscript`, or update the pinned Nix
+   input to `v1.0.0` and rebuild.
+4. Enable Driftile, then assign shortcuts or claim them with the final helper.
+
+Version 1.0.0 has no runtime behavior or persistence-format changes from RC.1.
+The package ID, settings, shortcut action IDs, and stored layouts remain
+compatible.
 
 ## Upgrade from 0.1.0
 

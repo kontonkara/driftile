@@ -6,7 +6,7 @@ workspaces.
 Driftile keeps independent layouts for each output and virtual desktop while
 leaving window, output, and desktop mechanisms to KWin.
 
-## Current main features
+## Features
 
 - Horizontal scrollable columns with optional vertical window stacks.
 - Keyboard-driven focus, movement, reordering, resizing, centering, and
@@ -22,16 +22,15 @@ leaving window, output, and desktop mechanisms to KWin.
   borderless presentation.
 - Exact extension-reload restoration, conservative cross-session restoration,
   and fail-closed restoration when a known output returns.
-- An optional reversible shortcut helper, with custom JSON profiles in current
-  source.
+- An optional reversible shortcut helper with custom JSON profiles.
 
 ## Status
 
-The latest stable release is 0.1.0. The main branch builds the 1.0.0-rc.1
-candidate and requires KDE Plasma with KWin 6.7 or newer. It targets native
-Wayland and XWayland windows, plus single-output native X11 sessions.
+The latest stable release is 1.0.0 and requires KDE Plasma with KWin 6.7 or
+newer. It targets native Wayland and XWayland windows, plus single-output native
+X11 sessions.
 
-Current-main limits:
+Known limits:
 
 - Cross-session restoration waits up to five seconds for every strongly and
   uniquely identifiable persisted window. Ambiguous or incomplete snapshots
@@ -93,6 +92,7 @@ checks.
 - [Testing](docs/testing.md)
 - [Performance](docs/performance.md)
 - [Roadmap](docs/roadmap.md)
+- [1.0.0 release notes](docs/release-notes-1.0.0.md)
 - [1.0.0-rc.1 release notes](docs/release-notes-1.0.0-rc.1.md)
 - [0.1.0 release notes](docs/release-notes-0.1.0.md)
 

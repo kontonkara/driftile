@@ -1,8 +1,8 @@
 # Roadmap
 
-Version 0.1.0 is released. The early milestones and 0.1 criteria below are a
-historical record; the v1 and post-v1 sections describe future direction, not a
-committed release schedule.
+Versions 0.1.0 and 1.0.0 are released. The delivered milestones and release
+criteria below are a historical record; only the post-v1 section describes
+future direction, not a committed release schedule.
 
 ## Foundation (delivered)
 
@@ -117,11 +117,11 @@ These criteria have direct automated coverage in the 0.1.0 source. See the
 [0.1.0 release notes](release-notes-0.1.0.md) for shipped artifacts,
 compatibility, and known limits.
 
-## v1
+## 1.0.0 (released)
 
-Version 1 hardens persistence, recovery, supported pointer insertion, and the
-release lifecycle. It does not add new navigation or presentation modes. This
-work is outside the published 0.1.0 scope; final 1.0.0 remains unreleased.
+Version 1.0.0 delivered persistence and recovery hardening, supported pointer
+insertion, and release lifecycle validation without adding new navigation or
+presentation modes. It extends the published 0.1.0 scope.
 
 Persistence foundation complete: core has a strict logical-state codec, a bounded four-entry v2 topology catalog, fail-closed window and output matching, side-effect-free canonical runtime capture, and all-or-nothing hydration. Stable changed snapshots reach the debounced opaque `QtCore.Settings` store; bare v1 state migrates without changing the storage key. Runtime startup reselects a complete settled topology, applies exact reload state or a complete strong-descriptor cross-session match atomically, waits boundedly for late windows behind a no-admission barrier, and requires a quiet candidate before commit. An additive known-output return restores an exact tiled layout per output without repatriating windows or rebuilding unchanged contexts; unsafe plans use normal topology recovery. Replaced window objects receive fresh restore baselines. Isolated Wayland and X11 sessions verify idempotent script reloads.
 
@@ -132,13 +132,14 @@ Wayland and XWayland applications.
 
 Compatibility, migration, and troubleshooting guidance is published. A
 separate visible lifecycle VM verifies a clean published 0.1.0 install and
-load, upgrade to the current candidate, real Konsole and KDE Calculator
+load, upgrade into the 1.0 release line, real Konsole and KDE Calculator
 lifecycles, disable, removal, and post-removal KWin usability.
 
 Recovery validation is complete for reload, session restoration, late windows,
-and known-output return. The current prerelease checkpoint is `1.0.0-rc.1`.
+and known-output return. Version `1.0.0-rc.1` validated the final runtime before
+stable promotion without behavior changes.
 
-Exit criteria:
+Release criteria (met):
 
 - Reload and session restoration converge without scrambling visible layouts.
 - Reconnecting a known output restores its contexts without disturbing active outputs.
