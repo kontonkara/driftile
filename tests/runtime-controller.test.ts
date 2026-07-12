@@ -18809,6 +18809,182 @@ describe("RuntimeController", () => {
     expect(fixture.activationCount).toBe(0);
   });
 
+  it("keeps a managed context deferred until its work area recovers", () => {
+    const trackedOutput = createTrackedOutput("DP-1", 0);
+    const output = trackedOutput.output;
+    const desktop = { id: "desktop-1" };
+    const active = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [active.window],
+    );
+    let workAreaHeight = 800;
+    Object.defineProperty(fixture.workspace, "clientArea", {
+      configurable: true,
+      value: () => ({ height: workAreaHeight, width: 1000, x: 0, y: 0 }),
+    });
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+    const key = `${output.name}\u0000${desktop.id}`;
+    const state = controller as unknown as {
+      readonly dirtyContexts: ReadonlySet<string>;
+    };
+
+    expect(controller.start()).toBe(true);
+    const originalFrame = { ...active.window.frameGeometry };
+    const originalLayout = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const originalWrites = active.writeCount;
+    const warning = console.warn;
+    workAreaHeight = 20;
+    trackedOutput.setGeometry({ height: 20, width: 1000, x: 0, y: 0 });
+    trackedOutput.geometryChanged.emit();
+    console.warn = () => undefined;
+
+    try {
+      flushTopologyRecovery(resumeScheduler, workScheduler);
+      expect(controller.managedCount).toBe(1);
+      expect(controller.lastWriteCount).toBe(0);
+      expect(active.window.frameGeometry).toEqual(originalFrame);
+      expect(active.writeCount).toBe(originalWrites);
+      expect(
+        runtimeLayout(controller).snapshot(
+          outputId(output.name),
+          desktopId(desktop.id),
+        ),
+      ).toEqual(originalLayout);
+      expect(state.dirtyContexts.has(key)).toBe(true);
+      expect(workScheduler.pendingCount).toBe(0);
+      expect(resumeScheduler.pendingCount).toBe(0);
+
+      expect(controller.reconcile()).toBe(0);
+      expect(controller.lastWriteCount).toBe(0);
+      expect(active.window.frameGeometry).toEqual(originalFrame);
+      expect(active.writeCount).toBe(originalWrites);
+      expect(state.dirtyContexts.has(key)).toBe(true);
+      expect(workScheduler.pendingCount).toBe(0);
+      expect(resumeScheduler.pendingCount).toBe(0);
+    } finally {
+      console.warn = warning;
+    }
+
+    workAreaHeight = 700;
+    trackedOutput.setGeometry({ height: 700, width: 1000, x: 0, y: 0 });
+    trackedOutput.geometryChanged.emit();
+    flushTopologyRecovery(resumeScheduler, workScheduler);
+
+    expect(controller.managedCount).toBe(1);
+    expect(controller.lastWriteCount).toBe(1);
+    expect(active.window.frameGeometry).toEqual({
+      height: 680,
+      width: 485,
+      x: 10,
+      y: 10,
+    });
+    expect(active.writeCount).toBe(originalWrites + 1);
+    expect(state.dirtyContexts.has(key)).toBe(false);
+    expect(workScheduler.pendingCount).toBe(0);
+    expect(resumeScheduler.pendingCount).toBe(0);
+  });
+
+  it("continues public reconciliation past an unusable context", () => {
+    const blockedOutput = createTrackedOutput("DP-1", 0);
+    const healthyOutput = createTrackedOutput("HDMI-A-1", 1000);
+    const desktop = { id: "desktop-1" };
+    const blocked = createTrackedWindow(
+      "blocked",
+      blockedOutput.output,
+      desktop,
+    );
+    const healthy = createTrackedWindow(
+      "healthy",
+      healthyOutput.output,
+      desktop,
+    );
+    const fixture = createWorkspace(
+      blockedOutput.output,
+      desktop,
+      [blockedOutput.output, healthyOutput.output],
+      [desktop],
+      [blocked.window, healthy.window],
+    );
+    let blockedWorkAreaHeight = 800;
+    Object.defineProperty(fixture.workspace, "clientArea", {
+      configurable: true,
+      value: (_option: number, output: KWinOutput) => ({
+        height:
+          output.name === blockedOutput.output.name
+            ? blockedWorkAreaHeight
+            : 800,
+        width: 1000,
+        x: output.geometry.x,
+        y: output.geometry.y,
+      }),
+    });
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+    const blockedKey = `${blockedOutput.output.name}\u0000${desktop.id}`;
+    const state = controller as unknown as {
+      readonly dirtyContexts: ReadonlySet<string>;
+    };
+
+    expect(controller.start()).toBe(true);
+    const blockedFrame = { ...blocked.window.frameGeometry };
+    const blockedWrites = blocked.writeCount;
+    const healthyWrites = healthy.writeCount;
+    blockedWorkAreaHeight = 20;
+    blockedOutput.setGeometry({ height: 20, width: 1000, x: 0, y: 0 });
+    blockedOutput.geometryChanged.emit();
+    const warning = console.warn;
+    console.warn = () => undefined;
+
+    try {
+      flushTopologyRecovery(resumeScheduler, workScheduler);
+      healthy.setFrameGeometry({
+        height: 320,
+        width: 420,
+        x: 1200,
+        y: 100,
+      });
+
+      expect(controller.reconcile()).toBe(1);
+    } finally {
+      console.warn = warning;
+    }
+
+    expect(controller.managedCount).toBe(2);
+    expect(controller.lastWriteCount).toBe(1);
+    expect(blocked.window.frameGeometry).toEqual(blockedFrame);
+    expect(blocked.writeCount).toBe(blockedWrites);
+    expect(healthy.window.frameGeometry).toEqual({
+      height: 780,
+      width: 485,
+      x: 1010,
+      y: 10,
+    });
+    expect(healthy.writeCount).toBe(healthyWrites + 1);
+    expect(state.dirtyContexts.has(blockedKey)).toBe(true);
+    expect(workScheduler.pendingCount).toBe(0);
+    expect(resumeScheduler.pendingCount).toBe(0);
+  });
+
   it("keeps live ownership classification linear during reconcile writes", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };

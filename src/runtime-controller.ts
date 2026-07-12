@@ -1790,7 +1790,14 @@ export class RuntimeController {
     let writeCount = 0;
 
     for (const context of this.contexts.values()) {
-      writeCount += this.reconcileContext(context, sampledGeometries);
+      try {
+        writeCount += this.reconcileContext(context, sampledGeometries);
+      } catch (error) {
+        this.dirtyContexts.add(context.key);
+        console.warn(
+          `[driftile] context reconcile deferred context=${context.key} error=${String(error)}`,
+        );
+      }
     }
 
     if (this.refreshAutomaticFloatingAdmissionQueue()) {
