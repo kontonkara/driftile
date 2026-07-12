@@ -26,9 +26,9 @@ leaving window, output, and desktop mechanisms to KWin.
 
 ## Status
 
-The latest stable release is 1.0.0 and requires KDE Plasma with KWin 6.7 or
-newer. It targets native Wayland and XWayland windows, plus single-output native
-X11 sessions.
+The latest stable release is 1.0.0. The main branch tracks 1.1.0-dev.0 and
+requires KDE Plasma with KWin 6.7 or newer. It targets native Wayland and
+XWayland windows, plus single-output native X11 sessions.
 
 Known limits:
 
