@@ -722,7 +722,7 @@ describe("KWin shortcut handlers", () => {
       "Runtime.DriftileRuntime.applySettings(root.readSettings())",
     );
     expect(qml).toMatch(
-      /Component\.onCompleted: Runtime\.DriftileRuntime\.init\([\s\S]*root\.readSettings\(\)\)/,
+      /Runtime\.DriftileRuntime\.init\([\s\S]*root\.readSettings\(\), loadedLayoutState,[\s\S]*root\.queueLayoutState\)/,
     );
     expect(runtime).toContain(
       "const settings = decodeSettings(settingsSnapshot)",
@@ -733,6 +733,24 @@ describe("KWin shortcut handlers", () => {
     );
     expect(runtime).not.toMatch(
       /export function set(?:Borderless|Gap|Default)/,
+    );
+  });
+
+  it("wires versioned layout storage around the runtime lifecycle", () => {
+    expect(qml).toContain("import QtCore");
+    expect(qml).toContain('key: "layout-v1"');
+    expect(qml).toContain(
+      'StandardPaths.writableLocation(StandardPaths.GenericConfigLocation) + "/driftile-layout-state.ini"',
+    );
+    expect(qml).toMatch(
+      /const loadedLayoutState = layoutStateStore\.load\(\);[\s\S]*Runtime\.DriftileRuntime\.init\([\s\S]*loadedLayoutState,[\s\S]*root\.queueLayoutState\)/,
+    );
+    expect(qml).toMatch(
+      /Component\.onDestruction:[\s\S]*flushLayoutState\(\);[\s\S]*layoutStateStore\.flush\(\);[\s\S]*Runtime\.DriftileRuntime\.destroy\(\);/,
+    );
+    expect(runtime).toContain('if (loadedLayoutState !== "")');
+    expect(runtime).toContain(
+      "activeController.requestLayoutStatePublication()",
     );
   });
 });

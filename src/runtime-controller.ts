@@ -443,6 +443,7 @@ export interface RuntimeControllerOptions {
   readonly columnWidthPresets?: readonly ColumnWidth[];
   readonly createRect?: KWinRectFactory;
   readonly gap?: number;
+  readonly onLayoutStateChanged?: (canonicalState: string) => void;
   readonly schedule?: (callback: () => void) => void;
   readonly scheduleResume?: (callback: () => void) => void;
   readonly startupStabilizationProbes?: number;
@@ -507,10 +508,14 @@ export class RuntimeController {
   private readonly knownOutputInstances = new Map<string, number>();
   private lastOutputCount = 0;
   private lastWrites = 0;
+  private lastPublishedLayoutState: string | null = null;
   private layout = new LayoutEngine();
+  private layoutStatePublicationPending = false;
   private readonly managedWindows = new Map<WindowId, ManagedWindow>();
   private readonly pendingFullscreenTargets = new Map<WindowId, boolean>();
   private readonly observer: WindowObserver;
+  private readonly onLayoutStateChanged:
+    ((canonicalState: string) => void) | undefined;
   private readonly pendingAdmissionContexts = new Set<string>();
   private pendingDefaultColumnWidth: ColumnWidth | null = null;
   private pendingGap: number | null = null;
@@ -523,6 +528,7 @@ export class RuntimeController {
   private startupStabilizationRemaining = 0;
   private startupStabilizationToken: object | null = null;
   private started = false;
+  private startupCompleted = false;
   private defaultColumnWidth: ColumnWidth;
   private windowHeightStep = DEFAULT_WINDOW_HEIGHT_STEP_PERCENT / 100;
   private readonly windowHeightPresets: readonly ColumnWidth[];
@@ -582,6 +588,7 @@ export class RuntimeController {
     this.borderlessSettlementEnabled = options.scheduleResume !== undefined;
     this.borderlessWindows = options.borderlessWindows ?? false;
     this.gap = normalizeGap(options.gap ?? DEFAULT_GAP) ?? DEFAULT_GAP;
+    this.onLayoutStateChanged = options.onLayoutStateChanged;
     this.schedule =
       options.schedule ??
       ((callback) => {
@@ -705,6 +712,80 @@ export class RuntimeController {
       );
       return null;
     }
+  }
+
+  requestLayoutStatePublication(): void {
+    if (
+      this.onLayoutStateChanged === undefined ||
+      !this.started ||
+      !this.startupCompleted
+    ) {
+      return;
+    }
+
+    this.layoutStatePublicationPending = true;
+  }
+
+  flushLayoutStatePublication(): boolean {
+    if (
+      !this.layoutStatePublicationPending ||
+      this.onLayoutStateChanged === undefined
+    ) {
+      return false;
+    }
+
+    const canonicalState = this.captureLayoutState();
+
+    if (canonicalState === null) {
+      return false;
+    }
+
+    if (canonicalState === this.lastPublishedLayoutState) {
+      this.layoutStatePublicationPending = false;
+      return false;
+    }
+
+    try {
+      this.onLayoutStateChanged(canonicalState);
+    } catch (error) {
+      console.warn(
+        `[driftile] layout state publication failed error=${String(error)}`,
+      );
+      return false;
+    }
+
+    this.lastPublishedLayoutState = canonicalState;
+    this.layoutStatePublicationPending = false;
+    return true;
+  }
+
+  finalizeLayoutStatePublication(): boolean {
+    if (
+      this.onLayoutStateChanged === undefined ||
+      !this.started ||
+      !this.startupCompleted
+    ) {
+      return false;
+    }
+
+    const previouslyPublishedState = this.lastPublishedLayoutState;
+
+    try {
+      if (this.workScheduled) {
+        this.workScheduled = false;
+        this.flushScheduledWork();
+      }
+
+      this.requestLayoutStatePublication();
+      this.flushLayoutStatePublication();
+    } catch (error) {
+      console.warn(
+        `[driftile] layout state finalization failed error=${String(error)}`,
+      );
+      return false;
+    }
+
+    return this.lastPublishedLayoutState !== previouslyPublishedState;
   }
 
   setBorderlessWindows(enabled: boolean): void {
@@ -1802,6 +1883,9 @@ export class RuntimeController {
     }
 
     try {
+      this.lastPublishedLayoutState = null;
+      this.layoutStatePublicationPending = false;
+      this.startupCompleted = false;
       this.runGeneration += 1;
       this.started = true;
       this.lastOutputCount = this.workspace.screens.length;
@@ -1839,6 +1923,7 @@ export class RuntimeController {
 
       this.desktopLifecycle.reconcile(this.desktopLifecycleCanMutate());
       this.reconcile();
+      this.startupCompleted = true;
       return true;
     } catch (error) {
       this.stop();
@@ -1852,6 +1937,7 @@ export class RuntimeController {
     }
 
     this.started = false;
+    this.startupCompleted = false;
     this.workScheduled = false;
     this.runGeneration += 1;
     this.pendingExpelFocusHandoff = null;
@@ -1946,6 +2032,8 @@ export class RuntimeController {
       this.toggleTransitionProbes.clear();
       this.workScheduled = false;
       this.lastWrites = 0;
+      this.lastPublishedLayoutState = null;
+      this.layoutStatePublicationPending = false;
     }
   }
 
@@ -2412,6 +2500,9 @@ export class RuntimeController {
     for (const key of affectedContextKeys) {
       this.finishCanceledToggleTransition(key);
     }
+
+    this.requestLayoutStatePublication();
+    this.flushLayoutStatePublication();
   };
 
   private readonly handleWindowActivated = (
@@ -11781,7 +11872,13 @@ export class RuntimeController {
   }
 
   private scheduleWork(): void {
-    if (!this.started || this.initializing || this.workScheduled) {
+    if (!this.started || this.initializing) {
+      return;
+    }
+
+    this.requestLayoutStatePublication();
+
+    if (this.workScheduled) {
       return;
     }
 
@@ -11919,6 +12016,8 @@ export class RuntimeController {
     ) {
       this.scheduleWork();
     }
+
+    this.flushLayoutStatePublication();
   }
 
   private applyPendingDefaultColumnWidth(): void {

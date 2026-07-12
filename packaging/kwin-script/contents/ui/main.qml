@@ -1,3 +1,4 @@
+import QtCore
 import QtQuick
 import org.kde.kwin
 import "../code/main.js" as Runtime
@@ -8,6 +9,12 @@ QtObject {
     property bool deliveringResumeCallbacks: false
     property var nextResumeCallbacks: []
     property var resumeCallbacks: []
+
+    readonly property LayoutStateStore layoutStateStore: LayoutStateStore {
+        category: "Layout"
+        key: "layout-v1"
+        location: StandardPaths.writableLocation(StandardPaths.GenericConfigLocation) + "/driftile-layout-state.ini"
+    }
 
     readonly property Timer resumeTimer: Timer {
         interval: 50
@@ -689,9 +696,24 @@ QtObject {
         resumeTimer.start();
     }
 
-    Component.onCompleted: Runtime.DriftileRuntime.init(Workspace, Workspace.MaximizeArea,
-                                                        root.createRect, root.schedule,
-                                                        root.scheduleResume,
-                                                        root.readSettings())
-    Component.onDestruction: Runtime.DriftileRuntime.destroy()
+    function queueLayoutState(canonicalState) {
+        layoutStateStore.queue(canonicalState);
+    }
+
+    Component.onCompleted: {
+        const loadedLayoutState = layoutStateStore.load();
+        Runtime.DriftileRuntime.init(Workspace, Workspace.MaximizeArea,
+                                    root.createRect, root.schedule,
+                                    root.scheduleResume,
+                                    root.readSettings(), loadedLayoutState,
+                                    root.queueLayoutState);
+    }
+    Component.onDestruction: {
+        try {
+            Runtime.DriftileRuntime.flushLayoutState();
+            layoutStateStore.flush();
+        } finally {
+            Runtime.DriftileRuntime.destroy();
+        }
+    }
 }

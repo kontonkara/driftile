@@ -116,7 +116,7 @@ Harden recovery and finish user-facing integration.
 
 These features were outside the 0.1.0 scope and remain planned work.
 
-Persistence foundation complete: core has a strict versioned logical-state codec, fail-closed window and output matching, and side-effect-free canonical runtime capture. The QML package has a debounced opaque `QtCore.Settings` store, and isolated Wayland and X11 sessions verify its exact destruction-time transport across script reloads. Storage notifications, same-session hydration, matcher integration, and known-topology restoration remain.
+Persistence foundation complete: core has a strict versioned logical-state codec, fail-closed window and output matching, and side-effect-free canonical runtime capture. Stable changed snapshots now reach the debounced opaque `QtCore.Settings` store, and isolated Wayland and X11 sessions verify its exact destruction-time transport across script reloads. Same-session hydration, matcher integration, and known-topology restoration remain.
 
 - Persist logical order, widths, viewport offsets, and floating overrides.
 - Restore layouts across script reloads, sessions, and known output topologies.

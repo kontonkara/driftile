@@ -12,6 +12,8 @@ const STARTUP_STABILIZATION_PROBES = 20;
 let controller: RuntimeController | undefined;
 let appliedSettings: DriftileSettings | undefined;
 
+type LayoutStateChanged = (canonicalState: string) => void;
+
 export function init(
   workspace: KWinWorkspace,
   clientAreaOption: number,
@@ -19,6 +21,8 @@ export function init(
   schedule: (callback: () => void) => void,
   scheduleResume: (callback: () => void) => void,
   settingsSnapshot: unknown,
+  loadedLayoutState: unknown,
+  onLayoutStateChanged: unknown,
 ): void {
   const settings = decodeSettings(settingsSnapshot);
 
@@ -30,6 +34,10 @@ export function init(
     return;
   }
 
+  const layoutStateChanged = writableLayoutStateSink(
+    loadedLayoutState,
+    onLayoutStateChanged,
+  );
   const nextController = new RuntimeController(workspace, {
     borderlessWindows: settings.borderlessWindows,
     clientAreaOption,
@@ -38,6 +46,9 @@ export function init(
     schedule,
     scheduleResume,
     startupStabilizationProbes: STARTUP_STABILIZATION_PROBES,
+    ...(layoutStateChanged === undefined
+      ? {}
+      : { onLayoutStateChanged: layoutStateChanged }),
   });
   nextController.setDefaultColumnWidthPercent(
     settings.defaultColumnWidthPercent,
@@ -52,6 +63,11 @@ export function init(
 
   controller = nextController;
   appliedSettings = settings;
+
+  if (layoutStateChanged !== undefined) {
+    controller.requestLayoutStatePublication();
+    controller.flushLayoutStatePublication();
+  }
   console.info(
     `[driftile] managed=${String(controller.managedCount)} writes=${String(controller.lastWriteCount)}`,
   );
@@ -64,6 +80,16 @@ export function destroy(): void {
     controller = undefined;
     appliedSettings = undefined;
   }
+}
+
+export function flushLayoutState(): boolean {
+  const activeController = controller;
+
+  if (!activeController) {
+    return false;
+  }
+
+  return activeController.finalizeLayoutStatePublication();
 }
 
 export function applySettings(settingsSnapshot: unknown): boolean {
@@ -96,228 +122,278 @@ function decodeSettings(value: unknown): DriftileSettings | null {
   return settings;
 }
 
+function writableLayoutStateSink(
+  loadedLayoutState: unknown,
+  candidate: unknown,
+): LayoutStateChanged | undefined {
+  if (typeof loadedLayoutState !== "string") {
+    console.warn("[driftile] invalid loaded layout state ignored");
+    return undefined;
+  }
+
+  if (loadedLayoutState !== "") {
+    return undefined;
+  }
+
+  if (typeof candidate !== "function") {
+    console.warn("[driftile] invalid layout state callback ignored");
+    return undefined;
+  }
+
+  return candidate as LayoutStateChanged;
+}
+
+function runCommand(
+  command: (activeController: RuntimeController) => boolean,
+): void {
+  const activeController = controller;
+
+  if (!activeController || !command(activeController)) {
+    return;
+  }
+
+  activeController.requestLayoutStatePublication();
+  activeController.flushLayoutStatePublication();
+}
+
 export function focusLeft(): void {
-  controller?.focusLeft();
+  runCommand((activeController) => activeController.focusLeft());
 }
 
 export function focusRight(): void {
-  controller?.focusRight();
+  runCommand((activeController) => activeController.focusRight());
 }
 
 export function focusFirstColumn(): void {
-  controller?.focusFirstColumn();
+  runCommand((activeController) => activeController.focusFirstColumn());
 }
 
 export function focusLastColumn(): void {
-  controller?.focusLastColumn();
+  runCommand((activeController) => activeController.focusLastColumn());
 }
 
 export function focusUp(): void {
-  controller?.focusUp();
+  runCommand((activeController) => activeController.focusUp());
 }
 
 export function focusDown(): void {
-  controller?.focusDown();
+  runCommand((activeController) => activeController.focusDown());
 }
 
 export function focusPreviousDesktop(): void {
-  controller?.focusPreviousDesktop();
+  runCommand((activeController) => activeController.focusPreviousDesktop());
 }
 
 export function focusNextDesktop(): void {
-  controller?.focusNextDesktop();
+  runCommand((activeController) => activeController.focusNextDesktop());
 }
 
 export function focusDesktop(index: number): void {
-  controller?.focusDesktop(index);
+  runCommand((activeController) => activeController.focusDesktop(index));
 }
 
 export function moveDesktopDown(): void {
-  controller?.moveDesktopDown();
+  runCommand((activeController) => activeController.moveDesktopDown());
 }
 
 export function moveDesktopUp(): void {
-  controller?.moveDesktopUp();
+  runCommand((activeController) => activeController.moveDesktopUp());
 }
 
 export function moveColumnLeft(): void {
-  controller?.moveColumnLeft();
+  runCommand((activeController) => activeController.moveColumnLeft());
 }
 
 export function moveColumnRight(): void {
-  controller?.moveColumnRight();
+  runCommand((activeController) => activeController.moveColumnRight());
 }
 
 export function moveColumnToFirst(): void {
-  controller?.moveColumnToFirst();
+  runCommand((activeController) => activeController.moveColumnToFirst());
 }
 
 export function moveColumnToLast(): void {
-  controller?.moveColumnToLast();
+  runCommand((activeController) => activeController.moveColumnToLast());
 }
 
 export function moveWindowLeft(): void {
-  controller?.moveWindowLeft();
+  runCommand((activeController) => activeController.moveWindowLeft());
 }
 
 export function moveWindowRight(): void {
-  controller?.moveWindowRight();
+  runCommand((activeController) => activeController.moveWindowRight());
 }
 
 export function moveWindowUp(): void {
-  controller?.moveWindowUp();
+  runCommand((activeController) => activeController.moveWindowUp());
 }
 
 export function moveWindowDown(): void {
-  controller?.moveWindowDown();
+  runCommand((activeController) => activeController.moveWindowDown());
 }
 
 export function insertWindowIntoStackLeft(): void {
-  controller?.insertWindowIntoStackLeft();
+  runCommand((activeController) =>
+    activeController.insertWindowIntoStackLeft(),
+  );
 }
 
 export function insertWindowIntoStackRight(): void {
-  controller?.insertWindowIntoStackRight();
+  runCommand((activeController) =>
+    activeController.insertWindowIntoStackRight(),
+  );
 }
 
 export function consumeWindowIntoColumn(): void {
-  controller?.consumeWindowIntoColumn();
+  runCommand((activeController) => activeController.consumeWindowIntoColumn());
 }
 
 export function expelWindowFromColumn(): void {
-  controller?.expelWindowFromColumn();
+  runCommand((activeController) => activeController.expelWindowFromColumn());
 }
 
 export function toggleFloating(): void {
-  controller?.toggleFloating();
+  runCommand((activeController) => activeController.toggleFloating());
 }
 
 export function switchFocusBetweenFloatingAndTiling(): void {
-  controller?.switchFocusBetweenFloatingAndTiling();
+  runCommand((activeController) =>
+    activeController.switchFocusBetweenFloatingAndTiling(),
+  );
 }
 
 export function focusFloating(): void {
-  controller?.focusFloating();
+  runCommand((activeController) => activeController.focusFloating());
 }
 
 export function focusTiling(): void {
-  controller?.focusTiling();
+  runCommand((activeController) => activeController.focusTiling());
 }
 
 export function toggleFullscreen(): void {
-  controller?.toggleFullscreen();
+  runCommand((activeController) => activeController.toggleFullscreen());
 }
 
 export function maximizeWindowToEdges(): void {
-  controller?.maximizeWindowToEdges();
+  runCommand((activeController) => activeController.maximizeWindowToEdges());
 }
 
 export function moveWindowToPreviousDesktop(): void {
-  controller?.moveWindowToPreviousDesktop();
+  runCommand((activeController) =>
+    activeController.moveWindowToPreviousDesktop(),
+  );
 }
 
 export function moveWindowToNextDesktop(): void {
-  controller?.moveWindowToNextDesktop();
+  runCommand((activeController) => activeController.moveWindowToNextDesktop());
 }
 
 export function moveColumnToPreviousDesktop(): void {
-  controller?.moveColumnToPreviousDesktop();
+  runCommand((activeController) =>
+    activeController.moveColumnToPreviousDesktop(),
+  );
 }
 
 export function moveColumnToNextDesktop(): void {
-  controller?.moveColumnToNextDesktop();
+  runCommand((activeController) => activeController.moveColumnToNextDesktop());
 }
 
 export function moveColumnToDesktop(index: number): void {
-  controller?.moveColumnToDesktop(index);
+  runCommand((activeController) => activeController.moveColumnToDesktop(index));
 }
 
 export function moveWindowToOutputLeft(): void {
-  controller?.moveWindowToOutputLeft();
+  runCommand((activeController) => activeController.moveWindowToOutputLeft());
 }
 
 export function moveWindowToOutputRight(): void {
-  controller?.moveWindowToOutputRight();
+  runCommand((activeController) => activeController.moveWindowToOutputRight());
 }
 
 export function moveWindowToOutputUp(): void {
-  controller?.moveWindowToOutputUp();
+  runCommand((activeController) => activeController.moveWindowToOutputUp());
 }
 
 export function moveWindowToOutputDown(): void {
-  controller?.moveWindowToOutputDown();
+  runCommand((activeController) => activeController.moveWindowToOutputDown());
 }
 
 export function moveColumnToOutputLeft(): void {
-  controller?.moveColumnToOutputLeft();
+  runCommand((activeController) => activeController.moveColumnToOutputLeft());
 }
 
 export function moveColumnToOutputRight(): void {
-  controller?.moveColumnToOutputRight();
+  runCommand((activeController) => activeController.moveColumnToOutputRight());
 }
 
 export function moveColumnToOutputUp(): void {
-  controller?.moveColumnToOutputUp();
+  runCommand((activeController) => activeController.moveColumnToOutputUp());
 }
 
 export function moveColumnToOutputDown(): void {
-  controller?.moveColumnToOutputDown();
+  runCommand((activeController) => activeController.moveColumnToOutputDown());
 }
 
 export function decreaseColumnWidth(): void {
-  controller?.decreaseColumnWidth();
+  runCommand((activeController) => activeController.decreaseColumnWidth());
 }
 
 export function increaseColumnWidth(): void {
-  controller?.increaseColumnWidth();
+  runCommand((activeController) => activeController.increaseColumnWidth());
 }
 
 export function resetColumnWidth(): void {
-  controller?.resetColumnWidth();
+  runCommand((activeController) => activeController.resetColumnWidth());
 }
 
 export function switchPresetColumnWidth(): void {
-  controller?.switchPresetColumnWidth();
+  runCommand((activeController) => activeController.switchPresetColumnWidth());
 }
 
 export function switchPresetColumnWidthBack(): void {
-  controller?.switchPresetColumnWidthBack();
+  runCommand((activeController) =>
+    activeController.switchPresetColumnWidthBack(),
+  );
 }
 
 export function decreaseWindowHeight(): void {
-  controller?.decreaseWindowHeight();
+  runCommand((activeController) => activeController.decreaseWindowHeight());
 }
 
 export function increaseWindowHeight(): void {
-  controller?.increaseWindowHeight();
+  runCommand((activeController) => activeController.increaseWindowHeight());
 }
 
 export function resetWindowHeight(): void {
-  controller?.resetWindowHeight();
+  runCommand((activeController) => activeController.resetWindowHeight());
 }
 
 export function switchPresetWindowHeight(): void {
-  controller?.switchPresetWindowHeight();
+  runCommand((activeController) => activeController.switchPresetWindowHeight());
 }
 
 export function switchPresetWindowHeightBack(): void {
-  controller?.switchPresetWindowHeightBack();
+  runCommand((activeController) =>
+    activeController.switchPresetWindowHeightBack(),
+  );
 }
 
 export function maximizeColumn(): void {
-  controller?.maximizeColumn();
+  runCommand((activeController) => activeController.maximizeColumn());
 }
 
 export function centerColumn(): void {
-  controller?.centerColumn();
+  runCommand((activeController) => activeController.centerColumn());
 }
 
 export function expandColumnToAvailableWidth(): void {
-  controller?.expandColumnToAvailableWidth();
+  runCommand((activeController) =>
+    activeController.expandColumnToAvailableWidth(),
+  );
 }
 
 export function centerVisibleColumns(): void {
-  controller?.centerVisibleColumns();
+  runCommand((activeController) => activeController.centerVisibleColumns());
 }
 
 export function probeTopology(): void {

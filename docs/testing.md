@@ -35,7 +35,7 @@ It uses temporary user and XDG directories, private D-Bus sessions, virtual Wayl
 Before layout scenarios start, every isolated backend imports the packaged state-store component through a declarative probe. Three load and unload generations require exact escaped Unicode JSON with its trailing newline, destruction-time flush before the long debounce timer, duplicate cancellation, unchanged committed state, and a separate timer-driven commit. The file lives only in that backend's temporary XDG configuration directory.
 
 The unit suite also validates canonical persistence encoding, stable runtime
-capture, strict schema limits, reference ownership, floating-anchor
+capture, changed-state publication, callback-failure retry, strict schema limits, reference ownership, floating-anchor
 normalization, fail-closed decoding of corrupt or future state, exact live-ID
 precedence, globally unique session descriptors, ambiguous-match rejection,
 output serial and connector policies, deterministic ordering, and the maximum

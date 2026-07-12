@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   columnId,
   desktopId,
@@ -1077,6 +1077,176 @@ function controlMaximize(
 }
 
 describe("RuntimeController", () => {
+  it("publishes only changed canonical layout state", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const tracked = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [tracked.window],
+    );
+    const published: string[] = [];
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      onLayoutStateChanged: (canonicalState) => {
+        published.push(canonicalState);
+      },
+    });
+
+    expect(controller.start()).toBe(true);
+    controller.requestLayoutStatePublication();
+    expect(controller.flushLayoutStatePublication()).toBe(true);
+    controller.requestLayoutStatePublication();
+    expect(controller.flushLayoutStatePublication()).toBe(false);
+    expect(published).toHaveLength(1);
+    expect(decodeLayoutPersistence(published[0] ?? "")).toMatchObject({
+      ok: true,
+      value: { windows: [{ liveId: "window-1" }] },
+    });
+    controller.stop();
+  });
+
+  it("retries publication after a callback failure", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const tracked = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [tracked.window],
+    );
+    const published: string[] = [];
+    let attempts = 0;
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      onLayoutStateChanged: (canonicalState) => {
+        attempts += 1;
+
+        if (attempts === 1) {
+          throw new Error("test publication failure");
+        }
+
+        published.push(canonicalState);
+      },
+    });
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      expect(controller.start()).toBe(true);
+      controller.requestLayoutStatePublication();
+      expect(controller.flushLayoutStatePublication()).toBe(false);
+      expect(controller.flushLayoutStatePublication()).toBe(true);
+      expect(attempts).toBe(2);
+      expect(published).toHaveLength(1);
+      expect(warning).toHaveBeenCalledWith(
+        expect.stringContaining("layout state publication failed"),
+      );
+    } finally {
+      warning.mockRestore();
+      controller.stop();
+    }
+  });
+
+  it("publishes post-start external window lifecycle changes", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const second = createTrackedWindow("window-2", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window],
+    );
+    const scheduler = new ManualScheduler();
+    const published: string[] = [];
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      onLayoutStateChanged: (canonicalState) => {
+        published.push(canonicalState);
+      },
+      schedule: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    flushManualScheduler(scheduler);
+    controller.requestLayoutStatePublication();
+    expect(controller.flushLayoutStatePublication()).toBe(true);
+
+    fixture.windowAdded.emit(second.window);
+    flushManualScheduler(scheduler);
+
+    expect(published).toHaveLength(2);
+    expect(decodeLayoutPersistence(published[1] ?? "")).toMatchObject({
+      ok: true,
+      value: {
+        windows: [{ liveId: "window-1" }, { liveId: "window-2" }],
+      },
+    });
+
+    fixture.windowRemoved.emit(second.window);
+    flushManualScheduler(scheduler);
+
+    expect(published).toHaveLength(3);
+    expect(decodeLayoutPersistence(published[2] ?? "")).toMatchObject({
+      ok: true,
+      value: { windows: [{ liveId: "window-1" }] },
+    });
+    controller.stop();
+  });
+
+  it("finalizes queued activation work before the last publication", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const second = createTrackedWindow("window-2", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window, second.window],
+    );
+    const scheduler = new ManualScheduler();
+    const published: string[] = [];
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      onLayoutStateChanged: (canonicalState) => {
+        published.push(canonicalState);
+      },
+      schedule: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    flushManualScheduler(scheduler);
+    controller.requestLayoutStatePublication();
+    expect(controller.flushLayoutStatePublication()).toBe(true);
+    expect(decodeLayoutPersistence(published[0] ?? "")).toMatchObject({
+      ok: true,
+      value: { contexts: [{ activeColumnIndex: 1 }] },
+    });
+
+    fixture.workspace.activeWindow = first.window;
+
+    expect(scheduler.pendingCount).toBeGreaterThan(0);
+    expect(controller.finalizeLayoutStatePublication()).toBe(true);
+    expect(decodeLayoutPersistence(published[1] ?? "")).toMatchObject({
+      ok: true,
+      value: { contexts: [{ activeColumnIndex: 0 }] },
+    });
+
+    const publicationCount = published.length;
+    controller.stop();
+    flushManualScheduler(scheduler);
+    expect(published).toHaveLength(publicationCount);
+  });
+
   it("captures stable durable layout state without runtime side effects", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };

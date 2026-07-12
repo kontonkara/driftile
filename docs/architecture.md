@@ -138,7 +138,7 @@ Invalid ownership, stale live references, and in-flight structural work fail
 closed. Stale floating neighbors are reduced to safe surviving anchors and the
 index fallback.
 
-The QML package includes an opaque `QtCore.Settings` store with an explicit file location, one-shot write debounce, duplicate suppression, and synchronous final flush. An isolated real-KWin probe imports that component and verifies an escaped Unicode JSON document with its trailing newline across immediate declarative-script unload and reload on Wayland and X11. Storage notifications, hydration, and matcher integration are not connected yet.
+The runtime publishes changed canonical snapshots only after stable work. Teardown consumes one already-queued runtime pass through normal reconciliation before the final capture; remaining blockers preserve the previous document. The QML package queues snapshots in an opaque `QtCore.Settings` store with an explicit file location, one-shot write debounce, duplicate suppression, and synchronous final flush before runtime teardown. A non-empty stored document is preserved until hydration can consume it. An isolated real-KWin probe imports the store and verifies an escaped Unicode JSON document with its trailing newline across immediate declarative-script unload and reload on Wayland and X11. Hydration and matcher integration are not connected yet.
 
 ## Reconciliation rules
 
