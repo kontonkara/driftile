@@ -16,6 +16,7 @@
     "lint": "eslint src tests vitest.config.ts",
     "lint:shell": "shellcheck tools/**/*.sh",
     "package": "node tools/package.mjs",
+    "package:check": "node tools/check-package.mjs",
     "shortcuts:check": "node tools/shortcut-command.mjs check",
     "shortcuts:claim": "node tools/shortcut-command.mjs claim",
     "shortcuts:release": "node tools/shortcut-command.mjs release",
