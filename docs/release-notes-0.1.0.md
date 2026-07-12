@@ -41,9 +41,5 @@ These limits apply to the tagged 0.1.0 artifacts.
   uses virtual output removal and reattachment.
 - Native X11 is verified on one output. Native X11 multi-output remains
   unverified.
-- Exact extension reloads restore logical order, sizes, viewport state, and
-  floating anchors. Cross-session restore waits up to five seconds for a
-  complete strongly identified window set; otherwise the stored snapshot is
-  skipped.
-- Reconnecting an absent output does not yet restore a known historical
-  topology.
+- Layout persistence is disabled. Logical order, sizes, viewport state, and
+  floating state are not restored across sessions or extension reloads.
