@@ -117,6 +117,26 @@ System Settings before removing `$XDG_STATE_HOME/driftile/shortcut-claim.json`.
 When `XDG_STATE_HOME` is unset, the file is under
 `$HOME/.local/state/driftile/shortcut-claim.json`.
 
+Uninstalling the package does not delete configuration or layout data. For an
+optional clean removal, first complete the shortcut release and uninstall
+steps above, then remove Driftile's stored KConfig values and layout snapshot:
+
+```bash
+kwriteconfig6 --file kwinrc --group Plugins \
+  --key io.github.kontonkara.driftileEnabled --delete ""
+for key in BorderlessWindows ColumnWidthStepPercent \
+  DefaultColumnWidthPercent Gap WindowHeightStepPercent; do
+  kwriteconfig6 --file kwinrc \
+    --group Script-io.github.kontonkara.driftile \
+    --key "$key" --delete ""
+done
+rm -- "${XDG_CONFIG_HOME:-$HOME/.config}/driftile-layout-state.ini"
+```
+
+Delete the shortcut claim file only after a successful release. Shortcuts
+assigned manually remain in KGlobalAccel and must be removed through System
+Settings.
+
 ## NixOS and Home Manager
 
 The flake exposes packages and installation modules for `x86_64-linux` and
@@ -208,8 +228,16 @@ driftile-shortcuts release
 ```
 
 Release the profile before upgrading or removing the Nix package so the
-recovery command remains available. Source builds use `nix build`; the
-development shell is available through `nix develop`.
+recovery command remains available. Before a removal rebuild, also disable
+Driftile in **KWin Scripts** and select **Apply**. Then remove the relevant
+module declaration or set `programs.driftile.enable = false` and rebuild. Nix
+removal retains the same `kwinrc`, layout snapshot, and manually assigned
+shortcut state described above. Remove `programs.driftile.settings` before
+cleaning its KConfig values so a later Home Manager activation cannot restore
+them.
+
+Source builds use `nix build`; the development shell is available through
+`nix develop`.
 
 ## Published 0.1.0 limits
 
