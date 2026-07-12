@@ -15,6 +15,7 @@ import {
   decodeLayoutPersistence,
   LAYOUT_PERSISTENCE_LIMITS,
 } from "../src/core/layout-persistence";
+import type { LayoutPersistenceCatalogSnapshot } from "../src/core/layout-persistence-catalog";
 import type {
   KWinOutput,
   KWinSignal,
@@ -1123,6 +1124,266 @@ function createPersistedEditorStack(
   return document;
 }
 
+const KNOWN_OUTPUT_LEFT_IDENTITY = Object.freeze({
+  manufacturer: "Example Displays",
+  model: "Workspace Panel",
+  serialNumber: "workspace-panel-001",
+});
+
+const KNOWN_OUTPUT_RIGHT_IDENTITY = Object.freeze({
+  manufacturer: "Example Displays",
+  model: "Returning Panel",
+  serialNumber: "returning-panel-001",
+});
+
+function createKnownOutputHistorySnapshot(
+  rightViewportOffset = 0,
+): LayoutPersistenceCatalogSnapshot {
+  const historicalLeftOutput = {
+    key: "DP-1",
+    name: "DP-1",
+    ...KNOWN_OUTPUT_LEFT_IDENTITY,
+  };
+  const historicalRightOutput = {
+    key: "DP-OLD",
+    name: "DP-OLD",
+    ...KNOWN_OUTPUT_RIGHT_IDENTITY,
+  };
+
+  return {
+    state: {
+      contexts: [
+        {
+          activeColumnIndex: 1,
+          columns: [
+            {
+              members: [
+                {
+                  height: { clientHeight: 260, kind: "fixed" },
+                  windowKey: "left-stack-1",
+                },
+                {
+                  height: { kind: "auto", weight: 1 },
+                  windowKey: "left-stack-2",
+                },
+              ],
+              width: { kind: "fixed", value: 300 },
+            },
+            {
+              members: [{ windowKey: "left-active" }],
+              width: { kind: "fixed", value: 400 },
+            },
+          ],
+          desktopId: "desktop-1",
+          outputKey: historicalLeftOutput.key,
+          viewportOffset: 0,
+        },
+        {
+          activeColumnIndex: 1,
+          columns: [
+            {
+              members: [
+                {
+                  height: { clientHeight: 240, kind: "fixed" },
+                  windowKey: "right-stack-1",
+                },
+                {
+                  height: { kind: "auto", weight: 1 },
+                  windowKey: "right-stack-2",
+                },
+              ],
+              width: { kind: "fixed", value: 300 },
+            },
+            {
+              members: [{ windowKey: "right-active" }],
+              width: { kind: "fixed", value: 400 },
+            },
+          ],
+          desktopId: "desktop-1",
+          outputKey: historicalRightOutput.key,
+          viewportOffset: rightViewportOffset,
+        },
+        {
+          activeColumnIndex: 0,
+          columns: [
+            {
+              fullWidthRestore: { kind: "fixed", value: 420 },
+              members: [{ windowKey: "right-full-width" }],
+              width: { kind: "proportion", value: 1 },
+            },
+          ],
+          desktopId: "desktop-2",
+          outputKey: historicalRightOutput.key,
+          viewportOffset: 0,
+        },
+      ],
+      floatingWindows: [],
+      format: "driftile-layout",
+      outputs: [historicalLeftOutput, historicalRightOutput],
+      version: 1,
+      windows: [
+        "left-stack-1",
+        "left-stack-2",
+        "left-active",
+        "right-stack-1",
+        "right-stack-2",
+        "right-active",
+        "right-full-width",
+      ].map((key) => ({ key, liveId: key })),
+    },
+    topology: {
+      outputs: [historicalLeftOutput, historicalRightOutput],
+    },
+  };
+}
+
+function createSingleWindowLayoutDocument(
+  outputName: string,
+  width: number,
+): string {
+  return `${JSON.stringify({
+    contexts: [
+      {
+        activeColumnIndex: 0,
+        columns: [
+          {
+            members: [{ windowKey: "startup-window" }],
+            width: { kind: "fixed", value: width },
+          },
+        ],
+        desktopId: "desktop-1",
+        outputKey: outputName,
+        viewportOffset: 0,
+      },
+    ],
+    floatingWindows: [],
+    format: "driftile-layout",
+    outputs: [{ key: outputName, name: outputName }],
+    version: 1,
+    windows: [{ key: "startup-window", liveId: "startup-window" }],
+  })}\n`;
+}
+
+function createKnownOutputReturnFixture(
+  options: {
+    readonly onLayoutStateChanged?: (canonicalState: string) => void;
+    readonly rightStackMinHeight?: number;
+    readonly rightViewportOffset?: number;
+  } = {},
+) {
+  const returnedGeometryChanged = new Signal<[]>();
+  const leftOutput: KWinOutput = {
+    ...createOutput("DP-1", 0),
+    ...KNOWN_OUTPUT_LEFT_IDENTITY,
+  };
+  const returnedOutput: KWinOutput = {
+    ...createOutput("HDMI-A-2", 1000),
+    ...KNOWN_OUTPUT_RIGHT_IDENTITY,
+    geometryChanged: returnedGeometryChanged,
+  };
+  const primaryDesktop = { id: "desktop-1" };
+  const secondaryDesktop = { id: "desktop-2" };
+  const stackConstraints =
+    options.rightStackMinHeight === undefined
+      ? {}
+      : {
+          minSize: {
+            height: options.rightStackMinHeight,
+            width: 1,
+          },
+        };
+  const rightWindows = [
+    createTrackedWindow(
+      "right-stack-1",
+      returnedOutput,
+      primaryDesktop,
+      stackConstraints,
+    ),
+    createTrackedWindow(
+      "right-stack-2",
+      returnedOutput,
+      primaryDesktop,
+      stackConstraints,
+    ),
+    createTrackedWindow("right-active", returnedOutput, primaryDesktop),
+    createTrackedWindow("right-full-width", returnedOutput, secondaryDesktop),
+  ] as const;
+  const leftWindows = [
+    createTrackedWindow("left-stack-1", leftOutput, primaryDesktop),
+    createTrackedWindow("left-stack-2", leftOutput, primaryDesktop),
+    createTrackedWindow("left-active", leftOutput, primaryDesktop),
+  ] as const;
+  const workspace = createWorkspace(
+    leftOutput,
+    primaryDesktop,
+    [leftOutput],
+    [primaryDesktop, secondaryDesktop],
+    [...rightWindows, ...leftWindows].map(({ window }) => window),
+  );
+  const workScheduler = new ManualScheduler();
+  const resumeScheduler = new ManualScheduler();
+  const history = createKnownOutputHistorySnapshot(options.rightViewportOffset);
+  const controller = new RuntimeController(workspace.workspace, {
+    clientAreaOption: 2,
+    columnWidth: { kind: "fixed", value: 250 },
+    gap: 10,
+    knownLayoutSnapshots: () => [history],
+    ...(options.onLayoutStateChanged
+      ? { onLayoutStateChanged: options.onLayoutStateChanged }
+      : {}),
+    schedule: workScheduler.schedule,
+    scheduleResume: resumeScheduler.schedule,
+  });
+
+  if (!controller.start()) {
+    throw new Error("could not start known output return fixture");
+  }
+
+  installTestLayout(
+    controller,
+    leftOutput,
+    primaryDesktop,
+    "column:left-active",
+    [
+      {
+        id: "column:left-stack-1",
+        width: { kind: "fixed", value: 300 },
+        windowHeights: [
+          { clientHeight: 260, kind: "fixed" },
+          { kind: "auto", weight: 1 },
+        ],
+        windowIds: ["left-stack-1", "left-stack-2"],
+      },
+      {
+        id: "column:left-active",
+        width: { kind: "fixed", value: 400 },
+        windowIds: ["left-active"],
+      },
+    ],
+  );
+
+  return {
+    activeWindow: workspace.workspace.activeWindow,
+    activationCount: workspace.activationCount,
+    controller,
+    leftLayout: runtimeLayout(controller).snapshot(
+      outputId(leftOutput.name),
+      desktopId(primaryDesktop.id),
+    ),
+    leftOutput,
+    leftWindowState: captureTrackedWindowState(leftWindows),
+    leftWindows,
+    primaryDesktop,
+    resumeScheduler,
+    returnedGeometryChanged,
+    returnedOutput,
+    rightWindows,
+    secondaryDesktop,
+    workScheduler,
+    workspace,
+  };
+}
+
 describe("RuntimeController", () => {
   it("publishes only changed canonical layout state", () => {
     const output = createOutput("DP-1", 0);
@@ -1154,6 +1415,48 @@ describe("RuntimeController", () => {
       ok: true,
       value: { windows: [{ liveId: "window-1" }] },
     });
+    controller.stop();
+  });
+
+  it("publishes each settled topology-only output change once", () => {
+    const output = createOutput("DP-1", 0);
+    const emptyOutput = createOutput("HDMI-A-1", 1000);
+    const desktop = { id: "desktop-1" };
+    const fixture = createWorkspace(output, desktop, [output], [desktop], []);
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const published: string[] = [];
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      onLayoutStateChanged: (canonicalState) => {
+        published.push(canonicalState);
+      },
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(published).toHaveLength(1);
+    const unchangedState = published[0];
+
+    fixture.setScreens([output, emptyOutput]);
+    fixture.screensChanged.emit();
+    flushTopologyRecovery(resumeScheduler, workScheduler);
+
+    expect(published).toEqual([unchangedState, unchangedState]);
+    controller.requestLayoutStatePublication();
+    expect(controller.flushLayoutStatePublication()).toBe(false);
+    expect(published).toHaveLength(2);
+
+    fixture.setScreens([output]);
+    fixture.screensChanged.emit();
+    flushTopologyRecovery(resumeScheduler, workScheduler);
+
+    expect(published).toEqual([unchangedState, unchangedState, unchangedState]);
+    controller.requestLayoutStatePublication();
+    expect(controller.flushLayoutStatePublication()).toBe(false);
+    expect(controller.finalizeLayoutStatePublication()).toBe(false);
+    expect(published).toHaveLength(3);
     controller.stop();
   });
 
@@ -23850,6 +24153,749 @@ describe("RuntimeController", () => {
     scheduler.flush();
     expect(controller.managedCount).toBe(2);
     expect(second.window.frameGeometry.x).toBe(505);
+  });
+
+  it("restores a returned output without touching the active output", () => {
+    const {
+      activeWindow,
+      activationCount,
+      controller,
+      leftLayout,
+      leftOutput,
+      leftWindows,
+      leftWindowState,
+      primaryDesktop,
+      resumeScheduler,
+      returnedOutput,
+      rightWindows,
+      secondaryDesktop,
+      workScheduler,
+      workspace: fixture,
+    } = createKnownOutputReturnFixture({ rightViewportOffset: 40 });
+
+    expect(controller.managedCount).toBe(leftWindows.length);
+    expect(leftLayout).toMatchObject({
+      activeColumnId: columnId("column:left-active"),
+      columns: [
+        {
+          width: { kind: "fixed", value: 300 },
+          windowHeights: [
+            { clientHeight: 260, kind: "fixed" },
+            { kind: "auto", weight: 1 },
+          ],
+          windowIds: [windowId("left-stack-1"), windowId("left-stack-2")],
+        },
+        {
+          width: { kind: "fixed", value: 400 },
+          windowIds: [windowId("left-active")],
+        },
+      ],
+      viewportOffset: 0,
+    });
+    expect(activeWindow).toBe(leftWindows[2].window);
+    expect(rightWindows.map(({ writeCount }) => writeCount)).toEqual([
+      0, 0, 0, 0,
+    ]);
+
+    fixture.setScreens([leftOutput, returnedOutput]);
+    fixture.screensChanged.emit();
+    flushTopologyRecovery(resumeScheduler, workScheduler);
+
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(returnedOutput.name),
+        desktopId(primaryDesktop.id),
+      ),
+    ).toEqual({
+      activeColumnId: columnId("column:right-active"),
+      columns: [
+        {
+          id: columnId("column:right-stack-1"),
+          width: { kind: "fixed", value: 300 },
+          windowHeights: [
+            { clientHeight: 240, kind: "fixed" },
+            { kind: "auto", weight: 1 },
+          ],
+          windowIds: [windowId("right-stack-1"), windowId("right-stack-2")],
+        },
+        {
+          id: columnId("column:right-active"),
+          width: { kind: "fixed", value: 400 },
+          windowIds: [windowId("right-active")],
+        },
+      ],
+      desktopId: desktopId(primaryDesktop.id),
+      outputId: outputId(returnedOutput.name),
+      viewportOffset: 40,
+    });
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(returnedOutput.name),
+        desktopId(secondaryDesktop.id),
+      ),
+    ).toEqual({
+      activeColumnId: columnId("column:right-full-width"),
+      columns: [
+        {
+          id: columnId("column:right-full-width"),
+          width: { kind: "proportion", value: 1 },
+          windowIds: [windowId("right-full-width")],
+        },
+      ],
+      desktopId: desktopId(secondaryDesktop.id),
+      outputId: outputId(returnedOutput.name),
+      viewportOffset: 0,
+    });
+    const restoredState = controller as unknown as {
+      readonly columnFullWidthRestore: ReadonlyMap<
+        string,
+        ReadonlyMap<
+          ReturnType<typeof columnId>,
+          { kind: string; value: number }
+        >
+      >;
+    };
+    expect(
+      restoredState.columnFullWidthRestore
+        .get(`${returnedOutput.name}\u0000${secondaryDesktop.id}`)
+        ?.get(columnId("column:right-full-width")),
+    ).toEqual({ kind: "fixed", value: 420 });
+    expect(controller.managedCount).toBe(
+      leftWindows.length + rightWindows.length,
+    );
+    expect(
+      rightWindows.slice(0, 3).every(({ writeCount }) => writeCount > 0),
+    ).toBe(true);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(leftOutput.name),
+        desktopId(primaryDesktop.id),
+      ),
+    ).toEqual(leftLayout);
+    expectTrackedWindowState(leftWindows, leftWindowState);
+    expect(fixture.workspace.activeWindow).toBe(activeWindow);
+    expect(fixture.activationCount).toBe(activationCount);
+    expect(resumeScheduler.pendingCount).toBe(0);
+    expect(workScheduler.pendingCount).toBe(0);
+  });
+
+  it("falls back atomically when returned output history violates size constraints", () => {
+    const {
+      activeWindow,
+      activationCount,
+      controller,
+      leftLayout,
+      leftOutput,
+      leftWindows,
+      leftWindowState,
+      primaryDesktop,
+      resumeScheduler,
+      returnedOutput,
+      rightWindows,
+      secondaryDesktop,
+      workScheduler,
+      workspace: fixture,
+    } = createKnownOutputReturnFixture({
+      rightStackMinHeight: 600,
+      rightViewportOffset: 120,
+    });
+
+    expect(controller.managedCount).toBe(leftWindows.length);
+    fixture.setScreens([leftOutput, returnedOutput]);
+    fixture.screensChanged.emit();
+    flushTopologyRecovery(resumeScheduler, workScheduler);
+
+    const primaryRightLayout = runtimeLayout(controller).snapshot(
+      outputId(returnedOutput.name),
+      desktopId(primaryDesktop.id),
+    );
+    const secondaryRightLayout = runtimeLayout(controller).snapshot(
+      outputId(returnedOutput.name),
+      desktopId(secondaryDesktop.id),
+    );
+
+    expect(primaryRightLayout.viewportOffset).toBe(0);
+    expect(primaryRightLayout.columns).toHaveLength(3);
+    expect(
+      primaryRightLayout.columns.map((column) => ({
+        width: column.width,
+        windowIds: column.windowIds,
+      })),
+    ).toEqual([
+      {
+        width: { kind: "fixed", value: 250 },
+        windowIds: [windowId("right-stack-1")],
+      },
+      {
+        width: { kind: "fixed", value: 250 },
+        windowIds: [windowId("right-stack-2")],
+      },
+      {
+        width: { kind: "fixed", value: 250 },
+        windowIds: [windowId("right-active")],
+      },
+    ]);
+    expect(secondaryRightLayout).toMatchObject({
+      columns: [
+        {
+          width: { kind: "fixed", value: 250 },
+          windowIds: [windowId("right-full-width")],
+        },
+      ],
+      viewportOffset: 0,
+    });
+    const fallbackState = controller as unknown as {
+      readonly columnFullWidthRestore: ReadonlyMap<string, unknown>;
+      readonly managedWindows: ReadonlyMap<WindowId, unknown>;
+    };
+    expect(
+      fallbackState.columnFullWidthRestore.has(
+        `${returnedOutput.name}\u0000${secondaryDesktop.id}`,
+      ),
+    ).toBe(false);
+    expect(
+      rightWindows.every(({ window }) =>
+        fallbackState.managedWindows.has(windowId(String(window.internalId))),
+      ),
+    ).toBe(true);
+    expect(
+      rightWindows.slice(0, 3).every(({ writeCount }) => writeCount > 0),
+    ).toBe(true);
+    expect(controller.managedCount).toBe(
+      leftWindows.length + rightWindows.length,
+    );
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(leftOutput.name),
+        desktopId(primaryDesktop.id),
+      ),
+    ).toEqual(leftLayout);
+    expectTrackedWindowState(leftWindows, leftWindowState);
+    expect(fixture.workspace.activeWindow).toBe(activeWindow);
+    expect(fixture.activationCount).toBe(activationCount);
+    expect(resumeScheduler.pendingCount).toBe(0);
+    expect(workScheduler.pendingCount).toBe(0);
+  });
+
+  it("keeps a newer topology barrier raised during history selection", () => {
+    const setup = createKnownOutputReturnFixture();
+    const history = createKnownOutputHistorySnapshot();
+    const state = setup.controller as unknown as {
+      knownLayoutSnapshots: () => readonly LayoutPersistenceCatalogSnapshot[];
+      readonly managedWindows: ReadonlyMap<WindowId, unknown>;
+      readonly topologyStabilizing: boolean;
+      readonly topologyWindowOrder: ReadonlyMap<WindowId, number> | null;
+    };
+    let injectedTopologyEvent = false;
+
+    state.knownLayoutSnapshots = () => {
+      if (!injectedTopologyEvent) {
+        injectedTopologyEvent = true;
+        setup.returnedGeometryChanged.emit();
+      }
+
+      return [history];
+    };
+
+    setup.workspace.setScreens([setup.leftOutput, setup.returnedOutput]);
+    setup.workspace.screensChanged.emit();
+    setup.resumeScheduler.flush();
+    setup.resumeScheduler.flush();
+    setup.workScheduler.flush();
+
+    expect(injectedTopologyEvent).toBe(true);
+    expect(state.topologyStabilizing).toBe(true);
+    expect(state.topologyWindowOrder).not.toBeNull();
+    expect(setup.controller.managedCount).toBe(setup.leftWindows.length);
+    expect(
+      setup.rightWindows.some(({ window }) =>
+        state.managedWindows.has(windowId(String(window.internalId))),
+      ),
+    ).toBe(false);
+    expect(
+      runtimeLayout(setup.controller).snapshot(
+        outputId(setup.returnedOutput.name),
+        desktopId(setup.primaryDesktop.id),
+      ).columns,
+    ).toEqual([]);
+    expect(
+      runtimeLayout(setup.controller).snapshot(
+        outputId(setup.leftOutput.name),
+        desktopId(setup.primaryDesktop.id),
+      ),
+    ).toEqual(setup.leftLayout);
+    expectTrackedWindowState(setup.leftWindows, setup.leftWindowState);
+    expect(setup.workspace.workspace.activeWindow).toBe(setup.activeWindow);
+    expect(setup.resumeScheduler.pendingCount).toBeGreaterThan(0);
+
+    flushTopologyRecovery(setup.resumeScheduler, setup.workScheduler);
+
+    expect(state.topologyStabilizing).toBe(false);
+    expect(state.topologyWindowOrder).toBeNull();
+    expect(setup.controller.managedCount).toBe(
+      setup.leftWindows.length + setup.rightWindows.length,
+    );
+    expect(
+      runtimeLayout(setup.controller).snapshot(
+        outputId(setup.returnedOutput.name),
+        desktopId(setup.primaryDesktop.id),
+      ).columns,
+    ).toHaveLength(2);
+    expect(
+      runtimeLayout(setup.controller).snapshot(
+        outputId(setup.leftOutput.name),
+        desktopId(setup.primaryDesktop.id),
+      ),
+    ).toEqual(setup.leftLayout);
+    expectTrackedWindowState(setup.leftWindows, setup.leftWindowState);
+    expect(setup.workspace.workspace.activeWindow).toBe(setup.activeWindow);
+  });
+
+  it("rolls back a restored output when its final validation throws", () => {
+    const setup = createKnownOutputReturnFixture();
+    type KnownOutputCurrentProbe = (
+      prepared: unknown,
+      restoration: unknown,
+    ) => boolean;
+    const state = setup.controller as unknown as {
+      readonly columnFullWidthRestore: ReadonlyMap<string, unknown>;
+      knownOutputAdmissionContextIsCurrent: KnownOutputCurrentProbe;
+      readonly managedWindows: ReadonlyMap<WindowId, unknown>;
+    };
+    const originalProbe = state.knownOutputAdmissionContextIsCurrent.bind(
+      setup.controller,
+    );
+    let preRestoreChecks = 0;
+    let postRestoreThrows = 0;
+
+    state.knownOutputAdmissionContextIsCurrent = (prepared, restoration) => {
+      const restoredColumns =
+        runtimeLayout(setup.controller).snapshot(
+          outputId(setup.returnedOutput.name),
+          desktopId(setup.primaryDesktop.id),
+        ).columns.length +
+        runtimeLayout(setup.controller).snapshot(
+          outputId(setup.returnedOutput.name),
+          desktopId(setup.secondaryDesktop.id),
+        ).columns.length;
+
+      if (restoredColumns > 0) {
+        postRestoreThrows += 1;
+        throw new Error("injected post-restore validation failure");
+      }
+
+      preRestoreChecks += 1;
+      return originalProbe(prepared, restoration);
+    };
+
+    setup.workspace.setScreens([setup.leftOutput, setup.returnedOutput]);
+    setup.workspace.screensChanged.emit();
+    flushTopologyRecovery(setup.resumeScheduler, setup.workScheduler);
+
+    const primaryLayout = runtimeLayout(setup.controller).snapshot(
+      outputId(setup.returnedOutput.name),
+      desktopId(setup.primaryDesktop.id),
+    );
+    const secondaryLayout = runtimeLayout(setup.controller).snapshot(
+      outputId(setup.returnedOutput.name),
+      desktopId(setup.secondaryDesktop.id),
+    );
+    const targetIds = [...primaryLayout.columns, ...secondaryLayout.columns]
+      .flatMap((column) => column.windowIds.map(String))
+      .sort();
+
+    expect(preRestoreChecks).toBe(2);
+    expect(postRestoreThrows).toBe(1);
+    expect(primaryLayout.columns).toHaveLength(3);
+    expect(
+      primaryLayout.columns.every((column) => column.windowIds.length === 1),
+    ).toBe(true);
+    expect(primaryLayout.viewportOffset).toBe(0);
+    expect(secondaryLayout).toMatchObject({
+      columns: [
+        {
+          width: { kind: "fixed", value: 250 },
+          windowIds: [windowId("right-full-width")],
+        },
+      ],
+      viewportOffset: 0,
+    });
+    expect(targetIds).toEqual(
+      [
+        "right-active",
+        "right-full-width",
+        "right-stack-1",
+        "right-stack-2",
+      ].sort(),
+    );
+    expect(new Set(targetIds).size).toBe(setup.rightWindows.length);
+    expect(
+      state.columnFullWidthRestore.has(
+        `${setup.returnedOutput.name}\u0000${setup.secondaryDesktop.id}`,
+      ),
+    ).toBe(false);
+    expect(
+      setup.rightWindows.every(({ window }) =>
+        state.managedWindows.has(windowId(String(window.internalId))),
+      ),
+    ).toBe(true);
+    expect(
+      runtimeLayout(setup.controller).snapshot(
+        outputId(setup.leftOutput.name),
+        desktopId(setup.primaryDesktop.id),
+      ),
+    ).toEqual(setup.leftLayout);
+    expectTrackedWindowState(setup.leftWindows, setup.leftWindowState);
+    expect(setup.workspace.workspace.activeWindow).toBe(setup.activeWindow);
+    expect(setup.workspace.activationCount).toBe(setup.activationCount);
+  });
+
+  it("prunes a full-width restore when its output is unplugged", () => {
+    const published: string[] = [];
+    const setup = createKnownOutputReturnFixture({
+      onLayoutStateChanged: (state) => {
+        published.push(state);
+      },
+    });
+
+    setup.workspace.setScreens([setup.leftOutput, setup.returnedOutput]);
+    setup.workspace.screensChanged.emit();
+    flushTopologyRecovery(setup.resumeScheduler, setup.workScheduler);
+    published.length = 0;
+
+    setup.workspace.setScreens([setup.leftOutput]);
+    setup.workspace.screensChanged.emit();
+    flushTopologyRecovery(setup.resumeScheduler, setup.workScheduler);
+
+    const document = requiredLayoutDocument(setup.controller);
+    const decoded = decodeLayoutPersistence(document);
+    const state = setup.controller as unknown as {
+      readonly columnFullWidthRestore: ReadonlyMap<string, unknown>;
+    };
+
+    expect(decoded.ok).toBe(true);
+
+    if (!decoded.ok) {
+      throw new Error("unplugged layout state did not decode");
+    }
+
+    expect(
+      decoded.value.contexts.some(
+        (context) => context.outputKey === setup.returnedOutput.name,
+      ),
+    ).toBe(false);
+    expect(
+      decoded.value.contexts.some((context) =>
+        context.columns.some((column) => column.fullWidthRestore !== undefined),
+      ),
+    ).toBe(false);
+    expect(
+      state.columnFullWidthRestore.has(
+        `${setup.returnedOutput.name}\u0000${setup.secondaryDesktop.id}`,
+      ),
+    ).toBe(false);
+    expect(setup.controller.managedCount).toBe(setup.leftWindows.length);
+    expect(published.length).toBeGreaterThan(0);
+    expect(published[published.length - 1]).toBe(document);
+    expect(setup.controller.finalizeLayoutStatePublication()).toBe(false);
+  });
+
+  it("preserves a parked full-width column while another output returns", () => {
+    const activeOutput = createTrackedOutput("DP-1", 0);
+    const passiveOutput = createTrackedOutput("HDMI-A-1", 1000);
+    const returnedOutput: KWinOutput = {
+      ...createOutput("USB-C-2", 2000),
+      ...KNOWN_OUTPUT_RIGHT_IDENTITY,
+    };
+    const historicalReturnedOutput = {
+      key: "USB-C-OLD",
+      name: "USB-C-OLD",
+      ...KNOWN_OUTPUT_RIGHT_IDENTITY,
+    };
+    const desktop = { id: "desktop-1" };
+    const returned = createTrackedWindow(
+      "returned-window",
+      returnedOutput,
+      desktop,
+    );
+    const activeWindows = [
+      createTrackedWindow("active-1", activeOutput.output, desktop),
+      createTrackedWindow("active-2", activeOutput.output, desktop),
+      createTrackedWindow("active-3", activeOutput.output, desktop),
+    ] as const;
+    const fixture = createWorkspace(
+      activeOutput.output,
+      desktop,
+      [activeOutput.output, passiveOutput.output],
+      [desktop],
+      [returned.window, ...activeWindows.map(({ window }) => window)],
+    );
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const history: LayoutPersistenceCatalogSnapshot = {
+      state: {
+        contexts: [
+          {
+            activeColumnIndex: 0,
+            columns: [
+              {
+                members: [{ windowKey: "returned-window" }],
+                width: { kind: "fixed", value: 360 },
+              },
+            ],
+            desktopId: desktop.id,
+            outputKey: historicalReturnedOutput.key,
+            viewportOffset: 0,
+          },
+        ],
+        floatingWindows: [],
+        format: "driftile-layout",
+        outputs: [historicalReturnedOutput],
+        version: 1,
+        windows: [{ key: "returned-window", liveId: "returned-window" }],
+      },
+      topology: {
+        outputs: [
+          { key: activeOutput.output.name, name: activeOutput.output.name },
+          { key: passiveOutput.output.name, name: passiveOutput.output.name },
+          historicalReturnedOutput,
+        ],
+      },
+    };
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+      knownLayoutSnapshots: () => [history],
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(controller.managedCount).toBe(activeWindows.length);
+    const layout = new LayoutEngine();
+    expect(
+      layout.restoreColumns({
+        activeColumnId: columnId("column:active-3"),
+        columns: [
+          {
+            column: {
+              id: columnId("column:active-1"),
+              width: { kind: "proportion", value: 1 },
+              windowIds: [windowId("active-1")],
+            },
+            index: 0,
+          },
+          {
+            column: {
+              id: columnId("column:active-2"),
+              width: { kind: "fixed", value: 300 },
+              windowIds: [windowId("active-2")],
+            },
+            index: 1,
+          },
+          {
+            column: {
+              id: columnId("column:active-3"),
+              width: { kind: "fixed", value: 300 },
+              windowIds: [windowId("active-3")],
+            },
+            index: 2,
+          },
+        ],
+        desktopId: desktopId(desktop.id),
+        outputId: outputId(activeOutput.output.name),
+      }),
+    ).toBe(true);
+    type TestCapacityLease = {
+      readonly column: {
+        readonly column: {
+          readonly id: ReturnType<typeof columnId>;
+          readonly windowIds: readonly WindowId[];
+        };
+        readonly index: number;
+      };
+      readonly windows: readonly { readonly windowId: WindowId }[];
+    };
+    const key = `${activeOutput.output.name}\u0000${desktop.id}`;
+    const state = controller as unknown as {
+      readonly capacityLeaseByWindow: ReadonlyMap<WindowId, TestCapacityLease>;
+      readonly capacityLeasesByContext: ReadonlyMap<
+        string,
+        ReadonlySet<TestCapacityLease>
+      >;
+      readonly columnFullWidthRestore: Map<
+        string,
+        Map<ReturnType<typeof columnId>, { kind: string; value: number }>
+      >;
+      layout: LayoutEngine;
+    };
+    state.layout = layout;
+    state.columnFullWidthRestore.set(
+      key,
+      new Map([[columnId("column:active-1"), { kind: "fixed", value: 300 }]]),
+    );
+    controller.reconcile();
+    flushCapacityParking(resumeScheduler, workScheduler);
+
+    const parkedId = windowId("active-1");
+    const lease = state.capacityLeaseByWindow.get(parkedId);
+
+    expect(lease).toBeDefined();
+
+    if (!lease) {
+      throw new Error("capacity fixture did not park the full-width column");
+    }
+
+    expect(controller.managedCount).toBe(2);
+    expect(lease.column).toMatchObject({
+      column: {
+        id: columnId("column:active-1"),
+        windowIds: [parkedId],
+      },
+      index: 0,
+    });
+    expect(
+      state.columnFullWidthRestore.get(key)?.get(columnId("column:active-1")),
+    ).toEqual({ kind: "fixed", value: 300 });
+    const residentLayout = layout.snapshot(
+      outputId(activeOutput.output.name),
+      desktopId(desktop.id),
+    );
+    const activeWindowState = captureTrackedWindowState(activeWindows);
+    const parkedFrame = { ...activeWindows[0].window.frameGeometry };
+
+    fixture.setScreens([
+      activeOutput.output,
+      passiveOutput.output,
+      returnedOutput,
+    ]);
+    fixture.screensChanged.emit();
+    flushTopologyRecovery(resumeScheduler, workScheduler);
+
+    expect(state.capacityLeaseByWindow.get(parkedId)).toBe(lease);
+    expect(state.capacityLeasesByContext.get(key)?.has(lease)).toBe(true);
+    expect(lease.column).toMatchObject({
+      column: {
+        id: columnId("column:active-1"),
+        windowIds: [parkedId],
+      },
+      index: 0,
+    });
+    expect(activeWindows[0].window.frameGeometry).toEqual(parkedFrame);
+    expectTrackedWindowState(activeWindows, activeWindowState);
+    expect(
+      layout.snapshot(
+        outputId(activeOutput.output.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(residentLayout);
+    expect(
+      state.columnFullWidthRestore.get(key)?.get(columnId("column:active-1")),
+    ).toEqual({ kind: "fixed", value: 300 });
+    expect(controller.managedCount).toBe(3);
+    expect(
+      layout.snapshot(outputId(returnedOutput.name), desktopId(desktop.id)),
+    ).toMatchObject({
+      columns: [
+        {
+          width: { kind: "fixed", value: 360 },
+          windowIds: [windowId("returned-window")],
+        },
+      ],
+    });
+    expect(returned.writeCount).toBeGreaterThan(0);
+    expect(fixture.workspace.activeWindow).toBe(activeWindows[2].window);
+  });
+
+  it("reselects startup layout state after topology stabilization", () => {
+    const initialOutput = createOutput("DP-1", 0);
+    const settledOutput = createOutput("HDMI-A-2", 1000);
+    const desktop = { id: "desktop-1" };
+    const tracked = createTrackedWindow(
+      "startup-window",
+      initialOutput,
+      desktop,
+    );
+    const fixture = createWorkspace(
+      initialOutput,
+      desktop,
+      [initialOutput],
+      [desktop],
+      [tracked.window],
+    );
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const initialDocument = createSingleWindowLayoutDocument(
+      initialOutput.name,
+      300,
+    );
+    const settledDocument = createSingleWindowLayoutDocument(
+      settledOutput.name,
+      600,
+    );
+    const selections: string[] = [];
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      layoutHydrationRetryProbes: 10,
+      layoutStateForCurrentTopology: () => {
+        const outputName = fixture.workspace.screens[0]?.name ?? "";
+        selections.push(outputName);
+        return outputName === settledOutput.name
+          ? settledDocument
+          : initialDocument;
+      },
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+      startupStabilizationProbes: 3,
+    });
+
+    expect(controller.start(initialDocument)).toBe(true);
+    expect(controller.managedCount).toBe(0);
+    tracked.setOutput(settledOutput);
+    Object.defineProperty(fixture.workspace, "activeScreen", {
+      configurable: true,
+      value: settledOutput,
+    });
+    fixture.setScreens([settledOutput]);
+    fixture.screensChanged.emit();
+
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      if (resumeScheduler.pendingCount > 0) {
+        resumeScheduler.flush();
+      }
+
+      while (workScheduler.pendingCount > 0) {
+        workScheduler.flush();
+      }
+
+      if (
+        resumeScheduler.pendingCount === 0 &&
+        workScheduler.pendingCount === 0
+      ) {
+        break;
+      }
+    }
+
+    expect(resumeScheduler.pendingCount).toBe(0);
+    expect(workScheduler.pendingCount).toBe(0);
+    expect(selections.length).toBeGreaterThan(0);
+    expect(selections[selections.length - 1]).toBe(settledOutput.name);
+    expect(controller.managedCount).toBe(1);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(settledOutput.name),
+        desktopId(desktop.id),
+      ),
+    ).toMatchObject({
+      columns: [
+        {
+          width: { kind: "fixed", value: 600 },
+          windowIds: [windowId("startup-window")],
+        },
+      ],
+    });
   });
 
   it("waits for two stable topology samples before reflowing", () => {

@@ -34,19 +34,23 @@ import {
 } from "./core/layout-engine";
 import {
   planLayoutHydration,
+  type LayoutPersistenceHydrationContext,
   type LayoutPersistenceHydrationInput,
   type LayoutPersistenceHydrationPlan,
   type LayoutPersistenceHydrationRestoreBaselineValue,
 } from "./core/layout-persistence-hydration";
+import type {
+  LayoutPersistenceCatalogSnapshot,
+  LayoutPersistenceTopologyV2,
+} from "./core/layout-persistence-catalog";
+import { planKnownOutputLayoutHydration } from "./core/layout-persistence-known-output";
+import { matchPersistedOutputs } from "./core/layout-persistence-match";
 import {
   captureLayoutPersistence,
-  type LayoutPersistenceCaptureOutput,
   type LayoutPersistenceCaptureRestoreBaseline,
-  type LayoutPersistenceCaptureWindow,
 } from "./core/layout-persistence-capture";
 import {
   decodeLayoutPersistence,
-  LAYOUT_PERSISTENCE_LIMITS,
   type LayoutPersistenceV1,
 } from "./core/layout-persistence";
 import {
@@ -73,6 +77,10 @@ import {
   type ContextGeometry,
   type KWinRectFactory,
 } from "./platform/kwin/geometry-adapter";
+import {
+  layoutPersistenceOutputDescriptor,
+  layoutPersistenceWindowDescriptor,
+} from "./platform/kwin/persistence-descriptors";
 import {
   normalizeWindow,
   WindowObserver,
@@ -397,6 +405,31 @@ interface TopologyColumnMetadata {
   readonly sourceContextKey: string;
 }
 
+interface KnownOutputTopologyRestoration {
+  readonly outputId: OutputId;
+  readonly plan: LayoutPersistenceHydrationPlan;
+  readonly topologyRevision: number;
+}
+
+interface KnownOutputAdmissionCandidate extends AdmissionCandidate {
+  readonly fingerprint: string;
+  readonly restoreBaseline: RestoreBaseline | null;
+  readonly suspended: boolean;
+}
+
+interface KnownOutputAdmissionContext {
+  readonly candidates: readonly KnownOutputAdmissionCandidate[];
+  readonly context: ManagedContext;
+  readonly contextGeometry: ContextGeometry;
+  readonly planned: LayoutPersistenceHydrationContext;
+  readonly targetFrames: ReadonlyMap<WindowId, Rect>;
+}
+
+interface TopologyAdmissionGroup {
+  readonly context: ManagedContext;
+  readonly sources: KWinWindow[];
+}
+
 interface CapacityRecoveryPlan {
   readonly activeColumnId: ColumnId | null;
   readonly columns: readonly CapacityParkColumn[];
@@ -490,6 +523,8 @@ export interface RuntimeControllerOptions {
   readonly gap?: number;
   readonly layoutHydrationQuietSamples?: number;
   readonly layoutHydrationRetryProbes?: number;
+  readonly layoutStateForCurrentTopology?: () => string;
+  readonly knownLayoutSnapshots?: () => readonly LayoutPersistenceCatalogSnapshot[];
   readonly onLayoutStateChanged?: (canonicalState: string) => void;
   readonly schedule?: (callback: () => void) => void;
   readonly scheduleResume?: (callback: () => void) => void;
@@ -557,6 +592,7 @@ export class RuntimeController {
   private initialLayoutHydrationStableSamples = 0;
   private initialLayoutHydrationWaited = false;
   private initialLayoutHydrationStatus: InitialLayoutHydrationStatus = "none";
+  private readonly layoutStateForCurrentTopology: (() => string) | undefined;
   private initialLayoutStateDocument: string | null = null;
   private initializing = false;
   private readonly lastFloatingFocus = new Map<string, WindowId>();
@@ -564,12 +600,16 @@ export class RuntimeController {
   private ownershipFollowUpRequired = false;
   private ownershipRefreshInProgress = false;
   private readonly knownOutputInstances = new Map<string, number>();
+  private readonly knownLayoutSnapshots:
+    (() => readonly LayoutPersistenceCatalogSnapshot[]) | undefined;
+  private lastSettledTopology: LayoutPersistenceTopologyV2 | null = null;
   private lastOutputCount = 0;
   private lastWrites = 0;
   private lastPublishedLayoutState: string | null = null;
   private layout = new LayoutEngine();
   private layoutStatePublicationLocked = false;
   private layoutStatePublicationPending = false;
+  private layoutTopologyPublicationPending = false;
   private preserveLoadedLayoutState = false;
   private preservedFallbackLayoutState: string | null = null;
   private readonly managedWindows = new Map<WindowId, ManagedWindow>();
@@ -609,6 +649,10 @@ export class RuntimeController {
   private readonly topologyColumnByWindow = new Map<
     WindowId,
     TopologyColumnMetadata
+  >();
+  private readonly topologyKnownOutputRestorations = new Map<
+    OutputId,
+    KnownOutputTopologyRestoration
   >();
   private topologyInvalidateAllBaselines = false;
   private readonly topologyInvalidatedOutputs = new Set<OutputId>();
@@ -658,6 +702,8 @@ export class RuntimeController {
       options.layoutHydrationRetryProbes ?? 0,
       0,
     );
+    this.layoutStateForCurrentTopology = options.layoutStateForCurrentTopology;
+    this.knownLayoutSnapshots = options.knownLayoutSnapshots;
     this.onLayoutStateChanged = options.onLayoutStateChanged;
     this.schedule =
       options.schedule ??
@@ -908,7 +954,10 @@ export class RuntimeController {
       return false;
     }
 
-    if (canonicalState === this.lastPublishedLayoutState) {
+    if (
+      canonicalState === this.lastPublishedLayoutState &&
+      !this.layoutTopologyPublicationPending
+    ) {
       this.layoutStatePublicationPending = false;
       return false;
     }
@@ -924,6 +973,7 @@ export class RuntimeController {
 
     this.lastPublishedLayoutState = canonicalState;
     this.layoutStatePublicationPending = false;
+    this.layoutTopologyPublicationPending = false;
     return true;
   }
 
@@ -2062,24 +2112,31 @@ export class RuntimeController {
     }
 
     try {
+      const layoutSelectionPending =
+        this.layoutStateForCurrentTopology !== undefined;
       this.initialLayoutStateDocument =
         loadedLayoutState.length === 0 ? null : loadedLayoutState;
       this.initialLayoutHydrationStatus =
-        this.initialLayoutStateDocument === null ? "none" : "pending";
-      this.hydrationInProgress = this.initialLayoutStateDocument !== null;
+        layoutSelectionPending || this.initialLayoutStateDocument !== null
+          ? "pending"
+          : "none";
+      this.hydrationInProgress =
+        this.initialLayoutHydrationStatus === "pending";
       this.initialLayoutDecodedState = null;
       this.initialLayoutHydrationCandidateFingerprint = null;
       this.initialLayoutHydrationRetryRemaining =
-        this.initialLayoutStateDocument === null
-          ? 0
-          : this.initialLayoutHydrationRetryProbes;
+        this.initialLayoutHydrationStatus === "pending"
+          ? this.initialLayoutHydrationRetryProbes
+          : 0;
       this.initialLayoutHydrationRetryToken = null;
       this.initialLayoutHydrationStableSamples = 0;
       this.initialLayoutHydrationWaited = false;
-      this.preserveLoadedLayoutState = this.initialLayoutStateDocument !== null;
+      this.preserveLoadedLayoutState =
+        this.initialLayoutHydrationStatus === "pending";
       this.lastPublishedLayoutState = null;
       this.layoutStatePublicationLocked = false;
       this.layoutStatePublicationPending = false;
+      this.layoutTopologyPublicationPending = false;
       this.preservedFallbackLayoutState = null;
       this.startupCompleted = false;
       this.runGeneration += 1;
@@ -2185,6 +2242,7 @@ export class RuntimeController {
       this.observer.stop();
       this.layout = new LayoutEngine();
       this.knownOutputInstances.clear();
+      this.lastSettledTopology = null;
       this.contexts.clear();
       this.pendingExpelFocusHandoff = null;
       this.stackEditOperation = null;
@@ -2242,6 +2300,7 @@ export class RuntimeController {
       this.windowStateRevisions.clear();
       this.topologyAllowsOverflowAdmissions = false;
       this.topologyColumnByWindow.clear();
+      this.topologyKnownOutputRestorations.clear();
       this.topologyWindowOrder = null;
       this.toggleGeometryTransitions.clear();
       this.toggleTransitionProbes.clear();
@@ -2249,6 +2308,7 @@ export class RuntimeController {
       this.lastWrites = 0;
       this.lastPublishedLayoutState = null;
       this.layoutStatePublicationPending = false;
+      this.layoutTopologyPublicationPending = false;
     }
   }
 
@@ -8587,6 +8647,44 @@ export class RuntimeController {
     }
   }
 
+  private pruneColumnFullWidthRestores(): void {
+    for (const [key, restores] of this.columnFullWidthRestore) {
+      const context = this.contexts.get(key);
+      const parsed = context ?? managedContextFromKey(key);
+      const leases = this.capacityLeasesByContext.get(key);
+
+      if (!parsed && !leases) {
+        this.columnFullWidthRestore.delete(key);
+        continue;
+      }
+
+      const liveColumnIds = new Set<ColumnId>();
+
+      if (parsed) {
+        for (const column of this.layout.snapshot(
+          parsed.outputId,
+          parsed.desktopId,
+        ).columns) {
+          liveColumnIds.add(column.id);
+        }
+      }
+
+      for (const lease of leases ?? []) {
+        liveColumnIds.add(lease.column.column.id);
+      }
+
+      for (const id of restores.keys()) {
+        if (!liveColumnIds.has(id)) {
+          restores.delete(id);
+        }
+      }
+
+      if (restores.size === 0) {
+        this.columnFullWidthRestore.delete(key);
+      }
+    }
+  }
+
   private reconcileColumnFullWidthRestore(
     contextKey: string,
     before: LayoutContextSnapshot,
@@ -11224,6 +11322,14 @@ export class RuntimeController {
     );
   }
 
+  private hasUnsettledTopology(): boolean {
+    return (
+      this.topologyRecoveryPending ||
+      this.topologyStabilizing ||
+      this.topologyRetryPending
+    );
+  }
+
   private desktopLifecycleCanMutate(): boolean {
     return (
       this.started &&
@@ -11248,7 +11354,9 @@ export class RuntimeController {
     );
 
     if (topologyBatchPending && topologyBatchConsumed) {
+      this.pruneColumnFullWidthRestores();
       this.topologyColumnByWindow.clear();
+      this.topologyKnownOutputRestorations.clear();
       this.topologyAllowsOverflowAdmissions = false;
       this.topologyWindowOrder = null;
     }
@@ -11269,6 +11377,7 @@ export class RuntimeController {
       return;
     }
 
+    this.lastSettledTopology = this.currentLayoutPersistenceTopology();
     this.startupCompleted = true;
 
     if (this.initialLayoutHydrationStatus === "failed") {
@@ -11282,19 +11391,81 @@ export class RuntimeController {
   }
 
   private tryHydrateInitialLayoutState(): boolean {
-    const document = this.initialLayoutStateDocument;
-
-    if (document === null || this.initialLayoutHydrationStatus !== "pending") {
+    if (this.initialLayoutHydrationStatus !== "pending") {
       this.hydrationInProgress = false;
       return false;
     }
 
     let failureReason: string | null = null;
+    const topologyUnsettled = this.hasUnsettledTopology();
+
+    if (topologyUnsettled && this.layoutStateForCurrentTopology) {
+      this.initialLayoutHydrationWaited = true;
+      this.initialLayoutHydrationCandidateFingerprint = null;
+      this.initialLayoutHydrationStableSamples = 0;
+
+      if (
+        this.initialLayoutHydrationRetryRemaining > 0 &&
+        this.scheduleInitialLayoutHydrationRetry()
+      ) {
+        this.hydrationInProgress = true;
+        return false;
+      }
+
+      failureReason = "topology-unsettled";
+    }
 
     try {
+      let document = this.initialLayoutStateDocument;
+
+      if (failureReason === null && this.layoutStateForCurrentTopology) {
+        const selectedDocument: unknown = this.layoutStateForCurrentTopology();
+
+        if (typeof selectedDocument !== "string") {
+          throw new Error("layout state selection must return a string");
+        }
+
+        const selected =
+          selectedDocument.length === 0 ? null : selectedDocument;
+
+        if (selected !== document) {
+          document = selected;
+          this.initialLayoutStateDocument = selected;
+          this.initialLayoutDecodedState = null;
+          this.initialLayoutHydrationCandidateFingerprint = null;
+          this.initialLayoutHydrationStableSamples = 0;
+          this.layoutStatePublicationLocked = false;
+        }
+      }
+
+      if (
+        failureReason === null &&
+        this.layoutStateForCurrentTopology &&
+        this.hasUnsettledTopology()
+      ) {
+        this.initialLayoutHydrationWaited = true;
+        this.initialLayoutHydrationCandidateFingerprint = null;
+        this.initialLayoutHydrationStableSamples = 0;
+
+        if (
+          this.initialLayoutHydrationRetryRemaining > 0 &&
+          this.scheduleInitialLayoutHydrationRetry()
+        ) {
+          this.hydrationInProgress = true;
+          return false;
+        }
+
+        failureReason = "topology-unsettled";
+      }
+
+      if (failureReason === null && document === null) {
+        this.finishInitialLayoutHydrationWithoutState();
+        return false;
+      }
+
       let state = this.initialLayoutDecodedState;
 
-      if (state === null) {
+      if (failureReason === null && state === null && document !== null) {
         const decoded = decodeLayoutPersistence(document);
 
         if (!decoded.ok) {
@@ -11309,7 +11480,7 @@ export class RuntimeController {
       }
 
       if (failureReason === null) {
-        if (this.topologyRecoveryPending || this.hasTopologyBarrier()) {
+        if (topologyUnsettled) {
           failureReason = "topology-unsettled";
         } else if (state !== null) {
           const input = this.liveLayoutHydrationInput();
@@ -11387,6 +11558,20 @@ export class RuntimeController {
     return true;
   }
 
+  private finishInitialLayoutHydrationWithoutState(): void {
+    this.hydrationInProgress = false;
+    this.initialLayoutDecodedState = null;
+    this.initialLayoutHydrationCandidateFingerprint = null;
+    this.initialLayoutHydrationRetryRemaining = 0;
+    this.initialLayoutHydrationRetryToken = null;
+    this.initialLayoutHydrationStableSamples = 0;
+    this.initialLayoutHydrationWaited = false;
+    this.initialLayoutHydrationStatus = "none";
+    this.initialLayoutStateDocument = null;
+    this.layoutStatePublicationLocked = false;
+    this.preserveLoadedLayoutState = false;
+  }
+
   private liveLayoutHydrationInput(): LayoutPersistenceHydrationInput {
     const windows = this.observer.snapshot().map((observed) => {
       const source = this.observer.source(observed.id);
@@ -11412,6 +11597,125 @@ export class RuntimeController {
       outputs: this.workspace.screens.map(layoutPersistenceOutputDescriptor),
       windows,
     };
+  }
+
+  private currentLayoutPersistenceTopology(): LayoutPersistenceTopologyV2 | null {
+    try {
+      return {
+        outputs: this.workspace.screens.map((output) => {
+          const descriptor = layoutPersistenceOutputDescriptor(output);
+
+          return { key: descriptor.name, ...descriptor };
+        }),
+      };
+    } catch (error) {
+      console.warn(
+        `[driftile] layout topology descriptor unavailable error=${String(error)}`,
+      );
+      return null;
+    }
+  }
+
+  private prepareKnownOutputTopologyRestorations(
+    previousTopology: LayoutPersistenceTopologyV2 | null,
+    currentTopology: LayoutPersistenceTopologyV2,
+  ): void {
+    this.topologyKnownOutputRestorations.clear();
+
+    if (!previousTopology || !this.knownLayoutSnapshots) {
+      return;
+    }
+
+    const transition = matchPersistedOutputs(
+      previousTopology.outputs,
+      liveOutputPersistenceDescriptors(currentTopology),
+    );
+
+    if (
+      transition.matches.length !== previousTopology.outputs.length ||
+      transition.unmatchedPersistedKeys.length !== 0 ||
+      transition.unmatchedLiveIds.length === 0
+    ) {
+      return;
+    }
+
+    let snapshots: readonly LayoutPersistenceCatalogSnapshot[];
+
+    try {
+      snapshots = this.knownLayoutSnapshots();
+    } catch (error) {
+      console.warn(
+        `[driftile] layout history unavailable error=${String(error)}`,
+      );
+      return;
+    }
+
+    let historicalSnapshot: LayoutPersistenceCatalogSnapshot | undefined;
+
+    try {
+      historicalSnapshot = snapshots.find((snapshot) =>
+        snapshotTopologyMatches(snapshot, currentTopology),
+      );
+    } catch (error) {
+      console.warn(
+        `[driftile] layout history selection skipped error=${String(error)}`,
+      );
+      return;
+    }
+
+    if (!historicalSnapshot) {
+      return;
+    }
+
+    let input: LayoutPersistenceHydrationInput;
+
+    try {
+      input = this.liveLayoutHydrationInput();
+    } catch (error) {
+      console.warn(
+        `[driftile] live layout history input unavailable error=${String(error)}`,
+      );
+      return;
+    }
+
+    for (const outputName of transition.unmatchedLiveIds) {
+      let planned: ReturnType<typeof planKnownOutputLayoutHydration>;
+
+      try {
+        planned = planKnownOutputLayoutHydration(
+          historicalSnapshot,
+          currentTopology,
+          outputName,
+          input,
+        );
+      } catch (error) {
+        console.warn(
+          `[driftile] known output layout planning skipped output=${outputName} error=${String(error)}`,
+        );
+        continue;
+      }
+
+      if (planned.kind !== "plan") {
+        continue;
+      }
+
+      const restoredOutputId = outputId(outputName);
+
+      if (
+        planned.value.contexts.length === 0 ||
+        planned.value.contexts.some(
+          (context) => context.layout.outputId !== restoredOutputId,
+        )
+      ) {
+        continue;
+      }
+
+      this.topologyKnownOutputRestorations.set(restoredOutputId, {
+        outputId: restoredOutputId,
+        plan: planned.value,
+        topologyRevision: this.topologyRevision,
+      });
+    }
   }
 
   private sampleInitialLayoutHydrationCandidate(
@@ -11786,8 +12090,7 @@ export class RuntimeController {
     candidate: LayoutHydrationCandidate,
   ): boolean {
     if (
-      this.topologyRecoveryPending ||
-      this.hasTopologyBarrier() ||
+      this.hasUnsettledTopology() ||
       candidate.topologyFingerprint !==
         this.layoutHydrationTopologyFingerprint()
     ) {
@@ -12109,6 +12412,8 @@ export class RuntimeController {
     if (!this.started) {
       return;
     }
+
+    this.topologyKnownOutputRestorations.clear();
 
     const canceledTransitionKeys = new Set<string>();
 
@@ -12619,6 +12924,11 @@ export class RuntimeController {
     }
 
     const currentOutputInstances = this.topologyObserver.outputInstances();
+    const previousTopology = this.lastSettledTopology;
+    const currentTopology = this.currentLayoutPersistenceTopology();
+    const persistenceTopologyChanged =
+      currentTopology !== null &&
+      !layoutPersistenceTopologiesEqual(previousTopology, currentTopology);
     const outputCountChanged =
       this.lastOutputCount !== this.workspace.screens.length;
     const outputMembershipChanged =
@@ -12683,9 +12993,41 @@ export class RuntimeController {
       affectedContexts.set(key, { context, current, runtime });
     }
 
+    const changedCapacityLeaseContexts = new Set<string>();
+
+    for (const [key, affected] of affectedContexts) {
+      const leases = this.capacityLeasesByContext.get(key);
+
+      for (const lease of leases ?? []) {
+        if (
+          !affected.current ||
+          affected.current.fingerprint !== lease.contextFingerprint
+        ) {
+          changedCapacityLeaseContexts.add(key);
+          break;
+        }
+      }
+    }
+
     if (this.topologyRevision !== committingRevision) {
       return false;
     }
+
+    if (currentTopology) {
+      this.prepareKnownOutputTopologyRestorations(
+        previousTopology,
+        currentTopology,
+      );
+    } else {
+      this.topologyKnownOutputRestorations.clear();
+    }
+
+    if (this.topologyRevision !== committingRevision) {
+      return false;
+    }
+
+    const preserveUnchangedContexts =
+      this.topologyKnownOutputRestorations.size > 0;
 
     for (const leases of [...this.capacityLeasesByContext.values()]) {
       for (const lease of [...leases]) {
@@ -12701,19 +13043,51 @@ export class RuntimeController {
 
     if (fullResync) {
       for (const id of this.managedWindows.keys()) {
-        this.pendingWindowSyncs.add(id);
+        if (
+          !preserveUnchangedContexts ||
+          this.topologyWindowRequiresSynchronization(
+            id,
+            undefined,
+            replacedOutputs,
+            changedCapacityLeaseContexts,
+          )
+        ) {
+          this.pendingWindowSyncs.add(id);
+        }
       }
 
       for (const source of this.workspace.stackingOrder) {
         const observed = normalizeWindow(source);
 
         if (observed) {
-          this.pendingWindowSyncs.add(windowId(observed.id));
+          const id = windowId(observed.id);
+
+          if (
+            !preserveUnchangedContexts ||
+            this.topologyWindowRequiresSynchronization(
+              id,
+              source,
+              replacedOutputs,
+              changedCapacityLeaseContexts,
+            )
+          ) {
+            this.pendingWindowSyncs.add(id);
+          }
         }
       }
 
       for (const id of this.waitingWindowContexts.keys()) {
-        this.pendingWindowSyncs.add(id);
+        if (
+          !preserveUnchangedContexts ||
+          this.topologyWindowRequiresSynchronization(
+            id,
+            undefined,
+            replacedOutputs,
+            changedCapacityLeaseContexts,
+          )
+        ) {
+          this.pendingWindowSyncs.add(id);
+        }
       }
     }
 
@@ -12759,6 +13133,12 @@ export class RuntimeController {
 
     this.orderPendingWindowSyncs();
 
+    if (this.topologyRevision !== committingRevision) {
+      return false;
+    }
+
+    this.lastSettledTopology = currentTopology;
+
     this.knownOutputInstances.clear();
 
     for (const [name, instanceId] of currentOutputInstances) {
@@ -12779,6 +13159,56 @@ export class RuntimeController {
     this.topologyInvalidateAllBaselines = false;
     this.topologyInvalidatedOutputs.clear();
     this.topologyOutputs.clear();
+
+    if (persistenceTopologyChanged) {
+      this.layoutTopologyPublicationPending = true;
+      this.requestLayoutStatePublication();
+    }
+
+    return true;
+  }
+
+  private topologyWindowRequiresSynchronization(
+    id: WindowId,
+    knownSource?: KWinWindow,
+    replacedOutputs?: ReadonlySet<OutputId>,
+    changedCapacityLeaseContexts?: ReadonlySet<string>,
+  ): boolean {
+    const source = knownSource ?? this.observer.source(id);
+
+    if (!source) {
+      return true;
+    }
+
+    const observed = normalizeWindow(source);
+    const nextContext = observed ? managedContext(observed) : null;
+    const nextKey = nextContext ? contextKey(nextContext) : null;
+
+    if (nextContext && replacedOutputs?.has(nextContext.outputId) === true) {
+      return true;
+    }
+
+    const owner = this.managedWindows.get(id);
+
+    if (owner) {
+      return nextKey !== owner.contextKey;
+    }
+
+    const floating = this.floatingWindows.get(id);
+
+    if (floating) {
+      return nextKey !== floating.currentContextKey;
+    }
+
+    const lease = this.capacityLeaseByWindow.get(id);
+
+    if (lease) {
+      return (
+        nextKey !== lease.contextKey ||
+        changedCapacityLeaseContexts?.has(lease.contextKey) === true
+      );
+    }
+
     return true;
   }
 
@@ -12873,7 +13303,15 @@ export class RuntimeController {
   }
 
   private flushScheduledWork(): void {
-    if (this.hydrationInProgress || this.stackEditOperation) {
+    if (this.stackEditOperation) {
+      return;
+    }
+
+    if (this.hydrationInProgress) {
+      if (this.topologyRecoveryPending) {
+        this.synchronizeTopologyRecovery();
+      }
+
       return;
     }
 
@@ -12916,7 +13354,9 @@ export class RuntimeController {
     );
 
     if (topologyBatchPending && topologyBatchConsumed) {
+      this.pruneColumnFullWidthRestores();
       this.topologyColumnByWindow.clear();
+      this.topologyKnownOutputRestorations.clear();
       this.topologyAllowsOverflowAdmissions = false;
       this.topologyWindowOrder = null;
     }
@@ -13476,10 +13916,7 @@ export class RuntimeController {
     sources: readonly KWinWindow[],
     preservedRestoreBaselines: ReadonlyMap<WindowId, RestoreBaseline | null>,
   ): number {
-    const groups = new Map<
-      string,
-      { readonly context: ManagedContext; readonly sources: KWinWindow[] }
-    >();
+    const groups = new Map<string, TopologyAdmissionGroup>();
 
     for (const source of sources) {
       const id = windowId(String(source.internalId));
@@ -13508,6 +13945,41 @@ export class RuntimeController {
 
     let admitted = 0;
 
+    for (const [restoredOutputId, restoration] of [
+      ...this.topologyKnownOutputRestorations,
+    ]) {
+      const outputGroups = [...groups.values()].filter(
+        (group) => group.context.outputId === restoredOutputId,
+      );
+      let restored: number | null;
+
+      try {
+        restored = this.admitKnownOutputTopologyRestoration(
+          restoration,
+          outputGroups,
+          preservedRestoreBaselines,
+        );
+      } catch (error) {
+        restored = null;
+        console.warn(
+          `[driftile] known output layout admission skipped output=${String(restoredOutputId)} error=${String(error)}`,
+        );
+      }
+      this.topologyKnownOutputRestorations.delete(restoredOutputId);
+
+      if (restored === null) {
+        continue;
+      }
+
+      admitted += restored;
+
+      for (const [key, group] of groups) {
+        if (group.context.outputId === restoredOutputId) {
+          groups.delete(key);
+        }
+      }
+    }
+
     for (const group of groups.values()) {
       admitted += this.admitTopologyWindowGroup(
         group.context,
@@ -13517,6 +13989,451 @@ export class RuntimeController {
     }
 
     return admitted;
+  }
+
+  private admitKnownOutputTopologyRestoration(
+    restoration: KnownOutputTopologyRestoration,
+    groups: readonly TopologyAdmissionGroup[],
+    preservedRestoreBaselines: ReadonlyMap<WindowId, RestoreBaseline | null>,
+  ): number | null {
+    if (
+      restoration.topologyRevision !== this.topologyRevision ||
+      this.topologyRecoveryPending ||
+      this.topologyStabilizing ||
+      this.topologyRetryPending ||
+      restoration.plan.floatingWindows.length !== 0 ||
+      restoration.plan.restoreBaselines.length !== 0
+    ) {
+      return null;
+    }
+
+    const plannedContexts = new Map(
+      restoration.plan.contexts.map((planned) => [planned.key, planned]),
+    );
+
+    if (
+      plannedContexts.size !== restoration.plan.contexts.length ||
+      groups.length !== plannedContexts.size ||
+      groups.some(
+        (group) =>
+          group.context.outputId !== restoration.outputId ||
+          !plannedContexts.has(contextKey(group.context)),
+      )
+    ) {
+      return null;
+    }
+
+    const expectedWindowIds = new Set<WindowId>();
+
+    for (const planned of restoration.plan.contexts) {
+      if (
+        planned.layout.outputId !== restoration.outputId ||
+        planned.key !==
+          contextKey({
+            desktopId: planned.layout.desktopId,
+            outputId: planned.layout.outputId,
+          })
+      ) {
+        return null;
+      }
+
+      for (const column of planned.layout.columns) {
+        for (const id of column.windowIds) {
+          if (expectedWindowIds.has(id)) {
+            return null;
+          }
+
+          expectedWindowIds.add(id);
+        }
+      }
+    }
+
+    const prepared: KnownOutputAdmissionContext[] = [];
+    const candidateWindowIds = new Set<WindowId>();
+
+    for (const group of groups) {
+      const key = contextKey(group.context);
+      const planned = plannedContexts.get(key);
+
+      if (!planned) {
+        return null;
+      }
+
+      const plannedWindowIds = new Set<WindowId>();
+
+      for (const column of planned.layout.columns) {
+        for (const id of column.windowIds) {
+          plannedWindowIds.add(id);
+        }
+      }
+
+      const candidates: Array<
+        Omit<KnownOutputAdmissionCandidate, "restoreBaseline">
+      > = [];
+
+      for (const source of group.sources) {
+        const id = windowId(String(source.internalId));
+        const observed = normalizeWindow(source);
+        const liveContext = observed ? managedContext(observed) : null;
+
+        if (
+          candidateWindowIds.has(id) ||
+          !plannedWindowIds.has(id) ||
+          this.observer.source(id) !== source ||
+          !liveContext ||
+          contextKey(liveContext) !== key ||
+          this.managedWindows.has(id) ||
+          this.floatingWindows.has(id) ||
+          this.automaticFloatingWindows.has(id) ||
+          this.automaticallyFloats(source)
+        ) {
+          return null;
+        }
+
+        candidateWindowIds.add(id);
+        candidates.push({
+          fingerprint: layoutHydrationWindowFingerprint(source),
+          id,
+          source,
+          suspended:
+            this.suspendedWindows.has(id) ||
+            this.requestedSuspensions.has(id) ||
+            hasGeometryAuthorityBlocker(source),
+        });
+      }
+
+      if (
+        candidates.length !== plannedWindowIds.size ||
+        candidates.some((candidate) => !plannedWindowIds.has(candidate.id))
+      ) {
+        return null;
+      }
+
+      let contextGeometry: ContextGeometry | null;
+
+      try {
+        contextGeometry = this.geometry.contextGeometry(
+          group.context.outputId,
+          group.context.desktopId,
+        );
+      } catch {
+        return null;
+      }
+
+      const existingContext = this.contexts.get(key);
+      const before = this.layout.snapshot(
+        group.context.outputId,
+        group.context.desktopId,
+      );
+
+      if (
+        !contextGeometry ||
+        before.columns.length !== 0 ||
+        (existingContext !== undefined &&
+          (existingContext.windowIds.size !== 0 ||
+            existingContext.geometryFingerprint !==
+              contextGeometry.fingerprint))
+      ) {
+        return null;
+      }
+
+      const preview = previewColumnRestoration(
+        before,
+        planned.layout.columns.map((column, index) => ({ column, index })),
+        {
+          activeColumnId: planned.layout.activeColumnId,
+          viewportOffset: planned.layout.viewportOffset,
+        },
+      );
+
+      if (!preview) {
+        return null;
+      }
+
+      let solved: ReturnType<typeof solveStripGeometry>;
+
+      try {
+        solved = this.solveContextGeometry(preview, contextGeometry);
+      } catch {
+        return null;
+      }
+
+      if (!this.canApplyLayout(solved.maxViewportOffset)) {
+        return null;
+      }
+
+      const frames = new Map(
+        solved.windows.map((window) => [window.windowId, window.frame]),
+      );
+
+      for (const candidate of candidates) {
+        const frame = frames.get(candidate.id);
+
+        if (
+          !frame ||
+          !respectsSizeConstraints(frame, candidate.source) ||
+          (!candidate.suspended &&
+            (!isGeometryWritable(candidate.source) ||
+              !this.geometry.canApplyFrame(candidate.id, frame, group.context)))
+        ) {
+          return null;
+        }
+      }
+
+      const preparedCandidates: KnownOutputAdmissionCandidate[] = [];
+
+      for (const candidate of candidates) {
+        const preserved = preservedRestoreBaselines.has(candidate.id)
+          ? cloneRestoreBaseline(
+              preservedRestoreBaselines.get(candidate.id) ?? null,
+            )
+          : undefined;
+        const restoreBaseline =
+          preserved !== undefined
+            ? preserved
+            : candidate.suspended
+              ? null
+              : this.previewRestoreBaselineForAdmission(
+                  candidate.id,
+                  candidate.source,
+                  contextGeometry.fingerprint,
+                );
+
+        preparedCandidates.push({ ...candidate, restoreBaseline });
+      }
+
+      prepared.push({
+        candidates: preparedCandidates,
+        context: group.context,
+        contextGeometry,
+        planned,
+        targetFrames: frames,
+      });
+    }
+
+    if (!equalWindowIdSets(expectedWindowIds, candidateWindowIds)) {
+      return null;
+    }
+
+    for (const context of prepared) {
+      if (!this.knownOutputAdmissionContextIsCurrent(context, restoration)) {
+        return null;
+      }
+    }
+
+    if (restoration.topologyRevision !== this.topologyRevision) {
+      return null;
+    }
+
+    const fullWidthRestores = new Map<string, Map<ColumnId, ColumnWidth>>();
+
+    for (const restore of restoration.plan.fullWidthRestores) {
+      const planned = plannedContexts.get(restore.contextKey);
+
+      if (
+        !planned ||
+        !planned.layout.columns.some((column) => column.id === restore.columnId)
+      ) {
+        return null;
+      }
+
+      let contextRestores = fullWidthRestores.get(restore.contextKey);
+
+      if (!contextRestores) {
+        contextRestores = new Map<ColumnId, ColumnWidth>();
+        fullWidthRestores.set(restore.contextKey, contextRestores);
+      }
+
+      if (contextRestores.has(restore.columnId)) {
+        return null;
+      }
+
+      contextRestores.set(restore.columnId, { ...restore.width });
+    }
+
+    const restoredContexts: KnownOutputAdmissionContext[] = [];
+
+    for (const context of prepared) {
+      let restored: boolean;
+
+      try {
+        restored = this.layout.restoreColumns({
+          activeColumnId: context.planned.layout.activeColumnId,
+          columns: context.planned.layout.columns.map((column, index) => ({
+            column,
+            index,
+          })),
+          desktopId: context.context.desktopId,
+          outputId: context.context.outputId,
+          viewportOffset: context.planned.layout.viewportOffset,
+        });
+      } catch {
+        restored = false;
+      }
+
+      if (!restored) {
+        this.rollbackKnownOutputTopologyRestoration(restoredContexts);
+        return null;
+      }
+
+      restoredContexts.push(context);
+    }
+
+    let remainsCurrent: boolean;
+
+    try {
+      remainsCurrent =
+        restoration.topologyRevision === this.topologyRevision &&
+        prepared.every((context) =>
+          this.knownOutputAdmissionContextIsCurrent(context, restoration),
+        ) &&
+        restoration.topologyRevision === this.topologyRevision;
+    } catch {
+      remainsCurrent = false;
+    }
+
+    if (!remainsCurrent) {
+      this.rollbackKnownOutputTopologyRestoration(restoredContexts);
+      return null;
+    }
+
+    let admitted = 0;
+
+    for (const preparedContext of prepared) {
+      const key = preparedContext.planned.key;
+      let runtimeContext = this.contexts.get(key);
+
+      if (!runtimeContext) {
+        runtimeContext = {
+          ...preparedContext.context,
+          geometryFingerprint: preparedContext.contextGeometry.fingerprint,
+          key,
+          windowIds: new Set<WindowId>(),
+        };
+        this.contexts.set(key, runtimeContext);
+      }
+
+      this.columnFullWidthRestore.delete(key);
+
+      const contextRestores = fullWidthRestores.get(key);
+
+      if (contextRestores && contextRestores.size > 0) {
+        this.columnFullWidthRestore.set(key, contextRestores);
+      }
+
+      for (const candidate of preparedContext.candidates) {
+        this.claimWindowBorder(candidate.id, candidate.source);
+        const borderRestore = this.windowBorderRestore.get(candidate.id);
+
+        if (borderRestore?.admissionBaselinePending) {
+          borderRestore.admissionBaselinePending = false;
+        }
+
+        this.windowAdmissionHistory.add(candidate.id);
+
+        runtimeContext.windowIds.add(candidate.id);
+        this.managedWindows.set(candidate.id, {
+          contextKey: key,
+          restoreBaseline: cloneRestoreBaseline(candidate.restoreBaseline),
+        });
+        this.forgetWaitingWindow(candidate.id);
+
+        if (candidate.suspended) {
+          this.suspendGeometryLease(candidate.id);
+        } else {
+          this.resumeSamples.delete(candidate.id);
+          this.suspendedWindows.delete(candidate.id);
+          this.transientResumeProbes.delete(candidate.id);
+        }
+
+        admitted += 1;
+      }
+
+      this.capacityParkBackoffs.delete(key);
+      this.markContextDirty(runtimeContext);
+    }
+
+    return admitted;
+  }
+
+  private knownOutputAdmissionContextIsCurrent(
+    prepared: KnownOutputAdmissionContext,
+    restoration: KnownOutputTopologyRestoration,
+  ): boolean {
+    if (
+      restoration.topologyRevision !== this.topologyRevision ||
+      this.topologyRecoveryPending ||
+      this.topologyStabilizing ||
+      this.topologyRetryPending
+    ) {
+      return false;
+    }
+
+    let contextGeometry: ContextGeometry | null;
+
+    try {
+      contextGeometry = this.geometry.contextGeometry(
+        prepared.context.outputId,
+        prepared.context.desktopId,
+      );
+    } catch {
+      return false;
+    }
+
+    if (
+      !contextGeometry ||
+      contextGeometry.fingerprint !== prepared.contextGeometry.fingerprint
+    ) {
+      return false;
+    }
+
+    return prepared.candidates.every((candidate) => {
+      const observed = normalizeWindow(candidate.source);
+      const context = observed ? managedContext(observed) : null;
+      const targetFrame = prepared.targetFrames.get(candidate.id);
+
+      return (
+        this.observer.source(candidate.id) === candidate.source &&
+        layoutHydrationWindowFingerprint(candidate.source) ===
+          candidate.fingerprint &&
+        context !== null &&
+        contextKey(context) === prepared.planned.key &&
+        !this.managedWindows.has(candidate.id) &&
+        !this.floatingWindows.has(candidate.id) &&
+        !this.automaticFloatingWindows.has(candidate.id) &&
+        !this.automaticallyFloats(candidate.source) &&
+        targetFrame !== undefined &&
+        respectsSizeConstraints(targetFrame, candidate.source) &&
+        (candidate.suspended ||
+          (isGeometryWritable(candidate.source) &&
+            this.geometry.canApplyFrame(
+              candidate.id,
+              targetFrame,
+              prepared.context,
+            ))) &&
+        (this.suspendedWindows.has(candidate.id) ||
+          this.requestedSuspensions.has(candidate.id) ||
+          hasGeometryAuthorityBlocker(candidate.source)) === candidate.suspended
+      );
+    });
+  }
+
+  private rollbackKnownOutputTopologyRestoration(
+    contexts: readonly KnownOutputAdmissionContext[],
+  ): void {
+    for (const context of [...contexts].reverse()) {
+      const removed = this.layout.removeColumns({
+        columnIds: context.planned.layout.columns.map((column) => column.id),
+        desktopId: context.context.desktopId,
+        outputId: context.context.outputId,
+      });
+
+      if (!removed) {
+        throw new Error(
+          `known output layout rollback failed context=${context.planned.key}`,
+        );
+      }
+    }
   }
 
   private admitTopologyWindowGroup(
@@ -14859,6 +15776,37 @@ export class RuntimeController {
     );
   }
 
+  private previewRestoreBaselineForAdmission(
+    id: WindowId,
+    source: KWinWindow,
+    fingerprint: string,
+  ): RestoreBaseline {
+    const borderRestore = this.windowBorderRestore.get(id);
+
+    if (borderRestore?.admissionBaselinePending) {
+      return {
+        clientFrame: snapshotRect(borderRestore.clientFrame),
+        fingerprint,
+        frame: snapshotRect(borderRestore.frame),
+        kind: "client",
+        noBorder: borderRestore.noBorder,
+      };
+    }
+
+    const borderClaimExpected =
+      borderRestore === undefined &&
+      this.windowUsesBorderlessMode(source) &&
+      typeof source.noBorder === "boolean" &&
+      !source.noBorder;
+    const firstAdmission = !this.windowAdmissionHistory.has(id);
+
+    return this.captureRestoreBaseline(
+      source,
+      fingerprint,
+      borderClaimExpected || firstAdmission ? "client" : "frame",
+    );
+  }
+
   private frameForRestoreBaseline(
     id: WindowId,
     baseline: RestoreBaseline,
@@ -14892,25 +15840,46 @@ export class RuntimeController {
   }
 
   private claimWindowBorder(id: WindowId, source: KWinWindow): boolean {
-    if (
-      !this.windowUsesBorderlessMode(source) ||
-      typeof source.noBorder !== "boolean" ||
-      source.noBorder
-    ) {
+    let alreadyOwned: boolean;
+    let originalClientFrame: Rect | null;
+    let originalFrame: Rect | null;
+
+    try {
+      if (
+        !this.windowUsesBorderlessMode(source) ||
+        typeof source.noBorder !== "boolean" ||
+        source.noBorder
+      ) {
+        return false;
+      }
+
+      alreadyOwned = this.windowBorderRestore.has(id);
+      originalClientFrame = alreadyOwned
+        ? null
+        : snapshotRect(source.clientGeometry);
+      originalFrame = alreadyOwned ? null : snapshotRect(source.frameGeometry);
+    } catch (error) {
+      console.warn(
+        `[driftile] borderless window preflight failed window=${String(id)} error=${String(error)}`,
+      );
       return false;
     }
 
-    const alreadyOwned = this.windowBorderRestore.has(id);
-    const originalClientFrame = alreadyOwned
-      ? null
-      : snapshotRect(source.clientGeometry);
-    const originalFrame = alreadyOwned
-      ? null
-      : snapshotRect(source.frameGeometry);
+    if (originalClientFrame && originalFrame) {
+      this.windowBorderRestore.set(id, {
+        admissionBaselinePending: !this.managedWindows.has(id),
+        clientFrame: originalClientFrame,
+        frame: originalFrame,
+        noBorder: false,
+      });
+    }
+
     let failure: string | undefined;
+    let applied = false;
 
     try {
       source.noBorder = true;
+      applied = windowIsBorderless(source);
     } catch (error) {
       failure =
         error instanceof Error
@@ -14920,19 +15889,14 @@ export class RuntimeController {
             : "unknown error";
     }
 
-    if (source.noBorder) {
-      if (originalClientFrame && originalFrame) {
-        this.windowBorderRestore.set(id, {
-          admissionBaselinePending: !this.managedWindows.has(id),
-          clientFrame: originalClientFrame,
-          frame: originalFrame,
-          noBorder: false,
-        });
-      }
-
-      this.scheduleBorderlessSettlement(id);
+    if (applied) {
+      this.scheduleBorderlessSettlementSafely(id);
 
       return true;
+    }
+
+    if (failure === undefined && !alreadyOwned) {
+      this.windowBorderRestore.delete(id);
     }
 
     if (failure !== undefined) {
@@ -14945,9 +15909,20 @@ export class RuntimeController {
       );
     }
 
-    this.scheduleBorderlessSettlement(id);
+    this.scheduleBorderlessSettlementSafely(id);
 
     return false;
+  }
+
+  private scheduleBorderlessSettlementSafely(id: WindowId): void {
+    try {
+      this.scheduleBorderlessSettlement(id);
+    } catch (error) {
+      this.borderlessSettlementTokens.delete(id);
+      console.warn(
+        `[driftile] borderless settlement scheduling failed window=${String(id)} error=${String(error)}`,
+      );
+    }
   }
 
   private restoreWindowBorder(id: WindowId): boolean {
@@ -16724,6 +17699,66 @@ function layoutHydrationWindowFingerprint(source: KWinWindow): string {
   });
 }
 
+function liveOutputPersistenceDescriptors(
+  topology: LayoutPersistenceTopologyV2,
+) {
+  return topology.outputs.map((output) => ({
+    liveId: output.name,
+    ...(output.manufacturer === undefined
+      ? {}
+      : { manufacturer: output.manufacturer }),
+    ...(output.model === undefined ? {} : { model: output.model }),
+    name: output.name,
+    ...(output.serialNumber === undefined
+      ? {}
+      : { serialNumber: output.serialNumber }),
+  }));
+}
+
+function snapshotTopologyMatches(
+  snapshot: LayoutPersistenceCatalogSnapshot,
+  currentTopology: LayoutPersistenceTopologyV2,
+): boolean {
+  if (
+    snapshot.topology === null ||
+    snapshot.topology.outputs.length !== currentTopology.outputs.length
+  ) {
+    return false;
+  }
+
+  const matched = matchPersistedOutputs(
+    snapshot.topology.outputs,
+    liveOutputPersistenceDescriptors(currentTopology),
+  );
+
+  return (
+    matched.matches.length === snapshot.topology.outputs.length &&
+    matched.unmatchedLiveIds.length === 0 &&
+    matched.unmatchedPersistedKeys.length === 0
+  );
+}
+
+function equalWindowIdSets(
+  left: ReadonlySet<WindowId>,
+  right: ReadonlySet<WindowId>,
+): boolean {
+  if (left.size !== right.size) {
+    return false;
+  }
+
+  for (const id of left) {
+    if (!right.has(id)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function windowIsBorderless(source: KWinWindow): boolean {
+  return source.noBorder === true;
+}
+
 function replaceSet<T>(target: Set<T>, values: ReadonlySet<T>): void {
   target.clear();
 
@@ -16813,77 +17848,6 @@ function snapshotRect(rect: Rect): Rect {
     x: rect.x,
     y: rect.y,
   };
-}
-
-function layoutPersistenceOutputDescriptor(
-  output: KWinOutput,
-): LayoutPersistenceCaptureOutput {
-  const manufacturer = optionalPersistenceIdentifier(output.manufacturer);
-  const model = optionalPersistenceIdentifier(output.model);
-  const serialNumber = optionalPersistenceIdentifier(output.serialNumber);
-
-  return {
-    ...(manufacturer === undefined ? {} : { manufacturer }),
-    ...(model === undefined ? {} : { model }),
-    name: output.name,
-    ...(serialNumber === undefined ? {} : { serialNumber }),
-  };
-}
-
-function layoutPersistenceWindowDescriptor(
-  liveId: string,
-  source: KWinWindow | undefined,
-): LayoutPersistenceCaptureWindow {
-  if (!source) {
-    return { liveId };
-  }
-
-  const desktopFileName = optionalPersistenceIdentifier(source.desktopFileName);
-  const resourceClass = optionalPersistenceIdentifier(source.resourceClass);
-  const resourceName = optionalPersistenceIdentifier(source.resourceName);
-  const tag = optionalPersistenceIdentifier(source.tag);
-  const windowRole = optionalPersistenceIdentifier(source.windowRole);
-
-  if (
-    desktopFileName === undefined &&
-    resourceClass === undefined &&
-    resourceName === undefined &&
-    tag === undefined &&
-    windowRole === undefined
-  ) {
-    return { liveId };
-  }
-
-  return {
-    liveId,
-    sessionMatch: {
-      ...(desktopFileName === undefined ? {} : { desktopFileName }),
-      ...(resourceClass === undefined ? {} : { resourceClass }),
-      ...(resourceName === undefined ? {} : { resourceName }),
-      ...(tag === undefined ? {} : { tag }),
-      ...(windowRole === undefined ? {} : { windowRole }),
-    },
-  };
-}
-
-function optionalPersistenceIdentifier(value: unknown): string | undefined {
-  if (
-    typeof value !== "string" ||
-    value.length === 0 ||
-    value.length > LAYOUT_PERSISTENCE_LIMITS.identifierCharacters
-  ) {
-    return undefined;
-  }
-
-  for (let index = 0; index < value.length; index += 1) {
-    const code = value.charCodeAt(index);
-
-    if (code <= 31 || code === 127) {
-      return undefined;
-    }
-  }
-
-  return value;
 }
 
 function rectsEqual(left: Rect, right: Rect): boolean {
@@ -17047,6 +18011,42 @@ function restoreSetMembership<T>(
   } else {
     values.delete(value);
   }
+}
+
+function layoutPersistenceTopologiesEqual(
+  left: LayoutPersistenceTopologyV2 | null,
+  right: LayoutPersistenceTopologyV2 | null,
+): boolean {
+  if (left === right) {
+    return true;
+  }
+
+  if (
+    left === null ||
+    right === null ||
+    left.outputs.length !== right.outputs.length
+  ) {
+    return false;
+  }
+
+  const rightByKey = new Map(
+    right.outputs.map((output) => [output.key, output] as const),
+  );
+
+  return (
+    rightByKey.size === right.outputs.length &&
+    left.outputs.every((output) => {
+      const candidate = rightByKey.get(output.key);
+
+      return (
+        candidate !== undefined &&
+        output.manufacturer === candidate.manufacturer &&
+        output.model === candidate.model &&
+        output.name === candidate.name &&
+        output.serialNumber === candidate.serialNumber
+      );
+    })
+  );
 }
 
 function layoutContextSnapshotsEqual(

@@ -382,12 +382,20 @@ package_archive="$project_root/dist/driftile-$package_version.kwinscript"
 readonly package_archive
 shortcut_archive="$project_root/dist/driftile-shortcuts-$package_version.mjs"
 readonly shortcut_archive
+layout_state_validator="$project_root/dist/bin/driftile-layout-state-validator.mjs"
+readonly layout_state_validator
 npm --prefix "$project_root" run package >/dev/null
 
-if [[ ! -f "$package_archive" || ! -f "$shortcut_archive" ]]; then
-  printf 'Missing packaged release artifacts.\n' >&2
+if [[
+  ! -f "$package_archive" ||
+    ! -f "$shortcut_archive" ||
+    ! -f "$layout_state_validator"
+]]; then
+  printf 'Missing release or integration build artifacts.\n' >&2
   exit 1
 fi
+
+export DRIFTILE_SMOKE_LAYOUT_STATE_VALIDATOR="$layout_state_validator"
 
 if [[ "$selection" == "all" || "$selection" == "wayland" ]]; then
   run_backend wayland

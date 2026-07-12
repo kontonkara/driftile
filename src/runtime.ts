@@ -2,6 +2,10 @@ import type { KWinWorkspace } from "./platform/kwin/api";
 import type { KWinRectFactory } from "./platform/kwin/geometry-adapter";
 import { RuntimeController } from "./runtime-controller";
 import {
+  createRuntimeLayoutPersistence,
+  type RuntimeLayoutStateChanged,
+} from "./runtime-persistence";
+import {
   decodeDriftileSettings,
   sameDriftileSettings,
   type DriftileSettings,
@@ -13,8 +17,6 @@ const LAYOUT_HYDRATION_QUIET_SAMPLES = 2;
 
 let controller: RuntimeController | undefined;
 let appliedSettings: DriftileSettings | undefined;
-
-type LayoutStateChanged = (canonicalState: string) => void;
 
 export function init(
   workspace: KWinWorkspace,
@@ -40,8 +42,11 @@ export function init(
     loadedLayoutState,
     onLayoutStateChanged,
   );
-  const initialLayoutState =
-    typeof loadedLayoutState === "string" ? loadedLayoutState : "";
+  const layoutPersistence = createRuntimeLayoutPersistence(
+    workspace,
+    typeof loadedLayoutState === "string" ? loadedLayoutState : "",
+    layoutStateChanged,
+  );
   const nextController = new RuntimeController(workspace, {
     borderlessWindows: settings.borderlessWindows,
     clientAreaOption,
@@ -49,12 +54,15 @@ export function init(
     gap: settings.gap,
     layoutHydrationQuietSamples: LAYOUT_HYDRATION_QUIET_SAMPLES,
     layoutHydrationRetryProbes: LAYOUT_HYDRATION_RETRY_PROBES,
+    layoutStateForCurrentTopology: () =>
+      layoutPersistence.stateForCurrentTopology(),
+    knownLayoutSnapshots: () => layoutPersistence.snapshots(),
     schedule,
     scheduleResume,
     startupStabilizationProbes: STARTUP_STABILIZATION_PROBES,
-    ...(layoutStateChanged === undefined
+    ...(layoutPersistence.onStateChanged === undefined
       ? {}
-      : { onLayoutStateChanged: layoutStateChanged }),
+      : { onLayoutStateChanged: layoutPersistence.onStateChanged }),
   });
   nextController.setDefaultColumnWidthPercent(
     settings.defaultColumnWidthPercent,
@@ -62,7 +70,7 @@ export function init(
   nextController.setColumnWidthStepPercent(settings.columnWidthStepPercent);
   nextController.setWindowHeightStepPercent(settings.windowHeightStepPercent);
 
-  if (!nextController.start(initialLayoutState)) {
+  if (!nextController.start(layoutPersistence.initialState)) {
     console.warn("[driftile] no output or virtual desktop available");
     return;
   }
@@ -126,7 +134,7 @@ function decodeSettings(value: unknown): DriftileSettings | null {
 function writableLayoutStateSink(
   loadedLayoutState: unknown,
   candidate: unknown,
-): LayoutStateChanged | undefined {
+): RuntimeLayoutStateChanged | undefined {
   if (typeof loadedLayoutState !== "string") {
     console.warn("[driftile] invalid loaded layout state ignored");
     return undefined;
@@ -137,7 +145,7 @@ function writableLayoutStateSink(
     return undefined;
   }
 
-  return candidate as LayoutStateChanged;
+  return candidate as RuntimeLayoutStateChanged;
 }
 
 function runCommand(

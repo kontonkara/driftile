@@ -35,6 +35,8 @@ assign its shortcuts after the upgrade.
 
 ## Known limits
 
+These limits apply to the tagged 0.1.0 artifacts.
+
 - Physical connector hot-plugging has not been verified; automated coverage
   uses virtual output removal and reattachment.
 - Native X11 is verified on one output. Native X11 multi-output remains

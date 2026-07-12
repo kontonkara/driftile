@@ -11,6 +11,10 @@ const shortcutToolOutput = resolve(
   rootDirectory,
   "dist/bin/driftile-shortcuts.mjs",
 );
+const layoutStateValidatorOutput = resolve(
+  rootDirectory,
+  "dist/bin/driftile-layout-state-validator.mjs",
+);
 
 export async function buildProject() {
   await rm(packageOutput, { force: true, recursive: true });
@@ -30,6 +34,7 @@ export async function buildProject() {
       treeShaking: true,
     }),
     buildShortcutTool(),
+    buildLayoutStateValidator(),
   ]);
 }
 
@@ -41,6 +46,22 @@ export async function buildShortcutTool() {
     format: "esm",
     legalComments: "none",
     outfile: shortcutToolOutput,
+    platform: "node",
+    target: "node22",
+    treeShaking: true,
+  });
+}
+
+async function buildLayoutStateValidator() {
+  await mkdir(dirname(layoutStateValidatorOutput), { recursive: true });
+  await build({
+    bundle: true,
+    entryPoints: [
+      resolve(rootDirectory, "src/layout-persistence-validator-cli.ts"),
+    ],
+    format: "esm",
+    legalComments: "none",
+    outfile: layoutStateValidatorOutput,
     platform: "node",
     target: "node22",
     treeShaking: true,

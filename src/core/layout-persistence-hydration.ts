@@ -19,10 +19,12 @@ import {
   type PersistedRectV1,
   type PersistedRestoreBaselineV1,
   type PersistedWindowMatchV1,
+  type PersistedWindowV1,
 } from "./layout-persistence";
 import {
   matchPersistedOutputs,
   matchPersistedWindows,
+  type ResolvedPersistedWindow,
 } from "./layout-persistence-match";
 
 export interface LiveLayoutHydrationDesktop {
@@ -114,6 +116,17 @@ export type LayoutPersistenceHydrationResult =
   | {
       readonly ok: true;
       readonly value: LayoutPersistenceHydrationPlan;
+    };
+
+export type LayoutPersistenceWindowIdentityResolution =
+  | {
+      readonly ok: false;
+      readonly reason: LayoutPersistenceHydrationFailure;
+    }
+  | {
+      readonly matches: readonly ResolvedPersistedWindow[];
+      readonly ok: true;
+      readonly sessionMatchedPersistedKeys: ReadonlySet<string>;
     };
 
 interface TiledPosition {
@@ -524,6 +537,149 @@ export function planExactLayoutHydration(
   };
 }
 
+export function resolveLayoutPersistenceWindowIdentities(
+  persisted: readonly PersistedWindowV1[],
+  live: readonly LiveLayoutHydrationWindow[],
+  requiredPersistedKeys: ReadonlySet<string> = new Set(
+    persisted.map((window) => window.key),
+  ),
+): LayoutPersistenceWindowIdentityResolution {
+  if (
+    live.some(
+      (window) =>
+        !validIdentifier(window.liveId) ||
+        !validOptionalIdentifier(window.desktopFileName) ||
+        !validOptionalIdentifier(window.resourceClass) ||
+        !validOptionalIdentifier(window.resourceName) ||
+        !validOptionalIdentifier(window.tag) ||
+        !validOptionalIdentifier(window.windowRole),
+    )
+  ) {
+    return failure("invalid-live-descriptor");
+  }
+
+  if (hasDuplicateBy(live, (window) => window.liveId)) {
+    return failure("duplicate-live-window-id");
+  }
+
+  const persistedWindows = new Map(
+    persisted.map((window) => [window.key, window]),
+  );
+
+  if (
+    persistedWindows.size !== persisted.length ||
+    [...requiredPersistedKeys].some((key) => !persistedWindows.has(key))
+  ) {
+    return failure("invalid-persisted-state");
+  }
+
+  const liveWindows = new Map(live.map((window) => [window.liveId, window]));
+  const windowMatches = matchPersistedWindows(
+    persisted,
+    live.map((window) => ({
+      ...(window.desktopFileName === undefined
+        ? {}
+        : { desktopFileName: window.desktopFileName }),
+      liveId: window.liveId,
+      ...(window.resourceClass === undefined
+        ? {}
+        : { resourceClass: window.resourceClass }),
+      ...(window.resourceName === undefined
+        ? {}
+        : { resourceName: window.resourceName }),
+      ...(window.tag === undefined ? {} : { tag: window.tag }),
+      ...(window.windowRole === undefined
+        ? {}
+        : { windowRole: window.windowRole }),
+    })),
+  );
+  const exactPersistedWindowKeys = new Set<string>();
+  const exactLiveWindowIds = new Set<string>();
+
+  for (const match of windowMatches.matches) {
+    if (match.basis === "live-id") {
+      exactPersistedWindowKeys.add(match.persistedKey);
+      exactLiveWindowIds.add(match.liveId);
+    }
+  }
+
+  const persistedStrongProjectionCounts = new Map<string, number>();
+  const liveStrongProjectionCounts = new Map<string, number>();
+
+  for (const window of persisted) {
+    if (
+      !exactPersistedWindowKeys.has(window.key) &&
+      window.sessionMatch !== undefined
+    ) {
+      countStrongProjections(
+        window.sessionMatch,
+        persistedStrongProjectionCounts,
+      );
+    }
+  }
+
+  for (const window of live) {
+    if (!exactLiveWindowIds.has(window.liveId)) {
+      countStrongProjections(window, liveStrongProjectionCounts);
+    }
+  }
+
+  const matches: ResolvedPersistedWindow[] = [];
+  const sessionMatchedPersistedKeys = new Set<string>();
+
+  for (const match of windowMatches.matches) {
+    if (!requiredPersistedKeys.has(match.persistedKey)) {
+      continue;
+    }
+
+    if (match.basis === "session") {
+      const descriptor = persistedWindows.get(match.persistedKey)?.sessionMatch;
+      const liveWindow = liveWindows.get(match.liveId);
+
+      if (
+        !descriptor ||
+        !liveWindow ||
+        !hasMutuallyUniqueStrongProjection(
+          descriptor,
+          liveWindow,
+          persistedStrongProjectionCounts,
+          liveStrongProjectionCounts,
+        )
+      ) {
+        return failure("unresolved-live-window");
+      }
+
+      sessionMatchedPersistedKeys.add(match.persistedKey);
+    }
+
+    matches.push(match);
+  }
+
+  if (matches.length !== requiredPersistedKeys.size) {
+    const matchedKeys = new Set(matches.map((match) => match.persistedKey));
+    const unmatchedKeys = [...requiredPersistedKeys].filter(
+      (key) => !matchedKeys.has(key),
+    );
+
+    return failure(
+      unmatchedWindowsCanArrive(
+        unmatchedKeys,
+        persistedWindows,
+        persistedStrongProjectionCounts,
+        liveStrongProjectionCounts,
+      )
+        ? "missing-live-window"
+        : "unresolved-live-window",
+    );
+  }
+
+  return {
+    matches,
+    ok: true,
+    sessionMatchedPersistedKeys,
+  };
+}
+
 function remapPersistenceIdentities(
   state: LayoutPersistenceV1,
   input: LayoutPersistenceHydrationInput,
@@ -551,108 +707,20 @@ function remapPersistenceIdentities(
     return { ok: false, reason: "unresolved-live-output" };
   }
 
-  const windowMatches = matchPersistedWindows(
+  const windowResolution = resolveLayoutPersistenceWindowIdentities(
     state.windows,
-    input.windows.map((window) => ({
-      ...(window.desktopFileName === undefined
-        ? {}
-        : { desktopFileName: window.desktopFileName }),
-      liveId: window.liveId,
-      ...(window.resourceClass === undefined
-        ? {}
-        : { resourceClass: window.resourceClass }),
-      ...(window.resourceName === undefined
-        ? {}
-        : { resourceName: window.resourceName }),
-      ...(window.tag === undefined ? {} : { tag: window.tag }),
-      ...(window.windowRole === undefined
-        ? {}
-        : { windowRole: window.windowRole }),
-    })),
+    input.windows,
   );
 
-  const persistedWindows = new Map(
-    state.windows.map((window) => [window.key, window]),
-  );
-  const liveWindows = new Map(
-    input.windows.map((window) => [window.liveId, window]),
-  );
-  const exactPersistedWindowKeys = new Set<string>();
-  const exactLiveWindowIds = new Set<string>();
-
-  for (const match of windowMatches.matches) {
-    if (match.basis === "live-id") {
-      exactPersistedWindowKeys.add(match.persistedKey);
-      exactLiveWindowIds.add(match.liveId);
-    }
-  }
-
-  const persistedStrongProjectionCounts = new Map<string, number>();
-  const liveStrongProjectionCounts = new Map<string, number>();
-
-  for (const persisted of state.windows) {
-    if (
-      !exactPersistedWindowKeys.has(persisted.key) &&
-      persisted.sessionMatch !== undefined
-    ) {
-      countStrongProjections(
-        persisted.sessionMatch,
-        persistedStrongProjectionCounts,
-      );
-    }
-  }
-
-  for (const live of input.windows) {
-    if (!exactLiveWindowIds.has(live.liveId)) {
-      countStrongProjections(live, liveStrongProjectionCounts);
-    }
-  }
-
-  const sessionMatchedWindowKeys = new Set<string>();
-
-  for (const match of windowMatches.matches) {
-    if (match.basis !== "session") {
-      continue;
-    }
-
-    const descriptor = persistedWindows.get(match.persistedKey)?.sessionMatch;
-    const live = liveWindows.get(match.liveId);
-
-    if (
-      !descriptor ||
-      !live ||
-      !hasMutuallyUniqueStrongProjection(
-        descriptor,
-        live,
-        persistedStrongProjectionCounts,
-        liveStrongProjectionCounts,
-      )
-    ) {
-      return { ok: false, reason: "unresolved-live-window" };
-    }
-
-    sessionMatchedWindowKeys.add(match.persistedKey);
-  }
-
-  if (windowMatches.unmatchedPersistedKeys.length !== 0) {
-    return {
-      ok: false,
-      reason: unmatchedWindowsCanArrive(
-        windowMatches.unmatchedPersistedKeys,
-        persistedWindows,
-        persistedStrongProjectionCounts,
-        liveStrongProjectionCounts,
-      )
-        ? "missing-live-window"
-        : "unresolved-live-window",
-    };
+  if (!windowResolution.ok) {
+    return windowResolution;
   }
 
   const outputNames = new Map(
     outputMatches.matches.map((match) => [match.persistedKey, match.liveId]),
   );
   const windowIds = new Map(
-    windowMatches.matches.map((match) => [match.persistedKey, match.liveId]),
+    windowResolution.matches.map((match) => [match.persistedKey, match.liveId]),
   );
 
   return {
@@ -660,7 +728,10 @@ function remapPersistenceIdentities(
     value: {
       ...state,
       contexts: state.contexts.map((context) =>
-        contextWithoutStaleRestoreBaselines(context, sessionMatchedWindowKeys),
+        contextWithoutStaleRestoreBaselines(
+          context,
+          windowResolution.sessionMatchedPersistedKeys,
+        ),
       ),
       outputs: state.outputs.map((output) => ({
         ...output,
@@ -992,8 +1063,9 @@ function immutableArray<T>(values: T[]): readonly T[] {
   return Object.freeze(values);
 }
 
-function failure(
-  reason: LayoutPersistenceHydrationFailure,
-): LayoutPersistenceHydrationResult {
+function failure(reason: LayoutPersistenceHydrationFailure): {
+  readonly ok: false;
+  readonly reason: LayoutPersistenceHydrationFailure;
+} {
   return { ok: false, reason };
 }

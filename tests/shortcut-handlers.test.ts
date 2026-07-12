@@ -751,7 +751,17 @@ describe("KWin shortcut handlers", () => {
     expect(runtime).toContain(
       'typeof loadedLayoutState === "string" ? loadedLayoutState : ""',
     );
-    expect(runtime).toContain("nextController.start(initialLayoutState)");
+    expect(runtime).toContain("createRuntimeLayoutPersistence(");
+    expect(runtime).toContain(
+      "nextController.start(layoutPersistence.initialState)",
+    );
+    expect(runtime).toContain("layoutStateForCurrentTopology");
+    expect(runtime).toContain("layoutPersistence.stateForCurrentTopology()");
+    expect(runtime).toContain("knownLayoutSnapshots");
+    expect(runtime).toContain("layoutPersistence.snapshots()");
+    expect(runtime).toContain(
+      "onLayoutStateChanged: layoutPersistence.onStateChanged",
+    );
     expect(runtime).toContain(
       "activeController.requestLayoutStatePublication()",
     );

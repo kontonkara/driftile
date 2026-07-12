@@ -112,14 +112,12 @@ compatibility, and known limits.
 
 ## v1
 
-Harden recovery and finish user-facing integration.
+Harden recovery and finish user-facing integration. This work is outside the
+published 0.1.0 scope; the persistence foundation is complete and the remaining
+items are still planned.
 
-These features were outside the 0.1.0 scope and remain planned work.
+Persistence foundation complete: core has a strict logical-state codec, a bounded four-entry v2 topology catalog, fail-closed window and output matching, side-effect-free canonical runtime capture, and all-or-nothing hydration. Stable changed snapshots reach the debounced opaque `QtCore.Settings` store; bare v1 state migrates without changing the storage key. Runtime startup reselects a complete settled topology, applies exact reload state or a complete strong-descriptor cross-session match atomically, waits boundedly for late windows behind a no-admission barrier, and requires a quiet candidate before commit. An additive known-output return restores an exact tiled layout per output without repatriating windows or rebuilding unchanged contexts; unsafe plans use normal topology recovery. Replaced window objects receive fresh restore baselines. Isolated Wayland and X11 sessions verify idempotent script reloads.
 
-Persistence foundation complete: core has a strict versioned logical-state codec, fail-closed window and output matching, side-effect-free canonical runtime capture, and all-or-nothing hydration. Stable changed snapshots reach the debounced opaque `QtCore.Settings` store. Runtime startup applies exact reload state or a complete strong-descriptor cross-session match atomically after live-state revalidation. It waits boundedly for late windows behind a no-admission barrier and requires a quiet candidate before commit. Replaced window objects receive fresh restore baselines. Isolated Wayland and X11 sessions verify idempotent script reloads. Known-topology restoration remains.
-
-- Persist logical order, widths, viewport offsets, and floating overrides.
-- Restore layouts across sessions and known output topologies.
 - Add mouse-driven reinsertion and rearrangement.
 - Add tabbed column presentation and matching pointer navigation.
 - Add Driftile-specific application overrides and a complete settings UI.

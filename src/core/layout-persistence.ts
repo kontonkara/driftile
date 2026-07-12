@@ -159,6 +159,10 @@ export function decodeLayoutPersistence(
   }
 }
 
+export function canonicalizePersistedOutput(value: unknown): PersistedOutputV1 {
+  return parseOutput(value);
+}
+
 function parseV1(value: unknown): LayoutPersistenceV1 {
   const state = recordWithKeys(
     value,

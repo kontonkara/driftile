@@ -128,7 +128,30 @@ RuntimeState
 
 ## Persistence boundary
 
-The persistence foundation is a bounded, versioned JSON codec in core. It stores logical output and window descriptors, column and stack order, width and height policies, viewport offsets, full-width restore values, manual-floating reinsertion anchors, and context-guarded tiled restore baselines. It rejects unknown fields, invalid references, impossible layout policies, oversized input, and unsupported versions without mutating live state.
+The persistence foundation is a bounded, versioned JSON codec in core. A v2
+document keeps at most four most-recent output-topology snapshots under one
+4 MiB limit. Each snapshot records the complete output descriptor set, including
+outputs without owned windows, plus a validated v1 logical state. The current
+snapshot may keep context-guarded restore baselines; every historical snapshot
+is baseline-free. Bare v1 documents remain valid startup input and migrate on
+the next successful publication. Older runtimes see v2 as unsupported and keep
+it write-locked.
+
+Logical state stores output and window descriptors, column and stack order,
+width and height policies, viewport offsets, full-width restore values,
+manual-floating reinsertion anchors, and context-guarded tiled restore
+baselines. The catalog and nested state codecs reject unknown fields, invalid
+references, ambiguous output identities, impossible layout policies, oversized
+input, and unsupported versions without mutating live state.
+
+After topology settlement, an additive output return may select a matching
+historical snapshot. Restoration is output-atomic and tiled-only: every eligible
+historical window must already be on the returned output, geometry must pass a
+second live preflight, and any mismatch falls back to normal topology recovery.
+Matched outputs retain ownership, column order, widths, active column, and
+focus; their viewport may clamp only after departed columns are removed.
+Historical floating state and restore baselines are never applied during this
+path.
 
 Transient runtime state is never durable: expected layout frames, decoration ownership, focus caches, waiting and suspension state, schedulers, probes, and transaction tokens are excluded. A context fingerprint is stored only with original client and frame restore baselines; a mismatch discards those baselines without rejecting the logical layout. A window `liveId` is an exact same-session reload hint only. The pure matcher gives that identity precedence, then accepts public KWin session descriptors only when both sides are globally unique; missing, duplicate, or overlapping matches remain unmatched. Output matching prefers a unique display serial tuple and otherwise requires the available connector metadata exactly. Desktops require their exact KWin IDs.
 
@@ -153,7 +176,15 @@ Invalid ownership, stale live references, and in-flight structural work fail
 closed. Stale floating neighbors are reduced to safe surviving anchors and the
 index fallback.
 
-The runtime publishes changed canonical snapshots only after stable work. Teardown consumes one already-queued runtime pass through normal reconciliation before the final capture; remaining blockers preserve the previous document. The QML package queues snapshots in an opaque `QtCore.Settings` store with an explicit file location, one-shot write debounce, duplicate suppression, and synchronous final flush before runtime teardown. An isolated real-KWin probe imports the store and verifies an escaped Unicode JSON document with its trailing newline across immediate declarative-script unload and reload on Wayland and X11.
+The runtime publishes after stable work changes logical state or settles a new
+complete output topology; identical state and topology are suppressed. Teardown
+consumes one already-queued runtime pass through normal reconciliation before
+the final capture; remaining blockers preserve the previous document. The QML
+package queues snapshots in an opaque `QtCore.Settings` store with an explicit
+file location, one-shot write debounce, duplicate suppression, and synchronous
+final flush before runtime teardown. An isolated real-KWin probe imports the
+store and verifies an escaped Unicode JSON document with its trailing newline
+across immediate declarative-script unload and reload on Wayland and X11.
 
 The hydration planner first resolves every persisted window and output by exact
 live identity. If an identity is missing, it attempts one complete descriptor
@@ -184,7 +215,6 @@ ownership or replace its stored source during automatic startup work.
 Unsupported future versions remain write-locked for the run. Oversized
 documents use the same conservative lock because their version cannot be
 inspected safely within the codec bound.
-Known-topology restoration is not connected yet.
 
 ## Reconciliation rules
 

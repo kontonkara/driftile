@@ -40,7 +40,16 @@ capture, changed-state publication, callback-failure retry, strict schema limits
 normalization, fail-closed decoding of corrupt or future state, exact live-ID
 precedence, globally unique session descriptors, ambiguous-match rejection,
 output serial and connector policies, deterministic ordering, and the maximum
-persisted window count without pairwise scanning. Hydration planning covers
+persisted window count without pairwise scanning. Catalog coverage verifies
+bare-v1 migration, strict canonical v2 snapshots, complete topologies with empty
+outputs, serial-aware MRU deduplication, active-only restore baselines, callback
+failure rollback, four-entry and 4 MiB eviction, and full-topology startup
+selection. Known-output planning covers global identity uniqueness, connector
+renames, exact target-window ownership, and fail-closed baseline and floating
+state rejection. Runtime coverage exercises output-atomic restoration and
+geometry-rejection fallback while unchanged outputs retain their layout and
+focus, plus one publication for each settled topology-only empty-output change.
+Hydration planning covers
 exact-ID precedence, complete cross-session descriptor remapping, ambiguity and
 weak-identity rejection, stale baseline removal, context guards, immutable
 `LayoutEngine`-compatible plans, floating-anchor remapping, and the 4096-window
@@ -57,7 +66,12 @@ or oversized-document write locking.
 
 The unit suite also covers shortcut manifests, live gap bounds, coalescing, exact reflow, hidden-context deferral, and zero writes to minimized or floating windows, default-width bounds, existing-layout preservation, deferred application, constrained waiting admission, newly admitted columns, and reset, resize-step bounds, no-write live changes, exact percentage-point actions, stack redistribution, decorated constraints, physical-pixel clamps, and rollback, unusable singleton, grouped, delayed-startup, and managed-context recovery with healthy-context isolation, a 128-cycle window lifecycle with synchronous geometry acknowledgements and bounded scheduler settlement, one-step desktop-reorder permutations, boundaries, rejection paths, and pinned-tail preservation, numbered desktop validation and tail clamping, immutable whole-column previews, floating transfer isolation and relationship guards, whole-column minimized-passive desktop and output transfer, secondary transfer with retained same-column minimized peers, zero mechanism and geometry writes, cancellation and rollback races, fail-closed minimized windows outside the source column or in the target context for default whole-column and secondary single-window transfers, batch transfer commits and rollback, trailing-desktop ownership, stack mutations and rollback, weighted window heights, deterministic output routing, floating ownership, layer focus memory and geometric navigation, minimized tiled-slot and manual-floating-frame retention, minimized focus skipping, vertical reorder, horizontal extraction, direct insertion across minimized source and target peers, fully minimized targets, skipped-singleton nonparticipation, authoritative hidden-frame changes, state-round-trip rollback, fail-closed state blockers, explicit consume, and explicit expel across minimized passive slots, no-wrap boundaries, transactional tiled-layer reveal, synchronous and deferred focus confirmation, reentrant focus rejection and rollback, fail-closed non-minimize suspension blockers, all-member transaction guards, projected stack rollback across authoritative removals, stacked fullscreen and maximize extraction past settled minimized peers, exact compensation, optional borderless ownership, reclassification, decorated frame constraints, topology-stable resize and reset clamps, cached silent hard-bound changes, test-only advisory increment and aspect metadata, available-width expansion, exact signed-offset centering, column and window sizing rollback, rotation bursts, rapid same-name output replacement, topology barriers, capacity recovery, and stale callback cancellation.
 
-The isolated two-output Wayland scenario uses KScreen to verify scale and position changes, output disable and re-enable recovery, and stable reachable frames for native Wayland and XWayland windows. A native layer-shell panel verifies work-area recovery.
+The isolated two-output Wayland scenario uses KScreen to verify scale and
+position changes, exact known-output history restoration over a deliberately
+different reduced right-side stack for native Wayland and XWayland windows,
+unchanged remaining ownership and focus, and six-client reachability after
+output disable and re-enable. A native layer-shell panel verifies work-area
+recovery.
 
 The isolated X11 scenario verifies a grid-aligned real xterm resize and reset cycle, shortcut-driven stacked fullscreen and maximize extraction, live RandR mode changes, and work-area recovery from a real EWMH dock strut.
 

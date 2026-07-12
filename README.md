@@ -18,8 +18,8 @@ leaving window, output, and desktop mechanisms to KWin.
 - Settled recovery for output, scale, work-area, and window-constraint changes.
 - Configurable gaps, default column width, resize steps, and optional
   borderless presentation.
-- Exact extension-reload restoration and conservative cross-session restoration
-  for uniquely identified windows in current source.
+- Exact extension-reload restoration, conservative cross-session restoration,
+  and fail-closed restoration when a known output returns.
 - An optional reversible shortcut helper, with custom JSON profiles in current
   source.
 
@@ -34,7 +34,8 @@ Known limits:
 - Cross-session restoration waits up to five seconds for every strongly and
   uniquely identifiable persisted window. Ambiguous or incomplete snapshots
   are skipped without partial ownership.
-- Known output topologies are not restored after reconnecting an absent output.
+- A returned output is restored only when its complete topology and tiled
+  window set match safely; otherwise normal topology recovery is used.
 - Physical connector hot-plugging has not been verified.
 - Native X11 multi-output layouts remain unverified.
 

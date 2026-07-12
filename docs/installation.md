@@ -192,7 +192,9 @@ Release the profile before upgrading or removing the Nix package so the
 recovery command remains available. Source builds use `nix build`; the
 development shell is available through `nix develop`.
 
-## Known 0.1 limits
+## Published 0.1.0 limits
+
+These limits apply to the tagged 0.1.0 artifacts, not later source development.
 
 - Physical connector hot-plug has not been verified; automated coverage uses
   virtual output removal and reattachment.

@@ -1779,22 +1779,9 @@ read_persisted_layout_state() {
       --key layout-v1 \
       --default "" 2>/dev/null || true)
 
-    if [[ -n "$state" ]] && decoded_state=$(jq \
-      --compact-output \
-      --exit-status \
-      --slurp '
-        select(length == 1)
-        | .[0]
-        | if type == "string" then fromjson
-          elif type == "object" then .
-          else empty
-          end
-        | select(
-            type == "object" and
-            .format == "driftile-layout" and
-            .version == 1
-          )
-      ' <<< "$state" 2>/dev/null); then
+    if [[ -n "$state" ]] && decoded_state=$(node \
+      "$DRIFTILE_SMOKE_LAYOUT_STATE_VALIDATOR" \
+      <<< "$state" 2>/dev/null); then
       printf '%s' "$decoded_state"
       return 0
     fi
@@ -1978,7 +1965,8 @@ single_output_reload_state_matches() {
         [.windows[] | select(.liveId == $liveId) | .key] as $keys
         | select(($keys | length) == 1)
         | $keys[0];
-      (windowKey($first)) as $firstKey
+      (if .version == 2 then .snapshots[0].state else . end)
+      | (windowKey($first)) as $firstKey
       | (windowKey($second)) as $secondKey
       | (windowKey($third)) as $thirdKey
       | (windowKey($fourth)) as $fourthKey
@@ -2014,7 +2002,8 @@ multi_output_reload_state_matches() {
         [.windows[] | select(.liveId == $liveId) | .key] as $keys
         | select(($keys | length) == 1)
         | $keys[0];
-      (windowKey($leftFloating)) as $leftFloatingKey
+      (if .version == 2 then .snapshots[0].state else . end)
+      | (windowKey($leftFloating)) as $leftFloatingKey
       | (windowKey($leftTiled)) as $leftTiledKey
       | (windowKey($rightFloating)) as $rightFloatingKey
       | (windowKey($rightTiled)) as $rightTiledKey
@@ -2051,6 +2040,231 @@ multi_output_reload_state_matches() {
           and .desktopId == $rightContexts[0].desktopId
         )
     ' >/dev/null
+}
+
+full_multi_output_layout_catalog_matches() {
+  local live_ids=$1
+  local floating_live_ids=$2
+
+  jq --exit-status \
+    --argjson liveIds "$live_ids" \
+    --argjson floatingLiveIds "$floating_live_ids" '
+      def floatingIds($snapshot):
+        [
+          $snapshot.state.floatingWindows[].windowKey as $key
+          | $snapshot.state.windows[]
+          | select(.key == $key)
+          | .liveId
+        ] | sort;
+      def ownershipKeys($snapshot):
+        [$snapshot.state.contexts[].columns[].members[].windowKey]
+        + [$snapshot.state.floatingWindows[].windowKey];
+      def exactOwnership($snapshot):
+        ([$snapshot.state.windows[].liveId] | sort) == ($liveIds | sort)
+        and (ownershipKeys($snapshot) | sort)
+          == ([$snapshot.state.windows[].key] | sort)
+        and (ownershipKeys($snapshot) | unique | length)
+          == (ownershipKeys($snapshot) | length)
+        and floatingIds($snapshot) == ($floatingLiveIds | sort);
+      select(.version == 2 and (.snapshots | length) > 0)
+      | .snapshots[0] as $active
+      | (
+          [$active.topology.outputs[].name] | sort
+        ) == ["Virtual-0", "Virtual-1"]
+        and ($active.state.outputs | length) == 2
+        and exactOwnership($active)
+    ' >/dev/null
+}
+
+reduced_multi_output_layout_catalog_matches() {
+  local full_catalog=$1
+  local live_ids=$2
+  local floating_live_ids=$3
+  local right_live_ids=$4
+
+  jq --exit-status \
+    --argjson full "$full_catalog" \
+    --argjson liveIds "$live_ids" \
+    --argjson floatingLiveIds "$floating_live_ids" \
+    --argjson rightLiveIds "$right_live_ids" '
+      def logicalState:
+        del(
+          .contexts[].restoreFingerprint,
+          .contexts[].columns[].members[].restoreBaseline
+        );
+      def tiledShape($snapshot; $projectionLiveIds):
+        [
+          $projectionLiveIds[] as $liveId
+          | [
+              $snapshot.state.windows[]
+              | select(.liveId == $liveId)
+              | .key
+            ] as $keys
+          | select(($keys | length) == 1)
+          | $keys[0]
+        ] as $windowKeys
+        | [
+            $snapshot.state.contexts[].columns[]
+            | . as $column
+            | [
+                $column.members[]
+                | . as $member
+                | select($windowKeys | index($member.windowKey))
+                | del(.restoreBaseline)
+              ] as $members
+            | select(($members | length) > 0)
+            | ($column | del(.members) | . + {members: $members})
+          ];
+      def floatingIds($snapshot):
+        [
+          $snapshot.state.floatingWindows[].windowKey as $key
+          | $snapshot.state.windows[]
+          | select(.key == $key)
+          | .liveId
+        ] | sort;
+      def ownershipKeys($snapshot):
+        [$snapshot.state.contexts[].columns[].members[].windowKey]
+        + [$snapshot.state.floatingWindows[].windowKey];
+      def exactOwnership($snapshot):
+        ([$snapshot.state.windows[].liveId] | sort) == ($liveIds | sort)
+        and (ownershipKeys($snapshot) | sort)
+          == ([$snapshot.state.windows[].key] | sort)
+        and (ownershipKeys($snapshot) | unique | length)
+          == (ownershipKeys($snapshot) | length)
+        and floatingIds($snapshot) == ($floatingLiveIds | sort);
+      select(.version == 2 and (.snapshots | length) > 1)
+      | .snapshots[0] as $active
+      | .snapshots[1] as $history
+      | $full.snapshots[0] as $fullSnapshot
+      | ($active.topology.outputs | length) == 1
+        and $active.topology.outputs[0].name == "Virtual-0"
+        and ($active.state.outputs | length) == 1
+        and all(
+          $active.state.contexts[];
+          .outputKey == $active.topology.outputs[0].key
+        )
+        and exactOwnership($active)
+        and $history.topology == $fullSnapshot.topology
+        and (($history.state | logicalState) == ($fullSnapshot.state | logicalState))
+        and (
+          tiledShape($active; $rightLiveIds)
+          != tiledShape($fullSnapshot; $rightLiveIds)
+        )
+    ' >/dev/null
+}
+
+restored_multi_output_layout_catalog_matches() {
+  local full_catalog=$1
+  local reduced_catalog=$2
+  local live_ids=$3
+  local floating_live_ids=$4
+  local left_live_ids=$5
+  local right_live_ids=$6
+
+  jq --exit-status \
+    --argjson full "$full_catalog" \
+    --argjson reduced "$reduced_catalog" \
+    --argjson liveIds "$live_ids" \
+    --argjson floatingLiveIds "$floating_live_ids" \
+    --argjson leftLiveIds "$left_live_ids" \
+    --argjson rightLiveIds "$right_live_ids" '
+      def tiledProjection($snapshot; $projectionLiveIds; $includeViewport):
+        [
+          $projectionLiveIds[] as $liveId
+          | [
+              $snapshot.state.windows[]
+              | select(.liveId == $liveId)
+              | .key
+            ] as $keys
+          | select(($keys | length) == 1)
+          | $keys[0]
+        ] as $windowKeys
+        | select(($windowKeys | length) == ($projectionLiveIds | length))
+        | [
+            $snapshot.state.contexts[]
+            | . as $context
+            | [
+                $context.columns[]
+                | . as $column
+                | [
+                    $column.members[]
+                    | . as $member
+                    | select($windowKeys | index($member.windowKey))
+                    | del(.restoreBaseline)
+                  ] as $members
+                | select(($members | length) > 0)
+                | ($column | del(.members) | . + {members: $members})
+              ] as $columns
+            | select(($columns | length) > 0)
+            | ({
+                activeColumnIndex: $context.activeColumnIndex,
+                columns: $columns,
+                desktopId: $context.desktopId,
+                outputKey: $context.outputKey
+              } + if $includeViewport then {
+                viewportOffset: $context.viewportOffset
+              } else {} end)
+          ] as $contexts
+        | select(
+            ([$contexts[].columns[].members[].windowKey] | sort)
+            == ($windowKeys | sort)
+          )
+        | $contexts;
+      def floatingIds($snapshot):
+        [
+          $snapshot.state.floatingWindows[].windowKey as $key
+          | $snapshot.state.windows[]
+          | select(.key == $key)
+          | .liveId
+        ] | sort;
+      def ownershipKeys($snapshot):
+        [$snapshot.state.contexts[].columns[].members[].windowKey]
+        + [$snapshot.state.floatingWindows[].windowKey];
+      def exactOwnership($snapshot):
+        ([$snapshot.state.windows[].liveId] | sort) == ($liveIds | sort)
+        and (ownershipKeys($snapshot) | sort)
+          == ([$snapshot.state.windows[].key] | sort)
+        and (ownershipKeys($snapshot) | unique | length)
+          == (ownershipKeys($snapshot) | length)
+        and floatingIds($snapshot) == ($floatingLiveIds | sort);
+      select(.version == 2 and (.snapshots | length) > 1)
+      | .snapshots[0] as $active
+      | $full.snapshots[0] as $fullSnapshot
+      | $reduced.snapshots[0] as $reducedSnapshot
+      | $reduced.snapshots[0].topology as $reducedTopology
+      | $active.topology == $fullSnapshot.topology
+        and .snapshots[1].topology == $reducedTopology
+        and exactOwnership($active)
+        and (
+          tiledProjection($active; $rightLiveIds; true)
+          == tiledProjection($fullSnapshot; $rightLiveIds; true)
+        )
+        and (
+          tiledProjection($active; $leftLiveIds; false)
+          == tiledProjection($reducedSnapshot; $leftLiveIds; false)
+        )
+    ' >/dev/null
+}
+
+wait_for_layout_catalog_match() {
+  local matcher=$1
+  local attempt
+  local state
+
+  shift
+
+  for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
+    state=$(read_persisted_layout_state) || true
+
+    if [[ -n "$state" ]] && "$matcher" "$@" <<< "$state"; then
+      printf '%s' "$state"
+      return 0
+    fi
+
+    sleep 0.05
+  done
+
+  return 1
 }
 
 wait_for_single_output_reload_fixture() {
@@ -7805,15 +8019,22 @@ verify_multi_output_stacked_fullscreen_extraction() {
 run_multi_output_scenario() {
   local protocol=$1
   local baseline
+  local floating_live_ids
+  local full_layout_catalog
   local index
+  local left_live_ids
+  local live_ids
   local output_frame
   local reachable_frame
+  local reduced_layout_catalog
+  local right_live_ids
   local scaled_left_first="16,16,402.666667,448"
   local scaled_left_second="434.666667,16,402.666667,448"
   local right_floating_frame
   local side
   local temporary_left_pid
   local -a baselines=("" "" "" "" "" "")
+  local -a historical_right_frames=("" "" "" "" "" "")
   local -a titles=(
     "driftile-multi-output-${protocol}-left-a"
     "driftile-multi-output-${protocol}-left-b"
@@ -7822,11 +8043,19 @@ run_multi_output_scenario() {
     "driftile-multi-output-${protocol}-right-b"
     "driftile-multi-output-${protocol}-right-c"
   )
+  local -a window_ids=("" "" "" "" "" "")
 
   if [[ "$protocol" == "wayland" ]]; then
     scaled_left_first="16,16,403.333333,448"
     scaled_left_second="434.666667,16,403.333333,448"
   fi
+
+  kwriteconfig6 \
+    --file "$XDG_CONFIG_HOME/driftile-layout-state.ini" \
+    --group Layout \
+    --key layout-v1 \
+    --delete \
+    ""
 
   for index in 0 1 3 4; do
     start_client "$protocol" "${titles[index]}" true
@@ -7890,6 +8119,145 @@ run_multi_output_scenario() {
     fail "Driftile did not restore the default gap on both $protocol output contexts: $(describe_layout "${titles[0]}" "${titles[1]}" "${titles[3]}" "${titles[4]}")"
   wait_for_active "${titles[4]}" || \
     fail "Driftile changed $protocol focus while restoring the multi-output gap"
+
+  for index in 0 1 3 4; do
+    window_ids[index]=$(window_id "${titles[index]}") || \
+      fail "KWin did not expose ${titles[index]} before known-output recovery"
+  done
+  live_ids=$(jq --compact-output --null-input --args \
+    '$ARGS.positional' \
+    "${window_ids[0]}" "${window_ids[1]}" \
+    "${window_ids[3]}" "${window_ids[4]}")
+  floating_live_ids='[]'
+  left_live_ids=$(jq --compact-output --null-input --args \
+    '$ARGS.positional' "${window_ids[0]}" "${window_ids[1]}")
+  right_live_ids=$(jq --compact-output --null-input --args \
+    '$ARGS.positional' "${window_ids[3]}" "${window_ids[4]}")
+
+  for index in 3 4; do
+    historical_right_frames[index]=$(capture_stable_geometry "${titles[index]}") || \
+      fail "the historical right-output $protocol frame for ${titles[index]} did not stabilize"
+  done
+
+  unload_driftile_script || \
+    fail "KWin could not unload Driftile before the known-output $protocol checkpoint"
+  full_layout_catalog=$(wait_for_layout_catalog_match \
+    full_multi_output_layout_catalog_matches \
+    "$live_ids" "$floating_live_ids") || \
+    fail "Driftile did not persist the complete multi-output $protocol layout catalog"
+  load_driftile_script || \
+    fail "KWin could not reload Driftile for the known-output $protocol checkpoint"
+  wait_for_geometries \
+    "${titles[0]}" "16,16,616,688" \
+    "${titles[1]}" "648,16,616,688" \
+    "${titles[3]}" "${historical_right_frames[3]}" \
+    "${titles[4]}" "${historical_right_frames[4]}" || \
+    fail "Driftile did not hydrate the complete multi-output $protocol checkpoint"
+  wait_for_active "${titles[4]}" || \
+    fail "Driftile changed focus while hydrating the multi-output $protocol checkpoint"
+
+  kscreen-doctor output.Virtual-1.disable >/dev/null || \
+    fail "KScreen could not disable Virtual-1 for known-output recovery"
+  wait_for_output_enabled Virtual-1 false || \
+    fail "KScreen did not disable Virtual-1 for known-output recovery"
+
+  # The virtual backend can move frames before it emits an output signal. Allow
+  # the production two-second topology probe to observe the membership change.
+  sleep 2.5
+
+  activate_window "${titles[4]}" || \
+    fail "KWin could not focus the historical $protocol window at the reduced topology"
+  wait_for_active "${titles[4]}" || \
+    fail "KWin did not focus the historical $protocol window at the reduced topology"
+  invoke_shortcut "driftile_move_window_left" || \
+    fail "KGlobalAccel could not change the reduced right-side $protocol shape"
+
+  for index in 3 4; do
+    capture_stable_geometry "${titles[index]}" >/dev/null || \
+      fail "${titles[index]} did not settle in the reduced right-side $protocol stack"
+  done
+
+  activate_window "${titles[0]}" || \
+    fail "KWin could not focus the remaining $protocol output before known-output recovery"
+  wait_for_active "${titles[0]}" || \
+    fail "KWin did not focus the remaining $protocol output before known-output recovery"
+
+  for index in 0 1 3 4; do
+    capture_stable_geometry "${titles[index]}" >/dev/null || \
+      fail "${titles[index]} did not settle at the reduced $protocol topology"
+  done
+
+  unload_driftile_script || \
+    fail "KWin could not unload Driftile at the reduced $protocol topology"
+  reduced_layout_catalog=$(wait_for_layout_catalog_match \
+    reduced_multi_output_layout_catalog_matches \
+    "$full_layout_catalog" \
+    "$live_ids" \
+    "$floating_live_ids" \
+    "$right_live_ids") || \
+    fail "Driftile did not retain the complete $protocol topology behind the reduced current snapshot"
+  load_driftile_script || \
+    fail "KWin could not reload Driftile at the reduced $protocol topology"
+  wait_for_active "${titles[0]}" || \
+    fail "Driftile changed focus while hydrating the reduced $protocol topology"
+
+  kscreen-doctor \
+    output.Virtual-1.enable \
+    output.Virtual-1.scale.1 \
+    output.Virtual-1.position.1280,0 \
+    >/dev/null || fail "KScreen could not re-enable Virtual-1 for known-output recovery"
+  wait_for_output_configuration Virtual-1 1280 0 1280 720 1 || \
+    fail "KScreen did not restore Virtual-1 for known-output recovery"
+  sleep 2.5
+  wait_for_geometries \
+    "${titles[0]}" "16,16,616,688" \
+    "${titles[1]}" "648,16,616,688" \
+    "${titles[3]}" "${historical_right_frames[3]}" \
+    "${titles[4]}" "${historical_right_frames[4]}" || \
+    fail "Driftile did not restore the known multi-output $protocol geometry: $(describe_layout "${titles[0]}" "${titles[1]}" "${titles[3]}" "${titles[4]}")"
+  for index in 0 1; do
+    capture_stable_geometry "${titles[index]}" >/dev/null || \
+      fail "${titles[index]} did not stabilize while the known output returned"
+    window_is_on_output_side "${titles[index]}" left || \
+      fail "Driftile moved ${titles[index]} off the remaining $protocol output"
+  done
+  wait_for_active "${titles[0]}" || \
+    fail "Driftile reset $protocol focus while restoring the returned output"
+
+  unload_driftile_script || \
+    fail "KWin could not unload Driftile after known-output $protocol recovery"
+  wait_for_layout_catalog_match \
+    restored_multi_output_layout_catalog_matches \
+    "$full_layout_catalog" \
+    "$reduced_layout_catalog" \
+    "$live_ids" \
+    "$floating_live_ids" \
+    "$left_live_ids" \
+    "$right_live_ids" \
+    >/dev/null || \
+    fail "Driftile did not restore the historical right-output $protocol state without resetting the remaining output"
+  load_driftile_script || \
+    fail "KWin could not reload Driftile after known-output $protocol recovery"
+  wait_for_geometries \
+    "${titles[0]}" "16,16,616,688" \
+    "${titles[1]}" "648,16,616,688" \
+    "${titles[3]}" "${historical_right_frames[3]}" \
+    "${titles[4]}" "${historical_right_frames[4]}" || \
+    fail "Driftile did not hydrate the recovered multi-output $protocol checkpoint"
+  for index in 0 1; do
+    capture_stable_geometry "${titles[index]}" >/dev/null || \
+      fail "${titles[index]} did not stabilize after the recovered $protocol reload"
+    window_is_on_output_side "${titles[index]}" left || \
+      fail "Driftile moved ${titles[index]} after the recovered $protocol reload"
+  done
+  wait_for_active "${titles[0]}" || \
+    fail "Driftile changed focus while hydrating the recovered $protocol checkpoint"
+  wait_for_shortcut_focus \
+    "driftile_focus_column_right" "${titles[1]}" || \
+    fail "Driftile did not become ready after the recovered $protocol reload"
+  wait_for_shortcut_focus \
+    "driftile_focus_column_left" "${titles[0]}" || \
+    fail "Driftile did not restore focus after the recovered $protocol readiness check"
 
   wait_for_shortcut "driftile_insert_window_into_stack_left" || \
     fail "KGlobalAccel did not register the multi-output insert-into-stack-left shortcut"
@@ -8305,7 +8673,6 @@ run_multi_output_scenario() {
     "${titles[4]}" "1296,16,616,688" \
     "${titles[5]}" "1928,16,616,688" || \
     fail "Driftile did not recover after Virtual-1 was re-enabled: $(describe_layout "${titles[@]}")"
-
   for index in 0 3; do
     if ((index == 0)); then
       side=left
