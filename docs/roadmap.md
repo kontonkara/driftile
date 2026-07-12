@@ -126,14 +126,18 @@ complete and the remaining items are still planned.
 
 Persistence foundation complete: core has a strict logical-state codec, a bounded four-entry v2 topology catalog, fail-closed window and output matching, side-effect-free canonical runtime capture, and all-or-nothing hydration. Stable changed snapshots reach the debounced opaque `QtCore.Settings` store; bare v1 state migrates without changing the storage key. Runtime startup reselects a complete settled topology, applies exact reload state or a complete strong-descriptor cross-session match atomically, waits boundedly for late windows behind a no-admission barrier, and requires a quiet candidate before commit. An additive known-output return restores an exact tiled layout per output without repatriating windows or rebuilding unchanged contexts; unsafe plans use normal topology recovery. Replaced window objects receive fresh restore baselines. Isolated Wayland and X11 sessions verify idempotent script reloads.
 
-Cross-output pointer adoption is complete for one active normal tiled window and
-one exact visible tiled target.
+Same-context pointer reinsertion and cross-output pointer adoption are complete
+for one active normal tiled window and one exact visible tiled target. A
+focused two-head VM verifies the KWin-owned cross-output path with native
+Wayland and XWayland applications.
+
+Compatibility, migration, and troubleshooting guidance is published. A
+separate visible lifecycle VM verifies a clean published 0.1.0 install and
+load, upgrade to the current candidate, real Konsole and KDE Calculator
+lifecycles, disable, removal, and post-removal KWin usability.
 
 - Finish recovery validation for reload, session restoration, late windows, and
   known-output return.
-- Harden same-context pointer reinsertion and KWin-owned cross-output adoption
-  without extending the supported pointer interaction set.
-- Publish compatibility, migration, and troubleshooting guidance.
 
 Exit criteria:
 

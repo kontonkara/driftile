@@ -1,0 +1,52 @@
+# Compatibility
+
+## Platform baseline
+
+- KDE Plasma and KWin 6.7 or newer are required.
+- Native Wayland is the primary target. Native Wayland and XWayland windows use
+  the same layout model.
+- Native X11 is verified on one output with a global-workspace fallback.
+  Multi-output native X11 remains unverified.
+- Desktop reordering fails closed when the KWin X11 scripting backend does not
+  expose the required method.
+
+## Installation portability
+
+The release archive is a standard KWin KPackage and is not tied to a specific
+Linux distribution. Install it with `kpackagetool6` on a compatible Plasma
+desktop. The optional shortcut helper requires Node.js 22 or newer, `busctl`,
+and `flock`.
+
+The Nix flake provides packages plus NixOS and Home Manager modules for
+`x86_64-linux` and `aarch64-linux`. Other distributions use the same
+`.kwinscript` release archive and the portable installation procedure.
+
+## Window and geometry limits
+
+- Exposed client minimum and maximum sizes are enforced as hard layout bounds.
+- The Plasma 6.7 `KWin::Window` scripting API does not expose X11 or XWayland
+  base sizes, resize increments, aspect bounds, or strict-geometry rules.
+  Driftile therefore does not include those hints in its layout model; KWin may
+  still adjust an applied frame.
+- Exact off-lattice frames are verified with XWayland. Native X11 may quantize
+  frames, so its compatibility checks use grid-aligned geometry.
+- Live constraint changes are verified with Qt Quick and GTK 3 clients. Broader
+  toolkit coverage remains unverified.
+- Dialogs, modal and transient windows, non-resizable normal windows, and
+  normal windows fixed on both axes remain outside tiling ownership.
+
+## Display hardware limits
+
+Automated coverage uses virtual Wayland outputs, Xvfb, and a visible virtual
+machine. Output scale and position changes plus virtual output removal and
+re-enablement are covered. Real GPU combinations, physical connector hot-plug,
+and a wider hardware matrix remain unverified.
+
+## Integration boundary
+
+Driftile is a KWin extension, not a compositor. It owns layout policy while
+KWin remains responsible for windows, geometry application, outputs,
+fullscreen, maximize, minimize, and virtual-desktop mechanisms. Plasma remains
+responsible for shell features such as Overview, Pager, and Task Switcher.
+Unsupported or unavailable KWin mechanisms fail closed instead of being
+reimplemented inside Driftile.

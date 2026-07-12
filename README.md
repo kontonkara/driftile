@@ -6,7 +6,7 @@ workspaces.
 Driftile keeps independent layouts for each output and virtual desktop while
 leaving window, output, and desktop mechanisms to KWin.
 
-## Features
+## Current main features
 
 - Horizontal scrollable columns with optional vertical window stacks.
 - Keyboard-driven focus, movement, reordering, resizing, centering, and
@@ -31,7 +31,7 @@ The latest stable release is 0.1.0. The main branch tracks 1.0.0-dev.0 and
 requires KDE Plasma with KWin 6.7 or newer. It targets native Wayland and
 XWayland windows, plus single-output native X11 sessions.
 
-Known limits:
+Current-main limits:
 
 - Cross-session restoration waits up to five seconds for every strongly and
   uniquely identifiable persisted window. Ambiguous or incomplete snapshots
@@ -49,12 +49,13 @@ Install the versioned `.kwinscript`, enable Driftile in **System Settings >
 Window Management > KWin Scripts**, then assign shortcuts manually or with the
 optional reversible helper. See [Installation](docs/installation.md) for
 artifact verification, custom shortcut profiles, NixOS and Home Manager
-modules, upgrades, and safe removal.
+modules, upgrades, and safe removal. See [Migration](docs/migration.md) before
+changing release generations.
 
 ## Development
 
-Requirements: Node.js 22 or newer, npm, `zip`, ShellCheck, REUSE, `busctl`,
-`flock`, `kwriteconfig6`, and KDE Frameworks 6 KPackage tools.
+Requirements: Node.js 22 or newer, npm, `zip`, `unzip`, ShellCheck, REUSE,
+`busctl`, `flock`, `kwriteconfig6`, and KDE Frameworks 6 KPackage tools.
 
 ```bash
 npm ci
@@ -81,6 +82,9 @@ checks.
 ## Documentation
 
 - [Installation](docs/installation.md)
+- [Migration](docs/migration.md)
+- [Compatibility](docs/compatibility.md)
+- [Troubleshooting](docs/troubleshooting.md)
 - [Configuration](docs/configuration.md)
 - [Shortcuts](docs/shortcuts.md)
 - [Interaction model](docs/interaction-model.md)
