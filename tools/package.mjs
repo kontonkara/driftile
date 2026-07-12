@@ -1,5 +1,6 @@
-import { readdir, rm, utimes } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { createHash } from "node:crypto";
+import { readFile, readdir, rm, utimes, writeFile } from "node:fs/promises";
+import { basename, dirname, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { buildProject } from "./build.mjs";
@@ -41,6 +42,15 @@ export async function packageProject() {
   if (result.status !== 0) {
     throw new Error(`zip exited with status ${String(result.status)}`);
   }
+
+  const checksum = createHash("sha256")
+    .update(await readFile(artifactPath))
+    .digest("hex");
+  await writeFile(
+    resolve(outputDirectory, "SHA256SUMS"),
+    `${checksum}  ${basename(artifactPath)}\n`,
+    "utf8",
+  );
 
   return artifactPath;
 }
