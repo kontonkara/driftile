@@ -22,8 +22,9 @@ Driftile 0.1.0 provides scrollable tiling as a KWin extension for KDE Plasma.
 - An optional helper for claiming and safely restoring the default shortcut
   profile.
 
-Follow the [installation guide](installation.md) to verify and install the
-release artifacts, enable Driftile, and configure shortcuts.
+Follow the [installation guide](https://github.com/kontonkara/driftile/blob/v0.1.0/docs/installation.md)
+to verify and install the release artifacts, enable Driftile, and configure
+shortcuts.
 
 ## Upgrade note
 
