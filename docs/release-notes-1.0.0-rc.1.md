@@ -45,7 +45,8 @@ Download all required files from this release and verify them with
 
 Do not combine packages or helpers from different releases. Release any
 helper-owned 0.1.0 shortcuts while that helper is still available, then disable
-Driftile before upgrading. Follow [Migration](migration.md#upgrade-from-010)
+Driftile before upgrading. Follow the
+[migration guide](https://github.com/kontonkara/driftile/blob/v1.0.0-rc.1/docs/migration.md#upgrade-from-010)
 for the complete archive, NixOS, and Home Manager paths.
 
 ## Known limits
@@ -62,4 +63,6 @@ for the complete archive, NixOS, and Home Manager paths.
   normally. An ambiguous or incomplete stored match set is rejected atomically
   without partial ownership.
 
-See [Compatibility](compatibility.md) for the complete supported boundary.
+See the
+[compatibility guide](https://github.com/kontonkara/driftile/blob/v1.0.0-rc.1/docs/compatibility.md)
+for the complete supported boundary.
