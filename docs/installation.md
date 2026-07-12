@@ -104,13 +104,43 @@ System Settings before removing `$XDG_STATE_HOME/driftile/shortcut-claim.json`.
 When `XDG_STATE_HOME` is unset, the file is under
 `$HOME/.local/state/driftile/shortcut-claim.json`.
 
-## Nix
+## NixOS and Home Manager
 
-The flake exposes a package for `x86_64-linux` and `aarch64-linux`. Add it to a
-NixOS or Home Manager package list instead of also installing the
-`.kwinscript`; two copies with the same KWin package ID can make package
-selection ambiguous. Enable and configure Driftile in System Settings after
-activating the generation.
+The flake exposes packages and installation modules for `x86_64-linux` and
+`aarch64-linux`. Add Driftile as an input:
+
+```nix
+inputs.driftile.url = "github:kontonkara/driftile";
+```
+
+For a system-wide NixOS installation, import the NixOS module:
+
+```nix
+modules = [
+  driftile.nixosModules.default
+  {
+    programs.driftile.enable = true;
+  }
+];
+```
+
+For a per-user installation, import the module into an existing Home Manager
+configuration:
+
+```nix
+modules = [
+  driftile.homeManagerModules.default
+  {
+    programs.driftile.enable = true;
+  }
+];
+```
+
+`programs.driftile.package` can override the package in either module. Choose
+one installation scope for each user instead of also installing the
+`.kwinscript`; multiple copies with the same KWin package ID can make package
+selection ambiguous. Rebuild the NixOS or Home Manager generation, then enable
+and configure Driftile in System Settings.
 
 The Nix package provides the shortcut helper as `driftile-shortcuts` with its
 Node.js, `busctl`, and `flock` runtime dependencies wrapped:

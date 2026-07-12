@@ -36,7 +36,10 @@ jobs:
       - name: Verify release package
         run: nix develop --no-update-lock-file --command npm run package:check
 
-      - name: Check flake outputs
+      - name: Evaluate flake outputs for every system
+        run: nix flake check --no-update-lock-file --all-systems --no-build
+
+      - name: Build native flake checks
         run: nix flake check --no-update-lock-file
 
       - name: Build Nix package

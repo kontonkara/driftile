@@ -6,10 +6,13 @@
 npm ci
 npm run check
 npm run package
+nix flake check --all-systems --no-build
 ```
 
 `npm run package:check` performs the slower release gate: it rebuilds every
 versioned asset twice, compares exact bytes, and validates `SHA256SUMS`.
+The flake check evaluates the NixOS and Home Manager modules for every supported
+architecture; the normal `nix flake check` also builds checks for the host.
 
 ## Isolated KWin smoke test
 

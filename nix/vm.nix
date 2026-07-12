@@ -1,6 +1,5 @@
 {
   pkgs,
-  self,
   ...
 }:
 
@@ -7813,6 +7812,7 @@ let
 in
 {
   networking.hostName = "driftile-vm";
+  programs.driftile.enable = true;
   system.stateVersion = "26.05";
   system.switch.enable = false;
 
@@ -7861,7 +7861,6 @@ in
 
   environment.systemPackages = [
     demo
-    self.packages.${pkgs.stdenv.hostPlatform.system}.driftile
   ];
 
   system.activationScripts.driftileVmUserConfig = {

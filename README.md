@@ -40,7 +40,8 @@ See [Product scope](docs/product-scope.md) for the complete behavior boundary.
 Install the versioned `.kwinscript`, enable Driftile in **System Settings >
 Window Management > KWin Scripts**, then assign shortcuts manually or with the
 optional reversible helper. See [Installation](docs/installation.md) for
-artifact verification, upgrades, Nix packaging, and safe removal.
+artifact verification, upgrades, NixOS and Home Manager modules, and safe
+removal.
 
 ## Development
 

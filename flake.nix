@@ -1,5 +1,5 @@
 {
-  description = "Driftile development environment";
+  description = "A KWin extension for KDE Plasma providing scrollable tiling and dynamic workspaces";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
@@ -11,6 +11,21 @@
         "x86_64-linux"
       ];
       forAllSystems = nixpkgs.lib.genAttrs systems;
+      homeManagerModule = import ./nix/modules/install.nix {
+        inherit self;
+        packageOptionPath = [
+          "home"
+          "packages"
+        ];
+        preventSystemInstall = true;
+      };
+      nixosModule = import ./nix/modules/install.nix {
+        inherit self;
+        packageOptionPath = [
+          "environment"
+          "systemPackages"
+        ];
+      };
       packageFor =
         pkgs:
         pkgs.buildNpmPackage {
@@ -36,7 +51,12 @@
               ${pkgs.nodejs_24}/bin/node \
               "$out/bin/driftile-shortcuts" \
               --add-flags "$out/libexec/driftile/driftile-shortcuts.mjs" \
-              --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.systemd pkgs.util-linux ]}
+              --prefix PATH : ${
+                pkgs.lib.makeBinPath [
+                  pkgs.systemd
+                  pkgs.util-linux
+                ]
+              }
 
             runHook postInstall
           '';
@@ -50,6 +70,34 @@
         };
     in
     {
+      checks = forAllSystems (
+        system:
+        let
+          pkgs = import nixpkgs { inherit system; };
+        in
+        {
+          modules = import ./nix/module-check.nix {
+            defaultPackage = self.packages.${system}.driftile;
+            inherit
+              homeManagerModule
+              nixosModule
+              pkgs
+              ;
+            lib = nixpkgs.lib;
+          };
+        }
+      );
+
+      homeManagerModules = {
+        default = homeManagerModule;
+        driftile = homeManagerModule;
+      };
+
+      nixosModules = {
+        default = nixosModule;
+        driftile = nixosModule;
+      };
+
       packages = forAllSystems (
         system:
         let
@@ -106,10 +154,8 @@
 
           integration = pkgs.mkShell {
             packages = integrationPackages;
-            DRIFTILE_SMOKE_LAYER_SHELL_QML_IMPORT =
-              "${pkgs.kdePackages.layer-shell-qt}/lib/qt-6/qml";
-            DRIFTILE_SMOKE_KGLOBALACCELD =
-              "${pkgs.kdePackages.kglobalacceld}/libexec/kglobalacceld";
+            DRIFTILE_SMOKE_LAYER_SHELL_QML_IMPORT = "${pkgs.kdePackages.layer-shell-qt}/lib/qt-6/qml";
+            DRIFTILE_SMOKE_KGLOBALACCELD = "${pkgs.kdePackages.kglobalacceld}/libexec/kglobalacceld";
             GI_TYPELIB_PATH = pkgs.lib.makeSearchPath "lib/girepository-1.0" [
               pkgs.atk
               pkgs.gdk-pixbuf
@@ -125,8 +171,10 @@
 
       nixosConfigurations.driftile-vm = nixpkgs.lib.nixosSystem {
         system = "x86_64-linux";
-        specialArgs = { inherit self; };
-        modules = [ ./nix/vm.nix ];
+        modules = [
+          self.nixosModules.default
+          ./nix/vm.nix
+        ];
       };
     };
 }
