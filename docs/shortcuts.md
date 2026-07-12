@@ -121,8 +121,9 @@ causes Driftile to append a new empty tail through KWin.
 `Meta+.` creates a new right column from the active column's bottom window.
 Both keep focus in the active column and stop at an unavailable boundary.
 
-Plasma already owns some listed sequences. During development, enable Driftile
-and claim the complete profile explicitly:
+Plasma already owns some listed sequences. A release provides the optional
+versioned helper documented in [Installation](installation.md). From a source
+checkout, enable Driftile and claim the complete profile explicitly:
 
 ```bash
 npm run shortcuts:claim

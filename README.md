@@ -30,6 +30,13 @@ store integration remain v1 work.
 - Dynamic workspace lifecycle with output-local selection where supported.
 - Portable installation through the standard KWin package format.
 
+## Installation
+
+Driftile requires Plasma with KWin 6.7 or newer. Install the versioned
+`.kwinscript`, enable it in System Settings, then configure shortcuts manually
+or with the optional reversible helper. See [Installation](docs/installation.md)
+for checksums, upgrades, Nix packaging, and safe removal.
+
 ## Development
 
 Requirements: Node.js 22 or newer, npm, `zip`, ShellCheck, `busctl`, `flock`, and KDE Frameworks 6 KPackage tools.
@@ -50,13 +57,14 @@ npm run shortcuts:claim
 
 On systems with Nix, `nix develop` provides the source toolchain, and `nix build` builds the KWin package. Use `nix develop .#integration` for the isolated KWin tests.
 
-The generated KWin package and checksum manifest are written to
-`dist/driftile-0.1.0.kwinscript` and `dist/SHA256SUMS`.
+The generated KWin package, optional shortcut helper, license, and checksum
+manifest are written to `dist/`.
 
 Run `npm run test:integration` for isolated KWin lifecycle tests. A visible NixOS Plasma VM is also available. See [Testing](docs/testing.md) for coverage and commands.
 
 ## Documentation
 
+- [Installation](docs/installation.md)
 - [Product scope](docs/product-scope.md)
 - [Interaction model](docs/interaction-model.md)
 - [Shortcuts](docs/shortcuts.md)
