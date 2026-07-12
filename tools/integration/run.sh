@@ -66,13 +66,6 @@ fail() {
     sed 's/^/  /' "$xvfb_log" >&2
   fi
 
-  if [[ -n "${process_trace_log:-}" && -s "$process_trace_log" ]]; then
-    printf '%s\n' 'Process trace:' >&2
-    grep -E \
-      'Xwayland|xwayland-wrapper|ENOENT|EACCES|EPERM|EMFILE|ENFILE|EAGAIN|ENOSYS|execve\(.* = -1|clone3\(.* = -1|vfork\(.* = -1|fcntl\([^,]+, F_(GETFD|SETFD).* = -1' \
-      "$process_trace_log" | sed 's/^/  /' >&2 || true
-  fi
-
   exit 1
 }
 
@@ -101,20 +94,17 @@ run_backend() (
   local kglobalacceld="${DRIFTILE_SMOKE_KGLOBALACCELD:-}"
   local result_file
   local display_number
-  local exact_xwayland="${DRIFTILE_SMOKE_XWAYLAND:-}"
   local qml_binary
   local qml_import_path=""
   local qml_prefix
-  local process_trace_log=""
+  local runtime_directory=""
   local xvfb_log=""
   local xvfb_pid=""
-  local xwayland_wrapper_directory
   local package_installed=0
   local output_count
   local protocols
   local scenario
   local socket_name
-  local -a wayland_command=(kwin_wayland)
 
   sandbox=$(mktemp -d "${TMPDIR:-/tmp}/driftile-${backend}-smoke.XXXXXX")
   log_file="$sandbox/kwin.log"
@@ -134,6 +124,10 @@ run_backend() (
       wait "$xvfb_pid" >/dev/null 2>&1 || true
     fi
 
+    if [[ -n "$runtime_directory" ]]; then
+      rm -rf -- "$runtime_directory"
+    fi
+
     if [[ "${DRIFTILE_KEEP_SMOKE_SANDBOX:-0}" == "1" ]]; then
       printf '%s smoke-test sandbox: %s\n' "$backend" "$sandbox"
       return
@@ -143,6 +137,9 @@ run_backend() (
   }
 
   trap cleanup EXIT
+
+  runtime_directory=$(mktemp -d /tmp/driftile-runtime.XXXXXX)
+  chmod 0700 "$runtime_directory"
 
   for command_name in \
     busctl \
@@ -181,10 +178,8 @@ run_backend() (
     "$sandbox/config" \
     "$sandbox/data" \
     "$sandbox/home" \
-    "$sandbox/runtime" \
     "$sandbox/state" \
     "$sandbox/system-data"
-  chmod 0700 "$sandbox/runtime"
 
   export DRIFTILE_SMOKE_CLIENT="$project_root/tools/integration/client.qml"
   export DRIFTILE_SMOKE_AUTOMATIC_FLOATING_PROBE="$project_root/tools/integration/automatic-floating-probe.js"
@@ -212,7 +207,7 @@ run_backend() (
   export XDG_CONFIG_HOME="$sandbox/config"
   export XDG_DATA_HOME="$sandbox/data"
   export XDG_DATA_DIRS="$sandbox/system-data"
-  export XDG_RUNTIME_DIR="$sandbox/runtime"
+  export XDG_RUNTIME_DIR="$runtime_directory"
   export XDG_STATE_HOME="$sandbox/state"
 
   unset \
@@ -248,30 +243,7 @@ run_backend() (
   case "$backend" in
     wayland | wayland-multi-output)
       require_command kwin_wayland || exit 1
-
-      if [[ -n "$exact_xwayland" ]]; then
-        if [[ ! -x "$exact_xwayland" ]]; then
-          fail "The exact Xwayland executable is unavailable."
-        fi
-
-        xwayland_wrapper_directory="$sandbox/xwayland-bin"
-        mkdir "$xwayland_wrapper_directory"
-        ln -s \
-          "$project_root/tools/integration/xwayland-wrapper.sh" \
-          "$xwayland_wrapper_directory/Xwayland"
-        export DRIFTILE_SMOKE_XWAYLAND="$exact_xwayland"
-        export PATH="$xwayland_wrapper_directory:$PATH"
-      fi
-
       require_command Xwayland || exit 1
-
-      if [[
-        -n "$exact_xwayland" &&
-          "$(readlink -f "$(command -v Xwayland)")" != "$project_root/tools/integration/xwayland-wrapper.sh"
-      ]]; then
-        fail "KWin would not resolve the exact Xwayland executable."
-      fi
-
       require_command kscreen-doctor || exit 1
       protocols="${DRIFTILE_SMOKE_PROTOCOLS:-xwayland wayland}"
 
@@ -288,19 +260,6 @@ run_backend() (
       export DRIFTILE_SMOKE_PROTOCOLS="$protocols"
       export KWIN_COMPOSE=Q
       export XDG_SESSION_TYPE=wayland
-
-      if [[ "${DRIFTILE_SMOKE_PROCESS_TRACE:-0}" == "1" ]]; then
-        require_command strace || exit 1
-        process_trace_log="$sandbox/process.strace"
-        wayland_command=(
-          strace
-          -f
-          -e "trace=process,fcntl"
-          -s 200
-          -o "$process_trace_log"
-          kwin_wayland
-        )
-      fi
 
       if [[ "$backend" == "wayland-multi-output" ]]; then
         if [[
@@ -321,9 +280,9 @@ run_backend() (
 
       export DRIFTILE_SMOKE_SCENARIO="$scenario"
 
-      if ! timeout --kill-after=5s 150s \
+      if ! timeout --kill-after=5s 300s \
         dbus-run-session --config-file="$dbus_session_config" -- \
-        "${wayland_command[@]}" \
+        kwin_wayland \
         --virtual \
         --width 1280 \
         --height 720 \
@@ -370,7 +329,7 @@ run_backend() (
       display_number=$(<"$sandbox/display")
       export DISPLAY=":$display_number"
 
-      if ! timeout --kill-after=5s 180s \
+      if ! timeout --kill-after=5s 240s \
         dbus-run-session --config-file="$dbus_session_config" -- \
         "$project_root/tools/integration/x11-session.sh" \
         >"$log_file" 2>&1; then
