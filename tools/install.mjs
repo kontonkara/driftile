@@ -1,7 +1,6 @@
-import { dirname, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { access } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { buildProject, buildShortcutTool } from "./build.mjs";
 
 const actions = {
@@ -9,57 +8,167 @@ const actions = {
   remove: "--remove",
   upgrade: "--upgrade",
 };
+const pluginId = "io.github.kontonkara.driftile";
+const pluginKey = `${pluginId}Enabled`;
+const rootDirectory = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const defaultPaths = {
+  packageDirectory: resolve(rootDirectory, "dist/kwin-script"),
+  shortcutTool: resolve(rootDirectory, "dist/bin/driftile-shortcuts.mjs"),
+};
+const unloadPollAttempts = 100;
+const unloadPollDelayMilliseconds = 50;
 
-const action = process.argv[2];
+export async function runInstallLifecycle(action, dependencies = {}) {
+  if (typeof action !== "string" || !Object.hasOwn(actions, action)) {
+    throw new Error("Expected one of: install, upgrade, remove");
+  }
 
-if (!(action in actions)) {
-  throw new Error("Expected one of: install, upgrade, remove");
+  const buildPackage = dependencies.buildProject ?? buildProject;
+  const buildShortcuts = dependencies.buildShortcutTool ?? buildShortcutTool;
+  const log = dependencies.log ?? console.log;
+  const paths = dependencies.paths ?? defaultPaths;
+  const run = dependencies.runCommand ?? runCommand;
+  const sleep = dependencies.sleep ?? delay;
+  const pollAttempts = dependencies.unloadPollAttempts ?? unloadPollAttempts;
+
+  if (!Number.isInteger(pollAttempts) || pollAttempts < 1) {
+    throw new Error("Unload poll attempts must be a positive integer");
+  }
+
+  if (action === "remove") {
+    await buildShortcuts();
+  } else {
+    await buildPackage();
+  }
+
+  run(process.execPath, [paths.shortcutTool, "release"]);
+  run("kwriteconfig6", [
+    "--file",
+    "kwinrc",
+    "--group",
+    "Plugins",
+    "--key",
+    pluginKey,
+    "--type",
+    "bool",
+    "false",
+  ]);
+  run("busctl", [
+    "--user",
+    "call",
+    "org.kde.KWin",
+    "/Scripting",
+    "org.kde.kwin.Scripting",
+    "start",
+  ]);
+
+  await waitUntilUnloaded(run, sleep, pollAttempts);
+
+  const target = action === "remove" ? pluginId : paths.packageDirectory;
+  run("kpackagetool6", ["--type=KWin/Script", actions[action], target]);
+
+  if (action !== "remove") {
+    log(enableInstructions());
+  }
 }
 
-const rootDirectory = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const packageDirectory = resolve(rootDirectory, "dist/kwin-script");
-const shortcutTool = resolve(rootDirectory, "dist/bin/driftile-shortcuts.mjs");
-const pluginId = "io.github.kontonkara.driftile";
+async function waitUntilUnloaded(run, sleep, attempts) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const output = run(
+      "busctl",
+      [
+        "--user",
+        "--json=short",
+        "call",
+        "org.kde.KWin",
+        "/Scripting",
+        "org.kde.kwin.Scripting",
+        "isScriptLoaded",
+        "s",
+        pluginId,
+      ],
+      { capture: true },
+    );
 
-if (action === "remove") {
+    if (!parseScriptLoadedReply(output)) {
+      return;
+    }
+
+    if (attempt + 1 < attempts) {
+      await sleep(unloadPollDelayMilliseconds);
+    }
+  }
+
+  throw new Error(
+    "KWin did not unload Driftile; the installed package was not changed",
+  );
+}
+
+export function parseScriptLoadedReply(output) {
+  let reply;
+
   try {
-    await access(shortcutTool);
-  } catch {
-    await buildShortcutTool();
+    reply = JSON.parse(output);
+  } catch (error) {
+    throw new Error("KWin returned an invalid script state", { cause: error });
   }
 
-  const release = spawnSync(process.execPath, [shortcutTool, "release"], {
-    stdio: "inherit",
-  });
-
-  if (release.error) {
-    throw release.error;
+  if (
+    typeof reply !== "object" ||
+    reply === null ||
+    reply.type !== "b" ||
+    !Array.isArray(reply.data) ||
+    reply.data.length !== 1 ||
+    typeof reply.data[0] !== "boolean"
+  ) {
+    throw new Error("KWin returned an invalid script state");
   }
 
-  if (release.status !== 0) {
+  return reply.data[0];
+}
+
+function enableInstructions() {
+  return [
+    "Driftile is installed and disabled.",
+    "Enable it and claim its shortcut profile with:",
+    `  kwriteconfig6 --file kwinrc --group Plugins --key ${pluginKey} --type bool true`,
+    "  busctl --user call org.kde.KWin /Scripting org.kde.kwin.Scripting start",
+    "  npm run shortcuts:claim",
+  ].join("\n");
+}
+
+function runCommand(command, arguments_, options = {}) {
+  const capture = options.capture === true;
+  const result = spawnSync(
+    command,
+    arguments_,
+    capture ? { encoding: "utf8" } : { stdio: "inherit" },
+  );
+
+  if (result.error) {
+    throw result.error;
+  }
+
+  if (result.status !== 0) {
+    const detail = capture ? result.stderr.trim() : "";
     throw new Error(
-      `shortcut release exited with status ${String(release.status)}`,
+      detail.length > 0
+        ? `${command} failed: ${detail}`
+        : `${command} exited with status ${String(result.status)}`,
     );
   }
-} else {
-  await buildProject();
+
+  return capture ? result.stdout.trim() : "";
 }
 
-const target = action === "remove" ? pluginId : packageDirectory;
-const result = spawnSync(
-  "kpackagetool6",
-  ["--type=KWin/Script", actions[action], target],
-  { stdio: "inherit" },
-);
-
-if (result.error) {
-  throw result.error;
+function delay(milliseconds) {
+  return new Promise((resolveDelay) => {
+    setTimeout(resolveDelay, milliseconds);
+  });
 }
 
-if (result.status !== 0) {
-  throw new Error(`kpackagetool6 exited with status ${String(result.status)}`);
-}
+const entryPoint = process.argv[1];
 
-if (action !== "remove") {
-  console.log("Enable Driftile, then run: npm run shortcuts:claim");
+if (entryPoint && import.meta.url === pathToFileURL(entryPoint).href) {
+  await runInstallLifecycle(process.argv[2]);
 }

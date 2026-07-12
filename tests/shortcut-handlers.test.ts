@@ -507,9 +507,9 @@ describe("KWin shortcut handlers", () => {
     ]);
   });
 
-  it("releases a saved shortcut profile before a development upgrade", () => {
+  it("routes development upgrades through the safe package lifecycle", () => {
     expect(packageMetadata.scripts?.["upgrade:dev"]).toBe(
-      "npm run shortcuts:release && node tools/install.mjs upgrade",
+      "node tools/install.mjs upgrade",
     );
   });
 

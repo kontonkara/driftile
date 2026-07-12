@@ -25,7 +25,7 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "uninstall:dev": "node tools/install.mjs remove",
-    "upgrade:dev": "npm run shortcuts:release && node tools/install.mjs upgrade",
+    "upgrade:dev": "node tools/install.mjs upgrade",
     "version:check": "node tools/release-version.mjs"
   },
   "license": "GPL-3.0-or-later",
