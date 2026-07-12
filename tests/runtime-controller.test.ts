@@ -11,6 +11,7 @@ import {
   LayoutEngine,
   type WindowHeight,
 } from "../src/core/layout-engine";
+import { decodeLayoutPersistence } from "../src/core/layout-persistence";
 import type {
   KWinOutput,
   KWinSignal,
@@ -1076,6 +1077,163 @@ function controlMaximize(
 }
 
 describe("RuntimeController", () => {
+  it("captures stable durable layout state without runtime side effects", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const windows = [
+      createTrackedWindow("window-1", output, desktop),
+      createTrackedWindow("window-2", output, desktop),
+    ];
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map(({ window }) => window),
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 400 },
+      gap: 10,
+    });
+
+    expect(controller.captureLayoutState()).toBeNull();
+    expect(controller.start()).toBe(true);
+    expect(controller.maximizeColumn()).toBe(true);
+    const minimized = windows[0];
+
+    if (!minimized) {
+      throw new Error("missing persistence capture fixture window");
+    }
+
+    Object.defineProperty(minimized.window, "minimized", {
+      configurable: true,
+      value: true,
+    });
+    minimized.minimizedChanged.emit();
+    const before = captureTrackedWindowState(windows);
+    const activationCount = fixture.activationCount;
+    const desktopSwitchCount = fixture.desktopSwitchCount;
+    const outputTransferCount = fixture.outputTransferCount;
+    const document = controller.captureLayoutState();
+
+    expect(document).not.toBeNull();
+
+    if (document === null) {
+      throw new Error("stable layout capture was unavailable");
+    }
+
+    expect(decodeLayoutPersistence(document)).toMatchObject({
+      ok: true,
+      value: {
+        contexts: [
+          {
+            activeColumnIndex: 1,
+            columns: [
+              {
+                members: [{ windowKey: "window-1" }],
+                width: { kind: "fixed", value: 400 },
+              },
+              {
+                fullWidthRestore: { kind: "fixed", value: 400 },
+                members: [{ windowKey: "window-2" }],
+                width: { kind: "proportion", value: 1 },
+              },
+            ],
+            desktopId: "desktop-1",
+            outputKey: "DP-1",
+          },
+        ],
+        outputs: [{ key: "DP-1", name: "DP-1" }],
+        windows: [
+          { key: "window-1", liveId: "window-1" },
+          { key: "window-2", liveId: "window-2" },
+        ],
+      },
+    });
+    expectTrackedWindowState(windows, before);
+    expect(fixture.activationCount).toBe(activationCount);
+    expect(fixture.desktopSwitchCount).toBe(desktopSwitchCount);
+    expect(fixture.outputTransferCount).toBe(outputTransferCount);
+
+    controller.stop();
+    expect(controller.captureLayoutState()).toBeNull();
+  });
+
+  it("does not capture while a topology transaction is unsettled", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const tracked = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [tracked.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      scheduleResume: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(controller.captureLayoutState()).not.toBeNull();
+
+    fixture.setScreens([output, createOutput("HDMI-A-1", 1000)]);
+    fixture.screensChanged.emit();
+
+    expect(controller.captureLayoutState()).toBeNull();
+    controller.stop();
+  });
+
+  it("does not capture reentrantly during a desktop lifecycle mutation", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const tracked = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [tracked.window],
+    );
+    const desktopsChanged = new Signal<[]>();
+    let desktops: KWinVirtualDesktop[] = [desktop];
+    let reentrantCapture: string | null | undefined;
+
+    Object.defineProperties(fixture.workspace, {
+      createDesktop: {
+        configurable: true,
+        value: (position: number) => {
+          reentrantCapture = controller.captureLayoutState();
+          desktops.splice(position, 0, { id: "created-1" });
+          desktopsChanged.emit();
+        },
+      },
+      desktops: {
+        configurable: true,
+        get: () => desktops,
+      },
+      desktopsChanged: { configurable: true, value: desktopsChanged },
+      removeDesktop: {
+        configurable: true,
+        value: (removed: KWinVirtualDesktop) => {
+          desktops = desktops.filter((candidate) => candidate !== removed);
+          desktopsChanged.emit();
+        },
+      },
+    });
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(reentrantCapture).toBeNull();
+    expect(controller.captureLayoutState()).not.toBeNull();
+    controller.stop();
+  });
+
   it("delegates fullscreen to KWin without changing the tiled layout", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };

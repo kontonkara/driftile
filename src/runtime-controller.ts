@@ -32,6 +32,7 @@ import {
   type WindowHeight,
   type WindowHeightEditRollback,
 } from "./core/layout-engine";
+import { captureLayoutPersistence } from "./core/layout-persistence-capture";
 import {
   findAdjacentOutput,
   type OutputDirection,
@@ -650,6 +651,62 @@ export class RuntimeController {
     return this.managedWindows.size;
   }
 
+  captureLayoutState(): string | null {
+    if (!this.layoutCaptureReady()) {
+      return null;
+    }
+
+    try {
+      const contexts = [...this.contexts.values()].map((context) => ({
+        key: context.key,
+        layout: this.layout.snapshot(context.outputId, context.desktopId),
+      }));
+      const fullWidthRestores: Array<{
+        readonly columnId: ColumnId;
+        readonly contextKey: string;
+        readonly width: ColumnWidth;
+      }> = [];
+
+      for (const [contextKey, restores] of this.columnFullWidthRestore) {
+        for (const [columnId, width] of restores) {
+          fullWidthRestores.push({ columnId, contextKey, width });
+        }
+      }
+
+      const floatingWindows = [...this.floatingWindows].map(
+        ([liveId, floating]) => {
+          if (
+            floating.sourceContextKey !==
+            contextKey({
+              desktopId: floating.placement.desktopId,
+              outputId: floating.placement.outputId,
+            })
+          ) {
+            throw new Error(
+              "Cannot capture layout persistence while floating ownership is inconsistent",
+            );
+          }
+
+          return { liveId: String(liveId), placement: floating.placement };
+        },
+      );
+
+      this.validateCapturedOwnership(contexts, floatingWindows);
+      return captureLayoutPersistence({
+        contexts,
+        floatingWindows,
+        fullWidthRestores,
+        liveOutputNames: this.workspace.screens.map((output) => output.name),
+        liveWindowIds: this.observer.snapshot().map((window) => window.id),
+      });
+    } catch (error) {
+      console.warn(
+        `[driftile] layout persistence capture skipped error=${String(error)}`,
+      );
+      return null;
+    }
+  }
+
   setBorderlessWindows(enabled: boolean): void {
     if (this.borderlessWindows === enabled) {
       return;
@@ -669,6 +726,145 @@ export class RuntimeController {
 
     this.synchronizeWindowBorders();
     this.reconcileBorderAffectedContexts();
+  }
+
+  private layoutCaptureReady(): boolean {
+    return !(
+      !this.started ||
+      this.initializing ||
+      this.startupStabilizationRemaining > 0 ||
+      this.startupStabilizationToken !== null ||
+      this.pendingExpelFocusHandoff !== null ||
+      this.stackEditOperation !== null ||
+      this.windowTransferOperation !== null ||
+      this.stackedNativeStateOperation !== null ||
+      this.topologyRecoveryPending ||
+      this.hasTopologyBarrier() ||
+      this.capacityParkOperations.size > 0 ||
+      this.capacityCanceledParks.size > 0 ||
+      this.capacityLeasesByContext.size > 0 ||
+      this.pendingWindowSyncs.size > 0 ||
+      this.pendingExternalFullscreenExtractions.size > 0 ||
+      this.pendingFullscreenTargets.size > 0 ||
+      this.unconfirmedFullscreenRetentions.size > 0 ||
+      this.unconfirmedFullscreenTargets.size > 0 ||
+      this.fullscreenRequestProbes.size > 0 ||
+      this.toggleGeometryTransitions.size > 0 ||
+      this.ownershipRefreshInProgress ||
+      this.ownershipFollowUpRequired ||
+      this.workScheduled ||
+      this.desktopLifecycle.unsettled
+    );
+  }
+
+  private validateCapturedOwnership(
+    contexts: readonly {
+      readonly key: string;
+      readonly layout: LayoutContextSnapshot;
+    }[],
+    floatingWindows: readonly {
+      readonly liveId: string;
+      readonly placement: DetachedWindowPlacement;
+    }[],
+  ): void {
+    const capturedManagedIds = new Set<WindowId>();
+
+    for (const captured of contexts) {
+      const runtimeContext = this.contexts.get(captured.key);
+      const layoutIds = new Set<WindowId>();
+
+      if (!runtimeContext) {
+        throw new Error(
+          "Cannot capture layout persistence with a missing runtime context",
+        );
+      }
+
+      if (
+        contextKey({
+          desktopId: captured.layout.desktopId,
+          outputId: captured.layout.outputId,
+        }) !== captured.key
+      ) {
+        throw new Error(
+          "Cannot capture layout persistence with a mismatched context key",
+        );
+      }
+
+      for (const column of captured.layout.columns) {
+        for (const id of column.windowIds) {
+          if (layoutIds.has(id) || capturedManagedIds.has(id)) {
+            throw new Error(
+              "Cannot capture layout persistence with duplicate tiled ownership",
+            );
+          }
+
+          const owner = this.managedWindows.get(id);
+          const source = this.observer.source(id);
+          const observed = source ? normalizeWindow(source) : null;
+          const liveContext = observed ? managedContext(observed) : null;
+
+          if (
+            owner?.contextKey !== captured.key ||
+            this.floatingWindows.has(id) ||
+            this.automaticFloatingWindows.has(id) ||
+            this.waitingWindowContexts.has(id) ||
+            !liveContext ||
+            contextKey(liveContext) !== captured.key ||
+            (source !== undefined && this.automaticallyFloats(source))
+          ) {
+            throw new Error(
+              "Cannot capture layout persistence with stale tiled ownership",
+            );
+          }
+
+          layoutIds.add(id);
+          capturedManagedIds.add(id);
+        }
+      }
+
+      if (
+        layoutIds.size !== runtimeContext.windowIds.size ||
+        [...runtimeContext.windowIds].some((id) => !layoutIds.has(id))
+      ) {
+        throw new Error(
+          "Cannot capture layout persistence with mismatched context ownership",
+        );
+      }
+    }
+
+    if (
+      capturedManagedIds.size !== this.managedWindows.size ||
+      [...this.managedWindows.keys()].some((id) => !capturedManagedIds.has(id))
+    ) {
+      throw new Error(
+        "Cannot capture layout persistence with uncaptured managed windows",
+      );
+    }
+
+    for (const floating of floatingWindows) {
+      const id = windowId(floating.liveId);
+      const source = this.observer.source(id);
+      const observed = source ? normalizeWindow(source) : null;
+      const liveContext = observed ? managedContext(observed) : null;
+      const expectedContextKey = contextKey({
+        desktopId: floating.placement.desktopId,
+        outputId: floating.placement.outputId,
+      });
+
+      if (
+        String(floating.placement.windowId) !== floating.liveId ||
+        this.managedWindows.has(id) ||
+        !liveContext ||
+        contextKey(liveContext) !== expectedContextKey ||
+        this.automaticFloatingWindows.has(id) ||
+        this.waitingWindowContexts.has(id) ||
+        (source !== undefined && this.automaticallyFloats(source))
+      ) {
+        throw new Error(
+          "Cannot capture layout persistence with stale floating ownership",
+        );
+      }
+    }
   }
 
   setDefaultColumnWidthPercent(value: number): boolean {

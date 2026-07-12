@@ -90,6 +90,12 @@ export class DesktopLifecycle {
     return this.dirty && this.pendingMutation === null;
   }
 
+  get unsettled(): boolean {
+    return (
+      this.dirty || this.pendingMutation !== null || this.mutationCallActive
+    );
+  }
+
   start(): void {
     if (
       this.started ||

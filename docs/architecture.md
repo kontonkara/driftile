@@ -132,7 +132,13 @@ The persistence foundation is a bounded, versioned JSON codec in core. It stores
 
 Transient runtime state is never durable: geometry fingerprints, expected frames, original-frame and decoration ownership, focus caches, waiting and suspension state, schedulers, probes, and transaction tokens are excluded. A window `liveId` is an exact same-session reload hint only. The pure matcher gives that identity precedence, then accepts public KWin session descriptors only when both sides are globally unique; missing, duplicate, or overlapping matches remain unmatched. Output matching prefers a unique display serial tuple and otherwise requires the available connector metadata exactly. Desktops require their exact KWin IDs.
 
-The QML package includes an opaque `QtCore.Settings` store with an explicit file location, one-shot write debounce, duplicate suppression, and synchronous final flush. An isolated real-KWin probe imports that component and verifies an escaped Unicode JSON document with its trailing newline across immediate declarative-script unload and reload on Wayland and X11. Runtime capture, hydration, write notifications, and matcher integration are not connected yet.
+At a stable runtime boundary, Driftile can now capture the complete durable
+model as one canonical codec document without changing layout or KWin state.
+Invalid ownership, stale live references, and in-flight structural work fail
+closed. Stale floating neighbors are reduced to safe surviving anchors and the
+index fallback.
+
+The QML package includes an opaque `QtCore.Settings` store with an explicit file location, one-shot write debounce, duplicate suppression, and synchronous final flush. An isolated real-KWin probe imports that component and verifies an escaped Unicode JSON document with its trailing newline across immediate declarative-script unload and reload on Wayland and X11. Storage notifications, hydration, and matcher integration are not connected yet.
 
 ## Reconciliation rules
 
