@@ -100,6 +100,7 @@ run_backend() (
   for command_name in \
     busctl \
     dbus-run-session \
+    gjs \
     jq \
     kpackagetool6 \
     kwriteconfig6 \
@@ -139,6 +140,7 @@ run_backend() (
   export DRIFTILE_SMOKE_DESKTOP_REORDER_STATE_PROBE="$project_root/tools/integration/desktop-reorder-state-probe.js"
   export DRIFTILE_SMOKE_FIXED_SIZE_CLIENT="$project_root/tools/integration/fixed-size-client.qml"
   export DRIFTILE_SMOKE_FLOATING_NAVIGATION_ARRANGER="$project_root/tools/integration/floating-navigation-arranger.js"
+  export DRIFTILE_SMOKE_GTK3_LIVE_CONSTRAINT_CLIENT="$project_root/tools/integration/live-constraint-client-gtk3.js"
   export DRIFTILE_SMOKE_LIVE_CONSTRAINT_CLIENT="$project_root/tools/integration/live-constraint-client.qml"
   export DRIFTILE_SMOKE_LAYER_SHELL_QML_IMPORT="$layer_shell_qml_import"
   export DRIFTILE_SMOKE_NATIVE_TILE_TOGGLE="$project_root/tools/integration/native-tile-toggle.js"

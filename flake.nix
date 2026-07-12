@@ -81,6 +81,8 @@
             developmentPackages
             ++ (with pkgs; [
               dbus
+              gjs
+              gtk3
               kdePackages.kglobalacceld
               kdePackages.layer-shell-qt
               kdePackages.libkscreen
@@ -108,6 +110,15 @@
               "${pkgs.kdePackages.layer-shell-qt}/lib/qt-6/qml";
             DRIFTILE_SMOKE_KGLOBALACCELD =
               "${pkgs.kdePackages.kglobalacceld}/libexec/kglobalacceld";
+            GI_TYPELIB_PATH = pkgs.lib.makeSearchPath "lib/girepository-1.0" [
+              pkgs.atk
+              pkgs.gdk-pixbuf
+              pkgs.glib.out
+              pkgs.gobject-introspection-unwrapped
+              pkgs.gtk3
+              pkgs.harfbuzz
+              pkgs.pango.out
+            ];
           };
         }
       );

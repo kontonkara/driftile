@@ -2050,6 +2050,30 @@ start_qml_client() {
   client_pids+=("$!")
 }
 
+start_gtk3_client() {
+  local protocol=$1
+
+  shift
+
+  case "$protocol" in
+    wayland)
+      GDK_BACKEND=wayland NO_AT_BRIDGE=1 gjs \
+        "$DRIFTILE_SMOKE_GTK3_LIVE_CONSTRAINT_CLIENT" \
+        "$@" &
+      ;;
+    x11 | xwayland)
+      GDK_BACKEND=x11 NO_AT_BRIDGE=1 gjs \
+        "$DRIFTILE_SMOKE_GTK3_LIVE_CONSTRAINT_CLIENT" \
+        "$@" &
+      ;;
+    *)
+      fail "unsupported client protocol: $protocol"
+      ;;
+  esac
+
+  client_pids+=("$!")
+}
+
 start_client() {
   local protocol=$1
   local window_title=$2
@@ -5710,10 +5734,12 @@ verify_xterm_resize_increment_policy() {
 
 verify_live_hard_constraint_recovery() {
   local protocol=$1
-  local first_title=$2
-  local second_title=$3
-  local third_title=$4
-  local base_title="driftile-live-constraint-${protocol}"
+  local client_kind=$2
+  local first_title=$3
+  local second_title=$4
+  local third_title=$5
+  local client_label
+  local base_title="driftile-live-constraint-${client_kind}-${protocol}"
   local initial_title="$base_title initial"
   local constrained_title="$base_title constrained"
   local relaxed_title="$base_title relaxed"
@@ -5729,39 +5755,58 @@ verify_live_hard_constraint_recovery() {
   local tiled_third="32,16,616,688"
   local tiled_client="664,16,616,688"
 
-  original_first=$(capture_stable_geometry "$first_title") || \
-    fail "the first $protocol window did not stabilize before live hard-constraint acceptance"
-  original_second=$(capture_stable_geometry "$second_title") || \
-    fail "the second $protocol window did not stabilize before live hard-constraint acceptance"
-  original_third=$(capture_stable_geometry "$third_title") || \
-    fail "the third $protocol window did not stabilize before live hard-constraint acceptance"
-  wait_for_active "$third_title" || \
-    fail "KWin did not preserve $protocol focus before live hard-constraint acceptance"
+  case "$client_kind" in
+    gtk3)
+      client_label="GTK 3"
+      ;;
+    qt)
+      client_label="Qt Quick"
+      ;;
+    *)
+      fail "unsupported live-constraint client: $client_kind"
+      ;;
+  esac
 
-  start_qml_client \
-    "$protocol" \
-    "$DRIFTILE_SMOKE_LIVE_CONSTRAINT_CLIENT" \
-    "$base_title"
+  original_first=$(capture_stable_geometry "$first_title") || \
+    fail "the first $protocol window did not stabilize before $client_label live hard-constraint acceptance"
+  original_second=$(capture_stable_geometry "$second_title") || \
+    fail "the second $protocol window did not stabilize before $client_label live hard-constraint acceptance"
+  original_third=$(capture_stable_geometry "$third_title") || \
+    fail "the third $protocol window did not stabilize before $client_label live hard-constraint acceptance"
+  wait_for_active "$third_title" || \
+    fail "KWin did not preserve $protocol focus before $client_label live hard-constraint acceptance"
+
+  case "$client_kind" in
+    gtk3)
+      start_gtk3_client "$protocol" "$base_title"
+      ;;
+    qt)
+      start_qml_client \
+        "$protocol" \
+        "$DRIFTILE_SMOKE_LIVE_CONSTRAINT_CLIENT" \
+        "$base_title"
+      ;;
+  esac
   client_pid=${client_pids[${#client_pids[@]}-1]}
 
   capture_stable_geometry "$initial_title" >/dev/null || \
-    fail "the initial live-constraint $protocol window did not stabilize"
+    fail "the initial $client_label live-constraint $protocol window did not stabilize"
   activate_window "$initial_title" || \
-    fail "KWin could not activate the initial live-constraint $protocol window"
+    fail "KWin could not activate the initial $client_label live-constraint $protocol window"
   wait_for_active "$initial_title" || \
-    fail "KWin did not focus the initial live-constraint $protocol window"
+    fail "KWin did not focus the initial $client_label live-constraint $protocol window"
   wait_for_window_border_state "$initial_title" true || \
-    fail "Driftile did not remove the live-constraint $protocol decoration"
+    fail "Driftile did not remove the $client_label live-constraint $protocol decoration"
   wait_for_geometries \
     "$first_title" "$tiled_first" \
     "$second_title" "$tiled_second" \
     "$third_title" "$tiled_third" \
     "$initial_title" "$tiled_client" || \
-    fail "Driftile did not own the initial live-constraint $protocol layout: $(describe_layout "$first_title" "$second_title" "$third_title" "$initial_title")"
+    fail "Driftile did not own the initial $client_label live-constraint $protocol layout: $(describe_layout "$first_title" "$second_title" "$third_title" "$initial_title")"
   activate_window "$third_title" || \
-    fail "KWin could not trigger the tightened live $protocol constraint"
+    fail "KWin could not trigger the tightened live $client_label $protocol constraint"
   wait_for_active "$third_title" || \
-    fail "KWin did not focus the adjacent $protocol window while tightening constraints"
+    fail "KWin did not focus the adjacent $protocol window while tightening $client_label constraints"
 
   constrained_frame=""
   constrained_width=0
@@ -5785,53 +5830,53 @@ verify_live_hard_constraint_recovery() {
   done
 
   [[ "$constrained_frame" =~ ^-?[0-9]+,-?[0-9]+,[0-9]+,[0-9]+$ ]] || \
-    fail "the tightened live-constraint $protocol window did not stabilize"
+    fail "the tightened $client_label live-constraint $protocol window did not stabilize"
   IFS=, read -r _ _ constrained_width _ <<< "$constrained_frame"
   ((constrained_width >= 700)) || \
-    fail "KWin did not apply the tightened live $protocol minimum width: $constrained_frame"
+    fail "KWin did not apply the tightened live $client_label $protocol minimum width: $constrained_frame"
   wait_for_geometries \
     "$first_title" "$tiled_first" \
     "$second_title" "$tiled_second" \
     "$third_title" "$tiled_third" || \
-    fail "Driftile changed sibling frames after the live $protocol minimum became incompatible: $(describe_layout "$first_title" "$second_title" "$third_title" "$constrained_title")"
+    fail "Driftile changed sibling frames after the live $client_label $protocol minimum became incompatible: $(describe_layout "$first_title" "$second_title" "$third_title" "$constrained_title")"
   wait_for_active "$third_title" || \
-    fail "Driftile changed focus after the live $protocol minimum became incompatible"
+    fail "Driftile changed focus after the live $client_label $protocol minimum became incompatible"
   activate_window "$constrained_title" || \
-    fail "KWin could not refocus the constrained $protocol window"
+    fail "KWin could not refocus the constrained $client_label $protocol window"
   wait_for_active "$constrained_title" || \
-    fail "KWin did not refocus the constrained $protocol window"
+    fail "KWin did not refocus the constrained $client_label $protocol window"
   activate_window "$third_title" || \
-    fail "KWin could not trigger relaxed live $protocol constraints"
+    fail "KWin could not trigger relaxed live $client_label $protocol constraints"
   wait_for_active "$third_title" || \
-    fail "KWin did not focus the adjacent $protocol window while relaxing constraints"
+    fail "KWin did not focus the adjacent $protocol window while relaxing $client_label constraints"
 
   wait_for_geometries \
     "$first_title" "$tiled_first" \
     "$second_title" "$tiled_second" \
     "$third_title" "$tiled_third" \
     "$relaxed_title" "$tiled_client" || \
-    fail "Driftile did not recover the exact $protocol layout after hard constraints relaxed: $(describe_layout "$first_title" "$second_title" "$third_title" "$relaxed_title")"
+    fail "Driftile did not recover the exact $protocol layout after $client_label hard constraints relaxed: $(describe_layout "$first_title" "$second_title" "$third_title" "$relaxed_title")"
   invoke_shortcut "driftile_focus_column_right" || \
-    fail "KGlobalAccel could not focus the recovered $protocol window"
+    fail "KGlobalAccel could not focus the recovered $client_label $protocol window"
   wait_for_active "$relaxed_title" || \
-    fail "Driftile could not focus the recovered $protocol window"
+    fail "Driftile could not focus the recovered $client_label $protocol window"
 
   stop_client "$client_pid"
   wait_for_window_gone "$relaxed_title" || \
-    fail "the live-constraint $protocol window did not close"
+    fail "the $client_label live-constraint $protocol window did not close"
   activate_window "$first_title" || \
-    fail "KWin could not reveal the first $protocol window after live-constraint acceptance"
+    fail "KWin could not reveal the first $protocol window after $client_label live-constraint acceptance"
   wait_for_active "$first_title" || \
-    fail "KWin did not focus the first $protocol window after live-constraint acceptance"
+    fail "KWin did not focus the first $protocol window after $client_label live-constraint acceptance"
   activate_window "$third_title" || \
-    fail "KWin could not restore $protocol focus after live-constraint acceptance"
+    fail "KWin could not restore $protocol focus after $client_label live-constraint acceptance"
   wait_for_active "$third_title" || \
-    fail "KWin did not restore $protocol focus after live-constraint acceptance"
+    fail "KWin did not restore $protocol focus after $client_label live-constraint acceptance"
   wait_for_geometries \
     "$first_title" "$original_first" \
     "$second_title" "$original_second" \
     "$third_title" "$original_third" || \
-    fail "Driftile did not restore the exact $protocol layout after live-constraint acceptance: $(describe_layout "$first_title" "$second_title" "$third_title")"
+    fail "Driftile did not restore the exact $protocol layout after $client_label live-constraint acceptance: $(describe_layout "$first_title" "$second_title" "$third_title")"
 }
 
 run_scenario() {
@@ -6140,6 +6185,14 @@ run_scenario() {
 
   verify_live_hard_constraint_recovery \
     "$protocol" \
+    qt \
+    "$first_title" \
+    "$second_title" \
+    "$third_title"
+
+  verify_live_hard_constraint_recovery \
+    "$protocol" \
+    gtk3 \
     "$first_title" \
     "$second_title" \
     "$third_title"
