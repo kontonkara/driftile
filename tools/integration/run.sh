@@ -186,7 +186,7 @@ run_backend() (
 
   if ! kpackagetool6 \
     --type=KWin/Script \
-    --install "$project_root/dist/kwin-script" \
+    --install "$package_archive" \
     >/dev/null; then
     fail "KPackage could not install Driftile in the $backend sandbox."
   fi
@@ -325,7 +325,17 @@ case "$selection" in
 esac
 
 require_command npm
-npm --prefix "$project_root" run build >/dev/null
+require_command node
+package_version=$(node "$project_root/tools/release-version.mjs")
+readonly package_version
+package_archive="$project_root/dist/driftile-$package_version.kwinscript"
+readonly package_archive
+npm --prefix "$project_root" run package >/dev/null
+
+if [[ ! -f "$package_archive" ]]; then
+  printf 'Missing packaged KWin artifact: %s\n' "$package_archive" >&2
+  exit 1
+fi
 
 if [[ "$selection" == "all" || "$selection" == "wayland" ]]; then
   run_backend wayland
