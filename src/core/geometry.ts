@@ -501,6 +501,97 @@ function appendWeightedHeightWindows(
   }
 }
 
+interface AutomaticHeightConstraint {
+  readonly index: number;
+  readonly maximumHeight: number;
+  readonly maximumLogWaterLevel: number;
+  readonly minimumHeight: number;
+  readonly minimumLogWaterLevel: number;
+  readonly weight: number;
+}
+
+class AutomaticHeightConstraintIndex {
+  private readonly leafCount: number;
+  private readonly maximumMinimumLogWaterLevels: Float64Array;
+  private readonly minimumMaximumLogWaterLevels: Float64Array;
+
+  constructor(constraints: readonly (AutomaticHeightConstraint | undefined)[]) {
+    let leafCount = 1;
+
+    while (leafCount < constraints.length) {
+      leafCount *= 2;
+    }
+
+    this.leafCount = leafCount;
+    this.maximumMinimumLogWaterLevels = new Float64Array(leafCount * 2);
+    this.maximumMinimumLogWaterLevels.fill(Number.NEGATIVE_INFINITY);
+    this.minimumMaximumLogWaterLevels = new Float64Array(leafCount * 2);
+    this.minimumMaximumLogWaterLevels.fill(Number.POSITIVE_INFINITY);
+
+    for (const constraint of constraints) {
+      if (!constraint) {
+        continue;
+      }
+
+      const leaf = leafCount + constraint.index;
+      this.maximumMinimumLogWaterLevels[leaf] = constraint.minimumLogWaterLevel;
+      this.minimumMaximumLogWaterLevels[leaf] = constraint.maximumLogWaterLevel;
+    }
+
+    for (let node = leafCount - 1; node > 0; node -= 1) {
+      this.updateNode(node);
+    }
+  }
+
+  firstViolation(logWaterLevel: number): number {
+    if (!this.nodeHasViolation(1, logWaterLevel)) {
+      return -1;
+    }
+
+    let node = 1;
+
+    while (node < this.leafCount) {
+      const left = node * 2;
+      node = this.nodeHasViolation(left, logWaterLevel) ? left : left + 1;
+    }
+
+    return node - this.leafCount;
+  }
+
+  remove(index: number): void {
+    let node = this.leafCount + index;
+    this.maximumMinimumLogWaterLevels[node] = Number.NEGATIVE_INFINITY;
+    this.minimumMaximumLogWaterLevels[node] = Number.POSITIVE_INFINITY;
+
+    while (node > 1) {
+      node = Math.floor(node / 2);
+      this.updateNode(node);
+    }
+  }
+
+  private nodeHasViolation(node: number, logWaterLevel: number): boolean {
+    return (
+      (this.maximumMinimumLogWaterLevels[node] ?? Number.NEGATIVE_INFINITY) >
+        logWaterLevel ||
+      (this.minimumMaximumLogWaterLevels[node] ?? Number.POSITIVE_INFINITY) <
+        logWaterLevel
+    );
+  }
+
+  private updateNode(node: number): void {
+    const left = node * 2;
+    const right = left + 1;
+    this.maximumMinimumLogWaterLevels[node] = Math.max(
+      this.maximumMinimumLogWaterLevels[left] ?? Number.NEGATIVE_INFINITY,
+      this.maximumMinimumLogWaterLevels[right] ?? Number.NEGATIVE_INFINITY,
+    );
+    this.minimumMaximumLogWaterLevels[node] = Math.min(
+      this.minimumMaximumLogWaterLevels[left] ?? Number.POSITIVE_INFINITY,
+      this.minimumMaximumLogWaterLevels[right] ?? Number.POSITIVE_INFINITY,
+    );
+  }
+}
+
 function distributeAutomaticWindowHeights(
   output: Array<number | undefined>,
   policies: readonly WindowHeight[],
@@ -606,97 +697,6 @@ function distributeAutomaticWindowHeights(
 
   if (remaining > floatingPointTolerance(initialBudget, remaining)) {
     throw new RangeError("window maximum heights cannot fill the work area");
-  }
-}
-
-interface AutomaticHeightConstraint {
-  readonly index: number;
-  readonly maximumHeight: number;
-  readonly maximumLogWaterLevel: number;
-  readonly minimumHeight: number;
-  readonly minimumLogWaterLevel: number;
-  readonly weight: number;
-}
-
-class AutomaticHeightConstraintIndex {
-  private readonly leafCount: number;
-  private readonly maximumMinimumLogWaterLevels: Float64Array;
-  private readonly minimumMaximumLogWaterLevels: Float64Array;
-
-  constructor(constraints: readonly (AutomaticHeightConstraint | undefined)[]) {
-    let leafCount = 1;
-
-    while (leafCount < constraints.length) {
-      leafCount *= 2;
-    }
-
-    this.leafCount = leafCount;
-    this.maximumMinimumLogWaterLevels = new Float64Array(leafCount * 2);
-    this.maximumMinimumLogWaterLevels.fill(Number.NEGATIVE_INFINITY);
-    this.minimumMaximumLogWaterLevels = new Float64Array(leafCount * 2);
-    this.minimumMaximumLogWaterLevels.fill(Number.POSITIVE_INFINITY);
-
-    for (const constraint of constraints) {
-      if (!constraint) {
-        continue;
-      }
-
-      const leaf = leafCount + constraint.index;
-      this.maximumMinimumLogWaterLevels[leaf] = constraint.minimumLogWaterLevel;
-      this.minimumMaximumLogWaterLevels[leaf] = constraint.maximumLogWaterLevel;
-    }
-
-    for (let node = leafCount - 1; node > 0; node -= 1) {
-      this.updateNode(node);
-    }
-  }
-
-  firstViolation(logWaterLevel: number): number {
-    if (!this.nodeHasViolation(1, logWaterLevel)) {
-      return -1;
-    }
-
-    let node = 1;
-
-    while (node < this.leafCount) {
-      const left = node * 2;
-      node = this.nodeHasViolation(left, logWaterLevel) ? left : left + 1;
-    }
-
-    return node - this.leafCount;
-  }
-
-  remove(index: number): void {
-    let node = this.leafCount + index;
-    this.maximumMinimumLogWaterLevels[node] = Number.NEGATIVE_INFINITY;
-    this.minimumMaximumLogWaterLevels[node] = Number.POSITIVE_INFINITY;
-
-    while (node > 1) {
-      node = Math.floor(node / 2);
-      this.updateNode(node);
-    }
-  }
-
-  private nodeHasViolation(node: number, logWaterLevel: number): boolean {
-    return (
-      (this.maximumMinimumLogWaterLevels[node] ?? Number.NEGATIVE_INFINITY) >
-        logWaterLevel ||
-      (this.minimumMaximumLogWaterLevels[node] ?? Number.POSITIVE_INFINITY) <
-        logWaterLevel
-    );
-  }
-
-  private updateNode(node: number): void {
-    const left = node * 2;
-    const right = left + 1;
-    this.maximumMinimumLogWaterLevels[node] = Math.max(
-      this.maximumMinimumLogWaterLevels[left] ?? Number.NEGATIVE_INFINITY,
-      this.maximumMinimumLogWaterLevels[right] ?? Number.NEGATIVE_INFINITY,
-    );
-    this.minimumMaximumLogWaterLevels[node] = Math.min(
-      this.minimumMaximumLogWaterLevels[left] ?? Number.POSITIVE_INFINITY,
-      this.minimumMaximumLogWaterLevels[right] ?? Number.POSITIVE_INFINITY,
-    );
   }
 }
 
