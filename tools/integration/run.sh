@@ -16,6 +16,31 @@ require_command() {
   fi
 }
 
+find_dbus_session_config() {
+  local candidate
+  local daemon
+  local prefix
+
+  daemon=$(readlink -f "$(command -v dbus-daemon)")
+  prefix=$(dirname "$(dirname "$daemon")")
+
+  for candidate in \
+    "$prefix/share/dbus-1/session.conf" \
+    "$prefix/etc/dbus-1/session.conf"; do
+    if [[ -r "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return
+    fi
+  done
+
+  if [[ -r /etc/dbus-1/session.conf ]]; then
+    printf '%s\n' /etc/dbus-1/session.conf
+    return
+  fi
+
+  return 1
+}
+
 fail() {
   local message=$1
 
@@ -52,6 +77,7 @@ wait_for_file() {
 run_backend() (
   local backend=$1
   local candidate
+  local dbus_session_config
   local sandbox
   local log_file
   local layer_shell_qml_import="${DRIFTILE_SMOKE_LAYER_SHELL_QML_IMPORT:-}"
@@ -99,6 +125,7 @@ run_backend() (
 
   for command_name in \
     busctl \
+    dbus-daemon \
     dbus-run-session \
     gjs \
     jq \
@@ -109,6 +136,9 @@ run_backend() (
     timeout; do
     require_command "$command_name" || exit 1
   done
+
+  dbus_session_config=$(find_dbus_session_config) || \
+    fail "D-Bus session configuration is unavailable."
 
   qml_binary=$(readlink -f "$(command -v qml)")
   qml_prefix=$(dirname "$(dirname "$qml_binary")")
@@ -232,7 +262,8 @@ run_backend() (
 
       export DRIFTILE_SMOKE_SCENARIO="$scenario"
 
-      if ! timeout --kill-after=5s 150s dbus-run-session -- \
+      if ! timeout --kill-after=5s 150s \
+        dbus-run-session --config-file="$dbus_session_config" -- \
         kwin_wayland \
         --virtual \
         --width 1280 \
@@ -280,7 +311,8 @@ run_backend() (
       display_number=$(<"$sandbox/display")
       export DISPLAY=":$display_number"
 
-      if ! timeout --kill-after=5s 90s dbus-run-session -- \
+      if ! timeout --kill-after=5s 90s \
+        dbus-run-session --config-file="$dbus_session_config" -- \
         "$project_root/tools/integration/x11-session.sh" \
         >"$log_file" 2>&1; then
         fail "The isolated KWin X11 session did not finish successfully."
