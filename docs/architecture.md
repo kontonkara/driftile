@@ -132,6 +132,10 @@ The persistence foundation is a bounded, versioned JSON codec in core. It stores
 
 Transient runtime state is never durable: expected layout frames, decoration ownership, focus caches, waiting and suspension state, schedulers, probes, and transaction tokens are excluded. A context fingerprint is stored only with original client and frame restore baselines; a mismatch discards those baselines without rejecting the logical layout. A window `liveId` is an exact same-session reload hint only. The pure matcher gives that identity precedence, then accepts public KWin session descriptors only when both sides are globally unique; missing, duplicate, or overlapping matches remain unmatched. Output matching prefers a unique display serial tuple and otherwise requires the available connector metadata exactly. Desktops require their exact KWin IDs.
 
+Canonical capture records bounded public KWin window identity and output
+manufacturer, model, and serial metadata when available. Empty, oversized, or
+control-bearing optional values are omitted before they reach the codec.
+
 A matching restore baseline is accepted only when its client frame, frame, and
 border-adjusted restore frame remain inside the current work area and the final
 frame satisfies the live size constraints. An unsafe baseline is discarded

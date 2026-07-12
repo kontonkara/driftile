@@ -23,8 +23,11 @@ export interface KWinOutput {
   readonly devicePixelRatio: number;
   readonly geometry: KWinRect;
   readonly geometryChanged?: KWinSignal<[]>;
+  readonly manufacturer?: string;
+  readonly model?: string;
   readonly name: string;
   readonly scaleChanged?: KWinSignal<[]>;
+  readonly serialNumber?: string;
 }
 
 export interface KWinWindow {
@@ -33,6 +36,7 @@ export interface KWinWindow {
   readonly decorationChanged?: KWinSignal<[]>;
   readonly decorationPolicyChanged?: KWinSignal<[]>;
   readonly deleted: boolean;
+  readonly desktopFileName?: string;
   desktops: readonly KWinVirtualDesktop[];
   readonly desktopsChanged?: KWinSignal<[]>;
   readonly desktopWindow: boolean;
@@ -70,13 +74,17 @@ export interface KWinWindow {
   readonly requestedTileChanged?: KWinSignal<[]>;
   readonly resize: boolean;
   readonly resizeable: boolean;
+  readonly resourceClass?: string;
+  readonly resourceName?: string;
   setMaximize?(vertically: boolean, horizontally: boolean): void;
   readonly specialWindow: boolean;
+  readonly tag?: string;
   readonly tile: object | null;
   readonly tileChanged?: KWinSignal<[tile: object | null]>;
   readonly transient: boolean;
   readonly transientChanged?: KWinSignal<[]>;
   readonly transientFor: KWinWindow | null;
+  readonly windowRole?: string;
 }
 
 export interface KWinWorkspace {

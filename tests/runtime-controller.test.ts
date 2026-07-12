@@ -2588,6 +2588,112 @@ describe("RuntimeController", () => {
     },
   );
 
+  it("captures public KWin session identity descriptors", () => {
+    const output: KWinOutput = {
+      ...createOutput("DP-1", 0),
+      manufacturer: "Example",
+      model: "Panel",
+      serialNumber: "serial-1",
+    };
+    const desktop = { id: "desktop-1" };
+    const tracked = createTrackedWindow("window-1", output, desktop, {
+      desktopFileName: "org.example.Editor",
+      resourceClass: "example-editor",
+      resourceName: "editor-main",
+      tag: "primary-document",
+      windowRole: "main",
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [tracked.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(
+      decodeLayoutPersistence(requiredLayoutDocument(controller)),
+    ).toMatchObject({
+      ok: true,
+      value: {
+        outputs: [
+          {
+            key: "DP-1",
+            manufacturer: "Example",
+            model: "Panel",
+            name: "DP-1",
+            serialNumber: "serial-1",
+          },
+        ],
+        windows: [
+          {
+            key: "window-1",
+            liveId: "window-1",
+            sessionMatch: {
+              desktopFileName: "org.example.Editor",
+              resourceClass: "example-editor",
+              resourceName: "editor-main",
+              tag: "primary-document",
+              windowRole: "main",
+            },
+          },
+        ],
+      },
+    });
+    controller.stop();
+  });
+
+  it("omits unsafe optional KWin identity descriptors", () => {
+    const oversized = "x".repeat(
+      LAYOUT_PERSISTENCE_LIMITS.identifierCharacters + 1,
+    );
+    const output: KWinOutput = {
+      ...createOutput("DP-1", 0),
+      manufacturer: "",
+      model: "unsafe\nmodel",
+      serialNumber: oversized,
+    };
+    const desktop = { id: "desktop-1" };
+    const tracked = createTrackedWindow("window-1", output, desktop, {
+      desktopFileName: "",
+      resourceClass: "unsafe\u0000class",
+      resourceName: oversized,
+      tag: "unsafe\u007ftag",
+      windowRole: "",
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [tracked.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    expect(controller.start()).toBe(true);
+    const decoded = decodeLayoutPersistence(requiredLayoutDocument(controller));
+
+    expect(decoded.ok).toBe(true);
+
+    if (!decoded.ok) {
+      throw new Error("sanitized identity persistence was rejected");
+    }
+
+    expect(decoded.value.outputs).toEqual([{ key: "DP-1", name: "DP-1" }]);
+    expect(decoded.value.windows).toEqual([
+      { key: "window-1", liveId: "window-1" },
+    ]);
+    controller.stop();
+  });
+
   it("does not capture while a topology transaction is unsettled", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };

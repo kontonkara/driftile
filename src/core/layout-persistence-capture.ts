@@ -13,8 +13,11 @@ import {
   type PersistedColumnMemberV1,
   type PersistedContextV1,
   type PersistedFloatingWindowV1,
+  type PersistedOutputV1,
   type PersistedRectV1,
   type PersistedRestoreBaselineV1,
+  type PersistedWindowMatchV1,
+  type PersistedWindowV1,
 } from "./layout-persistence";
 
 export interface LayoutPersistenceCaptureContext {
@@ -47,12 +50,24 @@ export interface LayoutPersistenceCaptureRestoreBaselineValue {
   readonly noBorder: boolean | null;
 }
 
+export interface LayoutPersistenceCaptureOutput {
+  readonly manufacturer?: string;
+  readonly model?: string;
+  readonly name: string;
+  readonly serialNumber?: string;
+}
+
+export interface LayoutPersistenceCaptureWindow {
+  readonly liveId: string;
+  readonly sessionMatch?: PersistedWindowMatchV1;
+}
+
 export interface LayoutPersistenceCaptureInput {
   readonly contexts: readonly LayoutPersistenceCaptureContext[];
   readonly floatingWindows: readonly LayoutPersistenceCaptureFloatingWindow[];
   readonly fullWidthRestores: readonly LayoutPersistenceCaptureFullWidthRestore[];
-  readonly liveOutputNames: readonly string[];
-  readonly liveWindowIds: readonly string[];
+  readonly liveOutputs: readonly LayoutPersistenceCaptureOutput[];
+  readonly liveWindows: readonly LayoutPersistenceCaptureWindow[];
   readonly restoreBaselines?: readonly LayoutPersistenceCaptureRestoreBaseline[];
 }
 
@@ -69,11 +84,8 @@ interface IndexedRestoreBaselines {
 export function captureLayoutPersistence(
   input: LayoutPersistenceCaptureInput,
 ): string {
-  const liveOutputNames = uniqueStrings(
-    input.liveOutputNames,
-    "live output name",
-  );
-  const liveWindowIds = uniqueStrings(input.liveWindowIds, "live window ID");
+  const liveOutputs = indexLiveOutputs(input.liveOutputs);
+  const liveWindows = indexLiveWindows(input.liveWindows);
   const contextsByKey = new Map<string, LayoutPersistenceCaptureContext>();
   const columnsByContext = new Map<string, ReadonlySet<ColumnId>>();
   const tiledContextByWindow = new Map<string, string>();
@@ -131,23 +143,17 @@ export function captureLayoutPersistence(
   const restoreBaselines = indexRestoreBaselines(
     input.restoreBaselines ?? [],
     contextsByKey,
-    liveWindowIds,
+    liveWindows,
     tiledContextByWindow,
   );
-  const outputs = new Map<
-    string,
-    { readonly key: string; readonly name: string }
-  >();
-  const windows = new Map<
-    string,
-    { readonly key: string; readonly liveId: string }
-  >();
+  const outputs = new Map<string, PersistedOutputV1>();
+  const windows = new Map<string, PersistedWindowV1>();
   const ownedWindowIds = new Set<string>();
   const contexts: PersistedContextV1[] = [];
 
   for (const context of input.contexts) {
     const outputName = String(context.layout.outputId);
-    registerOutput(outputName, liveOutputNames, outputs);
+    registerOutput(outputName, liveOutputs, outputs);
     const activeColumnIndex = resolveActiveColumnIndex(context.layout);
     const contextRestores = fullWidthRestores.get(context.key);
     const restoreFingerprint = restoreBaselines.fingerprintByContext.get(
@@ -168,7 +174,7 @@ export function captureLayoutPersistence(
 
         const members = column.windowIds.map((id, memberIndex) => {
           const liveId = String(id);
-          registerWindow(liveId, liveWindowIds, ownedWindowIds, windows);
+          registerWindow(liveId, liveWindows, ownedWindowIds, windows);
           const height = heights?.[memberIndex];
 
           if (heights !== undefined && height === undefined) {
@@ -209,8 +215,8 @@ export function captureLayoutPersistence(
     }
 
     const outputName = String(placement.outputId);
-    registerOutput(outputName, liveOutputNames, outputs);
-    registerWindow(liveId, liveWindowIds, ownedWindowIds, windows);
+    registerOutput(outputName, liveOutputs, outputs);
+    registerWindow(liveId, liveWindows, ownedWindowIds, windows);
     const positions = tiledPositionsByContext.get(
       contextIdentity(outputName, String(placement.desktopId)),
     );
@@ -280,7 +286,7 @@ function indexFullWidthRestores(
 function indexRestoreBaselines(
   baselines: readonly LayoutPersistenceCaptureRestoreBaseline[],
   contexts: ReadonlyMap<string, LayoutPersistenceCaptureContext>,
-  liveWindowIds: ReadonlySet<string>,
+  liveWindows: ReadonlyMap<string, LayoutPersistenceCaptureWindow>,
   tiledContextByWindow: ReadonlyMap<string, string>,
 ): IndexedRestoreBaselines {
   const baselinesByWindow = new Map<string, PersistedRestoreBaselineV1>();
@@ -291,7 +297,7 @@ function indexRestoreBaselines(
       invalid("a restore baseline must reference a captured context");
     }
 
-    if (!liveWindowIds.has(entry.liveId)) {
+    if (!liveWindows.has(entry.liveId)) {
       invalid("a restore baseline must reference a live window");
     }
 
@@ -390,25 +396,29 @@ function persistedMember(
 
 function registerOutput(
   name: string,
-  live: ReadonlySet<string>,
-  outputs: Map<string, { readonly key: string; readonly name: string }>,
+  live: ReadonlyMap<string, LayoutPersistenceCaptureOutput>,
+  outputs: Map<string, PersistedOutputV1>,
 ): void {
-  if (!live.has(name)) {
+  const descriptor = live.get(name);
+
+  if (!descriptor) {
     invalid("captured layout state references a non-live output");
   }
 
   if (!outputs.has(name)) {
-    outputs.set(name, { key: name, name });
+    outputs.set(name, persistedOutput(descriptor));
   }
 }
 
 function registerWindow(
   liveId: string,
-  live: ReadonlySet<string>,
+  live: ReadonlyMap<string, LayoutPersistenceCaptureWindow>,
   owned: Set<string>,
-  windows: Map<string, { readonly key: string; readonly liveId: string }>,
+  windows: Map<string, PersistedWindowV1>,
 ): void {
-  if (!live.has(liveId)) {
+  const descriptor = live.get(liveId);
+
+  if (!descriptor) {
     invalid("captured layout state references a non-live window");
   }
 
@@ -417,24 +427,85 @@ function registerWindow(
   }
 
   owned.add(liveId);
-  windows.set(liveId, { key: liveId, liveId });
+  windows.set(liveId, persistedWindow(descriptor));
 }
 
-function uniqueStrings(
-  values: readonly string[],
-  label: string,
-): ReadonlySet<string> {
-  const unique = new Set<string>();
+function indexLiveOutputs(
+  outputs: readonly LayoutPersistenceCaptureOutput[],
+): ReadonlyMap<string, LayoutPersistenceCaptureOutput> {
+  const indexed = new Map<string, LayoutPersistenceCaptureOutput>();
 
-  for (const value of values) {
-    if (value.length === 0 || unique.has(value)) {
-      invalid(`${label}s must be non-empty and unique`);
+  for (const output of outputs) {
+    if (output.name.length === 0 || indexed.has(output.name)) {
+      invalid("live output names must be non-empty and unique");
     }
 
-    unique.add(value);
+    indexed.set(output.name, output);
   }
 
-  return unique;
+  return indexed;
+}
+
+function indexLiveWindows(
+  windows: readonly LayoutPersistenceCaptureWindow[],
+): ReadonlyMap<string, LayoutPersistenceCaptureWindow> {
+  const indexed = new Map<string, LayoutPersistenceCaptureWindow>();
+
+  for (const window of windows) {
+    if (window.liveId.length === 0 || indexed.has(window.liveId)) {
+      invalid("live window IDs must be non-empty and unique");
+    }
+
+    indexed.set(window.liveId, window);
+  }
+
+  return indexed;
+}
+
+function persistedOutput(
+  output: LayoutPersistenceCaptureOutput,
+): PersistedOutputV1 {
+  return {
+    key: output.name,
+    ...(output.manufacturer === undefined
+      ? {}
+      : { manufacturer: output.manufacturer }),
+    ...(output.model === undefined ? {} : { model: output.model }),
+    name: output.name,
+    ...(output.serialNumber === undefined
+      ? {}
+      : { serialNumber: output.serialNumber }),
+  };
+}
+
+function persistedWindow(
+  window: LayoutPersistenceCaptureWindow,
+): PersistedWindowV1 {
+  return {
+    key: window.liveId,
+    liveId: window.liveId,
+    ...(window.sessionMatch === undefined
+      ? {}
+      : { sessionMatch: cloneWindowMatch(window.sessionMatch) }),
+  };
+}
+
+function cloneWindowMatch(
+  match: PersistedWindowMatchV1,
+): PersistedWindowMatchV1 {
+  return {
+    ...(match.desktopFileName === undefined
+      ? {}
+      : { desktopFileName: match.desktopFileName }),
+    ...(match.resourceClass === undefined
+      ? {}
+      : { resourceClass: match.resourceClass }),
+    ...(match.resourceName === undefined
+      ? {}
+      : { resourceName: match.resourceName }),
+    ...(match.tag === undefined ? {} : { tag: match.tag }),
+    ...(match.windowRole === undefined ? {} : { windowRole: match.windowRole }),
+  };
 }
 
 function cloneWidth(width: ColumnWidth): ColumnWidth {

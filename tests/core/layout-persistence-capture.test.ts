@@ -111,13 +111,74 @@ describe("layout persistence capture", () => {
       contexts: [...input.contexts].reverse(),
       floatingWindows: [...input.floatingWindows].reverse(),
       fullWidthRestores: [...input.fullWidthRestores].reverse(),
-      liveOutputNames: [...input.liveOutputNames].reverse(),
-      liveWindowIds: [...input.liveWindowIds].reverse(),
+      liveOutputs: [...input.liveOutputs].reverse(),
+      liveWindows: [...input.liveWindows].reverse(),
     };
 
     expect(captureLayoutPersistence(reordered)).toBe(
       captureLayoutPersistence(input),
     );
+  });
+
+  it("captures stable output and window session descriptors", () => {
+    const input = representativeInput();
+    const document = captureLayoutPersistence({
+      ...input,
+      liveOutputs: input.liveOutputs.map((output) =>
+        output.name === "DP-1"
+          ? {
+              ...output,
+              manufacturer: "Example",
+              model: "Panel",
+              serialNumber: "serial-1",
+            }
+          : output,
+      ),
+      liveWindows: input.liveWindows.map((window) =>
+        window.liveId === "window-1"
+          ? {
+              ...window,
+              sessionMatch: {
+                desktopFileName: "org.example.Editor",
+                resourceClass: "example-editor",
+                resourceName: "editor-main",
+                tag: "primary-document",
+                windowRole: "main",
+              },
+            }
+          : window,
+      ),
+    });
+    const decoded = decodeLayoutPersistence(document);
+
+    expect(decoded.ok).toBe(true);
+
+    if (!decoded.ok) {
+      return;
+    }
+
+    expect(
+      decoded.value.outputs.find((output) => output.key === "DP-1"),
+    ).toEqual({
+      key: "DP-1",
+      manufacturer: "Example",
+      model: "Panel",
+      name: "DP-1",
+      serialNumber: "serial-1",
+    });
+    expect(
+      decoded.value.windows.find((window) => window.key === "window-1"),
+    ).toEqual({
+      key: "window-1",
+      liveId: "window-1",
+      sessionMatch: {
+        desktopFileName: "org.example.Editor",
+        resourceClass: "example-editor",
+        resourceName: "editor-main",
+        tag: "primary-document",
+        windowRole: "main",
+      },
+    });
   });
 
   it("attaches restore baselines to their exact tiled context", () => {
@@ -211,8 +272,8 @@ describe("layout persistence capture", () => {
         contexts: [],
         floatingWindows: [floating],
         fullWidthRestores: [],
-        liveOutputNames: [String(secondOutput)],
-        liveWindowIds: [floating.liveId],
+        liveOutputs: [{ name: String(secondOutput) }],
+        liveWindows: [{ liveId: floating.liveId }],
       }),
     );
 
@@ -240,8 +301,11 @@ describe("layout persistence capture", () => {
           contexts: [],
           floatingWindows: [],
           fullWidthRestores: [],
-          liveOutputNames: ["DP-1"],
-          liveWindowIds: ["waiting", "automatic-floating"],
+          liveOutputs: [{ name: "DP-1" }],
+          liveWindows: [
+            { liveId: "waiting" },
+            { liveId: "automatic-floating" },
+          ],
         }),
       ),
     ).toEqual({
@@ -330,28 +394,30 @@ describe("layout persistence capture", () => {
       "a missing live output",
       (input: LayoutPersistenceCaptureInput) => ({
         ...input,
-        liveOutputNames: ["HDMI-A-1"],
+        liveOutputs: [{ name: "HDMI-A-1" }],
       }),
     ],
     [
       "a missing live window",
       (input: LayoutPersistenceCaptureInput) => ({
         ...input,
-        liveWindowIds: input.liveWindowIds.filter((id) => id !== "window-1"),
+        liveWindows: input.liveWindows.filter(
+          (window) => window.liveId !== "window-1",
+        ),
       }),
     ],
     [
       "duplicate live output names",
       (input: LayoutPersistenceCaptureInput) => ({
         ...input,
-        liveOutputNames: [...input.liveOutputNames, "DP-1"],
+        liveOutputs: [...input.liveOutputs, { name: "DP-1" }],
       }),
     ],
     [
       "duplicate live window IDs",
       (input: LayoutPersistenceCaptureInput) => ({
         ...input,
-        liveWindowIds: [...input.liveWindowIds, "window-1"],
+        liveWindows: [...input.liveWindows, { liveId: "window-1" }],
       }),
     ],
     [
@@ -430,7 +496,7 @@ describe("layout persistence capture", () => {
           ...floating,
           liveId: "other-floating",
         })),
-        liveWindowIds: [...input.liveWindowIds, "other-floating"],
+        liveWindows: [...input.liveWindows, { liveId: "other-floating" }],
       }),
     ],
   ])("fails closed for %s", (_name, change) => {
@@ -503,14 +569,18 @@ function representativeInput(): LayoutPersistenceCaptureInput {
         width: { kind: "fixed", value: 720 },
       },
     ],
-    liveOutputNames: ["HDMI-A-1", "DP-1", "unused-output"],
-    liveWindowIds: [
-      "window-4",
-      "floating-1",
-      "window-3",
-      "window-2",
-      "window-1",
-      "waiting-window",
+    liveOutputs: [
+      { name: "HDMI-A-1" },
+      { name: "DP-1" },
+      { name: "unused-output" },
+    ],
+    liveWindows: [
+      { liveId: "window-4" },
+      { liveId: "floating-1" },
+      { liveId: "window-3" },
+      { liveId: "window-2" },
+      { liveId: "window-1" },
+      { liveId: "waiting-window" },
     ],
   };
 }
@@ -540,12 +610,14 @@ function captureAnchor(
       contexts: [context],
       floatingWindows: [floating, ...additionalFloatingWindows],
       fullWidthRestores: [],
-      liveOutputNames: [String(firstOutput)],
-      liveWindowIds: [
-        ...tiledIds,
-        floating.liveId,
-        ...additionalFloatingWindows.map((window) => window.liveId),
-        ...additionalLiveIds,
+      liveOutputs: [{ name: String(firstOutput) }],
+      liveWindows: [
+        ...tiledIds.map((liveId) => ({ liveId })),
+        { liveId: floating.liveId },
+        ...additionalFloatingWindows.map((window) => ({
+          liveId: window.liveId,
+        })),
+        ...additionalLiveIds.map((liveId) => ({ liveId })),
       ],
     }),
   );
@@ -669,8 +741,13 @@ function freezeCaptureInput(
   Object.freeze(input.contexts);
   Object.freeze(input.floatingWindows);
   Object.freeze(input.fullWidthRestores);
-  Object.freeze(input.liveOutputNames);
-  Object.freeze(input.liveWindowIds);
+  input.liveOutputs.forEach(Object.freeze);
+  input.liveWindows.forEach((window) => {
+    Object.freeze(window.sessionMatch);
+    Object.freeze(window);
+  });
+  Object.freeze(input.liveOutputs);
+  Object.freeze(input.liveWindows);
   Object.freeze(input.restoreBaselines);
   return Object.freeze(input);
 }

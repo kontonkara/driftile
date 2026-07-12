@@ -39,9 +39,14 @@ import {
 } from "./core/layout-persistence-hydration";
 import {
   captureLayoutPersistence,
+  type LayoutPersistenceCaptureOutput,
   type LayoutPersistenceCaptureRestoreBaseline,
+  type LayoutPersistenceCaptureWindow,
 } from "./core/layout-persistence-capture";
-import { decodeLayoutPersistence } from "./core/layout-persistence";
+import {
+  decodeLayoutPersistence,
+  LAYOUT_PERSISTENCE_LIMITS,
+} from "./core/layout-persistence";
 import {
   findAdjacentOutput,
   type OutputDirection,
@@ -763,8 +768,17 @@ export class RuntimeController {
         contexts,
         floatingWindows,
         fullWidthRestores,
-        liveOutputNames: this.workspace.screens.map((output) => output.name),
-        liveWindowIds: this.observer.snapshot().map((window) => window.id),
+        liveOutputs: this.workspace.screens.map(
+          layoutPersistenceOutputDescriptor,
+        ),
+        liveWindows: this.observer
+          .snapshot()
+          .map((window) =>
+            layoutPersistenceWindowDescriptor(
+              window.id,
+              this.observer.source(window.id),
+            ),
+          ),
         restoreBaselines,
       });
     } catch (error) {
@@ -16583,6 +16597,77 @@ function snapshotRect(rect: Rect): Rect {
     x: rect.x,
     y: rect.y,
   };
+}
+
+function layoutPersistenceOutputDescriptor(
+  output: KWinOutput,
+): LayoutPersistenceCaptureOutput {
+  const manufacturer = optionalPersistenceIdentifier(output.manufacturer);
+  const model = optionalPersistenceIdentifier(output.model);
+  const serialNumber = optionalPersistenceIdentifier(output.serialNumber);
+
+  return {
+    ...(manufacturer === undefined ? {} : { manufacturer }),
+    ...(model === undefined ? {} : { model }),
+    name: output.name,
+    ...(serialNumber === undefined ? {} : { serialNumber }),
+  };
+}
+
+function layoutPersistenceWindowDescriptor(
+  liveId: string,
+  source: KWinWindow | undefined,
+): LayoutPersistenceCaptureWindow {
+  if (!source) {
+    return { liveId };
+  }
+
+  const desktopFileName = optionalPersistenceIdentifier(source.desktopFileName);
+  const resourceClass = optionalPersistenceIdentifier(source.resourceClass);
+  const resourceName = optionalPersistenceIdentifier(source.resourceName);
+  const tag = optionalPersistenceIdentifier(source.tag);
+  const windowRole = optionalPersistenceIdentifier(source.windowRole);
+
+  if (
+    desktopFileName === undefined &&
+    resourceClass === undefined &&
+    resourceName === undefined &&
+    tag === undefined &&
+    windowRole === undefined
+  ) {
+    return { liveId };
+  }
+
+  return {
+    liveId,
+    sessionMatch: {
+      ...(desktopFileName === undefined ? {} : { desktopFileName }),
+      ...(resourceClass === undefined ? {} : { resourceClass }),
+      ...(resourceName === undefined ? {} : { resourceName }),
+      ...(tag === undefined ? {} : { tag }),
+      ...(windowRole === undefined ? {} : { windowRole }),
+    },
+  };
+}
+
+function optionalPersistenceIdentifier(value: unknown): string | undefined {
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    value.length > LAYOUT_PERSISTENCE_LIMITS.identifierCharacters
+  ) {
+    return undefined;
+  }
+
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+
+    if (code <= 31 || code === 127) {
+      return undefined;
+    }
+  }
+
+  return value;
 }
 
 function rectsEqual(left: Rect, right: Rect): boolean {
