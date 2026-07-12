@@ -1079,6 +1079,50 @@ function controlMaximize(
   };
 }
 
+const PERSISTED_EDITOR_IDENTITIES = [
+  {
+    desktopFileName: "org.example.Editor",
+    resourceClass: "example-editor",
+    tag: "document-1",
+  },
+  {
+    desktopFileName: "org.example.Editor",
+    resourceClass: "example-editor",
+    tag: "document-2",
+  },
+] as const;
+
+function createPersistedEditorStack(
+  output: KWinOutput,
+  desktop: KWinVirtualDesktop,
+): string {
+  const windows = PERSISTED_EDITOR_IDENTITIES.map((identity, index) =>
+    createTrackedWindow(`source-editor-${String(index + 1)}`, output, desktop, {
+      ...identity,
+    }),
+  );
+  const fixture = createWorkspace(
+    output,
+    desktop,
+    [output],
+    [desktop],
+    windows.map(({ window }) => window),
+  );
+  const source = new RuntimeController(fixture.workspace, {
+    clientAreaOption: 2,
+    columnWidth: { kind: "fixed", value: 360 },
+    gap: 10,
+  });
+
+  if (!source.start() || !source.moveWindowLeft()) {
+    throw new Error("could not create persisted editor stack");
+  }
+
+  const document = requiredLayoutDocument(source);
+  source.stop();
+  return document;
+}
+
 describe("RuntimeController", () => {
   it("publishes only changed canonical layout state", () => {
     const output = createOutput("DP-1", 0);
@@ -1463,6 +1507,338 @@ describe("RuntimeController", () => {
     );
   });
 
+  it("waits for a quiet late window set before restoring once", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const document = createPersistedEditorStack(output, desktop);
+    const liveWindows = PERSISTED_EDITOR_IDENTITIES.map((identity, index) =>
+      createTrackedWindow(`live-editor-${String(index + 1)}`, output, desktop, {
+        ...identity,
+        frameGeometry: {
+          height: 320 + index * 20,
+          width: 440 + index * 20,
+          x: 80 + index * 420,
+          y: 70 + index * 30,
+        },
+      }),
+    );
+    const first = liveWindows[0];
+    const second = liveWindows[1];
+    const unrelated = createTrackedWindow(
+      "late-unrelated-dialog",
+      output,
+      desktop,
+      {
+        dialog: true,
+        normalWindow: false,
+      },
+    );
+
+    if (!first || !second) {
+      throw new Error("missing live editor window");
+    }
+
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window],
+    );
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const published: string[] = [];
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const restored = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      layoutHydrationQuietSamples: 2,
+      layoutHydrationRetryProbes: 3,
+      onLayoutStateChanged: (canonicalState) => {
+        published.push(canonicalState);
+      },
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+    const frozen = captureTrackedWindowState(liveWindows);
+    const expectWaiting = (): void => {
+      expect(restored.managedCount).toBe(0);
+      expect(restored.floatingCount).toBe(0);
+      expect(restored.captureLayoutState()).toBeNull();
+      expect(restored.finalizeLayoutStatePublication()).toBe(false);
+      expect(published).toEqual([]);
+      expectTrackedWindowState(liveWindows, frozen);
+      expect(workScheduler.pendingCount).toBe(0);
+      expect(resumeScheduler.pendingCount).toBe(1);
+    };
+
+    try {
+      expect(restored.start(document)).toBe(true);
+      expectWaiting();
+
+      resumeScheduler.flush();
+      expectWaiting();
+
+      fixture.windowAdded.emit(second.window);
+      fixture.workspace.activeWindow = second.window;
+      expectWaiting();
+
+      resumeScheduler.flush();
+      expectWaiting();
+
+      fixture.windowAdded.emit(unrelated.window);
+      expect(unrelated.writeCount).toBe(0);
+      expectWaiting();
+
+      resumeScheduler.flush();
+
+      expect(resumeScheduler.pendingCount).toBe(0);
+      expect(workScheduler.pendingCount).toBe(0);
+      expect(restored.managedCount).toBe(2);
+      expect(restored.automaticFloatingCount).toBe(1);
+      expect(
+        runtimeLayout(restored).snapshot(
+          outputId(output.name),
+          desktopId(desktop.id),
+        ),
+      ).toMatchObject({
+        columns: [
+          {
+            width: { kind: "fixed", value: 360 },
+            windowIds: [windowId("live-editor-1"), windowId("live-editor-2")],
+          },
+        ],
+      });
+      expect(published).toHaveLength(1);
+      expect(published[0]).toBe(restored.captureLayoutState());
+      expect(decodeLayoutPersistence(published[0] ?? "")).toMatchObject({
+        ok: true,
+        value: {
+          contexts: [
+            {
+              columns: [
+                {
+                  members: [
+                    { windowKey: "live-editor-1" },
+                    { windowKey: "live-editor-2" },
+                  ],
+                },
+              ],
+            },
+          ],
+          windows: [{ liveId: "live-editor-1" }, { liveId: "live-editor-2" }],
+        },
+      });
+      expect(warning).not.toHaveBeenCalled();
+    } finally {
+      warning.mockRestore();
+      restored.stop();
+    }
+  });
+
+  it("falls back after exactly three missing-window probes", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const document = createPersistedEditorStack(output, desktop);
+    const first = createTrackedWindow("live-editor-1", output, desktop, {
+      ...PERSISTED_EDITOR_IDENTITIES[0],
+      frameGeometry: { height: 320, width: 440, x: 80, y: 70 },
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window],
+    );
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const published: string[] = [];
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const restored = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      layoutHydrationQuietSamples: 2,
+      layoutHydrationRetryProbes: 3,
+      onLayoutStateChanged: (canonicalState) => {
+        published.push(canonicalState);
+      },
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+    const frozen = captureTrackedWindowState([first]);
+    const expectWaiting = (): void => {
+      expect(restored.managedCount).toBe(0);
+      expect(restored.captureLayoutState()).toBeNull();
+      expect(published).toEqual([]);
+      expectTrackedWindowState([first], frozen);
+      expect(workScheduler.pendingCount).toBe(0);
+      expect(resumeScheduler.pendingCount).toBe(1);
+      expect(warning).not.toHaveBeenCalled();
+    };
+
+    try {
+      expect(restored.start(document)).toBe(true);
+      expectWaiting();
+
+      resumeScheduler.flush();
+      expectWaiting();
+      resumeScheduler.flush();
+      expectWaiting();
+      resumeScheduler.flush();
+
+      expect(resumeScheduler.pendingCount).toBe(0);
+      expect(workScheduler.pendingCount).toBe(0);
+      expect(warning).toHaveBeenCalledTimes(1);
+      expect(warning).toHaveBeenCalledWith(
+        expect.stringContaining("missing-live-window"),
+      );
+      expect(restored.managedCount).toBe(1);
+      expect(first.writeCount).toBeGreaterThan(frozen.geometryWrites[0] ?? 0);
+      expect(restored.captureLayoutState()).not.toBeNull();
+      expect(restored.finalizeLayoutStatePublication()).toBe(false);
+      expect(published).toEqual([]);
+    } finally {
+      warning.mockRestore();
+      restored.stop();
+    }
+  });
+
+  it("cancels a pending layout hydration probe when stopped", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const document = createPersistedEditorStack(output, desktop);
+    const first = createTrackedWindow("live-editor-1", output, desktop, {
+      ...PERSISTED_EDITOR_IDENTITIES[0],
+      frameGeometry: { height: 320, width: 440, x: 80, y: 70 },
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window],
+    );
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const published: string[] = [];
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const restored = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      layoutHydrationQuietSamples: 2,
+      layoutHydrationRetryProbes: 3,
+      onLayoutStateChanged: (canonicalState) => {
+        published.push(canonicalState);
+      },
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+    const frozen = captureTrackedWindowState([first]);
+
+    try {
+      expect(restored.start(document)).toBe(true);
+      expect(resumeScheduler.pendingCount).toBe(1);
+      expect(restored.managedCount).toBe(0);
+      expect(restored.captureLayoutState()).toBeNull();
+
+      restored.stop();
+      expect(resumeScheduler.pendingCount).toBe(1);
+      resumeScheduler.flush();
+
+      expect(resumeScheduler.pendingCount).toBe(0);
+      expect(workScheduler.pendingCount).toBe(0);
+      expect(restored.managedCount).toBe(0);
+      expect(restored.captureLayoutState()).toBeNull();
+      expectTrackedWindowState([first], frozen);
+      expect(published).toEqual([]);
+      expect(warning).not.toHaveBeenCalled();
+    } finally {
+      warning.mockRestore();
+      restored.stop();
+    }
+  });
+
+  it("terminates late hydration when an output topology barrier starts", () => {
+    const output = createOutput("DP-1", 0);
+    const addedOutput = createOutput("HDMI-A-1", 1000);
+    const desktop = { id: "desktop-1" };
+    const document = createPersistedEditorStack(output, desktop);
+    const liveWindows = PERSISTED_EDITOR_IDENTITIES.map((identity, index) =>
+      createTrackedWindow(`live-editor-${String(index + 1)}`, output, desktop, {
+        ...identity,
+      }),
+    );
+    const first = liveWindows[0];
+    const second = liveWindows[1];
+
+    if (!first || !second) {
+      throw new Error("missing live editor window");
+    }
+
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window],
+    );
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const published: string[] = [];
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const restored = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      layoutHydrationQuietSamples: 2,
+      layoutHydrationRetryProbes: 3,
+      onLayoutStateChanged: (canonicalState) => {
+        published.push(canonicalState);
+      },
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+    const frozen = captureTrackedWindowState(liveWindows);
+
+    try {
+      expect(restored.start(document)).toBe(true);
+      expect(resumeScheduler.pendingCount).toBe(1);
+      fixture.setScreens([output, addedOutput]);
+      fixture.screensChanged.emit();
+      expectTrackedWindowState(liveWindows, frozen);
+
+      resumeScheduler.flush();
+
+      expect(warning).toHaveBeenCalledTimes(1);
+      expect(warning).toHaveBeenCalledWith(
+        expect.stringContaining("topology-unsettled"),
+      );
+      expect(restored.managedCount).toBe(0);
+      expect(restored.captureLayoutState()).toBeNull();
+      expectTrackedWindowState(liveWindows, frozen);
+
+      fixture.windowAdded.emit(second.window);
+      flushTopologyRecovery(resumeScheduler, workScheduler);
+
+      expect(restored.managedCount).toBe(2);
+      expect(testLayoutColumns(restored, output, desktop)).toEqual([
+        {
+          id: "column:live-editor-1",
+          windowIds: ["live-editor-1"],
+        },
+        {
+          id: "column:live-editor-2",
+          windowIds: ["live-editor-2"],
+        },
+      ]);
+      expect(resumeScheduler.pendingCount).toBe(0);
+      expect(workScheduler.pendingCount).toBe(0);
+      expect(published).toEqual([]);
+    } finally {
+      warning.mockRestore();
+      restored.stop();
+    }
+  });
+
   it("rejects ambiguous cross-session window identity without partial hydration", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
@@ -1504,13 +1880,19 @@ describe("RuntimeController", () => {
       [desktop],
       liveWindows.map(({ window }) => window),
     );
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
     const published: string[] = [];
     const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
     const restored = new RuntimeController(fixture.workspace, {
       clientAreaOption: 2,
+      layoutHydrationQuietSamples: 2,
+      layoutHydrationRetryProbes: 3,
       onLayoutStateChanged: (canonicalState) => {
         published.push(canonicalState);
       },
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
     });
 
     try {
@@ -1518,6 +1900,8 @@ describe("RuntimeController", () => {
       expect(warning).toHaveBeenCalledWith(
         expect.stringContaining("unresolved-live-window"),
       );
+      expect(workScheduler.pendingCount).toBe(0);
+      expect(resumeScheduler.pendingCount).toBe(0);
       expect(restored.managedCount).toBe(2);
       expect(testLayoutColumns(restored, output, desktop)).toEqual([
         {

@@ -164,8 +164,14 @@ serial tuple when one exists, otherwise the exact connector and available
 metadata. Ambiguous, weak, partial, or conflicting matches reject the whole
 document. Restore baselines belonging to replaced window objects are discarded,
 while exact-ID baselines remain eligible.
-After bounded startup stabilization, the runtime builds that plan and a fresh
-layout model off-side. It revalidates live window identity, ownership,
+After bounded startup stabilization, the runtime waits up to five seconds for
+missing strongly identifiable windows. Admissions, geometry, decorations,
+capture, and publication remain blocked while exactly one retry is pending. A
+complete candidate must remain identical for two resume-timer samples; unrelated
+extra windows are excluded from that quiet fingerprint. Timeout or a terminal
+mismatch releases normal admission without publishing over the loaded state.
+The runtime builds the accepted plan and a fresh layout model off-side. It
+revalidates live window identity, ownership,
 constraints, context geometry, and topology immediately before an atomic
 in-memory commit; KWin geometry writes begin only through normal reconciliation
 after the commit. Extra live windows then use normal admission. Minimized or
@@ -178,8 +184,7 @@ ownership or replace its stored source during automatic startup work.
 Unsupported future versions remain write-locked for the run. Oversized
 documents use the same conservative lock because their version cannot be
 inspected safely within the codec bound.
-Late cross-session window discovery and known-topology restoration are not
-connected yet.
+Known-topology restoration is not connected yet.
 
 ## Reconciliation rules
 

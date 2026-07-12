@@ -34,6 +34,7 @@ import {
 } from "./core/layout-engine";
 import {
   planLayoutHydration,
+  type LayoutPersistenceHydrationInput,
   type LayoutPersistenceHydrationPlan,
   type LayoutPersistenceHydrationRestoreBaselineValue,
 } from "./core/layout-persistence-hydration";
@@ -46,6 +47,7 @@ import {
 import {
   decodeLayoutPersistence,
   LAYOUT_PERSISTENCE_LIMITS,
+  type LayoutPersistenceV1,
 } from "./core/layout-persistence";
 import {
   findAdjacentOutput,
@@ -105,6 +107,7 @@ const MAX_CAPACITY_PARK_ATTEMPTS = 20;
 const MAX_BORDERLESS_SETTLEMENT_PROBES = 20;
 const MAX_EXTERNAL_FULLSCREEN_EXTRACTION_ATTEMPTS = 20;
 const MAX_FULLSCREEN_REQUEST_PROBES = 20;
+const MAX_LAYOUT_HYDRATION_PROBES = 1_000;
 const MAX_STACK_EDIT_FOCUS_PROBES = 20;
 const MAX_TOPOLOGY_SAMPLE_ATTEMPTS = 20;
 const MAX_TRANSIENT_RESUME_PROBES = 20;
@@ -485,6 +488,8 @@ export interface RuntimeControllerOptions {
   readonly columnWidthPresets?: readonly ColumnWidth[];
   readonly createRect?: KWinRectFactory;
   readonly gap?: number;
+  readonly layoutHydrationQuietSamples?: number;
+  readonly layoutHydrationRetryProbes?: number;
   readonly onLayoutStateChanged?: (canonicalState: string) => void;
   readonly schedule?: (callback: () => void) => void;
   readonly scheduleResume?: (callback: () => void) => void;
@@ -543,6 +548,14 @@ export class RuntimeController {
   private readonly geometry: KWinGeometryAdapter;
   private gap: number;
   private hydrationInProgress = false;
+  private initialLayoutDecodedState: LayoutPersistenceV1 | null = null;
+  private initialLayoutHydrationCandidateFingerprint: string | null = null;
+  private readonly initialLayoutHydrationQuietSamples: number;
+  private initialLayoutHydrationRetryRemaining = 0;
+  private readonly initialLayoutHydrationRetryProbes: number;
+  private initialLayoutHydrationRetryToken: object | null = null;
+  private initialLayoutHydrationStableSamples = 0;
+  private initialLayoutHydrationWaited = false;
   private initialLayoutHydrationStatus: InitialLayoutHydrationStatus = "none";
   private initialLayoutStateDocument: string | null = null;
   private initializing = false;
@@ -637,6 +650,14 @@ export class RuntimeController {
     this.borderlessSettlementEnabled = options.scheduleResume !== undefined;
     this.borderlessWindows = options.borderlessWindows ?? false;
     this.gap = normalizeGap(options.gap ?? DEFAULT_GAP) ?? DEFAULT_GAP;
+    this.initialLayoutHydrationQuietSamples = normalizeProbeCount(
+      options.layoutHydrationQuietSamples ?? 2,
+      1,
+    );
+    this.initialLayoutHydrationRetryProbes = normalizeProbeCount(
+      options.layoutHydrationRetryProbes ?? 0,
+      0,
+    );
     this.onLayoutStateChanged = options.onLayoutStateChanged;
     this.schedule =
       options.schedule ??
@@ -2046,6 +2067,15 @@ export class RuntimeController {
       this.initialLayoutHydrationStatus =
         this.initialLayoutStateDocument === null ? "none" : "pending";
       this.hydrationInProgress = this.initialLayoutStateDocument !== null;
+      this.initialLayoutDecodedState = null;
+      this.initialLayoutHydrationCandidateFingerprint = null;
+      this.initialLayoutHydrationRetryRemaining =
+        this.initialLayoutStateDocument === null
+          ? 0
+          : this.initialLayoutHydrationRetryProbes;
+      this.initialLayoutHydrationRetryToken = null;
+      this.initialLayoutHydrationStableSamples = 0;
+      this.initialLayoutHydrationWaited = false;
       this.preserveLoadedLayoutState = this.initialLayoutStateDocument !== null;
       this.lastPublishedLayoutState = null;
       this.layoutStatePublicationLocked = false;
@@ -2109,6 +2139,12 @@ export class RuntimeController {
     this.started = false;
     this.startupCompleted = false;
     this.hydrationInProgress = false;
+    this.initialLayoutDecodedState = null;
+    this.initialLayoutHydrationCandidateFingerprint = null;
+    this.initialLayoutHydrationRetryRemaining = 0;
+    this.initialLayoutHydrationRetryToken = null;
+    this.initialLayoutHydrationStableSamples = 0;
+    this.initialLayoutHydrationWaited = false;
     this.initialLayoutHydrationStatus = "none";
     this.initialLayoutStateDocument = null;
     this.layoutStatePublicationLocked = false;
@@ -2219,6 +2255,7 @@ export class RuntimeController {
   reconcile(): number {
     if (
       !this.started ||
+      this.hydrationInProgress ||
       this.stackEditOperation ||
       this.windowTransferOperation ||
       this.topologyStabilizing ||
@@ -2335,6 +2372,12 @@ export class RuntimeController {
 
   private readonly handleWindowAdded = (window: ObservedWindow): void => {
     const addedId = windowId(window.id);
+
+    if (this.hydrationInProgress) {
+      this.pendingWindowSyncs.add(addedId);
+      return;
+    }
+
     const source = this.observer.source(window.id);
 
     if (this.synchronizeAutomaticFloatingWindow(addedId, source)) {
@@ -11191,9 +11234,14 @@ export class RuntimeController {
     );
   }
 
-  private initializeStartupWindows(): void {
+  private initializeStartupWindows(): boolean {
     this.observer.discoverWindows();
     this.tryHydrateInitialLayoutState();
+
+    if (this.initialLayoutHydrationStatus === "pending") {
+      return false;
+    }
+
     const topologyBatchPending = this.topologyWindowOrder !== null;
     const topologyBatchConsumed = this.synchronizePendingWindows(
       topologyBatchPending && this.topologyAllowsOverflowAdmissions,
@@ -11210,10 +11258,14 @@ export class RuntimeController {
       topologyBatchPending && topologyBatchConsumed,
     );
     this.synchronizeWindowBorders();
+    return true;
   }
 
   private completeStartup(): void {
-    if (this.startupCompleted) {
+    if (
+      this.startupCompleted ||
+      this.initialLayoutHydrationStatus === "pending"
+    ) {
       return;
     }
 
@@ -11237,70 +11289,90 @@ export class RuntimeController {
       return false;
     }
 
-    this.initialLayoutStateDocument = null;
     let failureReason: string | null = null;
 
     try {
-      const decoded = decodeLayoutPersistence(document);
+      let state = this.initialLayoutDecodedState;
 
-      if (!decoded.ok) {
-        failureReason = decoded.error;
-        this.layoutStatePublicationLocked =
-          decoded.error === "unsupported-version" ||
-          decoded.error === "document-too-large";
-      } else if (this.topologyRecoveryPending || this.hasTopologyBarrier()) {
-        failureReason = "topology-unsettled";
-      } else {
-        const liveWindows = this.observer.snapshot().map((observed) => {
-          const source = this.observer.source(observed.id);
-          const liveContext = managedContext(observed);
-          const identity = layoutPersistenceWindowDescriptor(
-            observed.id,
-            source,
-          );
+      if (state === null) {
+        const decoded = decodeLayoutPersistence(document);
 
-          return {
-            desktopId: String(liveContext?.desktopId ?? ""),
-            eligible: Boolean(
-              source &&
-              liveContext &&
-              !this.automaticFloatingWindows.has(windowId(observed.id)) &&
-              !this.automaticallyFloats(source),
-            ),
-            liveId: identity.liveId,
-            outputName: observed.outputId,
-            ...(identity.sessionMatch ?? {}),
-          };
-        });
-        const planned = planLayoutHydration(decoded.value, {
-          desktops: this.workspace.desktops.map((desktop) => ({
-            id: desktop.id,
-          })),
-          outputs: this.workspace.screens.map(
-            layoutPersistenceOutputDescriptor,
-          ),
-          windows: liveWindows,
-        });
-
-        if (!planned.ok) {
-          failureReason = planned.reason;
+        if (!decoded.ok) {
+          failureReason = decoded.error;
+          this.layoutStatePublicationLocked =
+            decoded.error === "unsupported-version" ||
+            decoded.error === "document-too-large";
         } else {
-          const candidate = this.prepareLayoutHydrationCandidate(planned.value);
+          state = decoded.value;
+          this.initialLayoutDecodedState = state;
+        }
+      }
 
-          if (!candidate) {
-            failureReason = "runtime-preflight";
-          } else if (!this.layoutHydrationCandidateIsCurrent(candidate)) {
-            failureReason = "live-state-changed";
-          } else if (!this.commitLayoutHydrationCandidate(candidate)) {
-            failureReason = "runtime-state-changed";
+      if (failureReason === null) {
+        if (this.topologyRecoveryPending || this.hasTopologyBarrier()) {
+          failureReason = "topology-unsettled";
+        } else if (state !== null) {
+          const input = this.liveLayoutHydrationInput();
+          const planned = planLayoutHydration(state, input);
+
+          if (!planned.ok) {
+            if (
+              planned.reason === "missing-live-window" &&
+              this.initialLayoutHydrationRetryRemaining > 0
+            ) {
+              this.initialLayoutHydrationWaited = true;
+              this.initialLayoutHydrationCandidateFingerprint = null;
+              this.initialLayoutHydrationStableSamples = 0;
+
+              if (this.scheduleInitialLayoutHydrationRetry()) {
+                this.hydrationInProgress = true;
+                return false;
+              }
+
+              failureReason = "retry-schedule-failed";
+            } else {
+              failureReason = planned.reason;
+            }
+          } else {
+            const candidate = this.prepareLayoutHydrationCandidate(
+              planned.value,
+            );
+
+            if (!candidate) {
+              failureReason = "runtime-preflight";
+            } else if (!this.layoutHydrationCandidateIsCurrent(candidate)) {
+              failureReason = "live-state-changed";
+            } else if (
+              this.initialLayoutHydrationWaited &&
+              !this.sampleInitialLayoutHydrationCandidate(candidate)
+            ) {
+              if (
+                this.initialLayoutHydrationRetryRemaining > 0 &&
+                this.scheduleInitialLayoutHydrationRetry()
+              ) {
+                this.hydrationInProgress = true;
+                return false;
+              }
+
+              failureReason = "live-state-unsettled";
+            } else if (!this.commitLayoutHydrationCandidate(candidate)) {
+              failureReason = "runtime-state-changed";
+            }
           }
         }
       }
     } catch (error) {
       failureReason = `runtime-error:${String(error)}`;
-    } finally {
-      this.hydrationInProgress = false;
     }
+
+    this.hydrationInProgress = false;
+    this.initialLayoutDecodedState = null;
+    this.initialLayoutHydrationCandidateFingerprint = null;
+    this.initialLayoutHydrationRetryRemaining = 0;
+    this.initialLayoutHydrationRetryToken = null;
+    this.initialLayoutHydrationStableSamples = 0;
+    this.initialLayoutHydrationWaited = false;
+    this.initialLayoutStateDocument = null;
 
     if (failureReason !== null) {
       this.initialLayoutHydrationStatus = "failed";
@@ -11312,6 +11384,127 @@ export class RuntimeController {
 
     this.initialLayoutHydrationStatus = "succeeded";
     this.preserveLoadedLayoutState = false;
+    return true;
+  }
+
+  private liveLayoutHydrationInput(): LayoutPersistenceHydrationInput {
+    const windows = this.observer.snapshot().map((observed) => {
+      const source = this.observer.source(observed.id);
+      const liveContext = managedContext(observed);
+      const identity = layoutPersistenceWindowDescriptor(observed.id, source);
+
+      return {
+        desktopId: String(liveContext?.desktopId ?? ""),
+        eligible: Boolean(
+          source &&
+          liveContext &&
+          !this.automaticFloatingWindows.has(windowId(observed.id)) &&
+          !this.automaticallyFloats(source),
+        ),
+        liveId: identity.liveId,
+        outputName: observed.outputId,
+        ...(identity.sessionMatch ?? {}),
+      };
+    });
+
+    return {
+      desktops: this.workspace.desktops.map((desktop) => ({ id: desktop.id })),
+      outputs: this.workspace.screens.map(layoutPersistenceOutputDescriptor),
+      windows,
+    };
+  }
+
+  private sampleInitialLayoutHydrationCandidate(
+    candidate: LayoutHydrationCandidate,
+  ): boolean {
+    const fingerprint = JSON.stringify({
+      contexts: [...candidate.contextGeometryFingerprints].sort(
+        ([left], [right]) => left.localeCompare(right),
+      ),
+      topology: candidate.topologyFingerprint,
+      windows: [...candidate.windows]
+        .map(([id, window]) => ({
+          contextKey: window.contextKey,
+          fingerprint: window.fingerprint,
+          id: String(id),
+          suspended: window.suspended,
+          targetFrame: window.targetFrame,
+        }))
+        .sort((left, right) => left.id.localeCompare(right.id)),
+    });
+
+    if (fingerprint === this.initialLayoutHydrationCandidateFingerprint) {
+      this.initialLayoutHydrationStableSamples = Math.min(
+        this.initialLayoutHydrationQuietSamples,
+        this.initialLayoutHydrationStableSamples + 1,
+      );
+    } else {
+      this.initialLayoutHydrationCandidateFingerprint = fingerprint;
+      this.initialLayoutHydrationStableSamples = 1;
+    }
+
+    return (
+      this.initialLayoutHydrationStableSamples >=
+      this.initialLayoutHydrationQuietSamples
+    );
+  }
+
+  private scheduleInitialLayoutHydrationRetry(): boolean {
+    if (
+      !this.started ||
+      this.initialLayoutHydrationStatus !== "pending" ||
+      this.initialLayoutHydrationRetryRemaining <= 0
+    ) {
+      return false;
+    }
+
+    if (this.initialLayoutHydrationRetryToken !== null) {
+      return true;
+    }
+
+    const runGeneration = this.runGeneration;
+    const token = {};
+    this.initialLayoutHydrationRetryToken = token;
+
+    try {
+      this.scheduleResume(() => {
+        if (
+          !this.started ||
+          this.runGeneration !== runGeneration ||
+          this.initialLayoutHydrationRetryToken !== token
+        ) {
+          return;
+        }
+
+        this.initialLayoutHydrationRetryToken = null;
+        this.initialLayoutHydrationRetryRemaining -= 1;
+
+        try {
+          this.initializing = true;
+          const initialized = this.initializeStartupWindows();
+          this.initializing = false;
+
+          if (!initialized) {
+            return;
+          }
+
+          this.flushScheduledWork();
+          this.completeStartup();
+        } catch (error) {
+          console.warn(
+            `[driftile] delayed layout hydration failed error=${String(error)}`,
+          );
+          this.initializing = false;
+          this.stop();
+        } finally {
+          this.initializing = false;
+        }
+      });
+    } catch {
+      this.initialLayoutHydrationRetryToken = null;
+      return false;
+    }
+
     return true;
   }
 
@@ -11795,8 +11988,13 @@ export class RuntimeController {
 
       try {
         this.initializing = true;
-        this.initializeStartupWindows();
+        const initialized = this.initializeStartupWindows();
         this.initializing = false;
+
+        if (!initialized) {
+          return;
+        }
+
         this.flushScheduledWork();
         this.completeStartup();
       } catch (error) {
@@ -12675,7 +12873,7 @@ export class RuntimeController {
   }
 
   private flushScheduledWork(): void {
-    if (this.stackEditOperation) {
+    if (this.hydrationInProgress || this.stackEditOperation) {
       return;
     }
 
@@ -12865,6 +13063,7 @@ export class RuntimeController {
 
   private synchronizePendingWindows(allowOverflowAdmissions = false): boolean {
     if (
+      this.hydrationInProgress ||
       this.startupStabilizationToken !== null ||
       this.topologyStabilizing ||
       this.topologyRetryPending
@@ -13868,6 +14067,10 @@ export class RuntimeController {
   }
 
   private tryAdmitWindow(source: KWinWindow): boolean {
+    if (this.hydrationInProgress) {
+      return false;
+    }
+
     const id = windowId(String(source.internalId));
     const observed = normalizeWindow(source);
     const capacityLease = this.capacityLeaseByWindow.get(id);
@@ -16927,6 +17130,17 @@ function normalizeGap(value: number): number | null {
     value <= MAX_GAP
     ? value
     : null;
+}
+
+function normalizeProbeCount(value: number, minimum: number): number {
+  if (!Number.isFinite(value)) {
+    return minimum;
+  }
+
+  return Math.min(
+    MAX_LAYOUT_HYDRATION_PROBES,
+    Math.max(minimum, Math.trunc(value)),
+  );
 }
 
 function currentDesktopForOutput(workspace: KWinWorkspace, output: KWinOutput) {

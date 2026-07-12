@@ -815,6 +815,152 @@ describe("layout persistence hydration identity fallback", () => {
     ).toEqual({ ok: false, reason: "unresolved-live-window" });
   });
 
+  it("distinguishes a strong window that can still arrive", () => {
+    const state = withStaleWindow(
+      representativeState(),
+      "tiled-a",
+      editorWindowMatch("primary"),
+    );
+    const baseInput = representativeInput();
+    const input: LayoutPersistenceHydrationInput = {
+      ...baseInput,
+      windows: baseInput.windows.filter((window) => window.liveId !== "live-a"),
+    };
+
+    expect(planLayoutHydration(state, input)).toEqual({
+      ok: false,
+      reason: "missing-live-window",
+    });
+  });
+
+  it("waits when every missing strong window can still arrive", () => {
+    const baseState = representativeState();
+    const state: LayoutPersistenceV1 = {
+      ...baseState,
+      windows: baseState.windows.map((window) => {
+        if (window.key === "tiled-a") {
+          return {
+            ...window,
+            liveId: "stale-a",
+            sessionMatch: editorWindowMatch("primary"),
+          };
+        }
+
+        if (window.key === "tiled-b") {
+          return {
+            ...window,
+            liveId: "stale-b",
+            sessionMatch: editorWindowMatch("secondary"),
+          };
+        }
+
+        return window;
+      }),
+    };
+    const baseInput = representativeInput();
+    const input: LayoutPersistenceHydrationInput = {
+      ...baseInput,
+      windows: baseInput.windows.filter(
+        (window) => window.liveId !== "live-a" && window.liveId !== "live-b",
+      ),
+    };
+
+    expect(planLayoutHydration(state, input)).toEqual({
+      ok: false,
+      reason: "missing-live-window",
+    });
+  });
+
+  it("does not wait when another unresolved identity is ambiguous", () => {
+    const baseState = representativeState();
+    const state: LayoutPersistenceV1 = {
+      ...baseState,
+      windows: baseState.windows.map((window) => {
+        if (window.key === "tiled-a") {
+          return {
+            ...window,
+            liveId: "stale-a",
+            sessionMatch: editorWindowMatch("primary"),
+          };
+        }
+
+        if (window.key === "tiled-b") {
+          return {
+            ...window,
+            liveId: "stale-b",
+            sessionMatch: editorWindowMatch("secondary"),
+          };
+        }
+
+        return window;
+      }),
+    };
+    const baseInput = representativeInput();
+    const retained = baseInput.windows.filter(
+      (window) => window.liveId !== "live-a" && window.liveId !== "live-b",
+    );
+    const ambiguousSource = required(
+      baseInput.windows.find((window) => window.liveId === "live-b"),
+    );
+    const descriptor = editorWindowMatch("secondary");
+    const input: LayoutPersistenceHydrationInput = {
+      ...baseInput,
+      windows: [
+        ...retained,
+        { ...ambiguousSource, ...descriptor, liveId: "restored-b-1" },
+        { ...ambiguousSource, ...descriptor, liveId: "restored-b-2" },
+      ],
+    };
+
+    expect(planLayoutHydration(state, input)).toEqual({
+      ok: false,
+      reason: "unresolved-live-window",
+    });
+  });
+
+  it("does not wait behind an already matched weak identity", () => {
+    const baseState = representativeState();
+    const weakDescriptor = { desktopFileName: "org.example.Weak" } as const;
+    const state: LayoutPersistenceV1 = {
+      ...baseState,
+      windows: baseState.windows.map((window) => {
+        if (window.key === "tiled-a") {
+          return {
+            ...window,
+            liveId: "stale-a",
+            sessionMatch: editorWindowMatch("primary"),
+          };
+        }
+
+        if (window.key === "tiled-b") {
+          return {
+            ...window,
+            liveId: "stale-b",
+            sessionMatch: weakDescriptor,
+          };
+        }
+
+        return window;
+      }),
+    };
+    const baseInput = representativeInput();
+    const input: LayoutPersistenceHydrationInput = {
+      ...baseInput,
+      windows: baseInput.windows
+        .filter((window) => window.liveId !== "live-a")
+        .map((window) =>
+          window.liveId === "live-b"
+            ? { ...window, ...weakDescriptor, liveId: "restored-b" }
+            : window,
+        ),
+    };
+
+    expect(planLayoutHydration(state, input)).toEqual({
+      ok: false,
+      reason: "unresolved-live-window",
+    });
+  });
+
   it("does not use resource names to disambiguate a shared strong identity", () => {
     const baseState = representativeState();
     const state: LayoutPersistenceV1 = {

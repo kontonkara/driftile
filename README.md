@@ -31,9 +31,9 @@ sessions.
 
 Known limits:
 
-- Cross-session restoration requires every persisted window to be present and
-  uniquely identifiable at the startup hydration boundary. Otherwise the whole
-  snapshot is skipped without partial ownership.
+- Cross-session restoration waits up to five seconds for every strongly and
+  uniquely identifiable persisted window. Ambiguous or incomplete snapshots
+  are skipped without partial ownership.
 - Known output topologies are not restored after reconnecting an absent output.
 - Physical connector hot-plugging has not been verified.
 - Native X11 multi-output layouts remain unverified.

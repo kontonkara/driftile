@@ -47,7 +47,9 @@ weak-identity rejection, stale baseline removal, context guards, immutable
 limit in linear passes. Runtime coverage verifies atomic immediate and delayed
 startup application, pre-commit identity validation, cross-session stack
 restoration with current-session baselines, ambiguous-match fallback without
-partial ownership, minimized and hidden write suppression, extra-window
+partial ownership, bounded late-window success and timeout, quiet-candidate
+sampling, retry cancellation, topology-barrier fallback, minimized and hidden
+write suppression, extra-window
 admission, full-width restoration, stale-state preservation, context-guarded
 original restore baselines across repeated reloads, manual-floating
 current-context capture with source-exact rollback, and permanent future-version

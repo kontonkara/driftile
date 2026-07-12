@@ -571,10 +571,6 @@ function remapPersistenceIdentities(
     })),
   );
 
-  if (windowMatches.unmatchedPersistedKeys.length !== 0) {
-    return { ok: false, reason: "unresolved-live-window" };
-  }
-
   const persistedWindows = new Map(
     state.windows.map((window) => [window.key, window]),
   );
@@ -638,6 +634,20 @@ function remapPersistenceIdentities(
     sessionMatchedWindowKeys.add(match.persistedKey);
   }
 
+  if (windowMatches.unmatchedPersistedKeys.length !== 0) {
+    return {
+      ok: false,
+      reason: unmatchedWindowsCanArrive(
+        windowMatches.unmatchedPersistedKeys,
+        persistedWindows,
+        persistedStrongProjectionCounts,
+        liveStrongProjectionCounts,
+      )
+        ? "missing-live-window"
+        : "unresolved-live-window",
+    };
+  }
+
   const outputNames = new Map(
     outputMatches.matches.map((match) => [match.persistedKey, match.liveId]),
   );
@@ -662,6 +672,39 @@ function remapPersistenceIdentities(
       })),
     },
   };
+}
+
+function unmatchedWindowsCanArrive(
+  persistedKeys: readonly string[],
+  persistedWindows: ReadonlyMap<string, LayoutPersistenceV1["windows"][number]>,
+  persistedCounts: ReadonlyMap<string, number>,
+  liveCounts: ReadonlyMap<string, number>,
+): boolean {
+  for (const key of persistedKeys) {
+    const descriptor = persistedWindows.get(key)?.sessionMatch;
+
+    if (!descriptor) {
+      return false;
+    }
+
+    let uniqueProjection = false;
+
+    for (const projection of strongProjectionKeys(descriptor)) {
+      if ((liveCounts.get(projection) ?? 0) !== 0) {
+        return false;
+      }
+
+      if (persistedCounts.get(projection) === 1) {
+        uniqueProjection = true;
+      }
+    }
+
+    if (!uniqueProjection) {
+      return false;
+    }
+  }
+
+  return persistedKeys.length > 0;
 }
 
 function contextWithoutStaleRestoreBaselines(
@@ -716,9 +759,21 @@ function countStrongProjections(
   descriptor: PersistedWindowMatchV1,
   counts: Map<string, number>,
 ): void {
-  forEachStrongProjection(descriptor, (key) => {
+  for (const key of strongProjectionKeys(descriptor)) {
     counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+}
+
+function strongProjectionKeys(
+  descriptor: PersistedWindowMatchV1,
+): readonly string[] {
+  const keys: string[] = [];
+
+  forEachStrongProjection(descriptor, (key) => {
+    keys.push(key);
   });
+
+  return keys;
 }
 
 function hasMutuallyUniqueStrongProjection(

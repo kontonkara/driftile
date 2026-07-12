@@ -40,7 +40,8 @@ assign its shortcuts after the upgrade.
 - Native X11 is verified on one output. Native X11 multi-output remains
   unverified.
 - Exact extension reloads restore logical order, sizes, viewport state, and
-  floating anchors. Cross-session restore requires a complete uniquely
-  identified window set at startup; otherwise the stored snapshot is skipped.
+  floating anchors. Cross-session restore waits up to five seconds for a
+  complete strongly identified window set; otherwise the stored snapshot is
+  skipped.
 - Reconnecting an absent output does not yet restore a known historical
   topology.

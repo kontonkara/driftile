@@ -8,6 +8,8 @@ import {
 } from "./settings";
 
 const STARTUP_STABILIZATION_PROBES = 20;
+const LAYOUT_HYDRATION_RETRY_PROBES = 100;
+const LAYOUT_HYDRATION_QUIET_SAMPLES = 2;
 
 let controller: RuntimeController | undefined;
 let appliedSettings: DriftileSettings | undefined;
@@ -45,6 +47,8 @@ export function init(
     clientAreaOption,
     createRect,
     gap: settings.gap,
+    layoutHydrationQuietSamples: LAYOUT_HYDRATION_QUIET_SAMPLES,
+    layoutHydrationRetryProbes: LAYOUT_HYDRATION_RETRY_PROBES,
     schedule,
     scheduleResume,
     startupStabilizationProbes: STARTUP_STABILIZATION_PROBES,
