@@ -12,9 +12,10 @@ nix flake check --all-systems --no-build
 `npm run package:check` performs the slower release gate: it rebuilds every
 versioned asset twice, compares exact bytes, validates `SHA256SUMS`, and
 requires the exact KPackage file list, plugin ID, and metadata version.
-The flake check evaluates the NixOS and Home Manager modules for every supported
-architecture, including exact settings-only KConfig mappings and range
-rejection; the normal `nix flake check` also builds checks for the host.
+The flake check evaluates both modules for every supported architecture. It
+also uses the pinned official Home Manager to verify standalone installation,
+settings-only NixOS coexistence, generated profiles, and collision rejection;
+the normal `nix flake check` builds the checks for the host.
 To run only the deterministic budgets documented in
 [Performance](performance.md), use `npm run performance:check`. The same tests
 are already part of `check`.

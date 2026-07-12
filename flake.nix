@@ -1,10 +1,21 @@
 {
   description = "A KWin extension for KDE Plasma providing scrollable tiling and dynamic workspaces";
 
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  inputs = {
+    home-manager = {
+      url = "github:nix-community/home-manager";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  };
 
   outputs =
-    { self, nixpkgs, ... }:
+    {
+      home-manager,
+      self,
+      nixpkgs,
+      ...
+    }:
     let
       systems = [
         "aarch64-linux"
@@ -78,6 +89,17 @@
           pkgs = import nixpkgs { inherit system; };
         in
         {
+          home-manager = import ./nix/home-manager-check.nix {
+            defaultPackage = self.packages.${system}.driftile;
+            inherit
+              home-manager
+              homeManagerModule
+              nixosModule
+              pkgs
+              system
+              ;
+            lib = nixpkgs.lib;
+          };
           modules = import ./nix/module-check.nix {
             defaultPackage = self.packages.${system}.driftile;
             inherit
