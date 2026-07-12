@@ -36,6 +36,7 @@ Exit criteria:
 The current runtime already:
 
 - Settles output and work-area event bursts behind two matching delayed snapshots.
+- Coalesces width-height rotation bursts and rapid unplug, relocation, and same-name replug sequences before applying geometry.
 - Keeps singleton and grouped startup windows waiting when a settled work area cannot produce a valid tile, then retries after topology recovery without stopping the runtime.
 - Keeps managed contexts unchanged and dirty when settled work-area geometry cannot produce valid frames, while healthy contexts continue reconciling.
 - Observes output-list, geometry, scale, and dock invalidations.
