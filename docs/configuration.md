@@ -2,6 +2,16 @@
 
 Open **System Settings > Window Management > KWin Scripts** and configure Driftile.
 
+Driftile validates all five settings as one snapshot. Applying an invalid value
+through an external configuration tool rejects the entire update and preserves
+the active settings; valid changes apply without reloading the extension.
+
+## Keyboard shortcuts
+
+Open **System Settings > Keyboard > Shortcuts** and search for **Driftile** to
+change any registered action. KGlobalAccel stores and applies assignments live;
+the KWin-script settings page does not maintain a second copy.
+
 ## Window gap
 
 **Window gap** controls spacing between tiled windows and work-area edges in logical pixels. The default is `16`; the range is `0`–`64`, and `0` removes gaps.

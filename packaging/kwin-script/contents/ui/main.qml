@@ -42,15 +42,7 @@ QtObject {
         target: Options
 
         function onConfigChanged() {
-            Runtime.DriftileRuntime.setBorderlessWindows(
-                KWin.readConfig("BorderlessWindows", true))
-            Runtime.DriftileRuntime.setGap(KWin.readConfig("Gap", 16))
-            Runtime.DriftileRuntime.setDefaultColumnWidthPercent(
-                KWin.readConfig("DefaultColumnWidthPercent", 50))
-            Runtime.DriftileRuntime.setColumnWidthStepPercent(
-                KWin.readConfig("ColumnWidthStepPercent", 10))
-            Runtime.DriftileRuntime.setWindowHeightStepPercent(
-                KWin.readConfig("WindowHeightStepPercent", 10))
+            Runtime.DriftileRuntime.applySettings(root.readSettings())
         }
     }
 
@@ -669,6 +661,16 @@ QtObject {
         onActivated: Runtime.DriftileRuntime.resetColumnWidth()
     }
 
+    function readSettings() {
+        return {
+            borderlessWindows: KWin.readConfig("BorderlessWindows", true),
+            columnWidthStepPercent: KWin.readConfig("ColumnWidthStepPercent", 10),
+            defaultColumnWidthPercent: KWin.readConfig("DefaultColumnWidthPercent", 50),
+            gap: KWin.readConfig("Gap", 16),
+            windowHeightStepPercent: KWin.readConfig("WindowHeightStepPercent", 10)
+        };
+    }
+
     function createRect(x, y, width, height) {
         return Qt.rect(x, y, width, height);
     }
@@ -690,10 +692,6 @@ QtObject {
     Component.onCompleted: Runtime.DriftileRuntime.init(Workspace, Workspace.MaximizeArea,
                                                         root.createRect, root.schedule,
                                                         root.scheduleResume,
-                                                        KWin.readConfig("BorderlessWindows", true),
-                                                        KWin.readConfig("Gap", 16),
-                                                        KWin.readConfig("DefaultColumnWidthPercent", 50),
-                                                        KWin.readConfig("ColumnWidthStepPercent", 10),
-                                                        KWin.readConfig("WindowHeightStepPercent", 10))
+                                                        root.readSettings())
     Component.onDestruction: Runtime.DriftileRuntime.destroy()
 }

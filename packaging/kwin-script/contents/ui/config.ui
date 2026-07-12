@@ -116,6 +116,16 @@
     </layout>
    </item>
    <item>
+    <widget class="QLabel" name="shortcutConfigurationHint">
+     <property name="text">
+      <string>Configure keyboard shortcuts in System Settings &gt; Keyboard &gt; Shortcuts.</string>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
     <spacer name="verticalSpacer">
      <property name="orientation">
       <enum>Qt::Vertical</enum>

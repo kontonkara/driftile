@@ -1,10 +1,16 @@
 import type { KWinWorkspace } from "./platform/kwin/api";
 import type { KWinRectFactory } from "./platform/kwin/geometry-adapter";
 import { RuntimeController } from "./runtime-controller";
+import {
+  decodeDriftileSettings,
+  sameDriftileSettings,
+  type DriftileSettings,
+} from "./settings";
 
 const STARTUP_STABILIZATION_PROBES = 20;
 
 let controller: RuntimeController | undefined;
+let appliedSettings: DriftileSettings | undefined;
 
 export function init(
   workspace: KWinWorkspace,
@@ -12,28 +18,32 @@ export function init(
   createRect: KWinRectFactory,
   schedule: (callback: () => void) => void,
   scheduleResume: (callback: () => void) => void,
-  borderlessWindows: boolean,
-  gap: number,
-  defaultColumnWidthPercent: number,
-  columnWidthStepPercent: number,
-  windowHeightStepPercent: number,
+  settingsSnapshot: unknown,
 ): void {
+  const settings = decodeSettings(settingsSnapshot);
+
+  if (!settings) {
+    return;
+  }
+
   if (controller) {
     return;
   }
 
   const nextController = new RuntimeController(workspace, {
-    borderlessWindows,
+    borderlessWindows: settings.borderlessWindows,
     clientAreaOption,
     createRect,
-    gap,
+    gap: settings.gap,
     schedule,
     scheduleResume,
     startupStabilizationProbes: STARTUP_STABILIZATION_PROBES,
   });
-  nextController.setDefaultColumnWidthPercent(defaultColumnWidthPercent);
-  nextController.setColumnWidthStepPercent(columnWidthStepPercent);
-  nextController.setWindowHeightStepPercent(windowHeightStepPercent);
+  nextController.setDefaultColumnWidthPercent(
+    settings.defaultColumnWidthPercent,
+  );
+  nextController.setColumnWidthStepPercent(settings.columnWidthStepPercent);
+  nextController.setWindowHeightStepPercent(settings.windowHeightStepPercent);
 
   if (!nextController.start()) {
     console.warn("[driftile] no output or virtual desktop available");
@@ -41,34 +51,49 @@ export function init(
   }
 
   controller = nextController;
+  appliedSettings = settings;
   console.info(
     `[driftile] managed=${String(controller.managedCount)} writes=${String(controller.lastWriteCount)}`,
   );
 }
 
 export function destroy(): void {
-  controller?.stop();
-  controller = undefined;
+  try {
+    controller?.stop();
+  } finally {
+    controller = undefined;
+    appliedSettings = undefined;
+  }
 }
 
-export function setBorderlessWindows(enabled: boolean): void {
-  controller?.setBorderlessWindows(enabled);
+export function applySettings(settingsSnapshot: unknown): boolean {
+  const settings = decodeSettings(settingsSnapshot);
+
+  if (!settings || !controller) {
+    return false;
+  }
+
+  if (appliedSettings && sameDriftileSettings(appliedSettings, settings)) {
+    return true;
+  }
+
+  controller.setBorderlessWindows(settings.borderlessWindows);
+  controller.setDefaultColumnWidthPercent(settings.defaultColumnWidthPercent);
+  controller.setColumnWidthStepPercent(settings.columnWidthStepPercent);
+  controller.setWindowHeightStepPercent(settings.windowHeightStepPercent);
+  controller.setGap(settings.gap);
+  appliedSettings = settings;
+  return true;
 }
 
-export function setDefaultColumnWidthPercent(percent: number): void {
-  controller?.setDefaultColumnWidthPercent(percent);
-}
+function decodeSettings(value: unknown): DriftileSettings | null {
+  const settings = decodeDriftileSettings(value);
 
-export function setColumnWidthStepPercent(percent: number): void {
-  controller?.setColumnWidthStepPercent(percent);
-}
+  if (!settings) {
+    console.warn("[driftile] invalid settings snapshot ignored");
+  }
 
-export function setWindowHeightStepPercent(percent: number): void {
-  controller?.setWindowHeightStepPercent(percent);
-}
-
-export function setGap(gap: number): void {
-  controller?.setGap(gap);
+  return settings;
 }
 
 export function focusLeft(): void {

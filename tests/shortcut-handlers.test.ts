@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { DEFAULT_DRIFTILE_SETTINGS } from "../src/settings";
 import { shortcutBindings } from "../src/shortcut-profile";
 
 interface ShortcutHandler {
@@ -513,6 +514,13 @@ describe("KWin shortcut handlers", () => {
     );
   });
 
+  it("points shortcut configuration to the native KDE editor", () => {
+    expect(configurationUi).toContain('name="shortcutConfigurationHint"');
+    expect(configurationUi).toContain(
+      "Configure keyboard shortcuts in System Settings &gt; Keyboard &gt; Shortcuts.",
+    );
+  });
+
   it("exposes borderless windows as a user setting", () => {
     expect(metadata["X-KDE-ConfigModule"]).toBe(
       "kwin/effects/configs/kcm_kwin4_genericscripted",
@@ -521,9 +529,13 @@ describe("KWin shortcut handlers", () => {
     expect(configuration).toContain('<group name="">');
     expect(configuration).toContain("<default>true</default>");
     expect(configurationUi).toContain('name="kcfg_BorderlessWindows"');
-    expect(qml).toContain('KWin.readConfig("BorderlessWindows", true)');
+    expect(qml).toContain(
+      `borderlessWindows: KWin.readConfig("BorderlessWindows", ${String(DEFAULT_DRIFTILE_SETTINGS.borderlessWindows)})`,
+    );
     expect(qml).toContain("function onConfigChanged()");
-    expect(qml).toContain("setBorderlessWindows(");
+    expect(qml).toContain(
+      "Runtime.DriftileRuntime.applySettings(root.readSettings())",
+    );
   });
 
   it("exposes the window gap as a live bounded user setting", () => {
@@ -544,9 +556,8 @@ describe("KWin shortcut handlers", () => {
       /<property name="maximum">\s*<number>64<\/number>/,
     );
     expect(gapWidget).toMatch(/<property name="value">\s*<number>16<\/number>/);
-    expect(qml.match(/KWin\.readConfig\("Gap", 16\)/g)).toHaveLength(2);
     expect(qml).toContain(
-      'Runtime.DriftileRuntime.setGap(KWin.readConfig("Gap", 16))',
+      `gap: KWin.readConfig("Gap", ${String(DEFAULT_DRIFTILE_SETTINGS.gap)})`,
     );
   });
 
@@ -581,11 +592,8 @@ describe("KWin shortcut handlers", () => {
     expect(widthWidget).toMatch(
       /<property name="value">\s*<number>50<\/number>/,
     );
-    expect(
-      qml.match(/KWin\.readConfig\("DefaultColumnWidthPercent", 50\)/g),
-    ).toHaveLength(2);
-    expect(qml).toMatch(
-      /Runtime\.DriftileRuntime\.setDefaultColumnWidthPercent\(\s*KWin\.readConfig\("DefaultColumnWidthPercent", 50\)\)/,
+    expect(qml).toContain(
+      `defaultColumnWidthPercent: KWin.readConfig("DefaultColumnWidthPercent", ${String(DEFAULT_DRIFTILE_SETTINGS.defaultColumnWidthPercent)})`,
     );
   });
 
@@ -618,20 +626,11 @@ describe("KWin shortcut handlers", () => {
     expect(stepWidget).toMatch(
       /<property name="value">\s*<number>10<\/number>/,
     );
-    expect(
-      qml.match(/KWin\.readConfig\("ColumnWidthStepPercent", 10\)/g),
-    ).toHaveLength(2);
-    expect(qml).toMatch(
-      /Runtime\.DriftileRuntime\.setColumnWidthStepPercent\(\s*KWin\.readConfig\("ColumnWidthStepPercent", 10\)\)/,
+    expect(qml).toContain(
+      `columnWidthStepPercent: KWin.readConfig("ColumnWidthStepPercent", ${String(DEFAULT_DRIFTILE_SETTINGS.columnWidthStepPercent)})`,
     );
-    expect(qml).toMatch(
-      /KWin\.readConfig\("DefaultColumnWidthPercent", 50\),\s*KWin\.readConfig\("ColumnWidthStepPercent", 10\),/,
-    );
-    expect(runtime).toMatch(
-      /nextController\.setDefaultColumnWidthPercent\(defaultColumnWidthPercent\);\s*nextController\.setColumnWidthStepPercent\(columnWidthStepPercent\);/,
-    );
-    expect(runtime).toMatch(
-      /export function setColumnWidthStepPercent\(percent: number\): void \{\s*controller\?\.setColumnWidthStepPercent\(percent\);\s*\}/,
+    expect(runtime).toContain(
+      "controller.setColumnWidthStepPercent(settings.columnWidthStepPercent)",
     );
   });
 
@@ -664,20 +663,31 @@ describe("KWin shortcut handlers", () => {
     expect(stepWidget).toMatch(
       /<property name="value">\s*<number>10<\/number>/,
     );
-    expect(
-      qml.match(/KWin\.readConfig\("WindowHeightStepPercent", 10\)/g),
-    ).toHaveLength(2);
-    expect(qml).toMatch(
-      /Runtime\.DriftileRuntime\.setWindowHeightStepPercent\(\s*KWin\.readConfig\("WindowHeightStepPercent", 10\)\)/,
+    expect(qml).toContain(
+      `windowHeightStepPercent: KWin.readConfig("WindowHeightStepPercent", ${String(DEFAULT_DRIFTILE_SETTINGS.windowHeightStepPercent)})`,
+    );
+    expect(runtime).toContain(
+      "controller.setWindowHeightStepPercent(settings.windowHeightStepPercent)",
+    );
+  });
+
+  it("validates and applies settings as one live snapshot", () => {
+    expect(qml).toContain("function readSettings()");
+    expect(qml).toContain(
+      "Runtime.DriftileRuntime.applySettings(root.readSettings())",
     );
     expect(qml).toMatch(
-      /KWin\.readConfig\("ColumnWidthStepPercent", 10\),\s*KWin\.readConfig\("WindowHeightStepPercent", 10\)\)/,
+      /Component\.onCompleted: Runtime\.DriftileRuntime\.init\([\s\S]*root\.readSettings\(\)\)/,
     );
-    expect(runtime).toMatch(
-      /nextController\.setColumnWidthStepPercent\(columnWidthStepPercent\);\s*nextController\.setWindowHeightStepPercent\(windowHeightStepPercent\);\s*if \(!nextController\.start\(\)\)/,
+    expect(runtime).toContain(
+      "const settings = decodeSettings(settingsSnapshot)",
     );
-    expect(runtime).toMatch(
-      /export function setWindowHeightStepPercent\(percent: number\): void \{\s*controller\?\.setWindowHeightStepPercent\(percent\);\s*\}/,
+    expect(runtime).toContain("decodeDriftileSettings(value)");
+    expect(runtime).toContain(
+      "sameDriftileSettings(appliedSettings, settings)",
+    );
+    expect(runtime).not.toMatch(
+      /export function set(?:Borderless|Gap|Default)/,
     );
   });
 });
