@@ -12,6 +12,7 @@
       ];
       forAllSystems = nixpkgs.lib.genAttrs systems;
       homeManagerModule = import ./nix/modules/install.nix {
+        homeSettings = true;
         inherit self;
         packageOptionPath = [
           "home"

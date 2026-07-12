@@ -6,6 +6,25 @@ Driftile validates all five settings as one snapshot. Applying an invalid value
 through an external configuration tool rejects the entire update and preserves
 the active settings; valid changes apply without reloading the extension.
 
+## Home Manager
+
+`programs.driftile.settings` is `null` by default, so Home Manager writes no
+Driftile setting. A non-null value is one complete typed profile: omitted fields
+take the defaults documented below, and Home Manager writes all five values.
+This profile works with `programs.driftile.enable = false` when the package is
+installed system-wide.
+
+The activation writes only `BorderlessWindows`, `Gap`,
+`DefaultColumnWidthPercent`, `ColumnWidthStepPercent`, and
+`WindowHeightStepPercent` in Driftile's `kwinrc` group. It does not replace the
+file or manage shortcuts. A running KWin session is asked to reconfigure on a
+best-effort basis; otherwise the values apply on its next reload or start.
+
+Changing `settings` back to `null` or removing the Home Manager module import
+stops future writes but leaves the last values in `kwinrc`. Change them through
+System Settings or declare another complete profile when different values are
+required.
+
 ## Keyboard shortcuts
 
 Open **System Settings > Keyboard > Shortcuts** and search for **Driftile** to

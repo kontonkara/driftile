@@ -149,6 +149,24 @@ modules = [
 ];
 ```
 
+Home Manager can also own the complete five-setting profile:
+
+```nix
+programs.driftile.settings = {
+  borderlessWindows = true;
+  gap = 16;
+  defaultColumnWidthPercent = 50;
+  columnWidthStepPercent = 10;
+  windowHeightStepPercent = 10;
+};
+```
+
+The profile is independent of package installation. When the package is
+already installed by NixOS or another system module, keep
+`programs.driftile.enable = false` and set `programs.driftile.settings` in Home
+Manager. See [Configuration](configuration.md#home-manager) for ownership and
+reload behavior.
+
 The current Home Manager module can also generate a custom shortcut profile:
 
 ```nix
@@ -169,9 +187,10 @@ driftile-shortcuts check --profile "$profile"
 ```
 
 For a system-wide NixOS installation, import the Home Manager module only for
-this profile and leave Home Manager's `programs.driftile.enable` false. The
-system package supplies `driftile-shortcuts`, while Home Manager manages only
-the JSON file; this avoids installing the KWin package twice.
+settings or a shortcut profile and leave Home Manager's
+`programs.driftile.enable` false. The system package supplies
+`driftile-shortcuts`, while Home Manager manages only the requested user
+configuration; this avoids installing the KWin package twice.
 
 `programs.driftile.package` can override the package in either module. Choose
 one installation scope for each user instead of also installing the

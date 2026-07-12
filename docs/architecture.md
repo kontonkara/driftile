@@ -36,6 +36,14 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Does not watch JSON files. A Home Manager profile is portable input to an
   explicit `claim --profile`, not a second live source of shortcut state.
 
+### Nix integration
+
+- Installs one KWin package through either NixOS or Home Manager and rejects a
+  duplicate per-user installation.
+- Maps an optional complete Home Manager settings profile to KDE's native
+  KConfig module. Settings and shortcut-profile generation remain available
+  without a second package installation.
+
 ### TypeScript runtime
 
 - Models eligible windows from every existing output and desktop context.
@@ -302,8 +310,9 @@ inspected safely within the codec bound.
 - Verify strict shortcut-profile decoding, semantic identities, exact listed
   replacements and unbinds, omitted-action handling, dependency ordering,
   cycle rejection, rollback, release, and CLI option boundaries.
-- Evaluate Home Manager's profile-only mode and exact generated JSON without
-  adding the package to the user's environment.
+- Evaluate Home Manager's settings-only and shortcut-profile modes, including
+  exact KConfig values and generated JSON, without adding the package to the
+  user's environment.
 - Unit-test core policies with plain fixtures.
 - Test reconcile output for minimality and idempotence.
 - Replay window lifecycle and output or desktop transfer sequences.
