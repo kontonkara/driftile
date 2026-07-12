@@ -12631,10 +12631,39 @@ export class RuntimeController {
     });
 
     while (admittedCandidates.length > 0) {
-      const layout = this.solveContextGeometry(
-        this.layout.snapshot(context.outputId, context.desktopId),
-        contextGeometry,
-      );
+      let layout: ReturnType<typeof solveStripGeometry>;
+
+      try {
+        layout = this.solveContextGeometry(
+          this.layout.snapshot(context.outputId, context.desktopId),
+          contextGeometry,
+        );
+      } catch (error) {
+        const rolledBack = this.layout.unmanageWindows({
+          desktopId: context.desktopId,
+          outputId: context.outputId,
+          windowIds: admittedCandidates.map((candidate) => candidate.id),
+        });
+
+        if (!rolledBack) {
+          throw Object.assign(
+            new Error(
+              `window admission group rollback failed context=${key} error=${String(error)}`,
+            ),
+            { cause: error },
+          );
+        }
+
+        for (const candidate of admittedCandidates) {
+          this.deferWindow(candidate.id, key, contextGeometry.fingerprint);
+        }
+
+        console.warn(
+          `[driftile] window admission group deferred context=${key} error=${String(error)}`,
+        );
+        return 0;
+      }
+
       const frames = new Map(
         layout.windows.map((window) => [window.windowId, window.frame]),
       );
@@ -12651,10 +12680,22 @@ export class RuntimeController {
         break;
       }
 
-      const rejectedIds = new Set(rejected.map((candidate) => candidate.id));
+      const rejectedWindowIds = rejected.map((candidate) => candidate.id);
+      const removed = this.layout.unmanageWindows({
+        desktopId: context.desktopId,
+        outputId: context.outputId,
+        windowIds: rejectedWindowIds,
+      });
+
+      if (!removed) {
+        throw new Error(
+          `window admission group rejection rollback failed context=${key}`,
+        );
+      }
+
+      const rejectedIds = new Set(rejectedWindowIds);
 
       for (const candidate of rejected) {
-        this.layout.unmanageWindow(candidate.id);
         this.forgetWaitingWindow(candidate.id);
       }
 
@@ -12823,15 +12864,18 @@ export class RuntimeController {
     try {
       decision = this.layoutAdmissionDecision(context, id, contextGeometry);
     } catch (error) {
-      this.layout.unmanageWindow(id);
-
-      if (this.initializing) {
-        throw error;
+      if (!this.layout.unmanageWindow(id)) {
+        throw Object.assign(
+          new Error(
+            `window admission rollback failed window=${String(id)} error=${String(error)}`,
+          ),
+          { cause: error },
+        );
       }
 
-      this.deferWindow(id, key);
+      this.deferWindow(id, key, contextGeometry.fingerprint);
       console.warn(
-        `[driftile] window admission skipped window=${String(id)} error=${String(error)}`,
+        `[driftile] window admission deferred window=${String(id)} error=${String(error)}`,
       );
       return false;
     }

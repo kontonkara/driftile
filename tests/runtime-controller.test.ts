@@ -18559,6 +18559,256 @@ describe("RuntimeController", () => {
     expect(geometryLookupCount).toBe(2);
   });
 
+  it("keeps an unusable startup group waiting until its work area recovers", () => {
+    const trackedOutput = createTrackedOutput("DP-1", 0);
+    const output = trackedOutput.output;
+    trackedOutput.setGeometry({ height: 20, width: 1000, x: 0, y: 0 });
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const active = createTrackedWindow("window-2", output, desktop);
+    const windows = [first, active];
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map(({ window }) => window),
+    );
+    let workAreaHeight = 20;
+    Object.defineProperty(fixture.workspace, "clientArea", {
+      configurable: true,
+      value: () => ({ height: workAreaHeight, width: 1000, x: 0, y: 0 }),
+    });
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+    const state = controller as unknown as {
+      readonly pendingAdmissionContexts: ReadonlySet<string>;
+      readonly pendingWindowSyncs: ReadonlySet<WindowId>;
+      readonly waitingWindowContexts: ReadonlyMap<WindowId, string>;
+      readonly waitingWindowIds: ReadonlyMap<string, ReadonlySet<WindowId>>;
+    };
+    const originalFrames = windows.map(({ window }) => ({
+      ...window.frameGeometry,
+    }));
+    const warning = console.warn;
+
+    console.warn = () => undefined;
+
+    try {
+      expect(controller.start()).toBe(true);
+      expect(controller.managedCount).toBe(0);
+      expect(controller.lastWriteCount).toBe(0);
+      expect(windows.map(({ writeCount }) => writeCount)).toEqual([0, 0]);
+      expect(windows.map(({ window }) => window.frameGeometry)).toEqual(
+        originalFrames,
+      );
+      expect(state.waitingWindowContexts.size).toBe(2);
+      expect(new Set(state.waitingWindowContexts.values()).size).toBe(1);
+      expect(state.waitingWindowIds.size).toBe(1);
+      expect([...state.waitingWindowIds.values()][0]?.size).toBe(2);
+      expect(state.pendingAdmissionContexts.size).toBe(0);
+      expect(state.pendingWindowSyncs.size).toBe(0);
+      expect(workScheduler.pendingCount).toBe(0);
+      expect(resumeScheduler.pendingCount).toBe(0);
+      expect(
+        runtimeLayout(controller).snapshot(
+          outputId(output.name),
+          desktopId(desktop.id),
+        ).columns,
+      ).toEqual([]);
+      expect(fixture.workspace.activeWindow).toBe(active.window);
+
+      trackedOutput.geometryChanged.emit();
+      flushTopologyRecovery(resumeScheduler, workScheduler);
+      expect(controller.managedCount).toBe(0);
+      expect(windows.map(({ writeCount }) => writeCount)).toEqual([0, 0]);
+      expect(windows.map(({ window }) => window.frameGeometry)).toEqual(
+        originalFrames,
+      );
+      expect(state.waitingWindowContexts.size).toBe(2);
+      expect(state.waitingWindowIds.size).toBe(1);
+      expect(state.pendingAdmissionContexts.size).toBe(0);
+      expect(state.pendingWindowSyncs.size).toBe(0);
+      expect(workScheduler.pendingCount).toBe(0);
+      expect(resumeScheduler.pendingCount).toBe(0);
+    } finally {
+      console.warn = warning;
+    }
+
+    workAreaHeight = 800;
+    trackedOutput.setGeometry({ height: 800, width: 1000, x: 0, y: 0 });
+    trackedOutput.geometryChanged.emit();
+    flushTopologyRecovery(resumeScheduler, workScheduler);
+
+    expect(controller.managedCount).toBe(2);
+    expect(controller.lastWriteCount).toBe(2);
+    expect(state.waitingWindowContexts.size).toBe(0);
+    expect(state.waitingWindowIds.size).toBe(0);
+    expect(state.pendingAdmissionContexts.size).toBe(0);
+    expect(state.pendingWindowSyncs.size).toBe(0);
+    expect(workScheduler.pendingCount).toBe(0);
+    expect(resumeScheduler.pendingCount).toBe(0);
+    expect(testLayoutColumns(controller, output, desktop)).toEqual([
+      { id: "column:window-1", windowIds: ["window-1"] },
+      { id: "column:window-2", windowIds: ["window-2"] },
+    ]);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ).activeColumnId,
+    ).toBe("column:window-2");
+    expect(windows.map(({ window }) => window.frameGeometry)).toEqual([
+      { height: 780, width: 485, x: 10, y: 10 },
+      { height: 780, width: 485, x: 505, y: 10 },
+    ]);
+    expect(windows.map(({ writeCount }) => writeCount)).toEqual([1, 1]);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+    expect(fixture.activationCount).toBe(0);
+    expect(controller.reconcile()).toBe(0);
+    expect(windows.map(({ writeCount }) => writeCount)).toEqual([1, 1]);
+  });
+
+  it("keeps an unusable startup singleton waiting until recovery", () => {
+    const trackedOutput = createTrackedOutput("DP-1", 0);
+    const output = trackedOutput.output;
+    trackedOutput.setGeometry({ height: 20, width: 1000, x: 0, y: 0 });
+    const desktop = { id: "desktop-1" };
+    const active = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [active.window],
+    );
+    let workAreaHeight = 20;
+    Object.defineProperty(fixture.workspace, "clientArea", {
+      configurable: true,
+      value: () => ({ height: workAreaHeight, width: 1000, x: 0, y: 0 }),
+    });
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+    const state = controller as unknown as {
+      readonly waitingWindowContexts: ReadonlyMap<WindowId, string>;
+    };
+    const originalFrame = { ...active.window.frameGeometry };
+    const warning = console.warn;
+
+    console.warn = () => undefined;
+
+    try {
+      expect(controller.start()).toBe(true);
+    } finally {
+      console.warn = warning;
+    }
+
+    expect(controller.managedCount).toBe(0);
+    expect(controller.lastWriteCount).toBe(0);
+    expect(active.writeCount).toBe(0);
+    expect(active.window.frameGeometry).toEqual(originalFrame);
+    expect(state.waitingWindowContexts.has(windowId("window-1"))).toBe(true);
+    expect(workScheduler.pendingCount).toBe(0);
+    expect(resumeScheduler.pendingCount).toBe(0);
+
+    workAreaHeight = 800;
+    trackedOutput.setGeometry({ height: 800, width: 1000, x: 0, y: 0 });
+    trackedOutput.geometryChanged.emit();
+    flushTopologyRecovery(resumeScheduler, workScheduler);
+
+    expect(controller.managedCount).toBe(1);
+    expect(controller.lastWriteCount).toBe(1);
+    expect(state.waitingWindowContexts.size).toBe(0);
+    expect(active.window.frameGeometry).toEqual({
+      height: 780,
+      width: 485,
+      x: 10,
+      y: 10,
+    });
+    expect(active.writeCount).toBe(1);
+    expect(workScheduler.pendingCount).toBe(0);
+    expect(resumeScheduler.pendingCount).toBe(0);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+    expect(fixture.activationCount).toBe(0);
+  });
+
+  it("defers an unusable group after delayed startup stabilization", () => {
+    const trackedOutput = createTrackedOutput("DP-1", 0);
+    const output = trackedOutput.output;
+    trackedOutput.setGeometry({ height: 20, width: 1000, x: 0, y: 0 });
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const active = createTrackedWindow("window-2", output, desktop);
+    const windows = [first, active];
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map(({ window }) => window),
+    );
+    let workAreaHeight = 20;
+    Object.defineProperty(fixture.workspace, "clientArea", {
+      configurable: true,
+      value: () => ({ height: workAreaHeight, width: 1000, x: 0, y: 0 }),
+    });
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+      startupStabilizationProbes: 2,
+    });
+    const state = controller as unknown as {
+      readonly waitingWindowContexts: ReadonlyMap<WindowId, string>;
+    };
+    const warning = console.warn;
+
+    expect(controller.start()).toBe(true);
+    expect(controller.managedCount).toBe(0);
+    expect(resumeScheduler.pendingCount).toBe(1);
+    console.warn = () => undefined;
+
+    try {
+      flushManualScheduler(resumeScheduler);
+    } finally {
+      console.warn = warning;
+    }
+
+    expect(controller.managedCount).toBe(0);
+    expect(windows.map(({ writeCount }) => writeCount)).toEqual([0, 0]);
+    expect(state.waitingWindowContexts.size).toBe(2);
+    expect(workScheduler.pendingCount).toBe(0);
+    expect(resumeScheduler.pendingCount).toBe(0);
+
+    workAreaHeight = 800;
+    trackedOutput.setGeometry({ height: 800, width: 1000, x: 0, y: 0 });
+    trackedOutput.geometryChanged.emit();
+    flushTopologyRecovery(resumeScheduler, workScheduler);
+
+    expect(controller.managedCount).toBe(2);
+    expect(state.waitingWindowContexts.size).toBe(0);
+    expect(windows.map(({ writeCount }) => writeCount)).toEqual([1, 1]);
+    expect(workScheduler.pendingCount).toBe(0);
+    expect(resumeScheduler.pendingCount).toBe(0);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+    expect(fixture.activationCount).toBe(0);
+  });
+
   it("keeps live ownership classification linear during reconcile writes", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
