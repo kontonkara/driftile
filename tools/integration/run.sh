@@ -68,8 +68,9 @@ fail() {
 
   if [[ -n "${process_trace_log:-}" && -s "$process_trace_log" ]]; then
     printf '%s\n' 'Process trace:' >&2
-    grep -E 'Xwayland|xwayland-wrapper|execve|clone|vfork| = -1 ' \
-      "$process_trace_log" | tail -200 | sed 's/^/  /' >&2 || true
+    grep -E \
+      'Xwayland|xwayland-wrapper|ENOENT|EACCES|EPERM|EMFILE|ENFILE|EAGAIN|ENOSYS|execve\(.* = -1|clone3\(.* = -1|vfork\(.* = -1|fcntl\([^,]+, F_(GETFD|SETFD).* = -1' \
+      "$process_trace_log" | sed 's/^/  /' >&2 || true
   fi
 
   exit 1

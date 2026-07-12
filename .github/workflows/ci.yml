@@ -81,10 +81,20 @@ jobs:
 
       - name: Run ${{ matrix.backend }} integration
         env:
+          DRIFTILE_KEEP_SMOKE_SANDBOX: "1"
           DRIFTILE_SMOKE_PROCESS_TRACE: "1"
         run: >-
           nix develop --no-update-lock-file .#integration --command
           npm run test:integration -- "${{ matrix.backend }}"
+
+      - name: Upload Wayland process trace
+        if: failure() && matrix.backend == 'wayland'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: wayland-process-trace
+          path: ${{ runner.temp }}/**/process.strace
+          if-no-files-found: error
+          retention-days: 1
 
   release:
     if: github.ref_type == 'tag'
