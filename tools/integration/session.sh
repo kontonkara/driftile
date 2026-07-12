@@ -1669,15 +1669,36 @@ wait_for_settings_persistence_generation() {
 }
 
 settings_persistence_payload_matches() {
-  local verified
+  local cancellation_survived
+  local cancellation_verified
+  local initial_queue_verified
+  local payload_verified
 
-  verified=$(kreadconfig6 \
+  initial_queue_verified=$(kreadconfig6 \
+    --file "$settings_persistence_probe_file" \
+    --group Probe \
+    --key InitialQueueVerified \
+    --default false 2>/dev/null || true)
+  payload_verified=$(kreadconfig6 \
     --file "$settings_persistence_probe_file" \
     --group Probe \
     --key PayloadVerified \
     --default false 2>/dev/null || true)
+  cancellation_verified=$(kreadconfig6 \
+    --file "$settings_persistence_probe_file" \
+    --group Probe \
+    --key CancellationVerified \
+    --default false 2>/dev/null || true)
+  cancellation_survived=$(kreadconfig6 \
+    --file "$settings_persistence_probe_file" \
+    --group Probe \
+    --key CancellationSurvived \
+    --default false 2>/dev/null || true)
 
-  [[ "$verified" == true ]]
+  [[ "$initial_queue_verified" == true ]] &&
+    [[ "$payload_verified" == true ]] &&
+    [[ "$cancellation_verified" == true ]] &&
+    [[ "$cancellation_survived" == true ]]
 }
 
 verify_settings_persistence_transport() {
@@ -1688,6 +1709,9 @@ verify_settings_persistence_transport() {
   unload_settings_persistence_probe || return 1
   load_settings_persistence_probe || return 1
   wait_for_settings_persistence_generation 2 || return 1
+  unload_settings_persistence_probe || return 1
+  load_settings_persistence_probe || return 1
+  wait_for_settings_persistence_generation 3 || return 1
   settings_persistence_payload_matches || return 1
   unload_settings_persistence_probe || return 1
 }
