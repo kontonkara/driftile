@@ -66,6 +66,12 @@ fail() {
     sed 's/^/  /' "$xvfb_log" >&2
   fi
 
+  if [[ -n "${process_trace_log:-}" && -s "$process_trace_log" ]]; then
+    printf '%s\n' 'Process trace:' >&2
+    grep -E 'Xwayland|xwayland-wrapper|execve|clone|vfork| = -1 ' \
+      "$process_trace_log" | tail -200 | sed 's/^/  /' >&2 || true
+  fi
+
   exit 1
 }
 
@@ -98,6 +104,7 @@ run_backend() (
   local qml_binary
   local qml_import_path=""
   local qml_prefix
+  local process_trace_log=""
   local xvfb_log=""
   local xvfb_pid=""
   local xwayland_wrapper_directory
@@ -106,6 +113,7 @@ run_backend() (
   local protocols
   local scenario
   local socket_name
+  local -a wayland_command=(kwin_wayland)
 
   sandbox=$(mktemp -d "${TMPDIR:-/tmp}/driftile-${backend}-smoke.XXXXXX")
   log_file="$sandbox/kwin.log"
@@ -280,6 +288,19 @@ run_backend() (
       export KWIN_COMPOSE=Q
       export XDG_SESSION_TYPE=wayland
 
+      if [[ "${DRIFTILE_SMOKE_PROCESS_TRACE:-0}" == "1" ]]; then
+        require_command strace || exit 1
+        process_trace_log="$sandbox/process.strace"
+        wayland_command=(
+          strace
+          -f
+          -e "trace=process,fcntl"
+          -s 200
+          -o "$process_trace_log"
+          kwin_wayland
+        )
+      fi
+
       if [[ "$backend" == "wayland-multi-output" ]]; then
         if [[
           -n "$layer_shell_qml_import" &&
@@ -301,7 +322,7 @@ run_backend() (
 
       if ! timeout --kill-after=5s 150s \
         dbus-run-session --config-file="$dbus_session_config" -- \
-        kwin_wayland \
+        "${wayland_command[@]}" \
         --virtual \
         --width 1280 \
         --height 720 \

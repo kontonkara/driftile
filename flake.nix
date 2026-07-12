@@ -91,6 +91,7 @@
               kdePackages.qtwayland
               jq
               socat
+              strace
               systemd
               xorg-server
               xterm

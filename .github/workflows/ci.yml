@@ -80,6 +80,8 @@ jobs:
         run: nix develop --no-update-lock-file .#integration --command npm ci
 
       - name: Run ${{ matrix.backend }} integration
+        env:
+          DRIFTILE_SMOKE_PROCESS_TRACE: "1"
         run: >-
           nix develop --no-update-lock-file .#integration --command
           npm run test:integration -- "${{ matrix.backend }}"
