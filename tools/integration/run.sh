@@ -150,7 +150,7 @@ run_backend() (
   export DRIFTILE_SMOKE_QML_IMPORT="$qml_import_path"
   export DRIFTILE_SMOKE_RESULT="$result_file"
   export DRIFTILE_SMOKE_SETTINGS_PERSISTENCE_PROBE="$project_root/tools/integration/settings-persistence-probe.qml"
-  export DRIFTILE_SMOKE_SHORTCUT_TOOL="$project_root/dist/bin/driftile-shortcuts.mjs"
+  export DRIFTILE_SMOKE_SHORTCUT_TOOL="$shortcut_archive"
   export DRIFTILE_SMOKE_WORK_AREA_PANEL="$project_root/tools/integration/work-area-panel.qml"
   export HOME="$sandbox/home"
   export LC_ALL=C.UTF-8
@@ -330,10 +330,12 @@ package_version=$(node "$project_root/tools/release-version.mjs")
 readonly package_version
 package_archive="$project_root/dist/driftile-$package_version.kwinscript"
 readonly package_archive
+shortcut_archive="$project_root/dist/driftile-shortcuts-$package_version.mjs"
+readonly shortcut_archive
 npm --prefix "$project_root" run package >/dev/null
 
-if [[ ! -f "$package_archive" ]]; then
-  printf 'Missing packaged KWin artifact: %s\n' "$package_archive" >&2
+if [[ ! -f "$package_archive" || ! -f "$shortcut_archive" ]]; then
+  printf 'Missing packaged release artifacts.\n' >&2
   exit 1
 fi
 
