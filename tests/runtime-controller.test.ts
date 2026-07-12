@@ -21410,6 +21410,95 @@ describe("RuntimeController", () => {
     expect(controller.lastWriteCount).toBe(1);
   });
 
+  it("settles an output rotation burst before reflowing", () => {
+    const trackedOutput = createTrackedOutput("DP-1", 0);
+    const output = trackedOutput.output;
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const second = createTrackedWindow("window-2", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window, second.window],
+    );
+    Object.defineProperty(fixture.workspace, "clientArea", {
+      configurable: true,
+      value: (_option: number, candidate: KWinOutput) => ({
+        ...candidate.geometry,
+      }),
+    });
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    controller.start();
+    const initialWrites = [first.writeCount, second.writeCount];
+
+    expect([first.window.frameGeometry, second.window.frameGeometry]).toEqual([
+      { height: 780, width: 485, x: 10, y: 10 },
+      { height: 780, width: 485, x: 505, y: 10 },
+    ]);
+
+    trackedOutput.setGeometry({
+      height: 800,
+      width: 800,
+      x: 0,
+      y: 0,
+    });
+    trackedOutput.geometryChanged.emit();
+    resumeScheduler.flush();
+
+    expect([first.writeCount, second.writeCount]).toEqual(initialWrites);
+    expect(workScheduler.pendingCount).toBe(0);
+
+    trackedOutput.setGeometry({
+      height: 1000,
+      width: 800,
+      x: 0,
+      y: 0,
+    });
+    trackedOutput.geometryChanged.emit();
+
+    expect(resumeScheduler.pendingCount).toBe(1);
+    expect(workScheduler.pendingCount).toBe(0);
+    expect([first.writeCount, second.writeCount]).toEqual(initialWrites);
+
+    resumeScheduler.flush();
+    expect(resumeScheduler.pendingCount).toBe(1);
+    expect(workScheduler.pendingCount).toBe(0);
+    expect([first.writeCount, second.writeCount]).toEqual(initialWrites);
+
+    resumeScheduler.flush();
+    expect(resumeScheduler.pendingCount).toBe(0);
+    expect(workScheduler.pendingCount).toBe(1);
+    expect([first.writeCount, second.writeCount]).toEqual(initialWrites);
+
+    workScheduler.flush();
+
+    expect([first.window.frameGeometry, second.window.frameGeometry]).toEqual([
+      { height: 980, width: 385, x: 10, y: 10 },
+      { height: 980, width: 385, x: 405, y: 10 },
+    ]);
+    expect([first.writeCount, second.writeCount]).toEqual(
+      initialWrites.map((writes) => writes + 1),
+    );
+    expect(fixture.workspace.screens).toEqual([output]);
+    expect(first.window.output).toBe(output);
+    expect(second.window.output).toBe(output);
+    expect(fixture.workspace.activeWindow).toBe(second.window);
+    expect(controller.managedCount).toBe(2);
+    expect(controller.lastWriteCount).toBe(2);
+    expect(resumeScheduler.pendingCount).toBe(0);
+    expect(workScheduler.pendingCount).toBe(0);
+  });
+
   it("cancels a pending recovery when a newer topology event arrives", () => {
     const trackedOutput = createTrackedOutput("DP-1", 0);
     const output = trackedOutput.output;
@@ -21607,6 +21696,94 @@ describe("RuntimeController", () => {
     workScheduler.flush();
     expect(window.window.frameGeometry.x).toBeCloseTo(210.4, 6);
     expect(window.writeCount).toBe(2);
+  });
+
+  it("settles a rapid unplug and same-name replug as one topology", () => {
+    const leftOutput = createTrackedOutput("DP-1", 0);
+    const originalRightOutput = createTrackedOutput("HDMI-A-1", 1000);
+    const replacementRightOutput = createTrackedOutput("HDMI-A-1", 1000);
+    const desktop = { id: "desktop-1" };
+    const left = createTrackedWindow("window-left", leftOutput.output, desktop);
+    const relocated = createTrackedWindow(
+      "window-right",
+      originalRightOutput.output,
+      desktop,
+    );
+    const fixture = createWorkspace(
+      leftOutput.output,
+      desktop,
+      [leftOutput.output, originalRightOutput.output],
+      [desktop],
+      [left.window, relocated.window],
+    );
+    const workScheduler = new ManualScheduler();
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: workScheduler.schedule,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    controller.start();
+    const initialWrites = [left.writeCount, relocated.writeCount];
+
+    expect([left.window.frameGeometry, relocated.window.frameGeometry]).toEqual(
+      [
+        { height: 780, width: 485, x: 10, y: 10 },
+        { height: 780, width: 485, x: 1010, y: 10 },
+      ],
+    );
+
+    fixture.setScreens([leftOutput.output]);
+    fixture.screensChanged.emit();
+    relocated.setOutput(leftOutput.output);
+
+    expect(fixture.workspace.screens).toEqual([leftOutput.output]);
+    expect(relocated.window.output).toBe(leftOutput.output);
+    expect([left.writeCount, relocated.writeCount]).toEqual(initialWrites);
+
+    resumeScheduler.flush();
+
+    expect(resumeScheduler.pendingCount).toBe(1);
+    expect(workScheduler.pendingCount).toBe(1);
+    expect([left.writeCount, relocated.writeCount]).toEqual(initialWrites);
+
+    fixture.setScreens([leftOutput.output, replacementRightOutput.output]);
+    fixture.screensChanged.emit();
+
+    expect(replacementRightOutput.output).not.toBe(originalRightOutput.output);
+    expect(replacementRightOutput.output.name).toBe(
+      originalRightOutput.output.name,
+    );
+    expect(fixture.workspace.screens).toEqual([
+      leftOutput.output,
+      replacementRightOutput.output,
+    ]);
+    expect(resumeScheduler.pendingCount).toBe(1);
+    expect(workScheduler.pendingCount).toBe(1);
+    expect([left.writeCount, relocated.writeCount]).toEqual(initialWrites);
+
+    workScheduler.flush();
+
+    expect(workScheduler.pendingCount).toBe(0);
+    expect([left.writeCount, relocated.writeCount]).toEqual(initialWrites);
+    flushTopologyRecovery(resumeScheduler, workScheduler);
+
+    expect([left.window.frameGeometry, relocated.window.frameGeometry]).toEqual(
+      [
+        { height: 780, width: 485, x: 10, y: 10 },
+        { height: 780, width: 485, x: 505, y: 10 },
+      ],
+    );
+    expect(left.writeCount).toBe(initialWrites[0]);
+    expect(relocated.writeCount).toBe((initialWrites[1] ?? 0) + 1);
+    expect(left.window.output).toBe(leftOutput.output);
+    expect(relocated.window.output).toBe(leftOutput.output);
+    expect(fixture.workspace.activeWindow).toBe(relocated.window);
+    expect(controller.managedCount).toBe(2);
+    expect(resumeScheduler.pendingCount).toBe(0);
+    expect(workScheduler.pendingCount).toBe(0);
   });
 
   it("preserves a suspended slot while its sibling follows topology", () => {
