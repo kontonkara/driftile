@@ -124,6 +124,7 @@
             nodejs_24
             reuse
             shellcheck
+            unzip
             util-linux
             zip
           ];

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { readFile, readdir } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import { basename, dirname, resolve } from "node:path";
@@ -11,9 +12,22 @@ const outputDirectory = resolve(rootDirectory, "dist");
 const version = await releaseVersion(rootDirectory);
 const licenseArtifact = resolve(outputDirectory, "LICENSE");
 const checksumManifestPath = resolve(outputDirectory, "SHA256SUMS");
+const pluginId = "io.github.kontonkara.driftile";
+const expectedPackageEntries = [
+  "contents/code/main.js",
+  "contents/config/main.xml",
+  "contents/ui/LayoutStateStore.qml",
+  "contents/ui/config.ui",
+  "contents/ui/main.qml",
+  "metadata.json",
+];
+const packageArtifact = resolve(
+  outputDirectory,
+  `driftile-${version}.kwinscript`,
+);
 const releaseArtifacts = [
   licenseArtifact,
-  resolve(outputDirectory, `driftile-${version}.kwinscript`),
+  packageArtifact,
   resolve(outputDirectory, `driftile-shortcuts-${version}.mjs`),
 ].sort(compareFilenames);
 const packagedAssets = [...releaseArtifacts, checksumManifestPath];
@@ -55,6 +69,9 @@ if (
   throw new Error("packaged LICENSE does not match the repository LICENSE");
 }
 
+verifyPackageEntries(packageArtifact);
+verifyPackageMetadata(packageArtifact);
+
 const packagedReleaseArtifacts = (
   await readdir(outputDirectory, {
     withFileTypes: true,
@@ -91,4 +108,57 @@ function compareFilenames(left, right) {
   }
 
   return leftName > rightName ? 1 : 0;
+}
+
+function verifyPackageEntries(artifact) {
+  const entries = runUnzip(["-Z1", artifact])
+    .trimEnd()
+    .split("\n")
+    .filter((entry) => entry !== "")
+    .sort();
+
+  if (JSON.stringify(entries) !== JSON.stringify(expectedPackageEntries)) {
+    throw new Error(
+      `KWin package entries differ from the release contract: ${entries.join(", ")}`,
+    );
+  }
+}
+
+function verifyPackageMetadata(artifact) {
+  let metadata;
+
+  try {
+    metadata = JSON.parse(runUnzip(["-p", artifact, "metadata.json"]));
+  } catch (error) {
+    throw new Error("KWin package metadata is not valid JSON", {
+      cause: error,
+    });
+  }
+
+  if (metadata["KPlugin"]?.["Id"] !== pluginId) {
+    throw new Error("KWin package metadata contains an unexpected plugin ID");
+  }
+
+  if (metadata["KPlugin"]?.["Version"] !== version) {
+    throw new Error("KWin package metadata version does not match the release");
+  }
+}
+
+function runUnzip(arguments_) {
+  const result = spawnSync("unzip", arguments_, {
+    encoding: "utf8",
+    maxBuffer: 1024 * 1024,
+  });
+
+  if (result.error) {
+    throw result.error;
+  }
+
+  if (result.status !== 0) {
+    throw new Error(
+      `unzip exited with status ${String(result.status)}: ${result.stderr.trim()}`,
+    );
+  }
+
+  return result.stdout;
 }
