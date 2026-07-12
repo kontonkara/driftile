@@ -69,6 +69,7 @@ The current runtime already:
 - Configures a 1–50 percentage-point explicit column-width step without reflowing existing layouts.
 - Configures a 1–50 percentage-point explicit window-height step without reflowing existing layouts.
 - Treats exposed client minimum and maximum sizes as hard bounds, detects silent changes on visible tracked windows, does not model unexposed X11 increment and aspect hints, and leaves backend enforcement to KWin.
+- Runs a deterministic 128-cycle add, focus, minimize, restore, and remove regression with synchronous geometry acknowledgements and bounded scheduler settlement.
 - Keeps one shared trailing desktop empty and removes only redundant tails created by the current run.
 - Registers compact default shortcuts with `H/J/K/L`, arrow, Home/End, and Page Up/Down aliases.
 - Provides a reversible development helper for claiming shortcuts already used
