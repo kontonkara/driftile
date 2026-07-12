@@ -1673,6 +1673,7 @@ settings_persistence_payload_matches() {
   local cancellation_verified
   local initial_queue_verified
   local payload_verified
+  local timed_flush_verified
 
   initial_queue_verified=$(kreadconfig6 \
     --file "$settings_persistence_probe_file" \
@@ -1694,11 +1695,17 @@ settings_persistence_payload_matches() {
     --group Probe \
     --key CancellationSurvived \
     --default false 2>/dev/null || true)
+  timed_flush_verified=$(kreadconfig6 \
+    --file "$settings_persistence_probe_file" \
+    --group Probe \
+    --key TimedFlushVerified \
+    --default false 2>/dev/null || true)
 
   [[ "$initial_queue_verified" == true ]] &&
     [[ "$payload_verified" == true ]] &&
     [[ "$cancellation_verified" == true ]] &&
-    [[ "$cancellation_survived" == true ]]
+    [[ "$cancellation_survived" == true ]] &&
+    [[ "$timed_flush_verified" == true ]]
 }
 
 verify_settings_persistence_transport() {
