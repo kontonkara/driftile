@@ -15,6 +15,16 @@ export interface PointerWindowDropInput {
 
 export type PointerWindowDropTarget = WindowReinsertionTarget;
 
+export interface PointerExternalWindowDropInput {
+  readonly context: LayoutContextSnapshot;
+  readonly cursor: Point;
+  readonly draggedWindowId: WindowId;
+  readonly visibleArea: Rect;
+  readonly windows: readonly WindowGeometry[];
+}
+
+export type PointerExternalWindowDropTarget = WindowReinsertionTarget;
+
 interface ContextWindowPlacement {
   readonly columnId: ColumnId;
   readonly memberIndex: number;
@@ -40,15 +50,72 @@ export function planPointerWindowDrop(
     return null;
   }
 
-  if (!containsPoint(input.visibleArea, input.cursor)) {
+  const target = pointerWindowDropTarget(
+    placements,
+    input.cursor,
+    input.draggedWindowId,
+    input.visibleArea,
+    input.windows,
+  );
+
+  if (!target) {
+    return null;
+  }
+
+  const targetPlacement = placements.get(target.targetWindowId);
+
+  if (!targetPlacement) {
+    return null;
+  }
+
+  return isSameColumnNoOp(draggedPlacement, targetPlacement, target.position)
+    ? null
+    : target;
+}
+
+export function planPointerExternalWindowDrop(
+  input: PointerExternalWindowDropInput,
+): PointerExternalWindowDropTarget | null {
+  if (
+    !isRecord(input) ||
+    typeof input.draggedWindowId !== "string" ||
+    !isFinitePoint(input.cursor) ||
+    !isUsableRect(input.visibleArea) ||
+    !Array.isArray(input.windows)
+  ) {
+    return null;
+  }
+
+  const placements = contextWindowPlacements(input.context);
+
+  if (!placements || placements.has(input.draggedWindowId)) {
+    return null;
+  }
+
+  return pointerWindowDropTarget(
+    placements,
+    input.cursor,
+    input.draggedWindowId,
+    input.visibleArea,
+    input.windows,
+  );
+}
+
+function pointerWindowDropTarget(
+  placements: ReadonlyMap<WindowId, ContextWindowPlacement>,
+  cursor: Point,
+  draggedWindowId: WindowId,
+  visibleArea: Rect,
+  windows: readonly WindowGeometry[],
+): PointerWindowDropTarget | null {
+  if (!containsPoint(visibleArea, cursor)) {
     return null;
   }
 
   const geometryWindowIds = new Set<WindowId>();
   let target: PointerWindowDropTarget | null = null;
-  let targetPlacement: ContextWindowPlacement | null = null;
 
-  for (const geometry of input.windows) {
+  for (const geometry of windows) {
     if (!validWindowGeometry(geometry)) {
       return null;
     }
@@ -65,8 +132,8 @@ export function planPointerWindowDrop(
     }
 
     if (
-      geometry.windowId === input.draggedWindowId ||
-      !containsPoint(geometry.frame, input.cursor)
+      geometry.windowId === draggedWindowId ||
+      !containsPoint(geometry.frame, cursor)
     ) {
       continue;
     }
@@ -77,25 +144,18 @@ export function planPointerWindowDrop(
 
     target = Object.freeze({
       position:
-        input.cursor.y < geometry.frame.y + geometry.frame.height / 2
+        cursor.y < geometry.frame.y + geometry.frame.height / 2
           ? "before"
           : "after",
       targetWindowId: geometry.windowId,
     });
-    targetPlacement = placement;
   }
 
-  if (
-    geometryWindowIds.size !== placements.size ||
-    !target ||
-    !targetPlacement
-  ) {
+  if (geometryWindowIds.size !== placements.size || !target) {
     return null;
   }
 
-  return isSameColumnNoOp(draggedPlacement, targetPlacement, target.position)
-    ? null
-    : target;
+  return target;
 }
 
 function contextWindowPlacements(
@@ -118,8 +178,10 @@ function contextWindowPlacements(
     if (
       !isRecord(column) ||
       typeof column.id !== "string" ||
+      !validColumnWidth(column.width) ||
       !Array.isArray(column.windowIds) ||
-      column.windowIds.length === 0
+      column.windowIds.length === 0 ||
+      !validWindowHeights(column.windowHeights, column.windowIds.length)
     ) {
       return null;
     }
@@ -150,7 +212,76 @@ function contextWindowPlacements(
     }
   }
 
+  if (
+    context.activeColumnId !== null &&
+    (typeof context.activeColumnId !== "string" ||
+      !columnIds.has(context.activeColumnId))
+  ) {
+    return null;
+  }
+
   return placements;
+}
+
+function validColumnWidth(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    (value.kind === "fixed" || value.kind === "proportion") &&
+    typeof value.value === "number" &&
+    Number.isFinite(value.value) &&
+    value.value > 0
+  );
+}
+
+function validWindowHeights(value: unknown, windowCount: number): boolean {
+  if (value === undefined) {
+    return true;
+  }
+
+  if (!Array.isArray(value) || value.length !== windowCount) {
+    return false;
+  }
+
+  let nonAutomaticCount = 0;
+  let hasNonDefaultHeight = false;
+
+  for (const height of value) {
+    if (!isRecord(height)) {
+      return false;
+    }
+
+    if (height.kind === "auto") {
+      if (
+        typeof height.weight !== "number" ||
+        !Number.isFinite(height.weight) ||
+        height.weight <= 0
+      ) {
+        return false;
+      }
+
+      hasNonDefaultHeight ||= height.weight !== 1;
+      continue;
+    }
+
+    if (
+      (height.kind === "fixed" &&
+        typeof height.clientHeight === "number" &&
+        Number.isFinite(height.clientHeight) &&
+        height.clientHeight > 0) ||
+      (height.kind === "preset" &&
+        typeof height.index === "number" &&
+        Number.isInteger(height.index) &&
+        height.index >= 0)
+    ) {
+      nonAutomaticCount += 1;
+      hasNonDefaultHeight = true;
+      continue;
+    }
+
+    return false;
+  }
+
+  return nonAutomaticCount <= 1 && hasNonDefaultHeight;
 }
 
 function isSameColumnNoOp(

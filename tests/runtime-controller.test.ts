@@ -23696,6 +23696,257 @@ describe("RuntimeController", () => {
     expect(waiting.writeCount).toBe(0);
   });
 
+  it.each([
+    { eventOrder: "output-before-finish" as const, position: "after" as const },
+    {
+      eventOrder: "finish-before-output" as const,
+      position: "before" as const,
+    },
+  ])(
+    "adopts an external pointer drop $position the target with $eventOrder events",
+    ({ eventOrder, position }) => {
+      const setup = createExternalPointerDropRuntimeFixture();
+      const publicationCount = setup.published.length;
+
+      beginExternalPointerDrop(setup, position);
+      finishExternalPointerDrop(setup, eventOrder);
+
+      expect(
+        testLayoutColumns(setup.controller, setup.sourceOutput, setup.desktop),
+      ).toEqual([]);
+      expect(
+        testLayoutColumns(setup.controller, setup.targetOutput, setup.desktop),
+      ).toEqual([
+        {
+          id: "column:target",
+          windowIds:
+            position === "before"
+              ? ["dragged", "target"]
+              : ["target", "dragged"],
+        },
+      ]);
+      const targetSnapshot = runtimeLayout(setup.controller).snapshot(
+        outputId(setup.targetOutput.name),
+        desktopId(setup.desktop.id),
+      );
+      const targetColumn = targetSnapshot.columns[0];
+
+      expect(targetSnapshot.activeColumnId).toBe(columnId("column:target"));
+      expect(targetColumn?.width).toEqual({ kind: "fixed", value: 360 });
+      expect(targetColumn && columnWindowHeights(targetColumn)).toEqual(
+        position === "before"
+          ? [
+              { kind: "auto", weight: 1 },
+              { clientHeight: 240, kind: "fixed" },
+            ]
+          : [
+              { clientHeight: 240, kind: "fixed" },
+              { kind: "auto", weight: 1 },
+            ],
+      );
+      expect(setup.fixture.workspace.activeWindow).toBe(setup.dragged.window);
+      expect(setup.fixture.outputTransferCount).toBe(0);
+      expect(setup.dragged.desktopWriteCount).toBe(0);
+      expect(setup.fixture.desktopSwitchCount).toBe(0);
+      expect(setup.published).toHaveLength(publicationCount + 1);
+    },
+  );
+
+  it("waits through a mixed output and desktop context before insertion", () => {
+    const setup = createExternalPointerDropRuntimeFixture({
+      differentDesktop: true,
+    });
+    const publishedBefore = setup.published.length;
+
+    beginExternalPointerDrop(setup, "after");
+    settleExternalPointerDropBeforeOutput(setup);
+    setup.dragged.setOutput(setup.targetOutput);
+    setup.scheduler.flush();
+    setup.scheduler.flush();
+    Object.defineProperty(setup.dragged.window, "desktops", {
+      configurable: true,
+      value: [setup.targetDesktop],
+    });
+    setup.dragged.desktopsChanged.emit();
+    flushManualScheduler(setup.scheduler);
+
+    expect(
+      testLayoutColumns(
+        setup.controller,
+        setup.sourceOutput,
+        setup.sourceDesktop,
+      ),
+    ).toEqual([]);
+    expect(
+      testLayoutColumns(
+        setup.controller,
+        setup.targetOutput,
+        setup.targetDesktop,
+      ),
+    ).toEqual([{ id: "column:target", windowIds: ["target", "dragged"] }]);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.dragged.window);
+    expect(setup.fixture.outputTransferCount).toBe(0);
+    expect(setup.dragged.desktopWriteCount).toBe(0);
+    expect(setup.fixture.desktopSwitchCount).toBe(0);
+    expect(setup.published).toHaveLength(publishedBefore + 1);
+  });
+
+  it("waits for an empty external destination before ordinary admission", () => {
+    const sourceOutput = createOutput("DP-1", 0);
+    const targetOutput = createOutput("HDMI-A-1", 1000);
+    const desktop = { id: "desktop-1" };
+    const dragged = createTrackedWindow("dragged", sourceOutput, desktop);
+    const fixture = createWorkspace(
+      sourceOutput,
+      desktop,
+      [sourceOutput, targetOutput],
+      [desktop],
+      [dragged.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+      scheduleResume: scheduler.schedule,
+    });
+
+    controller.start();
+    Object.defineProperty(dragged.window, "move", {
+      configurable: true,
+      value: true,
+    });
+    dragged.moveResizedChanged.emit();
+    dragged.interactiveMoveResizeStarted.emit();
+    dragged.setFrameGeometry({ height: 300, width: 400, x: 1180, y: 250 });
+    fixture.setCursorPosition(1380, 400);
+    Object.defineProperty(dragged.window, "move", {
+      configurable: true,
+      value: false,
+    });
+    dragged.moveResizedChanged.emit();
+    dragged.interactiveMoveResizeFinished.emit();
+    const releasedFrame = { ...dragged.window.frameGeometry };
+
+    scheduler.flush();
+    expect(dragged.window.frameGeometry).toEqual(releasedFrame);
+    dragged.setOutput(targetOutput);
+    flushManualScheduler(scheduler);
+
+    expect(testLayoutColumns(controller, sourceOutput, desktop)).toEqual([]);
+    expect(testLayoutColumns(controller, targetOutput, desktop)).toEqual([
+      { id: "column:dragged", windowIds: ["dragged"] },
+    ]);
+    expect(fixture.workspace.activeWindow).toBe(dragged.window);
+    expect(fixture.outputTransferCount).toBe(0);
+    expect(dragged.desktopWriteCount).toBe(0);
+  });
+
+  it("abandons external insertion when context probe scheduling fails", () => {
+    const setup = createExternalPointerDropRuntimeFixture({
+      resumeSchedulingFails: true,
+    });
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      beginExternalPointerDrop(setup, "after");
+      finishExternalPointerMovement(setup);
+      flushManualScheduler(setup.scheduler);
+      setup.dragged.setOutput(setup.targetOutput);
+      flushManualScheduler(setup.scheduler);
+    } finally {
+      warning.mockRestore();
+    }
+
+    expect(
+      testLayoutColumns(setup.controller, setup.sourceOutput, setup.desktop),
+    ).toEqual([]);
+    expect(
+      testLayoutColumns(setup.controller, setup.targetOutput, setup.desktop),
+    ).toEqual([
+      { id: "column:target", windowIds: ["target"] },
+      { id: "column:dragged", windowIds: ["dragged"] },
+    ]);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.dragged.window);
+    expect(setup.fixture.outputTransferCount).toBe(0);
+    expect(setup.dragged.desktopWriteCount).toBe(0);
+  });
+
+  it("falls back to ordinary destination admission when the drop target changes", () => {
+    const setup = createExternalPointerDropRuntimeFixture();
+
+    beginExternalPointerDrop(setup, "after");
+    settleExternalPointerDropBeforeOutput(setup);
+    Object.defineProperty(setup.target.window, "minimized", {
+      configurable: true,
+      value: true,
+    });
+    setup.target.minimizedChanged.emit();
+    setup.dragged.setOutput(setup.targetOutput);
+    flushManualScheduler(setup.scheduler);
+
+    expect(
+      testLayoutColumns(setup.controller, setup.sourceOutput, setup.desktop),
+    ).toEqual([]);
+    expect(
+      testLayoutColumns(setup.controller, setup.targetOutput, setup.desktop),
+    ).toEqual([
+      { id: "column:target", windowIds: ["target"] },
+      { id: "column:dragged", windowIds: ["dragged"] },
+    ]);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.dragged.window);
+    expect(setup.fixture.outputTransferCount).toBe(0);
+    expect(setup.dragged.desktopWriteCount).toBe(0);
+  });
+
+  it("compensates a partial external drop before ordinary destination admission", () => {
+    const setup = createExternalPointerDropRuntimeFixture();
+    const targetFrameBefore = { ...setup.target.window.frameGeometry };
+    const attemptedTargetFrames: KWinWindow["frameGeometry"][] = [];
+    let rejectedDraggedWrite = false;
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    setup.target.setWriteBehavior((frame, commit) => {
+      attemptedTargetFrames.push({ ...frame });
+      commit();
+    });
+    setup.dragged.setWriteBehavior((_frame, commit) => {
+      if (!rejectedDraggedWrite) {
+        rejectedDraggedWrite = true;
+        throw new Error("destination write rejected");
+      }
+
+      commit();
+    });
+
+    try {
+      beginExternalPointerDrop(setup, "before");
+      finishExternalPointerDrop(setup, "output-before-finish");
+    } finally {
+      setup.target.setWriteBehavior(null);
+      setup.dragged.setWriteBehavior(null);
+      warning.mockRestore();
+    }
+
+    expect(rejectedDraggedWrite).toBe(true);
+    expect(attemptedTargetFrames.length).toBeGreaterThanOrEqual(2);
+    expect(attemptedTargetFrames[0]?.y).toBeGreaterThan(targetFrameBefore.y);
+    expect(attemptedTargetFrames[1]).toEqual(targetFrameBefore);
+    expect(setup.target.window.frameGeometry).toEqual(targetFrameBefore);
+    expect(
+      testLayoutColumns(setup.controller, setup.sourceOutput, setup.desktop),
+    ).toEqual([]);
+    expect(
+      testLayoutColumns(setup.controller, setup.targetOutput, setup.desktop),
+    ).toEqual([
+      { id: "column:target", windowIds: ["target"] },
+      { id: "column:dragged", windowIds: ["dragged"] },
+    ]);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.dragged.window);
+    expect(setup.fixture.outputTransferCount).toBe(0);
+    expect(setup.dragged.desktopWriteCount).toBe(0);
+  });
+
   it("reinserts a dragged tiled window into a target column and stack slot", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
@@ -32549,6 +32800,193 @@ function createOutputTransferFixture(
     targetDesktop,
     targetOutput,
   };
+}
+
+interface ExternalPointerDropRuntimeFixture {
+  readonly controller: RuntimeController;
+  readonly desktop: KWinVirtualDesktop;
+  readonly dragged: TrackedWindow;
+  readonly fixture: WorkspaceFixture;
+  readonly published: string[];
+  readonly scheduler: ManualScheduler;
+  readonly sourceDesktop: KWinVirtualDesktop;
+  readonly sourceOutput: KWinOutput;
+  readonly target: TrackedWindow;
+  readonly targetDesktop: KWinVirtualDesktop;
+  readonly targetOutput: KWinOutput;
+}
+
+function createExternalPointerDropRuntimeFixture(
+  options: {
+    readonly differentDesktop?: boolean;
+    readonly resumeSchedulingFails?: boolean;
+  } = {},
+): ExternalPointerDropRuntimeFixture {
+  const differentDesktop = options.differentDesktop ?? false;
+  const sourceOutput = createOutput("DP-1", 0);
+  const targetOutput = createOutput("HDMI-A-1", 1000);
+  const sourceDesktop = { id: "desktop-1" };
+  const targetDesktop = differentDesktop ? { id: "desktop-2" } : sourceDesktop;
+  const target = createTrackedWindow("target", targetOutput, targetDesktop, {
+    frameGeometry: { height: 240, width: 360, x: 1010, y: 10 },
+  });
+  const dragged = createTrackedWindow("dragged", sourceOutput, sourceDesktop);
+  const fixture = createWorkspace(
+    sourceOutput,
+    sourceDesktop,
+    [sourceOutput, targetOutput],
+    differentDesktop ? [sourceDesktop, targetDesktop] : [sourceDesktop],
+    [target.window, dragged.window],
+    differentDesktop,
+  );
+
+  if (differentDesktop) {
+    fixture.setCurrentDesktop(targetOutput, targetDesktop);
+  }
+  const scheduler = new ManualScheduler();
+  const published: string[] = [];
+  const controller = new RuntimeController(fixture.workspace, {
+    clientAreaOption: 2,
+    gap: 10,
+    onLayoutStateChanged: (document) => published.push(document),
+    schedule: scheduler.schedule,
+    scheduleResume: options.resumeSchedulingFails
+      ? () => {
+          throw new Error("resume scheduling rejected");
+        }
+      : scheduler.schedule,
+  });
+
+  if (!controller.start()) {
+    throw new Error("external pointer drop fixture did not start");
+  }
+
+  const layout = new LayoutEngine();
+  const sourceRestored = layout.restoreColumns({
+    activeColumnId: columnId("column:dragged"),
+    columns: [
+      {
+        column: {
+          id: columnId("column:dragged"),
+          width: { kind: "proportion", value: 0.5 },
+          windowIds: [windowId("dragged")],
+        },
+        index: 0,
+      },
+    ],
+    desktopId: desktopId(sourceDesktop.id),
+    outputId: outputId(sourceOutput.name),
+  });
+  const targetRestored = layout.restoreColumns({
+    activeColumnId: columnId("column:target"),
+    columns: [
+      {
+        column: {
+          id: columnId("column:target"),
+          width: { kind: "fixed", value: 360 },
+          windowHeights: [{ clientHeight: 240, kind: "fixed" }],
+          windowIds: [windowId("target")],
+        },
+        index: 0,
+      },
+    ],
+    desktopId: desktopId(targetDesktop.id),
+    outputId: outputId(targetOutput.name),
+  });
+
+  if (!sourceRestored || !targetRestored) {
+    throw new Error("external pointer drop layout could not be restored");
+  }
+
+  (
+    controller as unknown as {
+      layout: LayoutEngine;
+    }
+  ).layout = layout;
+  controller.reconcile();
+  controller.requestLayoutStatePublication();
+  controller.flushLayoutStatePublication();
+
+  if (scheduler.pendingCount > 0) {
+    flushManualScheduler(scheduler);
+  }
+
+  return {
+    controller,
+    desktop: sourceDesktop,
+    dragged,
+    fixture,
+    published,
+    scheduler,
+    sourceDesktop,
+    sourceOutput,
+    target,
+    targetDesktop,
+    targetOutput,
+  };
+}
+
+function beginExternalPointerDrop(
+  setup: ExternalPointerDropRuntimeFixture,
+  position: "after" | "before",
+): void {
+  Object.defineProperty(setup.dragged.window, "move", {
+    configurable: true,
+    value: true,
+  });
+  setup.dragged.moveResizedChanged.emit();
+  setup.dragged.interactiveMoveResizeStarted.emit();
+  const targetFrame = setup.target.window.frameGeometry;
+  const cursor = {
+    x: targetFrame.x + targetFrame.width / 2,
+    y:
+      targetFrame.y +
+      targetFrame.height * (position === "before" ? 0.25 : 0.75),
+  };
+  setup.dragged.setFrameGeometry({
+    ...setup.dragged.window.frameGeometry,
+    x: cursor.x - setup.dragged.window.frameGeometry.width / 2,
+    y: cursor.y - setup.dragged.window.frameGeometry.height / 2,
+  });
+  setup.fixture.setCursorPosition(cursor.x, cursor.y);
+}
+
+function finishExternalPointerDrop(
+  setup: ExternalPointerDropRuntimeFixture,
+  eventOrder: "finish-before-output" | "output-before-finish",
+): void {
+  if (eventOrder === "finish-before-output") {
+    settleExternalPointerDropBeforeOutput(setup);
+    setup.dragged.setOutput(setup.targetOutput);
+  } else {
+    setup.dragged.setOutput(setup.targetOutput);
+    finishExternalPointerMovement(setup);
+  }
+
+  flushManualScheduler(setup.scheduler);
+}
+
+function settleExternalPointerDropBeforeOutput(
+  setup: ExternalPointerDropRuntimeFixture,
+): void {
+  finishExternalPointerMovement(setup);
+
+  if (setup.scheduler.pendingCount === 0) {
+    throw new Error("external pointer drop did not schedule context waiting");
+  }
+
+  setup.scheduler.flush();
+}
+
+function finishExternalPointerMovement(
+  setup: ExternalPointerDropRuntimeFixture,
+): void {
+  Object.defineProperty(setup.dragged.window, "move", {
+    configurable: true,
+    value: false,
+  });
+  setup.dragged.moveResizedChanged.emit();
+  setup.dragged.interactiveMoveResizeFinished.emit();
 }
 
 function createPositionedOutput(

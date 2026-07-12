@@ -3,7 +3,9 @@ import type { Rect, WindowGeometry } from "../../src/core/geometry";
 import { columnId, desktopId, outputId, windowId } from "../../src/core/ids";
 import type { LayoutContextSnapshot } from "../../src/core/layout-engine";
 import {
+  planPointerExternalWindowDrop,
   planPointerWindowDrop,
+  type PointerExternalWindowDropInput,
   type PointerWindowDropInput,
 } from "../../src/core/pointer-reinsertion";
 
@@ -220,6 +222,103 @@ describe("planPointerWindowDrop", () => {
   });
 });
 
+describe("planPointerExternalWindowDrop", () => {
+  it("selects a complete destination target around its vertical midpoint", () => {
+    const input = externalFixture();
+    const before = planPointerExternalWindowDrop({
+      ...input,
+      cursor: { x: 250, y: 49.999 },
+    });
+    const after = planPointerExternalWindowDrop({
+      ...input,
+      cursor: { x: 250, y: 50 },
+    });
+
+    expect(before).toEqual({
+      position: "before",
+      targetWindowId: "target-a",
+    });
+    expect(after).toEqual({
+      position: "after",
+      targetWindowId: "target-a",
+    });
+    expect(Object.isFrozen(before)).toBe(true);
+  });
+
+  it("rejects outside, ambiguous, and incomplete destination hits", () => {
+    const input = externalFixture();
+    const overlapping = input.windows.map((candidate) =>
+      candidate.windowId === "target-b"
+        ? { ...candidate, frame: { ...candidate.frame, y: 0 } }
+        : candidate,
+    );
+
+    expect(
+      planPointerExternalWindowDrop({
+        ...input,
+        cursor: { x: -1, y: 25 },
+      }),
+    ).toBeNull();
+    expect(
+      planPointerExternalWindowDrop({ ...input, windows: overlapping }),
+    ).toBeNull();
+    expect(
+      planPointerExternalWindowDrop({
+        ...input,
+        windows: input.windows.slice(1),
+      }),
+    ).toBeNull();
+  });
+
+  it("rejects dragged membership and invalid destination state", () => {
+    const input = externalFixture();
+    const draggedColumn = fixture().context.columns[0];
+
+    if (!draggedColumn) {
+      throw new Error("expected a dragged source column");
+    }
+
+    expect(
+      planPointerExternalWindowDrop({
+        ...input,
+        context: {
+          ...input.context,
+          columns: [draggedColumn, ...input.context.columns],
+        },
+        windows: [fixture().windows[0], ...input.windows].filter(
+          (candidate): candidate is WindowGeometry => candidate !== undefined,
+        ),
+      }),
+    ).toBeNull();
+    expect(
+      planPointerExternalWindowDrop({
+        ...input,
+        context: {
+          ...input.context,
+          activeColumnId: columnId("missing"),
+        },
+      }),
+    ).toBeNull();
+    expect(
+      planPointerExternalWindowDrop({
+        ...input,
+        context: {
+          ...input.context,
+          columns: input.context.columns.map((column) => ({
+            ...column,
+            width: { kind: "fixed" as const, value: 0 },
+          })),
+        },
+      }),
+    ).toBeNull();
+    expect(
+      planPointerExternalWindowDrop(
+        null as unknown as Parameters<typeof planPointerExternalWindowDrop>[0],
+      ),
+    ).toBeNull();
+  });
+});
+
 function fixture(
   options: {
     readonly targetAFrame?: Rect;
@@ -268,6 +367,28 @@ function fixture(
         options.targetBFrame ?? { height: 100, width: 100, x: 200, y: 100 },
       ),
     ],
+  };
+}
+
+function externalFixture(): PointerExternalWindowDropInput {
+  const input = fixture();
+  const targetColumn = input.context.columns[1];
+
+  if (!targetColumn) {
+    throw new Error("expected a destination column");
+  }
+
+  return {
+    context: {
+      ...input.context,
+      activeColumnId: targetColumn.id,
+      columns: [targetColumn],
+      outputId: outputId("HDMI-A-1"),
+    },
+    cursor: input.cursor,
+    draggedWindowId: input.draggedWindowId,
+    visibleArea: input.visibleArea,
+    windows: input.windows.slice(1),
   };
 }
 

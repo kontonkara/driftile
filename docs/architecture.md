@@ -52,7 +52,11 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Holds initial admission through a one-second signal grace, then plans existing windows as one batch.
 - Defers external output and desktop transfers, then re-owns each window in its destination context.
 - Suspends geometry writes while KWin owns a window-state transition and resumes after its restored frame stabilizes.
-- Captures tiled move intent once, plans a same-context drop from the final cursor position, and commits the shared layout transaction only after geometry authority stabilizes.
+- Captures tiled move intent once, plans a drop from the final cursor position,
+  and commits the shared layout transaction only after geometry authority
+  stabilizes. A completed KWin-owned move to another visible output may be
+  adopted into one exact tiled target; stale or absent targets use ordinary
+  destination admission.
 - Observes output list, geometry, scale, and dock invalidations, then holds writes until two delayed topology snapshots match.
 - Detects otherwise silent client-area and hard-constraint changes with visibility-limited fingerprints.
 - Replays structural output changes in a stable layout order independent of KWin window-signal order.
@@ -131,7 +135,7 @@ RuntimeState
   toggleGeometryTransitions: Map<WindowId, { contextKey, expectedFrame, settlementArmed }>
   desktopLifecycle: { ownedDesktopIds, pendingMutation }
   topologyBarrier: { revision, affectedOutputs, stableSample }
-  pointerMoveIntent: { contextKey, layoutSnapshot, participants, finalCursor }
+  pointerMoveIntent: { contextKey, layoutSnapshot, participants, finalCursor, sourceOutput, sourceDesktop, externalDrop }
 ```
 
 `LayoutContext` owns columns, per-window automatic weights or fixed/preset heights, viewport offset, and the last applied geometry fingerprint. A managed window owns an optional decoration-independent client restore baseline plus the exact frame observed at capture time. A manually floating window remains observed but has no layout or geometry owner; its detached placement records stable anchors for reinsertion. An automatically floating window has no layout slot, floating anchor, waiting entry, suspension, or retry state. A minimized tiled window remains suspended in its exact logical slot, while a minimized manually floating window keeps its exact detached frame. Reconcile excludes suspended windows until KWin releases geometry authority. Waiting windows have no layout owner. KWin objects never enter core state.
@@ -245,6 +249,12 @@ inspected safely within the codec bound.
 - Resolve direct stack insertion inside the active context, skipping singleton columns without wrapping and preserving every intermediate column. Skipped columns are nonparticipants.
 - Permit a visible active member to insert past settled minimized passive peers in the participating source and target columns, including a fully minimized target stack. Preserve passive logical order, height state, minimized state, and externally changed hidden frames without geometry writes.
 - Reject direct insertion when either participating column contains a fullscreen, maximized, native-tiled, restore- or toggle-settling, or other non-minimize blocker. Cancel and roll back if a participant completes a state round trip during reflow.
+- After KWin completes physical output and desktop movement, adopt one active
+  normal tiled window into the exact visible target under the cursor. Use the
+  target midpoint for before-or-after insertion, retain the destination width,
+  reset the moved height to automatic, and commit both contexts together. If
+  the target is empty, stale, ambiguous, or changes during the transaction,
+  leave KWin's move intact and use ordinary destination singleton admission.
 - Transfer either the active column or one secondary window between existing desktops through an immutable two-context preview, then commit only after KWin accepts every desktop mechanism, focus, and destination geometry.
 - Transfer either the active column or one secondary window between outputs through the same preview, then commit only after KWin accepts every output and desktop mechanism plus both visible layouts.
 - Preserve whole-column member order and width, apply the active member last, and restore all owned mechanisms and frames if any batch step fails.
@@ -330,6 +340,10 @@ inspected safely within the codec bound.
 - Verify directional and edge floating focus, stacking tie-breaks, no-wrap boundaries, and exact frame immutability.
 - Verify vertical focus, member reorder, contextual merge and extraction, suspended members, and structural rollback.
 - Verify direct insertion past settled minimized source and target peers, fully minimized target stacks, skipped-singleton nonparticipation, zero hidden-frame writes, authoritative external frame changes, state-round-trip cancellation, exact rollback, and fail-closed blockers.
+- Verify cross-output pointer adoption before and after a visible target,
+  destination width and automatic height, both signal orders, exact
+  compensation, and ordinary singleton fallback for empty, stale, ambiguous,
+  or raced targets without output or desktop mechanism writes.
 - Verify explicit top-member consume and bottom-member expel, minimized passive-member policy, synchronous and deferred focus handoff, reentrant command rejection, width rules, height-state reset, boundaries, and rollback.
 - Verify the settled topology barrier, output replacement and removal, dock and silent work-area invalidations, sticky restore invalidation, and deterministic capacity recovery.
 - Verify independent contexts with native Wayland and XWayland windows on two virtual outputs and native X11 windows on the X11 backend.

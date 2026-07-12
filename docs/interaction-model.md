@@ -26,20 +26,27 @@ Driftile uses one keyboard grammar and does not wrap at layout boundaries:
 | Minimize focus       | Preserve tiled slots and floating frames; skip minimized windows without wrapping                 | Available |
 | Hidden-member edits  | Preserve documented passive peers; reject every other minimized-member structural edit            | Available |
 | Floating layer       | Toggle state, switch layers, and navigate floating windows geometrically                          | Available |
-| Pointer drop         | Reinsert one active tiled window before or after a visible target in the same context             | Available |
+| Pointer drop         | Reinsert one active tiled window before or after a same-context or visible cross-output target    | Available |
 | Tabbed columns       | Toggle a column between stacked and tabbed presentation without changing navigation               | v1        |
-| Pointer navigation   | Provide wheel navigation and cross-context rearrangement through the shared layout model          | v1        |
+| Pointer navigation   | Provide wheel navigation and cross-desktop rearrangement through the shared layout model          | v1        |
 
 Single-window transfers will remain available as secondary, unbound actions.
 Default desktop and output transfer shortcuts must move the whole active column.
 An active floating layer changes desktop transfer to the active window only.
 
-A tiled drag commits only on release over one visible tiled target in the same
-output and desktop. The target midpoint selects insertion before or after it.
-Moving within a stack retains the window-height policy; moving into another
-column adopts automatic height and the destination width. Resize sessions,
-cancelled or ambiguous drops, state changes, and topology changes leave the
-logical slot unchanged and restore its tiled frame.
+A tiled drag commits on release over one visible tiled target in the same
+context or on another visible output. The target midpoint selects insertion
+before or after it. Moving within a stack retains the window-height policy;
+moving into another column retains the destination width and gives the moved
+window automatic height.
+
+KWin owns physical output and desktop movement. Driftile adopts a completed
+cross-output move only when the cursor still identifies one valid destination
+target. An empty, invalidated, ambiguous, or raced target uses ordinary
+destination admission and creates a singleton rather than moving the window
+back. Same-context resize sessions, cancelled or ambiguous drops, state
+changes, and topology changes leave the logical slot unchanged and restore its
+tiled frame.
 
 A stack has at most one fixed or preset window height. Changing a different
 member converts the other members to weighted automatic heights that preserve

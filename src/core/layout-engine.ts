@@ -117,6 +117,11 @@ export interface WindowReinsertionTarget {
   readonly targetWindowId: WindowId;
 }
 
+export interface WindowTransferInsertionTarget extends WindowReinsertionTarget {
+  readonly desktopId: DesktopId;
+  readonly outputId: OutputId;
+}
+
 export interface ColumnTransferTarget {
   readonly columnId: ColumnId;
   readonly desktopId: DesktopId;
@@ -1403,18 +1408,174 @@ export class LayoutEngine {
       outputId: targetBefore.outputId,
       viewportOffset: targetBefore.viewportOffset,
     });
-    const preview = Object.freeze({
-      sourceLayout: sourceAfter,
-      targetLayout: targetAfter,
-    }) as WindowTransferPreview;
-    this.windowTransferPreviews.set(preview, {
-      sourceAfter,
-      sourceBefore,
-      targetAfter,
-      targetBefore,
+    return this.createWindowTransferPreview(
       windowId,
+      sourceBefore,
+      sourceAfter,
+      targetBefore,
+      targetAfter,
+    );
+  }
+
+  previewWindowTransferToWindow(
+    windowId: WindowId,
+    target: WindowTransferInsertionTarget,
+  ): WindowTransferPreview | null {
+    if (
+      !validWindowTransferInsertionTarget(target) ||
+      target.targetWindowId === windowId
+    ) {
+      return null;
+    }
+
+    const sourcePlacement = this.placements.get(windowId);
+    const targetPlacement = this.placements.get(target.targetWindowId);
+    const targetKey = contextKey(target.outputId, target.desktopId);
+
+    if (
+      !sourcePlacement ||
+      !targetPlacement ||
+      sourcePlacement.contextKey === targetKey ||
+      targetPlacement.contextKey !== targetKey
+    ) {
+      return null;
+    }
+
+    const source = this.contexts.get(sourcePlacement.contextKey);
+    const destination = this.contexts.get(targetKey);
+
+    if (
+      !source ||
+      !destination ||
+      source.activeColumnId !== sourcePlacement.columnId
+    ) {
+      return null;
+    }
+
+    const sourceBefore = immutableContextSnapshot(
+      this.snapshot(source.outputId, source.desktopId),
+    );
+    const targetBefore = immutableContextSnapshot(
+      this.snapshot(destination.outputId, destination.desktopId),
+    );
+    const sourceColumnIndex = sourceBefore.columns.findIndex(
+      (column) => column.id === sourcePlacement.columnId,
+    );
+    const sourceColumn = sourceBefore.columns[sourceColumnIndex];
+    const sourceMemberIndex = sourceColumn?.windowIds.indexOf(windowId) ?? -1;
+    const targetColumnIndex = targetBefore.columns.findIndex(
+      (column) => column.id === targetPlacement.columnId,
+    );
+    const targetColumn = targetBefore.columns[targetColumnIndex];
+    const targetMemberIndex =
+      targetColumn?.windowIds.indexOf(target.targetWindowId) ?? -1;
+
+    if (
+      sourceMemberIndex < 0 ||
+      targetMemberIndex < 0 ||
+      !sourceColumn ||
+      !targetColumn ||
+      !validContextSnapshot(sourceBefore) ||
+      !validContextSnapshot(targetBefore) ||
+      !this.placementsMatchSnapshot(sourceBefore) ||
+      !this.placementsMatchSnapshot(targetBefore)
+    ) {
+      return null;
+    }
+
+    const sourceColumns: LayoutColumnSnapshot[] = [];
+
+    for (const [index, column] of sourceBefore.columns.entries()) {
+      if (index !== sourceColumnIndex) {
+        sourceColumns.push(column);
+        continue;
+      }
+
+      const windowIds = [...column.windowIds];
+      windowIds.splice(sourceMemberIndex, 1);
+
+      if (windowIds.length === 0) {
+        continue;
+      }
+
+      const windowHeights = withoutSnapshotWindowHeight(
+        column,
+        sourceMemberIndex,
+      );
+      sourceColumns.push({
+        id: column.id,
+        width: column.width,
+        ...(windowHeights ? { windowHeights } : {}),
+        windowIds,
+      });
+    }
+
+    const sourceColumnRemoved = sourceColumn.windowIds.length === 1;
+    const sourceAfter = immutableContextSnapshot({
+      activeColumnId: sourceColumnRemoved
+        ? (sourceBefore.columns[sourceColumnIndex + 1]?.id ??
+          sourceBefore.columns[sourceColumnIndex - 1]?.id ??
+          null)
+        : sourceBefore.activeColumnId,
+      columns: sourceColumns,
+      desktopId: sourceBefore.desktopId,
+      outputId: sourceBefore.outputId,
+      viewportOffset:
+        sourceColumns.length === 0 ? 0 : sourceBefore.viewportOffset,
     });
-    return preview;
+    const targetWindowIds = [...targetColumn.windowIds];
+    const targetInsertionIndex =
+      targetMemberIndex + (target.position === "after" ? 1 : 0);
+    targetWindowIds.splice(targetInsertionIndex, 0, windowId);
+    const targetWindowHeights =
+      columnWindowHeights(targetColumn).map(cloneWindowHeight);
+    targetWindowHeights.splice(
+      targetInsertionIndex,
+      0,
+      automaticWindowHeight(),
+    );
+    const compactTargetWindowHeights =
+      compactWindowHeights(targetWindowHeights);
+    const targetColumns = targetBefore.columns.map((column, index) =>
+      index === targetColumnIndex
+        ? {
+            id: column.id,
+            width: column.width,
+            ...(compactTargetWindowHeights
+              ? { windowHeights: compactTargetWindowHeights }
+              : {}),
+            windowIds: targetWindowIds,
+          }
+        : column,
+    );
+    const targetAfter = immutableContextSnapshot({
+      activeColumnId: targetColumn.id,
+      columns: targetColumns,
+      desktopId: targetBefore.desktopId,
+      outputId: targetBefore.outputId,
+      viewportOffset: targetBefore.viewportOffset,
+    });
+
+    if (
+      !validTransferContextSnapshot(sourceAfter) ||
+      !validContextSnapshot(targetAfter) ||
+      !sameWindowSetAcrossContexts(
+        sourceBefore,
+        targetBefore,
+        sourceAfter,
+        targetAfter,
+      )
+    ) {
+      return null;
+    }
+
+    return this.createWindowTransferPreview(
+      windowId,
+      sourceBefore,
+      sourceAfter,
+      targetBefore,
+      targetAfter,
+    );
   }
 
   commitWindowTransfer(preview: WindowTransferPreview): boolean {
@@ -2023,6 +2184,27 @@ export class LayoutEngine {
     return { kind, rollback };
   }
 
+  private createWindowTransferPreview(
+    windowId: WindowId,
+    sourceBefore: LayoutContextSnapshot,
+    sourceAfter: LayoutContextSnapshot,
+    targetBefore: LayoutContextSnapshot,
+    targetAfter: LayoutContextSnapshot,
+  ): WindowTransferPreview {
+    const preview = Object.freeze({
+      sourceLayout: sourceAfter,
+      targetLayout: targetAfter,
+    }) as WindowTransferPreview;
+    this.windowTransferPreviews.set(preview, {
+      sourceAfter,
+      sourceBefore,
+      targetAfter,
+      targetBefore,
+      windowId,
+    });
+    return preview;
+  }
+
   private createColumnStackEditPreview(
     kind: ColumnStackEditPreview["kind"],
     movedWindowId: WindowId,
@@ -2540,6 +2722,17 @@ function validWindowReinsertionTarget(
     isRecord(target) &&
     (target["position"] === "after" || target["position"] === "before") &&
     typeof target["targetWindowId"] === "string"
+  );
+}
+
+function validWindowTransferInsertionTarget(
+  target: unknown,
+): target is WindowTransferInsertionTarget {
+  return (
+    isRecord(target) &&
+    validWindowReinsertionTarget(target) &&
+    typeof target["desktopId"] === "string" &&
+    typeof target["outputId"] === "string"
   );
 }
 

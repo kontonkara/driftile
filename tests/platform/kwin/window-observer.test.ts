@@ -249,7 +249,7 @@ describe("WindowObserver", () => {
     const desktopsChanged = source.desktopsChanged as Signal<[]>;
     const changed: string[] = [];
     const observer = new WindowObserver(createWorkspace([source]), {
-      changed: (windowId) => changed.push(windowId),
+      changed: (windowId, cause) => changed.push(`${windowId}:${cause}`),
     });
     const nextOutput: KWinOutput = {
       devicePixelRatio: 1.25,
@@ -280,7 +280,7 @@ describe("WindowObserver", () => {
     desktopsChanged.emit();
 
     expect(observer.snapshot()[0]?.desktopIds).toEqual(["desktop-2"]);
-    expect(changed).toEqual(["window-1", "window-1"]);
+    expect(changed).toEqual(["window-1:context", "window-1:context"]);
   });
 
   it("retains a temporarily all-desktop source until it returns", () => {
@@ -384,7 +384,7 @@ describe("WindowObserver", () => {
     const modalChanged = source.modalChanged as Signal<[]>;
     const changed: string[] = [];
     const observer = new WindowObserver(createWorkspace([source]), {
-      changed: (windowId) => changed.push(windowId),
+      changed: (windowId, cause) => changed.push(`${windowId}:${cause}`),
     });
 
     observer.start();
@@ -404,7 +404,11 @@ describe("WindowObserver", () => {
     });
     modalChanged.emit();
 
-    expect(changed).toEqual(["window-1", "window-1", "window-1"]);
+    expect(changed).toEqual([
+      "window-1:constraints",
+      "window-1:classification",
+      "window-1:classification",
+    ]);
   });
 
   it("deduplicates hard-constraint refreshes across existing and geometry signals", () => {
@@ -658,7 +662,7 @@ describe("WindowObserver", () => {
     const finished = source.interactiveMoveResizeFinished as Signal<[]>;
     const events: string[] = [];
     const observer = new WindowObserver(createWorkspace([source]), {
-      changed: (windowId) => events.push(`changed:${windowId}`),
+      changed: (windowId, cause) => events.push(`changed:${windowId}:${cause}`),
       interactiveMoveFinished: (windowId) =>
         events.push(`finished:${windowId}`),
       interactiveMoveStarted: (windowId) => events.push(`started:${windowId}`),
@@ -679,8 +683,60 @@ describe("WindowObserver", () => {
 
     expect(events).toEqual([
       "started:window-1",
-      "changed:window-1",
+      "changed:window-1:constraints",
       "state:window-1",
+      "finished:window-1",
+      "state:window-1",
+    ]);
+  });
+
+  it("keeps interactive move lifecycle intact across context changes", () => {
+    const source = createWindow({ move: true });
+    const started = source.interactiveMoveResizeStarted as Signal<[]>;
+    const finished = source.interactiveMoveResizeFinished as Signal<[]>;
+    const outputChanged = source.outputChanged as Signal<
+      [oldOutput?: KWinOutput | null]
+    >;
+    const desktopsChanged = source.desktopsChanged as Signal<[]>;
+    const events: string[] = [];
+    const observer = new WindowObserver(createWorkspace([source]), {
+      changed: (windowId, cause) => events.push(`changed:${windowId}:${cause}`),
+      interactiveMoveFinished: (windowId) =>
+        events.push(`finished:${windowId}`),
+      interactiveMoveStarted: (windowId) => events.push(`started:${windowId}`),
+      stateChanged: (windowId) => events.push(`state:${windowId}`),
+    });
+    const nextOutput: KWinOutput = {
+      devicePixelRatio: 1,
+      geometry: { height: 1080, width: 1920, x: 1920, y: 0 },
+      name: "HDMI-A-1",
+    };
+
+    observer.start();
+    started.emit();
+    Object.defineProperty(source, "output", {
+      configurable: true,
+      value: nextOutput,
+    });
+    outputChanged.emit();
+    outputChanged.emit();
+    Object.defineProperty(source, "desktops", {
+      configurable: true,
+      value: [{ id: "desktop-2" }],
+    });
+    desktopsChanged.emit();
+    desktopsChanged.emit();
+    Object.defineProperty(source, "move", {
+      configurable: true,
+      value: false,
+    });
+    finished.emit();
+
+    expect(events).toEqual([
+      "started:window-1",
+      "state:window-1",
+      "changed:window-1:context",
+      "changed:window-1:context",
       "finished:window-1",
       "state:window-1",
     ]);

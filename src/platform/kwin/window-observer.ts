@@ -1,6 +1,8 @@
 import type { KWinOutput, KWinRect, KWinWindow, KWinWorkspace } from "./api";
 
 export type ObservedWindowKind = "dialog" | "normal" | "other";
+export type ObservedWindowChangeCause =
+  "classification" | "constraints" | "context";
 export type WindowSuspensionRequest =
   | "maximized-requested"
   | "maximized-settling"
@@ -17,7 +19,10 @@ export interface ObservedWindow {
 
 export interface WindowObserverEvents {
   readonly added?: (window: ObservedWindow) => void;
-  readonly changed?: (windowId: string) => void;
+  readonly changed?: (
+    windowId: string,
+    cause: ObservedWindowChangeCause,
+  ) => void;
   readonly fullScreenChanged?: (windowId: string, fullScreen: boolean) => void;
   readonly interactiveMoveFinished?: (windowId: string) => void;
   readonly interactiveMoveStarted?: (windowId: string) => void;
@@ -190,8 +195,8 @@ export class WindowObserver {
       return;
     }
 
-    const refresh = (): void => {
-      this.refresh(id, window);
+    const refreshContext = (): void => {
+      this.refresh(id, window, "context");
     };
     const refreshState = (): void => {
       this.refreshState(id, window);
@@ -218,7 +223,7 @@ export class WindowObserver {
       refreshState();
     };
     const refreshAutomaticFloating = (): void => {
-      this.refresh(id, window, true);
+      this.refresh(id, window, "classification", true);
     };
     let interactiveMoveActive = false;
     let committedTile: object | null | undefined;
@@ -229,7 +234,7 @@ export class WindowObserver {
       handleClientGeometryChanged: refreshClientGeometry,
       handleConstraintChanged: refreshConstraint,
       handleDecorationPolicyChanged: refreshDecorationPolicy,
-      handleDesktopsChanged: refresh,
+      handleDesktopsChanged: refreshContext,
       handleFullScreenChanged: () => {
         this.events.fullScreenChanged?.(id, window.fullScreen);
         refreshState();
@@ -290,7 +295,7 @@ export class WindowObserver {
 
         refreshState();
       },
-      handleOutputChanged: refresh,
+      handleOutputChanged: refreshContext,
       handleRequestedTileChanged: () => {
         if (window.tile !== null) {
           this.events.suspensionSettled?.(id, "native-tile-settling");
@@ -378,6 +383,7 @@ export class WindowObserver {
   private refresh(
     id: string,
     source: KWinWindow,
+    cause: ObservedWindowChangeCause,
     forceNotification = false,
   ): void {
     const entry = this.windows.get(id);
@@ -393,7 +399,7 @@ export class WindowObserver {
     }
 
     entry.observed = observed;
-    this.events.changed?.(id);
+    this.events.changed?.(id, cause);
   }
 
   private refreshState(id: string, source: KWinWindow): void {
@@ -421,7 +427,7 @@ export class WindowObserver {
     }
 
     entry.constraintFingerprint = fingerprint;
-    this.events.changed?.(id);
+    this.events.changed?.(id, "constraints");
     return true;
   }
 
