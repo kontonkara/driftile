@@ -29,6 +29,8 @@ readonly native_tile_toggle_plugin_id="io.github.kontonkara.driftile.integration
 readonly output_router_plugin_id="io.github.kontonkara.driftile.integration-output-router"
 readonly output_transfer_state_probe_plugin_id="io.github.kontonkara.driftile.integration-output-transfer-state-probe"
 readonly output_transfer_state_verified_shortcut_prefix="Driftile Integration Output Transfer State Verified"
+readonly settings_persistence_probe_plugin_id="io.github.kontonkara.driftile.integration-settings-persistence-probe"
+readonly settings_persistence_probe_file="$XDG_CONFIG_HOME/driftile-settings-persistence-probe.ini"
 readonly stable_sample_count=2
 readonly wait_attempts=200
 
@@ -137,6 +139,13 @@ cleanup() {
     org.kde.kwin.Scripting \
     unloadScript \
     s "$native_tile_toggle_plugin_id" \
+    >/dev/null 2>&1 || true
+  busctl --user call \
+    org.kde.KWin \
+    /Scripting \
+    org.kde.kwin.Scripting \
+    unloadScript \
+    s "$settings_persistence_probe_plugin_id" \
     >/dev/null 2>&1 || true
   busctl --user call \
     org.kde.KWin \
@@ -1593,6 +1602,94 @@ run_one_shot_script() {
 
   [[ "$unload_result" == "b true" ]] || return 1
   wait_for_named_script_state "$name" false
+}
+
+load_settings_persistence_probe() {
+  local load_result
+  local script_id
+
+  load_result=$(busctl --user call \
+    org.kde.KWin \
+    /Scripting \
+    org.kde.kwin.Scripting \
+    loadDeclarativeScript \
+    ss \
+    "$DRIFTILE_SMOKE_SETTINGS_PERSISTENCE_PROBE" \
+    "$settings_persistence_probe_plugin_id") || return 1
+  script_id=${load_result#i }
+
+  if [[ ! "$script_id" =~ ^[0-9]+$ ]]; then
+    return 1
+  fi
+
+  busctl --user call \
+    org.kde.KWin \
+    "/Scripting/Script${script_id}" \
+    org.kde.kwin.Script \
+    run \
+    >/dev/null || return 1
+
+  wait_for_named_script_state "$settings_persistence_probe_plugin_id" true
+}
+
+unload_settings_persistence_probe() {
+  local unload_result
+
+  unload_result=$(busctl --user call \
+    org.kde.KWin \
+    /Scripting \
+    org.kde.kwin.Scripting \
+    unloadScript \
+    s "$settings_persistence_probe_plugin_id") || return 1
+
+  [[ "$unload_result" == "b true" ]] || return 1
+  wait_for_named_script_state "$settings_persistence_probe_plugin_id" false
+}
+
+wait_for_settings_persistence_generation() {
+  local expected=$1
+  local attempt
+  local generation
+
+  for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
+    generation=$(kreadconfig6 \
+      --file "$settings_persistence_probe_file" \
+      --group Probe \
+      --key Generation \
+      --default missing 2>/dev/null || true)
+
+    if [[ "$generation" == "$expected" ]]; then
+      return 0
+    fi
+
+    sleep 0.05
+  done
+
+  return 1
+}
+
+settings_persistence_payload_matches() {
+  local verified
+
+  verified=$(kreadconfig6 \
+    --file "$settings_persistence_probe_file" \
+    --group Probe \
+    --key PayloadVerified \
+    --default false 2>/dev/null || true)
+
+  [[ "$verified" == true ]]
+}
+
+verify_settings_persistence_transport() {
+  rm -f "$settings_persistence_probe_file"
+
+  load_settings_persistence_probe || return 1
+  wait_for_settings_persistence_generation 1 || return 1
+  unload_settings_persistence_probe || return 1
+  load_settings_persistence_probe || return 1
+  wait_for_settings_persistence_generation 2 || return 1
+  settings_persistence_payload_matches || return 1
+  unload_settings_persistence_probe || return 1
 }
 
 detect_desktop_reorder_capability() {
@@ -7763,6 +7860,8 @@ run_multi_output_scenario() {
 trap cleanup EXIT
 
 wait_for_dbus || fail "the required KWin D-Bus APIs did not appear"
+verify_settings_persistence_transport || \
+  fail "KWin declarative Settings persistence did not survive a script reload"
 detect_desktop_reorder_capability || \
   fail "KWin desktop reorder capability could not be detected"
 prepare_test_desktops || fail "KWin could not create the second integration virtual desktop"
