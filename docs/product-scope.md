@@ -21,6 +21,7 @@ The ownership rule is strict:
 - Live global tiled-window gap from 0 to 64 logical pixels without changing layout state.
 - Configurable 10%–100% default width for newly admitted columns, fresh cross-context retiles, and explicit reset.
 - Configurable 1–50 percentage-point step for explicit column-width decrease and increase actions.
+- Configurable 1–50 percentage-point step for explicit active-window height decrease and increase actions.
 - Output-local commands unless a transfer is explicit.
 - Work-area, size-constraint, fullscreen, minimized-window compatibility, dialog, and hot-plug handling.
 - Hard client minimum and maximum bounds with cached detection of silent visible-window changes; unexposed increment and aspect hints do not alter Driftile's tiled model, while applied frames remain subject to KWin.
@@ -79,6 +80,7 @@ Driftile must integrate with, not duplicate:
 - Available-width expansion grows only a fully visible active column up to its shared window constraints, preserves every other fully visible column, and changes width and viewport atomically.
 - Visible-column centering changes only the viewport offset and preserves focus, order, widths, and grouping.
 - Window-height resizing makes the active member the sole fixed or preset member; automatic siblings preserve their relative weights while sharing the remaining height.
+- A height action never moves opposite its requested direction after constraints change. An automatic member may become fixed without a frame write when it already touches the requested hard boundary.
 - Resetting a window height returns that member to automatic sizing. A failed stack reflow restores every prior height state and frame.
 - Horizontal window movement merges a singleton into its neighbor or extracts a stacked member into a new adjacent singleton column.
 - Merge preserves the destination width; extraction copies the source width; both preserve focus and member order.
@@ -122,3 +124,4 @@ Driftile must integrate with, not duplicate:
 - A live gap change reflows visible tiled contexts only. It preserves logical order, widths, height policies, focus, floating frames, excluded windows, and minimized frames; hidden contexts adopt it when shown.
 - A default-width change leaves existing column width policies unchanged. Newly admitted columns, fresh cross-context retiles, and explicit reset use the new proportion subject to live window constraints. Retrying a waiting admission may add a column and update the affected viewport and frames; otherwise the policy change performs no frame writes.
 - A width-step change performs no layout, frame, viewport, or focus write. It affects only later explicit decrease and increase actions; reset, presets, full width, and available-width expansion remain independent.
+- A height-step change performs no layout, frame, viewport, or focus write. It affects only later explicit decrease and increase actions; reset and height presets remain independent.

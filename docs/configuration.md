@@ -20,6 +20,12 @@ Changing it does not alter existing managed width policies, focus, floating anch
 
 The value is a percentage-point step of the gap-adjusted work-area span, not a percentage of the current frame. Changing it does not resize or move any window; the next explicit decrease or increase uses the new step. Reset, presets, full width, and available-width expansion are unchanged. Hard window constraints can clamp the result to a fixed boundary.
 
+## Window height step
+
+**Window height step** controls the **Decrease window height** and **Increase window height** actions. The default is `10%`; the range is `1%`–`50%`.
+
+The value is a percentage-point step of the gap-adjusted work-area height, not a percentage of the current frame. Changing it performs no layout work; the next explicit decrease or increase resizes the active stack member and redistributes its automatic siblings. Reset and height presets are unchanged. Window and stack constraints can clamp the result.
+
 ## Window decorations
 
 **Hide KWin borders and title bars on application windows** is enabled by default. It covers tiled, floating, dialog, transient, and utility windows. Panels, desktop surfaces, unmanaged windows, and windows that were already borderless keep their KWin state.
