@@ -20424,6 +20424,140 @@ describe("RuntimeController", () => {
     expect(third.window.frameGeometry.x).toBe(20);
   });
 
+  it("settles sustained window lifecycles without geometry feedback", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const second = createTrackedWindow("window-2", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window, second.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+      scheduleResume: scheduler.schedule,
+    });
+    const acknowledgeGeometry = (tracked: TrackedWindow): void => {
+      tracked.setWriteBehavior((_frame, commit) => {
+        const oldGeometry = { ...tracked.window.frameGeometry };
+        commit();
+        tracked.frameGeometryChanged.emit(oldGeometry);
+      });
+    };
+    const warnings: unknown[][] = [];
+    const warning = console.warn;
+
+    acknowledgeGeometry(first);
+    acknowledgeGeometry(second);
+    console.warn = (...arguments_: unknown[]): void => {
+      warnings.push(arguments_);
+    };
+
+    try {
+      expect(controller.start()).toBe(true);
+      flushManualScheduler(scheduler);
+      const baselineLayout = runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      );
+      const baselineFrames = [first, second].map(({ window }) => ({
+        ...window.frameGeometry,
+      }));
+      const baselineWidths = baselineLayout.columns.map(({ width }) => ({
+        ...width,
+      }));
+
+      expect(fixture.workspace.activeWindow).toBe(second.window);
+      expect(scheduler.pendingCount).toBe(0);
+
+      for (let cycle = 0; cycle < 128; cycle += 1) {
+        const candidate = createTrackedWindow(
+          `lifecycle-window-${String(cycle)}`,
+          output,
+          desktop,
+        );
+        acknowledgeGeometry(candidate);
+        fixture.windowAdded.emit(candidate.window);
+        fixture.workspace.activeWindow = candidate.window;
+        flushManualScheduler(scheduler);
+
+        expect(controller.managedCount).toBe(3);
+        expect(fixture.workspace.activeWindow).toBe(candidate.window);
+        expect(scheduler.pendingCount).toBe(0);
+
+        setWindowState("minimized", candidate, true);
+        fixture.workspace.activeWindow = second.window;
+        flushManualScheduler(scheduler);
+
+        expect(candidate.window.minimized).toBe(true);
+        expect(fixture.workspace.activeWindow).toBe(second.window);
+        expect(scheduler.pendingCount).toBe(0);
+
+        setWindowState("minimized", candidate, false);
+        fixture.workspace.activeWindow = candidate.window;
+        flushManualScheduler(scheduler);
+
+        expect(candidate.window.minimized).toBe(false);
+        expect(fixture.workspace.activeWindow).toBe(candidate.window);
+        expect(scheduler.pendingCount).toBe(0);
+
+        fixture.workspace.activeWindow = second.window;
+        fixture.windowRemoved.emit(candidate.window);
+        flushManualScheduler(scheduler);
+        fixture.workspace.activeWindow = first.window;
+        flushManualScheduler(scheduler);
+        fixture.workspace.activeWindow = second.window;
+        flushManualScheduler(scheduler);
+
+        expect(controller.managedCount).toBe(2);
+        expect(fixture.workspace.activeWindow).toBe(second.window);
+        expect(
+          runtimeLayout(controller).snapshot(
+            outputId(output.name),
+            desktopId(desktop.id),
+          ),
+        ).toEqual(baselineLayout);
+        expect(
+          [first, second].map(({ window }) => window.frameGeometry),
+        ).toEqual(baselineFrames);
+        expect(
+          runtimeLayout(controller)
+            .snapshot(outputId(output.name), desktopId(desktop.id))
+            .columns.map(({ width }) => ({ ...width })),
+        ).toEqual(baselineWidths);
+
+        const settledWrites = [first.writeCount, second.writeCount];
+        first.frameGeometryChanged.emit({ ...first.window.frameGeometry });
+        second.frameGeometryChanged.emit({ ...second.window.frameGeometry });
+        candidate.frameGeometryChanged.emit({
+          ...candidate.window.frameGeometry,
+        });
+
+        for (let probe = 0; probe < 4; probe += 1) {
+          controller.probeTopology();
+        }
+
+        flushManualScheduler(scheduler);
+        expect(controller.reconcile()).toBe(0);
+        expect([first.writeCount, second.writeCount]).toEqual(settledWrites);
+        expect(controller.lastWriteCount).toBe(0);
+        expect(scheduler.pendingCount).toBe(0);
+      }
+
+      expect(warnings).toEqual([]);
+    } finally {
+      console.warn = warning;
+      first.setWriteBehavior(null);
+      second.setWriteBehavior(null);
+    }
+  });
+
   it("reconciles each dirty output context in one scheduled batch", () => {
     const output = createOutput("DP-1", 0);
     const otherOutput = createOutput("HDMI-A-1", 1000);
