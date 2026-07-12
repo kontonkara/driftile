@@ -1155,6 +1155,27 @@ single_output_work_area() {
   '
 }
 
+frames_intersect() {
+  local first=$1
+  local second=$2
+
+  jq --exit-status --null-input \
+    --arg first "$first" \
+    --arg second "$second" '
+      def rect:
+        split(",")
+        | map(tonumber)
+        | select(length == 4 and .[2] > 0 and .[3] > 0);
+
+      ($first | rect) as $a
+      | ($second | rect) as $b
+      | $a[0] < ($b[0] + $b[2])
+        and ($a[0] + $a[2]) > $b[0]
+        and $a[1] < ($b[1] + $b[3])
+        and ($a[1] + $a[3]) > $b[1]
+    ' >/dev/null
+}
+
 wait_for_x11_window() {
   local window_title=$1
   local attempt
@@ -7188,6 +7209,8 @@ run_multi_output_scenario() {
   local protocol=$1
   local baseline
   local index
+  local output_frame
+  local reachable_frame
   local scaled_left_first="16,16,402.666667,448"
   local scaled_left_second="434.666667,16,402.666667,448"
   local right_floating_frame
@@ -7636,6 +7659,35 @@ run_multi_output_scenario() {
     "${titles[5]}" "664,16,616,688" || \
     fail "Driftile did not merge the $protocol windows onto the remaining output: $(describe_layout "${titles[@]}")"
 
+  output_frame=$(single_output_work_area "$protocol") || \
+    fail "the remaining output frame was unavailable"
+
+  for index in "${!titles[@]}"; do
+    activate_window "${titles[index]}" || \
+      fail "KWin could not activate ${titles[index]} after output removal"
+    wait_for_active "${titles[index]}" || \
+      fail "KWin did not focus ${titles[index]} after output removal"
+    reachable_frame=$(capture_stable_geometry "${titles[index]}") || \
+      fail "${titles[index]} did not stabilize after output removal"
+    wait_for_active "${titles[index]}" || \
+      fail "${titles[index]} lost focus during the reachability check"
+    frames_intersect "$reachable_frame" "$output_frame" || \
+      fail "${titles[index]} was unreachable after output removal: frame=$reachable_frame output=$output_frame"
+  done
+
+  activate_window "${titles[5]}" || \
+    fail "KWin could not restore focus after the reachability sweep"
+  wait_for_active "${titles[5]}" || \
+    fail "KWin did not restore focus after the reachability sweep"
+  wait_for_geometries \
+    "${titles[0]}" "-2496,16,616,688" \
+    "${titles[1]}" "-1864,16,616,688" \
+    "${titles[2]}" "-1232,16,616,688" \
+    "${titles[3]}" "-600,16,616,688" \
+    "${titles[4]}" "32,16,616,688" \
+    "${titles[5]}" "664,16,616,688" || \
+    fail "Driftile did not restore the merged $protocol layout after the reachability sweep: $(describe_layout "${titles[@]}")"
+
   kscreen-doctor \
     output.Virtual-1.enable \
     output.Virtual-1.scale.1 \
@@ -7649,6 +7701,39 @@ run_multi_output_scenario() {
     "${titles[4]}" "1296,16,616,688" \
     "${titles[5]}" "1928,16,616,688" || \
     fail "Driftile did not recover after Virtual-1 was re-enabled: $(describe_layout "${titles[@]}")"
+
+  for index in 0 3; do
+    if ((index == 0)); then
+      side=left
+    else
+      side=right
+    fi
+
+    activate_window "${titles[index]}" || \
+      fail "KWin could not activate ${titles[index]} after output recovery"
+    wait_for_active "${titles[index]}" || \
+      fail "KWin did not focus ${titles[index]} after output recovery"
+    reachable_frame=$(capture_stable_geometry "${titles[index]}") || \
+      fail "${titles[index]} did not stabilize after output recovery"
+    wait_for_active "${titles[index]}" || \
+      fail "${titles[index]} lost focus during the recovery check"
+    window_is_on_output_side "${titles[index]}" "$side" || \
+      fail "${titles[index]} was unreachable after output recovery: frame=$reachable_frame side=$side"
+  done
+
+  for index in 2 5; do
+    activate_window "${titles[index]}" || \
+      fail "KWin could not restore ${titles[index]} after output recovery"
+    wait_for_active "${titles[index]}" || \
+      fail "KWin did not restore ${titles[index]} after output recovery"
+  done
+
+  wait_for_geometries \
+    "${titles[1]}" "16,16,616,688" \
+    "${titles[2]}" "648,16,616,688" \
+    "${titles[4]}" "1296,16,616,688" \
+    "${titles[5]}" "1928,16,616,688" || \
+    fail "Driftile did not restore the recovered $protocol layout after reachability checks: $(describe_layout "${titles[@]}")"
 
   set_plugin_state false
   wait_for_script_state false || fail "KWin did not unload Driftile"
