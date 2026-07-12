@@ -140,6 +140,11 @@ index fallback.
 
 The runtime publishes changed canonical snapshots only after stable work. Teardown consumes one already-queued runtime pass through normal reconciliation before the final capture; remaining blockers preserve the previous document. The QML package queues snapshots in an opaque `QtCore.Settings` store with an explicit file location, one-shot write debounce, duplicate suppression, and synchronous final flush before runtime teardown. A non-empty stored document is preserved until hydration can consume it. An isolated real-KWin probe imports the store and verifies an escaped Unicode JSON document with its trailing newline across immediate declarative-script unload and reload on Wayland and X11. Hydration and matcher integration are not connected yet.
 
+The pure same-session hydration planner resolves every persisted window and
+output by its unique exact live identity, reconstructs an immutable complete
+layout plan in linear time, and rejects the whole document on any mismatch.
+Runtime application of that plan is not connected yet.
+
 ## Reconciliation rules
 
 - Read usable geometry from KWin work areas; never infer panel bounds.
