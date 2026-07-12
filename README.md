@@ -44,8 +44,8 @@ artifact verification, upgrades, Nix packaging, and safe removal.
 
 ## Development
 
-Requirements: Node.js 22 or newer, npm, `zip`, ShellCheck, `busctl`, `flock`,
-`kwriteconfig6`, and KDE Frameworks 6 KPackage tools.
+Requirements: Node.js 22 or newer, npm, `zip`, ShellCheck, REUSE, `busctl`,
+`flock`, `kwriteconfig6`, and KDE Frameworks 6 KPackage tools.
 
 ```bash
 npm ci
