@@ -507,6 +507,33 @@ Release criteria (met):
 - Existing unit, packaged Wayland and X11 integration, hidden full-VM, package,
   and Nix module checks remain green.
 
+## 1.10.0 (in development)
+
+The bounded 1.10.0 slice adds exact per-application exclusions to optional
+borderless presentation. One empty-default `ApplicationBorderlessExclusions`
+setting matches exact, case-sensitive KWin `desktopFileName` values. Its
+deterministic bounded parser builds a `Set` for O(1) membership checks. Home
+Manager exposes the same policy as a list.
+
+When `BorderlessWindows` is false, the global setting dominates and Driftile
+does not apply borderless policy. Live application-identity and settings
+reconciliation preserves geometry and focus while acquiring, reasserting, or
+releasing only decoration state owned by Driftile. The behavior covers native
+Wayland, XWayland, and native X11 windows.
+
+This slice adds no action, binding, persistence-format, or overview change.
+KWin's shared outline has no ownership mechanism, so it cannot safely provide
+a production drag preview; that presentation work remains deferred.
+
+Release criteria:
+
+- A blank exclusion list preserves the current borderless behavior.
+- Exact matches retain their existing decoration state while non-matches obey
+  the enabled global policy; disabling that policy restores owned state.
+- Identity and settings changes reconcile live without geometry or focus
+  writes and without taking ownership of pre-existing borderless state.
+- Parser, runtime, Home Manager, Wayland, XWayland, and native X11 checks pass.
+
 ## Post-v1
 
 Add interaction and presentation features outside the frozen v1 scope without
