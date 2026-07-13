@@ -82,8 +82,17 @@ or oversized-document write locking.
 Overview coverage validates current-snapshot selection, exact live topology,
 desktop and window matching, bare-v1 rejection, baseline stripping, immutable
 projection, input-order independence, the 4,096-window operation budget, the
-two-read store boundary, public-only KWin imports, and the absence of settings,
-workspace, shortcut-assignment, or screen-edge writes.
+two-read store boundary, public-only KWin imports, the direct live window
+reference, current-card gate, every live focus guard, fail-closed invalid input,
+and the sole permitted `KWin.Workspace.activeWindow` write. Settings,
+shortcut-assignment, and screen-edge writes remain forbidden.
+
+The two-output Wayland scenario routes a physical left click through the
+compositor for native Wayland and XWayland targets. It requires the effect to
+close with exactly the selected target focused while preserving frames,
+memberships, selected desktops, settings, persisted layout, and Plasma's
+built-in Overview. Toggle-only lifecycle checks on the other supported backends
+continue to require unchanged focus.
 
 The unit suite also covers shortcut manifests, live gap bounds, coalescing, exact reflow, hidden-context deferral, and zero writes to minimized or floating windows, default-width bounds, existing-layout preservation, deferred application, constrained waiting admission, newly admitted columns, and reset, resize-step bounds, no-write live changes, exact percentage-point actions, stack redistribution, decorated constraints, physical-pixel clamps, and rollback, unusable singleton, grouped, delayed-startup, and managed-context recovery with healthy-context isolation, a 128-cycle window lifecycle with synchronous geometry acknowledgements and bounded scheduler settlement, one-step desktop-reorder permutations, boundaries, rejection paths, and pinned-tail preservation, numbered desktop validation and tail clamping, immutable whole-column previews, floating transfer isolation and relationship guards, whole-column minimized-passive desktop and output transfer, secondary transfer with retained same-column minimized peers, zero mechanism and geometry writes, cancellation and rollback races, fail-closed minimized windows outside the source column or in the target context for default whole-column and secondary single-window transfers, batch transfer commits and rollback, trailing-desktop ownership, stack mutations and rollback, weighted window heights, deterministic output routing, floating ownership, layer focus memory and geometric navigation, minimized tiled-slot and manual-floating-frame retention, minimized focus skipping, vertical reorder, horizontal extraction, direct insertion across minimized source and target peers, fully minimized targets, skipped-singleton nonparticipation, authoritative hidden-frame changes, state-round-trip rollback, fail-closed state blockers, explicit consume, and explicit expel across minimized passive slots, no-wrap boundaries, transactional tiled-layer reveal, synchronous and deferred focus confirmation, reentrant focus rejection and rollback, fail-closed non-minimize suspension blockers, all-member transaction guards, projected stack rollback across authoritative removals, stacked fullscreen and maximize extraction past settled minimized peers, exact compensation, optional borderless ownership, reclassification, decorated frame constraints, topology-stable resize and reset clamps, cached silent hard-bound changes, test-only advisory increment and aspect metadata, available-width expansion, exact signed-offset centering, column and window sizing rollback, rotation bursts, rapid same-name output replacement, topology barriers, capacity recovery, and stale callback cancellation.
 

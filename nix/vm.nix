@@ -4572,7 +4572,7 @@ let
         fi
 
         record_focus_state \
-          "visible read-only overview preserved real applications and core state"
+          "visible overview lifecycle preserved real applications and core state"
       }
 
       wait_for_shortcut_focus() {

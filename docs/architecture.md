@@ -4,7 +4,7 @@
 
 ```text
 QML bridge -> TypeScript runtime -> core -> reconcile -> KWin
-stable layout snapshot -> overview projector -> read-only KWin effect
+stable layout snapshot -> overview projector -> guarded KWin effect -> KWin focus
 ```
 
 Events travel from KWin through the bridge into the runtime. Commands and resulting geometry operations travel toward KWin.
@@ -57,8 +57,15 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Projects snapshot zero into a baseline-free, immutable view model after exact
   live output, desktop, and window validation.
 - Uses only public KWin QML types to enrich live thumbnails and screen context.
-- Owns no settings, focus, desktop, window, geometry, shortcut assignment, or
-  screen-edge mechanism.
+- Keeps each rendered thumbnail's direct live window object in its QML delegate;
+  the object does not enter projected or persisted state.
+- Accepts left clicks only in the current desktop card, then revalidates the
+  active effect, identity, input eligibility, state, output, desktop, and current
+  activity without a workspace scan.
+- Writes only `KWin.Workspace.activeWindow`. A valid click closes the effect; an
+  invalid or stale click leaves it open without a write.
+- Owns no settings, desktop or activity selection, membership, output, geometry,
+  shortcut assignment, or screen-edge mechanism.
 
 ### TypeScript runtime
 

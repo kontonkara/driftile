@@ -72,10 +72,27 @@ The ownership rule is strict:
   compositor mechanism. It uses `O(V)` work in the visible context and no
   workspace-wide scan.
 
+## 1.7 optional overview slice
+
+- Only thumbnails in each `SceneView` current-desktop card accept left clicks.
+- A click keeps the direct live window object and revalidates the active effect,
+  exact internal ID, input eligibility, live window state, output, desktop, and
+  current activity.
+- A valid click retains or assigns `KWin.Workspace.activeWindow`, then closes
+  the effect. An invalid or stale click writes nothing and leaves it open.
+- Ordinary KWin activation may raise the window, and existing Driftile focus
+  handling may reveal its tiled column.
+- The effect does not switch desktops or activities, move windows, write
+  memberships, outputs, geometry, or settings, or add actions, default bindings,
+  gestures, drag, keyboard navigation, schema, IPC, private APIs, timers, or
+  workspace scans. Direct target resolution is constant time; live validation
+  is bounded by the candidate's desktop and activity memberships.
+
 ## Beyond v1
 
-- A removable read-only overview companion presents the authoritative layout
-  model while Plasma's built-in Overview remains the compatible fallback.
+- A removable overview companion presents the authoritative layout with guarded
+  current-context focus while Plasma's built-in Overview remains the compatible
+  fallback.
 - Optional five-finger horizontal touchpad navigation reuses tiled column
   focus; global wheel input is deferred because KWin 6.7 exposes no public
   script axis API.
@@ -83,7 +100,7 @@ The ownership rule is strict:
 - Tabbed columns and matching pointer navigation.
 - Additional application-specific policies and an expanded settings UI.
 - Optional visual transitions, layout indicators, and concise diagnostics.
-- Interactive overview focus, desktop selection, and pointer rearrangement.
+- Overview desktop selection and pointer rearrangement.
 - Activity-aware layouts.
 
 ## Compatibility
@@ -108,7 +125,8 @@ Driftile must integrate with, not duplicate:
 - Fullscreen, maximize, minimize, decoration mechanisms, and interactive move/resize behavior.
 - Dialogs, modal or transient windows, non-resizable normal windows, and normal windows fixed on both axes.
 - The built-in Overview, Pager, Task Switcher, desktop OSD, and session
-  restoration. The optional companion is presentation-only.
+  restoration. The optional companion requests focus only through public
+  `KWin.Workspace.activeWindow`; KWin retains focus and stacking ownership.
 
 ## Invariants
 
@@ -121,6 +139,8 @@ Driftile must integrate with, not duplicate:
 - Focusing a non-minimized managed window makes it fully visible. Horizontal
   tiled navigation uses the smallest required scroll unless optional centering
   successfully places the destination closer to the work-area center.
+- An overview click may focus only a valid current-card window. A valid click
+  closes the effect; an invalid or stale click leaves it open without a write.
 - Reordering moves one whole active column left, right, first, or last inside its context without changing focus or widths.
 - Column-width resizing changes one whole active column, translates client limits to decorated frame bounds, respects every member's width constraints, and preserves focus and grouping.
 - A newly admitted or explicitly resized width that reaches a hard minimum or maximum is stored at that fixed logical-pixel boundary, so work-area changes cannot scale it past the same constraint.

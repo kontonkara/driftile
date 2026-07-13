@@ -1,9 +1,13 @@
 # Overview Companion
 
-The optional overview companion is a separate, read-only KWin effect. It shows
+The optional overview companion is a separate KWin effect. It presents
 Driftile's current output, desktop, column, stack, viewport, and floating-window
-model without changing it. Plasma's built-in Overview remains installed and
-unchanged.
+model. On `main`, a left click on a valid thumbnail in the current desktop card
+focuses that live window through KWin and closes the effect. Plasma's built-in
+Overview remains installed and unchanged.
+
+The released 1.6.0 package is presentation-only. Guarded current-context focus
+belongs to the in-development 1.7.0 slice.
 
 The companion is disabled by default and has no default shortcut or screen
 edge. It requires the main Driftile KWin script because that script publishes
@@ -67,11 +71,24 @@ layout snapshot whose outputs, desktops, and referenced windows match KWin. A
 missing, changing, legacy, corrupt, future, oversized, or stale snapshot keeps
 the effect closed.
 
-The companion does not write settings, focus or move windows, switch desktops,
-change geometry, register a screen edge, or assign a shortcut. It does not
-infer columns from window geometry. Disabling or uninstalling it leaves the
-main extension and Plasma's built-in Overview unchanged.
+Only thumbnails in a `SceneView` current-desktop card accept left clicks. The
+effect revalidates the direct live window object, exact internal ID, output,
+desktop and activity memberships, visibility, minimized and deleted state, and
+input eligibility. A valid click retains or assigns
+`KWin.Workspace.activeWindow`, then closes the effect. An invalid or stale click
+performs no write and leaves the effect open.
+
+Ordinary KWin activation may raise the window, and Driftile's existing focus
+handling may reveal its tiled column. The effect does not switch desktops or
+activities, move windows, write memberships, outputs, geometry, or settings,
+register a screen edge, assign a shortcut, or provide drag or keyboard
+navigation. It does not infer columns from window geometry. Disabling or
+uninstalling it leaves the main extension and Plasma's built-in Overview
+unchanged.
 
 Packaged lifecycle checks cover native Wayland, XWayland, two-output Wayland,
-and single-output native X11. They require exact layout bytes, window frames,
-focus, desktop state, and built-in Overview state before and after activation.
+and single-output native X11. The two-output Wayland scenario additionally
+routes a physical left click through the compositor for native Wayland and
+XWayland targets. Only the intended focus may change; frames, memberships,
+selected desktops, settings, persisted layout, and Plasma's built-in Overview
+must remain unchanged.

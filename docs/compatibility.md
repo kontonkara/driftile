@@ -13,7 +13,9 @@
   expose the required method.
 - The optional overview lifecycle is verified with native Wayland, XWayland,
   two virtual Wayland outputs, and single-output native X11. It uses the same
-  exact snapshot validation on every backend.
+  exact snapshot validation on every backend. Guarded current-context focus is
+  additionally verified for native Wayland and XWayland targets in the
+  two-output Wayland scenario.
 
 ## Installation portability
 
@@ -53,6 +55,7 @@ Driftile is a KWin extension, not a compositor. It owns layout policy while
 KWin remains responsible for windows, geometry application, outputs,
 fullscreen, maximize, minimize, and virtual-desktop mechanisms. Plasma's
 built-in Overview, Pager, and Task Switcher remain the shell baseline. The
-optional companion adds a separate read-only layout view without replacing
-them. Unsupported or unavailable KWin mechanisms fail closed instead of being
+optional companion adds a separate layout view with guarded current-context
+focus without replacing them. KWin retains focus and stacking ownership.
+Unsupported or unavailable KWin mechanisms fail closed instead of being
 reimplemented inside Driftile.

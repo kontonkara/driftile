@@ -400,7 +400,7 @@ taking over compositor mechanisms.
   expanded settings UI.
 - Add optional visual transitions, layout indicators, and concise diagnostics.
 - Keep Plasma's built-in Overview as the compatible baseline.
-- Add optional overview focus, desktop selection, and pointer-driven
-  rearrangement only through public KWin and Plasma extension APIs.
+- Add optional overview desktop selection and pointer-driven rearrangement only
+  through public KWin and Plasma extension APIs.
 
 The optional overview must remain removable, preserve the authoritative layout state, and fall back cleanly to Plasma's Overview.

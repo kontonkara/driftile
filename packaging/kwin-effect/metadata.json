@@ -7,7 +7,7 @@
       }
     ],
     "Category": "Window Management",
-    "Description": "A read-only overview of Driftile desktops, columns, stacks, and floating windows.",
+    "Description": "A Driftile layout overview with guarded current-context click-to-focus.",
     "EnabledByDefault": false,
     "Icon": "preferences-system-windows",
     "Id": "io.github.kontonkara.driftile.overview",

@@ -24,8 +24,8 @@ leaving window, output, and desktop mechanisms to KWin.
 - Optional five-finger horizontal touchpad navigation on native Wayland.
 - Exact extension-reload restoration, conservative cross-session restoration,
   and fail-closed restoration when a known output returns.
-- An optional read-only overview companion that presents the authoritative
-  output, desktop, column, stack, and viewport model.
+- An optional overview companion that presents the authoritative layout; the
+  current 1.7 development version adds guarded current-card focus on left click.
 - An optional reversible shortcut helper with custom JSON profiles.
 
 ## Status

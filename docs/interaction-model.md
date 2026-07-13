@@ -15,6 +15,15 @@ completed left swipe focuses right, and a completed right swipe focuses left.
 It does not add shortcut actions, and partial or cancelled gestures perform no
 command.
 
+The optional overview accepts left clicks only on valid thumbnails in the
+current desktop card. It revalidates the direct live window against that output,
+desktop, current activity, and input eligibility, then retains or assigns
+`KWin.Workspace.activeWindow`. A valid click closes the effect; an invalid or
+stale click leaves it open without a write. Ordinary KWin activation may raise
+the window, and existing Driftile focus handling may reveal its tiled column.
+The effect does not switch desktops or activities, move windows, or write
+memberships, outputs, geometry, or settings.
+
 ## Delivery contract
 
 | Area                 | Required behavior                                                                                 | Target    |
@@ -33,6 +42,7 @@ command.
 | Floating layer       | Toggle state, switch layers, and navigate floating windows geometrically                          | Available |
 | Pointer drop         | Reinsert or adopt one active tiled window at one exact visible target                             | Available |
 | Pointer resize       | Adopt one completed horizontal resize as the active column's fixed width                          | Available |
+| Overview companion   | Focus a valid current-card thumbnail with left click; invalid clicks keep the effect open         | Available |
 | Tabbed columns       | Toggle a column between stacked and tabbed presentation without changing navigation               | v1        |
 | Pointer navigation   | Provide wheel navigation through the shared layout model                                          | Future    |
 
