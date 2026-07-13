@@ -2,7 +2,8 @@
 
 Versions 0.1.0, 1.0.0, 1.1.0, 1.2.0, 1.3.0, 1.4.0, 1.5.0, 1.6.0, and 1.7.0 are
 released. The delivered milestones and release criteria below are a historical
-record. The remaining post-v1 direction is not a committed release schedule.
+record. Version 1.8.0-rc.1 is the current release candidate. The remaining
+post-v1 direction is not a committed release schedule.
 
 ## Foundation (delivered)
 
@@ -394,7 +395,7 @@ Release criteria (met):
   frames, memberships, selected desktops, settings, and built-in Overview
   state around the intentional focus change.
 
-## 1.8.0 (in development)
+## 1.8.0 (release candidate)
 
 The bounded 1.8.0 release adds only desktop selection to the optional overview.
 A left click on the number gutter of a non-current desktop card requests that
@@ -414,7 +415,10 @@ rearrangement behavior, private APIs, timers, or window, stacking-order, or
 layout scans. Selection performs `O(D + O)` validation for live desktops and
 outputs, where KWin bounds `D` at 25, and retains no persistent work.
 
-Release criteria:
+Version `1.8.0-rc.1` packages this frozen slice for release validation without
+behavior outside the boundary above.
+
+Candidate criteria (met):
 
 - Static QML contract coverage pins the non-current number-gutter click target,
   exact live guards, public Wayland write, guarded single-output fallback,

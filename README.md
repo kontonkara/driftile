@@ -25,15 +25,16 @@ leaving window, output, and desktop mechanisms to KWin.
 - Exact extension-reload restoration, conservative cross-session restoration,
   and fail-closed restoration when a known output returns.
 - An optional overview companion that presents the authoritative layout; the
-  1.7.0 release adds guarded current-card focus, while 1.8 development adds
-  guarded non-current desktop selection from number gutters.
+  1.7.0 release adds guarded current-card focus, while the 1.8.0-rc.1 candidate
+  adds guarded non-current desktop selection from number gutters.
 - An optional reversible shortcut helper with custom JSON profiles.
 
 ## Status
 
 The latest stable release is [1.7.0](docs/release-notes-1.7.0.md).
 
-The `main` branch tracks `1.8.0-dev.0` and is not a stable release.
+The current candidate is
+[1.8.0-rc.1](docs/release-notes-1.8.0-rc.1.md). It is not a stable release.
 
 Driftile requires KDE Plasma with KWin 6.7 or newer. It targets native Wayland
 and XWayland windows, plus single-output native X11 sessions.
@@ -59,8 +60,8 @@ artifact verification, custom shortcut profiles, NixOS and Home Manager
 modules, upgrades, and safe removal. See [Migration](docs/migration.md) before
 changing release generations.
 
-The 1.7.0 release also provides the separate overview effect. It is disabled
-and unbound by default; see [Overview companion](docs/overview.md).
+The release artifacts also provide the separate overview effect. It is
+disabled and unbound by default; see [Overview companion](docs/overview.md).
 
 ## Development
 
@@ -104,6 +105,7 @@ checks.
 - [Testing](docs/testing.md)
 - [Performance](docs/performance.md)
 - [Roadmap](docs/roadmap.md)
+- [1.8.0-rc.1 release notes](docs/release-notes-1.8.0-rc.1.md)
 - [1.7.0 release notes](docs/release-notes-1.7.0.md)
 - [1.7.0-rc.1 release notes](docs/release-notes-1.7.0-rc.1.md)
 - [1.6.0 release notes](docs/release-notes-1.6.0.md)

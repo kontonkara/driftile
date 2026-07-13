@@ -21,8 +21,8 @@ desktop, current activity, and input eligibility, then retains or requests
 `KWin.Workspace.activeWindow`. Only confirmed focus closes the effect; an
 invalid, stale, or rejected request leaves it open. Ordinary KWin activation
 may raise the window, and existing Driftile focus handling may reveal its tiled column.
-On the 1.8 development branch, the number gutter of a non-current card also
-accepts a left click. The effect revalidates the live screen, output, desktop
+In 1.8.0-rc.1, the number gutter of a non-current card also accepts a left
+click. The effect revalidates the live screen, output, desktop
 object and ID, requests selection through a public KWin property, and closes
 only after exact confirmation. The current gutter and every rejected request
 remain inert. The effect does not switch activities, move windows, or write
