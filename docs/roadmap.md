@@ -314,11 +314,11 @@ Release criteria (met):
 
 ## 1.6.0 (in development)
 
-The frozen 1.6.0 core slice will adopt only a completed horizontal pointer
-resize of the active normal tiled window. KWin remains the interactive-resize
-owner. After a width-only left- or right-edge finish in the same settled,
-visible, unchanged output and desktop, Driftile may store KWin's accepted width
-as the active column's existing fixed-width policy and reflow that context.
+The bounded 1.6.0 core slice adopts only a completed horizontal pointer resize
+of the active normal tiled window. KWin remains the interactive-resize owner.
+After a width-only left- or right-edge finish in the same settled, visible,
+unchanged output and desktop, Driftile stores KWin's accepted width as the
+active column's existing fixed-width policy and reflows that context.
 
 Every active-column member must remain visible, writable, unsuspended, and
 unchanged. Corner or vertical resizing, an ambiguous edge, any participant,
@@ -330,7 +330,7 @@ The slice adds no setting, action, binding, visual feedback, persistence-schema
 field, or compositor ownership. It performs no geometry write while KWin owns
 the resize and no workspace-wide scan.
 
-Release criteria:
+Implemented core criteria:
 
 - Observer and runtime paths distinguish exact left- and right-edge width-only
   finishes from moves, corners, vertical resizes, and ambiguous geometry.
@@ -340,9 +340,13 @@ Release criteria:
   write compensates exactly before restoration.
 - Planning and validation use `O(V)` work in the visible context, with no
   persistent growth or workspace scan.
-- Focused tests cover the observer and runtime behavior. Packaged Wayland,
-  XWayland, and single-output native X11 checks precede one physical
-  `Meta+right` visible-VM checkpoint.
+- Focused tests cover the observer, pure planner, and runtime behavior. Packaged
+  native Wayland, XWayland, and single-output native X11 gesture scenarios
+  exercise the same finish-only adoption and reset path.
+
+The remaining major release checkpoint is one visible mixed-application VM run
+with a physical `Meta+right` resize, accepted-width verification, and exact
+cleanup.
 
 ## Post-v1
 

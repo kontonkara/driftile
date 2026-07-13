@@ -114,19 +114,20 @@ target is initially unavailable or becomes invalidated, unrelated-context
 isolation, zero hidden-source writes, and exact destination compensation before
 singleton admission.
 
-The frozen 1.6 slice adds tests only for horizontal pointer-resize adoption.
-Focused `WindowObserver` cases will cover start and finish delivery, duplicate
-and fallback signals, initial and final frame capture, and left-, right-,
-corner-, vertical-, and ambiguous-edge classification. Focused runtime cases
-will cover the unchanged visible-context and all-member guards, successful
-fixed-width adoption with one publication, preserved order, heights, focus, and
-unrelated contexts, every state, topology, constraint, and authority race,
-exact restoration, partial-write compensation, and `O(V)` visible-context work
-without a workspace scan.
+The 1.6 slice adds tests only for horizontal pointer-resize adoption. Focused
+`WindowObserver` cases cover direct and fallback start and finish delivery,
+duplicate suppression, and cloned initial and final frames. Pure planner cases
+classify left-, right-, corner-, vertical-, and ambiguous-edge changes. Focused
+runtime cases cover the zero-write interactive lease, unchanged visible-context
+and all-member guards, successful fixed-width adoption with one publication,
+preserved order, heights, focus, and unrelated contexts, every state, topology,
+constraint, and authority race, exact restoration, partial-write compensation,
+and `O(V)` visible-context work without a workspace scan.
 
-Packaged checks will exercise the same new behavior with native Wayland,
-XWayland, and single-output native X11 windows. After those checks pass, one
-later visible-VM checkpoint will inject a physical `Meta+right` resize and
+Packaged single-output checks drive the same finish-only adoption and reset path
+for native Wayland and XWayland windows through the Wayland fake-input protocol,
+and for native X11 through XTEST. One later visible mixed-application VM
+checkpoint remains planned: it will inject a physical `Meta+right` resize and
 verify the accepted width plus exact cleanup. No unrelated scenario or test-pool
 expansion belongs to this slice.
 

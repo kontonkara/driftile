@@ -32,7 +32,7 @@ command.
 | Hidden-member edits  | Preserve documented passive peers; reject every other minimized-member structural edit            | Available |
 | Floating layer       | Toggle state, switch layers, and navigate floating windows geometrically                          | Available |
 | Pointer drop         | Reinsert or adopt one active tiled window at one exact visible target                             | Available |
-| Pointer resize       | Adopt one completed horizontal resize as the active column's fixed width                          | 1.6       |
+| Pointer resize       | Adopt one completed horizontal resize as the active column's fixed width                          | Available |
 | Tabbed columns       | Toggle a column between stacked and tabbed presentation without changing navigation               | v1        |
 | Pointer navigation   | Provide wheel navigation through the shared layout model                                          | Future    |
 
@@ -57,13 +57,14 @@ desktop movement, and Driftile adopts only when the cursor still identifies one
 valid destination target. An empty, invalidated, ambiguous, or raced target
 uses ordinary destination admission rather than moving the window back.
 
-The frozen 1.6 resize path starts with the active normal tiled window in one
-settled visible context. KWin owns the interactive resize, so Driftile performs
-no geometry write until it finishes. An unambiguous width-only left- or
-right-edge finish may become the existing fixed width of the active column only
-when every member remains visible, writable, unsuspended, unchanged, and in the
-same output and desktop. Success reflows that context, preserves order, heights,
-focus, and unrelated contexts, and publishes once.
+Finish-only horizontal resize adoption starts with the active normal tiled
+window in one settled visible context. KWin owns the interactive-resize lease,
+so Driftile performs no geometry write until it finishes. An unambiguous
+width-only left- or right-edge finish becomes the existing fixed width of the
+active column only when every member remains visible, writable, unsuspended,
+unchanged, and in the same output and desktop. Success propagates the accepted
+width through every active-column member, reflows that context, preserves order,
+heights, focus, and unrelated contexts, and publishes once.
 
 Corner or vertical resizing, an ambiguous edge, any participant, state,
 context, topology, or constraint race, and a rejected write restore the prior
@@ -71,7 +72,8 @@ column policy and tiled frames. Partial writes are compensated exactly. Other
 resize sessions, cancelled or ambiguous drops, state changes, and topology
 changes retain the logical slot and restore its tiled frame. Pointer adoption
 is finish-only and adds no visual feedback, setting, action, binding, or
-persistence schema.
+persistence schema. Planning, validation, reflow, and compensation use `O(V)`
+work in the visible context without scanning the workspace.
 
 A stack has at most one fixed or preset window height. Changing a different
 member converts the other members to weighted automatic heights that preserve

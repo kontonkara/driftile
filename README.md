@@ -11,8 +11,8 @@ leaving window, output, and desktop mechanisms to KWin.
 - Horizontal scrollable columns with optional vertical window stacks.
 - Keyboard-driven focus, movement, reordering, resizing, centering, and
   transfers between desktops and outputs.
-- Finish-only pointer reinsertion within one visible layout and adoption into
-  an exact visible tiled target after a KWin-owned output or desktop move.
+- Finish-only pointer reinsertion and horizontal column-resize adoption, plus
+  exact visible-target adoption after a KWin-owned output or desktop move.
 - One shared trailing empty virtual desktop with conservative creation and
   cleanup.
 - Manual floating, automatic layout exclusions, minimized-slot retention, and
