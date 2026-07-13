@@ -396,9 +396,38 @@ Release criteria (met):
 
 ## 1.8.0 (in development)
 
-The `main` branch tracks `1.8.0-dev.0`. Its next bounded slice will be selected
-and scope-frozen separately; this placeholder does not commit an implementation
-scope.
+The bounded 1.8.0 release adds only desktop selection to the optional overview.
+A left click on the number gutter of a non-current desktop card requests that
+desktop for the `SceneView` output. The current-desktop gutter remains inert.
+
+On Wayland, the effect writes public `SceneView.currentDesktop`, preserving
+KWin's per-output or global desktop semantics. When that property is
+unavailable, the effect may write global `Workspace.currentDesktop` only in a
+single-output session. Before either write, it revalidates the active effect,
+the exact live output, the desktop's direct object and ID, and that the desktop
+is still non-current. It closes only after an exact post-write read confirms
+the selected desktop. Every stale, invalid, raced, or rejected request fails
+closed and leaves the effect active.
+
+The slice adds no actions, default bindings, settings, schema, drag or
+rearrangement behavior, private APIs, timers, or window, stacking-order, or
+layout scans. Selection performs `O(D + O)` validation for live desktops and
+outputs, where KWin bounds `D` at 25, and retains no persistent work.
+
+Release criteria:
+
+- Static QML contract coverage pins the non-current number-gutter click target,
+  exact live guards, public Wayland write, guarded single-output fallback,
+  post-write confirmation, and fail-closed behavior.
+- The existing packaged multi-output physical-click scenario covers per-output
+  Wayland selection with native Wayland and XWayland applications while
+  preserving the other output, window frames and memberships, settings, layout
+  projection, and Plasma's built-in Overview.
+- Native X11 coverage pins the global fallback statically and retains the
+  existing packaged single-output global-desktop checks. The current X11
+  harness does not claim end-to-end overview-effect click activation.
+- These checks extend the existing static, multi-output, and X11 fallback test
+  pool without adding a new scenario family.
 
 ## Post-v1
 
@@ -411,7 +440,7 @@ taking over compositor mechanisms.
   expanded settings UI.
 - Add optional visual transitions, layout indicators, and concise diagnostics.
 - Keep Plasma's built-in Overview as the compatible baseline.
-- Add optional overview desktop selection and pointer-driven rearrangement only
-  through public KWin and Plasma extension APIs.
+- Add pointer-driven overview rearrangement only through public KWin and Plasma
+  extension APIs; it is explicitly deferred beyond 1.8.0.
 
 The optional overview must remain removable, preserve the authoritative layout state, and fall back cleanly to Plasma's Overview.
