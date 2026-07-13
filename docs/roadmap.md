@@ -1,9 +1,9 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0, 1.1.0, 1.2.0, 1.3.0, 1.4.0, 1.5.0, 1.6.0, 1.7.0, 1.8.0,
-and 1.9.0 are released. The delivered milestones and release criteria below are
-a historical record. The remaining post-v1 direction is not a committed
-release schedule.
+Versions 0.1.0, 1.0.0, 1.1.0, 1.2.0, 1.3.0, 1.4.0, 1.5.0, 1.6.0, 1.7.0,
+1.8.0, 1.9.0, and 1.9.1 are released. The delivered milestones and release
+criteria below are a historical record. The remaining post-v1 direction is not
+a committed release schedule.
 
 ## Foundation (delivered)
 
@@ -484,16 +484,19 @@ Release criteria (met):
 - These checks extend the existing static and multi-output test pool without a
   new scenario family, binding, or client type.
 
-## 1.9.1 (release candidate)
+## 1.9.1 (released)
 
-Version `1.9.1-rc.1` freezes a bounded patch for full-width column positioning
-and exact toggle restoration without adding actions, bindings, or settings.
-The optional persisted restore viewport lets the candidate retain exact
+The bounded 1.9.1 release corrects full-width column positioning and exact
+toggle restoration without adding actions, bindings, settings, gestures, or
+overview behavior. Its optional persisted restore viewport retains exact
 toggle-back behavior across reloads while accepting older documents that omit
 it. Version 1.9.0 rejects documents containing the additive field atomically,
 so a downgrade starts safely without restoring the newer toggle metadata.
 
-Candidate criteria (met):
+Version `1.9.1-rc.1` validated the patch before stable promotion without
+runtime or persistence behavior changes.
+
+Release criteria (met):
 
 - A full-width active column retains equal configured outer gaps and moves
   adjacent columns entirely outside the viewport.
@@ -516,6 +519,6 @@ taking over compositor mechanisms.
 - Add optional visual transitions, layout indicators, and concise diagnostics.
 - Keep Plasma's built-in Overview as the compatible baseline.
 - Add pointer-driven overview rearrangement only through public KWin and Plasma
-  extension APIs; it remains deferred beyond 1.9.0.
+  extension APIs; it remains deferred beyond 1.9.1.
 
 The optional overview must remain removable, preserve the authoritative layout state, and fall back cleanly to Plasma's Overview.

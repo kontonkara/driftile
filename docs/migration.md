@@ -1,9 +1,46 @@
 # Migration
 
-The latest stable release is 1.9.0. Use the steps below when changing release
+The latest stable release is 1.9.1. Use the steps below when changing release
 generations, and never combine files from different releases.
 
-## Upgrade from 1.9.0 to 1.9.1-rc.1
+## Upgrade from 1.9.1-rc.1
+
+1. Release helper-owned shortcuts with the RC helper while it is still
+   available.
+2. Disable Driftile and the optional overview in System Settings.
+3. Upgrade both installed archives to their matching 1.9.1 versions, or update
+   the pinned Nix input to `v1.9.1` and rebuild.
+4. Enable Driftile, then assign shortcuts or claim them with the final helper.
+5. If installed, re-enable the overview and review its manually assigned
+   shortcut.
+
+Version 1.9.1 has no runtime or persistence behavior changes from RC.1. Both
+package IDs, all ten settings, shortcut action IDs and bindings, gestures,
+overview behavior, the platform boundary, and stored layouts remain compatible.
+
+## Upgrade from 1.9.0 to 1.9.1
+
+1. Release helper-owned shortcuts with the 1.9.0 helper while it is still
+   available.
+2. Disable Driftile and the optional overview in System Settings.
+3. Upgrade the main package and, if installed, the overview to their matching
+   1.9.1 archives, or pin the Nix input to `v1.9.1` and rebuild the NixOS or
+   Home Manager generation that owns each package.
+4. Enable Driftile, then assign shortcuts or claim them with the 1.9.1 helper.
+5. If installed, re-enable the overview and review its manually assigned
+   shortcut.
+
+The release keeps a full-width active column between equal configured outer
+gaps and moves adjacent columns entirely outside the viewport. Toggling back
+restores the exact prior width and viewport, including after an extension
+reload.
+
+The persisted full-width restore may now include an optional viewport. Version
+1.9.1 accepts existing 1.9.0 documents where that field is absent. Package IDs,
+all ten settings, shortcut actions and bindings, gestures, overview behavior,
+and the KWin 6.7 platform boundary remain unchanged.
+
+## Upgrade from 1.9.0 to 1.9.1-rc.1 (historical)
 
 1. Release helper-owned shortcuts with the 1.9.0 helper while it is still
    available.
@@ -15,24 +52,25 @@ generations, and never combine files from different releases.
 5. If installed, re-enable the overview and review its manually assigned
    shortcut.
 
-The candidate keeps a full-width active column between equal outer gaps and
-moves adjacent columns entirely outside the viewport. Toggling back restores
-the exact prior width and viewport, including after an extension reload.
+The candidate keeps a full-width active column between equal configured outer
+gaps and moves adjacent columns entirely outside the viewport. Toggling back
+restores the exact prior width and viewport, including after an extension
+reload.
 
 The persisted full-width restore may now include an optional viewport. The
 candidate accepts existing 1.9.0 documents where that field is absent. Package
 IDs, all ten settings, shortcut actions and bindings, gestures, and overview
 behavior remain unchanged.
 
-## Roll back from 1.9.1-rc.1 to 1.9.0
+## Roll back from 1.9.1 to 1.9.0
 
-Release shortcuts with the RC helper, disable Driftile and the optional
+Release shortcuts with the 1.9.1 helper, disable Driftile and the optional
 overview, then restore both packages to their verified 1.9.0 archives. For
 NixOS or Home Manager, restore the `v1.9.0` input and rebuild the generation
 that owns each package. Re-enable the packages and restore the 1.9.0 shortcut
 profile.
 
-Version 1.9.0 rejects a layout document containing the candidate's additive
+Version 1.9.0 rejects a layout document containing the release's additive
 restore-viewport field atomically. It therefore starts safely through normal
 window admission instead of restoring the newer full-width toggle metadata.
 No setting cleanup is required.
