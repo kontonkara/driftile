@@ -278,8 +278,34 @@ Release criteria (met):
 
 ## 1.5.0 (in development)
 
-The next bounded slice is not selected or scope-frozen. Its behavior and
-release criteria will be recorded here before implementation begins.
+The frozen 1.5.0 slice extends finish-only pointer adoption to a window that
+KWin moves between virtual desktops on the same output. Once the move settles
+on a visible destination desktop, releasing over exactly one eligible tiled
+target inserts the window before or after it by vertical midpoint. Empty,
+ambiguous, stale, blocked, or raced targets retain KWin's completed move and
+use normal singleton admission.
+
+Driftile does not initiate desktop switching or membership changes. The slice
+adds no visual feedback, settings, shortcut actions, bindings, gestures,
+persistence-format changes, overview interaction, or compositor ownership.
+The hidden source desktop receives no geometry writes.
+
+Release criteria:
+
+- Membership-before-finish and finish-before-membership event orders produce
+  the same exact transfer, including the native X11 global-desktop fallback.
+- A successful insertion preserves the destination column width, assigns
+  automatic height, retains focus, and publishes once without desktop or
+  output mechanism calls.
+- Unavailable or invalidated targets fall back to singleton admission without
+  reversing the KWin-owned move.
+- Partial destination writes compensate exactly before fallback; the hidden
+  source and unrelated contexts receive no writes.
+- Settlement uses bounded probes and `O(S + T)` transient work for source and
+  target contexts only, with no workspace-wide scan or persistent growth.
+- Focused unit and packaged coverage exercise native Wayland, XWayland, and
+  single-output native X11; backend-specific geometry rejection falls back
+  safely.
 
 ## Post-v1
 
