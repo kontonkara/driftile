@@ -84,10 +84,15 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   frame only after resize ownership settles.
 - Adopts only an unambiguous width-only left- or right-edge finish when
   every captured column member remains visible, writable, unsuspended,
-  unchanged, and in the same output and desktop. Success replaces the existing
-  fixed column policy, propagates the accepted width through every member,
-  reflows one context, and publishes once; cancellation or rejection restores
-  the prior model and frames with exact compensation.
+  unchanged, and in the same output and desktop. It stages every writable
+  same-context target while the captured logical layout remains unchanged, and
+  requires two successive exact target samples; target mismatches time out
+  after 20 delayed probes.
+- Holds one mutation barrier throughout settlement. Success then commits the
+  existing fixed-column policy and publishes once. Rejection restores the
+  captured model, supersedes attempted target requests with exact rollback
+  frames, and releases an exact rollback after 20 matching samples. A rollback
+  not confirmed within 40 probes falls back to ordinary deferred recovery.
 - Observes output list, geometry, scale, and dock invalidations, then holds writes until two delayed topology snapshots match.
 - Detects otherwise silent client-area and hard-constraint changes with visibility-limited fingerprints.
 - Replays structural output changes in a stable layout order independent of KWin window-signal order.
@@ -187,6 +192,7 @@ RuntimeState
   topologyBarrier: { revision, affectedOutputs, stableSample }
   pointerMoveIntent: { contextKey, layoutSnapshot, participants, finalCursor, sourceOutput, sourceDesktop, externalDrop }
   pointerResizeIntent: { contextKey, layoutSnapshot, participants, initialFrame, acceptedFrame, activeColumnId }
+  pointerResizeSettlement: { contextKey, targets, rollbackFrames, phase, attempts, stableSamples }
 ```
 
 `LayoutContext` owns columns, per-window automatic weights or fixed/preset heights, viewport offset, and the last applied geometry fingerprint. A managed window owns an optional decoration-independent client restore baseline plus the exact frame observed at capture time. A manually floating window remains observed but has no layout or geometry owner; its detached placement records stable anchors for reinsertion. An automatically floating window has no layout slot, floating anchor, waiting entry, suspension, or retry state. Role-based and configured application exclusions share this ownership path; the bounded configured lookup is constant time. A minimized tiled window remains suspended in its exact logical slot, while a minimized manually floating window keeps its exact detached frame. Reconcile excludes suspended windows until KWin releases geometry authority. Waiting windows have no layout owner. KWin objects never enter core state.
@@ -317,14 +323,18 @@ inspected safely within the codec bound.
   unrelated context. If destination writes partially apply, compensate them
   exactly before singleton admission.
 - For finish-only horizontal resize adoption, compare the initial and accepted
-  final frames only after KWin finishes. Accept exactly one changed horizontal edge with
-  unchanged vertical edges, and require the same settled visible context plus
-  an unchanged, fully writable active column.
-- Commit the accepted width as the existing fixed column policy, reflow only
-  that context, preserve order, height policies, focus, and unrelated contexts,
-  and publish once. A corner, vertical or ambiguous resize, participant or
-  authority change, topology or constraint race, or rejected write restores
-  the captured policy and frames; compensate any partial write exactly.
+  final frames only after KWin finishes. Accept exactly one changed horizontal
+  edge with unchanged vertical edges, and require the same settled visible
+  context plus an unchanged, fully writable active column.
+- Keep the captured logical layout unchanged while staging every writable
+  same-context target. Require two successive exact target samples, time out a
+  target mismatch after 20 delayed probes, and reject competing layout
+  mutations until settlement ends.
+- Commit the accepted width as the existing fixed-column policy only after
+  target settlement, preserve order, height policies, focus, and unrelated
+  contexts, and publish once. On rejection, supersede attempted target requests
+  with captured rollback frames, release after 20 exact rollback samples, and
+  defer ordinary recovery when rollback is not confirmed within 40 probes.
 - Transfer either the active column or one secondary window between existing desktops through an immutable two-context preview, then commit only after KWin accepts every desktop mechanism, focus, and destination geometry.
 - Transfer either the active column or one secondary window between outputs through the same preview, then commit only after KWin accepts every output and desktop mechanism plus both visible layouts.
 - Preserve whole-column member order and width, apply the active member last, and restore all owned mechanisms and frames if any batch step fails.
@@ -383,6 +393,9 @@ inspected safely within the codec bound.
   distributing the affected stack.
 - Keep horizontal-resize capture, finish validation, reflow, and compensation
   `O(V)` in the visible context, with no workspace scan or persistent growth.
+- Bound horizontal-resize target-mismatch detection to 20 delayed probes and
+  rollback recovery to 40 probes, including a 20-sample exact rollback quiet
+  period.
 - Gate critical runtime and geometry paths with the deterministic operation
   counts documented in [Performance](performance.md).
 
@@ -433,7 +446,9 @@ inspected safely within the codec bound.
 - Focused observer cases cover direct and fallback start/finish delivery,
   duplicate suppression, and cloned frame capture. Pure planner and runtime
   cases cover exact horizontal-edge classification, the zero-write interactive
-  lease, fixed-width adoption, fail-closed races, one publication, `O(V)`
+  lease, all same-context targets, delayed configure acceptance, the settlement
+  mutation barrier, fixed-width adoption, fail-closed races, one publication,
+  late-configure rollback, focus replay, native-state lease protection, `O(V)`
   context-local work, restoration, and partial-write compensation.
 - Verify explicit top-member consume and bottom-member expel, minimized passive-member policy, synchronous and deferred focus handoff, reentrant command rejection, width rules, height-state reset, boundaries, and rollback.
 - Verify the settled topology barrier, output replacement and removal, dock and silent work-area invalidations, sticky restore invalidation, and deterministic capacity recovery.

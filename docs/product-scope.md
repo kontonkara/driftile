@@ -56,13 +56,18 @@ The ownership rule is strict:
 - Every member of the active column must remain visible, writable, unsuspended,
   and unchanged. Driftile writes nothing while KWin owns the
   interactive-resize lease.
-- Success stores the accepted width in the existing fixed-column policy,
-  propagates it through every active-column member, reflows only that context,
+- After release, Driftile stages every writable same-context target while the
+  prior logical layout remains unchanged. Every target must match exactly for
+  two successive samples, target mismatches time out after 20 delayed probes,
+  and competing layout mutations remain blocked during settlement.
+- Success then stores the accepted width in the existing fixed-column policy,
   preserves order, heights, focus, and unrelated contexts, and publishes once.
 - A corner or vertical resize, ambiguous edge, changed or minimized participant,
   suspension, state, context, topology, or constraint race, or rejected write
-  restores the prior policy and tiled frames. Partial writes are compensated
-  exactly before restoration.
+  restores the prior policy and tiled frames. Rollback supersedes attempted
+  target requests and releases after 20 exact samples. An unconfirmed rollback
+  falls back after 40 probes; native-state ownership receives no competing
+  frame write.
 - The slice adds no setting, action, binding, feedback, persistence field, or
   compositor mechanism. It uses `O(V)` work in the visible context and no
   workspace-wide scan.

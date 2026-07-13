@@ -62,18 +62,24 @@ window in one settled visible context. KWin owns the interactive-resize lease,
 so Driftile performs no geometry write until it finishes. An unambiguous
 width-only left- or right-edge finish becomes the existing fixed width of the
 active column only when every member remains visible, writable, unsuspended,
-unchanged, and in the same output and desktop. Success propagates the accepted
-width through every active-column member, reflows that context, preserves order,
+unchanged, and in the same output and desktop. Driftile then stages every
+writable target in that context while keeping the prior logical layout. Two
+successive delayed samples must match every target exactly; target mismatches
+time out after 20 probes. Competing layout mutations remain blocked until
+settlement finishes. Success then commits the fixed width, preserves order,
 heights, focus, and unrelated contexts, and publishes once.
 
 Corner or vertical resizing, an ambiguous edge, any participant, state,
-context, topology, or constraint race, and a rejected write restore the prior
-column policy and tiled frames. Partial writes are compensated exactly. Other
-resize sessions, cancelled or ambiguous drops, state changes, and topology
-changes retain the logical slot and restore its tiled frame. Pointer adoption
-is finish-only and adds no visual feedback, setting, action, binding, or
-persistence schema. Planning, validation, reflow, and compensation use `O(V)`
-work in the visible context without scanning the workspace.
+context, topology, or constraint race, a rejected write, or target timeout
+restores the prior column policy and tiled frames. Rollback supersedes every
+attempted target request and releases after 20 exact samples. If rollback is
+not confirmed within 40 probes, ordinary deferred recovery runs; when KWin has
+taken native-state geometry ownership, it receives no competing frame write.
+Late configure delivery is rechecked, and focus changes are replayed after
+cleanup. Pointer adoption is finish-only and adds no visual feedback, setting,
+action, binding, or persistence schema. Planning, validation, reflow, and
+compensation use `O(V)` work in the visible context without scanning the
+workspace.
 
 A stack has at most one fixed or preset window height. Changing a different
 member converts the other members to weighted automatic heights that preserve

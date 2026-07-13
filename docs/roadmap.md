@@ -323,8 +323,13 @@ active column's existing fixed-width policy and reflows that context.
 Every active-column member must remain visible, writable, unsuspended, and
 unchanged. Corner or vertical resizing, an ambiguous edge, any participant,
 state, context, topology, or constraint race, and any rejected write cancel the
-adoption and restore the prior tiled layout. Partial writes receive exact
-compensation.
+adoption. After release, every writable same-context target is staged while the
+prior logical layout remains unchanged. Two exact target samples are required
+before commit, target mismatches time out after 20 delayed probes, and competing
+layout mutations stay blocked throughout settlement. Rejection supersedes
+attempted target requests with captured rollback frames and releases after 20
+exact samples. An unconfirmed rollback falls back to deferred recovery after 40
+probes; lost native-state geometry authority receives no competing write.
 
 The slice adds no setting, action, binding, visual feedback, persistence-schema
 field, or compositor ownership. It performs no geometry write while KWin owns
@@ -336,17 +341,21 @@ Implemented core criteria:
   finishes from moves, corners, vertical resizes, and ambiguous geometry.
 - A successful adoption changes only the active fixed column width, preserves
   order, heights, focus, and unrelated contexts, and publishes once.
-- Every invalidation restores the prior policy and frames; a partial context
-  write compensates exactly before restoration.
+- Every invalidation retains or restores the prior policy and frames through
+  bounded target settlement, late-configure rollback, or deferred recovery.
 - Planning and validation use `O(V)` work in the visible context, with no
   persistent growth or workspace scan.
 - Focused tests cover the observer, pure planner, and runtime behavior. Packaged
   native Wayland, XWayland, and single-output native X11 gesture scenarios
-  exercise the same finish-only adoption and reset path.
+  exercise the same finish-only adoption and reset path. Runtime coverage also
+  includes delayed configure delivery, all same-context targets, late forward
+  configure after rollback begins, focus replay, the mutation barrier,
+  native-state lease protection, and one publication.
 
-The remaining major release checkpoint is one visible mixed-application VM run
-with a physical `Meta+right` resize, accepted-width verification, and exact
-cleanup.
+The visible full VM checkpoint passed on 2026-07-13 with native Wayland Firefox
+and XWayland xterm. A physical `Meta` plus right-button resize proved KWin's
+held interactive state before release, adopted the accepted XWayland width, and
+restored the exact stacked frames on reset.
 
 ## Post-v1
 

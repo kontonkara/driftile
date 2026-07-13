@@ -114,22 +114,25 @@ target is initially unavailable or becomes invalidated, unrelated-context
 isolation, zero hidden-source writes, and exact destination compensation before
 singleton admission.
 
-The 1.6 slice adds tests only for horizontal pointer-resize adoption. Focused
+The 1.6 slice adds focused horizontal pointer-resize coverage.
 `WindowObserver` cases cover direct and fallback start and finish delivery,
 duplicate suppression, and cloned initial and final frames. Pure planner cases
-classify left-, right-, corner-, vertical-, and ambiguous-edge changes. Focused
-runtime cases cover the zero-write interactive lease, unchanged visible-context
-and all-member guards, successful fixed-width adoption with one publication,
-preserved order, heights, focus, and unrelated contexts, every state, topology,
-constraint, and authority race, exact restoration, partial-write compensation,
-and `O(V)` visible-context work without a workspace scan.
+classify left-, right-, corner-, vertical-, and ambiguous-edge changes. Runtime
+cases keep the logical layout unchanged until every same-context target matches
+for two samples, cover delayed Wayland-style configure delivery and the
+mutation barrier, and require one publication on success. Timeout coverage
+delivers a late forward configure after rollback starts and verifies the
+20-sample rollback quiet period within the 40-probe recovery bound. Additional
+cases verify focus replay, native-state lease protection, partial-write
+compensation, fail-closed races, and `O(V)` context-local work.
 
 Packaged single-output checks drive the same finish-only adoption and reset path
 for native Wayland and XWayland windows through the Wayland fake-input protocol,
-and for native X11 through XTEST. One later visible mixed-application VM
-checkpoint remains planned: it will inject a physical `Meta+right` resize and
-verify the accepted width plus exact cleanup. No unrelated scenario or test-pool
-expansion belongs to this slice.
+and for native X11 through XTEST. The visible full VM checkpoint passed on
+2026-07-13 with native Wayland Firefox and XWayland xterm. A physical `Meta`
+plus right-button resize proved KWin's held interactive state before release,
+then verified accepted-width adoption and an exact stacked-frame reset. No
+unrelated scenario or test-pool expansion belongs to this slice.
 
 The isolated two-output Wayland scenario uses KScreen to verify scale and
 position changes, exact known-output history restoration over a deliberately
