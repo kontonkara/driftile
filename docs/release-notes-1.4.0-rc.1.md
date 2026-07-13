@@ -8,8 +8,8 @@ a stable release; 1.3.0 remains the latest stable version.
 - Adds optional five-finger horizontal touchpad navigation, disabled by
   default. A completed left swipe focuses the next column to the right; a
   completed right swipe focuses the previous column to the left.
-- Exposes the feature through the atomic KConfig, NixOS, and Home Manager
-  settings. Existing configurations keep the feature disabled.
+- Exposes the feature through the atomic KConfig snapshot and typed Home
+  Manager settings. Existing configurations keep the feature disabled.
 - Targets native Wayland. Enabling the setting on native X11 is a safe no-op.
 - Adds no shortcut actions or default bindings. Existing action IDs, overview
   behavior, and the persisted-layout format remain compatible with 1.3.0.

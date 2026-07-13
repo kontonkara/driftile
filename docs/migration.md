@@ -24,9 +24,11 @@ format remain compatible with 1.3.0.
 
 Release shortcuts with the RC helper, disable Driftile and the optional
 overview, then restore both installed packages to their verified 1.3.0
-versions. For Nix, restore the `v1.3.0` input and rebuild. Re-enable the
-packages and restore the 1.3.0 shortcut profile. The additive touchpad setting
-may remain: 1.3.0 ignores it. No layout-state reset is required.
+versions. Home Manager users must remove a declared
+`programs.driftile.settings.touchpadNavigation` attribute before restoring the
+`v1.3.0` input because that module does not expose it. Rebuild, re-enable the
+packages, and restore the 1.3.0 shortcut profile. A persisted KConfig key may
+remain because 1.3.0 ignores it. No layout-state reset is required.
 
 ## Upgrade from 1.3.0-rc.1
 
