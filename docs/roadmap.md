@@ -1,8 +1,9 @@
 # Roadmap
 
 Versions 0.1.0, 1.0.0, 1.1.0, and 1.2.0 are released. The delivered milestones
-and release criteria below are a historical record. The remaining post-v1
-direction is not a committed release schedule.
+and release criteria below are a historical record. Version 1.3.0 is in
+development and is not scope-frozen. The remaining post-v1 direction is not a
+committed release schedule.
 
 ## Foundation (delivered)
 
@@ -217,6 +218,11 @@ Release criteria (met):
 - Unit, Home Manager, and NixOS module checks cover the policy. Packaged
   integration covers Wayland, XWayland, and native X11, and the visible
   real-application checkpoint exercises live policy changes.
+
+## 1.3.0 (in development)
+
+The 1.3.0 scope is not frozen. Behavior and release criteria will be recorded
+when the next bounded slice is selected.
 
 ## Post-v1
 

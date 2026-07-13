@@ -8,11 +8,11 @@ let
   pluginId = "io.github.kontonkara.driftile";
   pluginMetadata = builtins.fromJSON (builtins.readFile ../packaging/kwin-script/metadata.json);
   currentVersion = pluginMetadata.KPlugin.Version;
-  publishedVersion = "1.1.0";
+  publishedVersion = "1.2.0";
   publishedArchive = pkgs.fetchurl {
     name = "driftile-${publishedVersion}.kwinscript";
     url = "https://github.com/kontonkara/driftile/releases/download/v${publishedVersion}/driftile-${publishedVersion}.kwinscript";
-    hash = "sha256-vs+S70jK2M8IT4YlUfImG5e1Q7x2umALjhntKRfoJ60=";
+    hash = "sha256-45nnH+Lwg9XZXeGQ9t3i6qxrvvfZFCeqikcWwOjyPUE=";
   };
   currentArchive =
     pkgs.runCommand "driftile-${currentVersion}.kwinscript"
@@ -194,6 +194,13 @@ let
           | jq --exit-status --raw-output '.KPlugin.Version'
       }
 
+      archive_runtime_digest() {
+        local digest
+
+        digest=$(unzip -p "$1" contents/code/main.js | sha256sum) || return 1
+        printf '%s' "''${digest%% *}"
+      }
+
       installed_version() {
         jq --exit-status --raw-output '.KPlugin.Version' \
           "$installed_package/metadata.json"
@@ -351,6 +358,10 @@ let
         || fail_test "the published archive metadata is unexpected"
       [[ "$(archive_version "$current_archive")" == "$current_version" ]] \
         || fail_test "the current archive metadata is unexpected"
+      published_archive_runtime_digest=$(archive_runtime_digest "$published_archive") \
+        || fail_test "the published archive runtime could not be hashed"
+      current_archive_runtime_digest=$(archive_runtime_digest "$current_archive") \
+        || fail_test "the current archive runtime could not be hashed"
       [[ ! -e "$installed_package" ]] \
         || fail_test "a user package was present before the test"
       [[ ! -e "/run/current-system/sw/share/kwin/scripts/$plugin_id" ]] \
@@ -367,6 +378,8 @@ let
         || fail_test "the installed published metadata is unexpected"
       published_runtime_digest=$(runtime_digest) \
         || fail_test "the published runtime could not be hashed"
+      [[ "$published_runtime_digest" == "$published_archive_runtime_digest" ]] \
+        || fail_test "the installed published runtime did not match its archive"
       set_enabled true
       load_installed_script
       progress "published $published_version package installed and loaded"
@@ -380,9 +393,9 @@ let
         || fail_test "the upgraded metadata did not change"
       current_runtime_digest=$(runtime_digest) \
         || fail_test "the current runtime could not be hashed"
-      [[ "$current_runtime_digest" != "$published_runtime_digest" ]] \
-        || fail_test "the runtime bundle did not change during upgrade"
-      progress "package upgraded to $current_version with a new runtime"
+      [[ "$current_runtime_digest" == "$current_archive_runtime_digest" ]] \
+        || fail_test "the installed current runtime did not match its archive"
+      progress "package upgraded to $current_version with the current runtime"
 
       set_enabled true
       load_installed_script
