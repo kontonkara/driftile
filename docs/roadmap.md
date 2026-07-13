@@ -1,9 +1,10 @@
 # Roadmap
 
 Versions 0.1.0, 1.0.0, 1.1.0, and 1.2.0 are released. The delivered milestones
-and release criteria below are a historical record. Version 1.3.0 is in
-development and is not scope-frozen. The remaining post-v1 direction is not a
-committed release schedule.
+and release criteria below are a historical record. Version 1.3.0 is
+scope-frozen at `1.3.0-rc.1`; only release-blocking fixes and release
+documentation remain before stable promotion. The remaining post-v1 direction
+is not a committed release schedule.
 
 ## Foundation (delivered)
 
@@ -219,17 +220,19 @@ Release criteria (met):
   integration covers Wayland, XWayland, and native X11, and the visible
   real-application checkpoint exercises live policy changes.
 
-## 1.3.0 (in development)
+## 1.3.0 (release candidate)
 
-The first bounded 1.3.0 slice adds a separate read-only overview companion. It
+The bounded 1.3.0 slice adds a separate read-only overview companion. It
 projects the authoritative persisted layout into desktop, column, stack,
 viewport, and floating-window views without adding layout ownership or changing
-the main KWin script package.
+the main KWin script package. Version `1.3.0-rc.1` is the current candidate.
 
-Current criteria:
+Frozen candidate criteria:
 
 - The effect is separately installable, disabled by default, and has no default
   shortcut or screen edge.
+- NixOS and Home Manager expose the separate effect only through an explicit
+  opt-in.
 - Only an unchanged current v2 snapshot with exact live output, desktop, and
   window references can open.
 - Projection is linear in the persisted model, immutable, and strips restore

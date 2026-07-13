@@ -9,21 +9,24 @@ The companion is disabled by default and has no default shortcut or screen
 edge. It requires the main Driftile KWin script because that script publishes
 the authoritative layout snapshot.
 
-## Install from source
+## Install a release
 
-Build the versioned packages:
+Download `driftile-overview-1.3.0-rc.1.kwineffect` and `SHA256SUMS` from the
+same release, then verify the archive:
 
-```bash
-npm ci
-npm run package
+```console
+$ sha256sum --check --ignore-missing SHA256SUMS
 ```
 
 Install the overview package as the desktop user:
 
 ```bash
 kpackagetool6 --type=KWin/Effect \
-  --install ./dist/driftile-overview-1.3.0-dev.0.kwineffect
+  --install ./driftile-overview-1.3.0-rc.1.kwineffect
 ```
+
+To build the same versioned archive from source, run `npm ci` followed by
+`npm run package`; the archive is written to `dist/`.
 
 Enable **Driftile Overview** in **System Settings > Window Management > Desktop
 Effects**. Assign its toggle action in **System Settings > Keyboard >
@@ -43,7 +46,7 @@ uninstalling the package.
 
 ## NixOS and Home Manager
 
-The 1.3 development flake exposes the effect separately as
+The 1.3.0-rc.1 flake exposes the effect separately as
 `packages.<system>.driftile-overview`. The NixOS and Home Manager modules keep
 it opt-in:
 

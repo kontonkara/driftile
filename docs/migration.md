@@ -3,6 +3,31 @@
 The latest stable release is 1.2.0. Use the steps below when changing release
 generations, and never combine files from different releases.
 
+## Upgrade from 1.2.0 to 1.3.0-rc.1
+
+1. Release helper-owned shortcuts with the 1.2.0 helper while it is still
+   available.
+2. Disable Driftile in **KWin Scripts** and select **Apply**.
+3. Upgrade to `driftile-1.3.0-rc.1.kwinscript` and use the matching helper, or
+   pin the Nix input to `v1.3.0-rc.1` and rebuild.
+4. Enable Driftile, then assign shortcuts or claim them with the RC helper.
+5. Optionally install `driftile-overview-1.3.0-rc.1.kwineffect`, or set
+   `programs.driftile.overview.enable = true` and rebuild. Enable the effect and
+   assign its shortcut explicitly.
+
+The candidate keeps the 1.2.0 main-script behavior, package ID, nine settings,
+shortcut action IDs, and persisted-layout format. The overview is a separate,
+read-only package that is disabled and unbound by default.
+
+## Roll back to 1.2.0
+
+Disable the overview and remove its archive package. For Nix, remove
+`programs.driftile.overview.enable` before restoring the `v1.2.0` input and
+rebuilding. Release shortcuts with the RC helper, disable Driftile, then
+install the verified 1.2.0 package and matching helper or complete the Nix
+rollback. Re-enable Driftile and restore its shortcut profile. No settings or
+layout-state reset is required.
+
 ## Upgrade from 1.2.0-rc.1
 
 1. Release helper-owned shortcuts with the RC helper while it is still
