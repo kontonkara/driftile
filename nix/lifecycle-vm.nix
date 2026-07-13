@@ -8,11 +8,11 @@ let
   pluginId = "io.github.kontonkara.driftile";
   pluginMetadata = builtins.fromJSON (builtins.readFile ../packaging/kwin-script/metadata.json);
   currentVersion = pluginMetadata.KPlugin.Version;
-  publishedVersion = "0.1.0";
+  publishedVersion = "1.0.0";
   publishedArchive = pkgs.fetchurl {
     name = "driftile-${publishedVersion}.kwinscript";
     url = "https://github.com/kontonkara/driftile/releases/download/v${publishedVersion}/driftile-${publishedVersion}.kwinscript";
-    hash = "sha256-1541UYNmMygmWgwml3MEWJRqri701T/hSDikvCTTdFM=";
+    hash = "sha256-XkjVsi8tWzmfdxXa8ekyirz4iHpeKFhXhlT/mxjOZZk=";
   };
   currentArchive =
     pkgs.runCommand "driftile-${currentVersion}.kwinscript"

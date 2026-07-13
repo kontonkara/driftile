@@ -1,7 +1,34 @@
 # Migration
 
-The latest stable release is 1.0.0. Use the steps below when changing release
-generations, and never combine files from different releases.
+The latest stable release is 1.0.0, and 1.1.0-rc.1 is the current prerelease
+candidate. Use the steps below when changing release generations, and never
+combine files from different releases.
+
+## Upgrade from 1.0.0
+
+1. Release helper-owned shortcuts with the 1.0.0 helper while it is still
+   available.
+2. Disable Driftile in **KWin Scripts** and select **Apply**.
+3. Upgrade the archive to `driftile-1.1.0-rc.1.kwinscript`, or update the
+   pinned Nix input to `v1.1.0-rc.1` and rebuild.
+4. Enable Driftile, review the three new settings, then assign shortcuts or
+   claim them with the candidate helper.
+
+The package ID, shortcut action IDs, KConfig group, and stored-layout format
+remain compatible. The five 1.0.0 settings keep their existing values. The
+candidate adds these safe-default KConfig values:
+
+- `ApplicationColumnWidths=""` keeps the global initial-width policy.
+- `ColumnWidthPresets=""` keeps the built-in exact-thirds cycle.
+- `CenterFocusedColumn=false` keeps minimal-reveal focus navigation.
+
+Missing new keys use those defaults. Invalid external values reject the full
+eight-setting snapshot without changing the active settings or layout.
+
+With Home Manager, `programs.driftile.settings = null` continues to write
+nothing. A non-null value is a complete profile, so updating the module writes
+the three new defaults when they are omitted. Pin the package and module to the
+same release generation.
 
 ## Upgrade from 1.0.0-rc.1
 
@@ -44,6 +71,14 @@ stored window; additional live windows are admitted normally. Invalid or
 ambiguous logical state is rejected atomically, while unsafe per-window
 restore baselines are discarded. Legacy bare-v1 documents remain accepted and
 migrate on the next successful publication.
+
+## Roll back to 1.0.0
+
+Release shortcuts with the candidate helper, disable Driftile, and install the
+verified 1.0.0 archive. For Nix, restore the 1.0.0 package and module input
+together and rebuild. The three additive KConfig keys may remain: 1.0.0 ignores
+them. Existing settings, shortcut action IDs, and stored layouts remain
+compatible, so no layout-state reset is required.
 
 ## NixOS and Home Manager
 

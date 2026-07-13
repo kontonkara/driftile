@@ -170,8 +170,7 @@ modules = [
 ];
 ```
 
-Home Manager can also own the complete eight-setting profile from the main
-branch:
+The 1.1 Home Manager module can also own the complete eight-setting profile:
 
 ```nix
 programs.driftile.settings = {
