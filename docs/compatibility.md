@@ -9,6 +9,9 @@
   Multi-output native X11 remains unverified.
 - Desktop reordering fails closed when the KWin X11 scripting backend does not
   expose the required method.
+- The optional overview lifecycle is verified with native Wayland, XWayland,
+  two virtual Wayland outputs, and single-output native X11. It uses the same
+  exact snapshot validation on every backend.
 
 ## Installation portability
 

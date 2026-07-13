@@ -7,6 +7,10 @@ if [[ "${DRIFTILE_SMOKE_TRACE:-0}" == "1" ]]; then
 fi
 
 readonly plugin_id="io.github.kontonkara.driftile"
+readonly overview_plugin_id="io.github.kontonkara.driftile.overview"
+readonly overview_shortcut="driftile_toggle_overview"
+readonly overview_shortcut_text="Driftile: Toggle overview"
+readonly plasma_overview_effect_id="overview"
 readonly automatic_floating_probe_plugin_id="io.github.kontonkara.driftile.integration-automatic-floating-probe"
 readonly automatic_floating_probe_arm_shortcut="Driftile Integration Automatic Floating Arm"
 readonly automatic_floating_probe_armed_shortcut_prefix="Driftile Integration Automatic Floating Armed"
@@ -110,6 +114,13 @@ cleanup() {
   restore_layout_configuration >/dev/null 2>&1 || true
   stop_work_area_panel
   stop_x11_work_area_dock
+  busctl --user call \
+    org.kde.KWin \
+    /Effects \
+    org.kde.kwin.Effects \
+    unloadEffect \
+    s "$overview_plugin_id" \
+    >/dev/null 2>&1 || true
   busctl --user call \
     org.kde.KWin \
     /Scripting \
@@ -448,6 +459,326 @@ invoke_shortcut() {
     invokeShortcut \
     s "$1" \
     >/dev/null
+}
+
+unregister_desktop_state_marker() {
+  local marker=$1
+  local result
+
+  [[ "$marker" == "$desktop_state_verified_shortcut_prefix "* ]] || return 1
+  result=$(busctl --user call \
+    org.kde.kglobalaccel \
+    /kglobalaccel \
+    org.kde.KGlobalAccel \
+    unregister \
+    ss kwin "$marker") || return 1
+
+  [[ "$result" == "b true" ]] || return 1
+  wait_for_shortcut_absent "$marker"
+}
+
+effect_is_available() {
+  busctl --user --json=short get-property \
+    org.kde.KWin \
+    /Effects \
+    org.kde.kwin.Effects \
+    listOfEffects 2>/dev/null | jq --exit-status \
+      --arg effectId "$1" \
+      '.data | any(. == $effectId)' \
+      >/dev/null
+}
+
+effect_loaded_state() {
+  local state
+
+  state=$(busctl --user call \
+    org.kde.KWin \
+    /Effects \
+    org.kde.kwin.Effects \
+    isEffectLoaded \
+    s "$1" 2>/dev/null) || return 1
+
+  case "$state" in
+    "b true") printf '%s' true ;;
+    "b false") printf '%s' false ;;
+    *) return 1 ;;
+  esac
+}
+
+effect_active_state() {
+  busctl --user --json=short get-property \
+    org.kde.KWin \
+    /Effects \
+    org.kde.kwin.Effects \
+    activeEffects 2>/dev/null | jq --exit-status --raw-output \
+      --arg effectId "$1" \
+      '.data | any(. == $effectId) | tostring'
+}
+
+wait_for_effect_loaded_state() {
+  local effect_id=$1
+  local expected=$2
+  local attempt
+
+  for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
+    if [[ "$(effect_loaded_state "$effect_id" 2>/dev/null || true)" == "$expected" ]]; then
+      return 0
+    fi
+
+    sleep 0.05
+  done
+
+  return 1
+}
+
+wait_for_effect_active_state() {
+  local effect_id=$1
+  local expected=$2
+  local attempt
+
+  for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
+    if [[ "$(effect_active_state "$effect_id" 2>/dev/null || true)" == "$expected" ]]; then
+      return 0
+    fi
+
+    sleep 0.05
+  done
+
+  return 1
+}
+
+load_overview_effect() {
+  local result
+
+  result=$(busctl --user call \
+    org.kde.KWin \
+    /Effects \
+    org.kde.kwin.Effects \
+    loadEffect \
+    s "$overview_plugin_id") || return 1
+
+  [[ "$result" == "b true" ]] || return 1
+  wait_for_effect_loaded_state "$overview_plugin_id" true
+}
+
+unload_overview_effect() {
+  busctl --user call \
+    org.kde.KWin \
+    /Effects \
+    org.kde.kwin.Effects \
+    unloadEffect \
+    s "$overview_plugin_id" \
+    >/dev/null || return 1
+
+  wait_for_effect_loaded_state "$overview_plugin_id" false
+}
+
+layout_file_digest() {
+  sha256sum "$layout_state_file" 2>/dev/null | awk '{ print $1 }'
+}
+
+capture_stable_layout_digest() {
+  local attempt
+  local digest
+  local layout_document
+  local previous_digest=""
+  local stable_samples=0
+
+  for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
+    layout_document=$(read_persisted_layout_state) || return 1
+
+    if jq --exit-status '
+      .version == 2
+        and (.snapshots | length) > 0
+        and .snapshots[0].topology != null
+    ' <<< "$layout_document" >/dev/null; then
+      digest=$(layout_file_digest) || return 1
+
+      if [[ "$digest" == "$previous_digest" ]]; then
+        stable_samples=$((stable_samples + 1))
+      else
+        previous_digest=$digest
+        stable_samples=1
+      fi
+
+      if ((stable_samples >= 5)); then
+        printf '%s' "$digest"
+        return 0
+      fi
+    else
+      previous_digest=""
+      stable_samples=0
+    fi
+
+    sleep 0.1
+  done
+
+  return 1
+}
+
+capture_overview_checkpoint() {
+  local active_window
+  local desktop_id
+  local desktop_sequence=""
+  local digest
+  local frame
+  local frames=""
+  local title
+
+  digest=$(capture_stable_layout_digest) || return 1
+
+  while IFS= read -r desktop_id; do
+    desktop_sequence+="${desktop_sequence:+|}$desktop_id"
+  done < <(virtual_desktop_ids)
+
+  active_window=$(describe_active_windows "$@")
+
+  for title in "$@"; do
+    frame=$(capture_stable_geometry "$title") || return 1
+    frames+="${frames:+|}$title=$frame"
+  done
+
+  printf '%s\037%s\037%s\037%s\037%s\037%s\037%s' \
+    "$digest" \
+    "$desktop_sequence" \
+    "$(current_desktop_id)" \
+    "$active_window" \
+    "$frames" \
+    "$(effect_loaded_state "$plasma_overview_effect_id")" \
+    "$(effect_active_state "$plasma_overview_effect_id")"
+}
+
+verify_overview_missing_state() {
+  local overview_keys
+  local plasma_active
+  local plasma_loaded
+
+  [[ ! -e "$layout_state_file" ]] || \
+    fail "layout state existed before the early overview rejection check"
+  wait_for_script_state false || \
+    fail "Driftile was loaded during the early overview rejection check"
+  plasma_loaded=$(effect_loaded_state "$plasma_overview_effect_id") || \
+    fail "KWin did not expose the early built-in Overview loaded state"
+  plasma_active=$(effect_active_state "$plasma_overview_effect_id") || \
+    fail "KWin did not expose the early built-in Overview active state"
+  load_overview_effect || \
+    fail "KWin could not load the overview for its missing-state check"
+  wait_for_shortcut "$overview_shortcut" || \
+    fail "KGlobalAccel did not register the early overview action"
+  overview_keys=$(shortcut_keys "$overview_shortcut" "$overview_shortcut_text") || \
+    fail "KGlobalAccel did not expose the early overview assignment"
+  [[ "$overview_keys" == "[]" ]] || \
+    fail "the early overview action was unexpectedly bound: $overview_keys"
+  invoke_shortcut "$overview_shortcut" || \
+    fail "KGlobalAccel could not invoke the missing-state overview action"
+  sleep 0.5
+  [[ "$(effect_active_state "$overview_plugin_id")" == false ]] || \
+    fail "the overview became active without layout state"
+  [[ "$(effect_active_state "$plasma_overview_effect_id")" == "$plasma_active" ]] || \
+    fail "the missing-state overview changed the built-in Overview active state"
+  [[ "$(effect_loaded_state "$plasma_overview_effect_id")" == "$plasma_loaded" ]] || \
+    fail "the missing-state overview changed the built-in Overview loaded state"
+  unload_overview_effect || \
+    fail "KWin could not unload the overview after its missing-state check"
+  overview_keys=$(shortcut_keys "$overview_shortcut" "$overview_shortcut_text") || \
+    fail "KGlobalAccel did not preserve the inert overview assignment"
+  [[ "$overview_keys" == "[]" ]] || \
+    fail "the unloaded early overview action gained an assignment: $overview_keys"
+  invoke_shortcut "$overview_shortcut" || \
+    fail "KGlobalAccel could not invoke the inert early overview action"
+  sleep 0.2
+  [[ "$(effect_loaded_state "$overview_plugin_id")" == false ]] || \
+    fail "the inert early overview action reloaded the effect"
+  [[ "$(effect_active_state "$overview_plugin_id")" == false ]] || \
+    fail "the inert early overview action activated the effect"
+  [[ "$(effect_active_state "$plasma_overview_effect_id")" == "$plasma_active" ]] || \
+    fail "the inert early overview action changed the built-in Overview active state"
+  [[ "$(effect_loaded_state "$plasma_overview_effect_id")" == "$plasma_loaded" ]] || \
+    fail "the inert early overview action changed the built-in Overview loaded state"
+}
+
+verify_overview_effect_lifecycle() {
+  local protocol=$1
+  local active_window
+  local after_checkpoint
+  local baseline_checkpoint
+  local overview_keys
+  local plasma_active
+  local plasma_loaded
+
+  shift
+
+  wait_for_script_state true || \
+    fail "KWin did not keep Driftile loaded before the $protocol overview checkpoint"
+  wait_for_effect_loaded_state "$overview_plugin_id" false || \
+    fail "the Driftile overview was loaded before the $protocol lifecycle check"
+  overview_keys=$(shortcut_keys "$overview_shortcut" "$overview_shortcut_text") || \
+    fail "KGlobalAccel did not expose the inert $protocol overview assignment"
+  [[ "$overview_keys" == "[]" ]] || \
+    fail "the inert $protocol overview action was unexpectedly bound: $overview_keys"
+
+  baseline_checkpoint=$(capture_overview_checkpoint "$@") || \
+    fail "the $protocol overview checkpoint did not stabilize"
+  plasma_loaded=$(effect_loaded_state "$plasma_overview_effect_id") || \
+    fail "KWin did not expose the built-in Overview loaded state"
+  plasma_active=$(effect_active_state "$plasma_overview_effect_id") || \
+    fail "KWin did not expose the built-in Overview active state"
+  active_window=$(describe_active_windows "$@")
+  [[ "$active_window" != none && "$active_window" != *,* ]] || \
+    fail "the $protocol overview checkpoint did not have one active application window"
+
+  load_overview_effect || \
+    fail "KWin could not load the Driftile overview for $protocol"
+  wait_for_shortcut "$overview_shortcut" || \
+    fail "KGlobalAccel did not register the $protocol overview action"
+  overview_keys=$(shortcut_keys "$overview_shortcut" "$overview_shortcut_text") || \
+    fail "KGlobalAccel did not expose the $protocol overview shortcut assignment"
+  [[ "$overview_keys" == "[]" ]] || \
+    fail "the $protocol overview action was unexpectedly bound: $overview_keys"
+  after_checkpoint=$(capture_overview_checkpoint "$@") || \
+    fail "the $protocol overview checkpoint did not survive the effect load"
+  [[ "$after_checkpoint" == "$baseline_checkpoint" ]] || \
+    fail "loading the $protocol overview changed windows, desktops, focus, layout state, or the built-in Overview"
+
+  invoke_shortcut "$overview_shortcut" || \
+    fail "KGlobalAccel could not activate the $protocol overview"
+  wait_for_effect_active_state "$overview_plugin_id" true || \
+    fail "the $protocol overview did not become active"
+  [[ "$(effect_loaded_state "$plasma_overview_effect_id")" == "$plasma_loaded" ]] || \
+    fail "the $protocol overview changed the built-in Overview loaded state"
+  [[ "$(effect_active_state "$plasma_overview_effect_id")" == "$plasma_active" ]] || \
+    fail "the $protocol overview changed the built-in Overview active state"
+
+  invoke_shortcut "$overview_shortcut" || \
+    fail "KGlobalAccel could not deactivate the $protocol overview"
+  wait_for_effect_active_state "$overview_plugin_id" false || \
+    fail "the $protocol overview did not deactivate"
+  after_checkpoint=$(capture_overview_checkpoint "$@") || \
+    fail "the $protocol overview checkpoint did not stabilize after deactivation"
+  [[ "$after_checkpoint" == "$baseline_checkpoint" ]] || \
+    fail "the $protocol overview changed windows, desktops, focus, layout state, or the built-in Overview"
+
+  unload_overview_effect || \
+    fail "KWin could not unload the Driftile overview after $protocol"
+  wait_for_script_state true || \
+    fail "unloading the $protocol overview unloaded Driftile"
+  wait_for_shortcut "driftile_focus_column_left" || \
+    fail "unloading the $protocol overview removed Driftile actions"
+  overview_keys=$(shortcut_keys "$overview_shortcut" "$overview_shortcut_text") || \
+    fail "KGlobalAccel did not preserve the inert $protocol overview assignment"
+  [[ "$overview_keys" == "[]" ]] || \
+    fail "the unloaded $protocol overview action gained an assignment: $overview_keys"
+  invoke_shortcut "$overview_shortcut" || \
+    fail "KGlobalAccel could not invoke the inert $protocol overview action"
+  sleep 0.2
+  wait_for_effect_loaded_state "$overview_plugin_id" false || \
+    fail "the inert $protocol overview action reloaded the effect"
+  wait_for_effect_active_state "$overview_plugin_id" false || \
+    fail "the inert $protocol overview action activated the effect"
+  after_checkpoint=$(capture_overview_checkpoint "$@") || \
+    fail "the $protocol checkpoint did not survive the inert overview action"
+  [[ "$after_checkpoint" == "$baseline_checkpoint" ]] || \
+    fail "the inert $protocol overview action changed windows, desktops, focus, layout state, or the built-in Overview"
 }
 
 claim_shortcut_profile() {
@@ -985,7 +1316,8 @@ wait_for_dbus() {
 
   for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
     if busctl --user introspect org.kde.KWin /Scripting >/dev/null 2>&1 &&
-      busctl --user introspect org.kde.KWin /WindowsRunner >/dev/null 2>&1; then
+      busctl --user introspect org.kde.KWin /WindowsRunner >/dev/null 2>&1 &&
+      busctl --user introspect org.kde.KWin /Effects >/dev/null 2>&1; then
       return 0
     fi
 
@@ -8049,6 +8381,9 @@ run_scenario() {
       fail "Driftile did not restore the $protocol state window after native tiling: $(describe_layout "$first_title" "$second_title")"
   fi
 
+  verify_overview_effect_lifecycle \
+    "$protocol" "$first_title" "$second_title"
+
   set_plugin_state false
   wait_for_script_state false || fail "KWin did not unload Driftile after $protocol state transitions"
   wait_for_geometries \
@@ -8357,6 +8692,28 @@ run_multi_output_scenario() {
     fail "Driftile did not restore the default gap on both $protocol output contexts: $(describe_layout "${titles[0]}" "${titles[1]}" "${titles[3]}" "${titles[4]}")"
   wait_for_active "${titles[4]}" || \
     fail "Driftile changed $protocol focus while restoring the multi-output gap"
+
+  activate_window "${titles[0]}" || \
+    fail "KWin could not prepare the per-output $protocol overview checkpoint"
+  wait_for_active "${titles[0]}" || \
+    fail "KWin did not focus the per-output $protocol overview checkpoint"
+  verify_multi_output_desktop_state "${titles[0]}" primary || \
+    fail "KWin did not expose the selected desktops before the $protocol overview"
+  unregister_desktop_state_marker \
+    "$desktop_state_verified_shortcut_prefix ${titles[0]} primary" || \
+    fail "KGlobalAccel could not remove the pre-overview desktop-state marker"
+  verify_overview_effect_lifecycle \
+    "$protocol" \
+    "${titles[0]}" "${titles[1]}" "${titles[3]}" "${titles[4]}"
+  verify_multi_output_desktop_state "${titles[0]}" primary || \
+    fail "the $protocol overview changed a selected output desktop"
+  unregister_desktop_state_marker \
+    "$desktop_state_verified_shortcut_prefix ${titles[0]} primary" || \
+    fail "KGlobalAccel could not remove the post-overview desktop-state marker"
+  activate_window "${titles[4]}" || \
+    fail "KWin could not restore multi-output $protocol focus after the overview"
+  wait_for_active "${titles[4]}" || \
+    fail "KWin did not restore multi-output $protocol focus after the overview"
 
   for index in 0 1 3 4; do
     window_ids[index]=$(window_id "${titles[index]}") || \
@@ -8972,6 +9329,14 @@ run_multi_output_scenario() {
 trap cleanup EXIT
 
 wait_for_dbus || fail "the required KWin D-Bus APIs did not appear"
+effect_is_available "$overview_plugin_id" || \
+  fail "KWin did not discover the installed Driftile overview"
+wait_for_effect_loaded_state "$overview_plugin_id" false || \
+  fail "the Driftile overview did not remain disabled by default"
+wait_for_shortcut_absent "$overview_shortcut" || \
+  fail "the disabled Driftile overview registered its shortcut"
+verify_overview_missing_state || \
+  fail "the Driftile overview did not fail closed without layout state"
 verify_settings_persistence_transport || \
   fail "KWin declarative Settings persistence did not survive a script reload"
 detect_desktop_reorder_capability || \

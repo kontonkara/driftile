@@ -36,6 +36,11 @@ kpackagetool6 --type=KWin/Effect \
   --remove io.github.kontonkara.driftile.overview
 ```
 
+KGlobalAccel preserves shortcut metadata and later manual assignments across
+effect unloads. The retained action is inert while the effect is unloaded. If
+the assignment should also be removed, clear it in System Settings before
+uninstalling the package.
+
 ## NixOS and Home Manager
 
 The 1.3 development flake exposes the effect separately as
@@ -63,3 +68,7 @@ The companion does not write settings, focus or move windows, switch desktops,
 change geometry, register a screen edge, or assign a shortcut. It does not
 infer columns from window geometry. Disabling or uninstalling it leaves the
 main extension and Plasma's built-in Overview unchanged.
+
+Packaged lifecycle checks cover native Wayland, XWayland, two-output Wayland,
+and single-output native X11. They require exact layout bytes, window frames,
+focus, desktop state, and built-in Overview state before and after activation.

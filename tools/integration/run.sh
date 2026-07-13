@@ -5,6 +5,7 @@ set -euo pipefail
 project_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 readonly project_root
 readonly plugin_id="io.github.kontonkara.driftile"
+readonly overview_plugin_id="io.github.kontonkara.driftile.overview"
 readonly wait_attempts=200
 
 require_command() {
@@ -101,6 +102,7 @@ run_backend() (
   local xvfb_log=""
   local xvfb_pid=""
   local package_installed=0
+  local overview_package_installed=0
   local output_count
   local protocols
   local scenario
@@ -112,6 +114,13 @@ run_backend() (
 
   # shellcheck disable=SC2329
   cleanup() {
+    if [[ "$overview_package_installed" == "1" ]]; then
+      kpackagetool6 \
+        --type=KWin/Effect \
+        --remove "$overview_plugin_id" \
+        >/dev/null 2>&1 || true
+    fi
+
     if [[ "$package_installed" == "1" ]]; then
       kpackagetool6 \
         --type=KWin/Script \
@@ -151,6 +160,7 @@ run_backend() (
     kreadconfig6 \
     kwriteconfig6 \
     qml \
+    sha256sum \
     timeout; do
     require_command "$command_name" || exit 1
   done
@@ -240,6 +250,14 @@ run_backend() (
     fail "KPackage could not install Driftile in the $backend sandbox."
   fi
   package_installed=1
+
+  if ! kpackagetool6 \
+    --type=KWin/Effect \
+    --install "$overview_package_archive" \
+    >/dev/null; then
+    fail "KPackage could not install the Driftile overview in the $backend sandbox."
+  fi
+  overview_package_installed=1
 
   case "$backend" in
     wayland | wayland-multi-output)
@@ -351,6 +369,18 @@ run_backend() (
   fi
 
   if ! kpackagetool6 \
+    --type=KWin/Effect \
+    --remove "$overview_plugin_id" \
+    >/dev/null; then
+    fail "KPackage could not remove the Driftile overview from the $backend sandbox."
+  fi
+  overview_package_installed=0
+
+  if [[ -e "$XDG_DATA_HOME/kwin/effects/$overview_plugin_id" ]]; then
+    fail "KPackage left the Driftile overview installed after the $backend test."
+  fi
+
+  if ! kpackagetool6 \
     --type=KWin/Script \
     --remove "$plugin_id" \
     >/dev/null; then
@@ -381,6 +411,8 @@ package_version=$(node "$project_root/tools/release-version.mjs")
 readonly package_version
 package_archive="$project_root/dist/driftile-$package_version.kwinscript"
 readonly package_archive
+overview_package_archive="$project_root/dist/driftile-overview-$package_version.kwineffect"
+readonly overview_package_archive
 shortcut_archive="$project_root/dist/driftile-shortcuts-$package_version.mjs"
 readonly shortcut_archive
 layout_state_validator="$project_root/dist/bin/driftile-layout-state-validator.mjs"
@@ -389,6 +421,7 @@ npm --prefix "$project_root" run package >/dev/null
 
 if [[
   ! -f "$package_archive" ||
+    ! -f "$overview_package_archive" ||
     ! -f "$shortcut_archive" ||
     ! -f "$layout_state_validator"
 ]]; then
