@@ -126,6 +126,9 @@ monitor_guest() {
   local loaded_file="$temporary_directory/xchg/driftile-loaded"
   local pointer_drag_name
   local pointer_ready_file
+  local pointer_resize_ready_file
+  local pointer_resize_sent=false
+  local pointer_resize_sent_file
   local pointer_sent_file
   local -A keys_sent=(
     [bracket-right]=false
@@ -268,6 +271,22 @@ monitor_guest() {
       fi
     done
 
+    pointer_resize_ready_file="$temporary_directory/xchg/driftile-pointer-resize-horizontal-ready"
+    pointer_resize_sent_file="$temporary_directory/xchg/driftile-pointer-resize-horizontal-sent"
+
+    if [[ "$pointer_resize_sent" == false \
+      && -f "$pointer_resize_ready_file" ]]; then
+      if ! send_physical_pointer_resize "$pointer_resize_ready_file"; then
+        printf 'Could not send the physical pointer resize: horizontal.\n' >&2
+        finish_full_vm_monitor || true
+        return 1
+      fi
+
+      printf 'The VM received the physical pointer resize: horizontal.\n'
+      : > "$pointer_resize_sent_file"
+      pointer_resize_sent=true
+    fi
+
     if [[ "$desktop_pointer_held" == false \
       && "$desktop_pointer_released" == false \
       && -f "$desktop_pointer_hold_ready_file" ]]; then
@@ -332,9 +351,9 @@ monitor_guest() {
       fi
 
       if [[ "$(<"$focus_file")" == true ]]; then
-        printf 'The VM verified physical shortcut and pointer routing, desktop switching and reordering, same-output cross-desktop pointer adoption, minimized-slot navigation, column reordering, horizontal extraction, consume and expel past minimized peers, native fullscreen and maximize, stacked fullscreen and maximize extraction past minimized peers, borderless ownership, numbered dynamic desktops, whole-column desktop transfer past a minimized member, floating desktop transfers, output transfers, floating-layer navigation, focus, stack editing and pointer reinsertion, live touchpad-navigation settings, the visible read-only overview lifecycle, advanced column view, column and window sizing, scrolling, mixed Konsole, Firefox, KDE Calculator, XWayland xterm, and fixed-size XWayland fixtures, plus repeated real-application lifecycles.\n'
+        printf 'The VM verified physical shortcut and pointer routing, desktop switching and reordering, same-output cross-desktop pointer adoption, minimized-slot navigation, column reordering, horizontal extraction, consume and expel past minimized peers, native fullscreen and maximize, stacked fullscreen and maximize extraction past minimized peers, borderless ownership, numbered dynamic desktops, whole-column desktop transfer past a minimized member, floating desktop transfers, output transfers, floating-layer navigation, focus, stack editing, pointer reinsertion and horizontal pointer-resize adoption, live touchpad-navigation settings, the visible read-only overview lifecycle, advanced column view, column and window sizing, scrolling, mixed Konsole, Firefox, KDE Calculator, XWayland xterm, and fixed-size XWayland fixtures, plus repeated real-application lifecycles.\n'
       else
-        printf 'The VM failed to verify physical shortcut or pointer routing, desktop switching or reordering, same-output cross-desktop pointer adoption, minimized-slot navigation, column reordering, horizontal extraction, consume or expel past minimized peers, native fullscreen or maximize, stacked fullscreen or maximize extraction past minimized peers, borderless ownership, numbered dynamic desktops, whole-column desktop transfer past a minimized member, floating desktop transfers, output transfers, floating-layer navigation, focus, stack editing or pointer reinsertion, live touchpad-navigation settings, the visible read-only overview lifecycle, advanced column view, column or window sizing, scrolling, mixed primary application fixtures, or the repeated real-application lifecycle pool.\n' >&2
+        printf 'The VM failed to verify physical shortcut or pointer routing, desktop switching or reordering, same-output cross-desktop pointer adoption, minimized-slot navigation, column reordering, horizontal extraction, consume or expel past minimized peers, native fullscreen or maximize, stacked fullscreen or maximize extraction past minimized peers, borderless ownership, numbered dynamic desktops, whole-column desktop transfer past a minimized member, floating desktop transfers, output transfers, floating-layer navigation, focus, stack editing, pointer reinsertion or horizontal pointer-resize adoption, live touchpad-navigation settings, the visible read-only overview lifecycle, advanced column view, column or window sizing, scrolling, mixed primary application fixtures, or the repeated real-application lifecycle pool.\n' >&2
         failed=true
 
         if [[ -f "$diagnostics_file" ]]; then
@@ -851,9 +870,35 @@ set_physical_pointer_drag_state() {
   if [[ "$down" == true ]]; then
     input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"btn","data":{"down":true,"button":"left"}}]}}'
   else
-    input='{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":false,"button":"left"}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
+    input='{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":false,"button":"left"}},{"type":"btn","data":{"down":false,"button":"right"}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
   fi
 
+  send_qmp_commands "$capabilities" "$input"
+}
+
+set_physical_meta_key_state() {
+  local down=$1
+  local capabilities='{"execute":"qmp_capabilities"}'
+  local input
+
+  [[ "$down" == true || "$down" == false ]] || return 1
+
+  if [[ "$down" == true ]]; then
+    input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}}]}}'
+  else
+    input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
+  fi
+
+  send_qmp_commands "$capabilities" "$input"
+}
+
+set_physical_right_button_state() {
+  local down=$1
+  local capabilities='{"execute":"qmp_capabilities"}'
+  local input
+
+  [[ "$down" == true || "$down" == false ]] || return 1
+  input="{\"execute\":\"input-send-event\",\"arguments\":{\"events\":[{\"type\":\"btn\",\"data\":{\"down\":$down,\"button\":\"right\"}}]}}"
   send_qmp_commands "$capabilities" "$input"
 }
 
@@ -932,6 +977,180 @@ send_physical_pointer_drag() {
   sleep 0.1
 
   set_physical_pointer_drag_state false || result=1
+  return "$result"
+}
+
+send_physical_pointer_resize() {
+  local armed_file
+  local attempt
+  local coordinate_file=$1
+  local destination_absolute_x
+  local destination_absolute_y
+  local destination_x
+  local destination_y
+  local extra
+  local first_absolute_x
+  local first_absolute_y
+  local first_x
+  local first_y
+  local held_file
+  local middle_absolute_x
+  local middle_absolute_y
+  local middle_x
+  local middle_y
+  local output_height
+  local output_width
+  local output_x
+  local output_y
+  local positioned_file
+  local release_ready_file
+  local result=0
+  local start_absolute_x
+  local start_absolute_y
+  local start_x
+  local start_y
+  local third_absolute_x
+  local third_absolute_y
+  local third_x
+  local third_y
+
+  IFS=' ' read -r \
+    start_x \
+    start_y \
+    destination_x \
+    destination_y \
+    output_x \
+    output_y \
+    output_width \
+    output_height \
+    extra < "$coordinate_file" || return 1
+  [[ -z "${extra:-}" ]] || return 1
+  ((start_x != destination_x \
+    && start_y == destination_y \
+    && start_x >= output_x \
+    && start_x < output_x + output_width \
+    && start_y >= output_y \
+    && start_y < output_y + output_height \
+    && destination_x >= output_x \
+    && destination_x < output_x + output_width)) || return 1
+
+  start_absolute_x=$(absolute_pointer_coordinate \
+    "$start_x" "$output_x" "$output_width") || return 1
+  start_absolute_y=$(absolute_pointer_coordinate \
+    "$start_y" "$output_y" "$output_height") || return 1
+  destination_absolute_x=$(absolute_pointer_coordinate \
+    "$destination_x" "$output_x" "$output_width") || return 1
+  destination_absolute_y=$(absolute_pointer_coordinate \
+    "$destination_y" "$output_y" "$output_height") || return 1
+  first_x=$(((3 * start_x + destination_x) / 4))
+  first_y=$start_y
+  middle_x=$(((start_x + destination_x) / 2))
+  middle_y=$start_y
+  third_x=$(((start_x + 3 * destination_x) / 4))
+  third_y=$start_y
+  first_absolute_x=$(absolute_pointer_coordinate \
+    "$first_x" "$output_x" "$output_width") || return 1
+  first_absolute_y=$(absolute_pointer_coordinate \
+    "$first_y" "$output_y" "$output_height") || return 1
+  middle_absolute_x=$(absolute_pointer_coordinate \
+    "$middle_x" "$output_x" "$output_width") || return 1
+  middle_absolute_y=$(absolute_pointer_coordinate \
+    "$middle_y" "$output_y" "$output_height") || return 1
+  third_absolute_x=$(absolute_pointer_coordinate \
+    "$third_x" "$output_x" "$output_width") || return 1
+  third_absolute_y=$(absolute_pointer_coordinate \
+    "$third_y" "$output_y" "$output_height") || return 1
+  positioned_file="${coordinate_file%-ready}-positioned"
+  armed_file="${coordinate_file%-ready}-armed"
+  held_file="${coordinate_file%-ready}-held"
+  release_ready_file="${coordinate_file%-ready}-release-ready"
+
+  absolute_pointer_available || return 1
+  set_physical_pointer_drag_state false || return 1
+  rm -f -- \
+    "$positioned_file" \
+    "$armed_file" \
+    "$held_file" \
+    "$release_ready_file"
+
+  if ! send_absolute_pointer_position "$start_absolute_x" "$start_absolute_y"; then
+    result=1
+  fi
+  sleep 0.2
+
+  if ((result == 0)); then
+    : > "$positioned_file" || result=1
+  fi
+
+  if ((result == 0)); then
+    for ((attempt = 0; attempt < 150; attempt += 1)); do
+      [[ -f "$armed_file" ]] && break
+      sleep 0.1
+    done
+
+    [[ -f "$armed_file" ]] || result=1
+  fi
+
+  if ((result == 0)) && ! set_physical_meta_key_state true; then
+    result=1
+  fi
+  sleep 0.2
+
+  if ((result == 0)) && ! set_physical_right_button_state true; then
+    result=1
+  fi
+  sleep 0.2
+
+  if ((result == 0)) \
+    && ! send_absolute_pointer_position \
+      "$first_absolute_x" "$first_absolute_y"; then
+    result=1
+  fi
+  sleep 0.1
+
+  if ((result == 0)) \
+    && ! send_absolute_pointer_position \
+      "$middle_absolute_x" "$middle_absolute_y"; then
+    result=1
+  fi
+  sleep 0.1
+
+  if ((result == 0)) \
+    && ! send_absolute_pointer_position \
+      "$third_absolute_x" "$third_absolute_y"; then
+    result=1
+  fi
+  sleep 0.1
+
+  if ((result == 0)) \
+    && ! send_absolute_pointer_position \
+      "$destination_absolute_x" "$destination_absolute_y"; then
+    result=1
+  fi
+  sleep 0.2
+
+  if ((result == 0)); then
+    : > "$held_file" || result=1
+  fi
+
+  if ((result == 0)); then
+    for ((attempt = 0; attempt < 400; attempt += 1)); do
+      [[ -f "$release_ready_file" ]] && break
+      sleep 0.1
+    done
+
+    [[ -f "$release_ready_file" ]] || result=1
+  fi
+
+  set_physical_right_button_state false || result=1
+  sleep 0.1
+  set_physical_meta_key_state false || result=1
+  set_physical_pointer_drag_state false || result=1
+  rm -f -- \
+    "$positioned_file" \
+    "$armed_file" \
+    "$held_file" \
+    "$release_ready_file"
   return "$result"
 }
 

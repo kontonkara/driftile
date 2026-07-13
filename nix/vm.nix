@@ -24,6 +24,32 @@ let
     ];
   };
   floatingNavigationProbe = ../tools/vm/floating-navigation-probe.js;
+  interactiveResizeStateProbe = pkgs.writeText "driftile-vm-interactive-resize-state.js" ''
+    var window = workspace.activeWindow;
+
+    if (window === null || window === undefined) {
+      throw new Error("the interactive-resize probe requires an active window");
+    }
+
+    var frame = window.frameGeometry;
+    var shortcutName = [
+      "driftile_vm_pointer_state",
+      String(window.move),
+      String(window.resize),
+      String(Math.round(frame.x)),
+      String(Math.round(frame.y)),
+      String(Math.round(frame.width)),
+      String(Math.round(frame.height)),
+      String(window.active),
+    ].join("_");
+
+    registerShortcut(
+      shortcutName,
+      "Driftile VM interactive resize state",
+      "",
+      function () {},
+    );
+  '';
   firefoxPage = pkgs.writeText "driftile-vm-firefox.html" ''
     <!doctype html>
     <html lang="en">
@@ -80,6 +106,7 @@ let
     ];
     text = ''
       floating_navigation_probe_id="io.github.kontonkara.driftile.vm-floating-navigation"
+      interactive_resize_probe_id="io.github.kontonkara.driftile.vm-interactive-resize"
       overview_plugin_id="io.github.kontonkara.driftile.overview"
       overview_shortcut="driftile_toggle_overview"
       overview_shortcut_text="Driftile: Toggle overview"
@@ -217,6 +244,78 @@ let
           2>/dev/null) || return 1
 
         [[ "$unload_result" == "b true" ]]
+      }
+
+      capture_interactive_resize_state() {
+        local attempt
+        local load_result
+        local probe_state=""
+        local script_id
+        local shortcuts
+        local unload_result
+
+        busctl --user call \
+          org.kde.KWin \
+          /Scripting \
+          org.kde.kwin.Scripting \
+          unloadScript \
+          s "$interactive_resize_probe_id" \
+          >/dev/null 2>&1 || true
+
+        load_result=$(busctl --user call \
+          org.kde.KWin \
+          /Scripting \
+          org.kde.kwin.Scripting \
+          loadScript \
+          ss ${interactiveResizeStateProbe} "$interactive_resize_probe_id" \
+          2>/dev/null) || return 1
+
+        if [[ ! "$load_result" =~ ^i\ ([0-9]+)$ ]]; then
+          return 1
+        fi
+
+        script_id=''${BASH_REMATCH[1]}
+        if ! busctl --user call \
+          org.kde.KWin \
+          "/Scripting/Script$script_id" \
+          org.kde.kwin.Script \
+          run \
+          >/dev/null; then
+          busctl --user call \
+            org.kde.KWin \
+            /Scripting \
+            org.kde.kwin.Scripting \
+            unloadScript \
+            s "$interactive_resize_probe_id" \
+            >/dev/null 2>&1 || true
+          return 1
+        fi
+
+        for ((attempt = 0; attempt < 50; attempt += 1)); do
+          shortcuts=$(busctl --user call \
+            org.kde.kglobalaccel \
+            /component/kwin \
+            org.kde.kglobalaccel.Component \
+            shortcutNames 2>/dev/null) || true
+
+          if [[ "$shortcuts" =~ driftile_vm_pointer_state_(true|false)_(true|false)_(-?[0-9]+)_(-?[0-9]+)_([0-9]+)_([0-9]+)_(true|false) ]]; then
+            probe_state="''${BASH_REMATCH[1]},''${BASH_REMATCH[2]},''${BASH_REMATCH[3]},''${BASH_REMATCH[4]},''${BASH_REMATCH[5]},''${BASH_REMATCH[6]},''${BASH_REMATCH[7]}"
+            break
+          fi
+
+          sleep 0.1
+        done
+
+        unload_result=$(busctl --user call \
+          org.kde.KWin \
+          /Scripting \
+          org.kde.kwin.Scripting \
+          unloadScript \
+          s "$interactive_resize_probe_id" \
+          2>/dev/null) || return 1
+
+        [[ "$unload_result" == "b true" && -n "$probe_state" ]] || return 1
+        printf '%s' "$probe_state"
       }
 
       activate_window() {
@@ -1824,6 +1923,23 @@ let
         ((width > 0 && height > 0)) || return 1
         (((width - base_width) % increment_width != 0)) || \
           (((height - base_height) % increment_height != 0))
+      }
+
+      frame_width_matches_resize_lattice() {
+        local frame=$1
+        local policy=$2
+        local width
+        local increment_width
+        local base_width
+
+        [[ "$frame" =~ ^-?[0-9]+,-?[0-9]+,[0-9]+,[0-9]+$ ]] || return 1
+        resize_policy_is_nontrivial "$policy" || return 1
+        IFS=, read -r _ _ width _ <<< "$frame"
+        IFS=, read -r increment_width _ base_width _ <<< "$policy"
+
+        ((width > 0 \
+          && width >= base_width \
+          && (width - base_width) % increment_width == 0))
       }
 
       real_window_protocol_matches() {
@@ -7371,6 +7487,130 @@ let
         return 1
       }
 
+      request_physical_pointer_resize() {
+        local active_title=$7
+        local armed_file=/tmp/shared/driftile-pointer-resize-horizontal-armed
+        local attempt
+        local destination_x=$4
+        local destination_y=$5
+        local held_file=/tmp/shared/driftile-pointer-resize-horizontal-held
+        local interactive_state=""
+        local interactive_state_variable=$9
+        local live_frame=""
+        local live_frame_variable=$8
+        local output_frame=$6
+        local output_height
+        local output_width
+        local output_x
+        local output_y
+        local positioned_file=/tmp/shared/driftile-pointer-resize-horizontal-positioned
+        local ready_file=/tmp/shared/driftile-pointer-resize-horizontal-ready
+        local release_ready_file=/tmp/shared/driftile-pointer-resize-horizontal-release-ready
+        local sent_file=/tmp/shared/driftile-pointer-resize-horizontal-sent
+        local source_x=$2
+        local source_y=$3
+        local temporary_file="$ready_file.tmp"
+
+        [[ "$1" == horizontal ]] || return 1
+        frame_is_valid "$output_frame" || return 1
+        printf -v "$live_frame_variable" '%s' ""
+        printf -v "$interactive_state_variable" '%s' ""
+        IFS=, read -r \
+          output_x \
+          output_y \
+          output_width \
+          output_height \
+          <<< "$output_frame"
+        rm -f \
+          "$armed_file" \
+          "$held_file" \
+          "$positioned_file" \
+          "$ready_file" \
+          "$release_ready_file" \
+          "$sent_file" \
+          "$temporary_file"
+        printf '%s %s %s %s %s %s %s %s\n' \
+          "$source_x" \
+          "$source_y" \
+          "$destination_x" \
+          "$destination_y" \
+          "$output_x" \
+          "$output_y" \
+          "$output_width" \
+          "$output_height" \
+          > "$temporary_file"
+        mv "$temporary_file" "$ready_file"
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          [[ -f "$positioned_file" ]] && break
+          sleep 0.1
+        done
+
+        if [[ ! -f "$positioned_file" ]] \
+          || ! activate_window "$active_title" \
+          || ! wait_for_active "$active_title"; then
+          rm -f \
+            "$armed_file" \
+            "$held_file" \
+            "$positioned_file" \
+            "$ready_file" \
+            "$release_ready_file" \
+            "$temporary_file"
+          return 1
+        fi
+        : > "$armed_file"
+
+        for ((attempt = 0; attempt < 200; attempt += 1)); do
+          [[ -f "$held_file" ]] && break
+          sleep 0.1
+        done
+
+        if [[ ! -f "$held_file" ]]; then
+          rm -f \
+            "$armed_file" \
+            "$held_file" \
+            "$positioned_file" \
+            "$ready_file" \
+            "$release_ready_file" \
+            "$temporary_file"
+          return 1
+        fi
+
+        live_frame=$(
+          capture_stable_window_frame_contains "$active_title" 2>/dev/null \
+            || true
+        )
+        interactive_state=$(capture_interactive_resize_state 2>/dev/null || true)
+        printf -v "$live_frame_variable" '%s' "$live_frame"
+        printf -v "$interactive_state_variable" '%s' "$interactive_state"
+        : > "$release_ready_file"
+
+        for ((attempt = 0; attempt < 200; attempt += 1)); do
+          if [[ -f "$sent_file" ]]; then
+            rm -f \
+              "$armed_file" \
+              "$held_file" \
+              "$positioned_file" \
+              "$ready_file" \
+              "$release_ready_file" \
+              "$sent_file" \
+              "$temporary_file"
+            return 0
+          fi
+
+          sleep 0.1
+        done
+
+        rm -f \
+          "$armed_file" \
+          "$held_file" \
+          "$positioned_file" \
+          "$ready_file" \
+          "$release_ready_file" \
+          "$temporary_file"
+        return 1
+      }
+
       clear_physical_cross_desktop_pointer_handshake() {
         rm -f \
           /tmp/shared/driftile-cross-desktop-pointer-hold-ready \
@@ -9136,6 +9376,274 @@ let
           "physical Meta+M restored the exact tiled layout and focus"
       }
 
+      verify_physical_horizontal_pointer_resize() {
+        local accepted_width=0
+        local adoption_verified=false
+        local destination_x=0
+        local destination_y=0
+        local expected_firefox_frame=""
+        local expected_xterm_frame=""
+        local firefox_frame=""
+        local firefox_height=0
+        local firefox_title=$1
+        local firefox_width=0
+        local firefox_x=0
+        local firefox_y=0
+        local gesture_delivered=false
+        local handshake_delivered=false
+        local held_active=""
+        local held_height=0
+        local held_interactive_state=""
+        local held_move=""
+        local held_resize=""
+        local held_state_height=0
+        local held_state_width=0
+        local held_state_x=0
+        local held_state_y=0
+        local held_width=0
+        local held_x=0
+        local held_xterm_frame=""
+        local held_y=0
+        local layout_digest=""
+        local output_frame=$3
+        local output_height=0
+        local output_width=0
+        local output_x=0
+        local output_y=0
+        local reset_verified=false
+        local resize_distance=0
+        local resize_policy=""
+        local resized_xterm_frame=""
+        local resized_xterm_height=0
+        local resized_xterm_x=0
+        local resized_xterm_y=0
+        local source_x=0
+        local source_y=0
+        local xterm_frame=""
+        local xterm_height=0
+        local xterm_title=$2
+        local xterm_width=0
+        local xterm_x=0
+        local xterm_y=0
+
+        if ! layout_digest=$(wait_for_stable_overview_layout_digest); then
+          record_focus_state \
+            "horizontal pointer resize layout barrier failed"
+          return 1
+        fi
+
+        firefox_frame=$(
+          capture_stable_window_frame_contains "$firefox_title" \
+            || true
+        )
+        xterm_frame=$(
+          capture_stable_window_frame_contains "$xterm_title" \
+            || true
+        )
+        resize_policy=$(
+          x11_window_resize_policy "$xterm_title" xterm 2>/dev/null \
+            || true
+        )
+
+        if frame_is_valid "$output_frame" \
+          && frame_is_valid "$firefox_frame" \
+          && frame_is_valid "$xterm_frame" \
+          && resize_policy_is_nontrivial "$resize_policy" \
+          && wait_for_active "$xterm_title"; then
+          IFS=, read -r \
+            output_x \
+            output_y \
+            output_width \
+            output_height \
+            <<< "$output_frame"
+          IFS=, read -r \
+            firefox_x \
+            firefox_y \
+            firefox_width \
+            firefox_height \
+            <<< "$firefox_frame"
+          IFS=, read -r \
+            xterm_x \
+            xterm_y \
+            xterm_width \
+            xterm_height \
+            <<< "$xterm_frame"
+          source_x=$((xterm_x + xterm_width - 3))
+          source_y=$((xterm_y + (xterm_height / 2)))
+          resize_distance=$((xterm_width / 5))
+
+          if ((resize_distance < 64)); then
+            resize_distance=64
+          elif ((resize_distance > 128)); then
+            resize_distance=128
+          fi
+
+          destination_x=$((source_x - resize_distance))
+          destination_y=$source_y
+
+          if ((xterm_width >= 192 \
+            && firefox_x == xterm_x \
+            && firefox_width == xterm_width \
+            && firefox_y + firefox_height < xterm_y \
+            && source_x > xterm_x + ((2 * xterm_width) / 3) \
+            && source_x < xterm_x + xterm_width \
+            && source_y >= xterm_y \
+            && source_y < xterm_y + xterm_height \
+            && destination_x >= output_x \
+            && destination_x < output_x + output_width \
+            && destination_y >= output_y \
+            && destination_y < output_y + output_height)) \
+            && request_physical_pointer_resize \
+              horizontal \
+              "$source_x" \
+              "$source_y" \
+              "$destination_x" \
+              "$destination_y" \
+              "$output_frame" \
+              "$xterm_title" \
+              held_xterm_frame \
+              held_interactive_state; then
+            handshake_delivered=true
+
+            if frame_is_valid "$held_xterm_frame" \
+              && [[ "$held_interactive_state" \
+                =~ ^(true|false),(true|false),(-?[0-9]+),(-?[0-9]+),([0-9]+),([0-9]+),(true|false)$ ]]; then
+              IFS=, read -r \
+                held_move \
+                held_resize \
+                held_state_x \
+                held_state_y \
+                held_state_width \
+                held_state_height \
+                held_active \
+                <<< "$held_interactive_state"
+              IFS=, read -r \
+                held_x \
+                held_y \
+                held_width \
+                held_height \
+                <<< "$held_xterm_frame"
+
+              if [[ "$held_move" == false \
+                && "$held_resize" == true \
+                && "$held_active" == true ]] \
+                && ((held_x == xterm_x \
+                  && held_y == xterm_y \
+                  && held_width != xterm_width \
+                  && held_height == xterm_height \
+                  && held_state_x == held_x \
+                  && held_state_y == held_y \
+                  && held_state_width == held_width \
+                  && held_state_height == held_height)); then
+                gesture_delivered=true
+              fi
+            fi
+          fi
+        fi
+
+        if [[ "$gesture_delivered" == true ]]; then
+          resized_xterm_frame=$(
+            capture_stable_window_frame_contains "$xterm_title" \
+              || true
+          )
+
+          if frame_is_valid "$resized_xterm_frame"; then
+            IFS=, read -r \
+              resized_xterm_x \
+              resized_xterm_y \
+              accepted_width \
+              resized_xterm_height \
+              <<< "$resized_xterm_frame"
+            expected_xterm_frame="$xterm_x,$xterm_y,$accepted_width,$xterm_height"
+            expected_firefox_frame="$firefox_x,$firefox_y,$accepted_width,$firefox_height"
+
+            if ((accepted_width != xterm_width \
+              && resized_xterm_x == xterm_x \
+              && resized_xterm_y == xterm_y \
+              && resized_xterm_height == xterm_height)) \
+              && frame_width_matches_resize_lattice \
+                "$resized_xterm_frame" \
+                "$resize_policy" \
+              && wait_for_named_frames \
+                "$xterm_title" \
+                "$expected_xterm_frame" \
+                "$firefox_title" \
+                "$expected_firefox_frame" \
+              && wait_for_pointer_stack_order \
+                "$firefox_title" \
+                "$xterm_title" \
+                "$accepted_width" \
+              && wait_for_active "$xterm_title"; then
+              adoption_verified=true
+              record_focus_state \
+                "physical horizontal pointer resize adopted the accepted XWayland width"
+            fi
+          fi
+        fi
+
+        if [[ "$adoption_verified" == true ]] \
+          && invoke_shortcut "driftile_reset_column_width" \
+          && wait_for_named_frames \
+            "$xterm_title" \
+            "$xterm_frame" \
+            "$firefox_title" \
+            "$firefox_frame" \
+          && wait_for_pointer_stack_order \
+            "$firefox_title" \
+            "$xterm_title" \
+            "$xterm_width" \
+          && wait_for_active "$xterm_title"; then
+          reset_verified=true
+          record_focus_state \
+            "horizontal pointer resize reset restored the exact stacked frames"
+        fi
+
+        if [[ "$adoption_verified" == true \
+          && "$reset_verified" == true ]]; then
+          return 0
+        fi
+
+        if [[ "$gesture_delivered" == true \
+          && "$reset_verified" == false ]]; then
+          invoke_shortcut "driftile_reset_column_width" \
+            >/dev/null 2>&1 || true
+          wait_for_named_frames \
+            "$xterm_title" \
+            "$xterm_frame" \
+            "$firefox_title" \
+            "$firefox_frame" \
+            >/dev/null 2>&1 || true
+        fi
+
+        record_focus_state \
+          "physical horizontal pointer resize verification failed"
+        {
+          printf 'output frame: %s\n' "$output_frame"
+          printf 'Firefox frame before resize: %s\n' "$firefox_frame"
+          printf 'XWayland xterm frame before resize: %s\n' "$xterm_frame"
+          printf 'XWayland resize policy: %s\n' "$resize_policy"
+          printf 'layout barrier digest: %s\n' "$layout_digest"
+          printf 'resize source and destination: %s,%s -> %s,%s\n' \
+            "$source_x" \
+            "$source_y" \
+            "$destination_x" \
+            "$destination_y"
+          printf 'XWayland xterm held frame: %s\n' "$held_xterm_frame"
+          printf 'KWin held move,resize,x,y,width,height,active: %s\n' \
+            "$held_interactive_state"
+          printf 'XWayland xterm accepted frame: %s\n' \
+            "$resized_xterm_frame"
+          printf 'expected adopted frames: %s | %s\n' \
+            "$expected_firefox_frame" \
+            "$expected_xterm_frame"
+          printf 'handshake delivered: %s\n' "$handshake_delivered"
+          printf 'interactive resize proven: %s\n' "$gesture_delivered"
+          printf 'adoption verified: %s\n' "$adoption_verified"
+          printf 'reset verified: %s\n' "$reset_verified"
+        } >> /tmp/shared/driftile-focus-diagnostics
+        return 1
+      }
+
       verify_physical_pointer_reinsertion() {
         local baseline_first
         local baseline_second
@@ -9152,6 +9660,7 @@ let
         local firefox_width
         local firefox_x
         local firefox_y
+        local horizontal_resize_verified=false
         local output_frame=""
         local output_height
         local output_width
@@ -9320,6 +9829,16 @@ let
 
         if [[ "$cross_column_verified" == true \
           && "$same_stack_verified" == true ]] \
+          && verify_physical_horizontal_pointer_resize \
+            "$firefox_title" \
+            "$xterm_title" \
+            "$output_frame"; then
+          horizontal_resize_verified=true
+        fi
+
+        if [[ "$cross_column_verified" == true \
+          && "$same_stack_verified" == true \
+          && "$horizontal_resize_verified" == true ]] \
           && verify_touchpad_navigation_checkpoint \
             "$title_a" \
             "$title_b" \
@@ -9331,6 +9850,7 @@ let
 
         if [[ "$cross_column_verified" == true \
           && "$same_stack_verified" == true \
+          && "$horizontal_resize_verified" == true \
           && "$touchpad_navigation_verified" == true ]] \
           && verify_overview_effect_checkpoint \
             "$title_a" \
@@ -9373,6 +9893,7 @@ let
 
         if [[ "$cross_column_verified" == true \
           && "$same_stack_verified" == true \
+          && "$horizontal_resize_verified" == true \
           && "$touchpad_navigation_verified" == true \
           && "$overview_verified" == true \
           && "$cleanup_verified" == true ]]; then
@@ -9389,6 +9910,8 @@ let
           printf 'target width: %s\n' "$target_width"
           printf 'cross-column verified: %s\n' "$cross_column_verified"
           printf 'same-stack verified: %s\n' "$same_stack_verified"
+          printf 'horizontal resize verified: %s\n' \
+            "$horizontal_resize_verified"
           printf 'touchpad navigation verified: %s\n' \
             "$touchpad_navigation_verified"
           printf 'overview verified: %s\n' "$overview_verified"
@@ -11210,6 +11733,7 @@ let
 
     [MouseBindings]
     CommandAll1=Move
+    CommandAll3=Resize
     CommandAllKey=Meta
 
     [Plugins]
