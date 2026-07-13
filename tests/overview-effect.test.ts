@@ -58,7 +58,7 @@ describe("overview effect package", () => {
     expect(reader).not.toMatch(/setValue|repeat:\s*true/u);
   });
 
-  it("uses only the public KWin QML module and writes only active-window focus", () => {
+  it("uses only public KWin QML writes for focus and desktop selection", () => {
     for (const source of qmlSources) {
       expect(source).not.toContain("org.kde.kwin.private");
     }
@@ -73,12 +73,17 @@ describe("overview effect package", () => {
     expect(desktopCard).toContain("KWin.WindowModel");
     expect(desktopCard).toContain("KWin.WindowFilterModel");
     expect(desktopCard).toContain("KWin.WindowThumbnail");
-    const workspaceWrites =
+    const kwinWrites =
       qmlSources
         .join("\n")
-        .match(/KWin\.Workspace\.[A-Za-z0-9_]+\s*=(?!=)/gu) ?? [];
-    expect(workspaceWrites).toHaveLength(1);
-    expect(workspaceWrites[0]).toMatch(/^KWin\.Workspace\.activeWindow\s*=$/u);
+        .match(/KWin\.(?:SceneView|Workspace)\.[A-Za-z0-9_]+\s*=(?!=)/gu) ?? [];
+    expect(
+      kwinWrites.map((write) => write.replace(/\s*=$/u, "")).sort(),
+    ).toEqual([
+      "KWin.SceneView.currentDesktop",
+      "KWin.Workspace.activeWindow",
+      "KWin.Workspace.currentDesktop",
+    ]);
     expect(qmlSources.join("\n")).not.toMatch(
       /(?:model\.window|candidate)\.[A-Za-z0-9_]+\s*=(?!=)|\.setValue\s*\(/u,
     );
@@ -97,16 +102,26 @@ describe("overview effect package", () => {
       scene.indexOf("function windowUsesCurrentActivity("),
       scene.indexOf("function orderedDesktopIds("),
     );
+    const numberGutter = desktopCard.slice(
+      desktopCard.indexOf("id: numberGutter"),
+      desktopCard.indexOf("id: viewport"),
+    );
+    const thumbnail = desktopCard.slice(
+      desktopCard.indexOf("id: thumbnailShell"),
+      desktopCard.indexOf("function indexOfDesktop("),
+    );
 
-    expect(desktopCard.match(/\bTapHandler\s*\{/gu)).toHaveLength(1);
-    expect(desktopCard).toContain("acceptedButtons: Qt.LeftButton");
-    expect(desktopCard).toContain(
+    expect(desktopCard.match(/\bTapHandler\s*\{/gu)).toHaveLength(2);
+    expect(numberGutter.match(/\bTapHandler\s*\{/gu)).toHaveLength(1);
+    expect(thumbnail.match(/\bTapHandler\s*\{/gu)).toHaveLength(1);
+    expect(thumbnail).toContain("acceptedButtons: Qt.LeftButton");
+    expect(thumbnail).toContain(
       "acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad",
     );
-    expect(desktopCard).toContain(
+    expect(thumbnail).toContain(
       "enabled: card.current && thumbnailShell.visible",
     );
-    expect(desktopCard).toContain(
+    expect(thumbnail).toContain(
       "card.windowTapped(model.window, thumbnailShell.windowId, card.desktop, card.desktopId)",
     );
 
@@ -163,6 +178,141 @@ describe("overview effect package", () => {
     expect(scene).not.toContain("KWin.Workspace.stackingOrder");
     expect(`${scene}\n${desktopCard}`).not.toMatch(
       /MouseArea|DragHandler|ShortcutHandler|\.setValue\s*\(/u,
+    );
+  });
+
+  it("selects only an exact live non-current desktop from its number gutter", () => {
+    const numberGutter = desktopCard.slice(
+      desktopCard.indexOf("id: numberGutter"),
+      desktopCard.indexOf("id: viewport"),
+    );
+    const selector = scene.slice(
+      scene.indexOf("function selectDesktop("),
+      scene.indexOf("function focusWindow("),
+    );
+    const outputProjection = scene.slice(
+      scene.indexOf("function projectedOutputId("),
+      scene.indexOf("function outputDescriptorsMatch("),
+    );
+
+    expect(desktopCard).toContain(
+      "signal desktopTapped(var candidate, string expectedDesktopId, var expectedScreen)",
+    );
+    expect(numberGutter).toContain("width: card.contentLeft");
+    expect(numberGutter).toContain("height: card.height");
+    expect(numberGutter).toContain("acceptedButtons: Qt.LeftButton");
+    expect(numberGutter).toContain(
+      "acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad",
+    );
+    expect(numberGutter).toContain(
+      "enabled: !card.current && card.desktop && card.screen",
+    );
+    expect(numberGutter).toContain(
+      "card.desktopTapped(card.desktop, card.desktopId, card.screen)",
+    );
+    expect(scene).toMatch(
+      /onDesktopTapped:\s*\(candidate, expectedDesktopId, expectedScreen\)\s*=>\s*root\.selectDesktop\(\s*candidate, expectedDesktopId, expectedScreen\)/u,
+    );
+
+    expect(selector).toContain("const model = overviewModel;");
+    expect(selector).toContain("!sceneEffect");
+    expect(selector.match(/sceneEffect\.active !== true/gu)).toHaveLength(2);
+    expect(selector).toContain("!model");
+    expect(selector).toContain("!candidate");
+    expect(selector).toContain("expectedDesktopId.length === 0");
+    expect(selector).toContain("!targetScreen");
+    expect(selector).toContain("expectedScreen !== targetScreen");
+
+    expect(selector).toContain("const screens = KWin.Workspace.screens;");
+    expect(selector).toContain("for (const screen of screens)");
+    expect(selector).toContain("screen === expectedScreen");
+    expect(selector).toContain("liveScreen !== null");
+    expect(selector).toContain("liveScreen === null");
+    expect(selector).toContain("const expectedOutputId = outputId;");
+    expect(selector).toContain("expectedOutputId.length === 0");
+    expect(selector).toContain(
+      "projectedOutputId(model, liveScreen) !== expectedOutputId",
+    );
+    expect(outputProjection).toContain("for (const output of model.outputs)");
+    expect(outputProjection).toContain(
+      "outputDescriptorsMatch(output, screen)",
+    );
+
+    expect(selector).toContain(
+      "for (const desktop of KWin.Workspace.desktops)",
+    );
+    expect(selector).toContain(
+      "desktop === candidate && String(desktop.id) === expectedDesktopId",
+    );
+    expect(selector).toContain("liveDesktop !== null");
+    expect(selector).toContain("liveDesktop === null");
+    expect(selector).toContain("sceneEffect.overviewModel !== model");
+    expect(selector).toContain("overviewModel !== model");
+    expect(selector).toContain("targetScreen !== liveScreen");
+    expect(selector).toContain("outputId !== expectedOutputId");
+
+    expect(selector).toContain(
+      'const hasSceneDesktop = typeof KWin.SceneView.currentDesktop !== "undefined";',
+    );
+    expect(selector).toContain(
+      "!hasSceneDesktop && (screens.length !== 1 || screens[0] !== liveScreen)",
+    );
+    expect(selector).toContain("const activeDesktop = currentDesktop;");
+    expect(selector).toContain("activeDesktop === liveDesktop");
+    expect(selector).toContain(
+      "String(activeDesktop.id) === expectedDesktopId",
+    );
+
+    expect(selector).toContain("KWin.SceneView.currentDesktop = liveDesktop");
+    expect(selector).toContain("KWin.Workspace.currentDesktop = liveDesktop");
+    expect(selector).toMatch(
+      /if \(hasSceneDesktop\) \{\s*KWin\.SceneView\.currentDesktop = liveDesktop;\s*\} else \{\s*KWin\.Workspace\.currentDesktop = liveDesktop;\s*\}/u,
+    );
+    expect(selector).toContain("catch (error)");
+    expect(selector).toContain("const selectedDesktop = currentDesktop;");
+    expect(selector).toContain("selectedDesktop !== liveDesktop");
+    expect(selector).toContain(
+      "String(selectedDesktop.id) !== expectedDesktopId",
+    );
+    expect(selector.match(/sceneEffect\.deactivate\(\)/gu)).toHaveLength(1);
+
+    const sceneWrite = selector.indexOf(
+      "KWin.SceneView.currentDesktop = liveDesktop",
+    );
+    const fallbackWrite = selector.indexOf(
+      "KWin.Workspace.currentDesktop = liveDesktop",
+    );
+    const postWriteRead = selector.indexOf(
+      "const selectedDesktop = currentDesktop;",
+    );
+    const confirmation = selector.indexOf("selectedDesktop !== liveDesktop");
+    const deactivate = selector.indexOf("sceneEffect.deactivate()");
+    const preWriteGuards = [
+      selector.lastIndexOf("sceneEffect.active !== true"),
+      selector.indexOf("expectedScreen !== targetScreen"),
+      selector.indexOf("targetScreen !== liveScreen"),
+      selector.indexOf("desktop === candidate"),
+      selector.indexOf("outputId !== expectedOutputId"),
+      selector.indexOf("screens.length !== 1"),
+      selector.indexOf("activeDesktop === liveDesktop"),
+    ];
+    expect(sceneWrite).toBeGreaterThan(0);
+    expect(
+      preWriteGuards.every((guard) => guard > 0 && guard < sceneWrite),
+    ).toBe(true);
+    expect(fallbackWrite).toBeGreaterThan(sceneWrite);
+    expect(postWriteRead).toBeGreaterThan(fallbackWrite);
+    expect(confirmation).toBeGreaterThan(postWriteRead);
+    expect(deactivate).toBeGreaterThan(confirmation);
+    expect(selector).toMatch(
+      /if \(selectedDesktop !== liveDesktop \|\| String\(selectedDesktop\.id\) !== expectedDesktopId\) \{\s*return;\s*\}\s*sceneEffect\.deactivate\(\);/u,
+    );
+
+    expect(`${scene}\n${desktopCard}`).not.toMatch(
+      /\b(?:Action|DragHandler|MouseArea|Settings|ShortcutHandler|Timer)\s*\{|\.setValue\s*\(|\bsequence\s*:/u,
+    );
+    expect(`${selector}\n${outputProjection}`).not.toMatch(
+      /KWin\.Workspace\.(?:stackingOrder|windows)\b|KWin\.WindowModel|layoutStateReader|model\.(?:contexts|desktopIds|floatingWindows)/u,
     );
   });
 

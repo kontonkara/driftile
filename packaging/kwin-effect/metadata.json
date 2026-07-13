@@ -7,7 +7,7 @@
       }
     ],
     "Category": "Window Management",
-    "Description": "A Driftile layout overview with guarded current-context click-to-focus.",
+    "Description": "A Driftile layout overview with guarded window focus and desktop selection.",
     "EnabledByDefault": false,
     "Icon": "preferences-system-windows",
     "Id": "io.github.kontonkara.driftile.overview",

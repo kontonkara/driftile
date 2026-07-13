@@ -67,9 +67,78 @@ Rectangle {
             desktopId: modelData
             floatingWindows: root.floatingFor(modelData)
             screen: root.targetScreen
+            onDesktopTapped: (candidate, expectedDesktopId, expectedScreen) => root.selectDesktop(
+                                 candidate, expectedDesktopId, expectedScreen)
             onWindowTapped: (candidate, expectedWindowId, expectedDesktop, expectedDesktopId) => root.focusWindow(
                                 candidate, expectedWindowId, expectedDesktop, expectedDesktopId)
         }
+    }
+
+    function selectDesktop(candidate, expectedDesktopId, expectedScreen) {
+        const model = overviewModel;
+        if (!sceneEffect || sceneEffect.active !== true || !model || !candidate || expectedDesktopId.length === 0
+                || !targetScreen || expectedScreen !== targetScreen) {
+            return;
+        }
+
+        const screens = KWin.Workspace.screens;
+        let liveScreen = null;
+        for (const screen of screens) {
+            if (screen === expectedScreen) {
+                if (liveScreen !== null) {
+                    return;
+                }
+                liveScreen = screen;
+            }
+        }
+        if (liveScreen === null) {
+            return;
+        }
+
+        const expectedOutputId = outputId;
+        if (expectedOutputId.length === 0 || projectedOutputId(model, liveScreen) !== expectedOutputId) {
+            return;
+        }
+
+        let liveDesktop = null;
+        for (const desktop of KWin.Workspace.desktops) {
+            if (desktop === candidate && String(desktop.id) === expectedDesktopId) {
+                if (liveDesktop !== null) {
+                    return;
+                }
+                liveDesktop = desktop;
+            }
+        }
+        if (liveDesktop === null || sceneEffect.active !== true || sceneEffect.overviewModel !== model
+                || overviewModel !== model || targetScreen !== liveScreen || outputId !== expectedOutputId) {
+            return;
+        }
+
+        const hasSceneDesktop = typeof KWin.SceneView.currentDesktop !== "undefined";
+        if (!hasSceneDesktop && (screens.length !== 1 || screens[0] !== liveScreen)) {
+            return;
+        }
+
+        const activeDesktop = currentDesktop;
+        if (!activeDesktop || activeDesktop === liveDesktop || String(activeDesktop.id) === expectedDesktopId) {
+            return;
+        }
+
+        try {
+            if (hasSceneDesktop) {
+                KWin.SceneView.currentDesktop = liveDesktop;
+            } else {
+                KWin.Workspace.currentDesktop = liveDesktop;
+            }
+        } catch (error) {
+            return;
+        }
+
+        const selectedDesktop = currentDesktop;
+        if (selectedDesktop !== liveDesktop || String(selectedDesktop.id) !== expectedDesktopId) {
+            return;
+        }
+        sceneEffect.deactivate();
     }
 
     function focusWindow(candidate, expectedWindowId, expectedDesktop, expectedDesktopId) {
@@ -160,18 +229,26 @@ Rectangle {
     }
 
     function outputIdForScreen() {
-        if (!overviewModel || !targetScreen) {
+        return projectedOutputId(overviewModel, targetScreen);
+    }
+
+    function projectedOutputId(model, screen) {
+        if (!model || !screen) {
             return "";
         }
 
-        const screenName = String(targetScreen.name);
-        for (const output of overviewModel.outputs) {
-            if (output.name === screenName && outputDescriptorsMatch(output, targetScreen)) {
-                return output.outputId;
+        const screenName = String(screen.name);
+        let projectedId = "";
+        for (const output of model.outputs) {
+            if (output.name === screenName && outputDescriptorsMatch(output, screen)) {
+                if (projectedId.length > 0) {
+                    return "";
+                }
+                projectedId = output.outputId;
             }
         }
 
-        return "";
+        return projectedId;
     }
 
     function outputDescriptorsMatch(output, screen) {

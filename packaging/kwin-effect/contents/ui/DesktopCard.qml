@@ -11,6 +11,7 @@ Rectangle {
     required property var floatingWindows
     required property var screen
 
+    signal desktopTapped(var candidate, string expectedDesktopId, var expectedScreen)
     signal windowTapped(var candidate, string expectedWindowId, var expectedDesktop, string expectedDesktopId)
 
     readonly property var columns: context ? context.columns : []
@@ -31,16 +32,30 @@ Rectangle {
     radius: 8
     clip: true
 
-    Text {
-        x: 12
-        anchors.verticalCenter: parent.verticalCenter
-        width: card.contentLeft - 18
-        text: String(card.indexOfDesktop(card.desktopId) + 1)
-        color: card.current ? "#f3f7ff" : "#b6c1d2"
-        font.bold: card.current
-        font.pixelSize: Math.max(12, Math.min(20, card.height * 0.2))
-        horizontalAlignment: Text.AlignHCenter
-        elide: Text.ElideRight
+    Item {
+        id: numberGutter
+
+        width: card.contentLeft
+        height: card.height
+
+        Text {
+            x: 12
+            anchors.verticalCenter: parent.verticalCenter
+            width: numberGutter.width - 18
+            text: String(card.indexOfDesktop(card.desktopId) + 1)
+            color: card.current ? "#f3f7ff" : "#b6c1d2"
+            font.bold: card.current
+            font.pixelSize: Math.max(12, Math.min(20, card.height * 0.2))
+            horizontalAlignment: Text.AlignHCenter
+            elide: Text.ElideRight
+        }
+
+        TapHandler {
+            acceptedButtons: Qt.LeftButton
+            acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+            enabled: !card.current && card.desktop && card.screen
+            onTapped: card.desktopTapped(card.desktop, card.desktopId, card.screen)
+        }
     }
 
     Item {
