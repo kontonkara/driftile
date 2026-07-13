@@ -147,12 +147,20 @@ The isolated backend tests do not cover application-driven live hard-bound chang
 
 Set `DRIFTILE_KEEP_SMOKE_SANDBOX=1` to retain the temporary files after a run.
 
-## Visible Plasma VM
+## Plasma VM
 
 On NixOS, run the VM from a graphical session with KVM available:
 
 ```bash
 tools/vm/run.sh
+```
+
+Add `--hidden` to any VM command to keep QEMU off-screen. Hidden mode retains
+the virtual display and QMP input path, skips host window sizing, requires no
+graphical host session, and still shuts down immediately after the checkpoint:
+
+```bash
+tools/vm/run.sh lifecycle --hidden
 ```
 
 For the focused two-output pointer checkpoint, run:
@@ -225,4 +233,4 @@ extension remains loaded.
 
 The host injects real keyboard shortcuts and absolute `Meta+left` drags through QEMU QMP, so Plasma routing and pointer behavior cannot hide behind direct invocation. The pointer checkpoint moves native Wayland Firefox into an XWayland xterm column, verifies destination width and order, then reorders the resulting stack. A second physical drag moves native Wayland Firefox through a KWin-owned same-output desktop switch, releases it over a fresh XWayland target, and verifies destination order and width, active focus, unchanged hidden primary-desktop frames, and exact cleanup. The VM also verifies both desktop-reorder directions and aliases against real applications while preserving desktop IDs, selection, window memberships, focus, frames, and the shared tail. It applies and restores a live gap while a real Konsole window is floating. For default width and both resize steps, it co-delivers each policy with a temporary gap barrier, restores the gap, then proves exact existing frames before the explicit action. The remaining checks cover dynamic desktops, minimized-slot navigation, column reorder, horizontal extraction, explicit consume and expel past minimized peers, tiled and floating transfers, transfer boundaries, layer navigation, stack editing, fullscreen and maximize, sizing, and viewport scrolling with native Wayland and XWayland clients. The real xterm path also verifies advertised character-cell resize increments and exact off-lattice tiled geometry. See [Shortcuts](shortcuts.md).
 
-The VM is ephemeral, has restricted networking, and cannot be switched onto the host. The passwordless `driftile` account signs in automatically. Screen locking, display power saving, and system sleep are disabled inside the guest. The launcher closes the VM immediately after the visible checks report success or failure. The X11 Plasma session remains available from the login screen; automated integration tests cover both KWin backends.
+The VM is ephemeral, has restricted networking, and cannot be switched onto the host. The passwordless `driftile` account signs in automatically. Screen locking, display power saving, and system sleep are disabled inside the guest. The launcher closes the VM immediately after the checks report success or failure. The X11 Plasma session remains available from the login screen; automated integration tests cover both KWin backends.

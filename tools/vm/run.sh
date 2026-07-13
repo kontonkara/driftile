@@ -2,12 +2,41 @@
 
 set -euo pipefail
 
-vm_mode=${1:-full}
+vm_mode=full
+vm_mode_set=false
+vm_visibility=visible
+vm_visibility_set=false
 
-if (($# > 1)); then
-  printf 'Usage: %s [full|two-head|lifecycle]\n' "$0" >&2
-  exit 2
-fi
+usage() {
+  printf 'Usage: %s [full|two-head|lifecycle] [--hidden]\n' "$0" >&2
+}
+
+for argument in "$@"; do
+  case "$argument" in
+    full | two-head | lifecycle)
+      if [[ "$vm_mode_set" == true ]]; then
+        usage
+        exit 2
+      fi
+
+      vm_mode=$argument
+      vm_mode_set=true
+      ;;
+    --hidden)
+      if [[ "$vm_visibility_set" == true ]]; then
+        usage
+        exit 2
+      fi
+
+      vm_visibility=hidden
+      vm_visibility_set=true
+      ;;
+    *)
+      usage
+      exit 2
+      ;;
+  esac
+done
 
 case "$vm_mode" in
   full)
@@ -23,7 +52,7 @@ case "$vm_mode" in
     vm_runner=run-driftile-vm-lifecycle-vm
     ;;
   *)
-    printf 'Usage: %s [full|two-head|lifecycle]\n' "$0" >&2
+    usage
     exit 2
     ;;
 esac
@@ -33,6 +62,13 @@ temporary_directory=$(mktemp -d -t driftile-vm.XXXXXXXXXX)
 host_script_loaded=false
 readonly host_script_name="io.github.kontonkara.driftile.vm-window"
 readonly qmp_socket="$temporary_directory/qmp.sock"
+qemu_options="-qmp unix:$qmp_socket,server=on,wait=off"
+
+if [[ "$vm_visibility" == hidden ]]; then
+  qemu_options+=" -display none"
+fi
+
+readonly qemu_options
 readonly two_head_desktop_height=768
 readonly two_head_desktop_width=1376
 readonly two_head_desktop_x=0
@@ -1427,7 +1463,7 @@ start_owned_full_vm() {
 
   (
     trap - INT TERM
-    export QEMU_OPTS="-qmp unix:$qmp_socket,server=on,wait=off"
+    export QEMU_OPTS="$qemu_options"
     export TMPDIR="$temporary_directory"
     export USE_TMPDIR=1
     exec "./result/bin/$vm_runner"
@@ -1451,7 +1487,9 @@ start_owned_full_vm() {
 
 trap cleanup EXIT
 
-if [[ -z "${DISPLAY:-}" && -z "${WAYLAND_DISPLAY:-}" ]]; then
+if [[ "$vm_visibility" == visible \
+  && -z "${DISPLAY:-}" \
+  && -z "${WAYLAND_DISPLAY:-}" ]]; then
   printf 'A graphical session is required to show the VM window.\n' >&2
   exit 1
 fi
@@ -1459,7 +1497,7 @@ fi
 cd -- "$root_directory"
 nixos-rebuild build-vm --flake ".#$flake_configuration"
 
-if ! prepare_host_window; then
+if [[ "$vm_visibility" == visible ]] && ! prepare_host_window; then
   printf 'Could not request the initial VM window size from host KWin.\n' >&2
 fi
 
@@ -1479,12 +1517,12 @@ vm_status=0
 
 set +e
 if [[ "$vm_mode" == two-head ]]; then
-  QEMU_OPTS="-qmp unix:$qmp_socket,server=on,wait=off" \
+  QEMU_OPTS="$qemu_options" \
     SDL_VIDEO_MINIMIZE_ON_FOCUS_LOSS=0 \
     USE_TMPDIR=1 TMPDIR="$temporary_directory" \
     "./result/bin/$vm_runner"
 else
-  QEMU_OPTS="-qmp unix:$qmp_socket,server=on,wait=off" \
+  QEMU_OPTS="$qemu_options" \
     USE_TMPDIR=1 TMPDIR="$temporary_directory" \
     "./result/bin/$vm_runner"
 fi
