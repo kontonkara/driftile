@@ -14,11 +14,16 @@ let
   overviewPluginMetadata = builtins.fromJSON (builtins.readFile ../packaging/kwin-effect/metadata.json);
   currentVersion = pluginMetadata.KPlugin.Version;
   currentOverviewVersion = overviewPluginMetadata.KPlugin.Version;
-  publishedVersion = "1.2.0";
+  publishedVersion = "1.3.0";
   publishedArchive = pkgs.fetchurl {
     name = "driftile-${publishedVersion}.kwinscript";
     url = "https://github.com/kontonkara/driftile/releases/download/v${publishedVersion}/driftile-${publishedVersion}.kwinscript";
-    hash = "sha256-45nnH+Lwg9XZXeGQ9t3i6qxrvvfZFCeqikcWwOjyPUE=";
+    hash = "sha256-Ez3gu3jyswgplV59/aahxPihRQrsrFWpKJcEm2Ux9EM=";
+  };
+  publishedOverviewArchive = pkgs.fetchurl {
+    name = "driftile-overview-${publishedVersion}.kwineffect";
+    url = "https://github.com/kontonkara/driftile/releases/download/v${publishedVersion}/driftile-overview-${publishedVersion}.kwineffect";
+    hash = "sha256-4h7g52JcssRAkqC8X3If6N6WwKJSe/3d1MjSq4QAOQc=";
   };
   currentArchive =
     pkgs.runCommand "driftile-${currentVersion}.kwinscript"
@@ -86,6 +91,7 @@ let
       pkgs.kdePackages.kconfig
       pkgs.kdePackages.konsole
       pkgs.kdePackages.kpackage
+      pkgs.libxml2
       pkgs.systemd
       pkgs.unzip
     ];
@@ -98,6 +104,7 @@ let
       readonly overview_shortcut=${overviewShortcut}
       readonly overview_shortcut_text="${overviewShortcutText}"
       readonly published_archive=${publishedArchive}
+      readonly published_overview_archive=${publishedOverviewArchive}
       readonly current_archive=${currentArchive}
       readonly current_overview_archive=${currentOverviewArchive}
       readonly published_version=${publishedVersion}
@@ -236,6 +243,51 @@ let
           | jq --exit-status --raw-output '.KPlugin.Version'
       }
 
+      archive_plugin_id() {
+        unzip -p "$1" metadata.json \
+          | jq --exit-status --raw-output '.KPlugin.Id'
+      }
+
+      archive_enabled_by_default() {
+        unzip -p "$1" metadata.json \
+          | jq --exit-status --raw-output '.KPlugin.EnabledByDefault'
+      }
+
+      config_default() {
+        local config_file=$1
+        local entry_name=$2
+        local entry_path
+        local entry_count
+
+        entry_path="/*[local-name()='kcfg']/*[local-name()='group']/*[local-name()='entry'][@name='$entry_name']"
+        entry_count=$(xmllint \
+          --xpath "count($entry_path)" \
+          "$config_file") || return 1
+        [[ "$entry_count" == "1" ]] || return 1
+        xmllint \
+          --xpath "string($entry_path/*[local-name()='default'])" \
+          "$config_file"
+      }
+
+      archive_config_default() {
+        local archive=$1
+        local entry_name=$2
+        local temporary_config
+        local result
+
+        temporary_config=$(mktemp)
+        if ! unzip -p "$archive" contents/config/main.xml > "$temporary_config"; then
+          rm -f -- "$temporary_config"
+          return 1
+        fi
+        result=$(config_default "$temporary_config" "$entry_name") || {
+          rm -f -- "$temporary_config"
+          return 1
+        }
+        rm -f -- "$temporary_config"
+        printf '%s' "$result"
+      }
+
       archive_runtime_digest() {
         local digest
 
@@ -246,6 +298,17 @@ let
       installed_version() {
         jq --exit-status --raw-output '.KPlugin.Version' \
           "$installed_package/metadata.json"
+      }
+
+      installed_plugin_id() {
+        jq --exit-status --raw-output '.KPlugin.Id' \
+          "$installed_package/metadata.json"
+      }
+
+      installed_config_default() {
+        config_default \
+          "$installed_package/contents/config/main.xml" \
+          "$1"
       }
 
       runtime_digest() {
@@ -268,6 +331,24 @@ let
       overview_installed_version() {
         jq --exit-status --raw-output '.KPlugin.Version' \
           "$installed_overview_package/metadata.json"
+      }
+
+      overview_installed_plugin_id() {
+        jq --exit-status --raw-output '.KPlugin.Id' \
+          "$installed_overview_package/metadata.json"
+      }
+
+      overview_installed_enabled_by_default() {
+        jq --exit-status --raw-output '.KPlugin.EnabledByDefault' \
+          "$installed_overview_package/metadata.json"
+      }
+
+      touchpad_navigation_override() {
+        kreadconfig6 \
+          --file kwinrc \
+          --group "Script-$plugin_id" \
+          --key TouchpadNavigation \
+          --default missing
       }
 
       overview_runtime_digest() {
@@ -521,7 +602,15 @@ let
           if [[ -f "$installed_package/metadata.json" ]]; then
             printf 'installed version: %s\n' \
               "$(installed_version 2>/dev/null || printf unreadable)"
+            printf 'installed package ID: %s\n' \
+              "$(installed_plugin_id 2>/dev/null || printf unreadable)"
           fi
+          if [[ -f "$installed_package/contents/config/main.xml" ]]; then
+            printf 'installed TouchpadNavigation default: %s\n' \
+              "$(installed_config_default TouchpadNavigation 2>/dev/null || printf unreadable)"
+          fi
+          printf 'TouchpadNavigation override: %s\n' \
+            "$(touchpad_navigation_override 2>/dev/null || printf unreadable)"
           printf '\nKPackage matches:\n'
           kpackagetool6 --type=KWin/Script --list 2>&1 \
             | grep --fixed-strings "$plugin_id" \
@@ -530,7 +619,13 @@ let
           if [[ -f "$installed_overview_package/metadata.json" ]]; then
             printf 'overview installed version: %s\n' \
               "$(overview_installed_version 2>/dev/null || printf unreadable)"
+            printf 'overview installed package ID: %s\n' \
+              "$(overview_installed_plugin_id 2>/dev/null || printf unreadable)"
+            printf 'overview enabled by default: %s\n' \
+              "$(overview_installed_enabled_by_default 2>/dev/null || printf unreadable)"
           fi
+          printf 'overview available: %s\n' \
+            "$(effect_available_state "$overview_plugin_id" 2>/dev/null || printf unavailable)"
           printf 'overview loaded: %s\n' \
             "$(effect_loaded_state "$overview_plugin_id" 2>/dev/null || printf unavailable)"
           printf 'overview action registered: '
@@ -580,15 +675,30 @@ let
 
       [[ "$(archive_version "$published_archive")" == "$published_version" ]] \
         || fail_test "the published archive metadata is unexpected"
+      [[ "$(archive_plugin_id "$published_archive")" == "$plugin_id" ]] \
+        || fail_test "the published archive package ID is unexpected"
+      [[ "$(archive_version "$published_overview_archive")" == "$published_version" ]] \
+        || fail_test "the published overview archive metadata is unexpected"
+      [[ "$(archive_plugin_id "$published_overview_archive")" == "$overview_plugin_id" ]] \
+        || fail_test "the published overview archive package ID is unexpected"
+      [[ "$(archive_enabled_by_default "$published_overview_archive")" == false ]] \
+        || fail_test "the published overview archive was enabled by default"
       [[ "$(archive_version "$current_archive")" == "$current_version" ]] \
         || fail_test "the current archive metadata is unexpected"
+      [[ "$(archive_plugin_id "$current_archive")" == "$plugin_id" ]] \
+        || fail_test "the current archive package ID is unexpected"
+      [[ "$(archive_config_default "$current_archive" TouchpadNavigation)" == false ]] \
+        || fail_test "the current archive enabled TouchpadNavigation by default"
       [[ "$(archive_version "$current_overview_archive")" == "$current_overview_version" ]] \
         || fail_test "the current overview archive metadata is unexpected"
-      [[ "$(unzip -p "$current_overview_archive" metadata.json \
-        | jq --exit-status --raw-output '.KPlugin.EnabledByDefault')" == false ]] \
+      [[ "$(archive_plugin_id "$current_overview_archive")" == "$overview_plugin_id" ]] \
+        || fail_test "the current overview archive package ID is unexpected"
+      [[ "$(archive_enabled_by_default "$current_overview_archive")" == false ]] \
         || fail_test "the current overview archive was enabled by default"
       published_archive_runtime_digest=$(archive_runtime_digest "$published_archive") \
         || fail_test "the published archive runtime could not be hashed"
+      published_overview_archive_runtime_digest=$(archive_runtime_digest "$published_overview_archive") \
+        || fail_test "the published overview archive runtime could not be hashed"
       current_archive_runtime_digest=$(archive_runtime_digest "$current_archive") \
         || fail_test "the current archive runtime could not be hashed"
       current_overview_archive_runtime_digest=$(archive_runtime_digest "$current_overview_archive") \
@@ -612,33 +722,93 @@ let
       fi
       wait_for_shortcut_registration_state "$overview_shortcut" false \
         || fail_test "the overview action existed before installation"
+      [[ "$(touchpad_navigation_override)" == missing ]] \
+        || fail_test "TouchpadNavigation had a user override before installation"
       progress "clean package baseline confirmed"
 
       run_checked \
         "the published package could not be installed" \
         kpackagetool6 --type=KWin/Script --install "$published_archive"
+      run_checked \
+        "the published overview package could not be installed" \
+        kpackagetool6 --type=KWin/Effect --install "$published_overview_archive"
+      package_is_listed \
+        || fail_test "KPackage did not list the published package"
+      overview_package_is_listed \
+        || fail_test "KPackage did not list the published overview"
       [[ "$(installed_version)" == "$published_version" ]] \
         || fail_test "the installed published metadata is unexpected"
+      [[ "$(installed_plugin_id)" == "$plugin_id" ]] \
+        || fail_test "the installed published package ID is unexpected"
       published_runtime_digest=$(runtime_digest) \
         || fail_test "the published runtime could not be hashed"
       [[ "$published_runtime_digest" == "$published_archive_runtime_digest" ]] \
         || fail_test "the installed published runtime did not match its archive"
+      [[ "$(overview_installed_version)" == "$published_version" ]] \
+        || fail_test "the installed published overview metadata is unexpected"
+      [[ "$(overview_installed_plugin_id)" == "$overview_plugin_id" ]] \
+        || fail_test "the installed published overview package ID is unexpected"
+      [[ "$(overview_installed_enabled_by_default)" == false ]] \
+        || fail_test "the installed published overview was enabled by default"
+      published_overview_runtime_digest=$(overview_runtime_digest) \
+        || fail_test "the published overview runtime could not be hashed"
+      [[ "$published_overview_runtime_digest" == "$published_overview_archive_runtime_digest" ]] \
+        || fail_test "the installed published overview runtime did not match its archive"
+      request_kwin_reconfigure
+      wait_for_effect_available_state "$overview_plugin_id" true \
+        || fail_test "KWin did not discover the published overview after reconfiguration"
+      wait_for_effect_loaded_state "$overview_plugin_id" false \
+        || fail_test "the published overview was loaded after installation"
+      wait_for_shortcut_registration_state "$overview_shortcut" false \
+        || fail_test "the disabled published overview registered its action"
       set_enabled true
       load_installed_script
-      progress "published $published_version package installed and loaded"
+      progress "published $published_version packages installed with the overview disabled and unbound"
 
       set_enabled false
       unload_installed_script
       run_checked \
         "the current package could not upgrade the published package" \
         kpackagetool6 --type=KWin/Script --upgrade "$current_archive"
+      run_checked \
+        "the current overview could not upgrade the published overview" \
+        kpackagetool6 --type=KWin/Effect --upgrade "$current_overview_archive"
+      request_kwin_reconfigure
+      package_is_listed \
+        || fail_test "KPackage did not list the upgraded package"
+      overview_package_is_listed \
+        || fail_test "KPackage did not list the upgraded overview"
       [[ "$(installed_version)" == "$current_version" ]] \
         || fail_test "the upgraded metadata did not change"
+      [[ "$(installed_plugin_id)" == "$plugin_id" ]] \
+        || fail_test "the upgraded package ID changed"
       current_runtime_digest=$(runtime_digest) \
         || fail_test "the current runtime could not be hashed"
       [[ "$current_runtime_digest" == "$current_archive_runtime_digest" ]] \
         || fail_test "the installed current runtime did not match its archive"
-      progress "package upgraded to $current_version with the current runtime"
+      [[ "$(installed_config_default TouchpadNavigation)" == false ]] \
+        || fail_test "the upgraded package enabled TouchpadNavigation by default"
+      [[ "$(touchpad_navigation_override)" == missing ]] \
+        || fail_test "the upgrade wrote a TouchpadNavigation override"
+      [[ "$(overview_installed_version)" == "$current_overview_version" ]] \
+        || fail_test "the upgraded overview metadata did not change"
+      [[ "$(overview_installed_plugin_id)" == "$overview_plugin_id" ]] \
+        || fail_test "the upgraded overview package ID changed"
+      [[ "$(overview_installed_enabled_by_default)" == false ]] \
+        || fail_test "the upgraded overview was enabled by default"
+      current_overview_runtime_digest=$(overview_runtime_digest) \
+        || fail_test "the upgraded overview runtime could not be hashed"
+      [[ "$current_overview_runtime_digest" == "$current_overview_archive_runtime_digest" ]] \
+        || fail_test "the installed current overview runtime did not match its archive"
+      wait_for_effect_available_state "$overview_plugin_id" true \
+        || fail_test "KWin did not rediscover the upgraded overview"
+      wait_for_effect_loaded_state "$overview_plugin_id" false \
+        || fail_test "the overview was loaded by the upgrade"
+      wait_for_shortcut_registration_state "$overview_shortcut" false \
+        || fail_test "the disabled upgraded overview registered its action"
+      wait_for_script_state false \
+        || fail_test "the main script was loaded by the upgrade"
+      progress "both packages upgraded to $current_version and retained disabled defaults"
 
       set_enabled true
       load_installed_script
@@ -648,28 +818,6 @@ let
         || fail_test "the current runtime could not open Konsole"
       start_test_kcalc "$app_kcalc_title" \
         || fail_test "the current runtime could not open KDE Calculator"
-
-      run_checked \
-        "the current overview package could not be installed" \
-        kpackagetool6 --type=KWin/Effect --install "$current_overview_archive"
-      overview_package_is_listed \
-        || fail_test "KPackage did not list the installed overview"
-      [[ "$(overview_installed_version)" == "$current_overview_version" ]] \
-        || fail_test "the installed overview metadata is unexpected"
-      current_overview_runtime_digest=$(overview_runtime_digest) \
-        || fail_test "the installed overview runtime could not be hashed"
-      [[ "$current_overview_runtime_digest" == "$current_overview_archive_runtime_digest" ]] \
-        || fail_test "the installed overview runtime did not match its archive"
-      request_kwin_reconfigure
-      wait_for_effect_available_state "$overview_plugin_id" true \
-        || fail_test "KWin did not discover the installed overview after reconfiguration"
-      wait_for_effect_loaded_state "$overview_plugin_id" false \
-        || fail_test "the overview was loaded immediately after installation"
-      wait_for_shortcut_registration_state "$overview_shortcut" false \
-        || fail_test "the disabled overview registered its action before loading"
-      wait_for_script_state true \
-        || fail_test "installing the overview unloaded the current runtime"
-      progress "current overview installed separately and remained disabled"
 
       load_overview_effect
       wait_for_shortcut_registration_state "$overview_shortcut" true \
