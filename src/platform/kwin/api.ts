@@ -42,6 +42,7 @@ export interface KWinWindow {
   readonly decorationPolicyChanged?: KWinSignal<[]>;
   readonly deleted: boolean;
   readonly desktopFileName?: string;
+  readonly desktopFileNameChanged?: KWinSignal<[]>;
   desktops: readonly KWinVirtualDesktop[];
   readonly desktopsChanged?: KWinSignal<[]>;
   readonly desktopWindow: boolean;

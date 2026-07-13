@@ -5,6 +5,12 @@ import {
   type ApplicationColumnWidthOverrides,
 } from "./application-overrides";
 import {
+  decodeApplicationTilingExclusions,
+  EMPTY_APPLICATION_TILING_EXCLUSIONS,
+  sameApplicationTilingExclusions,
+  type ApplicationTilingExclusions,
+} from "./application-tiling-exclusions";
+import {
   decodeColumnWidthPresetPercentages,
   EMPTY_COLUMN_WIDTH_PRESET_PERCENTAGES,
   sameColumnWidthPresetPercentages,
@@ -17,10 +23,11 @@ const MIN_DEFAULT_COLUMN_WIDTH_PERCENT = 10;
 const MAX_DEFAULT_COLUMN_WIDTH_PERCENT = 100;
 const MIN_RESIZE_STEP_PERCENT = 1;
 const MAX_RESIZE_STEP_PERCENT = 50;
-const SETTINGS_FIELD_COUNT = 8;
+const SETTINGS_FIELD_COUNT = 9;
 
 export interface DriftileSettings {
   readonly applicationColumnWidths: ApplicationColumnWidthOverrides;
+  readonly applicationTilingExclusions: ApplicationTilingExclusions;
   readonly borderlessWindows: boolean;
   readonly centerFocusedColumn: boolean;
   readonly columnWidthPresets: ColumnWidthPresetPercentages;
@@ -32,6 +39,7 @@ export interface DriftileSettings {
 
 export const DEFAULT_DRIFTILE_SETTINGS: DriftileSettings = Object.freeze({
   applicationColumnWidths: EMPTY_APPLICATION_COLUMN_WIDTH_OVERRIDES,
+  applicationTilingExclusions: EMPTY_APPLICATION_TILING_EXCLUSIONS,
   borderlessWindows: true,
   centerFocusedColumn: false,
   columnWidthPresets: EMPTY_COLUMN_WIDTH_PRESET_PERCENTAGES,
@@ -53,6 +61,7 @@ export function decodeDriftileSettings(
   if (
     Reflect.ownKeys(candidate).length !== SETTINGS_FIELD_COUNT ||
     !owns(candidate, "applicationColumnWidths") ||
+    !owns(candidate, "applicationTilingExclusions") ||
     !owns(candidate, "borderlessWindows") ||
     !owns(candidate, "centerFocusedColumn") ||
     !owns(candidate, "columnWidthPresets") ||
@@ -67,6 +76,9 @@ export function decodeDriftileSettings(
   const applicationColumnWidths = decodeApplicationColumnWidthOverrides(
     candidate["applicationColumnWidths"],
   );
+  const applicationTilingExclusions = decodeApplicationTilingExclusions(
+    candidate["applicationTilingExclusions"],
+  );
   const borderlessWindows = candidate["borderlessWindows"];
   const centerFocusedColumn = candidate["centerFocusedColumn"];
   const columnWidthPresets = decodeColumnWidthPresetPercentages(
@@ -79,6 +91,7 @@ export function decodeDriftileSettings(
 
   if (
     !applicationColumnWidths ||
+    !applicationTilingExclusions ||
     typeof borderlessWindows !== "boolean" ||
     typeof centerFocusedColumn !== "boolean" ||
     !columnWidthPresets ||
@@ -104,6 +117,7 @@ export function decodeDriftileSettings(
 
   return Object.freeze({
     applicationColumnWidths,
+    applicationTilingExclusions,
     borderlessWindows,
     centerFocusedColumn,
     columnWidthPresets,
@@ -122,6 +136,10 @@ export function sameDriftileSettings(
     sameApplicationColumnWidthOverrides(
       left.applicationColumnWidths,
       right.applicationColumnWidths,
+    ) &&
+    sameApplicationTilingExclusions(
+      left.applicationTilingExclusions,
+      right.applicationTilingExclusions,
     ) &&
     left.borderlessWindows === right.borderlessWindows &&
     left.centerFocusedColumn === right.centerFocusedColumn &&

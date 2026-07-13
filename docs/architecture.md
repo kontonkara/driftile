@@ -89,6 +89,10 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   that map in constant time, falls back to the global default, and remains
   subject to the normal window-constraint clamp. Existing columns do not read
   the map again.
+- Parses at most 128 application exclusions into an exact case-sensitive
+  `desktopFileName` set. Admission uses one constant-time lookup; a live policy
+  replacement scans the observed window set once and schedules only windows
+  whose membership changed.
 - Replaces at most 16 column-width presets atomically without layout work;
   existing columns retain their concrete widths and later preset actions read
   the new cycle.
@@ -134,6 +138,7 @@ RuntimeState
   windowHeightStep: number
   defaultColumnWidth: ColumnWidth
   applicationColumnWidths: Map<desktopFileName, percent>
+  applicationTilingExclusions: Set<desktopFileName>
   pendingDefaultColumnWidth: ColumnWidth | null
   pendingGap: number | null
   pendingWindowSyncs: Set<WindowId>
@@ -151,7 +156,7 @@ RuntimeState
   pointerMoveIntent: { contextKey, layoutSnapshot, participants, finalCursor, sourceOutput, sourceDesktop, externalDrop }
 ```
 
-`LayoutContext` owns columns, per-window automatic weights or fixed/preset heights, viewport offset, and the last applied geometry fingerprint. A managed window owns an optional decoration-independent client restore baseline plus the exact frame observed at capture time. A manually floating window remains observed but has no layout or geometry owner; its detached placement records stable anchors for reinsertion. An automatically floating window has no layout slot, floating anchor, waiting entry, suspension, or retry state. A minimized tiled window remains suspended in its exact logical slot, while a minimized manually floating window keeps its exact detached frame. Reconcile excludes suspended windows until KWin releases geometry authority. Waiting windows have no layout owner. KWin objects never enter core state.
+`LayoutContext` owns columns, per-window automatic weights or fixed/preset heights, viewport offset, and the last applied geometry fingerprint. A managed window owns an optional decoration-independent client restore baseline plus the exact frame observed at capture time. A manually floating window remains observed but has no layout or geometry owner; its detached placement records stable anchors for reinsertion. An automatically floating window has no layout slot, floating anchor, waiting entry, suspension, or retry state. Role-based and configured application exclusions share this ownership path; the bounded configured lookup is constant time. A minimized tiled window remains suspended in its exact logical slot, while a minimized manually floating window keeps its exact detached frame. Reconcile excludes suspended windows until KWin releases geometry authority. Waiting windows have no layout owner. KWin objects never enter core state.
 
 ## Persistence boundary
 
@@ -379,6 +384,9 @@ inspected safely within the codec bound.
   `desktopFileName` lookup, duplicate rejection, global-default fallback,
   constant-time admission lookup, existing-column preservation, and live
   constraint clamps for new singleton columns.
+- Verify bounded application-exclusion decoding, exact case-sensitive lookup,
+  startup ownership, live release and fresh readmission, native-state blockers,
+  persistence omission, and zero writes to excluded frames.
 - Verify width-step bounds, no-write live changes, exact percentage-point actions, hard-bound clamps, and rollback.
 - Verify height-step bounds, no-write live changes, exact stack redistribution, decorated constraints, physical-pixel clamps, and rollback.
 - Verify one-step desktop reordering in both directions, all four default shortcut handlers, boundary and tail no-ops, unavailable or rejected mechanisms, wrong permutations, and the pinned tail. Unit and multi-output integration coverage preserve every output selection; integration and visible-VM coverage preserve live IDs, memberships, focus, and frames.

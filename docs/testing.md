@@ -79,6 +79,11 @@ fallback, existing-column preservation, waiting admission, and live constraint
 clamping for new singleton columns. Nix module checks verify the canonical
 KConfig encoding from typed Home Manager profiles.
 
+Application-exclusion coverage verifies bounded exact-ID decoding, canonical
+Home Manager encoding, atomic nine-setting updates, startup exclusion, live
+release and fresh readmission, native-state blockers, persistence omission,
+constant-time membership checks, and zero writes to excluded frames.
+
 Pointer coverage includes strict visible-target planning, midpoint selection,
 same-stack height retention, cross-column automatic height, destination-width
 inheritance, and exact same-context rollback. Cross-output cases cover both
@@ -135,6 +140,13 @@ The script builds `nixosConfigurations.driftile-vm` through `nixos-rebuild build
 The primary VM also applies a 60% Firefox rule, confirms that changing it to
 80% leaves the existing column untouched, and verifies the wider rule on a new
 Firefox window.
+
+It then combines an 80% Firefox rule with an exact tiling exclusion. The
+excluded window and three-column baseline remain unchanged under tiling
+commands; clearing the exclusion admits Firefox at the configured width; live
+re-exclusion restores the exact sibling layout while preserving Firefox's tiled
+frame. Unit tests separately verify that exclusion transitions issue no frame
+writes to the excluded window.
 
 It also toggles focused-column centering live against the three Konsole
 columns. The disabled path preserves the exact minimal-reveal frames, while

@@ -3,6 +3,11 @@ import {
   sameApplicationColumnWidthOverrides,
   type ApplicationColumnWidthOverrides,
 } from "./application-overrides";
+import {
+  EMPTY_APPLICATION_TILING_EXCLUSIONS,
+  sameApplicationTilingExclusions,
+  type ApplicationTilingExclusions,
+} from "./application-tiling-exclusions";
 import { COLUMN_WIDTH_PRESET_LIMITS } from "./column-width-presets";
 import {
   DEFAULT_WINDOW_HEIGHT_PRESETS,
@@ -573,6 +578,7 @@ interface LayoutHydrationCandidate {
 
 export interface RuntimeControllerOptions {
   readonly applicationColumnWidths?: ApplicationColumnWidthOverrides;
+  readonly applicationTilingExclusions?: ApplicationTilingExclusions;
   readonly borderlessWindows?: boolean;
   readonly centerFocusedColumn?: boolean;
   readonly clientAreaOption: number;
@@ -593,6 +599,7 @@ export interface RuntimeControllerOptions {
 
 export class RuntimeController {
   private applicationColumnWidths: ApplicationColumnWidthOverrides;
+  private applicationTilingExclusions: ApplicationTilingExclusions;
   private readonly automaticFloatingWindows = new Set<WindowId>();
   private readonly borderlessSettlementEnabled: boolean;
   private readonly borderlessSettlementTokens = new Map<WindowId, object>();
@@ -757,6 +764,9 @@ export class RuntimeController {
     this.applicationColumnWidths =
       options.applicationColumnWidths ??
       EMPTY_APPLICATION_COLUMN_WIDTH_OVERRIDES;
+    this.applicationTilingExclusions =
+      options.applicationTilingExclusions ??
+      EMPTY_APPLICATION_TILING_EXCLUSIONS;
     this.borderlessSettlementEnabled = options.scheduleResume !== undefined;
     this.borderlessWindows = options.borderlessWindows ?? false;
     this.centerFocusedColumn =
@@ -1309,6 +1319,57 @@ export class RuntimeController {
     }
 
     if (this.pendingAdmissionContexts.size > 0) {
+      this.scheduleDeferredRuntimeWork();
+    }
+
+    return true;
+  }
+
+  setApplicationTilingExclusions(
+    exclusions: ApplicationTilingExclusions,
+  ): boolean {
+    const previous = this.applicationTilingExclusions;
+
+    if (sameApplicationTilingExclusions(previous, exclusions)) {
+      return false;
+    }
+
+    this.applicationTilingExclusions = exclusions;
+
+    if (!this.started) {
+      return true;
+    }
+
+    let membershipChanged = false;
+
+    for (const observed of this.observer.snapshot()) {
+      const source = this.observer.source(observed.id);
+
+      if (
+        !source ||
+        !this.applicationTilingExclusionMembershipChanged(
+          source,
+          previous,
+          exclusions,
+        )
+      ) {
+        continue;
+      }
+
+      const id = windowId(observed.id);
+      this.cancelPointerMoveForWindowChange(id);
+      this.pendingWindowSyncs.add(id);
+      membershipChanged = true;
+
+      if (
+        this.windowTransferOperation?.stateGuardIds.has(id) &&
+        !this.windowTransferOperation.movingIds.has(id)
+      ) {
+        this.windowTransferOperation.memberStateInvalidated = true;
+      }
+    }
+
+    if (membershipChanged && !this.windowTransferOperation) {
       this.scheduleDeferredRuntimeWork();
     }
 
@@ -16847,6 +16908,10 @@ export class RuntimeController {
       return false;
     }
 
+    if (this.applicationTilingExclusionApplies(source)) {
+      return true;
+    }
+
     const geometryBlocked = hasGeometryAuthorityBlocker(source);
     let resizeable: boolean;
 
@@ -16876,6 +16941,59 @@ export class RuntimeController {
     }
 
     return constraintState === FIXED_SIZE_CONSTRAINTS && !geometryBlocked;
+  }
+
+  private applicationTilingExclusionApplies(
+    source: KWinWindow,
+    exclusions = this.applicationTilingExclusions,
+  ): boolean {
+    if (!source.normalWindow || exclusions.canonicalEntries.length === 0) {
+      return false;
+    }
+
+    const desktopFileName = this.applicationDesktopFileName(source);
+
+    return desktopFileName !== null && exclusions.excludes(desktopFileName);
+  }
+
+  private applicationTilingExclusionMembershipChanged(
+    source: KWinWindow,
+    previous: ApplicationTilingExclusions,
+    next: ApplicationTilingExclusions,
+  ): boolean {
+    if (
+      !source.normalWindow ||
+      (previous.canonicalEntries.length === 0 &&
+        next.canonicalEntries.length === 0)
+    ) {
+      return false;
+    }
+
+    const desktopFileName = this.applicationDesktopFileName(source);
+
+    if (desktopFileName === null) {
+      return false;
+    }
+
+    return (
+      (previous.canonicalEntries.length > 0 &&
+        previous.excludes(desktopFileName)) !==
+      (next.canonicalEntries.length > 0 && next.excludes(desktopFileName))
+    );
+  }
+
+  private applicationDesktopFileName(source: KWinWindow): string | null {
+    let desktopFileName: unknown;
+
+    try {
+      desktopFileName = source.desktopFileName;
+    } catch {
+      return null;
+    }
+
+    return typeof desktopFileName === "string" && desktopFileName.length > 0
+      ? desktopFileName
+      : null;
   }
 
   private retainsFullscreenRequestGeometry(source: KWinWindow): boolean {

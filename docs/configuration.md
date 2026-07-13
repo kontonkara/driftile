@@ -2,7 +2,7 @@
 
 Open **System Settings > Window Management > KWin Scripts** and configure Driftile.
 
-Driftile validates all eight settings as one snapshot. Applying an invalid value
+Driftile validates all nine settings as one snapshot. Applying an invalid value
 through an external configuration tool rejects the entire update and preserves
 the active settings; valid changes apply without reloading the extension.
 
@@ -10,12 +10,13 @@ the active settings; valid changes apply without reloading the extension.
 
 `programs.driftile.settings` is `null` by default, so Home Manager writes no
 Driftile setting. A non-null value is one complete typed profile: omitted fields
-take the defaults documented below, and Home Manager writes all eight values.
+take the defaults documented below, and Home Manager writes all nine values.
 This profile works with `programs.driftile.enable = false` when the package is
 installed system-wide.
 
-The activation writes only `ApplicationColumnWidths`, `BorderlessWindows`,
-`CenterFocusedColumn`, `Gap`, `DefaultColumnWidthPercent`, `ColumnWidthPresets`,
+The activation writes only `ApplicationColumnWidths`,
+`ApplicationTilingExclusions`, `BorderlessWindows`, `CenterFocusedColumn`,
+`Gap`, `DefaultColumnWidthPercent`, `ColumnWidthPresets`,
 `ColumnWidthStepPercent`, and `WindowHeightStepPercent` in Driftile's `kwinrc`
 group. It does not replace the file or manage shortcuts. A running KWin session
 is asked to reconfigure on a best-effort basis; otherwise the values apply on
@@ -30,13 +31,18 @@ programs.driftile.settings.applicationColumnWidths = {
   "org.mozilla.firefox" = 80;
 };
 
+programs.driftile.settings.applicationTilingExclusions = [
+  "org.kde.spectacle"
+];
+
 programs.driftile.settings.centerFocusedColumn = false;
 programs.driftile.settings.columnWidthPresets = [ 20 50 80 ];
 ```
 
-Widths must be `10`–`100`. IDs are exact, may not contain `=` or control
-characters, and are limited to 255 UTF-8 bytes. A profile may contain at most
-128 overrides.
+Widths must be `10`–`100`. Width-override IDs are exact and may not contain `=`.
+Exclusion IDs may contain `=` because the whole line is the ID. Both reject
+control characters, are limited to 255 UTF-8 bytes, and accept at most 128
+entries per policy.
 
 Changing `settings` back to `null` or removing the Home Manager module import
 stops future writes but leaves the last values in `kwinrc`. Change them through
@@ -86,6 +92,20 @@ Matching is case-sensitive. Windows without a matching usable ID keep the
 global default. Updating the rules does not resize existing columns; later new
 columns and fresh singleton admissions use the new value, clamped to the live
 window constraints and physical-pixel grid.
+
+## Application tiling exclusions
+
+**Applications excluded from tiling** keeps matching normal application
+windows outside layout ownership by exact KWin `desktopFileName`. Enter one ID
+per line. Blank lines are ignored; matching is case-sensitive; duplicates,
+control characters, and more than 128 entries reject the complete settings
+update. Each ID is limited to 255 UTF-8 bytes.
+
+Adding an exclusion live releases matching tiled, waiting, or manually floating
+windows without writing their frames. Removing it admits matching eligible
+windows as fresh singleton columns once KWin releases fullscreen, maximize,
+native-tile, move, or resize authority. Exclusions take priority over
+application-specific initial widths and are not stored in layout persistence.
 
 ## Column width step
 

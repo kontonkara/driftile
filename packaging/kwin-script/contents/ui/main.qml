@@ -671,6 +671,7 @@ QtObject {
     function readSettings() {
         return {
             applicationColumnWidths: KWin.readConfig("ApplicationColumnWidths", ""),
+            applicationTilingExclusions: KWin.readConfig("ApplicationTilingExclusions", ""),
             borderlessWindows: KWin.readConfig("BorderlessWindows", true),
             centerFocusedColumn: KWin.readConfig("CenterFocusedColumn", false),
             columnWidthPresets: KWin.readConfig("ColumnWidthPresets", ""),

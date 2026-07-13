@@ -41,7 +41,7 @@ export interface WindowObserverEvents {
 }
 
 interface WindowEntry {
-  readonly handleAutomaticFloatingChanged: () => void;
+  readonly handleClassificationChanged: () => void;
   readonly handleClientGeometryChanged: (oldGeometry: KWinRect) => void;
   readonly handleConstraintChanged: () => void;
   readonly handleDecorationPolicyChanged: () => void;
@@ -222,7 +222,7 @@ export class WindowObserver {
       refreshConstraint();
       refreshState();
     };
-    const refreshAutomaticFloating = (): void => {
+    const refreshClassification = (): void => {
       this.refresh(id, window, "classification", true);
     };
     let interactiveMoveActive = false;
@@ -230,7 +230,7 @@ export class WindowObserver {
     let maximizeRequested = window.maximizeMode !== 0;
     let tileRequested = window.tile !== null;
     const entry: WindowEntry = {
-      handleAutomaticFloatingChanged: refreshAutomaticFloating,
+      handleClassificationChanged: refreshClassification,
       handleClientGeometryChanged: refreshClientGeometry,
       handleConstraintChanged: refreshConstraint,
       handleDecorationPolicyChanged: refreshDecorationPolicy,
@@ -349,6 +349,7 @@ export class WindowObserver {
 
     this.windows.set(id, entry);
     window.clientGeometryChanged?.connect(entry.handleClientGeometryChanged);
+    window.desktopFileNameChanged?.connect(entry.handleClassificationChanged);
     window.desktopsChanged?.connect(entry.handleDesktopsChanged);
     window.frameGeometryChanged?.connect(entry.handleFrameGeometryChanged);
     window.fullScreenChanged?.connect(entry.handleFullScreenChanged);
@@ -362,12 +363,12 @@ export class WindowObserver {
     window.maximizeableChanged?.connect(entry.handleConstraintChanged);
     window.maximizedChanged?.connect(entry.handleMaximizedChanged);
     window.minimizedChanged?.connect(entry.handleStateChanged);
-    window.modalChanged?.connect(entry.handleAutomaticFloatingChanged);
+    window.modalChanged?.connect(entry.handleClassificationChanged);
     window.moveResizedChanged?.connect(entry.handleInteractiveStateChanged);
     window.outputChanged?.connect(entry.handleOutputChanged);
     window.requestedTileChanged?.connect(entry.handleRequestedTileChanged);
     window.tileChanged?.connect(entry.handleTileChanged);
-    window.transientChanged?.connect(entry.handleAutomaticFloatingChanged);
+    window.transientChanged?.connect(entry.handleClassificationChanged);
     this.events.tracked?.(id);
     window.decorationChanged?.connect(entry.handleDecorationPolicyChanged);
     window.decorationPolicyChanged?.connect(
@@ -524,6 +525,9 @@ function disconnectWindowSignals(entry: WindowEntry): void {
   entry.source.clientGeometryChanged?.disconnect(
     entry.handleClientGeometryChanged,
   );
+  entry.source.desktopFileNameChanged?.disconnect(
+    entry.handleClassificationChanged,
+  );
   entry.source.desktopsChanged?.disconnect(entry.handleDesktopsChanged);
   entry.source.frameGeometryChanged?.disconnect(
     entry.handleFrameGeometryChanged,
@@ -541,7 +545,7 @@ function disconnectWindowSignals(entry: WindowEntry): void {
   entry.source.maximizeableChanged?.disconnect(entry.handleConstraintChanged);
   entry.source.maximizedChanged?.disconnect(entry.handleMaximizedChanged);
   entry.source.minimizedChanged?.disconnect(entry.handleStateChanged);
-  entry.source.modalChanged?.disconnect(entry.handleAutomaticFloatingChanged);
+  entry.source.modalChanged?.disconnect(entry.handleClassificationChanged);
   entry.source.moveResizedChanged?.disconnect(
     entry.handleInteractiveStateChanged,
   );
@@ -550,9 +554,7 @@ function disconnectWindowSignals(entry: WindowEntry): void {
     entry.handleRequestedTileChanged,
   );
   entry.source.tileChanged?.disconnect(entry.handleTileChanged);
-  entry.source.transientChanged?.disconnect(
-    entry.handleAutomaticFloatingChanged,
-  );
+  entry.source.transientChanged?.disconnect(entry.handleClassificationChanged);
 }
 
 function constraintFingerprint(window: KWinWindow): string {

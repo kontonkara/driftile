@@ -25,6 +25,9 @@ The ownership rule is strict:
 - Up to 128 application-specific 10%–100% initial singleton widths, matched by
   exact KWin `desktopFileName` with global-default fallback and live constraint
   clamping.
+- Up to 128 exact KWin `desktopFileName` exclusions that keep matching
+  application windows outside tiling and apply live without taking geometry
+  ownership.
 - Up to 16 configurable, strictly increasing 10%–100% column-width presets;
   an empty configuration retains the built-in exact thirds.
 - Optional best-effort centering for successful left, right, first, and last
@@ -49,8 +52,7 @@ The ownership rule is strict:
   because KWin 6.7 exposes no public script axis API.
 - Cross-desktop pointer rearrangement and visual drop feedback.
 - Tabbed columns and matching pointer navigation.
-- Application-specific policies beyond initial column widths and an expanded
-  settings UI.
+- Additional application-specific policies and an expanded settings UI.
 - Optional visual transitions, layout indicators, and concise diagnostics.
 - An optional Driftile layout overview that remains removable and preserves
   Plasma's built-in Overview as the compatible fallback.
@@ -133,6 +135,11 @@ Driftile must integrate with, not duplicate:
 - Directional floating focus chooses the nearest positive center distance on the requested axis; first and last choose frame-x extremes. Minimized windows are excluded, and no action wraps or writes geometry.
 - KWin alone owns minimization. Driftile registers no minimize action or default shortcut, keeps a minimized tiled window in its exact logical slot, and preserves a minimized manually floating window's exact detached frame for restoration.
 - An automatically layout-excluded window has no layout slot, manual-floating anchor, waiting entry, suspension, or retry state. Commands requiring layout ownership are no-ops; relation-free desktop transfer remains available.
+- A configured application exclusion uses the same automatic-exclusion state,
+  matches the exact case-sensitive `desktopFileName`, takes priority over an
+  initial-width rule, and never writes the excluded window's frame. Removing
+  the rule performs fresh admission rather than restoring a former slot or
+  floating anchor.
 - A managed window that becomes modal or transient leaves its layout without a geometry write or stale baseline restore. It may be admitted again after the role clears.
 - Unrelated window order, widths, and viewport offsets remain stable.
 - A changed context never restores an original frame captured under stale output geometry.

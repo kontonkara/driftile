@@ -44,5 +44,9 @@
       <label>Initial column widths by desktop-file ID</label>
       <default></default>
     </entry>
+    <entry name="ApplicationTilingExclusions" type="String">
+      <label>Applications excluded from tiling by desktop-file ID</label>
+      <default></default>
+    </entry>
   </group>
 </kcfg>

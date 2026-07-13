@@ -196,8 +196,23 @@ Release criteria (met):
 
 ## 1.2.0 (in development)
 
-Version 1.2.0 is in development. Its scope and release criteria will be
-documented as behavior is implemented and verified.
+The current bounded slice adds exact application tiling exclusions. Up to 128
+case-sensitive KWin `desktopFileName` values may be configured through KConfig
+or Home Manager. Matching windows use the existing automatic-exclusion
+ownership path, including live release and fresh readmission, without a new
+layout state or persistence format.
+
+Release criteria:
+
+- All nine settings validate and apply atomically with a blank exclusion list
+  preserving 1.1 behavior.
+- Startup and live policy changes never write an excluded window's frame and
+  reflow only affected tiled contexts.
+- Removing a rule waits for KWin-owned native-state blockers, then performs
+  fresh singleton admission without restoring an old slot or floating anchor.
+- Unit, Home Manager, and NixOS module checks cover the policy; the full
+  integration matrix guards Wayland, XWayland, and native X11 regressions; a
+  visible real-application check exercises live policy changes.
 
 ## Post-v1
 

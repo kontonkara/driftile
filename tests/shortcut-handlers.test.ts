@@ -695,6 +695,36 @@ describe("KWin shortcut handlers", () => {
     );
   });
 
+  it("exposes exact application tiling exclusions as a bounded list", () => {
+    const exclusionsEntry = configuration.match(
+      /<entry name="ApplicationTilingExclusions" type="String">([\s\S]*?)<\/entry>/,
+    )?.[1];
+    const exclusionsLabel = configurationUi.match(
+      /<widget class="QLabel" name="applicationTilingExclusionsLabel">([\s\S]*?)<\/widget>/,
+    )?.[1];
+    const exclusionsWidget = configurationUi.match(
+      /<widget class="QPlainTextEdit" name="kcfg_ApplicationTilingExclusions">([\s\S]*?)<\/widget>/,
+    )?.[1];
+
+    expect(exclusionsEntry).toContain(
+      "<label>Applications excluded from tiling by desktop-file ID</label>",
+    );
+    expect(exclusionsEntry).toContain("<default></default>");
+    expect(exclusionsLabel).toContain(
+      "<string>Applications excluded from tiling:</string>",
+    );
+    expect(exclusionsLabel).toContain(
+      "<cstring>kcfg_ApplicationTilingExclusions</cstring>",
+    );
+    expect(exclusionsWidget).toContain(
+      "Enter one exact, case-sensitive desktop-file ID per line.",
+    );
+    expect(exclusionsWidget).toContain("Blank lines are ignored.");
+    expect(qml).toContain(
+      'applicationTilingExclusions: KWin.readConfig("ApplicationTilingExclusions", "")',
+    );
+  });
+
   it("exposes the column width step as a live bounded user setting", () => {
     const stepEntry = configuration.match(
       /<entry name="ColumnWidthStepPercent" type="Int">([\s\S]*?)<\/entry>/,

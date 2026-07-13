@@ -48,6 +48,8 @@ function createWindow(overrides: Partial<KWinWindow> = {}): KWinWindow {
     decorationChanged: new Signal<[]>(),
     decorationPolicyChanged: new Signal<[]>(),
     deleted: false,
+    desktopFileName: "org.example.App",
+    desktopFileNameChanged: new Signal<[]>(),
     desktops: [desktop],
     desktopsChanged: new Signal<[]>(),
     desktopWindow: false,
@@ -375,13 +377,14 @@ describe("WindowObserver", () => {
     expect(changed).toEqual([]);
   });
 
-  it("publishes constraint, transient, and modal ownership changes", () => {
+  it("publishes constraint and ownership classification changes", () => {
     const source = createWindow();
     const maximizeableChanged = source.maximizeableChanged as Signal<
       [maximizeable: boolean]
     >;
     const transientChanged = source.transientChanged as Signal<[]>;
     const modalChanged = source.modalChanged as Signal<[]>;
+    const desktopFileNameChanged = source.desktopFileNameChanged as Signal<[]>;
     const changed: string[] = [];
     const observer = new WindowObserver(createWorkspace([source]), {
       changed: (windowId, cause) => changed.push(`${windowId}:${cause}`),
@@ -403,9 +406,15 @@ describe("WindowObserver", () => {
       value: true,
     });
     modalChanged.emit();
+    Object.defineProperty(source, "desktopFileName", {
+      configurable: true,
+      value: "org.example.Reclassified",
+    });
+    desktopFileNameChanged.emit();
 
     expect(changed).toEqual([
       "window-1:constraints",
+      "window-1:classification",
       "window-1:classification",
       "window-1:classification",
     ]);
@@ -1024,6 +1033,8 @@ describe("WindowObserver", () => {
     const removedClientGeometry = removedSource.clientGeometryChanged as Signal<
       [oldGeometry: KWinRect]
     >;
+    const removedDesktopFileName =
+      removedSource.desktopFileNameChanged as Signal<[]>;
     const removedDesktops = removedSource.desktopsChanged as Signal<[]>;
     const removedFrameGeometry = removedSource.frameGeometryChanged as Signal<
       [oldGeometry: KWinRect]
@@ -1038,6 +1049,8 @@ describe("WindowObserver", () => {
     const stoppedClientGeometry = stoppedSource.clientGeometryChanged as Signal<
       [oldGeometry: KWinRect]
     >;
+    const stoppedDesktopFileName =
+      stoppedSource.desktopFileNameChanged as Signal<[]>;
     const stoppedDecoration = stoppedSource.decorationChanged as Signal<[]>;
     const stoppedDesktops = stoppedSource.desktopsChanged as Signal<[]>;
     const stoppedFrameGeometry = stoppedSource.frameGeometryChanged as Signal<
@@ -1071,6 +1084,7 @@ describe("WindowObserver", () => {
     observer.start();
     expect([
       removedClientGeometry.size,
+      removedDesktopFileName.size,
       removedDesktops.size,
       removedFrameGeometry.size,
       removedFullScreen.size,
@@ -1078,6 +1092,7 @@ describe("WindowObserver", () => {
       removedMoveResize.size,
       removedOutput.size,
       stoppedClientGeometry.size,
+      stoppedDesktopFileName.size,
       stoppedDecoration.size,
       stoppedDesktops.size,
       stoppedFrameGeometry.size,
@@ -1088,22 +1103,24 @@ describe("WindowObserver", () => {
       stoppedModal.size,
       stoppedMaximizeable.size,
       stoppedTransient.size,
-    ]).toEqual(Array.from({ length: 18 }, () => 1));
+    ]).toEqual(Array.from({ length: 20 }, () => 1));
 
     windowRemoved.emit(removedSource);
     expect([
       removedClientGeometry.size,
+      removedDesktopFileName.size,
       removedDesktops.size,
       removedFrameGeometry.size,
       removedFullScreen.size,
       removedMoveResizeStarted.size,
       removedMoveResize.size,
       removedOutput.size,
-    ]).toEqual([0, 0, 0, 0, 0, 0, 0]);
+    ]).toEqual([0, 0, 0, 0, 0, 0, 0, 0]);
 
     observer.stop();
     expect([
       stoppedClientGeometry.size,
+      stoppedDesktopFileName.size,
       stoppedDecoration.size,
       stoppedDesktops.size,
       stoppedFrameGeometry.size,
@@ -1114,9 +1131,10 @@ describe("WindowObserver", () => {
       stoppedModal.size,
       stoppedMaximizeable.size,
       stoppedTransient.size,
-    ]).toEqual(Array.from({ length: 11 }, () => 0));
+    ]).toEqual(Array.from({ length: 12 }, () => 0));
 
     removedClientGeometry.emit({ ...removedSource.clientGeometry });
+    removedDesktopFileName.emit();
     removedDesktops.emit();
     removedFrameGeometry.emit({ ...removedSource.frameGeometry });
     removedFullScreen.emit();
@@ -1124,6 +1142,7 @@ describe("WindowObserver", () => {
     removedMoveResize.emit();
     removedOutput.emit();
     stoppedClientGeometry.emit({ ...stoppedSource.clientGeometry });
+    stoppedDesktopFileName.emit();
     stoppedDecoration.emit();
     stoppedDesktops.emit();
     stoppedFrameGeometry.emit({ ...stoppedSource.frameGeometry });

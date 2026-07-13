@@ -59,14 +59,15 @@ let
     value != ""
     && builtins.stringLength value <= 255
     && value == lib.strings.trim value
-    && !lib.hasInfix "=" value
     && !hasControlCharacter value;
+  validColumnWidthDesktopFileName = value:
+    validDesktopFileName value && !lib.hasInfix "=" value;
   applicationColumnWidthType = lib.types.addCheck
     (lib.types.attrsOf (lib.types.ints.between 10 100))
     (
       widths:
       builtins.length (builtins.attrNames widths) <= 128
-      && lib.all validDesktopFileName (builtins.attrNames widths)
+      && lib.all validColumnWidthDesktopFileName (builtins.attrNames widths)
     );
   renderApplicationColumnWidths = widths:
     lib.concatStringsSep "\n" (
@@ -74,6 +75,18 @@ let
         builtins.sort builtins.lessThan (builtins.attrNames widths)
       )
     );
+  applicationTilingExclusionType = lib.types.addCheck
+    (lib.types.listOf lib.types.str)
+    (
+      exclusions:
+      builtins.length exclusions <= 128
+      && builtins.length (lib.unique exclusions) == builtins.length exclusions
+      && lib.all (
+        exclusion: builtins.isString exclusion && validDesktopFileName exclusion
+      ) exclusions
+    );
+  renderApplicationTilingExclusions = exclusions:
+    lib.concatStringsSep "\n" (builtins.sort builtins.lessThan exclusions);
   strictlyIncreasing = values:
     builtins.length values < 2
     || (
@@ -118,6 +131,12 @@ in
               type = applicationColumnWidthType;
               default = { };
               description = "Initial column widths keyed by exact desktop-file ID.";
+            };
+
+            applicationTilingExclusions = lib.mkOption {
+              type = applicationTilingExclusionType;
+              default = [ ];
+              description = "Exact desktop-file IDs excluded from tiling.";
             };
 
             borderlessWindows = lib.mkOption {
@@ -203,6 +222,7 @@ in
       lib.mkIf (cfg.settings != null) {
         qt.kde.settings.kwinrc."Script-${pluginId}" = {
           ApplicationColumnWidths = renderApplicationColumnWidths cfg.settings.applicationColumnWidths;
+          ApplicationTilingExclusions = renderApplicationTilingExclusions cfg.settings.applicationTilingExclusions;
           BorderlessWindows = cfg.settings.borderlessWindows;
           CenterFocusedColumn = cfg.settings.centerFocusedColumn;
           ColumnWidthPresets = renderColumnWidthPresets cfg.settings.columnWidthPresets;

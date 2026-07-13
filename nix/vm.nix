@@ -1218,6 +1218,25 @@ let
           >/dev/null
       }
 
+      set_application_tiling_exclusions() {
+        local value=$1
+
+        ${pkgs.kdePackages.kconfig}/bin/kwriteconfig6 \
+          --file "$HOME/.config/kwinrc" \
+          --group "Script-${pluginId}" \
+          --key ApplicationTilingExclusions \
+          --type string \
+          "$value" \
+          || return 1
+
+        busctl --user call \
+          org.kde.KWin \
+          /KWin \
+          org.kde.KWin \
+          reconfigure \
+          >/dev/null
+      }
+
       set_column_width_presets() {
         local value=$1
 
@@ -3983,6 +4002,7 @@ let
 
       cleanup_temporary_windows() {
         set_application_column_widths "" >/dev/null 2>&1 || true
+        set_application_tiling_exclusions "" >/dev/null 2>&1 || true
         restore_layout_configuration >/dev/null 2>&1 || true
         cleanup_fourth_window || true
         cleanup_fifth_window
@@ -8682,6 +8702,188 @@ let
         return 1
       }
 
+      verify_application_tiling_exclusion() {
+        local admitted_frame=""
+        local admitted_width=0
+        local attempt
+        local baseline_first
+        local baseline_second
+        local baseline_third
+        local cleanup_verified=true
+        local configuration_barrier=false
+        local current_frame=""
+        local desktop_file_name="firefox"
+        local excluded_frame=""
+        local expected_width
+        local firefox_pid=""
+        local firefox_profile=""
+        local firefox_title="Driftile VM Firefox"
+        local output_frame
+        local output_width
+        local previous_frame=""
+        local stable_samples=0
+        local verified=false
+
+        if ! activate_window "$title_c" \
+          || ! wait_for_active "$title_c" \
+          || ! capture_stable_frames; then
+          record_focus_state "application tiling exclusion baseline failed"
+          return 1
+        fi
+        baseline_first=$stable_first_frame
+        baseline_second=$stable_second_frame
+        baseline_third=$stable_third_frame
+        output_frame=$(single_enabled_output_frame 2>/dev/null || true)
+
+        if ! frame_is_valid "$output_frame"; then
+          record_focus_state "application tiling exclusion output frame failed"
+          return 1
+        fi
+        IFS=, read -r _ _ output_width _ <<< "$output_frame"
+        expected_width=$(((80 * (output_width - 16) + 50) / 100 - 16))
+
+        if set_application_column_widths "$desktop_file_name=80" \
+          && set_application_tiling_exclusions "$desktop_file_name" \
+          && set_gap 24; then
+          for ((attempt = 0; attempt < 100; attempt += 1)); do
+            if capture_stable_frames \
+              && { [[ "$stable_first_frame" != "$baseline_first" ]] \
+                || [[ "$stable_second_frame" != "$baseline_second" ]] \
+                || [[ "$stable_third_frame" != "$baseline_third" ]]; }; then
+              configuration_barrier=true
+              break
+            fi
+
+            sleep 0.1
+          done
+        fi
+
+        if [[ "$configuration_barrier" == true ]] \
+          && set_gap 16 \
+          && wait_for_frames \
+            "$baseline_first" \
+            "$baseline_second" \
+            "$baseline_third" \
+          && start_firefox_window \
+            firefox_pid \
+            firefox_title \
+            firefox_profile \
+            "$firefox_title" \
+          && [[ "$(window_desktop_file_contains "$firefox_title" 2>/dev/null || true)" \
+            == "$desktop_file_name" ]] \
+          && activate_window "$firefox_title" \
+          && wait_for_active "$firefox_title" \
+          && excluded_frame=$(capture_stable_window_frame_contains "$firefox_title") \
+          && frame_is_valid "$excluded_frame" \
+          && wait_for_frames \
+            "$baseline_first" \
+            "$baseline_second" \
+            "$baseline_third" \
+          && invoke_shortcut "driftile_increase_column_width" \
+          && invoke_shortcut "driftile_move_column_left" \
+          && wait_for_window_frame_contains "$firefox_title" "$excluded_frame" \
+          && wait_for_frames \
+            "$baseline_first" \
+            "$baseline_second" \
+            "$baseline_third" \
+          && set_application_tiling_exclusions ""; then
+          for ((attempt = 0; attempt < 100; attempt += 1)); do
+            current_frame=$(window_frame_contains "$firefox_title" 2>/dev/null || true)
+
+            if frame_is_valid "$current_frame" \
+              && [[ "$current_frame" != "$excluded_frame" ]]; then
+              IFS=, read -r _ _ admitted_width _ <<< "$current_frame"
+
+              if ((admitted_width >= expected_width - 2 \
+                && admitted_width <= expected_width + 2)); then
+                if [[ "$current_frame" == "$previous_frame" ]]; then
+                  stable_samples=$((stable_samples + 1))
+                else
+                  stable_samples=1
+                fi
+
+                if ((stable_samples >= 2)); then
+                  admitted_frame=$current_frame
+                  break
+                fi
+              else
+                stable_samples=0
+              fi
+            else
+              stable_samples=0
+            fi
+
+            previous_frame=$current_frame
+            sleep 0.1
+          done
+
+          if frame_is_valid "$admitted_frame" \
+            && set_application_tiling_exclusions "$desktop_file_name" \
+            && wait_for_frames \
+              "$baseline_first" \
+              "$baseline_second" \
+              "$baseline_third" \
+            && wait_for_window_frame_contains "$firefox_title" "$admitted_frame" \
+            && activate_window "$firefox_title" \
+            && wait_for_active "$firefox_title" \
+            && invoke_shortcut "driftile_increase_column_width" \
+            && invoke_shortcut "driftile_move_column_left" \
+            && wait_for_window_frame_contains "$firefox_title" "$admitted_frame" \
+            && wait_for_frames \
+              "$baseline_first" \
+              "$baseline_second" \
+              "$baseline_third"; then
+            verified=true
+          fi
+        fi
+
+        if [[ -n "$firefox_pid" ]]; then
+          terminate_process "$firefox_pid"
+
+          if ! wait_for_window_gone_contains "$firefox_title"; then
+            cleanup_verified=false
+          fi
+        fi
+        if [[ -n "$firefox_profile" ]] \
+          && ! rm -rf -- "$firefox_profile"; then
+          cleanup_verified=false
+        fi
+        if ! set_application_tiling_exclusions ""; then
+          cleanup_verified=false
+        fi
+        if ! set_application_column_widths ""; then
+          cleanup_verified=false
+        fi
+        if ! set_gap 16; then
+          cleanup_verified=false
+        fi
+        if ! activate_window "$title_c" \
+          || ! wait_for_active "$title_c" \
+          || ! wait_for_frames \
+            "$baseline_first" \
+            "$baseline_second" \
+            "$baseline_third"; then
+          cleanup_verified=false
+        fi
+
+        if [[ "$verified" == true && "$cleanup_verified" == true ]]; then
+          record_focus_state "application tiling exclusion verification passed"
+          return 0
+        fi
+
+        record_focus_state "application tiling exclusion verification failed"
+        {
+          printf 'desktop-file ID: %s\n' "$desktop_file_name"
+          printf 'excluded Firefox frame: %s\n' "$excluded_frame"
+          printf 'admitted Firefox frame: %s\n' "$admitted_frame"
+          printf 'expected admitted width: %s\n' "$expected_width"
+          printf 'configuration barrier: %s\n' "$configuration_barrier"
+          printf 'verified: %s\n' "$verified"
+          printf 'cleanup verified: %s\n' "$cleanup_verified"
+        } >> /tmp/shared/driftile-focus-diagnostics
+        return 1
+      }
+
       loaded=false
 
       for _ in $(seq 1 200); do
@@ -8774,6 +8976,7 @@ let
         && verify_physical_maximize_shortcut \
         && verify_real_applications \
         && verify_application_column_width_override \
+        && verify_application_tiling_exclusion \
         && verify_physical_pointer_reinsertion; then
         focus_verified=true
       fi
@@ -9612,6 +9815,7 @@ let
     ${pluginId}Enabled=true
 
     [Script-${pluginId}]
+    ApplicationTilingExclusions=
     CenterFocusedColumn=false
     ColumnWidthStepPercent=10
     DefaultColumnWidthPercent=${if driftileVmTwoHead then "100" else "50"}

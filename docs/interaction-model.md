@@ -93,6 +93,12 @@ Driftile extracts it into a singleton column immediately to the right. Leaving
 the native state keeps that column separate. A singleton or floating window
 keeps its existing layout ownership.
 
+An application can also be excluded by exact `desktopFileName` in Driftile's
+settings. A match uses the same automatic-exclusion ownership as dialogs and
+other KWin-owned roles: tiling commands are no-ops and Driftile does not write
+its frame. Clearing the rule admits an otherwise eligible window as a fresh
+singleton after native-state and interactive-move blockers settle.
+
 Plasma exposes one global virtual-desktop list, and KWin owns its reorder
 mechanism. Driftile can request a one-position move of the desktop currently
 selected on the active output. It never wraps; desktop IDs, per-output

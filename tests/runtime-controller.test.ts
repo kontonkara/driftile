@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { decodeApplicationColumnWidthOverrides } from "../src/application-overrides";
+import { decodeApplicationTilingExclusions } from "../src/application-tiling-exclusions";
 import {
   columnId,
   desktopId,
@@ -86,6 +87,7 @@ class ManualScheduler {
 
 interface TrackedWindow {
   readonly decorationPolicyChanged: Signal<[]>;
+  readonly desktopFileNameChanged: Signal<[]>;
   readonly desktopWriteCount: number;
   readonly desktopsChanged: Signal<[]>;
   readonly frameGeometryChanged: Signal<
@@ -179,6 +181,7 @@ function createTrackedWindow(
   overrides: Partial<KWinWindow> = {},
 ): TrackedWindow {
   const decorationPolicyChanged = new Signal<[]>();
+  const desktopFileNameChanged = new Signal<[]>();
   const desktopsChanged = new Signal<[]>();
   const frameGeometryChanged = new Signal<
     [oldGeometry: KWinWindow["frameGeometry"]]
@@ -218,6 +221,7 @@ function createTrackedWindow(
     clientGeometry: initialClientGeometry,
     decorationPolicyChanged,
     deleted: false,
+    desktopFileNameChanged,
     desktops: [desktop],
     desktopsChanged,
     desktopWindow: false,
@@ -329,6 +333,7 @@ function createTrackedWindow(
 
   return {
     decorationPolicyChanged,
+    desktopFileNameChanged,
     get desktopWriteCount() {
       return desktopWriteCount;
     },
@@ -8155,6 +8160,349 @@ describe("RuntimeController", () => {
     expect(automatic.map(({ writeCount }) => writeCount)).toEqual(
       automatic.map(() => 0),
     );
+  });
+
+  it("keeps matching applications outside layout ownership and persistence", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const excluded = createTrackedWindow("excluded", output, desktop, {
+      desktopFileName: "org.example.Excluded",
+      frameGeometry: { height: 260, width: 340, x: 71, y: 89 },
+    });
+    const tiled = createTrackedWindow("tiled", output, desktop, {
+      desktopFileName: "org.example.Tiled",
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [excluded.window, tiled.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      applicationTilingExclusions: requiredApplicationTilingExclusions(
+        "org.example.Excluded",
+      ),
+      clientAreaOption: 2,
+      gap: 10,
+    });
+    const excludedFrame = { ...excluded.window.frameGeometry };
+
+    expect(controller.start()).toBe(true);
+    expect(controller.managedCount).toBe(1);
+    expect(controller.floatingCount).toBe(0);
+    expect(controller.automaticFloatingCount).toBe(1);
+    expect(excluded.window.frameGeometry).toEqual(excludedFrame);
+    expect(excluded.writeCount).toBe(0);
+
+    const decoded = decodeLayoutPersistence(requiredLayoutDocument(controller));
+
+    expect(decoded.ok).toBe(true);
+
+    if (!decoded.ok) {
+      throw new Error("application exclusion persistence fixture was rejected");
+    }
+
+    expect(decoded.value.windows.map((window) => window.liveId)).toEqual([
+      "tiled",
+    ]);
+    expect(
+      decoded.value.contexts.flatMap((context) =>
+        context.columns.flatMap((column) =>
+          column.members.map((member) => member.windowKey),
+        ),
+      ),
+    ).toEqual(["tiled"]);
+  });
+
+  it("reclassifies only changed application memberships on a live policy update", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("first", output, desktop, {
+      desktopFileName: "org.example.First",
+    });
+    const excluded = createTrackedWindow("excluded", output, desktop, {
+      desktopFileName: "org.example.Excluded",
+    });
+    const third = createTrackedWindow("third", output, desktop, {
+      desktopFileName: "org.example.Third",
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window, excluded.window, third.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+    const state = controller as unknown as {
+      readonly pendingWindowSyncs: ReadonlySet<WindowId>;
+    };
+
+    expect(controller.start()).toBe(true);
+    flushManualScheduler(scheduler);
+    const excludedFrame = { ...excluded.window.frameGeometry };
+    const excludedWrites = excluded.writeCount;
+    const exclusions = requiredApplicationTilingExclusions(
+      "org.example.Excluded",
+    );
+
+    expect(controller.setApplicationTilingExclusions(exclusions)).toBe(true);
+    expect([...state.pendingWindowSyncs]).toEqual([windowId("excluded")]);
+    expect(scheduler.pendingCount).toBe(1);
+    expect(
+      controller.setApplicationTilingExclusions(
+        requiredApplicationTilingExclusions("org.example.Excluded"),
+      ),
+    ).toBe(false);
+    expect(scheduler.pendingCount).toBe(1);
+    scheduler.flush();
+
+    expect(controller.managedCount).toBe(2);
+    expect(controller.automaticFloatingCount).toBe(1);
+    expect(excluded.window.frameGeometry).toEqual(excludedFrame);
+    expect(excluded.writeCount).toBe(excludedWrites);
+    expect(state.pendingWindowSyncs.size).toBe(0);
+
+    expect(
+      controller.setApplicationTilingExclusions(
+        requiredApplicationTilingExclusions(""),
+      ),
+    ).toBe(true);
+    expect([...state.pendingWindowSyncs]).toEqual([windowId("excluded")]);
+    scheduler.flush();
+
+    expect(controller.managedCount).toBe(3);
+    expect(controller.automaticFloatingCount).toBe(0);
+    expect(state.pendingWindowSyncs.size).toBe(0);
+    expect(excluded.writeCount).toBe(excludedWrites + 1);
+  });
+
+  it("tracks desktop-file identity changes without writing an excluded frame", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const changing = createTrackedWindow("changing", output, desktop, {
+      desktopFileName: "org.example.Tiled",
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [changing.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      applicationTilingExclusions: requiredApplicationTilingExclusions(
+        "org.example.Excluded",
+      ),
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    flushManualScheduler(scheduler);
+    const tiledFrame = { ...changing.window.frameGeometry };
+    const tiledWrites = changing.writeCount;
+    Object.defineProperty(changing.window, "desktopFileName", {
+      configurable: true,
+      value: "org.example.Excluded",
+    });
+    changing.desktopFileNameChanged.emit();
+
+    expect(controller.managedCount).toBe(0);
+    expect(controller.automaticFloatingCount).toBe(1);
+    expect(changing.window.frameGeometry).toEqual(tiledFrame);
+    expect(changing.writeCount).toBe(tiledWrites);
+    flushManualScheduler(scheduler);
+    expect(changing.writeCount).toBe(tiledWrites);
+    changing.setFrameGeometry({
+      ...tiledFrame,
+      x: tiledFrame.x + 73,
+      y: tiledFrame.y + 41,
+    });
+
+    Object.defineProperty(changing.window, "desktopFileName", {
+      configurable: true,
+      value: "org.example.Tiled",
+    });
+    changing.desktopFileNameChanged.emit();
+
+    expect(controller.automaticFloatingCount).toBe(0);
+    flushManualScheduler(scheduler);
+    expect(controller.managedCount).toBe(1);
+    expect(changing.writeCount).toBe(tiledWrites + 1);
+  });
+
+  it("retains automatic ownership until a blocker settles after policy removal", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const excluded = createTrackedWindow("excluded", output, desktop, {
+      desktopFileName: "org.example.Excluded",
+      maximizeMode: 3,
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [excluded.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      applicationTilingExclusions: requiredApplicationTilingExclusions(
+        "org.example.Excluded",
+      ),
+      clientAreaOption: 2,
+      schedule: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    flushManualScheduler(scheduler);
+    expect(controller.automaticFloatingCount).toBe(1);
+    expect(excluded.writeCount).toBe(0);
+
+    expect(
+      controller.setApplicationTilingExclusions(
+        requiredApplicationTilingExclusions(""),
+      ),
+    ).toBe(true);
+    scheduler.flush();
+    expect(controller.automaticFloatingCount).toBe(1);
+    expect(controller.managedCount).toBe(0);
+    expect(excluded.writeCount).toBe(0);
+
+    Object.defineProperty(excluded.window, "maximizeMode", {
+      configurable: true,
+      value: 0,
+    });
+    excluded.maximizedChanged.emit();
+    flushManualScheduler(scheduler);
+
+    expect(controller.automaticFloatingCount).toBe(0);
+    expect(controller.managedCount).toBe(1);
+    expect(excluded.writeCount).toBe(1);
+  });
+
+  it("defers a live exclusion until a pending fullscreen request commits", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const active = createTrackedWindow("active", output, desktop, {
+      desktopFileName: "org.example.Excluded",
+    });
+    const fullscreen = controlFullscreen(active, { write: "defer" });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [active.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+    const state = controller as unknown as {
+      readonly pendingFullscreenTargets: ReadonlyMap<WindowId, boolean>;
+    };
+
+    expect(controller.start()).toBe(true);
+    flushManualScheduler(scheduler);
+    const layout = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const frame = { ...active.window.frameGeometry };
+    const writes = active.writeCount;
+
+    expect(controller.toggleFullscreen()).toBe(true);
+    expect(state.pendingFullscreenTargets.get(windowId("active"))).toBe(true);
+    expect(
+      controller.setApplicationTilingExclusions(
+        requiredApplicationTilingExclusions("org.example.Excluded"),
+      ),
+    ).toBe(true);
+    expect(controller.reconcile()).toBe(0);
+    expect(controller.managedCount).toBe(1);
+    expect(controller.automaticFloatingCount).toBe(0);
+    expect(active.window.frameGeometry).toEqual(frame);
+    expect(active.writeCount).toBe(writes);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(layout);
+
+    expect(fullscreen.commitDeferred()).toBe(true);
+    flushManualScheduler(scheduler);
+
+    expect(state.pendingFullscreenTargets.has(windowId("active"))).toBe(false);
+    expect(controller.managedCount).toBe(0);
+    expect(controller.automaticFloatingCount).toBe(1);
+    expect(active.window.frameGeometry).toEqual(frame);
+    expect(active.writeCount).toBe(writes);
+  });
+
+  it("rejects stale geometry when a live policy excludes a transaction member", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop, {
+      desktopFileName: "org.example.First",
+    });
+    const excluded = createTrackedWindow("window-2", output, desktop, {
+      desktopFileName: "org.example.Excluded",
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window, excluded.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    flushManualScheduler(scheduler);
+    fixture.workspace.activeWindow = first.window;
+    const excludedFrame = { ...excluded.window.frameGeometry };
+    const excludedWrites = excluded.writeCount;
+    first.setWriteBehavior((_frame, commit) => {
+      first.setWriteBehavior(null);
+      commit();
+      controller.setApplicationTilingExclusions(
+        requiredApplicationTilingExclusions("org.example.Excluded"),
+      );
+    });
+
+    expect(controller.increaseColumnWidth()).toBe(false);
+    flushManualScheduler(scheduler);
+
+    expect(controller.automaticFloatingCount).toBe(1);
+    expect(controller.managedCount).toBe(1);
+    expect(excluded.window.frameGeometry).toEqual(excludedFrame);
+    expect(excluded.writeCount).toBe(excludedWrites);
+    expect(
+      runtimeLayout(controller)
+        .snapshot(outputId(output.name), desktopId(desktop.id))
+        .columns.flatMap((column) => column.windowIds),
+    ).toEqual([windowId("window-1")]);
+    expectAutomaticOwnershipBookkeepingClear(controller, windowId("window-2"));
   });
 
   it("releases a late transient without restoring its stale baseline", () => {
@@ -34881,6 +35229,16 @@ function requiredLayoutDocument(controller: RuntimeController): string {
   }
 
   return document;
+}
+
+function requiredApplicationTilingExclusions(value: string) {
+  const exclusions = decodeApplicationTilingExclusions(value);
+
+  if (!exclusions) {
+    throw new Error("application tiling exclusions fixture is invalid");
+  }
+
+  return exclusions;
 }
 
 function exposeValueTypeGeometry(

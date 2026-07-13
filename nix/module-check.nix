@@ -168,6 +168,10 @@ let
             "org.example.Browser" = 80;
             "org.example.Editor" = 60;
           };
+          applicationTilingExclusions = [
+            "org.example.Editor=tool"
+            "org.example.Browser"
+          ];
           borderlessWindows = false;
           centerFocusedColumn = true;
           columnWidthPresets = [ 20 50 80 ];
@@ -231,6 +235,17 @@ let
       {
         programs.driftile.enable = true;
       };
+  homeManagerMaximumExclusions =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.settings.applicationTilingExclusions =
+          builtins.genList (index: "org.example.App${toString index}") 128;
+      }
+      { };
   homeManagerSettingsCollision =
     evaluate homeManagerModule
       [
@@ -289,6 +304,32 @@ let
         }) 129
       );
     }
+    { applicationTilingExclusions = "org.example.Editor"; }
+    { applicationTilingExclusions = [ 1 ]; }
+    { applicationTilingExclusions = [ "" ]; }
+    { applicationTilingExclusions = [ " org.example.Editor" ]; }
+    { applicationTilingExclusions = [ "org.example.Editor " ]; }
+    { applicationTilingExclusions = [ "org.example\nEditor" ]; }
+    {
+      applicationTilingExclusions = [
+        (builtins.fromJSON ''"org.example.\u0080Editor"'')
+      ];
+    }
+    {
+      applicationTilingExclusions = [
+        (builtins.concatStringsSep "" (builtins.genList (_: "a") 256))
+      ];
+    }
+    {
+      applicationTilingExclusions = [
+        "org.example.Editor"
+        "org.example.Editor"
+      ];
+    }
+    {
+      applicationTilingExclusions =
+        builtins.genList (index: "org.example.App${toString index}") 129;
+    }
   ];
   invalidSettingsRejected =
     settings:
@@ -314,6 +355,9 @@ let
       ApplicationColumnWidths = ''
         org.example.Browser=80
         org.example.Editor=60'';
+      ApplicationTilingExclusions = ''
+        org.example.Browser
+        org.example.Editor=tool'';
       BorderlessWindows = false;
       CenterFocusedColumn = true;
       ColumnWidthPresets = "20,50,80";
@@ -326,6 +370,7 @@ let
   expectedDefaultSettings = {
     kwinrc."Script-io.github.kontonkara.driftile" = {
       ApplicationColumnWidths = "";
+      ApplicationTilingExclusions = "";
       BorderlessWindows = true;
       CenterFocusedColumn = false;
       ColumnWidthPresets = "";
@@ -366,12 +411,18 @@ assert
       homeManagerMaximumOverrides.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ApplicationColumnWidths
   ) == 128;
 assert
+  builtins.length (
+    lib.splitString "\n"
+      homeManagerMaximumExclusions.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ApplicationTilingExclusions
+  ) == 128;
+assert
   homeManagerMaximumPresets.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ColumnWidthPresets
   == "10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25";
 assert
   homeManagerSettingsWithSystemInstall.config.qt.kde.settings == {
     kwinrc."Script-io.github.kontonkara.driftile" = {
       ApplicationColumnWidths = "";
+      ApplicationTilingExclusions = "";
       BorderlessWindows = true;
       CenterFocusedColumn = false;
       ColumnWidthPresets = "";

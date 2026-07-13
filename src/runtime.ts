@@ -49,6 +49,7 @@ export function init(
   );
   const nextController = new RuntimeController(workspace, {
     applicationColumnWidths: settings.applicationColumnWidths,
+    applicationTilingExclusions: settings.applicationTilingExclusions,
     borderlessWindows: settings.borderlessWindows,
     clientAreaOption,
     createRect,
@@ -116,6 +117,9 @@ export function applySettings(settingsSnapshot: unknown): boolean {
   }
 
   controller.setApplicationColumnWidths(settings.applicationColumnWidths);
+  controller.setApplicationTilingExclusions(
+    settings.applicationTilingExclusions,
+  );
   controller.setBorderlessWindows(settings.borderlessWindows);
   controller.setCenterFocusedColumn(settings.centerFocusedColumn);
   controller.setDefaultColumnWidthPercent(settings.defaultColumnWidthPercent);

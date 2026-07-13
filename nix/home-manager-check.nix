@@ -35,6 +35,10 @@ let
           "org.example.Browser" = 80;
           "org.example.Editor" = 60;
         };
+        applicationTilingExclusions = [
+          "org.example.Editor=tool"
+          "org.example.Browser"
+        ];
         borderlessWindows = false;
         centerFocusedColumn = true;
         columnWidthPresets = [ 20 50 80 ];
@@ -86,6 +90,9 @@ assert standalone.config.qt.kde.settings == {
     ApplicationColumnWidths = ''
       org.example.Browser=80
       org.example.Editor=60'';
+    ApplicationTilingExclusions = ''
+      org.example.Browser
+      org.example.Editor=tool'';
     BorderlessWindows = false;
     CenterFocusedColumn = true;
     ColumnWidthPresets = "20,50,80";
@@ -105,6 +112,7 @@ assert lib.all (assertion: assertion.assertion) settingsOnly.config.assertions;
 assert settingsOnly.config.qt.kde.settings == {
   kwinrc."Script-io.github.kontonkara.driftile" = {
     ApplicationColumnWidths = "";
+    ApplicationTilingExclusions = "";
     BorderlessWindows = true;
     CenterFocusedColumn = false;
     ColumnWidthPresets = "";

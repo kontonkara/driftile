@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { decodeApplicationColumnWidthOverrides } from "../src/application-overrides";
+import { decodeApplicationTilingExclusions } from "../src/application-tiling-exclusions";
 import { decodeColumnWidthPresetPercentages } from "../src/column-width-presets";
 import {
   decodeDriftileSettings,
@@ -16,6 +17,14 @@ if (!validApplicationColumnWidths) {
   throw new Error("application override fixture is invalid");
 }
 
+const validApplicationTilingExclusions = decodeApplicationTilingExclusions(
+  "org.example.Legacy\norg.example.Editor=tool",
+);
+
+if (!validApplicationTilingExclusions) {
+  throw new Error("application tiling exclusion fixture is invalid");
+}
+
 const validColumnWidthPresets = decodeColumnWidthPresetPercentages("20,50,80");
 
 if (!validColumnWidthPresets) {
@@ -24,6 +33,7 @@ if (!validColumnWidthPresets) {
 
 const validSettings: DriftileSettings = {
   applicationColumnWidths: validApplicationColumnWidths,
+  applicationTilingExclusions: validApplicationTilingExclusions,
   borderlessWindows: false,
   centerFocusedColumn: true,
   columnWidthPresets: validColumnWidthPresets,
@@ -35,6 +45,7 @@ const validSettings: DriftileSettings = {
 
 const validSettingsInput = {
   applicationColumnWidths: "org.example.Editor=75",
+  applicationTilingExclusions: "org.example.Legacy\norg.example.Editor=tool",
   borderlessWindows: validSettings.borderlessWindows,
   centerFocusedColumn: validSettings.centerFocusedColumn,
   columnWidthPresets: validSettings.columnWidthPresets.canonicalValue,
@@ -56,6 +67,9 @@ describe("Driftile settings", () => {
     });
     expect(
       DEFAULT_DRIFTILE_SETTINGS.applicationColumnWidths.canonicalEntries,
+    ).toEqual([]);
+    expect(
+      DEFAULT_DRIFTILE_SETTINGS.applicationTilingExclusions.canonicalEntries,
     ).toEqual([]);
     expect(DEFAULT_DRIFTILE_SETTINGS.columnWidthPresets.canonicalValue).toBe(
       "",
@@ -82,6 +96,9 @@ describe("Driftile settings", () => {
     expect(decoded?.applicationColumnWidths.canonicalEntries).toEqual(
       validApplicationColumnWidths.canonicalEntries,
     );
+    expect(decoded?.applicationTilingExclusions.canonicalEntries).toEqual(
+      validApplicationTilingExclusions.canonicalEntries,
+    );
     expect(decoded).not.toBe(input);
     expect(Object.isFrozen(decoded)).toBe(true);
     expect(input).toEqual(validSettingsInput);
@@ -90,6 +107,7 @@ describe("Driftile settings", () => {
   it.each([
     {
       applicationColumnWidths: "",
+      applicationTilingExclusions: "",
       borderlessWindows: true,
       centerFocusedColumn: false,
       columnWidthPresets: "10",
@@ -100,6 +118,7 @@ describe("Driftile settings", () => {
     },
     {
       applicationColumnWidths: "org.example.Browser=80",
+      applicationTilingExclusions: "org.example.Legacy",
       borderlessWindows: false,
       centerFocusedColumn: true,
       columnWidthPresets: "100",
@@ -115,6 +134,9 @@ describe("Driftile settings", () => {
     expect(decoded?.applicationColumnWidths.canonicalEntries.join("\n")).toBe(
       settings.applicationColumnWidths,
     );
+    expect(
+      decoded?.applicationTilingExclusions.canonicalEntries.join("\n"),
+    ).toBe(settings.applicationTilingExclusions);
     expect(decoded?.columnWidthPresets.canonicalValue).toBe(
       settings.columnWidthPresets,
     );
@@ -135,6 +157,12 @@ describe("Driftile settings", () => {
     [
       "invalid application overrides",
       { applicationColumnWidths: "org.example.Editor=9" },
+    ],
+    [
+      "duplicate application tiling exclusions",
+      {
+        applicationTilingExclusions: "org.example.Editor\n org.example.Editor ",
+      },
     ],
     ["a non-numeric gap", { gap: "16" }],
     ["a non-finite gap", { gap: Number.NaN }],
@@ -177,6 +205,8 @@ describe("Driftile settings", () => {
   it("rejects missing fields", () => {
     const incomplete = {
       applicationColumnWidths: validSettingsInput.applicationColumnWidths,
+      applicationTilingExclusions:
+        validSettingsInput.applicationTilingExclusions,
       borderlessWindows: validSettings.borderlessWindows,
       centerFocusedColumn: validSettings.centerFocusedColumn,
       columnWidthPresets: validSettingsInput.columnWidthPresets,
@@ -213,8 +243,16 @@ describe("Driftile settings", () => {
       throw new Error("column-width preset fixture is invalid");
     }
 
+    const changedApplicationTilingExclusions =
+      decodeApplicationTilingExclusions("org.example.Other");
+
+    if (!changedApplicationTilingExclusions) {
+      throw new Error("application tiling exclusion fixture is invalid");
+    }
+
     for (const changed of [
       { applicationColumnWidths: changedApplicationColumnWidths },
+      { applicationTilingExclusions: changedApplicationTilingExclusions },
       { borderlessWindows: true },
       { centerFocusedColumn: false },
       { columnWidthPresets: changedColumnWidthPresets },

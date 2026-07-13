@@ -59,6 +59,10 @@ manually floating window returns only through **Toggle floating**. KWin retains
 geometry authority while a window is fullscreen, maximized, minimized,
 interactively moved or resized, or natively tiled.
 
+Also check **Applications excluded from tiling** in Driftile's settings. The
+entries match KWin's exact, case-sensitive `desktopFileName`; clearing a match
+allows fresh admission after KWin releases any native-state blocker.
+
 On multiple outputs, an otherwise eligible window can wait when admitting it
 would exceed visible capacity. It is retried after space or topology recovers.
 Review the ownership boundary and current exclusions in
