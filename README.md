@@ -32,7 +32,8 @@ leaving window, output, and desktop mechanisms to KWin.
 
 The latest stable release is [1.4.0](docs/release-notes-1.4.0.md).
 
-The `main` branch tracks `1.5.0-dev.0` and is not a stable release.
+The `main` branch tracks the
+[`1.5.0-rc.1` prerelease candidate](docs/release-notes-1.5.0-rc.1.md).
 
 Driftile requires KDE Plasma with KWin 6.7 or newer. It targets native Wayland
 and XWayland windows, plus single-output native X11 sessions.
@@ -58,8 +59,8 @@ artifact verification, custom shortcut profiles, NixOS and Home Manager
 modules, upgrades, and safe removal. See [Migration](docs/migration.md) before
 changing release generations.
 
-The 1.4.0 release also provides the separate overview effect. It is disabled
-and unbound by default; see [Overview companion](docs/overview.md).
+The 1.5.0-rc.1 candidate also provides the separate overview effect. It is
+disabled and unbound by default; see [Overview companion](docs/overview.md).
 
 ## Development
 
@@ -103,6 +104,7 @@ checks.
 - [Testing](docs/testing.md)
 - [Performance](docs/performance.md)
 - [Roadmap](docs/roadmap.md)
+- [1.5.0-rc.1 release notes](docs/release-notes-1.5.0-rc.1.md)
 - [1.4.0 release notes](docs/release-notes-1.4.0.md)
 - [1.4.0-rc.1 release notes](docs/release-notes-1.4.0-rc.1.md)
 - [1.3.0 release notes](docs/release-notes-1.3.0.md)
