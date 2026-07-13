@@ -362,9 +362,32 @@ restored the exact stacked frames on reset.
 
 ## 1.7.0 (in development)
 
-The `main` branch tracks `1.7.0-dev.0`. Its next bounded core slice will be
-selected and scope-frozen separately; this placeholder does not commit an
-implementation scope.
+The frozen 1.7.0 slice adds only current-context click-to-focus to the optional
+overview. Each rendered thumbnail in a `SceneView` current-desktop card keeps
+its direct `model.window` object. A left click revalidates that the effect is
+active and the candidate still exists, is not deleted, hidden, or minimized,
+wants input, has the exact `internalId`, remains on the same output, belongs to
+that output's current desktop, and matches the current activity through its
+live memberships. A valid click assigns public `Workspace.activeWindow` only
+when needed, then closes the effect. An invalid or stale click fails closed and
+leaves the effect active.
+
+Ordinary KWin activation may raise the window, and existing Driftile focus
+handling may reveal its tiled column. The effect's focus path writes only
+`Workspace.activeWindow`. It does not switch desktops or activities; move
+windows; write memberships, outputs, geometry, or settings; or add actions,
+default bindings, gestures, drag, keyboard navigation, schema, IPC, private
+APIs, timers, or workspace scans. The direct validation path is bounded by the
+candidate's desktop and activity memberships.
+
+Release criteria:
+
+- Static QML contract tests pin the direct window reference, every live guard,
+  the fail-closed path, and the sole permitted public focus write.
+- One packaged multi-output, compositor-routed physical left-click scenario
+  covers native Wayland and XWayland protocol passes and preserves exact
+  frames, memberships, selected desktops, settings, and built-in Overview
+  state around the intentional focus change.
 
 ## Post-v1
 
