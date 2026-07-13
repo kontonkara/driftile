@@ -11,6 +11,8 @@ Rectangle {
     required property var floatingWindows
     required property var screen
 
+    signal windowTapped(var candidate, string expectedWindowId, var expectedDesktop, string expectedDesktopId)
+
     readonly property var columns: context ? context.columns : []
     readonly property real contentLeft: 42
     readonly property real contentTop: 10
@@ -131,6 +133,12 @@ Rectangle {
                     color: "transparent"
                     border.width: KWin.Workspace.activeWindow === model.window ? 2 : 1
                     border.color: KWin.Workspace.activeWindow === model.window ? "#f4f8ff" : "#71839e"
+                }
+
+                TapHandler {
+                    acceptedButtons: Qt.LeftButton
+                    enabled: card.current && thumbnailShell.visible
+                    onTapped: card.windowTapped(model.window, thumbnailShell.windowId, card.desktop, card.desktopId)
                 }
             }
         }

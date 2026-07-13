@@ -67,7 +67,67 @@ Rectangle {
             desktopId: modelData
             floatingWindows: root.floatingFor(modelData)
             screen: root.targetScreen
+            onWindowTapped: (candidate, expectedWindowId, expectedDesktop, expectedDesktopId) => root.focusWindow(
+                                candidate, expectedWindowId, expectedDesktop, expectedDesktopId)
         }
+    }
+
+    function focusWindow(candidate, expectedWindowId, expectedDesktop, expectedDesktopId) {
+        if (!sceneEffect || sceneEffect.active !== true || !candidate || candidate.deleted || candidate.hidden
+                || candidate.minimized || candidate.wantsInput !== true || expectedWindowId.length === 0
+                || String(candidate.internalId) !== expectedWindowId || expectedDesktopId.length === 0 || !targetScreen
+                || candidate.output !== targetScreen) {
+            return;
+        }
+
+        const activeDesktop = currentDesktop;
+        if (!activeDesktop || activeDesktop !== expectedDesktop || String(activeDesktop.id) !== expectedDesktopId
+                || !windowUsesDesktop(candidate, expectedDesktop, expectedDesktopId) || !windowUsesCurrentActivity(
+                    candidate)) {
+            return;
+        }
+
+        if (KWin.Workspace.activeWindow !== candidate) {
+            KWin.Workspace.activeWindow = candidate;
+        }
+        sceneEffect.deactivate();
+    }
+
+    function windowUsesDesktop(candidate, expectedDesktop, expectedDesktopId) {
+        const desktops = candidate.desktops;
+        if (!desktops) {
+            return false;
+        }
+        if (desktops.length === 0) {
+            return true;
+        }
+
+        for (const desktop of desktops) {
+            if (desktop === expectedDesktop && String(desktop.id) === expectedDesktopId) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    function windowUsesCurrentActivity(candidate) {
+        const activities = candidate.activities;
+        if (!activities) {
+            return false;
+        }
+        if (activities.length === 0) {
+            return true;
+        }
+
+        const currentActivity = String(KWin.Workspace.currentActivity);
+        for (const activity of activities) {
+            if (String(activity) === currentActivity) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     function orderedDesktopIds() {

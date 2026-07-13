@@ -58,7 +58,7 @@ describe("overview effect package", () => {
     expect(reader).not.toMatch(/setValue|repeat:\s*true/u);
   });
 
-  it("uses only the public KWin QML module and remains read-only", () => {
+  it("uses only the public KWin QML module and writes only active-window focus", () => {
     for (const source of qmlSources) {
       expect(source).not.toContain("org.kde.kwin.private");
     }
@@ -73,8 +73,71 @@ describe("overview effect package", () => {
     expect(desktopCard).toContain("KWin.WindowModel");
     expect(desktopCard).toContain("KWin.WindowFilterModel");
     expect(desktopCard).toContain("KWin.WindowThumbnail");
+    const workspaceWrites =
+      qmlSources
+        .join("\n")
+        .match(/KWin\.Workspace\.[A-Za-z0-9_]+\s*=(?!=)/gu) ?? [];
+    expect(workspaceWrites).toHaveLength(1);
+    expect(workspaceWrites[0]).toMatch(/^KWin\.Workspace\.activeWindow\s*=$/u);
     expect(qmlSources.join("\n")).not.toMatch(
-      /Workspace\.[A-Za-z0-9_]+\s*=(?!=)|model\.window\.[A-Za-z0-9_]+\s*=(?!=)|\.setValue\s*\(/u,
+      /(?:model\.window|candidate)\.[A-Za-z0-9_]+\s*=(?!=)|\.setValue\s*\(/u,
+    );
+  });
+
+  it("focuses only a valid current-context thumbnail on a left click", () => {
+    const focusHandler = scene.slice(
+      scene.indexOf("function focusWindow("),
+      scene.indexOf("function windowUsesDesktop("),
+    );
+
+    expect(desktopCard.match(/\bTapHandler\s*\{/gu)).toHaveLength(1);
+    expect(desktopCard).toContain("acceptedButtons: Qt.LeftButton");
+    expect(desktopCard).toContain(
+      "enabled: card.current && thumbnailShell.visible",
+    );
+    expect(desktopCard).toContain(
+      "card.windowTapped(model.window, thumbnailShell.windowId, card.desktop, card.desktopId)",
+    );
+
+    expect(scene).toContain("!sceneEffect");
+    expect(scene).toContain("sceneEffect.active !== true");
+    expect(scene).toContain("!candidate");
+    expect(scene).toContain("candidate.deleted");
+    expect(scene).toContain("candidate.hidden");
+    expect(scene).toContain("candidate.minimized");
+    expect(scene).toContain("candidate.wantsInput !== true");
+    expect(scene).toContain(
+      "String(candidate.internalId) !== expectedWindowId",
+    );
+    expect(scene).toContain("!targetScreen");
+    expect(scene).toContain("candidate.output !== targetScreen");
+    expect(scene).toContain("activeDesktop !== expectedDesktop");
+    expect(scene).toContain("String(activeDesktop.id) !== expectedDesktopId");
+    expect(scene).toContain("expectedDesktopId.length === 0");
+    expect(scene).toContain("const desktops = candidate.desktops");
+    expect(scene).toMatch(/if \(desktops\.length === 0\) \{\s*return true;/u);
+    expect(scene).toContain("const activities = candidate.activities");
+    expect(scene).toMatch(/if \(activities\.length === 0\) \{\s*return true;/u);
+    expect(scene).toContain("KWin.Workspace.currentActivity");
+    expect(scene).toContain("KWin.Workspace.activeWindow !== candidate");
+    expect(scene).toContain("KWin.Workspace.activeWindow = candidate");
+    expect(scene).toContain("sceneEffect.deactivate()");
+
+    const activeWindowWrite = focusHandler.indexOf(
+      "KWin.Workspace.activeWindow = candidate",
+    );
+    const deactivate = focusHandler.indexOf("sceneEffect.deactivate()");
+    const earlyReturns = [...focusHandler.matchAll(/\breturn;/gu)].map(
+      (match) => match.index,
+    );
+    expect(earlyReturns).toHaveLength(2);
+    expect(earlyReturns.every((index) => index < activeWindowWrite)).toBe(true);
+    expect(activeWindowWrite).toBeGreaterThan(0);
+    expect(deactivate).toBeGreaterThan(activeWindowWrite);
+
+    expect(scene).not.toContain("KWin.Workspace.stackingOrder");
+    expect(`${scene}\n${desktopCard}`).not.toMatch(
+      /MouseArea|DragHandler|ShortcutHandler|\.setValue\s*\(/u,
     );
   });
 
