@@ -1,4 +1,5 @@
 {
+  driftileCurrentOverviewPackage,
   driftileCurrentPackage,
   pkgs,
   ...
@@ -6,8 +7,13 @@
 
 let
   pluginId = "io.github.kontonkara.driftile";
+  overviewPluginId = "io.github.kontonkara.driftile.overview";
+  overviewShortcut = "driftile_toggle_overview";
+  overviewShortcutText = "Driftile: Toggle overview";
   pluginMetadata = builtins.fromJSON (builtins.readFile ../packaging/kwin-script/metadata.json);
+  overviewPluginMetadata = builtins.fromJSON (builtins.readFile ../packaging/kwin-effect/metadata.json);
   currentVersion = pluginMetadata.KPlugin.Version;
+  currentOverviewVersion = overviewPluginMetadata.KPlugin.Version;
   publishedVersion = "1.2.0";
   publishedArchive = pkgs.fetchurl {
     name = "driftile-${publishedVersion}.kwinscript";
@@ -41,6 +47,35 @@ let
         find package -type f -printf '%P\n' | LC_ALL=C sort > entries
         (cd package && zip -0Xq "$out" -@ < ../entries)
       '';
+  currentOverviewArchive =
+    pkgs.runCommand "driftile-overview-${currentOverviewVersion}.kwineffect"
+      {
+        nativeBuildInputs = [
+          pkgs.coreutils
+          pkgs.findutils
+          pkgs.jq
+          pkgs.zip
+        ];
+      }
+      ''
+        mkdir package
+        cp -R \
+          ${driftileCurrentOverviewPackage}/share/kwin/effects/${overviewPluginId}/. \
+          package/
+        chmod -R u+w package
+
+        test "$(jq -er '.KPackageStructure' package/metadata.json)" = KWin/Effect
+        test "$(jq -er '.KPlugin.Id' package/metadata.json)" = ${overviewPluginId}
+        test "$(jq -er '.KPlugin.Version' package/metadata.json)" = ${currentOverviewVersion}
+        test "$(jq -er '.KPlugin.EnabledByDefault' package/metadata.json)" = false
+        test -f package/contents/code/main.js
+        test -f package/contents/ui/main.qml
+        test -z "$(find package -type l -print -quit)"
+
+        find package -exec touch -h -d @315532800 {} +
+        find package -type f -printf '%P\n' | LC_ALL=C sort > entries
+        (cd package && zip -0Xq "$out" -@ < ../entries)
+      '';
   lifecycleCheck = pkgs.writeShellApplication {
     name = "driftile-lifecycle-check";
     runtimeInputs = [
@@ -59,14 +94,21 @@ let
       readonly result_file=/tmp/shared/driftile-lifecycle-verified
       readonly command_log=/tmp/driftile-lifecycle-commands.log
       readonly plugin_id=${pluginId}
+      readonly overview_plugin_id=${overviewPluginId}
+      readonly overview_shortcut=${overviewShortcut}
+      readonly overview_shortcut_text="${overviewShortcutText}"
       readonly published_archive=${publishedArchive}
       readonly current_archive=${currentArchive}
+      readonly current_overview_archive=${currentOverviewArchive}
       readonly published_version=${publishedVersion}
       readonly current_version=${currentVersion}
+      readonly current_overview_version=${currentOverviewVersion}
       readonly data_home="''${XDG_DATA_HOME:-$HOME/.local/share}"
       readonly installed_package="$data_home/kwin/scripts/$plugin_id"
       readonly installed_main="$installed_package/contents/ui/main.qml"
       readonly installed_runtime="$installed_package/contents/code/main.js"
+      readonly installed_overview_package="$data_home/kwin/effects/$overview_plugin_id"
+      readonly installed_overview_runtime="$installed_overview_package/contents/code/main.js"
       readonly runner_title="Driftile release lifecycle"
       result_written=false
       test_kcalc_pid=""
@@ -218,6 +260,171 @@ let
           | grep --fixed-strings --quiet "$plugin_id"
       }
 
+      overview_package_is_listed() {
+        kpackagetool6 --type=KWin/Effect --list 2>/dev/null \
+          | grep --fixed-strings --quiet "$overview_plugin_id"
+      }
+
+      overview_installed_version() {
+        jq --exit-status --raw-output '.KPlugin.Version' \
+          "$installed_overview_package/metadata.json"
+      }
+
+      overview_runtime_digest() {
+        local digest
+
+        digest=$(sha256sum "$installed_overview_runtime") || return 1
+        printf '%s' "''${digest%% *}"
+      }
+
+      effect_available_state() {
+        busctl --user --json=short get-property \
+          org.kde.KWin \
+          /Effects \
+          org.kde.kwin.Effects \
+          listOfEffects 2>/dev/null \
+          | jq --exit-status --raw-output \
+            --arg effectId "$1" \
+            '.data | any(. == $effectId) | tostring'
+      }
+
+      effect_is_available() {
+        [[ "$(effect_available_state "$1")" == true ]]
+      }
+
+      wait_for_effect_available_state() {
+        local effect_id=$1
+        local expected=$2
+        local attempt
+
+        for ((attempt = 0; attempt < 200; attempt += 1)); do
+          if [[ "$(effect_available_state "$effect_id" 2>/dev/null || true)" == "$expected" ]]; then
+            return 0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      request_kwin_reconfigure() {
+        run_checked \
+          "KWin rejected the effect discovery refresh" \
+          busctl --user --expect-reply=no call \
+          org.kde.KWin \
+          /KWin \
+          org.kde.KWin \
+          reconfigure
+      }
+
+      effect_loaded_state() {
+        local state
+
+        state=$(busctl --user call \
+          org.kde.KWin \
+          /Effects \
+          org.kde.kwin.Effects \
+          isEffectLoaded \
+          s "$1" \
+          2>/dev/null) || return 1
+
+        case "$state" in
+          "b true") printf '%s' true ;;
+          "b false") printf '%s' false ;;
+          *) return 1 ;;
+        esac
+      }
+
+      wait_for_effect_loaded_state() {
+        local effect_id=$1
+        local expected=$2
+        local attempt
+
+        for ((attempt = 0; attempt < 200; attempt += 1)); do
+          if [[ "$(effect_loaded_state "$effect_id" 2>/dev/null || true)" == "$expected" ]]; then
+            return 0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      shortcut_is_registered() {
+        busctl --user call \
+          org.kde.kglobalaccel \
+          /component/kwin \
+          org.kde.kglobalaccel.Component \
+          shortcutNames 2>/dev/null \
+          | grep --fixed-strings --quiet "$1"
+      }
+
+      wait_for_shortcut_registration_state() {
+        local shortcut=$1
+        local expected=$2
+        local attempt
+
+        for ((attempt = 0; attempt < 200; attempt += 1)); do
+          if shortcut_is_registered "$shortcut"; then
+            [[ "$expected" == true ]] && return 0
+          elif [[ "$expected" == false ]]; then
+            return 0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      shortcut_keys() {
+        local shortcut_name=$1
+        local shortcut_text=$2
+
+        busctl --user --json=short call \
+          org.kde.kglobalaccel \
+          /kglobalaccel \
+          org.kde.KGlobalAccel \
+          shortcutKeys \
+          as \
+          4 kwin "$shortcut_name" KWin "$shortcut_text" \
+          2>/dev/null \
+          | jq --compact-output \
+            '.data[0] | map(.[0]) | map(select(. != [0, 0, 0, 0])) | sort'
+      }
+
+      load_overview_effect() {
+        local result
+
+        result=$(busctl --user call \
+          org.kde.KWin \
+          /Effects \
+          org.kde.kwin.Effects \
+          loadEffect \
+          s "$overview_plugin_id" \
+          2>> "$command_log") \
+          || fail_test "KWin rejected the overview load request"
+        [[ "$result" == "b true" ]] \
+          || fail_test "KWin did not accept the overview load request"
+        wait_for_effect_loaded_state "$overview_plugin_id" true \
+          || fail_test "the overview did not reach the loaded state"
+      }
+
+      unload_overview_effect() {
+        run_checked \
+          "KWin rejected the overview unload request" \
+          busctl --user call \
+          org.kde.KWin \
+          /Effects \
+          org.kde.kwin.Effects \
+          unloadEffect \
+          s "$overview_plugin_id"
+        wait_for_effect_loaded_state "$overview_plugin_id" false \
+          || fail_test "the overview did not reach the unloaded state"
+      }
+
       window_match_id() {
         local title=$1
 
@@ -319,6 +526,23 @@ let
           kpackagetool6 --type=KWin/Script --list 2>&1 \
             | grep --fixed-strings "$plugin_id" \
             || true
+          printf '\noverview package path: %s\n' "$installed_overview_package"
+          if [[ -f "$installed_overview_package/metadata.json" ]]; then
+            printf 'overview installed version: %s\n' \
+              "$(overview_installed_version 2>/dev/null || printf unreadable)"
+          fi
+          printf 'overview loaded: %s\n' \
+            "$(effect_loaded_state "$overview_plugin_id" 2>/dev/null || printf unavailable)"
+          printf 'overview action registered: '
+          if shortcut_is_registered "$overview_shortcut"; then
+            printf 'true\n'
+          else
+            printf 'false\n'
+          fi
+          printf '\noverview KPackage matches:\n'
+          kpackagetool6 --type=KWin/Effect --list 2>&1 \
+            | grep --fixed-strings "$overview_plugin_id" \
+            || true
           if [[ -s "$command_log" ]]; then
             printf '\ncommand log:\n'
             tail -n 80 "$command_log"
@@ -358,17 +582,36 @@ let
         || fail_test "the published archive metadata is unexpected"
       [[ "$(archive_version "$current_archive")" == "$current_version" ]] \
         || fail_test "the current archive metadata is unexpected"
+      [[ "$(archive_version "$current_overview_archive")" == "$current_overview_version" ]] \
+        || fail_test "the current overview archive metadata is unexpected"
+      [[ "$(unzip -p "$current_overview_archive" metadata.json \
+        | jq --exit-status --raw-output '.KPlugin.EnabledByDefault')" == false ]] \
+        || fail_test "the current overview archive was enabled by default"
       published_archive_runtime_digest=$(archive_runtime_digest "$published_archive") \
         || fail_test "the published archive runtime could not be hashed"
       current_archive_runtime_digest=$(archive_runtime_digest "$current_archive") \
         || fail_test "the current archive runtime could not be hashed"
+      current_overview_archive_runtime_digest=$(archive_runtime_digest "$current_overview_archive") \
+        || fail_test "the current overview archive runtime could not be hashed"
       [[ ! -e "$installed_package" ]] \
         || fail_test "a user package was present before the test"
+      [[ ! -e "$installed_overview_package" ]] \
+        || fail_test "a user overview package was present before the test"
       [[ ! -e "/run/current-system/sw/share/kwin/scripts/$plugin_id" ]] \
         || fail_test "a system package was present before the test"
+      [[ ! -e "/run/current-system/sw/share/kwin/effects/$overview_plugin_id" ]] \
+        || fail_test "a system overview package was present before the test"
       if package_is_listed; then
         fail_test "KPackage listed Driftile before installation"
       fi
+      if overview_package_is_listed; then
+        fail_test "KPackage listed the overview before installation"
+      fi
+      if effect_is_available "$overview_plugin_id"; then
+        fail_test "KWin listed the overview before installation"
+      fi
+      wait_for_shortcut_registration_state "$overview_shortcut" false \
+        || fail_test "the overview action existed before installation"
       progress "clean package baseline confirmed"
 
       run_checked \
@@ -405,6 +648,64 @@ let
         || fail_test "the current runtime could not open Konsole"
       start_test_kcalc "$app_kcalc_title" \
         || fail_test "the current runtime could not open KDE Calculator"
+
+      run_checked \
+        "the current overview package could not be installed" \
+        kpackagetool6 --type=KWin/Effect --install "$current_overview_archive"
+      overview_package_is_listed \
+        || fail_test "KPackage did not list the installed overview"
+      [[ "$(overview_installed_version)" == "$current_overview_version" ]] \
+        || fail_test "the installed overview metadata is unexpected"
+      current_overview_runtime_digest=$(overview_runtime_digest) \
+        || fail_test "the installed overview runtime could not be hashed"
+      [[ "$current_overview_runtime_digest" == "$current_overview_archive_runtime_digest" ]] \
+        || fail_test "the installed overview runtime did not match its archive"
+      request_kwin_reconfigure
+      wait_for_effect_available_state "$overview_plugin_id" true \
+        || fail_test "KWin did not discover the installed overview after reconfiguration"
+      wait_for_effect_loaded_state "$overview_plugin_id" false \
+        || fail_test "the overview was loaded immediately after installation"
+      wait_for_shortcut_registration_state "$overview_shortcut" false \
+        || fail_test "the disabled overview registered its action before loading"
+      wait_for_script_state true \
+        || fail_test "installing the overview unloaded the current runtime"
+      progress "current overview installed separately and remained disabled"
+
+      load_overview_effect
+      wait_for_shortcut_registration_state "$overview_shortcut" true \
+        || fail_test "the loaded overview did not register its action"
+      overview_keys=$(shortcut_keys "$overview_shortcut" "$overview_shortcut_text") \
+        || fail_test "KGlobalAccel did not expose the overview assignment"
+      [[ "$overview_keys" == "[]" ]] \
+        || fail_test "the overview action was unexpectedly bound: $overview_keys"
+      wait_for_script_state true \
+        || fail_test "loading the overview unloaded the current runtime"
+      progress "current overview loaded with an unbound action"
+
+      unload_overview_effect
+      overview_keys=$(shortcut_keys "$overview_shortcut" "$overview_shortcut_text") \
+        || fail_test "KGlobalAccel did not retain the unloaded overview action"
+      [[ "$overview_keys" == "[]" ]] \
+        || fail_test "the unloaded overview action gained an assignment: $overview_keys"
+      wait_for_script_state true \
+        || fail_test "unloading the overview unloaded the current runtime"
+      run_checked \
+        "the current overview package could not be removed" \
+        kpackagetool6 --type=KWin/Effect --remove "$overview_plugin_id"
+      [[ ! -e "$installed_overview_package" ]] \
+        || fail_test "the overview package remained after removal"
+      if overview_package_is_listed; then
+        fail_test "KPackage still listed the overview after removal"
+      fi
+      request_kwin_reconfigure
+      wait_for_effect_available_state "$overview_plugin_id" false \
+        || fail_test "KWin still listed the removed overview after reconfiguration"
+      wait_for_effect_loaded_state "$overview_plugin_id" false \
+        || fail_test "the overview was loaded after package removal"
+      wait_for_script_state true \
+        || fail_test "removing the overview unloaded the current runtime"
+      progress "overview unload and removal preserved the current runtime"
+
       stop_process "$test_kcalc_pid" "$app_kcalc_title" \
         || fail_test "KDE Calculator did not close cleanly"
       test_kcalc_pid=""
@@ -494,6 +795,7 @@ let
   '';
 in
 assert currentVersion != publishedVersion;
+assert currentOverviewVersion == currentVersion;
 {
   networking.hostName = "driftile-vm-lifecycle";
   system.stateVersion = "26.05";
