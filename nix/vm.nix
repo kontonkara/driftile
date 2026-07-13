@@ -1178,6 +1178,27 @@ let
           >/dev/null
       }
 
+      set_center_focused_column() {
+        local value=$1
+
+        [[ "$value" == true || "$value" == false ]] || return 1
+
+        ${pkgs.kdePackages.kconfig}/bin/kwriteconfig6 \
+          --file "$HOME/.config/kwinrc" \
+          --group "Script-${pluginId}" \
+          --key CenterFocusedColumn \
+          --type bool \
+          "$value" \
+          || return 1
+
+        busctl --user call \
+          org.kde.KWin \
+          /KWin \
+          org.kde.KWin \
+          reconfigure \
+          >/dev/null
+      }
+
       set_application_column_widths() {
         local value=$1
 
@@ -1964,6 +1985,111 @@ let
         done
 
         return 1
+      }
+
+      focused_column_frames_are_centered() {
+        local baseline_first=$1
+        local baseline_second=$2
+        local baseline_third=$3
+        local current_first=$4
+        local current_second=$5
+        local current_third=$6
+        local work_area=$7
+        local baseline_first_height
+        local baseline_first_width
+        local baseline_first_x
+        local baseline_first_y
+        local baseline_second_height
+        local baseline_second_width
+        local baseline_second_x
+        local baseline_second_y
+        local baseline_third_height
+        local baseline_third_width
+        local baseline_third_x
+        local baseline_third_y
+        local first_delta
+        local first_height
+        local first_width
+        local first_x
+        local first_y
+        local midpoint_difference
+        local second_delta
+        local second_height
+        local second_width
+        local second_x
+        local second_y
+        local third_delta
+        local third_height
+        local third_width
+        local third_x
+        local third_y
+        local work_area_width
+        local work_area_x
+
+        frame_is_valid "$baseline_first" \
+          && frame_is_valid "$baseline_second" \
+          && frame_is_valid "$baseline_third" \
+          && frame_is_valid "$current_first" \
+          && frame_is_valid "$current_second" \
+          && frame_is_valid "$current_third" \
+          && frame_is_valid "$work_area" \
+          || return 1
+        IFS=, read -r \
+          baseline_first_x \
+          baseline_first_y \
+          baseline_first_width \
+          baseline_first_height \
+          <<< "$baseline_first"
+        IFS=, read -r \
+          baseline_second_x \
+          baseline_second_y \
+          baseline_second_width \
+          baseline_second_height \
+          <<< "$baseline_second"
+        IFS=, read -r \
+          baseline_third_x \
+          baseline_third_y \
+          baseline_third_width \
+          baseline_third_height \
+          <<< "$baseline_third"
+        IFS=, read -r work_area_x _ work_area_width _ <<< "$work_area"
+
+        ((baseline_first_x < baseline_second_x \
+          && baseline_second_x < baseline_third_x \
+          && work_area_width > 0)) \
+          || return 1
+        IFS=, read -r first_x first_y first_width first_height \
+          <<< "$current_first"
+        IFS=, read -r second_x second_y second_width second_height \
+          <<< "$current_second"
+        IFS=, read -r third_x third_y third_width third_height \
+          <<< "$current_third"
+        first_delta=$((first_x - baseline_first_x))
+        second_delta=$((second_x - baseline_second_x))
+        third_delta=$((third_x - baseline_third_x))
+        midpoint_difference=$((
+          2 * (second_x - work_area_x) \
+            + second_width \
+            - work_area_width
+        ))
+        ((midpoint_difference < 0)) \
+          && midpoint_difference=$((-midpoint_difference))
+
+        ((first_y == baseline_first_y \
+          && first_width == baseline_first_width \
+          && first_height == baseline_first_height \
+          && second_y == baseline_second_y \
+          && second_width == baseline_second_width \
+          && second_height == baseline_second_height \
+          && third_y == baseline_third_y \
+          && third_width == baseline_third_width \
+          && third_height == baseline_third_height \
+          && first_x < second_x \
+          && second_x < third_x \
+          && first_delta != 0 \
+          && first_delta == second_delta \
+          && second_delta == third_delta \
+          && midpoint_difference <= 2))
       }
 
       wait_for_numbered_desktop_frames() {
@@ -6046,6 +6172,170 @@ let
         record_focus_state "window B extracted into the right column"
       }
 
+      verify_center_focused_column_configuration() {
+        local attempt
+        local canonical_first
+        local canonical_second
+        local canonical_third
+        local centered_first
+        local centered_second
+        local centered_third
+        local disabled_verified=false
+        local enabled_verified=false
+        local output_frame
+        local work_area
+
+        if ! set_center_focused_column false \
+          || ! activate_window "$title_a" \
+          || ! wait_for_active "$title_a" \
+          || ! activate_window "$title_c" \
+          || ! wait_for_active "$title_c" \
+          || ! capture_stable_frames; then
+          record_focus_state \
+            "focused-column centering baseline setup failed"
+          return 1
+        fi
+        canonical_first=$stable_first_frame
+        canonical_second=$stable_second_frame
+        canonical_third=$stable_third_frame
+        output_frame=$(single_enabled_output_frame 2>/dev/null || true)
+        work_area=$(
+          maximized_work_area_frame \
+            "$canonical_second" \
+            "$output_frame" \
+            2>/dev/null \
+            || true
+        )
+
+        if ! frame_is_valid "$work_area" \
+          || ! invoke_shortcut "driftile_focus_column_left" \
+          || ! wait_for_active "$title_b" \
+          || ! wait_for_frames \
+            "$canonical_first" \
+            "$canonical_second" \
+            "$canonical_third" \
+          || ! invoke_shortcut "driftile_focus_column_right" \
+          || ! wait_for_active "$title_c" \
+          || ! wait_for_frames \
+            "$canonical_first" \
+            "$canonical_second" \
+            "$canonical_third"; then
+          record_focus_state \
+            "disabled focused-column centering changed the minimal reveal"
+          return 1
+        fi
+        record_focus_state \
+          "disabled focused-column centering preserved the minimal reveal"
+
+        if ! set_center_focused_column true \
+          || ! wait_for_active "$title_c" \
+          || ! wait_for_frames \
+            "$canonical_first" \
+            "$canonical_second" \
+            "$canonical_third"; then
+          set_center_focused_column false >/dev/null 2>&1 || true
+          record_focus_state \
+            "enabling focused-column centering changed settled state"
+          return 1
+        fi
+
+        for ((attempt = 0; attempt < 30; attempt += 1)); do
+          if activate_window "$title_c" \
+            && wait_for_active "$title_c" \
+            && wait_for_frames \
+              "$canonical_first" \
+              "$canonical_second" \
+              "$canonical_third" \
+            && invoke_shortcut "driftile_focus_column_left" \
+            && wait_for_active "$title_b" \
+            && capture_stable_frames \
+            && focused_column_frames_are_centered \
+              "$canonical_first" \
+              "$canonical_second" \
+              "$canonical_third" \
+              "$stable_first_frame" \
+              "$stable_second_frame" \
+              "$stable_third_frame" \
+              "$work_area"; then
+            enabled_verified=true
+            break
+          fi
+        done
+
+        if [[ "$enabled_verified" != true ]]; then
+          set_center_focused_column false >/dev/null 2>&1 || true
+          activate_window "$title_c" >/dev/null 2>&1 || true
+          wait_for_active "$title_c" >/dev/null 2>&1 || true
+          wait_for_frames \
+            "$canonical_first" \
+            "$canonical_second" \
+            "$canonical_third" \
+            >/dev/null 2>&1 \
+            || true
+          record_focus_state \
+            "enabled focused-column centering did not center B"
+          return 1
+        fi
+        centered_first=$stable_first_frame
+        centered_second=$stable_second_frame
+        centered_third=$stable_third_frame
+        record_focus_state \
+          "enabled focused-column centering translated the viewport after $((attempt + 1)) focus probes"
+
+        if ! set_center_focused_column false \
+          || ! wait_for_active "$title_b" \
+          || ! wait_for_frames \
+            "$centered_first" \
+            "$centered_second" \
+            "$centered_third"; then
+          set_center_focused_column false >/dev/null 2>&1 || true
+          record_focus_state \
+            "disabling focused-column centering changed settled state"
+          return 1
+        fi
+
+        for ((attempt = 0; attempt < 30; attempt += 1)); do
+          if activate_window "$title_c" \
+            && wait_for_active "$title_c" \
+            && wait_for_frames \
+              "$canonical_first" \
+              "$canonical_second" \
+              "$canonical_third" \
+            && invoke_shortcut "driftile_focus_column_left" \
+            && wait_for_active "$title_b" \
+            && capture_stable_frames \
+            && [[ "$stable_first_frame" == "$canonical_first" \
+              && "$stable_second_frame" == "$canonical_second" \
+              && "$stable_third_frame" == "$canonical_third" ]]; then
+            disabled_verified=true
+            break
+          fi
+        done
+
+        if [[ "$disabled_verified" != true ]] \
+          || ! invoke_shortcut "driftile_focus_column_right" \
+          || ! wait_for_active "$title_c" \
+          || ! wait_for_frames \
+            "$canonical_first" \
+            "$canonical_second" \
+            "$canonical_third"; then
+          set_center_focused_column false >/dev/null 2>&1 || true
+          activate_window "$title_c" >/dev/null 2>&1 || true
+          wait_for_active "$title_c" >/dev/null 2>&1 || true
+          wait_for_frames \
+            "$canonical_first" \
+            "$canonical_second" \
+            "$canonical_third" \
+            >/dev/null 2>&1 \
+            || true
+          record_focus_state \
+            "disabling focused-column centering did not restore minimal reveal"
+          return 1
+        fi
+        record_focus_state \
+          "focused-column centering live toggle restored the exact baseline after $((attempt + 1)) focus probes"
+      }
+
       request_physical_shortcut() {
         local attempt
         local key_name=$1
@@ -8472,6 +8762,7 @@ let
 
       if [[ "$loaded" == true && "$desktops_ready" == true ]] \
         && verify_focus \
+        && verify_center_focused_column_configuration \
         && verify_physical_consume_expel_shortcuts \
         && verify_physical_layer_focus_shortcut \
         && verify_physical_floating_navigation_shortcuts \
@@ -9321,6 +9612,7 @@ let
     ${pluginId}Enabled=true
 
     [Script-${pluginId}]
+    CenterFocusedColumn=false
     ColumnWidthStepPercent=10
     DefaultColumnWidthPercent=${if driftileVmTwoHead then "100" else "50"}
     Gap=${if driftileVmTwoHead then "8" else "16"}

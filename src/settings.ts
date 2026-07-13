@@ -17,11 +17,12 @@ const MIN_DEFAULT_COLUMN_WIDTH_PERCENT = 10;
 const MAX_DEFAULT_COLUMN_WIDTH_PERCENT = 100;
 const MIN_RESIZE_STEP_PERCENT = 1;
 const MAX_RESIZE_STEP_PERCENT = 50;
-const SETTINGS_FIELD_COUNT = 7;
+const SETTINGS_FIELD_COUNT = 8;
 
 export interface DriftileSettings {
   readonly applicationColumnWidths: ApplicationColumnWidthOverrides;
   readonly borderlessWindows: boolean;
+  readonly centerFocusedColumn: boolean;
   readonly columnWidthPresets: ColumnWidthPresetPercentages;
   readonly columnWidthStepPercent: number;
   readonly defaultColumnWidthPercent: number;
@@ -32,6 +33,7 @@ export interface DriftileSettings {
 export const DEFAULT_DRIFTILE_SETTINGS: DriftileSettings = Object.freeze({
   applicationColumnWidths: EMPTY_APPLICATION_COLUMN_WIDTH_OVERRIDES,
   borderlessWindows: true,
+  centerFocusedColumn: false,
   columnWidthPresets: EMPTY_COLUMN_WIDTH_PRESET_PERCENTAGES,
   columnWidthStepPercent: 10,
   defaultColumnWidthPercent: 50,
@@ -52,6 +54,7 @@ export function decodeDriftileSettings(
     Reflect.ownKeys(candidate).length !== SETTINGS_FIELD_COUNT ||
     !owns(candidate, "applicationColumnWidths") ||
     !owns(candidate, "borderlessWindows") ||
+    !owns(candidate, "centerFocusedColumn") ||
     !owns(candidate, "columnWidthPresets") ||
     !owns(candidate, "columnWidthStepPercent") ||
     !owns(candidate, "defaultColumnWidthPercent") ||
@@ -65,6 +68,7 @@ export function decodeDriftileSettings(
     candidate["applicationColumnWidths"],
   );
   const borderlessWindows = candidate["borderlessWindows"];
+  const centerFocusedColumn = candidate["centerFocusedColumn"];
   const columnWidthPresets = decodeColumnWidthPresetPercentages(
     candidate["columnWidthPresets"],
   );
@@ -76,6 +80,7 @@ export function decodeDriftileSettings(
   if (
     !applicationColumnWidths ||
     typeof borderlessWindows !== "boolean" ||
+    typeof centerFocusedColumn !== "boolean" ||
     !columnWidthPresets ||
     !isBoundedInteger(
       columnWidthStepPercent,
@@ -100,6 +105,7 @@ export function decodeDriftileSettings(
   return Object.freeze({
     applicationColumnWidths,
     borderlessWindows,
+    centerFocusedColumn,
     columnWidthPresets,
     columnWidthStepPercent,
     defaultColumnWidthPercent,
@@ -118,6 +124,7 @@ export function sameDriftileSettings(
       right.applicationColumnWidths,
     ) &&
     left.borderlessWindows === right.borderlessWindows &&
+    left.centerFocusedColumn === right.centerFocusedColumn &&
     sameColumnWidthPresetPercentages(
       left.columnWidthPresets,
       right.columnWidthPresets,

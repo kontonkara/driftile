@@ -169,6 +169,7 @@ let
             "org.example.Editor" = 60;
           };
           borderlessWindows = false;
+          centerFocusedColumn = true;
           columnWidthPresets = [ 20 50 80 ];
           columnWidthStepPercent = 13;
           defaultColumnWidthPercent = 65;
@@ -247,6 +248,7 @@ let
       };
   invalidSettings = [
     { borderlessWindows = "false"; }
+    { centerFocusedColumn = "true"; }
     { gap = -1; }
     { gap = 65; }
     { defaultColumnWidthPercent = 9; }
@@ -313,6 +315,7 @@ let
         org.example.Browser=80
         org.example.Editor=60'';
       BorderlessWindows = false;
+      CenterFocusedColumn = true;
       ColumnWidthPresets = "20,50,80";
       ColumnWidthStepPercent = 13;
       DefaultColumnWidthPercent = 65;
@@ -324,6 +327,7 @@ let
     kwinrc."Script-io.github.kontonkara.driftile" = {
       ApplicationColumnWidths = "";
       BorderlessWindows = true;
+      CenterFocusedColumn = false;
       ColumnWidthPresets = "";
       ColumnWidthStepPercent = 10;
       DefaultColumnWidthPercent = 50;
@@ -369,6 +373,7 @@ assert
     kwinrc."Script-io.github.kontonkara.driftile" = {
       ApplicationColumnWidths = "";
       BorderlessWindows = true;
+      CenterFocusedColumn = false;
       ColumnWidthPresets = "";
       ColumnWidthStepPercent = 10;
       DefaultColumnWidthPercent = 50;

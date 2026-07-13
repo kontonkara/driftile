@@ -77,6 +77,8 @@ The current runtime already:
   constraint clamping. Existing columns remain unchanged.
 - Configures up to 16 strictly increasing column-width presets without changing
   existing widths; a blank configuration retains the built-in exact thirds.
+- Optionally centers successful horizontal tiled focus navigation without
+  changing vertical, floating, layer, or direct application focus.
 - Configures a 1–50 percentage-point explicit column-width step without reflowing existing layouts.
 - Configures a 1–50 percentage-point explicit window-height step without reflowing existing layouts.
 - Treats exposed client minimum and maximum sizes as hard bounds, detects silent changes on visible tracked windows, does not model unexposed X11 increment and aspect hints, and leaves backend enforcement to KWin.
@@ -85,7 +87,7 @@ The current runtime already:
 - Registers compact default shortcuts with `H/J/K/L`, arrow, Home/End, and Page Up/Down aliases.
 - Provides a reversible shortcut helper for the bundled defaults and explicit
   JSON v1 profiles; a UI without a Node.js dependency remains future work.
-- Lets Home Manager write the seven typed settings or generate a portable
+- Lets Home Manager write the eight typed settings or generate a portable
   shortcut profile without installing a second KWin package; shortcut claiming
   remains explicit.
 - Leaves dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows outside layout ownership, separate from manual floating.
@@ -155,8 +157,8 @@ Release criteria (met):
 
 ## 1.1.0 (in development)
 
-The current bounded slice adds application-specific initial column widths and
-a configurable column-width preset cycle.
+The current bounded slice adds application-specific initial column widths, a
+configurable column-width preset cycle, and optional horizontal focus centering.
 Each 10%–100% rule occupies one line and matches the exact KWin
 `desktopFileName`; at most 128 rules are accepted. Newly created and fresh
 singleton columns use an O(1) lookup, fall back to the global default when no
@@ -167,6 +169,12 @@ A preset profile contains at most 16 strictly increasing integer percentages
 from 10 to 100. Reconfiguration preserves every existing width, frame,
 viewport, focus target, and persisted layout; later preset actions use the new
 cycle. A blank profile retains the built-in exact thirds.
+
+Centering is disabled by default. When enabled, successful left, right, first,
+and last tiled focus actions center the destination with the same viewport
+policy as the explicit center action, in the same transaction. Unsafe center
+previews retain minimal reveal; other focus paths and live setting changes do
+not move the layout.
 
 Global wheel input remains deferred because KWin 6.7 has no public script axis
 API. This milestone does not add a private input path.

@@ -574,6 +574,7 @@ interface LayoutHydrationCandidate {
 export interface RuntimeControllerOptions {
   readonly applicationColumnWidths?: ApplicationColumnWidthOverrides;
   readonly borderlessWindows?: boolean;
+  readonly centerFocusedColumn?: boolean;
   readonly clientAreaOption: number;
   readonly columnWidth?: ColumnWidth;
   readonly columnWidthPresets?: readonly ColumnWidth[];
@@ -614,6 +615,7 @@ export class RuntimeController {
     CapacityParkOperation
   >();
   private readonly capacityParkBackoffs = new Set<string>();
+  private centerFocusedColumn: boolean;
   private readonly committedOutputRanks = new Map<OutputId, number>();
   private readonly columnFullWidthRestore = new Map<
     string,
@@ -757,6 +759,10 @@ export class RuntimeController {
       EMPTY_APPLICATION_COLUMN_WIDTH_OVERRIDES;
     this.borderlessSettlementEnabled = options.scheduleResume !== undefined;
     this.borderlessWindows = options.borderlessWindows ?? false;
+    this.centerFocusedColumn =
+      typeof options.centerFocusedColumn === "boolean"
+        ? options.centerFocusedColumn
+        : false;
     this.gap = normalizeGap(options.gap ?? DEFAULT_GAP) ?? DEFAULT_GAP;
     this.initialLayoutHydrationQuietSamples = normalizeProbeCount(
       options.layoutHydrationQuietSamples ?? 2,
@@ -1376,6 +1382,15 @@ export class RuntimeController {
     return true;
   }
 
+  setCenterFocusedColumn(enabled: boolean): boolean {
+    if (typeof enabled !== "boolean" || enabled === this.centerFocusedColumn) {
+      return false;
+    }
+
+    this.centerFocusedColumn = enabled;
+    return true;
+  }
+
   focusLeft(): boolean {
     return this.focusHorizontal("left");
   }
@@ -1903,51 +1918,20 @@ export class RuntimeController {
       return false;
     }
 
-    let currentLayout: ReturnType<typeof solveStripGeometry>;
+    const centered = this.centeredColumnView(command, command.activeId);
 
-    try {
-      currentLayout = this.solveContextGeometry(
-        command.before,
-        command.contextGeometry,
-      );
-    } catch {
+    if (!centered) {
       return false;
     }
 
-    const active = currentLayout.windows.find(
-      (window) => window.windowId === command.activeId,
-    );
-
-    if (!active) {
-      return false;
-    }
-
-    const workArea = command.contextGeometry.workArea;
-    const requestedOffset = roundToPhysicalPixel(
-      currentLayout.viewportOffset +
-        active.frame.x +
-        active.frame.width / 2 -
-        (workArea.x + workArea.width / 2),
-      command.contextGeometry.devicePixelRatio,
-    );
-    const preview = this.previewActiveColumnView(
-      command,
-      command.activeColumn.width,
-      requestedOffset,
-    );
-
-    if (!preview) {
-      return false;
-    }
-
-    const desiredOffset = preview.viewportOffset;
+    const desiredOffset = centered.desiredViewportOffset;
 
     if (
-      Math.abs(desiredOffset - currentLayout.viewportOffset) <=
+      Math.abs(desiredOffset - centered.currentViewportOffset) <=
       floatingPointTolerance(
         desiredOffset,
-        currentLayout.viewportOffset,
-        workArea.width,
+        centered.currentViewportOffset,
+        command.contextGeometry.workArea.width,
       )
     ) {
       return false;
@@ -4326,10 +4310,40 @@ export class RuntimeController {
 
     const rememberedFloatingFocus = this.lastFloatingFocus.get(key);
     const rememberedTiledFocus = this.lastTiledFocus.get(key);
+    const centered =
+      this.centerFocusedColumn &&
+      !this.hasCapacityMutationInFlight(command.context.key)
+        ? this.centeredColumnView(command, targetId)
+        : null;
+    const desiredViewportOffset = centered?.desiredViewportOffset ?? null;
     const focused = this.applyActiveColumnMutation(
       command,
       "column focus",
-      () => this.layout.activateWindow(targetId),
+      () => {
+        if (!this.layout.activateWindow(targetId)) {
+          return false;
+        }
+
+        if (
+          desiredViewportOffset === null ||
+          nearlyEqual(desiredViewportOffset, command.before.viewportOffset)
+        ) {
+          return true;
+        }
+
+        if (
+          this.layout.setViewportOffset(
+            command.context.outputId,
+            command.context.desktopId,
+            desiredViewportOffset,
+          )
+        ) {
+          return true;
+        }
+
+        this.layout.activateWindow(command.activeId);
+        return false;
+      },
       () => this.layout.activateWindow(command.activeId),
       () =>
         this.workspace.activeWindow === originalActive &&
@@ -4350,6 +4364,69 @@ export class RuntimeController {
 
     this.rememberLayerFocus(targetId, target);
     return true;
+  }
+
+  private centeredColumnView(
+    command: ActiveColumnCommand,
+    targetId: WindowId,
+  ): {
+    readonly currentViewportOffset: number;
+    readonly desiredViewportOffset: number;
+  } | null {
+    const targetColumn = command.before.columns.find((column) =>
+      column.windowIds.includes(targetId),
+    );
+
+    if (!targetColumn) {
+      return null;
+    }
+
+    const targetContext: LayoutContextSnapshot = {
+      ...command.before,
+      activeColumnId: targetColumn.id,
+    };
+    let currentLayout: ReturnType<typeof solveStripGeometry>;
+
+    try {
+      currentLayout = this.solveContextGeometry(
+        targetContext,
+        command.contextGeometry,
+      );
+    } catch {
+      return null;
+    }
+
+    const target = currentLayout.windows.find(
+      (window) => window.windowId === targetId,
+    );
+
+    if (!target) {
+      return null;
+    }
+
+    const workArea = command.contextGeometry.workArea;
+    const requestedOffset = roundToPhysicalPixel(
+      currentLayout.viewportOffset +
+        target.frame.x +
+        target.frame.width / 2 -
+        (workArea.x + workArea.width / 2),
+      command.contextGeometry.devicePixelRatio,
+    );
+    let centeredLayout: ReturnType<typeof solveStripGeometry>;
+
+    try {
+      centeredLayout = this.solveContextGeometry(
+        { ...targetContext, viewportOffset: requestedOffset },
+        command.contextGeometry,
+      );
+    } catch {
+      return null;
+    }
+
+    return {
+      currentViewportOffset: currentLayout.viewportOffset,
+      desiredViewportOffset: centeredLayout.viewportOffset,
+    };
   }
 
   private focusWithinActiveColumn(direction: VerticalDirection): boolean {

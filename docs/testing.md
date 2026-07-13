@@ -136,6 +136,12 @@ The primary VM also applies a 60% Firefox rule, confirms that changing it to
 80% leaves the existing column untouched, and verifies the wider rule on a new
 Firefox window.
 
+It also toggles focused-column centering live against the three Konsole
+columns. The disabled path preserves the exact minimal-reveal frames, while
+the enabled path preserves order and dimensions, translates every column by
+the same nonzero offset, and centers the focused column within one physical
+pixel before the disabled baseline is restored.
+
 The same VM applies the custom column-width preset list `25,75` to an active
 Konsole column. Physical `Meta+R` input selects 75%, wraps forward to 25%, and
 physical `Meta+Shift+R` wraps back to 75%. Each frame is checked against the

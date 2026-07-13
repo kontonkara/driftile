@@ -68,6 +68,7 @@ export function init(
   nextController.setDefaultColumnWidthPercent(
     settings.defaultColumnWidthPercent,
   );
+  nextController.setCenterFocusedColumn(settings.centerFocusedColumn);
   nextController.setColumnWidthPresets(settings.columnWidthPresets.percentages);
   nextController.setColumnWidthStepPercent(settings.columnWidthStepPercent);
   nextController.setWindowHeightStepPercent(settings.windowHeightStepPercent);
@@ -116,6 +117,7 @@ export function applySettings(settingsSnapshot: unknown): boolean {
 
   controller.setApplicationColumnWidths(settings.applicationColumnWidths);
   controller.setBorderlessWindows(settings.borderlessWindows);
+  controller.setCenterFocusedColumn(settings.centerFocusedColumn);
   controller.setDefaultColumnWidthPercent(settings.defaultColumnWidthPercent);
   controller.setColumnWidthPresets(settings.columnWidthPresets.percentages);
   controller.setColumnWidthStepPercent(settings.columnWidthStepPercent);

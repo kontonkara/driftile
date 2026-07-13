@@ -9038,6 +9038,121 @@ describe("RuntimeController", () => {
     expect(fixture.activationCount).toBe(2);
   });
 
+  it("optionally centers only horizontal tiled focus targets", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const windows = Array.from({ length: 3 }, (_value, index) =>
+      createTrackedWindow(`window-${String(index + 1)}`, output, desktop),
+    );
+    const first = windows[0];
+    const middle = windows[1];
+    const last = windows[2];
+
+    if (!first || !middle || !last) {
+      throw new Error("missing horizontal focus fixture");
+    }
+
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map(({ window }) => window),
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      centerFocusedColumn: true,
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+    });
+
+    expect(controller.start()).toBe(true);
+    const layout = runtimeLayout(controller);
+    const order = testLayoutColumns(controller, output, desktop);
+    const viewportOffset = (): number =>
+      layout.snapshot(outputId(output.name), desktopId(desktop.id))
+        .viewportOffset;
+    const centerX = (tracked: TrackedWindow): number =>
+      tracked.window.frameGeometry.x + tracked.window.frameGeometry.width / 2;
+
+    fixture.workspace.activeWindow = first.window;
+    expect(viewportOffset()).toBe(0);
+    expect(centerX(first)).toBe(160);
+
+    expect(controller.focusRight()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(middle.window);
+    expect(viewportOffset()).toBe(-30);
+    expect(centerX(middle)).toBe(500);
+
+    expect(controller.focusLastColumn()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(last.window);
+    expect(viewportOffset()).toBe(280);
+    expect(centerX(last)).toBe(500);
+
+    expect(controller.focusLeft()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(middle.window);
+    expect(viewportOffset()).toBe(-30);
+    expect(centerX(middle)).toBe(500);
+
+    expect(controller.focusFirstColumn()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(first.window);
+    expect(viewportOffset()).toBe(-340);
+    expect(centerX(first)).toBe(500);
+    expect(controller.focusFirstColumn()).toBe(false);
+    expect(viewportOffset()).toBe(-340);
+    expect(testLayoutColumns(controller, output, desktop)).toEqual(order);
+  });
+
+  it("updates horizontal focus centering without runtime writes", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const windows = [
+      createTrackedWindow("window-1", output, desktop),
+      createTrackedWindow("window-2", output, desktop),
+    ];
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map(({ window }) => window),
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+    });
+
+    expect(controller.start()).toBe(true);
+    const layout = runtimeLayout(controller);
+    const before = layout.snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
+    const writes = windows.map(({ writeCount }) => writeCount);
+    const activationCount = fixture.activationCount;
+
+    expect(
+      controller.setCenterFocusedColumn("true" as unknown as boolean),
+    ).toBe(false);
+    expect(controller.setCenterFocusedColumn(1 as unknown as boolean)).toBe(
+      false,
+    );
+    expect(controller.setCenterFocusedColumn(false)).toBe(false);
+    expect(controller.setCenterFocusedColumn(true)).toBe(true);
+    expect(controller.setCenterFocusedColumn(true)).toBe(false);
+    expect(controller.setCenterFocusedColumn(false)).toBe(true);
+    expect(controller.setCenterFocusedColumn(false)).toBe(false);
+
+    expect(
+      layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+    ).toEqual(before);
+    expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
+    expect(windows.map(({ writeCount }) => writeCount)).toEqual(writes);
+    expect(fixture.activationCount).toBe(activationCount);
+  });
+
   it("skips minimized stack members vertically without changing their slots", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
@@ -9053,6 +9168,7 @@ describe("RuntimeController", () => {
     );
     const scheduler = new ManualScheduler();
     const controller = new RuntimeController(fixture.workspace, {
+      centerFocusedColumn: true,
       clientAreaOption: 2,
       gap: 10,
       schedule: scheduler.schedule,
@@ -14506,6 +14622,7 @@ describe("RuntimeController", () => {
       windows.map(({ window }) => window),
     );
     const controller = new RuntimeController(fixture.workspace, {
+      centerFocusedColumn: true,
       clientAreaOption: 2,
       columnWidth: { kind: "fixed", value: 300 },
       gap: 10,
@@ -14658,6 +14775,7 @@ describe("RuntimeController", () => {
       );
       const scheduler = new ManualScheduler();
       const controller = new RuntimeController(fixture.workspace, {
+        centerFocusedColumn: true,
         clientAreaOption: 2,
         gap: 10,
         schedule: scheduler.schedule,
@@ -15999,6 +16117,7 @@ describe("RuntimeController", () => {
         windows.map(({ window }) => window),
       );
       const controller = new RuntimeController(fixture.workspace, {
+        centerFocusedColumn: true,
         clientAreaOption: 2,
         columnWidth: { kind: "fixed", value: 300 },
         gap: 10,

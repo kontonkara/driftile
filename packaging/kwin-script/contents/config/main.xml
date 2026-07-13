@@ -8,6 +8,10 @@
       <label>Hide KWin borders and title bars on application windows</label>
       <default>true</default>
     </entry>
+    <entry name="CenterFocusedColumn" type="Bool">
+      <label>Center tiled columns after horizontal focus navigation</label>
+      <default>false</default>
+    </entry>
     <entry name="Gap" type="Int">
       <label>Window gap in logical pixels</label>
       <default>16</default>

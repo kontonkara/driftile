@@ -672,6 +672,7 @@ QtObject {
         return {
             applicationColumnWidths: KWin.readConfig("ApplicationColumnWidths", ""),
             borderlessWindows: KWin.readConfig("BorderlessWindows", true),
+            centerFocusedColumn: KWin.readConfig("CenterFocusedColumn", false),
             columnWidthPresets: KWin.readConfig("ColumnWidthPresets", ""),
             columnWidthStepPercent: KWin.readConfig("ColumnWidthStepPercent", 10),
             defaultColumnWidthPercent: KWin.readConfig("DefaultColumnWidthPercent", 50),

@@ -126,6 +126,12 @@ in
               description = "Whether to hide KWin borders and title bars.";
             };
 
+            centerFocusedColumn = lib.mkOption {
+              type = lib.types.bool;
+              default = false;
+              description = "Whether horizontal tiled focus navigation centers the destination column.";
+            };
+
             columnWidthPresets = lib.mkOption {
               type = columnWidthPresetType;
               default = [ ];
@@ -198,6 +204,7 @@ in
         qt.kde.settings.kwinrc."Script-${pluginId}" = {
           ApplicationColumnWidths = renderApplicationColumnWidths cfg.settings.applicationColumnWidths;
           BorderlessWindows = cfg.settings.borderlessWindows;
+          CenterFocusedColumn = cfg.settings.centerFocusedColumn;
           ColumnWidthPresets = renderColumnWidthPresets cfg.settings.columnWidthPresets;
           ColumnWidthStepPercent = cfg.settings.columnWidthStepPercent;
           DefaultColumnWidthPercent = cfg.settings.defaultColumnWidthPercent;

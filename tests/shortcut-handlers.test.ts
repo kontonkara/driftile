@@ -583,6 +583,32 @@ describe("KWin shortcut handlers", () => {
     );
   });
 
+  it("exposes opt-in centering for horizontal tiled focus", () => {
+    const centeringEntry = configuration.match(
+      /<entry name="CenterFocusedColumn" type="Bool">([\s\S]*?)<\/entry>/,
+    )?.[1];
+    const centeringWidget = configurationUi.match(
+      /<widget class="QCheckBox" name="kcfg_CenterFocusedColumn">([\s\S]*?)<\/widget>/,
+    )?.[1];
+
+    expect(centeringEntry).toContain(
+      "<label>Center tiled columns after horizontal focus navigation</label>",
+    );
+    expect(centeringEntry).toContain("<default>false</default>");
+    expect(centeringWidget).toContain(
+      "<string>Center tiled columns after horizontal focus navigation</string>",
+    );
+    expect(qml).toContain(
+      'centerFocusedColumn: KWin.readConfig("CenterFocusedColumn", false)',
+    );
+    expect(runtime).toContain(
+      "nextController.setCenterFocusedColumn(settings.centerFocusedColumn)",
+    );
+    expect(runtime).toContain(
+      "controller.setCenterFocusedColumn(settings.centerFocusedColumn)",
+    );
+  });
+
   it("exposes the window gap as a live bounded user setting", () => {
     const gapEntry = configuration.match(
       /<entry name="Gap" type="Int">([\s\S]*?)<\/entry>/,

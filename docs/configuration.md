@@ -2,7 +2,7 @@
 
 Open **System Settings > Window Management > KWin Scripts** and configure Driftile.
 
-Driftile validates all seven settings as one snapshot. Applying an invalid value
+Driftile validates all eight settings as one snapshot. Applying an invalid value
 through an external configuration tool rejects the entire update and preserves
 the active settings; valid changes apply without reloading the extension.
 
@@ -10,12 +10,12 @@ the active settings; valid changes apply without reloading the extension.
 
 `programs.driftile.settings` is `null` by default, so Home Manager writes no
 Driftile setting. A non-null value is one complete typed profile: omitted fields
-take the defaults documented below, and Home Manager writes all seven values.
+take the defaults documented below, and Home Manager writes all eight values.
 This profile works with `programs.driftile.enable = false` when the package is
 installed system-wide.
 
 The activation writes only `ApplicationColumnWidths`, `BorderlessWindows`,
-`Gap`, `DefaultColumnWidthPercent`, `ColumnWidthPresets`,
+`CenterFocusedColumn`, `Gap`, `DefaultColumnWidthPercent`, `ColumnWidthPresets`,
 `ColumnWidthStepPercent`, and `WindowHeightStepPercent` in Driftile's `kwinrc`
 group. It does not replace the file or manage shortcuts. A running KWin session
 is asked to reconfigure on a best-effort basis; otherwise the values apply on
@@ -30,6 +30,7 @@ programs.driftile.settings.applicationColumnWidths = {
   "org.mozilla.firefox" = 80;
 };
 
+programs.driftile.settings.centerFocusedColumn = false;
 programs.driftile.settings.columnWidthPresets = [ 20 50 80 ];
 ```
 
@@ -47,6 +48,18 @@ required.
 Open **System Settings > Keyboard > Shortcuts** and search for **Driftile** to
 change any registered action. KGlobalAccel stores and applies assignments live;
 the KWin-script settings page does not maintain a second copy.
+
+## Horizontal focus centering
+
+**Center tiled columns after horizontal focus navigation** is disabled by
+default. When enabled, successful left, right, first, and last tiled focus
+actions center their destination column with the same viewport policy as the
+explicit **Center column** action. If centering cannot be prepared safely, the
+normal minimal reveal still completes the focus action.
+
+Changing the option does not move the current layout. Vertical, floating,
+layer, and direct application focus are unchanged, and the explicit **Center
+column** action remains available.
 
 ## Window gap
 

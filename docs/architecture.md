@@ -92,6 +92,9 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Replaces at most 16 column-width presets atomically without layout work;
   existing columns retain their concrete widths and later preset actions read
   the new cycle.
+- Optionally centers the destination of successful horizontal tiled focus
+  navigation inside the existing focus transaction. Other focus paths retain
+  minimal reveal and a failed center preview falls back without rejecting focus.
 - Applies width- and height-step changes in constant time without scheduling layout work; only later matching decrease and increase actions read each value.
 - Rolls back speculative startup admission as one batch when settled work-area geometry cannot produce valid frames, then keeps fingerprinted waiting ownership for a later topology recovery.
 - Isolates failed context solves at public and scheduled reconcile boundaries, keeps each blocked context dirty without immediate retry, and continues reconciling healthy contexts.
@@ -126,6 +129,7 @@ RuntimeState
   contexts: Map<ContextKey, LayoutContext>
   dirtyContexts: Set<ContextKey>
   gap: number
+  centerFocusedColumn: boolean
   columnWidthStep: number
   windowHeightStep: number
   defaultColumnWidth: ColumnWidth
@@ -311,6 +315,8 @@ inspected safely within the codec bound.
   that may create a fresh singleton.
 - Replace the bounded column-width preset cycle without changing model values,
   frames, viewport state, or focus.
+- Treat horizontal-focus centering as future command policy. Reconfiguration
+  performs no layout work, and rejected focus restores the prior viewport.
 - Treat resize-step changes as future command policy: preserve every current model value, frame, viewport, and focus target.
 - Never leave partial layout ownership after a failed startup solve, and never immediately reschedule an unchanged unusable work area.
 - Keep a managed context unchanged and dirty when its settled work area cannot produce valid frames; a failure in one context must not block another.

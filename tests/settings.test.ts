@@ -25,6 +25,7 @@ if (!validColumnWidthPresets) {
 const validSettings: DriftileSettings = {
   applicationColumnWidths: validApplicationColumnWidths,
   borderlessWindows: false,
+  centerFocusedColumn: true,
   columnWidthPresets: validColumnWidthPresets,
   columnWidthStepPercent: 25,
   defaultColumnWidthPercent: 75,
@@ -35,6 +36,7 @@ const validSettings: DriftileSettings = {
 const validSettingsInput = {
   applicationColumnWidths: "org.example.Editor=75",
   borderlessWindows: validSettings.borderlessWindows,
+  centerFocusedColumn: validSettings.centerFocusedColumn,
   columnWidthPresets: validSettings.columnWidthPresets.canonicalValue,
   columnWidthStepPercent: validSettings.columnWidthStepPercent,
   defaultColumnWidthPercent: validSettings.defaultColumnWidthPercent,
@@ -46,6 +48,7 @@ describe("Driftile settings", () => {
   it("exposes the current immutable defaults", () => {
     expect(DEFAULT_DRIFTILE_SETTINGS).toMatchObject({
       borderlessWindows: true,
+      centerFocusedColumn: false,
       columnWidthStepPercent: 10,
       defaultColumnWidthPercent: 50,
       gap: 16,
@@ -69,6 +72,7 @@ describe("Driftile settings", () => {
 
     expect(decoded).toMatchObject({
       borderlessWindows: validSettings.borderlessWindows,
+      centerFocusedColumn: validSettings.centerFocusedColumn,
       columnWidthPresets: validSettings.columnWidthPresets,
       columnWidthStepPercent: validSettings.columnWidthStepPercent,
       defaultColumnWidthPercent: validSettings.defaultColumnWidthPercent,
@@ -87,6 +91,7 @@ describe("Driftile settings", () => {
     {
       applicationColumnWidths: "",
       borderlessWindows: true,
+      centerFocusedColumn: false,
       columnWidthPresets: "10",
       columnWidthStepPercent: 1,
       defaultColumnWidthPercent: 10,
@@ -96,6 +101,7 @@ describe("Driftile settings", () => {
     {
       applicationColumnWidths: "org.example.Browser=80",
       borderlessWindows: false,
+      centerFocusedColumn: true,
       columnWidthPresets: "100",
       columnWidthStepPercent: 50,
       defaultColumnWidthPercent: 100,
@@ -114,6 +120,7 @@ describe("Driftile settings", () => {
     );
     expect(decoded).toMatchObject({
       borderlessWindows: settings.borderlessWindows,
+      centerFocusedColumn: settings.centerFocusedColumn,
       columnWidthStepPercent: settings.columnWidthStepPercent,
       defaultColumnWidthPercent: settings.defaultColumnWidthPercent,
       gap: settings.gap,
@@ -123,6 +130,7 @@ describe("Driftile settings", () => {
 
   it.each([
     ["a non-boolean borderless setting", { borderlessWindows: 1 }],
+    ["a non-boolean centering setting", { centerFocusedColumn: 1 }],
     ["invalid column-width presets", { columnWidthPresets: "50,40" }],
     [
       "invalid application overrides",
@@ -170,6 +178,7 @@ describe("Driftile settings", () => {
     const incomplete = {
       applicationColumnWidths: validSettingsInput.applicationColumnWidths,
       borderlessWindows: validSettings.borderlessWindows,
+      centerFocusedColumn: validSettings.centerFocusedColumn,
       columnWidthPresets: validSettingsInput.columnWidthPresets,
       columnWidthStepPercent: validSettings.columnWidthStepPercent,
       defaultColumnWidthPercent: validSettings.defaultColumnWidthPercent,
@@ -207,6 +216,7 @@ describe("Driftile settings", () => {
     for (const changed of [
       { applicationColumnWidths: changedApplicationColumnWidths },
       { borderlessWindows: true },
+      { centerFocusedColumn: false },
       { columnWidthPresets: changedColumnWidthPresets },
       { columnWidthStepPercent: 26 },
       { defaultColumnWidthPercent: 76 },

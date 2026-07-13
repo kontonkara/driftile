@@ -27,6 +27,8 @@ The ownership rule is strict:
   clamping.
 - Up to 16 configurable, strictly increasing 10%–100% column-width presets;
   an empty configuration retains the built-in exact thirds.
+- Optional best-effort centering for successful left, right, first, and last
+  tiled focus navigation without changing other focus paths.
 - Configurable 1–50 percentage-point step for explicit column-width decrease and increase actions.
 - Configurable 1–50 percentage-point step for explicit active-window height decrease and increase actions.
 - Output-local commands unless a transfer is explicit.
@@ -85,7 +87,9 @@ Driftile must integrate with, not duplicate:
 - Maximizing a member of a regular stack extracts it into an immediate right singleton before calling KWin; unmaximizing leaves it separate.
 - No layout write occurs while a topology snapshot is unsettled.
 - A temporarily unusable settled work area leaves eligible startup windows waiting and managed layouts unchanged without writes or retry loops; a later settled geometry change recovers them normally.
-- Focusing a non-minimized managed window makes it fully visible with the smallest required scroll.
+- Focusing a non-minimized managed window makes it fully visible. Horizontal
+  tiled navigation uses the smallest required scroll unless optional centering
+  successfully places the destination closer to the work-area center.
 - Reordering moves one whole active column left, right, first, or last inside its context without changing focus or widths.
 - Column-width resizing changes one whole active column, translates client limits to decorated frame bounds, respects every member's width constraints, and preserves focus and grouping.
 - A newly admitted or explicitly resized width that reaches a hard minimum or maximum is stored at that fixed logical-pixel boundary, so work-area changes cannot scale it past the same constraint.
@@ -146,5 +150,9 @@ Driftile must integrate with, not duplicate:
 - A column-width preset change performs no layout, frame, viewport, focus, or
   persistence write. Existing columns keep their concrete width; later preset
   actions use the replacement cycle and retain normal constraint clamping.
+- Horizontal-focus centering runs inside the successful tiled focus transaction
+  and uses the existing physical-pixel viewport calculation. A failed center
+  preview keeps the normal minimal reveal; changing the option performs no
+  layout or persistence write.
 - A width-step change performs no layout, frame, viewport, or focus write. It affects only later explicit decrease and increase actions; reset, presets, full width, and available-width expansion remain independent.
 - A height-step change performs no layout, frame, viewport, or focus write. It affects only later explicit decrease and increase actions; reset and height presets remain independent.

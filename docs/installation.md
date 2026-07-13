@@ -28,7 +28,7 @@ kpackagetool6 --type=KWin/Script \
 
 Open **System Settings > Window Management > KWin Scripts**, enable
 **Driftile**, and select **Apply**. The configure button on the same page opens
-the gap, width, height, and decoration settings described in
+the layout and presentation settings described in
 [Configuration](configuration.md).
 
 ## Configure shortcuts
@@ -125,7 +125,7 @@ steps above, then remove Driftile's stored KConfig values and layout snapshot:
 kwriteconfig6 --file kwinrc --group Plugins \
   --key io.github.kontonkara.driftileEnabled --delete ""
 for key in ApplicationColumnWidths BorderlessWindows \
-  ColumnWidthPresets ColumnWidthStepPercent \
+  CenterFocusedColumn ColumnWidthPresets ColumnWidthStepPercent \
   DefaultColumnWidthPercent Gap WindowHeightStepPercent; do
   kwriteconfig6 --file kwinrc \
     --group Script-io.github.kontonkara.driftile \
@@ -170,7 +170,7 @@ modules = [
 ];
 ```
 
-Home Manager can also own the complete seven-setting profile from the main
+Home Manager can also own the complete eight-setting profile from the main
 branch:
 
 ```nix
@@ -179,6 +179,7 @@ programs.driftile.settings = {
     "org.kde.konsole" = 60;
   };
   borderlessWindows = true;
+  centerFocusedColumn = false;
   columnWidthPresets = [ 20 50 80 ];
   gap = 16;
   defaultColumnWidthPercent = 50;

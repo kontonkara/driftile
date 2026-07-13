@@ -19,7 +19,8 @@ leaving window, output, and desktop mechanisms to KWin.
   native fullscreen and maximize integration.
 - Settled recovery for output, scale, work-area, and window-constraint changes.
 - Configurable gaps, global and application-specific initial column widths,
-  column-width presets, resize steps, and optional borderless presentation.
+  column-width presets, resize steps, horizontal focus centering, and optional
+  borderless presentation.
 - Exact extension-reload restoration, conservative cross-session restoration,
   and fail-closed restoration when a known output returns.
 - An optional reversible shortcut helper with custom JSON profiles.
