@@ -433,6 +433,12 @@ Release criteria (met):
 - These checks extend the existing static, multi-output, and X11 fallback test
   pool without adding a new scenario family.
 
+## 1.9.0 (in development)
+
+The `main` branch tracks `1.9.0-dev.0`. Its next bounded slice will be selected
+and scope-frozen separately; this placeholder does not commit an implementation
+scope.
+
 ## Post-v1
 
 Add interaction and presentation features outside the frozen v1 scope without
