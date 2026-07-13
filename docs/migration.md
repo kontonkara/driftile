@@ -1,9 +1,41 @@
 # Migration
 
-The latest stable release is 1.3.0. Use the steps below when changing release
+The latest stable release is 1.4.0. Use the steps below when changing release
 generations, and never combine files from different releases.
 
-## Upgrade from 1.3.0 to 1.4.0-rc.1
+## Upgrade from 1.4.0-rc.1
+
+1. Release helper-owned shortcuts with the RC helper while it is still
+   available.
+2. Disable Driftile and the optional overview in System Settings.
+3. Upgrade the installed archives to their matching 1.4.0 versions, or update
+   the pinned Nix input to `v1.4.0` and rebuild.
+4. Enable Driftile, then assign shortcuts or claim them with the final helper.
+5. If installed, re-enable the overview and review its manually assigned
+   shortcut.
+
+Version 1.4.0 has no runtime or persistence behavior changes from RC.1. Both
+package IDs, the ten settings, shortcut action IDs, overview behavior, and
+stored layouts remain compatible.
+
+## Upgrade from 1.3.0 to 1.4.0
+
+1. Release helper-owned shortcuts with the 1.3.0 helper while it is still
+   available.
+2. Disable Driftile and the optional overview in System Settings.
+3. Upgrade the main script and, if installed, the overview to their matching
+   1.4.0 archives, or pin the Nix input to `v1.4.0` and rebuild.
+4. Enable Driftile, review the new touchpad setting, then assign shortcuts or
+   claim them with the final helper.
+5. If installed, re-enable the overview and review its manually assigned
+   shortcut.
+
+The new five-finger horizontal touchpad setting defaults to disabled. Enabling
+it adds column-focus gestures on native Wayland and is a safe no-op on native
+X11. The package IDs, shortcut action IDs, overview behavior, and stored-layout
+format remain compatible with 1.3.0.
+
+## Upgrade from 1.3.0 to 1.4.0-rc.1 (historical)
 
 1. Release helper-owned shortcuts with the 1.3.0 helper while it is still
    available.
@@ -20,9 +52,9 @@ it adds column-focus gestures on native Wayland and is a safe no-op on native
 X11. The package IDs, shortcut action IDs, overview behavior, and stored-layout
 format remain compatible with 1.3.0.
 
-## Roll back from 1.4.0-rc.1 to 1.3.0
+## Roll back from 1.4.0 to 1.3.0
 
-Release shortcuts with the RC helper, disable Driftile and the optional
+Release shortcuts with the 1.4.0 helper, disable Driftile and the optional
 overview, then restore archive installations to their verified 1.3.0 packages.
 For Nix, remove a declared
 `programs.driftile.settings.touchpadNavigation` attribute if present, restore
