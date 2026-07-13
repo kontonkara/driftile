@@ -641,6 +641,8 @@ capture_overview_checkpoint() {
   local digest
   local frame
   local frames=""
+  local membership
+  local memberships=""
   local title
 
   digest=$(capture_stable_layout_digest) || return 1
@@ -654,16 +656,124 @@ capture_overview_checkpoint() {
   for title in "$@"; do
     frame=$(capture_stable_geometry "$title") || return 1
     frames+="${frames:+|}$title=$frame"
+    membership=$(window_desktop_transfer_state "$title") || return 1
+    memberships+="${memberships:+|}$title=$membership"
   done
 
-  printf '%s\037%s\037%s\037%s\037%s\037%s\037%s' \
+  printf '%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s' \
     "$digest" \
     "$desktop_sequence" \
     "$(current_desktop_id)" \
     "$active_window" \
     "$frames" \
+    "$memberships" \
+    "$(capture_overview_settings)" \
     "$(effect_loaded_state "$plasma_overview_effect_id")" \
     "$(effect_active_state "$plasma_overview_effect_id")"
+}
+
+capture_overview_settings() {
+  local key
+  local value
+  local -a keys=(
+    ApplicationColumnWidths
+    ApplicationTilingExclusions
+    BorderlessWindows
+    CenterFocusedColumn
+    ColumnWidthPresets
+    ColumnWidthStepPercent
+    DefaultColumnWidthPercent
+    Gap
+    TouchpadNavigation
+    WindowHeightStepPercent
+  )
+
+  for key in "${keys[@]}"; do
+    value=$(kreadconfig6 \
+      --file "$XDG_CONFIG_HOME/kwinrc" \
+      --group "Script-${plugin_id}" \
+      --key "$key" \
+      --default __driftile_missing_setting__) || return 1
+    printf '%s\036%s\037' "$key" "$value"
+  done | sha256sum | awk '{ print $1 }'
+}
+
+overview_checkpoint_differences() {
+  local expected=$1
+  local actual=$2
+  local index
+  local differences=""
+  local -a labels=(
+    layout
+    desktop-sequence
+    selected-desktop
+    focus
+    frames
+    memberships
+    settings
+    built-in-loaded
+    built-in-active
+  )
+  local -a expected_fields=()
+  local -a actual_fields=()
+  local IFS=$'\037'
+
+  read -r -a expected_fields <<< "$expected"
+  read -r -a actual_fields <<< "$actual"
+
+  for index in "${!labels[@]}"; do
+    if [[ "${expected_fields[index]:-}" != "${actual_fields[index]:-}" ]]; then
+      differences+="${differences:+,}${labels[index]}"
+    fi
+  done
+
+  printf '%s' "${differences:-unknown}"
+}
+
+overview_number_gutter_click_point() {
+  local output_name=$1
+  local desktop_index=$2
+  local desktop_count=$3
+  local card_gap
+  local card_height
+  local content_left=42
+  local height
+  local minimum_dimension
+  local outer_margin
+  local width
+  local x
+  local y
+
+  ((desktop_index >= 0 && desktop_index < desktop_count)) || return 1
+  read -r x y width height < <(
+    kscreen-doctor -j 2>/dev/null | jq --exit-status --raw-output \
+      --arg outputName "$output_name" '
+        .outputs
+        | map(select(.enabled and .name == $outputName))
+        | select(length == 1)
+        | .[0]
+        | [
+            .pos.x,
+            .pos.y,
+            ((.size.width / .scale) | floor),
+            ((.size.height / .scale) | floor)
+          ]
+        | @tsv
+      '
+  ) || return 1
+
+  minimum_dimension=$((width < height ? width : height))
+  outer_margin=$((minimum_dimension * 35 / 1000))
+  ((outer_margin < 20)) && outer_margin=20
+  card_gap=$((height * 12 / 1000))
+  ((card_gap < 2)) && card_gap=2
+  ((card_gap > 10)) && card_gap=10
+  card_height=$(((height - outer_margin * 2 - card_gap * (desktop_count - 1)) / desktop_count))
+  ((card_height > 0)) || return 1
+
+  printf '%s %s\n' \
+    "$((x + outer_margin + content_left / 2))" \
+    "$((y + outer_margin + desktop_index * (card_height + card_gap) + card_height / 2))"
 }
 
 verify_overview_missing_state() {
@@ -845,6 +955,204 @@ verify_overview_effect_lifecycle() {
     fail "the $protocol checkpoint did not survive the inert overview action"
   [[ "$after_checkpoint" == "$baseline_checkpoint" ]] || \
     fail "the inert $protocol overview action changed windows, desktops, focus, layout state, or the built-in Overview"
+}
+
+verify_overview_desktop_selection() {
+  local protocol=$1
+  local left_first_title=$2
+  local source_title=$3
+  local target_title=$4
+  local right_first_title=$5
+  local right_second_title=$6
+  local after_checkpoint
+  local baseline_checkpoint
+  local click_x
+  local click_y
+  local expected_target_checkpoint
+  local overview_keys
+  local plasma_active
+  local plasma_loaded
+  local restore_checkpoint
+  local target_pid
+  local trailing_desktop_id=""
+  local -a desktop_ids=()
+  local -a restore_titles=(
+    "$left_first_title"
+    "$source_title"
+    "$right_first_title"
+    "$right_second_title"
+  )
+  local -a selection_titles=(
+    "${restore_titles[@]}"
+    "$target_title"
+  )
+
+  wait_for_script_state true || \
+    fail "KWin did not keep Driftile loaded before the $protocol overview desktop-selection check"
+  wait_for_effect_loaded_state "$overview_plugin_id" false || \
+    fail "the Driftile overview was loaded before the $protocol desktop-selection check"
+  wait_for_current_desktop "$primary_desktop_id" || \
+    fail "KWin did not retain desktop 1 before the $protocol overview desktop-selection check"
+  wait_for_only_active "$source_title" "${restore_titles[@]}" || \
+    fail "KWin did not retain the $protocol overview focus source before desktop selection"
+  restore_checkpoint=$(capture_overview_checkpoint "${restore_titles[@]}") || \
+    fail "the restorable $protocol overview desktop-selection fixture did not stabilize"
+
+  invoke_shortcut "driftile_focus_desktop_2" || \
+    fail "KGlobalAccel could not select desktop 2 for the $protocol overview selector fixture"
+  wait_for_current_desktop "$secondary_desktop_id" || \
+    fail "Driftile did not select desktop 2 for the $protocol overview selector fixture"
+  start_client "$protocol" "$target_title" true
+  target_pid=${client_pids[${#client_pids[@]}-1]}
+  wait_for_window_desktop "$target_title" "$secondary_desktop_id" || \
+    fail "KWin did not place the $protocol overview selector fixture on desktop 2"
+  wait_for_only_active "$target_title" "${selection_titles[@]}" || \
+    fail "KWin did not retain the exact $protocol overview selector target on desktop 2"
+  wait_for_geometries \
+    "$left_first_title" "16,16,616,688" \
+    "$source_title" "648,16,616,688" \
+    "$target_title" "16,16,616,688" \
+    "$right_first_title" "1296,16,616,688" \
+    "$right_second_title" "1928,16,616,688" || \
+    fail "Driftile did not establish the isolated $protocol overview desktop-2 fixture: $(describe_layout "${selection_titles[@]}")"
+  wait_for_appended_desktop \
+    trailing_desktop_id \
+    "$primary_desktop_id" \
+    "$secondary_desktop_id" || \
+    fail "Driftile did not append the shared empty tail for the $protocol overview selector fixture"
+  verify_multi_output_desktop_state "$target_title" secondary || \
+    fail "KWin did not expose left desktop 2 and right desktop 1 for the $protocol overview selector target"
+  unregister_desktop_state_marker \
+    "$desktop_state_verified_shortcut_prefix $target_title secondary" || \
+    fail "KGlobalAccel could not remove the target $protocol overview desktop-state marker"
+  expected_target_checkpoint=$(capture_overview_checkpoint "${selection_titles[@]}") || \
+    fail "the expected $protocol overview desktop-2 checkpoint did not stabilize"
+
+  invoke_shortcut "driftile_focus_desktop_1" || \
+    fail "KGlobalAccel could not restore desktop 1 before the $protocol overview selector click"
+  wait_for_current_desktop "$primary_desktop_id" || \
+    fail "Driftile did not restore desktop 1 before the $protocol overview selector click"
+  wait_for_only_active "$source_title" "${selection_titles[@]}" || \
+    fail "KWin did not restore the exact $protocol overview selector source on desktop 1"
+  verify_multi_output_desktop_state "$source_title" primary || \
+    fail "KWin did not expose desktop 1 on both outputs before the $protocol overview selector click"
+  unregister_desktop_state_marker \
+    "$desktop_state_verified_shortcut_prefix $source_title primary" || \
+    fail "KGlobalAccel could not remove the source $protocol overview desktop-state marker"
+  baseline_checkpoint=$(capture_overview_checkpoint "${selection_titles[@]}") || \
+    fail "the source $protocol overview desktop-selection checkpoint did not stabilize"
+  plasma_loaded=$(effect_loaded_state "$plasma_overview_effect_id") || \
+    fail "KWin did not expose the built-in Overview loaded state before $protocol desktop selection"
+  plasma_active=$(effect_active_state "$plasma_overview_effect_id") || \
+    fail "KWin did not expose the built-in Overview active state before $protocol desktop selection"
+
+  load_overview_effect || \
+    fail "KWin could not load the Driftile overview for $protocol desktop selection"
+  wait_for_shortcut "$overview_shortcut" || \
+    fail "KGlobalAccel did not register the $protocol overview desktop-selection action"
+  overview_keys=$(shortcut_keys "$overview_shortcut" "$overview_shortcut_text") || \
+    fail "KGlobalAccel did not expose the $protocol overview desktop-selection assignment"
+  [[ "$overview_keys" == "[]" ]] || \
+    fail "the $protocol overview desktop-selection action was unexpectedly bound: $overview_keys"
+  after_checkpoint=$(capture_overview_checkpoint "${selection_titles[@]}") || \
+    fail "the $protocol overview desktop-selection checkpoint did not survive the effect load"
+  [[ "$after_checkpoint" == "$baseline_checkpoint" ]] || \
+    fail "loading the $protocol overview desktop selector changed frames, memberships, settings, layout state, focus, desktops, or the built-in Overview"
+
+  mapfile -t desktop_ids < <(virtual_desktop_ids)
+  ((${#desktop_ids[@]} == 3)) || \
+    fail "the $protocol overview desktop selector did not expose its exact three-card fixture"
+  [[ \
+    "${desktop_ids[0]}" == "$primary_desktop_id" &&
+      "${desktop_ids[1]}" == "$secondary_desktop_id" &&
+      "${desktop_ids[2]}" == "$trailing_desktop_id"
+  ]] || fail "the $protocol overview desktop selector target was not exact card index 1"
+  read -r click_x click_y < <(
+    overview_number_gutter_click_point Virtual-0 1 "${#desktop_ids[@]}"
+  ) || fail "KScreen did not expose the left $protocol overview number-gutter geometry"
+
+  invoke_shortcut "$overview_shortcut" || \
+    fail "KGlobalAccel could not activate the $protocol overview desktop selector"
+  wait_for_effect_active_state "$overview_plugin_id" true || \
+    fail "the $protocol overview desktop selector did not become active"
+  after_checkpoint=$(capture_overview_checkpoint "${selection_titles[@]}") || \
+    fail "the active $protocol overview desktop-selection fixture did not stabilize"
+  [[ "$after_checkpoint" == "$baseline_checkpoint" ]] || \
+    fail "activating the $protocol overview desktop selector changed frames, memberships, settings, layout state, focus, desktops, or the built-in Overview"
+  [[ "$(effect_loaded_state "$plasma_overview_effect_id")" == "$plasma_loaded" ]] || \
+    fail "the $protocol overview desktop selector changed the built-in Overview loaded state"
+  [[ "$(effect_active_state "$plasma_overview_effect_id")" == "$plasma_active" ]] || \
+    fail "the $protocol overview desktop selector changed the built-in Overview active state"
+  [[ "$(effect_active_state "$overview_plugin_id")" == true ]] || \
+    fail "the $protocol overview desktop selector was not active immediately before physical input"
+
+  "$DRIFTILE_SMOKE_FAKE_INPUT_CLIENT" click "$click_x" "$click_y" || \
+    fail "the compositor-routed $protocol overview desktop-selector click failed"
+  wait_for_current_desktop "$secondary_desktop_id" || \
+    fail "the $protocol overview desktop-selector click did not select desktop 2"
+  wait_for_only_active "$target_title" "${selection_titles[@]}" || \
+    fail "KWin did not restore the exact $protocol desktop-2 target after overview selection: $(describe_active_windows "${selection_titles[@]}")"
+  verify_multi_output_desktop_state "$target_title" secondary || \
+    fail "the $protocol overview selector did not leave left desktop 2 and right desktop 1 selected"
+  unregister_desktop_state_marker \
+    "$desktop_state_verified_shortcut_prefix $target_title secondary" || \
+    fail "KGlobalAccel could not remove the selected $protocol overview desktop-state marker"
+  wait_for_effect_active_state "$overview_plugin_id" false || \
+    fail "the $protocol overview did not close after confirmed desktop selection"
+  wait_for_effect_loaded_state "$overview_plugin_id" true || \
+    fail "the $protocol overview unloaded after confirmed desktop selection"
+  after_checkpoint=$(capture_overview_checkpoint "${selection_titles[@]}") || \
+    fail "the selected $protocol overview desktop-2 checkpoint did not stabilize"
+  [[ "$after_checkpoint" == "$expected_target_checkpoint" ]] || \
+    fail "the $protocol overview desktop-selector click changed frames, memberships, settings, layout state, or the built-in Overview beyond exact desktop selection"
+
+  unload_overview_effect || \
+    fail "KWin could not unload the Driftile overview after $protocol desktop selection"
+  wait_for_script_state true || \
+    fail "unloading the $protocol overview desktop selector unloaded Driftile"
+  overview_keys=$(shortcut_keys "$overview_shortcut" "$overview_shortcut_text") || \
+    fail "KGlobalAccel did not preserve the inert $protocol overview desktop-selection assignment"
+  [[ "$overview_keys" == "[]" ]] || \
+    fail "the unloaded $protocol overview desktop-selection action gained an assignment: $overview_keys"
+  invoke_shortcut "$overview_shortcut" || \
+    fail "KGlobalAccel could not invoke the inert $protocol overview desktop-selection action"
+  sleep 0.2
+  wait_for_effect_loaded_state "$overview_plugin_id" false || \
+    fail "the inert $protocol overview desktop-selection action reloaded the effect"
+  wait_for_effect_active_state "$overview_plugin_id" false || \
+    fail "the inert $protocol overview desktop-selection action activated the effect"
+  after_checkpoint=$(capture_overview_checkpoint "${selection_titles[@]}") || \
+    fail "the $protocol desktop-2 checkpoint did not survive the inert overview action"
+  [[ "$after_checkpoint" == "$expected_target_checkpoint" ]] || \
+    fail "the inert $protocol overview desktop-selection action changed frames, memberships, settings, layout state, focus, desktops, or the built-in Overview"
+
+  invoke_shortcut "driftile_focus_desktop_1" || \
+    fail "KGlobalAccel could not restore desktop 1 after the $protocol overview selector"
+  wait_for_current_desktop "$primary_desktop_id" || \
+    fail "Driftile did not restore desktop 1 after the $protocol overview selector"
+  wait_for_only_active "$source_title" "${selection_titles[@]}" || \
+    fail "KWin did not restore the exact $protocol overview focus source"
+  verify_multi_output_desktop_state "$source_title" primary || \
+    fail "KWin did not restore desktop 1 on both outputs after the $protocol overview selector"
+  unregister_desktop_state_marker \
+    "$desktop_state_verified_shortcut_prefix $source_title primary" || \
+    fail "KGlobalAccel could not remove the restored $protocol overview desktop-state marker"
+
+  stop_client "$target_pid"
+  wait_for_window_gone "$target_title" || \
+    fail "the temporary $protocol overview selector target did not close"
+  wait_for_desktop_sequence "$primary_desktop_id" "$secondary_desktop_id" || \
+    fail "Driftile did not remove the temporary $protocol overview selector tail"
+  wait_for_geometries \
+    "$left_first_title" "16,16,616,688" \
+    "$source_title" "648,16,616,688" \
+    "$right_first_title" "1296,16,616,688" \
+    "$right_second_title" "1928,16,616,688" || \
+    fail "Driftile did not restore the $protocol overview selector fixture: $(describe_layout "${restore_titles[@]}")"
+  after_checkpoint=$(capture_overview_checkpoint "${restore_titles[@]}") || \
+    fail "the restored $protocol overview selector checkpoint did not stabilize"
+  [[ "$after_checkpoint" == "$restore_checkpoint" ]] || \
+    fail "the $protocol overview selector fixture did not restore its exact checkpoint: $(overview_checkpoint_differences "$restore_checkpoint" "$after_checkpoint")"
 }
 
 claim_shortcut_profile() {
@@ -9364,6 +9672,10 @@ run_multi_output_scenario() {
       "$protocol" \
       --click-focus "${titles[0]}" "${titles[1]}" 956 190 \
       "${titles[0]}" "${titles[1]}" "${titles[3]}" "${titles[4]}"
+    verify_overview_desktop_selection \
+      "$protocol" \
+      "${titles[0]}" "${titles[1]}" "${titles[2]}" \
+      "${titles[3]}" "${titles[4]}"
   fi
   verify_multi_output_desktop_state "${titles[1]}" primary || \
     fail "the $protocol overview changed a selected output desktop"
