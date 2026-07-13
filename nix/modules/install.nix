@@ -52,55 +52,59 @@ let
     ''"\u009e"''
     ''"\u009f"''
   ];
-  hasControlCharacter = value:
+  hasControlCharacter =
+    value:
     builtins.match ".*[[:cntrl:]].*" value != null
     || lib.any (character: lib.hasInfix character value) c1ControlCharacters;
-  validDesktopFileName = value:
+  validDesktopFileName =
+    value:
     value != ""
     && builtins.stringLength value <= 255
     && value == lib.strings.trim value
     && !hasControlCharacter value;
-  validColumnWidthDesktopFileName = value:
-    validDesktopFileName value && !lib.hasInfix "=" value;
-  applicationColumnWidthType = lib.types.addCheck
-    (lib.types.attrsOf (lib.types.ints.between 10 100))
-    (
-      widths:
-      builtins.length (builtins.attrNames widths) <= 128
-      && lib.all validColumnWidthDesktopFileName (builtins.attrNames widths)
-    );
-  renderApplicationColumnWidths = widths:
+  validColumnWidthDesktopFileName = value: validDesktopFileName value && !lib.hasInfix "=" value;
+  applicationColumnWidthType =
+    lib.types.addCheck (lib.types.attrsOf (lib.types.ints.between 10 100))
+      (
+        widths:
+        builtins.length (builtins.attrNames widths) <= 128
+        && lib.all validColumnWidthDesktopFileName (builtins.attrNames widths)
+      );
+  renderApplicationColumnWidths =
+    widths:
     lib.concatStringsSep "\n" (
       map (desktopFileName: "${desktopFileName}=${toString widths.${desktopFileName}}") (
         builtins.sort builtins.lessThan (builtins.attrNames widths)
       )
     );
-  applicationTilingExclusionType = lib.types.addCheck
-    (lib.types.listOf lib.types.str)
-    (
-      exclusions:
-      builtins.length exclusions <= 128
-      && builtins.length (lib.unique exclusions) == builtins.length exclusions
-      && lib.all (
-        exclusion: builtins.isString exclusion && validDesktopFileName exclusion
-      ) exclusions
-    );
-  renderApplicationTilingExclusions = exclusions:
-    lib.concatStringsSep "\n" (builtins.sort builtins.lessThan exclusions);
-  strictlyIncreasing = values:
+  applicationTilingExclusionType = lib.types.addCheck (lib.types.listOf lib.types.str) (
+    exclusions:
+    builtins.length exclusions <= 128
+    && builtins.length (lib.unique exclusions) == builtins.length exclusions
+    && lib.all (exclusion: builtins.isString exclusion && validDesktopFileName exclusion) exclusions
+  );
+  renderApplicationTilingExclusions =
+    exclusions: lib.concatStringsSep "\n" (builtins.sort builtins.lessThan exclusions);
+  strictlyIncreasing =
+    values:
     builtins.length values < 2
     || (
       builtins.head values < builtins.head (builtins.tail values)
       && strictlyIncreasing (builtins.tail values)
     );
-  columnWidthPresetType = lib.types.addCheck
-    (lib.types.listOf (lib.types.ints.between 10 100))
-    (presets: builtins.length presets <= 16 && strictlyIncreasing presets);
-  renderColumnWidthPresets = presets:
-    lib.concatStringsSep "," (map toString presets);
-  systemInstallEnabled = lib.attrByPath [
+  columnWidthPresetType = lib.types.addCheck (lib.types.listOf (lib.types.ints.between 10 100)) (
+    presets: builtins.length presets <= 16 && strictlyIncreasing presets
+  );
+  renderColumnWidthPresets = presets: lib.concatStringsSep "," (map toString presets);
+  systemMainInstallEnabled = lib.attrByPath [
     "programs"
     "driftile"
+    "enable"
+  ] false osConfig;
+  systemOverviewInstallEnabled = lib.attrByPath [
+    "programs"
+    "driftile"
+    "overview"
     "enable"
   ] false osConfig;
 in
@@ -113,6 +117,17 @@ in
       default = self.packages.${system}.driftile;
       defaultText = lib.literalExpression "inputs.driftile.packages.\${pkgs.stdenv.hostPlatform.system}.driftile";
       description = "The Driftile package to install.";
+    };
+
+    overview = {
+      enable = lib.mkEnableOption "installation of the Driftile overview effect";
+
+      package = lib.mkOption {
+        type = lib.types.package;
+        default = self.packages.${system}."driftile-overview";
+        defaultText = lib.literalExpression "inputs.driftile.packages.\${pkgs.stdenv.hostPlatform.system}.\"driftile-overview\"";
+        description = "The Driftile overview effect package to install.";
+      };
     };
   }
   // lib.optionalAttrs shortcutConfigFile {
@@ -195,8 +210,21 @@ in
         (lib.optionalAttrs preventSystemInstall {
           assertions = [
             {
-              assertion = !systemInstallEnabled;
+              assertion = !systemMainInstallEnabled;
               message = "Install Driftile through either NixOS or Home Manager for a user, not both.";
+            }
+          ];
+        })
+      ]
+    ))
+    (lib.mkIf cfg.overview.enable (
+      lib.mkMerge [
+        (lib.setAttrByPath packageOptionPath [ cfg.overview.package ])
+        (lib.optionalAttrs preventSystemInstall {
+          assertions = [
+            {
+              assertion = !systemOverviewInstallEnabled;
+              message = "Install the Driftile overview effect through either NixOS or Home Manager for a user, not both.";
             }
           ];
         })

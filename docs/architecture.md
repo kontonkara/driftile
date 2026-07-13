@@ -39,8 +39,10 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 
 ### Nix integration
 
-- Installs one KWin package through either NixOS or Home Manager and rejects a
-  duplicate per-user installation.
+- Exposes disjoint main and overview outputs from one build. The default output
+  remains the main KWin script and shortcut helper.
+- Installs either package through NixOS or Home Manager and rejects duplicate
+  ownership of the same package ID while allowing independent scopes.
 - Maps an optional complete Home Manager settings profile to KDE's native
   KConfig module. Settings and shortcut-profile generation remain available
   without a second package installation.

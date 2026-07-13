@@ -1,5 +1,6 @@
 {
   defaultPackage,
+  defaultOverviewPackage,
   homeManagerModule,
   lib,
   nixosModule,
@@ -70,21 +71,46 @@ let
     module: packageOptionPath:
     let
       disabled = evaluate module packageOptionPath {
-        programs.driftile.package = pkgs.hello;
+        programs.driftile = {
+          package = pkgs.hello;
+          overview.package = pkgs.hello;
+        };
       } { };
-      enabled = evaluate module packageOptionPath {
+      mainEnabled = evaluate module packageOptionPath {
         programs.driftile.enable = true;
       } { };
-      overridden = evaluate module packageOptionPath {
+      mainOverridden = evaluate module packageOptionPath {
         programs.driftile = {
           enable = true;
           package = pkgs.hello;
         };
       } { };
+      overviewEnabled = evaluate module packageOptionPath {
+        programs.driftile.overview.enable = true;
+      } { };
+      overviewOverridden = evaluate module packageOptionPath {
+        programs.driftile.overview = {
+          enable = true;
+          package = pkgs.hello;
+        };
+      } { };
+      bothEnabled = evaluate module packageOptionPath {
+        programs.driftile = {
+          enable = true;
+          overview.enable = true;
+        };
+      } { };
     in
     assert packagePaths packageOptionPath disabled == [ ];
-    assert packagePaths packageOptionPath enabled == [ (toString defaultPackage) ];
-    assert packagePaths packageOptionPath overridden == [ (toString pkgs.hello) ];
+    assert packagePaths packageOptionPath mainEnabled == [ (toString defaultPackage) ];
+    assert packagePaths packageOptionPath mainOverridden == [ (toString pkgs.hello) ];
+    assert packagePaths packageOptionPath overviewEnabled == [ (toString defaultOverviewPackage) ];
+    assert packagePaths packageOptionPath overviewOverridden == [ (toString pkgs.hello) ];
+    assert
+      packagePaths packageOptionPath bothEnabled == [
+        (toString defaultPackage)
+        (toString defaultOverviewPackage)
+      ];
     true;
 
   homeManagerCollision =
@@ -98,6 +124,60 @@ let
       }
       {
         programs.driftile.enable = true;
+      };
+  homeManagerOverviewCollision =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.overview.enable = true;
+      }
+      {
+        programs.driftile.overview.enable = true;
+      };
+  homeManagerMainWithSystemOverview =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.enable = true;
+      }
+      {
+        programs.driftile.overview.enable = true;
+      };
+  homeManagerOverviewWithSystemMain =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.overview.enable = true;
+      }
+      {
+        programs.driftile.enable = true;
+      };
+  homeManagerBothCollisions =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile = {
+          enable = true;
+          overview.enable = true;
+        };
+      }
+      {
+        programs.driftile = {
+          enable = true;
+          overview.enable = true;
+        };
       };
   homeManagerEmptyProfile =
     evaluate homeManagerModule
@@ -174,7 +254,11 @@ let
           ];
           borderlessWindows = false;
           centerFocusedColumn = true;
-          columnWidthPresets = [ 20 50 80 ];
+          columnWidthPresets = [
+            20
+            50
+            80
+          ];
           columnWidthStepPercent = 13;
           defaultColumnWidthPercent = 65;
           gap = 7;
@@ -217,8 +301,7 @@ let
         "packages"
       ]
       {
-        programs.driftile.settings.columnWidthPresets =
-          builtins.genList (index: index + 10) 16;
+        programs.driftile.settings.columnWidthPresets = builtins.genList (index: index + 10) 16;
       }
       { };
   homeManagerSettingsWithSystemInstall =
@@ -242,8 +325,9 @@ let
         "packages"
       ]
       {
-        programs.driftile.settings.applicationTilingExclusions =
-          builtins.genList (index: "org.example.App${toString index}") 128;
+        programs.driftile.settings.applicationTilingExclusions = builtins.genList (
+          index: "org.example.App${toString index}"
+        ) 128;
       }
       { };
   homeManagerSettingsCollision =
@@ -274,8 +358,18 @@ let
     { columnWidthPresets = [ 101 ]; }
     { columnWidthPresets = [ 50.5 ]; }
     { columnWidthPresets = [ "50" ]; }
-    { columnWidthPresets = [ 50 50 ]; }
-    { columnWidthPresets = [ 50 40 ]; }
+    {
+      columnWidthPresets = [
+        50
+        50
+      ];
+    }
+    {
+      columnWidthPresets = [
+        50
+        40
+      ];
+    }
     { columnWidthPresets = builtins.genList (index: index + 10) 17; }
     { windowHeightStepPercent = 0; }
     { windowHeightStepPercent = 51; }
@@ -327,8 +421,7 @@ let
       ];
     }
     {
-      applicationTilingExclusions =
-        builtins.genList (index: "org.example.App${toString index}") 129;
+      applicationTilingExclusions = builtins.genList (index: "org.example.App${toString index}") 129;
     }
   ];
   invalidSettingsRejected =
@@ -391,6 +484,14 @@ let
 in
 assert homeManagerValid;
 assert map (entry: entry.assertion) homeManagerCollision.config.assertions == [ false ];
+assert map (entry: entry.assertion) homeManagerOverviewCollision.config.assertions == [ false ];
+assert map (entry: entry.assertion) homeManagerMainWithSystemOverview.config.assertions == [ true ];
+assert map (entry: entry.assertion) homeManagerOverviewWithSystemMain.config.assertions == [ true ];
+assert
+  map (entry: entry.assertion) homeManagerBothCollisions.config.assertions == [
+    false
+    false
+  ];
 assert map (entry: entry.assertion) homeManagerEmptyProfile.config.assertions == [ false ];
 assert packagePaths [ "home" "packages" ] homeManagerProfile == [ ];
 assert packagePaths [ "home" "packages" ] homeManagerProfileWithSystemInstall == [ ];

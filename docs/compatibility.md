@@ -17,9 +17,9 @@ and are not tied to a specific Linux distribution. Install them with
 `kpackagetool6` on a compatible Plasma desktop. The optional shortcut helper
 requires Node.js 22 or newer, `busctl`, and `flock`.
 
-The Nix flake provides packages plus NixOS and Home Manager modules for
-`x86_64-linux` and `aarch64-linux`. Other distributions use the same
-`.kwinscript` release archive and the portable installation procedure.
+The Nix flake provides separate main and overview packages plus NixOS and Home
+Manager modules for `x86_64-linux` and `aarch64-linux`. Other distributions use
+the same KPackage archives and portable installation procedure.
 
 ## Window and geometry limits
 

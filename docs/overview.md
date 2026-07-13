@@ -36,6 +36,22 @@ kpackagetool6 --type=KWin/Effect \
   --remove io.github.kontonkara.driftile.overview
 ```
 
+## NixOS and Home Manager
+
+The 1.3 development flake exposes the effect separately as
+`packages.<system>.driftile-overview`. The NixOS and Home Manager modules keep
+it opt-in:
+
+```nix
+programs.driftile.overview.enable = true;
+```
+
+The main script and overview can be installed independently. For example, a
+system-wide main package can be combined with a per-user overview. Do not
+install the same package ID through both NixOS and Home Manager for one user.
+Neither module enables the effect in KWin; enable it in Desktop Effects and
+assign its shortcut explicitly.
+
 ## Safety boundary
 
 On activation, the effect accepts only two identical reads of a valid current

@@ -44,6 +44,10 @@
         pkgs.buildNpmPackage {
           pname = "driftile";
           version = "1.3.0-dev.0";
+          outputs = [
+            "out"
+            "overview"
+          ];
           src = self;
 
           nodejs = pkgs.nodejs_24;
@@ -71,6 +75,11 @@
                 ]
               }
 
+            install -d \
+              "$overview/share/kwin/effects/io.github.kontonkara.driftile.overview"
+            cp -r dist/kwin-effect/. \
+              "$overview/share/kwin/effects/io.github.kontonkara.driftile.overview/"
+
             runHook postInstall
           '';
 
@@ -91,6 +100,7 @@
         {
           home-manager = import ./nix/home-manager-check.nix {
             defaultPackage = self.packages.${system}.driftile;
+            defaultOverviewPackage = self.packages.${system}."driftile-overview";
             inherit
               home-manager
               homeManagerModule
@@ -102,6 +112,7 @@
           };
           modules = import ./nix/module-check.nix {
             defaultPackage = self.packages.${system}.driftile;
+            defaultOverviewPackage = self.packages.${system}."driftile-overview";
             inherit
               homeManagerModule
               nixosModule
@@ -109,6 +120,31 @@
               ;
             lib = nixpkgs.lib;
           };
+          package-layout = pkgs.runCommand "driftile-package-layout-check" { } ''
+            main=${self.packages.${system}.driftile}
+            overview=${self.packages.${system}."driftile-overview"}
+
+            test -d "$main/share/kwin/scripts/io.github.kontonkara.driftile"
+            test -x "$main/bin/driftile-shortcuts"
+            test -f "$main/libexec/driftile/driftile-shortcuts.mjs"
+            test ! -e "$main/share/kwin/effects"
+            test "$(find "$main" -mindepth 1 -maxdepth 1 | wc -l)" -eq 3
+            test "$(find "$main/bin" -mindepth 1 -maxdepth 1 | wc -l)" -eq 1
+            test "$(find "$main/libexec/driftile" -mindepth 1 -maxdepth 1 | wc -l)" -eq 1
+            test "$(find "$main/share" -mindepth 1 -maxdepth 1 | wc -l)" -eq 1
+            test "$(find "$main/share/kwin" -mindepth 1 -maxdepth 1 | wc -l)" -eq 1
+
+            test -d "$overview/share/kwin/effects/io.github.kontonkara.driftile.overview"
+            test ! -e "$overview/share/kwin/scripts"
+            test ! -e "$overview/bin"
+            test ! -e "$overview/libexec"
+            test "$(find "$overview" -mindepth 1 -maxdepth 1 | wc -l)" -eq 1
+            test "$(find "$overview/share" -mindepth 1 -maxdepth 1 | wc -l)" -eq 1
+            test "$(find "$overview/share/kwin" -mindepth 1 -maxdepth 1 | wc -l)" -eq 1
+            test "$(find "$overview/share/kwin/effects" -mindepth 1 -maxdepth 1 | wc -l)" -eq 1
+
+            touch "$out"
+          '';
         }
       );
 
@@ -129,6 +165,7 @@
           driftile = packageFor pkgs;
         in
         {
+          "driftile-overview" = driftile.overview;
           inherit driftile;
           default = driftile;
         }

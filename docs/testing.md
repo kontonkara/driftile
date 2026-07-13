@@ -16,8 +16,9 @@ metadata version, and disabled-by-default policy. The main archive contract is
 checked independently from the optional effect.
 The flake check evaluates both modules for every supported architecture. It
 also uses the pinned official Home Manager to verify standalone installation,
-settings-only NixOS coexistence, generated profiles, and collision rejection;
-the normal `nix flake check` builds the checks for the host.
+settings-only NixOS coexistence, generated profiles, independent main and
+overview ownership, same-ID collision rejection, and disjoint physical package
+outputs; the normal `nix flake check` builds the checks for the host.
 To run only the deterministic budgets documented in
 [Performance](performance.md), use `npm run performance:check`. The same tests
 are already part of `check`.

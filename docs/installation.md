@@ -170,6 +170,18 @@ modules = [
 ];
 ```
 
+The 1.3 development module also exposes the optional overview as a separate
+package. It remains disabled unless requested:
+
+```nix
+programs.driftile.overview.enable = true;
+```
+
+Main-script and overview ownership are independent. NixOS may install one while
+Home Manager installs the other, but the modules reject installing the same
+package ID in both scopes for one user. The module does not enable the effect
+or assign its shortcut; see [Overview companion](overview.md).
+
 The 1.2.0 Home Manager module can also own the complete nine-setting profile:
 
 ```nix
