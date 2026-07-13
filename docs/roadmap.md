@@ -2,8 +2,8 @@
 
 Versions 0.1.0, 1.0.0, and 1.1.0 are released. The delivered milestones and
 release criteria below are a historical record. Version 1.2.0 is in
-development. The remaining post-v1 direction is not a committed release
-schedule.
+release-candidate validation on `main`; 1.1.0 remains the latest stable
+release. The remaining post-v1 direction is not a committed release schedule.
 
 ## Foundation (delivered)
 
@@ -76,6 +76,8 @@ The current runtime already:
 - Configures up to 128 exact `desktopFileName` initial singleton widths, with a
   constant-time admission lookup, global-default fallback, and normal
   constraint clamping. Existing columns remain unchanged.
+- Excludes up to 128 exact, case-sensitive `desktopFileName` values from layout
+  ownership, with live release and fresh readmission when the policy changes.
 - Configures up to 16 strictly increasing column-width presets without changing
   existing widths; a blank configuration retains the built-in exact thirds.
 - Optionally centers successful horizontal tiled focus navigation without
@@ -88,7 +90,7 @@ The current runtime already:
 - Registers compact default shortcuts with `H/J/K/L`, arrow, Home/End, and Page Up/Down aliases.
 - Provides a reversible shortcut helper for the bundled defaults and explicit
   JSON v1 profiles; a UI without a Node.js dependency remains future work.
-- Lets Home Manager write the eight typed settings or generate a portable
+- Lets Home Manager write the nine typed settings or generate a portable
   shortcut profile without installing a second KWin package; shortcut claiming
   remains explicit.
 - Leaves dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows outside layout ownership, separate from manual floating.
@@ -194,15 +196,15 @@ Release criteria (met):
 - Wayland, XWayland, single-output X11, packaging, Nix, and visible VM release
   checks pass for the release.
 
-## 1.2.0 (in development)
+## 1.2.0 (release candidate)
 
-The current bounded slice adds exact application tiling exclusions. Up to 128
-case-sensitive KWin `desktopFileName` values may be configured through KConfig
-or Home Manager. Matching windows use the existing automatic-exclusion
-ownership path, including live release and fresh readmission, without a new
-layout state or persistence format.
+Version `1.2.0-rc.1` is the current candidate for the bounded application
+tiling-exclusion slice. Up to 128 case-sensitive KWin `desktopFileName` values
+may be configured through KConfig or Home Manager. Matching windows use the
+existing automatic-exclusion ownership path, including live release and fresh
+readmission, without a new layout state or persistence format.
 
-Release criteria:
+Release-candidate criteria:
 
 - All nine settings validate and apply atomically with a blank exclusion list
   preserving 1.1 behavior.
@@ -210,9 +212,9 @@ Release criteria:
   reflow only affected tiled contexts.
 - Removing a rule waits for KWin-owned native-state blockers, then performs
   fresh singleton admission without restoring an old slot or floating anchor.
-- Unit, Home Manager, and NixOS module checks cover the policy; the full
-  integration matrix guards Wayland, XWayland, and native X11 regressions; a
-  visible real-application check exercises live policy changes.
+- Unit, Home Manager, and NixOS module checks cover the policy. Packaged
+  integration must cover Wayland, XWayland, and native X11, and the visible
+  real-application checkpoint must exercise live policy changes.
 
 ## Post-v1
 

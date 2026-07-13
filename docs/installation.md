@@ -1,7 +1,8 @@
 # Installation
 
 Driftile requires KDE Plasma with KWin 6.7 or newer and `kpackagetool6`.
-Version 1.1.0 targets Wayland, XWayland, and a single-output native X11 session.
+The latest stable release is 1.1.0; 1.2.0-rc.1 is available for release-candidate
+testing. Both target Wayland, XWayland, and a single-output native X11 session.
 Run all commands as the desktop user, not with `sudo`.
 
 ## Install a release
@@ -124,7 +125,7 @@ steps above, then remove Driftile's stored KConfig values and layout snapshot:
 ```bash
 kwriteconfig6 --file kwinrc --group Plugins \
   --key io.github.kontonkara.driftileEnabled --delete ""
-for key in ApplicationColumnWidths BorderlessWindows \
+for key in ApplicationColumnWidths ApplicationTilingExclusions BorderlessWindows \
   CenterFocusedColumn ColumnWidthPresets ColumnWidthStepPercent \
   DefaultColumnWidthPercent Gap WindowHeightStepPercent; do
   kwriteconfig6 --file kwinrc \
@@ -170,13 +171,15 @@ modules = [
 ];
 ```
 
-The 1.1 Home Manager module can also own the complete eight-setting profile:
+The current 1.2.0-rc.1 Home Manager module can also own the complete
+nine-setting profile:
 
 ```nix
 programs.driftile.settings = {
   applicationColumnWidths = {
     "org.kde.konsole" = 60;
   };
+  applicationTilingExclusions = [ ];
   borderlessWindows = true;
   centerFocusedColumn = false;
   columnWidthPresets = [ 20 50 80 ];
@@ -186,6 +189,11 @@ programs.driftile.settings = {
   windowHeightStepPercent = 10;
 };
 ```
+
+The stable 1.1.0 input shown above provides the eight-setting 1.1 module; omit
+`applicationTilingExclusions` when using that pin. See
+[Migration](migration.md#upgrade-from-110-to-120-rc1) before selecting the
+release-candidate input.
 
 The profile is independent of package installation. When the package is
 already installed by NixOS or another system module, keep
