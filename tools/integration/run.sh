@@ -234,6 +234,7 @@ run_backend() (
     KDE_SESSION_UID \
     KDE_SESSION_VERSION \
     KWIN_COMPOSE \
+    KWIN_WAYLAND_NO_PERMISSION_CHECKS \
     WAYLAND_DISPLAY \
     XDG_CURRENT_DESKTOP \
     XDG_SESSION_DESKTOP
@@ -268,6 +269,12 @@ run_backend() (
       require_command kwin_wayland || exit 1
       require_command Xwayland || exit 1
       require_command kscreen-doctor || exit 1
+      if [[
+        -z "${DRIFTILE_SMOKE_FAKE_INPUT_CLIENT:-}" ||
+          ! -x "$DRIFTILE_SMOKE_FAKE_INPUT_CLIENT"
+      ]]; then
+        fail "The packaged fake-input integration client is unavailable."
+      fi
       protocols="${DRIFTILE_SMOKE_PROTOCOLS:-xwayland wayland}"
 
       case "$protocols" in
@@ -283,6 +290,17 @@ run_backend() (
       export DRIFTILE_SMOKE_PROTOCOLS="$protocols"
       export KWIN_COMPOSE=Q
       export XDG_SESSION_TYPE=wayland
+
+      kwriteconfig6 \
+        --file "$XDG_CONFIG_HOME/kwinrc" \
+        --group MouseBindings \
+        --key CommandAll3 \
+        Resize
+      kwriteconfig6 \
+        --file "$XDG_CONFIG_HOME/kwinrc" \
+        --group MouseBindings \
+        --key CommandAllKey \
+        Meta
 
       if [[ "$backend" == "wayland-multi-output" ]]; then
         if [[
@@ -305,6 +323,7 @@ run_backend() (
 
       if ! timeout --kill-after=5s 300s \
         dbus-run-session --config-file="$dbus_session_config" -- \
+        env KWIN_WAYLAND_NO_PERMISSION_CHECKS=1 \
         kwin_wayland \
         --virtual \
         --width 1280 \
@@ -361,6 +380,11 @@ run_backend() (
         --group MouseBindings \
         --key CommandAll1 \
         Move
+      kwriteconfig6 \
+        --file "$XDG_CONFIG_HOME/kwinrc" \
+        --group MouseBindings \
+        --key CommandAll3 \
+        Resize
       kwriteconfig6 \
         --file "$XDG_CONFIG_HOME/kwinrc" \
         --group MouseBindings \

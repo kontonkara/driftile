@@ -53,6 +53,7 @@ desktop_reorder_supported=false
 touchpad_navigation_checked=false
 work_area_panel_pid=""
 x11_pointer_drag_active=false
+x11_pointer_drag_button=1
 x11_work_area_dock_pid=""
 
 if [[ -n "${DRIFTILE_SMOKE_QML_IMPORT:-}" ]]; then
@@ -112,9 +113,10 @@ release_x11_pointer_drag() {
     return
   fi
 
-  xdotool mouseup 1 >/dev/null 2>&1 || true
+  xdotool mouseup "$x11_pointer_drag_button" >/dev/null 2>&1 || true
   xdotool keyup Super_L >/dev/null 2>&1 || true
   x11_pointer_drag_active=false
+  x11_pointer_drag_button=1
 }
 
 cleanup() {
@@ -2312,6 +2314,44 @@ read_persisted_layout_state() {
   return 1
 }
 
+wait_for_window_fixed_column_width() {
+  local window_title=$1
+  local expected_width=$2
+  local attempt
+  local id
+  local state
+
+  id=$(window_id "$window_title") || return 1
+
+  for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
+    state=$(read_persisted_layout_state 2>/dev/null || true)
+
+    if [[ -n "$state" ]] && jq --exit-status \
+      --arg liveId "$id" \
+      --argjson expectedWidth "$expected_width" '
+        .snapshots[0].state as $state
+        | [
+            $state.windows[]
+            | select(.liveId == $liveId)
+            | .key
+          ] as $windowKeys
+        | select(($windowKeys | length) == 1)
+        | $windowKeys[0] as $windowKey
+        | [
+            $state.contexts[].columns[]
+            | select(any(.members[]; .windowKey == $windowKey))
+            | .width
+          ] == [{kind: "fixed", value: $expectedWidth}]
+      ' <<< "$state" >/dev/null; then
+      return 0
+    fi
+
+    sleep 0.05
+  done
+
+  return 1
+}
+
 run_one_shot_script() {
   local script_path=$1
   local name=$2
@@ -3838,6 +3878,7 @@ verify_x11_cross_desktop_pointer_adoption() {
   frames_intersect "$source_frame" "$peer_frame" && \
     fail "the isolated X11 pointer source columns overlapped before the drag"
   x11_pointer_drag_active=true
+  x11_pointer_drag_button=1
   xdotool mousemove --sync \
     "$((source_x + source_width / 2))" \
     "$((source_y + source_height / 2))" || \
@@ -7675,6 +7716,122 @@ verify_application_tiling_exclusion() {
     fail "the application-exclusion $protocol sibling did not close"
 }
 
+perform_horizontal_pointer_resize() {
+  local protocol=$1
+  local start_x=$2
+  local start_y=$3
+  local end_x=$4
+  local end_y=$5
+  local midpoint_x=$(((start_x + end_x) / 2))
+  local midpoint_y=$(((start_y + end_y) / 2))
+
+  if [[ "$protocol" != x11 ]]; then
+    "$DRIFTILE_SMOKE_FAKE_INPUT_CLIENT" \
+      "$start_x" "$start_y" "$end_x" "$end_y"
+    return
+  fi
+
+  x11_pointer_drag_active=true
+  x11_pointer_drag_button=3
+  xdotool mousemove --sync "$start_x" "$start_y" || return 1
+  xdotool keydown Super_L || return 1
+  sleep 0.05
+  xdotool mousedown 3 || return 1
+  sleep 0.05
+  xdotool mousemove --sync "$midpoint_x" "$midpoint_y" || return 1
+  sleep 0.05
+  xdotool mousemove --sync "$end_x" "$end_y" || return 1
+  sleep 0.05
+  xdotool mouseup 3 || return 1
+  sleep 0.05
+  xdotool keyup Super_L || return 1
+  x11_pointer_drag_active=false
+  x11_pointer_drag_button=1
+}
+
+verify_horizontal_pointer_resize_adoption() {
+  local protocol=$1
+  local first_title=$2
+  local second_title=$3
+  local active_title=$4
+  local active_frame
+  local active_height
+  local active_width
+  local active_x
+  local active_y
+  local adopted_height
+  local adopted_frame
+  local adopted_width
+  local adopted_x
+  local adopted_y
+  local drag_end_x
+  local drag_start_x
+  local drag_y
+  local frame
+  local first_frame
+  local first_x
+  local second_frame
+  local second_x
+  local resize_delta=160
+
+  first_frame=$(capture_stable_geometry "$first_title") || return 1
+  second_frame=$(capture_stable_geometry "$second_title") || return 1
+  active_frame=$(capture_stable_geometry "$active_title") || return 1
+
+  for frame in "$first_frame" "$second_frame" "$active_frame"; do
+    [[ "$frame" =~ ^-?[0-9]+,-?[0-9]+,[0-9]+,[0-9]+$ ]] || return 1
+  done
+
+  IFS=, read -r first_x _ _ _ <<< "$first_frame"
+  IFS=, read -r second_x _ _ _ <<< "$second_frame"
+  IFS=, read -r active_x active_y active_width active_height <<< "$active_frame"
+  ((first_x < second_x && second_x < active_x && active_width > resize_delta)) || \
+    return 1
+
+  activate_window "$active_title" || return 1
+  wait_for_active "$active_title" || return 1
+
+  drag_start_x=$((active_x + (active_width * 3) / 4))
+  drag_end_x=$((drag_start_x - resize_delta))
+  drag_y=$((active_y + active_height / 2))
+
+  perform_horizontal_pointer_resize \
+    "$protocol" \
+    "$drag_start_x" \
+    "$drag_y" \
+    "$drag_end_x" \
+    "$drag_y" || return 1
+
+  adopted_frame=$(capture_changed_stable_geometry \
+    "$active_title" \
+    "$active_frame") || return 1
+  [[ "$adopted_frame" =~ ^-?[0-9]+,-?[0-9]+,[0-9]+,[0-9]+$ ]] || return 1
+  IFS=, read -r adopted_x adopted_y adopted_width adopted_height \
+    <<< "$adopted_frame"
+  ((
+    adopted_x == active_x &&
+      adopted_y == active_y &&
+      adopted_height == active_height &&
+      adopted_width > 0 &&
+      adopted_width < active_width
+  )) || return 1
+
+  wait_for_geometries \
+    "$first_title" "$first_frame" \
+    "$second_title" "$second_frame" \
+    "$active_title" "$adopted_frame" || return 1
+  wait_for_window_fixed_column_width "$active_title" "$adopted_width" || \
+    return 1
+  wait_for_active "$active_title" || return 1
+
+  invoke_shortcut "driftile_reset_column_width" || return 1
+  wait_for_geometries \
+    "$first_title" "$first_frame" \
+    "$second_title" "$second_frame" \
+    "$active_title" "$active_frame" || return 1
+  wait_for_active "$active_title"
+}
+
 run_scenario() {
   local protocol=$1
   local first_title="driftile-smoke-${protocol}-a"
@@ -7759,6 +7916,13 @@ run_scenario() {
     "$second_title" "32,16,616,688" \
     "$third_title" "664,16,616,688" || \
     fail "Driftile changed the $protocol layout while removing decorations: $(describe_layout "$first_title" "$second_title" "$third_title")"
+
+  verify_horizontal_pointer_resize_adoption \
+    "$protocol" \
+    "$first_title" \
+    "$second_title" \
+    "$third_title" || \
+    fail "Driftile did not adopt and reset the completed horizontal $protocol pointer resize: $(describe_layout "$first_title" "$second_title" "$third_title")"
 
   gap_minimized_id=$(window_id "$second_title") || \
     fail "KWin did not expose the $protocol gap-test window"

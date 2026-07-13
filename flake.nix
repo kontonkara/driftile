@@ -175,6 +175,53 @@
         system:
         let
           pkgs = import nixpkgs { inherit system; };
+          fakeInputClient = pkgs.stdenv.mkDerivation {
+            name = "driftile-fake-input-client";
+            dontUnpack = true;
+            strictDeps = true;
+
+            nativeBuildInputs = [
+              pkgs.pkg-config
+              pkgs.wayland-scanner
+            ];
+            buildInputs = [ pkgs.wayland ];
+
+            buildPhase = ''
+              runHook preBuild
+
+              wayland-scanner client-header \
+                ${pkgs.kdePackages.plasma-wayland-protocols}/share/plasma-wayland-protocols/fake-input.xml \
+                fake-input-client-protocol.h
+              wayland-scanner private-code \
+                ${pkgs.kdePackages.plasma-wayland-protocols}/share/plasma-wayland-protocols/fake-input.xml \
+                fake-input-protocol.c
+              $CC \
+                -std=c11 \
+                -D_POSIX_C_SOURCE=200809L \
+                -Wall \
+                -Wextra \
+                -Wpedantic \
+                -Werror \
+                $(pkg-config --cflags wayland-client) \
+                -I. \
+                ${./tools/integration/fake-input-client.c} \
+                fake-input-protocol.c \
+                $(pkg-config --libs wayland-client) \
+                -o driftile-fake-input-client
+
+              runHook postBuild
+            '';
+
+            installPhase = ''
+              runHook preInstall
+
+              install -Dm755 \
+                driftile-fake-input-client \
+                "$out/bin/driftile-fake-input-client"
+
+              runHook postInstall
+            '';
+          };
           developmentPackages = with pkgs; [
             gh
             kdePackages.kconfig
@@ -191,6 +238,7 @@
             developmentPackages
             ++ (with pkgs; [
               dbus
+              fakeInputClient
               gjs
               gtk3
               kdePackages.kglobalacceld
@@ -217,6 +265,7 @@
 
           integration = pkgs.mkShell {
             packages = integrationPackages;
+            DRIFTILE_SMOKE_FAKE_INPUT_CLIENT = "${fakeInputClient}/bin/driftile-fake-input-client";
             DRIFTILE_SMOKE_LAYER_SHELL_QML_IMPORT = "${pkgs.kdePackages.layer-shell-qt}/lib/qt-6/qml";
             DRIFTILE_SMOKE_KGLOBALACCELD = "${pkgs.kdePackages.kglobalacceld}/libexec/kglobalacceld";
             GI_TYPELIB_PATH = pkgs.lib.makeSearchPath "lib/girepository-1.0" [
