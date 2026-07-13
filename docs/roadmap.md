@@ -243,12 +243,41 @@ Release criteria (met):
 - Removing it leaves the main extension and Plasma's built-in Overview
   unchanged.
 
+## 1.4.0 (in development)
+
+The first frozen 1.4.0 slice adds optional five-finger horizontal touchpad
+column focus through KWin's public `SwipeGestureHandler` API. One boolean
+setting controls the complete feature and remains disabled by default. A
+completed left swipe focuses the next column to the right; a completed right
+swipe focuses the previous column to the left.
+
+This slice adds no vertical or configurable-finger gestures, shortcut actions,
+default bindings, progress-driven behavior, animation, overview interaction,
+or persistence-format changes. It targets native Wayland. Enabling it in a
+native X11 session is a safe no-op.
+
+Release criteria:
+
+- The default configuration creates no touchpad gesture handlers and preserves
+  all 1.3.0 behavior.
+- Enabling the setting creates exactly two five-finger touchpad swipe handlers;
+  each completed direction calls its existing column-focus command exactly
+  once.
+- Partial and cancelled gestures perform no command, focus, viewport, window,
+  overview, or persistence write.
+- Live enable, disable, and re-enable replace gesture registrations without a
+  KWin restart or duplicate activation.
+- No shortcut action, default binding, overview package file, layout model, or
+  persistence schema changes.
+- Focused unit and packaged checks cover configuration, handler lifecycle, and
+  direction mapping. Packaged native Wayland confirms handler construction;
+  native X11 confirms the no-op contract.
+
 ## Post-v1
 
 Add interaction and presentation features outside the frozen v1 scope without
 taking over compositor mechanisms.
 
-- Explore touchpad navigation through public extension APIs.
 - Add cross-desktop pointer rearrangement and visual drop feedback.
 - Add tabbed column presentation and matching pointer navigation.
 - Add application-specific policies beyond initial column widths and an
