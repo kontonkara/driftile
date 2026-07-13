@@ -25033,6 +25033,572 @@ describe("RuntimeController", () => {
     },
   );
 
+  it("commits a stacked pointer resize after a delayed passive Wayland configure", () => {
+    const setup = createPointerResizeRuntimeFixture();
+    const passiveFrame = { ...setup.passive.window.frameGeometry };
+    const activeFrame = { ...setup.active.window.frameGeometry };
+    const acceptedFrame = pointerResizeAcceptedFrame(activeFrame, "right", 550);
+    const passiveAttempts: KWinWindow["frameGeometry"][] = [];
+    const publicationCount = setup.published.length;
+    const activationCount = setup.fixture.activationCount;
+    const warnings: string[] = [];
+    const warning = vi.spyOn(console, "warn").mockImplementation((message) => {
+      warnings.push(String(message));
+    });
+
+    beginPointerColumnResize(setup, acceptedFrame);
+    setup.passive.setWriteBehavior((frame, commit) => {
+      passiveAttempts.push({ ...frame });
+      setup.scheduler.schedule(commit);
+    });
+
+    try {
+      finishPointerColumnResize(setup);
+    } finally {
+      setup.passive.setWriteBehavior(null);
+      warning.mockRestore();
+    }
+
+    expect(
+      activeColumnWidth(setup.controller, setup.output, setup.desktop),
+    ).toEqual({ kind: "fixed", value: 550 });
+    expect(setup.passive.window.frameGeometry).toEqual({
+      ...passiveFrame,
+      width: 550,
+    });
+    expect(setup.active.window.frameGeometry).toEqual(acceptedFrame);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+    expect(setup.fixture.activationCount).toBe(activationCount);
+    expect(setup.controller.lastWriteCount).toBe(1);
+    expect(setup.published).toHaveLength(publicationCount + 1);
+    expect(passiveAttempts).not.toContainEqual(passiveFrame);
+    expect(
+      warnings.some((message) =>
+        message.includes("pointer column resize rolled back"),
+      ),
+    ).toBe(false);
+  });
+
+  it("waits for every same-context pointer resize target", () => {
+    const setup = createPointerResizeRuntimeFixture(true);
+    const adjacent = setup.adjacent;
+
+    if (!adjacent) {
+      throw new Error("adjacent pointer resize fixture is unavailable");
+    }
+
+    const beforeLayout = setup.layout.snapshot(
+      outputId(setup.output.name),
+      desktopId(setup.desktop.id),
+    );
+    const activeFrame = { ...setup.active.window.frameGeometry };
+    const adjacentFrame = { ...adjacent.window.frameGeometry };
+    const passiveAttempts: KWinWindow["frameGeometry"][] = [];
+    const adjacentAttempts: KWinWindow["frameGeometry"][] = [];
+    const publicationCount = setup.published.length;
+    const passiveCommit: { value: (() => void) | null } = { value: null };
+    const adjacentCommit: { value: (() => void) | null } = { value: null };
+
+    expect(
+      testLayoutColumns(setup.controller, setup.output, setup.desktop),
+    ).toEqual([
+      { id: "column:stack", windowIds: ["passive", "active"] },
+      { id: "column:adjacent", windowIds: ["adjacent"] },
+    ]);
+
+    beginPointerColumnResize(
+      setup,
+      pointerResizeAcceptedFrame(activeFrame, "right", 550),
+    );
+    setup.passive.setWriteBehavior((frame, commit) => {
+      passiveAttempts.push({ ...frame });
+      passiveCommit.value = commit;
+    });
+    adjacent.setWriteBehavior((frame, commit) => {
+      adjacentAttempts.push({ ...frame });
+      adjacentCommit.value = commit;
+    });
+    Object.defineProperty(setup.active.window, "resize", {
+      configurable: true,
+      value: false,
+    });
+    setup.active.moveResizedChanged.emit();
+    setup.active.interactiveMoveResizeFinished.emit();
+
+    while (
+      (!passiveCommit.value || !adjacentCommit.value) &&
+      setup.scheduler.pendingCount > 0
+    ) {
+      setup.scheduler.flush();
+    }
+
+    expect(passiveCommit.value).not.toBeNull();
+    expect(adjacentCommit.value).not.toBeNull();
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(beforeLayout);
+    expect(setup.published).toHaveLength(publicationCount);
+
+    invokeCapturedCallback(passiveCommit.value, "passive configure");
+    expect(
+      activeColumnWidth(setup.controller, setup.output, setup.desktop),
+    ).toEqual({ kind: "fixed", value: 400 });
+    invokeCapturedCallback(adjacentCommit.value, "adjacent configure");
+
+    try {
+      flushManualScheduler(setup.scheduler);
+    } finally {
+      setup.passive.setWriteBehavior(null);
+      adjacent.setWriteBehavior(null);
+    }
+
+    expect(passiveAttempts).toHaveLength(1);
+    expect(adjacentAttempts).toHaveLength(1);
+    expect(setup.passive.window.frameGeometry).toEqual(passiveAttempts[0]);
+    expect(adjacent.window.frameGeometry).toEqual(adjacentAttempts[0]);
+    expect(adjacent.window.frameGeometry).toMatchObject({
+      height: adjacentFrame.height,
+      width: adjacentFrame.width,
+      y: adjacentFrame.y,
+    });
+    expect(
+      activeColumnWidth(setup.controller, setup.output, setup.desktop),
+    ).toEqual({ kind: "fixed", value: 550 });
+    expect(setup.published).toHaveLength(publicationCount + 1);
+  });
+
+  it("blocks concurrent mutations while pointer resize geometry settles", () => {
+    const setup = createPointerResizeRuntimeFixture();
+    const activeFrame = { ...setup.active.window.frameGeometry };
+    const acceptedFrame = pointerResizeAcceptedFrame(activeFrame, "right", 550);
+    const delayedCommit: { value: (() => void) | null } = { value: null };
+
+    beginPointerColumnResize(setup, acceptedFrame);
+    setup.passive.setWriteBehavior((_frame, commit) => {
+      delayedCommit.value = commit;
+    });
+    Object.defineProperty(setup.active.window, "resize", {
+      configurable: true,
+      value: false,
+    });
+    setup.active.moveResizedChanged.emit();
+    setup.active.interactiveMoveResizeFinished.emit();
+
+    while (!delayedCommit.value && setup.scheduler.pendingCount > 0) {
+      setup.scheduler.flush();
+    }
+
+    expect(delayedCommit.value).not.toBeNull();
+    expect(setup.controller.toggleFloating()).toBe(false);
+    expect(setup.controller.floatingCount).toBe(0);
+
+    invokeCapturedCallback(delayedCommit.value, "delayed configure");
+
+    try {
+      flushManualScheduler(setup.scheduler);
+    } finally {
+      setup.passive.setWriteBehavior(null);
+    }
+
+    expect(
+      activeColumnWidth(setup.controller, setup.output, setup.desktop),
+    ).toEqual({ kind: "fixed", value: 550 });
+    expect(setup.controller.toggleFloating()).toBe(true);
+    expect(setup.controller.floatingCount).toBe(1);
+    flushManualScheduler(setup.scheduler);
+  });
+
+  it("replays focus activation after pointer resize compensation", () => {
+    const setup = createPointerResizeRuntimeFixture(true);
+    const adjacent = setup.adjacent;
+
+    if (!adjacent) {
+      throw new Error("adjacent pointer resize fixture is unavailable");
+    }
+
+    const activeFrame = { ...setup.active.window.frameGeometry };
+    const passiveAttempts: KWinWindow["frameGeometry"][] = [];
+    const delayedForwardCommit: { value: (() => void) | null } = {
+      value: null,
+    };
+
+    beginPointerColumnResize(
+      setup,
+      pointerResizeAcceptedFrame(activeFrame, "right", 550),
+    );
+    setup.passive.setWriteBehavior((frame, commit) => {
+      passiveAttempts.push({ ...frame });
+
+      if (passiveAttempts.length === 1) {
+        delayedForwardCommit.value = commit;
+        return;
+      }
+
+      commit();
+
+      if (delayedForwardCommit.value) {
+        const lateCommit = delayedForwardCommit.value;
+        delayedForwardCommit.value = null;
+        setup.scheduler.schedule(() => {
+          setup.scheduler.schedule(() => {
+            setup.scheduler.schedule(lateCommit);
+          });
+        });
+      }
+    });
+    Object.defineProperty(setup.active.window, "resize", {
+      configurable: true,
+      value: false,
+    });
+    setup.active.moveResizedChanged.emit();
+    setup.active.interactiveMoveResizeFinished.emit();
+
+    while (!delayedForwardCommit.value && setup.scheduler.pendingCount > 0) {
+      setup.scheduler.flush();
+    }
+
+    expect(delayedForwardCommit.value).not.toBeNull();
+    setup.fixture.workspace.activeWindow = adjacent.window;
+    setup.fixture.windowActivated.emit(adjacent.window);
+
+    try {
+      flushManualScheduler(setup.scheduler);
+    } finally {
+      setup.passive.setWriteBehavior(null);
+    }
+
+    const layout = setup.layout.snapshot(
+      outputId(setup.output.name),
+      desktopId(setup.desktop.id),
+    );
+    expect(layout.activeColumnId).toBe(columnId("column:adjacent"));
+    expect(
+      layout.columns.find((column) => column.id === columnId("column:stack"))
+        ?.width,
+    ).toEqual({ kind: "fixed", value: 400 });
+    expect(setup.fixture.workspace.activeWindow).toBe(adjacent.window);
+    expect(passiveAttempts.length).toBeGreaterThanOrEqual(3);
+    expect(setup.controller.increaseColumnWidth()).toBe(true);
+    flushManualScheduler(setup.scheduler);
+  });
+
+  it("recovers when a pointer resize settlement probe throws", () => {
+    const setup = createPointerResizeRuntimeFixture();
+    const beforeLayout = setup.layout.snapshot(
+      outputId(setup.output.name),
+      desktopId(setup.desktop.id),
+    );
+    const passiveFrame = { ...setup.passive.window.frameGeometry };
+    const activeFrame = { ...setup.active.window.frameGeometry };
+    const publicationCount = setup.published.length;
+    const runtimeState = setup.controller as unknown as {
+      readonly pointerResizeSettlement: unknown;
+    };
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    beginPointerColumnResize(
+      setup,
+      pointerResizeAcceptedFrame(activeFrame, "right", 550),
+    );
+    Object.defineProperty(setup.active.window, "resize", {
+      configurable: true,
+      value: false,
+    });
+    setup.active.moveResizedChanged.emit();
+    setup.active.interactiveMoveResizeFinished.emit();
+
+    while (
+      runtimeState.pointerResizeSettlement === null &&
+      setup.scheduler.pendingCount > 0
+    ) {
+      setup.scheduler.flush();
+    }
+
+    expect(runtimeState.pointerResizeSettlement).not.toBeNull();
+    const clientGeometryDescriptor = Object.getOwnPropertyDescriptor(
+      setup.passive.window,
+      "clientGeometry",
+    );
+    let throwOnce = true;
+    Object.defineProperty(setup.passive.window, "clientGeometry", {
+      configurable: true,
+      enumerable: true,
+      get: () => {
+        if (throwOnce) {
+          throwOnce = false;
+          throw new Error("client geometry unavailable");
+        }
+
+        return { ...setup.passive.window.frameGeometry };
+      },
+    });
+
+    try {
+      expect(() => {
+        flushManualScheduler(setup.scheduler);
+      }).not.toThrow();
+    } finally {
+      if (clientGeometryDescriptor) {
+        Object.defineProperty(
+          setup.passive.window,
+          "clientGeometry",
+          clientGeometryDescriptor,
+        );
+      }
+
+      warning.mockRestore();
+    }
+
+    expect(runtimeState.pointerResizeSettlement).toBeNull();
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(beforeLayout);
+    expect(setup.passive.window.frameGeometry).toEqual(passiveFrame);
+    expect(setup.active.window.frameGeometry).toEqual(activeFrame);
+    expect(setup.published).toHaveLength(publicationCount);
+
+    beginPointerColumnResize(
+      setup,
+      pointerResizeAcceptedFrame(activeFrame, "right", 520),
+    );
+    finishPointerColumnResize(setup);
+
+    expect(
+      activeColumnWidth(setup.controller, setup.output, setup.desktop),
+    ).toEqual({ kind: "fixed", value: 520 });
+  });
+
+  it("does not compensate through a pending native-state lease", () => {
+    const setup = createPointerResizeRuntimeFixture();
+    const beforeLayout = setup.layout.snapshot(
+      outputId(setup.output.name),
+      desktopId(setup.desktop.id),
+    );
+    const activeFrame = { ...setup.active.window.frameGeometry };
+    const passiveAttempts: KWinWindow["frameGeometry"][] = [];
+    const publicationCount = setup.published.length;
+    const runtimeState = setup.controller as unknown as {
+      readonly pointerResizeSettlement: unknown;
+    };
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    beginPointerColumnResize(
+      setup,
+      pointerResizeAcceptedFrame(activeFrame, "right", 550),
+    );
+    setup.passive.setWriteBehavior((frame) => {
+      passiveAttempts.push({ ...frame });
+    });
+    Object.defineProperty(setup.active.window, "resize", {
+      configurable: true,
+      value: false,
+    });
+    setup.active.moveResizedChanged.emit();
+    setup.active.interactiveMoveResizeFinished.emit();
+
+    while (
+      runtimeState.pointerResizeSettlement === null &&
+      setup.scheduler.pendingCount > 0
+    ) {
+      setup.scheduler.flush();
+    }
+
+    expect(runtimeState.pointerResizeSettlement).not.toBeNull();
+    expect(passiveAttempts).toHaveLength(1);
+    setup.passive.maximizedAboutToChange.emit(3);
+
+    try {
+      flushManualScheduler(setup.scheduler);
+    } finally {
+      setup.passive.setWriteBehavior(null);
+      warning.mockRestore();
+    }
+
+    expect(runtimeState.pointerResizeSettlement).toBeNull();
+    expect(passiveAttempts).toHaveLength(1);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(beforeLayout);
+    expect(setup.published).toHaveLength(publicationCount);
+  });
+
+  it("defers compensation after a silent work-area change", () => {
+    const setup = createPointerResizeRuntimeFixture();
+    const beforeLayout = setup.layout.snapshot(
+      outputId(setup.output.name),
+      desktopId(setup.desktop.id),
+    );
+    const passiveFrame = { ...setup.passive.window.frameGeometry };
+    const activeFrame = { ...setup.active.window.frameGeometry };
+    const acceptedFrame = pointerResizeAcceptedFrame(activeFrame, "right", 550);
+    const activeWrites = setup.active.writeCount;
+    const passiveAttempts: KWinWindow["frameGeometry"][] = [];
+    const publicationCount = setup.published.length;
+    const runtimeState = setup.controller as unknown as {
+      readonly pointerResizeSettlement: unknown;
+    };
+    const originalClientArea = setup.fixture.workspace.clientArea.bind(
+      setup.fixture.workspace,
+    );
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    beginPointerColumnResize(setup, acceptedFrame);
+    setup.passive.setWriteBehavior((frame) => {
+      passiveAttempts.push({ ...frame });
+    });
+    Object.defineProperty(setup.active.window, "resize", {
+      configurable: true,
+      value: false,
+    });
+    setup.active.moveResizedChanged.emit();
+    setup.active.interactiveMoveResizeFinished.emit();
+
+    while (
+      runtimeState.pointerResizeSettlement === null &&
+      setup.scheduler.pendingCount > 0
+    ) {
+      setup.scheduler.flush();
+    }
+
+    expect(runtimeState.pointerResizeSettlement).not.toBeNull();
+    expect(passiveAttempts).toEqual([{ ...passiveFrame, width: 550 }]);
+    Object.defineProperty(setup.fixture.workspace, "clientArea", {
+      configurable: true,
+      value: (
+        option: number,
+        output: KWinOutput,
+        desktop: KWinVirtualDesktop,
+      ) => {
+        const area = originalClientArea(option, output, desktop);
+        return { ...area, width: area.width - 100 };
+      },
+    });
+
+    while (
+      runtimeState.pointerResizeSettlement !== null &&
+      setup.scheduler.pendingCount > 0
+    ) {
+      setup.scheduler.flush();
+    }
+
+    expect(runtimeState.pointerResizeSettlement).toBeNull();
+    expect(setup.scheduler.pendingCount).toBeGreaterThan(0);
+    expect(passiveAttempts).toHaveLength(1);
+    expect(setup.passive.window.frameGeometry).toEqual(passiveFrame);
+    expect(setup.active.window.frameGeometry).toEqual(acceptedFrame);
+    expect(setup.active.writeCount).toBe(activeWrites);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(beforeLayout);
+    expect(setup.published).toHaveLength(publicationCount);
+
+    setup.passive.setWriteBehavior(null);
+
+    try {
+      flushManualScheduler(setup.scheduler);
+    } finally {
+      warning.mockRestore();
+    }
+
+    expect(setup.passive.window.frameGeometry).toEqual(passiveFrame);
+    expect(setup.active.window.frameGeometry).toEqual(activeFrame);
+    expect(setup.active.writeCount).toBe(activeWrites + 1);
+    expect(setup.controller.lastWriteCount).toBe(2);
+  });
+
+  it("rolls back a timed-out pointer resize after a late passive configure", () => {
+    const setup = createPointerResizeRuntimeFixture();
+    const beforeLayout = setup.layout.snapshot(
+      outputId(setup.output.name),
+      desktopId(setup.desktop.id),
+    );
+    const passiveFrame = { ...setup.passive.window.frameGeometry };
+    const activeFrame = { ...setup.active.window.frameGeometry };
+    const passiveAttempts: KWinWindow["frameGeometry"][] = [];
+    const publicationCount = setup.published.length;
+    let delayedForwardCommit: (() => void) | null = null;
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    beginPointerColumnResize(
+      setup,
+      pointerResizeAcceptedFrame(activeFrame, "right", 550),
+    );
+    const activeWrites = setup.active.writeCount;
+    setup.passive.setWriteBehavior((frame, commit) => {
+      passiveAttempts.push({ ...frame });
+
+      if (passiveAttempts.length === 1) {
+        delayedForwardCommit = commit;
+        return;
+      }
+
+      commit();
+
+      if (delayedForwardCommit) {
+        const lateCommit = delayedForwardCommit;
+        delayedForwardCommit = null;
+        setup.scheduler.schedule(() => {
+          setup.scheduler.schedule(() => {
+            setup.scheduler.schedule(lateCommit);
+          });
+        });
+      }
+    });
+
+    try {
+      finishPointerColumnResize(setup);
+    } finally {
+      setup.passive.setWriteBehavior(null);
+      warning.mockRestore();
+    }
+
+    expect(passiveAttempts[0]).toEqual({ ...passiveFrame, width: 550 });
+    expect(passiveAttempts.slice(1)).toEqual([passiveFrame, passiveFrame]);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(beforeLayout);
+    expect(setup.passive.window.frameGeometry).toEqual(passiveFrame);
+    expect(setup.active.window.frameGeometry).toEqual(activeFrame);
+    expect(setup.active.writeCount).toBe(activeWrites + 1);
+    expect(setup.published).toHaveLength(publicationCount);
+    expect(setup.scheduler.pendingCount).toBe(0);
+    expect(
+      (
+        setup.controller as unknown as {
+          readonly pointerResizeSettlement: unknown;
+        }
+      ).pointerResizeSettlement,
+    ).toBeNull();
+
+    beginPointerColumnResize(
+      setup,
+      pointerResizeAcceptedFrame(activeFrame, "right", 520),
+    );
+    finishPointerColumnResize(setup);
+
+    expect(
+      activeColumnWidth(setup.controller, setup.output, setup.desktop),
+    ).toEqual({ kind: "fixed", value: 520 });
+    expect(setup.passive.window.frameGeometry.width).toBe(520);
+    expect(setup.active.window.frameGeometry.width).toBe(520);
+    expect(setup.published).toHaveLength(publicationCount + 1);
+  });
+
   it.each([
     {
       name: "canceled",
@@ -35019,6 +35585,7 @@ function testLayoutColumns(
 
 interface PointerResizeRuntimeFixture {
   readonly active: TrackedWindow;
+  readonly adjacent: TrackedWindow | null;
   readonly controller: RuntimeController;
   readonly desktop: KWinVirtualDesktop;
   readonly fixture: WorkspaceFixture;
@@ -35031,7 +35598,9 @@ interface PointerResizeRuntimeFixture {
   readonly unrelatedOutput: KWinOutput;
 }
 
-function createPointerResizeRuntimeFixture(): PointerResizeRuntimeFixture {
+function createPointerResizeRuntimeFixture(
+  includeAdjacent = false,
+): PointerResizeRuntimeFixture {
   const output = createOutput("DP-1", 0);
   const unrelatedOutput = createOutput("HDMI-A-1", 1000);
   const desktop = { id: "desktop-1" };
@@ -35040,17 +35609,28 @@ function createPointerResizeRuntimeFixture(): PointerResizeRuntimeFixture {
   });
   const passive = createTrackedWindow("passive", output, desktop);
   const active = createTrackedWindow("active", output, desktop);
+  const adjacent = includeAdjacent
+    ? createTrackedWindow("adjacent", output, desktop)
+    : null;
   const fixture = createWorkspace(
     output,
     desktop,
     [output, unrelatedOutput],
     [desktop],
-    [unrelated.window, passive.window, active.window],
+    [
+      unrelated.window,
+      passive.window,
+      active.window,
+      ...(adjacent ? [adjacent.window] : []),
+    ],
   );
   const scheduler = new ManualScheduler();
   const published: string[] = [];
   const controller = new RuntimeController(fixture.workspace, {
     clientAreaOption: 2,
+    ...(includeAdjacent
+      ? { columnWidth: { kind: "fixed" as const, value: 280 } }
+      : {}),
     gap: 10,
     onLayoutStateChanged: (document) => published.push(document),
     schedule: scheduler.schedule,
@@ -35077,6 +35657,18 @@ function createPointerResizeRuntimeFixture(): PointerResizeRuntimeFixture {
         },
         index: 0,
       },
+      ...(adjacent
+        ? [
+            {
+              column: {
+                id: columnId("column:adjacent"),
+                width: { kind: "fixed" as const, value: 320 },
+                windowIds: [windowId("adjacent")],
+              },
+              index: 1,
+            },
+          ]
+        : []),
     ],
     desktopId: desktopId(desktop.id),
     outputId: outputId(output.name),
@@ -35114,6 +35706,7 @@ function createPointerResizeRuntimeFixture(): PointerResizeRuntimeFixture {
 
   return {
     active,
+    adjacent,
     controller,
     desktop,
     fixture,
@@ -36265,6 +36858,17 @@ function flushManualScheduler(scheduler: ManualScheduler): void {
   if (scheduler.pendingCount > 0) {
     throw new Error("manual scheduler did not settle");
   }
+}
+
+function invokeCapturedCallback(
+  callback: (() => void) | null,
+  label: string,
+): void {
+  if (!callback) {
+    throw new Error(`${label} callback is unavailable`);
+  }
+
+  callback();
 }
 
 function withoutRestoreBaselines(document: string): string {

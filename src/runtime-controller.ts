@@ -120,6 +120,8 @@ const MAX_RESIZE_STEP_PERCENT = 50;
 const MIN_DEFAULT_COLUMN_WIDTH_PERCENT = 10;
 const MIN_RESIZE_STEP_PERCENT = 1;
 const MAX_POINTER_EXTERNAL_CONTEXT_PROBES = 20;
+const MAX_POINTER_RESIZE_COMPENSATION_PROBES = 40;
+const MAX_POINTER_RESIZE_SETTLEMENT_PROBES = 20;
 const DEFAULT_COLUMN_WIDTH: ColumnWidth = {
   kind: "proportion",
   value: DEFAULT_COLUMN_WIDTH_PERCENT / 100,
@@ -145,6 +147,8 @@ const MAX_TOPOLOGY_SAMPLE_ATTEMPTS = 20;
 const MAX_TRANSIENT_RESUME_PROBES = 20;
 const MINIMUM_COLUMN_WIDTH = 64;
 const REQUIRED_CAPACITY_PARK_SAMPLES = 2;
+const REQUIRED_POINTER_RESIZE_COMPENSATION_SAMPLES = 20;
+const REQUIRED_POINTER_RESIZE_SETTLEMENT_SAMPLES = 2;
 const WINDOW_HEIGHT_PRESET_CYCLE_TOLERANCE = 1;
 
 type ColumnResizeAction =
@@ -429,6 +433,33 @@ interface PointerResizeIntent {
   readonly sourceDesktop: KWinVirtualDesktop;
   readonly sourceOutput: KWinOutput;
   readonly topologyRevision: number;
+}
+
+interface PointerResizeSettlementWindow {
+  readonly columnId: ColumnId;
+  readonly constraints: FrameSizeConstraintBounds;
+  readonly id: WindowId;
+  readonly rollbackFrame: Rect;
+  readonly source: KWinWindow;
+  readonly stateRevision: number;
+  readonly targetFrame: Rect;
+}
+
+interface PointerResizeSettlement {
+  attempts: number;
+  readonly command: ActiveColumnCommand;
+  compensationWrites: number;
+  failure: string | null;
+  readonly forwardAttemptedIds: Set<WindowId>;
+  forwardWrites: number;
+  readonly intent: PointerResizeIntent;
+  pending: boolean;
+  phase: "compensating" | "forward";
+  stableSamples: number;
+  readonly targetLayout: LayoutContextSnapshot;
+  readonly targetWidth: ColumnWidth;
+  readonly windowById: ReadonlyMap<WindowId, PointerResizeSettlementWindow>;
+  readonly windows: readonly PointerResizeSettlementWindow[];
 }
 
 interface StackTransferAcceptance {
@@ -735,13 +766,16 @@ export class RuntimeController {
   private interactiveResizeSource: KWinWindow | null = null;
   private pointerMoveIntent: PointerMoveIntent | null = null;
   private pointerResizeIntent: PointerResizeIntent | null = null;
+  private pointerResizeSettlement: PointerResizeSettlement | null = null;
   private pendingDefaultColumnWidth: ColumnWidth | null = null;
   private pendingGap: number | null = null;
   private readonly pendingWindowSyncs = new Set<WindowId>();
   private readonly resumeSamples = new Map<WindowId, ResumeSample>();
   private readonly schedule: (callback: () => void) => void;
   private readonly scheduleResume: (callback: () => void) => void;
+  private pendingMutationWrites = 0;
   private scheduledMutationWrites = 0;
+  private workFlushDepth = 0;
   private runGeneration = 0;
   private readonly startupStabilizationProbes: number;
   private startupStabilizationRemaining = 0;
@@ -1156,7 +1190,10 @@ export class RuntimeController {
       return;
     }
 
-    if (this.interactiveResizeSource !== null) {
+    if (
+      this.interactiveResizeSource !== null ||
+      this.pointerResizeSettlement !== null
+    ) {
       this.borderlessReconciliationPending = true;
       return;
     }
@@ -1188,6 +1225,7 @@ export class RuntimeController {
       this.interactiveResizeSource !== null ||
       this.pointerMoveIntent !== null ||
       this.pointerResizeIntent !== null ||
+      this.pointerResizeSettlement !== null ||
       this.stackEditOperation !== null ||
       this.windowTransferOperation !== null ||
       this.stackedNativeStateOperation !== null ||
@@ -2357,6 +2395,7 @@ export class RuntimeController {
       this.interactiveResizeSource = null;
       this.pointerMoveIntent = null;
       this.pointerResizeIntent = null;
+      this.pointerResizeSettlement = null;
       this.startupCompleted = false;
       this.runGeneration += 1;
       this.started = true;
@@ -2433,6 +2472,7 @@ export class RuntimeController {
     this.interactiveResizeSource = null;
     this.pointerMoveIntent = null;
     this.pointerResizeIntent = null;
+    this.pointerResizeSettlement = null;
     this.stackEditOperation = null;
 
     try {
@@ -2471,6 +2511,7 @@ export class RuntimeController {
       this.interactiveResizeSource = null;
       this.pointerMoveIntent = null;
       this.pointerResizeIntent = null;
+      this.pointerResizeSettlement = null;
       this.stackEditOperation = null;
       this.windowTransferOperation = null;
       this.stackedNativeStateOperation = null;
@@ -2495,7 +2536,9 @@ export class RuntimeController {
       this.ownershipRefreshInProgress = false;
       this.requestedSuspensions.clear();
       this.resumeSamples.clear();
+      this.pendingMutationWrites = 0;
       this.scheduledMutationWrites = 0;
+      this.workFlushDepth = 0;
       this.suspendedWindows.clear();
       this.startupStabilizationRemaining = 0;
       this.startupStabilizationToken = null;
@@ -2545,6 +2588,7 @@ export class RuntimeController {
       this.hydrationInProgress ||
       this.stackEditOperation ||
       this.interactiveResizeSource !== null ||
+      this.pointerResizeSettlement !== null ||
       this.windowTransferOperation ||
       this.topologyStabilizing ||
       this.topologyRetryPending
@@ -2563,6 +2607,11 @@ export class RuntimeController {
     }
 
     this.synchronizePendingWindows();
+
+    if (this.pointerResizeIsSettling()) {
+      return 0;
+    }
+
     this.retryPendingAdmissions();
     const sampledGeometries =
       ownershipChanged || admissionsPending
@@ -2675,14 +2724,18 @@ export class RuntimeController {
       this.capacityParkBackoffs.delete(contextKey(addedContext));
 
       if (
-        this.interactiveResizeSource !== null &&
+        (this.interactiveResizeSource !== null ||
+          this.pointerResizeSettlement !== null) &&
         this.pointerResizeIntent?.contextKey === contextKey(addedContext)
       ) {
         this.pointerResizeIntent = null;
       }
     }
 
-    if (this.interactiveResizeSource !== null) {
+    if (
+      this.interactiveResizeSource !== null ||
+      this.pointerResizeSettlement !== null
+    ) {
       this.pendingWindowSyncs.add(addedId);
       return;
     }
@@ -3646,14 +3699,22 @@ export class RuntimeController {
     }
 
     const resizeIntent = this.pointerResizeIntent;
+    const resizeSettlement = this.pointerResizeSettlement;
     const pointerResizeConstraintChangeContinues =
       cause === "constraints" &&
-      resizeIntent?.resizedWindowId === changedId &&
+      resizeIntent !== null &&
       source !== undefined &&
-      resizeIntent.source === source &&
       (resizeIntent.phase === "resizing"
-        ? this.interactiveResizeSourceIsEligible(source)
-        : this.settledPointerResizeSourceIsEligible(source));
+        ? resizeIntent.resizedWindowId === changedId &&
+          resizeIntent.source === source &&
+          this.interactiveResizeSourceIsEligible(source)
+        : resizeSettlement?.intent === resizeIntent &&
+          resizeSettlement.windows.some(
+            (window) =>
+              window.id === changedId &&
+              window.source === source &&
+              this.pointerResizeSourceHasStableOwnership(source),
+          ));
 
     if (!pointerResizeConstraintChangeContinues) {
       this.cancelPointerResizeForWindowChange(changedId);
@@ -4046,6 +4107,10 @@ export class RuntimeController {
     }
 
     const id = windowId(String(window.internalId));
+
+    if (this.stackEditOperation) {
+      return;
+    }
 
     if (
       window.fullScreen &&
@@ -13085,6 +13150,10 @@ export class RuntimeController {
       return false;
     }
 
+    if (this.pointerResizeSettlement?.intent === intent) {
+      return true;
+    }
+
     const reject = (): false => {
       if (this.pointerResizeIntent === intent) {
         this.pointerResizeIntent = null;
@@ -13149,36 +13218,11 @@ export class RuntimeController {
       kind: "fixed",
       value: inferred.width,
     };
-    const rollbackFrames = new Map(
-      intent.participants.map(
-        (participant) => [participant.id, participant.beforeFrame] as const,
-      ),
-    );
-    const applied = this.applyColumnWidth(
-      command,
-      target,
-      "pointer column resize",
-      () =>
-        this.pointerResizeIntent === intent &&
-        intent.generation === this.runGeneration &&
-        intent.topologyRevision === this.topologyRevision &&
-        intent.gap === this.gap &&
-        intent.contextFingerprint === context.geometryFingerprint &&
-        this.workspace.activeWindow === source &&
-        this.settledPointerResizeSourceIsEligible(source) &&
-        this.pointerResizeParticipantsAreCurrent(intent, context, false),
-      rollbackFrames,
-    );
-    this.pointerResizeIntent = null;
 
-    if (!applied) {
-      return false;
+    if (!this.beginPointerResizeSettlement(intent, command, target)) {
+      return reject();
     }
 
-    this.scheduledMutationWrites += this.lastWrites;
-    this.deleteColumnFullWidthRestore(context.key, intent.activeColumnId);
-    this.finishColumnWidthChange(context.key);
-    this.requestLayoutStatePublication();
     return true;
   }
 
@@ -13247,6 +13291,813 @@ export class RuntimeController {
             rectsEqual(participant.window.frameGeometry, expectedFrame))),
       );
     });
+  }
+
+  private beginPointerResizeSettlement(
+    intent: PointerResizeIntent,
+    command: ActiveColumnCommand,
+    targetWidth: ColumnWidth,
+  ): boolean {
+    const targetGeometry = this.previewActiveColumnView(
+      command,
+      targetWidth,
+      command.before.viewportOffset,
+    );
+
+    if (
+      !targetGeometry ||
+      !this.canApplyLayout(targetGeometry.maxViewportOffset)
+    ) {
+      return false;
+    }
+
+    const targetLayout: LayoutContextSnapshot = {
+      ...command.before,
+      columns: command.before.columns.map((column) =>
+        column.id === intent.activeColumnId
+          ? { ...column, width: { ...targetWidth } }
+          : column,
+      ),
+      viewportOffset: targetGeometry.viewportOffset,
+    };
+    const writableTargets = targetGeometry.windows.filter(
+      (window) => !this.suspendedWindows.has(window.windowId),
+    );
+
+    if (
+      writableTargets.length === 0 ||
+      targetGeometry.windows.some((window) => {
+        const source = this.observer.source(window.windowId);
+        return !source || !respectsSizeConstraints(window.frame, source);
+      }) ||
+      writableTargets.some(
+        (window) =>
+          !this.geometry.canApplyFrame(
+            window.windowId,
+            window.frame,
+            command.context,
+          ),
+      )
+    ) {
+      return false;
+    }
+
+    const targetIds = writableTargets.map((window) => window.windowId);
+    const observedBefore = this.geometry.observedFrames(
+      targetIds,
+      command.context,
+    );
+
+    if (observedBefore.size !== targetIds.length) {
+      return false;
+    }
+
+    const participants = new Map(
+      intent.participants.map((participant) => [participant.id, participant]),
+    );
+    const windows: PointerResizeSettlementWindow[] = [];
+
+    for (const target of writableTargets) {
+      const source = this.observer.source(target.windowId);
+      const observedFrame = observedBefore.get(target.windowId);
+      const participant = participants.get(target.windowId);
+      const rollbackFrame = participant?.beforeFrame ?? observedFrame;
+      const constraints = source ? frameSizeConstraintBounds(source) : null;
+      const owner = this.managedWindows.get(target.windowId);
+      const observed = source ? normalizeWindow(source) : null;
+      const liveContext = observed ? managedContext(observed) : null;
+
+      if (
+        !source ||
+        !observedFrame ||
+        !rollbackFrame ||
+        !constraints ||
+        owner?.contextKey !== command.context.key ||
+        !command.context.windowIds.has(target.windowId) ||
+        !liveContext ||
+        contextKey(liveContext) !== command.context.key ||
+        this.requestedSuspensions.has(target.windowId) ||
+        this.floatingWindows.has(target.windowId) ||
+        this.waitingWindowContexts.has(target.windowId) ||
+        this.automaticFloatingWindows.has(target.windowId) ||
+        this.automaticallyFloats(source) ||
+        this.toggleGeometryTransitions.has(target.windowId) ||
+        !isGeometryWritable(source) ||
+        !respectsSizeConstraints(rollbackFrame, source) ||
+        !this.geometry.canApplyFrame(
+          target.windowId,
+          rollbackFrame,
+          command.context,
+        )
+      ) {
+        return false;
+      }
+
+      windows.push({
+        columnId: target.columnId,
+        constraints: { ...constraints },
+        id: target.windowId,
+        rollbackFrame: snapshotRect(rollbackFrame),
+        source,
+        stateRevision: this.windowStateRevisions.get(target.windowId) ?? 0,
+        targetFrame: snapshotRect(target.frame),
+      });
+    }
+
+    const windowById = new Map(windows.map((window) => [window.id, window]));
+
+    if (
+      intent.participants.some((participant) => !windowById.has(participant.id))
+    ) {
+      return false;
+    }
+
+    const changes = diffWindowGeometries(writableTargets, observedBefore);
+    const operation: PointerResizeSettlement = {
+      attempts: 0,
+      command,
+      compensationWrites: 0,
+      failure: null,
+      forwardAttemptedIds: new Set(),
+      forwardWrites: 0,
+      intent,
+      pending: false,
+      phase: "forward",
+      stableSamples: 0,
+      targetLayout,
+      targetWidth: { ...targetWidth },
+      windowById,
+      windows,
+    };
+    this.pointerResizeSettlement = operation;
+    this.stackEditOperation = operation;
+    this.dirtyContexts.delete(command.context.key);
+
+    try {
+      for (const change of changes) {
+        operation.forwardAttemptedIds.add(change.windowId);
+        const applied = this.geometry.apply(
+          [change],
+          command.context,
+          (current) =>
+            this.pointerResizeSettlement === operation &&
+            this.pointerResizeIntent === intent &&
+            this.observer.source(current.windowId) ===
+              operation.windowById.get(current.windowId)?.source,
+        );
+        operation.forwardWrites += applied;
+
+        if (applied !== 1) {
+          break;
+        }
+      }
+    } catch (error) {
+      try {
+        this.beginPointerResizeCompensation(
+          operation,
+          `target geometry staging failed: ${String(error)}`,
+        );
+      } catch (recoveryError) {
+        this.finishPointerResizeSettlementRecovery(
+          operation,
+          `target geometry recovery failed: ${String(recoveryError)}`,
+        );
+      }
+
+      return true;
+    }
+
+    if (operation.forwardWrites !== changes.length) {
+      this.beginPointerResizeCompensation(
+        operation,
+        "a target geometry request was rejected",
+      );
+    } else {
+      this.schedulePointerResizeSettlementProbe(operation);
+    }
+
+    return true;
+  }
+
+  private schedulePointerResizeSettlementProbe(
+    operation: PointerResizeSettlement,
+  ): void {
+    if (
+      !this.started ||
+      this.pointerResizeSettlement !== operation ||
+      operation.pending
+    ) {
+      return;
+    }
+
+    operation.pending = true;
+    const runGeneration = this.runGeneration;
+    let schedulerReturned = false;
+
+    try {
+      this.scheduleResume(() => {
+        if (
+          !this.started ||
+          this.runGeneration !== runGeneration ||
+          this.pointerResizeSettlement !== operation
+        ) {
+          return;
+        }
+
+        const synchronous = !schedulerReturned;
+
+        if (!synchronous) {
+          operation.pending = false;
+        }
+
+        try {
+          this.probePointerResizeSettlement(operation);
+        } catch (error) {
+          try {
+            if (operation.phase === "forward") {
+              this.beginPointerResizeCompensation(
+                operation,
+                `settlement probe failed: ${String(error)}`,
+              );
+            } else {
+              this.finishPointerResizeSettlementRecovery(
+                operation,
+                `rollback probe failed: ${String(error)}`,
+              );
+            }
+          } catch (recoveryError) {
+            this.finishPointerResizeSettlementRecovery(
+              operation,
+              `settlement recovery failed: ${String(recoveryError)}`,
+            );
+          }
+        }
+
+        if (synchronous && this.pointerResizeSettlement === operation) {
+          operation.pending = false;
+        }
+
+        if (this.pointerResizeSettlement === operation && !operation.pending) {
+          this.schedulePointerResizeSettlementProbe(operation);
+        }
+      });
+      schedulerReturned = true;
+    } catch (error) {
+      operation.pending = false;
+
+      try {
+        if (operation.phase === "forward") {
+          this.beginPointerResizeCompensation(
+            operation,
+            `settlement scheduling failed: ${String(error)}`,
+          );
+        } else {
+          this.finishPointerResizeSettlementRecovery(
+            operation,
+            `rollback scheduling failed: ${String(error)}`,
+          );
+        }
+      } catch (recoveryError) {
+        this.finishPointerResizeSettlementRecovery(
+          operation,
+          `settlement scheduling recovery failed: ${String(recoveryError)}`,
+        );
+      }
+    }
+  }
+
+  private probePointerResizeSettlement(
+    operation: PointerResizeSettlement,
+  ): void {
+    operation.attempts += 1;
+
+    if (operation.phase === "forward") {
+      if (
+        !this.pointerResizeSettlementStateIsCurrent(
+          operation,
+          operation.command.before,
+        )
+      ) {
+        this.beginPointerResizeCompensation(
+          operation,
+          "the captured window state changed",
+        );
+        return;
+      }
+
+      if (this.pointerResizeSettlementFramesMatch(operation, "target")) {
+        operation.stableSamples += 1;
+
+        if (
+          operation.stableSamples >= REQUIRED_POINTER_RESIZE_SETTLEMENT_SAMPLES
+        ) {
+          this.commitPointerResizeSettlement(operation);
+        }
+
+        return;
+      }
+
+      operation.stableSamples = 0;
+
+      if (operation.attempts >= MAX_POINTER_RESIZE_SETTLEMENT_PROBES) {
+        this.beginPointerResizeCompensation(
+          operation,
+          "target geometry did not settle",
+        );
+      }
+
+      return;
+    }
+
+    if (
+      !this.restorePointerResizeSettlementLayout(operation) ||
+      !this.pointerResizeSettlementCanCompensate(operation)
+    ) {
+      if (operation.attempts >= MAX_POINTER_RESIZE_COMPENSATION_PROBES) {
+        this.finishPointerResizeSettlementRecovery(
+          operation,
+          "captured rollback ownership was lost",
+        );
+      }
+
+      return;
+    }
+
+    if (this.pointerResizeSettlementFramesMatch(operation, "rollback")) {
+      operation.stableSamples += 1;
+
+      if (
+        operation.stableSamples >= REQUIRED_POINTER_RESIZE_COMPENSATION_SAMPLES
+      ) {
+        this.finishPointerResizeCompensation(operation);
+      } else if (operation.attempts >= MAX_POINTER_RESIZE_COMPENSATION_PROBES) {
+        this.finishPointerResizeSettlementRecovery(
+          operation,
+          "captured rollback quiet period did not settle",
+        );
+      }
+
+      return;
+    }
+
+    operation.stableSamples = 0;
+    this.applyPointerResizeCompensationFrames(operation);
+
+    if (operation.attempts >= MAX_POINTER_RESIZE_COMPENSATION_PROBES) {
+      this.finishPointerResizeSettlementRecovery(
+        operation,
+        "captured rollback geometry did not settle",
+      );
+    }
+  }
+
+  private commitPointerResizeSettlement(
+    operation: PointerResizeSettlement,
+  ): void {
+    if (
+      !this.pointerResizeSettlementStateIsCurrent(
+        operation,
+        operation.command.before,
+      ) ||
+      !this.pointerResizeSettlementFramesMatch(operation, "target")
+    ) {
+      this.beginPointerResizeCompensation(
+        operation,
+        "target acceptance changed before commit",
+      );
+      return;
+    }
+
+    const rollbackFrames = new Map(
+      operation.windows.map(
+        (window) => [window.id, window.rollbackFrame] as const,
+      ),
+    );
+    this.lastWrites = 0;
+    const applied = this.applyColumnWidth(
+      operation.command,
+      operation.targetWidth,
+      "pointer column resize",
+      () =>
+        this.pointerResizeSettlementStateIsCurrent(
+          operation,
+          operation.targetLayout,
+        ) && this.pointerResizeSettlementFramesMatch(operation, "target"),
+      rollbackFrames,
+    );
+
+    if (!applied) {
+      operation.compensationWrites += this.lastWrites;
+      this.beginPointerResizeCompensation(
+        operation,
+        "the settled layout commit was rejected",
+      );
+      return;
+    }
+
+    const writes = operation.forwardWrites + this.lastWrites;
+    this.pointerResizeSettlement = null;
+
+    if (this.stackEditOperation === operation) {
+      this.stackEditOperation = null;
+    }
+
+    if (this.pointerResizeIntent === operation.intent) {
+      this.pointerResizeIntent = null;
+    }
+
+    this.handleWindowActivated(this.workspace.activeWindow);
+
+    for (const window of operation.windows) {
+      this.pendingWindowSyncs.delete(window.id);
+    }
+
+    this.dirtyContexts.delete(operation.command.context.key);
+    this.recordPendingMutationWrites(writes);
+    this.deleteColumnFullWidthRestore(
+      operation.command.context.key,
+      operation.intent.activeColumnId,
+    );
+    this.finishColumnWidthChange(operation.command.context.key);
+    this.requestLayoutStatePublication();
+    this.scheduleWork();
+  }
+
+  private beginPointerResizeCompensation(
+    operation: PointerResizeSettlement,
+    failure: string,
+  ): void {
+    if (this.pointerResizeSettlement !== operation) {
+      return;
+    }
+
+    operation.phase = "compensating";
+    operation.attempts = 0;
+    operation.stableSamples = 0;
+    operation.failure ??= failure;
+
+    try {
+      if (!this.restorePointerResizeSettlementLayout(operation)) {
+        this.finishPointerResizeSettlementRecovery(
+          operation,
+          "captured layout rollback was rejected",
+        );
+        return;
+      }
+
+      if (this.pointerResizeSettlementCanCompensate(operation)) {
+        this.applyPointerResizeCompensationFrames(operation, true);
+      }
+    } catch (error) {
+      this.finishPointerResizeSettlementRecovery(
+        operation,
+        `captured rollback request failed: ${String(error)}`,
+      );
+      return;
+    }
+
+    this.schedulePointerResizeSettlementProbe(operation);
+  }
+
+  private applyPointerResizeCompensationFrames(
+    operation: PointerResizeSettlement,
+    supersedeForwardRequests = false,
+  ): void {
+    const targets: WindowGeometry[] = operation.windows
+      .filter(
+        (window) =>
+          (supersedeForwardRequests &&
+            operation.forwardAttemptedIds.has(window.id)) ||
+          !rectsEqual(window.source.frameGeometry, window.rollbackFrame),
+      )
+      .map((window) => ({
+        columnId: window.columnId,
+        frame: window.rollbackFrame,
+        windowId: window.id,
+      }));
+
+    for (const target of targets) {
+      operation.compensationWrites += this.geometry.apply(
+        [target],
+        operation.command.context,
+        (change) => {
+          const window = operation.windowById.get(change.windowId);
+          return Boolean(
+            window &&
+            this.pointerResizeSettlementCompensationContextIsCurrent(
+              operation,
+            ) &&
+            this.pointerResizeSettlementWindowCanCompensate(operation, window),
+          );
+        },
+      );
+    }
+  }
+
+  private finishPointerResizeCompensation(
+    operation: PointerResizeSettlement,
+  ): void {
+    const failure = operation.failure ?? "target geometry was rejected";
+    this.finishPointerResizeSettlement(operation);
+    console.warn(
+      `[driftile] pointer column resize rolled back context=${operation.command.context.key} error=${failure}`,
+    );
+  }
+
+  private finishPointerResizeSettlementRecovery(
+    operation: PointerResizeSettlement,
+    failure: string,
+  ): void {
+    this.finishPointerResizeSettlement(operation);
+    console.warn(
+      `[driftile] pointer column resize recovery deferred context=${operation.command.context.key} error=${failure}`,
+    );
+  }
+
+  private finishPointerResizeSettlement(
+    operation: PointerResizeSettlement,
+  ): void {
+    if (this.pointerResizeSettlement !== operation) {
+      return;
+    }
+
+    this.pointerResizeSettlement = null;
+
+    if (this.stackEditOperation === operation) {
+      this.stackEditOperation = null;
+    }
+
+    if (this.pointerResizeIntent === operation.intent) {
+      this.pointerResizeIntent = null;
+    }
+
+    this.handleWindowActivated(this.workspace.activeWindow);
+
+    for (const window of operation.windows) {
+      this.pendingWindowSyncs.add(window.id);
+    }
+
+    const context = this.contexts.get(operation.command.context.key);
+
+    if (context) {
+      this.markContextDirty(context);
+    }
+
+    this.recordPendingMutationWrites(
+      operation.forwardWrites + operation.compensationWrites,
+    );
+
+    this.scheduleWork();
+  }
+
+  private recordPendingMutationWrites(writes: number): void {
+    if (writes <= 0) {
+      return;
+    }
+
+    if (this.workFlushDepth > 0) {
+      this.scheduledMutationWrites += writes;
+    } else {
+      this.pendingMutationWrites += writes;
+    }
+  }
+
+  private pointerResizeSettlementStateIsCurrent(
+    operation: PointerResizeSettlement,
+    expectedLayout: LayoutContextSnapshot,
+  ): boolean {
+    const intent = operation.intent;
+    const context = operation.command.context;
+
+    if (
+      !this.started ||
+      this.pointerResizeSettlement !== operation ||
+      this.stackEditOperation !== operation ||
+      this.pointerResizeIntent !== intent ||
+      this.interactiveResizeSource !== null ||
+      intent.generation !== this.runGeneration ||
+      intent.topologyRevision !== this.topologyRevision ||
+      intent.gap !== this.gap ||
+      intent.contextFingerprint !== context.geometryFingerprint ||
+      this.contexts.get(context.key) !== context ||
+      this.workspace.activeWindow !== intent.source ||
+      !this.settledPointerResizeSourceIsEligible(intent.source) ||
+      intent.source.output !== intent.sourceOutput ||
+      currentDesktopForOutput(this.workspace, intent.sourceOutput)?.id !==
+        intent.sourceDesktop.id ||
+      this.hasTopologyBarrier() ||
+      this.pendingAdmissionContexts.has(context.key) ||
+      this.hasStructuralCapacityState(context.key) ||
+      this.dirtyContexts.has(context.key) ||
+      this.toggleTransitionPending(context.key) ||
+      !layoutContextSnapshotsEqual(
+        this.layout.snapshot(context.outputId, context.desktopId),
+        expectedLayout,
+      ) ||
+      this.pointerResizeSettlementHasUnexpectedPendingSync(operation)
+    ) {
+      return false;
+    }
+
+    let contextGeometry: ContextGeometry | null;
+
+    try {
+      contextGeometry = this.geometry.contextGeometry(
+        context.outputId,
+        context.desktopId,
+      );
+    } catch {
+      return false;
+    }
+
+    if (
+      !contextGeometry ||
+      contextGeometry.fingerprint !== intent.contextFingerprint
+    ) {
+      return false;
+    }
+
+    return operation.windows.every((window) => {
+      const source = this.observer.source(window.id);
+      const owner = this.managedWindows.get(window.id);
+      const observed = source ? normalizeWindow(source) : null;
+      const liveContext = observed ? managedContext(observed) : null;
+
+      return Boolean(
+        source === window.source &&
+        owner?.contextKey === context.key &&
+        context.windowIds.has(window.id) &&
+        liveContext &&
+        contextKey(liveContext) === context.key &&
+        !this.suspendedWindows.has(window.id) &&
+        !this.requestedSuspensions.has(window.id) &&
+        !this.floatingWindows.has(window.id) &&
+        !this.waitingWindowContexts.has(window.id) &&
+        !this.automaticFloatingWindows.has(window.id) &&
+        !this.automaticallyFloats(window.source) &&
+        !this.toggleGeometryTransitions.has(window.id) &&
+        isGeometryWritable(window.source) &&
+        (this.windowStateRevisions.get(window.id) ?? 0) ===
+          window.stateRevision,
+      );
+    });
+  }
+
+  private pointerResizeSettlementCanCompensate(
+    operation: PointerResizeSettlement,
+  ): boolean {
+    return (
+      this.pointerResizeSettlementCompensationContextIsCurrent(operation) &&
+      operation.windows.every((window) =>
+        this.pointerResizeSettlementWindowCanCompensate(operation, window),
+      )
+    );
+  }
+
+  private pointerResizeSettlementCompensationContextIsCurrent(
+    operation: PointerResizeSettlement,
+  ): boolean {
+    const intent = operation.intent;
+    const context = operation.command.context;
+
+    if (
+      !this.started ||
+      this.pointerResizeSettlement !== operation ||
+      this.stackEditOperation !== operation ||
+      intent.generation !== this.runGeneration ||
+      intent.topologyRevision !== this.topologyRevision ||
+      intent.gap !== this.gap ||
+      intent.contextFingerprint !== context.geometryFingerprint ||
+      this.contexts.get(context.key) !== context ||
+      this.hasTopologyBarrier()
+    ) {
+      return false;
+    }
+
+    try {
+      return (
+        this.geometry.contextGeometry(context.outputId, context.desktopId)
+          ?.fingerprint === intent.contextFingerprint
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  private pointerResizeSettlementWindowCanCompensate(
+    operation: PointerResizeSettlement,
+    window: PointerResizeSettlementWindow,
+  ): boolean {
+    const context = operation.command.context;
+    const source = this.observer.source(window.id);
+    const observed = source ? normalizeWindow(source) : null;
+    const liveContext = observed ? managedContext(observed) : null;
+
+    return Boolean(
+      source === window.source &&
+      this.managedWindows.get(window.id)?.contextKey === context.key &&
+      context.windowIds.has(window.id) &&
+      liveContext &&
+      contextKey(liveContext) === context.key &&
+      !this.suspendedWindows.has(window.id) &&
+      !this.requestedSuspensions.has(window.id) &&
+      !this.floatingWindows.has(window.id) &&
+      !this.waitingWindowContexts.has(window.id) &&
+      !this.automaticFloatingWindows.has(window.id) &&
+      !this.automaticallyFloats(window.source) &&
+      !this.toggleGeometryTransitions.has(window.id) &&
+      isGeometryWritable(window.source) &&
+      (this.windowStateRevisions.get(window.id) ?? 0) ===
+        window.stateRevision &&
+      this.geometry.canApplyFrame(window.id, window.rollbackFrame, context),
+    );
+  }
+
+  private pointerResizeIsSettling(): boolean {
+    return this.pointerResizeSettlement !== null;
+  }
+
+  private pointerResizeSettlementFramesMatch(
+    operation: PointerResizeSettlement,
+    frameKind: "rollback" | "target",
+  ): boolean {
+    return operation.windows.every((window) => {
+      const constraints = frameSizeConstraintBounds(window.source);
+      const expectedFrame =
+        frameKind === "target" ? window.targetFrame : window.rollbackFrame;
+
+      return (
+        this.observer.source(window.id) === window.source &&
+        constraints !== null &&
+        frameSizeConstraintBoundsEqual(constraints, window.constraints) &&
+        rectsEqual(window.source.frameGeometry, expectedFrame)
+      );
+    });
+  }
+
+  private pointerResizeSettlementHasUnexpectedPendingSync(
+    operation: PointerResizeSettlement,
+  ): boolean {
+    const contextKeyValue = operation.command.context.key;
+
+    for (const id of this.pendingWindowSyncs) {
+      if (operation.windowById.has(id)) {
+        continue;
+      }
+
+      const source = this.observer.source(id);
+      const observed = source ? normalizeWindow(source) : null;
+      const liveContext = observed ? managedContext(observed) : null;
+
+      if (
+        this.managedWindows.get(id)?.contextKey === contextKeyValue ||
+        this.waitingWindowContexts.get(id) === contextKeyValue ||
+        this.capacityLeaseByWindow.get(id)?.contextKey === contextKeyValue ||
+        (liveContext && contextKey(liveContext) === contextKeyValue)
+      ) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private restorePointerResizeSettlementLayout(
+    operation: PointerResizeSettlement,
+  ): boolean {
+    const context = operation.command.context;
+    const current = this.layout.snapshot(context.outputId, context.desktopId);
+
+    if (layoutContextSnapshotsEqual(current, operation.command.before)) {
+      return true;
+    }
+
+    const beforeColumn = operation.command.before.columns.find(
+      (column) => column.id === operation.intent.activeColumnId,
+    );
+
+    if (!beforeColumn) {
+      return false;
+    }
+
+    const previous = this.layout.setActiveColumnWidth(
+      operation.intent.resizedWindowId,
+      beforeColumn.width,
+    );
+
+    if (!previous) {
+      return false;
+    }
+
+    this.layout.setViewportOffset(
+      context.outputId,
+      context.desktopId,
+      operation.command.before.viewportOffset,
+    );
+    return layoutContextSnapshotsEqual(
+      this.layout.snapshot(context.outputId, context.desktopId),
+      operation.command.before,
+    );
   }
 
   private commitFinishedPointerMove(
@@ -16002,17 +16853,30 @@ export class RuntimeController {
   }
 
   private flushScheduledWork(): void {
-    this.scheduledMutationWrites = 0;
+    const outermost = this.workFlushDepth === 0;
+
+    if (outermost) {
+      this.scheduledMutationWrites = 0;
+    }
+
+    this.workFlushDepth += 1;
 
     try {
       this.flushScheduledWorkPass();
     } finally {
-      this.scheduledMutationWrites = 0;
+      this.workFlushDepth -= 1;
+
+      if (outermost) {
+        this.scheduledMutationWrites = 0;
+      }
     }
   }
 
   private flushScheduledWorkPass(): void {
-    if (this.interactiveResizeSource !== null) {
+    if (
+      this.interactiveResizeSource !== null ||
+      this.pointerResizeSettlement !== null
+    ) {
       return;
     }
 
@@ -16070,6 +16934,10 @@ export class RuntimeController {
       topologyBatchPending && this.topologyAllowsOverflowAdmissions,
     );
 
+    if (this.pointerResizeIsSettling()) {
+      return;
+    }
+
     if (topologyBatchPending && topologyBatchConsumed) {
       this.pruneColumnFullWidthRestores();
       this.topologyColumnByWindow.clear();
@@ -16124,7 +16992,9 @@ export class RuntimeController {
       this.ownershipFollowUpRequired = true;
     }
 
-    this.lastWrites = writeCount + this.scheduledMutationWrites;
+    this.lastWrites =
+      writeCount + this.scheduledMutationWrites + this.pendingMutationWrites;
+    this.pendingMutationWrites = 0;
     this.retryPendingExternalFullscreenExtractions();
 
     if (this.ownershipFollowUpRequired) {
