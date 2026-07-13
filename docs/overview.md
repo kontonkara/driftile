@@ -9,8 +9,8 @@ Overview remains installed and unchanged.
 In 1.8.0, a left click on a non-current desktop card's number gutter selects
 that desktop. The current desktop's gutter remains inert.
 
-In 1.9 development, a left click on a valid non-current thumbnail selects its
-desktop and then focuses that exact window. Current-card focus remains direct.
+In 1.9.0-rc.1, a left click on a valid non-current thumbnail selects its desktop
+and then focuses that exact window. Current-card focus remains direct.
 
 The released 1.6.0 package remains presentation-only.
 
@@ -20,8 +20,10 @@ the authoritative layout snapshot.
 
 ## Install a release
 
-Download `driftile-overview-1.8.0.kwineffect` and `SHA256SUMS` from the same
-release, then verify the archive:
+The [1.9.0-rc.1 package](release-notes-1.9.0-rc.1.md) is the current candidate,
+not a stable release; 1.8.0 remains the latest stable version. Download
+`driftile-overview-1.9.0-rc.1.kwineffect` and `SHA256SUMS` from the same release,
+then verify the archive:
 
 ```console
 $ sha256sum --check --ignore-missing SHA256SUMS
@@ -31,7 +33,7 @@ Install the overview package as the desktop user:
 
 ```bash
 kpackagetool6 --type=KWin/Effect \
-  --install ./driftile-overview-1.8.0.kwineffect
+  --install ./driftile-overview-1.9.0-rc.1.kwineffect
 ```
 
 To build the same versioned archive from source, run `npm ci` followed by
@@ -55,7 +57,7 @@ uninstalling the package.
 
 ## NixOS and Home Manager
 
-The 1.8.0 flake exposes the effect separately as
+The 1.9.0-rc.1 flake exposes the effect separately as
 `packages.<system>.driftile-overview`. The NixOS and Home Manager modules keep
 it opt-in:
 
@@ -105,8 +107,8 @@ Ordinary KWin activation may raise the window, and Driftile's existing focus
 handling may reveal its tiled column. Beyond a confirmed desktop request, the
 effect does not switch activities, move windows, write memberships, outputs,
 geometry, or settings, register a screen edge, assign a shortcut, or provide
-drag, rearrangement, or keyboard navigation. The 1.9 slice adds no action,
-binding, setting, schema, private API, or timer and performs no window,
+drag, rearrangement, or keyboard navigation. The 1.9.0-rc.1 slice adds no
+action, binding, setting, schema, private API, or timer and performs no window,
 stacking-order, or layout scan. It does not infer columns from window geometry.
 Disabling or uninstalling it leaves the main extension and Plasma's built-in
 Overview unchanged.

@@ -1,7 +1,41 @@
 # Migration
 
-The latest stable release is 1.8.0. Use the steps below when changing release
-generations, and never combine files from different releases.
+The latest stable release is 1.8.0. Version 1.9.0-rc.1 is the current candidate,
+not a stable release. Use the steps below when changing release generations,
+and never combine files from different releases.
+
+## Upgrade from 1.8.0 to 1.9.0-rc.1
+
+1. Release helper-owned shortcuts with the 1.8.0 helper while it is still
+   available.
+2. Disable Driftile and the optional overview in System Settings.
+3. Upgrade the main package and, if installed, the overview to their matching
+   1.9.0-rc.1 archives, or pin the Nix input to `v1.9.0-rc.1` and rebuild the
+   NixOS or Home Manager generation that owns each package.
+4. Enable Driftile, then assign shortcuts or claim them with the RC helper.
+5. If installed, re-enable the overview and review its manually assigned
+   shortcut.
+
+Version 1.9.0-rc.1 adds guarded left-click activation to valid thumbnails in
+non-current desktop cards. The current-card focus path is unchanged. Before
+selection, the expected off-desktop hidden state is accepted; after exact
+desktop confirmation, the same window must revalidate as visible before focus
+is requested and confirmed. A rejection before selection leaves the effect
+open. A failure after confirmed selection keeps the selected desktop, closes
+the stale effect, and performs no rollback.
+
+The candidate changes no main-script runtime, setting, shortcut action ID,
+binding, gesture, or persistence format. Both package IDs, the ten settings,
+and stored layouts remain compatible with 1.8.0.
+
+## Roll back from 1.9.0-rc.1 to 1.8.0
+
+Release shortcuts with the RC helper, disable Driftile and the optional
+overview, then restore the main package and any installed overview to their
+verified 1.8.0 archives. For NixOS or Home Manager, restore the `v1.8.0` input
+and rebuild the generation that owns each package. Re-enable the packages and
+restore the 1.8.0 shortcut profile. No setting cleanup or layout-state reset is
+required.
 
 ## Upgrade from 1.8.0-rc.1
 

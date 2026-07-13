@@ -1,9 +1,10 @@
 # Roadmap
 
 Versions 0.1.0, 1.0.0, 1.1.0, 1.2.0, 1.3.0, 1.4.0, 1.5.0, 1.6.0, 1.7.0, and
-1.8.0 are released. The delivered milestones and release criteria below are a
-historical record. The remaining post-v1 direction is not a committed release
-schedule.
+1.8.0 are released. Version 1.9.0-rc.1 packages the frozen 1.9.0 slice as the
+current release candidate; it is not a stable release. The delivered milestones
+and release criteria below are a historical record. The remaining post-v1
+direction is not a committed release schedule.
 
 ## Foundation (delivered)
 
@@ -433,7 +434,7 @@ Release criteria (met):
 - These checks extend the existing static, multi-output, and X11 fallback test
   pool without adding a new scenario family.
 
-## 1.9.0 (in development)
+## 1.9.0 (release candidate)
 
 The bounded 1.9.0 release extends only thumbnail activation in the optional
 overview. A left click on a valid thumbnail in the current desktop card retains
@@ -463,7 +464,10 @@ and the candidate's observed desktop and activity membership entries `M`,
 retains no work, and issues at most one desktop write, one active-window write,
 and one deactivation.
 
-Release criteria:
+Version `1.9.0-rc.1` packages this frozen slice for release validation without
+behavior outside the boundary above.
+
+Candidate criteria (met):
 
 - Static QML contract coverage pins the shared thumbnail click path, a
   current-card path that bypasses only desktop selection, ordered pre-write and

@@ -30,15 +30,15 @@ confirmation. The current gutter and every rejected request remain inert. The
 effect never switches activities or writes window output, membership, geometry,
 or settings.
 
-In 1.9 development, a valid non-current thumbnail first revalidates the exact
-effect, model, screen, projected output, desktop, window, and activity while
-allowing the window's off-desktop hidden state. It selects and confirms that
-desktop through the existing public path, then revalidates the same window as
-visible, requests the exact active window, and confirms focus. Pre-selection
-rejection leaves the effect open. A late invalidation or focus failure after
-confirmed selection keeps the selected desktop and closes the stale effect
-without rollback. This adds no action, binding, setting, schema, private API,
-timer, move, geometry write, or membership write, and performs no window,
+In 1.9.0-rc.1, a valid non-current thumbnail first revalidates the exact effect,
+model, screen, projected output, desktop, window, and activity while allowing
+the window's off-desktop hidden state. It selects and confirms that desktop
+through the existing public path, then revalidates the same window as visible,
+requests the exact active window, and confirms focus. Pre-selection rejection
+leaves the effect open. A late invalidation or focus failure after confirmed
+selection keeps the selected desktop and closes the stale effect without
+rollback. This adds no action, binding, setting, schema, private API, timer,
+move, geometry write, or membership write, and performs no window,
 stacking-order, or layout scan.
 
 ## Delivery contract
