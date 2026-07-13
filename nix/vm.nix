@@ -80,6 +80,11 @@ let
     ];
     text = ''
       floating_navigation_probe_id="io.github.kontonkara.driftile.vm-floating-navigation"
+      overview_plugin_id="io.github.kontonkara.driftile.overview"
+      overview_shortcut="driftile_toggle_overview"
+      overview_shortcut_text="Driftile: Toggle overview"
+      plasma_overview_effect_id="overview"
+      layout_state_file="''${XDG_CONFIG_HOME:-$HOME/.config}/driftile-layout-state.ini"
 
       window_match_id() {
         local title=$1
@@ -3511,6 +3516,557 @@ let
           >/dev/null
       }
 
+      shortcut_is_registered() {
+        busctl --user call \
+          org.kde.kglobalaccel \
+          /component/kwin \
+          org.kde.kglobalaccel.Component \
+          shortcutNames 2>/dev/null \
+          | grep -Fq "$1"
+      }
+
+      wait_for_shortcut_registration_state() {
+        local attempt
+        local expected=$2
+        local shortcut=$1
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          if shortcut_is_registered "$shortcut"; then
+            [[ "$expected" == true ]] && return 0
+          elif [[ "$expected" == false ]]; then
+            return 0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      shortcut_keys() {
+        local shortcut_name=$1
+        local shortcut_text=$2
+
+        busctl --user --json=short call \
+          org.kde.kglobalaccel \
+          /kglobalaccel \
+          org.kde.KGlobalAccel \
+          shortcutKeys \
+          as \
+          4 kwin "$shortcut_name" KWin "$shortcut_text" \
+          2>/dev/null \
+          | jq --compact-output \
+            '.data[0] | map(.[0]) | map(select(. != [0, 0, 0, 0])) | sort'
+      }
+
+      effect_is_available() {
+        busctl --user --json=short get-property \
+          org.kde.KWin \
+          /Effects \
+          org.kde.kwin.Effects \
+          listOfEffects 2>/dev/null \
+          | jq --exit-status \
+            --arg effectId "$1" \
+            '.data | any(. == $effectId)' \
+            >/dev/null
+      }
+
+      effect_loaded_state() {
+        local state
+
+        state=$(busctl --user call \
+          org.kde.KWin \
+          /Effects \
+          org.kde.kwin.Effects \
+          isEffectLoaded \
+          s "$1" 2>/dev/null) || return 1
+
+        case "$state" in
+          "b true") printf '%s' true ;;
+          "b false") printf '%s' false ;;
+          *) return 1 ;;
+        esac
+      }
+
+      effect_active_state() {
+        busctl --user --json=short get-property \
+          org.kde.KWin \
+          /Effects \
+          org.kde.kwin.Effects \
+          activeEffects 2>/dev/null \
+          | jq --exit-status --raw-output \
+            --arg effectId "$1" \
+            '.data | any(. == $effectId) | tostring'
+      }
+
+      wait_for_effect_loaded_state() {
+        local attempt
+        local effect_id=$1
+        local expected=$2
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          if [[ "$(effect_loaded_state "$effect_id" 2>/dev/null || true)" == "$expected" ]]; then
+            return 0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      wait_for_effect_active_state() {
+        local attempt
+        local effect_id=$1
+        local expected=$2
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          if [[ "$(effect_active_state "$effect_id" 2>/dev/null || true)" == "$expected" ]]; then
+            return 0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      load_overview_effect() {
+        local result
+
+        result=$(busctl --user call \
+          org.kde.KWin \
+          /Effects \
+          org.kde.kwin.Effects \
+          loadEffect \
+          s "$overview_plugin_id" 2>/dev/null) || return 1
+
+        [[ "$result" == "b true" ]] \
+          && wait_for_effect_loaded_state "$overview_plugin_id" true
+      }
+
+      unload_overview_effect() {
+        busctl --user call \
+          org.kde.KWin \
+          /Effects \
+          org.kde.kwin.Effects \
+          unloadEffect \
+          s "$overview_plugin_id" \
+          >/dev/null 2>&1 || return 1
+
+        wait_for_effect_loaded_state "$overview_plugin_id" false
+      }
+
+      capture_journal_cursor() {
+        local line
+
+        while IFS= read -r line; do
+          if [[ "$line" == "-- cursor: "* ]]; then
+            printf '%s' "''${line#-- cursor: }"
+            return 0
+          fi
+        done < <(journalctl --user -n 0 --show-cursor --no-pager -o cat 2>/dev/null)
+
+        return 1
+      }
+
+      overview_component_errors_after() {
+        local errors
+        local journal
+
+        journal=$(journalctl \
+          --user \
+          --after-cursor "$1" \
+          --no-pager \
+          -o cat 2>/dev/null) || return 1
+
+        if errors=$(printf '%s\n' "$journal" \
+          | grep -Ei 'io\.github\.kontonkara\.driftile\.overview|driftile-overview' \
+          | grep -Ei 'QQml|component|error|failed|not found|not ready|not a type|unavailable'); then
+          {
+            printf '\n[overview component errors]\n'
+            printf '%s\n' "$errors"
+          } >> /tmp/shared/driftile-focus-diagnostics
+          return 1
+        fi
+
+        return 0
+      }
+
+      overview_layout_representation() {
+        ${pkgs.kdePackages.kconfig}/bin/kreadconfig6 \
+          --file "$layout_state_file" \
+          --group Layout \
+          --key layout-v1 \
+          --default ""
+      }
+
+      normalize_overview_layout_document() {
+        jq --exit-status --compact-output --slurp '
+          select(length == 1)
+          | .[0]
+          | if type == "object" then
+              .
+            elif type == "string" then
+              fromjson | select(type == "object")
+            else
+              empty
+            end
+        '
+      }
+
+      overview_checkpoint_trace() {
+        printf '[overview checkpoint] %s\n' "$1" \
+          >> /tmp/shared/driftile-focus-diagnostics
+      }
+
+      wait_for_stable_overview_layout_digest() {
+        local attempt
+        local canonical_bytes=0
+        local current=""
+        local file_bytes=0
+        local file_exists=false
+        local first_digest
+        local layout_document
+        local layout_representation
+        local previous=""
+        local representation_bytes=0
+        local samples=""
+        local second_digest
+        local stable_samples=0
+        local topology="unavailable"
+        local version="unavailable"
+
+        for ((attempt = 0; attempt < 40; attempt += 1)); do
+          canonical_bytes=0
+          current="invalid"
+          file_bytes=0
+          file_exists=false
+          representation_bytes=0
+          topology="unavailable"
+          version="unavailable"
+
+          if [[ -e "$layout_state_file" ]]; then
+            file_exists=true
+            file_bytes=$(stat --format '%s' "$layout_state_file" 2>/dev/null || printf '0')
+          fi
+
+          if [[ -s "$layout_state_file" ]] \
+            && first_digest=$(sha256sum "$layout_state_file" 2>/dev/null) \
+            && layout_representation=$(overview_layout_representation 2>/dev/null) \
+            && second_digest=$(sha256sum "$layout_state_file" 2>/dev/null); then
+            first_digest=''${first_digest%% *}
+            second_digest=''${second_digest%% *}
+            representation_bytes=''${#layout_representation}
+
+            if [[ "$first_digest" == "$second_digest" ]] \
+              && layout_document=$(normalize_overview_layout_document \
+                <<< "$layout_representation" 2>/dev/null); then
+              canonical_bytes=''${#layout_document}
+              version=$(jq --raw-output '.version // "missing"' \
+                <<< "$layout_document" 2>/dev/null || printf 'invalid-json')
+              topology=$(jq --raw-output '
+                if (.snapshots | type) == "array"
+                  and (.snapshots | length) > 0
+                then (.snapshots[0].topology != null | tostring)
+                else "missing"
+                end
+              ' <<< "$layout_document" 2>/dev/null || printf 'invalid-json')
+
+              if jq --exit-status '
+                .version == 2
+                  and (.snapshots | length) > 0
+                  and .snapshots[0].topology != null
+                ' <<< "$layout_document" >/dev/null; then
+                current=$second_digest
+              fi
+            fi
+          fi
+
+          samples+="''${samples:+,}''${current:0:12}"
+
+          if [[ "$current" != invalid ]]; then
+
+            if [[ -n "$previous" && "$current" == "$previous" ]]; then
+              stable_samples=$((stable_samples + 1))
+            else
+              stable_samples=1
+            fi
+            previous=$current
+
+            if ((stable_samples >= 5)); then
+              overview_checkpoint_trace \
+                "layout barrier=stable path=$layout_state_file exists=$file_exists file-bytes=$file_bytes representation-bytes=$representation_bytes canonical-bytes=$canonical_bytes version=$version topology=$topology samples=$samples"
+              printf '%s' "$current"
+              return 0
+            fi
+          else
+            previous=""
+            stable_samples=0
+          fi
+
+          sleep 0.1
+        done
+
+        overview_checkpoint_trace \
+          "layout barrier=failed path=$layout_state_file exists=$file_exists file-bytes=$file_bytes representation-bytes=$representation_bytes canonical-bytes=$canonical_bytes version=$version topology=$topology samples=$samples"
+        return 1
+      }
+
+      overview_checkpoint_once() {
+        local active_caption
+        local built_in_active
+        local built_in_loaded
+        local current_desktop
+        local desktop_sequence
+        local digest
+        local frame
+        local frames=""
+        local quoted_title
+        local title
+
+        digest=$(wait_for_stable_overview_layout_digest) || {
+          overview_checkpoint_trace "field=layout-digest result=failed"
+          return 1
+        }
+        desktop_sequence=$(virtual_desktop_sequence) || {
+          overview_checkpoint_trace "field=desktop-sequence result=failed"
+          return 1
+        }
+        current_desktop=$(current_desktop_id) || {
+          overview_checkpoint_trace "field=current-desktop result=failed"
+          return 1
+        }
+        active_caption=$(active_window_caption) || {
+          overview_checkpoint_trace "field=active-caption result=failed"
+          return 1
+        }
+        if [[ -z "$active_caption" ]]; then
+          overview_checkpoint_trace "field=active-caption result=empty"
+          return 1
+        fi
+        overview_checkpoint_trace \
+          "fields digest=''${digest:0:12} desktops=$desktop_sequence current=$current_desktop active=$active_caption"
+
+        for title in "$@"; do
+          printf -v quoted_title '%q' "$title"
+          frame=$(capture_stable_window_frame "$title") || {
+            overview_checkpoint_trace \
+              "field=frame title=$quoted_title result=failed current=$(window_frame "$title" 2>/dev/null || printf 'unavailable')"
+            return 1
+          }
+          overview_checkpoint_trace \
+            "field=frame title=$quoted_title result=stable value=$frame"
+          frames+="''${frames:+|}$title=$frame"
+        done
+
+        built_in_loaded=$(effect_loaded_state "$plasma_overview_effect_id") || {
+          overview_checkpoint_trace "field=built-in-loaded result=failed"
+          return 1
+        }
+        built_in_active=$(effect_active_state "$plasma_overview_effect_id") || {
+          overview_checkpoint_trace "field=built-in-active result=failed"
+          return 1
+        }
+        overview_checkpoint_trace \
+          "fields built-in-loaded=$built_in_loaded built-in-active=$built_in_active"
+
+        printf '%s\037%s\037%s\037%s\037%s\037%s\037%s' \
+          "$digest" \
+          "$desktop_sequence" \
+          "$current_desktop" \
+          "$active_caption" \
+          "$frames" \
+          "$built_in_loaded" \
+          "$built_in_active"
+      }
+
+      capture_overview_checkpoint() {
+        local attempt
+        local current
+        local previous=""
+
+        for ((attempt = 0; attempt < 20; attempt += 1)); do
+          current=$(overview_checkpoint_once "$@") || {
+            overview_checkpoint_trace \
+              "checkpoint attempt=$attempt result=field-failure"
+            previous=""
+            sleep 0.1
+            continue
+          }
+
+          if [[ -n "$previous" && "$current" == "$previous" ]]; then
+            overview_checkpoint_trace \
+              "checkpoint attempt=$attempt result=stable"
+            printf '%s' "$current"
+            return 0
+          fi
+
+          if [[ -n "$previous" ]]; then
+            overview_checkpoint_trace \
+              "checkpoint attempt=$attempt result=mismatch"
+          fi
+          previous=$current
+          sleep 0.1
+        done
+
+        overview_checkpoint_trace "checkpoint result=failed"
+        return 1
+      }
+
+      overview_checkpoint_failure() {
+        local message=$1
+
+        {
+          printf '\n[visible overview checkpoint failed]\n'
+          printf '%s\n' "$message"
+          printf 'overview loaded: %s\n' \
+            "$(effect_loaded_state "$overview_plugin_id" 2>/dev/null || true)"
+          printf 'overview active: %s\n' \
+            "$(effect_active_state "$overview_plugin_id" 2>/dev/null || true)"
+        } >> /tmp/shared/driftile-focus-diagnostics
+
+        unload_overview_effect >/dev/null 2>&1 || true
+      }
+
+      verify_overview_effect_checkpoint() {
+        local after_checkpoint
+        local baseline_checkpoint
+        local journal_cursor
+        local overview_keys
+        local plasma_active
+        local plasma_loaded
+
+        if ! effect_is_available "$overview_plugin_id" \
+          || ! wait_for_effect_loaded_state "$overview_plugin_id" false \
+          || ! wait_for_shortcut_registration_state "$overview_shortcut" false; then
+          overview_checkpoint_failure \
+            "the installed overview was not available and disabled before loading"
+          return 1
+        fi
+
+        baseline_checkpoint=$(capture_overview_checkpoint "$@") || {
+          overview_checkpoint_failure \
+            "the real-application layout or persisted v2 state did not stabilize"
+          return 1
+        }
+        plasma_loaded=$(effect_loaded_state "$plasma_overview_effect_id") || return 1
+        plasma_active=$(effect_active_state "$plasma_overview_effect_id") || return 1
+        journal_cursor=$(capture_journal_cursor) || {
+          overview_checkpoint_failure "the user journal cursor was unavailable"
+          return 1
+        }
+
+        if ! load_overview_effect \
+          || ! wait_for_shortcut_registration_state "$overview_shortcut" true; then
+          overview_checkpoint_failure "KWin could not load the overview effect and action"
+          return 1
+        fi
+
+        overview_keys=$(shortcut_keys "$overview_shortcut" "$overview_shortcut_text") || {
+          overview_checkpoint_failure "KGlobalAccel did not expose the overview action"
+          return 1
+        }
+        if [[ "$overview_keys" != "[]" ]]; then
+          overview_checkpoint_failure \
+            "the overview action was unexpectedly bound: $overview_keys"
+          return 1
+        fi
+
+        after_checkpoint=$(capture_overview_checkpoint "$@") || {
+          overview_checkpoint_failure \
+            "the layout did not stabilize after loading the overview"
+          return 1
+        }
+        if [[ "$after_checkpoint" != "$baseline_checkpoint" ]]; then
+          overview_checkpoint_failure \
+            "loading the overview changed frames, focus, desktops, layout state, or the built-in Overview"
+          return 1
+        fi
+
+        if ! invoke_shortcut "$overview_shortcut" \
+          || ! wait_for_effect_active_state "$overview_plugin_id" true; then
+          overview_checkpoint_failure "the unbound KGlobalAccel action did not open the overview"
+          return 1
+        fi
+
+        sleep 3
+
+        if [[ "$(effect_active_state "$overview_plugin_id" 2>/dev/null || true)" != true ]] \
+          || ! overview_component_errors_after "$journal_cursor"; then
+          overview_checkpoint_failure \
+            "the visible overview did not remain active and component-error-free"
+          return 1
+        fi
+
+        if ! invoke_shortcut "$overview_shortcut" \
+          || ! wait_for_effect_active_state "$overview_plugin_id" false; then
+          overview_checkpoint_failure "the KGlobalAccel action did not close the overview"
+          return 1
+        fi
+
+        after_checkpoint=$(capture_overview_checkpoint "$@") || {
+          overview_checkpoint_failure \
+            "the layout did not stabilize after closing the overview"
+          return 1
+        }
+        if [[ "$after_checkpoint" != "$baseline_checkpoint" ]] \
+          || [[ "$(effect_loaded_state "$plasma_overview_effect_id")" != "$plasma_loaded" ]] \
+          || [[ "$(effect_active_state "$plasma_overview_effect_id")" != "$plasma_active" ]] \
+          || ! overview_component_errors_after "$journal_cursor"; then
+          overview_checkpoint_failure \
+            "the overview changed the captured layout or the built-in Overview"
+          return 1
+        fi
+
+        if ! unload_overview_effect \
+          || ! wait_for_shortcut_registration_state "$overview_shortcut" true; then
+          overview_checkpoint_failure \
+            "effect unload did not retain the inert overview action"
+          return 1
+        fi
+
+        overview_keys=$(shortcut_keys "$overview_shortcut" "$overview_shortcut_text") || {
+          overview_checkpoint_failure \
+            "KGlobalAccel did not expose the retained overview action"
+          return 1
+        }
+        if [[ "$overview_keys" != "[]" ]] \
+          || ! invoke_shortcut "$overview_shortcut"; then
+          overview_checkpoint_failure \
+            "the retained overview action was bound or could not be invoked"
+          return 1
+        fi
+
+        sleep 0.3
+
+        after_checkpoint=$(capture_overview_checkpoint "$@") || {
+          overview_checkpoint_failure \
+            "the layout did not stabilize after invoking the inert overview action"
+          return 1
+        }
+        if [[ "$(effect_loaded_state "$overview_plugin_id")" != false ]] \
+          || [[ "$(effect_active_state "$overview_plugin_id")" != false ]] \
+          || [[ "$after_checkpoint" != "$baseline_checkpoint" ]] \
+          || [[ "$(effect_loaded_state "$plasma_overview_effect_id")" != "$plasma_loaded" ]] \
+          || [[ "$(effect_active_state "$plasma_overview_effect_id")" != "$plasma_active" ]] \
+          || [[ "$(busctl --user call \
+            org.kde.KWin \
+            /Scripting \
+            org.kde.kwin.Scripting \
+            isScriptLoaded \
+            s ${pluginId} 2>/dev/null)" != "b true" ]] \
+          || ! wait_for_shortcut_registration_state "driftile_focus_window_down" true \
+          || ! overview_component_errors_after "$journal_cursor"; then
+          overview_checkpoint_failure \
+            "the inert action changed the overview, captured layout, core extension, or built-in Overview"
+          return 1
+        fi
+
+        record_focus_state \
+          "visible read-only overview preserved real applications and core state"
+      }
+
       wait_for_shortcut_focus() {
         local attempt
         local sample
@@ -4001,6 +4557,7 @@ let
       }
 
       cleanup_temporary_windows() {
+        unload_overview_effect >/dev/null 2>&1 || true
         set_application_column_widths "" >/dev/null 2>&1 || true
         set_application_tiling_exclusions "" >/dev/null 2>&1 || true
         restore_layout_configuration >/dev/null 2>&1 || true
@@ -8113,6 +8670,7 @@ let
         local output_width
         local output_x
         local output_y
+        local overview_verified=false
         local same_stack_verified=false
         local source_x
         local source_y
@@ -8131,6 +8689,7 @@ let
           record_focus_state "physical pointer fixture baseline failed"
           return 1
         fi
+
         baseline_first=$stable_first_frame
         baseline_second=$stable_second_frame
         baseline_third=$stable_third_frame
@@ -8271,6 +8830,17 @@ let
           fi
         fi
 
+        if [[ "$cross_column_verified" == true \
+          && "$same_stack_verified" == true ]] \
+          && verify_overview_effect_checkpoint \
+            "$title_a" \
+            "$title_b" \
+            "$title_c" \
+            "$firefox_title" \
+            "$xterm_title"; then
+          overview_verified=true
+        fi
+
         if [[ -n "$xterm_pid" ]]; then
           terminate_process "$xterm_pid"
 
@@ -8303,6 +8873,7 @@ let
 
         if [[ "$cross_column_verified" == true \
           && "$same_stack_verified" == true \
+          && "$overview_verified" == true \
           && "$cleanup_verified" == true ]]; then
           record_focus_state \
             "physical pointer fixture closed and restored the tiled layout"
@@ -8317,6 +8888,7 @@ let
           printf 'target width: %s\n' "$target_width"
           printf 'cross-column verified: %s\n' "$cross_column_verified"
           printf 'same-stack verified: %s\n' "$same_stack_verified"
+          printf 'overview verified: %s\n' "$overview_verified"
           printf 'cleanup verified: %s\n' "$cleanup_verified"
         } >> /tmp/shared/driftile-focus-diagnostics
         return 1
@@ -9865,6 +10437,7 @@ in
 {
   networking.hostName = if driftileVmTwoHead then "driftile-vm-two-head" else "driftile-vm";
   programs.driftile.enable = true;
+  programs.driftile.overview.enable = !driftileVmTwoHead;
   system.stateVersion = "26.05";
   system.switch.enable = false;
 

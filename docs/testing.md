@@ -169,6 +169,17 @@ physical `Meta+Shift+R` wraps back to 75%. Each frame is checked against the
 gap-adjusted output proportion before the setting is cleared and the exact
 baseline layout is restored.
 
+At the settled Firefox, Konsole, and XWayland xterm pointer layout, the primary
+VM confirms that the separately installed overview effect is disabled and
+unbound. It loads the effect through KWin, invokes its unbound action through
+KGlobalAccel without assigning a test chord, leaves the overview visible for
+three seconds, and rejects component errors. Its baseline requires the same
+valid v2 layout digest for 400 ms before frame and focus capture. After closing
+and unloading the effect, it requires identical frames, focus, desktops,
+persisted layout bytes, and built-in Overview state. The retained unbound
+action is invoked once more to prove it is inert after unload, while the main
+extension remains loaded.
+
 The host injects real keyboard shortcuts and absolute `Meta+left` drags through QEMU QMP, so Plasma routing and pointer behavior cannot hide behind direct invocation. The pointer checkpoint moves native Wayland Firefox into an XWayland xterm column, verifies destination width and order, then reorders the resulting stack. The VM also verifies both desktop-reorder directions and aliases against real applications while preserving desktop IDs, selection, window memberships, focus, frames, and the shared tail. It applies and restores a live gap while a real Konsole window is floating. For default width and both resize steps, it co-delivers each policy with a temporary gap barrier, restores the gap, then proves exact existing frames before the explicit action. The remaining checks cover dynamic desktops, minimized-slot navigation, column reorder, horizontal extraction, explicit consume and expel past minimized peers, tiled and floating transfers, transfer boundaries, layer navigation, stack editing, fullscreen and maximize, sizing, and viewport scrolling with native Wayland and XWayland clients. The real xterm path also verifies advertised character-cell resize increments and exact off-lattice tiled geometry. See [Shortcuts](shortcuts.md).
 
 The VM is ephemeral, has restricted networking, and cannot be switched onto the host. The passwordless `driftile` account signs in automatically. Screen locking, display power saving, and system sleep are disabled inside the guest. The launcher closes the VM immediately after the visible checks report success or failure. The X11 Plasma session remains available from the login screen; automated integration tests cover both KWin backends.
