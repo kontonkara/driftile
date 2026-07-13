@@ -106,6 +106,7 @@ cleanup() {
     custom_shortcut_profile_owned=false
   fi
 
+  restore_application_configuration >/dev/null 2>&1 || true
   restore_layout_configuration >/dev/null 2>&1 || true
   stop_work_area_panel
   stop_x11_work_area_dock
@@ -208,6 +209,21 @@ window_id() {
 
   match_id=$(window_match_id "$1") || return 1
   printf '%s' "${match_id#*_}"
+}
+
+window_desktop_file_name() {
+  local id
+
+  id=$(window_id "$1") || return 1
+  busctl --user --json=short call \
+    org.kde.KWin \
+    /KWin \
+    org.kde.KWin \
+    getWindowInfo \
+    s "$id" 2>/dev/null | jq --exit-status --raw-output '
+      .data[0].desktopFile.data
+      | select(type == "string" and length > 0)
+    '
 }
 
 x11_window_id() {
@@ -1214,6 +1230,28 @@ capture_stable_geometry() {
     current=$(window_frame_geometry "$window_title" 2>/dev/null || true)
 
     if [[ -n "$current" && "$current" == "$previous" ]]; then
+      printf '%s' "$current"
+      return 0
+    fi
+
+    previous=$current
+    sleep 0.05
+  done
+
+  return 1
+}
+
+capture_changed_stable_geometry() {
+  local window_title=$1
+  local baseline=$2
+  local attempt
+  local current
+  local previous=""
+
+  for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
+    current=$(window_frame_geometry "$window_title" 2>/dev/null || true)
+
+    if [[ -n "$current" && "$current" != "$baseline" && "$current" == "$previous" ]]; then
       printf '%s' "$current"
       return 0
     fi
@@ -2803,6 +2841,36 @@ set_gap() {
     >/dev/null
 }
 
+set_application_configuration() {
+  local exclusions=$2
+  local widths=$1
+
+  kwriteconfig6 \
+    --file "$XDG_CONFIG_HOME/kwinrc" \
+    --group "Script-${plugin_id}" \
+    --key ApplicationColumnWidths \
+    --type string \
+    "$widths" || return 1
+
+  kwriteconfig6 \
+    --file "$XDG_CONFIG_HOME/kwinrc" \
+    --group "Script-${plugin_id}" \
+    --key ApplicationTilingExclusions \
+    --type string \
+    "$exclusions" || return 1
+
+  busctl --user call \
+    org.kde.KWin \
+    /KWin \
+    org.kde.KWin \
+    reconfigure \
+    >/dev/null
+}
+
+restore_application_configuration() {
+  set_application_configuration "" ""
+}
+
 set_layout_configuration() {
   kwriteconfig6 \
     --file "$XDG_CONFIG_HOME/kwinrc" \
@@ -2871,20 +2939,21 @@ start_qml_client() {
   client_pids+=("$!")
 }
 
-start_gtk3_client() {
+start_gjs_client() {
   local protocol=$1
+  local client=$2
 
-  shift
+  shift 2
 
   case "$protocol" in
     wayland)
       GDK_BACKEND=wayland NO_AT_BRIDGE=1 gjs \
-        "$DRIFTILE_SMOKE_GTK3_LIVE_CONSTRAINT_CLIENT" \
+        "$client" \
         "$@" &
       ;;
     x11 | xwayland)
       GDK_BACKEND=x11 NO_AT_BRIDGE=1 gjs \
-        "$DRIFTILE_SMOKE_GTK3_LIVE_CONSTRAINT_CLIENT" \
+        "$client" \
         "$@" &
       ;;
     *)
@@ -2893,6 +2962,31 @@ start_gtk3_client() {
   esac
 
   client_pids+=("$!")
+}
+
+start_gtk3_client() {
+  local protocol=$1
+
+  shift
+  start_gjs_client \
+    "$protocol" \
+    "$DRIFTILE_SMOKE_GTK3_LIVE_CONSTRAINT_CLIENT" \
+    "$@"
+}
+
+start_application_exclusion_sibling() {
+  local protocol=$1
+  local window_title=$2
+
+  if [[ "$protocol" == wayland ]]; then
+    start_gjs_client \
+      "$protocol" \
+      "$DRIFTILE_SMOKE_GTK3_CLIENT" \
+      "$window_title"
+    return
+  fi
+
+  start_xterm_client "$protocol" "$window_title"
 }
 
 start_client() {
@@ -6700,6 +6794,148 @@ verify_live_hard_constraint_recovery() {
     fail "Driftile did not restore the exact $protocol layout after $client_label live-constraint acceptance: $(describe_layout "$first_title" "$second_title" "$third_title")"
 }
 
+verify_application_tiling_exclusion() {
+  local admitted_frame
+  local admitted_width
+  local desktop_file_name
+  local excluded_frame
+  local protocol=$1
+  local sibling_admitted_frame
+  local sibling_baseline
+  local sibling_gap_frame
+  local sibling_pid
+  local sibling_restored_frame
+  local sibling_tiled_frame
+  local sibling_title="driftile-exclusion-sibling-${protocol}"
+  local target_pid
+  local target_title="driftile-exclusion-${protocol}"
+  local witness_desktop_file_name
+  local witness_pid
+  local witness_title="driftile-exclusion-identity-${protocol}"
+
+  start_client "$protocol" "$target_title" true
+  target_pid=${client_pids[${#client_pids[@]}-1]}
+  capture_stable_geometry "$target_title" >/dev/null || \
+    fail "the application-exclusion $protocol target did not stabilize"
+  start_client "$protocol" "$witness_title" true
+  witness_pid=${client_pids[${#client_pids[@]}-1]}
+  capture_stable_geometry "$witness_title" >/dev/null || \
+    fail "the application-exclusion $protocol identity witness did not stabilize"
+
+  desktop_file_name=$(window_desktop_file_name "$target_title") || \
+    fail "KWin did not expose the application-exclusion $protocol desktop-file ID"
+  witness_desktop_file_name=$(window_desktop_file_name "$witness_title") || \
+    fail "KWin did not expose the application-exclusion $protocol witness desktop-file ID"
+  [[ "$desktop_file_name" == "$witness_desktop_file_name" ]] || \
+    fail "the application-exclusion $protocol desktop-file ID was not deterministic"
+  [[ "$desktop_file_name" != *"="* ]] || \
+    fail "the application-exclusion $protocol desktop-file ID cannot encode a width override"
+
+  stop_client "$witness_pid"
+  wait_for_window_gone "$witness_title" || \
+    fail "the application-exclusion $protocol identity witness did not close"
+
+  start_application_exclusion_sibling "$protocol" "$sibling_title"
+  sibling_pid=${client_pids[${#client_pids[@]}-1]}
+  sibling_baseline=$(capture_stable_geometry "$sibling_title") || \
+    fail "the application-exclusion $protocol sibling did not stabilize"
+
+  activate_window "$target_title" || \
+    fail "KWin could not activate the application-exclusion $protocol target"
+  wait_for_active "$target_title" || \
+    fail "KWin did not activate the application-exclusion $protocol target"
+  excluded_frame=$(capture_stable_geometry "$target_title") || \
+    fail "the application-exclusion $protocol target frame did not stabilize"
+
+  set_borderless_windows false || \
+    fail "KWin could not preserve decorated application-exclusion $protocol geometry"
+  set_application_configuration \
+    "$desktop_file_name=80" \
+    "$desktop_file_name" || \
+    fail "KWin could not preconfigure the application-exclusion $protocol policy"
+  set_plugin_state true
+  wait_for_script_state true || \
+    fail "KWin did not load Driftile for the application-exclusion $protocol scenario"
+  claim_shortcut_profile
+
+  wait_for_geometries "$target_title" "$excluded_frame" || \
+    fail "Driftile changed the preconfigured excluded $protocol frame"
+  sibling_tiled_frame=$(capture_changed_stable_geometry \
+    "$sibling_title" \
+    "$sibling_baseline") || \
+    fail "Driftile did not tile the application-exclusion $protocol sibling"
+  invoke_shortcut "driftile_increase_column_width" || \
+    fail "KGlobalAccel could not invoke the excluded $protocol width action"
+  invoke_shortcut "driftile_move_column_left" || \
+    fail "KGlobalAccel could not invoke the excluded $protocol move action"
+  wait_for_geometries \
+    "$target_title" "$excluded_frame" \
+    "$sibling_title" "$sibling_tiled_frame" || \
+    fail "Driftile changed the excluded $protocol frame or its sibling under tiling commands"
+
+  set_application_configuration "$desktop_file_name=80" "" || \
+    fail "KWin could not clear the application-exclusion $protocol policy"
+  admitted_frame=$(capture_changed_stable_geometry \
+    "$target_title" \
+    "$excluded_frame") || \
+    fail "Driftile did not freshly admit the application-exclusion $protocol target"
+  IFS=, read -r _ _ admitted_width _ <<< "$admitted_frame"
+  ((admitted_width == 995)) || \
+    fail "Driftile did not use the configured 80% $protocol admission width: $admitted_frame"
+  wait_for_active "$target_title" || \
+    fail "Driftile changed $protocol focus during application-exclusion admission"
+  sibling_admitted_frame=$(capture_stable_geometry "$sibling_title") || \
+    fail "the application-exclusion $protocol sibling did not settle after target admission"
+
+  set_application_configuration \
+    "$desktop_file_name=80" \
+    "$desktop_file_name" || \
+    fail "KWin could not reapply the application-exclusion $protocol policy"
+  set_gap 24 || \
+    fail "KWin could not expose the live application-exclusion $protocol delivery barrier"
+  sibling_gap_frame=$(capture_changed_stable_geometry \
+    "$sibling_title" \
+    "$sibling_admitted_frame") || \
+    fail "Driftile did not reflow the application-exclusion $protocol sibling at the delivery barrier"
+  wait_for_geometries \
+    "$target_title" "$admitted_frame" \
+    "$sibling_title" "$sibling_gap_frame" || \
+    fail "Driftile changed the live re-excluded $protocol frame at the delivery barrier"
+  invoke_shortcut "driftile_increase_column_width" || \
+    fail "KGlobalAccel could not invoke the re-excluded $protocol width action"
+  wait_for_geometries \
+    "$target_title" "$admitted_frame" \
+    "$sibling_title" "$sibling_gap_frame" || \
+    fail "Driftile changed the live re-excluded $protocol frame or its sibling under a tiling command"
+
+  set_gap 16 || \
+    fail "KWin could not restore the application-exclusion $protocol gap"
+  sibling_restored_frame=$(capture_changed_stable_geometry \
+    "$sibling_title" \
+    "$sibling_gap_frame") || \
+    fail "Driftile did not restore the application-exclusion $protocol sibling gap"
+  wait_for_geometries \
+    "$target_title" "$admitted_frame" \
+    "$sibling_title" "$sibling_restored_frame" || \
+    fail "Driftile changed the re-excluded $protocol frame while restoring its sibling"
+
+  set_plugin_state false
+  wait_for_script_state false || \
+    fail "KWin did not unload Driftile after the application-exclusion $protocol scenario"
+  release_shortcut_profile
+  restore_application_configuration || \
+    fail "KWin could not restore the application-exclusion $protocol configuration"
+  set_borderless_windows true || \
+    fail "KWin could not restore the application-exclusion $protocol border policy"
+  rm -f "$layout_state_file"
+  stop_client "$target_pid"
+  stop_client "$sibling_pid"
+  wait_for_window_gone "$target_title" || \
+    fail "the application-exclusion $protocol target did not close"
+  wait_for_window_gone "$sibling_title" || \
+    fail "the application-exclusion $protocol sibling did not close"
+}
+
 run_scenario() {
   local protocol=$1
   local first_title="driftile-smoke-${protocol}-a"
@@ -6723,6 +6959,8 @@ run_scenario() {
   local state_frame="648,16,616,688"
   local full_output_frame="0,0,1280,720"
   local native_tile_frame="4,4,314,712"
+
+  verify_application_tiling_exclusion "$protocol"
 
   start_client "$protocol" "$first_title" true
   capture_stable_geometry "$first_title" >/dev/null || fail "the first $protocol test window did not stabilize"
