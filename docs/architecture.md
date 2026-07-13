@@ -79,6 +79,14 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   back to singleton admission when the target is unavailable or invalidated.
 - Adds no visual layer, setting, shortcut action, binding, or persistence field
   for cross-desktop adoption.
+- The frozen 1.6 design observes a KWin-owned interactive resize without writing
+  geometry, captures the active column and visible context once, and classifies
+  the accepted final frame only after resize ownership settles.
+- It will adopt only an unambiguous width-only left- or right-edge finish when
+  every captured column member remains visible, writable, unsuspended,
+  unchanged, and in the same output and desktop. Success replaces the existing
+  fixed column width, reflows one context, and publishes once; cancellation or
+  rejection restores the prior model and frames with exact compensation.
 - Observes output list, geometry, scale, and dock invalidations, then holds writes until two delayed topology snapshots match.
 - Detects otherwise silent client-area and hard-constraint changes with visibility-limited fingerprints.
 - Replays structural output changes in a stable layout order independent of KWin window-signal order.
@@ -144,6 +152,7 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 
 - Remains the source of truth for live windows, outputs, desktop order and selection, focus, and window state.
 - Owns the virtual-desktop reordering mechanism.
+- Owns interactive pointer move and resize sessions.
 - Applies geometry and validates window constraints.
 - Reports external changes back through signals.
 
@@ -208,6 +217,10 @@ Historical floating state and restore baselines are never applied during this
 path.
 
 Transient runtime state is never durable: expected layout frames, decoration ownership, focus caches, waiting and suspension state, schedulers, probes, and transaction tokens are excluded. A context fingerprint is stored only with original client and frame restore baselines; a mismatch discards those baselines without rejecting the logical layout. A window `liveId` is an exact same-session reload hint only. The pure matcher gives that identity precedence, then accepts public KWin session descriptors only when both sides are globally unique; missing, duplicate, or overlapping matches remain unmatched. Output matching prefers a unique display serial tuple and otherwise requires the available connector metadata exactly. Desktops require their exact KWin IDs.
+
+The planned horizontal-resize intent is also transient. It adds no persistence
+schema field, setting, action, binding, feedback surface, or compositor
+mechanism.
 
 Canonical capture records bounded public KWin window identity and output
 manufacturer, model, and serial metadata when available. Empty, oversized, or
@@ -301,6 +314,15 @@ inspected safely within the codec bound.
   bounded number of times, apply no hidden-source geometry, and isolate every
   unrelated context. If destination writes partially apply, compensate them
   exactly before singleton admission.
+- For the frozen 1.6 resize path, compare the initial and accepted final frames
+  only after KWin finishes. Accept exactly one changed horizontal edge with
+  unchanged vertical edges, and require the same settled visible context plus
+  an unchanged, fully writable active column.
+- Commit the accepted width as the existing fixed column policy, reflow only
+  that context, preserve order, height policies, focus, and unrelated contexts,
+  and publish once. A corner, vertical or ambiguous resize, participant or
+  authority change, topology or constraint race, or rejected write restores
+  the captured policy and frames; compensate any partial write exactly.
 - Transfer either the active column or one secondary window between existing desktops through an immutable two-context preview, then commit only after KWin accepts every desktop mechanism, focus, and destination geometry.
 - Transfer either the active column or one secondary window between outputs through the same preview, then commit only after KWin accepts every output and desktop mechanism plus both visible layouts.
 - Preserve whole-column member order and width, apply the active member last, and restore all owned mechanisms and frames if any batch step fails.
@@ -357,6 +379,8 @@ inspected safely within the codec bound.
 - Keep default core operations linear in the affected context, not the whole
   workspace. Automatic-height allocation indexes member bounds once before
   distributing the affected stack.
+- Keep horizontal-resize capture, finish validation, reflow, and compensation
+  `O(V)` in the visible context, with no workspace scan or persistent growth.
 - Gate critical runtime and geometry paths with the deterministic operation
   counts documented in [Performance](performance.md).
 
@@ -404,6 +428,10 @@ inspected safely within the codec bound.
   finish-before-membership event orders. Cover bounded pending settlement,
   initially unavailable or invalidated singleton fallback, exact compensation
   before fallback, zero hidden-source writes, and unrelated-context isolation.
+- For the frozen 1.6 slice, add focused observer cases for start/finish capture
+  and exact horizontal-edge classification, plus runtime cases for successful
+  fixed-width adoption, every fail-closed race, one publication, context-local
+  linear work, restoration, and partial-write compensation.
 - Verify explicit top-member consume and bottom-member expel, minimized passive-member policy, synchronous and deferred focus handoff, reentrant command rejection, width rules, height-state reset, boundaries, and rollback.
 - Verify the settled topology barrier, output replacement and removal, dock and silent work-area invalidations, sticky restore invalidation, and deterministic capacity recovery.
 - Verify independent contexts with native Wayland and XWayland windows on two virtual outputs and native X11 windows on the X11 backend.

@@ -32,6 +32,7 @@ command.
 | Hidden-member edits  | Preserve documented passive peers; reject every other minimized-member structural edit            | Available |
 | Floating layer       | Toggle state, switch layers, and navigate floating windows geometrically                          | Available |
 | Pointer drop         | Reinsert or adopt one active tiled window at one exact visible target                             | Available |
+| Pointer resize       | Adopt one completed horizontal resize as the active column's fixed width                          | 1.6       |
 | Tabbed columns       | Toggle a column between stacked and tabbed presentation without changing navigation               | v1        |
 | Pointer navigation   | Provide wheel navigation through the shared layout model                                          | Future    |
 
@@ -55,10 +56,22 @@ Cross-output behavior is unchanged: KWin owns physical output and any required
 desktop movement, and Driftile adopts only when the cursor still identifies one
 valid destination target. An empty, invalidated, ambiguous, or raced target
 uses ordinary destination admission rather than moving the window back.
-Same-context resize sessions, cancelled or ambiguous drops, state changes, and
-topology changes leave the logical slot unchanged and restore its tiled frame.
-Pointer adoption is finish-only and adds no visual feedback, setting, binding,
-or persistence schema.
+
+The frozen 1.6 resize path starts with the active normal tiled window in one
+settled visible context. KWin owns the interactive resize, so Driftile performs
+no geometry write until it finishes. An unambiguous width-only left- or
+right-edge finish may become the existing fixed width of the active column only
+when every member remains visible, writable, unsuspended, unchanged, and in the
+same output and desktop. Success reflows that context, preserves order, heights,
+focus, and unrelated contexts, and publishes once.
+
+Corner or vertical resizing, an ambiguous edge, any participant, state,
+context, topology, or constraint race, and a rejected write restore the prior
+column policy and tiled frames. Partial writes are compensated exactly. Other
+resize sessions, cancelled or ambiguous drops, state changes, and topology
+changes retain the logical slot and restore its tiled frame. Pointer adoption
+is finish-only and adds no visual feedback, setting, action, binding, or
+persistence schema.
 
 A stack has at most one fixed or preset window height. Changing a different
 member converts the other members to weighted automatic heights that preserve
@@ -67,8 +80,9 @@ returns the active member to automatic sizing.
 
 ## KWin boundary
 
-KWin owns fullscreen, maximize, minimize, output transfer, and virtual-desktop
-mechanisms. Driftile owns their layout semantics.
+KWin owns fullscreen, maximize, minimize, interactive pointer move and resize,
+output transfer, and virtual-desktop mechanisms. Driftile owns their layout
+semantics.
 
 Driftile provides no minimize action or default shortcut. A minimized tiled
 window retains its exact logical slot, and a minimized manually floating window

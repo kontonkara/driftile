@@ -314,9 +314,35 @@ Release criteria (met):
 
 ## 1.6.0 (in development)
 
-The `main` branch tracks `1.6.0-dev.0`. Its next bounded core slice will be
-selected and scope-frozen separately; this placeholder does not commit an
-implementation scope.
+The frozen 1.6.0 core slice will adopt only a completed horizontal pointer
+resize of the active normal tiled window. KWin remains the interactive-resize
+owner. After a width-only left- or right-edge finish in the same settled,
+visible, unchanged output and desktop, Driftile may store KWin's accepted width
+as the active column's existing fixed-width policy and reflow that context.
+
+Every active-column member must remain visible, writable, unsuspended, and
+unchanged. Corner or vertical resizing, an ambiguous edge, any participant,
+state, context, topology, or constraint race, and any rejected write cancel the
+adoption and restore the prior tiled layout. Partial writes receive exact
+compensation.
+
+The slice adds no setting, action, binding, visual feedback, persistence-schema
+field, or compositor ownership. It performs no geometry write while KWin owns
+the resize and no workspace-wide scan.
+
+Release criteria:
+
+- Observer and runtime paths distinguish exact left- and right-edge width-only
+  finishes from moves, corners, vertical resizes, and ambiguous geometry.
+- A successful adoption changes only the active fixed column width, preserves
+  order, heights, focus, and unrelated contexts, and publishes once.
+- Every invalidation restores the prior policy and frames; a partial context
+  write compensates exactly before restoration.
+- Planning and validation use `O(V)` work in the visible context, with no
+  persistent growth or workspace scan.
+- Focused tests cover the observer and runtime behavior. Packaged Wayland,
+  XWayland, and single-output native X11 checks precede one physical
+  `Meta+right` visible-VM checkpoint.
 
 ## Post-v1
 

@@ -47,6 +47,24 @@ The ownership rule is strict:
 - Single-window floating desktop transfer with exact frame and tiled-layout preservation.
 - Event-driven, incremental reconciliation; only visible context geometry and non-minimized tracked-window hard constraints are checked periodically, while a settled structural output change permits one bounded workspace resynchronization.
 
+## Frozen 1.6 core slice
+
+- A finish-only pointer resize may adopt KWin's accepted width only for the
+  active normal tiled window after an unambiguous width-only left- or right-edge
+  resize finishes in the same settled, visible, unchanged output and desktop.
+- Every member of the active column must remain visible, writable, unsuspended,
+  and unchanged. Driftile writes nothing while KWin owns the interactive resize.
+- Success stores the accepted width in the existing fixed-column policy,
+  reflows only that context, preserves order, heights, focus, and unrelated
+  contexts, and publishes once.
+- A corner or vertical resize, ambiguous edge, changed or minimized participant,
+  suspension, state, context, topology, or constraint race, or rejected write
+  restores the prior policy and tiled frames. Partial writes are compensated
+  exactly before restoration.
+- The slice adds no setting, action, binding, feedback, persistence field, or
+  compositor mechanism. It uses `O(V)` work in the visible context and no
+  workspace-wide scan.
+
 ## Beyond v1
 
 - A removable read-only overview companion presents the authoritative layout
