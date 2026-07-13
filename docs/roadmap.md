@@ -484,18 +484,23 @@ Release criteria (met):
 - These checks extend the existing static and multi-output test pool without a
   new scenario family, binding, or client type.
 
-## 1.9.1 (in development)
+## 1.9.1 (release candidate)
 
-The `main` branch tracks `1.9.1-dev.0`. This bounded patch corrects full-width
-column positioning and exact toggle restoration without adding actions,
-bindings, or settings. Existing persistence documents remain readable.
+Version `1.9.1-rc.1` freezes a bounded patch for full-width column positioning
+and exact toggle restoration without adding actions, bindings, or settings.
+The optional persisted restore viewport lets the candidate retain exact
+toggle-back behavior across reloads while accepting older documents that omit
+it. Version 1.9.0 rejects documents containing the additive field atomically,
+so a downgrade starts safely without restoring the newer toggle metadata.
 
-Release criteria:
+Candidate criteria (met):
 
-- A full-width active column retains equal configured outer gaps and leaves no
-  adjacent column visible inside the work area.
+- A full-width active column retains equal configured outer gaps and moves
+  adjacent columns entirely outside the viewport.
 - Toggling back restores the prior width and viewport exactly, including after
   extension reload, while failed geometry writes keep the maximized state.
+- Persistence accepts 1.9.0 documents without a restore viewport and fails
+  closed on downgrade instead of partially applying newer metadata.
 - Existing unit, packaged Wayland and X11 integration, hidden full-VM, package,
   and Nix module checks remain green.
 
