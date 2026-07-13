@@ -1,10 +1,8 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0, 1.1.0, 1.2.0, 1.3.0, 1.4.0, and 1.5.0 are released.
-The delivered milestones and release criteria below are a historical record.
-Version 1.6.0 is scope-frozen at `1.6.0-rc.1`; only release-blocking fixes and
-release documentation remain before stable promotion. The remaining post-v1
-direction is not a committed release schedule.
+Versions 0.1.0, 1.0.0, 1.1.0, 1.2.0, 1.3.0, 1.4.0, 1.5.0, and 1.6.0 are
+released. The delivered milestones and release criteria below are a historical
+record. The remaining post-v1 direction is not a committed release schedule.
 
 ## Foundation (delivered)
 
@@ -314,15 +312,16 @@ Release criteria (met):
   single-output native X11; backend-specific geometry rejection falls back
   safely.
 
-## 1.6.0 (release candidate)
+## 1.6.0 (released)
 
-The bounded 1.6.0 core slice adopts only a completed horizontal pointer resize
+The bounded 1.6.0 release adopts only a completed horizontal pointer resize
 of the active normal tiled window. KWin remains the interactive-resize owner.
 After a width-only left- or right-edge finish in the same settled, visible,
 unchanged output and desktop, Driftile stores KWin's accepted width as the
 active column's existing fixed-width policy and reflows that context.
 
-Version `1.6.0-rc.1` is the current candidate.
+Version `1.6.0-rc.1` validated the final packages before stable promotion
+without behavior changes.
 
 Every active-column member must remain visible, writable, unsuspended, and
 unchanged. Corner or vertical resizing, an ambiguous edge, any participant,
@@ -335,11 +334,11 @@ attempted target requests with captured rollback frames and releases after 20
 exact samples. An unconfirmed rollback falls back to deferred recovery after 40
 probes; lost native-state geometry authority receives no competing write.
 
-The slice adds no setting, action, binding, visual feedback, persistence-schema
-field, or compositor ownership. It performs no geometry write while KWin owns
-the resize and no workspace-wide scan.
+The release adds no setting, action, binding, visual feedback,
+persistence-schema field, or compositor ownership. It performs no geometry
+write while KWin owns the resize and no workspace-wide scan.
 
-Frozen candidate criteria:
+Release criteria (met):
 
 - Observer and runtime paths distinguish exact left- and right-edge width-only
   finishes from moves, corners, vertical resizes, and ambiguous geometry.
