@@ -1,9 +1,8 @@
 # Roadmap
 
-Versions 0.1.0 and 1.0.0 are released. The delivered milestones and release
-criteria below are a historical record. Version 1.1.0-rc.1 is the current
-prerelease candidate; the remaining post-v1 direction is not a committed
-release schedule.
+Versions 0.1.0, 1.0.0, and 1.1.0 are released. The delivered milestones and
+release criteria below are a historical record. The remaining post-v1
+direction is not a committed release schedule.
 
 ## Foundation (delivered)
 
@@ -156,9 +155,9 @@ Release criteria (met):
 - Performance budgets pass on the documented reference scenario.
 - Installation, upgrade, disable, and uninstall paths leave Plasma usable.
 
-## 1.1.0 (release candidate)
+## 1.1.0 (released)
 
-The current bounded slice adds application-specific initial column widths, a
+Version 1.1.0 adds application-specific initial column widths, a
 configurable column-width preset cycle, and optional horizontal focus centering.
 Each 10%–100% rule occupies one line and matches the exact KWin
 `desktopFileName`; at most 128 rules are accepted. Newly created and fresh
@@ -180,7 +179,10 @@ not move the layout.
 Global wheel input remains deferred because KWin 6.7 has no public script axis
 API. This milestone does not add a private input path.
 
-Release criteria:
+Version `1.1.0-rc.1` validated the final runtime before stable promotion
+without behavior changes.
+
+Release criteria (met):
 
 - All eight settings validate and apply atomically through KConfig and Home
   Manager with backward-compatible defaults.
@@ -189,7 +191,7 @@ Release criteria:
 - Focus centering remains disabled by default and falls back safely to minimal
   reveal when a centered transaction cannot be prepared.
 - Wayland, XWayland, single-output X11, packaging, Nix, and visible VM release
-  checks pass for the candidate.
+  checks pass for the release.
 
 ## Post-v1
 

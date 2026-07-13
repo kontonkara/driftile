@@ -1,8 +1,6 @@
-# Driftile 1.1.0-rc.1
+# Driftile 1.1.0
 
-Driftile 1.1.0-rc.1 was a prerelease candidate for testing the 1.1 release. It
-was not a stable release; at publication, 1.0.0 remained the latest stable
-version.
+Driftile 1.1.0 is the current stable release.
 
 ## Requirements and assets
 
@@ -15,10 +13,15 @@ version.
 Download all required files from this release and verify them with
 `SHA256SUMS`:
 
-- `driftile-1.1.0-rc.1.kwinscript`
-- `driftile-shortcuts-1.1.0-rc.1.mjs`, if using the portable helper
+- `driftile-1.1.0.kwinscript`
+- `driftile-shortcuts-1.1.0.mjs`, if using the portable helper
 - `SHA256SUMS`
 - `LICENSE`
+
+## Changes since 1.1.0-rc.1
+
+There are no runtime or persistence behavior changes since RC.1. The validated
+candidate was promoted with the final version and release documentation.
 
 ## Changes since 1.0.0
 
@@ -40,7 +43,7 @@ Do not combine packages or helpers from different releases. Release any owned
 shortcut profile with the installed helper, then disable Driftile before
 upgrading. The package ID, shortcut action IDs, and stored-layout format remain
 compatible. Follow the
-[migration guide](https://github.com/kontonkara/driftile/blob/v1.1.0-rc.1/docs/migration.md#upgrade-from-100)
+[migration guide](https://github.com/kontonkara/driftile/blob/v1.1.0/docs/migration.md)
 for the complete archive, NixOS, Home Manager, and rollback paths.
 
 ## Known limits
@@ -61,5 +64,5 @@ for the complete archive, NixOS, Home Manager, and rollback paths.
   without partial ownership.
 
 See the
-[compatibility guide](https://github.com/kontonkara/driftile/blob/v1.1.0-rc.1/docs/compatibility.md)
+[compatibility guide](https://github.com/kontonkara/driftile/blob/v1.1.0/docs/compatibility.md)
 for the complete supported boundary.

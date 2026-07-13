@@ -1,6 +1,6 @@
 # Driftile 1.0.0
 
-Driftile 1.0.0 is the current stable release.
+Driftile 1.0.0 was the stable release before 1.1.0.
 
 ## Requirements and assets
 
