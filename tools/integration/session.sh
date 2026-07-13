@@ -8116,6 +8116,7 @@ verify_application_tiling_exclusion() {
   local sibling_baseline
   local sibling_gap_frame
   local sibling_pid
+  local sibling_reexcluded_frame
   local sibling_restored_frame
   local sibling_tiled_frame
   local sibling_title="driftile-exclusion-sibling-${protocol}"
@@ -8203,22 +8204,35 @@ verify_application_tiling_exclusion() {
     "$desktop_file_name=80" \
     "$desktop_file_name" || \
     fail "KWin could not reapply the application-exclusion $protocol policy"
+  sibling_reexcluded_frame=$(capture_changed_stable_geometry \
+    "$sibling_title" \
+    "$sibling_admitted_frame") || \
+    fail "Driftile did not reflow the application-exclusion $protocol sibling after live re-exclusion"
+  wait_for_geometries \
+    "$target_title" "$admitted_frame" \
+    "$sibling_title" "$sibling_reexcluded_frame" || \
+    fail "Driftile did not settle the live application-exclusion $protocol re-exclusion barrier: $(describe_layout "$target_title" "$sibling_title")"
+  wait_for_active "$target_title" || \
+    fail "Driftile changed $protocol focus during live application re-exclusion"
+
   set_gap 24 || \
     fail "KWin could not expose the live application-exclusion $protocol delivery barrier"
   sibling_gap_frame=$(capture_changed_stable_geometry \
     "$sibling_title" \
-    "$sibling_admitted_frame") || \
+    "$sibling_reexcluded_frame") || \
     fail "Driftile did not reflow the application-exclusion $protocol sibling at the delivery barrier"
   wait_for_geometries \
     "$target_title" "$admitted_frame" \
     "$sibling_title" "$sibling_gap_frame" || \
-    fail "Driftile changed the live re-excluded $protocol frame at the delivery barrier"
+    fail "Driftile changed the live re-excluded $protocol frame at the delivery barrier: $(describe_layout "$target_title" "$sibling_title")"
+  wait_for_active "$target_title" || \
+    fail "Driftile changed $protocol focus at the application-exclusion delivery barrier"
   invoke_shortcut "driftile_increase_column_width" || \
     fail "KGlobalAccel could not invoke the re-excluded $protocol width action"
   wait_for_geometries \
     "$target_title" "$admitted_frame" \
     "$sibling_title" "$sibling_gap_frame" || \
-    fail "Driftile changed the live re-excluded $protocol frame or its sibling under a tiling command"
+    fail "Driftile changed the live re-excluded $protocol frame or its sibling under a tiling command: $(describe_layout "$target_title" "$sibling_title")"
 
   set_gap 16 || \
     fail "KWin could not restore the application-exclusion $protocol gap"
