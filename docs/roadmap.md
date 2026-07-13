@@ -360,6 +360,12 @@ and XWayland xterm. A physical `Meta` plus right-button resize proved KWin's
 held interactive state before release, adopted the accepted XWayland width, and
 restored the exact stacked frames on reset.
 
+## 1.7.0 (in development)
+
+The `main` branch tracks `1.7.0-dev.0`. Its next bounded core slice will be
+selected and scope-frozen separately; this placeholder does not commit an
+implementation scope.
+
 ## Post-v1
 
 Add interaction and presentation features outside the frozen v1 scope without
