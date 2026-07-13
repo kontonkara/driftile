@@ -3,6 +3,38 @@
 The latest stable release is 1.5.0. Use the steps below when changing release
 generations, and never combine files from different releases.
 
+## Upgrade from 1.5.0 to 1.6.0-rc.1
+
+1. Release helper-owned shortcuts with the 1.5.0 helper while it is still
+   available.
+2. Disable Driftile and the optional overview in System Settings.
+3. Upgrade the main script and, if installed, the overview to their matching
+   1.6.0-rc.1 archives, or pin the Nix input to `v1.6.0-rc.1` and rebuild the
+   NixOS or Home Manager generation that owns each package.
+4. Enable Driftile, then assign shortcuts or claim them with the RC helper.
+5. If installed, re-enable the overview and review its manually assigned
+   shortcut.
+
+Version 1.6.0-rc.1 adds finish-only horizontal pointer-resize adoption for the
+active normal tiled window. KWin continues to own the interactive resize. An
+unambiguous width-only left- or right-edge finish in the same settled, visible,
+unchanged output and desktop can become the active column's fixed width after
+every same-context target settles. Races, rejected geometry, and late configure
+delivery retain or restore the prior width policy and frames through bounded
+recovery.
+
+The candidate changes no settings, shortcut action IDs, bindings, gestures,
+overview behavior, or persistence format. Both package IDs, the ten settings,
+and stored layouts remain compatible with 1.5.0.
+
+## Roll back from 1.6.0-rc.1 to 1.5.0
+
+Release shortcuts with the RC helper, disable Driftile and the optional
+overview, then restore both installed packages to their verified 1.5.0
+archives. For NixOS or Home Manager, restore the `v1.5.0` input and rebuild the
+generation that owns each package. Re-enable the packages and restore the
+1.5.0 shortcut profile. No setting cleanup or layout-state reset is required.
+
 ## Upgrade from 1.5.0-rc.1
 
 1. Release helper-owned shortcuts with the RC helper while it is still
