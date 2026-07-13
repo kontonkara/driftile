@@ -4,7 +4,7 @@
 
 ```text
 QML bridge -> TypeScript runtime -> core -> reconcile -> KWin
-stable layout snapshot -> overview projector -> guarded KWin effect -> KWin focus
+stable layout snapshot -> overview projector -> guarded KWin effect -> KWin focus or desktop selection
 ```
 
 Events travel from KWin through the bridge into the runtime. Commands and resulting geometry operations travel toward KWin.
@@ -62,10 +62,14 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Accepts left clicks only in the current desktop card, then revalidates the
   active effect, identity, input eligibility, state, output, desktop, and current
   activity without a workspace scan.
-- Writes only `KWin.Workspace.activeWindow`. Only confirmed focus closes the
-  effect; an invalid, stale, or rejected request leaves it open.
-- Owns no settings, desktop or activity selection, membership, output, geometry,
-  shortcut assignment, or screen-edge mechanism.
+- Accepts a non-current number-gutter click only after revalidating the active
+  effect, exact live screen, projected output, and direct desktop object and ID.
+- Writes only `KWin.Workspace.activeWindow`, public
+  `KWin.SceneView.currentDesktop`, or the guarded single-output
+  `KWin.Workspace.currentDesktop` fallback. Only a confirmed result closes the
+  effect; an invalid, stale, raced, or rejected request leaves it open.
+- Owns no settings, activity selection, membership, output, geometry, shortcut
+  assignment, or screen-edge mechanism. KWin owns desktop switching.
 
 ### TypeScript runtime
 

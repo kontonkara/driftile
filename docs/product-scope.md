@@ -89,11 +89,27 @@ The ownership rule is strict:
   workspace scans. Direct target resolution is constant time; live validation
   is bounded by the candidate's desktop and activity memberships.
 
+## 1.8 optional overview slice
+
+- A left click on a non-current desktop card's number gutter requests that
+  desktop for the card's exact live screen. The current gutter remains inert.
+- The effect revalidates the active effect and model, exact live screen and
+  projected output, the desktop's direct object and ID, and its non-current
+  state immediately before writing.
+- Wayland uses public `KWin.SceneView.currentDesktop`. If that property is
+  unavailable, `KWin.Workspace.currentDesktop` is permitted only in an exact
+  single-output session. Only a confirmed selection closes the effect.
+- Invalid, stale, ambiguous, raced, or rejected requests perform no further
+  work and leave the effect open.
+- The slice adds no action, default binding, setting, schema, drag,
+  rearrangement, private API, timer, window scan, or layout scan. Validation is
+  `O(D + O)` over KWin's bounded desktop and output lists.
+
 ## Beyond v1
 
 - A removable overview companion presents the authoritative layout with guarded
-  current-context focus while Plasma's built-in Overview remains the compatible
-  fallback.
+  current-context focus and desktop selection while Plasma's built-in Overview
+  remains the compatible fallback.
 - Optional five-finger horizontal touchpad navigation reuses tiled column
   focus; global wheel input is deferred because KWin 6.7 exposes no public
   script axis API.
@@ -101,7 +117,7 @@ The ownership rule is strict:
 - Tabbed columns and matching pointer navigation.
 - Additional application-specific policies and an expanded settings UI.
 - Optional visual transitions, layout indicators, and concise diagnostics.
-- Overview desktop selection and pointer rearrangement.
+- Overview pointer rearrangement.
 - Activity-aware layouts.
 
 ## Compatibility
@@ -126,8 +142,9 @@ Driftile must integrate with, not duplicate:
 - Fullscreen, maximize, minimize, decoration mechanisms, and interactive move/resize behavior.
 - Dialogs, modal or transient windows, non-resizable normal windows, and normal windows fixed on both axes.
 - The built-in Overview, Pager, Task Switcher, desktop OSD, and session
-  restoration. The optional companion requests focus only through public
-  `KWin.Workspace.activeWindow`; KWin retains focus and stacking ownership.
+  restoration. The optional companion requests focus or desktop selection only
+  through public KWin properties; KWin retains focus, stacking, and desktop
+  switching ownership.
 
 ## Invariants
 
@@ -142,6 +159,9 @@ Driftile must integrate with, not duplicate:
   successfully places the destination closer to the work-area center.
 - An overview click may focus only a valid current-card window. Only confirmed
   focus closes the effect; an invalid, stale, or rejected request leaves it open.
+- An overview gutter click may select only an exact live non-current desktop for
+  its screen. Only confirmed selection closes the effect; a current, invalid,
+  stale, raced, or rejected request leaves it open.
 - Reordering moves one whole active column left, right, first, or last inside its context without changing focus or widths.
 - Column-width resizing changes one whole active column, translates client limits to decorated frame bounds, respects every member's width constraints, and preserves focus and grouping.
 - A newly admitted or explicitly resized width that reaches a hard minimum or maximum is stored at that fixed logical-pixel boundary, so work-area changes cannot scale it past the same constraint.

@@ -25,7 +25,8 @@ leaving window, output, and desktop mechanisms to KWin.
 - Exact extension-reload restoration, conservative cross-session restoration,
   and fail-closed restoration when a known output returns.
 - An optional overview companion that presents the authoritative layout; the
-  1.7.0 release adds guarded current-card focus on left click.
+  1.7.0 release adds guarded current-card focus, while 1.8 development adds
+  guarded non-current desktop selection from number gutters.
 - An optional reversible shortcut helper with custom JSON profiles.
 
 ## Status

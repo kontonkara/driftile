@@ -15,7 +15,10 @@
   two virtual Wayland outputs, and single-output native X11. It uses the same
   exact snapshot validation on every backend. Guarded current-context focus is
   additionally verified for native Wayland and XWayland targets in the
-  two-output Wayland scenario.
+  two-output Wayland scenario. The same physical scenario verifies per-output
+  desktop selection in both protocol passes. Native X11 keeps static coverage
+  of the guarded single-output global fallback; end-to-end selection activation
+  is not claimed there.
 
 ## Installation portability
 
@@ -56,6 +59,7 @@ KWin remains responsible for windows, geometry application, outputs,
 fullscreen, maximize, minimize, and virtual-desktop mechanisms. Plasma's
 built-in Overview, Pager, and Task Switcher remain the shell baseline. The
 optional companion adds a separate layout view with guarded current-context
-focus without replacing them. KWin retains focus and stacking ownership.
+focus and desktop selection without replacing them. KWin retains focus,
+stacking, and desktop switching ownership.
 Unsupported or unavailable KWin mechanisms fail closed instead of being
 reimplemented inside Driftile.

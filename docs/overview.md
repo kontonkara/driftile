@@ -6,6 +6,9 @@ model. In 1.7.0, a left click on a valid thumbnail in the current desktop card
 focuses that live window through KWin and closes the effect. Plasma's built-in
 Overview remains installed and unchanged.
 
+On the 1.8 development branch, a left click on a non-current desktop card's
+number gutter selects that desktop. The current desktop's gutter remains inert.
+
 The released 1.6.0 package remains presentation-only.
 
 The companion is disabled by default and has no default shortcut or screen
@@ -78,17 +81,26 @@ input eligibility. A valid candidate retains or requests
 An invalid or stale candidate performs no write, and rejected focus leaves the
 effect open.
 
+Desktop selection revalidates the active effect, exact live screen and output,
+the desktop's direct object and ID, and its non-current state immediately before
+the write. Wayland uses public `KWin.SceneView.currentDesktop`. If that property
+is unavailable, `KWin.Workspace.currentDesktop` is permitted only with exactly
+one live screen. The effect closes only after an exact read confirms the
+selection; invalid, stale, raced, or rejected requests leave it open.
+
 Ordinary KWin activation may raise the window, and Driftile's existing focus
-handling may reveal its tiled column. The effect does not switch desktops or
-activities, move windows, write memberships, outputs, geometry, or settings,
-register a screen edge, assign a shortcut, or provide drag or keyboard
-navigation. It does not infer columns from window geometry. Disabling or
-uninstalling it leaves the main extension and Plasma's built-in Overview
-unchanged.
+handling may reveal its tiled column. Beyond a confirmed desktop request, the
+effect does not switch activities, move windows, write memberships, outputs,
+geometry, or settings, register a screen edge, assign a shortcut, or provide
+drag, rearrangement, or keyboard navigation. It does not infer columns from
+window geometry. Disabling or uninstalling it leaves the main extension and
+Plasma's built-in Overview unchanged.
 
 Packaged lifecycle checks cover native Wayland, XWayland, two-output Wayland,
 and single-output native X11. The two-output Wayland scenario additionally
-routes a physical left click through the compositor for native Wayland and
-XWayland targets. Only the intended focus may change; frames, memberships,
-selected desktops, settings, persisted layout, and Plasma's built-in Overview
-must remain unchanged.
+routes physical left clicks through the compositor for native Wayland and
+XWayland passes. It verifies both current-card focus and per-output desktop
+selection while preserving the other output, frames, memberships, settings,
+persisted layout, and Plasma's built-in Overview. Native X11 retains lifecycle
+and static fallback coverage; the harness does not claim an end-to-end X11
+selection click.
