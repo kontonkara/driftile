@@ -435,9 +435,51 @@ Release criteria (met):
 
 ## 1.9.0 (in development)
 
-The `main` branch tracks `1.9.0-dev.0`. Its next bounded slice will be selected
-and scope-frozen separately; this placeholder does not commit an implementation
-scope.
+The bounded 1.9.0 release extends only thumbnail activation in the optional
+overview. A left click on a valid thumbnail in the current desktop card retains
+the existing direct-focus behavior. A click in a non-current card first
+requests that card's desktop through the existing public desktop-selection
+path, then focuses the exact clicked window. Wayland uses the per-output
+`SceneView` property; the guarded global fallback remains limited to a
+single-output session. Confirmed focus closes the effect.
+
+Before changing the desktop, the effect validates the active effect and model,
+exact live screen and projected output, direct desktop object and ID, and the
+clicked window's identity, output, desktop and activity memberships, input
+eligibility, deletion, and minimization state. It does not reject the expected
+off-desktop hidden state. After confirmed desktop selection, it repeats the
+effect, model, screen, desktop, activity, and window validation, now including
+hidden state, before requesting focus. A rejected desktop request performs no
+focus write and leaves the effect open. Any failure after confirmed selection
+keeps the selected desktop, closes the potentially stale effect, and performs
+no compensating rollback against compositor state that may already have
+changed.
+
+The slice adds no action, default binding, setting, schema, drag or
+rearrangement behavior, geometry or membership write, private API, timer, or
+window, stacking-order, or layout scan. A non-current click performs
+`O(S + O + D + M)` validation across live screens, projected outputs, desktops,
+and the candidate's observed desktop and activity membership entries `M`,
+retains no work, and issues at most one desktop write, one active-window write,
+and one deactivation.
+
+Release criteria:
+
+- Static QML contract coverage pins the shared thumbnail click path, a
+  current-card path that bypasses only desktop selection, ordered pre-write and
+  post-selection guards, public desktop and focus writes, exact confirmations,
+  and every fail-closed path.
+- The existing packaged multi-output physical-click scenario uses distinct
+  target and last-active windows on desktop 2. Its number-gutter click must
+  restore the last-active window, while its thumbnail click must focus only the
+  exact target in native Wayland and XWayland passes.
+- The physical scenario preserves the other output, window frames and
+  memberships, settings, layout projection, desktop sequence, and Plasma's
+  built-in Overview, then restores its byte-identical baseline.
+- Native X11 retains static coverage of the guarded single-output fallback; the
+  current harness does not claim end-to-end overview-effect click activation.
+- These checks extend the existing static and multi-output test pool without a
+  new scenario family, binding, or client type.
 
 ## Post-v1
 
@@ -451,6 +493,6 @@ taking over compositor mechanisms.
 - Add optional visual transitions, layout indicators, and concise diagnostics.
 - Keep Plasma's built-in Overview as the compatible baseline.
 - Add pointer-driven overview rearrangement only through public KWin and Plasma
-  extension APIs; it is explicitly deferred beyond 1.8.0.
+  extension APIs; it remains deferred beyond 1.9.0.
 
 The optional overview must remain removable, preserve the authoritative layout state, and fall back cleanly to Plasma's Overview.
