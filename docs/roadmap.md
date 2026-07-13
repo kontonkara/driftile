@@ -276,6 +276,11 @@ Release criteria (met):
   direction mapping. Packaged native Wayland confirms handler construction;
   native X11 confirms the no-op contract.
 
+## 1.5.0 (in development)
+
+The next bounded slice is not selected or scope-frozen. Its behavior and
+release criteria will be recorded here before implementation begins.
+
 ## Post-v1
 
 Add interaction and presentation features outside the frozen v1 scope without
