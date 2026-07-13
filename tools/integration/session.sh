@@ -45,6 +45,7 @@ export QT_QUICK_BACKEND=software
 
 client_pids=()
 custom_shortcut_profile_owned=false
+overview_effect_checks_enabled=false
 primary_desktop_id=""
 qml_options=(--software)
 secondary_desktop_id=""
@@ -1316,8 +1317,21 @@ wait_for_dbus() {
 
   for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
     if busctl --user introspect org.kde.KWin /Scripting >/dev/null 2>&1 &&
-      busctl --user introspect org.kde.KWin /WindowsRunner >/dev/null 2>&1 &&
-      busctl --user introspect org.kde.KWin /Effects >/dev/null 2>&1; then
+      busctl --user introspect org.kde.KWin /WindowsRunner >/dev/null 2>&1; then
+      return 0
+    fi
+
+    sleep 0.05
+  done
+
+  return 1
+}
+
+wait_for_effects_dbus() {
+  local attempt
+
+  for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
+    if busctl --user introspect org.kde.KWin /Effects >/dev/null 2>&1; then
       return 0
     fi
 
@@ -8381,8 +8395,10 @@ run_scenario() {
       fail "Driftile did not restore the $protocol state window after native tiling: $(describe_layout "$first_title" "$second_title")"
   fi
 
-  verify_overview_effect_lifecycle \
-    "$protocol" "$first_title" "$second_title"
+  if [[ "$overview_effect_checks_enabled" == true ]]; then
+    verify_overview_effect_lifecycle \
+      "$protocol" "$first_title" "$second_title"
+  fi
 
   set_plugin_state false
   wait_for_script_state false || fail "KWin did not unload Driftile after $protocol state transitions"
@@ -8702,9 +8718,11 @@ run_multi_output_scenario() {
   unregister_desktop_state_marker \
     "$desktop_state_verified_shortcut_prefix ${titles[0]} primary" || \
     fail "KGlobalAccel could not remove the pre-overview desktop-state marker"
-  verify_overview_effect_lifecycle \
-    "$protocol" \
-    "${titles[0]}" "${titles[1]}" "${titles[3]}" "${titles[4]}"
+  if [[ "$overview_effect_checks_enabled" == true ]]; then
+    verify_overview_effect_lifecycle \
+      "$protocol" \
+      "${titles[0]}" "${titles[1]}" "${titles[3]}" "${titles[4]}"
+  fi
   verify_multi_output_desktop_state "${titles[0]}" primary || \
     fail "the $protocol overview changed a selected output desktop"
   unregister_desktop_state_marker \
@@ -9329,14 +9347,23 @@ run_multi_output_scenario() {
 trap cleanup EXIT
 
 wait_for_dbus || fail "the required KWin D-Bus APIs did not appear"
-effect_is_available "$overview_plugin_id" || \
-  fail "KWin did not discover the installed Driftile overview"
-wait_for_effect_loaded_state "$overview_plugin_id" false || \
-  fail "the Driftile overview did not remain disabled by default"
-wait_for_shortcut_absent "$overview_shortcut" || \
-  fail "the disabled Driftile overview registered its shortcut"
-verify_overview_missing_state || \
-  fail "the Driftile overview did not fail closed without layout state"
+if wait_for_effects_dbus; then
+  overview_effect_checks_enabled=true
+  effect_is_available "$overview_plugin_id" || \
+    fail "KWin did not discover the installed Driftile overview"
+  wait_for_effect_loaded_state "$overview_plugin_id" false || \
+    fail "the Driftile overview did not remain disabled by default"
+  wait_for_shortcut_absent "$overview_shortcut" || \
+    fail "the disabled Driftile overview registered its shortcut"
+  verify_overview_missing_state || \
+    fail "the Driftile overview did not fail closed without layout state"
+elif [[ "$DRIFTILE_SMOKE_PROTOCOLS" != "x11" ]]; then
+  fail "KWin did not expose the required /Effects D-Bus API"
+else
+  printf '%s\n' \
+    "Driftile integration: skipping overview effect checks because KWin X11 did not expose /Effects." \
+    >&2
+fi
 verify_settings_persistence_transport || \
   fail "KWin declarative Settings persistence did not survive a script reload"
 detect_desktop_reorder_capability || \
