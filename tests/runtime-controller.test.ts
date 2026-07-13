@@ -105,6 +105,7 @@ interface TrackedWindow {
   readonly moveResizedChanged: Signal<[]>;
   readonly outputChanged: Signal<[oldOutput?: KWinOutput | null]>;
   readonly requestedTileChanged: Signal<[]>;
+  setExternalDesktops(desktops: readonly KWinVirtualDesktop[]): void;
   setFrameGeometry(frame: KWinWindow["frameGeometry"]): void;
   setOutput(output: KWinOutput): void;
   setDesktopWriteBehavior(
@@ -356,6 +357,10 @@ function createTrackedWindow(
     requestedTileChanged,
     setDesktopWriteBehavior: (behavior) => {
       desktopWriteBehavior = behavior;
+    },
+    setExternalDesktops: (desktops) => {
+      windowDesktops = desktops;
+      desktopsChanged.emit();
     },
     setFrameGeometry: (frame) => {
       frameGeometry = frame;
@@ -24498,6 +24503,273 @@ describe("RuntimeController", () => {
     },
   );
 
+  it.each([
+    {
+      eventOrder: "membership-before-finish" as const,
+      perOutputDesktops: true,
+      position: "after" as const,
+      resolver: "per-output",
+      settleDestinationBeforeFinish: true,
+    },
+    {
+      eventOrder: "finish-before-membership" as const,
+      perOutputDesktops: true,
+      position: "after" as const,
+      resolver: "per-output",
+      settleDestinationBeforeFinish: false,
+    },
+    {
+      eventOrder: "membership-before-finish" as const,
+      perOutputDesktops: false,
+      position: "before" as const,
+      resolver: "global",
+      settleDestinationBeforeFinish: true,
+    },
+    {
+      eventOrder: "finish-before-membership" as const,
+      perOutputDesktops: false,
+      position: "before" as const,
+      resolver: "global",
+      settleDestinationBeforeFinish: true,
+    },
+  ])(
+    "adopts a same-output cross-desktop pointer drop $position the target with $eventOrder events through the $resolver desktop resolver",
+    ({
+      eventOrder,
+      perOutputDesktops,
+      position,
+      settleDestinationBeforeFinish,
+    }) => {
+      const setup = createExternalPointerDropRuntimeFixture({
+        perOutputDesktops,
+        sameOutputCrossDesktop: true,
+      });
+      const isolatedWindows = requiredExternalPointerIsolationWindows(setup);
+      const publishedBefore = setup.published.length;
+      const isolationBaseline = captureTrackedWindowState(isolatedWindows);
+
+      expect(typeof setup.fixture.workspace.currentDesktopForScreen).toBe(
+        perOutputDesktops ? "function" : "undefined",
+      );
+      beginExternalPointerDrop(setup, position);
+      const settlement = finishCrossDesktopPointerDrop(
+        setup,
+        eventOrder,
+        settleDestinationBeforeFinish,
+      );
+
+      if (!settleDestinationBeforeFinish) {
+        expect(settlement.targetDirtyBeforeSettlement).toBe(true);
+        expect(settlement.pendingBeforeSettlement).toBeGreaterThan(0);
+        expect(settlement.sourceBeforeSettlement).toEqual([
+          { id: "column:source", windowIds: ["source", "dragged"] },
+        ]);
+        expect(settlement.targetBeforeSettlement).toEqual([
+          { id: "column:target", windowIds: ["target"] },
+        ]);
+        expect(settlement.callbacks).toBeGreaterThan(0);
+        expect(settlement.callbacks).toBeLessThanOrEqual(6);
+      }
+
+      expect(
+        runtimeLayout(setup.controller).snapshot(
+          outputId(setup.sourceOutput.name),
+          desktopId(setup.sourceDesktop.id),
+        ),
+      ).toEqual({
+        activeColumnId: columnId("column:source"),
+        columns: [
+          {
+            id: columnId("column:source"),
+            width: { kind: "proportion", value: 0.5 },
+            windowIds: [windowId("source")],
+          },
+        ],
+        desktopId: desktopId(setup.sourceDesktop.id),
+        outputId: outputId(setup.sourceOutput.name),
+        viewportOffset: 0,
+      });
+      expect(
+        runtimeLayout(setup.controller).snapshot(
+          outputId(setup.targetOutput.name),
+          desktopId(setup.targetDesktop.id),
+        ),
+      ).toEqual({
+        activeColumnId: columnId("column:target"),
+        columns: [
+          {
+            id: columnId("column:target"),
+            width: { kind: "fixed", value: 360 },
+            windowHeights:
+              position === "before"
+                ? [
+                    { kind: "auto", weight: 1 },
+                    { clientHeight: 240, kind: "fixed" },
+                  ]
+                : [
+                    { clientHeight: 240, kind: "fixed" },
+                    { kind: "auto", weight: 1 },
+                  ],
+            windowIds:
+              position === "before"
+                ? [windowId("dragged"), windowId("target")]
+                : [windowId("target"), windowId("dragged")],
+          },
+        ],
+        desktopId: desktopId(setup.targetDesktop.id),
+        outputId: outputId(setup.targetOutput.name),
+        viewportOffset: 0,
+      });
+      expect(setup.fixture.workspace.activeWindow).toBe(setup.dragged.window);
+      expect(setup.published).toHaveLength(publishedBefore + 1);
+      expectExternalPointerMechanismsUntouched(
+        setup,
+        isolatedWindows,
+        isolationBaseline,
+      );
+    },
+  );
+
+  it("falls back to singleton admission when a cross-desktop destination is invalidated", () => {
+    const setup = createExternalPointerDropRuntimeFixture({
+      sameOutputCrossDesktop: true,
+    });
+    const isolatedWindows = requiredExternalPointerIsolationWindows(setup);
+    const isolationBaseline = captureTrackedWindowState(isolatedWindows);
+
+    beginExternalPointerDrop(setup, "after");
+    showExternalPointerTargetDesktop(setup);
+    finishExternalPointerMovement(setup);
+    setWindowState("minimized", setup.target, true);
+    moveExternalPointerWindowToTargetDesktop(setup);
+    flushManualScheduler(setup.scheduler);
+
+    expectExternalPointerSingletonFallback(setup);
+    expectExternalPointerMechanismsUntouched(
+      setup,
+      isolatedWindows,
+      isolationBaseline,
+    );
+  });
+
+  it("falls back to singleton admission when a cross-desktop destination is initially unavailable", () => {
+    const setup = createExternalPointerDropRuntimeFixture({
+      sameOutputCrossDesktop: true,
+    });
+    const isolatedWindows = requiredExternalPointerIsolationWindows(setup);
+    const isolationBaseline = captureTrackedWindowState(isolatedWindows);
+
+    setWindowState("minimized", setup.target, true);
+    flushManualScheduler(setup.scheduler);
+    beginExternalPointerDrop(setup, "after");
+    finishCrossDesktopPointerDrop(setup, "membership-before-finish");
+
+    expectExternalPointerSingletonFallback(setup);
+    expectExternalPointerMechanismsUntouched(
+      setup,
+      isolatedWindows,
+      isolationBaseline,
+    );
+  });
+
+  it("compensates a partial cross-desktop destination write before singleton admission", () => {
+    const setup = createExternalPointerDropRuntimeFixture({
+      sameOutputCrossDesktop: true,
+    });
+    const isolatedWindows = requiredExternalPointerIsolationWindows(setup);
+    const isolationBaseline = captureTrackedWindowState(isolatedWindows);
+    const targetFrameBefore = { ...setup.target.window.frameGeometry };
+    const sourceLayoutBefore = runtimeLayout(setup.controller).snapshot(
+      outputId(setup.sourceOutput.name),
+      desktopId(setup.sourceDesktop.id),
+    );
+    const targetLayoutBefore = runtimeLayout(setup.controller).snapshot(
+      outputId(setup.targetOutput.name),
+      desktopId(setup.targetDesktop.id),
+    );
+    const attemptedTargetFrames: KWinWindow["frameGeometry"][] = [];
+    let sourceLayoutDuringCompensation: ReturnType<
+      LayoutEngine["snapshot"]
+    > | null = null;
+    let targetLayoutDuringCompensation: ReturnType<
+      LayoutEngine["snapshot"]
+    > | null = null;
+    let activeBlockedDuringCompensation = false;
+    let rejectedDraggedWrite = false;
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    setup.target.setWriteBehavior((frame, commit) => {
+      attemptedTargetFrames.push({ ...frame });
+
+      if (attemptedTargetFrames.length === 2) {
+        activeBlockedDuringCompensation = setup.dragged.window.minimized;
+        sourceLayoutDuringCompensation = runtimeLayout(
+          setup.controller,
+        ).snapshot(
+          outputId(setup.sourceOutput.name),
+          desktopId(setup.sourceDesktop.id),
+        );
+        targetLayoutDuringCompensation = runtimeLayout(
+          setup.controller,
+        ).snapshot(
+          outputId(setup.targetOutput.name),
+          desktopId(setup.targetDesktop.id),
+        );
+      }
+
+      commit();
+    });
+    setup.dragged.setWriteBehavior((_frame, commit) => {
+      if (!rejectedDraggedWrite) {
+        rejectedDraggedWrite = true;
+        setWindowState("minimized", setup.dragged, true);
+        throw new Error("destination write rejected");
+      }
+
+      commit();
+    });
+
+    try {
+      beginExternalPointerDrop(setup, "before");
+      finishCrossDesktopPointerDrop(setup, "finish-before-membership");
+    } finally {
+      setup.target.setWriteBehavior(null);
+      setup.dragged.setWriteBehavior(null);
+      warning.mockRestore();
+    }
+
+    expect(rejectedDraggedWrite).toBe(true);
+    expect(attemptedTargetFrames).toHaveLength(2);
+    expect(attemptedTargetFrames[0]?.y).toBeGreaterThan(targetFrameBefore.y);
+    expect(attemptedTargetFrames[1]).toEqual(targetFrameBefore);
+    expect(activeBlockedDuringCompensation).toBe(true);
+    expect(sourceLayoutDuringCompensation).toEqual(sourceLayoutBefore);
+    expect(targetLayoutDuringCompensation).toEqual(targetLayoutBefore);
+    expect(setup.target.window.frameGeometry).toEqual(targetFrameBefore);
+    expect(setup.dragged.window.minimized).toBe(true);
+    expect(
+      testLayoutColumns(
+        setup.controller,
+        setup.targetOutput,
+        setup.targetDesktop,
+      ),
+    ).toEqual([{ id: "column:target", windowIds: ["target"] }]);
+    expectExternalPointerMechanismsUntouched(
+      setup,
+      isolatedWindows,
+      isolationBaseline,
+    );
+
+    setWindowState("minimized", setup.dragged, false);
+    flushManualScheduler(setup.scheduler);
+    expectExternalPointerSingletonFallback(setup);
+    expectExternalPointerMechanismsUntouched(
+      setup,
+      isolatedWindows,
+      isolationBaseline,
+    );
+  });
+
   it("waits through a mixed output and desktop context before insertion", () => {
     const setup = createExternalPointerDropRuntimeFixture({
       differentDesktop: true,
@@ -24509,11 +24781,7 @@ describe("RuntimeController", () => {
     setup.dragged.setOutput(setup.targetOutput);
     setup.scheduler.flush();
     setup.scheduler.flush();
-    Object.defineProperty(setup.dragged.window, "desktops", {
-      configurable: true,
-      value: [setup.targetDesktop],
-    });
-    setup.dragged.desktopsChanged.emit();
+    setup.dragged.setExternalDesktops([setup.targetDesktop]);
     flushManualScheduler(setup.scheduler);
 
     expect(
@@ -33555,38 +33823,72 @@ interface ExternalPointerDropRuntimeFixture {
   readonly fixture: WorkspaceFixture;
   readonly published: string[];
   readonly scheduler: ManualScheduler;
+  readonly sourcePeer: TrackedWindow | null;
   readonly sourceDesktop: KWinVirtualDesktop;
   readonly sourceOutput: KWinOutput;
   readonly target: TrackedWindow;
   readonly targetDesktop: KWinVirtualDesktop;
   readonly targetOutput: KWinOutput;
+  readonly unrelated: TrackedWindow | null;
+  readonly unrelatedDesktop: KWinVirtualDesktop | null;
 }
 
 function createExternalPointerDropRuntimeFixture(
   options: {
     readonly differentDesktop?: boolean;
+    readonly perOutputDesktops?: boolean;
     readonly resumeSchedulingFails?: boolean;
+    readonly sameOutputCrossDesktop?: boolean;
   } = {},
 ): ExternalPointerDropRuntimeFixture {
-  const differentDesktop = options.differentDesktop ?? false;
+  const sameOutputCrossDesktop = options.sameOutputCrossDesktop ?? false;
+  const differentDesktop = options.differentDesktop ?? sameOutputCrossDesktop;
+  const perOutputDesktops = options.perOutputDesktops ?? differentDesktop;
   const sourceOutput = createOutput("DP-1", 0);
-  const targetOutput = createOutput("HDMI-A-1", 1000);
+  const targetOutput = sameOutputCrossDesktop
+    ? sourceOutput
+    : createOutput("HDMI-A-1", 1000);
   const sourceDesktop = { id: "desktop-1" };
   const targetDesktop = differentDesktop ? { id: "desktop-2" } : sourceDesktop;
+  const unrelatedDesktop = sameOutputCrossDesktop
+    ? { id: "desktop-unrelated" }
+    : null;
+  const sourcePeer = sameOutputCrossDesktop
+    ? createTrackedWindow("source", sourceOutput, sourceDesktop)
+    : null;
   const target = createTrackedWindow("target", targetOutput, targetDesktop, {
-    frameGeometry: { height: 240, width: 360, x: 1010, y: 10 },
+    frameGeometry: {
+      height: 240,
+      width: 360,
+      x: sameOutputCrossDesktop ? 10 : 1010,
+      y: 10,
+    },
   });
+  const unrelated = unrelatedDesktop
+    ? createTrackedWindow("unrelated", sourceOutput, unrelatedDesktop, {
+        frameGeometry: { height: 260, width: 340, x: 40, y: 50 },
+      })
+    : null;
   const dragged = createTrackedWindow("dragged", sourceOutput, sourceDesktop);
   const fixture = createWorkspace(
     sourceOutput,
     sourceDesktop,
-    [sourceOutput, targetOutput],
-    differentDesktop ? [sourceDesktop, targetDesktop] : [sourceDesktop],
-    [target.window, dragged.window],
-    differentDesktop,
+    sameOutputCrossDesktop ? [sourceOutput] : [sourceOutput, targetOutput],
+    [
+      sourceDesktop,
+      ...(differentDesktop ? [targetDesktop] : []),
+      ...(unrelatedDesktop ? [unrelatedDesktop] : []),
+    ],
+    [
+      ...(sourcePeer ? [sourcePeer.window] : []),
+      target.window,
+      ...(unrelated ? [unrelated.window] : []),
+      dragged.window,
+    ],
+    perOutputDesktops,
   );
 
-  if (differentDesktop) {
+  if (differentDesktop && !sameOutputCrossDesktop) {
     fixture.setCurrentDesktop(targetOutput, targetDesktop);
   }
   const scheduler = new ManualScheduler();
@@ -33609,13 +33911,19 @@ function createExternalPointerDropRuntimeFixture(
 
   const layout = new LayoutEngine();
   const sourceRestored = layout.restoreColumns({
-    activeColumnId: columnId("column:dragged"),
+    activeColumnId: columnId(
+      sameOutputCrossDesktop ? "column:source" : "column:dragged",
+    ),
     columns: [
       {
         column: {
-          id: columnId("column:dragged"),
+          id: columnId(
+            sameOutputCrossDesktop ? "column:source" : "column:dragged",
+          ),
           width: { kind: "proportion", value: 0.5 },
-          windowIds: [windowId("dragged")],
+          windowIds: sameOutputCrossDesktop
+            ? [windowId("source"), windowId("dragged")]
+            : [windowId("dragged")],
         },
         index: 0,
       },
@@ -33639,8 +33947,27 @@ function createExternalPointerDropRuntimeFixture(
     desktopId: desktopId(targetDesktop.id),
     outputId: outputId(targetOutput.name),
   });
+  const unrelatedRestored =
+    !unrelated ||
+    !unrelatedDesktop ||
+    layout.restoreColumns({
+      activeColumnId: columnId("column:unrelated"),
+      columns: [
+        {
+          column: {
+            id: columnId("column:unrelated"),
+            width: { kind: "fixed", value: 340 },
+            windowHeights: [{ clientHeight: 260, kind: "fixed" }],
+            windowIds: [windowId("unrelated")],
+          },
+          index: 0,
+        },
+      ],
+      desktopId: desktopId(unrelatedDesktop.id),
+      outputId: outputId(sourceOutput.name),
+    });
 
-  if (!sourceRestored || !targetRestored) {
+  if (!sourceRestored || !targetRestored || !unrelatedRestored) {
     throw new Error("external pointer drop layout could not be restored");
   }
 
@@ -33664,12 +33991,71 @@ function createExternalPointerDropRuntimeFixture(
     fixture,
     published,
     scheduler,
+    sourcePeer,
     sourceDesktop,
     sourceOutput,
     target,
     targetDesktop,
     targetOutput,
+    unrelated,
+    unrelatedDesktop,
   };
+}
+
+function requiredExternalPointerIsolationWindows(
+  setup: ExternalPointerDropRuntimeFixture,
+): readonly [TrackedWindow, TrackedWindow] {
+  if (!setup.sourcePeer || !setup.unrelated) {
+    throw new Error("external pointer fixture needs isolated windows");
+  }
+
+  return [setup.sourcePeer, setup.unrelated];
+}
+
+function expectExternalPointerMechanismsUntouched(
+  setup: ExternalPointerDropRuntimeFixture,
+  isolatedWindows: readonly [TrackedWindow, TrackedWindow],
+  isolationBaseline: ReturnType<typeof captureTrackedWindowState>,
+): void {
+  const desktopsDescriptor = Object.getOwnPropertyDescriptor(
+    setup.dragged.window,
+    "desktops",
+  );
+
+  expect(typeof desktopsDescriptor?.get).toBe("function");
+  expect(typeof desktopsDescriptor?.set).toBe("function");
+  expect(setup.fixture.outputTransferCount).toBe(0);
+  expect(
+    [...isolatedWindows, setup.target, setup.dragged].map(
+      ({ desktopWriteCount }) => desktopWriteCount,
+    ),
+  ).toEqual([0, 0, 0, 0]);
+  expect(setup.fixture.desktopSwitchCount).toBe(0);
+  expect(setup.fixture.activationCount).toBe(0);
+  expectTrackedWindowState(isolatedWindows, isolationBaseline);
+}
+
+function expectExternalPointerSingletonFallback(
+  setup: ExternalPointerDropRuntimeFixture,
+): void {
+  expect(
+    testLayoutColumns(
+      setup.controller,
+      setup.sourceOutput,
+      setup.sourceDesktop,
+    ),
+  ).toEqual([{ id: "column:source", windowIds: ["source"] }]);
+  expect(
+    testLayoutColumns(
+      setup.controller,
+      setup.targetOutput,
+      setup.targetDesktop,
+    ),
+  ).toEqual([
+    { id: "column:target", windowIds: ["target"] },
+    { id: "column:dragged", windowIds: ["dragged"] },
+  ]);
+  expect(setup.fixture.workspace.activeWindow).toBe(setup.dragged.window);
 }
 
 function beginExternalPointerDrop(
@@ -33710,6 +34096,82 @@ function finishExternalPointerDrop(
   }
 
   flushManualScheduler(setup.scheduler);
+}
+
+function finishCrossDesktopPointerDrop(
+  setup: ExternalPointerDropRuntimeFixture,
+  eventOrder: "finish-before-membership" | "membership-before-finish",
+  settleDestinationBeforeFinish = true,
+): {
+  readonly callbacks: number;
+  readonly pendingBeforeSettlement: number;
+  readonly sourceBeforeSettlement: ReturnType<typeof testLayoutColumns> | null;
+  readonly targetBeforeSettlement: ReturnType<typeof testLayoutColumns> | null;
+  readonly targetDirtyBeforeSettlement: boolean;
+} {
+  const callbacksBefore = setup.scheduler.executedCount;
+  showExternalPointerTargetDesktop(setup, settleDestinationBeforeFinish);
+
+  if (eventOrder === "finish-before-membership") {
+    finishExternalPointerMovement(setup);
+    moveExternalPointerWindowToTargetDesktop(setup);
+  } else {
+    moveExternalPointerWindowToTargetDesktop(setup);
+    finishExternalPointerMovement(setup);
+  }
+
+  const pendingBeforeSettlement = settleDestinationBeforeFinish
+    ? 0
+    : setup.scheduler.pendingCount;
+  const sourceBeforeSettlement = settleDestinationBeforeFinish
+    ? null
+    : testLayoutColumns(
+        setup.controller,
+        setup.sourceOutput,
+        setup.sourceDesktop,
+      );
+  const targetBeforeSettlement = settleDestinationBeforeFinish
+    ? null
+    : testLayoutColumns(
+        setup.controller,
+        setup.targetOutput,
+        setup.targetDesktop,
+      );
+  const targetDirtyBeforeSettlement =
+    !settleDestinationBeforeFinish &&
+    (
+      setup.controller as unknown as {
+        dirtyContexts: Set<string>;
+      }
+    ).dirtyContexts.has(
+      `${setup.targetOutput.name}\u0000${setup.targetDesktop.id}`,
+    );
+  flushManualScheduler(setup.scheduler);
+
+  return {
+    callbacks: setup.scheduler.executedCount - callbacksBefore,
+    pendingBeforeSettlement,
+    sourceBeforeSettlement,
+    targetBeforeSettlement,
+    targetDirtyBeforeSettlement,
+  };
+}
+
+function showExternalPointerTargetDesktop(
+  setup: ExternalPointerDropRuntimeFixture,
+  settle = true,
+): void {
+  setup.fixture.setCurrentDesktop(setup.targetOutput, setup.targetDesktop);
+
+  if (settle) {
+    flushManualScheduler(setup.scheduler);
+  }
+}
+
+function moveExternalPointerWindowToTargetDesktop(
+  setup: ExternalPointerDropRuntimeFixture,
+): void {
+  setup.dragged.setExternalDesktops([setup.targetDesktop]);
 }
 
 function settleExternalPointerDropBeforeOutput(

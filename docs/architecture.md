@@ -73,6 +73,12 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   stabilizes. A completed KWin-owned move to another visible output may be
   adopted into one exact tiled target; stale or absent targets use ordinary
   destination admission.
+- Reuses that finish-only transaction after KWin selects another desktop on the
+  same output and changes the window membership. It probes only a pending
+  visible destination, leaves the hidden source geometry untouched, and falls
+  back to singleton admission when the target is unavailable or invalidated.
+- Adds no visual layer, setting, shortcut action, binding, or persistence field
+  for cross-desktop adoption.
 - Observes output list, geometry, scale, and dock invalidations, then holds writes until two delayed topology snapshots match.
 - Detects otherwise silent client-area and hard-constraint changes with visibility-limited fingerprints.
 - Replays structural output changes in a stable layout order independent of KWin window-signal order.
@@ -289,6 +295,12 @@ inspected safely within the codec bound.
   reset the moved height to automatic, and commit both contexts together. If
   the target is empty, stale, ambiguous, or changes during the transaction,
   leave KWin's move intact and use ordinary destination singleton admission.
+- After KWin selects a different visible desktop on the same output and moves
+  the active window there, use the same midpoint, destination-width, automatic-
+  height, and singleton-fallback semantics. Probe a pending destination only a
+  bounded number of times, apply no hidden-source geometry, and isolate every
+  unrelated context. If destination writes partially apply, compensate them
+  exactly before singleton admission.
 - Transfer either the active column or one secondary window between existing desktops through an immutable two-context preview, then commit only after KWin accepts every desktop mechanism, focus, and destination geometry.
 - Transfer either the active column or one secondary window between outputs through the same preview, then commit only after KWin accepts every output and desktop mechanism plus both visible layouts.
 - Preserve whole-column member order and width, apply the active member last, and restore all owned mechanisms and frames if any batch step fails.
@@ -387,6 +399,11 @@ inspected safely within the codec bound.
   destination width and automatic height, both signal orders, exact
   compensation, and ordinary singleton fallback for empty, stale, ambiguous,
   or raced targets without output or desktop mechanism writes.
+- Verify same-output cross-desktop adoption across the output-local and global
+  desktop resolvers and both membership-before-finish and
+  finish-before-membership event orders. Cover bounded pending settlement,
+  initially unavailable or invalidated singleton fallback, exact compensation
+  before fallback, zero hidden-source writes, and unrelated-context isolation.
 - Verify explicit top-member consume and bottom-member expel, minimized passive-member policy, synchronous and deferred focus handoff, reentrant command rejection, width rules, height-state reset, boundaries, and rollback.
 - Verify the settled topology barrier, output replacement and removal, dock and silent work-area invalidations, sticky restore invalidation, and deterministic capacity recovery.
 - Verify independent contexts with native Wayland and XWayland windows on two virtual outputs and native X11 windows on the X11 backend.

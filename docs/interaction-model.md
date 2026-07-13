@@ -31,27 +31,34 @@ command.
 | Minimize focus       | Preserve tiled slots and floating frames; skip minimized windows without wrapping                 | Available |
 | Hidden-member edits  | Preserve documented passive peers; reject every other minimized-member structural edit            | Available |
 | Floating layer       | Toggle state, switch layers, and navigate floating windows geometrically                          | Available |
-| Pointer drop         | Reinsert one active tiled window before or after a same-context or visible cross-output target    | Available |
+| Pointer drop         | Reinsert or adopt one active tiled window at one exact visible target                             | Available |
 | Tabbed columns       | Toggle a column between stacked and tabbed presentation without changing navigation               | v1        |
-| Pointer navigation   | Provide wheel navigation and cross-desktop rearrangement through the shared layout model          | v1        |
+| Pointer navigation   | Provide wheel navigation through the shared layout model                                          | Future    |
 
 Single-window transfers will remain available as secondary, unbound actions.
 Default desktop and output transfer shortcuts must move the whole active column.
 An active floating layer changes desktop transfer to the active window only.
 
-A tiled drag commits on release over one visible tiled target in the same
-context or on another visible output. The target midpoint selects insertion
-before or after it. Moving within a stack retains the window-height policy;
-moving into another column retains the destination width and gives the moved
-window automatic height.
+A tiled drag commits on release over exactly one visible tiled target in the
+same context. The target midpoint selects insertion before or after it. Moving
+within a stack retains the window-height policy; moving into another column
+retains the destination width and gives the moved window automatic height.
 
-KWin owns physical output and desktop movement. Driftile adopts a completed
-cross-output move only when the cursor still identifies one valid destination
-target. An empty, invalidated, ambiguous, or raced target uses ordinary
-destination admission and creates a singleton rather than moving the window
-back. Same-context resize sessions, cancelled or ambiguous drops, state
-changes, and topology changes leave the logical slot unchanged and restore its
-tiled frame.
+KWin owns desktop selection and window membership. After KWin moves the active
+window to a selected visible desktop on the same output, Driftile can adopt it
+before or after the exact tiled target under the release point. A pending
+destination settles through bounded probes. The hidden source receives no
+geometry writes. An unavailable, invalidated, ambiguous, stale, or raced target
+keeps KWin's move and uses ordinary singleton admission.
+
+Cross-output behavior is unchanged: KWin owns physical output and any required
+desktop movement, and Driftile adopts only when the cursor still identifies one
+valid destination target. An empty, invalidated, ambiguous, or raced target
+uses ordinary destination admission rather than moving the window back.
+Same-context resize sessions, cancelled or ambiguous drops, state changes, and
+topology changes leave the logical slot unchanged and restore its tiled frame.
+Pointer adoption is finish-only and adds no visual feedback, setting, binding,
+or persistence schema.
 
 A stack has at most one fixed or preset window height. Changing a different
 member converts the other members to weighted automatic heights that preserve

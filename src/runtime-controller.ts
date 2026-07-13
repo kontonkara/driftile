@@ -355,17 +355,29 @@ interface PointerExternalDropIntent {
   readonly context: ManagedContext;
   readonly contextKey: string;
   readonly desktop: KWinVirtualDesktop;
-  readonly insertion: PointerExternalInsertionIntent | null;
+  insertion: PointerExternalInsertionIntent;
+  readonly kind: "desktop" | "output";
   readonly output: KWinOutput;
   probePending: boolean;
 }
 
-interface PointerExternalInsertionIntent {
+type PointerExternalInsertionIntent =
+  | { readonly state: "pending" }
+  | { readonly state: "unavailable" }
+  | PointerExternalReadyInsertionIntent;
+
+interface PointerExternalReadyInsertionIntent {
   readonly contextFingerprint: string;
   readonly layout: LayoutContextSnapshot;
   readonly participants: readonly PointerMoveParticipant[];
   readonly runtimeContext: RuntimeContext;
+  readonly state: "ready";
   readonly target: PointerWindowDropTarget;
+}
+
+interface PointerExternalSettledContext {
+  readonly contextGeometry: ContextGeometry;
+  readonly runtimeContext: RuntimeContext;
 }
 
 interface PointerMoveIntent {
@@ -2842,18 +2854,27 @@ export class RuntimeController {
     );
     const output = outputs[0];
 
-    if (
-      outputs.length !== 1 ||
-      !output ||
-      output === intent.sourceOutput ||
-      output.name === String(intent.before.outputId)
-    ) {
+    if (outputs.length !== 1 || !output) {
       return null;
     }
 
     const desktop = currentDesktopForOutput(this.workspace, output);
 
     if (!desktop) {
+      return null;
+    }
+
+    const sameOutput =
+      output === intent.sourceOutput ||
+      output.name === String(intent.before.outputId);
+    const kind = sameOutput ? "desktop" : "output";
+
+    if (
+      (kind === "desktop" && desktop.id === intent.sourceDesktop.id) ||
+      (kind === "output" &&
+        (output === intent.sourceOutput ||
+          output.name === String(intent.before.outputId)))
+    ) {
       return null;
     }
 
@@ -2867,34 +2888,34 @@ export class RuntimeController {
       context,
       contextKey: key,
       desktop,
-      insertion: null,
+      insertion: { state: "pending" },
+      kind,
       output,
       probePending: false,
     };
-    const runtimeContext = this.contexts.get(key);
+    external.insertion = this.captureExternalPointerInsertion(
+      intent,
+      external,
+      cursor,
+    );
+    return external;
+  }
 
-    if (
-      !this.isContextVisible(context) ||
-      !runtimeContext ||
-      this.dirtyContexts.has(key) ||
-      this.pendingAdmissionContexts.has(key) ||
-      this.hasStructuralCapacityState(key) ||
-      this.waitingWindowIds.has(key) ||
-      this.toggleTransitionPending(key)
-    ) {
-      return external;
+  private captureExternalPointerInsertion(
+    intent: PointerMoveIntent,
+    external: PointerExternalDropIntent,
+    cursor: Point,
+    settledContext?: PointerExternalSettledContext,
+  ): PointerExternalInsertionIntent {
+    const settled =
+      settledContext ?? this.settledExternalPointerContext(external);
+
+    if (settled === "pending" || settled === "unavailable") {
+      return { state: settled };
     }
 
-    const sampledGeometries = this.sampleSettledVisibleContextGeometries();
-    const contextGeometry = sampledGeometries?.get(key);
-
-    if (
-      !sampledGeometries ||
-      !contextGeometry ||
-      contextGeometry.fingerprint !== runtimeContext.geometryFingerprint
-    ) {
-      return external;
-    }
+    const { contextGeometry, runtimeContext } = settled;
+    const { context, contextKey: key } = external;
 
     const layout = this.layout.snapshot(context.outputId, context.desktopId);
     const participants: PointerMoveParticipant[] = [];
@@ -2914,7 +2935,7 @@ export class RuntimeController {
           this.pendingWindowSyncs.has(id) ||
           !this.stackTransferMemberIsEligible(id, window, runtimeContext, false)
         ) {
-          return external;
+          return { state: "unavailable" };
         }
 
         participants.push({
@@ -2929,7 +2950,7 @@ export class RuntimeController {
       participants.length === 0 ||
       participants.length !== runtimeContext.windowIds.size
     ) {
-      return external;
+      return { state: "unavailable" };
     }
 
     let solved: ReturnType<typeof solveStripGeometry>;
@@ -2937,7 +2958,7 @@ export class RuntimeController {
     try {
       solved = this.solveContextGeometry(layout, contextGeometry);
     } catch {
-      return external;
+      return { state: "unavailable" };
     }
 
     const target = planPointerExternalWindowDrop({
@@ -2949,19 +2970,118 @@ export class RuntimeController {
     });
 
     if (!target || solved.windows.length !== participants.length) {
-      return external;
+      return { state: "unavailable" };
     }
 
     return {
-      ...external,
-      insertion: {
-        contextFingerprint: contextGeometry.fingerprint,
-        layout,
-        participants,
-        runtimeContext,
-        target,
-      },
+      contextFingerprint: contextGeometry.fingerprint,
+      layout,
+      participants,
+      runtimeContext,
+      state: "ready",
+      target,
     };
+  }
+
+  private settledExternalPointerContext(
+    external: PointerExternalDropIntent,
+  ): PointerExternalSettledContext | "pending" | "unavailable" {
+    if (!this.pointerExternalDestinationIsSelected(external)) {
+      return "unavailable";
+    }
+
+    const key = external.contextKey;
+
+    if (
+      this.dirtyContexts.has(key) ||
+      this.pendingAdmissionContexts.has(key) ||
+      this.hasStructuralCapacityState(key) ||
+      this.waitingWindowIds.has(key) ||
+      this.toggleTransitionPending(key)
+    ) {
+      return "pending";
+    }
+
+    const runtimeContext = this.contexts.get(key);
+
+    if (!runtimeContext) {
+      return "unavailable";
+    }
+
+    let contextGeometry: ContextGeometry | null;
+
+    try {
+      contextGeometry = this.geometry.contextGeometry(
+        runtimeContext.outputId,
+        runtimeContext.desktopId,
+      );
+    } catch {
+      return "pending";
+    }
+
+    if (
+      !contextGeometry ||
+      contextGeometry.fingerprint !== runtimeContext.geometryFingerprint
+    ) {
+      return "pending";
+    }
+
+    return { contextGeometry, runtimeContext };
+  }
+
+  private pointerExternalDestinationIsSelected(
+    external: PointerExternalDropIntent,
+  ): boolean {
+    return (
+      currentDesktopForOutput(this.workspace, external.output)?.id ===
+      external.desktop.id
+    );
+  }
+
+  private pointerExternalDestinationIsCurrent(
+    external: PointerExternalDropIntent,
+  ): boolean {
+    return (
+      this.workspace.screens.includes(external.output) &&
+      this.workspace.desktops.some(
+        (desktop) => desktop.id === external.desktop.id,
+      ) &&
+      this.pointerExternalDestinationIsSelected(external) &&
+      this.isContextVisible(external.context)
+    );
+  }
+
+  private pointerExternalTransferMechanismIsCurrent(
+    intent: PointerMoveIntent,
+    external: PointerExternalDropIntent,
+    source: KWinWindow,
+  ): boolean {
+    if (
+      !this.workspace.screens.includes(intent.sourceOutput) ||
+      !this.pointerExternalDestinationIsCurrent(external) ||
+      !this.workspace.desktops.some(
+        (desktop) => desktop.id === intent.sourceDesktop.id,
+      ) ||
+      source.output?.name !== external.output.name ||
+      !windowIsOnDesktop(source, external.desktop)
+    ) {
+      return false;
+    }
+
+    if (external.kind === "desktop") {
+      return (
+        external.output === intent.sourceOutput &&
+        external.output.name === String(intent.before.outputId) &&
+        external.desktop.id !== intent.sourceDesktop.id
+      );
+    }
+
+    return (
+      external.output !== intent.sourceOutput &&
+      external.output.name !== String(intent.before.outputId) &&
+      currentDesktopForOutput(this.workspace, intent.sourceOutput)?.id ===
+        intent.sourceDesktop.id
+    );
   }
 
   private waitForExternalPointerContext(
@@ -2984,10 +3104,6 @@ export class RuntimeController {
 
     const nextKey = nextContext ? contextKey(nextContext) : null;
 
-    if (nextKey === external.contextKey) {
-      return false;
-    }
-
     const intermediateContext = Boolean(
       nextContext &&
       (nextContext.outputId === intent.before.outputId ||
@@ -2998,6 +3114,33 @@ export class RuntimeController {
 
     if (nextKey !== null && !intermediateContext) {
       this.pointerMoveIntent = null;
+      return false;
+    }
+
+    if (external.insertion.state === "pending") {
+      const settled = this.settledExternalPointerContext(external);
+
+      if (settled === "unavailable") {
+        external.insertion = { state: "unavailable" };
+      } else if (settled !== "pending" && intent.finalCursor) {
+        external.insertion = this.captureExternalPointerInsertion(
+          intent,
+          external,
+          intent.finalCursor,
+          settled,
+        );
+      }
+    } else if (
+      external.insertion.state === "ready" &&
+      typeof this.settledExternalPointerContext(external) === "string"
+    ) {
+      external.insertion = { state: "unavailable" };
+    }
+
+    if (
+      nextKey === external.contextKey &&
+      external.insertion.state !== "pending"
+    ) {
       return false;
     }
 
@@ -11622,7 +11765,7 @@ export class RuntimeController {
     };
     const insertion = external.insertion;
 
-    if (!insertion) {
+    if (insertion.state !== "ready") {
       return reject();
     }
 
@@ -11654,18 +11797,11 @@ export class RuntimeController {
       this.waitingWindowIds.has(external.contextKey) ||
       this.toggleTransitionPending(intent.contextKey) ||
       this.toggleTransitionPending(external.contextKey) ||
-      !this.workspace.screens.includes(intent.sourceOutput) ||
-      !this.workspace.screens.includes(external.output) ||
-      !this.workspace.desktops.some(
-        (desktop) => desktop.id === intent.sourceDesktop.id,
+      !this.pointerExternalTransferMechanismIsCurrent(
+        intent,
+        external,
+        source,
       ) ||
-      !this.workspace.desktops.some(
-        (desktop) => desktop.id === external.desktop.id,
-      ) ||
-      currentDesktopForOutput(this.workspace, intent.sourceOutput)?.id !==
-        intent.sourceDesktop.id ||
-      currentDesktopForOutput(this.workspace, external.output)?.id !==
-        external.desktop.id ||
       !this.pointerExternalParticipantsAreCurrent(
         intent,
         sourceRuntimeContext,
@@ -11787,7 +11923,7 @@ export class RuntimeController {
     }
 
     const memberIds = new Set([id]);
-    const command: OutputTransferCommand = {
+    const commonCommand = {
       activeId: id,
       activeWindow: source,
       context: {
@@ -11796,23 +11932,32 @@ export class RuntimeController {
       },
       contextGeometry: sourceContextGeometry,
       contextKey: intent.contextKey,
-      geometryPassiveIds: new Set(),
+      geometryPassiveIds: new Set<WindowId>(),
       memberIds,
       members: [{ id, minimized: false, window: source }],
-      retainedSourceIds: new Set(),
+      retainedSourceIds: new Set<WindowId>(),
       retainedSourceMembers: [],
       sourceColumn,
       sourceDesktop: intent.sourceDesktop,
-      sourceOutput: intent.sourceOutput,
       sourceRuntimeContext,
       targetContext: external.context,
       targetContextGeometry,
       targetContextKey: external.contextKey,
       targetDesktop: external.desktop,
-      targetOutput: external.output,
       targetRuntimeContext,
       wholeColumn: false,
     };
+    const command: DesktopTransferCommand | OutputTransferCommand =
+      external.kind === "desktop"
+        ? {
+            ...commonCommand,
+            output: intent.sourceOutput,
+          }
+        : {
+            ...commonCommand,
+            sourceOutput: intent.sourceOutput,
+            targetOutput: external.output,
+          };
 
     if (
       !this.transferLayoutIsSafe(
@@ -11839,7 +11984,7 @@ export class RuntimeController {
     const operation: WindowTransferOperation = {
       activeId: id,
       desktopChangeSuppressed: false,
-      kind: "output",
+      kind: external.kind,
       memberStateInvalidated: false,
       movingIds: memberIds,
       sourceContextKey: intent.contextKey,
@@ -11852,7 +11997,7 @@ export class RuntimeController {
     this.windowTransferOperation = operation;
 
     try {
-      return this.applyAdoptedPointerOutputTransfer(
+      return this.applyAdoptedPointerTransfer(
         intent,
         command,
         preview,
@@ -11892,14 +12037,22 @@ export class RuntimeController {
     }
   }
 
-  private applyAdoptedPointerOutputTransfer(
+  private applyAdoptedPointerTransfer(
     intent: PointerMoveIntent,
-    command: OutputTransferCommand,
+    command: DesktopTransferCommand | OutputTransferCommand,
     preview: ContextTransferPreview,
     sourceLayout: ReturnType<typeof solveStripGeometry>,
     targetLayout: ReturnType<typeof solveStripGeometry>,
     operation: WindowTransferOperation,
   ): boolean {
+    const external = intent.externalDrop;
+    const insertion = external?.insertion;
+
+    if (!external || !insertion || insertion.state !== "ready") {
+      return false;
+    }
+
+    const desktopTransfer = this.isDesktopTransferCommand(command);
     const topologyRevision = this.topologyRevision;
     const sourceWasDirty = this.dirtyContexts.has(command.contextKey);
     const targetWasDirty = this.dirtyContexts.has(command.targetContextKey);
@@ -11916,7 +12069,7 @@ export class RuntimeController {
       if (
         !this.transferMemberStatesAreCurrent(command, operation) ||
         !this.transferLayoutsOwnershipIsCurrent(sourceLayout, targetLayout) ||
-        !this.outputTransferOperationIsCurrent(
+        !this.adoptedPointerTransferOperationIsCurrent(
           command,
           operation,
           topologyRevision,
@@ -11934,18 +12087,32 @@ export class RuntimeController {
         ),
       );
 
-      for (const plan of [
-        {
-          context: command.context,
-          contextKey: command.contextKey,
-          layout: sourceLayout,
-        },
-        {
-          context: command.targetContext,
-          contextKey: command.targetContextKey,
-          layout: targetLayout,
-        },
-      ] as const) {
+      const geometryPlans: readonly {
+        readonly context: ManagedContext;
+        readonly contextKey: string;
+        readonly layout: ReturnType<typeof solveStripGeometry>;
+      }[] = desktopTransfer
+        ? [
+            {
+              context: command.targetContext,
+              contextKey: command.targetContextKey,
+              layout: targetLayout,
+            },
+          ]
+        : [
+            {
+              context: command.context,
+              contextKey: command.contextKey,
+              layout: sourceLayout,
+            },
+            {
+              context: command.targetContext,
+              contextKey: command.targetContextKey,
+              layout: targetLayout,
+            },
+          ];
+
+      for (const plan of geometryPlans) {
         const windowIds = plan.layout.windows.map((window) => window.windowId);
         const observedBefore = this.geometry.observedFrames(
           windowIds,
@@ -12001,13 +12168,17 @@ export class RuntimeController {
           changes.push(activeChange);
         }
       }
-      this.dirtyContexts.delete(command.contextKey);
+
+      if (!desktopTransfer) {
+        this.dirtyContexts.delete(command.contextKey);
+      }
+
       this.dirtyContexts.delete(command.targetContextKey);
 
       for (const change of changes) {
         if (
           this.pointerMoveIntent !== intent ||
-          !this.outputTransferOperationIsCurrent(
+          !this.adoptedPointerTransferOperationIsCurrent(
             command,
             operation,
             topologyRevision,
@@ -12029,7 +12200,7 @@ export class RuntimeController {
           change.context,
           (current) =>
             this.pointerMoveIntent === intent &&
-            this.outputTransferOperationIsCurrent(
+            this.adoptedPointerTransferOperationIsCurrent(
               command,
               operation,
               topologyRevision,
@@ -12054,14 +12225,14 @@ export class RuntimeController {
         // XWayland may publish an accepted frame after the setter returns.
         !this.transferChangedFramesAreOwned(changes, rollbackTargets) ||
         this.pointerMoveIntent !== intent ||
-        !this.outputTransferOperationIsCurrent(
+        !this.adoptedPointerTransferOperationIsCurrent(
           command,
           operation,
           topologyRevision,
         ) ||
         !this.transferLayoutsOwnershipIsCurrent(sourceLayout, targetLayout) ||
-        !this.outputTransferFingerprintsMatch(command) ||
-        !this.outputTransferFinalStateIsSafe(
+        !this.adoptedPointerTransferFingerprintsMatch(command) ||
+        !this.adoptedPointerTransferFinalStateIsSafe(
           command,
           sourceLayout,
           targetLayout,
@@ -12088,7 +12259,13 @@ export class RuntimeController {
         command.targetContext.desktopId,
         targetLayout.viewportOffset,
       );
-      this.commitOutputTransferRuntime(command, destinationBaselines);
+
+      if (desktopTransfer) {
+        this.commitDesktopTransferRuntime(command, destinationBaselines);
+      } else {
+        this.commitOutputTransferRuntime(command, destinationBaselines);
+      }
+
       this.reconcileColumnFullWidthRestore(
         command.contextKey,
         intent.before,
@@ -12096,7 +12273,7 @@ export class RuntimeController {
       );
       this.reconcileColumnFullWidthRestore(
         command.targetContextKey,
-        intent.externalDrop?.insertion?.layout ?? preview.value.targetLayout,
+        insertion.layout,
         preview.value.targetLayout,
       );
     } catch (error) {
@@ -12141,27 +12318,78 @@ export class RuntimeController {
     const forwardFrames = new Map(
       attemptedChanges.map((change) => [change.windowId, change.frame]),
     );
+    let desktopDestinationRestored = true;
 
-    for (const rollback of [...rollbackTargets].reverse()) {
-      const forwardFrame = forwardFrames.get(rollback.windowId);
-      const window = this.observer.source(rollback.windowId);
+    if (desktopTransfer) {
+      for (const rollback of [...rollbackTargets].reverse()) {
+        const forwardFrame = forwardFrames.get(rollback.windowId);
+        const window = this.observer.source(rollback.windowId);
 
-      if (
-        !forwardFrame ||
-        !window ||
-        !rectsEqual(window.frameGeometry, forwardFrame)
-      ) {
-        continue;
+        if (!forwardFrame) {
+          continue;
+        }
+
+        if (!window) {
+          desktopDestinationRestored = false;
+          continue;
+        }
+
+        if (rectsEqual(window.frameGeometry, rollback.frame)) {
+          continue;
+        }
+
+        if (
+          !rectsEqual(window.frameGeometry, forwardFrame) ||
+          !this.adoptedPointerDesktopCompensationIsSafe(
+            command,
+            rollback.windowId,
+            window,
+          )
+        ) {
+          desktopDestinationRestored = false;
+          continue;
+        }
+
+        const applied = this.geometry.apply(
+          [rollback],
+          rollback.context,
+          (current) =>
+            this.observer.source(current.windowId) === window &&
+            rectsEqual(window.frameGeometry, forwardFrame) &&
+            this.adoptedPointerDesktopCompensationIsSafe(
+              command,
+              current.windowId,
+              window,
+            ),
+        );
+        compensationWrites += applied;
+
+        if (applied !== 1) {
+          desktopDestinationRestored = false;
+        }
       }
+    } else {
+      for (const rollback of [...rollbackTargets].reverse()) {
+        const forwardFrame = forwardFrames.get(rollback.windowId);
+        const window = this.observer.source(rollback.windowId);
 
-      compensationWrites += this.geometry.apply(
-        [rollback],
-        rollback.context,
-        (current) =>
-          this.observer.source(current.windowId) === window &&
-          rectsEqual(window.frameGeometry, forwardFrame) &&
-          this.windowOwnershipClassificationIsCurrent(current.windowId),
-      );
+        if (
+          !forwardFrame ||
+          !window ||
+          !rectsEqual(window.frameGeometry, forwardFrame)
+        ) {
+          continue;
+        }
+
+        compensationWrites += this.geometry.apply(
+          [rollback],
+          rollback.context,
+          (current) =>
+            this.observer.source(current.windowId) === window &&
+            rectsEqual(window.frameGeometry, forwardFrame) &&
+            this.windowOwnershipClassificationIsCurrent(current.windowId),
+        );
+      }
     }
 
     for (const change of attemptedChanges) {
@@ -12179,8 +12407,12 @@ export class RuntimeController {
       this.dirtyContexts.add(command.contextKey);
     }
 
-    if (targetWasDirty) {
-      this.dirtyContexts.add(command.targetContextKey);
+    if (targetWasDirty || (desktopTransfer && !desktopDestinationRestored)) {
+      const targetContext = this.contexts.get(command.targetContextKey);
+
+      if (targetContext) {
+        this.markContextDirty(targetContext);
+      }
     }
 
     this.scheduledMutationWrites += forwardWrites + compensationWrites;
@@ -12188,6 +12420,119 @@ export class RuntimeController {
       `[driftile] adopted pointer transfer rolled back window=${String(command.activeId)} error=${failure ?? "unknown failure"}`,
     );
     return false;
+  }
+
+  private adoptedPointerDesktopCompensationIsSafe(
+    command: DesktopTransferCommand,
+    id: WindowId,
+    window: KWinWindow,
+  ): boolean {
+    const targetRuntimeContext = command.targetRuntimeContext;
+    const owner = this.managedWindows.get(id);
+    const observed = normalizeWindow(window);
+    const liveContext = observed ? managedContext(observed) : null;
+    const ownerIsCurrent =
+      id === command.activeId
+        ? owner?.contextKey === command.contextKey &&
+          command.sourceRuntimeContext.windowIds.has(id)
+        : owner?.contextKey === command.targetContextKey &&
+          targetRuntimeContext?.windowIds.has(id) === true;
+
+    if (
+      this.observer.source(id) !== window ||
+      !targetRuntimeContext ||
+      this.contexts.get(command.targetContextKey) !== targetRuntimeContext ||
+      targetRuntimeContext.geometryFingerprint !==
+        command.targetContextGeometry.fingerprint ||
+      !ownerIsCurrent ||
+      !liveContext ||
+      contextKey(liveContext) !== command.targetContextKey ||
+      !this.workspace.screens.includes(command.output) ||
+      currentDesktopForOutput(this.workspace, command.output)?.id !==
+        command.targetDesktop.id ||
+      window.output?.name !== command.output.name ||
+      !windowIsOnDesktop(window, command.targetDesktop) ||
+      !isGeometryWritable(window) ||
+      !this.windowOwnershipClassificationIsCurrent(id)
+    ) {
+      return false;
+    }
+
+    try {
+      return (
+        this.geometry.contextGeometry(
+          command.targetContext.outputId,
+          command.targetContext.desktopId,
+        )?.fingerprint === command.targetContextGeometry.fingerprint
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  private isDesktopTransferCommand(
+    command: DesktopTransferCommand | OutputTransferCommand,
+  ): command is DesktopTransferCommand {
+    return "output" in command;
+  }
+
+  private adoptedPointerTransferOperationIsCurrent(
+    command: DesktopTransferCommand | OutputTransferCommand,
+    operation: WindowTransferOperation,
+    topologyRevision: number,
+  ): boolean {
+    if (this.isDesktopTransferCommand(command)) {
+      return (
+        operation.kind === "desktop" &&
+        this.desktopTransferOperationIsCurrent(
+          command,
+          operation,
+          topologyRevision,
+        )
+      );
+    }
+
+    return (
+      operation.kind === "output" &&
+      this.outputTransferOperationIsCurrent(
+        command,
+        operation,
+        topologyRevision,
+      )
+    );
+  }
+
+  private adoptedPointerTransferFingerprintsMatch(
+    command: DesktopTransferCommand | OutputTransferCommand,
+  ): boolean {
+    return this.isDesktopTransferCommand(command)
+      ? this.desktopTransferFingerprintsMatch(command)
+      : this.outputTransferFingerprintsMatch(command);
+  }
+
+  private adoptedPointerTransferFinalStateIsSafe(
+    command: DesktopTransferCommand | OutputTransferCommand,
+    sourceLayout: ReturnType<typeof solveStripGeometry>,
+    targetLayout: ReturnType<typeof solveStripGeometry>,
+    changedWindowIds: ReadonlySet<WindowId>,
+  ): boolean {
+    if (!this.isDesktopTransferCommand(command)) {
+      return this.outputTransferFinalStateIsSafe(
+        command,
+        sourceLayout,
+        targetLayout,
+        changedWindowIds,
+      );
+    }
+
+    return (
+      this.transferUnchangedFramesMatch(
+        targetLayout,
+        changedWindowIds,
+        command.geometryPassiveIds,
+      ) &&
+      this.desktopTransferFinalStateIsSafe(command, sourceLayout, targetLayout)
+    );
   }
 
   private pointerExternalParticipantsAreCurrent(
@@ -12201,6 +12546,7 @@ export class RuntimeController {
     if (
       !external ||
       !insertion ||
+      insertion.state !== "ready" ||
       intent.participants.length !== sourceContext.windowIds.size ||
       insertion.participants.length !== targetContext.windowIds.size
     ) {

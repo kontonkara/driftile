@@ -107,6 +107,13 @@ destination width, automatic moved height, partial-frame compensation, no
 output or desktop mechanism writes, and ordinary singleton admission for
 empty, stale, ambiguous, or raced targets.
 
+Cross-desktop unit cases cover the 2x2 matrix of output-local or global desktop
+resolution and membership-before-finish or finish-before-membership event
+order. They verify bounded pending-destination settlement, fallback when the
+target is initially unavailable or becomes invalidated, unrelated-context
+isolation, zero hidden-source writes, and exact destination compensation before
+singleton admission.
+
 The isolated two-output Wayland scenario uses KScreen to verify scale and
 position changes, exact known-output history restoration over a deliberately
 different reduced right-side stack for native Wayland and XWayland windows,

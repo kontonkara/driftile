@@ -14,8 +14,9 @@ The ownership rule is strict:
 
 - One horizontal strip of columns per `(output, desktop)` context.
 - Deterministic window insertion, ordering, focus, movement, resizing, and scrolling.
-- Finish-only pointer reinsertion for active tiled windows within one context or
-  into a visible tiled target on another output.
+- Finish-only pointer reinsertion within one context, plus adoption at one exact
+  visible tiled target after KWin moves the active tiled window to a selected
+  desktop on the same output or to another visible output.
 - Vertical window stacks within columns.
 - Per-window height adjustment, weighted automatic stack distribution, and height presets.
 - Managed, manually floating, automatically layout-excluded, and ignored window states.
@@ -53,7 +54,7 @@ The ownership rule is strict:
 - Optional five-finger horizontal touchpad navigation reuses tiled column
   focus; global wheel input is deferred because KWin 6.7 exposes no public
   script axis API.
-- Cross-desktop pointer rearrangement and visual drop feedback.
+- Visual drop feedback for pointer operations.
 - Tabbed columns and matching pointer navigation.
 - Additional application-specific policies and an expanded settings UI.
 - Optional visual transitions, layout indicators, and concise diagnostics.
@@ -108,6 +109,8 @@ Driftile must integrate with, not duplicate:
 - Merge preserves the destination width; extraction copies the source width; both preserve focus and member order.
 - A same-context tiled pointer drop targets one visible window. Its vertical midpoint selects before or after; cross-column insertion adopts automatic height and the destination width, while same-stack reorder retains height policy. Invalidated or ambiguous intent restores the original slot.
 - After KWin moves an active normal tiled window to another visible output, Driftile may adopt that move by inserting it before or after the tiled window under the cursor. The target midpoint selects the position, the destination column width is retained, and the moved window adopts automatic height. KWin remains the sole owner of physical output and desktop movement. An empty, invalidated, ambiguous, or raced target falls back to ordinary destination admission as a singleton instead of reversing KWin's move.
+- After KWin selects another visible desktop on the same output and moves the active normal tiled window there, Driftile may adopt it on release over exactly one tiled target in that selected desktop. The target midpoint selects before or after, the destination width is retained, and the moved window adopts automatic height. A pending destination receives bounded settlement probes; an unavailable, invalidated, ambiguous, stale, or raced target keeps KWin's move and uses singleton admission. The hidden source receives no geometry writes.
+- Cross-desktop pointer adoption adds no visual feedback, setting, shortcut action, binding, or persistence-schema field.
 - Direct insertion appends the active window to the nearest existing stack in its direction, skips singleton columns as nonparticipants without wrapping, and preserves the target width.
 - Direct insertion may cross settled minimized passive peers in the participating source and target columns, including a fully minimized target stack. Those peers retain logical order, height state, minimized state, and externally changed frames without geometry writes. Fullscreen, maximized, native-tiled, restore- or toggle-settling, and other blockers in either participating column fail closed; a state round trip during reflow cancels and rolls back the edit.
 - Explicit consume appends the immediate right column's visible top member to the active column; explicit expel moves the active column's visible bottom member into a new right column. Focus remains in the active column.
