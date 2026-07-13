@@ -1,10 +1,56 @@
 # Migration
 
-The latest stable release is 1.8.0. Version 1.9.0-rc.1 is the current candidate,
-not a stable release. Use the steps below when changing release generations,
-and never combine files from different releases.
+The latest stable release is 1.9.0. Use the steps below when changing release
+generations, and never combine files from different releases.
 
-## Upgrade from 1.8.0 to 1.9.0-rc.1
+## Upgrade from 1.9.0-rc.1
+
+1. Release helper-owned shortcuts with the RC helper while it is still
+   available.
+2. Disable Driftile and the optional overview in System Settings.
+3. Upgrade the main package and, if installed, the overview to their matching
+   1.9.0 archives, or update the Nix input to `v1.9.0` and rebuild the NixOS or
+   Home Manager generation that owns each package.
+4. Enable Driftile, then assign shortcuts or claim them with the final helper.
+5. If installed, re-enable the overview and review its manually assigned
+   shortcut.
+
+Version 1.9.0 has no runtime or persistence behavior changes from RC.1. Both
+package IDs, all ten settings, shortcut action IDs and bindings, gesture and
+overview behavior, the persistence format, and stored layouts remain
+compatible.
+
+## Upgrade from 1.8.0 to 1.9.0
+
+1. Release helper-owned shortcuts with the 1.8.0 helper while it is still
+   available.
+2. Disable Driftile and the optional overview in System Settings.
+3. Upgrade the main package and, if installed, the overview to their matching
+   1.9.0 archives, or pin the Nix input to `v1.9.0` and rebuild the NixOS or Home
+   Manager generation that owns each package.
+4. Enable Driftile, then assign shortcuts or claim them with the 1.9.0 helper.
+5. If installed, re-enable the overview and review its manually assigned
+   shortcut.
+
+Version 1.9.0 adds guarded left-click activation to valid thumbnails in
+non-current desktop cards. The current-card focus path is unchanged. Before
+selection, the effect revalidates the exact active effect, model, live screen,
+projected output, desktop object and ID, window object and ID, current activity,
+memberships, deletion and minimization state, and input eligibility while
+accepting the expected off-desktop hidden state. It selects and confirms the
+desktop through public `KWin.SceneView.currentDesktop` on Wayland, or through
+the guarded `KWin.Workspace.currentDesktop` fallback only with one live screen.
+It then revalidates the same window as visible before requesting and confirming
+exact `KWin.Workspace.activeWindow` focus.
+
+A failure before confirmed selection leaves the effect open and performs no
+focus write. A late invalidation or focus failure keeps the confirmed desktop,
+closes the stale effect, and performs no rollback. The release changes no
+main-script runtime, setting, shortcut action ID, binding, gesture, or
+persistence format. Both package IDs, all ten settings, shortcut action IDs and
+bindings, gestures, and stored layouts remain compatible with 1.8.0.
+
+## Upgrade from 1.8.0 to 1.9.0-rc.1 (historical)
 
 1. Release helper-owned shortcuts with the 1.8.0 helper while it is still
    available.
@@ -16,21 +62,15 @@ and never combine files from different releases.
 5. If installed, re-enable the overview and review its manually assigned
    shortcut.
 
-Version 1.9.0-rc.1 adds guarded left-click activation to valid thumbnails in
-non-current desktop cards. The current-card focus path is unchanged. Before
-selection, the expected off-desktop hidden state is accepted; after exact
-desktop confirmation, the same window must revalidate as visible before focus
-is requested and confirmed. A rejection before selection leaves the effect
-open. A failure after confirmed selection keeps the selected desktop, closes
-the stale effect, and performs no rollback.
+Version 1.9.0-rc.1 adds the same guarded non-current thumbnail activation as
+1.9.0. The candidate changes no main-script runtime, setting, shortcut action
+ID, binding, gesture, or persistence format. Both package IDs, all ten settings,
+shortcut action IDs and bindings, gestures, and stored layouts remain compatible
+with 1.8.0.
 
-The candidate changes no main-script runtime, setting, shortcut action ID,
-binding, gesture, or persistence format. Both package IDs, the ten settings,
-and stored layouts remain compatible with 1.8.0.
+## Roll back from 1.9.0 to 1.8.0
 
-## Roll back from 1.9.0-rc.1 to 1.8.0
-
-Release shortcuts with the RC helper, disable Driftile and the optional
+Release shortcuts with the 1.9.0 helper, disable Driftile and the optional
 overview, then restore the main package and any installed overview to their
 verified 1.8.0 archives. For NixOS or Home Manager, restore the `v1.8.0` input
 and rebuild the generation that owns each package. Re-enable the packages and

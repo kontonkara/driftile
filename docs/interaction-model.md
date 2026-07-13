@@ -30,7 +30,7 @@ confirmation. The current gutter and every rejected request remain inert. The
 effect never switches activities or writes window output, membership, geometry,
 or settings.
 
-In 1.9.0-rc.1, a valid non-current thumbnail first revalidates the exact effect,
+In 1.9.0, a valid non-current thumbnail first revalidates the exact effect,
 model, screen, projected output, desktop, window, and activity while allowing
 the window's off-desktop hidden state. It selects and confirms that desktop
 through the existing public path, then revalidates the same window as visible,
