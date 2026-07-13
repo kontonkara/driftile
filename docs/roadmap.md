@@ -1,8 +1,9 @@
 # Roadmap
 
 Versions 0.1.0, 1.0.0, and 1.1.0 are released. The delivered milestones and
-release criteria below are a historical record. The remaining post-v1
-direction is not a committed release schedule.
+release criteria below are a historical record. Version 1.2.0 is in
+development. The remaining post-v1 direction is not a committed release
+schedule.
 
 ## Foundation (delivered)
 
@@ -192,6 +193,11 @@ Release criteria (met):
   reveal when a centered transaction cannot be prepared.
 - Wayland, XWayland, single-output X11, packaging, Nix, and visible VM release
   checks pass for the release.
+
+## 1.2.0 (in development)
+
+Version 1.2.0 is in development. Its scope and release criteria will be
+documented as behavior is implemented and verified.
 
 ## Post-v1
 

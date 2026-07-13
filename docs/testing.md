@@ -125,7 +125,7 @@ tools/vm/run.sh lifecycle
 ```
 
 The lifecycle mode opens one non-fullscreen `1366x768` Wayland VM with no
-preinstalled Driftile package. It installs and loads the pinned 1.0.0 release,
+preinstalled Driftile package. It installs and loads the pinned 1.1.0 release,
 unloads and upgrades it to the current package, opens and closes Konsole and
 KDE Calculator, removes the package, verifies KWin with another Calculator
 window, then closes immediately.
