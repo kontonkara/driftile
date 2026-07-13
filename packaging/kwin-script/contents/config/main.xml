@@ -52,5 +52,9 @@
       <label>Applications excluded from tiling by desktop-file ID</label>
       <default></default>
     </entry>
+    <entry name="ApplicationBorderlessExclusions" type="String">
+      <label>Applications keeping KWin borders and title bars by desktop-file ID</label>
+      <default></default>
+    </entry>
   </group>
 </kcfg>

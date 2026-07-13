@@ -136,7 +136,20 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Extracts a regular stack member transactionally before requesting native maximize-to-edges through KWin; rejected requests restore the exact model, frames, focus, and runtime ownership.
 - Keeps dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows outside layout ownership in state separate from manual floating.
 - Releases a managed window that gains an automatic-floating role without restoring its old frame, then readmits it when the role clears and it remains eligible.
-- Optionally claims borderless state for application windows independently of layout ownership, reasserts owned state after policy changes, and restores only decoration state that it owns.
+- Optionally claims borderless state for application windows independently of
+  layout ownership, reasserts owned state after policy changes, and restores
+  only decoration state that it owns.
+- Consults a separate exact, case-sensitive `desktopFileName` exclusion set
+  before each borderless claim. Missing and empty IDs remain eligible, and no
+  resource, role, or other identity fallback is used. The policy covers every
+  otherwise eligible tiled, floating, dialog, transient, and utility window.
+- Reconciles borderless exclusions and `desktopFileName` changes live without
+  geometry writes, focus changes, or logical-layout or layout-persistence
+  changes. Global disable dominates the set, and disable or unload restores only
+  owned decoration state.
+- Delivers an atomic settings change in ownership-safe order: disable the
+  global policy before replacing exclusions, or install the new exclusions
+  before enabling the global policy.
 - Defers live gap changes across structural transactions, then reflows dirty visible contexts and retries capacity admissions under one settled value.
 - Applies default-width changes before admission without changing existing column width policies; newly admitted columns, fresh cross-context retiles, and explicit reset read the current policy.
 - Parses at most 128 application-width entries into an exact
@@ -144,10 +157,16 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   that map in constant time, falls back to the global default, and remains
   subject to the normal window-constraint clamp. Existing columns do not read
   the map again.
-- Parses at most 128 application exclusions into an exact case-sensitive
+- Parses at most 128 application tiling exclusions into an exact case-sensitive
   `desktopFileName` set. Admission uses one constant-time lookup; a live policy
   replacement scans the observed window set once and schedules only windows
   whose membership changed.
+- Reuses the same exact-ID decoder for application borderless exclusions: at
+  most 65,664 document characters, 512 raw characters per line, 128 unique
+  nonblank entries, and 255 UTF-8 bytes per trimmed ID. Blank lines are ignored;
+  duplicates, controls, invalid UTF-16, and oversized input fail the complete
+  settings snapshot. Valid entries are held in canonical sorted order with
+  constant-time membership lookup.
 - Replaces at most 16 column-width presets atomically without layout work;
   existing columns retain their concrete widths and later preset actions read
   the new cycle.
@@ -195,6 +214,7 @@ RuntimeState
   defaultColumnWidth: ColumnWidth
   applicationColumnWidths: Map<desktopFileName, percent>
   applicationTilingExclusions: Set<desktopFileName>
+  applicationBorderlessExclusions: Set<desktopFileName>
   pendingDefaultColumnWidth: ColumnWidth | null
   pendingGap: number | null
   pendingWindowSyncs: Set<WindowId>
@@ -401,6 +421,10 @@ inspected safely within the codec bound.
 - Replace the bounded application-width lookup atomically on reconfiguration.
   Do not revisit existing columns; schedule only contexts with waiting windows
   that may create a fresh singleton.
+- Replace the bounded `ApplicationBorderlessExclusions` set atomically.
+  Reconfiguration and application-identity signals reconcile decoration
+  ownership without geometry writes, focus changes, or model or
+  layout-persistence changes; interactive resize and settlement retain priority.
 - Replace the bounded column-width preset cycle without changing model values,
   frames, viewport state, or focus.
 - Treat horizontal-focus centering as future command policy. Reconfiguration
@@ -477,7 +501,12 @@ inspected safely within the codec bound.
 - Verify whole-column and secondary directional transfers, retained minimized source peers with zero desktop, output, and geometry writes, fail-closed minimized windows outside that source column, no-wrap boundaries, per-output desktop selection, focus preservation, cancellation races, and exact two-context compensation.
 - Verify numbered desktop selection and whole-column transfer, tail clamping, same-target no-ops, and shared-tail renewal.
 - Verify manual and automatic floating desktop transfer, exact frame preservation, related-window guards, tiled-state isolation, and compensation.
-- Verify optional borderless ownership across tiled and floating windows, policy reassertion, live reconfigure handling, and unload restoration.
+- Verify bounded application-borderless exclusion decoding, canonical sorting,
+  exact case-sensitive lookup without fallbacks, missing and empty identities,
+  all eligible window roles, global-disable dominance, policy reassertion, live
+  settings and identity changes without geometry writes, focus changes, or
+  layout-state or layout-persistence changes, plus ownership-safe global-disable
+  and unload restoration.
 - Verify live gap reflow, bounds, no-op coalescing, hidden-context deferral, capacity retry, and zero writes to minimized, floating, or excluded windows.
 - Verify default-width bounds, coalescing, structural deferral, existing-layout preservation, constrained waiting admission, newly admitted-column policy, and transactional reset.
 - Verify bounded one-entry-per-line application-width decoding, exact

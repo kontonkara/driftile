@@ -32,6 +32,10 @@ let
     programs.driftile = {
       enable = true;
       settings = {
+        applicationBorderlessExclusions = [
+          "org.example.Terminal"
+          "org.example.Browser"
+        ];
         applicationColumnWidths = {
           "org.example.Browser" = 80;
           "org.example.Editor" = 60;
@@ -144,6 +148,9 @@ assert !lib.elem (toString pkgs.hello) (homePackagePaths overviewDisabled);
 assert
   standalone.config.qt.kde.settings == {
     kwinrc."Script-io.github.kontonkara.driftile" = {
+      ApplicationBorderlessExclusions = ''
+        org.example.Browser
+        org.example.Terminal'';
       ApplicationColumnWidths = ''
         org.example.Browser=80
         org.example.Editor=60'';
@@ -161,6 +168,10 @@ assert
     };
   };
 assert
+  builtins.length (
+    builtins.attrNames standalone.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile"
+  ) == 11;
+assert
   standalone.config.xdg.configFile."driftile/shortcuts.json".text == ''
     {"bindings":{"driftile_focus_column_left":["Meta+A"],"driftile_reset_column_width":[]},"version":1}
   '';
@@ -174,6 +185,7 @@ assert lib.all (assertion: assertion.assertion) settingsOnly.config.assertions;
 assert
   settingsOnly.config.qt.kde.settings == {
     kwinrc."Script-io.github.kontonkara.driftile" = {
+      ApplicationBorderlessExclusions = "";
       ApplicationColumnWidths = "";
       ApplicationTilingExclusions = "";
       BorderlessWindows = true;

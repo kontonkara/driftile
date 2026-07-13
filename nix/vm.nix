@@ -1483,6 +1483,25 @@ let
           >/dev/null
       }
 
+      set_application_borderless_exclusions() {
+        local value=$1
+
+        ${pkgs.kdePackages.kconfig}/bin/kwriteconfig6 \
+          --file "$HOME/.config/kwinrc" \
+          --group "Script-${pluginId}" \
+          --key ApplicationBorderlessExclusions \
+          --type string \
+          "$value" \
+          || return 1
+
+        busctl --user call \
+          org.kde.KWin \
+          /KWin \
+          org.kde.KWin \
+          reconfigure \
+          >/dev/null
+      }
+
       set_column_width_presets() {
         local value=$1
 
@@ -1991,6 +2010,26 @@ let
           }
 
           if [[ "$state" == true ]]; then
+            return 0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      wait_for_real_window_decorated() {
+        local attempt
+        local state
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          state=$(real_window_border_state "$1" 2>/dev/null) || {
+            sleep 0.1
+            continue
+          }
+
+          if [[ "$state" == false ]]; then
             return 0
           fi
 
@@ -10457,6 +10496,170 @@ let
         record_focus_state "XWayland terminal closed and the tiled layout reflowed"
       }
 
+      verify_application_borderless_exclusions() {
+        local baseline_first
+        local baseline_second
+        local baseline_third
+        local borderless_exclusions=""
+        local calculator_desktop_file=""
+        local calculator_pid=""
+        local calculator_title="Driftile VM Borderless KDE Calculator"
+        local cleanup_verified=true
+        local exclusions_cleared=false
+        local exclusions_reapplied=false
+        local exclusions_verified=false
+        local konsole_desktop_file=""
+        local xterm_desktop_file=""
+        local xterm_pid=""
+        local xterm_title="Driftile VM Borderless XWayland Terminal"
+
+        if ! set_application_borderless_exclusions "" \
+          || ! activate_window "$title_c" \
+          || ! wait_for_active "$title_c" \
+          || ! wait_for_real_window_borderless "$title_a" \
+          || ! capture_stable_frames; then
+          set_application_borderless_exclusions "" >/dev/null 2>&1 || true
+          record_focus_state \
+            "application borderless exclusion baseline failed"
+          return 1
+        fi
+        baseline_first=$stable_first_frame
+        baseline_second=$stable_second_frame
+        baseline_third=$stable_third_frame
+
+        if start_kcalc_window \
+            calculator_pid \
+            calculator_title \
+            "$calculator_title" \
+          && start_xterm_window \
+            xterm_pid \
+            xterm_title \
+            "$xterm_title"; then
+          konsole_desktop_file=$(window_desktop_file_contains "$title_a" 2>/dev/null || true)
+          calculator_desktop_file=$(
+            window_desktop_file_contains "$calculator_title" 2>/dev/null || true
+          )
+          xterm_desktop_file=$(
+            window_desktop_file_contains "$xterm_title" 2>/dev/null || true
+          )
+          printf -v borderless_exclusions \
+            '%s\n%s' \
+            "$konsole_desktop_file" \
+            "$xterm_desktop_file"
+
+          if [[ -n "$konsole_desktop_file" \
+            && -n "$calculator_desktop_file" \
+            && -n "$xterm_desktop_file" \
+            && "$konsole_desktop_file" != "$calculator_desktop_file" \
+            && "$xterm_desktop_file" != "$calculator_desktop_file" ]] \
+            && activate_window "$calculator_title" \
+            && wait_for_active "$calculator_title" \
+            && set_application_borderless_exclusions "$borderless_exclusions" \
+            && wait_for_real_window_decorated "$title_a" \
+            && wait_for_real_window_decorated "$title_b" \
+            && wait_for_real_window_decorated "$title_c" \
+            && wait_for_real_window_decorated "$xterm_title" \
+            && wait_for_real_window_borderless "$calculator_title" \
+            && wait_for_active "$calculator_title"; then
+            exclusions_verified=true
+            record_focus_state \
+              "application exclusions preserved native and XWayland borders"
+          fi
+
+          if [[ "$exclusions_verified" == true ]] \
+            && set_application_borderless_exclusions "" \
+            && wait_for_real_window_borderless "$title_a" \
+            && wait_for_real_window_borderless "$title_b" \
+            && wait_for_real_window_borderless "$title_c" \
+            && wait_for_real_window_borderless "$xterm_title" \
+            && wait_for_real_window_borderless "$calculator_title" \
+            && wait_for_active "$calculator_title"; then
+            exclusions_cleared=true
+            record_focus_state \
+              "cleared application exclusions restored borderless windows"
+          fi
+
+          if [[ "$exclusions_cleared" == true ]] \
+            && set_application_borderless_exclusions "$borderless_exclusions" \
+            && wait_for_real_window_decorated "$title_a" \
+            && wait_for_real_window_decorated "$title_b" \
+            && wait_for_real_window_decorated "$title_c" \
+            && wait_for_real_window_decorated "$xterm_title" \
+            && wait_for_real_window_borderless "$calculator_title" \
+            && wait_for_active "$calculator_title"; then
+            exclusions_reapplied=true
+            record_focus_state \
+              "reapplied application exclusions restored owned borders"
+          fi
+        fi
+
+        if ! set_application_borderless_exclusions ""; then
+          cleanup_verified=false
+        fi
+        if [[ -n "$calculator_pid" ]] \
+          && ! wait_for_real_window_borderless "$calculator_title"; then
+          cleanup_verified=false
+        fi
+        if [[ -n "$xterm_pid" ]] \
+          && ! wait_for_real_window_borderless "$xterm_title"; then
+          cleanup_verified=false
+        fi
+        if ! wait_for_real_window_borderless "$title_a"; then
+          cleanup_verified=false
+        fi
+        if ! wait_for_real_window_borderless "$title_b"; then
+          cleanup_verified=false
+        fi
+        if ! wait_for_real_window_borderless "$title_c"; then
+          cleanup_verified=false
+        fi
+
+        if [[ -n "$calculator_pid" ]]; then
+          terminate_process "$calculator_pid"
+
+          if ! wait_for_window_gone_contains "$calculator_title"; then
+            cleanup_verified=false
+          fi
+        fi
+        if [[ -n "$xterm_pid" ]]; then
+          terminate_process "$xterm_pid"
+
+          if ! wait_for_window_gone_contains "$xterm_title"; then
+            cleanup_verified=false
+          fi
+        fi
+        if ! activate_window "$title_c" \
+          || ! wait_for_active "$title_c" \
+          || ! wait_for_singleton_layout \
+            "$baseline_first" \
+            "$baseline_second" \
+            "$baseline_third"; then
+          cleanup_verified=false
+        fi
+
+        if [[ "$exclusions_verified" == true \
+          && "$exclusions_cleared" == true \
+          && "$exclusions_reapplied" == true \
+          && "$cleanup_verified" == true ]]; then
+          record_focus_state \
+            "application borderless exclusion verification passed"
+          return 0
+        fi
+
+        record_focus_state \
+          "application borderless exclusion verification failed"
+        {
+          printf 'Konsole desktop-file ID: %s\n' "$konsole_desktop_file"
+          printf 'KCalc desktop-file ID: %s\n' "$calculator_desktop_file"
+          printf 'xterm desktop-file ID: %s\n' "$xterm_desktop_file"
+          printf 'initial exclusion phase: %s\n' "$exclusions_verified"
+          printf 'cleared exclusion phase: %s\n' "$exclusions_cleared"
+          printf 'reapplied exclusion phase: %s\n' "$exclusions_reapplied"
+          printf 'cleanup verified: %s\n' "$cleanup_verified"
+        } >> /tmp/shared/driftile-focus-diagnostics
+        return 1
+      }
+
       verify_application_column_width_override() {
         local baseline_first
         local baseline_second
@@ -10905,6 +11108,7 @@ let
         && verify_physical_fullscreen_shortcut \
         && verify_physical_maximize_shortcut \
         && verify_real_applications \
+        && verify_application_borderless_exclusions \
         && verify_application_column_width_override \
         && verify_application_tiling_exclusion \
         && verify_physical_pointer_reinsertion \
@@ -11756,6 +11960,7 @@ let
     ${pluginId}Enabled=true
 
     [Script-${pluginId}]
+    ApplicationBorderlessExclusions=
     ApplicationTilingExclusions=
     CenterFocusedColumn=false
     ColumnWidthStepPercent=10

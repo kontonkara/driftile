@@ -41,6 +41,10 @@ class RuntimeControllerDouble {
 
   stop(): void {}
 
+  setApplicationBorderlessExclusions(): boolean {
+    return true;
+  }
+
   setApplicationColumnWidths(): boolean {
     return true;
   }
@@ -133,6 +137,9 @@ describe("touchpad navigation", () => {
     expect(mainQml).toContain(
       'touchpadNavigation: KWin.readConfig("TouchpadNavigation", false)',
     );
+    expect(mainQml).toContain(
+      'applicationBorderlessExclusions: KWin.readConfig("ApplicationBorderlessExclusions", "")',
+    );
     expect(
       mainQml.match(
         /root\.appliedTouchpadNavigation = Runtime\.DriftileRuntime\.getTouchpadNavigation\(\);/gu,
@@ -200,6 +207,7 @@ function settings(
   overrides: Readonly<Record<string, unknown>> = {},
 ): Readonly<Record<string, unknown>> {
   return {
+    applicationBorderlessExclusions: "",
     applicationColumnWidths: "",
     applicationTilingExclusions: "",
     borderlessWindows: true,

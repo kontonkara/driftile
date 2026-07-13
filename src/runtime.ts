@@ -48,6 +48,7 @@ export function init(
     layoutStateChanged,
   );
   const nextController = new RuntimeController(workspace, {
+    applicationBorderlessExclusions: settings.applicationBorderlessExclusions,
     applicationColumnWidths: settings.applicationColumnWidths,
     applicationTilingExclusions: settings.applicationTilingExclusions,
     borderlessWindows: settings.borderlessWindows,
@@ -116,17 +117,28 @@ export function applySettings(settingsSnapshot: unknown): boolean {
     return true;
   }
 
+  if (!settings.borderlessWindows) {
+    controller.setBorderlessWindows(false);
+  }
+
+  controller.setApplicationBorderlessExclusions(
+    settings.applicationBorderlessExclusions,
+  );
   controller.setApplicationColumnWidths(settings.applicationColumnWidths);
   controller.setApplicationTilingExclusions(
     settings.applicationTilingExclusions,
   );
-  controller.setBorderlessWindows(settings.borderlessWindows);
   controller.setCenterFocusedColumn(settings.centerFocusedColumn);
   controller.setDefaultColumnWidthPercent(settings.defaultColumnWidthPercent);
   controller.setColumnWidthPresets(settings.columnWidthPresets.percentages);
   controller.setColumnWidthStepPercent(settings.columnWidthStepPercent);
   controller.setWindowHeightStepPercent(settings.windowHeightStepPercent);
   controller.setGap(settings.gap);
+
+  if (settings.borderlessWindows) {
+    controller.setBorderlessWindows(true);
+  }
+
   appliedSettings = settings;
   return true;
 }

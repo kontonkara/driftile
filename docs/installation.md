@@ -127,9 +127,10 @@ steps above, then remove Driftile's stored KConfig values and layout snapshot:
 ```bash
 kwriteconfig6 --file kwinrc --group Plugins \
   --key io.github.kontonkara.driftileEnabled --delete ""
-for key in ApplicationColumnWidths ApplicationTilingExclusions BorderlessWindows \
-  CenterFocusedColumn ColumnWidthPresets ColumnWidthStepPercent \
-  DefaultColumnWidthPercent Gap TouchpadNavigation WindowHeightStepPercent; do
+for key in ApplicationBorderlessExclusions ApplicationColumnWidths \
+  ApplicationTilingExclusions BorderlessWindows CenterFocusedColumn \
+  ColumnWidthPresets ColumnWidthStepPercent DefaultColumnWidthPercent Gap \
+  TouchpadNavigation WindowHeightStepPercent; do
   kwriteconfig6 --file kwinrc \
     --group Script-io.github.kontonkara.driftile \
     --key "$key" --delete ""
@@ -204,6 +205,20 @@ programs.driftile.settings = {
   windowHeightStepPercent = 10;
 };
 ```
+
+The source-tree 1.10.0-dev.0 Home Manager module owns eleven settings and adds
+the following list, which defaults to empty:
+
+```nix
+programs.driftile.settings.applicationBorderlessExclusions = [
+  "org.kde.konsole"
+];
+```
+
+Use that attribute only with a package and module pinned to the same
+1.10.0-dev.0 revision; the tagged 1.9.1 module does not expose it. See
+[Configuration](configuration.md#application-borderless-exclusions) for exact
+matching, limits, and live behavior.
 
 The profile is independent of package installation. When the package is
 already installed by NixOS or another system module, keep

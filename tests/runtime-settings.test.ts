@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { ApplicationBorderlessExclusions } from "../src/application-borderless-exclusions";
 import type { ApplicationColumnWidthOverrides } from "../src/application-overrides";
 import type { ApplicationTilingExclusions } from "../src/application-tiling-exclusions";
 import type { KWinWorkspace } from "../src/platform/kwin/api";
 
 interface DeliveredSettings {
+  readonly applicationBorderlessExclusions: readonly string[];
   readonly applicationColumnWidths: readonly string[];
   readonly applicationTilingExclusions: readonly string[];
   readonly borderlessWindows: boolean;
@@ -21,6 +23,7 @@ type RuntimeSettingsInput = Record<keyof DeliveredSettings, unknown> & {
 };
 
 interface RuntimeControllerOptions {
+  readonly applicationBorderlessExclusions: ApplicationBorderlessExclusions;
   readonly applicationColumnWidths: ApplicationColumnWidthOverrides;
   readonly applicationTilingExclusions: ApplicationTilingExclusions;
   readonly borderlessWindows: boolean;
@@ -31,6 +34,10 @@ interface RuntimeControllerOptions {
 const controllerInstances: RuntimeControllerDouble[] = [];
 
 class RuntimeControllerDouble {
+  readonly borderDeliverySnapshots: Array<{
+    readonly applicationBorderlessExclusions: readonly string[];
+    readonly borderlessWindows: boolean;
+  }> = [];
   readonly calls: string[] = [];
   readonly deferredSnapshots: DeliveredSettings[] = [];
   readonly lastWriteCount = 0;
@@ -41,6 +48,8 @@ class RuntimeControllerDouble {
   constructor(_workspace: unknown, options: RuntimeControllerOptions) {
     this.schedule = options.schedule;
     this.state = {
+      applicationBorderlessExclusions:
+        options.applicationBorderlessExclusions.canonicalEntries,
       applicationColumnWidths: options.applicationColumnWidths.canonicalEntries,
       applicationTilingExclusions:
         options.applicationTilingExclusions.canonicalEntries,
@@ -76,6 +85,18 @@ class RuntimeControllerDouble {
     return true;
   }
 
+  setApplicationBorderlessExclusions(
+    exclusions: ApplicationBorderlessExclusions,
+  ): boolean {
+    this.calls.push("applicationBorderlessExclusions");
+    this.state = {
+      ...this.state,
+      applicationBorderlessExclusions: exclusions.canonicalEntries,
+    };
+    this.captureBorderDelivery();
+    return true;
+  }
+
   setApplicationTilingExclusions(
     exclusions: ApplicationTilingExclusions,
   ): boolean {
@@ -93,7 +114,17 @@ class RuntimeControllerDouble {
   setBorderlessWindows(value: boolean): boolean {
     this.calls.push("borderlessWindows");
     this.state = { ...this.state, borderlessWindows: value };
+    this.captureBorderDelivery();
     return true;
+  }
+
+  private captureBorderDelivery(): void {
+    this.borderDeliverySnapshots.push({
+      applicationBorderlessExclusions: [
+        ...this.state.applicationBorderlessExclusions,
+      ],
+      borderlessWindows: this.state.borderlessWindows,
+    });
   }
 
   setCenterFocusedColumn(value: boolean): boolean {
@@ -141,7 +172,7 @@ afterEach(() => {
 });
 
 describe("runtime settings delivery", () => {
-  it("keeps invalid ownership and accepts one valid ten-field snapshot before deferred work", async () => {
+  it("keeps invalid ownership and disables borders before replacing exclusions", async () => {
     vi.doMock("../src/runtime-controller", () => ({
       RuntimeController: RuntimeControllerDouble,
     }));
@@ -154,6 +185,7 @@ describe("runtime settings delivery", () => {
       deferredWork.push(callback);
     };
     const initial = settings({
+      applicationBorderlessExclusions: "org.example.InitialBorder",
       applicationTilingExclusions: "org.example.InitiallyExcluded",
     });
 
@@ -175,6 +207,7 @@ describe("runtime settings delivery", () => {
     }
 
     controller.calls.length = 0;
+    controller.borderDeliverySnapshots.length = 0;
     expect(controller.deliveredSettings.applicationTilingExclusions).toEqual([
       "org.example.InitiallyExcluded",
     ]);
@@ -191,6 +224,7 @@ describe("runtime settings delivery", () => {
     ]);
 
     const next = settings({
+      applicationBorderlessExclusions: "org.example.NewBorder",
       applicationColumnWidths: "org.example.Editor=75",
       applicationTilingExclusions: "org.example.NewlyExcluded",
       borderlessWindows: false,
@@ -203,6 +237,7 @@ describe("runtime settings delivery", () => {
       windowHeightStepPercent: 17,
     });
     const expected: DeliveredSettings = {
+      applicationBorderlessExclusions: ["org.example.NewBorder"],
       applicationColumnWidths: ["org.example.Editor=75"],
       applicationTilingExclusions: ["org.example.NewlyExcluded"],
       borderlessWindows: false,
@@ -217,15 +252,26 @@ describe("runtime settings delivery", () => {
     expect(runtime.applySettings(next)).toBe(true);
     expect(runtime.getTouchpadNavigation()).toBe(true);
     expect(controller.calls).toEqual([
+      "borderlessWindows",
+      "applicationBorderlessExclusions",
       "applicationColumnWidths",
       "applicationTilingExclusions",
-      "borderlessWindows",
       "centerFocusedColumn",
       "defaultColumnWidthPercent",
       "columnWidthPresets",
       "columnWidthStepPercent",
       "windowHeightStepPercent",
       "gap",
+    ]);
+    expect(controller.borderDeliverySnapshots).toEqual([
+      {
+        applicationBorderlessExclusions: ["org.example.InitialBorder"],
+        borderlessWindows: false,
+      },
+      {
+        applicationBorderlessExclusions: ["org.example.NewBorder"],
+        borderlessWindows: false,
+      },
     ]);
     expect(controller.deliveredSettings).toEqual(expected);
     expect(controller.deferredSnapshots).toEqual([]);
@@ -236,12 +282,77 @@ describe("runtime settings delivery", () => {
 
     runtime.destroy();
   });
+
+  it("delivers exclusions before enabling borderless mode", async () => {
+    vi.doMock("../src/runtime-controller", () => ({
+      RuntimeController: RuntimeControllerDouble,
+    }));
+    vi.spyOn(console, "info").mockImplementation(() => {});
+
+    const runtime = await import("../src/runtime");
+    const initial = settings({
+      applicationBorderlessExclusions: "org.example.InitialBorder",
+      borderlessWindows: false,
+    });
+
+    runtime.init(
+      { screens: [] } as unknown as KWinWorkspace,
+      2,
+      (x, y, width, height) => ({ height, width, x, y }),
+      () => {},
+      () => {},
+      initial,
+      "",
+      () => {},
+    );
+
+    const controller = controllerInstances[0];
+
+    if (!controller) {
+      throw new Error("runtime controller test double was not created");
+    }
+
+    controller.calls.length = 0;
+    controller.borderDeliverySnapshots.length = 0;
+    expect(
+      runtime.applySettings(
+        settings({
+          applicationBorderlessExclusions: "org.example.NewBorder",
+          borderlessWindows: true,
+        }),
+      ),
+    ).toBe(true);
+    expect(controller.calls).toEqual([
+      "applicationBorderlessExclusions",
+      "applicationColumnWidths",
+      "applicationTilingExclusions",
+      "centerFocusedColumn",
+      "defaultColumnWidthPercent",
+      "columnWidthPresets",
+      "columnWidthStepPercent",
+      "windowHeightStepPercent",
+      "gap",
+      "borderlessWindows",
+    ]);
+    expect(controller.borderDeliverySnapshots).toEqual([
+      {
+        applicationBorderlessExclusions: ["org.example.NewBorder"],
+        borderlessWindows: false,
+      },
+      {
+        applicationBorderlessExclusions: ["org.example.NewBorder"],
+        borderlessWindows: true,
+      },
+    ]);
+    runtime.destroy();
+  });
 });
 
 function settings(
   overrides: Partial<RuntimeSettingsInput> = {},
 ): RuntimeSettingsInput {
   return {
+    applicationBorderlessExclusions: "",
     applicationColumnWidths: "",
     applicationTilingExclusions: "",
     borderlessWindows: true,
@@ -259,6 +370,9 @@ function settings(
 function snapshot(settingsValue: DeliveredSettings): DeliveredSettings {
   return {
     ...settingsValue,
+    applicationBorderlessExclusions: [
+      ...settingsValue.applicationBorderlessExclusions,
+    ],
     applicationColumnWidths: [...settingsValue.applicationColumnWidths],
     applicationTilingExclusions: [...settingsValue.applicationTilingExclusions],
     columnWidthPresets: [...settingsValue.columnWidthPresets],

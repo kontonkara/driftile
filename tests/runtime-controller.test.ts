@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { decodeApplicationBorderlessExclusions } from "../src/application-borderless-exclusions";
 import { decodeApplicationColumnWidthOverrides } from "../src/application-overrides";
 import { decodeApplicationTilingExclusions } from "../src/application-tiling-exclusions";
 import {
@@ -6213,6 +6214,7 @@ describe("RuntimeController", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
     const decorated = createTrackedWindow("decorated", output, desktop, {
+      desktopFileName: "org.example.Decorated",
       noBorder: false,
     });
     const borderless = createTrackedWindow("borderless", output, desktop, {
@@ -6250,6 +6252,195 @@ describe("RuntimeController", () => {
     expect(borderless.window.noBorder).toBe(true);
     expect(dialog.window.noBorder).toBe(false);
     expect(fixed.window.noBorder).toBe(false);
+  });
+
+  it("honors startup border exclusions across tiled and floating window roles", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const tiled = createTrackedWindow("tiled", output, desktop, {
+      desktopFileName: "org.example.Tiled",
+      noBorder: false,
+    });
+    const excludedTiled = createTrackedWindow(
+      "excluded-tiled",
+      output,
+      desktop,
+      {
+        desktopFileName: "org.example.ExcludedTiled",
+        noBorder: false,
+      },
+    );
+    const floating = createTrackedWindow("floating", output, desktop, {
+      desktopFileName: "org.example.Floating",
+      noBorder: false,
+    });
+    const excludedFloating = createTrackedWindow(
+      "excluded-floating",
+      output,
+      desktop,
+      {
+        desktopFileName: "org.example.ExcludedFloating",
+        noBorder: false,
+      },
+    );
+    const dialog = createTrackedWindow("dialog", output, desktop, {
+      desktopFileName: "org.example.Dialog",
+      dialog: true,
+      noBorder: false,
+      normalWindow: false,
+    });
+    const excludedDialog = createTrackedWindow(
+      "excluded-dialog",
+      output,
+      desktop,
+      {
+        desktopFileName: "org.example.ExcludedDialog",
+        dialog: true,
+        noBorder: false,
+        normalWindow: false,
+      },
+    );
+    const transient = createTrackedWindow("transient", output, desktop, {
+      desktopFileName: "org.example.Transient",
+      noBorder: false,
+      normalWindow: false,
+      transient: true,
+      transientFor: tiled.window,
+    });
+    const excludedTransient = createTrackedWindow(
+      "excluded-transient",
+      output,
+      desktop,
+      {
+        desktopFileName: "org.example.ExcludedTransient",
+        noBorder: false,
+        normalWindow: false,
+        transient: true,
+        transientFor: tiled.window,
+      },
+    );
+    const utility = createTrackedWindow("utility", output, desktop, {
+      desktopFileName: "org.example.Utility",
+      noBorder: false,
+      normalWindow: false,
+      specialWindow: true,
+    });
+    const excludedUtility = createTrackedWindow(
+      "excluded-utility",
+      output,
+      desktop,
+      {
+        desktopFileName: "org.example.ExcludedUtility",
+        noBorder: false,
+        normalWindow: false,
+        specialWindow: true,
+      },
+    );
+    const included = [tiled, floating, dialog, transient, utility];
+    const excluded = [
+      excludedTiled,
+      excludedFloating,
+      excludedDialog,
+      excludedTransient,
+      excludedUtility,
+    ];
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [...included, ...excluded].map(({ window }) => window),
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      applicationBorderlessExclusions: requiredApplicationBorderlessExclusions(
+        excluded.map(({ window }) => window.desktopFileName).join("\n"),
+      ),
+      applicationTilingExclusions: requiredApplicationTilingExclusions(
+        "org.example.Floating\norg.example.ExcludedFloating",
+      ),
+      borderlessWindows: true,
+      clientAreaOption: 2,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(included.map(({ window }) => window.noBorder)).toEqual(
+      included.map(() => true),
+    );
+    expect(excluded.map(({ window }) => window.noBorder)).toEqual(
+      excluded.map(() => false),
+    );
+
+    controller.stop();
+    expect(included.map(({ window }) => window.noBorder)).toEqual(
+      included.map(() => false),
+    );
+    expect(excluded.map(({ window }) => window.noBorder)).toEqual(
+      excluded.map(() => false),
+    );
+  });
+
+  it("matches border exclusions exactly and treats empty identities as eligible", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const exact = createTrackedWindow("exact", output, desktop, {
+      desktopFileName: "org.example.Editor",
+      noBorder: false,
+    });
+    const differentCase = createTrackedWindow("case", output, desktop, {
+      desktopFileName: "org.example.editor",
+      noBorder: false,
+    });
+    const empty = createTrackedWindow("empty", output, desktop, {
+      desktopFileName: "",
+      noBorder: false,
+    });
+    const missing = createTrackedWindow("missing", output, desktop, {
+      noBorder: false,
+    });
+    const unreadable = createTrackedWindow("unreadable", output, desktop, {
+      noBorder: false,
+      normalWindow: false,
+      specialWindow: true,
+    });
+    Object.defineProperty(unreadable.window, "desktopFileName", {
+      configurable: true,
+      get: () => {
+        throw new Error("desktop file identity is unavailable");
+      },
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [
+        exact.window,
+        differentCase.window,
+        empty.window,
+        missing.window,
+        unreadable.window,
+      ],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      applicationBorderlessExclusions:
+        requiredApplicationBorderlessExclusions("org.example.Editor"),
+      borderlessWindows: true,
+      clientAreaOption: 2,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(exact.window.noBorder).toBe(false);
+    expect(differentCase.window.noBorder).toBe(true);
+    expect(empty.window.noBorder).toBe(true);
+    expect(missing.window.noBorder).toBe(true);
+    expect(unreadable.window.noBorder).toBe(true);
+
+    controller.stop();
+    expect(exact.window.noBorder).toBe(false);
+    expect(differentCase.window.noBorder).toBe(false);
+    expect(empty.window.noBorder).toBe(false);
+    expect(missing.window.noBorder).toBe(false);
+    expect(unreadable.window.noBorder).toBe(false);
   });
 
   it("keeps decorations when borderless windows are disabled", () => {
@@ -6303,6 +6494,329 @@ describe("RuntimeController", () => {
     controller.setBorderlessWindows(false);
     expect(decorated.window.noBorder).toBe(false);
     expect(borderless.window.noBorder).toBe(true);
+  });
+
+  it("reconciles live border exclusions without changing window ownership or geometry", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("first", output, desktop, {
+      desktopFileName: "org.example.First",
+      noBorder: false,
+    });
+    const second = createTrackedWindow("second", output, desktop, {
+      desktopFileName: "org.example.Second",
+      noBorder: false,
+    });
+    const utility = createTrackedWindow("utility", output, desktop, {
+      desktopFileName: "org.example.Utility",
+      noBorder: false,
+      normalWindow: false,
+      specialWindow: true,
+    });
+    const preexisting = createTrackedWindow("preexisting", output, desktop, {
+      desktopFileName: "org.example.Preexisting",
+      noBorder: true,
+    });
+    const windows = [first, second, utility, preexisting];
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map(({ window }) => window),
+    );
+    const scheduler = new ManualScheduler();
+    const published: string[] = [];
+    const controller = new RuntimeController(fixture.workspace, {
+      applicationBorderlessExclusions: requiredApplicationBorderlessExclusions(
+        "org.example.First\norg.example.Utility",
+      ),
+      borderlessWindows: true,
+      clientAreaOption: 2,
+      onLayoutStateChanged: (document) => published.push(document),
+      schedule: scheduler.schedule,
+    });
+    const borderState = controller as unknown as {
+      readonly windowBorderRestore: ReadonlyMap<WindowId, unknown>;
+    };
+
+    expect(controller.start()).toBe(true);
+    flushManualScheduler(scheduler);
+    fixture.workspace.activeWindow = second.window;
+    flushManualScheduler(scheduler);
+    expect([
+      first.window.noBorder,
+      second.window.noBorder,
+      utility.window.noBorder,
+      preexisting.window.noBorder,
+    ]).toEqual([false, true, false, true]);
+    expect([...borderState.windowBorderRestore.keys()]).toEqual([
+      windowId("second"),
+    ]);
+
+    const expectRuntimeUnchanged = (
+      action: () => boolean,
+      expectedResult: boolean,
+    ): (() => void) => {
+      const beforeWindows = captureTrackedWindowState(windows);
+      const beforeLayout = runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      );
+      const beforePublished = published.length;
+      const beforeActive = fixture.workspace.activeWindow;
+
+      const expectUnchanged = (): void => {
+        expectTrackedWindowState(windows, beforeWindows);
+        expect(
+          runtimeLayout(controller).snapshot(
+            outputId(output.name),
+            desktopId(desktop.id),
+          ),
+        ).toEqual(beforeLayout);
+        expect(published).toHaveLength(beforePublished);
+        expect(fixture.workspace.activeWindow).toBe(beforeActive);
+      };
+
+      expect(action()).toBe(expectedResult);
+      expectUnchanged();
+      return expectUnchanged;
+    };
+
+    const expectAfterAddition = expectRuntimeUnchanged(
+      () =>
+        controller.setApplicationBorderlessExclusions(
+          requiredApplicationBorderlessExclusions(
+            "org.example.Utility\norg.example.First",
+          ),
+        ),
+      false,
+    );
+    expect(scheduler.pendingCount).toBe(0);
+
+    expectRuntimeUnchanged(
+      () =>
+        controller.setApplicationBorderlessExclusions(
+          requiredApplicationBorderlessExclusions(
+            "org.example.First\norg.example.Second\norg.example.Utility",
+          ),
+        ),
+      true,
+    );
+    expect(second.window.noBorder).toBe(false);
+    expect(borderState.windowBorderRestore.size).toBe(0);
+    flushManualScheduler(scheduler);
+    expectAfterAddition();
+
+    const expectAfterRemoval = expectRuntimeUnchanged(
+      () =>
+        controller.setApplicationBorderlessExclusions(
+          requiredApplicationBorderlessExclusions("org.example.Second"),
+        ),
+      true,
+    );
+    expect([
+      first.window.noBorder,
+      second.window.noBorder,
+      utility.window.noBorder,
+      preexisting.window.noBorder,
+    ]).toEqual([true, false, true, true]);
+    expect([...borderState.windowBorderRestore.keys()]).toEqual([
+      windowId("first"),
+      windowId("utility"),
+    ]);
+    flushManualScheduler(scheduler);
+    expectAfterRemoval();
+
+    const expectIdentityChangeIsBorderOnly = (
+      desktopFileName: string,
+      action: () => void,
+    ): void => {
+      const beforeWindows = captureTrackedWindowState(windows);
+      const beforeLayout = runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      );
+      const beforePublished = published.length;
+      const beforeActive = fixture.workspace.activeWindow;
+
+      Object.defineProperty(first.window, "desktopFileName", {
+        configurable: true,
+        value: desktopFileName,
+      });
+      first.desktopFileNameChanged.emit();
+      action();
+      flushManualScheduler(scheduler);
+      expectTrackedWindowState(windows, beforeWindows);
+      expect(
+        runtimeLayout(controller).snapshot(
+          outputId(output.name),
+          desktopId(desktop.id),
+        ),
+      ).toEqual(beforeLayout);
+      expect(published).toHaveLength(beforePublished);
+      expect(fixture.workspace.activeWindow).toBe(beforeActive);
+    };
+
+    expectIdentityChangeIsBorderOnly("org.example.Second", () => {
+      expect(first.window.noBorder).toBe(false);
+      expect(borderState.windowBorderRestore.has(windowId("first"))).toBe(
+        false,
+      );
+    });
+    expect(first.window.noBorder).toBe(false);
+    expect(borderState.windowBorderRestore.has(windowId("first"))).toBe(false);
+
+    expectIdentityChangeIsBorderOnly("org.example.First", () => {
+      expect(first.window.noBorder).toBe(true);
+      expect(borderState.windowBorderRestore.has(windowId("first"))).toBe(true);
+    });
+    expect(borderState.windowBorderRestore.has(windowId("preexisting"))).toBe(
+      false,
+    );
+
+    controller.setBorderlessWindows(false);
+    expect(first.window.noBorder).toBe(false);
+    expect(second.window.noBorder).toBe(false);
+    expect(utility.window.noBorder).toBe(false);
+    expect(preexisting.window.noBorder).toBe(true);
+    expect(borderState.windowBorderRestore.size).toBe(0);
+
+    const disabledState = captureTrackedWindowState(windows);
+    expect(
+      controller.setApplicationBorderlessExclusions(
+        requiredApplicationBorderlessExclusions(""),
+      ),
+    ).toBe(true);
+    expectTrackedWindowState(windows, disabledState);
+    expect([
+      first.window.noBorder,
+      second.window.noBorder,
+      utility.window.noBorder,
+      preexisting.window.noBorder,
+    ]).toEqual([false, false, false, true]);
+
+    controller.stop();
+    expect(preexisting.window.noBorder).toBe(true);
+  });
+
+  it("defers border exclusion reconciliation while KWin owns resize", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const decorated = createTrackedWindow("decorated", output, desktop, {
+      desktopFileName: "org.example.Decorated",
+      noBorder: false,
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [decorated.window],
+    );
+    const scheduler = new ManualScheduler();
+    const published: string[] = [];
+    const controller = new RuntimeController(fixture.workspace, {
+      borderlessWindows: true,
+      clientAreaOption: 2,
+      onLayoutStateChanged: (document) => published.push(document),
+      schedule: scheduler.schedule,
+    });
+    const state = controller as unknown as {
+      readonly borderlessContextReconciliationPending: boolean;
+      readonly borderlessReconciliationPending: boolean;
+    };
+
+    expect(controller.start()).toBe(true);
+    flushManualScheduler(scheduler);
+    expect(decorated.window.noBorder).toBe(true);
+
+    const beginResize = (): void => {
+      Object.defineProperty(decorated.window, "resize", {
+        configurable: true,
+        value: true,
+      });
+      decorated.moveResizedChanged.emit();
+      decorated.interactiveMoveResizeStarted.emit();
+      flushManualScheduler(scheduler);
+    };
+    const finishResize = (): void => {
+      Object.defineProperty(decorated.window, "resize", {
+        configurable: true,
+        value: false,
+      });
+      decorated.moveResizedChanged.emit();
+      decorated.interactiveMoveResizeFinished.emit();
+      flushManualScheduler(scheduler);
+    };
+    const expectDeferredMutation = (
+      exclusions: string,
+      expectedBorderless: boolean,
+    ): void => {
+      const beforeWindow = captureTrackedWindowState([decorated]);
+      const beforeLayout = runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      );
+      const beforeActive = fixture.workspace.activeWindow;
+      const beforePublished = published.length;
+
+      expect(
+        controller.setApplicationBorderlessExclusions(
+          requiredApplicationBorderlessExclusions(exclusions),
+        ),
+      ).toBe(true);
+      expect(state.borderlessReconciliationPending).toBe(true);
+      expect(decorated.window.noBorder).toBe(expectedBorderless);
+      expectTrackedWindowState([decorated], beforeWindow);
+      expect(
+        runtimeLayout(controller).snapshot(
+          outputId(output.name),
+          desktopId(desktop.id),
+        ),
+      ).toEqual(beforeLayout);
+      expect(fixture.workspace.activeWindow).toBe(beforeActive);
+      expect(published).toHaveLength(beforePublished);
+      expect(scheduler.pendingCount).toBe(0);
+    };
+
+    beginResize();
+    expectDeferredMutation("org.example.Decorated", true);
+    expect(state.borderlessContextReconciliationPending).toBe(false);
+    finishResize();
+    expect(state.borderlessReconciliationPending).toBe(false);
+    expect(decorated.window.noBorder).toBe(false);
+
+    beginResize();
+    expectDeferredMutation("", false);
+    expect(state.borderlessContextReconciliationPending).toBe(false);
+    const beforeGlobalToggle = captureTrackedWindowState([decorated]);
+    const beforeGlobalLayout = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const beforeGlobalPublished = published.length;
+    const beforeGlobalActive = fixture.workspace.activeWindow;
+    controller.setBorderlessWindows(false);
+    controller.setBorderlessWindows(true);
+    expect(state.borderlessReconciliationPending).toBe(true);
+    expect(state.borderlessContextReconciliationPending).toBe(true);
+    expectTrackedWindowState([decorated], beforeGlobalToggle);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(beforeGlobalLayout);
+    expect(published).toHaveLength(beforeGlobalPublished);
+    expect(fixture.workspace.activeWindow).toBe(beforeGlobalActive);
+    finishResize();
+    expect(state.borderlessReconciliationPending).toBe(false);
+    expect(state.borderlessContextReconciliationPending).toBe(false);
+    expect(decorated.window.noBorder).toBe(true);
+
+    controller.stop();
+    expect(decorated.window.noBorder).toBe(false);
   });
 
   it("keeps owned decorations hidden while floating", () => {
@@ -6366,10 +6880,12 @@ describe("RuntimeController", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
     const decorated = createTrackedWindow("decorated", output, desktop, {
+      desktopFileName: "org.example.Decorated",
       noBorder: false,
     });
     const scheduler = new ManualScheduler();
     let acceptsBorderless = false;
+    let acceptsDecorated = true;
     let noBorder = false;
 
     Object.defineProperty(decorated.window, "noBorder", {
@@ -6377,6 +6893,10 @@ describe("RuntimeController", () => {
       get: () => noBorder,
       set: (value: boolean) => {
         if (value && !acceptsBorderless) {
+          return;
+        }
+
+        if (!value && !acceptsDecorated) {
           return;
         }
 
@@ -6397,17 +6917,102 @@ describe("RuntimeController", () => {
       clientAreaOption: 2,
       scheduleResume: scheduler.schedule,
     });
+    const borderState = controller as unknown as {
+      readonly windowBorderRestore: ReadonlyMap<WindowId, unknown>;
+    };
 
     expect(controller.start()).toBe(true);
     expect(decorated.window.noBorder).toBe(false);
     expect(scheduler.pendingCount).toBe(1);
 
-    acceptsBorderless = true;
+    expect(
+      controller.setApplicationBorderlessExclusions(
+        requiredApplicationBorderlessExclusions("org.example.Decorated"),
+      ),
+    ).toBe(true);
     scheduler.flush();
+    expect(decorated.window.noBorder).toBe(false);
+    expect(scheduler.pendingCount).toBe(0);
+
+    acceptsBorderless = true;
+    expect(
+      controller.setApplicationBorderlessExclusions(
+        requiredApplicationBorderlessExclusions(""),
+      ),
+    ).toBe(true);
     expect(decorated.window.noBorder).toBe(true);
+
+    acceptsDecorated = false;
+    expect(
+      controller.setApplicationBorderlessExclusions(
+        requiredApplicationBorderlessExclusions("org.example.Decorated"),
+      ),
+    ).toBe(true);
+    expect(decorated.window.noBorder).toBe(true);
+    expect(borderState.windowBorderRestore.has(windowId("decorated"))).toBe(
+      true,
+    );
+    flushManualScheduler(scheduler);
+
+    acceptsDecorated = true;
+    decorated.decorationPolicyChanged.emit();
+    expect(decorated.window.noBorder).toBe(false);
+    expect(borderState.windowBorderRestore.has(windowId("decorated"))).toBe(
+      false,
+    );
 
     controller.stop();
     expect(decorated.window.noBorder).toBe(false);
+  });
+
+  it("does not retain a border claim superseded by an exclusion update", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const decorated = createTrackedWindow("decorated", output, desktop, {
+      desktopFileName: "org.example.Decorated",
+      noBorder: false,
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [decorated.window],
+    );
+    let controller: RuntimeController | null = null;
+    let injectExclusion = true;
+    let noBorder = false;
+
+    Object.defineProperty(decorated.window, "noBorder", {
+      configurable: true,
+      get: () => noBorder,
+      set: (value: boolean) => {
+        if (value && injectExclusion && controller) {
+          injectExclusion = false;
+          controller.setApplicationBorderlessExclusions(
+            requiredApplicationBorderlessExclusions("org.example.Decorated"),
+          );
+        }
+
+        noBorder = value;
+      },
+    });
+
+    controller = new RuntimeController(fixture.workspace, {
+      borderlessWindows: true,
+      clientAreaOption: 2,
+    });
+    const borderState = controller as unknown as {
+      readonly windowBorderRestore: ReadonlyMap<WindowId, unknown>;
+    };
+
+    expect(controller.start()).toBe(true);
+    expect(decorated.window.noBorder).toBe(false);
+    expect(borderState.windowBorderRestore.has(windowId("decorated"))).toBe(
+      false,
+    );
+
+    controller.stop();
   });
 
   it("restores the pre-claim frame after synchronous decoration changes", () => {
@@ -37066,6 +37671,16 @@ function requiredApplicationTilingExclusions(value: string) {
 
   if (!exclusions) {
     throw new Error("application tiling exclusions fixture is invalid");
+  }
+
+  return exclusions;
+}
+
+function requiredApplicationBorderlessExclusions(value: string) {
+  const exclusions = decodeApplicationBorderlessExclusions(value);
+
+  if (!exclusions) {
+    throw new Error("application borderless exclusions fixture is invalid");
   }
 
   return exclusions;

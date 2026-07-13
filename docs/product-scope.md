@@ -21,7 +21,11 @@ The ownership rule is strict:
 - Vertical window stacks within columns.
 - Per-window height adjustment, weighted automatic stack distribution, and height presets.
 - Managed, manually floating, automatically layout-excluded, and ignored window states.
-- Optional borderless presentation for application windows with exact decoration ownership.
+- Optional borderless presentation for application windows with exact
+  decoration ownership.
+- Up to 128 exact, case-sensitive KWin `desktopFileName` exclusions that keep
+  matching tiled, floating, dialog, transient, and utility windows under their
+  existing decoration policy.
 - Live global tiled-window gap from 0 to 64 logical pixels without changing layout state.
 - Configurable 10%–100% default width for newly admitted columns, fresh cross-context retiles, and explicit reset.
 - Up to 128 application-specific 10%–100% initial singleton widths, matched by
@@ -244,7 +248,16 @@ Driftile must integrate with, not duplicate:
 - Capacity eviction keeps windows reachable and preserves the active column when a writable alternative exists.
 - Occupied or visible virtual desktops are never removed.
 - Special and all-desktop windows are never tiled.
-- Borderless mode covers tiled, floating, dialog, transient, and utility windows, changes only decoration state claimed by Driftile, and restores it when disabled or unloaded.
+- Borderless mode covers tiled, floating, dialog, transient, and utility
+  windows, changes only decoration state claimed by Driftile, and restores it
+  when disabled or unloaded.
+- A borderless exclusion matches only the exact, case-sensitive
+  `desktopFileName`. There is no identity fallback, and a missing or empty ID is
+  not excluded. A blank list therefore retains the prior global behavior.
+- `BorderlessWindows=false` dominates every exclusion. Live list or identity
+  changes acquire or restore only owned decoration state, issue no geometry
+  writes, and do not change focus, layout state, or layout persistence. Global
+  disable and unload remain ownership-safe.
 - A live gap change reflows visible tiled contexts only. It preserves logical order, widths, height policies, focus, floating frames, excluded windows, and minimized frames; hidden contexts adopt it when shown.
 - A default-width change leaves existing column width policies unchanged. Newly admitted columns, fresh cross-context retiles, and explicit reset use the new proportion subject to live window constraints. Retrying a waiting admission may add a column and update the affected viewport and frames; otherwise the policy change performs no frame writes.
 - Application-width rules use one exact, case-sensitive `desktopFileName` entry

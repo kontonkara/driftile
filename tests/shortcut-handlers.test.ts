@@ -723,6 +723,40 @@ describe("KWin shortcut handlers", () => {
     );
   });
 
+  it("exposes exact application borderless exclusions as a bounded list", () => {
+    const exclusionsEntry = configuration.match(
+      /<entry name="ApplicationBorderlessExclusions" type="String">([\s\S]*?)<\/entry>/,
+    )?.[1];
+    const exclusionsLabel = configurationUi.match(
+      /<widget class="QLabel" name="applicationBorderlessExclusionsLabel">([\s\S]*?)<\/widget>/,
+    )?.[1];
+    const exclusionsWidget = configurationUi.match(
+      /<widget class="QPlainTextEdit" name="kcfg_ApplicationBorderlessExclusions">([\s\S]*?)<\/widget>/,
+    )?.[1];
+
+    expect(exclusionsEntry).toContain(
+      "<label>Applications keeping KWin borders and title bars by desktop-file ID</label>",
+    );
+    expect(exclusionsEntry).toContain("<default></default>");
+    expect(exclusionsLabel).toContain(
+      "<string>Applications keeping KWin borders and title bars:</string>",
+    );
+    expect(exclusionsLabel).toContain(
+      "<cstring>kcfg_ApplicationBorderlessExclusions</cstring>",
+    );
+    expect(exclusionsWidget).toContain(
+      "Enter one exact, case-sensitive desktop-file ID per line.",
+    );
+    expect(exclusionsWidget).toContain("Blank lines are ignored.");
+    expect(qml).toContain(
+      'applicationBorderlessExclusions: KWin.readConfig("ApplicationBorderlessExclusions", "")',
+    );
+    expect(runtime).toContain(
+      "applicationBorderlessExclusions: settings.applicationBorderlessExclusions",
+    );
+    expect(runtime).toContain("controller.setApplicationBorderlessExclusions(");
+  });
+
   it("exposes the column width step as a live bounded user setting", () => {
     const stepEntry = configuration.match(
       /<entry name="ColumnWidthStepPercent" type="Int">([\s\S]*?)<\/entry>/,

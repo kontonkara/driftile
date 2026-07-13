@@ -4,6 +4,11 @@ import {
   type ApplicationColumnWidthOverrides,
 } from "./application-overrides";
 import {
+  EMPTY_APPLICATION_BORDERLESS_EXCLUSIONS,
+  sameApplicationBorderlessExclusions,
+  type ApplicationBorderlessExclusions,
+} from "./application-borderless-exclusions";
+import {
   EMPTY_APPLICATION_TILING_EXCLUSIONS,
   sameApplicationTilingExclusions,
   type ApplicationTilingExclusions,
@@ -656,6 +661,7 @@ interface LayoutHydrationCandidate {
 }
 
 export interface RuntimeControllerOptions {
+  readonly applicationBorderlessExclusions?: ApplicationBorderlessExclusions;
   readonly applicationColumnWidths?: ApplicationColumnWidthOverrides;
   readonly applicationTilingExclusions?: ApplicationTilingExclusions;
   readonly borderlessWindows?: boolean;
@@ -677,13 +683,16 @@ export interface RuntimeControllerOptions {
 }
 
 export class RuntimeController {
+  private applicationBorderlessExclusions: ApplicationBorderlessExclusions;
   private applicationColumnWidths: ApplicationColumnWidthOverrides;
   private applicationTilingExclusions: ApplicationTilingExclusions;
   private readonly automaticFloatingWindows = new Set<WindowId>();
   private readonly borderlessSettlementEnabled: boolean;
   private readonly borderlessSettlementTokens = new Map<WindowId, object>();
+  private borderlessContextReconciliationPending = false;
   private borderlessReconciliationPending = false;
   private borderlessWindows: boolean;
+  private readonly borderSynchronizationIds = new Set<WindowId>();
   private readonly capacityCanceledParks = new Map<
     string,
     CapacityParkOperation
@@ -845,11 +854,15 @@ export class RuntimeController {
     WindowId,
     WindowBorderRestore
   >();
+  private readonly windowDesktopFileNames = new Map<WindowId, string | null>();
   private readonly windowStateRevisions = new Map<WindowId, number>();
   private workScheduled = false;
   private readonly workspace: KWinWorkspace;
 
   constructor(workspace: KWinWorkspace, options: RuntimeControllerOptions) {
+    this.applicationBorderlessExclusions =
+      options.applicationBorderlessExclusions ??
+      EMPTY_APPLICATION_BORDERLESS_EXCLUSIONS;
     this.applicationColumnWidths =
       options.applicationColumnWidths ??
       EMPTY_APPLICATION_COLUMN_WIDTH_OVERRIDES;
@@ -1213,23 +1226,64 @@ export class RuntimeController {
       this.pointerResizeSettlement !== null
     ) {
       this.borderlessReconciliationPending = true;
+      this.borderlessContextReconciliationPending = true;
       return;
     }
 
-    this.applyBorderlessWindowSetting();
+    this.applyBorderlessWindowSetting(true);
   }
 
-  private applyBorderlessWindowSetting(): void {
+  setApplicationBorderlessExclusions(
+    exclusions: ApplicationBorderlessExclusions,
+  ): boolean {
+    if (
+      sameApplicationBorderlessExclusions(
+        this.applicationBorderlessExclusions,
+        exclusions,
+      )
+    ) {
+      return false;
+    }
+
+    this.applicationBorderlessExclusions = exclusions;
+
+    if (!this.started || !this.borderlessWindows) {
+      return true;
+    }
+
+    if (
+      this.interactiveResizeSource !== null ||
+      this.pointerResizeSettlement !== null
+    ) {
+      this.borderlessReconciliationPending = true;
+      return true;
+    }
+
+    this.applyBorderlessWindowSetting(false);
+    return true;
+  }
+
+  private applyBorderlessWindowSetting(reconcileContexts: boolean): void {
+    const shouldReconcileContexts =
+      reconcileContexts || this.borderlessContextReconciliationPending;
     this.borderlessReconciliationPending = false;
+    this.borderlessContextReconciliationPending = false;
 
     if (!this.borderlessWindows) {
       this.restoreWindowBorders();
-      this.reconcileBorderAffectedContexts();
+
+      if (shouldReconcileContexts) {
+        this.reconcileBorderAffectedContexts();
+      }
+
       return;
     }
 
     this.synchronizeWindowBorders();
-    this.reconcileBorderAffectedContexts();
+
+    if (shouldReconcileContexts) {
+      this.reconcileBorderAffectedContexts();
+    }
   }
 
   private layoutCaptureReady(): boolean {
@@ -2425,6 +2479,7 @@ export class RuntimeController {
       this.layoutStatePublicationPending = false;
       this.layoutTopologyPublicationPending = false;
       this.preservedFallbackLayoutState = null;
+      this.borderlessContextReconciliationPending = false;
       this.borderlessReconciliationPending = false;
       this.interactiveResizeSource = null;
       this.pointerMoveIntent = null;
@@ -2502,6 +2557,7 @@ export class RuntimeController {
     this.workScheduled = false;
     this.runGeneration += 1;
     this.pendingExpelFocusHandoff = null;
+    this.borderlessContextReconciliationPending = false;
     this.borderlessReconciliationPending = false;
     this.interactiveResizeSource = null;
     this.pointerMoveIntent = null;
@@ -2557,6 +2613,7 @@ export class RuntimeController {
       this.unconfirmedFullscreenTargets.clear();
       this.dirtyContexts.clear();
       this.automaticFloatingWindows.clear();
+      this.borderSynchronizationIds.clear();
       this.borderlessSettlementTokens.clear();
       this.floatingWindows.clear();
       this.lastFloatingFocus.clear();
@@ -2602,6 +2659,7 @@ export class RuntimeController {
       this.waitingWindowIds.clear();
       this.windowAdmissionHistory.clear();
       this.windowBorderRestore.clear();
+      this.windowDesktopFileNames.clear();
       this.windowStateRevisions.clear();
       this.topologyAllowsOverflowAdmissions = false;
       this.topologyColumnByWindow.clear();
@@ -2797,7 +2855,10 @@ export class RuntimeController {
   };
 
   private readonly handleWindowTracked = (id: string): void => {
-    this.synchronizeWindowBorder(windowId(id), this.observer.source(id));
+    const trackedId = windowId(id);
+    const source = this.observer.source(id);
+
+    this.synchronizeWindowBorder(trackedId, source);
   };
 
   private readonly handleInteractiveResizeStarted = (
@@ -3720,6 +3781,30 @@ export class RuntimeController {
   ): void => {
     const changedId = windowId(id);
     const source = this.observer.source(id);
+
+    if (this.borderSynchronizationIds.has(changedId)) {
+      return;
+    }
+
+    const desktopFileNameChange =
+      cause === "classification" && source
+        ? this.trackWindowDesktopFileNameChange(changedId, source)
+        : null;
+
+    if (
+      source &&
+      desktopFileNameChange &&
+      !this.desktopFileNameChangeRequiresLayout(
+        changedId,
+        source,
+        desktopFileNameChange.previous,
+        desktopFileNameChange.current,
+      )
+    ) {
+      this.synchronizeWindowBorder(changedId, source);
+      return;
+    }
+
     const pointerIntent = this.pointerMoveIntent;
     const pointerContextChangeContinues =
       cause === "context" &&
@@ -3809,6 +3894,10 @@ export class RuntimeController {
   private readonly handleWindowStateChanged = (id: string): void => {
     const changedId = windowId(id);
     const source = this.observer.source(id);
+
+    if (this.borderSynchronizationIds.has(changedId)) {
+      return;
+    }
 
     if (
       source === this.interactiveResizeSource &&
@@ -4081,6 +4170,7 @@ export class RuntimeController {
     this.borderlessSettlementTokens.delete(managedId);
     this.windowAdmissionHistory.delete(managedId);
     this.windowBorderRestore.delete(managedId);
+    this.windowDesktopFileNames.delete(managedId);
     this.windowStateRevisions.delete(managedId);
     this.forgetRememberedLayerFocus(managedId);
     const releasedContextKey = this.releaseWindow(managedId);
@@ -4094,7 +4184,7 @@ export class RuntimeController {
     }
 
     if (endedInteractiveResize && this.borderlessReconciliationPending) {
-      this.applyBorderlessWindowSetting();
+      this.applyBorderlessWindowSetting(false);
     }
 
     if (endedInteractiveResize) {
@@ -17034,7 +17124,7 @@ export class RuntimeController {
     }
 
     if (this.borderlessReconciliationPending) {
-      this.applyBorderlessWindowSetting();
+      this.applyBorderlessWindowSetting(false);
     }
 
     if (this.hydrationInProgress) {
@@ -19053,9 +19143,24 @@ export class RuntimeController {
       return false;
     }
 
-    const desktopFileName = this.applicationDesktopFileName(source);
+    return this.applicationTilingExclusionAppliesToDesktopFileName(
+      source,
+      this.applicationDesktopFileName(source),
+      exclusions,
+    );
+  }
 
-    return desktopFileName !== null && exclusions.excludes(desktopFileName);
+  private applicationTilingExclusionAppliesToDesktopFileName(
+    source: KWinWindow,
+    desktopFileName: string | null,
+    exclusions = this.applicationTilingExclusions,
+  ): boolean {
+    return (
+      source.normalWindow &&
+      desktopFileName !== null &&
+      exclusions.canonicalEntries.length > 0 &&
+      exclusions.excludes(desktopFileName)
+    );
   }
 
   private applicationTilingExclusionMembershipChanged(
@@ -19096,6 +19201,37 @@ export class RuntimeController {
     return typeof desktopFileName === "string" && desktopFileName.length > 0
       ? desktopFileName
       : null;
+  }
+
+  private trackWindowDesktopFileNameChange(
+    id: WindowId,
+    source: KWinWindow,
+  ): {
+    readonly current: string | null;
+    readonly previous: string | null;
+  } | null {
+    const current = this.applicationDesktopFileName(source);
+    const tracked = this.windowDesktopFileNames.has(id);
+    const previous = this.windowDesktopFileNames.get(id) ?? null;
+    this.windowDesktopFileNames.set(id, current);
+
+    return tracked && previous !== current ? { current, previous } : null;
+  }
+
+  private desktopFileNameChangeRequiresLayout(
+    id: WindowId,
+    source: KWinWindow,
+    previous: string | null,
+    current: string | null,
+  ): boolean {
+    return (
+      this.waitingWindowContexts.has(id) ||
+      this.applicationTilingExclusionAppliesToDesktopFileName(
+        source,
+        previous,
+      ) !==
+        this.applicationTilingExclusionAppliesToDesktopFileName(source, current)
+    );
   }
 
   private retainsFullscreenRequestGeometry(source: KWinWindow): boolean {
@@ -19537,12 +19673,32 @@ export class RuntimeController {
       return;
     }
 
-    if (!source || !this.windowUsesBorderlessMode(source)) {
-      this.restoreWindowBorder(id);
-      return;
+    const alreadySynchronizing = this.borderSynchronizationIds.has(id);
+    const desktopFileName =
+      source && this.borderlessWindows
+        ? this.applicationDesktopFileName(source)
+        : undefined;
+
+    if (desktopFileName !== undefined && !this.windowDesktopFileNames.has(id)) {
+      this.windowDesktopFileNames.set(id, desktopFileName);
     }
 
-    this.claimWindowBorder(id, source);
+    if (!alreadySynchronizing) {
+      this.borderSynchronizationIds.add(id);
+    }
+
+    try {
+      if (!source || !this.windowUsesBorderlessMode(source, desktopFileName)) {
+        this.restoreWindowBorder(id);
+        return;
+      }
+
+      this.claimWindowBorder(id, source);
+    } finally {
+      if (!alreadySynchronizing) {
+        this.borderSynchronizationIds.delete(id);
+      }
+    }
   }
 
   private synchronizeWindowBorders(): void {
@@ -19689,21 +19845,35 @@ export class RuntimeController {
       : { ...baseline.frame };
   }
 
-  private windowUsesBorderlessMode(source: KWinWindow): boolean {
+  private windowUsesBorderlessMode(
+    source: KWinWindow,
+    knownDesktopFileName?: string | null,
+  ): boolean {
+    if (
+      !this.started ||
+      !this.borderlessWindows ||
+      source.deleted ||
+      !source.managed ||
+      source.desktopWindow ||
+      source.dock
+    ) {
+      return false;
+    }
+
+    const desktopFileName =
+      knownDesktopFileName === undefined
+        ? this.applicationDesktopFileName(source)
+        : knownDesktopFileName;
+
     return (
-      this.started &&
-      this.borderlessWindows &&
-      !source.deleted &&
-      source.managed &&
-      !source.desktopWindow &&
-      !source.dock
+      desktopFileName === null ||
+      !this.applicationBorderlessExclusions.excludes(desktopFileName)
     );
   }
 
   private claimWindowBorder(id: WindowId, source: KWinWindow): boolean {
     let alreadyOwned: boolean;
-    let originalClientFrame: Rect | null;
-    let originalFrame: Rect | null;
+    let restore: WindowBorderRestore;
 
     try {
       if (
@@ -19714,11 +19884,14 @@ export class RuntimeController {
         return false;
       }
 
-      alreadyOwned = this.windowBorderRestore.has(id);
-      originalClientFrame = alreadyOwned
-        ? null
-        : snapshotRect(source.clientGeometry);
-      originalFrame = alreadyOwned ? null : snapshotRect(source.frameGeometry);
+      const existing = this.windowBorderRestore.get(id);
+      alreadyOwned = existing !== undefined;
+      restore = existing ?? {
+        admissionBaselinePending: !this.managedWindows.has(id),
+        clientFrame: snapshotRect(source.clientGeometry),
+        frame: snapshotRect(source.frameGeometry),
+        noBorder: false,
+      };
     } catch (error) {
       console.warn(
         `[driftile] borderless window preflight failed window=${String(id)} error=${String(error)}`,
@@ -19726,13 +19899,8 @@ export class RuntimeController {
       return false;
     }
 
-    if (originalClientFrame && originalFrame) {
-      this.windowBorderRestore.set(id, {
-        admissionBaselinePending: !this.managedWindows.has(id),
-        clientFrame: originalClientFrame,
-        frame: originalFrame,
-        noBorder: false,
-      });
+    if (!alreadyOwned) {
+      this.windowBorderRestore.set(id, restore);
     }
 
     let failure: string | undefined;
@@ -19750,13 +19918,44 @@ export class RuntimeController {
             : "unknown error";
     }
 
-    if (applied) {
+    let remainsEligible = false;
+
+    try {
+      remainsEligible = this.windowUsesBorderlessMode(source);
+    } catch (error) {
+      failure ??=
+        error instanceof Error
+          ? error.message
+          : typeof error === "string"
+            ? error
+            : "unknown error";
+    }
+
+    if (applied && remainsEligible) {
+      if (!this.windowBorderRestore.has(id)) {
+        this.windowBorderRestore.set(id, restore);
+      }
+
       this.scheduleBorderlessSettlementSafely(id);
 
       return true;
     }
 
-    if (failure === undefined && !alreadyOwned) {
+    if (!remainsEligible) {
+      if (applied && !this.windowBorderRestore.has(id)) {
+        this.windowBorderRestore.set(id, restore);
+      }
+
+      this.restoreWindowBorder(id);
+      this.borderlessSettlementTokens.delete(id);
+      return false;
+    }
+
+    if (
+      failure === undefined &&
+      !alreadyOwned &&
+      this.windowBorderRestore.get(id) === restore
+    ) {
       this.windowBorderRestore.delete(id);
     }
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { decodeApplicationBorderlessExclusions } from "../src/application-borderless-exclusions";
 import { decodeApplicationColumnWidthOverrides } from "../src/application-overrides";
 import { decodeApplicationTilingExclusions } from "../src/application-tiling-exclusions";
 import { decodeColumnWidthPresetPercentages } from "../src/column-width-presets";
@@ -17,6 +18,15 @@ if (!validApplicationColumnWidths) {
   throw new Error("application override fixture is invalid");
 }
 
+const validApplicationBorderlessExclusions =
+  decodeApplicationBorderlessExclusions(
+    "org.example.Decorated\norg.example.Legacy=tool",
+  );
+
+if (!validApplicationBorderlessExclusions) {
+  throw new Error("application borderless exclusion fixture is invalid");
+}
+
 const validApplicationTilingExclusions = decodeApplicationTilingExclusions(
   "org.example.Legacy\norg.example.Editor=tool",
 );
@@ -32,6 +42,7 @@ if (!validColumnWidthPresets) {
 }
 
 const validSettings: DriftileSettings = {
+  applicationBorderlessExclusions: validApplicationBorderlessExclusions,
   applicationColumnWidths: validApplicationColumnWidths,
   applicationTilingExclusions: validApplicationTilingExclusions,
   borderlessWindows: false,
@@ -45,6 +56,8 @@ const validSettings: DriftileSettings = {
 };
 
 const validSettingsInput = {
+  applicationBorderlessExclusions:
+    "org.example.Decorated\norg.example.Legacy=tool",
   applicationColumnWidths: "org.example.Editor=75",
   applicationTilingExclusions: "org.example.Legacy\norg.example.Editor=tool",
   borderlessWindows: validSettings.borderlessWindows,
@@ -68,6 +81,10 @@ describe("Driftile settings", () => {
       touchpadNavigation: false,
       windowHeightStepPercent: 10,
     });
+    expect(
+      DEFAULT_DRIFTILE_SETTINGS.applicationBorderlessExclusions
+        .canonicalEntries,
+    ).toEqual([]);
     expect(
       DEFAULT_DRIFTILE_SETTINGS.applicationColumnWidths.canonicalEntries,
     ).toEqual([]);
@@ -100,6 +117,9 @@ describe("Driftile settings", () => {
     expect(decoded?.applicationColumnWidths.canonicalEntries).toEqual(
       validApplicationColumnWidths.canonicalEntries,
     );
+    expect(decoded?.applicationBorderlessExclusions.canonicalEntries).toEqual(
+      validApplicationBorderlessExclusions.canonicalEntries,
+    );
     expect(decoded?.applicationTilingExclusions.canonicalEntries).toEqual(
       validApplicationTilingExclusions.canonicalEntries,
     );
@@ -110,6 +130,7 @@ describe("Driftile settings", () => {
 
   it.each([
     {
+      applicationBorderlessExclusions: "",
       applicationColumnWidths: "",
       applicationTilingExclusions: "",
       borderlessWindows: true,
@@ -122,6 +143,7 @@ describe("Driftile settings", () => {
       windowHeightStepPercent: 1,
     },
     {
+      applicationBorderlessExclusions: "org.example.Decorated",
       applicationColumnWidths: "org.example.Browser=80",
       applicationTilingExclusions: "org.example.Legacy",
       borderlessWindows: false,
@@ -137,6 +159,9 @@ describe("Driftile settings", () => {
     const decoded = decodeDriftileSettings(settings);
 
     expect(decoded).not.toBeNull();
+    expect(
+      decoded?.applicationBorderlessExclusions.canonicalEntries.join("\n"),
+    ).toBe(settings.applicationBorderlessExclusions);
     expect(decoded?.applicationColumnWidths.canonicalEntries.join("\n")).toBe(
       settings.applicationColumnWidths,
     );
@@ -165,6 +190,13 @@ describe("Driftile settings", () => {
     [
       "invalid application overrides",
       { applicationColumnWidths: "org.example.Editor=9" },
+    ],
+    [
+      "duplicate application borderless exclusions",
+      {
+        applicationBorderlessExclusions:
+          "org.example.Editor\n org.example.Editor ",
+      },
     ],
     [
       "duplicate application tiling exclusions",
@@ -210,7 +242,7 @@ describe("Driftile settings", () => {
     },
   );
 
-  it("rejects the previous nine-field snapshot", () => {
+  it("rejects the previous ten-field snapshot", () => {
     const incomplete = {
       applicationColumnWidths: validSettingsInput.applicationColumnWidths,
       applicationTilingExclusions:
@@ -221,6 +253,7 @@ describe("Driftile settings", () => {
       columnWidthStepPercent: validSettings.columnWidthStepPercent,
       defaultColumnWidthPercent: validSettings.defaultColumnWidthPercent,
       gap: validSettings.gap,
+      touchpadNavigation: validSettings.touchpadNavigation,
       windowHeightStepPercent: validSettings.windowHeightStepPercent,
     };
 
@@ -245,6 +278,13 @@ describe("Driftile settings", () => {
       throw new Error("application override fixture is invalid");
     }
 
+    const changedApplicationBorderlessExclusions =
+      decodeApplicationBorderlessExclusions("org.example.Other");
+
+    if (!changedApplicationBorderlessExclusions) {
+      throw new Error("application borderless exclusion fixture is invalid");
+    }
+
     const changedColumnWidthPresets =
       decodeColumnWidthPresetPercentages("20,50,90");
 
@@ -260,6 +300,9 @@ describe("Driftile settings", () => {
     }
 
     for (const changed of [
+      {
+        applicationBorderlessExclusions: changedApplicationBorderlessExclusions,
+      },
       { applicationColumnWidths: changedApplicationColumnWidths },
       { applicationTilingExclusions: changedApplicationTilingExclusions },
       { borderlessWindows: true },

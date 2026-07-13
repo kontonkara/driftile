@@ -52,15 +52,42 @@ let
     ''"\u009e"''
     ''"\u009f"''
   ];
+  ecmaScriptNonAsciiTrimCharacters = map builtins.fromJSON [
+    ''"\u00a0"''
+    ''"\u1680"''
+    ''"\u2000"''
+    ''"\u2001"''
+    ''"\u2002"''
+    ''"\u2003"''
+    ''"\u2004"''
+    ''"\u2005"''
+    ''"\u2006"''
+    ''"\u2007"''
+    ''"\u2008"''
+    ''"\u2009"''
+    ''"\u200a"''
+    ''"\u2028"''
+    ''"\u2029"''
+    ''"\u202f"''
+    ''"\u205f"''
+    ''"\u3000"''
+    ''"\ufeff"''
+  ];
   hasControlCharacter =
     value:
     builtins.match ".*[[:cntrl:]].*" value != null
     || lib.any (character: lib.hasInfix character value) c1ControlCharacters;
+  hasEcmaScriptNonAsciiPadding =
+    value:
+    lib.any (
+      character: lib.hasPrefix character value || lib.hasSuffix character value
+    ) ecmaScriptNonAsciiTrimCharacters;
   validDesktopFileName =
     value:
     value != ""
     && builtins.stringLength value <= 255
     && value == lib.strings.trim value
+    && !hasEcmaScriptNonAsciiPadding value
     && !hasControlCharacter value;
   validColumnWidthDesktopFileName = value: validDesktopFileName value && !lib.hasInfix "=" value;
   applicationColumnWidthType =
@@ -85,6 +112,8 @@ let
   );
   renderApplicationTilingExclusions =
     exclusions: lib.concatStringsSep "\n" (builtins.sort builtins.lessThan exclusions);
+  applicationBorderlessExclusionType = applicationTilingExclusionType;
+  renderApplicationBorderlessExclusions = renderApplicationTilingExclusions;
   strictlyIncreasing =
     values:
     builtins.length values < 2
@@ -142,6 +171,12 @@ in
       type = lib.types.nullOr (
         lib.types.submodule {
           options = {
+            applicationBorderlessExclusions = lib.mkOption {
+              type = applicationBorderlessExclusionType;
+              default = [ ];
+              description = "Exact desktop-file IDs keeping KWin borders and title bars.";
+            };
+
             applicationColumnWidths = lib.mkOption {
               type = applicationColumnWidthType;
               default = { };
@@ -255,6 +290,8 @@ in
     (lib.optionalAttrs homeSettings (
       lib.mkIf (cfg.settings != null) {
         qt.kde.settings.kwinrc."Script-${pluginId}" = {
+          ApplicationBorderlessExclusions =
+            renderApplicationBorderlessExclusions cfg.settings.applicationBorderlessExclusions;
           ApplicationColumnWidths = renderApplicationColumnWidths cfg.settings.applicationColumnWidths;
           ApplicationTilingExclusions = renderApplicationTilingExclusions cfg.settings.applicationTilingExclusions;
           BorderlessWindows = cfg.settings.borderlessWindows;

@@ -676,6 +676,7 @@ capture_overview_settings() {
   local key
   local value
   local -a keys=(
+    ApplicationBorderlessExclusions
     ApplicationColumnWidths
     ApplicationTilingExclusions
     BorderlessWindows
@@ -3896,6 +3897,7 @@ set_gap() {
 }
 
 set_application_configuration() {
+  local borderless_exclusions=${3:-}
   local exclusions=$2
   local widths=$1
 
@@ -3912,6 +3914,13 @@ set_application_configuration() {
     --key ApplicationTilingExclusions \
     --type string \
     "$exclusions" || return 1
+
+  kwriteconfig6 \
+    --file "$XDG_CONFIG_HOME/kwinrc" \
+    --group "Script-${plugin_id}" \
+    --key ApplicationBorderlessExclusions \
+    --type string \
+    "$borderless_exclusions" || return 1
 
   busctl --user call \
     org.kde.KWin \
@@ -8114,6 +8123,7 @@ verify_application_tiling_exclusion() {
   local protocol=$1
   local sibling_admitted_frame
   local sibling_baseline
+  local sibling_desktop_file_name
   local sibling_gap_frame
   local sibling_pid
   local sibling_reexcluded_frame
@@ -8152,6 +8162,11 @@ verify_application_tiling_exclusion() {
   sibling_pid=${client_pids[${#client_pids[@]}-1]}
   sibling_baseline=$(capture_stable_geometry "$sibling_title") || \
     fail "the application-exclusion $protocol sibling did not stabilize"
+  sibling_desktop_file_name=$(
+    window_desktop_file_name "$sibling_title" 2>/dev/null || true
+  )
+  [[ "$sibling_desktop_file_name" != "$desktop_file_name" ]] || \
+    fail "the application-exclusion $protocol sibling did not expose a distinct desktop-file ID"
 
   activate_window "$target_title" || \
     fail "KWin could not activate the application-exclusion $protocol target"
@@ -8245,9 +8260,64 @@ verify_application_tiling_exclusion() {
     "$sibling_title" "$sibling_restored_frame" || \
     fail "Driftile changed the re-excluded $protocol frame while restoring its sibling"
 
+  set_application_configuration \
+    "$desktop_file_name=80" \
+    "$desktop_file_name" \
+    "$desktop_file_name" || \
+    fail "KWin could not configure the application-borderless $protocol exclusion"
+  set_borderless_windows true || \
+    fail "KWin could not enable the application-borderless $protocol policy"
+  wait_for_window_border_state "$target_title" false || \
+    fail "Driftile removed the excluded $protocol target decoration"
+  wait_for_window_border_state "$sibling_title" true || \
+    fail "Driftile did not remove the unmatched $protocol sibling decoration"
+  wait_for_active "$target_title" || \
+    fail "Driftile changed $protocol focus while enabling application-borderless exclusions"
+
+  set_application_configuration \
+    "$desktop_file_name=80" \
+    "$desktop_file_name" \
+    "" || \
+    fail "KWin could not clear the application-borderless $protocol exclusion"
+  wait_for_window_border_state "$target_title" true || \
+    fail "Driftile did not claim the newly unmatched $protocol target decoration"
+  wait_for_window_border_state "$sibling_title" true || \
+    fail "Driftile changed the unmatched $protocol sibling borderless state"
+  wait_for_active "$target_title" || \
+    fail "Driftile changed $protocol focus while clearing application-borderless exclusions"
+
+  set_application_configuration \
+    "$desktop_file_name=80" \
+    "$desktop_file_name" \
+    "$desktop_file_name" || \
+    fail "KWin could not restore the application-borderless $protocol exclusion"
+  wait_for_window_border_state "$target_title" false || \
+    fail "Driftile did not restore the excluded $protocol target decoration"
+  wait_for_window_border_state "$sibling_title" true || \
+    fail "Driftile changed the unmatched $protocol sibling borderless state after exclusion restore"
+
+  set_borderless_windows false || \
+    fail "KWin could not disable the application-borderless $protocol policy"
+  wait_for_window_border_state "$target_title" false || \
+    fail "Driftile changed the excluded $protocol target decoration while disabling borderless policy"
+  wait_for_window_border_state "$sibling_title" false || \
+    fail "Driftile did not restore the unmatched $protocol sibling decoration"
+  set_borderless_windows true || \
+    fail "KWin could not re-enable the application-borderless $protocol policy"
+  wait_for_window_border_state "$target_title" false || \
+    fail "Driftile removed the excluded $protocol target decoration after policy re-enable"
+  wait_for_window_border_state "$sibling_title" true || \
+    fail "Driftile did not reclaim the unmatched $protocol sibling decoration"
+  wait_for_active "$target_title" || \
+    fail "Driftile changed $protocol focus during application-borderless policy delivery"
+
   set_plugin_state false
   wait_for_script_state false || \
     fail "KWin did not unload Driftile after the application-exclusion $protocol scenario"
+  wait_for_window_border_state "$target_title" false || \
+    fail "Driftile changed the excluded $protocol target decoration during unload"
+  wait_for_window_border_state "$sibling_title" false || \
+    fail "Driftile did not restore the unmatched $protocol sibling decoration during unload"
   release_shortcut_profile
   restore_application_configuration || \
     fail "KWin could not restore the application-exclusion $protocol configuration"

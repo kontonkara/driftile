@@ -70,6 +70,25 @@ Review the ownership boundary and current exclusions in
 may change the window's role, size constraints, desktop membership, or native
 tiling state.
 
+## A window keeps or loses KWin decorations unexpectedly
+
+First check **Hide KWin borders and title bars on application windows**.
+`BorderlessWindows=false` dominates the per-application list and keeps Driftile
+from applying borderless policy.
+
+For one application, check **Applications keeping KWin borders and title
+bars**. Entries match only the exact, case-sensitive KWin `desktopFileName`;
+there is no fallback to another identity. A missing or empty ID is not
+excluded, and an empty list retains the global behavior. Duplicate, malformed,
+or oversized input rejects the complete settings update and leaves the prior
+snapshot active.
+
+An exclusion preserves the window's existing KWin decoration state; it does not
+force a border onto a window already made borderless by KWin, a Window Rule, or
+the application. Client-side decorations and application toolbars are part of
+the application surface and are not controlled by this setting. List and
+`desktopFileName` changes apply live.
+
 ## A layout does not restore
 
 Persistence is conservative. A corrupt, stale, incompatible, ambiguous, or

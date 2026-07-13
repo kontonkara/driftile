@@ -18,7 +18,7 @@ leaving window, output, and desktop mechanisms to KWin.
 - Manual floating, automatic layout exclusions, minimized-slot retention, and
   native fullscreen and maximize integration.
 - Settled recovery for output, scale, work-area, and window-constraint changes.
-- Configurable gaps, application tiling exclusions, global and
+- Configurable gaps, application tiling and borderless exclusions, global and
   application-specific initial column widths, column-width presets, resize
   steps, horizontal focus centering, and optional borderless presentation.
 - Optional five-finger horizontal touchpad navigation on native Wayland.

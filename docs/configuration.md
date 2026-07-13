@@ -2,7 +2,7 @@
 
 Open **System Settings > Window Management > KWin Scripts** and configure Driftile.
 
-Driftile validates all ten settings as one snapshot. Applying an invalid value
+Driftile validates all eleven settings as one snapshot. Applying an invalid value
 through an external configuration tool rejects the entire update and preserves
 the active settings; valid changes apply without reloading the extension.
 
@@ -10,22 +10,28 @@ the active settings; valid changes apply without reloading the extension.
 
 `programs.driftile.settings` is `null` by default, so Home Manager writes no
 Driftile setting. A non-null value is one complete typed profile: omitted fields
-take the defaults documented below, and Home Manager writes all ten values.
+take the defaults documented below, and Home Manager writes all eleven values.
 This profile works with `programs.driftile.enable = false` when the package is
 installed system-wide.
 
-The activation writes only `ApplicationColumnWidths`,
-`ApplicationTilingExclusions`, `BorderlessWindows`, `CenterFocusedColumn`,
-`Gap`, `DefaultColumnWidthPercent`, `ColumnWidthPresets`,
+The activation writes only `ApplicationBorderlessExclusions`,
+`ApplicationColumnWidths`, `ApplicationTilingExclusions`,
+`BorderlessWindows`, `CenterFocusedColumn`, `Gap`,
+`DefaultColumnWidthPercent`, `ColumnWidthPresets`,
 `ColumnWidthStepPercent`, `TouchpadNavigation`, and
-`WindowHeightStepPercent` in Driftile's `kwinrc` group. It does not replace the
-file or manage shortcuts. A running KWin session is asked to reconfigure on a
-best-effort basis; otherwise the values apply on its next reload or start.
+`WindowHeightStepPercent` in Driftile's `kwinrc` group. It does not replace
+the file or manage shortcuts. A running KWin session is asked to reconfigure
+on a best-effort basis; otherwise the values apply on its next reload or start.
 
-Declare application overrides as a typed attribute set. Home Manager sorts the
-desktop-file IDs before writing the newline-delimited KConfig value.
+Declare application widths as a typed attribute set and exclusions as lists.
+Home Manager sorts desktop-file IDs before writing newline-delimited KConfig
+values.
 
 ```nix
+programs.driftile.settings.applicationBorderlessExclusions = [
+  "org.kde.konsole"
+];
+
 programs.driftile.settings.applicationColumnWidths = {
   "org.kde.konsole" = 60;
   "org.mozilla.firefox" = 80;
@@ -40,10 +46,11 @@ programs.driftile.settings.columnWidthPresets = [ 20 50 80 ];
 programs.driftile.settings.touchpadNavigation = true;
 ```
 
-Widths must be `10`–`100`. Width-override IDs are exact and may not contain `=`.
-Exclusion IDs may contain `=` because the whole line is the ID. Both reject
-control characters, are limited to 255 UTF-8 bytes, and accept at most 128
-entries per policy.
+Widths must be `10`–`100`. Width-override IDs are exact and may not contain
+`=`. Exclusion IDs may contain `=` because the whole line is the ID. Home
+Manager accepts at most 128 unique IDs per exclusion policy, rejects blank,
+whitespace-padded, control-containing, or over-255-byte IDs, and writes each
+list in canonical sorted order.
 
 Changing `settings` back to `null` or removing the Home Manager module import
 stops future writes but leaves the last values in `kwinrc`. Change them through
@@ -149,3 +156,33 @@ The value is a percentage-point step of the gap-adjusted work-area height, not a
 The option controls server-side KWin decorations. Client-side decorations and application toolbars are part of the application surface and may remain visible.
 
 Disabling the option restores decorations that Driftile removed. Unloading the extension does the same. Changes apply on the next KWin reconfigure or Driftile reload.
+
+## Application borderless exclusions
+
+`ApplicationBorderlessExclusions` is a KConfig `String` setting, shown as
+**Applications keeping KWin borders and title bars**. Enter one exact,
+case-sensitive KWin `desktopFileName` per line. A matching otherwise eligible
+window keeps its existing KWin decoration state whether it is tiled, floating,
+a dialog, transient, or utility window. Matching uses no resource-class,
+window-role, or other fallback. A missing or empty `desktopFileName` is not
+excluded.
+
+An empty document retains the global borderless behavior described above. When
+`BorderlessWindows=false`, that global setting dominates: Driftile applies no
+borderless policy regardless of the exclusion list.
+
+The KConfig decoder accepts at most 65,664 characters in the complete document,
+512 characters in each raw line, 128 nonblank unique IDs, and 255 UTF-8 bytes
+in each trimmed ID. It trims surrounding whitespace and ignores blank lines.
+Control characters, invalid UTF-16, an oversized value, or a duplicate after
+trimming rejects the complete eleven-setting snapshot. Accepted IDs have a
+canonical sorted internal form. Home Manager exposes the same policy as
+`programs.driftile.settings.applicationBorderlessExclusions`, a list rendered
+as a sorted newline-delimited KConfig value.
+
+Adding an exclusion live restores only decoration state Driftile claimed;
+removing it lets the enabled global policy claim a decorated match. Changes to
+the list or a window's `desktopFileName` reconcile live without issuing
+Driftile geometry writes or changing focus, layout state, or layout
+persistence. Global disable and extension unload restore owned state, while
+pre-existing borderless state remains untouched.

@@ -5,6 +5,12 @@ import {
   type ApplicationColumnWidthOverrides,
 } from "./application-overrides";
 import {
+  decodeApplicationBorderlessExclusions,
+  EMPTY_APPLICATION_BORDERLESS_EXCLUSIONS,
+  sameApplicationBorderlessExclusions,
+  type ApplicationBorderlessExclusions,
+} from "./application-borderless-exclusions";
+import {
   decodeApplicationTilingExclusions,
   EMPTY_APPLICATION_TILING_EXCLUSIONS,
   sameApplicationTilingExclusions,
@@ -23,9 +29,10 @@ const MIN_DEFAULT_COLUMN_WIDTH_PERCENT = 10;
 const MAX_DEFAULT_COLUMN_WIDTH_PERCENT = 100;
 const MIN_RESIZE_STEP_PERCENT = 1;
 const MAX_RESIZE_STEP_PERCENT = 50;
-const SETTINGS_FIELD_COUNT = 10;
+const SETTINGS_FIELD_COUNT = 11;
 
 export interface DriftileSettings {
+  readonly applicationBorderlessExclusions: ApplicationBorderlessExclusions;
   readonly applicationColumnWidths: ApplicationColumnWidthOverrides;
   readonly applicationTilingExclusions: ApplicationTilingExclusions;
   readonly borderlessWindows: boolean;
@@ -39,6 +46,7 @@ export interface DriftileSettings {
 }
 
 export const DEFAULT_DRIFTILE_SETTINGS: DriftileSettings = Object.freeze({
+  applicationBorderlessExclusions: EMPTY_APPLICATION_BORDERLESS_EXCLUSIONS,
   applicationColumnWidths: EMPTY_APPLICATION_COLUMN_WIDTH_OVERRIDES,
   applicationTilingExclusions: EMPTY_APPLICATION_TILING_EXCLUSIONS,
   borderlessWindows: true,
@@ -62,6 +70,7 @@ export function decodeDriftileSettings(
 
   if (
     Reflect.ownKeys(candidate).length !== SETTINGS_FIELD_COUNT ||
+    !owns(candidate, "applicationBorderlessExclusions") ||
     !owns(candidate, "applicationColumnWidths") ||
     !owns(candidate, "applicationTilingExclusions") ||
     !owns(candidate, "borderlessWindows") ||
@@ -76,6 +85,9 @@ export function decodeDriftileSettings(
     return null;
   }
 
+  const applicationBorderlessExclusions = decodeApplicationBorderlessExclusions(
+    candidate["applicationBorderlessExclusions"],
+  );
   const applicationColumnWidths = decodeApplicationColumnWidthOverrides(
     candidate["applicationColumnWidths"],
   );
@@ -94,6 +106,7 @@ export function decodeDriftileSettings(
   const windowHeightStepPercent = candidate["windowHeightStepPercent"];
 
   if (
+    !applicationBorderlessExclusions ||
     !applicationColumnWidths ||
     !applicationTilingExclusions ||
     typeof borderlessWindows !== "boolean" ||
@@ -121,6 +134,7 @@ export function decodeDriftileSettings(
   }
 
   return Object.freeze({
+    applicationBorderlessExclusions,
     applicationColumnWidths,
     applicationTilingExclusions,
     borderlessWindows,
@@ -139,6 +153,10 @@ export function sameDriftileSettings(
   right: DriftileSettings,
 ): boolean {
   return (
+    sameApplicationBorderlessExclusions(
+      left.applicationBorderlessExclusions,
+      right.applicationBorderlessExclusions,
+    ) &&
     sameApplicationColumnWidthOverrides(
       left.applicationColumnWidths,
       right.applicationColumnWidths,

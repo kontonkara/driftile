@@ -70,7 +70,11 @@ The current runtime already:
 - Moves one relation-free floating window between adjacent or numbered desktops without changing its frame or either tiled layout.
 - Moves the whole active column to an adjacent output with deterministic spatial routing, atomic visible-context reflow, and no layout geometry writes for settled minimized passive members. A secondary single-window transfer uses the same retained-source policy without output, desktop, or geometry writes to settled minimized peers.
 - Keeps default whole-column and secondary single-window transfer paths fail-closed when a minimized window is outside the active member's source column or is already in the target context.
-- Optionally removes application-window decorations independently of layout ownership while preserving pre-existing borderless state, reasserting owned policy, and restoring owned state on disable.
+- Optionally removes application-window decorations independently of layout
+  ownership while preserving pre-existing borderless state, reasserting owned
+  policy, and restoring owned state on disable. Up to 128 exact
+  `desktopFileName` exclusions keep matching applications under KWin's existing
+  decoration policy.
 - Applies a global 0–64 logical-pixel tiled-window gap live without mutating layout order, sizing policies, focus, floating frames, or minimized frames.
 - Configures a 10%–100% default width for newly admitted columns, fresh cross-context retiles, and explicit reset without changing existing column width policies.
 - Configures up to 128 exact `desktopFileName` initial singleton widths, with a
@@ -90,7 +94,7 @@ The current runtime already:
 - Registers compact default shortcuts with `H/J/K/L`, arrow, Home/End, and Page Up/Down aliases.
 - Provides a reversible shortcut helper for the bundled defaults and explicit
   JSON v1 profiles; a UI without a Node.js dependency remains future work.
-- Lets Home Manager write the ten typed settings or generate a portable
+- Lets Home Manager write the eleven typed settings or generate a portable
   shortcut profile without installing a second KWin package; shortcut claiming
   remains explicit.
 - Leaves dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows outside layout ownership, separate from manual floating.
@@ -510,16 +514,27 @@ Release criteria (met):
 ## 1.10.0 (in development)
 
 The bounded 1.10.0 slice adds exact per-application exclusions to optional
-borderless presentation. One empty-default `ApplicationBorderlessExclusions`
-setting matches exact, case-sensitive KWin `desktopFileName` values. Its
-deterministic bounded parser builds a `Set` for O(1) membership checks. Home
-Manager exposes the same policy as a list.
+borderless presentation. `ApplicationBorderlessExclusions` is an empty-default
+KConfig `String` with one exact, case-sensitive KWin `desktopFileName` per line;
+Home Manager exposes
+`programs.driftile.settings.applicationBorderlessExclusions` as a list and
+writes canonical sorted entries.
+
+The shared deterministic decoder accepts at most 128 unique nonblank entries,
+255 UTF-8 bytes per trimmed ID, 512 raw characters per line, and 65,664
+characters per document. Blank lines are ignored. Duplicates, control
+characters, invalid UTF-16, and oversized input reject the complete eleven-field
+snapshot. Valid entries are stored in sorted canonical form with `O(1)`
+membership checks. Matching has no identity fallback; a missing or empty
+`desktopFileName` is not excluded.
 
 When `BorderlessWindows` is false, the global setting dominates and Driftile
 does not apply borderless policy. Live application-identity and settings
-reconciliation preserves geometry and focus while acquiring, reasserting, or
-releasing only decoration state owned by Driftile. The behavior covers native
-Wayland, XWayland, and native X11 windows.
+reconciliation issues no geometry writes and preserves focus while acquiring,
+reasserting, or releasing only decoration state owned by Driftile. It does not
+change layout state or layout persistence. The behavior covers otherwise
+eligible tiled, floating, dialog, transient, and utility windows on native
+Wayland, XWayland, and native X11.
 
 This slice adds no action, binding, persistence-format, or overview change.
 KWin's shared outline has no ownership mechanism, so it cannot safely provide
@@ -529,9 +544,11 @@ Release criteria:
 
 - A blank exclusion list preserves the current borderless behavior.
 - Exact matches retain their existing decoration state while non-matches obey
-  the enabled global policy; disabling that policy restores owned state.
-- Identity and settings changes reconcile live without geometry or focus
-  writes and without taking ownership of pre-existing borderless state.
+  the enabled global policy; disabling that policy or unloading restores only
+  owned state.
+- Identity and settings changes reconcile live without geometry writes, focus
+  changes, or layout-state or layout-persistence changes and without taking
+  ownership of pre-existing borderless state.
 - Parser, runtime, Home Manager, Wayland, XWayland, and native X11 checks pass.
 
 ## Post-v1

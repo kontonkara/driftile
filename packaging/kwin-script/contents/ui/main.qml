@@ -689,6 +689,7 @@ QtObject {
 
     function readSettings() {
         return {
+            applicationBorderlessExclusions: KWin.readConfig("ApplicationBorderlessExclusions", ""),
             applicationColumnWidths: KWin.readConfig("ApplicationColumnWidths", ""),
             applicationTilingExclusions: KWin.readConfig("ApplicationTilingExclusions", ""),
             borderlessWindows: KWin.readConfig("BorderlessWindows", true),

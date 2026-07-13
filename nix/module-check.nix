@@ -236,6 +236,22 @@ let
         programs.driftile.settings = null;
       }
       { };
+  homeManagerOptionSurface =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      { }
+      { };
+  nixosOptionSurface =
+    evaluate nixosModule
+      [
+        "environment"
+        "systemPackages"
+      ]
+      { }
+      { };
   homeManagerSettings =
     evaluate homeManagerModule
       [
@@ -244,6 +260,10 @@ let
       ]
       {
         programs.driftile.settings = {
+          applicationBorderlessExclusions = [
+            "org.example.Terminal"
+            "org.example.Browser"
+          ];
           applicationColumnWidths = {
             "org.example.Browser" = 80;
             "org.example.Editor" = 60;
@@ -331,6 +351,30 @@ let
         ) 128;
       }
       { };
+  homeManagerMaximumBorderlessExclusions =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.settings.applicationBorderlessExclusions = builtins.genList (
+          index: "org.example.App${toString index}"
+        ) 128;
+      }
+      { };
+  homeManagerMaximumBorderlessIdentifier =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.settings.applicationBorderlessExclusions = [
+          (builtins.concatStringsSep "" (builtins.genList (_: "é") 127) + "a")
+        ];
+      }
+      { };
   homeManagerSettingsCollision =
     evaluate homeManagerModule
       [
@@ -347,6 +391,43 @@ let
         programs.driftile.enable = true;
       };
   invalidSettings = [
+    { applicationBorderlessExclusions = "org.example.Editor"; }
+    { applicationBorderlessExclusions = [ 1 ]; }
+    { applicationBorderlessExclusions = [ "" ]; }
+    { applicationBorderlessExclusions = [ " org.example.Editor" ]; }
+    { applicationBorderlessExclusions = [ "org.example.Editor " ]; }
+    {
+      applicationBorderlessExclusions = [
+        (builtins.fromJSON ''"\u00a0org.example.Editor"'')
+      ];
+    }
+    { applicationBorderlessExclusions = [ "org.example\nEditor" ]; }
+    {
+      applicationBorderlessExclusions = [
+        (builtins.fromJSON ''"org.example.\u0080Editor"'')
+      ];
+    }
+    {
+      applicationBorderlessExclusions = [
+        (builtins.concatStringsSep "" (builtins.genList (_: "a") 256))
+      ];
+    }
+    {
+      applicationBorderlessExclusions = [
+        (builtins.concatStringsSep "" (builtins.genList (_: "é") 128))
+      ];
+    }
+    {
+      applicationBorderlessExclusions = [
+        "org.example.Editor"
+        "org.example.Editor"
+      ];
+    }
+    {
+      applicationBorderlessExclusions = builtins.genList (
+        index: "org.example.App${toString index}"
+      ) 129;
+    }
     { borderlessWindows = "false"; }
     { centerFocusedColumn = "true"; }
     { touchpadNavigation = "true"; }
@@ -447,6 +528,9 @@ let
     !evaluated.success;
   expectedSettings = {
     kwinrc."Script-io.github.kontonkara.driftile" = {
+      ApplicationBorderlessExclusions = ''
+        org.example.Browser
+        org.example.Terminal'';
       ApplicationColumnWidths = ''
         org.example.Browser=80
         org.example.Editor=60'';
@@ -465,6 +549,7 @@ let
   };
   expectedDefaultSettings = {
     kwinrc."Script-io.github.kontonkara.driftile" = {
+      ApplicationBorderlessExclusions = "";
       ApplicationColumnWidths = "";
       ApplicationTilingExclusions = "";
       BorderlessWindows = true;
@@ -502,6 +587,8 @@ assert packagePaths [ "home" "packages" ] homeManagerProfileWithSystemInstall ==
 assert homeManagerProfileWithSystemInstall.config.xdg.configFile ? "driftile/shortcuts.json";
 assert homeManagerWithoutProfile.config.xdg.configFile == { };
 assert homeManagerWithoutSettings.config.qt.kde.settings == { };
+assert homeManagerOptionSurface.options.programs.driftile ? settings;
+assert !(nixosOptionSurface.options.programs.driftile ? settings);
 assert packagePaths [ "home" "packages" ] homeManagerSettings == [ ];
 assert
   packagePaths [ "home" "packages" ] homeManagerDefaultSettings == [ (toString defaultPackage) ];
@@ -510,6 +597,13 @@ assert homeManagerSettingsWithSystemInstall.config.assertions == [ ];
 assert map (entry: entry.assertion) homeManagerSettingsCollision.config.assertions == [ false ];
 assert homeManagerSettings.config.qt.kde.settings == expectedSettings;
 assert homeManagerDefaultSettings.config.qt.kde.settings == expectedDefaultSettings;
+assert
+  builtins.length (builtins.attrNames expectedSettings.kwinrc."Script-io.github.kontonkara.driftile")
+  == 11;
+assert
+  builtins.length (
+    builtins.attrNames expectedDefaultSettings.kwinrc."Script-io.github.kontonkara.driftile"
+  ) == 11;
 assert
   builtins.length (
     lib.splitString "\n"
@@ -521,11 +615,20 @@ assert
       homeManagerMaximumExclusions.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ApplicationTilingExclusions
   ) == 128;
 assert
+  builtins.length (
+    lib.splitString "\n"
+      homeManagerMaximumBorderlessExclusions.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ApplicationBorderlessExclusions
+  ) == 128;
+assert
+  builtins.stringLength homeManagerMaximumBorderlessIdentifier.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ApplicationBorderlessExclusions
+  == 255;
+assert
   homeManagerMaximumPresets.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ColumnWidthPresets
   == "10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25";
 assert
   homeManagerSettingsWithSystemInstall.config.qt.kde.settings == {
     kwinrc."Script-io.github.kontonkara.driftile" = {
+      ApplicationBorderlessExclusions = "";
       ApplicationColumnWidths = "";
       ApplicationTilingExclusions = "";
       BorderlessWindows = true;

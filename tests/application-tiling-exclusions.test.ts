@@ -101,6 +101,7 @@ describe("application tiling exclusion codec", () => {
     );
     expect(decodeApplicationTilingExclusions(maximumRaw)).not.toBeNull();
     expect(decodeApplicationTilingExclusions(`${maximumRaw} `)).toBeNull();
+    expect(decodeApplicationTilingExclusions(" ".repeat(513))).toBeNull();
     expect(
       decodeApplicationTilingExclusions(`${maximumIdentifier}a`),
     ).toBeNull();
