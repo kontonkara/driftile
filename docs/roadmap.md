@@ -134,10 +134,12 @@ presentation modes. It extends the published 0.1.0 scope.
 
 Persistence foundation complete: core has a strict logical-state codec, a bounded four-entry v2 topology catalog, fail-closed window and output matching, side-effect-free canonical runtime capture, and all-or-nothing hydration. Stable changed snapshots reach the debounced opaque `QtCore.Settings` store; bare v1 state migrates without changing the storage key. Runtime startup reselects a complete settled topology, applies exact reload state or a complete strong-descriptor cross-session match atomically, waits boundedly for late windows behind a no-admission barrier, and requires a quiet candidate before commit. An additive known-output return restores an exact tiled layout per output without repatriating windows or rebuilding unchanged contexts; unsafe plans use normal topology recovery. Replaced window objects receive fresh restore baselines. Isolated Wayland and X11 sessions verify idempotent script reloads.
 
-Same-context pointer reinsertion and cross-output pointer adoption are complete
-for one active normal tiled window and one exact visible tiled target. A
-focused two-head VM verifies the KWin-owned cross-output path with native
-Wayland and XWayland applications.
+The current pointer baseline covers same-context reinsertion, cross-output
+adoption, and same-output cross-desktop adoption for one active normal tiled
+window and one exact visible tiled target. A focused two-head VM verifies the
+KWin-owned cross-output path, while the full VM verifies same-output
+cross-desktop adoption with native Wayland and XWayland applications. Packaged
+native X11 covers the global-desktop fallback.
 
 Compatibility, migration, and troubleshooting guidance is published. A
 separate visible lifecycle VM verifies a clean published 0.1.0 install and
@@ -312,7 +314,7 @@ Release criteria:
 Add interaction and presentation features outside the frozen v1 scope without
 taking over compositor mechanisms.
 
-- Add cross-desktop pointer rearrangement and visual drop feedback.
+- Add visual drop feedback for pointer operations.
 - Add tabbed column presentation and matching pointer navigation.
 - Add application-specific policies beyond initial column widths and an
   expanded settings UI.
