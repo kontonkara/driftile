@@ -1,10 +1,8 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0, 1.1.0, 1.2.0, 1.3.0, and 1.4.0 are released. The
-delivered milestones and release criteria below are a historical record.
-Version 1.5.0 is scope-frozen at `1.5.0-rc.1`; only release-blocking fixes and
-release documentation remain before stable promotion. The remaining post-v1
-direction is not a committed release schedule.
+Versions 0.1.0, 1.0.0, 1.1.0, 1.2.0, 1.3.0, 1.4.0, and 1.5.0 are released.
+The delivered milestones and release criteria below are a historical record.
+The remaining post-v1 direction is not a committed release schedule.
 
 ## Foundation (delivered)
 
@@ -280,23 +278,24 @@ Release criteria (met):
   direction mapping. Packaged native Wayland confirms handler construction;
   native X11 confirms the no-op contract.
 
-## 1.5.0 (release candidate)
+## 1.5.0 (released)
 
-The frozen 1.5.0 slice extends finish-only pointer adoption to a window that
+The bounded 1.5.0 release extends finish-only pointer adoption to a window that
 KWin moves between virtual desktops on the same output. Once the move settles
 on a visible destination desktop, releasing over exactly one eligible tiled
 target inserts the window before or after it by vertical midpoint. Empty,
 ambiguous, stale, blocked, or raced targets retain KWin's completed move and
 use normal singleton admission.
 
-Version `1.5.0-rc.1` is the current candidate.
+Version `1.5.0-rc.1` validated the final packages before stable promotion
+without behavior changes.
 
-Driftile does not initiate desktop switching or membership changes. The slice
-adds no visual feedback, settings, shortcut actions, bindings, gestures,
-persistence-format changes, overview interaction, or compositor ownership.
-The hidden source desktop receives no geometry writes.
+Driftile does not initiate desktop switching or membership changes. The
+release adds no visual feedback, settings, shortcut actions, bindings,
+gestures, persistence-format changes, overview interaction, or compositor
+ownership. The hidden source desktop receives no geometry writes.
 
-Frozen candidate criteria:
+Release criteria (met):
 
 - Membership-before-finish and finish-before-membership event orders produce
   the same exact transfer, including the native X11 global-desktop fallback.
