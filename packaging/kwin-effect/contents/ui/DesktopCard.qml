@@ -12,7 +12,8 @@ Rectangle {
     required property var screen
 
     signal desktopTapped(var candidate, string expectedDesktopId, var expectedScreen)
-    signal windowTapped(var candidate, string expectedWindowId, var expectedDesktop, string expectedDesktopId)
+    signal windowTapped(var candidate, string expectedWindowId, var expectedDesktop, string expectedDesktopId,
+                        var expectedScreen)
 
     readonly property var columns: context ? context.columns : []
     readonly property real contentLeft: 42
@@ -153,8 +154,9 @@ Rectangle {
                 TapHandler {
                     acceptedButtons: Qt.LeftButton
                     acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
-                    enabled: card.current && thumbnailShell.visible
-                    onTapped: card.windowTapped(model.window, thumbnailShell.windowId, card.desktop, card.desktopId)
+                    enabled: thumbnailShell.visible && card.desktop && card.screen
+                    onTapped: card.windowTapped(model.window, thumbnailShell.windowId, card.desktop, card.desktopId,
+                                                card.screen)
                 }
             }
         }

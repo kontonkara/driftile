@@ -69,59 +69,98 @@ Rectangle {
             screen: root.targetScreen
             onDesktopTapped: (candidate, expectedDesktopId, expectedScreen) => root.selectDesktop(
                                  candidate, expectedDesktopId, expectedScreen)
-            onWindowTapped: (candidate, expectedWindowId, expectedDesktop, expectedDesktopId) => root.focusWindow(
-                                candidate, expectedWindowId, expectedDesktop, expectedDesktopId)
+            onWindowTapped: (candidate, expectedWindowId, expectedDesktop, expectedDesktopId, expectedScreen) =>
+                                root.focusWindow(candidate, expectedWindowId, expectedDesktop, expectedDesktopId,
+                                                 expectedScreen)
         }
     }
 
     function selectDesktop(candidate, expectedDesktopId, expectedScreen) {
+        const effect = sceneEffect;
         const model = overviewModel;
-        if (!sceneEffect || sceneEffect.active !== true || !model || !candidate || expectedDesktopId.length === 0
-                || !targetScreen || expectedScreen !== targetScreen) {
+        const liveScreen = liveScreenFor(expectedScreen);
+        const expectedOutput = projectedOutput(model, liveScreen);
+        const expectedOutputId = expectedOutput ? String(expectedOutput.outputId) : "";
+        const liveDesktop = liveDesktopFor(candidate, expectedDesktopId);
+        if (!desktopContextIsExact(effect, model, liveScreen, expectedOutput, expectedOutputId, liveDesktop,
+                                   expectedDesktopId)) {
             return;
         }
 
-        const screens = KWin.Workspace.screens;
-        let liveScreen = null;
-        for (const screen of screens) {
-            if (screen === expectedScreen) {
-                if (liveScreen !== null) {
-                    return;
-                }
-                liveScreen = screen;
-            }
-        }
-        if (liveScreen === null) {
+        if (!requestDesktopSelection(effect, model, liveScreen, expectedOutput, expectedOutputId, liveDesktop,
+                                     expectedDesktopId)) {
             return;
         }
+        effect.deactivate();
+    }
 
-        const expectedOutputId = outputId;
-        if (expectedOutputId.length === 0 || projectedOutputId(model, liveScreen) !== expectedOutputId) {
-            return;
-        }
-
-        let liveDesktop = null;
-        for (const desktop of KWin.Workspace.desktops) {
-            if (desktop === candidate && String(desktop.id) === expectedDesktopId) {
-                if (liveDesktop !== null) {
-                    return;
-                }
-                liveDesktop = desktop;
-            }
-        }
-        if (liveDesktop === null || sceneEffect.active !== true || sceneEffect.overviewModel !== model
-                || overviewModel !== model || targetScreen !== liveScreen || outputId !== expectedOutputId) {
-            return;
-        }
-
-        const hasSceneDesktop = typeof KWin.SceneView.currentDesktop !== "undefined";
-        if (!hasSceneDesktop && (screens.length !== 1 || screens[0] !== liveScreen)) {
+    function focusWindow(candidate, expectedWindowId, expectedDesktop, expectedDesktopId, expectedScreen) {
+        const effect = sceneEffect;
+        const model = overviewModel;
+        const liveScreen = liveScreenFor(expectedScreen);
+        const expectedOutput = projectedOutput(model, liveScreen);
+        const expectedOutputId = expectedOutput ? String(expectedOutput.outputId) : "";
+        const liveDesktop = liveDesktopFor(expectedDesktop, expectedDesktopId);
+        const expectedActivityId = String(KWin.Workspace.currentActivity);
+        if (!desktopContextIsExact(effect, model, liveScreen, expectedOutput, expectedOutputId, liveDesktop,
+                                   expectedDesktopId) || !windowContextIsExact(candidate, expectedWindowId,
+                                                                               liveScreen, liveDesktop,
+                                                                               expectedDesktopId,
+                                                                               expectedActivityId, false)) {
             return;
         }
 
         const activeDesktop = currentDesktop;
-        if (!activeDesktop || activeDesktop === liveDesktop || String(activeDesktop.id) === expectedDesktopId) {
+        if (!activeDesktop) {
             return;
+        }
+
+        let desktopSelectionConfirmed = false;
+        if (activeDesktop !== liveDesktop || String(activeDesktop.id) !== expectedDesktopId) {
+            if (!requestDesktopSelection(effect, model, liveScreen, expectedOutput, expectedOutputId, liveDesktop,
+                                         expectedDesktopId)) {
+                return;
+            }
+            desktopSelectionConfirmed = true;
+        }
+
+        let focusConfirmed = false;
+        const selectedDesktop = currentDesktop;
+        if (selectedDesktop === liveDesktop && String(selectedDesktop.id) === expectedDesktopId && desktopContextIsExact(
+                    effect, model, liveScreen, expectedOutput, expectedOutputId, liveDesktop, expectedDesktopId)
+                && windowContextIsExact(candidate, expectedWindowId, liveScreen, liveDesktop, expectedDesktopId,
+                                        expectedActivityId, true)) {
+            try {
+                if (KWin.Workspace.activeWindow !== candidate) {
+                    KWin.Workspace.activeWindow = candidate;
+                }
+                focusConfirmed = KWin.Workspace.activeWindow === candidate;
+            } catch (error) {
+                focusConfirmed = false;
+            }
+        }
+
+        if (focusConfirmed || desktopSelectionConfirmed) {
+            effect.deactivate();
+        }
+    }
+
+    function requestDesktopSelection(effect, model, liveScreen, expectedOutput, expectedOutputId, liveDesktop,
+                                     expectedDesktopId) {
+        if (!desktopContextIsExact(effect, model, liveScreen, expectedOutput, expectedOutputId, liveDesktop,
+                                   expectedDesktopId)) {
+            return false;
+        }
+
+        const screens = KWin.Workspace.screens;
+        const hasSceneDesktop = typeof KWin.SceneView.currentDesktop !== "undefined";
+        if (!hasSceneDesktop && (screens.length !== 1 || screens[0] !== liveScreen)) {
+            return false;
+        }
+
+        const activeDesktop = currentDesktop;
+        if (!activeDesktop || activeDesktop === liveDesktop || String(activeDesktop.id) === expectedDesktopId) {
+            return false;
         }
 
         try {
@@ -131,38 +170,36 @@ Rectangle {
                 KWin.Workspace.currentDesktop = liveDesktop;
             }
         } catch (error) {
-            return;
+            return false;
         }
 
         const selectedDesktop = currentDesktop;
-        if (selectedDesktop !== liveDesktop || String(selectedDesktop.id) !== expectedDesktopId) {
-            return;
-        }
-        sceneEffect.deactivate();
+        return selectedDesktop === liveDesktop && String(selectedDesktop.id) === expectedDesktopId;
     }
 
-    function focusWindow(candidate, expectedWindowId, expectedDesktop, expectedDesktopId) {
-        if (!sceneEffect || sceneEffect.active !== true || !candidate || candidate.deleted || candidate.hidden
-                || candidate.minimized || candidate.wantsInput !== true || expectedWindowId.length === 0
-                || String(candidate.internalId) !== expectedWindowId || expectedDesktopId.length === 0 || !targetScreen
-                || candidate.output !== targetScreen) {
-            return;
+    function desktopContextIsExact(effect, model, liveScreen, expectedOutput, expectedOutputId, liveDesktop,
+                                   expectedDesktopId) {
+        if (!effect || effect !== sceneEffect || effect.active !== true || !model || effect.overviewModel !== model
+                || overviewModel !== model || !liveScreen || targetScreen !== liveScreen
+                || liveScreenFor(liveScreen) !== liveScreen || !expectedOutput || expectedOutputId.length === 0
+                || String(expectedOutput.outputId) !== expectedOutputId || outputId !== expectedOutputId
+                || projectedOutput(model, liveScreen) !== expectedOutput || !liveDesktop || expectedDesktopId.length === 0
+                || String(liveDesktop.id) !== expectedDesktopId
+                || liveDesktopFor(liveDesktop, expectedDesktopId) !== liveDesktop) {
+            return false;
         }
 
-        const activeDesktop = currentDesktop;
-        if (!activeDesktop || activeDesktop !== expectedDesktop || String(activeDesktop.id) !== expectedDesktopId
-                || !windowUsesDesktop(candidate, expectedDesktop, expectedDesktopId) || !windowUsesCurrentActivity(
-                    candidate)) {
-            return;
-        }
+        return true;
+    }
 
-        if (KWin.Workspace.activeWindow !== candidate) {
-            KWin.Workspace.activeWindow = candidate;
-        }
-        if (KWin.Workspace.activeWindow !== candidate) {
-            return;
-        }
-        sceneEffect.deactivate();
+    function windowContextIsExact(candidate, expectedWindowId, liveScreen, liveDesktop, expectedDesktopId,
+                                  expectedActivityId, rejectHidden) {
+        return candidate && !candidate.deleted && !candidate.minimized && candidate.wantsInput === true
+                && (!rejectHidden || !candidate.hidden) && expectedWindowId.length > 0
+                && String(candidate.internalId) === expectedWindowId && candidate.output === liveScreen
+                && String(KWin.Workspace.currentActivity) === expectedActivityId
+                && windowUsesDesktop(candidate, liveDesktop, expectedDesktopId)
+                && windowUsesActivity(candidate, expectedActivityId);
     }
 
     function windowUsesDesktop(candidate, expectedDesktop, expectedDesktopId) {
@@ -183,7 +220,7 @@ Rectangle {
         return false;
     }
 
-    function windowUsesCurrentActivity(candidate) {
+    function windowUsesActivity(candidate, expectedActivityId) {
         const activities = candidate.activities;
         if (!activities) {
             return false;
@@ -192,9 +229,8 @@ Rectangle {
             return true;
         }
 
-        const currentActivity = String(KWin.Workspace.currentActivity);
         for (const activity of activities) {
-            if (String(activity) === currentActivity) {
+            if (String(activity) === expectedActivityId) {
                 return true;
             }
         }
@@ -233,22 +269,55 @@ Rectangle {
     }
 
     function projectedOutputId(model, screen) {
+        const output = projectedOutput(model, screen);
+        return output ? String(output.outputId) : "";
+    }
+
+    function projectedOutput(model, screen) {
         if (!model || !screen) {
-            return "";
+            return null;
         }
 
         const screenName = String(screen.name);
-        let projectedId = "";
+        let projected = null;
         for (const output of model.outputs) {
             if (output.name === screenName && outputDescriptorsMatch(output, screen)) {
-                if (projectedId.length > 0) {
-                    return "";
+                if (projected !== null) {
+                    return null;
                 }
-                projectedId = output.outputId;
+                projected = output;
             }
         }
 
-        return projectedId;
+        return projected;
+    }
+
+    function liveScreenFor(expectedScreen) {
+        let liveScreen = null;
+        for (const screen of KWin.Workspace.screens) {
+            if (screen === expectedScreen) {
+                if (liveScreen !== null) {
+                    return null;
+                }
+                liveScreen = screen;
+            }
+        }
+
+        return liveScreen;
+    }
+
+    function liveDesktopFor(expectedDesktop, expectedDesktopId) {
+        let liveDesktop = null;
+        for (const desktop of KWin.Workspace.desktops) {
+            if (desktop === expectedDesktop && String(desktop.id) === expectedDesktopId) {
+                if (liveDesktop !== null) {
+                    return null;
+                }
+                liveDesktop = desktop;
+            }
+        }
+
+        return liveDesktop;
     }
 
     function outputDescriptorsMatch(output, screen) {

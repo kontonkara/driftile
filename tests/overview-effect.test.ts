@@ -89,17 +89,25 @@ describe("overview effect package", () => {
     );
   });
 
-  it("focuses only a valid current-context thumbnail on a left click", () => {
+  it("activates current and non-current thumbnails through one guarded path", () => {
     const focusHandler = scene.slice(
       scene.indexOf("function focusWindow("),
+      scene.indexOf("function requestDesktopSelection("),
+    );
+    const desktopContext = scene.slice(
+      scene.indexOf("function desktopContextIsExact("),
+      scene.indexOf("function windowContextIsExact("),
+    );
+    const windowContext = scene.slice(
+      scene.indexOf("function windowContextIsExact("),
       scene.indexOf("function windowUsesDesktop("),
     );
     const desktopMembership = scene.slice(
       scene.indexOf("function windowUsesDesktop("),
-      scene.indexOf("function windowUsesCurrentActivity("),
+      scene.indexOf("function windowUsesActivity("),
     );
     const activityMembership = scene.slice(
-      scene.indexOf("function windowUsesCurrentActivity("),
+      scene.indexOf("function windowUsesActivity("),
       scene.indexOf("function orderedDesktopIds("),
     );
     const numberGutter = desktopCard.slice(
@@ -119,29 +127,86 @@ describe("overview effect package", () => {
       "acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad",
     );
     expect(thumbnail).toContain(
-      "enabled: card.current && thumbnailShell.visible",
+      "enabled: thumbnailShell.visible && card.desktop && card.screen",
     );
+    expect(thumbnail).not.toContain("enabled: card.current");
     expect(thumbnail).toContain(
-      "card.windowTapped(model.window, thumbnailShell.windowId, card.desktop, card.desktopId)",
+      "card.windowTapped(model.window, thumbnailShell.windowId, card.desktop, card.desktopId,",
+    );
+    expect(thumbnail).toContain("card.screen)");
+    expect(scene).toMatch(
+      /onWindowTapped:\s*\(candidate, expectedWindowId, expectedDesktop, expectedDesktopId, expectedScreen\)\s*=>\s*root\.focusWindow\(candidate, expectedWindowId, expectedDesktop, expectedDesktopId,\s*expectedScreen\)/u,
     );
 
-    expect(focusHandler).toContain("!sceneEffect");
-    expect(focusHandler).toContain("sceneEffect.active !== true");
-    expect(focusHandler).toContain("!candidate");
-    expect(focusHandler).toContain("candidate.deleted");
-    expect(focusHandler).toContain("candidate.hidden");
-    expect(focusHandler).toContain("candidate.minimized");
-    expect(focusHandler).toContain("candidate.wantsInput !== true");
+    expect(focusHandler).toContain("const effect = sceneEffect;");
+    expect(focusHandler).toContain("const model = overviewModel;");
     expect(focusHandler).toContain(
-      "String(candidate.internalId) !== expectedWindowId",
+      "const liveScreen = liveScreenFor(expectedScreen);",
     );
-    expect(focusHandler).toContain("!targetScreen");
-    expect(focusHandler).toContain("candidate.output !== targetScreen");
-    expect(focusHandler).toContain("activeDesktop !== expectedDesktop");
     expect(focusHandler).toContain(
-      "String(activeDesktop.id) !== expectedDesktopId",
+      "const expectedOutput = projectedOutput(model, liveScreen);",
     );
-    expect(focusHandler).toContain("expectedDesktopId.length === 0");
+    expect(focusHandler).toContain(
+      "const liveDesktop = liveDesktopFor(expectedDesktop, expectedDesktopId);",
+    );
+    expect(focusHandler).toContain(
+      "const expectedActivityId = String(KWin.Workspace.currentActivity);",
+    );
+    expect(focusHandler).toMatch(
+      /desktopContextIsExact\(effect, model, liveScreen, expectedOutput, expectedOutputId, liveDesktop,\s*expectedDesktopId\) \|\| !windowContextIsExact\(candidate, expectedWindowId,\s*liveScreen, liveDesktop,\s*expectedDesktopId,\s*expectedActivityId, false\)/u,
+    );
+    expect(focusHandler).toContain("const activeDesktop = currentDesktop;");
+    expect(focusHandler).toMatch(
+      /if \(activeDesktop !== liveDesktop \|\| String\(activeDesktop\.id\) !== expectedDesktopId\) \{\s*if \(!requestDesktopSelection\([\s\S]*?\)\) \{\s*return;\s*\}\s*desktopSelectionConfirmed = true;\s*\}/u,
+    );
+    expect(focusHandler).toContain("const selectedDesktop = currentDesktop;");
+    expect(focusHandler).toContain("selectedDesktop === liveDesktop");
+    expect(focusHandler).toContain(
+      "String(selectedDesktop.id) === expectedDesktopId",
+    );
+    expect(focusHandler).toMatch(
+      /windowContextIsExact\(candidate, expectedWindowId, liveScreen, liveDesktop, expectedDesktopId,\s*expectedActivityId, true\)/u,
+    );
+    expect(focusHandler).toContain("catch (error)");
+    expect(focusHandler).toContain("focusConfirmed = false;");
+    expect(focusHandler).toContain(
+      "focusConfirmed = KWin.Workspace.activeWindow === candidate;",
+    );
+
+    expect(desktopContext).toContain("effect !== sceneEffect");
+    expect(desktopContext).toContain("effect.active !== true");
+    expect(desktopContext).toContain("effect.overviewModel !== model");
+    expect(desktopContext).toContain("overviewModel !== model");
+    expect(desktopContext).toContain("targetScreen !== liveScreen");
+    expect(desktopContext).toContain(
+      "liveScreenFor(liveScreen) !== liveScreen",
+    );
+    expect(desktopContext).toContain(
+      "projectedOutput(model, liveScreen) !== expectedOutput",
+    );
+    expect(desktopContext).toContain("outputId !== expectedOutputId");
+    expect(desktopContext).toContain(
+      "liveDesktopFor(liveDesktop, expectedDesktopId) !== liveDesktop",
+    );
+
+    expect(windowContext).toContain("!candidate.deleted");
+    expect(windowContext).toContain("!candidate.minimized");
+    expect(windowContext).toContain("candidate.wantsInput === true");
+    expect(windowContext).toContain("(!rejectHidden || !candidate.hidden)");
+    expect(windowContext).toContain("expectedWindowId.length > 0");
+    expect(windowContext).toContain(
+      "String(candidate.internalId) === expectedWindowId",
+    );
+    expect(windowContext).toContain("candidate.output === liveScreen");
+    expect(windowContext).toContain(
+      "String(KWin.Workspace.currentActivity) === expectedActivityId",
+    );
+    expect(windowContext).toContain(
+      "windowUsesDesktop(candidate, liveDesktop, expectedDesktopId)",
+    );
+    expect(windowContext).toContain(
+      "windowUsesActivity(candidate, expectedActivityId)",
+    );
     expect(desktopMembership).toContain("const desktops = candidate.desktops");
     expect(desktopMembership).toMatch(
       /if \(desktops\.length === 0\) \{\s*return true;/u,
@@ -152,27 +217,44 @@ describe("overview effect package", () => {
     expect(activityMembership).toMatch(
       /if \(activities\.length === 0\) \{\s*return true;/u,
     );
-    expect(activityMembership).toContain("KWin.Workspace.currentActivity");
-    expect(
-      focusHandler.match(/KWin\.Workspace\.activeWindow !== candidate/gu),
-    ).toHaveLength(2);
-    expect(focusHandler).toContain("KWin.Workspace.activeWindow = candidate");
-    expect(focusHandler).toContain("sceneEffect.deactivate()");
+    expect(activityMembership).toContain(
+      "String(activity) === expectedActivityId",
+    );
 
+    expect(focusHandler).toContain("KWin.Workspace.activeWindow !== candidate");
+    expect(focusHandler).toContain("KWin.Workspace.activeWindow = candidate");
+    expect(
+      focusHandler.match(/KWin\.Workspace\.activeWindow = candidate/gu),
+    ).toHaveLength(1);
+    expect(focusHandler.match(/effect\.deactivate\(\)/gu)).toHaveLength(1);
+    expect(focusHandler).toMatch(
+      /if \(focusConfirmed \|\| desktopSelectionConfirmed\) \{\s*effect\.deactivate\(\);\s*\}/u,
+    );
+
+    const preSelectionValidation = focusHandler.indexOf(
+      "expectedActivityId, false",
+    );
+    const desktopRequest = focusHandler.indexOf("requestDesktopSelection(");
+    const selectedFlag = focusHandler.indexOf(
+      "desktopSelectionConfirmed = true;",
+    );
+    const postSelectionValidation = focusHandler.lastIndexOf(
+      "expectedActivityId, true",
+    );
     const activeWindowWrite = focusHandler.indexOf(
       "KWin.Workspace.activeWindow = candidate",
     );
-    const deactivate = focusHandler.indexOf("sceneEffect.deactivate()");
-    const earlyReturns = [...focusHandler.matchAll(/\breturn;/gu)].map(
-      (match) => match.index,
+    const focusConfirmation = focusHandler.indexOf(
+      "focusConfirmed = KWin.Workspace.activeWindow === candidate;",
     );
-    expect(earlyReturns).toHaveLength(3);
-    expect(
-      earlyReturns.slice(0, 2).every((index) => index < activeWindowWrite),
-    ).toBe(true);
-    expect(activeWindowWrite).toBeGreaterThan(0);
-    expect(earlyReturns[2]).toBeGreaterThan(activeWindowWrite);
-    expect(earlyReturns[2]).toBeLessThan(deactivate);
+    const deactivate = focusHandler.indexOf("effect.deactivate()");
+    expect(preSelectionValidation).toBeGreaterThan(0);
+    expect(desktopRequest).toBeGreaterThan(preSelectionValidation);
+    expect(selectedFlag).toBeGreaterThan(desktopRequest);
+    expect(postSelectionValidation).toBeGreaterThan(selectedFlag);
+    expect(activeWindowWrite).toBeGreaterThan(postSelectionValidation);
+    expect(focusConfirmation).toBeGreaterThan(activeWindowWrite);
+    expect(deactivate).toBeGreaterThan(focusConfirmation);
     expect(deactivate).toBeGreaterThan(activeWindowWrite);
 
     expect(scene).not.toContain("KWin.Workspace.stackingOrder");
@@ -190,8 +272,24 @@ describe("overview effect package", () => {
       scene.indexOf("function selectDesktop("),
       scene.indexOf("function focusWindow("),
     );
+    const desktopRequest = scene.slice(
+      scene.indexOf("function requestDesktopSelection("),
+      scene.indexOf("function desktopContextIsExact("),
+    );
+    const desktopContext = scene.slice(
+      scene.indexOf("function desktopContextIsExact("),
+      scene.indexOf("function windowContextIsExact("),
+    );
     const outputProjection = scene.slice(
-      scene.indexOf("function projectedOutputId("),
+      scene.indexOf("function projectedOutput("),
+      scene.indexOf("function liveScreenFor("),
+    );
+    const liveScreenLookup = scene.slice(
+      scene.indexOf("function liveScreenFor("),
+      scene.indexOf("function liveDesktopFor("),
+    );
+    const liveDesktopLookup = scene.slice(
+      scene.indexOf("function liveDesktopFor("),
       scene.indexOf("function outputDescriptorsMatch("),
     );
 
@@ -214,104 +312,116 @@ describe("overview effect package", () => {
       /onDesktopTapped:\s*\(candidate, expectedDesktopId, expectedScreen\)\s*=>\s*root\.selectDesktop\(\s*candidate, expectedDesktopId, expectedScreen\)/u,
     );
 
+    expect(selector).toContain("const effect = sceneEffect;");
     expect(selector).toContain("const model = overviewModel;");
-    expect(selector).toContain("!sceneEffect");
-    expect(selector.match(/sceneEffect\.active !== true/gu)).toHaveLength(2);
-    expect(selector).toContain("!model");
-    expect(selector).toContain("!candidate");
-    expect(selector).toContain("expectedDesktopId.length === 0");
-    expect(selector).toContain("!targetScreen");
-    expect(selector).toContain("expectedScreen !== targetScreen");
-
-    expect(selector).toContain("const screens = KWin.Workspace.screens;");
-    expect(selector).toContain("for (const screen of screens)");
-    expect(selector).toContain("screen === expectedScreen");
-    expect(selector).toContain("liveScreen !== null");
-    expect(selector).toContain("liveScreen === null");
-    expect(selector).toContain("const expectedOutputId = outputId;");
-    expect(selector).toContain("expectedOutputId.length === 0");
     expect(selector).toContain(
-      "projectedOutputId(model, liveScreen) !== expectedOutputId",
+      "const liveScreen = liveScreenFor(expectedScreen);",
     );
+    expect(selector).toContain(
+      "const expectedOutput = projectedOutput(model, liveScreen);",
+    );
+    expect(selector).toContain(
+      "const liveDesktop = liveDesktopFor(candidate, expectedDesktopId);",
+    );
+    expect(selector).toContain("desktopContextIsExact(");
+    expect(selector).toContain("requestDesktopSelection(");
+    expect(scene.match(/requestDesktopSelection\(/gu)).toHaveLength(3);
+
+    expect(liveScreenLookup).toContain(
+      "for (const screen of KWin.Workspace.screens)",
+    );
+    expect(liveScreenLookup).toContain("screen === expectedScreen");
+    expect(liveScreenLookup).toContain("liveScreen !== null");
+    expect(liveDesktopLookup).toContain(
+      "for (const desktop of KWin.Workspace.desktops)",
+    );
+    expect(liveDesktopLookup).toContain(
+      "desktop === expectedDesktop && String(desktop.id) === expectedDesktopId",
+    );
+    expect(liveDesktopLookup).toContain("liveDesktop !== null");
+
     expect(outputProjection).toContain("for (const output of model.outputs)");
     expect(outputProjection).toContain(
       "outputDescriptorsMatch(output, screen)",
     );
+    expect(outputProjection).toContain("return null;");
+    expect(outputProjection).toContain("return projected;");
 
-    expect(selector).toContain(
-      "for (const desktop of KWin.Workspace.desktops)",
+    expect(desktopContext).toContain("effect !== sceneEffect");
+    expect(desktopContext).toContain("effect.active !== true");
+    expect(desktopContext).toContain("effect.overviewModel !== model");
+    expect(desktopContext).toContain("overviewModel !== model");
+    expect(desktopContext).toContain("targetScreen !== liveScreen");
+    expect(desktopContext).toContain("outputId !== expectedOutputId");
+    expect(desktopContext).toContain(
+      "projectedOutput(model, liveScreen) !== expectedOutput",
     );
-    expect(selector).toContain(
-      "desktop === candidate && String(desktop.id) === expectedDesktopId",
+    expect(desktopContext).toContain(
+      "liveDesktopFor(liveDesktop, expectedDesktopId) !== liveDesktop",
     );
-    expect(selector).toContain("liveDesktop !== null");
-    expect(selector).toContain("liveDesktop === null");
-    expect(selector).toContain("sceneEffect.overviewModel !== model");
-    expect(selector).toContain("overviewModel !== model");
-    expect(selector).toContain("targetScreen !== liveScreen");
-    expect(selector).toContain("outputId !== expectedOutputId");
 
-    expect(selector).toContain(
+    expect(desktopRequest).toContain(
       'const hasSceneDesktop = typeof KWin.SceneView.currentDesktop !== "undefined";',
     );
-    expect(selector).toContain(
+    expect(desktopRequest).toContain("const screens = KWin.Workspace.screens;");
+    expect(desktopRequest).toContain(
       "!hasSceneDesktop && (screens.length !== 1 || screens[0] !== liveScreen)",
     );
-    expect(selector).toContain("const activeDesktop = currentDesktop;");
-    expect(selector).toContain("activeDesktop === liveDesktop");
-    expect(selector).toContain(
+    expect(desktopRequest).toContain("const activeDesktop = currentDesktop;");
+    expect(desktopRequest).toContain("activeDesktop === liveDesktop");
+    expect(desktopRequest).toContain(
       "String(activeDesktop.id) === expectedDesktopId",
     );
 
-    expect(selector).toContain("KWin.SceneView.currentDesktop = liveDesktop");
-    expect(selector).toContain("KWin.Workspace.currentDesktop = liveDesktop");
-    expect(selector).toMatch(
-      /if \(hasSceneDesktop\) \{\s*KWin\.SceneView\.currentDesktop = liveDesktop;\s*\} else \{\s*KWin\.Workspace\.currentDesktop = liveDesktop;\s*\}/u,
-    );
-    expect(selector).toContain("catch (error)");
-    expect(selector).toContain("const selectedDesktop = currentDesktop;");
-    expect(selector).toContain("selectedDesktop !== liveDesktop");
-    expect(selector).toContain(
-      "String(selectedDesktop.id) !== expectedDesktopId",
-    );
-    expect(selector.match(/sceneEffect\.deactivate\(\)/gu)).toHaveLength(1);
-
-    const sceneWrite = selector.indexOf(
+    expect(desktopRequest).toContain(
       "KWin.SceneView.currentDesktop = liveDesktop",
     );
-    const fallbackWrite = selector.indexOf(
+    expect(desktopRequest).toContain(
       "KWin.Workspace.currentDesktop = liveDesktop",
     );
-    const postWriteRead = selector.indexOf(
+    expect(desktopRequest).toMatch(
+      /if \(hasSceneDesktop\) \{\s*KWin\.SceneView\.currentDesktop = liveDesktop;\s*\} else \{\s*KWin\.Workspace\.currentDesktop = liveDesktop;\s*\}/u,
+    );
+    expect(desktopRequest).toContain("catch (error)");
+    expect(desktopRequest).toContain("return false;");
+    expect(desktopRequest).toContain("const selectedDesktop = currentDesktop;");
+    expect(desktopRequest).toContain(
+      "return selectedDesktop === liveDesktop && String(selectedDesktop.id) === expectedDesktopId;",
+    );
+    expect(selector.match(/effect\.deactivate\(\)/gu)).toHaveLength(1);
+    expect(desktopRequest).not.toContain("deactivate()");
+
+    const preWriteGuard = desktopRequest.indexOf("desktopContextIsExact(");
+    const sceneWrite = desktopRequest.indexOf(
+      "KWin.SceneView.currentDesktop = liveDesktop",
+    );
+    const fallbackWrite = desktopRequest.indexOf(
+      "KWin.Workspace.currentDesktop = liveDesktop",
+    );
+    const postWriteRead = desktopRequest.indexOf(
       "const selectedDesktop = currentDesktop;",
     );
-    const confirmation = selector.indexOf("selectedDesktop !== liveDesktop");
-    const deactivate = selector.indexOf("sceneEffect.deactivate()");
-    const preWriteGuards = [
-      selector.lastIndexOf("sceneEffect.active !== true"),
-      selector.indexOf("expectedScreen !== targetScreen"),
-      selector.indexOf("targetScreen !== liveScreen"),
-      selector.indexOf("desktop === candidate"),
-      selector.indexOf("outputId !== expectedOutputId"),
-      selector.indexOf("screens.length !== 1"),
-      selector.indexOf("activeDesktop === liveDesktop"),
-    ];
+    const confirmation = desktopRequest.indexOf(
+      "return selectedDesktop === liveDesktop",
+    );
+    const deactivate = selector.indexOf("effect.deactivate()");
+    expect(preWriteGuard).toBeGreaterThan(0);
     expect(sceneWrite).toBeGreaterThan(0);
-    expect(
-      preWriteGuards.every((guard) => guard > 0 && guard < sceneWrite),
-    ).toBe(true);
+    expect(sceneWrite).toBeGreaterThan(preWriteGuard);
     expect(fallbackWrite).toBeGreaterThan(sceneWrite);
     expect(postWriteRead).toBeGreaterThan(fallbackWrite);
     expect(confirmation).toBeGreaterThan(postWriteRead);
-    expect(deactivate).toBeGreaterThan(confirmation);
     expect(selector).toMatch(
-      /if \(selectedDesktop !== liveDesktop \|\| String\(selectedDesktop\.id\) !== expectedDesktopId\) \{\s*return;\s*\}\s*sceneEffect\.deactivate\(\);/u,
+      /if \(!requestDesktopSelection\([\s\S]*?\)\) \{\s*return;\s*\}\s*effect\.deactivate\(\);/u,
+    );
+    expect(deactivate).toBeGreaterThan(
+      selector.indexOf("requestDesktopSelection("),
     );
 
     expect(`${scene}\n${desktopCard}`).not.toMatch(
       /\b(?:Action|DragHandler|MouseArea|Settings|ShortcutHandler|Timer)\s*\{|\.setValue\s*\(|\bsequence\s*:/u,
     );
-    expect(`${selector}\n${outputProjection}`).not.toMatch(
+    expect(`${selector}\n${desktopRequest}\n${outputProjection}`).not.toMatch(
       /KWin\.Workspace\.(?:stackingOrder|windows)\b|KWin\.WindowModel|layoutStateReader|model\.(?:contexts|desktopIds|floatingWindows)/u,
     );
   });
