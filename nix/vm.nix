@@ -3559,6 +3559,36 @@ let
             '.data[0] | map(.[0]) | map(select(. != [0, 0, 0, 0])) | sort'
       }
 
+      kwin_shortcut_names() {
+        busctl --user --json=short call \
+          org.kde.kglobalaccel \
+          /component/kwin \
+          org.kde.kglobalaccel.Component \
+          shortcutNames 2>/dev/null \
+          | jq --exit-status --compact-output '
+            .data[0]
+            | select(type == "array" and all(.[]; type == "string"))
+            | sort
+          '
+      }
+
+      core_script_loaded_state() {
+        local state
+
+        state=$(busctl --user call \
+          org.kde.KWin \
+          /Scripting \
+          org.kde.kwin.Scripting \
+          isScriptLoaded \
+          s ${pluginId} 2>/dev/null) || return 1
+
+        case "$state" in
+          "b true") printf '%s' true ;;
+          "b false") printf '%s' false ;;
+          *) return 1 ;;
+        esac
+      }
+
       effect_is_available() {
         busctl --user --json=short get-property \
           org.kde.KWin \
@@ -3912,6 +3942,226 @@ let
 
         overview_checkpoint_trace "checkpoint result=failed"
         return 1
+      }
+
+      capture_stable_layout_bytes() {
+        local bytes
+        local expected_digest
+        local first_digest
+        local second_digest
+
+        expected_digest=$(wait_for_stable_overview_layout_digest) || return 1
+        first_digest=$(sha256sum "$layout_state_file" 2>/dev/null) || return 1
+        bytes=$(base64 --wrap=0 "$layout_state_file" 2>/dev/null) || return 1
+        second_digest=$(sha256sum "$layout_state_file" 2>/dev/null) || return 1
+        first_digest=''${first_digest%% *}
+        second_digest=''${second_digest%% *}
+
+        [[ "$first_digest" == "$expected_digest" \
+          && "$second_digest" == "$expected_digest" ]] || return 1
+        printf '%s' "$bytes"
+      }
+
+      touchpad_navigation_checkpoint_once() {
+        local core_loaded
+        local layout_bytes
+        local overview_checkpoint
+        local shortcut_names
+
+        overview_checkpoint=$(overview_checkpoint_once "$@") || return 1
+        layout_bytes=$(capture_stable_layout_bytes) || return 1
+        shortcut_names=$(kwin_shortcut_names) || return 1
+        core_loaded=$(core_script_loaded_state) || return 1
+        [[ "$core_loaded" == true ]] || return 1
+
+        printf '%s\036%s\036%s\036%s' \
+          "$overview_checkpoint" \
+          "$layout_bytes" \
+          "$shortcut_names" \
+          "$core_loaded"
+      }
+
+      capture_touchpad_navigation_checkpoint() {
+        local attempt
+        local current
+        local previous=""
+
+        for ((attempt = 0; attempt < 20; attempt += 1)); do
+          current=$(touchpad_navigation_checkpoint_once "$@") || {
+            previous=""
+            sleep 0.1
+            continue
+          }
+
+          if [[ -n "$previous" && "$current" == "$previous" ]]; then
+            printf '%s' "$current"
+            return 0
+          fi
+
+          previous=$current
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      read_touchpad_navigation() {
+        ${pkgs.kdePackages.kconfig}/bin/kreadconfig6 \
+          --file "''${XDG_CONFIG_HOME:-$HOME/.config}/kwinrc" \
+          --group "Script-${pluginId}" \
+          --key TouchpadNavigation \
+          --default false
+      }
+
+      set_touchpad_navigation() {
+        ${pkgs.kdePackages.kconfig}/bin/kwriteconfig6 \
+          --file "''${XDG_CONFIG_HOME:-$HOME/.config}/kwinrc" \
+          --group "Script-${pluginId}" \
+          --key TouchpadNavigation \
+          --type bool \
+          "$1" || return 1
+
+        busctl --user call \
+          org.kde.KWin \
+          /KWin \
+          org.kde.KWin \
+          reconfigure \
+          >/dev/null
+      }
+
+      restore_touchpad_navigation() {
+        local result=0
+
+        set_touchpad_navigation false || result=1
+        sleep 0.4
+        [[ "$(read_touchpad_navigation 2>/dev/null || true)" == false ]] \
+          || result=1
+        return "$result"
+      }
+
+      touchpad_navigation_journal_is_clean_after() {
+        local created_count
+        local destroyed_count
+        local diagnostics=""
+        local journal
+
+        journal=$(journalctl \
+          --user \
+          --after-cursor "$1" \
+          --no-pager \
+          -o cat 2>/dev/null) || return 1
+        created_count=$(grep -Foc \
+          '[driftile] touchpad-navigation lifecycle=created' \
+          <<< "$journal" || true)
+        destroyed_count=$(grep -Foc \
+          '[driftile] touchpad-navigation lifecycle=destroyed' \
+          <<< "$journal" || true)
+
+        if diagnostics=$(printf '%s\n' "$journal" \
+          | grep -Fi -- 'TouchpadNavigation.qml' \
+          | grep -Ei \
+            '(^|[[:space:]:])qml([[:space:]:]|$)|qqml|component|error|fail(ed|ure)?|unavailable|not[[:space:]]+a[[:space:]]+type|is[[:space:]]+not[[:space:]]+installed|cannot[[:space:]]+(assign|create|load)|invalid'); then
+          {
+            printf '\n[touchpad-navigation QML diagnostics]\n'
+            printf '%s\n' "$diagnostics"
+          } >> /tmp/shared/driftile-focus-diagnostics
+          return 1
+        fi
+
+        if ((created_count != 2 || destroyed_count != 2)); then
+          {
+            printf '\n[touchpad-navigation lifecycle mismatch]\n'
+            printf 'created: %s\ndestroyed: %s\n' \
+              "$created_count" \
+              "$destroyed_count"
+          } >> /tmp/shared/driftile-focus-diagnostics
+          return 1
+        fi
+
+        return 0
+      }
+
+      verify_touchpad_navigation_checkpoint() {
+        local after_checkpoint
+        local baseline_checkpoint
+        local expected
+        local journal_cursor
+        local result=0
+        local state
+
+        if [[ "$(read_touchpad_navigation 2>/dev/null || true)" != false ]]; then
+          record_focus_state "touchpad navigation was not disabled by default"
+          result=1
+        fi
+
+        if ((result == 0)); then
+          baseline_checkpoint=$(capture_touchpad_navigation_checkpoint "$@") \
+            || result=1
+        fi
+        if ((result == 0)); then
+          journal_cursor=$(capture_journal_cursor) || result=1
+        fi
+
+        if ((result == 0)); then
+          for expected in true false true false; do
+            if [[ "$expected" == true ]]; then
+              state=enabled
+            else
+              state=disabled
+            fi
+
+            if ! set_touchpad_navigation "$expected"; then
+              record_focus_state \
+                "live touchpad navigation could not be $state"
+              result=1
+              break
+            fi
+
+            # KWin returns before the 200 ms settings timer applies the value.
+            sleep 0.4
+
+            if [[ "$(read_touchpad_navigation 2>/dev/null || true)" != "$expected" ]]; then
+              record_focus_state \
+                "touchpad navigation did not retain the $state value"
+              result=1
+              break
+            fi
+
+            after_checkpoint=$(capture_touchpad_navigation_checkpoint "$@") \
+              || {
+                record_focus_state \
+                  "the $state touchpad-navigation checkpoint did not stabilize"
+                result=1
+                break
+              }
+            if [[ "$after_checkpoint" != "$baseline_checkpoint" ]]; then
+              record_focus_state \
+                "the $state touchpad-navigation checkpoint changed core state"
+              result=1
+              break
+            fi
+          done
+        fi
+
+        if ((result == 0)) \
+          && ! touchpad_navigation_journal_is_clean_after "$journal_cursor"; then
+          record_focus_state \
+            "touchpad-navigation lifecycle or QML diagnostics were invalid"
+          result=1
+        fi
+
+        if ! restore_touchpad_navigation; then
+          record_focus_state \
+            "touchpad navigation cleanup did not restore false"
+          result=1
+        fi
+
+        if ((result == 0)); then
+          record_focus_state \
+            "live touchpad navigation preserved real applications and core state"
+        fi
+
+        return "$result"
       }
 
       overview_checkpoint_failure() {
@@ -8675,6 +8925,7 @@ let
         local source_x
         local source_y
         local target_width=""
+        local touchpad_navigation_verified=false
         local xterm_frame=""
         local xterm_height
         local xterm_pid=""
@@ -8832,6 +9083,18 @@ let
 
         if [[ "$cross_column_verified" == true \
           && "$same_stack_verified" == true ]] \
+          && verify_touchpad_navigation_checkpoint \
+            "$title_a" \
+            "$title_b" \
+            "$title_c" \
+            "$firefox_title" \
+            "$xterm_title"; then
+          touchpad_navigation_verified=true
+        fi
+
+        if [[ "$cross_column_verified" == true \
+          && "$same_stack_verified" == true \
+          && "$touchpad_navigation_verified" == true ]] \
           && verify_overview_effect_checkpoint \
             "$title_a" \
             "$title_b" \
@@ -8873,6 +9136,7 @@ let
 
         if [[ "$cross_column_verified" == true \
           && "$same_stack_verified" == true \
+          && "$touchpad_navigation_verified" == true \
           && "$overview_verified" == true \
           && "$cleanup_verified" == true ]]; then
           record_focus_state \
@@ -8888,6 +9152,8 @@ let
           printf 'target width: %s\n' "$target_width"
           printf 'cross-column verified: %s\n' "$cross_column_verified"
           printf 'same-stack verified: %s\n' "$same_stack_verified"
+          printf 'touchpad navigation verified: %s\n' \
+            "$touchpad_navigation_verified"
           printf 'overview verified: %s\n' "$overview_verified"
           printf 'cleanup verified: %s\n' "$cleanup_verified"
         } >> /tmp/shared/driftile-focus-diagnostics

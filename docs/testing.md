@@ -177,6 +177,14 @@ gap-adjusted output proportion before the setting is cleared and the exact
 baseline layout is restored.
 
 At the settled Firefox, Konsole, and XWayland xterm pointer layout, the primary
+VM first verifies that touchpad navigation defaults to disabled, then applies
+`true`, `false`, `true`, and `false` live through KConfig. Every transition
+preserves exact frames, focus, desktop order and selection, persisted layout
+bytes, the full KGlobalAccel action list, the loaded core extension, and the
+built-in Overview state. The journal must report exactly two handler creations
+and destructions without component diagnostics, and cleanup restores `false`.
+
+At the same settled pointer layout, the primary
 VM confirms that the separately installed overview effect is disabled and
 unbound. It loads the effect through KWin, invokes its unbound action through
 KGlobalAccel without assigning a test chord, leaves the overview visible for
