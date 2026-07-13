@@ -6,12 +6,14 @@ const rootDirectory = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const semanticVersion = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 
 export async function releaseVersion(directory = rootDirectory) {
-  const [packageManifest, packageLock, metadata, flake] = await Promise.all([
-    readJson(resolve(directory, "package.json")),
-    readJson(resolve(directory, "package-lock.json")),
-    readJson(resolve(directory, "packaging/kwin-script/metadata.json")),
-    readFile(resolve(directory, "flake.nix"), "utf8"),
-  ]);
+  const [packageManifest, packageLock, metadata, overviewMetadata, flake] =
+    await Promise.all([
+      readJson(resolve(directory, "package.json")),
+      readJson(resolve(directory, "package-lock.json")),
+      readJson(resolve(directory, "packaging/kwin-script/metadata.json")),
+      readJson(resolve(directory, "packaging/kwin-effect/metadata.json")),
+      readFile(resolve(directory, "flake.nix"), "utf8"),
+    ]);
   const flakeVersions = [...flake.matchAll(/^\s*version = "([^"]+)";$/gmu)].map(
     (match) => match[1],
   );
@@ -26,6 +28,7 @@ export async function releaseVersion(directory = rootDirectory) {
     "package-lock.json root": packageLock["packages"]?.[""]?.["version"],
     "package.json": packageManifest["version"],
     "packaging metadata": metadata["KPlugin"]?.["Version"],
+    "overview packaging metadata": overviewMetadata["KPlugin"]?.["Version"],
   };
   const unique = new Set(Object.values(versions));
   const version = versions["package.json"];

@@ -7,6 +7,12 @@ const rootDirectory = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const packageSource = resolve(rootDirectory, "packaging/kwin-script");
 const packageOutput = resolve(rootDirectory, "dist/kwin-script");
 const runtimeOutput = resolve(packageOutput, "contents/code/main.js");
+const overviewPackageSource = resolve(rootDirectory, "packaging/kwin-effect");
+const overviewPackageOutput = resolve(rootDirectory, "dist/kwin-effect");
+const overviewRuntimeOutput = resolve(
+  overviewPackageOutput,
+  "contents/code/main.js",
+);
 const shortcutToolOutput = resolve(
   rootDirectory,
   "dist/bin/driftile-shortcuts.mjs",
@@ -17,9 +23,18 @@ const layoutStateValidatorOutput = resolve(
 );
 
 export async function buildProject() {
-  await rm(packageOutput, { force: true, recursive: true });
-  await cp(packageSource, packageOutput, { recursive: true });
-  await mkdir(dirname(runtimeOutput), { recursive: true });
+  await Promise.all([
+    rm(packageOutput, { force: true, recursive: true }),
+    rm(overviewPackageOutput, { force: true, recursive: true }),
+  ]);
+  await Promise.all([
+    cp(packageSource, packageOutput, { recursive: true }),
+    cp(overviewPackageSource, overviewPackageOutput, { recursive: true }),
+  ]);
+  await Promise.all([
+    mkdir(dirname(runtimeOutput), { recursive: true }),
+    mkdir(dirname(overviewRuntimeOutput), { recursive: true }),
+  ]);
 
   await Promise.all([
     build({
@@ -29,6 +44,17 @@ export async function buildProject() {
       globalName: "DriftileRuntime",
       legalComments: "none",
       outfile: runtimeOutput,
+      platform: "neutral",
+      target: "es2017",
+      treeShaking: true,
+    }),
+    build({
+      bundle: true,
+      entryPoints: [resolve(rootDirectory, "src/overview/runtime.ts")],
+      format: "iife",
+      globalName: "DriftileOverview",
+      legalComments: "none",
+      outfile: overviewRuntimeOutput,
       platform: "neutral",
       target: "es2017",
       treeShaking: true,

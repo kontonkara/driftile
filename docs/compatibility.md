@@ -12,10 +12,10 @@
 
 ## Installation portability
 
-The release archive is a standard KWin KPackage and is not tied to a specific
-Linux distribution. Install it with `kpackagetool6` on a compatible Plasma
-desktop. The optional shortcut helper requires Node.js 22 or newer, `busctl`,
-and `flock`.
+The main archive and optional overview companion are standard KWin KPackages
+and are not tied to a specific Linux distribution. Install them with
+`kpackagetool6` on a compatible Plasma desktop. The optional shortcut helper
+requires Node.js 22 or newer, `busctl`, and `flock`.
 
 The Nix flake provides packages plus NixOS and Home Manager modules for
 `x86_64-linux` and `aarch64-linux`. Other distributions use the same
@@ -46,7 +46,8 @@ and a wider hardware matrix remain unverified.
 
 Driftile is a KWin extension, not a compositor. It owns layout policy while
 KWin remains responsible for windows, geometry application, outputs,
-fullscreen, maximize, minimize, and virtual-desktop mechanisms. Plasma remains
-responsible for shell features such as Overview, Pager, and Task Switcher.
-Unsupported or unavailable KWin mechanisms fail closed instead of being
+fullscreen, maximize, minimize, and virtual-desktop mechanisms. Plasma's
+built-in Overview, Pager, and Task Switcher remain the shell baseline. The
+optional companion adds a separate read-only layout view without replacing
+them. Unsupported or unavailable KWin mechanisms fail closed instead of being
 reimplemented inside Driftile.

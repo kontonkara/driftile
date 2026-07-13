@@ -13,6 +13,7 @@ engine.
 | Lifecycle endurance      | 128 add, activate, minimize, restore, remove, focus, and probe cycles | At most 1,024 callbacks; empty queue, exact baseline recovery, zero settled writes, and no warnings    |
 | Visible burst            | 2 outputs, 2 visible contexts, 1 new window in each                   | 1 callback, exactly 2 writes, and no repeat write to either resident window                            |
 | Automatic height         | 1 stack, 128 weighted windows, 64 tail minimum clamps                 | At most 3 height-policy reads per window                                                               |
+| Overview projection      | 512 contexts with 4,096 tiled windows                                 | At most 7 counted projection operations per window                                                     |
 
 The startup workload is a synthetic scale guard. Its 1,000 singleton columns
 exceed the persisted per-context limit and are not a recommended user layout.

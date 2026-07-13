@@ -48,14 +48,15 @@ The ownership rule is strict:
 
 ## Beyond v1
 
+- A removable read-only overview companion presents the authoritative layout
+  model while Plasma's built-in Overview remains the compatible fallback.
 - Touchpad navigation remains exploratory; global wheel input is deferred
   because KWin 6.7 exposes no public script axis API.
 - Cross-desktop pointer rearrangement and visual drop feedback.
 - Tabbed columns and matching pointer navigation.
 - Additional application-specific policies and an expanded settings UI.
 - Optional visual transitions, layout indicators, and concise diagnostics.
-- An optional Driftile layout overview that remains removable and preserves
-  Plasma's built-in Overview as the compatible fallback.
+- Interactive overview focus, desktop selection, and pointer rearrangement.
 - Activity-aware layouts.
 
 ## Compatibility
@@ -79,7 +80,8 @@ Driftile must integrate with, not duplicate:
 - Global shortcut registration plus explicit, reversible conflict resolution.
 - Fullscreen, maximize, minimize, decoration mechanisms, and interactive move/resize behavior.
 - Dialogs, modal or transient windows, non-resizable normal windows, and normal windows fixed on both axes.
-- Overview, Pager, Task Switcher, desktop OSD, and session restoration.
+- The built-in Overview, Pager, Task Switcher, desktop OSD, and session
+  restoration. The optional companion is presentation-only.
 
 ## Invariants
 

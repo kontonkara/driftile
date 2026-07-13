@@ -1,0 +1,628 @@
+import { describe, expect, it } from "vitest";
+import {
+  LAYOUT_PERSISTENCE_CATALOG_VERSION,
+  encodeLayoutPersistenceCatalog,
+  type LayoutPersistenceCatalogSnapshot,
+  type LayoutPersistenceCatalogV2,
+  type LayoutPersistenceTopologyV2,
+} from "../../src/core/layout-persistence-catalog";
+import {
+  LAYOUT_PERSISTENCE_FORMAT,
+  LAYOUT_PERSISTENCE_LIMITS,
+  LAYOUT_PERSISTENCE_VERSION,
+  encodeLayoutPersistence,
+  type LayoutPersistenceV1,
+  type PersistedOutputV1,
+} from "../../src/core/layout-persistence";
+import {
+  projectOverviewLayout,
+  type OverviewLiveLayout,
+} from "../../src/overview/layout-view";
+
+const RESTORE_FINGERPRINT =
+  "1\u00000\u00000\u00001000\u0000800\u00000\u00000\u00001000\u0000800";
+const MAXIMUM_OPERATIONS_PER_WINDOW = 7;
+
+const internalOutput = Object.freeze({
+  key: "stored-internal",
+  manufacturer: "Example",
+  model: "Panel",
+  name: "eDP-1",
+  serialNumber: "internal-1",
+} satisfies PersistedOutputV1);
+
+const externalOutput = Object.freeze({
+  key: "stored-external",
+  manufacturer: "Example",
+  model: "Display",
+  name: "DP-1",
+  serialNumber: "external-1",
+} satisfies PersistedOutputV1);
+
+function representativeState(): LayoutPersistenceV1 {
+  return {
+    contexts: [
+      {
+        activeColumnIndex: 1,
+        columns: [
+          {
+            fullWidthRestore: { kind: "fixed", value: 800 },
+            members: [
+              {
+                height: { clientHeight: 480, kind: "fixed" },
+                restoreBaseline: {
+                  clientFrame: { height: 480, width: 700, x: 30, y: 50 },
+                  frame: { height: 510, width: 720, x: 20, y: 30 },
+                  kind: "client",
+                  noBorder: false,
+                },
+                windowKey: "stored-a",
+              },
+              { windowKey: "stored-b" },
+            ],
+            width: { kind: "proportion", value: 1 },
+          },
+          {
+            members: [
+              {
+                height: { index: 2, kind: "preset" },
+                windowKey: "stored-c",
+              },
+            ],
+            width: { kind: "fixed", value: 640 },
+          },
+        ],
+        desktopId: "desktop-1",
+        outputKey: internalOutput.key,
+        restoreFingerprint: RESTORE_FINGERPRINT,
+        viewportOffset: -120,
+      },
+      {
+        activeColumnIndex: 0,
+        columns: [
+          {
+            members: [
+              {
+                height: { kind: "auto", weight: 2 },
+                windowKey: "stored-d",
+              },
+            ],
+            width: { kind: "proportion", value: 0.5 },
+          },
+        ],
+        desktopId: "desktop-2",
+        outputKey: internalOutput.key,
+        viewportOffset: 40,
+      },
+    ],
+    floatingWindows: [
+      {
+        anchor: {
+          columnIndex: 0,
+          columnWidth: { kind: "proportion", value: 1 },
+          memberIndex: 1,
+          nextWindowKey: "stored-b",
+          previousWindowKey: "stored-a",
+          windowHeight: { index: 3, kind: "preset" },
+        },
+        desktopId: "desktop-1",
+        outputKey: internalOutput.key,
+        windowKey: "stored-floating",
+      },
+    ],
+    format: LAYOUT_PERSISTENCE_FORMAT,
+    outputs: [internalOutput],
+    version: LAYOUT_PERSISTENCE_VERSION,
+    windows: [
+      { key: "stored-a", liveId: "live-a" },
+      { key: "stored-b", liveId: "live-b" },
+      { key: "stored-c", liveId: "live-c" },
+      { key: "stored-d", liveId: "live-d" },
+      { key: "stored-floating", liveId: "live-floating" },
+    ],
+  };
+}
+
+function topology(
+  ...outputs: readonly PersistedOutputV1[]
+): LayoutPersistenceTopologyV2 {
+  return { outputs };
+}
+
+function snapshot(
+  state: LayoutPersistenceV1,
+  persistedTopology: LayoutPersistenceTopologyV2,
+): LayoutPersistenceCatalogSnapshot {
+  return { state, topology: persistedTopology };
+}
+
+function catalog(
+  ...snapshots: readonly LayoutPersistenceCatalogSnapshot[]
+): LayoutPersistenceCatalogV2 {
+  return {
+    format: LAYOUT_PERSISTENCE_FORMAT,
+    snapshots,
+    version: LAYOUT_PERSISTENCE_CATALOG_VERSION,
+  };
+}
+
+function documentFor(
+  state = representativeState(),
+  persistedTopology = topology(internalOutput, externalOutput),
+): string {
+  return encodeLayoutPersistenceCatalog(
+    catalog(snapshot(state, persistedTopology)),
+  );
+}
+
+function liveLayout(
+  overrides: Partial<OverviewLiveLayout> = {},
+): OverviewLiveLayout {
+  return {
+    desktopIds: ["desktop-1", "desktop-2"],
+    outputs: [
+      {
+        manufacturer: internalOutput.manufacturer,
+        model: internalOutput.model,
+        name: internalOutput.name,
+        serialNumber: internalOutput.serialNumber,
+      },
+      {
+        manufacturer: externalOutput.manufacturer,
+        model: externalOutput.model,
+        name: externalOutput.name,
+        serialNumber: externalOutput.serialNumber,
+      },
+    ],
+    windowIds: ["live-a", "live-b", "live-c", "live-d", "live-floating"],
+    ...overrides,
+  };
+}
+
+function success(document = documentFor(), live = liveLayout()) {
+  const projected = projectOverviewLayout(document, live);
+
+  if (!projected.ok) {
+    throw new Error(`projection failed: ${projected.error}`);
+  }
+
+  return projected.value;
+}
+
+function required<T>(value: T | undefined): T {
+  if (value === undefined) {
+    throw new Error("test fixture is incomplete");
+  }
+
+  return value;
+}
+
+function expectDeepFrozen(value: unknown): void {
+  if (typeof value !== "object" || value === null) {
+    return;
+  }
+
+  expect(Object.isFrozen(value)).toBe(true);
+
+  for (const child of Object.values(value)) {
+    expectDeepFrozen(child);
+  }
+}
+
+function oneWindowState(
+  persistedOutput: PersistedOutputV1,
+  suffix: string,
+): LayoutPersistenceV1 {
+  return {
+    contexts: [
+      {
+        activeColumnIndex: 0,
+        columns: [
+          {
+            members: [{ windowKey: `stored-${suffix}` }],
+            width: { kind: "fixed", value: 600 },
+          },
+        ],
+        desktopId: "desktop-1",
+        outputKey: persistedOutput.key,
+        viewportOffset: 0,
+      },
+    ],
+    floatingWindows: [],
+    format: LAYOUT_PERSISTENCE_FORMAT,
+    outputs: [persistedOutput],
+    version: LAYOUT_PERSISTENCE_VERSION,
+    windows: [{ key: `stored-${suffix}`, liveId: `live-${suffix}` }],
+  };
+}
+
+describe("projectOverviewLayout", () => {
+  it("projects the active catalog snapshot without private restore state", () => {
+    const projected = success();
+
+    expect(projected).toEqual({
+      contexts: [
+        {
+          activeColumnIndex: 1,
+          columns: [
+            {
+              fullWidthRestore: { kind: "fixed", value: 800 },
+              members: [
+                {
+                  height: { clientHeight: 480, kind: "fixed" },
+                  windowId: "live-a",
+                },
+                { windowId: "live-b" },
+              ],
+              width: { kind: "proportion", value: 1 },
+            },
+            {
+              members: [
+                {
+                  height: { index: 2, kind: "preset" },
+                  windowId: "live-c",
+                },
+              ],
+              width: { kind: "fixed", value: 640 },
+            },
+          ],
+          desktopId: "desktop-1",
+          outputId: "eDP-1",
+          viewportOffset: -120,
+        },
+        {
+          activeColumnIndex: 0,
+          columns: [
+            {
+              members: [
+                {
+                  height: { kind: "auto", weight: 2 },
+                  windowId: "live-d",
+                },
+              ],
+              width: { kind: "proportion", value: 0.5 },
+            },
+          ],
+          desktopId: "desktop-2",
+          outputId: "eDP-1",
+          viewportOffset: 40,
+        },
+      ],
+      desktopIds: ["desktop-1", "desktop-2"],
+      floatingWindows: [
+        {
+          anchor: {
+            columnIndex: 0,
+            columnWidth: { kind: "proportion", value: 1 },
+            memberIndex: 1,
+            nextWindowId: "live-b",
+            previousWindowId: "live-a",
+            windowHeight: { index: 3, kind: "preset" },
+          },
+          desktopId: "desktop-1",
+          outputId: "eDP-1",
+          windowId: "live-floating",
+        },
+      ],
+      outputs: [
+        {
+          manufacturer: externalOutput.manufacturer,
+          model: externalOutput.model,
+          name: externalOutput.name,
+          outputId: externalOutput.name,
+          serialNumber: externalOutput.serialNumber,
+        },
+        {
+          manufacturer: internalOutput.manufacturer,
+          model: internalOutput.model,
+          name: internalOutput.name,
+          outputId: internalOutput.name,
+          serialNumber: internalOutput.serialNumber,
+        },
+      ],
+    });
+    expectDeepFrozen(projected);
+    expect(JSON.stringify(projected)).not.toContain("restoreBaseline");
+    expect(JSON.stringify(projected)).not.toContain("restoreFingerprint");
+    expect(JSON.stringify(projected)).not.toContain("stored-");
+  });
+
+  it("uses snapshot zero instead of selecting a historical topology", () => {
+    const historicalOutput = {
+      key: "historical",
+      manufacturer: "Other",
+      model: "Projector",
+      name: "HDMI-A-1",
+      serialNumber: "historical-1",
+    } satisfies PersistedOutputV1;
+    const current = snapshot(
+      oneWindowState(internalOutput, "current"),
+      topology(internalOutput),
+    );
+    const historical = snapshot(
+      oneWindowState(historicalOutput, "historical"),
+      topology(historicalOutput),
+    );
+    const document = encodeLayoutPersistenceCatalog(
+      catalog(current, historical),
+    );
+
+    expect(
+      projectOverviewLayout(document, {
+        desktopIds: ["desktop-1"],
+        outputs: [
+          {
+            manufacturer: historicalOutput.manufacturer,
+            model: historicalOutput.model,
+            name: historicalOutput.name,
+            serialNumber: historicalOutput.serialNumber,
+          },
+        ],
+        windowIds: ["live-historical"],
+      }),
+    ).toEqual({ error: "topology-mismatch", ok: false });
+  });
+
+  it.each([
+    ["missing", "", "missing-state"],
+    ["corrupt", "{", "invalid-json"],
+    [
+      "invalid",
+      JSON.stringify({
+        format: LAYOUT_PERSISTENCE_FORMAT,
+        snapshots: [],
+        version: LAYOUT_PERSISTENCE_CATALOG_VERSION,
+      }),
+      "invalid-state",
+    ],
+    [
+      "future",
+      JSON.stringify({
+        format: LAYOUT_PERSISTENCE_FORMAT,
+        snapshots: [],
+        version: LAYOUT_PERSISTENCE_CATALOG_VERSION + 1,
+      }),
+      "unsupported-version",
+    ],
+    [
+      "oversize",
+      " ".repeat(LAYOUT_PERSISTENCE_LIMITS.documentCharacters + 1),
+      "document-too-large",
+    ],
+  ])("rejects %s state", (_label, document, error) => {
+    expect(projectOverviewLayout(document, liveLayout())).toEqual({
+      error,
+      ok: false,
+    });
+  });
+
+  it("rejects a bare v1 state with no authoritative topology", () => {
+    expect(
+      projectOverviewLayout(
+        encodeLayoutPersistence(representativeState()),
+        liveLayout(),
+      ),
+    ).toEqual({ error: "legacy-topology", ok: false });
+  });
+
+  it.each([
+    [
+      "a missing output",
+      liveLayout({ outputs: liveLayout().outputs.slice(0, 1) }),
+      "topology-mismatch",
+    ],
+    [
+      "a stale descriptor",
+      liveLayout({
+        outputs: liveLayout().outputs.map((output) =>
+          output.name === internalOutput.name
+            ? { ...output, model: "Changed" }
+            : output,
+        ),
+      }),
+      "topology-mismatch",
+    ],
+    [
+      "a duplicate output name",
+      liveLayout({
+        outputs: [
+          required(liveLayout().outputs[0]),
+          required(liveLayout().outputs[0]),
+        ],
+      }),
+      "invalid-live-output",
+    ],
+    [
+      "an invalid output name",
+      liveLayout({
+        outputs: [{ ...required(liveLayout().outputs[0]), name: "bad\nname" }],
+      }),
+      "invalid-live-output",
+    ],
+    [
+      "too many outputs",
+      liveLayout({
+        outputs: Array.from(
+          { length: LAYOUT_PERSISTENCE_LIMITS.outputs + 1 },
+          (_value, index) => ({ name: `output-${String(index)}` }),
+        ),
+      }),
+      "invalid-live-output",
+    ],
+  ])("rejects live topology with %s", (_label, live, error) => {
+    expect(projectOverviewLayout(documentFor(), live)).toEqual({
+      error,
+      ok: false,
+    });
+  });
+
+  it("accepts extra empty-tail desktops and unrelated live windows", () => {
+    const projected = success(
+      documentFor(),
+      liveLayout({
+        desktopIds: ["desktop-3", "desktop-2", "desktop-1"],
+        windowIds: [
+          "unrelated",
+          "live-floating",
+          "live-d",
+          "live-c",
+          "live-b",
+          "live-a",
+        ],
+      }),
+    );
+
+    expect(projected.desktopIds).toEqual([
+      "desktop-1",
+      "desktop-2",
+      "desktop-3",
+    ]);
+    expect(JSON.stringify(projected)).not.toContain("unrelated");
+  });
+
+  it.each([
+    [
+      "duplicate desktops",
+      liveLayout({ desktopIds: ["desktop-1", "desktop-1"] }),
+      "invalid-live-desktop",
+    ],
+    [
+      "invalid desktops",
+      liveLayout({ desktopIds: ["desktop-1", ""] }),
+      "invalid-live-desktop",
+    ],
+    [
+      "stale desktops",
+      liveLayout({ desktopIds: ["desktop-1"] }),
+      "desktop-mismatch",
+    ],
+    [
+      "too many desktops",
+      liveLayout({
+        desktopIds: Array.from(
+          { length: LAYOUT_PERSISTENCE_LIMITS.contexts + 1 },
+          (_value, index) => `desktop-${String(index)}`,
+        ),
+      }),
+      "invalid-live-desktop",
+    ],
+    [
+      "duplicate windows",
+      liveLayout({ windowIds: ["live-a", "live-a"] }),
+      "invalid-live-window",
+    ],
+    [
+      "invalid windows",
+      liveLayout({ windowIds: ["live-a", "bad\u0000window"] }),
+      "invalid-live-window",
+    ],
+    [
+      "stale windows",
+      liveLayout({
+        windowIds: ["live-a", "live-b", "live-c", "live-d"],
+      }),
+      "window-mismatch",
+    ],
+    [
+      "too many windows",
+      liveLayout({
+        windowIds: Array.from(
+          { length: LAYOUT_PERSISTENCE_LIMITS.windows + 1 },
+          (_value, index) => `window-${String(index)}`,
+        ),
+      }),
+      "invalid-live-window",
+    ],
+  ])("rejects %s", (_label, live, error) => {
+    expect(projectOverviewLayout(documentFor(), live)).toEqual({
+      error,
+      ok: false,
+    });
+  });
+
+  it("is deterministic when every live input is reordered", () => {
+    const forward = success();
+    const reversed = success(
+      documentFor(),
+      liveLayout({
+        desktopIds: [...liveLayout().desktopIds].reverse(),
+        outputs: [...liveLayout().outputs].reverse(),
+        windowIds: [...liveLayout().windowIds].reverse(),
+      }),
+    );
+
+    expect(reversed).toEqual(forward);
+  });
+
+  it("performance budget: resolves the maximum window catalog linearly", () => {
+    const windowCount = LAYOUT_PERSISTENCE_LIMITS.windows;
+    const contextCount = LAYOUT_PERSISTENCE_LIMITS.contexts;
+    const windowsPerContext = windowCount / contextCount;
+    const windows = Array.from({ length: windowCount }, (_value, index) => ({
+      key: `stored-${String(index)}`,
+      liveId: `live-${String(index)}`,
+    }));
+    const state: LayoutPersistenceV1 = {
+      contexts: Array.from({ length: contextCount }, (_value, contextIndex) => {
+        const contextWindows = windows.slice(
+          contextIndex * windowsPerContext,
+          (contextIndex + 1) * windowsPerContext,
+        );
+
+        return {
+          activeColumnIndex: 0,
+          columns: contextWindows.map((window) => ({
+            members: [{ windowKey: window.key }],
+            width: { kind: "fixed" as const, value: 600 },
+          })),
+          desktopId: `desktop-${String(contextIndex)}`,
+          outputKey: internalOutput.key,
+          viewportOffset: 0,
+        };
+      }),
+      floatingWindows: [],
+      format: LAYOUT_PERSISTENCE_FORMAT,
+      outputs: [internalOutput],
+      version: LAYOUT_PERSISTENCE_VERSION,
+      windows,
+    };
+    const metrics = { operations: 0 };
+    const projected = projectOverviewLayout(
+      documentFor(state, topology(internalOutput)),
+      {
+        desktopIds: Array.from(
+          { length: contextCount },
+          (_value, index) => `desktop-${String(index)}`,
+        ),
+        outputs: [
+          {
+            manufacturer: internalOutput.manufacturer,
+            model: internalOutput.model,
+            name: internalOutput.name,
+            serialNumber: internalOutput.serialNumber,
+          },
+        ],
+        windowIds: windows.map((window) => window.liveId),
+      },
+      metrics,
+    );
+
+    expect(projected.ok).toBe(true);
+    expect(metrics.operations).toBeLessThanOrEqual(
+      windowCount * MAXIMUM_OPERATIONS_PER_WINDOW,
+    );
+    expect(
+      projected.ok
+        ? projected.value.contexts.reduce(
+            (total, context) =>
+              total +
+              context.columns.reduce(
+                (contextTotal, column) => contextTotal + column.members.length,
+                0,
+              ),
+            0,
+          )
+        : 0,
+    ).toBe(windowCount);
+  });
+});

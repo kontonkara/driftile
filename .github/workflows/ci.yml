@@ -59,6 +59,7 @@ jobs:
             dist/LICENSE
             dist/SHA256SUMS
             dist/driftile-*.kwinscript
+            dist/driftile-overview-*.kwineffect
             dist/driftile-shortcuts-*.mjs
           if-no-files-found: error
           retention-days: 7
@@ -124,6 +125,7 @@ jobs:
             dist/LICENSE \
             dist/SHA256SUMS \
             dist/driftile-*.kwinscript \
+            dist/driftile-overview-*.kwineffect \
             dist/driftile-shortcuts-*.mjs \
             --notes-file "docs/release-notes-${GITHUB_REF_NAME#v}.md" \
             --repo "$GITHUB_REPOSITORY" \

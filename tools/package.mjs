@@ -15,6 +15,7 @@ import { releaseVersion } from "./release-version.mjs";
 
 const rootDirectory = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const packageDirectory = resolve(rootDirectory, "dist/kwin-script");
+const overviewPackageDirectory = resolve(rootDirectory, "dist/kwin-effect");
 const outputDirectory = resolve(rootDirectory, "dist");
 const licenseSource = resolve(rootDirectory, "LICENSE");
 const licenseArtifact = resolve(outputDirectory, "LICENSE");
@@ -27,6 +28,10 @@ export async function packageProject() {
     outputDirectory,
     `driftile-${version}.kwinscript`,
   );
+  const overviewArtifactPath = resolve(
+    outputDirectory,
+    `driftile-overview-${version}.kwineffect`,
+  );
   const shortcutArtifactPath = resolve(
     outputDirectory,
     `driftile-shortcuts-${version}.mjs`,
@@ -34,28 +39,14 @@ export async function packageProject() {
   await buildProject();
   await removeOldArtifacts();
 
-  const entries = await archiveEntries(packageDirectory);
   const timestamp = archiveTimestamp();
 
-  await Promise.all(
-    entries.map((entry) =>
-      utimes(resolve(packageDirectory, entry), timestamp, timestamp),
-    ),
+  await createDeterministicArchive(packageDirectory, artifactPath, timestamp);
+  await createDeterministicArchive(
+    overviewPackageDirectory,
+    overviewArtifactPath,
+    timestamp,
   );
-
-  const result = spawnSync("zip", ["-0Xq", artifactPath, ...entries], {
-    cwd: packageDirectory,
-    env: { ...process.env, LC_ALL: "C", TZ: "UTC" },
-    stdio: "inherit",
-  });
-
-  if (result.error) {
-    throw result.error;
-  }
-
-  if (result.status !== 0) {
-    throw new Error(`zip exited with status ${String(result.status)}`);
-  }
 
   await Promise.all([
     copyFile(licenseSource, licenseArtifact),
@@ -65,6 +56,7 @@ export async function packageProject() {
   const releaseArtifacts = [
     artifactPath,
     licenseArtifact,
+    overviewArtifactPath,
     shortcutArtifactPath,
   ].sort(compareFilenames);
   const checksumLines = await Promise.all(
@@ -91,6 +83,7 @@ async function removeOldArtifacts() {
       entry.name === "LICENSE" ||
       entry.name === "SHA256SUMS" ||
       /^driftile(?:-[^/]+)?\.kwinscript$/u.test(entry.name) ||
+      /^driftile-overview(?:-[^/]+)?\.kwineffect$/u.test(entry.name) ||
       /^driftile-shortcuts-[^/]+\.mjs$/u.test(entry.name)
     ) {
       await rm(resolve(outputDirectory, entry.name), {
@@ -98,6 +91,34 @@ async function removeOldArtifacts() {
         recursive: entry.isDirectory(),
       });
     }
+  }
+}
+
+export async function createDeterministicArchive(
+  packageRoot,
+  artifactPath,
+  timestamp,
+) {
+  const entries = await archiveEntries(packageRoot);
+
+  await Promise.all(
+    entries.map((entry) =>
+      utimes(resolve(packageRoot, entry), timestamp, timestamp),
+    ),
+  );
+
+  const result = spawnSync("zip", ["-0Xq", artifactPath, ...entries], {
+    cwd: packageRoot,
+    env: { ...process.env, LC_ALL: "C", TZ: "UTC" },
+    stdio: "inherit",
+  });
+
+  if (result.error) {
+    throw result.error;
+  }
+
+  if (result.status !== 0) {
+    throw new Error(`zip exited with status ${String(result.status)}`);
   }
 }
 

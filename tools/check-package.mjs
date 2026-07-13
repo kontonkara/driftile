@@ -13,6 +13,7 @@ const version = await releaseVersion(rootDirectory);
 const licenseArtifact = resolve(outputDirectory, "LICENSE");
 const checksumManifestPath = resolve(outputDirectory, "SHA256SUMS");
 const pluginId = "io.github.kontonkara.driftile";
+const overviewPluginId = "io.github.kontonkara.driftile.overview";
 const expectedPackageEntries = [
   "contents/code/main.js",
   "contents/config/main.xml",
@@ -21,13 +22,26 @@ const expectedPackageEntries = [
   "contents/ui/main.qml",
   "metadata.json",
 ];
+const expectedOverviewPackageEntries = [
+  "contents/code/main.js",
+  "contents/ui/DesktopCard.qml",
+  "contents/ui/LayoutStateReader.qml",
+  "contents/ui/OverviewScene.qml",
+  "contents/ui/main.qml",
+  "metadata.json",
+];
 const packageArtifact = resolve(
   outputDirectory,
   `driftile-${version}.kwinscript`,
 );
+const overviewPackageArtifact = resolve(
+  outputDirectory,
+  `driftile-overview-${version}.kwineffect`,
+);
 const releaseArtifacts = [
   licenseArtifact,
   packageArtifact,
+  overviewPackageArtifact,
   resolve(outputDirectory, `driftile-shortcuts-${version}.mjs`),
 ].sort(compareFilenames);
 const packagedAssets = [...releaseArtifacts, checksumManifestPath];
@@ -69,8 +83,29 @@ if (
   throw new Error("packaged LICENSE does not match the repository LICENSE");
 }
 
-verifyPackageEntries(packageArtifact);
-verifyPackageMetadata(packageArtifact);
+verifyPackageEntries(packageArtifact, expectedPackageEntries, "KWin script");
+verifyPackageEntries(
+  overviewPackageArtifact,
+  expectedOverviewPackageEntries,
+  "overview effect",
+);
+await verifyPackageMetadata(
+  packageArtifact,
+  resolve(rootDirectory, "packaging/kwin-script/metadata.json"),
+  {
+    packageStructure: "KWin/Script",
+    pluginId,
+  },
+);
+await verifyPackageMetadata(
+  overviewPackageArtifact,
+  resolve(rootDirectory, "packaging/kwin-effect/metadata.json"),
+  {
+    forbidConfigModule: true,
+    packageStructure: "KWin/Effect",
+    pluginId: overviewPluginId,
+  },
+);
 
 const packagedReleaseArtifacts = (
   await readdir(outputDirectory, {
@@ -110,37 +145,63 @@ function compareFilenames(left, right) {
   return leftName > rightName ? 1 : 0;
 }
 
-function verifyPackageEntries(artifact) {
+function verifyPackageEntries(artifact, expectedEntries, packageName) {
   const entries = runUnzip(["-Z1", artifact])
     .trimEnd()
     .split("\n")
     .filter((entry) => entry !== "")
     .sort();
 
-  if (JSON.stringify(entries) !== JSON.stringify(expectedPackageEntries)) {
+  if (JSON.stringify(entries) !== JSON.stringify(expectedEntries)) {
     throw new Error(
-      `KWin package entries differ from the release contract: ${entries.join(", ")}`,
+      `${packageName} entries differ from the release contract: ${entries.join(", ")}`,
     );
   }
 }
 
-function verifyPackageMetadata(artifact) {
+async function verifyPackageMetadata(
+  artifact,
+  sourceMetadataPath,
+  { forbidConfigModule = false, packageStructure, pluginId: expectedPluginId },
+) {
+  const archivedMetadata = runUnzip(["-p", artifact, "metadata.json"]);
+
+  if (archivedMetadata !== (await readFile(sourceMetadataPath, "utf8"))) {
+    throw new Error("packaged metadata does not match its repository source");
+  }
+
   let metadata;
 
   try {
-    metadata = JSON.parse(runUnzip(["-p", artifact, "metadata.json"]));
+    metadata = JSON.parse(archivedMetadata);
   } catch (error) {
     throw new Error("KWin package metadata is not valid JSON", {
       cause: error,
     });
   }
 
-  if (metadata["KPlugin"]?.["Id"] !== pluginId) {
+  if (metadata["KPackageStructure"] !== packageStructure) {
+    throw new Error("KWin package metadata has an unexpected structure");
+  }
+
+  if (metadata["KPlugin"]?.["Id"] !== expectedPluginId) {
     throw new Error("KWin package metadata contains an unexpected plugin ID");
   }
 
   if (metadata["KPlugin"]?.["Version"] !== version) {
     throw new Error("KWin package metadata version does not match the release");
+  }
+
+  if (metadata["KPlugin"]?.["EnabledByDefault"] !== false) {
+    throw new Error("KWin package metadata must be disabled by default");
+  }
+
+  if (metadata["X-Plasma-API"] !== "declarativescript") {
+    throw new Error("KWin package metadata must use the declarative API");
+  }
+
+  if (forbidConfigModule && "X-KDE-ConfigModule" in metadata) {
+    throw new Error("overview effect metadata must not expose a config module");
   }
 }
 

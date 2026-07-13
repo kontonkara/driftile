@@ -14,11 +14,13 @@ const expectedTests = [
   "RuntimeController > performance budget: settles sustained lifecycle changes",
   "RuntimeController > performance budget: coalesces dirty visible contexts",
   "solveStripGeometry > performance budget: bounds automatic height policy reads",
+  "projectOverviewLayout > performance budget: resolves the maximum window catalog linearly",
 ];
 const pattern = "performance budget:";
 const testFiles = [
   "tests/runtime-controller.test.ts",
   "tests/core/geometry.test.ts",
+  "tests/overview/layout-view.test.ts",
 ];
 const arguments_ = process.argv.slice(2);
 const listOnly = arguments_.length === 1 && arguments_[0] === "--list-only";

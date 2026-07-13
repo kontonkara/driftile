@@ -221,8 +221,23 @@ Release criteria (met):
 
 ## 1.3.0 (in development)
 
-The 1.3.0 scope is not frozen. Behavior and release criteria will be recorded
-when the next bounded slice is selected.
+The first bounded 1.3.0 slice adds a separate read-only overview companion. It
+projects the authoritative persisted layout into desktop, column, stack,
+viewport, and floating-window views without adding layout ownership or changing
+the main KWin script package.
+
+Current criteria:
+
+- The effect is separately installable, disabled by default, and has no default
+  shortcut or screen edge.
+- Only an unchanged current v2 snapshot with exact live output, desktop, and
+  window references can open.
+- Projection is linear in the persisted model, immutable, and strips restore
+  baselines and matching fingerprints.
+- The effect uses public KWin QML types and performs no settings, focus,
+  desktop, window, or geometry writes.
+- Removing it leaves the main extension and Plasma's built-in Overview
+  unchanged.
 
 ## Post-v1
 
@@ -236,7 +251,7 @@ taking over compositor mechanisms.
   expanded settings UI.
 - Add optional visual transitions, layout indicators, and concise diagnostics.
 - Keep Plasma's built-in Overview as the compatible baseline.
-- Explore an optional Driftile overview that presents the horizontal desktop strip, columns, stacks, and current viewport from the shared layout model.
-- Add focus, desktop selection, and pointer-driven rearrangement only through public KWin and Plasma extension APIs.
+- Add optional overview focus, desktop selection, and pointer-driven
+  rearrangement only through public KWin and Plasma extension APIs.
 
 The optional overview must remain removable, preserve the authoritative layout state, and fall back cleanly to Plasma's Overview.

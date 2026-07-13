@@ -23,6 +23,8 @@ leaving window, output, and desktop mechanisms to KWin.
   steps, horizontal focus centering, and optional borderless presentation.
 - Exact extension-reload restoration, conservative cross-session restoration,
   and fail-closed restoration when a known output returns.
+- An optional read-only overview companion that presents the authoritative
+  output, desktop, column, stack, and viewport model.
 - An optional reversible shortcut helper with custom JSON profiles.
 
 ## Status
@@ -53,6 +55,9 @@ optional reversible helper. See [Installation](docs/installation.md) for
 artifact verification, custom shortcut profiles, NixOS and Home Manager
 modules, upgrades, and safe removal. See [Migration](docs/migration.md) before
 changing release generations.
+
+The 1.3 development tree also builds a separate overview effect. It is disabled
+and unbound by default; see [Overview companion](docs/overview.md).
 
 ## Development
 
@@ -88,6 +93,7 @@ checks.
 - [Compatibility](docs/compatibility.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Configuration](docs/configuration.md)
+- [Overview companion](docs/overview.md)
 - [Shortcuts](docs/shortcuts.md)
 - [Interaction model](docs/interaction-model.md)
 - [Product scope](docs/product-scope.md)

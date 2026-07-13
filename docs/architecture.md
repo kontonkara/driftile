@@ -4,6 +4,7 @@
 
 ```text
 QML bridge -> TypeScript runtime -> core -> reconcile -> KWin
+stable layout snapshot -> overview projector -> read-only KWin effect
 ```
 
 Events travel from KWin through the bridge into the runtime. Commands and resulting geometry operations travel toward KWin.
@@ -43,6 +44,17 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Maps an optional complete Home Manager settings profile to KDE's native
   KConfig module. Settings and shortcut-profile generation remain available
   without a second package installation.
+
+### Overview companion
+
+- Ships as a separate, disabled-by-default `KWin/Effect` package.
+- Reads the opaque layout snapshot twice on activation and accepts only one
+  unchanged, current v2 catalog.
+- Projects snapshot zero into a baseline-free, immutable view model after exact
+  live output, desktop, and window validation.
+- Uses only public KWin QML types to enrich live thumbnails and screen context.
+- Owns no settings, focus, desktop, window, geometry, shortcut assignment, or
+  screen-edge mechanism.
 
 ### TypeScript runtime
 
