@@ -193,7 +193,7 @@ tools/vm/run.sh lifecycle
 ```
 
 The lifecycle mode opens one non-fullscreen `1366x768` Wayland VM with no
-preinstalled Driftile package. It installs the pinned 1.7.0 script and overview
+preinstalled Driftile package. It installs the pinned 1.8.0 script and overview
 archives, keeps the overview disabled and unbound, then unloads the script and
 upgrades both packages to the current build. It verifies package identities,
 runtime digests, the default-off touchpad setting, effect discovery, and the
