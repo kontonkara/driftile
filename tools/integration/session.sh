@@ -52,6 +52,7 @@ secondary_desktop_id=""
 desktop_reorder_supported=false
 touchpad_navigation_checked=false
 work_area_panel_pid=""
+x11_pointer_drag_active=false
 x11_work_area_dock_pid=""
 
 if [[ -n "${DRIFTILE_SMOKE_QML_IMPORT:-}" ]]; then
@@ -106,7 +107,19 @@ stop_x11_work_area_dock() {
   x11_work_area_dock_pid=""
 }
 
+release_x11_pointer_drag() {
+  if [[ "$x11_pointer_drag_active" != true ]]; then
+    return
+  fi
+
+  xdotool mouseup 1 >/dev/null 2>&1 || true
+  xdotool keyup Super_L >/dev/null 2>&1 || true
+  x11_pointer_drag_active=false
+}
+
 cleanup() {
+  release_x11_pointer_drag
+
   if [[ "$custom_shortcut_profile_owned" == true ]]; then
     node "$DRIFTILE_SMOKE_SHORTCUT_TOOL" release >/dev/null 2>&1 || true
     custom_shortcut_profile_owned=false
@@ -3678,6 +3691,263 @@ verify_x11_topology_recovery() {
   set_plugin_state false
   wait_for_script_state false || \
     fail "KWin did not unload Driftile after X11 topology recovery"
+}
+
+x11_cross_desktop_pointer_adoption_snapshot() {
+  local source_title=$1
+  local target_title=$2
+  local peer_title=$3
+  local peer_frame=$4
+  local peer_state=$5
+  local expected_source_state=$6
+  local expected_target_state=$7
+  local destination_desktop=$8
+  local current_desktop
+  local current_peer_frame
+  local current_peer_state
+  local source_frame
+  local source_state
+  local target_frame
+  local target_state
+
+  current_desktop=$(current_desktop_id) || return 1
+  [[ "$current_desktop" == "$destination_desktop" ]] || return 1
+
+  source_frame=$(window_frame_geometry "$source_title") || return 1
+  target_frame=$(window_frame_geometry "$target_title") || return 1
+  current_peer_frame=$(window_frame_geometry "$peer_title") || return 1
+  [[ "$current_peer_frame" == "$peer_frame" ]] || return 1
+  [[ "$target_frame" == "16,16,616,324" ]] || return 1
+  [[ "$source_frame" == "16,368,616,324" ]] || return 1
+
+  source_state=$(window_desktop_transfer_state "$source_title") || return 1
+  target_state=$(window_desktop_transfer_state "$target_title") || return 1
+  current_peer_state=$(window_desktop_transfer_state "$peer_title") || return 1
+  [[ "$current_peer_state" == "$peer_state" ]] || return 1
+  [[ "$source_state" == "$expected_source_state" ]] || return 1
+  [[ "$target_state" == "$expected_target_state" ]] || return 1
+  x11_window_is_active "$source_title" || return 1
+
+  printf '%s|%s|%s|%s|%s|%s' \
+    "$current_desktop" \
+    "$source_frame" \
+    "$target_frame" \
+    "$current_peer_frame" \
+    "$source_state" \
+    "$target_state"
+}
+
+wait_for_x11_cross_desktop_pointer_adoption() {
+  local attempt
+  local current=""
+  local matches=0
+  local previous=""
+
+  for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
+    current=$(x11_cross_desktop_pointer_adoption_snapshot "$@" 2>/dev/null || true)
+
+    if [[ -n "$current" && "$current" == "$previous" ]]; then
+      ((matches += 1))
+    elif [[ -n "$current" ]]; then
+      matches=1
+    else
+      matches=0
+    fi
+
+    if ((matches >= stable_sample_count)); then
+      return 0
+    fi
+
+    previous=$current
+    sleep 0.05
+  done
+
+  return 1
+}
+
+verify_x11_cross_desktop_pointer_adoption() {
+  local source_title="driftile-x11-pointer-desktop-source"
+  local peer_title="driftile-x11-pointer-desktop-peer"
+  local target_title="driftile-x11-pointer-desktop-target"
+  local source_pid
+  local peer_pid
+  local target_pid
+  local source_frame
+  local peer_frame
+  local target_frame
+  local peer_state
+  local source_state
+  local expected_source_state
+  local target_state
+  local output
+  local source_x source_y source_width source_height
+  local target_x target_y target_width target_height
+  local current_target_width
+  local destination_x destination_y
+
+  release_x11_pointer_drag
+  set_plugin_state false
+  wait_for_script_state false || \
+    fail "KWin did not keep Driftile unloaded before X11 pointer adoption"
+  set_current_desktop "$primary_desktop_id" || \
+    fail "KWin could not select the primary desktop before X11 pointer adoption"
+
+  start_xterm_client x11 "$source_title"
+  source_pid=${client_pids[${#client_pids[@]}-1]}
+  capture_stable_geometry "$source_title" >/dev/null || \
+    fail "the X11 pointer source did not stabilize"
+  start_xterm_client x11 "$peer_title"
+  peer_pid=${client_pids[${#client_pids[@]}-1]}
+  capture_stable_geometry "$peer_title" >/dev/null || \
+    fail "the X11 pointer source peer did not stabilize"
+
+  set_current_desktop "$secondary_desktop_id" || \
+    fail "KWin could not select the destination desktop for X11 pointer adoption"
+  start_xterm_client x11 "$target_title"
+  target_pid=${client_pids[${#client_pids[@]}-1]}
+  capture_stable_geometry "$target_title" >/dev/null || \
+    fail "the X11 pointer target did not stabilize"
+
+  set_plugin_state true
+  wait_for_script_state true || \
+    fail "KWin did not load Driftile for X11 pointer adoption"
+  wait_for_geometries "$target_title" "16,16,616,688" || \
+    fail "Driftile did not settle the visible X11 pointer target"
+  set_current_desktop "$primary_desktop_id" || \
+    fail "KWin could not restore the X11 pointer source desktop"
+
+  source_frame="16,16,616,688"
+  peer_frame="648,16,616,688"
+  target_frame="16,16,616,688"
+  wait_for_geometries \
+    "$source_title" "$source_frame" \
+    "$peer_title" "$peer_frame" \
+    "$target_title" "$target_frame" || \
+    fail "Driftile did not establish the isolated X11 pointer fixture: $(describe_layout "$source_title" "$peer_title" "$target_title")"
+
+  [[ "$source_frame" =~ ^-?[0-9]+,-?[0-9]+,[0-9]+,[0-9]+$ ]] || \
+    fail "the X11 pointer source frame was malformed: $source_frame"
+  [[ "$peer_frame" =~ ^-?[0-9]+,-?[0-9]+,[0-9]+,[0-9]+$ ]] || \
+    fail "the X11 pointer peer frame was malformed: $peer_frame"
+  [[ "$target_frame" =~ ^-?[0-9]+,-?[0-9]+,[0-9]+,[0-9]+$ ]] || \
+    fail "the X11 pointer target frame was malformed: $target_frame"
+  IFS=, read -r source_x source_y source_width source_height <<< "$source_frame"
+  IFS=, read -r target_x target_y target_width target_height <<< "$target_frame"
+  ((source_x < ${peer_frame%%,*})) || \
+    fail "the X11 pointer source was not before its observable source peer"
+  frames_intersect "$source_frame" "$peer_frame" && \
+    fail "the isolated X11 pointer source columns overlapped before the drag"
+  x11_pointer_drag_active=true
+  xdotool mousemove --sync \
+    "$((source_x + source_width / 2))" \
+    "$((source_y + source_height / 2))" || \
+    fail "XTEST could not position the pointer for X11 source activation"
+  xdotool mousedown 1 || fail "XTEST could not press button one for X11 source activation"
+  xdotool mouseup 1 || fail "XTEST could not release button one after X11 source activation"
+  wait_for_x11_window_active "$source_title" || \
+    fail "X11 did not publish the active pointer source"
+
+  source_state=$(window_desktop_transfer_state "$source_title") || \
+    fail "KWin did not expose the X11 pointer source state"
+  target_state=$(window_desktop_transfer_state "$target_title") || \
+    fail "KWin did not expose the X11 pointer target state"
+  peer_state=$(window_desktop_transfer_state "$peer_title") || \
+    fail "KWin did not expose the X11 pointer source-peer state"
+  output=$(jq --compact-output '.output' <<< "$source_state") || \
+    fail "KWin did not expose the X11 pointer source output"
+  jq --exit-status \
+    --arg desktop "$primary_desktop_id" \
+    --argjson output "$output" \
+    '.desktops == [$desktop] and .output == $output' \
+    <<< "$source_state" \
+    >/dev/null || fail "the X11 pointer source did not retain its source context"
+  jq --exit-status \
+    --arg desktop "$primary_desktop_id" \
+    --argjson output "$output" \
+    '.desktops == [$desktop] and .output == $output' \
+    <<< "$peer_state" \
+    >/dev/null || fail "the X11 pointer peer did not share the source context"
+  jq --exit-status \
+    --arg desktop "$secondary_desktop_id" \
+    --argjson output "$output" \
+    '.desktops == [$desktop] and .output == $output' \
+    <<< "$target_state" \
+    >/dev/null || fail "the X11 pointer target did not share the source output"
+  expected_source_state=$(
+    jq --compact-output \
+      --arg desktop "$secondary_desktop_id" \
+      '.desktops = [$desktop]' \
+      <<< "$source_state"
+  ) || fail "the exact X11 pointer destination state could not be constructed"
+  wait_for_x11_screen_size 1280 720 || \
+    fail "the X11 pointer fixture did not retain the restored screen size"
+  [[ "$(xrandr --listactivemonitors | sed -n 's/^Monitors: //p')" == "1" ]] || \
+    fail "the X11 pointer fixture did not expose exactly one active monitor"
+
+  xdotool mousemove --sync \
+    "$((source_x + source_width / 2))" \
+    "$((source_y + source_height / 2))" || \
+    fail "XTEST could not position the X11 pointer on the source"
+  xdotool keydown Super_L || fail "XTEST could not hold Meta for the X11 pointer drag"
+  xdotool mousedown 1 || fail "XTEST could not hold button one for the X11 pointer drag"
+  xdotool mousemove --sync 1279 "$((source_y + source_height / 2))" || \
+    fail "XTEST could not move the X11 pointer source to the desktop edge"
+
+  wait_for_current_desktop "$secondary_desktop_id" || \
+    fail "KWin did not select the X11 pointer destination desktop before release"
+  wait_for_window_desktop "$source_title" "$secondary_desktop_id" || \
+    fail "KWin did not move the X11 pointer source membership before release"
+  target_frame=$(capture_stable_geometry "$target_title") || \
+    fail "the X11 pointer target did not remain stable before release"
+  IFS=, read -r \
+    target_x target_y current_target_width target_height \
+    <<< "$target_frame"
+  ((current_target_width == target_width)) || \
+    fail "Driftile changed the X11 pointer target width before release"
+  destination_x=$((target_x + current_target_width / 2))
+  destination_y=$((target_y + (target_height * 3) / 4))
+  xdotool mousemove --sync "$destination_x" "$destination_y" || \
+    fail "XTEST could not position the X11 pointer over the lower target half"
+  wait_for_current_desktop "$secondary_desktop_id" || \
+    fail "KWin changed the X11 pointer destination before release"
+  wait_for_window_desktop "$source_title" "$secondary_desktop_id" || \
+    fail "KWin changed the X11 pointer source membership before release"
+  xdotool mouseup 1 || fail "XTEST could not release the X11 pointer drag"
+  xdotool keyup Super_L || fail "XTEST could not release Meta after the X11 pointer drag"
+  x11_pointer_drag_active=false
+
+  wait_for_x11_cross_desktop_pointer_adoption \
+    "$source_title" \
+    "$target_title" \
+    "$peer_title" \
+    "$peer_frame" \
+    "$peer_state" \
+    "$expected_source_state" \
+    "$target_state" \
+    "$secondary_desktop_id" || \
+    fail "Driftile did not adopt the stable same-output X11 pointer move: $(describe_layout "$source_title" "$target_title" "$peer_title")"
+
+  set_current_desktop "$primary_desktop_id" || \
+    fail "KWin could not restore the primary desktop after X11 pointer adoption"
+  wait_for_geometries "$peer_title" "16,16,616,688" || \
+    fail "Driftile did not reflow the revealed X11 source peer as a singleton"
+  [[ "$(window_desktop_transfer_state "$peer_title")" == "$peer_state" ]] || \
+    fail "Driftile changed the X11 source-peer context during pointer adoption"
+
+  stop_client "$source_pid"
+  stop_client "$target_pid"
+  stop_client "$peer_pid"
+  wait_for_window_gone "$source_title" || \
+    fail "the X11 pointer source did not close"
+  wait_for_window_gone "$target_title" || \
+    fail "the X11 pointer target did not close"
+  wait_for_window_gone "$peer_title" || \
+    fail "the X11 pointer source peer did not close"
+  wait_for_desktop_sequence "$primary_desktop_id" "$secondary_desktop_id" || \
+    fail "Driftile retained a temporary desktop after X11 pointer adoption"
+  set_plugin_state false
+  wait_for_script_state false || \
+    fail "KWin did not unload Driftile after X11 pointer adoption"
 }
 
 numbered_desktop_shortcuts_are_registered() {
@@ -8541,6 +8811,10 @@ run_scenario() {
   wait_for_window_gone "$first_title" || fail "the first $protocol test window did not close"
   wait_for_window_gone "$second_title" || fail "the second $protocol test window did not close"
   wait_for_window_gone "$third_title" || fail "the third $protocol test window did not close"
+
+  if [[ "$protocol" == "x11" ]]; then
+    verify_x11_cross_desktop_pointer_adoption
+  fi
 }
 
 verify_multi_output_stacked_maximize_extraction() {

@@ -202,6 +202,7 @@
               jq
               socat
               systemd
+              xdotool
               xorg-server
               xterm
               xprop

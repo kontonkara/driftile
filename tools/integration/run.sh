@@ -323,6 +323,7 @@ run_backend() (
     x11)
       require_command kwin_x11 || exit 1
       require_command Xvfb || exit 1
+      require_command xdotool || exit 1
       require_command xterm || exit 1
       require_command xprop || exit 1
       require_command xrandr || exit 1
@@ -336,6 +337,35 @@ run_backend() (
       export DRIFTILE_SMOKE_SCENARIO=single-output
       export XDG_SESSION_TYPE=x11
       xvfb_log="$sandbox/xvfb.log"
+
+      kwriteconfig6 \
+        --file "$XDG_CONFIG_HOME/kwinrc" \
+        --group Desktops \
+        --key Rows \
+        --type int \
+        1
+      kwriteconfig6 \
+        --file "$XDG_CONFIG_HOME/kwinrc" \
+        --group Windows \
+        --key ElectricBorders \
+        --type int \
+        2
+      kwriteconfig6 \
+        --file "$XDG_CONFIG_HOME/kwinrc" \
+        --group Windows \
+        --key ElectricBorderPushbackPixels \
+        --type int \
+        0
+      kwriteconfig6 \
+        --file "$XDG_CONFIG_HOME/kwinrc" \
+        --group MouseBindings \
+        --key CommandAll1 \
+        Move
+      kwriteconfig6 \
+        --file "$XDG_CONFIG_HOME/kwinrc" \
+        --group MouseBindings \
+        --key CommandAllKey \
+        Meta
 
       Xvfb \
         -displayfd 3 \
