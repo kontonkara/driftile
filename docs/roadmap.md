@@ -312,6 +312,12 @@ Release criteria (met):
   single-output native X11; backend-specific geometry rejection falls back
   safely.
 
+## 1.6.0 (in development)
+
+The `main` branch tracks `1.6.0-dev.0`. Its next bounded core slice will be
+selected and scope-frozen separately; this placeholder does not commit an
+implementation scope.
+
 ## Post-v1
 
 Add interaction and presentation features outside the frozen v1 scope without
