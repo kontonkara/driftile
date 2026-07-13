@@ -2,7 +2,9 @@
 
 Versions 0.1.0, 1.0.0, 1.1.0, 1.2.0, 1.3.0, 1.4.0, 1.5.0, and 1.6.0 are
 released. The delivered milestones and release criteria below are a historical
-record. The remaining post-v1 direction is not a committed release schedule.
+record. Version 1.7.0 is scope-frozen at `1.7.0-rc.1`; only release-blocking
+fixes and release documentation remain before stable promotion. The remaining
+post-v1 direction is not a committed release schedule.
 
 ## Foundation (delivered)
 
@@ -360,7 +362,7 @@ and XWayland xterm. A physical `Meta` plus right-button resize proved KWin's
 held interactive state before release, adopted the accepted XWayland width, and
 restored the exact stacked frames on reset.
 
-## 1.7.0 (in development)
+## 1.7.0 (release candidate)
 
 The frozen 1.7.0 slice adds only current-context click-to-focus to the optional
 overview. Each rendered thumbnail in a `SceneView` current-desktop card keeps
@@ -381,7 +383,9 @@ default bindings, gestures, drag, keyboard navigation, schema, IPC, private
 APIs, timers, or workspace scans. The direct validation path is bounded by the
 candidate's desktop and activity memberships.
 
-Release criteria:
+Version `1.7.0-rc.1` is the current candidate.
+
+Frozen candidate criteria:
 
 - Static QML contract tests pin the direct window reference, every live guard,
   accepted-focus confirmation, the fail-closed path, and the sole permitted

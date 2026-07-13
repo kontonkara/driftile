@@ -43,7 +43,7 @@ memberships, outputs, geometry, or settings.
 | Pointer drop         | Reinsert or adopt one active tiled window at one exact visible target                             | Available |
 | Pointer resize       | Adopt one completed horizontal resize as the active column's fixed width                          | Available |
 | Overview companion   | Focus a valid current-card thumbnail with left click; invalid or rejected focus stays open        | Available |
-| Tabbed columns       | Toggle a column between stacked and tabbed presentation without changing navigation               | v1        |
+| Tabbed columns       | Toggle a column between stacked and tabbed presentation without changing navigation               | Future    |
 | Pointer navigation   | Provide wheel navigation through the shared layout model                                          | Future    |
 
 Single-window transfers will remain available as secondary, unbound actions.
