@@ -720,11 +720,37 @@ verify_overview_effect_lifecycle() {
   local active_window
   local after_checkpoint
   local baseline_checkpoint
+  local click_source=""
+  local click_target=""
+  local click_x=""
+  local click_y=""
+  local expected_target_checkpoint=""
   local overview_keys
   local plasma_active
   local plasma_loaded
 
   shift
+
+  if [[ "${1:-}" == --click-focus ]]; then
+    (($# >= 6)) || fail "the $protocol overview click fixture was incomplete"
+    click_source=$2
+    click_target=$3
+    click_x=$4
+    click_y=$5
+    shift 5
+
+    activate_window "$click_target" || \
+      fail "KWin could not prepare the target-focused $protocol overview checkpoint"
+    wait_for_only_active "$click_target" "$@" || \
+      fail "KWin did not leave only the target focused for the $protocol overview checkpoint"
+    expected_target_checkpoint=$(capture_overview_checkpoint "$@") || \
+      fail "the target-focused $protocol overview checkpoint did not stabilize"
+
+    activate_window "$click_source" || \
+      fail "KWin could not restore the source-focused $protocol overview checkpoint"
+    wait_for_only_active "$click_source" "$@" || \
+      fail "KWin did not leave only the source focused for the $protocol overview checkpoint"
+  fi
 
   wait_for_script_state true || \
     fail "KWin did not keep Driftile loaded before the $protocol overview checkpoint"
@@ -767,14 +793,30 @@ verify_overview_effect_lifecycle() {
   [[ "$(effect_active_state "$plasma_overview_effect_id")" == "$plasma_active" ]] || \
     fail "the $protocol overview changed the built-in Overview active state"
 
-  invoke_shortcut "$overview_shortcut" || \
-    fail "KGlobalAccel could not deactivate the $protocol overview"
-  wait_for_effect_active_state "$overview_plugin_id" false || \
-    fail "the $protocol overview did not deactivate"
-  after_checkpoint=$(capture_overview_checkpoint "$@") || \
-    fail "the $protocol overview checkpoint did not stabilize after deactivation"
-  [[ "$after_checkpoint" == "$baseline_checkpoint" ]] || \
-    fail "the $protocol overview changed windows, desktops, focus, layout state, or the built-in Overview"
+  if [[ -n "$click_target" ]]; then
+    "$DRIFTILE_SMOKE_FAKE_INPUT_CLIENT" click "$click_x" "$click_y" || \
+      fail "the compositor-routed $protocol overview click failed"
+    wait_for_effect_active_state "$overview_plugin_id" false || \
+      fail "the $protocol overview did not close after the target click"
+    wait_for_effect_loaded_state "$overview_plugin_id" true || \
+      fail "the $protocol overview unloaded after the target click"
+    wait_for_only_active "$click_target" "$@" || \
+      fail "the $protocol overview click did not leave only its exact target focused: $(describe_active_windows "$@")"
+    after_checkpoint=$(capture_overview_checkpoint "$@") || \
+      fail "the target-focused $protocol overview checkpoint did not stabilize after the click"
+    [[ "$after_checkpoint" == "$expected_target_checkpoint" ]] || \
+      fail "the $protocol overview click changed windows, desktops, layout state, or the built-in Overview beyond its exact target focus"
+    baseline_checkpoint=$expected_target_checkpoint
+  else
+    invoke_shortcut "$overview_shortcut" || \
+      fail "KGlobalAccel could not deactivate the $protocol overview"
+    wait_for_effect_active_state "$overview_plugin_id" false || \
+      fail "the $protocol overview did not deactivate"
+    after_checkpoint=$(capture_overview_checkpoint "$@") || \
+      fail "the $protocol overview checkpoint did not stabilize after deactivation"
+    [[ "$after_checkpoint" == "$baseline_checkpoint" ]] || \
+      fail "the $protocol overview changed windows, desktops, focus, layout state, or the built-in Overview"
+  fi
 
   unload_overview_effect || \
     fail "KWin could not unload the Driftile overview after $protocol"
@@ -1116,6 +1158,23 @@ wait_for_active() {
 
   for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
     if window_is_active "$window_title"; then
+      return 0
+    fi
+
+    sleep 0.05
+  done
+
+  return 1
+}
+
+wait_for_only_active() {
+  local expected_title=$1
+  local attempt
+
+  shift
+
+  for ((attempt = 0; attempt < wait_attempts; attempt += 1)); do
+    if [[ "$(describe_active_windows "$@")" == "$expected_title" ]]; then
       return 0
     fi
 
@@ -9188,6 +9247,7 @@ run_multi_output_scenario() {
   local temporary_left_pid
   local -a baselines=("" "" "" "" "" "")
   local -a historical_right_frames=("" "" "" "" "" "")
+  local -a overview_desktop_ids=()
   local -a titles=(
     "driftile-multi-output-${protocol}-left-a"
     "driftile-multi-output-${protocol}-left-b"
@@ -9287,14 +9347,22 @@ run_multi_output_scenario() {
     "$desktop_state_verified_shortcut_prefix ${titles[0]} primary" || \
     fail "KGlobalAccel could not remove the pre-overview desktop-state marker"
   if [[ "$overview_effect_checks_enabled" == true ]]; then
+    wait_for_geometries \
+      "${titles[0]}" "16,16,616,688" \
+      "${titles[1]}" "648,16,616,688" || \
+      fail "the fixed multi-output $protocol overview click fixture did not stabilize"
+    mapfile -t overview_desktop_ids < <(virtual_desktop_ids)
+    ((${#overview_desktop_ids[@]} == 2)) || \
+      fail "the multi-output $protocol overview click fixture did not expose exactly two desktop cards"
     verify_overview_effect_lifecycle \
       "$protocol" \
+      --click-focus "${titles[0]}" "${titles[1]}" 956 190 \
       "${titles[0]}" "${titles[1]}" "${titles[3]}" "${titles[4]}"
   fi
-  verify_multi_output_desktop_state "${titles[0]}" primary || \
+  verify_multi_output_desktop_state "${titles[1]}" primary || \
     fail "the $protocol overview changed a selected output desktop"
   unregister_desktop_state_marker \
-    "$desktop_state_verified_shortcut_prefix ${titles[0]} primary" || \
+    "$desktop_state_verified_shortcut_prefix ${titles[1]} primary" || \
     fail "KGlobalAccel could not remove the post-overview desktop-state marker"
   activate_window "${titles[4]}" || \
     fail "KWin could not restore multi-output $protocol focus after the overview"

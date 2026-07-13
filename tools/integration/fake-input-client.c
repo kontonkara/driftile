@@ -20,12 +20,18 @@
 static struct wl_display *display;
 static struct wl_registry *registry;
 static struct org_kde_kwin_fake_input *fake_input;
+static bool left_button_pressed;
 static bool meta_pressed;
 static bool right_button_pressed;
 static volatile sig_atomic_t received_signal;
 
 static void release_inputs(void) {
   if (fake_input != NULL) {
+    if (left_button_pressed) {
+      org_kde_kwin_fake_input_button(fake_input, BTN_LEFT, 0);
+      left_button_pressed = false;
+    }
+
     if (right_button_pressed) {
       org_kde_kwin_fake_input_button(fake_input, BTN_RIGHT, 0);
       right_button_pressed = false;
@@ -183,19 +189,47 @@ static int drag_resize(int32_t start_x, int32_t start_y, int32_t end_x,
   return roundtrip() ? 0 : 1;
 }
 
+static int click_pointer(int32_t x, int32_t y) {
+  org_kde_kwin_fake_input_pointer_motion_absolute(
+      fake_input, wl_fixed_from_int(x), wl_fixed_from_int(y));
+  if (!settle_input()) {
+    return 1;
+  }
+
+  org_kde_kwin_fake_input_button(fake_input, BTN_LEFT, 1);
+  left_button_pressed = true;
+  if (!settle_input()) {
+    return 1;
+  }
+
+  org_kde_kwin_fake_input_button(fake_input, BTN_LEFT, 0);
+  if (!settle_input()) {
+    return 1;
+  }
+
+  left_button_pressed = false;
+  return 0;
+}
+
 int main(int argc, char **argv) {
+  bool click_mode = false;
   int32_t end_x;
   int32_t end_y;
   int32_t start_x;
   int32_t start_y;
   int result;
 
-  if (argc != 5 || !parse_coordinate(argv[1], &start_x) ||
-      !parse_coordinate(argv[2], &start_y) ||
-      !parse_coordinate(argv[3], &end_x) ||
-      !parse_coordinate(argv[4], &end_y)) {
-    fprintf(stderr, "usage: %s START_X START_Y END_X END_Y\n", argv[0]);
-    return 2;
+  if (argc == 4 && strcmp(argv[1], "click") == 0) {
+    click_mode = true;
+    if (!parse_coordinate(argv[2], &start_x) ||
+        !parse_coordinate(argv[3], &start_y)) {
+      goto invalid_arguments;
+    }
+  } else if (argc != 5 || !parse_coordinate(argv[1], &start_x) ||
+             !parse_coordinate(argv[2], &start_y) ||
+             !parse_coordinate(argv[3], &end_x) ||
+             !parse_coordinate(argv[4], &end_y)) {
+    goto invalid_arguments;
   }
 
   if (!install_signal_handlers() || atexit(release_inputs) != 0) {
@@ -223,18 +257,32 @@ int main(int argc, char **argv) {
 
   org_kde_kwin_fake_input_authenticate(
       fake_input, "Driftile integration",
-      "Verify one completed horizontal pointer resize");
+      "Verify one compositor-routed pointer interaction");
   if (!roundtrip()) {
     fputs("KWin fake-input authentication failed\n", stderr);
     return 1;
   }
 
-  result = drag_resize(start_x, start_y, end_x, end_y);
+  result = click_mode ? click_pointer(start_x, start_y)
+                      : drag_resize(start_x, start_y, end_x, end_y);
   if (result != 0) {
-    fputs(received_signal == 0 ? "fake-input resize drag failed\n"
-                               : "fake-input resize drag interrupted\n",
-          stderr);
+    if (click_mode) {
+      fputs(received_signal == 0 ? "fake-input click failed\n"
+                                 : "fake-input click interrupted\n",
+            stderr);
+    } else {
+      fputs(received_signal == 0 ? "fake-input resize drag failed\n"
+                                 : "fake-input resize drag interrupted\n",
+            stderr);
+    }
   }
 
   return result;
+
+invalid_arguments:
+  fprintf(stderr,
+          "usage: %s START_X START_Y END_X END_Y\n"
+          "       %s click X Y\n",
+          argv[0], argv[0]);
+  return 2;
 }
