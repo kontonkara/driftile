@@ -484,6 +484,12 @@ Release criteria (met):
 - These checks extend the existing static and multi-output test pool without a
   new scenario family, binding, or client type.
 
+## 1.9.1 (in development)
+
+The `main` branch tracks `1.9.1-dev.0`. This bounded patch corrects full-width
+column positioning and exact toggle restoration without adding actions,
+bindings, settings, or persistence incompatibilities.
+
 ## Post-v1
 
 Add interaction and presentation features outside the frozen v1 scope without
