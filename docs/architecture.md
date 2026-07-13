@@ -62,8 +62,8 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Accepts left clicks only in the current desktop card, then revalidates the
   active effect, identity, input eligibility, state, output, desktop, and current
   activity without a workspace scan.
-- Writes only `KWin.Workspace.activeWindow`. A valid click closes the effect; an
-  invalid or stale click leaves it open without a write.
+- Writes only `KWin.Workspace.activeWindow`. Only confirmed focus closes the
+  effect; an invalid, stale, or rejected request leaves it open.
 - Owns no settings, desktop or activity selection, membership, output, geometry,
   shortcut assignment, or screen-edge mechanism.
 

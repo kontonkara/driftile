@@ -794,6 +794,12 @@ verify_overview_effect_lifecycle() {
     fail "the $protocol overview changed the built-in Overview active state"
 
   if [[ -n "$click_target" ]]; then
+    after_checkpoint=$(capture_overview_checkpoint "$@") || \
+      fail "the active $protocol overview click fixture did not stabilize"
+    [[ "$after_checkpoint" == "$baseline_checkpoint" ]] || \
+      fail "activating the $protocol overview changed windows, desktops, focus, layout state, or the built-in Overview"
+    wait_for_effect_active_state "$overview_plugin_id" true || \
+      fail "the $protocol overview did not remain active through click settlement"
     "$DRIFTILE_SMOKE_FAKE_INPUT_CLIENT" click "$click_x" "$click_y" || \
       fail "the compositor-routed $protocol overview click failed"
     wait_for_effect_active_state "$overview_plugin_id" false || \

@@ -137,6 +137,7 @@ Rectangle {
 
                 TapHandler {
                     acceptedButtons: Qt.LeftButton
+                    acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
                     enabled: card.current && thumbnailShell.visible
                     onTapped: card.windowTapped(model.window, thumbnailShell.windowId, card.desktop, card.desktopId)
                 }

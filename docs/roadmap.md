@@ -369,8 +369,9 @@ active and the candidate still exists, is not deleted, hidden, or minimized,
 wants input, has the exact `internalId`, remains on the same output, belongs to
 that output's current desktop, and matches the current activity through its
 live memberships. A valid click assigns public `Workspace.activeWindow` only
-when needed, then closes the effect. An invalid or stale click fails closed and
-leaves the effect active.
+when needed and closes the effect only after KWin confirms that window active.
+An invalid, stale, or rejected focus request fails closed and leaves the effect
+active.
 
 Ordinary KWin activation may raise the window, and existing Driftile focus
 handling may reveal its tiled column. The effect's focus path writes only
@@ -383,7 +384,8 @@ candidate's desktop and activity memberships.
 Release criteria:
 
 - Static QML contract tests pin the direct window reference, every live guard,
-  the fail-closed path, and the sole permitted public focus write.
+  accepted-focus confirmation, the fail-closed path, and the sole permitted
+  public focus write.
 - One packaged multi-output, compositor-routed physical left-click scenario
   covers native Wayland and XWayland protocol passes and preserves exact
   frames, memberships, selected desktops, settings, and built-in Overview

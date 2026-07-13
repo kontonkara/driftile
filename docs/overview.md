@@ -74,9 +74,10 @@ the effect closed.
 Only thumbnails in a `SceneView` current-desktop card accept left clicks. The
 effect revalidates the direct live window object, exact internal ID, output,
 desktop and activity memberships, visibility, minimized and deleted state, and
-input eligibility. A valid click retains or assigns
-`KWin.Workspace.activeWindow`, then closes the effect. An invalid or stale click
-performs no write and leaves the effect open.
+input eligibility. A valid candidate retains or requests
+`KWin.Workspace.activeWindow`; the effect closes only after KWin confirms focus.
+An invalid or stale candidate performs no write, and rejected focus leaves the
+effect open.
 
 Ordinary KWin activation may raise the window, and Driftile's existing focus
 handling may reveal its tiled column. The effect does not switch desktops or

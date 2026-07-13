@@ -78,8 +78,9 @@ The ownership rule is strict:
 - A click keeps the direct live window object and revalidates the active effect,
   exact internal ID, input eligibility, live window state, output, desktop, and
   current activity.
-- A valid click retains or assigns `KWin.Workspace.activeWindow`, then closes
-  the effect. An invalid or stale click writes nothing and leaves it open.
+- A valid candidate retains or requests `KWin.Workspace.activeWindow`. The
+  effect closes only after KWin confirms focus. An invalid or stale candidate
+  is not written, and rejected focus leaves the effect open.
 - Ordinary KWin activation may raise the window, and existing Driftile focus
   handling may reveal its tiled column.
 - The effect does not switch desktops or activities, move windows, write
@@ -139,8 +140,8 @@ Driftile must integrate with, not duplicate:
 - Focusing a non-minimized managed window makes it fully visible. Horizontal
   tiled navigation uses the smallest required scroll unless optional centering
   successfully places the destination closer to the work-area center.
-- An overview click may focus only a valid current-card window. A valid click
-  closes the effect; an invalid or stale click leaves it open without a write.
+- An overview click may focus only a valid current-card window. Only confirmed
+  focus closes the effect; an invalid, stale, or rejected request leaves it open.
 - Reordering moves one whole active column left, right, first, or last inside its context without changing focus or widths.
 - Column-width resizing changes one whole active column, translates client limits to decorated frame bounds, respects every member's width constraints, and preserves focus and grouping.
 - A newly admitted or explicitly resized width that reaches a hard minimum or maximum is stored at that fixed logical-pixel boundary, so work-area changes cannot scale it past the same constraint.

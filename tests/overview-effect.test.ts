@@ -89,9 +89,20 @@ describe("overview effect package", () => {
       scene.indexOf("function focusWindow("),
       scene.indexOf("function windowUsesDesktop("),
     );
+    const desktopMembership = scene.slice(
+      scene.indexOf("function windowUsesDesktop("),
+      scene.indexOf("function windowUsesCurrentActivity("),
+    );
+    const activityMembership = scene.slice(
+      scene.indexOf("function windowUsesCurrentActivity("),
+      scene.indexOf("function orderedDesktopIds("),
+    );
 
     expect(desktopCard.match(/\bTapHandler\s*\{/gu)).toHaveLength(1);
     expect(desktopCard).toContain("acceptedButtons: Qt.LeftButton");
+    expect(desktopCard).toContain(
+      "acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad",
+    );
     expect(desktopCard).toContain(
       "enabled: card.current && thumbnailShell.visible",
     );
@@ -99,29 +110,39 @@ describe("overview effect package", () => {
       "card.windowTapped(model.window, thumbnailShell.windowId, card.desktop, card.desktopId)",
     );
 
-    expect(scene).toContain("!sceneEffect");
-    expect(scene).toContain("sceneEffect.active !== true");
-    expect(scene).toContain("!candidate");
-    expect(scene).toContain("candidate.deleted");
-    expect(scene).toContain("candidate.hidden");
-    expect(scene).toContain("candidate.minimized");
-    expect(scene).toContain("candidate.wantsInput !== true");
-    expect(scene).toContain(
+    expect(focusHandler).toContain("!sceneEffect");
+    expect(focusHandler).toContain("sceneEffect.active !== true");
+    expect(focusHandler).toContain("!candidate");
+    expect(focusHandler).toContain("candidate.deleted");
+    expect(focusHandler).toContain("candidate.hidden");
+    expect(focusHandler).toContain("candidate.minimized");
+    expect(focusHandler).toContain("candidate.wantsInput !== true");
+    expect(focusHandler).toContain(
       "String(candidate.internalId) !== expectedWindowId",
     );
-    expect(scene).toContain("!targetScreen");
-    expect(scene).toContain("candidate.output !== targetScreen");
-    expect(scene).toContain("activeDesktop !== expectedDesktop");
-    expect(scene).toContain("String(activeDesktop.id) !== expectedDesktopId");
-    expect(scene).toContain("expectedDesktopId.length === 0");
-    expect(scene).toContain("const desktops = candidate.desktops");
-    expect(scene).toMatch(/if \(desktops\.length === 0\) \{\s*return true;/u);
-    expect(scene).toContain("const activities = candidate.activities");
-    expect(scene).toMatch(/if \(activities\.length === 0\) \{\s*return true;/u);
-    expect(scene).toContain("KWin.Workspace.currentActivity");
-    expect(scene).toContain("KWin.Workspace.activeWindow !== candidate");
-    expect(scene).toContain("KWin.Workspace.activeWindow = candidate");
-    expect(scene).toContain("sceneEffect.deactivate()");
+    expect(focusHandler).toContain("!targetScreen");
+    expect(focusHandler).toContain("candidate.output !== targetScreen");
+    expect(focusHandler).toContain("activeDesktop !== expectedDesktop");
+    expect(focusHandler).toContain(
+      "String(activeDesktop.id) !== expectedDesktopId",
+    );
+    expect(focusHandler).toContain("expectedDesktopId.length === 0");
+    expect(desktopMembership).toContain("const desktops = candidate.desktops");
+    expect(desktopMembership).toMatch(
+      /if \(desktops\.length === 0\) \{\s*return true;/u,
+    );
+    expect(activityMembership).toContain(
+      "const activities = candidate.activities",
+    );
+    expect(activityMembership).toMatch(
+      /if \(activities\.length === 0\) \{\s*return true;/u,
+    );
+    expect(activityMembership).toContain("KWin.Workspace.currentActivity");
+    expect(
+      focusHandler.match(/KWin\.Workspace\.activeWindow !== candidate/gu),
+    ).toHaveLength(2);
+    expect(focusHandler).toContain("KWin.Workspace.activeWindow = candidate");
+    expect(focusHandler).toContain("sceneEffect.deactivate()");
 
     const activeWindowWrite = focusHandler.indexOf(
       "KWin.Workspace.activeWindow = candidate",
@@ -130,9 +151,13 @@ describe("overview effect package", () => {
     const earlyReturns = [...focusHandler.matchAll(/\breturn;/gu)].map(
       (match) => match.index,
     );
-    expect(earlyReturns).toHaveLength(2);
-    expect(earlyReturns.every((index) => index < activeWindowWrite)).toBe(true);
+    expect(earlyReturns).toHaveLength(3);
+    expect(
+      earlyReturns.slice(0, 2).every((index) => index < activeWindowWrite),
+    ).toBe(true);
     expect(activeWindowWrite).toBeGreaterThan(0);
+    expect(earlyReturns[2]).toBeGreaterThan(activeWindowWrite);
+    expect(earlyReturns[2]).toBeLessThan(deactivate);
     expect(deactivate).toBeGreaterThan(activeWindowWrite);
 
     expect(scene).not.toContain("KWin.Workspace.stackingOrder");

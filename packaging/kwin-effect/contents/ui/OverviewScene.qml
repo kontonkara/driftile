@@ -90,6 +90,9 @@ Rectangle {
         if (KWin.Workspace.activeWindow !== candidate) {
             KWin.Workspace.activeWindow = candidate;
         }
+        if (KWin.Workspace.activeWindow !== candidate) {
+            return;
+        }
         sceneEffect.deactivate();
     }
 

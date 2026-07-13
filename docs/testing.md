@@ -84,8 +84,9 @@ desktop and window matching, bare-v1 rejection, baseline stripping, immutable
 projection, input-order independence, the 4,096-window operation budget, the
 two-read store boundary, public-only KWin imports, the direct live window
 reference, current-card gate, every live focus guard, fail-closed invalid input,
-and the sole permitted `KWin.Workspace.activeWindow` write. Settings,
-shortcut-assignment, and screen-edge writes remain forbidden.
+accepted-focus confirmation, and the sole permitted
+`KWin.Workspace.activeWindow` write. Settings, shortcut-assignment, and
+screen-edge writes remain forbidden.
 
 The two-output Wayland scenario routes a physical left click through the
 compositor for native Wayland and XWayland targets. It requires the effect to
