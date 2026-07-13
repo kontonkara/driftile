@@ -814,6 +814,148 @@ let
         return 1
       }
 
+      window_desktop_output_state_contains() {
+        local desktop
+        local output_frame=$2
+        local output_height
+        local output_width
+        local output_x
+        local output_y
+        local state
+        local window_frame
+        local window_height
+        local window_width
+        local window_x
+        local window_y
+
+        frame_is_valid "$output_frame" || return 1
+        state=$(
+          window_info_contains "$1" \
+            | jq --exit-status --raw-output '
+                .data[0] as $window
+                | ($window.desktops.data // []) as $desktops
+                | select(
+                    ($desktops | type) == "array"
+                    and ($desktops | length) == 1
+                    and ($desktops[0] | type) == "string"
+                    and ($window.x.data | type) == "number"
+                    and ($window.y.data | type) == "number"
+                    and ($window.width.data | type) == "number"
+                    and ($window.width.data > 0)
+                    and ($window.height.data | type) == "number"
+                    and ($window.height.data > 0)
+                  )
+                | [
+                    $desktops[0],
+                    (
+                      [
+                        $window.x.data,
+                        $window.y.data,
+                        $window.width.data,
+                        $window.height.data
+                      ]
+                      | map(round | tostring)
+                      | join(",")
+                    )
+                  ]
+                | @tsv
+              '
+        ) || return 1
+        IFS=$'\t' read -r desktop window_frame <<< "$state"
+        frame_is_valid "$window_frame" || return 1
+        IFS=, read -r \
+          output_x \
+          output_y \
+          output_width \
+          output_height \
+          <<< "$output_frame"
+        IFS=, read -r \
+          window_x \
+          window_y \
+          window_width \
+          window_height \
+          <<< "$window_frame"
+
+        ((window_x + window_width / 2 >= output_x \
+          && window_x + window_width / 2 < output_x + output_width \
+          && window_y + window_height / 2 >= output_y \
+          && window_y + window_height / 2 < output_y + output_height)) \
+          || return 1
+        printf '%s|%s|%s\n' "$desktop" "$output_frame" "$window_frame"
+      }
+
+      wait_for_cross_desktop_pointer_destination() {
+        local active
+        local attempt
+        local current
+        local expected_desktop=$3
+        local firefox_desktop
+        local firefox_frame
+        local firefox_output
+        local firefox_state
+        local output_frame=$4
+        local previous=""
+        local snapshot
+        local stable_samples=0
+        local target_desktop
+        local target_frame
+        local target_output
+        local target_state
+
+        [[ "$(single_enabled_output_frame 2>/dev/null || true)" \
+          == "$output_frame" ]] || return 1
+
+        for ((attempt = 0; attempt < 200; attempt += 1)); do
+          current=$(current_desktop_id 2>/dev/null || true)
+          firefox_state=$(
+            window_desktop_output_state_contains \
+              "$1" "$output_frame" 2>/dev/null || true
+          )
+          target_state=$(
+            window_desktop_output_state_contains \
+              "$2" "$output_frame" 2>/dev/null || true
+          )
+          IFS='|' read -r \
+            firefox_desktop \
+            firefox_output \
+            firefox_frame \
+            <<< "$firefox_state"
+          IFS='|' read -r \
+            target_desktop \
+            target_output \
+            target_frame \
+            <<< "$target_state"
+          active=$(active_window_caption 2>/dev/null || true)
+          snapshot="$current|$firefox_state|$target_state|$active"
+
+          if [[ "$current" == "$expected_desktop" \
+            && "$firefox_desktop" == "$expected_desktop" \
+            && "$target_desktop" == "$expected_desktop" \
+            && "$firefox_output" == "$output_frame" \
+            && "$target_output" == "$output_frame" \
+            && -n "$firefox_frame" \
+            && -n "$target_frame" \
+            && "$active" == "$1" ]]; then
+            if [[ "$snapshot" == "$previous" ]]; then
+              stable_samples=$((stable_samples + 1))
+            else
+              stable_samples=1
+            fi
+
+            if ((stable_samples >= 2)); then
+              return 0
+            fi
+          else
+            stable_samples=0
+          fi
+
+          previous=$snapshot
+          sleep 0.1
+        done
+
+        return 1
+      }
+
       wait_for_shortcuts() {
         local attempt
         local shortcuts
@@ -7229,6 +7371,101 @@ let
         return 1
       }
 
+      clear_physical_cross_desktop_pointer_handshake() {
+        rm -f \
+          /tmp/shared/driftile-cross-desktop-pointer-hold-ready \
+          /tmp/shared/driftile-cross-desktop-pointer-held \
+          /tmp/shared/driftile-cross-desktop-pointer-release-ready \
+          /tmp/shared/driftile-cross-desktop-pointer-released \
+          /tmp/shared/driftile-cross-desktop-pointer-hold-ready.tmp \
+          /tmp/shared/driftile-cross-desktop-pointer-release-ready.tmp
+      }
+
+      request_physical_cross_desktop_pointer_hold() {
+        local attempt
+        local edge_x=$3
+        local edge_y=$4
+        local held_file=/tmp/shared/driftile-cross-desktop-pointer-held
+        local output_frame=$5
+        local output_height
+        local output_width
+        local output_x
+        local output_y
+        local ready_file=/tmp/shared/driftile-cross-desktop-pointer-hold-ready
+        local ready_exposed_variable=$6
+        local source_x=$1
+        local source_y=$2
+        local temporary_file="$ready_file.tmp"
+
+        printf -v "$ready_exposed_variable" '%s' false || return 1
+        frame_is_valid "$output_frame" || return 1
+        IFS=, read -r \
+          output_x \
+          output_y \
+          output_width \
+          output_height \
+          <<< "$output_frame"
+        clear_physical_cross_desktop_pointer_handshake || return 1
+        printf '%s %s %s %s %s %s %s %s\n' \
+          "$source_x" \
+          "$source_y" \
+          "$edge_x" \
+          "$edge_y" \
+          "$output_x" \
+          "$output_y" \
+          "$output_width" \
+          "$output_height" \
+          > "$temporary_file"
+        mv "$temporary_file" "$ready_file"
+        printf -v "$ready_exposed_variable" '%s' true || return 1
+
+        for ((attempt = 0; attempt < 200; attempt += 1)); do
+          [[ -f "$held_file" ]] && return 0
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      request_physical_cross_desktop_pointer_release() {
+        local attempt
+        local output_frame=$3
+        local output_height
+        local output_width
+        local output_x
+        local output_y
+        local ready_file=/tmp/shared/driftile-cross-desktop-pointer-release-ready
+        local released_file=/tmp/shared/driftile-cross-desktop-pointer-released
+        local target_x=$1
+        local target_y=$2
+        local temporary_file="$ready_file.tmp"
+
+        frame_is_valid "$output_frame" || return 1
+        IFS=, read -r \
+          output_x \
+          output_y \
+          output_width \
+          output_height \
+          <<< "$output_frame"
+        rm -f "$ready_file" "$released_file" "$temporary_file"
+        printf '%s %s %s %s %s %s\n' \
+          "$target_x" \
+          "$target_y" \
+          "$output_x" \
+          "$output_y" \
+          "$output_width" \
+          "$output_height" \
+          > "$temporary_file"
+        mv "$temporary_file" "$ready_file"
+
+        for ((attempt = 0; attempt < 200; attempt += 1)); do
+          [[ -f "$released_file" ]] && return 0
+          sleep 0.1
+        done
+
+        return 1
+      }
+
       verify_physical_desktop_reorder_shortcuts() {
         local first_frame=$1
         local second_frame=$2
@@ -9160,6 +9397,322 @@ let
         return 1
       }
 
+      verify_physical_cross_desktop_pointer_adoption() {
+        local adoption_verified=false
+        local baseline_first=""
+        local baseline_second=""
+        local baseline_third=""
+        local cleanup_release_delivered=false
+        local cleanup_verified=true
+        local destination_release_delivered=false
+        local destination_x=0
+        local destination_y=0
+        local edge_x=0
+        local edge_y=0
+        local firefox_frame=""
+        local firefox_height=0
+        local firefox_pid=""
+        local firefox_profile=""
+        local firefox_title="Driftile VM Firefox"
+        local firefox_width=0
+        local firefox_x=0
+        local firefox_y=0
+        local hidden_first=""
+        local hidden_primary_xterm_frame=""
+        local hidden_second=""
+        local hidden_third=""
+        local hold_delivered=false
+        local hold_ready_exposed=false
+        local hold_requested=false
+        local output_frame=""
+        local output_height=0
+        local output_width=0
+        local output_x=0
+        local output_y=0
+        local observed_current_desktop=""
+        local observed_firefox_state=""
+        local observed_target_state=""
+        local primary_xterm_pid=""
+        local primary_xterm_title="Driftile VM Cross-desktop Primary XWayland"
+        local setup_verified=false
+        local source_x=0
+        local source_y=0
+        local target_frame=""
+        local target_height=0
+        local target_pid=""
+        local target_title="Driftile VM Cross-desktop Target XWayland"
+        local target_width=0
+        local target_x=0
+        local target_y=0
+
+        clear_physical_cross_desktop_pointer_handshake || return 1
+        if set_current_desktop "$primary_desktop_id" \
+          && activate_window "$title_c" \
+          && wait_for_active "$title_c" \
+          && capture_stable_frames; then
+          baseline_first=$stable_first_frame
+          baseline_second=$stable_second_frame
+          baseline_third=$stable_third_frame
+        else
+          record_focus_state \
+            "cross-desktop pointer adoption baseline capture failed"
+        fi
+
+        if frame_is_valid "$baseline_first" \
+          && frame_is_valid "$baseline_second" \
+          && frame_is_valid "$baseline_third" \
+          && set_current_desktop "$secondary_desktop_id" \
+          && start_xterm_window target_pid target_title "$target_title" \
+          && wait_for_window_desktop "$target_title" "$secondary_desktop_id" \
+          && set_current_desktop "$primary_desktop_id" \
+          && start_xterm_window \
+            primary_xterm_pid \
+            primary_xterm_title \
+            "$primary_xterm_title" \
+          && wait_for_window_desktop \
+            "$primary_xterm_title" \
+            "$primary_desktop_id" \
+          && start_firefox_window \
+            firefox_pid \
+            firefox_title \
+            firefox_profile \
+            "$firefox_title" \
+          && wait_for_window_desktop "$firefox_title" "$primary_desktop_id" \
+          && activate_window "$firefox_title" \
+          && wait_for_active "$firefox_title" \
+          && capture_stable_frames; then
+          hidden_first=$stable_first_frame
+          hidden_second=$stable_second_frame
+          hidden_third=$stable_third_frame
+          hidden_primary_xterm_frame=$(
+            capture_stable_window_frame_contains "$primary_xterm_title" \
+              || true
+          )
+          firefox_frame=$(
+            capture_stable_window_frame_contains "$firefox_title" \
+              || true
+          )
+          output_frame=$(single_enabled_output_frame 2>/dev/null || true)
+
+          if frame_is_valid "$hidden_primary_xterm_frame" \
+            && frame_is_valid "$firefox_frame" \
+            && frame_is_valid "$output_frame"; then
+            IFS=, read -r \
+              firefox_x \
+              firefox_y \
+              firefox_width \
+              firefox_height \
+              <<< "$firefox_frame"
+            IFS=, read -r \
+              output_x \
+              output_y \
+              output_width \
+              output_height \
+              <<< "$output_frame"
+            source_x=$((firefox_x + (firefox_width / 2)))
+            source_y=$((firefox_y + (firefox_height / 2)))
+            edge_x=$((output_x + output_width - 1))
+            edge_y=$source_y
+
+            if ((source_x >= output_x \
+              && source_x < output_x + output_width \
+              && source_y >= output_y \
+              && source_y < output_y + output_height \
+              && edge_y >= output_y \
+              && edge_y < output_y + output_height)); then
+              setup_verified=true
+            fi
+          fi
+        fi
+
+        if [[ "$setup_verified" == true ]]; then
+          hold_requested=true
+
+          if request_physical_cross_desktop_pointer_hold \
+            "$source_x" \
+            "$source_y" \
+            "$edge_x" \
+            "$edge_y" \
+            "$output_frame" \
+            hold_ready_exposed; then
+            hold_delivered=true
+          fi
+
+          if [[ -f \
+            /tmp/shared/driftile-cross-desktop-pointer-hold-ready ]]; then
+            hold_ready_exposed=true
+          fi
+        fi
+
+        if [[ "$hold_delivered" == true ]]; then
+          if wait_for_cross_desktop_pointer_destination \
+            "$firefox_title" \
+            "$target_title" \
+            "$secondary_desktop_id" \
+            "$output_frame"; then
+            target_frame=$(
+              capture_stable_window_frame_contains "$target_title" \
+                || true
+            )
+
+            if frame_is_valid "$target_frame"; then
+              IFS=, read -r \
+                target_x \
+                target_y \
+                target_width \
+                target_height \
+                <<< "$target_frame"
+              destination_x=$((target_x + (target_width / 2)))
+              destination_y=$((target_y + ((3 * target_height) / 4)))
+
+              if ((destination_x >= output_x \
+                && destination_x < output_x + output_width \
+                && destination_y >= output_y \
+                && destination_y < output_y + output_height)) \
+                && request_physical_cross_desktop_pointer_release \
+                  "$destination_x" \
+                  "$destination_y" \
+                  "$output_frame"; then
+                destination_release_delivered=true
+
+                if wait_for_cross_desktop_pointer_destination \
+                  "$firefox_title" \
+                  "$target_title" \
+                  "$secondary_desktop_id" \
+                  "$output_frame" \
+                  && wait_for_pointer_stack_order \
+                    "$target_title" \
+                    "$firefox_title" \
+                    "$target_width" \
+                  && wait_for_window_frame_contains \
+                    "$primary_xterm_title" \
+                    "$hidden_primary_xterm_frame" \
+                  && wait_for_named_frames \
+                    "$title_a" \
+                    "$hidden_first" \
+                    "$title_b" \
+                    "$hidden_second" \
+                    "$title_c" \
+                    "$hidden_third" \
+                  && window_is_on_desktop \
+                    "$primary_xterm_title" \
+                    "$primary_desktop_id" \
+                  && window_is_on_desktop \
+                    "$title_a" \
+                    "$primary_desktop_id" \
+                  && window_is_on_desktop \
+                    "$title_b" \
+                    "$primary_desktop_id" \
+                  && window_is_on_desktop \
+                    "$title_c" \
+                    "$primary_desktop_id"; then
+                  adoption_verified=true
+                  record_focus_state \
+                    "physical cross-desktop pointer adoption preserved hidden contexts"
+                fi
+              fi
+            fi
+          fi
+        fi
+
+        observed_current_desktop=$(current_desktop_id 2>/dev/null || true)
+        observed_firefox_state=$(
+          window_desktop_output_state_contains \
+            "$firefox_title" "$output_frame" 2>/dev/null || true
+        )
+        observed_target_state=$(
+          window_desktop_output_state_contains \
+            "$target_title" "$output_frame" 2>/dev/null || true
+        )
+
+        if [[ "$hold_requested" == true \
+          && ( "$hold_ready_exposed" == true \
+            || "$hold_delivered" == true ) \
+          && "$destination_release_delivered" == false ]]; then
+          if request_physical_cross_desktop_pointer_release \
+            "$edge_x" \
+            "$edge_y" \
+            "$output_frame"; then
+            cleanup_release_delivered=true
+          else
+            cleanup_verified=false
+          fi
+        fi
+        clear_physical_cross_desktop_pointer_handshake \
+          || cleanup_verified=false
+
+        if [[ -n "$firefox_pid" ]]; then
+          terminate_process "$firefox_pid"
+
+          if ! wait_for_window_gone_contains "$firefox_title"; then
+            cleanup_verified=false
+          fi
+        fi
+        if [[ -n "$target_pid" ]]; then
+          terminate_process "$target_pid"
+
+          if ! wait_for_window_gone_contains "$target_title"; then
+            cleanup_verified=false
+          fi
+        fi
+        if [[ -n "$primary_xterm_pid" ]]; then
+          terminate_process "$primary_xterm_pid"
+
+          if ! wait_for_window_gone_contains "$primary_xterm_title"; then
+            cleanup_verified=false
+          fi
+        fi
+        if [[ -n "$firefox_profile" ]] \
+          && ! rm -rf -- "$firefox_profile"; then
+          cleanup_verified=false
+        fi
+        if ! set_current_desktop "$primary_desktop_id" \
+          || ! activate_window "$title_c" \
+          || ! wait_for_active "$title_c" \
+          || ! wait_for_singleton_layout \
+            "$baseline_first" \
+            "$baseline_second" \
+            "$baseline_third"; then
+          cleanup_verified=false
+        fi
+
+        if [[ "$adoption_verified" == true \
+          && "$destination_release_delivered" == true \
+          && "$cleanup_verified" == true ]]; then
+          record_focus_state \
+            "cross-desktop pointer fixture closed and restored the primary desktop"
+          return 0
+        fi
+
+        record_focus_state \
+          "physical cross-desktop pointer adoption verification failed"
+        {
+          printf 'setup verified: %s\n' "$setup_verified"
+          printf 'hold requested: %s\n' "$hold_requested"
+          printf 'hold ready exposed: %s\n' "$hold_ready_exposed"
+          printf 'hold delivered: %s\n' "$hold_delivered"
+          printf 'destination release delivered: %s\n' \
+            "$destination_release_delivered"
+          printf 'cleanup release delivered: %s\n' \
+            "$cleanup_release_delivered"
+          printf 'adoption verified: %s\n' "$adoption_verified"
+          printf 'cleanup verified: %s\n' "$cleanup_verified"
+          printf 'output frame: %s\n' "$output_frame"
+          printf 'source Firefox frame: %s\n' "$firefox_frame"
+          printf 'fresh target frame: %s\n' "$target_frame"
+          printf 'hidden primary xterm frame: %s\n' \
+            "$hidden_primary_xterm_frame"
+          printf 'hidden application frames: %s | %s | %s\n' \
+            "$hidden_first" \
+            "$hidden_second" \
+            "$hidden_third"
+          printf 'current desktop: %s\n' "$observed_current_desktop"
+          printf 'Firefox desktop/output: %s\n' "$observed_firefox_state"
+          printf 'target desktop/output: %s\n' "$observed_target_state"
+        } >> /tmp/shared/driftile-focus-diagnostics
+        return 1
+      }
+
       verify_real_applications() {
         local baseline_first
         local baseline_second
@@ -9815,7 +10368,8 @@ let
         && verify_real_applications \
         && verify_application_column_width_override \
         && verify_application_tiling_exclusion \
-        && verify_physical_pointer_reinsertion; then
+        && verify_physical_pointer_reinsertion \
+        && verify_physical_cross_desktop_pointer_adoption; then
         focus_verified=true
       fi
 
@@ -10645,6 +11199,15 @@ let
     '';
   };
   kwinConfig = pkgs.writeText "driftile-vm-kwinrc" ''
+    ${if driftileVmTwoHead then "" else ''
+      [Desktops]
+      Rows=1
+
+      [Windows]
+      ElectricBorderPushbackPixels=0
+      ElectricBorders=2
+    ''}
+
     [MouseBindings]
     CommandAll1=Move
     CommandAllKey=Meta

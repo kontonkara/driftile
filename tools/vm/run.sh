@@ -37,10 +37,22 @@ readonly two_head_desktop_height=768
 readonly two_head_desktop_width=1376
 readonly two_head_desktop_x=0
 readonly two_head_desktop_y=0
+owned_qemu_exit_status=0
+owned_qemu_pid=""
+owned_qemu_process_active=false
+owned_qemu_start_time=""
 status_monitor_pid=""
 
 # shellcheck disable=SC2329
 cleanup() {
+  trap '' INT TERM
+
+  if [[ "$owned_qemu_process_active" == true ]]; then
+    shutdown_owned_qemu_process >/dev/null 2>&1 || true
+  elif [[ -S "$qmp_socket" ]]; then
+    set_physical_pointer_drag_state false >/dev/null 2>&1 || true
+  fi
+
   if [[ -n "$status_monitor_pid" ]]; then
     wait "$status_monitor_pid" >/dev/null 2>&1 || true
   fi
@@ -99,6 +111,12 @@ prepare_host_window() {
 
 monitor_guest() {
   local attempt
+  local desktop_pointer_hold_ready_file="$temporary_directory/xchg/driftile-cross-desktop-pointer-hold-ready"
+  local desktop_pointer_held_file="$temporary_directory/xchg/driftile-cross-desktop-pointer-held"
+  local desktop_pointer_release_ready_file="$temporary_directory/xchg/driftile-cross-desktop-pointer-release-ready"
+  local desktop_pointer_released_file="$temporary_directory/xchg/driftile-cross-desktop-pointer-released"
+  local desktop_pointer_held=false
+  local desktop_pointer_released=false
   local diagnostics_file="$temporary_directory/xchg/driftile-focus-diagnostics"
   local failed=false
   local focus_file="$temporary_directory/xchg/driftile-focus-verified"
@@ -220,7 +238,7 @@ monitor_guest() {
       if [[ "${keys_sent[$key_name]}" == false && -f "$key_ready_file" ]]; then
         if ! send_physical_shortcut "$key_name"; then
           printf 'Could not send the physical shortcut: %s.\n' "$key_name" >&2
-          stop_vm || true
+          finish_full_vm_monitor || true
           return 1
         fi
 
@@ -239,7 +257,7 @@ monitor_guest() {
         if ! send_physical_pointer_drag "$pointer_ready_file"; then
           printf 'Could not send the physical pointer drag: %s.\n' \
             "$pointer_drag_name" >&2
-          stop_vm || true
+          finish_full_vm_monitor || true
           return 1
         fi
 
@@ -250,6 +268,61 @@ monitor_guest() {
       fi
     done
 
+    if [[ "$desktop_pointer_held" == false \
+      && "$desktop_pointer_released" == false \
+      && -f "$desktop_pointer_hold_ready_file" ]]; then
+      if ! send_cross_desktop_pointer_hold \
+        "$desktop_pointer_hold_ready_file"; then
+        set_physical_pointer_drag_state false >/dev/null 2>&1 || true
+        printf 'Could not hold the physical cross-desktop pointer drag at the edge.\n' \
+          >&2 || true
+        finish_full_vm_monitor || true
+        return 1
+      fi
+
+      desktop_pointer_held=true
+
+      if ! : > "$desktop_pointer_held_file"; then
+        set_physical_pointer_drag_state false >/dev/null 2>&1 || true
+        printf 'Could not acknowledge the physical cross-desktop pointer hold.\n' \
+          >&2 || true
+        finish_full_vm_monitor || true
+        return 1
+      fi
+      rm -f -- "$desktop_pointer_hold_ready_file" || true
+
+      printf 'The VM is holding the physical cross-desktop pointer drag at the edge.\n' \
+        || true
+    fi
+
+    if [[ "$desktop_pointer_held" == true \
+      && "$desktop_pointer_released" == false \
+      && -f "$desktop_pointer_release_ready_file" ]]; then
+      if ! send_cross_desktop_pointer_release \
+        "$desktop_pointer_release_ready_file"; then
+        set_physical_pointer_drag_state false >/dev/null 2>&1 || true
+        printf 'Could not release the physical cross-desktop pointer drag at the target.\n' \
+          >&2 || true
+        finish_full_vm_monitor || true
+        return 1
+      fi
+
+      desktop_pointer_held=false
+      desktop_pointer_released=true
+
+      if ! : > "$desktop_pointer_released_file"; then
+        set_physical_pointer_drag_state false >/dev/null 2>&1 || true
+        printf 'Could not acknowledge the physical cross-desktop pointer release.\n' \
+          >&2 || true
+        finish_full_vm_monitor || true
+        return 1
+      fi
+      rm -f -- "$desktop_pointer_release_ready_file" || true
+
+      printf 'The VM released the physical cross-desktop pointer drag at the target.\n' \
+        || true
+    fi
+
     if [[ -f "$loaded_file" && -f "$focus_file" ]]; then
       if [[ "$(<"$loaded_file")" == true ]]; then
         printf 'The VM reports that Driftile loaded successfully.\n'
@@ -259,9 +332,9 @@ monitor_guest() {
       fi
 
       if [[ "$(<"$focus_file")" == true ]]; then
-        printf 'The VM verified physical shortcut and pointer routing, desktop switching and reordering, minimized-slot navigation, column reordering, horizontal extraction, consume and expel past minimized peers, native fullscreen and maximize, stacked fullscreen and maximize extraction past minimized peers, borderless ownership, numbered dynamic desktops, whole-column desktop transfer past a minimized member, floating desktop transfers, output transfers, floating-layer navigation, focus, stack editing and pointer reinsertion, live touchpad-navigation settings, the visible read-only overview lifecycle, advanced column view, column and window sizing, scrolling, mixed Konsole, Firefox, KDE Calculator, XWayland xterm, and fixed-size XWayland fixtures, plus repeated real-application lifecycles.\n'
+        printf 'The VM verified physical shortcut and pointer routing, desktop switching and reordering, same-output cross-desktop pointer adoption, minimized-slot navigation, column reordering, horizontal extraction, consume and expel past minimized peers, native fullscreen and maximize, stacked fullscreen and maximize extraction past minimized peers, borderless ownership, numbered dynamic desktops, whole-column desktop transfer past a minimized member, floating desktop transfers, output transfers, floating-layer navigation, focus, stack editing and pointer reinsertion, live touchpad-navigation settings, the visible read-only overview lifecycle, advanced column view, column and window sizing, scrolling, mixed Konsole, Firefox, KDE Calculator, XWayland xterm, and fixed-size XWayland fixtures, plus repeated real-application lifecycles.\n'
       else
-        printf 'The VM failed to verify physical shortcut or pointer routing, desktop switching or reordering, minimized-slot navigation, column reordering, horizontal extraction, consume or expel past minimized peers, native fullscreen or maximize, stacked fullscreen or maximize extraction past minimized peers, borderless ownership, numbered dynamic desktops, whole-column desktop transfer past a minimized member, floating desktop transfers, output transfers, floating-layer navigation, focus, stack editing or pointer reinsertion, live touchpad-navigation settings, the visible read-only overview lifecycle, advanced column view, column or window sizing, scrolling, mixed primary application fixtures, or the repeated real-application lifecycle pool.\n' >&2
+        printf 'The VM failed to verify physical shortcut or pointer routing, desktop switching or reordering, same-output cross-desktop pointer adoption, minimized-slot navigation, column reordering, horizontal extraction, consume or expel past minimized peers, native fullscreen or maximize, stacked fullscreen or maximize extraction past minimized peers, borderless ownership, numbered dynamic desktops, whole-column desktop transfer past a minimized member, floating desktop transfers, output transfers, floating-layer navigation, focus, stack editing or pointer reinsertion, live touchpad-navigation settings, the visible read-only overview lifecycle, advanced column view, column or window sizing, scrolling, mixed primary application fixtures, or the repeated real-application lifecycle pool.\n' >&2
         failed=true
 
         if [[ -f "$diagnostics_file" ]]; then
@@ -270,11 +343,13 @@ monitor_guest() {
       fi
 
       if [[ "$failed" == true ]]; then
-        stop_vm || true
+        set_physical_pointer_drag_state false >/dev/null 2>&1 || true
+        finish_full_vm_monitor || true
         return 1
       fi
 
-      stop_vm || true
+      set_physical_pointer_drag_state false >/dev/null 2>&1 || true
+      finish_full_vm_monitor || return 1
       return 0
     fi
 
@@ -282,7 +357,8 @@ monitor_guest() {
   done
 
   printf 'The VM did not report Driftile status within 360 seconds.\n' >&2
-  stop_vm || true
+  set_physical_pointer_drag_state false >/dev/null 2>&1 || true
+  finish_full_vm_monitor || true
   return 1
 }
 
@@ -650,6 +726,121 @@ send_two_head_pointer_drag() {
   return "$result"
 }
 
+send_cross_desktop_pointer_hold() {
+  local coordinate_file=$1
+  local edge_absolute_x=""
+  local edge_absolute_y=""
+  local edge_x=""
+  local edge_y=""
+  local extra=""
+  local output_height=""
+  local output_width=""
+  local output_x=""
+  local output_y=""
+  local result=0
+  local source_absolute_x=""
+  local source_absolute_y=""
+  local source_x=""
+  local source_y=""
+
+  if ! IFS=' ' read -r \
+    source_x \
+    source_y \
+    edge_x \
+    edge_y \
+    output_x \
+    output_y \
+    output_width \
+    output_height \
+    extra < "$coordinate_file"; then
+    result=1
+  fi
+
+  if ((result == 0)) && [[ -n "$extra" ]]; then
+    result=1
+  fi
+  if ((result == 0)); then
+    source_absolute_x=$(absolute_pointer_coordinate \
+      "$source_x" "$output_x" "$output_width") || result=1
+    source_absolute_y=$(absolute_pointer_coordinate \
+      "$source_y" "$output_y" "$output_height") || result=1
+    edge_absolute_x=$(absolute_pointer_coordinate \
+      "$edge_x" "$output_x" "$output_width") || result=1
+    edge_absolute_y=$(absolute_pointer_coordinate \
+      "$edge_y" "$output_y" "$output_height") || result=1
+  fi
+  if ((result == 0)) && ! absolute_pointer_available; then
+    result=1
+  fi
+
+  set_physical_pointer_drag_state false || result=1
+  if ((result == 0)) \
+    && ! send_absolute_pointer_position \
+      "$source_absolute_x" "$source_absolute_y"; then
+    result=1
+  fi
+  if ((result == 0)) && ! set_physical_pointer_drag_state true; then
+    result=1
+  fi
+  if ((result == 0)) \
+    && ! send_absolute_pointer_position "$edge_absolute_x" "$edge_absolute_y"; then
+    result=1
+  fi
+
+  if ((result != 0)); then
+    set_physical_pointer_drag_state false >/dev/null 2>&1 || true
+  fi
+
+  return "$result"
+}
+
+send_cross_desktop_pointer_release() {
+  local capabilities='{"execute":"qmp_capabilities"}'
+  local coordinate_file=$1
+  local extra=""
+  local output_height=""
+  local output_width=""
+  local output_x=""
+  local output_y=""
+  local release_input=""
+  local result=0
+  local target_absolute_x=""
+  local target_absolute_y=""
+  local target_x=""
+  local target_y=""
+
+  if ! IFS=' ' read -r \
+    target_x \
+    target_y \
+    output_x \
+    output_y \
+    output_width \
+    output_height \
+    extra < "$coordinate_file"; then
+    result=1
+  fi
+
+  if ((result == 0)) && [[ -n "$extra" ]]; then
+    result=1
+  fi
+  if ((result == 0)); then
+    target_absolute_x=$(absolute_pointer_coordinate \
+      "$target_x" "$output_x" "$output_width") || result=1
+    target_absolute_y=$(absolute_pointer_coordinate \
+      "$target_y" "$output_y" "$output_height") || result=1
+  fi
+  if ((result == 0)) && ! absolute_pointer_available; then
+    result=1
+  fi
+  if ((result == 0)); then
+    release_input="{\"execute\":\"input-send-event\",\"arguments\":{\"events\":[{\"type\":\"abs\",\"data\":{\"axis\":\"x\",\"value\":$target_absolute_x}},{\"type\":\"abs\",\"data\":{\"axis\":\"y\",\"value\":$target_absolute_y}},{\"type\":\"btn\",\"data\":{\"down\":false,\"button\":\"left\"}},{\"type\":\"key\",\"data\":{\"down\":false,\"key\":{\"type\":\"qcode\",\"data\":\"meta_l\"}}}]}}"
+    send_qmp_commands "$capabilities" "$release_input" || result=1
+  fi
+
+  set_physical_pointer_drag_state false || result=1
+  return "$result"
+}
+
 set_physical_pointer_drag_state() {
   local down=$1
   local capabilities='{"execute":"qmp_capabilities"}'
@@ -876,6 +1067,169 @@ stop_vm() {
       >/dev/null 2>&1
 }
 
+qemu_process_snapshot() {
+  local -a process_fields=()
+  local process_stat
+  local process_stat_tail
+  local pid=$1
+
+  [[ -r "/proc/$pid/stat" ]] || return 1
+  process_stat=$(<"/proc/$pid/stat") || return 1
+  process_stat_tail=${process_stat##*) }
+  read -r -a process_fields <<< "$process_stat_tail"
+  (( ${#process_fields[@]} > 19 )) || return 1
+  printf '%s %s' "${process_fields[0]}" "${process_fields[19]}"
+}
+
+owned_qemu_process_identity_matches() {
+  local process_snapshot
+  local process_start_time
+
+  [[ "$owned_qemu_process_active" == true ]] || return 1
+  process_snapshot=$(qemu_process_snapshot "$owned_qemu_pid") || return 1
+  read -r _ process_start_time <<< "$process_snapshot"
+  [[ "$process_start_time" == "$owned_qemu_start_time" ]]
+}
+
+owned_qemu_process_exited() {
+  local process_snapshot
+  local process_start_time
+  local process_state
+
+  [[ "$owned_qemu_process_active" == true ]] || return 0
+  process_snapshot=$(qemu_process_snapshot "$owned_qemu_pid") || return 0
+  read -r process_state process_start_time <<< "$process_snapshot"
+
+  if [[ "$process_start_time" != "$owned_qemu_start_time" ]]; then
+    return 0
+  fi
+
+  [[ "$process_state" == Z || "$process_state" == X ]]
+}
+
+reap_owned_qemu_process() {
+  local process_status=0
+
+  [[ "$owned_qemu_process_active" == true ]] || return 0
+
+  if wait "$owned_qemu_pid"; then
+    process_status=0
+  else
+    process_status=$?
+  fi
+
+  owned_qemu_exit_status=$process_status
+  owned_qemu_pid=""
+  owned_qemu_process_active=false
+  owned_qemu_start_time=""
+}
+
+wait_for_owned_qemu_process_exit() {
+  local attempt
+  local attempts=$1
+
+  [[ "$attempts" =~ ^[1-9][0-9]*$ ]] || return 1
+
+  for ((attempt = 0; attempt < attempts; attempt += 1)); do
+    if owned_qemu_process_exited; then
+      reap_owned_qemu_process
+      return 0
+    fi
+
+    sleep 0.1
+  done
+
+  return 1
+}
+
+terminate_owned_qemu_process() {
+  [[ "$owned_qemu_process_active" == true ]] || return 0
+
+  if owned_qemu_process_exited; then
+    reap_owned_qemu_process
+    return 0
+  fi
+
+  if owned_qemu_process_identity_matches; then
+    kill -TERM "$owned_qemu_pid" >/dev/null 2>&1 || true
+  fi
+
+  if wait_for_owned_qemu_process_exit 50; then
+    return 0
+  fi
+
+  if owned_qemu_process_identity_matches; then
+    kill -KILL "$owned_qemu_pid" >/dev/null 2>&1 || true
+  fi
+  reap_owned_qemu_process
+}
+
+shutdown_owned_qemu_process() {
+  local input_release_accepted=false
+
+  [[ "$owned_qemu_process_active" == true ]] || return 0
+
+  if set_physical_pointer_drag_state false >/dev/null 2>&1; then
+    input_release_accepted=true
+  fi
+
+  if stop_vm >/dev/null 2>&1; then
+    wait_for_owned_qemu_process_exit 50 \
+      || terminate_owned_qemu_process
+  else
+    terminate_owned_qemu_process
+  fi
+
+  [[ "$input_release_accepted" == true \
+    || "$owned_qemu_process_active" == false ]]
+}
+
+finish_full_vm_monitor() {
+  local process_status
+
+  shutdown_owned_qemu_process || return 1
+  process_status=$owned_qemu_exit_status
+  ((process_status == 0))
+}
+
+# shellcheck disable=SC2329
+full_vm_monitor_signal_handler() {
+  local exit_status=$1
+
+  trap '' INT TERM
+  exit "$exit_status"
+}
+
+start_owned_full_vm() {
+  local process_snapshot
+  local process_state
+
+  trap '' INT TERM
+
+  (
+    trap - INT TERM
+    export QEMU_OPTS="-qmp unix:$qmp_socket,server=on,wait=off"
+    export TMPDIR="$temporary_directory"
+    export USE_TMPDIR=1
+    exec "./result/bin/$vm_runner"
+  ) &
+  owned_qemu_pid=$!
+  owned_qemu_process_active=true
+  if ! process_snapshot=$(qemu_process_snapshot "$owned_qemu_pid"); then
+    reap_owned_qemu_process
+    return 1
+  fi
+  read -r process_state owned_qemu_start_time <<< "$process_snapshot"
+
+  if [[ "$process_state" == Z || "$process_state" == X ]]; then
+    reap_owned_qemu_process
+    return 1
+  fi
+
+  trap 'full_vm_monitor_signal_handler 130' INT
+  trap 'full_vm_monitor_signal_handler 143' TERM
+}
+
 trap cleanup EXIT
 
 if [[ -z "${DISPLAY:-}" && -z "${WAYLAND_DISPLAY:-}" ]]; then
@@ -890,10 +1244,15 @@ if ! prepare_host_window; then
   printf 'Could not request the initial VM window size from host KWin.\n' >&2
 fi
 
+if [[ "$vm_mode" == full ]]; then
+  start_owned_full_vm
+  monitor_guest
+  exit 0
+fi
+
 case "$vm_mode" in
   lifecycle) monitor_lifecycle_guest & ;;
   two-head) monitor_two_head_guest & ;;
-  *) monitor_guest & ;;
 esac
 status_monitor_pid=$!
 
