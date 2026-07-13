@@ -262,6 +262,7 @@ let
           columnWidthStepPercent = 13;
           defaultColumnWidthPercent = 65;
           gap = 7;
+          touchpadNavigation = true;
           windowHeightStepPercent = 17;
         };
       }
@@ -348,6 +349,7 @@ let
   invalidSettings = [
     { borderlessWindows = "false"; }
     { centerFocusedColumn = "true"; }
+    { touchpadNavigation = "true"; }
     { gap = -1; }
     { gap = 65; }
     { defaultColumnWidthPercent = 9; }
@@ -457,6 +459,7 @@ let
       ColumnWidthStepPercent = 13;
       DefaultColumnWidthPercent = 65;
       Gap = 7;
+      TouchpadNavigation = true;
       WindowHeightStepPercent = 17;
     };
   };
@@ -470,6 +473,7 @@ let
       ColumnWidthStepPercent = 10;
       DefaultColumnWidthPercent = 50;
       Gap = 16;
+      TouchpadNavigation = false;
       WindowHeightStepPercent = 10;
     };
   };
@@ -530,6 +534,7 @@ assert
       ColumnWidthStepPercent = 10;
       DefaultColumnWidthPercent = 50;
       Gap = 8;
+      TouchpadNavigation = false;
       WindowHeightStepPercent = 10;
     };
   };

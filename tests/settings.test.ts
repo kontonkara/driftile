@@ -40,6 +40,7 @@ const validSettings: DriftileSettings = {
   columnWidthStepPercent: 25,
   defaultColumnWidthPercent: 75,
   gap: 32,
+  touchpadNavigation: true,
   windowHeightStepPercent: 20,
 };
 
@@ -52,6 +53,7 @@ const validSettingsInput = {
   columnWidthStepPercent: validSettings.columnWidthStepPercent,
   defaultColumnWidthPercent: validSettings.defaultColumnWidthPercent,
   gap: validSettings.gap,
+  touchpadNavigation: validSettings.touchpadNavigation,
   windowHeightStepPercent: validSettings.windowHeightStepPercent,
 };
 
@@ -63,6 +65,7 @@ describe("Driftile settings", () => {
       columnWidthStepPercent: 10,
       defaultColumnWidthPercent: 50,
       gap: 16,
+      touchpadNavigation: false,
       windowHeightStepPercent: 10,
     });
     expect(
@@ -91,6 +94,7 @@ describe("Driftile settings", () => {
       columnWidthStepPercent: validSettings.columnWidthStepPercent,
       defaultColumnWidthPercent: validSettings.defaultColumnWidthPercent,
       gap: validSettings.gap,
+      touchpadNavigation: validSettings.touchpadNavigation,
       windowHeightStepPercent: validSettings.windowHeightStepPercent,
     });
     expect(decoded?.applicationColumnWidths.canonicalEntries).toEqual(
@@ -114,6 +118,7 @@ describe("Driftile settings", () => {
       columnWidthStepPercent: 1,
       defaultColumnWidthPercent: 10,
       gap: 0,
+      touchpadNavigation: false,
       windowHeightStepPercent: 1,
     },
     {
@@ -125,6 +130,7 @@ describe("Driftile settings", () => {
       columnWidthStepPercent: 50,
       defaultColumnWidthPercent: 100,
       gap: 64,
+      touchpadNavigation: true,
       windowHeightStepPercent: 50,
     },
   ])("accepts the inclusive numeric bounds", (settings) => {
@@ -146,6 +152,7 @@ describe("Driftile settings", () => {
       columnWidthStepPercent: settings.columnWidthStepPercent,
       defaultColumnWidthPercent: settings.defaultColumnWidthPercent,
       gap: settings.gap,
+      touchpadNavigation: settings.touchpadNavigation,
       windowHeightStepPercent: settings.windowHeightStepPercent,
     });
   });
@@ -153,6 +160,7 @@ describe("Driftile settings", () => {
   it.each([
     ["a non-boolean borderless setting", { borderlessWindows: 1 }],
     ["a non-boolean centering setting", { centerFocusedColumn: 1 }],
+    ["a non-boolean touchpad setting", { touchpadNavigation: 1 }],
     ["invalid column-width presets", { columnWidthPresets: "50,40" }],
     [
       "invalid application overrides",
@@ -202,7 +210,7 @@ describe("Driftile settings", () => {
     },
   );
 
-  it("rejects missing fields", () => {
+  it("rejects the previous nine-field snapshot", () => {
     const incomplete = {
       applicationColumnWidths: validSettingsInput.applicationColumnWidths,
       applicationTilingExclusions:
@@ -212,6 +220,7 @@ describe("Driftile settings", () => {
       columnWidthPresets: validSettingsInput.columnWidthPresets,
       columnWidthStepPercent: validSettings.columnWidthStepPercent,
       defaultColumnWidthPercent: validSettings.defaultColumnWidthPercent,
+      gap: validSettings.gap,
       windowHeightStepPercent: validSettings.windowHeightStepPercent,
     };
 
@@ -259,6 +268,7 @@ describe("Driftile settings", () => {
       { columnWidthStepPercent: 26 },
       { defaultColumnWidthPercent: 76 },
       { gap: 33 },
+      { touchpadNavigation: false },
       { windowHeightStepPercent: 21 },
     ]) {
       expect(

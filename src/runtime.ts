@@ -131,6 +131,10 @@ export function applySettings(settingsSnapshot: unknown): boolean {
   return true;
 }
 
+export function getTouchpadNavigation(): boolean {
+  return appliedSettings?.touchpadNavigation === true;
+}
+
 function decodeSettings(value: unknown): DriftileSettings | null {
   const settings = decodeDriftileSettings(value);
 

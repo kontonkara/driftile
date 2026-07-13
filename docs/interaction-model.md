@@ -10,6 +10,11 @@ Driftile uses one keyboard grammar and does not wrap at layout boundaries:
 - Adding `Shift` reorders the currently selected desktop one global position down or up.
 - `1..9` address a virtual desktop directly; adding `Ctrl` moves the active column there.
 
+Optional five-finger touchpad navigation reuses horizontal column focus: a
+completed left swipe focuses right, and a completed right swipe focuses left.
+It does not add shortcut actions, and partial or cancelled gestures perform no
+command.
+
 ## Delivery contract
 
 | Area                 | Required behavior                                                                                 | Target    |

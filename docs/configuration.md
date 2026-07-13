@@ -2,7 +2,7 @@
 
 Open **System Settings > Window Management > KWin Scripts** and configure Driftile.
 
-Driftile validates all nine settings as one snapshot. Applying an invalid value
+Driftile validates all ten settings as one snapshot. Applying an invalid value
 through an external configuration tool rejects the entire update and preserves
 the active settings; valid changes apply without reloading the extension.
 
@@ -10,17 +10,17 @@ the active settings; valid changes apply without reloading the extension.
 
 `programs.driftile.settings` is `null` by default, so Home Manager writes no
 Driftile setting. A non-null value is one complete typed profile: omitted fields
-take the defaults documented below, and Home Manager writes all nine values.
+take the defaults documented below, and Home Manager writes all ten values.
 This profile works with `programs.driftile.enable = false` when the package is
 installed system-wide.
 
 The activation writes only `ApplicationColumnWidths`,
 `ApplicationTilingExclusions`, `BorderlessWindows`, `CenterFocusedColumn`,
 `Gap`, `DefaultColumnWidthPercent`, `ColumnWidthPresets`,
-`ColumnWidthStepPercent`, and `WindowHeightStepPercent` in Driftile's `kwinrc`
-group. It does not replace the file or manage shortcuts. A running KWin session
-is asked to reconfigure on a best-effort basis; otherwise the values apply on
-its next reload or start.
+`ColumnWidthStepPercent`, `TouchpadNavigation`, and
+`WindowHeightStepPercent` in Driftile's `kwinrc` group. It does not replace the
+file or manage shortcuts. A running KWin session is asked to reconfigure on a
+best-effort basis; otherwise the values apply on its next reload or start.
 
 Declare application overrides as a typed attribute set. Home Manager sorts the
 desktop-file IDs before writing the newline-delimited KConfig value.
@@ -37,6 +37,7 @@ programs.driftile.settings.applicationTilingExclusions = [
 
 programs.driftile.settings.centerFocusedColumn = false;
 programs.driftile.settings.columnWidthPresets = [ 20 50 80 ];
+programs.driftile.settings.touchpadNavigation = true;
 ```
 
 Widths must be `10`–`100`. Width-override IDs are exact and may not contain `=`.
@@ -66,6 +67,18 @@ normal minimal reveal still completes the focus action.
 Changing the option does not move the current layout. Vertical, floating,
 layer, and direct application focus are unchanged, and the explicit **Center
 column** action remains available.
+
+## Touchpad navigation
+
+**Enable five-finger horizontal touchpad navigation** is disabled by default.
+On native Wayland, a completed left swipe focuses the next tiled column to the
+right, while a completed right swipe focuses the previous column to the left.
+The normal horizontal focus reveal and optional centering policies still apply.
+
+Partial and cancelled gestures do nothing. Enabling or disabling the option
+updates gesture registration without restarting KWin. Native X11 treats the
+enabled option as a safe no-op, and the option adds no shortcut action or
+default key binding.
 
 ## Window gap
 

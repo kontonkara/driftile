@@ -50,6 +50,7 @@ let
         columnWidthStepPercent = 13;
         defaultColumnWidthPercent = 65;
         gap = 7;
+        touchpadNavigation = true;
         windowHeightStepPercent = 17;
       };
       shortcuts = {
@@ -155,6 +156,7 @@ assert
       ColumnWidthStepPercent = 13;
       DefaultColumnWidthPercent = 65;
       Gap = 7;
+      TouchpadNavigation = true;
       WindowHeightStepPercent = 17;
     };
   };
@@ -180,6 +182,7 @@ assert
       ColumnWidthStepPercent = 10;
       DefaultColumnWidthPercent = 50;
       Gap = 8;
+      TouchpadNavigation = false;
       WindowHeightStepPercent = 10;
     };
   };

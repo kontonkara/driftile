@@ -9,6 +9,7 @@ QtObject {
     property bool deliveringResumeCallbacks: false
     property var nextResumeCallbacks: []
     property var resumeCallbacks: []
+    property bool appliedTouchpadNavigation: false
 
     readonly property LayoutStateStore layoutStateStore: LayoutStateStore {
         category: "Layout"
@@ -49,7 +50,25 @@ QtObject {
         target: Options
 
         function onConfigChanged() {
-            Runtime.DriftileRuntime.applySettings(root.readSettings())
+            root.applySettings(root.readSettings())
+        }
+    }
+
+    readonly property Loader touchpadNavigationLoader: Loader {
+        active: root.appliedTouchpadNavigation
+        source: "TouchpadNavigation.qml"
+    }
+
+    readonly property Connections touchpadNavigationConnection: Connections {
+        ignoreUnknownSignals: true
+        target: touchpadNavigationLoader.item
+
+        function onFocusLeftRequested() {
+            Runtime.DriftileRuntime.focusLeft()
+        }
+
+        function onFocusRightRequested() {
+            Runtime.DriftileRuntime.focusRight()
         }
     }
 
@@ -678,8 +697,17 @@ QtObject {
             columnWidthStepPercent: KWin.readConfig("ColumnWidthStepPercent", 10),
             defaultColumnWidthPercent: KWin.readConfig("DefaultColumnWidthPercent", 50),
             gap: KWin.readConfig("Gap", 16),
+            touchpadNavigation: KWin.readConfig("TouchpadNavigation", false),
             windowHeightStepPercent: KWin.readConfig("WindowHeightStepPercent", 10)
         };
+    }
+
+    function applySettings(settings) {
+        if (!Runtime.DriftileRuntime.applySettings(settings)) {
+            return;
+        }
+
+        root.appliedTouchpadNavigation = Runtime.DriftileRuntime.getTouchpadNavigation();
     }
 
     function createRect(x, y, width, height) {
@@ -711,6 +739,7 @@ QtObject {
                                     root.scheduleResume,
                                     root.readSettings(), loadedLayoutState,
                                     root.queueLayoutState);
+        root.appliedTouchpadNavigation = Runtime.DriftileRuntime.getTouchpadNavigation();
     }
     Component.onDestruction: {
         try {

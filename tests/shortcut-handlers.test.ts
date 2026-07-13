@@ -578,9 +578,7 @@ describe("KWin shortcut handlers", () => {
       `borderlessWindows: KWin.readConfig("BorderlessWindows", ${String(DEFAULT_DRIFTILE_SETTINGS.borderlessWindows)})`,
     );
     expect(qml).toContain("function onConfigChanged()");
-    expect(qml).toContain(
-      "Runtime.DriftileRuntime.applySettings(root.readSettings())",
-    );
+    expect(qml).toContain("root.applySettings(root.readSettings())");
   });
 
   it("exposes opt-in centering for horizontal tiled focus", () => {
@@ -833,9 +831,7 @@ describe("KWin shortcut handlers", () => {
 
   it("validates and applies settings as one live snapshot", () => {
     expect(qml).toContain("function readSettings()");
-    expect(qml).toContain(
-      "Runtime.DriftileRuntime.applySettings(root.readSettings())",
-    );
+    expect(qml).toContain("root.applySettings(root.readSettings())");
     expect(qml).toMatch(
       /Runtime\.DriftileRuntime\.init\([\s\S]*root\.readSettings\(\), loadedLayoutState,[\s\S]*root\.queueLayoutState\)/,
     );

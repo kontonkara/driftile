@@ -18,6 +18,7 @@ const expectedPackageEntries = [
   "contents/code/main.js",
   "contents/config/main.xml",
   "contents/ui/LayoutStateStore.qml",
+  "contents/ui/TouchpadNavigation.qml",
   "contents/ui/config.ui",
   "contents/ui/main.qml",
   "metadata.json",

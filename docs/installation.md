@@ -127,7 +127,7 @@ kwriteconfig6 --file kwinrc --group Plugins \
   --key io.github.kontonkara.driftileEnabled --delete ""
 for key in ApplicationColumnWidths ApplicationTilingExclusions BorderlessWindows \
   CenterFocusedColumn ColumnWidthPresets ColumnWidthStepPercent \
-  DefaultColumnWidthPercent Gap WindowHeightStepPercent; do
+  DefaultColumnWidthPercent Gap TouchpadNavigation WindowHeightStepPercent; do
   kwriteconfig6 --file kwinrc \
     --group Script-io.github.kontonkara.driftile \
     --key "$key" --delete ""

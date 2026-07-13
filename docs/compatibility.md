@@ -7,6 +7,8 @@
   the same layout model.
 - Native X11 is verified on one output with a global-workspace fallback.
   Multi-output native X11 remains unverified.
+- Optional five-finger touchpad navigation uses KWin's native Wayland gesture
+  API. Enabling it in a native X11 session is a safe no-op.
 - Desktop reordering fails closed when the KWin X11 scripting backend does not
   expose the required method.
 - The optional overview lifecycle is verified with native Wayland, XWayland,

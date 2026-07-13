@@ -89,7 +89,7 @@ The current runtime already:
 - Registers compact default shortcuts with `H/J/K/L`, arrow, Home/End, and Page Up/Down aliases.
 - Provides a reversible shortcut helper for the bundled defaults and explicit
   JSON v1 profiles; a UI without a Node.js dependency remains future work.
-- Lets Home Manager write the nine typed settings or generate a portable
+- Lets Home Manager write the ten typed settings or generate a portable
   shortcut profile without installing a second KWin package; shortcut claiming
   remains explicit.
 - Leaves dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows outside layout ownership, separate from manual floating.

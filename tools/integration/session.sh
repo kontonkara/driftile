@@ -50,6 +50,7 @@ primary_desktop_id=""
 qml_options=(--software)
 secondary_desktop_id=""
 desktop_reorder_supported=false
+touchpad_navigation_checked=false
 work_area_panel_pid=""
 x11_work_area_dock_pid=""
 
@@ -111,6 +112,7 @@ cleanup() {
     custom_shortcut_profile_owned=false
   fi
 
+  restore_touchpad_navigation >/dev/null 2>&1 || true
   restore_application_configuration >/dev/null 2>&1 || true
   restore_layout_configuration >/dev/null 2>&1 || true
   stop_work_area_panel
@@ -820,6 +822,127 @@ shortcut_keys() {
     4 kwin "$shortcut_name" KWin "$shortcut_text" \
     | jq --compact-output \
       '.data[0] | map(.[0]) | map(select(. != [0, 0, 0, 0])) | sort'
+}
+
+kwin_shortcut_names() {
+  busctl --user --json=short call \
+    org.kde.kglobalaccel \
+    /component/kwin \
+    org.kde.kglobalaccel.Component \
+    shortcutNames 2>/dev/null | jq --exit-status --compact-output '
+      .data[0]
+      | select(type == "array" and all(.[]; type == "string"))
+      | sort
+    '
+}
+
+capture_touchpad_navigation_checkpoint() {
+  local active_window
+  local desktop_id
+  local desktop_sequence=""
+  local digest
+  local frame
+  local frames=""
+  local shortcut_names
+  local title
+
+  digest=$(capture_stable_layout_digest) || return 1
+  shortcut_names=$(kwin_shortcut_names) || return 1
+
+  while IFS= read -r desktop_id; do
+    desktop_sequence+="${desktop_sequence:+|}$desktop_id"
+  done < <(virtual_desktop_ids)
+
+  active_window=$(describe_active_windows "$@")
+
+  for title in "$@"; do
+    frame=$(capture_stable_geometry "$title") || return 1
+    frames+="${frames:+|}$title=$frame"
+  done
+
+  printf '%s\037%s\037%s\037%s\037%s\037%s' \
+    "$digest" \
+    "$desktop_sequence" \
+    "$(current_desktop_id)" \
+    "$active_window" \
+    "$frames" \
+    "$shortcut_names"
+}
+
+read_touchpad_navigation() {
+  kreadconfig6 \
+    --file "$XDG_CONFIG_HOME/kwinrc" \
+    --group "Script-${plugin_id}" \
+    --key TouchpadNavigation \
+    --default false
+}
+
+set_touchpad_navigation() {
+  kwriteconfig6 \
+    --file "$XDG_CONFIG_HOME/kwinrc" \
+    --group "Script-${plugin_id}" \
+    --key TouchpadNavigation \
+    --type bool \
+    "$1" || return 1
+
+  busctl --user call \
+    org.kde.KWin \
+    /KWin \
+    org.kde.KWin \
+    reconfigure \
+    >/dev/null
+}
+
+restore_touchpad_navigation() {
+  set_touchpad_navigation false
+}
+
+verify_touchpad_navigation_lifecycle() {
+  local after_checkpoint
+  local baseline_checkpoint
+  local expected
+  local protocol=$1
+  local state
+
+  shift
+
+  if [[ "$touchpad_navigation_checked" == true ]]; then
+    return
+  fi
+
+  [[ "$(read_touchpad_navigation)" == false ]] || \
+    fail "touchpad navigation was not disabled by default"
+  wait_for_script_state true || \
+    fail "KWin did not keep Driftile loaded before the $protocol touchpad-navigation check"
+  baseline_checkpoint=$(capture_touchpad_navigation_checkpoint "$@") || \
+    fail "the $protocol touchpad-navigation baseline did not stabilize"
+  [[ "$(describe_active_windows "$@")" != none ]] || \
+    fail "the $protocol touchpad-navigation baseline did not have an active application window"
+  [[ "$(describe_active_windows "$@")" != *,* ]] || \
+    fail "the $protocol touchpad-navigation baseline had multiple active application windows"
+
+  for expected in true false true false; do
+    if [[ "$expected" == true ]]; then
+      state=enabled
+    else
+      state=disabled
+    fi
+
+    set_touchpad_navigation "$expected" || \
+      fail "KWin could not set $protocol touchpad navigation to $state live"
+    # KWin returns from reconfigure before its 200 ms settings timer fires.
+    sleep 0.4
+    [[ "$(read_touchpad_navigation)" == "$expected" ]] || \
+      fail "KConfig did not retain $state $protocol touchpad navigation"
+    wait_for_script_state true || \
+      fail "setting $protocol touchpad navigation to $state reloaded or unloaded Driftile"
+    after_checkpoint=$(capture_touchpad_navigation_checkpoint "$@") || \
+      fail "the $state $protocol touchpad-navigation checkpoint did not stabilize"
+    [[ "$after_checkpoint" == "$baseline_checkpoint" ]] || \
+      fail "setting $protocol touchpad navigation to $state changed windows, focus, desktops, layout state, or shortcuts"
+  done
+
+  touchpad_navigation_checked=true
 }
 
 verify_custom_shortcut_profile() {
@@ -8395,6 +8518,9 @@ run_scenario() {
       fail "Driftile did not restore the $protocol state window after native tiling: $(describe_layout "$first_title" "$second_title")"
   fi
 
+  verify_touchpad_navigation_lifecycle \
+    "$protocol" "$first_title" "$second_title"
+
   if [[ "$overview_effect_checks_enabled" == true ]]; then
     verify_overview_effect_lifecycle \
       "$protocol" "$first_title" "$second_title"
@@ -8708,6 +8834,10 @@ run_multi_output_scenario() {
     fail "Driftile did not restore the default gap on both $protocol output contexts: $(describe_layout "${titles[0]}" "${titles[1]}" "${titles[3]}" "${titles[4]}")"
   wait_for_active "${titles[4]}" || \
     fail "Driftile changed $protocol focus while restoring the multi-output gap"
+
+  verify_touchpad_navigation_lifecycle \
+    "$protocol" \
+    "${titles[0]}" "${titles[1]}" "${titles[3]}" "${titles[4]}"
 
   activate_window "${titles[0]}" || \
     fail "KWin could not prepare the per-output $protocol overview checkpoint"

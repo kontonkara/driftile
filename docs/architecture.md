@@ -16,6 +16,8 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Loads the compiled runtime in the KWin script environment.
 - Passes the KWin workspace object to the runtime.
 - Hosts QML-only shortcut handlers.
+- Keeps the optional touchpad gesture Loader inactive by default; only an
+  accepted complete settings snapshot may create or destroy its two handlers.
 - Provides event-loop and minimum-delay schedulers for batched work and transition stabilization.
 - Runs a two-second watchdog for visible-context geometry and non-minimized tracked-window hard constraints.
 - Contains no layout policy; its state store handles only opaque canonical strings.

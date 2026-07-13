@@ -23,7 +23,7 @@ const MIN_DEFAULT_COLUMN_WIDTH_PERCENT = 10;
 const MAX_DEFAULT_COLUMN_WIDTH_PERCENT = 100;
 const MIN_RESIZE_STEP_PERCENT = 1;
 const MAX_RESIZE_STEP_PERCENT = 50;
-const SETTINGS_FIELD_COUNT = 9;
+const SETTINGS_FIELD_COUNT = 10;
 
 export interface DriftileSettings {
   readonly applicationColumnWidths: ApplicationColumnWidthOverrides;
@@ -34,6 +34,7 @@ export interface DriftileSettings {
   readonly columnWidthStepPercent: number;
   readonly defaultColumnWidthPercent: number;
   readonly gap: number;
+  readonly touchpadNavigation: boolean;
   readonly windowHeightStepPercent: number;
 }
 
@@ -46,6 +47,7 @@ export const DEFAULT_DRIFTILE_SETTINGS: DriftileSettings = Object.freeze({
   columnWidthStepPercent: 10,
   defaultColumnWidthPercent: 50,
   gap: 16,
+  touchpadNavigation: false,
   windowHeightStepPercent: 10,
 });
 
@@ -68,6 +70,7 @@ export function decodeDriftileSettings(
     !owns(candidate, "columnWidthStepPercent") ||
     !owns(candidate, "defaultColumnWidthPercent") ||
     !owns(candidate, "gap") ||
+    !owns(candidate, "touchpadNavigation") ||
     !owns(candidate, "windowHeightStepPercent")
   ) {
     return null;
@@ -87,6 +90,7 @@ export function decodeDriftileSettings(
   const columnWidthStepPercent = candidate["columnWidthStepPercent"];
   const defaultColumnWidthPercent = candidate["defaultColumnWidthPercent"];
   const gap = candidate["gap"];
+  const touchpadNavigation = candidate["touchpadNavigation"];
   const windowHeightStepPercent = candidate["windowHeightStepPercent"];
 
   if (
@@ -106,6 +110,7 @@ export function decodeDriftileSettings(
       MAX_DEFAULT_COLUMN_WIDTH_PERCENT,
     ) ||
     !isBoundedInteger(gap, MIN_GAP, MAX_GAP) ||
+    typeof touchpadNavigation !== "boolean" ||
     !isBoundedInteger(
       windowHeightStepPercent,
       MIN_RESIZE_STEP_PERCENT,
@@ -124,6 +129,7 @@ export function decodeDriftileSettings(
     columnWidthStepPercent,
     defaultColumnWidthPercent,
     gap,
+    touchpadNavigation,
     windowHeightStepPercent,
   });
 }
@@ -150,6 +156,7 @@ export function sameDriftileSettings(
     left.columnWidthStepPercent === right.columnWidthStepPercent &&
     left.defaultColumnWidthPercent === right.defaultColumnWidthPercent &&
     left.gap === right.gap &&
+    left.touchpadNavigation === right.touchpadNavigation &&
     left.windowHeightStepPercent === right.windowHeightStepPercent
   );
 }

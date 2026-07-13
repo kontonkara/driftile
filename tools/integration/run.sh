@@ -6,6 +6,8 @@ project_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 readonly project_root
 readonly plugin_id="io.github.kontonkara.driftile"
 readonly overview_plugin_id="io.github.kontonkara.driftile.overview"
+readonly touchpad_navigation_created_marker="[driftile] touchpad-navigation lifecycle=created"
+readonly touchpad_navigation_destroyed_marker="[driftile] touchpad-navigation lifecycle=destroyed"
 readonly wait_attempts=200
 
 require_command() {
@@ -88,7 +90,9 @@ wait_for_file() {
 run_backend() (
   local backend=$1
   local candidate
+  local created_count
   local dbus_session_config
+  local destroyed_count
   local sandbox
   local log_file
   local layer_shell_qml_import="${DRIFTILE_SMOKE_LAYER_SHELL_QML_IMPORT:-}"
@@ -366,6 +370,17 @@ run_backend() (
 
   if grep -Fq "Component failed to load" "$log_file"; then
     fail "KWin reported a declarative component load failure."
+  fi
+
+  if grep -Fi -- "TouchpadNavigation.qml" "$log_file" | grep -Eiq \
+    '(^|[[:space:]:])qml([[:space:]:]|$)|qqml|component|error|fail(ed|ure)?|unavailable|not[[:space:]]+a[[:space:]]+type|is[[:space:]]+not[[:space:]]+installed|cannot[[:space:]]+(assign|create|load)|invalid'; then
+    fail "KWin reported a TouchpadNavigation.qml diagnostic."
+  fi
+
+  created_count=$(grep -Foc -- "$touchpad_navigation_created_marker" "$log_file" || true)
+  destroyed_count=$(grep -Foc -- "$touchpad_navigation_destroyed_marker" "$log_file" || true)
+  if ((created_count != 2 || destroyed_count != 2)); then
+    fail "KWin reported touchpad-navigation lifecycle counts created=$created_count destroyed=$destroyed_count; expected exactly 2 each."
   fi
 
   if ! kpackagetool6 \

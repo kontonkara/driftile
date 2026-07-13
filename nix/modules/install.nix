@@ -166,6 +166,12 @@ in
               description = "Whether horizontal tiled focus navigation centers the destination column.";
             };
 
+            touchpadNavigation = lib.mkOption {
+              type = lib.types.bool;
+              default = false;
+              description = "Whether five-finger horizontal touchpad swipes navigate tiled columns.";
+            };
+
             columnWidthPresets = lib.mkOption {
               type = columnWidthPresetType;
               default = [ ];
@@ -257,6 +263,7 @@ in
           ColumnWidthStepPercent = cfg.settings.columnWidthStepPercent;
           DefaultColumnWidthPercent = cfg.settings.defaultColumnWidthPercent;
           Gap = cfg.settings.gap;
+          TouchpadNavigation = cfg.settings.touchpadNavigation;
           WindowHeightStepPercent = cfg.settings.windowHeightStepPercent;
         };
       }

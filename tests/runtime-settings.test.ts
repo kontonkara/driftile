@@ -16,6 +16,10 @@ interface DeliveredSettings {
   readonly windowHeightStepPercent: number;
 }
 
+type RuntimeSettingsInput = Record<keyof DeliveredSettings, unknown> & {
+  readonly touchpadNavigation: unknown;
+};
+
 interface RuntimeControllerOptions {
   readonly applicationColumnWidths: ApplicationColumnWidthOverrides;
   readonly applicationTilingExclusions: ApplicationTilingExclusions;
@@ -137,7 +141,7 @@ afterEach(() => {
 });
 
 describe("runtime settings delivery", () => {
-  it("keeps invalid exclusion ownership and delivers one valid nine-field snapshot before deferred work", async () => {
+  it("keeps invalid ownership and accepts one valid ten-field snapshot before deferred work", async () => {
     vi.doMock("../src/runtime-controller", () => ({
       RuntimeController: RuntimeControllerDouble,
     }));
@@ -195,6 +199,7 @@ describe("runtime settings delivery", () => {
       columnWidthStepPercent: 13,
       defaultColumnWidthPercent: 65,
       gap: 7,
+      touchpadNavigation: true,
       windowHeightStepPercent: 17,
     });
     const expected: DeliveredSettings = {
@@ -210,6 +215,7 @@ describe("runtime settings delivery", () => {
     };
 
     expect(runtime.applySettings(next)).toBe(true);
+    expect(runtime.getTouchpadNavigation()).toBe(true);
     expect(controller.calls).toEqual([
       "applicationColumnWidths",
       "applicationTilingExclusions",
@@ -233,8 +239,8 @@ describe("runtime settings delivery", () => {
 });
 
 function settings(
-  overrides: Partial<Record<keyof DeliveredSettings, unknown>> = {},
-): Record<keyof DeliveredSettings, unknown> {
+  overrides: Partial<RuntimeSettingsInput> = {},
+): RuntimeSettingsInput {
   return {
     applicationColumnWidths: "",
     applicationTilingExclusions: "",
@@ -244,6 +250,7 @@ function settings(
     columnWidthStepPercent: 10,
     defaultColumnWidthPercent: 50,
     gap: 16,
+    touchpadNavigation: false,
     windowHeightStepPercent: 10,
     ...overrides,
   };

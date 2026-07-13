@@ -50,8 +50,9 @@ The ownership rule is strict:
 
 - A removable read-only overview companion presents the authoritative layout
   model while Plasma's built-in Overview remains the compatible fallback.
-- Touchpad navigation remains exploratory; global wheel input is deferred
-  because KWin 6.7 exposes no public script axis API.
+- Optional five-finger horizontal touchpad navigation reuses tiled column
+  focus; global wheel input is deferred because KWin 6.7 exposes no public
+  script axis API.
 - Cross-desktop pointer rearrangement and visual drop feedback.
 - Tabbed columns and matching pointer navigation.
 - Additional application-specific policies and an expanded settings UI.
