@@ -26,7 +26,9 @@ leaving window, output, and desktop mechanisms to KWin.
   and fail-closed restoration when a known output returns.
 - An optional overview companion that presents the authoritative layout; the
   1.7.0 release adds guarded current-card focus, while 1.8.0 adds guarded
-  non-current desktop selection from number gutters.
+  non-current desktop selection from number gutters. The 1.9 development branch
+  also activates an exact non-current thumbnail after guarded desktop
+  selection.
 - An optional reversible shortcut helper with custom JSON profiles.
 
 ## Status

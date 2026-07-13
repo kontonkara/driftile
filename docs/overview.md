@@ -9,6 +9,9 @@ Overview remains installed and unchanged.
 In 1.8.0, a left click on a non-current desktop card's number gutter selects
 that desktop. The current desktop's gutter remains inert.
 
+In 1.9 development, a left click on a valid non-current thumbnail selects its
+desktop and then focuses that exact window. Current-card focus remains direct.
+
 The released 1.6.0 package remains presentation-only.
 
 The companion is disabled by default and has no default shortcut or screen
@@ -73,13 +76,19 @@ layout snapshot whose outputs, desktops, and referenced windows match KWin. A
 missing, changing, legacy, corrupt, future, oversized, or stale snapshot keeps
 the effect closed.
 
-Only thumbnails in a `SceneView` current-desktop card accept left clicks. The
-effect revalidates the direct live window object, exact internal ID, output,
-desktop and activity memberships, visibility, minimized and deleted state, and
-input eligibility. A valid candidate retains or requests
-`KWin.Workspace.activeWindow`; the effect closes only after KWin confirms focus.
-An invalid or stale candidate performs no write, and rejected focus leaves the
-effect open.
+Current-card thumbnail focus is unchanged: the effect revalidates the direct
+live window object, exact internal ID, output, desktop and activity memberships,
+visibility, minimized and deleted state, and input eligibility. It retains or
+requests `KWin.Workspace.activeWindow` and closes only after confirmed focus.
+An invalid, stale, or rejected request leaves the effect open.
+
+A non-current thumbnail first revalidates the exact active effect, model, live
+screen, projected output, direct desktop object and ID, direct window object and
+ID, current activity, memberships, state, and input eligibility. The window may
+still be hidden because its desktop is not selected. The effect then uses the
+existing desktop-selection path and requires exact confirmation before
+revalidating the same candidate, now including visible state, requesting the
+exact active window, and confirming focus.
 
 Desktop selection revalidates the active effect, exact live screen and output,
 the desktop's direct object and ID, and its non-current state immediately before
@@ -88,19 +97,26 @@ is unavailable, `KWin.Workspace.currentDesktop` is permitted only with exactly
 one live screen. The effect closes only after an exact read confirms the
 selection; invalid, stale, raced, or rejected requests leave it open.
 
+Any rejection before desktop selection leaves the effect open. Once selection
+is confirmed, a late invalidation or focus failure keeps the selected desktop,
+closes the stale effect, and performs no rollback.
+
 Ordinary KWin activation may raise the window, and Driftile's existing focus
 handling may reveal its tiled column. Beyond a confirmed desktop request, the
 effect does not switch activities, move windows, write memberships, outputs,
 geometry, or settings, register a screen edge, assign a shortcut, or provide
-drag, rearrangement, or keyboard navigation. It does not infer columns from
-window geometry. Disabling or uninstalling it leaves the main extension and
-Plasma's built-in Overview unchanged.
+drag, rearrangement, or keyboard navigation. The 1.9 slice adds no action,
+binding, setting, schema, private API, or timer and performs no window,
+stacking-order, or layout scan. It does not infer columns from window geometry.
+Disabling or uninstalling it leaves the main extension and Plasma's built-in
+Overview unchanged.
 
 Packaged lifecycle checks cover native Wayland, XWayland, two-output Wayland,
 and single-output native X11. The two-output Wayland scenario additionally
 routes physical left clicks through the compositor for native Wayland and
-XWayland passes. It verifies both current-card focus and per-output desktop
-selection while preserving the other output, frames, memberships, settings,
-persisted layout, and Plasma's built-in Overview. Native X11 retains lifecycle
-and static fallback coverage; the harness does not claim an end-to-end X11
-selection click.
+XWayland passes. It verifies current-card focus, per-output desktop selection,
+and cross-desktop thumbnail activation against an exact target plus a
+last-active decoy while preserving the other output, frames, memberships,
+settings, persisted layout, and Plasma's built-in Overview. Native X11 retains
+lifecycle and static fallback coverage; the harness does not claim an
+end-to-end X11 selection or cross-desktop activation click.

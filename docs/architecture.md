@@ -59,17 +59,25 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Uses only public KWin QML types to enrich live thumbnails and screen context.
 - Keeps each rendered thumbnail's direct live window object in its QML delegate;
   the object does not enter projected or persisted state.
-- Accepts left clicks only in the current desktop card, then revalidates the
-  active effect, identity, input eligibility, state, output, desktop, and current
-  activity without a workspace scan.
+- Keeps current-card thumbnail focus direct. A non-current thumbnail first
+  revalidates the exact active effect, model, live screen, projected output,
+  desktop, window, and activity; off-desktop hidden state is allowed only at
+  this stage.
 - Accepts a non-current number-gutter click only after revalidating the active
   effect, exact live screen, projected output, and direct desktop object and ID.
+- Selects a non-current card through public `KWin.SceneView.currentDesktop`, or
+  the guarded single-output `KWin.Workspace.currentDesktop` fallback, and
+  requires an exact confirmation. Thumbnail activation then revalidates the
+  same window including visible state, requests the exact
+  `KWin.Workspace.activeWindow`, and confirms focus.
 - Writes only `KWin.Workspace.activeWindow`, public
   `KWin.SceneView.currentDesktop`, or the guarded single-output
-  `KWin.Workspace.currentDesktop` fallback. Only a confirmed result closes the
-  effect; an invalid, stale, raced, or rejected request leaves it open.
-- Owns no settings, activity selection, membership, output, geometry, shortcut
-  assignment, or screen-edge mechanism. KWin owns desktop switching.
+  `KWin.Workspace.currentDesktop` fallback. Pre-selection rejection leaves the
+  effect open. After confirmed selection, late invalidation or focus rejection
+  keeps the selected desktop, closes the stale effect, and performs no rollback.
+- Adds no action, binding, setting, schema, private API, timer, move, geometry
+  write, membership write, or screen-edge mechanism. It performs no window,
+  stacking-order, or layout scan. KWin owns desktop switching and focus.
 
 ### TypeScript runtime
 

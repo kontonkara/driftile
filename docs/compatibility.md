@@ -13,12 +13,13 @@
   expose the required method.
 - The optional overview lifecycle is verified with native Wayland, XWayland,
   two virtual Wayland outputs, and single-output native X11. It uses the same
-  exact snapshot validation on every backend. Guarded current-context focus is
+  exact snapshot validation on every backend. Guarded current-card focus is
   additionally verified for native Wayland and XWayland targets in the
   two-output Wayland scenario. The same physical scenario verifies per-output
-  desktop selection in both protocol passes. Native X11 keeps static coverage
-  of the guarded single-output global fallback; end-to-end selection activation
-  is not claimed there.
+  desktop selection and cross-desktop thumbnail activation in both protocol
+  passes, each with an exact target and last-active decoy. Native X11 keeps
+  static coverage of the guarded single-output global fallback; end-to-end
+  selection or cross-desktop activation is not claimed there.
 
 ## Installation portability
 
@@ -58,8 +59,8 @@ Driftile is a KWin extension, not a compositor. It owns layout policy while
 KWin remains responsible for windows, geometry application, outputs,
 fullscreen, maximize, minimize, and virtual-desktop mechanisms. Plasma's
 built-in Overview, Pager, and Task Switcher remain the shell baseline. The
-optional companion adds a separate layout view with guarded current-context
-focus and desktop selection without replacing them. KWin retains focus,
-stacking, and desktop switching ownership.
+optional companion adds a separate layout view with guarded current-card and
+cross-desktop thumbnail focus plus desktop selection without replacing them.
+KWin retains focus, stacking, and desktop switching ownership.
 Unsupported or unavailable KWin mechanisms fail closed instead of being
 reimplemented inside Driftile.

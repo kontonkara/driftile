@@ -105,11 +105,32 @@ The ownership rule is strict:
   rearrangement, private API, timer, window scan, or layout scan. Validation is
   `O(D + O)` over KWin's bounded desktop and output lists.
 
+## 1.9 optional overview slice (development)
+
+- Current-card thumbnail focus remains the direct, guarded 1.7 path.
+- A non-current thumbnail first revalidates the exact active effect, model, live
+  screen, projected output, desktop, window, and current activity. The window
+  may still be hidden because its desktop is not selected.
+- The existing public per-output desktop selection, or guarded exact
+  single-output global fallback, must confirm the requested desktop. The effect
+  then revalidates the same candidate including visible state, requests the
+  exact active window, and confirms focus.
+- Rejection before selection leaves the effect open. After confirmed selection,
+  late invalidation or focus failure keeps the selected desktop, closes the
+  stale effect, and performs no rollback.
+- The slice adds no action, binding, setting, schema, private API, timer, move,
+  geometry write, or membership write. It performs no window, stacking-order,
+  or layout scan.
+- Validation is `O(S + O + D + M)` over observed screens, projected outputs,
+  desktops, and the window's observed desktop and activity membership entries
+  `M`, retains no work, and issues at most one desktop write, one focus write,
+  and one deactivation.
+
 ## Beyond v1
 
 - A removable overview companion presents the authoritative layout with guarded
-  current-context focus and desktop selection while Plasma's built-in Overview
-  remains the compatible fallback.
+  current- and cross-desktop focus plus desktop selection while Plasma's
+  built-in Overview remains the compatible fallback.
 - Optional five-finger horizontal touchpad navigation reuses tiled column
   focus; global wheel input is deferred because KWin 6.7 exposes no public
   script axis API.
@@ -157,8 +178,13 @@ Driftile must integrate with, not duplicate:
 - Focusing a non-minimized managed window makes it fully visible. Horizontal
   tiled navigation uses the smallest required scroll unless optional centering
   successfully places the destination closer to the work-area center.
-- An overview click may focus only a valid current-card window. Only confirmed
-  focus closes the effect; an invalid, stale, or rejected request leaves it open.
+- A current-card overview click may focus only a valid live window. Only
+  confirmed focus closes the effect; an invalid, stale, or rejected request
+  leaves it open.
+- A non-current overview thumbnail may focus only its exact projected live
+  window after confirmed desktop selection. Pre-selection rejection leaves the
+  effect open; any later failure keeps the selected desktop, closes the stale
+  effect, and performs no rollback.
 - An overview gutter click may select only an exact live non-current desktop for
   its screen. Only confirmed selection closes the effect; a current, invalid,
   stale, raced, or rejected request leaves it open.

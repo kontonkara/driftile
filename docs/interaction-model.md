@@ -15,40 +15,53 @@ completed left swipe focuses right, and a completed right swipe focuses left.
 It does not add shortcut actions, and partial or cancelled gestures perform no
 command.
 
-The optional overview accepts left clicks only on valid thumbnails in the
-current desktop card. It revalidates the direct live window against that output,
-desktop, current activity, and input eligibility, then retains or requests
+The optional overview's current-card path accepts left clicks only on valid
+thumbnails. It revalidates the direct live window against that output, desktop,
+current activity, and input eligibility, then retains or requests
 `KWin.Workspace.activeWindow`. Only confirmed focus closes the effect; an
 invalid, stale, or rejected request leaves it open. Ordinary KWin activation
-may raise the window, and existing Driftile focus handling may reveal its tiled column.
+may raise the window, and existing Driftile focus handling may reveal its tiled
+column.
+
 In 1.8.0, the number gutter of a non-current card also accepts a left click. The
-effect revalidates the live screen, output, desktop
-object and ID, requests selection through a public KWin property, and closes
-only after exact confirmation. The current gutter and every rejected request
-remain inert. The effect does not switch activities, move windows, or write
-memberships, outputs, geometry, or settings.
+effect revalidates the live screen, projected output, and desktop object and ID,
+requests selection through a public KWin property, and closes only after exact
+confirmation. The current gutter and every rejected request remain inert. The
+effect never switches activities or writes window output, membership, geometry,
+or settings.
+
+In 1.9 development, a valid non-current thumbnail first revalidates the exact
+effect, model, screen, projected output, desktop, window, and activity while
+allowing the window's off-desktop hidden state. It selects and confirms that
+desktop through the existing public path, then revalidates the same window as
+visible, requests the exact active window, and confirms focus. Pre-selection
+rejection leaves the effect open. A late invalidation or focus failure after
+confirmed selection keeps the selected desktop and closes the stale effect
+without rollback. This adds no action, binding, setting, schema, private API,
+timer, move, geometry write, or membership write, and performs no window,
+stacking-order, or layout scan.
 
 ## Delivery contract
 
-| Area                 | Required behavior                                                                                     | Target    |
-| -------------------- | ----------------------------------------------------------------------------------------------------- | --------- |
-| Horizontal strip     | Focus and reorder columns; focus or move to first and last; reveal with minimal scrolling             | Available |
-| Vertical column      | Focus and reorder members; consume or expel active, top, or bottom members                            | Available |
-| Column view          | Cycle `1/3`, `1/2`, and `2/3` widths in both directions; adjust by 10%; toggle full width; center     | Available |
-| Advanced column view | Fill available width and center all fully visible columns                                             | Available |
-| Window height        | Adjust one window by 10%; reset to automatic; cycle `1/3`, `1/2`, and `2/3` presets                   | Available |
-| Virtual desktops     | Focus adjacent or numbered desktops; reorder when KWin supports it; transfer a column or window       | Available |
-| Outputs              | Focus an adjacent output and transfer the whole active column                                         | Available |
-| Fullscreen           | Extract a regular stack member, then toggle native fullscreen through KWin                            | Available |
-| Native maximize      | Extract a regular stack member, then toggle it to work-area edges through KWin                        | Available |
-| Minimize focus       | Preserve tiled slots and floating frames; skip minimized windows without wrapping                     | Available |
-| Hidden-member edits  | Preserve documented passive peers; reject every other minimized-member structural edit                | Available |
-| Floating layer       | Toggle state, switch layers, and navigate floating windows geometrically                              | Available |
-| Pointer drop         | Reinsert or adopt one active tiled window at one exact visible target                                 | Available |
-| Pointer resize       | Adopt one completed horizontal resize as the active column's fixed width                              | Available |
-| Overview companion   | Focus a valid current-card thumbnail or select a non-current number gutter; rejected input stays open | Available |
-| Tabbed columns       | Toggle a column between stacked and tabbed presentation without changing navigation                   | Future    |
-| Pointer navigation   | Provide wheel navigation through the shared layout model                                              | Future    |
+| Area                 | Required behavior                                                                                 | Target    |
+| -------------------- | ------------------------------------------------------------------------------------------------- | --------- |
+| Horizontal strip     | Focus and reorder columns; focus or move to first and last; reveal with minimal scrolling         | Available |
+| Vertical column      | Focus and reorder members; consume or expel active, top, or bottom members                        | Available |
+| Column view          | Cycle `1/3`, `1/2`, and `2/3` widths in both directions; adjust by 10%; toggle full width; center | Available |
+| Advanced column view | Fill available width and center all fully visible columns                                         | Available |
+| Window height        | Adjust one window by 10%; reset to automatic; cycle `1/3`, `1/2`, and `2/3` presets               | Available |
+| Virtual desktops     | Focus adjacent or numbered desktops; reorder when KWin supports it; transfer a column or window   | Available |
+| Outputs              | Focus an adjacent output and transfer the whole active column                                     | Available |
+| Fullscreen           | Extract a regular stack member, then toggle native fullscreen through KWin                        | Available |
+| Native maximize      | Extract a regular stack member, then toggle it to work-area edges through KWin                    | Available |
+| Minimize focus       | Preserve tiled slots and floating frames; skip minimized windows without wrapping                 | Available |
+| Hidden-member edits  | Preserve documented passive peers; reject every other minimized-member structural edit            | Available |
+| Floating layer       | Toggle state, switch layers, and navigate floating windows geometrically                          | Available |
+| Pointer drop         | Reinsert or adopt one active tiled window at one exact visible target                             | Available |
+| Pointer resize       | Adopt one completed horizontal resize as the active column's fixed width                          | Available |
+| Overview companion   | Focus an exact current or non-current thumbnail, or select a non-current number gutter            | Available |
+| Tabbed columns       | Toggle a column between stacked and tabbed presentation without changing navigation               | Future    |
+| Pointer navigation   | Provide wheel navigation through the shared layout model                                          | Future    |
 
 Single-window transfers will remain available as secondary, unbound actions.
 Default desktop and output transfer shortcuts must move the whole active column.
