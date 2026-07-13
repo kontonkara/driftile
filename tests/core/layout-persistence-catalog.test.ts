@@ -98,6 +98,34 @@ function snapshot(
   };
 }
 
+function withFullWidthRestore(
+  value: LayoutPersistenceCatalogSnapshot,
+  viewportOffset: number,
+): LayoutPersistenceCatalogSnapshot {
+  const context = required(value.state.contexts[0]);
+  const column = required(context.columns[0]);
+
+  return {
+    ...value,
+    state: {
+      ...value.state,
+      contexts: [
+        {
+          ...context,
+          columns: [
+            {
+              ...column,
+              fullWidthRestore: { kind: "fixed", value: 720 },
+              fullWidthRestoreViewportOffset: viewportOffset,
+              width: { kind: "proportion", value: 1 },
+            },
+          ],
+        },
+      ],
+    },
+  };
+}
+
 function catalog(
   ...snapshots: readonly LayoutPersistenceCatalogSnapshot[]
 ): LayoutPersistenceCatalogV2 {
@@ -407,7 +435,10 @@ describe("layout persistence catalog merge", () => {
 
   it("moves the current topology to the front and strips baselines from history", () => {
     const previous = catalog(
-      snapshot(topology(output("DP-1", "serial-1")), "previous-active", true),
+      withFullWidthRestore(
+        snapshot(topology(output("DP-1", "serial-1")), "previous-active", true),
+        -260,
+      ),
       snapshot(topology(output("DP-2", "serial-2")), "previous-2"),
       snapshot(topology(output("DP-3", "serial-3")), "previous-3"),
       snapshot(topology(output("DP-4", "serial-4")), "oldest"),
@@ -445,6 +476,13 @@ describe("layout persistence catalog merge", () => {
     ).toEqual({
       height: { clientHeight: 420, kind: "fixed" },
       windowKey: "previous-active",
+    });
+    expect(
+      merged.value.snapshots[1]?.state.contexts[0]?.columns[0],
+    ).toMatchObject({
+      fullWidthRestore: { kind: "fixed", value: 720 },
+      fullWidthRestoreViewportOffset: -260,
+      width: { kind: "proportion", value: 1 },
     });
     expect(previous.snapshots[0]?.state.contexts[0]?.restoreFingerprint).toBe(
       CONTEXT_FINGERPRINT,

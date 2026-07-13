@@ -48,6 +48,7 @@ describe("layout persistence capture", () => {
               },
               {
                 fullWidthRestore: { kind: "fixed", value: 720 },
+                fullWidthRestoreViewportOffset: -310,
                 members: [{ windowKey: "window-3" }],
                 width: { kind: "proportion", value: 1 },
               },
@@ -451,6 +452,16 @@ describe("layout persistence capture", () => {
       }),
     ],
     [
+      "a non-finite full-width viewport restore",
+      (input: LayoutPersistenceCaptureInput) => ({
+        ...input,
+        fullWidthRestores: input.fullWidthRestores.map((restore) => ({
+          ...restore,
+          viewportOffset: Number.POSITIVE_INFINITY,
+        })),
+      }),
+    ],
+    [
       "duplicate restore baselines",
       (input: LayoutPersistenceCaptureInput) => ({
         ...input,
@@ -566,6 +577,7 @@ function representativeInput(): LayoutPersistenceCaptureInput {
       {
         columnId: columnId("column-2"),
         contextKey: "context-1",
+        viewportOffset: -310,
         width: { kind: "fixed", value: 720 },
       },
     ],

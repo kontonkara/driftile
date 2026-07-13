@@ -438,6 +438,12 @@ function stripContextRestoreBaselines(
       ...(column.fullWidthRestore === undefined
         ? {}
         : { fullWidthRestore: column.fullWidthRestore }),
+      ...(column.fullWidthRestoreViewportOffset === undefined
+        ? {}
+        : {
+            fullWidthRestoreViewportOffset:
+              column.fullWidthRestoreViewportOffset,
+          }),
       members: column.members.map((member) => ({
         ...(member.height === undefined ? {} : { height: member.height }),
         windowKey: member.windowKey,

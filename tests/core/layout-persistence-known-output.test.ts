@@ -71,6 +71,7 @@ describe("known-output layout persistence hydration", () => {
           {
             columnId: "column:live-terminal",
             contextKey: "DP-3\u0000desktop-1",
+            viewportOffset: -270,
             width: { kind: "fixed", value: 840 },
           },
         ],
@@ -555,6 +556,7 @@ function representativeSnapshot(): LayoutPersistenceCatalogSnapshot {
             },
             {
               fullWidthRestore: { kind: "fixed", value: 840 },
+              fullWidthRestoreViewportOffset: -270,
               members: [{ windowKey: "terminal" }],
               width: { kind: "proportion", value: 1 },
             },

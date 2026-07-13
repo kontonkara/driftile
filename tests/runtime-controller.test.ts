@@ -1252,6 +1252,7 @@ function createKnownOutputHistorySnapshot(
           columns: [
             {
               fullWidthRestore: { kind: "fixed", value: 420 },
+              fullWidthRestoreViewportOffset: 37,
               members: [{ windowKey: "right-full-width" }],
               width: { kind: "proportion", value: 1 },
             },
@@ -3273,24 +3274,53 @@ describe("RuntimeController", () => {
     expect(tracked.window.frameGeometry).toEqual(entryFrame);
   });
 
-  it("restores the full-width toggle's prior column width", () => {
+  it("restores the full-width toggle's prior column view", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
-    const active = createTrackedWindow("window-1", output, desktop);
+    const windows = Array.from({ length: 3 }, (_value, index) =>
+      createTrackedWindow(`window-${String(index + 1)}`, output, desktop),
+    );
+    const active = windows[1];
+
+    if (!active) {
+      throw new Error("missing persisted full-width fixture");
+    }
+
     const fixture = createWorkspace(
       output,
       desktop,
       [output],
       [desktop],
-      [active.window],
+      windows.map(({ window }) => window),
     );
     const source = new RuntimeController(fixture.workspace, {
       clientAreaOption: 2,
-      columnWidth: { kind: "fixed", value: 400 },
       gap: 10,
     });
 
     expect(source.start()).toBe(true);
+    const layout = installTestLayout(
+      source,
+      output,
+      desktop,
+      "column:window-2",
+      windows.map((_window, index) => ({
+        id: `column:window-${String(index + 1)}`,
+        width: { kind: "proportion" as const, value: 0.5 },
+        windowIds: [`window-${String(index + 1)}`],
+      })),
+    );
+    const outputKey = outputId(output.name);
+    const desktopKey = desktopId(desktop.id);
+
+    expect(layout.setViewportOffset(outputKey, desktopKey, 485)).toBe(true);
+    source.reconcile();
+    fixture.workspace.activeWindow = active.window;
+    const priorLayout = layout.snapshot(outputKey, desktopKey);
+    const priorFrames = windows.map(({ window }) => ({
+      ...window.frameGeometry,
+    }));
+
     expect(source.maximizeColumn()).toBe(true);
     const document = requiredLayoutDocument(source);
     source.stop();
@@ -3300,7 +3330,19 @@ describe("RuntimeController", () => {
       gap: 10,
     });
     expect(restored.start(document)).toBe(true);
+    fixture.workspace.activeWindow = active.window;
+    expect(
+      runtimeLayout(restored).snapshot(outputKey, desktopKey),
+    ).toMatchObject({
+      viewportOffset: 495,
+    });
     expect(restored.maximizeColumn()).toBe(true);
+    expect(runtimeLayout(restored).snapshot(outputKey, desktopKey)).toEqual(
+      priorLayout,
+    );
+    expect(windows.map(({ window }) => window.frameGeometry)).toEqual(
+      priorFrames,
+    );
     expect(
       decodeLayoutPersistence(requiredLayoutDocument(restored)),
     ).toMatchObject({
@@ -3308,7 +3350,12 @@ describe("RuntimeController", () => {
       value: {
         contexts: [
           {
-            columns: [{ width: { kind: "fixed", value: 400 } }],
+            columns: [
+              { width: { kind: "proportion", value: 0.5 } },
+              { width: { kind: "proportion", value: 0.5 } },
+              { width: { kind: "proportion", value: 0.5 } },
+            ],
+            viewportOffset: 485,
           },
         ],
       },
@@ -3637,6 +3684,7 @@ describe("RuntimeController", () => {
               },
               {
                 fullWidthRestore: { kind: "fixed", value: 400 },
+                fullWidthRestoreViewportOffset: 0,
                 members: [{ windowKey: "window-2" }],
                 width: { kind: "proportion", value: 1 },
               },
@@ -19985,6 +20033,106 @@ describe("RuntimeController", () => {
     expect(fixture.activationCount).toBe(0);
   });
 
+  it("centers a full-width column and restores the exact viewport", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const windows = Array.from({ length: 3 }, (_value, index) =>
+      createTrackedWindow(`window-${String(index + 1)}`, output, desktop),
+    );
+    const middle = windows[1];
+
+    if (!middle) {
+      throw new Error("missing full-width viewport fixture");
+    }
+
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map(({ window }) => window),
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    controller.start();
+    const layout = installTestLayout(
+      controller,
+      output,
+      desktop,
+      "column:window-2",
+      windows.map((_window, index) => ({
+        id: `column:window-${String(index + 1)}`,
+        width: { kind: "proportion" as const, value: 0.5 },
+        windowIds: [`window-${String(index + 1)}`],
+      })),
+    );
+    const outputKey = outputId(output.name);
+    const desktopKey = desktopId(desktop.id);
+
+    expect(layout.setViewportOffset(outputKey, desktopKey, 485)).toBe(true);
+    controller.reconcile();
+    fixture.workspace.activeWindow = middle.window;
+    expect(windows.map(({ window }) => window.frameGeometry)).toEqual([
+      { height: 780, width: 485, x: -475, y: 10 },
+      { height: 780, width: 485, x: 20, y: 10 },
+      { height: 780, width: 485, x: 515, y: 10 },
+    ]);
+
+    expect(controller.maximizeColumn()).toBe(true);
+    expect(layout.snapshot(outputKey, desktopKey).viewportOffset).toBe(495);
+    expect(windows.map(({ window }) => window.frameGeometry)).toEqual([
+      { height: 780, width: 485, x: -485, y: 10 },
+      { height: 780, width: 980, x: 10, y: 10 },
+      { height: 780, width: 485, x: 1000, y: 10 },
+    ]);
+
+    const maximizedLayout = layout.snapshot(outputKey, desktopKey);
+    const maximizedFrames = windows.map(({ window }) => ({
+      ...window.frameGeometry,
+    }));
+    const rejecting = windows[2];
+
+    if (!rejecting) {
+      throw new Error("missing full-width rollback window");
+    }
+
+    let rejectNextWrite = true;
+    rejecting.setWriteBehavior((_frame, commit) => {
+      if (rejectNextWrite) {
+        rejectNextWrite = false;
+        throw new Error("geometry rejected");
+      }
+
+      commit();
+    });
+    const warning = console.warn;
+    console.warn = () => undefined;
+
+    try {
+      expect(controller.maximizeColumn()).toBe(false);
+    } finally {
+      console.warn = warning;
+      rejecting.setWriteBehavior(null);
+    }
+
+    expect(layout.snapshot(outputKey, desktopKey)).toEqual(maximizedLayout);
+    expect(windows.map(({ window }) => window.frameGeometry)).toEqual(
+      maximizedFrames,
+    );
+
+    expect(controller.maximizeColumn()).toBe(true);
+    expect(layout.snapshot(outputKey, desktopKey).viewportOffset).toBe(485);
+    expect(windows.map(({ window }) => window.frameGeometry)).toEqual([
+      { height: 780, width: 485, x: -475, y: 10 },
+      { height: 780, width: 485, x: 20, y: 10 },
+      { height: 780, width: 485, x: 515, y: 10 },
+    ]);
+    expect(fixture.workspace.activeWindow).toBe(middle.window);
+  });
+
   it("discards full-width restore state when a column ID is reused", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
@@ -26932,12 +27080,21 @@ describe("RuntimeController", () => {
           { kind: string; value: number }
         >
       >;
+      readonly columnFullWidthViewportRestore: ReadonlyMap<
+        string,
+        ReadonlyMap<ReturnType<typeof columnId>, number>
+      >;
     };
     expect(
       restoredState.columnFullWidthRestore
         .get(`${returnedOutput.name}\u0000${secondaryDesktop.id}`)
         ?.get(columnId("column:right-full-width")),
     ).toEqual({ kind: "fixed", value: 420 });
+    expect(
+      restoredState.columnFullWidthViewportRestore
+        .get(`${returnedOutput.name}\u0000${secondaryDesktop.id}`)
+        ?.get(columnId("column:right-full-width")),
+    ).toBe(37);
     expect(controller.managedCount).toBe(
       leftWindows.length + rightWindows.length,
     );

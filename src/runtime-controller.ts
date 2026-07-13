@@ -642,6 +642,10 @@ interface LayoutHydrationCandidate {
     string,
     ReadonlyMap<ColumnId, ColumnWidth>
   >;
+  readonly fullWidthViewportRestores: ReadonlyMap<
+    string,
+    ReadonlyMap<ColumnId, number>
+  >;
   readonly hydratedWindowIds: ReadonlySet<WindowId>;
   readonly layout: LayoutEngine;
   readonly managedWindows: ReadonlyMap<WindowId, ManagedWindow>;
@@ -703,6 +707,10 @@ export class RuntimeController {
   private readonly columnFullWidthRestore = new Map<
     string,
     Map<ColumnId, ColumnWidth>
+  >();
+  private readonly columnFullWidthViewportRestore = new Map<
+    string,
+    Map<ColumnId, number>
   >();
   private columnWidthStep = DEFAULT_COLUMN_WIDTH_STEP_PERCENT / 100;
   private columnWidthPresets: readonly ColumnWidth[];
@@ -952,12 +960,22 @@ export class RuntimeController {
       const fullWidthRestores: Array<{
         readonly columnId: ColumnId;
         readonly contextKey: string;
+        readonly viewportOffset?: number;
         readonly width: ColumnWidth;
       }> = [];
 
       for (const [contextKey, restores] of this.columnFullWidthRestore) {
         for (const [columnId, width] of restores) {
-          fullWidthRestores.push({ columnId, contextKey, width });
+          const viewportOffset = this.columnFullWidthRestoreViewportOffset(
+            contextKey,
+            columnId,
+          );
+          fullWidthRestores.push({
+            columnId,
+            contextKey,
+            ...(viewportOffset === undefined ? {} : { viewportOffset }),
+            width,
+          });
         }
       }
 
@@ -2031,6 +2049,12 @@ export class RuntimeController {
       command.context.key,
       command.activeColumn.id,
     );
+    const restoreViewportOffset = restore
+      ? this.columnFullWidthRestoreViewportOffset(
+          command.context.key,
+          command.activeColumn.id,
+        )
+      : undefined;
     const target = restore ?? { kind: "proportion", value: 1 };
 
     if (sameColumnWidth(command.activeColumn.width, target)) {
@@ -2044,13 +2068,22 @@ export class RuntimeController {
           command.context.key,
           command.activeColumn.id,
           command.activeColumn.width,
+          command.before.viewportOffset,
         );
       }
 
       return true;
     }
 
-    const resized = this.applyColumnWidth(command, target, "column maximize");
+    const resized =
+      restoreViewportOffset === undefined
+        ? this.applyColumnWidth(command, target, "column maximize")
+        : this.applyColumnWidthAndViewport(
+            command,
+            target,
+            restoreViewportOffset,
+            "column maximize",
+          );
 
     if (!resized) {
       return false;
@@ -2066,6 +2099,7 @@ export class RuntimeController {
         command.context.key,
         command.activeColumn.id,
         command.activeColumn.width,
+        command.before.viewportOffset,
       );
     }
 
@@ -2561,6 +2595,7 @@ export class RuntimeController {
       this.capacityParkBackoffs.clear();
       this.capacityParkOperations.clear();
       this.columnFullWidthRestore.clear();
+      this.columnFullWidthViewportRestore.clear();
       this.committedOutputRanks.clear();
       this.waitingWindowContexts.clear();
       this.waitingContextFingerprints.clear();
@@ -9408,6 +9443,48 @@ export class RuntimeController {
     );
   }
 
+  private applyColumnWidthAndViewport(
+    command: ActiveColumnCommand,
+    width: ColumnWidth,
+    viewportOffset: number,
+    label: string,
+  ): boolean {
+    let previousWidth: ColumnWidth | null = null;
+
+    return this.applyActiveColumnMutation(
+      command,
+      label,
+      () => {
+        previousWidth = this.layout.setActiveColumnWidth(
+          command.activeId,
+          width,
+        );
+
+        if (previousWidth === null) {
+          return false;
+        }
+
+        if (
+          this.layout.setViewportOffset(
+            command.context.outputId,
+            command.context.desktopId,
+            viewportOffset,
+          )
+        ) {
+          return true;
+        }
+
+        this.layout.setActiveColumnWidth(command.activeId, previousWidth);
+        previousWidth = null;
+        return false;
+      },
+      () =>
+        previousWidth !== null &&
+        this.layout.setActiveColumnWidth(command.activeId, previousWidth) !==
+          null,
+    );
+  }
+
   private finishColumnWidthChange(contextKey: string): void {
     this.capacityParkBackoffs.delete(contextKey);
 
@@ -10011,10 +10088,18 @@ export class RuntimeController {
     return width ? { ...width } : undefined;
   }
 
+  private columnFullWidthRestoreViewportOffset(
+    contextKey: string,
+    id: ColumnId,
+  ): number | undefined {
+    return this.columnFullWidthViewportRestore.get(contextKey)?.get(id);
+  }
+
   private setColumnFullWidthRestore(
     contextKey: string,
     id: ColumnId,
     width: ColumnWidth,
+    viewportOffset?: number,
   ): void {
     let contextRestore = this.columnFullWidthRestore.get(contextKey);
 
@@ -10024,9 +10109,24 @@ export class RuntimeController {
     }
 
     contextRestore.set(id, { ...width });
+
+    if (viewportOffset === undefined) {
+      this.deleteColumnFullWidthViewportRestore(contextKey, id);
+      return;
+    }
+
+    let viewportRestore = this.columnFullWidthViewportRestore.get(contextKey);
+
+    if (!viewportRestore) {
+      viewportRestore = new Map<ColumnId, number>();
+      this.columnFullWidthViewportRestore.set(contextKey, viewportRestore);
+    }
+
+    viewportRestore.set(id, viewportOffset);
   }
 
   private deleteColumnFullWidthRestore(contextKey: string, id: ColumnId): void {
+    this.deleteColumnFullWidthViewportRestore(contextKey, id);
     const contextRestore = this.columnFullWidthRestore.get(contextKey);
 
     if (!contextRestore) {
@@ -10040,6 +10140,23 @@ export class RuntimeController {
     }
   }
 
+  private deleteColumnFullWidthViewportRestore(
+    contextKey: string,
+    id: ColumnId,
+  ): void {
+    const viewportRestore = this.columnFullWidthViewportRestore.get(contextKey);
+
+    if (!viewportRestore) {
+      return;
+    }
+
+    viewportRestore.delete(id);
+
+    if (viewportRestore.size === 0) {
+      this.columnFullWidthViewportRestore.delete(contextKey);
+    }
+  }
+
   private pruneColumnFullWidthRestores(): void {
     for (const [key, restores] of this.columnFullWidthRestore) {
       const context = this.contexts.get(key);
@@ -10048,6 +10165,7 @@ export class RuntimeController {
 
       if (!parsed && !leases) {
         this.columnFullWidthRestore.delete(key);
+        this.columnFullWidthViewportRestore.delete(key);
         continue;
       }
 
@@ -10069,11 +10187,13 @@ export class RuntimeController {
       for (const id of restores.keys()) {
         if (!liveColumnIds.has(id)) {
           restores.delete(id);
+          this.deleteColumnFullWidthViewportRestore(key, id);
         }
       }
 
       if (restores.size === 0) {
         this.columnFullWidthRestore.delete(key);
+        this.columnFullWidthViewportRestore.delete(key);
       }
     }
   }
@@ -10095,11 +10215,13 @@ export class RuntimeController {
     for (const id of contextRestore.keys()) {
       if (!beforeIds.has(id) || !afterIds.has(id)) {
         contextRestore.delete(id);
+        this.deleteColumnFullWidthViewportRestore(contextKey, id);
       }
     }
 
     if (contextRestore.size === 0) {
       this.columnFullWidthRestore.delete(contextKey);
+      this.columnFullWidthViewportRestore.delete(contextKey);
     }
   }
 
@@ -15351,6 +15473,10 @@ export class RuntimeController {
       string,
       Map<ColumnId, ColumnWidth>
     >();
+    const candidateFullWidthViewportRestores = new Map<
+      string,
+      Map<ColumnId, number>
+    >();
     const candidateSuspendedWindowIds = new Set<WindowId>();
     const candidateRestoreBaselinePendingWindowIds = new Set<WindowId>();
     const candidateHydratedWindowIds = new Set<WindowId>();
@@ -15494,6 +15620,22 @@ export class RuntimeController {
       }
 
       contextRestores.set(restore.columnId, { ...restore.width });
+
+      if (restore.viewportOffset !== undefined) {
+        let viewportRestores = candidateFullWidthViewportRestores.get(
+          restore.contextKey,
+        );
+
+        if (!viewportRestores) {
+          viewportRestores = new Map<ColumnId, number>();
+          candidateFullWidthViewportRestores.set(
+            restore.contextKey,
+            viewportRestores,
+          );
+        }
+
+        viewportRestores.set(restore.columnId, restore.viewportOffset);
+      }
     }
 
     for (const planned of plan.floatingWindows) {
@@ -15560,6 +15702,7 @@ export class RuntimeController {
       contexts: candidateContexts,
       floatingWindows: candidateFloatingWindows,
       fullWidthRestores: candidateFullWidthRestores,
+      fullWidthViewportRestores: candidateFullWidthViewportRestores,
       hydratedWindowIds: candidateHydratedWindowIds,
       layout: candidateLayout,
       managedWindows: candidateManagedWindows,
@@ -15723,6 +15866,7 @@ export class RuntimeController {
       this.managedWindows.clear();
       this.floatingWindows.clear();
       this.columnFullWidthRestore.clear();
+      this.columnFullWidthViewportRestore.clear();
       this.dirtyContexts.clear();
       this.pendingHydratedRestoreBaselines.clear();
 
@@ -15741,6 +15885,10 @@ export class RuntimeController {
 
       for (const [key, restores] of candidate.fullWidthRestores) {
         this.columnFullWidthRestore.set(key, new Map(restores));
+      }
+
+      for (const [key, restores] of candidate.fullWidthViewportRestores) {
+        this.columnFullWidthViewportRestore.set(key, new Map(restores));
       }
 
       for (const id of candidate.hydratedWindowIds) {
@@ -15764,6 +15912,7 @@ export class RuntimeController {
       this.managedWindows.clear();
       this.floatingWindows.clear();
       this.columnFullWidthRestore.clear();
+      this.columnFullWidthViewportRestore.clear();
       this.dirtyContexts.clear();
       replaceSet(this.dirtyContexts, previousDirtyContexts);
       replaceSet(this.pendingWindowSyncs, previousPendingWindowSyncs);
@@ -17860,6 +18009,7 @@ export class RuntimeController {
     }
 
     const fullWidthRestores = new Map<string, Map<ColumnId, ColumnWidth>>();
+    const fullWidthViewportRestores = new Map<string, Map<ColumnId, number>>();
 
     for (const restore of restoration.plan.fullWidthRestores) {
       const planned = plannedContexts.get(restore.contextKey);
@@ -17883,6 +18033,19 @@ export class RuntimeController {
       }
 
       contextRestores.set(restore.columnId, { ...restore.width });
+
+      if (restore.viewportOffset !== undefined) {
+        let viewportRestores = fullWidthViewportRestores.get(
+          restore.contextKey,
+        );
+
+        if (!viewportRestores) {
+          viewportRestores = new Map<ColumnId, number>();
+          fullWidthViewportRestores.set(restore.contextKey, viewportRestores);
+        }
+
+        viewportRestores.set(restore.columnId, restore.viewportOffset);
+      }
     }
 
     const restoredContexts: KnownOutputAdmissionContext[] = [];
@@ -17948,11 +18111,18 @@ export class RuntimeController {
       }
 
       this.columnFullWidthRestore.delete(key);
+      this.columnFullWidthViewportRestore.delete(key);
 
       const contextRestores = fullWidthRestores.get(key);
 
       if (contextRestores && contextRestores.size > 0) {
         this.columnFullWidthRestore.set(key, contextRestores);
+      }
+
+      const viewportRestores = fullWidthViewportRestores.get(key);
+
+      if (viewportRestores && viewportRestores.size > 0) {
+        this.columnFullWidthViewportRestore.set(key, viewportRestores);
       }
 
       for (const candidate of preparedContext.candidates) {

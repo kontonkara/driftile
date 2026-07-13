@@ -8729,10 +8729,14 @@ let
         local expand_second_frame
         local expand_third_frame
         local expanded_second_width
+        local full_first_x
+        local full_first_width
         local full_second_frame
         local full_second_height
         local full_second_width
+        local full_second_x
         local full_second_y
+        local full_third_x
         local original_first_frame
         local original_first_width
         local original_gap
@@ -8793,12 +8797,16 @@ let
           return 1
         fi
         full_second_frame=$stable_second_frame
+        IFS=, read -r full_first_x _ full_first_width _ \
+          <<< "$stable_first_frame"
         IFS=, read -r \
-          _ \
+          full_second_x \
           full_second_y \
           full_second_width \
           full_second_height \
           <<< "$full_second_frame"
+        IFS=, read -r full_third_x _ _ _ \
+          <<< "$stable_third_frame"
         usable_right=$((
           original_third_x + original_third_width - original_gap
         ))
@@ -8807,10 +8815,14 @@ let
         if ((original_gap <= 0 \
           || usable_right <= usable_left \
           || full_second_width <= original_second_width \
+          || full_second_x != usable_left \
+          || full_second_x + full_second_width != usable_right \
+          || full_first_x + full_first_width > usable_left - original_gap \
+          || full_third_x < usable_right + original_gap \
           || full_second_y != original_second_y \
           || full_second_height != original_second_height)); then
           record_focus_state \
-            "available-width usable span was invalid"
+            "full-width viewport margins or neighbor visibility were invalid"
           return 1
         fi
 
@@ -8820,6 +8832,10 @@ let
             "$original_first_width" \
             "$original_second_width" \
             "$original_third_width" \
+          || ! wait_for_frames \
+            "$original_first_frame" \
+            "$original_second_frame" \
+            "$original_third_frame" \
           || ! activate_window "$title_c" \
           || ! wait_for_active "$title_c" \
           || ! wait_for_frames \

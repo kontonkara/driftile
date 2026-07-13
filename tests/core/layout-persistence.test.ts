@@ -37,6 +37,7 @@ function persistedState(): LayoutPersistenceV1 {
           },
           {
             fullWidthRestore: { kind: "fixed", value: 720 },
+            fullWidthRestoreViewportOffset: -310,
             members: [
               {
                 height: { kind: "auto", weight: 2 },
@@ -128,6 +129,33 @@ describe("layout persistence codec", () => {
     expect(decodeLayoutPersistence(document)).toEqual({
       ok: true,
       value: state,
+    });
+  });
+
+  it("keeps legacy full-width restores without viewport offsets valid", () => {
+    const state = persistedState();
+    const context = required(state.contexts[0]);
+    const fullWidthColumn = required(context.columns[1]);
+    const legacy: LayoutPersistenceV1 = {
+      ...state,
+      contexts: [
+        {
+          ...context,
+          columns: [
+            required(context.columns[0]),
+            {
+              fullWidthRestore: required(fullWidthColumn.fullWidthRestore),
+              members: fullWidthColumn.members,
+              width: fullWidthColumn.width,
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(decodeLayoutPersistence(encodeLayoutPersistence(legacy))).toEqual({
+      ok: true,
+      value: legacy,
     });
   });
 
@@ -468,11 +496,47 @@ describe("layout persistence codec", () => {
         },
       ],
     };
+    const orphanedFullWidthViewportRestore: LayoutPersistenceV1 = {
+      ...state,
+      contexts: [
+        {
+          ...required(state.contexts[0]),
+          columns: [
+            {
+              ...required(required(state.contexts[0]).columns[0]),
+              fullWidthRestoreViewportOffset: 240,
+            },
+            required(required(state.contexts[0]).columns[1]),
+          ],
+        },
+      ],
+    };
+    const invalidFullWidthViewportRestore: LayoutPersistenceV1 = {
+      ...state,
+      contexts: [
+        {
+          ...required(state.contexts[0]),
+          columns: [
+            required(required(state.contexts[0]).columns[0]),
+            {
+              ...required(required(state.contexts[0]).columns[1]),
+              fullWidthRestoreViewportOffset: Number.POSITIVE_INFINITY,
+            },
+          ],
+        },
+      ],
+    };
 
     expect(() => encodeLayoutPersistence(twoFixedHeights)).toThrow();
     expect(() => encodeLayoutPersistence(selfAnchor)).toThrow();
     expect(() => encodeLayoutPersistence(splitAnchor)).toThrow();
     expect(() => encodeLayoutPersistence(staleFullWidthRestore)).toThrow();
+    expect(() =>
+      encodeLayoutPersistence(orphanedFullWidthViewportRestore),
+    ).toThrow();
+    expect(() =>
+      encodeLayoutPersistence(invalidFullWidthViewportRestore),
+    ).toThrow();
   });
 
   it("rejects floating anchors outside their tiled source context", () => {

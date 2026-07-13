@@ -137,6 +137,65 @@ describe("solveStripGeometry", () => {
     });
   });
 
+  it("keeps a full-width middle column between equal outer gaps", () => {
+    const context = createContext([
+      { kind: "proportion", value: 0.5 },
+      { kind: "proportion", value: 1 },
+      { kind: "proportion", value: 0.5 },
+    ]);
+    const result = solveStripGeometry({
+      context: {
+        ...context,
+        activeColumnId: columnId("column-2"),
+        viewportOffset: 1_904,
+      },
+      devicePixelRatio: 1,
+      gap: 16,
+      pixelGridOrigin: { x: 100, y: 50 },
+      workArea: { height: 1080, width: 1920, x: 100, y: 50 },
+    });
+    const [previous, active, next] = result.windows;
+
+    expect(result.viewportOffset).toBe(952);
+    expect((previous?.frame.x ?? 0) + (previous?.frame.width ?? 0)).toBe(100);
+    expect(active?.frame).toMatchObject({ width: 1888, x: 116 });
+    expect((active?.frame.x ?? 0) + (active?.frame.width ?? 0)).toBe(2004);
+    expect(next?.frame.x).toBe(2020);
+  });
+
+  it.each([1.25, 1.5, 1.75, 2.5])(
+    "keeps full-width outer gaps aligned at %s DPR",
+    (devicePixelRatio) => {
+      const context = createContext([
+        { kind: "proportion", value: 1 / 3 },
+        { kind: "proportion", value: 1 },
+        { kind: "proportion", value: 1 / 3 },
+      ]);
+      const result = solveStripGeometry({
+        context: {
+          ...context,
+          activeColumnId: columnId("column-2"),
+          viewportOffset: 0,
+        },
+        devicePixelRatio,
+        gap: 16,
+        pixelGridOrigin: { x: 100, y: 50 },
+        workArea: { height: 1080, width: 1920, x: 100, y: 50 },
+      });
+      const [previous, active, next] = result.windows;
+      const activeEnd = (active?.frame.x ?? 0) + (active?.frame.width ?? 0);
+
+      expect((previous?.frame.x ?? 0) + (previous?.frame.width ?? 0)).toBe(100);
+      expect(active?.frame.x).toBe(116);
+      expect(activeEnd).toBe(2004);
+      expect(next?.frame.x).toBe(2020);
+      expect(result.viewportOffset * devicePixelRatio).toBeCloseTo(
+        Math.round(result.viewportOffset * devicePixelRatio),
+        10,
+      );
+    },
+  );
+
   it("reveals a column on the left without restoring an outer gap", () => {
     const context = createContext([
       { kind: "proportion", value: 0.5 },

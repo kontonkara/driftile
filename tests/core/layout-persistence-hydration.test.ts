@@ -108,6 +108,7 @@ describe("exact layout persistence hydration", () => {
           {
             columnId: "column:live-d",
             contextKey: "DP-1\u0000desktop-1",
+            viewportOffset: -310,
             width: { kind: "fixed", value: 720 },
           },
         ],
@@ -125,6 +126,49 @@ describe("exact layout persistence hydration", () => {
     });
     expect(JSON.stringify(state)).toBe(beforeState);
     expect(JSON.stringify(input)).toBe(beforeInput);
+  });
+
+  it("hydrates legacy full-width restores without viewport offsets", () => {
+    const state = representativeState();
+    const context = required(state.contexts[0]);
+    const fullWidthColumn = required(context.columns[1]);
+    const legacyState: LayoutPersistenceV1 = {
+      ...state,
+      contexts: [
+        {
+          ...context,
+          columns: [
+            required(context.columns[0]),
+            {
+              fullWidthRestore: required(fullWidthColumn.fullWidthRestore),
+              members: fullWidthColumn.members,
+              width: fullWidthColumn.width,
+            },
+          ],
+        },
+        required(state.contexts[1]),
+      ],
+    };
+    const result = planExactLayoutHydration(legacyState, representativeInput());
+
+    expect(result).toMatchObject({
+      ok: true,
+      value: {
+        fullWidthRestores: [
+          {
+            columnId: "column:live-d",
+            contextKey: "DP-1\u0000desktop-1",
+            width: { kind: "fixed", value: 720 },
+          },
+        ],
+      },
+    });
+
+    if (result.ok) {
+      expect(result.value.fullWidthRestores[0]).not.toHaveProperty(
+        "viewportOffset",
+      );
+    }
   });
 
   it("returns deeply frozen plan data", () => {
@@ -158,6 +202,7 @@ describe("exact layout persistence hydration", () => {
     expect(Object.isFrozen(floating?.placement)).toBe(true);
     expect(Object.isFrozen(floating?.placement.columnWidth)).toBe(true);
     expect(Object.isFrozen(floating?.placement.windowHeight)).toBe(true);
+    expect(Object.isFrozen(result.value.fullWidthRestores[0])).toBe(true);
     expect(Object.isFrozen(result.value.fullWidthRestores[0]?.width)).toBe(
       true,
     );
@@ -1247,6 +1292,7 @@ function representativeState(): LayoutPersistenceV1 {
           },
           {
             fullWidthRestore: { kind: "fixed", value: 720 },
+            fullWidthRestoreViewportOffset: -310,
             members: [{ windowKey: "tiled-d" }],
             width: { kind: "proportion", value: 1 },
           },

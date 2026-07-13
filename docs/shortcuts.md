@@ -94,6 +94,10 @@ Native fullscreen uses the same extraction rule for a regular vertical stack.
 The singleton remains separate after leaving fullscreen. Existing singleton
 and floating ownership is unchanged.
 
+Full-width mode keeps the active column inside equal configured outer gaps and
+moves adjacent columns completely outside the viewport. Toggling it again
+restores the prior column width and viewport position.
+
 Available-width expansion grows the active column into the unused horizontal
 space, up to its shared window constraints, without hiding any currently fully
 visible column. Visible-column centering changes only the viewport position.

@@ -228,7 +228,8 @@ the next successful publication. Older runtimes see v2 as unsupported and keep
 it write-locked.
 
 Logical state stores output and window descriptors, column and stack order,
-width and height policies, viewport offsets, full-width restore values,
+width and height policies, viewport offsets, full-width restore widths and
+viewport positions,
 manual-floating reinsertion anchors, and context-guarded tiled restore
 baselines. The catalog and nested state codecs reject unknown fields, invalid
 references, ambiguous output identities, impossible layout policies, oversized
@@ -319,6 +320,7 @@ inspected safely within the codec bound.
 - Commit tiled focus and viewport changes only after KWin accepts the same live target; rejection or a synchronous authority change restores the prior focus, model, and frames.
 - Keep adjacent and direct-edge column reorders inside the active context and roll back the exact model order if geometry application cannot complete.
 - Apply active-column width changes transactionally, preserving focus, grouping, and the prior width on failure.
+- Pin a full-width active column between equal outer gaps, keep adjacent columns outside the work area, and restore its prior width and viewport in one transaction.
 - Expand only a fully visible active column up to its shared window constraints, keep every other fully visible column on screen, and commit its width and viewport change atomically.
 - Center a fully visible column group with a viewport-only transaction; permit signed viewport offsets when exact centering requires them.
 - Preserve signed viewport positions across width and structural changes while the active column remains visible; reveal it only after it leaves the work area.

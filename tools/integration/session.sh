@@ -9407,9 +9407,9 @@ run_scenario() {
   invoke_shortcut "driftile_maximize_column" || \
     fail "KGlobalAccel could not invoke the maximize-column shortcut"
   wait_for_layout \
-    "$first_title" "-600,16,616,688" \
-    "$second_title" "32,16,1248,688" \
-    "$third_title" "1296,16,616,688" || \
+    "$first_title" "-616,16,616,688" \
+    "$second_title" "16,16,1248,688" \
+    "$third_title" "1280,16,616,688" || \
     fail "Driftile did not maximize the active $protocol column: $(describe_layout "$first_title" "$second_title" "$third_title")"
   invoke_shortcut "driftile_maximize_column" || \
     fail "KGlobalAccel could not restore the maximized column"

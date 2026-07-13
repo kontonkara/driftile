@@ -8,6 +8,7 @@ import type {
 import {
   encodeLayoutPersistence,
   LAYOUT_PERSISTENCE_FORMAT,
+  LAYOUT_PERSISTENCE_LIMITS,
   LAYOUT_PERSISTENCE_VERSION,
   type LayoutPersistenceV1,
   type PersistedColumnMemberV1,
@@ -33,6 +34,7 @@ export interface LayoutPersistenceCaptureFloatingWindow {
 export interface LayoutPersistenceCaptureFullWidthRestore {
   readonly columnId: ColumnId;
   readonly contextKey: string;
+  readonly viewportOffset?: number;
   readonly width: ColumnWidth;
 }
 
@@ -192,7 +194,15 @@ export function captureLayoutPersistence(
         return {
           ...(fullWidthRestore === undefined
             ? {}
-            : { fullWidthRestore: cloneWidth(fullWidthRestore) }),
+            : {
+                fullWidthRestore: cloneWidth(fullWidthRestore.width),
+                ...(fullWidthRestore.viewportOffset === undefined
+                  ? {}
+                  : {
+                      fullWidthRestoreViewportOffset:
+                        fullWidthRestore.viewportOffset,
+                    }),
+              }),
           members,
           width: cloneWidth(column.width),
         };
@@ -254,8 +264,14 @@ function indexFullWidthRestores(
   restores: readonly LayoutPersistenceCaptureFullWidthRestore[],
   contexts: ReadonlyMap<string, LayoutPersistenceCaptureContext>,
   columnsByContext: ReadonlyMap<string, ReadonlySet<ColumnId>>,
-): ReadonlyMap<string, ReadonlyMap<ColumnId, ColumnWidth>> {
-  const indexed = new Map<string, Map<ColumnId, ColumnWidth>>();
+): ReadonlyMap<
+  string,
+  ReadonlyMap<ColumnId, LayoutPersistenceCaptureFullWidthRestore>
+> {
+  const indexed = new Map<
+    string,
+    Map<ColumnId, LayoutPersistenceCaptureFullWidthRestore>
+  >();
 
   for (const restore of restores) {
     if (!contexts.has(restore.contextKey)) {
@@ -266,10 +282,22 @@ function indexFullWidthRestores(
       invalid("a full-width restore must reference a captured column");
     }
 
+    if (
+      restore.viewportOffset !== undefined &&
+      (!Number.isFinite(restore.viewportOffset) ||
+        Math.abs(restore.viewportOffset) >
+          LAYOUT_PERSISTENCE_LIMITS.numericMagnitude)
+    ) {
+      invalid("a full-width viewport restore must be finite and bounded");
+    }
+
     let contextRestores = indexed.get(restore.contextKey);
 
     if (contextRestores === undefined) {
-      contextRestores = new Map<ColumnId, ColumnWidth>();
+      contextRestores = new Map<
+        ColumnId,
+        LayoutPersistenceCaptureFullWidthRestore
+      >();
       indexed.set(restore.contextKey, contextRestores);
     }
 
@@ -277,7 +305,7 @@ function indexFullWidthRestores(
       invalid("a column can have only one full-width restore value");
     }
 
-    contextRestores.set(restore.columnId, restore.width);
+    contextRestores.set(restore.columnId, restore);
   }
 
   return indexed;

@@ -488,7 +488,16 @@ Release criteria (met):
 
 The `main` branch tracks `1.9.1-dev.0`. This bounded patch corrects full-width
 column positioning and exact toggle restoration without adding actions,
-bindings, settings, or persistence incompatibilities.
+bindings, or settings. Existing persistence documents remain readable.
+
+Release criteria:
+
+- A full-width active column retains equal configured outer gaps and leaves no
+  adjacent column visible inside the work area.
+- Toggling back restores the prior width and viewport exactly, including after
+  extension reload, while failed geometry writes keep the maximized state.
+- Existing unit, packaged Wayland and X11 integration, hidden full-VM, package,
+  and Nix module checks remain green.
 
 ## Post-v1
 

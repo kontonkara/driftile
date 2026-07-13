@@ -220,6 +220,14 @@ function revealActiveColumn(
     }
 
     if (column.id === context.activeColumnId) {
+      if (column.width.kind === "proportion" && column.width.value === 1) {
+        return clamp(
+          snapToPixelGrid(columnStart - gap, devicePixelRatio),
+          0,
+          maxViewportOffset,
+        );
+      }
+
       return revealColumnSpan(
         columnStart,
         columnWidth,

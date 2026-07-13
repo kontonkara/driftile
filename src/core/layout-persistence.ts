@@ -61,6 +61,7 @@ export interface PersistedColumnMemberV1 {
 
 export interface PersistedColumnV1 {
   readonly fullWidthRestore?: ColumnWidth;
+  readonly fullWidthRestoreViewportOffset?: number;
   readonly members: readonly PersistedColumnMemberV1[];
   readonly width: ColumnWidth;
 }
@@ -319,7 +320,7 @@ function parseColumn(value: unknown): PersistedColumnV1 {
   const column = recordWithKeys(
     value,
     ["members", "width"],
-    ["fullWidthRestore"],
+    ["fullWidthRestore", "fullWidthRestoreViewportOffset"],
   );
   const members = boundedArray(
     column["members"],
@@ -331,6 +332,10 @@ function parseColumn(value: unknown): PersistedColumnV1 {
     column["fullWidthRestore"] === undefined
       ? undefined
       : parseWidth(column["fullWidthRestore"]);
+  const fullWidthRestoreViewportOffset =
+    column["fullWidthRestoreViewportOffset"] === undefined
+      ? undefined
+      : boundedNumber(column["fullWidthRestoreViewportOffset"], true);
   let nonAutomaticHeights = 0;
 
   for (const member of members) {
@@ -342,13 +347,18 @@ function parseColumn(value: unknown): PersistedColumnV1 {
   if (
     nonAutomaticHeights > 1 ||
     (fullWidthRestore !== undefined &&
-      (width.kind !== "proportion" || width.value !== 1))
+      (width.kind !== "proportion" || width.value !== 1)) ||
+    (fullWidthRestore === undefined &&
+      fullWidthRestoreViewportOffset !== undefined)
   ) {
     invalid();
   }
 
   return {
     ...(fullWidthRestore === undefined ? {} : { fullWidthRestore }),
+    ...(fullWidthRestoreViewportOffset === undefined
+      ? {}
+      : { fullWidthRestoreViewportOffset }),
     members,
     width,
   };

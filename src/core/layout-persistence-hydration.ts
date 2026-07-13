@@ -64,6 +64,7 @@ export interface LayoutPersistenceHydrationContext {
 export interface LayoutPersistenceHydrationFullWidthRestore {
   readonly columnId: ColumnId;
   readonly contextKey: string;
+  readonly viewportOffset?: number;
   readonly width: ColumnWidth;
 }
 
@@ -416,6 +417,12 @@ export function planExactLayoutHydration(
           Object.freeze({
             columnId: plannedColumnId,
             contextKey: key,
+            ...(persistedColumn.fullWidthRestoreViewportOffset === undefined
+              ? {}
+              : {
+                  viewportOffset:
+                    persistedColumn.fullWidthRestoreViewportOffset,
+                }),
             width: immutableWidth(persistedColumn.fullWidthRestore),
           }),
         );
