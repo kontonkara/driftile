@@ -1,8 +1,10 @@
 # Roadmap
 
 Versions 0.1.0, 1.0.0, 1.1.0, 1.2.0, and 1.3.0 are released. The delivered
-milestones and release criteria below are a historical record. The remaining
-post-v1 direction is not a committed release schedule.
+milestones and release criteria below are a historical record. Version 1.4.0
+is scope-frozen at `1.4.0-rc.1`; only release-blocking fixes and release
+documentation remain before stable promotion. The remaining post-v1 direction
+is not a committed release schedule.
 
 ## Foundation (delivered)
 
@@ -243,7 +245,7 @@ Release criteria (met):
 - Removing it leaves the main extension and Plasma's built-in Overview
   unchanged.
 
-## 1.4.0 (in development)
+## 1.4.0 (release candidate)
 
 The first frozen 1.4.0 slice adds optional five-finger horizontal touchpad
 column focus through KWin's public `SwipeGestureHandler` API. One boolean
@@ -251,12 +253,14 @@ setting controls the complete feature and remains disabled by default. A
 completed left swipe focuses the next column to the right; a completed right
 swipe focuses the previous column to the left.
 
+Version `1.4.0-rc.1` is the current candidate.
+
 This slice adds no vertical or configurable-finger gestures, shortcut actions,
 default bindings, progress-driven behavior, animation, overview interaction,
 or persistence-format changes. It targets native Wayland. Enabling it in a
 native X11 session is a safe no-op.
 
-Release criteria:
+Frozen candidate criteria:
 
 - The default configuration creates no touchpad gesture handlers and preserves
   all 1.3.0 behavior.
