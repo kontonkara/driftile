@@ -2,9 +2,9 @@
 
 The optional overview companion is a separate KWin effect. It presents
 Driftile's current output, desktop, column, stack, viewport, and floating-window
-model. In 1.7.0-rc.1, a left click on a valid thumbnail in the current desktop
-card focuses that live window through KWin and closes the effect. Plasma's
-built-in Overview remains installed and unchanged.
+model. In 1.7.0, a left click on a valid thumbnail in the current desktop card
+focuses that live window through KWin and closes the effect. Plasma's built-in
+Overview remains installed and unchanged.
 
 The released 1.6.0 package remains presentation-only.
 
@@ -14,8 +14,8 @@ the authoritative layout snapshot.
 
 ## Install a release
 
-Download `driftile-overview-1.7.0-rc.1.kwineffect` and `SHA256SUMS` from the
-same release, then verify the archive:
+Download `driftile-overview-1.7.0.kwineffect` and `SHA256SUMS` from the same
+release, then verify the archive:
 
 ```console
 $ sha256sum --check --ignore-missing SHA256SUMS
@@ -25,7 +25,7 @@ Install the overview package as the desktop user:
 
 ```bash
 kpackagetool6 --type=KWin/Effect \
-  --install ./driftile-overview-1.7.0-rc.1.kwineffect
+  --install ./driftile-overview-1.7.0.kwineffect
 ```
 
 To build the same versioned archive from source, run `npm ci` followed by
@@ -49,7 +49,7 @@ uninstalling the package.
 
 ## NixOS and Home Manager
 
-The 1.7.0-rc.1 flake exposes the effect separately as
+The 1.7.0 flake exposes the effect separately as
 `packages.<system>.driftile-overview`. The NixOS and Home Manager modules keep
 it opt-in:
 
