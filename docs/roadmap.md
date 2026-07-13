@@ -1,9 +1,8 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0, and 1.1.0 are released. The delivered milestones and
-release criteria below are a historical record. Version 1.2.0 is in
-release-candidate validation on `main`; 1.1.0 remains the latest stable
-release. The remaining post-v1 direction is not a committed release schedule.
+Versions 0.1.0, 1.0.0, 1.1.0, and 1.2.0 are released. The delivered milestones
+and release criteria below are a historical record. The remaining post-v1
+direction is not a committed release schedule.
 
 ## Foundation (delivered)
 
@@ -196,15 +195,18 @@ Release criteria (met):
 - Wayland, XWayland, single-output X11, packaging, Nix, and visible VM release
   checks pass for the release.
 
-## 1.2.0 (release candidate)
+## 1.2.0 (released)
 
-Version `1.2.0-rc.1` is the current candidate for the bounded application
-tiling-exclusion slice. Up to 128 case-sensitive KWin `desktopFileName` values
-may be configured through KConfig or Home Manager. Matching windows use the
-existing automatic-exclusion ownership path, including live release and fresh
-readmission, without a new layout state or persistence format.
+Version 1.2.0 adds the bounded application tiling-exclusion slice. Up to 128
+case-sensitive KWin `desktopFileName` values may be configured through KConfig
+or Home Manager. Matching windows use the existing automatic-exclusion
+ownership path, including live release and fresh readmission, without a new
+layout state or persistence format.
 
-Release-candidate criteria:
+Version `1.2.0-rc.1` validated the final runtime before stable promotion
+without behavior changes.
+
+Release criteria (met):
 
 - All nine settings validate and apply atomically with a blank exclusion list
   preserving 1.1 behavior.
@@ -213,8 +215,8 @@ Release-candidate criteria:
 - Removing a rule waits for KWin-owned native-state blockers, then performs
   fresh singleton admission without restoring an old slot or floating anchor.
 - Unit, Home Manager, and NixOS module checks cover the policy. Packaged
-  integration must cover Wayland, XWayland, and native X11, and the visible
-  real-application checkpoint must exercise live policy changes.
+  integration covers Wayland, XWayland, and native X11, and the visible
+  real-application checkpoint exercises live policy changes.
 
 ## Post-v1
 

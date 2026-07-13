@@ -1,18 +1,17 @@
 # Installation
 
 Driftile requires KDE Plasma with KWin 6.7 or newer and `kpackagetool6`.
-The latest stable release is 1.1.0; 1.2.0-rc.1 is available for release-candidate
-testing. Both target Wayland, XWayland, and a single-output native X11 session.
+Version 1.2.0 targets Wayland, XWayland, and a single-output native X11 session.
 Run all commands as the desktop user, not with `sudo`.
 
 ## Install a release
 
 Download these files from the same release:
 
-- `driftile-1.1.0.kwinscript`
+- `driftile-1.2.0.kwinscript`
 - `SHA256SUMS`
 - `LICENSE`
-- `driftile-shortcuts-1.1.0.mjs` if using the optional shortcut helper
+- `driftile-shortcuts-1.2.0.mjs` if using the optional shortcut helper
 
 Verify every downloaded release asset before installing it:
 
@@ -24,7 +23,7 @@ Install the KWin package:
 
 ```bash
 kpackagetool6 --type=KWin/Script \
-  --install ./driftile-1.1.0.kwinscript
+  --install ./driftile-1.2.0.kwinscript
 ```
 
 Open **System Settings > Window Management > KWin Scripts**, enable
@@ -34,7 +33,7 @@ the layout and presentation settings described in
 
 ## Configure shortcuts
 
-Driftile works without the companion helper. The 1.1.0 helper claims the
+Driftile works without the companion helper. The 1.2.0 helper claims the
 bundled defaults and accepts custom profiles. Any action can instead be
 assigned manually.
 
@@ -45,8 +44,8 @@ Driftile before running it, and keep the helper until its saved claim has been
 released.
 
 ```bash
-node ./driftile-shortcuts-1.1.0.mjs claim
-node ./driftile-shortcuts-1.1.0.mjs check
+node ./driftile-shortcuts-1.2.0.mjs claim
+node ./driftile-shortcuts-1.2.0.mjs check
 ```
 
 `claim` transactionally saves and replaces active conflicting assignments.
@@ -54,7 +53,7 @@ node ./driftile-shortcuts-1.1.0.mjs check
 after the claim:
 
 ```bash
-node ./driftile-shortcuts-1.1.0.mjs release
+node ./driftile-shortcuts-1.2.0.mjs release
 ```
 
 Do not use `--force` unless replacing later manual edits is intentional. See
@@ -65,9 +64,9 @@ Pass the same custom file to `claim` and `check`. `release` reads the saved
 transaction and rejects `--profile`:
 
 ```bash
-node ./driftile-shortcuts-1.1.0.mjs claim --profile ./shortcuts.json
-node ./driftile-shortcuts-1.1.0.mjs check --profile ./shortcuts.json
-node ./driftile-shortcuts-1.1.0.mjs release
+node ./driftile-shortcuts-1.2.0.mjs claim --profile ./shortcuts.json
+node ./driftile-shortcuts-1.2.0.mjs check --profile ./shortcuts.json
+node ./driftile-shortcuts-1.2.0.mjs release
 ```
 
 Release the current claim before claiming a changed profile.
@@ -145,7 +144,7 @@ The flake exposes packages and installation modules for `x86_64-linux` and
 `aarch64-linux`. Add Driftile as an input:
 
 ```nix
-inputs.driftile.url = "github:kontonkara/driftile/v1.1.0";
+inputs.driftile.url = "github:kontonkara/driftile/v1.2.0";
 ```
 
 For a system-wide NixOS installation, import the NixOS module:
@@ -171,8 +170,7 @@ modules = [
 ];
 ```
 
-The current 1.2.0-rc.1 Home Manager module can also own the complete
-nine-setting profile:
+The 1.2.0 Home Manager module can also own the complete nine-setting profile:
 
 ```nix
 programs.driftile.settings = {
@@ -189,11 +187,6 @@ programs.driftile.settings = {
   windowHeightStepPercent = 10;
 };
 ```
-
-The stable 1.1.0 input shown above provides the eight-setting 1.1 module; omit
-`applicationTilingExclusions` when using that pin. See
-[Migration](migration.md#upgrade-from-110-to-120-rc1) before selecting the
-release-candidate input.
 
 The profile is independent of package installation. When the package is
 already installed by NixOS or another system module, keep

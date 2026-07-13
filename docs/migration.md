@@ -1,21 +1,33 @@
 # Migration
 
-The latest stable release is 1.1.0, and 1.2.0-rc.1 is the current release
-candidate. Use the steps below when changing release generations, and never
-combine files from different releases.
+The latest stable release is 1.2.0. Use the steps below when changing release
+generations, and never combine files from different releases.
 
-## Upgrade from 1.1.0 to 1.2.0-rc.1
+## Upgrade from 1.2.0-rc.1
+
+1. Release helper-owned shortcuts with the RC helper while it is still
+   available.
+2. Disable Driftile in **KWin Scripts** and select **Apply**.
+3. Upgrade the archive to `driftile-1.2.0.kwinscript`, or update the pinned Nix
+   input to `v1.2.0` and rebuild.
+4. Enable Driftile, then assign shortcuts or claim them with the final helper.
+
+Version 1.2.0 has no runtime behavior or persistence-format changes from RC.1.
+The package ID, nine settings, shortcut action IDs, and stored layouts remain
+compatible.
+
+## Upgrade from 1.1.0
 
 1. Release helper-owned shortcuts with the 1.1.0 helper while it is still
    available.
 2. Disable Driftile in **KWin Scripts** and select **Apply**.
-3. Upgrade the archive to `driftile-1.2.0-rc.1.kwinscript`, or update the
-   pinned Nix input to `v1.2.0-rc.1` and rebuild.
+3. Upgrade the archive to `driftile-1.2.0.kwinscript`, or update the pinned Nix
+   input to `v1.2.0` and rebuild.
 4. Enable Driftile, review the new setting, then assign shortcuts or claim them
-   with the release-candidate helper.
+   with the 1.2.0 helper.
 
 The package ID, shortcut action IDs, KConfig group, and stored-layout format
-remain compatible. Version 1.2.0-rc.1 adds one safe-default KConfig value:
+remain compatible. Version 1.2.0 adds one safe-default KConfig value:
 
 - `ApplicationTilingExclusions=""` keeps every application eligible for
   tiling.
@@ -24,17 +36,17 @@ Missing this key uses the same default. Invalid external values reject the full
 nine-setting snapshot without changing active settings or layout.
 
 With Home Manager, `programs.driftile.settings = null` continues to write
-nothing. A non-null value is a complete profile, so the 1.2.0-rc.1 module writes
+nothing. A non-null value is a complete profile, so the 1.2.0 module writes
 `applicationTilingExclusions = [];` when it is omitted. Pin the package and
 module to the same release generation.
 
-## Roll back from 1.2.0-rc.1 to 1.1.0
+## Roll back to 1.1.0
 
-Release shortcuts with the release-candidate helper, disable Driftile, and
-install the verified 1.1.0 archive. For Nix, restore the 1.1.0 package and
-module input together and rebuild. The additive exclusion key may remain:
-1.1.0 ignores it. Existing settings, shortcut action IDs, and stored layouts
-remain compatible, so no layout-state reset is required.
+Release shortcuts with the 1.2.0 helper, disable Driftile, and install the
+verified 1.1.0 archive. For Nix, restore the 1.1.0 package and module input
+together and rebuild. The additive exclusion key may remain: 1.1.0 ignores it.
+Existing settings, shortcut action IDs, and stored layouts remain compatible,
+so no layout-state reset is required.
 
 ## Upgrade from 1.1.0-rc.1
 
@@ -119,9 +131,9 @@ migrate on the next successful publication.
 
 ## Roll back to 1.0.0
 
-Release shortcuts with the 1.1.0 helper, disable Driftile, and install the
+Release shortcuts with the 1.2.0 helper, disable Driftile, and install the
 verified 1.0.0 archive. For Nix, restore the 1.0.0 package and module input
-together and rebuild. The three additive KConfig keys may remain: 1.0.0 ignores
+together and rebuild. The four additive KConfig keys may remain: 1.0.0 ignores
 them. Existing settings, shortcut action IDs, and stored layouts remain
 compatible, so no layout-state reset is required.
 
