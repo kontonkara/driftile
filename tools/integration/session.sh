@@ -776,6 +776,85 @@ overview_number_gutter_click_point() {
     "$((y + outer_margin + desktop_index * (card_height + card_gap) + card_height / 2))"
 }
 
+overview_window_thumbnail_click_point() {
+  local output_name=$1
+  local desktop_index=$2
+  local desktop_count=$3
+  local window_title=$4
+  local output_height
+  local output_width
+  local output_x
+  local output_y
+  local window_frame
+
+  ((desktop_index >= 0 && desktop_index < desktop_count)) || return 1
+  read -r output_x output_y output_width output_height < <(
+    kscreen-doctor -j 2>/dev/null | jq --exit-status --raw-output \
+      --arg outputName "$output_name" '
+        .outputs
+        | map(select(.enabled and .name == $outputName))
+        | select(length == 1)
+        | .[0]
+        | [
+            .pos.x,
+            .pos.y,
+            (.size.width / .scale),
+            (.size.height / .scale)
+          ]
+        | select(all(.[]; type == "number"))
+        | @tsv
+      '
+  ) || return 1
+  window_frame=$(capture_stable_geometry "$window_title") || return 1
+
+  jq --exit-status --null-input --raw-output \
+    --arg frame "$window_frame" \
+    --argjson desktopCount "$desktop_count" \
+    --argjson desktopIndex "$desktop_index" \
+    --argjson outputHeight "$output_height" \
+    --argjson outputWidth "$output_width" \
+    --argjson outputX "$output_x" \
+    --argjson outputY "$output_y" '
+      ($frame | split(",") | map(tonumber)) as $window
+      | select(($window | length) == 4)
+      | ([$outputWidth, $outputHeight] | min) as $minimumDimension
+      | ([20, $minimumDimension * 0.035] | max) as $outerMargin
+      | ([2, ([10, $outputHeight * 0.012] | min)] | max) as $cardGap
+      | (($outputHeight - $outerMargin * 2 - $cardGap * ($desktopCount - 1)) / $desktopCount) as $cardHeight
+      | ([1, $outputWidth - $outerMargin * 2 - 52] | max) as $contentWidth
+      | ([1, $cardHeight - 20] | max) as $contentHeight
+      | ($window[0] + $window[2] / 2) as $windowCenterX
+      | ($window[1] + $window[3] / 2) as $windowCenterY
+      | select(
+          $outputWidth > 0
+          and $outputHeight > 0
+          and $cardHeight > 20
+          and $window[2] > 0
+          and $window[3] > 0
+          and $windowCenterX >= $outputX
+          and $windowCenterX < $outputX + $outputWidth
+          and $windowCenterY >= $outputY
+          and $windowCenterY < $outputY + $outputHeight
+        )
+      | (
+          $outputX + $outerMargin + 42
+          + ($windowCenterX - $outputX) * $contentWidth / $outputWidth
+        ) as $clickX
+      | (
+          $outputY + $outerMargin + $desktopIndex * ($cardHeight + $cardGap) + 10
+          + ($windowCenterY - $outputY) * $contentHeight / $outputHeight
+        ) as $clickY
+      | select(
+          $clickX > $outputX + $outerMargin + 42
+          and $clickX < $outputX + $outputWidth - $outerMargin - 10
+          and $clickY > $outputY + $outerMargin + $desktopIndex * ($cardHeight + $cardGap) + 10
+          and $clickY < $outputY + $outerMargin + $desktopIndex * ($cardHeight + $cardGap) + $cardHeight - 10
+        )
+      | [($clickX | floor), ($clickY | floor)]
+      | @tsv
+    '
+}
+
 verify_overview_missing_state() {
   local overview_keys
   local plasma_active
@@ -968,11 +1047,16 @@ verify_overview_desktop_selection() {
   local baseline_checkpoint
   local click_x
   local click_y
+  local decoy_pid
+  local decoy_title="${target_title}-decoy"
+  local expected_decoy_checkpoint
   local expected_target_checkpoint
   local overview_keys
   local plasma_active
   local plasma_loaded
   local restore_checkpoint
+  local target_click_x
+  local target_click_y
   local target_pid
   local trailing_desktop_id=""
   local -a desktop_ids=()
@@ -985,6 +1069,7 @@ verify_overview_desktop_selection() {
   local -a selection_titles=(
     "${restore_titles[@]}"
     "$target_title"
+    "$decoy_title"
   )
 
   wait_for_script_state true || \
@@ -1006,12 +1091,17 @@ verify_overview_desktop_selection() {
   target_pid=${client_pids[${#client_pids[@]}-1]}
   wait_for_window_desktop "$target_title" "$secondary_desktop_id" || \
     fail "KWin did not place the $protocol overview selector fixture on desktop 2"
-  wait_for_only_active "$target_title" "${selection_titles[@]}" || \
-    fail "KWin did not retain the exact $protocol overview selector target on desktop 2"
+  start_client "$protocol" "$decoy_title" true
+  decoy_pid=${client_pids[${#client_pids[@]}-1]}
+  wait_for_window_desktop "$decoy_title" "$secondary_desktop_id" || \
+    fail "KWin did not place the $protocol overview selector decoy on desktop 2"
+  wait_for_only_active "$decoy_title" "${selection_titles[@]}" || \
+    fail "KWin did not retain only the last-active $protocol overview selector decoy on desktop 2"
   wait_for_geometries \
     "$left_first_title" "16,16,616,688" \
     "$source_title" "648,16,616,688" \
     "$target_title" "16,16,616,688" \
+    "$decoy_title" "648,16,616,688" \
     "$right_first_title" "1296,16,616,688" \
     "$right_second_title" "1928,16,616,688" || \
     fail "Driftile did not establish the isolated $protocol overview desktop-2 fixture: $(describe_layout "${selection_titles[@]}")"
@@ -1020,13 +1110,24 @@ verify_overview_desktop_selection() {
     "$primary_desktop_id" \
     "$secondary_desktop_id" || \
     fail "Driftile did not append the shared empty tail for the $protocol overview selector fixture"
-  verify_multi_output_desktop_state "$target_title" secondary || \
-    fail "KWin did not expose left desktop 2 and right desktop 1 for the $protocol overview selector target"
+  verify_multi_output_desktop_state "$decoy_title" secondary || \
+    fail "KWin did not expose left desktop 2 and right desktop 1 for the $protocol overview selector decoy"
   unregister_desktop_state_marker \
-    "$desktop_state_verified_shortcut_prefix $target_title secondary" || \
-    fail "KGlobalAccel could not remove the target $protocol overview desktop-state marker"
+    "$desktop_state_verified_shortcut_prefix $decoy_title secondary" || \
+    fail "KGlobalAccel could not remove the decoy $protocol overview desktop-state marker"
+
+  activate_window "$target_title" || \
+    fail "KWin could not prepare the target-focused $protocol cross-desktop thumbnail checkpoint"
+  wait_for_only_active "$target_title" "${selection_titles[@]}" || \
+    fail "KWin did not leave only the exact $protocol cross-desktop thumbnail target focused"
   expected_target_checkpoint=$(capture_overview_checkpoint "${selection_titles[@]}") || \
     fail "the expected $protocol overview desktop-2 checkpoint did not stabilize"
+  activate_window "$decoy_title" || \
+    fail "KWin could not restore the last-active $protocol overview selector decoy"
+  wait_for_only_active "$decoy_title" "${selection_titles[@]}" || \
+    fail "KWin did not restore only the last-active $protocol overview selector decoy"
+  expected_decoy_checkpoint=$(capture_overview_checkpoint "${selection_titles[@]}") || \
+    fail "the expected last-active $protocol overview desktop-2 checkpoint did not stabilize"
 
   invoke_shortcut "driftile_focus_desktop_1" || \
     fail "KGlobalAccel could not restore desktop 1 before the $protocol overview selector click"
@@ -1070,6 +1171,10 @@ verify_overview_desktop_selection() {
   read -r click_x click_y < <(
     overview_number_gutter_click_point Virtual-0 1 "${#desktop_ids[@]}"
   ) || fail "KScreen did not expose the left $protocol overview number-gutter geometry"
+  read -r target_click_x target_click_y < <(
+    overview_window_thumbnail_click_point \
+      Virtual-0 1 "${#desktop_ids[@]}" "$target_title"
+  ) || fail "KScreen did not expose the exact left $protocol overview target-thumbnail geometry"
 
   invoke_shortcut "$overview_shortcut" || \
     fail "KGlobalAccel could not activate the $protocol overview desktop selector"
@@ -1090,12 +1195,12 @@ verify_overview_desktop_selection() {
     fail "the compositor-routed $protocol overview desktop-selector click failed"
   wait_for_current_desktop "$secondary_desktop_id" || \
     fail "the $protocol overview desktop-selector click did not select desktop 2"
-  wait_for_only_active "$target_title" "${selection_titles[@]}" || \
-    fail "KWin did not restore the exact $protocol desktop-2 target after overview selection: $(describe_active_windows "${selection_titles[@]}")"
-  verify_multi_output_desktop_state "$target_title" secondary || \
+  wait_for_only_active "$decoy_title" "${selection_titles[@]}" || \
+    fail "KWin did not restore only the last-active $protocol desktop-2 decoy after number-gutter selection: $(describe_active_windows "${selection_titles[@]}")"
+  verify_multi_output_desktop_state "$decoy_title" secondary || \
     fail "the $protocol overview selector did not leave left desktop 2 and right desktop 1 selected"
   unregister_desktop_state_marker \
-    "$desktop_state_verified_shortcut_prefix $target_title secondary" || \
+    "$desktop_state_verified_shortcut_prefix $decoy_title secondary" || \
     fail "KGlobalAccel could not remove the selected $protocol overview desktop-state marker"
   wait_for_effect_active_state "$overview_plugin_id" false || \
     fail "the $protocol overview did not close after confirmed desktop selection"
@@ -1103,8 +1208,59 @@ verify_overview_desktop_selection() {
     fail "the $protocol overview unloaded after confirmed desktop selection"
   after_checkpoint=$(capture_overview_checkpoint "${selection_titles[@]}") || \
     fail "the selected $protocol overview desktop-2 checkpoint did not stabilize"
-  [[ "$after_checkpoint" == "$expected_target_checkpoint" ]] || \
+  [[ "$after_checkpoint" == "$expected_decoy_checkpoint" ]] || \
     fail "the $protocol overview desktop-selector click changed frames, memberships, settings, layout state, or the built-in Overview beyond exact desktop selection"
+
+  invoke_shortcut "driftile_focus_desktop_1" || \
+    fail "KGlobalAccel could not restore desktop 1 before the $protocol cross-desktop thumbnail click"
+  wait_for_current_desktop "$primary_desktop_id" || \
+    fail "Driftile did not restore desktop 1 before the $protocol cross-desktop thumbnail click"
+  wait_for_only_active "$source_title" "${selection_titles[@]}" || \
+    fail "KWin did not restore the exact $protocol overview source before the cross-desktop thumbnail click"
+  verify_multi_output_desktop_state "$source_title" primary || \
+    fail "KWin did not restore desktop 1 on both outputs before the $protocol cross-desktop thumbnail click"
+  unregister_desktop_state_marker \
+    "$desktop_state_verified_shortcut_prefix $source_title primary" || \
+    fail "KGlobalAccel could not remove the pre-thumbnail $protocol overview desktop-state marker"
+  after_checkpoint=$(capture_overview_checkpoint "${selection_titles[@]}") || \
+    fail "the restored source $protocol overview checkpoint did not stabilize before thumbnail activation"
+  [[ "$after_checkpoint" == "$baseline_checkpoint" ]] || \
+    fail "returning from the $protocol overview number-gutter selection changed its exact source checkpoint"
+
+  invoke_shortcut "$overview_shortcut" || \
+    fail "KGlobalAccel could not activate the $protocol overview for cross-desktop thumbnail focus"
+  wait_for_effect_active_state "$overview_plugin_id" true || \
+    fail "the $protocol overview did not become active for cross-desktop thumbnail focus"
+  after_checkpoint=$(capture_overview_checkpoint "${selection_titles[@]}") || \
+    fail "the active $protocol cross-desktop thumbnail fixture did not stabilize"
+  [[ "$after_checkpoint" == "$baseline_checkpoint" ]] || \
+    fail "activating the $protocol overview for cross-desktop thumbnail focus changed its exact source checkpoint"
+  [[ "$(effect_loaded_state "$plasma_overview_effect_id")" == "$plasma_loaded" ]] || \
+    fail "the $protocol cross-desktop thumbnail path changed the built-in Overview loaded state"
+  [[ "$(effect_active_state "$plasma_overview_effect_id")" == "$plasma_active" ]] || \
+    fail "the $protocol cross-desktop thumbnail path changed the built-in Overview active state"
+  [[ "$(effect_active_state "$overview_plugin_id")" == true ]] || \
+    fail "the $protocol overview was not active immediately before the cross-desktop thumbnail click"
+
+  "$DRIFTILE_SMOKE_FAKE_INPUT_CLIENT" click "$target_click_x" "$target_click_y" || \
+    fail "the compositor-routed $protocol cross-desktop thumbnail click failed"
+  wait_for_current_desktop "$secondary_desktop_id" || \
+    fail "the $protocol cross-desktop thumbnail click did not select desktop 2"
+  wait_for_only_active "$target_title" "${selection_titles[@]}" || \
+    fail "the $protocol cross-desktop thumbnail click did not focus only its exact target instead of the decoy: $(describe_active_windows "${selection_titles[@]}")"
+  verify_multi_output_desktop_state "$target_title" secondary || \
+    fail "the $protocol cross-desktop thumbnail click did not leave left desktop 2 and right desktop 1 selected"
+  unregister_desktop_state_marker \
+    "$desktop_state_verified_shortcut_prefix $target_title secondary" || \
+    fail "KGlobalAccel could not remove the focused-thumbnail $protocol desktop-state marker"
+  wait_for_effect_active_state "$overview_plugin_id" false || \
+    fail "the $protocol overview did not close after confirmed cross-desktop thumbnail focus"
+  wait_for_effect_loaded_state "$overview_plugin_id" true || \
+    fail "the $protocol overview unloaded after confirmed cross-desktop thumbnail focus"
+  after_checkpoint=$(capture_overview_checkpoint "${selection_titles[@]}") || \
+    fail "the target-focused $protocol cross-desktop thumbnail checkpoint did not stabilize"
+  [[ "$after_checkpoint" == "$expected_target_checkpoint" ]] || \
+    fail "the $protocol cross-desktop thumbnail click changed frames, memberships, settings, layout state, desktops, or the built-in Overview beyond exact target focus"
 
   unload_overview_effect || \
     fail "KWin could not unload the Driftile overview after $protocol desktop selection"
@@ -1138,6 +1294,9 @@ verify_overview_desktop_selection() {
     "$desktop_state_verified_shortcut_prefix $source_title primary" || \
     fail "KGlobalAccel could not remove the restored $protocol overview desktop-state marker"
 
+  stop_client "$decoy_pid"
+  wait_for_window_gone "$decoy_title" || \
+    fail "the temporary $protocol overview selector decoy did not close"
   stop_client "$target_pid"
   wait_for_window_gone "$target_title" || \
     fail "the temporary $protocol overview selector target did not close"
