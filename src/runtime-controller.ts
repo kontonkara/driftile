@@ -75,6 +75,10 @@ import {
   planPointerWindowDrop,
   type PointerWindowDropTarget,
 } from "./core/pointer-reinsertion";
+import {
+  inferPointerHorizontalResize,
+  type PointerHorizontalResizeEdge,
+} from "./core/pointer-resize";
 import type {
   KWinOutput,
   KWinVirtualDesktop,
@@ -92,6 +96,7 @@ import {
   isGeometryWritable,
   respectsSizeConstraints,
   type ContextGeometry,
+  type FrameSizeConstraintBounds,
   type KWinRectFactory,
 } from "./platform/kwin/geometry-adapter";
 import {
@@ -399,6 +404,33 @@ interface PointerMoveIntent {
   readonly topologyRevision: number;
 }
 
+interface PointerResizeParticipant {
+  readonly beforeFrame: Rect;
+  readonly constraints: FrameSizeConstraintBounds;
+  readonly id: WindowId;
+  readonly stateRevision: number;
+  readonly window: KWinWindow;
+}
+
+interface PointerResizeIntent {
+  readonly acceptedFrame: Rect | null;
+  readonly activeColumnId: ColumnId;
+  readonly before: LayoutContextSnapshot;
+  readonly beforeFrame: Rect;
+  readonly contextFingerprint: string;
+  readonly contextKey: string;
+  readonly edge: PointerHorizontalResizeEdge | null;
+  readonly gap: number;
+  readonly generation: number;
+  readonly participants: readonly PointerResizeParticipant[];
+  readonly phase: "finished" | "resizing";
+  readonly resizedWindowId: WindowId;
+  readonly source: KWinWindow;
+  readonly sourceDesktop: KWinVirtualDesktop;
+  readonly sourceOutput: KWinOutput;
+  readonly topologyRevision: number;
+}
+
 interface StackTransferAcceptance {
   readonly accept: (expectedActive: KWinWindow) => boolean;
   readonly activeWindow: KWinWindow;
@@ -615,6 +647,7 @@ export class RuntimeController {
   private readonly automaticFloatingWindows = new Set<WindowId>();
   private readonly borderlessSettlementEnabled: boolean;
   private readonly borderlessSettlementTokens = new Map<WindowId, object>();
+  private borderlessReconciliationPending = false;
   private borderlessWindows: boolean;
   private readonly capacityCanceledParks = new Map<
     string,
@@ -699,7 +732,9 @@ export class RuntimeController {
   private readonly onLayoutStateChanged:
     ((canonicalState: string) => void) | undefined;
   private readonly pendingAdmissionContexts = new Set<string>();
+  private interactiveResizeSource: KWinWindow | null = null;
   private pointerMoveIntent: PointerMoveIntent | null = null;
+  private pointerResizeIntent: PointerResizeIntent | null = null;
   private pendingDefaultColumnWidth: ColumnWidth | null = null;
   private pendingGap: number | null = null;
   private readonly pendingWindowSyncs = new Set<WindowId>();
@@ -831,6 +866,8 @@ export class RuntimeController {
       fullScreenChanged: this.handleFullScreenChanged,
       interactiveMoveFinished: this.handleInteractiveMoveFinished,
       interactiveMoveStarted: this.handleInteractiveMoveStarted,
+      interactiveResizeFinished: this.handleInteractiveResizeFinished,
+      interactiveResizeStarted: this.handleInteractiveResizeStarted,
       maximizedAboutToChange: this.handleMaximizedAboutToChange,
       removed: this.handleWindowRemoved,
       stateChanged: this.handleWindowStateChanged,
@@ -1119,7 +1156,18 @@ export class RuntimeController {
       return;
     }
 
-    if (!enabled) {
+    if (this.interactiveResizeSource !== null) {
+      this.borderlessReconciliationPending = true;
+      return;
+    }
+
+    this.applyBorderlessWindowSetting();
+  }
+
+  private applyBorderlessWindowSetting(): void {
+    this.borderlessReconciliationPending = false;
+
+    if (!this.borderlessWindows) {
       this.restoreWindowBorders();
       this.reconcileBorderAffectedContexts();
       return;
@@ -1137,7 +1185,9 @@ export class RuntimeController {
       this.startupStabilizationRemaining > 0 ||
       this.startupStabilizationToken !== null ||
       this.pendingExpelFocusHandoff !== null ||
+      this.interactiveResizeSource !== null ||
       this.pointerMoveIntent !== null ||
+      this.pointerResizeIntent !== null ||
       this.stackEditOperation !== null ||
       this.windowTransferOperation !== null ||
       this.stackedNativeStateOperation !== null ||
@@ -1370,6 +1420,7 @@ export class RuntimeController {
 
       const id = windowId(observed.id);
       this.cancelPointerMoveForWindowChange(id);
+      this.cancelPointerResizeForWindowChange(id);
       this.pendingWindowSyncs.add(id);
       membershipChanged = true;
 
@@ -2302,7 +2353,10 @@ export class RuntimeController {
       this.layoutStatePublicationPending = false;
       this.layoutTopologyPublicationPending = false;
       this.preservedFallbackLayoutState = null;
+      this.borderlessReconciliationPending = false;
+      this.interactiveResizeSource = null;
       this.pointerMoveIntent = null;
+      this.pointerResizeIntent = null;
       this.startupCompleted = false;
       this.runGeneration += 1;
       this.started = true;
@@ -2375,7 +2429,10 @@ export class RuntimeController {
     this.workScheduled = false;
     this.runGeneration += 1;
     this.pendingExpelFocusHandoff = null;
+    this.borderlessReconciliationPending = false;
+    this.interactiveResizeSource = null;
     this.pointerMoveIntent = null;
+    this.pointerResizeIntent = null;
     this.stackEditOperation = null;
 
     try {
@@ -2411,7 +2468,9 @@ export class RuntimeController {
       this.lastSettledTopology = null;
       this.contexts.clear();
       this.pendingExpelFocusHandoff = null;
+      this.interactiveResizeSource = null;
       this.pointerMoveIntent = null;
+      this.pointerResizeIntent = null;
       this.stackEditOperation = null;
       this.windowTransferOperation = null;
       this.stackedNativeStateOperation = null;
@@ -2485,6 +2544,7 @@ export class RuntimeController {
       !this.started ||
       this.hydrationInProgress ||
       this.stackEditOperation ||
+      this.interactiveResizeSource !== null ||
       this.windowTransferOperation ||
       this.topologyStabilizing ||
       this.topologyRetryPending
@@ -2548,6 +2608,8 @@ export class RuntimeController {
     current?: KWinVirtualDesktop | null,
     output?: KWinOutput,
   ): void => {
+    this.pointerResizeIntent = null;
+
     if (this.windowTransferOperation) {
       if (this.windowTransferOperation.kind === "output") {
         this.windowTransferOperation.desktopChangeSuppressed = true;
@@ -2607,15 +2669,26 @@ export class RuntimeController {
     }
 
     const source = this.observer.source(window.id);
-
-    if (this.synchronizeAutomaticFloatingWindow(addedId, source)) {
-      return;
-    }
-
     const addedContext = managedContext(window);
 
     if (addedContext) {
       this.capacityParkBackoffs.delete(contextKey(addedContext));
+
+      if (
+        this.interactiveResizeSource !== null &&
+        this.pointerResizeIntent?.contextKey === contextKey(addedContext)
+      ) {
+        this.pointerResizeIntent = null;
+      }
+    }
+
+    if (this.interactiveResizeSource !== null) {
+      this.pendingWindowSyncs.add(addedId);
+      return;
+    }
+
+    if (this.synchronizeAutomaticFloatingWindow(addedId, source)) {
+      return;
     }
 
     if (
@@ -2639,8 +2712,245 @@ export class RuntimeController {
     this.synchronizeWindowBorder(windowId(id), this.observer.source(id));
   };
 
+  private readonly handleInteractiveResizeStarted = (
+    id: string,
+    initialFrame: Rect,
+  ): void => {
+    const existing = this.pointerResizeIntent;
+    const resizedWindowId = windowId(id);
+    const source = this.observer.source(id);
+
+    if (
+      existing?.phase === "resizing" &&
+      existing.resizedWindowId === resizedWindowId &&
+      existing.source === source
+    ) {
+      return;
+    }
+
+    const resizeLeaseWasUnsettled =
+      this.suspendedWindows.has(resizedWindowId) ||
+      this.resumeSamples.has(resizedWindowId) ||
+      this.pendingWindowSyncs.has(resizedWindowId);
+
+    this.interactiveResizeSource = source ?? null;
+
+    this.pointerMoveIntent = null;
+    this.pointerResizeIntent = null;
+
+    if (
+      !this.started ||
+      !this.startupCompleted ||
+      this.initializing ||
+      this.hydrationInProgress ||
+      this.stackEditOperation ||
+      this.windowTransferOperation ||
+      this.stackedNativeStateOperation ||
+      this.startupStabilizationToken !== null ||
+      this.hasTopologyBarrier() ||
+      !source ||
+      this.workspace.activeWindow !== source ||
+      !this.interactiveResizeSourceIsEligible(source) ||
+      !rectsEqual(source.frameGeometry, initialFrame) ||
+      this.automaticFloatingWindows.has(resizedWindowId) ||
+      this.floatingWindows.has(resizedWindowId) ||
+      this.waitingWindowContexts.has(resizedWindowId) ||
+      resizeLeaseWasUnsettled ||
+      this.requestedSuspensions.has(resizedWindowId) ||
+      this.pendingHydratedRestoreBaselines.has(resizedWindowId) ||
+      !this.toggleGeometrySettled(resizedWindowId)
+    ) {
+      return;
+    }
+
+    const owner = this.managedWindows.get(resizedWindowId);
+    const context = owner ? this.contexts.get(owner.contextKey) : undefined;
+    const observed = normalizeWindow(source);
+    const liveContext = observed ? managedContext(observed) : null;
+    const sourceOutput = context
+      ? this.workspace.screens.find(
+          (candidate) => candidate.name === String(context.outputId),
+        )
+      : undefined;
+    const sourceDesktop = sourceOutput
+      ? currentDesktopForOutput(this.workspace, sourceOutput)
+      : null;
+
+    if (
+      !owner ||
+      !context ||
+      !liveContext ||
+      !sourceOutput ||
+      !sourceDesktop ||
+      contextKey(liveContext) !== context.key ||
+      sourceDesktop.id !== String(context.desktopId) ||
+      !this.isContextVisible(context) ||
+      this.dirtyContexts.has(context.key) ||
+      this.pendingAdmissionContexts.has(context.key) ||
+      this.hasStructuralCapacityState(context.key) ||
+      this.toggleTransitionPending(context.key)
+    ) {
+      return;
+    }
+
+    const contextGeometry = this.sampleSettledContextGeometry(context);
+
+    if (!contextGeometry) {
+      return;
+    }
+
+    const before = this.layout.snapshot(context.outputId, context.desktopId);
+    const activeColumn = before.columns.find((column) =>
+      column.windowIds.includes(resizedWindowId),
+    );
+
+    if (
+      !activeColumn ||
+      before.activeColumnId !== activeColumn.id ||
+      !this.columnMembersBelongToContext(activeColumn, context)
+    ) {
+      return;
+    }
+
+    let solved: ReturnType<typeof solveStripGeometry>;
+
+    try {
+      solved = this.solveContextGeometry(before, contextGeometry);
+    } catch {
+      return;
+    }
+
+    if (solved.windows.length !== context.windowIds.size) {
+      return;
+    }
+
+    const solvedFrames = new Map(
+      solved.windows.map((window) => [window.windowId, window.frame] as const),
+    );
+    const participants: PointerResizeParticipant[] = [];
+
+    for (const participantId of activeColumn.windowIds) {
+      const participant = this.observer.source(participantId);
+      const beforeFrame = solvedFrames.get(participantId);
+      const constraints = participant
+        ? frameSizeConstraintBounds(participant)
+        : null;
+
+      if (
+        !participant ||
+        !beforeFrame ||
+        !constraints ||
+        this.pendingWindowSyncs.has(participantId) ||
+        this.resumeSamples.has(participantId) ||
+        !rectsEqual(participant.frameGeometry, beforeFrame) ||
+        (participantId === resizedWindowId
+          ? participant !== source ||
+            !this.interactiveResizeSourceIsEligible(participant)
+          : !this.stackTransferMemberIsEligible(
+              participantId,
+              participant,
+              context,
+              false,
+            ))
+      ) {
+        return;
+      }
+
+      participants.push({
+        beforeFrame: snapshotRect(beforeFrame),
+        constraints: { ...constraints },
+        id: participantId,
+        stateRevision: this.windowStateRevisions.get(participantId) ?? 0,
+        window: participant,
+      });
+    }
+
+    if (
+      participants.length !== activeColumn.windowIds.length ||
+      participants.length === 0 ||
+      !rectsEqual(
+        initialFrame,
+        solvedFrames.get(resizedWindowId) ?? initialFrame,
+      )
+    ) {
+      return;
+    }
+
+    this.pointerResizeIntent = {
+      acceptedFrame: null,
+      activeColumnId: activeColumn.id,
+      before,
+      beforeFrame: snapshotRect(initialFrame),
+      contextFingerprint: contextGeometry.fingerprint,
+      contextKey: context.key,
+      edge: null,
+      gap: this.gap,
+      generation: this.runGeneration,
+      participants,
+      phase: "resizing",
+      resizedWindowId,
+      source,
+      sourceDesktop,
+      sourceOutput,
+      topologyRevision: this.topologyRevision,
+    };
+  };
+
+  private readonly handleInteractiveResizeFinished = (
+    id: string,
+    acceptedFrame: Rect,
+  ): void => {
+    if (String(this.interactiveResizeSource?.internalId) === id) {
+      this.suspendGeometryLease(windowId(id));
+      this.interactiveResizeSource = null;
+    }
+
+    const intent = this.pointerResizeIntent;
+
+    if (!intent || String(intent.resizedWindowId) !== id) {
+      return;
+    }
+
+    const source = this.observer.source(id);
+    const observed = source ? normalizeWindow(source) : null;
+    const liveContext = observed ? managedContext(observed) : null;
+    const inferred = inferPointerHorizontalResize(
+      intent.beforeFrame,
+      acceptedFrame,
+    );
+
+    if (
+      intent.phase !== "resizing" ||
+      !source ||
+      source !== intent.source ||
+      this.workspace.activeWindow !== source ||
+      !this.settledPointerResizeSourceIsEligible(source) ||
+      !rectsEqual(source.frameGeometry, acceptedFrame) ||
+      !liveContext ||
+      contextKey(liveContext) !== intent.contextKey ||
+      source.output !== intent.sourceOutput ||
+      currentDesktopForOutput(this.workspace, intent.sourceOutput)?.id !==
+        intent.sourceDesktop.id ||
+      intent.generation !== this.runGeneration ||
+      intent.topologyRevision !== this.topologyRevision ||
+      intent.gap !== this.gap ||
+      !inferred
+    ) {
+      this.pointerResizeIntent = null;
+      return;
+    }
+
+    this.pointerResizeIntent = {
+      ...intent,
+      acceptedFrame: snapshotRect(acceptedFrame),
+      edge: inferred.edge,
+      phase: "finished",
+    };
+  };
+
   private readonly handleInteractiveMoveStarted = (id: string): void => {
     this.pointerMoveIntent = null;
+    this.pointerResizeIntent = null;
     const draggedWindowId = windowId(id);
     const source = this.observer.source(id);
 
@@ -3210,6 +3520,35 @@ export class RuntimeController {
     );
   }
 
+  private interactiveResizeSourceIsEligible(source: KWinWindow): boolean {
+    return (
+      source.resize &&
+      !source.move &&
+      this.pointerResizeSourceHasStableOwnership(source)
+    );
+  }
+
+  private settledPointerResizeSourceIsEligible(source: KWinWindow): boolean {
+    return (
+      !source.resize &&
+      !source.move &&
+      this.pointerResizeSourceHasStableOwnership(source)
+    );
+  }
+
+  private pointerResizeSourceHasStableOwnership(source: KWinWindow): boolean {
+    return (
+      source.managed &&
+      !source.deleted &&
+      !source.fullScreen &&
+      !source.minimized &&
+      source.maximizeMode === 0 &&
+      source.moveable &&
+      source.resizeable &&
+      source.tile === null
+    );
+  }
+
   private cancelPointerMoveForWindowChange(id: WindowId): void {
     if (
       this.pointerMoveIntent?.participants.some(
@@ -3217,6 +3556,16 @@ export class RuntimeController {
       )
     ) {
       this.pointerMoveIntent = null;
+    }
+  }
+
+  private cancelPointerResizeForWindowChange(id: WindowId): void {
+    if (
+      this.pointerResizeIntent?.participants.some(
+        (participant) => participant.id === id,
+      )
+    ) {
+      this.pointerResizeIntent = null;
     }
   }
 
@@ -3248,6 +3597,35 @@ export class RuntimeController {
     }
   }
 
+  private cancelPointerResizeForInvalidState(
+    id: WindowId,
+    source: KWinWindow | undefined,
+  ): void {
+    const intent = this.pointerResizeIntent;
+
+    if (!intent) {
+      return;
+    }
+
+    if (id === intent.resizedWindowId) {
+      const expectedSourceState =
+        source === intent.source &&
+        (intent.phase === "resizing"
+          ? this.interactiveResizeSourceIsEligible(source)
+          : this.settledPointerResizeSourceIsEligible(source));
+
+      if (!expectedSourceState) {
+        this.pointerResizeIntent = null;
+      }
+
+      return;
+    }
+
+    if (intent.participants.some((participant) => participant.id === id)) {
+      this.pointerResizeIntent = null;
+    }
+  }
+
   private readonly handleWindowChanged = (
     id: string,
     cause: ObservedWindowChangeCause,
@@ -3265,6 +3643,20 @@ export class RuntimeController {
 
     if (!pointerContextChangeContinues) {
       this.cancelPointerMoveForWindowChange(changedId);
+    }
+
+    const resizeIntent = this.pointerResizeIntent;
+    const pointerResizeConstraintChangeContinues =
+      cause === "constraints" &&
+      resizeIntent?.resizedWindowId === changedId &&
+      source !== undefined &&
+      resizeIntent.source === source &&
+      (resizeIntent.phase === "resizing"
+        ? this.interactiveResizeSourceIsEligible(source)
+        : this.settledPointerResizeSourceIsEligible(source));
+
+    if (!pointerResizeConstraintChangeContinues) {
+      this.cancelPointerResizeForWindowChange(changedId);
     }
 
     if (source) {
@@ -3321,7 +3713,18 @@ export class RuntimeController {
   private readonly handleWindowStateChanged = (id: string): void => {
     const changedId = windowId(id);
     const source = this.observer.source(id);
+
+    if (
+      source === this.interactiveResizeSource &&
+      !source.move &&
+      !source.resize
+    ) {
+      this.suspendGeometryLease(changedId);
+      this.interactiveResizeSource = null;
+    }
+
     this.cancelPointerMoveForInvalidState(changedId, source);
+    this.cancelPointerResizeForInvalidState(changedId, source);
     this.windowStateRevisions.set(
       changedId,
       (this.windowStateRevisions.get(changedId) ?? 0) + 1,
@@ -3413,6 +3816,7 @@ export class RuntimeController {
   ): void => {
     const suspendedId = windowId(id);
     this.cancelPointerMoveForWindowChange(suspendedId);
+    this.cancelPointerResizeForWindowChange(suspendedId);
 
     if (
       this.synchronizeAutomaticFloatingWindow(
@@ -3455,6 +3859,7 @@ export class RuntimeController {
   ): void => {
     const activeId = windowId(id);
     this.cancelPointerMoveForWindowChange(activeId);
+    this.cancelPointerResizeForWindowChange(activeId);
     const source = this.observer.source(id);
 
     if (!fullScreen) {
@@ -3501,6 +3906,7 @@ export class RuntimeController {
     mode: number,
   ): void => {
     this.cancelPointerMoveForWindowChange(windowId(id));
+    this.cancelPointerResizeForWindowChange(windowId(id));
 
     if (mode !== 3) {
       return;
@@ -3533,7 +3939,15 @@ export class RuntimeController {
 
   private readonly handleWindowRemoved = (id: string): void => {
     const managedId = windowId(id);
+    const endedInteractiveResize =
+      String(this.interactiveResizeSource?.internalId) === id;
+
+    if (endedInteractiveResize) {
+      this.interactiveResizeSource = null;
+    }
+
     this.cancelPointerMoveForWindowChange(managedId);
+    this.cancelPointerResizeForWindowChange(managedId);
     this.cancelInvalidPendingExpelFocusHandoff();
     const affectedContextKeys = new Set<string>();
     const floating = this.floatingWindows.get(managedId);
@@ -3583,6 +3997,14 @@ export class RuntimeController {
       this.finishCanceledToggleTransition(key);
     }
 
+    if (endedInteractiveResize && this.borderlessReconciliationPending) {
+      this.applyBorderlessWindowSetting();
+    }
+
+    if (endedInteractiveResize) {
+      this.scheduleWork();
+    }
+
     this.requestLayoutStatePublication();
     this.flushLayoutStatePublication();
   };
@@ -3593,6 +4015,13 @@ export class RuntimeController {
   ): void => {
     if (this.pointerMoveIntent && window !== this.pointerMoveIntent.source) {
       this.pointerMoveIntent = null;
+    }
+
+    if (
+      this.pointerResizeIntent &&
+      window !== this.pointerResizeIntent.source
+    ) {
+      this.pointerResizeIntent = null;
     }
 
     const pendingHandoff = this.pendingExpelFocusHandoff;
@@ -8890,6 +9319,8 @@ export class RuntimeController {
     command: ActiveColumnCommand,
     width: ColumnWidth,
     label: string,
+    accept?: () => boolean,
+    rollbackFrames?: ReadonlyMap<WindowId, Rect>,
   ): boolean {
     let previousWidth: ColumnWidth | null = null;
 
@@ -8907,6 +9338,8 @@ export class RuntimeController {
         previousWidth !== null &&
         this.layout.setActiveColumnWidth(command.activeId, previousWidth) !==
           null,
+      accept,
+      rollbackFrames,
     );
   }
 
@@ -10493,6 +10926,7 @@ export class RuntimeController {
 
   private prepareActiveColumnCommand(
     existingOperation?: object,
+    sampledContextGeometries?: ReadonlyMap<string, ContextGeometry>,
   ): ActiveColumnCommand | null {
     const activeWindow = this.workspace.activeWindow;
 
@@ -10500,6 +10934,9 @@ export class RuntimeController {
       !this.started ||
       (this.stackEditOperation !== null &&
         this.stackEditOperation !== existingOperation) ||
+      this.interactiveResizeSource !== null ||
+      (this.pointerResizeIntent !== null &&
+        this.pointerResizeIntent !== existingOperation) ||
       this.windowTransferOperation ||
       this.startupStabilizationToken !== null ||
       this.hasTopologyBarrier() ||
@@ -10509,7 +10946,8 @@ export class RuntimeController {
       return null;
     }
 
-    const sampledGeometries = this.sampleSettledVisibleContextGeometries();
+    const sampledGeometries =
+      sampledContextGeometries ?? this.sampleSettledVisibleContextGeometries();
 
     if (
       !sampledGeometries ||
@@ -12636,6 +13074,181 @@ export class RuntimeController {
     return true;
   }
 
+  private commitFinishedPointerResize(
+    id: WindowId,
+    source: KWinWindow,
+    context: RuntimeContext,
+  ): boolean {
+    const intent = this.pointerResizeIntent;
+
+    if (!intent || intent.resizedWindowId !== id) {
+      return false;
+    }
+
+    const reject = (): false => {
+      if (this.pointerResizeIntent === intent) {
+        this.pointerResizeIntent = null;
+      }
+
+      return false;
+    };
+    const acceptedFrame = intent.acceptedFrame;
+    const inferred = acceptedFrame
+      ? inferPointerHorizontalResize(intent.beforeFrame, acceptedFrame)
+      : null;
+
+    if (
+      intent.phase !== "finished" ||
+      !acceptedFrame ||
+      !inferred ||
+      inferred.edge !== intent.edge ||
+      intent.source !== source ||
+      intent.contextKey !== context.key ||
+      intent.generation !== this.runGeneration ||
+      intent.topologyRevision !== this.topologyRevision ||
+      intent.gap !== this.gap ||
+      intent.contextFingerprint !== context.geometryFingerprint ||
+      this.workspace.activeWindow !== source ||
+      !this.settledPointerResizeSourceIsEligible(source) ||
+      !rectsEqual(source.frameGeometry, acceptedFrame) ||
+      source.output !== intent.sourceOutput ||
+      currentDesktopForOutput(this.workspace, intent.sourceOutput)?.id !==
+        intent.sourceDesktop.id ||
+      this.dirtyContexts.has(context.key) ||
+      this.pendingAdmissionContexts.has(context.key) ||
+      this.hasStructuralCapacityState(context.key) ||
+      this.toggleTransitionPending(context.key) ||
+      !this.pointerResizeParticipantsAreCurrent(intent, context, true)
+    ) {
+      return reject();
+    }
+
+    const contextGeometry = this.sampleSettledContextGeometry(context);
+
+    if (!contextGeometry) {
+      return reject();
+    }
+
+    const command = this.prepareActiveColumnCommand(
+      intent,
+      new Map([[context.key, contextGeometry]]),
+    );
+
+    if (
+      !command ||
+      command.activeId !== id ||
+      command.activeColumn.id !== intent.activeColumnId ||
+      command.context !== context ||
+      command.contextGeometry.fingerprint !== intent.contextFingerprint ||
+      !layoutContextSnapshotsEqual(command.before, intent.before)
+    ) {
+      return reject();
+    }
+
+    const target: ColumnWidth = {
+      kind: "fixed",
+      value: inferred.width,
+    };
+    const rollbackFrames = new Map(
+      intent.participants.map(
+        (participant) => [participant.id, participant.beforeFrame] as const,
+      ),
+    );
+    const applied = this.applyColumnWidth(
+      command,
+      target,
+      "pointer column resize",
+      () =>
+        this.pointerResizeIntent === intent &&
+        intent.generation === this.runGeneration &&
+        intent.topologyRevision === this.topologyRevision &&
+        intent.gap === this.gap &&
+        intent.contextFingerprint === context.geometryFingerprint &&
+        this.workspace.activeWindow === source &&
+        this.settledPointerResizeSourceIsEligible(source) &&
+        this.pointerResizeParticipantsAreCurrent(intent, context, false),
+      rollbackFrames,
+    );
+    this.pointerResizeIntent = null;
+
+    if (!applied) {
+      return false;
+    }
+
+    this.scheduledMutationWrites += this.lastWrites;
+    this.deleteColumnFullWidthRestore(context.key, intent.activeColumnId);
+    this.finishColumnWidthChange(context.key);
+    this.requestLayoutStatePublication();
+    return true;
+  }
+
+  private pointerResizeParticipantsAreCurrent(
+    intent: PointerResizeIntent,
+    context: RuntimeContext,
+    requireCapturedFrames: boolean,
+  ): boolean {
+    const activeColumn = intent.before.columns.find(
+      (column) => column.id === intent.activeColumnId,
+    );
+
+    if (
+      !activeColumn ||
+      activeColumn.windowIds.length !== intent.participants.length
+    ) {
+      return false;
+    }
+
+    for (const contextWindowId of context.windowIds) {
+      if (this.pendingWindowSyncs.has(contextWindowId)) {
+        return false;
+      }
+    }
+
+    for (const waitingId of this.waitingWindowIds.get(context.key) ?? []) {
+      if (this.pendingWindowSyncs.has(waitingId)) {
+        return false;
+      }
+    }
+
+    return intent.participants.every((participant, index) => {
+      const source = this.observer.source(participant.id);
+      const owner = this.managedWindows.get(participant.id);
+      const observed = source ? normalizeWindow(source) : null;
+      const liveContext = observed ? managedContext(observed) : null;
+      const constraints = source ? frameSizeConstraintBounds(source) : null;
+      const expectedId = activeColumn.windowIds[index];
+      const expectedFrame =
+        participant.id === intent.resizedWindowId
+          ? intent.acceptedFrame
+          : participant.beforeFrame;
+
+      return Boolean(
+        participant.id === expectedId &&
+        source === participant.window &&
+        owner?.contextKey === context.key &&
+        context.windowIds.has(participant.id) &&
+        liveContext &&
+        contextKey(liveContext) === context.key &&
+        !this.suspendedWindows.has(participant.id) &&
+        !this.requestedSuspensions.has(participant.id) &&
+        !this.floatingWindows.has(participant.id) &&
+        !this.waitingWindowContexts.has(participant.id) &&
+        !this.automaticFloatingWindows.has(participant.id) &&
+        !this.automaticallyFloats(participant.window) &&
+        this.toggleGeometrySettled(participant.id) &&
+        isGeometryWritable(participant.window) &&
+        constraints !== null &&
+        frameSizeConstraintBoundsEqual(constraints, participant.constraints) &&
+        (participant.id === intent.resizedWindowId ||
+          (this.windowStateRevisions.get(participant.id) ?? 0) ===
+            participant.stateRevision) &&
+        (!requireCapturedFrames ||
+          (expectedFrame !== null &&
+            rectsEqual(participant.window.frameGeometry, expectedFrame))),
+      );
+    });
+  }
+
   private commitFinishedPointerMove(
     id: WindowId,
     source: KWinWindow,
@@ -12835,6 +13448,7 @@ export class RuntimeController {
     mutate: () => boolean,
     rollback: () => boolean,
     accept?: () => boolean,
+    rollbackFrames?: ReadonlyMap<WindowId, Rect>,
   ): boolean {
     if (!mutate()) {
       return false;
@@ -12910,13 +13524,32 @@ export class RuntimeController {
     );
     const rollbackLayout: WindowGeometry[] = [];
 
+    if (
+      rollbackFrames &&
+      [...rollbackFrames.keys()].some((id) => !observedBefore.has(id))
+    ) {
+      restoreLayout();
+      return false;
+    }
+
     for (const window of writableLayout) {
-      const frame = observedBefore.get(window.windowId);
+      const observedFrame = observedBefore.get(window.windowId);
+      const rollbackFrame = rollbackFrames?.get(window.windowId);
+      const frame = rollbackFrame ?? observedFrame;
+      const source = mutationSources.get(window.windowId);
 
       if (
+        !observedFrame ||
         !frame ||
-        this.observer.source(window.windowId) !==
-          mutationSources.get(window.windowId)
+        !source ||
+        this.observer.source(window.windowId) !== source ||
+        (rollbackFrame !== undefined &&
+          (!respectsSizeConstraints(rollbackFrame, source) ||
+            !this.geometry.canApplyFrame(
+              window.windowId,
+              rollbackFrame,
+              context,
+            )))
       ) {
         restoreLayout();
         return false;
@@ -12930,9 +13563,14 @@ export class RuntimeController {
         (change) => change.windowId,
       ),
     );
-    const rollbackTargets = rollbackLayout.filter((window) =>
-      forwardWindowIds.has(window.windowId),
-    );
+    const rollbackTargets = rollbackLayout.filter((window) => {
+      const observedFrame = observedBefore.get(window.windowId);
+      return (
+        forwardWindowIds.has(window.windowId) ||
+        (observedFrame !== undefined &&
+          !rectsEqual(observedFrame, window.frame))
+      );
+    });
     const wasDirty = this.dirtyContexts.has(context.key);
     this.dirtyContexts.delete(context.key);
     let dirtyDuringAcceptance = false;
@@ -12949,6 +13587,21 @@ export class RuntimeController {
       );
     } catch (error) {
       forwardError = String(error);
+    }
+
+    if (
+      forwardError === null &&
+      rollbackFrames !== undefined &&
+      writableLayout.some((window) => {
+        const source = mutationSources.get(window.windowId);
+        return (
+          !source ||
+          this.observer.source(window.windowId) !== source ||
+          !rectsEqual(source.frameGeometry, window.frame)
+        );
+      })
+    ) {
+      forwardError = `${label} geometry was not accepted`;
     }
 
     if (
@@ -12999,9 +13652,20 @@ export class RuntimeController {
             mutationSources.get(change.windowId) &&
           this.windowOwnershipClassificationIsCurrent(change.windowId),
       );
+      const compensationAccepted =
+        compensationTargets.length === rollbackTargets.length &&
+        compensationTargets.every((window) => {
+          const source = mutationSources.get(window.windowId);
+          return (
+            source !== undefined &&
+            this.observer.source(window.windowId) === source &&
+            rectsEqual(source.frameGeometry, window.frame)
+          );
+        });
 
       if (
         compensationWrites !== rollbackTargets.length ||
+        !compensationAccepted ||
         dirtyDuringAcceptance ||
         (dirtyBeforeCompensation && ownershipChangedDuringMutation) ||
         wasDirty
@@ -14417,6 +15081,7 @@ export class RuntimeController {
     }
 
     this.pointerMoveIntent = null;
+    this.pointerResizeIntent = null;
     this.topologyKnownOutputRestorations.clear();
 
     const canceledTransitionKeys = new Set<string>();
@@ -14710,6 +15375,36 @@ export class RuntimeController {
     }
 
     return outputNames.size > 0 ? null : geometries;
+  }
+
+  private sampleSettledContextGeometry(
+    context: RuntimeContext,
+  ): ContextGeometry | null {
+    if (!this.isContextVisible(context)) {
+      return null;
+    }
+
+    let current: ContextGeometry | null;
+
+    try {
+      current = this.geometry.contextGeometry(
+        context.outputId,
+        context.desktopId,
+      );
+    } catch (error) {
+      console.warn(
+        `[driftile] topology probe deferred context=${context.key} error=${String(error)}`,
+      );
+      this.handleTopologyChanged(String(context.outputId));
+      return null;
+    }
+
+    if (!current || current.fingerprint !== context.geometryFingerprint) {
+      this.handleTopologyChanged(String(context.outputId));
+      return null;
+    }
+
+    return current;
   }
 
   private scheduleTopologySample(): void {
@@ -15317,8 +16012,16 @@ export class RuntimeController {
   }
 
   private flushScheduledWorkPass(): void {
+    if (this.interactiveResizeSource !== null) {
+      return;
+    }
+
     if (this.stackEditOperation) {
       return;
+    }
+
+    if (this.borderlessReconciliationPending) {
+      this.applyBorderlessWindowSetting();
     }
 
     if (this.hydrationInProgress) {
@@ -15431,6 +16134,7 @@ export class RuntimeController {
 
     if (
       (this.pendingDefaultColumnWidth !== null || this.pendingGap !== null) &&
+      this.pointerResizeIntent === null &&
       !this.windowTransferOperation &&
       !this.stackedNativeStateOperation &&
       this.capacityParkOperations.size === 0
@@ -15468,6 +16172,13 @@ export class RuntimeController {
   }
 
   private applyPendingDefaultColumnWidth(): void {
+    if (
+      this.interactiveResizeSource !== null ||
+      this.pointerResizeIntent !== null
+    ) {
+      return;
+    }
+
     const width = this.pendingDefaultColumnWidth;
 
     if (!width) {
@@ -15488,6 +16199,13 @@ export class RuntimeController {
   }
 
   private applyPendingGap(): void {
+    if (
+      this.interactiveResizeSource !== null ||
+      this.pointerResizeIntent !== null
+    ) {
+      return;
+    }
+
     const gap = this.pendingGap;
 
     if (gap === null) {
@@ -15737,25 +16455,23 @@ export class RuntimeController {
         const context = this.contexts.get(owner.contextKey);
 
         if (context) {
-          let pointerMoveCommitted = false;
+          let pointerInteractionCommitted = false;
 
           if (resumed) {
-            pointerMoveCommitted = this.commitFinishedPointerMove(
-              id,
-              source,
-              context,
-            );
+            pointerInteractionCommitted =
+              this.commitFinishedPointerResize(id, source, context) ||
+              this.commitFinishedPointerMove(id, source, context);
           }
 
           if (
             resumed &&
-            !pointerMoveCommitted &&
+            !pointerInteractionCommitted &&
             String(this.workspace.activeWindow?.internalId) === String(id)
           ) {
             this.layout.activateWindow(id);
           }
 
-          if (!pointerMoveCommitted) {
+          if (!pointerInteractionCommitted) {
             this.markContextDirty(context);
           }
         }
@@ -19981,6 +20697,18 @@ function rectsEqual(left: Rect, right: Rect): boolean {
     Math.abs(left.y - right.y) <= 1e-6 &&
     Math.abs(left.width - right.width) <= 1e-6 &&
     Math.abs(left.height - right.height) <= 1e-6
+  );
+}
+
+function frameSizeConstraintBoundsEqual(
+  left: FrameSizeConstraintBounds,
+  right: FrameSizeConstraintBounds,
+): boolean {
+  return (
+    left.minimumWidth === right.minimumWidth &&
+    left.minimumHeight === right.minimumHeight &&
+    left.maximumWidth === right.maximumWidth &&
+    left.maximumHeight === right.maximumHeight
   );
 }
 

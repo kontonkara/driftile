@@ -26,6 +26,14 @@ export interface WindowObserverEvents {
   readonly fullScreenChanged?: (windowId: string, fullScreen: boolean) => void;
   readonly interactiveMoveFinished?: (windowId: string) => void;
   readonly interactiveMoveStarted?: (windowId: string) => void;
+  readonly interactiveResizeFinished?: (
+    windowId: string,
+    acceptedFrame: KWinRect,
+  ) => void;
+  readonly interactiveResizeStarted?: (
+    windowId: string,
+    initialFrame: KWinRect,
+  ) => void;
   readonly maximizedAboutToChange?: (windowId: string, mode: number) => void;
   readonly removed?: (windowId: string) => void;
   readonly suspensionSettled?: (
@@ -225,7 +233,78 @@ export class WindowObserver {
     const refreshClassification = (): void => {
       this.refresh(id, window, "classification", true);
     };
-    let interactiveMoveActive = false;
+    let interactiveSession: "move" | "resize" | null = null;
+    let interactiveSessionInvalid = false;
+    const synchronizeInteractiveSession = (
+      allowStart: boolean,
+      allowFinish: boolean,
+    ): void => {
+      if (window.deleted) {
+        interactiveSession = null;
+        interactiveSessionInvalid = true;
+        return;
+      }
+
+      if (window.move && window.resize) {
+        interactiveSession = null;
+        interactiveSessionInvalid = true;
+        return;
+      }
+
+      if (!window.move && !window.resize) {
+        if (!allowFinish) {
+          if (interactiveSession === null) {
+            interactiveSessionInvalid = false;
+          }
+
+          return;
+        }
+
+        const completedSession = interactiveSession;
+        interactiveSession = null;
+        interactiveSessionInvalid = false;
+
+        if (completedSession === "move") {
+          this.events.interactiveMoveFinished?.(id);
+        } else if (completedSession === "resize") {
+          this.events.interactiveResizeFinished?.(id, {
+            ...window.frameGeometry,
+          });
+        }
+
+        return;
+      }
+
+      const currentSession = window.move ? "move" : "resize";
+
+      if (interactiveSessionInvalid) {
+        return;
+      }
+
+      if (interactiveSession === currentSession) {
+        return;
+      }
+
+      if (interactiveSession !== null) {
+        interactiveSession = null;
+        interactiveSessionInvalid = true;
+        return;
+      }
+
+      if (!allowStart) {
+        return;
+      }
+
+      interactiveSession = currentSession;
+
+      if (currentSession === "move") {
+        this.events.interactiveMoveStarted?.(id);
+      } else {
+        this.events.interactiveResizeStarted?.(id, {
+          ...window.frameGeometry,
+        });
+      }
+    };
     let committedTile: object | null | undefined;
     let maximizeRequested = window.maximizeMode !== 0;
     let tileRequested = window.tile !== null;
@@ -241,25 +320,17 @@ export class WindowObserver {
       },
       handleFrameGeometryChanged: refreshFrameGeometry,
       handleInteractiveMoveFinished: () => {
-        const moved = interactiveMoveActive;
-        interactiveMoveActive = false;
-
-        if (moved) {
-          this.events.interactiveMoveFinished?.(id);
-        }
-
+        synchronizeInteractiveSession(false, true);
         refreshInteractiveState();
       },
       handleInteractiveMoveStarted: () => {
-        interactiveMoveActive = window.move;
-
-        if (interactiveMoveActive) {
-          this.events.interactiveMoveStarted?.(id);
-        }
-
+        synchronizeInteractiveSession(true, false);
         refreshInteractiveState();
       },
-      handleInteractiveStateChanged: refreshInteractiveState,
+      handleInteractiveStateChanged: () => {
+        synchronizeInteractiveSession(true, true);
+        refreshInteractiveState();
+      },
       handleMaximizedAboutToChange: (mode) => {
         if (mode !== 0) {
           this.events.maximizedAboutToChange?.(id, mode);

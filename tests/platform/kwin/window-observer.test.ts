@@ -751,30 +751,240 @@ describe("WindowObserver", () => {
     ]);
   });
 
-  it("keeps resize-only sessions out of interactive move callbacks", () => {
+  it("publishes cloned resize frames before state refreshes", () => {
+    const initialFrame = { height: 600, width: 800, x: 20, y: 30 };
+    const source = createWindow({ frameGeometry: initialFrame, resize: true });
+    const started = source.interactiveMoveResizeStarted as Signal<[]>;
+    const finished = source.interactiveMoveResizeFinished as Signal<[]>;
+    const events: string[] = [];
+    let acceptedFrame: KWinRect | undefined;
+    let startedFrame: KWinRect | undefined;
+    const observer = new WindowObserver(createWorkspace([source]), {
+      interactiveMoveFinished: (windowId) =>
+        events.push(`move-finished:${windowId}`),
+      interactiveMoveStarted: (windowId) =>
+        events.push(`move-started:${windowId}`),
+      interactiveResizeFinished: (windowId, frame) => {
+        acceptedFrame = frame;
+        events.push(`resize-finished:${windowId}`);
+      },
+      interactiveResizeStarted: (windowId, frame) => {
+        startedFrame = frame;
+        events.push(`resize-started:${windowId}`);
+      },
+      stateChanged: (windowId) => events.push(`state:${windowId}`),
+    });
+    const finalFrame = { height: 720, width: 960, x: 40, y: 50 };
+
+    observer.start();
+    started.emit();
+    Object.defineProperties(source, {
+      frameGeometry: { configurable: true, value: finalFrame },
+      resize: { configurable: true, value: false },
+    });
+    finished.emit();
+
+    expect(events).toEqual([
+      "resize-started:window-1",
+      "state:window-1",
+      "resize-finished:window-1",
+      "state:window-1",
+    ]);
+    expect(startedFrame).toEqual(initialFrame);
+    expect(startedFrame).not.toBe(initialFrame);
+    expect(acceptedFrame).toEqual(finalFrame);
+    expect(acceptedFrame).not.toBe(finalFrame);
+  });
+
+  it("deduplicates notify-before-direct resize lifecycle signals", () => {
     const source = createWindow({ resize: true });
     const started = source.interactiveMoveResizeStarted as Signal<[]>;
     const finished = source.interactiveMoveResizeFinished as Signal<[]>;
+    const moveResizedChanged = source.moveResizedChanged as Signal<[]>;
     const lifecycle: string[] = [];
-    const states: string[] = [];
+    const observer = new WindowObserver(createWorkspace([source]), {
+      interactiveResizeFinished: (windowId, frame) =>
+        lifecycle.push(`finished:${windowId}:${String(frame.width)}`),
+      interactiveResizeStarted: (windowId, frame) =>
+        lifecycle.push(`started:${windowId}:${String(frame.width)}`),
+    });
+
+    observer.start();
+    moveResizedChanged.emit();
+    started.emit();
+    Object.defineProperties(source, {
+      frameGeometry: {
+        configurable: true,
+        value: { ...source.frameGeometry, width: 920 },
+      },
+      resize: { configurable: true, value: false },
+    });
+    moveResizedChanged.emit();
+    finished.emit();
+
+    expect(lifecycle).toEqual([
+      "started:window-1:800",
+      "finished:window-1:920",
+    ]);
+  });
+
+  it("falls back to move-resized notifications for resize lifecycle", () => {
+    const source = createWindow({ resize: true });
+    Object.defineProperties(source, {
+      interactiveMoveResizeFinished: {
+        configurable: true,
+        value: undefined,
+      },
+      interactiveMoveResizeStarted: {
+        configurable: true,
+        value: undefined,
+      },
+    });
+    const moveResizedChanged = source.moveResizedChanged as Signal<[]>;
+    const lifecycle: string[] = [];
+    const observer = new WindowObserver(createWorkspace([source]), {
+      interactiveResizeFinished: (windowId, frame) =>
+        lifecycle.push(`finished:${windowId}:${String(frame.height)}`),
+      interactiveResizeStarted: (windowId, frame) =>
+        lifecycle.push(`started:${windowId}:${String(frame.height)}`),
+    });
+
+    observer.start();
+    moveResizedChanged.emit();
+    Object.defineProperties(source, {
+      frameGeometry: {
+        configurable: true,
+        value: { ...source.frameGeometry, height: 740 },
+      },
+      resize: { configurable: true, value: false },
+    });
+    moveResizedChanged.emit();
+
+    expect(lifecycle).toEqual([
+      "started:window-1:600",
+      "finished:window-1:740",
+    ]);
+  });
+
+  it("fails closed for ambiguous interactive sessions", () => {
+    const source = createWindow({ move: true, resize: true });
+    const started = source.interactiveMoveResizeStarted as Signal<[]>;
+    const finished = source.interactiveMoveResizeFinished as Signal<[]>;
+    const moveResizedChanged = source.moveResizedChanged as Signal<[]>;
+    const lifecycle: string[] = [];
     const observer = new WindowObserver(createWorkspace([source]), {
       interactiveMoveFinished: (windowId) =>
-        lifecycle.push(`finished:${windowId}`),
+        lifecycle.push(`move-finished:${windowId}`),
       interactiveMoveStarted: (windowId) =>
-        lifecycle.push(`started:${windowId}`),
-      stateChanged: (windowId) => states.push(windowId),
+        lifecycle.push(`move-started:${windowId}`),
+      interactiveResizeFinished: (windowId) =>
+        lifecycle.push(`resize-finished:${windowId}`),
+      interactiveResizeStarted: (windowId) =>
+        lifecycle.push(`resize-started:${windowId}`),
     });
 
     observer.start();
     started.emit();
+    moveResizedChanged.emit();
+    Object.defineProperties(source, {
+      move: { configurable: true, value: false },
+      resize: { configurable: true, value: false },
+    });
+    moveResizedChanged.emit();
+    finished.emit();
+
+    expect(lifecycle).toEqual([]);
+  });
+
+  it("ignores stray, premature, duplicate, and deleted resize finishes", () => {
+    const source = createWindow({ resize: true });
+    const started = source.interactiveMoveResizeStarted as Signal<[]>;
+    const finished = source.interactiveMoveResizeFinished as Signal<[]>;
+    const lifecycle: string[] = [];
+    const observer = new WindowObserver(createWorkspace([source]), {
+      interactiveResizeFinished: (windowId) =>
+        lifecycle.push(`finished:${windowId}`),
+      interactiveResizeStarted: (windowId) =>
+        lifecycle.push(`started:${windowId}`),
+    });
+
+    observer.start();
+    finished.emit();
+    started.emit();
+    finished.emit();
     Object.defineProperty(source, "resize", {
       configurable: true,
       value: false,
     });
     finished.emit();
+    finished.emit();
+    Object.defineProperties(source, {
+      deleted: { configurable: true, value: false },
+      resize: { configurable: true, value: true },
+    });
+    started.emit();
+    Object.defineProperties(source, {
+      deleted: { configurable: true, value: true },
+      resize: { configurable: true, value: false },
+    });
+    finished.emit();
 
-    expect(lifecycle).toEqual([]);
-    expect(states).toEqual(["window-1", "window-1"]);
+    expect(lifecycle).toEqual([
+      "started:window-1",
+      "finished:window-1",
+      "started:window-1",
+    ]);
+  });
+
+  it("disconnects captured resize sessions on removal and stop", () => {
+    const windowRemoved = new Signal<[window: KWinWindow]>();
+    const removedSource = createWindow({ resize: true });
+    const stoppedSource = createWindow({
+      internalId: "window-2",
+      resize: true,
+    });
+    const removedStarted = removedSource.interactiveMoveResizeStarted as Signal<
+      []
+    >;
+    const removedFinished =
+      removedSource.interactiveMoveResizeFinished as Signal<[]>;
+    const stoppedStarted = stoppedSource.interactiveMoveResizeStarted as Signal<
+      []
+    >;
+    const stoppedFinished =
+      stoppedSource.interactiveMoveResizeFinished as Signal<[]>;
+    const lifecycle: string[] = [];
+    const observer = new WindowObserver(
+      createWorkspace(
+        [removedSource, stoppedSource],
+        new Signal<[window: KWinWindow]>(),
+        windowRemoved,
+      ),
+      {
+        interactiveResizeFinished: (windowId) =>
+          lifecycle.push(`finished:${windowId}`),
+        interactiveResizeStarted: (windowId) =>
+          lifecycle.push(`started:${windowId}`),
+      },
+    );
+
+    observer.start();
+    removedStarted.emit();
+    stoppedStarted.emit();
+    windowRemoved.emit(removedSource);
+    observer.stop();
+    Object.defineProperty(removedSource, "resize", {
+      configurable: true,
+      value: false,
+    });
+    Object.defineProperty(stoppedSource, "resize", {
+      configurable: true,
+      value: false,
+    });
+    removedFinished.emit();
+    stoppedFinished.emit();
+
+    expect(lifecycle).toEqual(["started:window-1", "started:window-2"]);
   });
 
   it("publishes committed fullscreen state before the generic state refresh", () => {
