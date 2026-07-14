@@ -6,6 +6,9 @@ Versions 0.1.0, 1.0.0, 1.1.0, 1.2.0, 1.3.0, 1.4.0, 1.5.0, 1.6.0, 1.7.0,
 historical record. The remaining post-v1 direction is not a committed release
 schedule.
 
+Development is on 1.16.0-dev.0. Its scope is frozen to the two items in the
+1.16.0 section below.
+
 ## Foundation (delivered)
 
 - Build and package a declarative KWin script with a TypeScript runtime.
@@ -756,19 +759,27 @@ Release criteria (met):
   full and lifecycle VMs, version, exact-SHA CI, and release gates pass without
   widening this patch.
 
+## 1.16.0 (in development)
+
+The scope is frozen to two already implemented interaction and configuration
+changes:
+
+- Same-context pointer drops show the exact valid target half through KWin's
+  public outline API. Updates are coalesced and own no layout or persistence
+  state; cross-context feedback remains finish-only.
+- An exact application policy starts only newly tracked matching normal windows
+  under ordinary manual-floating ownership. Existing and hydrated ownership
+  wins, and the persistence schema is unchanged.
+
+No additional feature belongs to 1.16.0. Focused tests cover the new behavior;
+the existing X11 and Wayland scenarios cover packaged transport. Full and
+lifecycle VMs are reserved for the release checkpoint.
+
 ## Post-v1
 
 Add interaction and presentation features outside the frozen v1 scope without
 taking over compositor mechanisms.
 
-- Implemented on `main` for the next release: same-context pointer drops
-  outline the exact before/after target half through KWin's public API. The
-  preview is context-local, coalesced, and owns no layout or persistence state;
-  cross-context feedback remains deferred.
-- Implemented on `main` and unreleased: an exact application policy starts only
-  freshly admitted matching normal windows under ordinary manual-floating
-  ownership. Existing and hydrated ownership remains authoritative, and the
-  existing persistence schema is unchanged.
 - Add tabbed column presentation and matching pointer navigation.
 - Add further application-specific policies and an expanded settings UI.
 - Add optional visual transitions, layout indicators, and concise diagnostics.
