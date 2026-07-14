@@ -8852,6 +8852,24 @@ describe("RuntimeController", () => {
     expect(controller.automaticFloatingCount).toBe(1);
     expect(excluded.window.frameGeometry).toEqual(excludedFrame);
     expect(excluded.writeCount).toBe(0);
+    fixture.workspace.activeWindow = excluded.window;
+    const layout = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const tiledFrame = { ...tiled.window.frameGeometry };
+    const tiledWrites = tiled.writeCount;
+    expect(controller.centerColumn()).toBe(false);
+    expect(excluded.window.frameGeometry).toEqual(excludedFrame);
+    expect(excluded.writeCount).toBe(0);
+    expect(tiled.window.frameGeometry).toEqual(tiledFrame);
+    expect(tiled.writeCount).toBe(tiledWrites);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(layout);
 
     const decoded = decodeLayoutPersistence(requiredLayoutDocument(controller));
 
@@ -15766,6 +15784,305 @@ describe("RuntimeController", () => {
         frame: movedFrame,
       },
     });
+  });
+
+  it.each([
+    {
+      expectedFrame: { height: 200, width: 300, x: 350, y: 300 },
+      frame: { height: 200, width: 300, x: 12, y: 34 },
+      name: "ordinary work area",
+      outputGeometry: { height: 800, width: 1000, x: 0, y: 0 },
+    },
+    {
+      expectedFrame: { height: 240, width: 400, x: 1500, y: 360 },
+      frame: { height: 240, width: 400, x: 1300, y: 180 },
+      name: "nonzero work-area origin",
+      outputGeometry: { height: 800, width: 1000, x: 1200, y: 80 },
+    },
+    {
+      expectedFrame: { height: 201, width: 301, x: 1349.75, y: 350.25 },
+      frame: { height: 201, width: 301, x: 1010.25, y: 70.75 },
+      name: "fractional midpoint",
+      outputGeometry: {
+        height: 800,
+        width: 1000,
+        x: 1000.25,
+        y: 50.75,
+      },
+    },
+    {
+      expectedFrame: { height: 900, width: 1200, x: -1100, y: 125 },
+      frame: { height: 900, width: 1200, x: -900, y: 200 },
+      name: "oversized axes",
+      outputGeometry: { height: 800, width: 1000, x: -1100, y: 125 },
+    },
+  ] satisfies readonly {
+    readonly expectedFrame: KWinWindow["frameGeometry"];
+    readonly frame: KWinWindow["frameGeometry"];
+    readonly name: string;
+    readonly outputGeometry: KWinOutput["geometry"];
+  }[])(
+    "centers a manual-floating window in an $name",
+    ({ expectedFrame, frame, outputGeometry }) => {
+      const output = {
+        ...createOutput("DP-1", outputGeometry.x),
+        geometry: outputGeometry,
+      } satisfies KWinOutput;
+      const desktop = { id: "desktop-1" };
+      const first = createTrackedWindow("window-1", output, desktop);
+      const active = createTrackedWindow("window-2", output, desktop, {
+        frameGeometry: frame,
+      });
+      const third = createTrackedWindow("window-3", output, desktop);
+      const windows = [first, active, third];
+      const fixture = createWorkspace(
+        output,
+        desktop,
+        [output],
+        [desktop],
+        windows.map(({ window }) => window),
+      );
+      const controller = new RuntimeController(fixture.workspace, {
+        clientAreaOption: 2,
+        columnWidth: { kind: "fixed", value: 300 },
+        gap: 10,
+      });
+
+      expect(controller.start()).toBe(true);
+      fixture.workspace.activeWindow = active.window;
+      expect(controller.toggleFloating()).toBe(true);
+      active.setFrameGeometry(frame);
+      const activeId = windowId("window-2");
+      const floatingWindows = (
+        controller as unknown as {
+          readonly floatingWindows: ReadonlyMap<
+            WindowId,
+            {
+              readonly currentContextKey: string;
+              readonly expectedFrame: KWinWindow["frameGeometry"];
+              readonly placement: unknown;
+              readonly restoreBaseline: {
+                readonly clientFrame: KWinWindow["clientGeometry"];
+                readonly fingerprint: string;
+                readonly frame: KWinWindow["frameGeometry"];
+                readonly kind: "client" | "frame";
+                readonly noBorder: boolean | undefined;
+              };
+              readonly sourceContextKey: string;
+            }
+          >;
+        }
+      ).floatingWindows;
+      const floatingBefore = floatingWindows.get(activeId);
+
+      if (!floatingBefore) {
+        throw new Error("missing manual-floating centering state");
+      }
+
+      const tiledLayout = runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      );
+      const tiledFrames = [first, third].map(({ window }) => ({
+        ...window.frameGeometry,
+      }));
+      const writes = windows.map(({ writeCount }) => writeCount);
+      const activationCount = fixture.activationCount;
+      const activeOutput = active.window.output;
+      const activeDesktops = active.window.desktops;
+
+      expect(controller.centerColumn()).toBe(true);
+      expect(active.window.frameGeometry).toEqual(expectedFrame);
+      expect(active.window.frameGeometry).toMatchObject({
+        height: frame.height,
+        width: frame.width,
+      });
+      expect(windows.map(({ writeCount }) => writeCount)).toEqual([
+        writes[0],
+        (writes[1] ?? 0) + 1,
+        writes[2],
+      ]);
+      expect(controller.lastWriteCount).toBe(1);
+      expect(fixture.workspace.activeWindow).toBe(active.window);
+      expect(fixture.activationCount).toBe(activationCount);
+      expect(active.window.output).toBe(activeOutput);
+      expect(active.window.desktops).toBe(activeDesktops);
+      expect(
+        runtimeLayout(controller).snapshot(
+          outputId(output.name),
+          desktopId(desktop.id),
+        ),
+      ).toEqual(tiledLayout);
+      expect([first, third].map(({ window }) => window.frameGeometry)).toEqual(
+        tiledFrames,
+      );
+
+      const centeredFloating = floatingWindows.get(activeId);
+
+      expect(centeredFloating).toMatchObject({
+        currentContextKey: floatingBefore.currentContextKey,
+        expectedFrame,
+        placement: floatingBefore.placement,
+        restoreBaseline: {
+          clientFrame: expectedFrame,
+          fingerprint: floatingBefore.restoreBaseline.fingerprint,
+          frame: expectedFrame,
+          kind: "client",
+          noBorder: floatingBefore.restoreBaseline.noBorder,
+        },
+        sourceContextKey: floatingBefore.sourceContextKey,
+      });
+      expect(controller.centerColumn()).toBe(false);
+      expect(active.window.frameGeometry).toEqual(expectedFrame);
+      expect(active.writeCount).toBe((writes[1] ?? 0) + 1);
+      expect(controller.lastWriteCount).toBe(0);
+      expect(floatingWindows.get(activeId)).toBe(centeredFloating);
+      expect(
+        runtimeLayout(controller).snapshot(
+          outputId(output.name),
+          desktopId(desktop.id),
+        ),
+      ).toEqual(tiledLayout);
+    },
+  );
+
+  it("rejects a constrained floating center and keeps delayed compensation guarded", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const active = createTrackedWindow("window-2", output, desktop, {
+      frameGeometry: { height: 200, width: 300, x: 50, y: 60 },
+    });
+    const third = createTrackedWindow("window-3", output, desktop);
+    const windows = [first, active, third];
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map(({ window }) => window),
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    expect(controller.start()).toBe(true);
+    fixture.workspace.activeWindow = active.window;
+    expect(controller.toggleFloating()).toBe(true);
+    const originalFrame = { height: 200, width: 300, x: 50, y: 60 };
+    const targetFrame = { height: 200, width: 300, x: 350, y: 300 };
+    const constrainedFrame = { ...targetFrame, x: targetFrame.x - 1 };
+    active.setFrameGeometry(originalFrame);
+    const activeId = windowId("window-2");
+    const floatingWindows = (
+      controller as unknown as {
+        readonly floatingWindows: ReadonlyMap<WindowId, unknown>;
+      }
+    ).floatingWindows;
+    const floatingBefore = floatingWindows.get(activeId);
+    const tiledLayout = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const tiledState = captureTrackedWindowState([first, third]);
+    const writes = active.writeCount;
+    const delayedWrites: Array<{
+      readonly commit: () => void;
+      readonly frame: KWinWindow["frameGeometry"];
+    }> = [];
+    active.setWriteBehavior((frame, commit) => {
+      delayedWrites.push({ commit, frame: { ...frame } });
+
+      if (delayedWrites.length === 1) {
+        active.setFrameGeometry(constrainedFrame);
+      }
+    });
+    const warning = vi
+      .spyOn(console, "warn")
+      .mockImplementation(() => undefined);
+
+    try {
+      expect(controller.centerColumn()).toBe(false);
+    } finally {
+      warning.mockRestore();
+      active.setWriteBehavior(null);
+    }
+
+    expect(delayedWrites.map(({ frame }) => frame)).toEqual([
+      targetFrame,
+      originalFrame,
+    ]);
+    expect(active.window.frameGeometry).toEqual(constrainedFrame);
+    expect(active.writeCount).toBe(writes + 2);
+    expect(controller.lastWriteCount).toBe(2);
+    expect(floatingWindows.get(activeId)).toBe(floatingBefore);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(tiledLayout);
+    expectTrackedWindowState([first, third], tiledState);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+
+    for (const write of delayedWrites) {
+      write.commit();
+    }
+
+    expect(active.window.frameGeometry).toEqual(originalFrame);
+    expect(floatingWindows.get(activeId)).toBe(floatingBefore);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(tiledLayout);
+  });
+
+  it("blocks native-state manual-floating centering without tiled fallback", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const tiled = createTrackedWindow("tiled", output, desktop);
+    const active = createTrackedWindow("active", output, desktop, {
+      frameGeometry: { height: 200, width: 300, x: 80, y: 70 },
+    });
+    const fullscreen = controlFullscreen(active);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [tiled.window, active.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(controller.toggleFloating()).toBe(true);
+    active.setFrameGeometry({ height: 200, width: 300, x: 80, y: 70 });
+    fullscreen.externalCommit(true);
+    const layout = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const state = captureTrackedWindowState([tiled, active]);
+    const activationCount = fixture.activationCount;
+
+    expect(controller.centerColumn()).toBe(false);
+    expectTrackedWindowState([tiled, active], state);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(layout);
+    expect(controller.lastWriteCount).toBe(0);
+    expect(controller.floatingCount).toBe(1);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+    expect(fixture.activationCount).toBe(activationCount);
   });
 
   it("round-trips a stacked middle member into the current column width", () => {

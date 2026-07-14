@@ -56,7 +56,7 @@ stacking-order, or layout scan.
 | Native maximize      | Extract a regular stack member, then toggle it to work-area edges through KWin                    | Available |
 | Minimize focus       | Preserve tiled slots and floating frames; skip minimized windows without wrapping                 | Available |
 | Hidden-member edits  | Preserve documented passive peers; reject every other minimized-member structural edit            | Available |
-| Floating layer       | Toggle state, switch layers, navigate geometrically, and nudge the active window                  | Available |
+| Floating layer       | Toggle state, switch layers, navigate geometrically, nudge, and center the active window          | Available |
 | Pointer drop         | Reinsert or adopt one active tiled window at one exact visible target                             | Available |
 | Pointer resize       | Adopt one completed horizontal resize as the active column's fixed width                          | Available |
 | Overview companion   | Focus an exact current or non-current thumbnail, or select a non-current number gutter            | Available |
@@ -66,6 +66,14 @@ stacking-order, or layout scan.
 Single-window transfers will remain available as secondary, unbound actions.
 Default desktop and output transfer shortcuts must move the whole active column.
 An active floating layer changes desktop transfer to the active window only.
+
+The existing center-column action is contextual. With an active manually
+floating window, it centers each non-oversized dimension at the exact logical
+midpoint of the assigned output and desktop work area; an oversized dimension
+starts at the work-area origin. The command does not resize, change focus or
+membership, or modify a tiled layout. Automatic exclusions and native-state,
+interactive, minimized, stale, or otherwise blocked manual-floating targets do
+not fall through to tiled centering.
 
 A tiled drag commits on release over exactly one visible tiled target in the
 same context. The target midpoint selects insertion before or after it. Moving

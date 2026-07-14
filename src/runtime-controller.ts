@@ -513,7 +513,7 @@ interface ActiveWindowCommand {
   readonly contextKey: string;
 }
 
-interface ManualFloatingMoveCommand extends ActiveWindowCommand {
+interface ManualFloatingFrameCommand extends ActiveWindowCommand {
   readonly desktop: KWinVirtualDesktop;
   readonly floating: FloatingWindow;
   readonly originalFrame: KWinWindow["frameGeometry"];
@@ -2210,6 +2210,12 @@ export class RuntimeController {
   }
 
   centerColumn(): boolean {
+    const floatingResult = this.centerActiveManualFloatingWindow();
+
+    if (floatingResult !== null) {
+      return floatingResult;
+    }
+
     const command = this.prepareActiveColumnCommand();
 
     if (!command || this.hasCapacityMutationInFlight(command.context.key)) {
@@ -5454,6 +5460,18 @@ export class RuntimeController {
     deltaX: number,
     deltaY: number,
   ): boolean | null {
+    return this.changeActiveManualFloatingWindowFrame((frame, workArea) =>
+      moveFloatingFrame(frame, workArea, deltaX, deltaY),
+    );
+  }
+
+  private centerActiveManualFloatingWindow(): boolean | null {
+    return this.changeActiveManualFloatingWindowFrame(centerFloatingFrame);
+  }
+
+  private changeActiveManualFloatingWindowFrame(
+    resolveTargetFrame: (frame: Rect, workArea: Rect) => Rect,
+  ): boolean | null {
     const activeWindow = this.workspace.activeWindow;
 
     if (!activeWindow) {
@@ -5468,7 +5486,7 @@ export class RuntimeController {
     }
 
     this.lastWrites = 0;
-    const command = this.prepareManualFloatingMove(
+    const command = this.prepareManualFloatingFrameChange(
       activeId,
       activeWindow,
       floating,
@@ -5478,16 +5496,14 @@ export class RuntimeController {
       return false;
     }
 
-    const targetFrame = moveFloatingFrame(
+    const targetFrame = resolveTargetFrame(
       command.originalFrame,
       command.contextGeometry.workArea,
-      deltaX,
-      deltaY,
     );
 
     if (
       rectsEqual(targetFrame, command.originalFrame) ||
-      !this.manualFloatingMoveIsCurrent(command) ||
+      !this.manualFloatingFrameChangeIsCurrent(command) ||
       !this.geometry.canApplyFrame(
         command.activeId,
         targetFrame,
@@ -5505,7 +5521,7 @@ export class RuntimeController {
         [{ frame: targetFrame, windowId: command.activeId }],
         command.context,
         () =>
-          this.manualFloatingMoveIsCurrent(command) &&
+          this.manualFloatingFrameChangeIsCurrent(command) &&
           rectsEqual(command.activeWindow.frameGeometry, command.originalFrame),
       );
     } catch (error) {
@@ -5520,7 +5536,7 @@ export class RuntimeController {
         forwardError === null &&
         forwardWrites === 1 &&
         rectsEqual(command.activeWindow.frameGeometry, targetFrame) &&
-        this.manualFloatingMoveIsCurrent(command)
+        this.manualFloatingFrameChangeIsCurrent(command)
       ) {
         acceptedFrame = snapshotRect(command.activeWindow.frameGeometry);
         restoreBaseline = this.captureRestoreBaseline(
@@ -5538,7 +5554,7 @@ export class RuntimeController {
       restoreBaseline &&
       rectsEqual(acceptedFrame, targetFrame) &&
       rectsEqual(restoreBaseline.frame, acceptedFrame) &&
-      this.manualFloatingMoveIsCurrent(command) &&
+      this.manualFloatingFrameChangeIsCurrent(command) &&
       rectsEqual(command.activeWindow.frameGeometry, acceptedFrame)
     ) {
       this.floatingWindows.set(command.activeId, {
@@ -5550,7 +5566,7 @@ export class RuntimeController {
       return true;
     }
 
-    const compensationWrites = this.compensateManualFloatingMove(
+    const compensationWrites = this.compensateManualFloatingFrameChange(
       command,
       targetFrame,
       forwardWrites,
@@ -5559,18 +5575,18 @@ export class RuntimeController {
 
     if (forwardError !== null) {
       console.warn(
-        `[driftile] floating move rolled back window=${String(command.activeId)} error=${forwardError}`,
+        `[driftile] floating frame change rolled back window=${String(command.activeId)} error=${forwardError}`,
       );
     }
 
     return false;
   }
 
-  private prepareManualFloatingMove(
+  private prepareManualFloatingFrameChange(
     activeId: WindowId,
     activeWindow: KWinWindow,
     floating: FloatingWindow,
-  ): ManualFloatingMoveCommand | null {
+  ): ManualFloatingFrameCommand | null {
     const context = layerFocusContext(activeWindow);
 
     if (!context) {
@@ -5608,7 +5624,7 @@ export class RuntimeController {
       return null;
     }
 
-    const command: ManualFloatingMoveCommand = {
+    const command: ManualFloatingFrameCommand = {
       activeId,
       activeWindow,
       context,
@@ -5622,11 +5638,11 @@ export class RuntimeController {
       topologyRevision,
     };
 
-    return this.manualFloatingMoveIsCurrent(command) ? command : null;
+    return this.manualFloatingFrameChangeIsCurrent(command) ? command : null;
   }
 
-  private manualFloatingMoveIsCurrent(
-    command: ManualFloatingMoveCommand,
+  private manualFloatingFrameChangeIsCurrent(
+    command: ManualFloatingFrameCommand,
   ): boolean {
     if (
       !this.started ||
@@ -5708,8 +5724,8 @@ export class RuntimeController {
     );
   }
 
-  private compensateManualFloatingMove(
-    command: ManualFloatingMoveCommand,
+  private compensateManualFloatingFrameChange(
+    command: ManualFloatingFrameCommand,
     targetFrame: Rect,
     forwardWrites: number,
   ): number {
@@ -5723,8 +5739,8 @@ export class RuntimeController {
 
     if (
       forwardWrites !== 1 ||
-      !this.manualFloatingMoveIsCurrent(command) ||
-      !floatingMoveResultIsTransactionOwned(
+      !this.manualFloatingFrameChangeIsCurrent(command) ||
+      !floatingFrameChangeResultIsTransactionOwned(
         command.originalFrame,
         targetFrame,
         forwardFrame,
@@ -5746,12 +5762,12 @@ export class RuntimeController {
         [{ frame: command.originalFrame, windowId: command.activeId }],
         command.context,
         () =>
-          this.manualFloatingMoveIsCurrent(command) &&
+          this.manualFloatingFrameChangeIsCurrent(command) &&
           rectsEqual(command.activeWindow.frameGeometry, forwardFrame),
       );
     } catch (error) {
       console.warn(
-        `[driftile] floating move compensation failed window=${String(command.activeId)} error=${String(error)}`,
+        `[driftile] floating frame change compensation failed window=${String(command.activeId)} error=${String(error)}`,
       );
       return compensationWrites;
     }
@@ -5769,7 +5785,7 @@ export class RuntimeController {
 
     if (compensationWrites !== 1 || !restored) {
       console.warn(
-        `[driftile] floating move compensation was not acknowledged window=${String(command.activeId)}`,
+        `[driftile] floating frame change compensation was not acknowledged window=${String(command.activeId)}`,
       );
     }
 
@@ -22744,6 +22760,15 @@ function moveFloatingFrame(
   };
 }
 
+function centerFloatingFrame(frame: Rect, workArea: Rect): Rect {
+  return {
+    height: frame.height,
+    width: frame.width,
+    x: workArea.x + Math.max((workArea.width - frame.width) / 2, 0),
+    y: workArea.y + Math.max((workArea.height - frame.height) / 2, 0),
+  };
+}
+
 function maximumFloatingWindowOffscreenExtent(size: number): number {
   const visibleExtent = clamp(
     size / 4,
@@ -22753,7 +22778,7 @@ function maximumFloatingWindowOffscreenExtent(size: number): number {
   return Math.max(0, size - visibleExtent);
 }
 
-function floatingMoveResultIsTransactionOwned(
+function floatingFrameChangeResultIsTransactionOwned(
   originalFrame: Rect,
   targetFrame: Rect,
   resultFrame: Rect,

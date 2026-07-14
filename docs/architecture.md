@@ -129,7 +129,7 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Focuses adjacent desktops on the active output, with a global fallback and no wrapping.
 - Accepts a desktop reorder only when KWin produces the exact expected same-ID permutation. The operation leaves selections and window memberships unchanged, and the shared empty tail remains pinned.
 - Releases explicitly floating windows from continuous geometry ownership and restores their anchored layout slots on return.
-- Translates one active manually floating frame through a guarded directional command without a window or layout scan, preserving its reinsertion anchor and every tiled context.
+- Translates or work-area-centers one active manually floating frame through a shared guarded command without a window or layout scan, preserving its reinsertion anchor and every tiled context.
 - Transfers one active relation-free floating window between desktops through a dedicated KWin transaction without changing tiled state or frame geometry.
 - Remembers the last non-minimized tiled and floating focus per context, switches layers, and resolves floating navigation from live frame geometry without changing frames during floating navigation.
 - Skips minimized tiled slots, fully minimized columns, and minimized floating candidates during focus resolution without taking ownership of KWin's minimize mechanism.
@@ -286,6 +286,13 @@ a deterministic local fallback without mutating the runtime anchor. The
 historical cross-context anchor remains runtime-only and is not recovered across
 a reload made while the window is away.
 
+Directional movement and contextual centering share one guarded single-window
+frame transaction. It performs no window, column, or layout enumeration, accepts
+only an exact logical-frame acknowledgement, and commits floating metadata only
+after that acknowledgement. A still-owned inexact result may receive one ordered
+original-frame compensation request; stale ownership, context, or topology stops
+further writes.
+
 At a stable runtime boundary, Driftile can now capture the complete durable
 model as one canonical codec document without changing layout or KWin state.
 Invalid ownership, stale live references, and in-flight structural work fail
@@ -383,6 +390,7 @@ inspected safely within the codec bound.
 - Apply floating transitions from immutable previews, commit ownership only after every geometry request succeeds, and defer later context writes until asynchronous frames settle.
 - Switch focus between tiled and floating layers by resolving one deterministic target in each layer. Minimized slots are skipped, but a selected target with any other suspension or geometry-authority blocker fails closed instead of falling through. A tiled target in another column is revealed transactionally before KWin receives focus; ordinary rejection restores the exact model and geometry, while topology supersession uses normal deferred recovery.
 - Resolve floating `H/J/K/L` by the smallest strictly positive center delta on the requested axis and `Home/End` by frame-x extremes, scanning only live, non-minimized same-context floating windows.
+- Resolve the existing center-column action contextually: a manual-floating target uses the assigned output and desktop work area, exact logical midpoints, and work-area origins for oversized dimensions; a non-floating target keeps the tiled centering path. A blocked manual-floating target never falls through to tiled behavior.
 - Leave dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows outside layout ownership. Commands that require layout ownership are no-ops when one is active; desktop transfer may move one relation-free floating window.
 - If a managed window gains an automatic-floating role, remove its slot without writing a stale restore frame or disturbing unrelated order, widths, or viewport state. Re-admit it through normal admission after the role clears.
 - Allow horizontal overflow and viewport scrolling when KWin reports one output.

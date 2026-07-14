@@ -1273,6 +1273,58 @@ let
           '
       }
 
+      precise_window_frame() {
+        local id
+
+        id=$(window_id "$1") || return 1
+        busctl --user --json=short call \
+          org.kde.KWin \
+          /KWin \
+          org.kde.KWin \
+          getWindowInfo \
+          s "$id" 2>/dev/null \
+          | jq --exit-status --raw-output '
+            def coordinate:
+              (((. * 1000000) | round) / 1000000) | tostring;
+            .data[0] as $window
+            | [
+                $window.x.data,
+                $window.y.data,
+                $window.width.data,
+                $window.height.data
+              ]
+            | select(map(type == "number") | all)
+            | map(coordinate)
+            | join(",")
+          '
+      }
+
+      wait_for_precise_window_frame() {
+        local attempt
+        local current
+        local expected=$2
+        local stable_samples=0
+        local title=$1
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          current=$(precise_window_frame "$title" 2>/dev/null || true)
+
+          if [[ "$current" == "$expected" ]]; then
+            stable_samples=$((stable_samples + 1))
+
+            if ((stable_samples >= 2)); then
+              return 0
+            fi
+          else
+            stable_samples=0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
       wait_for_named_frames() {
         local attempt
         local current
@@ -1725,6 +1777,36 @@ let
           "$work_area_y" \
           "$output_width" \
           "$work_area_height"
+      }
+
+      centered_frame_in_work_area() {
+        local work_area=$1
+        local frame=$2
+
+        jq --exit-status --null-input --raw-output \
+          --arg workArea "$work_area" \
+          --arg frame "$frame" '
+            def rect($raw):
+              ($raw | split(",") | map(tonumber)) as $values
+              | {
+                  x: $values[0],
+                  y: $values[1],
+                  width: $values[2],
+                  height: $values[3]
+                };
+            def coordinate:
+              (((. * 1000000) | round) / 1000000) | tostring;
+            (rect($workArea)) as $work
+            | (rect($frame)) as $window
+            | [
+                $work.x + ([($work.width - $window.width) / 2, 0] | max),
+                $work.y + ([($work.height - $window.height) / 2, 0] | max),
+                $window.width,
+                $window.height
+              ]
+            | map(coordinate)
+            | join(",")
+          '
       }
 
       window_frame_contains() {
@@ -6365,14 +6447,17 @@ let
         local desktop_source_width
         local direct_insert_verified
         local first_trailing_desktop_id=""
+        local floating_center_frame
         local floating_left_frame
         local floating_left_up_frame
+        local floating_output_frame
         local floating_second_height
         local floating_second_frame
         local floating_second_width
         local floating_second_x
         local floating_second_y
         local floating_up_frame
+        local floating_work_area
         local gap_first_frame
         local gap_third_frame
         local horizontal_extraction_verified
@@ -6816,6 +6901,27 @@ let
         floating_left_frame="$((floating_second_x - 50)),$floating_second_y,$floating_second_width,$floating_second_height"
         floating_left_up_frame="$((floating_second_x - 50)),$((floating_second_y - 50)),$floating_second_width,$floating_second_height"
         floating_up_frame="$floating_second_x,$((floating_second_y - 50)),$floating_second_width,$floating_second_height"
+        floating_output_frame=$(single_enabled_output_frame 2>/dev/null || true)
+        floating_work_area=$(
+          maximized_work_area_frame \
+            "$singleton_first_frame" \
+            "$floating_output_frame" \
+            2>/dev/null \
+            || true
+        )
+        floating_center_frame=$(
+          centered_frame_in_work_area \
+            "$floating_work_area" \
+            "$floating_second_frame" \
+            2>/dev/null \
+            || true
+        )
+
+        if ! frame_is_valid "$floating_work_area" \
+          || ! frame_is_valid "$floating_center_frame"; then
+          record_focus_state "window B floating center target was invalid"
+          return 1
+        fi
 
         if ! request_physical_shortcut floating-move-left \
           || ! wait_for_frames \
@@ -6847,6 +6953,23 @@ let
         fi
         record_focus_state \
           "physical manual floating shortcuts moved window B by exact 50-pixel steps"
+
+        if ! request_physical_shortcut floating-center \
+          || ! wait_for_frames \
+            "$stable_first_frame" \
+            "$floating_center_frame" \
+            "$stable_third_frame" \
+          || ! wait_for_precise_window_frame \
+            "$title_b" \
+            "$floating_center_frame" \
+          || ! wait_for_active "$title_b"; then
+          record_focus_state \
+            "physical Meta+C did not center the real manual floating window"
+          return 1
+        fi
+        floating_second_frame=$floating_center_frame
+        record_focus_state \
+          "physical Meta+C centered the real manual floating window exactly"
 
         IFS=, read -r \
           tiled_first_x \

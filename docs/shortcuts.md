@@ -29,7 +29,7 @@ arrow keys are interchangeable unless noted otherwise.
 | Cycle preset column width forward or back        | `Meta+R` or `Meta+Shift+R`                           |
 | Toggle full-width column                         | `Meta+F`                                             |
 | Expand active column into available width        | `Meta+Ctrl+F`                                        |
-| Center active column                             | `Meta+C`                                             |
+| Center column or active manually floating window | `Meta+C`                                             |
 | Center fully visible columns                     | `Meta+Ctrl+C`                                        |
 | Decrease or increase column width by 10%         | `Meta+-` or `Meta+=`                                 |
 | Decrease or increase active window height by 10% | `Meta+Shift+-` or `Meta+Shift+=`                     |
@@ -58,6 +58,14 @@ but 10–75 pixels remain visible on each axis depending on its size; a frame
 smaller than 10 pixels stays fully visible. The action preserves frame size,
 focus, output, desktop, and every tiled layout. Automatic layout exclusions
 remain under KWin geometry ownership.
+
+`Meta+C` centers an active manually floating frame in its assigned output and
+desktop work area. Each smaller dimension uses its exact logical midpoint; an
+oversized dimension starts at that work area's origin. The guarded command
+preserves size, focus, context, reinsertion placement, and every tiled layout.
+An already centered, blocked, automatically excluded, or stale target is a
+no-op. With a tiled window active, the existing column-centering behavior is
+unchanged.
 
 Driftile does not register a minimize action or default shortcut; KWin owns the
 mechanism. A minimized tiled window retains its exact logical slot, and a

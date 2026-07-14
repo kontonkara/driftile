@@ -2374,6 +2374,36 @@ single_output_work_area() {
   '
 }
 
+centered_frame_in_work_area() {
+  local work_area=$1
+  local frame=$2
+
+  jq --exit-status --null-input --raw-output \
+    --arg workArea "$work_area" \
+    --arg frame "$frame" '
+      def rect($raw):
+        ($raw | split(",") | map(tonumber)) as $values
+        | {
+            x: $values[0],
+            y: $values[1],
+            width: $values[2],
+            height: $values[3]
+          };
+      def coordinate:
+        (((. * 1000000) | round) / 1000000) | tostring;
+      (rect($workArea)) as $work
+      | (rect($frame)) as $window
+      | [
+          $work.x + ([($work.width - $window.width) / 2, 0] | max),
+          $work.y + ([($work.height - $window.height) / 2, 0] | max),
+          $window.width,
+          $window.height
+        ]
+      | map(coordinate)
+      | join(",")
+    '
+}
+
 frames_intersect() {
   local first=$1
   local second=$2
@@ -6152,7 +6182,9 @@ verify_manual_floating_navigation() {
   local first_tiled_title=$2
   local active_tiled_title=$3
   local right_tiled_title=$4
+  local centered_frame
   local title
+  local work_area
   local -a navigation_pids=()
   local -a navigation_titles=(
     "driftile-floating-navigation-${protocol}-a"
@@ -6274,6 +6306,28 @@ verify_manual_floating_navigation() {
     "$first_tiled_title" "16,16,616,336" \
     "$active_tiled_title" "16,368,616,336" \
     "$right_tiled_title" "648,16,616,688"
+
+  work_area=$(single_output_work_area "$protocol") || \
+    fail "KWin did not expose the single-output $protocol work area for floating centering"
+  centered_frame=$(
+    centered_frame_in_work_area "$work_area" "80,80,360,240"
+  ) || fail "the centered $protocol floating frame could not be calculated"
+  activate_window "${navigation_titles[0]}" || \
+    fail "KWin could not focus the $protocol floating window before centering"
+  wait_for_active "${navigation_titles[0]}" || \
+    fail "KWin did not focus the $protocol floating window before centering"
+  invoke_shortcut "driftile_center_column" || \
+    fail "KGlobalAccel could not center the manual $protocol floating window"
+  wait_for_active "${navigation_titles[0]}" || \
+    fail "Driftile changed $protocol focus while centering a floating window"
+  wait_for_geometries \
+    "${navigation_titles[0]}" "$centered_frame" \
+    "${navigation_titles[1]}" "460,240,360,240" \
+    "${navigation_titles[2]}" "840,440,360,240" \
+    "$first_tiled_title" "16,16,616,336" \
+    "$active_tiled_title" "16,368,616,336" \
+    "$right_tiled_title" "648,16,616,688" || \
+    fail "Driftile did not apply the exact floating $protocol center target: $(describe_layout "${navigation_titles[@]}" "$first_tiled_title" "$active_tiled_title" "$right_tiled_title")"
 
   for title in "${navigation_pids[@]}"; do
     stop_client "$title"

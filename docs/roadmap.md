@@ -5,8 +5,7 @@ Versions 0.1.0, 1.0.0, 1.1.0, 1.2.0, 1.3.0, 1.4.0, 1.5.0, 1.6.0, 1.7.0,
 and release criteria below are a historical record. The remaining post-v1
 direction is not a committed release schedule.
 
-Development is on `1.12.0-dev.0`. The next bounded scope is not yet committed
-and will be frozen separately.
+Development is on `1.12.0-dev.0`, with the bounded scope frozen below.
 
 ## Foundation (delivered)
 
@@ -589,6 +588,36 @@ Release criteria (met):
   every failure preserves all tiled layout state and floating metadata.
 - Unit and packaged integration checks cover the bounded behavior on supported
   window-system paths without expanding the application matrix.
+
+## 1.12.0 (in development, scope frozen)
+
+Version `1.12.0` reuses the existing center-column action and `Meta+C` default
+to center an active manually floating frame in its assigned output and desktop
+work area. Each non-oversized dimension uses the exact logical midpoint; an
+oversized dimension starts at the work-area origin. Fractional logical targets
+are not rounded. A non-floating target keeps the existing tiled behavior.
+
+The command shares the guarded single-window frame transaction used by
+directional floating movement. It accepts only the exact target, commits
+floating metadata only after acknowledgement, and requests compensation only
+while ownership, context, and topology remain current. An already centered or
+blocked manual-floating target performs no write and never falls through to
+tiled centering. Automatic exclusions and native-state windows remain under
+KWin geometry ownership.
+
+This slice adds no action, binding, setting, configuration schema, persistence,
+helper, or overview behavior and does not expand the application matrix.
+
+Release criteria:
+
+- Ordinary and nonzero-origin work areas, fractional targets, and oversized
+  frame dimensions produce the exact per-axis target without resizing or
+  changing focus, context, anchor, or tiled state.
+- Preflight and already-centered no-ops perform zero writes; an inexact result
+  performs at most one forward and one guarded compensation write without a
+  metadata commit.
+- Unit, packaged Wayland, XWayland, native X11, and hidden full-VM checks reuse
+  existing windows and applications.
 
 ## Post-v1
 
