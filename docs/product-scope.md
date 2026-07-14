@@ -109,7 +109,7 @@ The ownership rule is strict:
   rearrangement, private API, timer, window scan, or layout scan. Validation is
   `O(D + O)` over KWin's bounded desktop and output lists.
 
-## 1.9 optional overview slice (development)
+## 1.9 optional overview slice
 
 - Current-card thumbnail focus remains the direct, guarded 1.7 path.
 - A non-current thumbnail first revalidates the exact active effect, model, live

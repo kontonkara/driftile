@@ -3,21 +3,21 @@
 The latest stable release is 1.9.1. Use the steps below when changing release
 generations, and never combine files from different releases.
 
-## Test 1.10.0-dev.0 from 1.9.1
+## Upgrade from 1.9.1 to 1.10.0-rc.1
 
-The `main` branch is a development build, not a stable release. To test it:
+Version 1.10.0-rc.1 is a candidate, not a stable release. To test it:
 
 1. Release helper-owned shortcuts with the 1.9.1 helper while it remains
    available.
 2. Disable Driftile and the optional overview in System Settings.
-3. Build or pin one 1.10.0-dev.0 revision and upgrade the main package, optional
-   overview, helper, and Nix modules from that same revision.
+3. Upgrade the main package, optional overview, and helper to their matching
+   1.10.0-rc.1 archives, or pin the Nix input to `v1.10.0-rc.1` and rebuild.
 4. Enable Driftile, review **Applications keeping KWin borders and title
    bars**, then assign shortcuts or claim them with the matching helper.
 5. If installed, re-enable the overview and review its manually assigned
    shortcut.
 
-Version 1.10.0-dev.0 adds one safe-default KConfig value:
+The candidate adds one safe-default KConfig value:
 
 - `ApplicationBorderlessExclusions=""` keeps the existing global borderless
   behavior.
@@ -29,13 +29,13 @@ shortcut actions and bindings, gestures, overview behavior, layout model, and
 persistence format are unchanged.
 
 With Home Manager, `programs.driftile.settings = null` still writes nothing. A
-non-null 1.10.0-dev.0 profile writes
+non-null 1.10.0-rc.1 profile writes
 `applicationBorderlessExclusions = [ ];` when omitted. Pin the package and
-module to the same revision.
+module to the same tag.
 
-## Return from 1.10.0-dev.0 to 1.9.1
+## Roll back from 1.10.0-rc.1 to 1.9.1
 
-Release shortcuts with the development helper, disable Driftile and the
+Release shortcuts with the RC helper, disable Driftile and the
 optional overview, then restore their verified 1.9.1 packages and helper. For
 Nix, remove `programs.driftile.settings.applicationBorderlessExclusions` if
 declared, restore the `v1.9.1` input, and rebuild. The additive KConfig key may

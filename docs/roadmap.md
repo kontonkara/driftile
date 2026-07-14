@@ -2,8 +2,8 @@
 
 Versions 0.1.0, 1.0.0, 1.1.0, 1.2.0, 1.3.0, 1.4.0, 1.5.0, 1.6.0, 1.7.0,
 1.8.0, 1.9.0, and 1.9.1 are released. The delivered milestones and release
-criteria below are a historical record. The remaining post-v1 direction is not
-a committed release schedule.
+criteria below are a historical record. Version 1.10.0-rc.1 is the current
+candidate. The remaining post-v1 direction is not a committed release schedule.
 
 ## Foundation (delivered)
 
@@ -511,12 +511,12 @@ Release criteria (met):
 - Existing unit, packaged Wayland and X11 integration, hidden full-VM, package,
   and Nix module checks remain green.
 
-## 1.10.0 (in development)
+## 1.10.0 (release candidate)
 
-The bounded 1.10.0 slice adds exact per-application exclusions to optional
-borderless presentation. `ApplicationBorderlessExclusions` is an empty-default
-KConfig `String` with one exact, case-sensitive KWin `desktopFileName` per line;
-Home Manager exposes
+Version `1.10.0-rc.1` freezes a bounded slice adding exact per-application
+exclusions to optional borderless presentation. `ApplicationBorderlessExclusions`
+is an empty-default KConfig `String` with one exact, case-sensitive KWin
+`desktopFileName` per line; Home Manager exposes
 `programs.driftile.settings.applicationBorderlessExclusions` as a list and
 writes canonical sorted entries.
 
@@ -540,7 +540,7 @@ This slice adds no action, binding, persistence-format, or overview change.
 KWin's shared outline has no ownership mechanism, so it cannot safely provide
 a production drag preview; that presentation work remains deferred.
 
-Release criteria:
+Candidate criteria (met):
 
 - A blank exclusion list preserves the current borderless behavior.
 - Exact matches retain their existing decoration state while non-matches obey
