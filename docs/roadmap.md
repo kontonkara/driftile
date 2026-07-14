@@ -1,11 +1,8 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.17.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.18.0 are
 released. The delivered milestones and release criteria below are a historical
 record. The remaining post-v1 direction is not a committed release schedule.
-
-Version `1.18.0-rc.1` is the current release candidate. Its scope is frozen to
-the application-specific horizontal focus policy in the 1.18.0 section below.
 
 ## Foundation (delivered)
 
@@ -805,9 +802,9 @@ Release criteria (met):
 No other feature belongs to 1.17.0. Further application policies remain
 post-v1 work.
 
-## 1.18.0 (release candidate)
+## 1.18.0 (released)
 
-Version `1.18.0-rc.1` freezes one application-specific horizontal focus policy.
+Version `1.18.0` delivers one application-specific horizontal focus policy.
 An empty `ApplicationFocusCentering` list preserves 1.17.0 behavior. Each
 exact, case-sensitive KWin `desktopFileName` match centers the destination
 selected by a successful left, right, first, or last tiled-focus action. The
@@ -817,19 +814,23 @@ are combined.
 A stacked destination checks only its selected member. Unmatched targets and
 failed center previews retain the normal minimal reveal. Replacing the bounded
 set performs no immediate layout, viewport, focus, geometry, or persistence
-write. The slice adds no action, binding, layout-state field, overview behavior,
-helper behavior, or compositor mechanism.
+write. The release adds no action, binding, layout-state field, overview
+behavior, helper behavior, or compositor mechanism.
 
-Candidate tagging gates:
+The 1.18.0-rc.1 candidate froze this exact scope; stable 1.18.0 adds no further
+behavior or data change.
+
+Release criteria (met):
 
 - Existing behavior coverage verifies selected-member matching, unmatched
   minimal reveal, global fallback, and write-free reconfiguration.
 - Existing settings, KConfig, KCM, Home Manager, and package checks expand from
   twelve to thirteen fields without a parallel test suite.
 - Format, type, lint, unit, deterministic build and package, all-system flake,
-  hidden full and lifecycle VMs, version, and exact-SHA CI must pass on the
-  unchanged candidate commit.
-- The tag release workflow must pass before publishing the candidate assets.
+  hidden full and lifecycle VMs, version, and exact-SHA CI pass on the unchanged
+  release commit.
+- The release workflow publishes assets only after all prerequisite jobs and
+  release gates pass.
 
 No other feature belongs to 1.18.0.
 

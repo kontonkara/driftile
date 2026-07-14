@@ -1,22 +1,21 @@
 # Migration
 
-The latest stable release is 1.17.0. Version 1.18.0-rc.1 is the current
-candidate and is not a stable release. Use the steps below when changing
-release generations, and never combine files from different releases.
+The latest stable release is 1.18.0. Use the steps below when changing release
+generations, and never combine files from different releases.
 
-## Upgrade from 1.17.0 to 1.18.0-rc.1
+## Upgrade from 1.17.0 to 1.18.0
 
 1. Release helper-owned shortcuts with the 1.17.0 helper while it remains
    available.
 2. Disable Driftile and the optional overview in System Settings.
 3. Upgrade the main package, optional overview, and helper to their matching
-   1.18.0-rc.1 archives, or pin the Nix input to `v1.18.0-rc.1` and rebuild.
+   1.18.0 archives, or pin the Nix input to `v1.18.0` and rebuild.
 4. Enable Driftile, review **Applications centered during horizontal focus**,
    then restore the shortcut profile.
 5. If installed, re-enable the overview and review its manually assigned
    shortcut.
 
-The candidate adds one safe-default KConfig value:
+The release adds one safe-default KConfig value:
 
 - `ApplicationFocusCentering=""` preserves 1.17.0 focus behavior.
 
@@ -34,9 +33,20 @@ required. A non-null Home Manager profile now writes thirteen settings and uses
 `applicationFocusCentering = [ ];` when omitted; pin the package and module to
 the same tag.
 
-## Roll back from 1.18.0-rc.1 to 1.17.0
+## Upgrade from 1.18.0-rc.1
 
 Release shortcuts with the RC helper, disable Driftile and the optional
+overview, then upgrade the main package, overview, and helper to their matching
+1.18.0 artifacts. For Nix, update the input from `v1.18.0-rc.1` to `v1.18.0`
+and rebuild. Re-enable the installed packages and restore the shortcut profile.
+
+Stable 1.18.0 adds no behavior or data change after RC.1. Configuration, helper
+profiles, package IDs, actions, bindings, persisted layouts, and overview
+behavior remain compatible; no reset or conversion is required.
+
+## Roll back from 1.18.0 to 1.17.0
+
+Release shortcuts with the 1.18.0 helper, disable Driftile and the optional
 overview, then restore their matching verified 1.17.0 packages and helper. For
 NixOS or Home Manager, remove
 `programs.driftile.settings.applicationFocusCentering` before restoring the
