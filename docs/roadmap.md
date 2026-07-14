@@ -5,7 +5,9 @@ Versions 0.1.0, 1.0.0, 1.1.0, 1.2.0, 1.3.0, 1.4.0, 1.5.0, 1.6.0, 1.7.0,
 delivered milestones and release criteria below are a historical record. The
 remaining post-v1 direction is not a committed release schedule.
 
-Development is on 1.14.0-dev.0. Its bounded scope is frozen below.
+Release candidate 1.14.0-rc.1 freezes the scope below. Feature and packaged
+integration validation is complete. Candidate tagging requires exact-SHA CI and
+the hidden full and lifecycle VM gates to pass in sequence.
 
 ## Foundation (delivered)
 
@@ -674,13 +676,13 @@ Release criteria (met):
   hidden full and lifecycle VMs, version, exact-SHA CI, and release gates pass
   without widening this slice.
 
-## 1.14.0 (in development)
+## 1.14.0 (release candidate)
 
-Version `1.14.0` freezes one bounded runtime slice: the existing window-height
-decrease and increase actions resize an active manually floating frame, while a
-tiled target keeps the existing stack-reflow behavior. Reset and preset-height
-actions remain tiled-only. A blocked or pending floating target never falls
-through to a tiled mutation.
+Version `1.14.0-rc.1` freezes one bounded runtime slice: the existing
+window-height decrease and increase actions resize an active manually floating
+frame, while a tiled target keeps the existing stack-reflow behavior. Reset and
+preset-height actions remain tiled-only. A blocked or pending floating target
+never falls through to a tiled mutation.
 
 The floating target is
 `originalHeight + direction * windowHeightStep * workArea.height`; the gap is
@@ -700,7 +702,7 @@ This slice changes no tiled height semantics, reset or preset behavior, action,
 binding, setting, configuration or persistence schema, helper, overview,
 application policy, focus, context, reinsertion anchor, or unrelated layout.
 
-Release criteria (pending):
+Candidate validation completed:
 
 - Unit coverage proves the configured gap-free work-area height step, decorated
   live bounds, positive client height, device-pixel-ratio snapping, preserved
@@ -712,8 +714,15 @@ Release criteria (pending):
   focus, context, or tiled state. The hidden full VM reuses its real
   manual-floating application and physical shortcuts.
 - Format, type, lint, unit, deterministic build and package, all-system flake,
-  hidden full and lifecycle VMs, version, exact-SHA CI, and release gates pass
-  without widening this slice.
+  and version checks pass without widening this slice.
+
+Candidate tagging gates:
+
+- Commit the candidate metadata and verify quality, native Wayland, and native
+  X11 jobs in exact-SHA branch CI.
+- Run the hidden full and lifecycle VMs on that unchanged candidate commit.
+- Create the candidate tag only after both gates pass, then require the tag
+  release workflow and its release checks to pass before publication.
 
 ## Post-v1
 
