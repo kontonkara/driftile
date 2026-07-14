@@ -14,16 +14,16 @@ let
   overviewPluginMetadata = builtins.fromJSON (builtins.readFile ../packaging/kwin-effect/metadata.json);
   currentVersion = pluginMetadata.KPlugin.Version;
   currentOverviewVersion = overviewPluginMetadata.KPlugin.Version;
-  publishedVersion = "1.15.1";
+  publishedVersion = "1.16.0";
   publishedArchive = pkgs.fetchurl {
     name = "driftile-${publishedVersion}.kwinscript";
     url = "https://github.com/kontonkara/driftile/releases/download/v${publishedVersion}/driftile-${publishedVersion}.kwinscript";
-    hash = "sha256-/qVZLgPeMZQn+39OMIcaOgnj78N/DC0AxKgldr3QmKg=";
+    hash = "sha256-4837X2+Oe9a2NJ4djdydFw/i4qbNKpptEyhBh6wTlFw=";
   };
   publishedOverviewArchive = pkgs.fetchurl {
     name = "driftile-overview-${publishedVersion}.kwineffect";
     url = "https://github.com/kontonkara/driftile/releases/download/v${publishedVersion}/driftile-overview-${publishedVersion}.kwineffect";
-    hash = "sha256-FuBKOw/Z0HDE7YjF68jdB9IkF31vbZcrWwk4TgTnQqc=";
+    hash = "sha256-jlMuYQ/+tPeLwkPi/NE9HQdNFO3vKfnG1jiQIkaua84=";
   };
   currentArchive =
     pkgs.runCommand "driftile-${currentVersion}.kwinscript"
