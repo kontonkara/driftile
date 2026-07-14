@@ -49,6 +49,10 @@ class RuntimeControllerDouble {
     return true;
   }
 
+  setApplicationFocusCentering(): boolean {
+    return true;
+  }
+
   setApplicationInitialFloating(): boolean {
     return true;
   }
@@ -145,6 +149,9 @@ describe("touchpad navigation", () => {
       'applicationBorderlessExclusions: KWin.readConfig("ApplicationBorderlessExclusions", "")',
     );
     expect(mainQml).toContain(
+      'applicationFocusCentering: KWin.readConfig("ApplicationFocusCentering", "")',
+    );
+    expect(mainQml).toContain(
       'applicationInitialFloating: KWin.readConfig("ApplicationInitialFloating", "")',
     );
     expect(
@@ -216,6 +223,7 @@ function settings(
   return {
     applicationBorderlessExclusions: "",
     applicationColumnWidths: "",
+    applicationFocusCentering: "",
     applicationInitialFloating: "",
     applicationTilingExclusions: "",
     borderlessWindows: true,

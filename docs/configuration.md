@@ -7,25 +7,25 @@ The settings page groups the existing controls into two tabs:
 - **General**: window decorations, focus centering, touchpad navigation, window
   gap, default column width, column width step and presets, and window height
   step.
-- **Applications**: initial column widths, initial floating rules, tiling
-  exclusions, and decoration exclusions.
+- **Applications**: initial column widths, focus centering, initial floating
+  rules, tiling exclusions, and decoration exclusions.
 
-This grouping changes no KConfig key or live behavior. Driftile still validates
-all twelve settings as one snapshot. Applying an invalid value through an
-external configuration tool rejects the entire update and preserves the active
-settings; valid changes apply without reloading the extension.
+Driftile validates all thirteen settings as one snapshot. Applying an invalid
+value through an external configuration tool rejects the entire update and
+preserves the active settings; valid changes apply without reloading the
+extension.
 
 ## Home Manager
 
 `programs.driftile.settings` is `null` by default, so Home Manager writes no
 Driftile setting. A non-null value is one complete typed profile: omitted fields
-take the defaults documented below, and Home Manager writes all twelve values.
+take the defaults documented below, and Home Manager writes all thirteen values.
 This profile works with `programs.driftile.enable = false` when the package is
 installed system-wide.
 
 The activation writes only `ApplicationBorderlessExclusions`,
-`ApplicationColumnWidths`, `ApplicationInitialFloating`,
-`ApplicationTilingExclusions`,
+`ApplicationColumnWidths`, `ApplicationFocusCentering`,
+`ApplicationInitialFloating`, `ApplicationTilingExclusions`,
 `BorderlessWindows`, `CenterFocusedColumn`, `Gap`,
 `DefaultColumnWidthPercent`, `ColumnWidthPresets`,
 `ColumnWidthStepPercent`, `TouchpadNavigation`, and
@@ -46,6 +46,10 @@ programs.driftile.settings.applicationColumnWidths = {
   "org.kde.konsole" = 60;
   "org.mozilla.firefox" = 80;
 };
+
+programs.driftile.settings.applicationFocusCentering = [
+  "org.mozilla.firefox"
+];
 
 programs.driftile.settings.applicationInitialFloating = [
   "org.kde.kcalc"
@@ -88,6 +92,17 @@ normal minimal reveal still completes the focus action.
 Changing the option does not move the current layout. Vertical, floating,
 layer, and direct application focus are unchanged, and the explicit **Center
 column** action remains available.
+
+**Applications centered during horizontal focus** is empty by default. Enter
+one exact, case-sensitive KWin `desktopFileName` per line to center only
+matching destinations. Matching and the global option are combined: enabling
+the global option centers every horizontal tiled-focus destination.
+
+For a stacked destination, the rule checks the member actually selected by the
+focus action, not another member in the same column. A missing or unmatched ID
+keeps the normal minimal reveal. Replacing the list performs no immediate
+layout, viewport, focus, or persistence write; it applies to the next left,
+right, first, or last tiled-focus action.
 
 ## Touchpad navigation
 
@@ -217,7 +232,7 @@ The KConfig decoder accepts at most 65,664 characters in the complete document,
 512 characters in each raw line, 128 nonblank unique IDs, and 255 UTF-8 bytes
 in each trimmed ID. It trims surrounding whitespace and ignores blank lines.
 Control characters, invalid UTF-16, an oversized value, or a duplicate after
-trimming rejects the complete twelve-setting snapshot. Accepted IDs have a
+trimming rejects the complete thirteen-setting snapshot. Accepted IDs have a
 canonical sorted internal form. Home Manager exposes the same policy as
 `programs.driftile.settings.applicationBorderlessExclusions`, a list rendered
 as a sorted newline-delimited KConfig value.

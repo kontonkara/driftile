@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { decodeApplicationBorderlessExclusions } from "../src/application-borderless-exclusions";
 import { decodeApplicationInitialFloating } from "../src/application-initial-floating";
 import { decodeApplicationColumnWidthOverrides } from "../src/application-overrides";
+import { decodeApplicationFocusCentering } from "../src/application-focus-centering";
 import { decodeApplicationTilingExclusions } from "../src/application-tiling-exclusions";
 import {
   columnId,
@@ -10136,17 +10137,33 @@ describe("RuntimeController", () => {
     expect(fixture.activationCount).toBe(2);
   });
 
-  it("optionally centers only horizontal tiled focus targets", () => {
+  it("centers configured horizontal targets with global fallback", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
-    const windows = Array.from({ length: 3 }, (_value, index) =>
-      createTrackedWindow(`window-${String(index + 1)}`, output, desktop),
-    );
+    const windows = [
+      createTrackedWindow("window-1", output, desktop, {
+        desktopFileName: "org.example.First",
+      }),
+      createTrackedWindow("window-2", output, desktop, {
+        desktopFileName: "org.example.Selected",
+      }),
+      createTrackedWindow("window-3", output, desktop, {
+        desktopFileName: "org.example.Centered",
+      }),
+      createTrackedWindow("window-4", output, desktop, {
+        desktopFileName: "org.example.Centered",
+      }),
+      createTrackedWindow("window-5", output, desktop, {
+        desktopFileName: "org.example.Last",
+      }),
+    ];
     const first = windows[0];
-    const middle = windows[1];
-    const last = windows[2];
+    const selected = windows[1];
+    const stackMatch = windows[2];
+    const centered = windows[3];
+    const last = windows[4];
 
-    if (!first || !middle || !last) {
+    if (!first || !selected || !stackMatch || !centered || !last) {
       throw new Error("missing horizontal focus fixture");
     }
 
@@ -10158,15 +10175,43 @@ describe("RuntimeController", () => {
       windows.map(({ window }) => window),
     );
     const controller = new RuntimeController(fixture.workspace, {
-      centerFocusedColumn: true,
+      applicationFocusCentering: requiredApplicationFocusCentering(
+        "org.example.Centered",
+      ),
       clientAreaOption: 2,
       columnWidth: { kind: "fixed", value: 300 },
       gap: 10,
     });
 
     expect(controller.start()).toBe(true);
-    const layout = runtimeLayout(controller);
-    const order = testLayoutColumns(controller, output, desktop);
+    const layout = installTestLayout(
+      controller,
+      output,
+      desktop,
+      "column:first",
+      [
+        {
+          id: "column:first",
+          width: { kind: "fixed", value: 300 },
+          windowIds: ["window-1"],
+        },
+        {
+          id: "column:stack",
+          width: { kind: "fixed", value: 300 },
+          windowIds: ["window-2", "window-3"],
+        },
+        {
+          id: "column:centered",
+          width: { kind: "fixed", value: 300 },
+          windowIds: ["window-4"],
+        },
+        {
+          id: "column:last",
+          width: { kind: "fixed", value: 300 },
+          windowIds: ["window-5"],
+        },
+      ],
+    );
     const viewportOffset = (): number =>
       layout.snapshot(outputId(output.name), desktopId(desktop.id))
         .viewportOffset;
@@ -10178,27 +10223,26 @@ describe("RuntimeController", () => {
     expect(centerX(first)).toBe(160);
 
     expect(controller.focusRight()).toBe(true);
-    expect(fixture.workspace.activeWindow).toBe(middle.window);
-    expect(viewportOffset()).toBe(-30);
-    expect(centerX(middle)).toBe(500);
+    expect(fixture.workspace.activeWindow).toBe(selected.window);
+    expect(stackMatch.window.desktopFileName).toBe("org.example.Centered");
+    expect(viewportOffset()).toBe(0);
+    expect(centerX(selected)).toBe(470);
 
-    expect(controller.focusLastColumn()).toBe(true);
-    expect(fixture.workspace.activeWindow).toBe(last.window);
+    expect(controller.focusRight()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(centered.window);
     expect(viewportOffset()).toBe(280);
-    expect(centerX(last)).toBe(500);
-
-    expect(controller.focusLeft()).toBe(true);
-    expect(fixture.workspace.activeWindow).toBe(middle.window);
-    expect(viewportOffset()).toBe(-30);
-    expect(centerX(middle)).toBe(500);
+    expect(centerX(centered)).toBe(500);
 
     expect(controller.focusFirstColumn()).toBe(true);
     expect(fixture.workspace.activeWindow).toBe(first.window);
-    expect(viewportOffset()).toBe(-340);
-    expect(centerX(first)).toBe(500);
-    expect(controller.focusFirstColumn()).toBe(false);
-    expect(viewportOffset()).toBe(-340);
-    expect(testLayoutColumns(controller, output, desktop)).toEqual(order);
+    expect(viewportOffset()).toBe(0);
+    expect(centerX(first)).toBe(160);
+
+    expect(controller.setCenterFocusedColumn(true)).toBe(true);
+    expect(controller.focusLastColumn()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(last.window);
+    expect(viewportOffset()).toBe(590);
+    expect(centerX(last)).toBe(500);
   });
 
   it("updates horizontal focus centering without runtime writes", () => {
@@ -10238,6 +10282,21 @@ describe("RuntimeController", () => {
       false,
     );
     expect(controller.setCenterFocusedColumn(false)).toBe(false);
+    expect(
+      controller.setApplicationFocusCentering(
+        requiredApplicationFocusCentering("org.example.Editor"),
+      ),
+    ).toBe(true);
+    expect(
+      controller.setApplicationFocusCentering(
+        requiredApplicationFocusCentering(" org.example.Editor "),
+      ),
+    ).toBe(false);
+    expect(
+      controller.setApplicationFocusCentering(
+        requiredApplicationFocusCentering(""),
+      ),
+    ).toBe(true);
     expect(controller.setCenterFocusedColumn(true)).toBe(true);
     expect(controller.setCenterFocusedColumn(true)).toBe(false);
     expect(controller.setCenterFocusedColumn(false)).toBe(true);
@@ -39251,6 +39310,16 @@ function requiredApplicationInitialFloating(value: string) {
 
   if (!applications) {
     throw new Error("application initial floating fixture is invalid");
+  }
+
+  return applications;
+}
+
+function requiredApplicationFocusCentering(value: string) {
+  const applications = decodeApplicationFocusCentering(value);
+
+  if (!applications) {
+    throw new Error("application focus centering fixture is invalid");
   }
 
   return applications;

@@ -48,6 +48,10 @@
       <label>Initial column widths by desktop-file ID</label>
       <default></default>
     </entry>
+    <entry name="ApplicationFocusCentering" type="String">
+      <label>Applications centered after horizontal focus navigation by KWin desktopFileName</label>
+      <default></default>
+    </entry>
     <entry name="ApplicationInitialFloating" type="String">
       <label>Applications initially floating by desktop-file ID</label>
       <default></default>

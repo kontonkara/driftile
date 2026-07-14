@@ -22,8 +22,8 @@ leaving window, output, and desktop mechanisms to KWin.
 - Settled recovery for output, scale, work-area, and window-constraint changes.
 - Configurable gaps, application initial floating, tiling and borderless
   exclusions, global and application-specific initial column widths,
-  column-width presets, resize steps, horizontal focus centering, and optional
-  borderless presentation.
+  column-width presets, resize steps, global and application-specific
+  horizontal focus centering, and optional borderless presentation.
 - Optional five-finger horizontal touchpad navigation on native Wayland.
 - Exact extension-reload restoration, conservative cross-session restoration,
   and fail-closed restoration when a known output returns.
@@ -36,6 +36,7 @@ leaving window, output, and desktop mechanisms to KWin.
 ## Status
 
 The latest stable release is [1.17.0](docs/release-notes-1.17.0.md).
+Development is on 1.18.0-dev.0 with a frozen application focus-centering scope.
 The feature list tracks the current `main` branch; release state is recorded in
 the [roadmap](docs/roadmap.md).
 

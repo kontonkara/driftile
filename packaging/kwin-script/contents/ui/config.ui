@@ -216,6 +216,32 @@
         </widget>
        </item>
        <item>
+        <widget class="QLabel" name="applicationFocusCenteringLabel">
+         <property name="text">
+          <string>Applications centered during horizontal focus:</string>
+         </property>
+         <property name="buddy">
+          <cstring>kcfg_ApplicationFocusCentering</cstring>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPlainTextEdit" name="kcfg_ApplicationFocusCentering">
+         <property name="toolTip">
+          <string>Enter one exact, case-sensitive KWin desktopFileName per line. This affects horizontal focus centering only.</string>
+         </property>
+         <property name="whatsThis">
+          <string>Blank lines are ignored. Exact matches are centered after horizontal focus navigation.</string>
+         </property>
+         <property name="minimumSize">
+          <size>
+           <width>0</width>
+           <height>80</height>
+          </size>
+         </property>
+        </widget>
+       </item>
+       <item>
         <widget class="QLabel" name="applicationInitialFloatingLabel">
          <property name="text">
           <string>Applications initially floating:</string>

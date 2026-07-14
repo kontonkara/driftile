@@ -41,16 +41,16 @@ The ownership rule is strict:
 - Up to 16 configurable, strictly increasing 10%–100% column-width presets;
   an empty configuration retains the built-in exact thirds.
 - Optional best-effort centering for successful left, right, first, and last
-  tiled focus navigation without changing other focus paths.
+  tiled focus navigation, globally or for up to 128 exact, case-sensitive KWin
+  `desktopFileName` targets, without changing other focus paths.
 - Configurable 1–50 percentage-point step for contextual width decrease and
   increase actions: the active whole column when tiled, or the active manually
   floating window when detached.
 - Configurable 1–50 percentage-point step for contextual height decrease and
   increase actions: the active stack member when tiled, or the active manually
   floating window when detached.
-- One settings page groups the existing twelve controls into eight General and
-  four Applications controls without changing KConfig keys, snapshot
-  validation, or live behavior.
+- One settings page groups thirteen controls into eight General and five
+  Applications controls.
 - Output-local commands unless a transfer is explicit.
 - Work-area, size-constraint, fullscreen, minimized-window compatibility, dialog handling, and settled virtual-output recovery.
 - Hard client minimum and maximum bounds with cached detection of silent visible-window changes; unexposed increment and aspect hints do not alter Driftile's tiled model, while applied frames remain subject to KWin.
@@ -344,8 +344,10 @@ Driftile must integrate with, not duplicate:
   persistence write. Existing columns keep their concrete width; later preset
   actions use the replacement cycle and retain normal constraint clamping.
 - Horizontal-focus centering runs inside the successful tiled focus transaction
-  and uses the existing physical-pixel viewport calculation. A failed center
-  preview keeps the normal minimal reveal; changing the option performs no
+  and uses the existing physical-pixel viewport calculation. The global flag
+  and bounded exact application set are combined, and a stacked destination
+  consults only the selected member. A failed center preview or unmatched
+  target keeps the normal minimal reveal; changing either policy performs no
   layout or persistence write.
 - A width-step change performs no layout, frame, viewport, or focus write. It affects only later explicit decrease and increase actions; reset, presets, full width, and available-width expansion remain independent.
 - A height-step change performs no layout, frame, viewport, or focus write. It affects only later explicit decrease and increase actions; reset and height presets remain independent.

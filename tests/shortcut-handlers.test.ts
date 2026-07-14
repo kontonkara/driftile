@@ -595,6 +595,7 @@ describe("KWin shortcut handlers", () => {
     ];
     const applicationControls = [
       "kcfg_ApplicationColumnWidths",
+      "kcfg_ApplicationFocusCentering",
       "kcfg_ApplicationInitialFloating",
       "kcfg_ApplicationTilingExclusions",
       "kcfg_ApplicationBorderlessExclusions",
@@ -646,6 +647,15 @@ describe("KWin shortcut handlers", () => {
     const centeringWidget = configurationUi.match(
       /<widget class="QCheckBox" name="kcfg_CenterFocusedColumn">([\s\S]*?)<\/widget>/,
     )?.[1];
+    const applicationCenteringEntry = configuration.match(
+      /<entry name="ApplicationFocusCentering" type="String">([\s\S]*?)<\/entry>/,
+    )?.[1];
+    const applicationCenteringLabel = configurationUi.match(
+      /<widget class="QLabel" name="applicationFocusCenteringLabel">([\s\S]*?)<\/widget>/,
+    )?.[1];
+    const applicationCenteringWidget = configurationUi.match(
+      /<widget class="QPlainTextEdit" name="kcfg_ApplicationFocusCentering">([\s\S]*?)<\/widget>/,
+    )?.[1];
 
     expect(centeringEntry).toContain(
       "<label>Center tiled columns after horizontal focus navigation</label>",
@@ -656,6 +666,22 @@ describe("KWin shortcut handlers", () => {
     );
     expect(qml).toContain(
       'centerFocusedColumn: KWin.readConfig("CenterFocusedColumn", false)',
+    );
+    expect(applicationCenteringEntry).toContain(
+      "<label>Applications centered after horizontal focus navigation by KWin desktopFileName</label>",
+    );
+    expect(applicationCenteringEntry).toContain("<default></default>");
+    expect(applicationCenteringLabel).toContain(
+      "<string>Applications centered during horizontal focus:</string>",
+    );
+    expect(applicationCenteringLabel).toContain(
+      "<cstring>kcfg_ApplicationFocusCentering</cstring>",
+    );
+    expect(applicationCenteringWidget).toContain(
+      "Enter one exact, case-sensitive KWin desktopFileName per line. This affects horizontal focus centering only.",
+    );
+    expect(qml).toContain(
+      'applicationFocusCentering: KWin.readConfig("ApplicationFocusCentering", "")',
     );
     expect(runtime).toContain(
       "nextController.setCenterFocusedColumn(settings.centerFocusedColumn)",

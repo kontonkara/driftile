@@ -40,6 +40,10 @@ let
           "org.example.Browser" = 80;
           "org.example.Editor" = 60;
         };
+        applicationFocusCentering = [
+          "org.example.Terminal"
+          "org.example.Browser"
+        ];
         applicationInitialFloating = [
           "org.example.Terminal"
           "org.example.Browser"
@@ -158,6 +162,9 @@ assert
       ApplicationColumnWidths = ''
         org.example.Browser=80
         org.example.Editor=60'';
+      ApplicationFocusCentering = ''
+        org.example.Browser
+        org.example.Terminal'';
       ApplicationInitialFloating = ''
         org.example.Browser
         org.example.Terminal'';
@@ -177,7 +184,7 @@ assert
 assert
   builtins.length (
     builtins.attrNames standalone.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile"
-  ) == 12;
+  ) == 13;
 assert
   standalone.config.xdg.configFile."driftile/shortcuts.json".text == ''
     {"bindings":{"driftile_focus_column_left":["Meta+A"],"driftile_reset_column_width":[]},"version":1}
@@ -194,6 +201,7 @@ assert
     kwinrc."Script-io.github.kontonkara.driftile" = {
       ApplicationBorderlessExclusions = "";
       ApplicationColumnWidths = "";
+      ApplicationFocusCentering = "";
       ApplicationInitialFloating = "";
       ApplicationTilingExclusions = "";
       BorderlessWindows = true;

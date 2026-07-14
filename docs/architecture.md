@@ -481,8 +481,9 @@ inspected safely within the codec bound.
   layout-persistence changes; interactive resize and settlement retain priority.
 - Replace the bounded column-width preset cycle without changing model values,
   frames, viewport state, or focus.
-- Treat horizontal-focus centering as future command policy. Reconfiguration
-  performs no layout work, and rejected focus restores the prior viewport.
+- Replace the bounded application focus-centering set atomically without
+  moving the current layout. Horizontal focus checks the selected target in
+  constant time; rejected focus restores the prior viewport.
 - Treat resize-step changes as future command policy: preserve every current model value, frame, viewport, and focus target.
 - Never leave partial layout ownership after a failed startup solve, and never immediately reschedule an unchanged unusable work area.
 - Keep a managed context unchanged and dirty when its settled work area cannot produce valid frames; a failure in one context must not block another.

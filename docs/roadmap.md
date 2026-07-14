@@ -802,6 +802,32 @@ Release criteria (met):
 No other feature belongs to 1.17.0. Further application policies remain
 post-v1 work.
 
+## 1.18.0 (in development)
+
+The scope is frozen to one application-specific horizontal focus policy. An
+empty `ApplicationFocusCentering` list preserves 1.17.0 behavior. Each exact,
+case-sensitive KWin `desktopFileName` match centers the destination selected by
+a successful left, right, first, or last tiled-focus action. The existing
+global option still centers every destination, and the two policies are
+combined.
+
+A stacked destination checks only its selected member. Unmatched targets and
+failed center previews retain the normal minimal reveal. Replacing the bounded
+set performs no immediate layout, viewport, focus, geometry, or persistence
+write. The slice adds no action, binding, layout-state field, overview behavior,
+helper behavior, or compositor mechanism.
+
+Development criteria:
+
+- Existing behavior coverage verifies selected-member matching, unmatched
+  minimal reveal, global fallback, and write-free reconfiguration.
+- Existing settings, KConfig, KCM, Home Manager, and package checks expand from
+  twelve to thirteen fields without a parallel test suite.
+- Format, type, lint, focused unit and module checks, deterministic package,
+  exact-SHA CI, and hidden release-checkpoint VMs must pass before publication.
+
+No other feature belongs to 1.18.0.
+
 ## Post-v1
 
 Add interaction and presentation features outside the frozen v1 scope without

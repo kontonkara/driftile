@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { decodeApplicationBorderlessExclusions } from "../src/application-borderless-exclusions";
 import { decodeApplicationInitialFloating } from "../src/application-initial-floating";
 import { decodeApplicationColumnWidthOverrides } from "../src/application-overrides";
+import { decodeApplicationFocusCentering } from "../src/application-focus-centering";
 import { decodeApplicationTilingExclusions } from "../src/application-tiling-exclusions";
 import { decodeColumnWidthPresetPercentages } from "../src/column-width-presets";
 import {
@@ -36,6 +37,14 @@ if (!validApplicationInitialFloating) {
   throw new Error("application initial-floating fixture is invalid");
 }
 
+const validApplicationFocusCentering = decodeApplicationFocusCentering(
+  "org.example.Browser\norg.example.Editor",
+);
+
+if (!validApplicationFocusCentering) {
+  throw new Error("application focus-centering fixture is invalid");
+}
+
 const validApplicationTilingExclusions = decodeApplicationTilingExclusions(
   "org.example.Legacy\norg.example.Editor=tool",
 );
@@ -53,6 +62,7 @@ if (!validColumnWidthPresets) {
 const validSettings: DriftileSettings = {
   applicationBorderlessExclusions: validApplicationBorderlessExclusions,
   applicationColumnWidths: validApplicationColumnWidths,
+  applicationFocusCentering: validApplicationFocusCentering,
   applicationInitialFloating: validApplicationInitialFloating,
   applicationTilingExclusions: validApplicationTilingExclusions,
   borderlessWindows: false,
@@ -69,6 +79,7 @@ const validSettingsInput = {
   applicationBorderlessExclusions:
     "org.example.Decorated\norg.example.Legacy=tool",
   applicationColumnWidths: "org.example.Editor=75",
+  applicationFocusCentering: "org.example.Browser\norg.example.Editor",
   applicationInitialFloating: "org.example.Floating\norg.example.Floating=tool",
   applicationTilingExclusions: "org.example.Legacy\norg.example.Editor=tool",
   borderlessWindows: validSettings.borderlessWindows,
@@ -101,6 +112,9 @@ describe("Driftile settings", () => {
     ).toEqual([]);
     expect(
       DEFAULT_DRIFTILE_SETTINGS.applicationInitialFloating.canonicalEntries,
+    ).toEqual([]);
+    expect(
+      DEFAULT_DRIFTILE_SETTINGS.applicationFocusCentering.canonicalEntries,
     ).toEqual([]);
     expect(
       DEFAULT_DRIFTILE_SETTINGS.applicationTilingExclusions.canonicalEntries,
@@ -137,6 +151,15 @@ describe("Driftile settings", () => {
     expect(decoded?.applicationInitialFloating.canonicalEntries).toEqual(
       validApplicationInitialFloating.canonicalEntries,
     );
+    expect(decoded?.applicationFocusCentering.canonicalEntries).toEqual(
+      validApplicationFocusCentering.canonicalEntries,
+    );
+    expect(
+      decoded?.applicationFocusCentering.centersOnFocus("org.example.Browser"),
+    ).toBe(true);
+    expect(
+      decoded?.applicationFocusCentering.centersOnFocus("org.example.browser"),
+    ).toBe(false);
     expect(
       decoded?.applicationInitialFloating.excludes("org.example.Floating"),
     ).toBe(true);
@@ -155,6 +178,7 @@ describe("Driftile settings", () => {
     {
       applicationBorderlessExclusions: "",
       applicationColumnWidths: "",
+      applicationFocusCentering: "",
       applicationInitialFloating: "",
       applicationTilingExclusions: "",
       borderlessWindows: true,
@@ -169,6 +193,7 @@ describe("Driftile settings", () => {
     {
       applicationBorderlessExclusions: "org.example.Decorated",
       applicationColumnWidths: "org.example.Browser=80",
+      applicationFocusCentering: "org.example.Browser",
       applicationInitialFloating: "org.example.Floating",
       applicationTilingExclusions: "org.example.Legacy",
       borderlessWindows: false,
@@ -189,6 +214,9 @@ describe("Driftile settings", () => {
     ).toBe(settings.applicationBorderlessExclusions);
     expect(decoded?.applicationColumnWidths.canonicalEntries.join("\n")).toBe(
       settings.applicationColumnWidths,
+    );
+    expect(decoded?.applicationFocusCentering.canonicalEntries.join("\n")).toBe(
+      settings.applicationFocusCentering,
     );
     expect(
       decoded?.applicationInitialFloating.canonicalEntries.join("\n"),
@@ -230,6 +258,12 @@ describe("Driftile settings", () => {
       "duplicate application initial-floating entries",
       {
         applicationInitialFloating: "org.example.Editor\n org.example.Editor ",
+      },
+    ],
+    [
+      "duplicate application focus-centering entries",
+      {
+        applicationFocusCentering: "org.example.Editor\n org.example.Editor ",
       },
     ],
     [
@@ -276,11 +310,12 @@ describe("Driftile settings", () => {
     },
   );
 
-  it("rejects the previous eleven-field snapshot", () => {
+  it("rejects the previous twelve-field snapshot", () => {
     const incomplete = {
       applicationBorderlessExclusions:
         validSettingsInput.applicationBorderlessExclusions,
       applicationColumnWidths: validSettingsInput.applicationColumnWidths,
+      applicationInitialFloating: validSettingsInput.applicationInitialFloating,
       applicationTilingExclusions:
         validSettingsInput.applicationTilingExclusions,
       borderlessWindows: validSettings.borderlessWindows,
@@ -328,6 +363,13 @@ describe("Driftile settings", () => {
       throw new Error("application initial-floating fixture is invalid");
     }
 
+    const changedApplicationFocusCentering =
+      decodeApplicationFocusCentering("org.example.Other");
+
+    if (!changedApplicationFocusCentering) {
+      throw new Error("application focus-centering fixture is invalid");
+    }
+
     const changedColumnWidthPresets =
       decodeColumnWidthPresetPercentages("20,50,90");
 
@@ -347,6 +389,7 @@ describe("Driftile settings", () => {
         applicationBorderlessExclusions: changedApplicationBorderlessExclusions,
       },
       { applicationColumnWidths: changedApplicationColumnWidths },
+      { applicationFocusCentering: changedApplicationFocusCentering },
       { applicationInitialFloating: changedApplicationInitialFloating },
       { applicationTilingExclusions: changedApplicationTilingExclusions },
       { borderlessWindows: true },

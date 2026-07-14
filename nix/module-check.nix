@@ -268,6 +268,10 @@ let
             "org.example.Browser" = 80;
             "org.example.Editor" = 60;
           };
+          applicationFocusCentering = [
+            "org.example.Terminal"
+            "org.example.Browser"
+          ];
           applicationInitialFloating = [
             "org.example.Terminal"
             "org.example.Browser"
@@ -355,6 +359,18 @@ let
         ) 128;
       }
       { };
+  homeManagerMaximumFocusCentering =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.settings.applicationFocusCentering = builtins.genList (
+          index: "org.example.App${toString index}"
+        ) 128;
+      }
+      { };
   homeManagerMaximumBorderlessExclusions =
     evaluate homeManagerModule
       [
@@ -395,6 +411,13 @@ let
         programs.driftile.enable = true;
       };
   invalidSettings = [
+    { applicationFocusCentering = "org.example.Editor"; }
+    { applicationFocusCentering = [ " org.example.Editor" ]; }
+    {
+      applicationFocusCentering = builtins.genList (
+        index: "org.example.App${toString index}"
+      ) 129;
+    }
     { applicationBorderlessExclusions = "org.example.Editor"; }
     { applicationBorderlessExclusions = [ 1 ]; }
     { applicationBorderlessExclusions = [ "" ]; }
@@ -538,6 +561,9 @@ let
       ApplicationColumnWidths = ''
         org.example.Browser=80
         org.example.Editor=60'';
+      ApplicationFocusCentering = ''
+        org.example.Browser
+        org.example.Terminal'';
       ApplicationInitialFloating = ''
         org.example.Browser
         org.example.Terminal'';
@@ -558,6 +584,7 @@ let
     kwinrc."Script-io.github.kontonkara.driftile" = {
       ApplicationBorderlessExclusions = "";
       ApplicationColumnWidths = "";
+      ApplicationFocusCentering = "";
       ApplicationInitialFloating = "";
       ApplicationTilingExclusions = "";
       BorderlessWindows = true;
@@ -607,11 +634,11 @@ assert homeManagerSettings.config.qt.kde.settings == expectedSettings;
 assert homeManagerDefaultSettings.config.qt.kde.settings == expectedDefaultSettings;
 assert
   builtins.length (builtins.attrNames expectedSettings.kwinrc."Script-io.github.kontonkara.driftile")
-  == 12;
+  == 13;
 assert
   builtins.length (
     builtins.attrNames expectedDefaultSettings.kwinrc."Script-io.github.kontonkara.driftile"
-  ) == 12;
+  ) == 13;
 assert
   builtins.length (
     lib.splitString "\n"
@@ -621,6 +648,11 @@ assert
   builtins.length (
     lib.splitString "\n"
       homeManagerMaximumExclusions.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ApplicationTilingExclusions
+  ) == 128;
+assert
+  builtins.length (
+    lib.splitString "\n"
+      homeManagerMaximumFocusCentering.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ApplicationFocusCentering
   ) == 128;
 assert
   builtins.length (
@@ -638,6 +670,7 @@ assert
     kwinrc."Script-io.github.kontonkara.driftile" = {
       ApplicationBorderlessExclusions = "";
       ApplicationColumnWidths = "";
+      ApplicationFocusCentering = "";
       ApplicationInitialFloating = "";
       ApplicationTilingExclusions = "";
       BorderlessWindows = true;

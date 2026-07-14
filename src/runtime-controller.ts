@@ -14,6 +14,11 @@ import {
   type ApplicationInitialFloating,
 } from "./application-initial-floating";
 import {
+  EMPTY_APPLICATION_FOCUS_CENTERING,
+  sameApplicationFocusCentering,
+  type ApplicationFocusCentering,
+} from "./application-focus-centering";
+import {
   EMPTY_APPLICATION_TILING_EXCLUSIONS,
   sameApplicationTilingExclusions,
   type ApplicationTilingExclusions,
@@ -700,6 +705,7 @@ interface LayoutHydrationCandidate {
 export interface RuntimeControllerOptions {
   readonly applicationBorderlessExclusions?: ApplicationBorderlessExclusions;
   readonly applicationColumnWidths?: ApplicationColumnWidthOverrides;
+  readonly applicationFocusCentering?: ApplicationFocusCentering;
   readonly applicationInitialFloating?: ApplicationInitialFloating;
   readonly applicationTilingExclusions?: ApplicationTilingExclusions;
   readonly borderlessWindows?: boolean;
@@ -725,6 +731,7 @@ export interface RuntimeControllerOptions {
 export class RuntimeController {
   private applicationBorderlessExclusions: ApplicationBorderlessExclusions;
   private applicationColumnWidths: ApplicationColumnWidthOverrides;
+  private applicationFocusCentering: ApplicationFocusCentering;
   private applicationInitialFloating: ApplicationInitialFloating;
   private applicationTilingExclusions: ApplicationTilingExclusions;
   private readonly automaticFloatingWindows = new Set<WindowId>();
@@ -923,6 +930,8 @@ export class RuntimeController {
     this.applicationColumnWidths =
       options.applicationColumnWidths ??
       EMPTY_APPLICATION_COLUMN_WIDTH_OVERRIDES;
+    this.applicationFocusCentering =
+      options.applicationFocusCentering ?? EMPTY_APPLICATION_FOCUS_CENTERING;
     this.applicationInitialFloating =
       options.applicationInitialFloating ?? EMPTY_APPLICATION_INITIAL_FLOATING;
     this.applicationTilingExclusions =
@@ -1555,6 +1564,22 @@ export class RuntimeController {
       this.scheduleDeferredRuntimeWork();
     }
 
+    return true;
+  }
+
+  setApplicationFocusCentering(
+    applications: ApplicationFocusCentering,
+  ): boolean {
+    if (
+      sameApplicationFocusCentering(
+        this.applicationFocusCentering,
+        applications,
+      )
+    ) {
+      return false;
+    }
+
+    this.applicationFocusCentering = applications;
     return true;
   }
 
@@ -5518,9 +5543,10 @@ export class RuntimeController {
 
     const rememberedFloatingFocus = this.lastFloatingFocus.get(key);
     const rememberedTiledFocus = this.lastTiledFocus.get(key);
+    const centerTarget =
+      this.centerFocusedColumn || this.applicationCentersOnFocus(target);
     const centered =
-      this.centerFocusedColumn &&
-      !this.hasCapacityMutationInFlight(command.context.key)
+      centerTarget && !this.hasCapacityMutationInFlight(command.context.key)
         ? this.centeredColumnView(command, targetId)
         : null;
     const desiredViewportOffset = centered?.desiredViewportOffset ?? null;
@@ -5635,6 +5661,18 @@ export class RuntimeController {
       currentViewportOffset: currentLayout.viewportOffset,
       desiredViewportOffset: centeredLayout.viewportOffset,
     };
+  }
+
+  private applicationCentersOnFocus(source: KWinWindow): boolean {
+    if (this.applicationFocusCentering.canonicalEntries.length === 0) {
+      return false;
+    }
+
+    const desktopFileName = this.applicationDesktopFileName(source);
+    return (
+      desktopFileName !== null &&
+      this.applicationFocusCentering.centersOnFocus(desktopFileName)
+    );
   }
 
   private focusWithinActiveColumn(direction: VerticalDirection): boolean {

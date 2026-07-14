@@ -114,6 +114,8 @@ let
     exclusions: lib.concatStringsSep "\n" (builtins.sort builtins.lessThan exclusions);
   applicationBorderlessExclusionType = applicationTilingExclusionType;
   renderApplicationBorderlessExclusions = renderApplicationTilingExclusions;
+  applicationFocusCenteringType = applicationTilingExclusionType;
+  renderApplicationFocusCentering = renderApplicationTilingExclusions;
   applicationInitialFloatingType = applicationTilingExclusionType;
   renderApplicationInitialFloating = renderApplicationTilingExclusions;
   strictlyIncreasing =
@@ -183,6 +185,12 @@ in
               type = applicationColumnWidthType;
               default = { };
               description = "Initial column widths keyed by exact desktop-file ID.";
+            };
+
+            applicationFocusCentering = lib.mkOption {
+              type = applicationFocusCenteringType;
+              default = [ ];
+              description = "Exact KWin desktopFileNames centered after horizontal focus navigation.";
             };
 
             applicationInitialFloating = lib.mkOption {
@@ -301,6 +309,8 @@ in
           ApplicationBorderlessExclusions =
             renderApplicationBorderlessExclusions cfg.settings.applicationBorderlessExclusions;
           ApplicationColumnWidths = renderApplicationColumnWidths cfg.settings.applicationColumnWidths;
+          ApplicationFocusCentering =
+            renderApplicationFocusCentering cfg.settings.applicationFocusCentering;
           ApplicationInitialFloating =
             renderApplicationInitialFloating cfg.settings.applicationInitialFloating;
           ApplicationTilingExclusions = renderApplicationTilingExclusions cfg.settings.applicationTilingExclusions;
