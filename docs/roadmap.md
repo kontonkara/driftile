@@ -5,6 +5,9 @@ Versions 0.1.0, 1.0.0, 1.1.0, 1.2.0, 1.3.0, 1.4.0, 1.5.0, 1.6.0, 1.7.0,
 milestones and release criteria below are a historical record. The remaining
 post-v1 direction is not a committed release schedule.
 
+Development is on 1.13.0-dev.0. The next bounded scope is not yet committed
+and will be frozen separately.
+
 ## Foundation (delivered)
 
 - Build and package a declarative KWin script with a TypeScript runtime.
