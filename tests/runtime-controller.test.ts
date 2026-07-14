@@ -16078,6 +16078,8 @@ describe("RuntimeController", () => {
     expect(controller.centerColumn()).toBe(false);
     expect(controller.increaseColumnWidth()).toBe(false);
     expect(controller.decreaseColumnWidth()).toBe(false);
+    expect(controller.increaseWindowHeight()).toBe(false);
+    expect(controller.decreaseWindowHeight()).toBe(false);
     expectTrackedWindowState([tiled, active], state);
     expect(
       runtimeLayout(controller).snapshot(
@@ -16278,6 +16280,290 @@ describe("RuntimeController", () => {
       },
     );
     expectNoResize(controller.decreaseColumnWidth.bind(controller));
+  });
+
+  it("resizes a decorated manual-floating height by the configured work-area step", () => {
+    const output = {
+      ...createOutput("DP-1", 0),
+      devicePixelRatio: 1.25,
+    };
+    const desktop = { id: "desktop-1" };
+    const minimumSize = { height: 80, width: 1 };
+    const maximumSize = { height: 10_000, width: 10_000 };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const active = createTrackedWindow("window-2", output, desktop, {
+      clientGeometry: { height: 286, width: 260, x: 368, y: 264 },
+      frameGeometry: { height: 320, width: 280, x: 360, y: 240 },
+      maxSize: maximumSize,
+      minSize: minimumSize,
+    });
+    const third = createTrackedWindow("window-3", output, desktop);
+    const windows = [first, active, third];
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map(({ window }) => window),
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 240 },
+      gap: 37,
+    });
+
+    expect(controller.setWindowHeightStepPercent(20)).toBe(true);
+    expect(controller.start()).toBe(true);
+    fixture.workspace.activeWindow = active.window;
+    expect(controller.toggleFloating()).toBe(true);
+    const activeId = windowId("window-2");
+    const floatingWindows = runtimeFloatingWindows(controller);
+    const floatingBefore = floatingWindows.get(activeId);
+
+    if (!floatingBefore) {
+      throw new Error("missing manual-floating height state");
+    }
+
+    const originalFrame = { height: 320, width: 280, x: 360, y: 240 };
+    const originalClientFrame = {
+      height: 286,
+      width: 260,
+      x: 368,
+      y: 264,
+    };
+    active.setFrameGeometry(originalFrame);
+    maximumSize.height = 446;
+    const tiledLayout = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const tiledState = captureTrackedWindowState([first, third]);
+    const managedCount = controller.managedCount;
+    const activationCount = fixture.activationCount;
+    const expectResize = (
+      resize: () => boolean,
+      expectedFrame: KWinWindow["frameGeometry"],
+      expectedClientFrame: KWinWindow["clientGeometry"],
+    ): void => {
+      const writes = active.writeCount;
+
+      expect(resize()).toBe(true);
+      expect(active.window.frameGeometry).toEqual(expectedFrame);
+      expect(active.window.clientGeometry).toEqual(expectedClientFrame);
+      expect(active.writeCount).toBe(writes + 1);
+      expect(controller.lastWriteCount).toBe(1);
+      expect(controller.floatingCount).toBe(1);
+      expect(controller.managedCount).toBe(managedCount);
+      expect(fixture.workspace.activeWindow).toBe(active.window);
+      expect(fixture.activationCount).toBe(activationCount);
+      expectTrackedWindowState([first, third], tiledState);
+      expect(
+        runtimeLayout(controller).snapshot(
+          outputId(output.name),
+          desktopId(desktop.id),
+        ),
+      ).toEqual(tiledLayout);
+      expect(floatingWindows.get(activeId)).toEqual({
+        currentContextKey: floatingBefore.currentContextKey,
+        expectedFrame,
+        placement: floatingBefore.placement,
+        restoreBaseline: {
+          clientFrame: expectedClientFrame,
+          fingerprint: floatingBefore.restoreBaseline.fingerprint,
+          frame: expectedFrame,
+          kind: "client",
+          noBorder: floatingBefore.restoreBaseline.noBorder,
+        },
+        sourceContextKey: floatingBefore.sourceContextKey,
+      });
+    };
+    const expectNoResize = (resize: () => boolean): void => {
+      const state = captureTrackedWindowState(windows);
+      const floating = floatingWindows.get(activeId);
+
+      expect(resize()).toBe(false);
+      expectTrackedWindowState(windows, state);
+      expect(controller.lastWriteCount).toBe(0);
+      expect(floatingWindows.get(activeId)).toBe(floating);
+      expect(
+        runtimeLayout(controller).snapshot(
+          outputId(output.name),
+          desktopId(desktop.id),
+        ),
+      ).toEqual(tiledLayout);
+    };
+
+    expectResize(
+      controller.increaseWindowHeight.bind(controller),
+      { height: 480, width: 280, x: 360, y: 240 },
+      { height: 446, width: 260, x: 368, y: 264 },
+    );
+    expectNoResize(controller.increaseWindowHeight.bind(controller));
+    expectNoResize(controller.resetWindowHeight.bind(controller));
+    expectNoResize(controller.switchPresetWindowHeight.bind(controller));
+    expectNoResize(controller.switchPresetWindowHeightBack.bind(controller));
+    expectResize(
+      controller.decreaseWindowHeight.bind(controller),
+      originalFrame,
+      originalClientFrame,
+    );
+
+    maximumSize.height = 200;
+    expectNoResize(controller.increaseWindowHeight.bind(controller));
+    maximumSize.height = 446;
+
+    active.setFrameGeometry({ ...originalFrame, y: 900 });
+    expectResize(
+      controller.decreaseWindowHeight.bind(controller),
+      { height: 160, width: 280, x: 360, y: 760 },
+      { height: 126, width: 260, x: 368, y: 784 },
+    );
+    const minimumFrameHeight =
+      Math.ceil((minimumSize.height + 34) * output.devicePixelRatio) /
+      output.devicePixelRatio;
+    expectResize(
+      controller.decreaseWindowHeight.bind(controller),
+      { height: minimumFrameHeight, width: 280, x: 360, y: 760 },
+      {
+        height: minimumFrameHeight - 34,
+        width: 260,
+        x: 368,
+        y: 784,
+      },
+    );
+    expectNoResize(controller.decreaseWindowHeight.bind(controller));
+
+    minimumSize.height = 0;
+    const minimumPositiveFrameHeight =
+      Math.ceil(35 * output.devicePixelRatio) / output.devicePixelRatio;
+    expectResize(
+      controller.decreaseWindowHeight.bind(controller),
+      { height: minimumPositiveFrameHeight, width: 280, x: 360, y: 760 },
+      {
+        height: minimumPositiveFrameHeight - 34,
+        width: 260,
+        x: 368,
+        y: 784,
+      },
+    );
+    expectNoResize(controller.decreaseWindowHeight.bind(controller));
+  });
+
+  it("settles a delayed floating height resize without action fallback", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const tiled = createTrackedWindow("tiled", output, desktop);
+    const active = createTrackedWindow("active", output, desktop, {
+      clientGeometry: { height: 206, width: 280, x: 128, y: 174 },
+      frameGeometry: { height: 240, width: 300, x: 120, y: 150 },
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [tiled.window, active.window],
+    );
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 37,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    expect(controller.setWindowHeightStepPercent(20)).toBe(true);
+    expect(controller.start()).toBe(true);
+    fixture.workspace.activeWindow = active.window;
+    expect(controller.toggleFloating()).toBe(true);
+    const activeId = windowId("active");
+    const floatingWindows = runtimeFloatingWindows(controller);
+    const floatingBefore = floatingWindows.get(activeId);
+
+    if (!floatingBefore) {
+      throw new Error("missing delayed manual-floating height state");
+    }
+
+    const originalFrame = { height: 240, width: 300, x: 120, y: 150 };
+    const targetFrame = { height: 400, width: 300, x: 120, y: 150 };
+    const targetClientFrame = {
+      height: 366,
+      width: 280,
+      x: 128,
+      y: 174,
+    };
+    active.setFrameGeometry(originalFrame);
+    const tiledLayout = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const tiledState = captureTrackedWindowState([tiled]);
+    const handlers = active.frameGeometryChanged.size;
+    const writes = active.writeCount;
+    let delayedWrite:
+      | {
+          readonly commit: () => void;
+          readonly frame: KWinWindow["frameGeometry"];
+        }
+      | undefined;
+    active.setWriteBehavior((frame, commit) => {
+      delayedWrite = { commit, frame: { ...frame } };
+    });
+
+    expect(controller.increaseWindowHeight()).toBe(true);
+    active.setWriteBehavior(null);
+    expect(delayedWrite?.frame).toEqual(targetFrame);
+    expect(active.window.frameGeometry).toEqual(originalFrame);
+    expect(active.writeCount).toBe(writes + 1);
+    expect(active.frameGeometryChanged.size).toBe(handlers + 1);
+    expect(resumeScheduler.pendingCount).toBe(1);
+
+    expect(controller.increaseWindowHeight()).toBe(false);
+    expect(controller.decreaseWindowHeight()).toBe(false);
+    expect(controller.increaseColumnWidth()).toBe(false);
+    expect(controller.decreaseColumnWidth()).toBe(false);
+    expect(controller.moveColumnLeft()).toBe(false);
+    expect(controller.centerColumn()).toBe(false);
+    expect(active.window.frameGeometry).toEqual(originalFrame);
+    expect(active.writeCount).toBe(writes + 1);
+    expect(floatingWindows.get(activeId)).toBe(floatingBefore);
+    expectTrackedWindowState([tiled], tiledState);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(tiledLayout);
+
+    delayedWrite?.commit();
+    active.frameGeometryChanged.emit(originalFrame);
+    resumeScheduler.flush();
+
+    expect(active.window.frameGeometry).toEqual(targetFrame);
+    expect(active.window.clientGeometry).toEqual(targetClientFrame);
+    expect(active.frameGeometryChanged.size).toBe(handlers);
+    expect(resumeScheduler.pendingCount).toBe(0);
+    expect(floatingWindows.get(activeId)).toEqual({
+      currentContextKey: floatingBefore.currentContextKey,
+      expectedFrame: targetFrame,
+      placement: floatingBefore.placement,
+      restoreBaseline: {
+        clientFrame: targetClientFrame,
+        fingerprint: floatingBefore.restoreBaseline.fingerprint,
+        frame: targetFrame,
+        kind: "client",
+        noBorder: floatingBefore.restoreBaseline.noBorder,
+      },
+      sourceContextKey: floatingBefore.sourceContextKey,
+    });
+    expect(controller.decreaseWindowHeight()).toBe(true);
+    expect(active.window.frameGeometry).toEqual(originalFrame);
+    expectTrackedWindowState([tiled], tiledState);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(tiledLayout);
   });
 
   it("settles one delayed floating width acknowledgement atomically", () => {

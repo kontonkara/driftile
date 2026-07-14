@@ -41,7 +41,9 @@ The ownership rule is strict:
 - Configurable 1–50 percentage-point step for contextual width decrease and
   increase actions: the active whole column when tiled, or the active manually
   floating window when detached.
-- Configurable 1–50 percentage-point step for explicit active-window height decrease and increase actions.
+- Configurable 1–50 percentage-point step for contextual height decrease and
+  increase actions: the active stack member when tiled, or the active manually
+  floating window when detached.
 - Output-local commands unless a transfer is explicit.
 - Work-area, size-constraint, fullscreen, minimized-window compatibility, dialog handling, and settled virtual-output recovery.
 - Hard client minimum and maximum bounds with cached detection of silent visible-window changes; unexposed increment and aspect hints do not alter Driftile's tiled model, while applied frames remain subject to KWin.
@@ -155,6 +157,23 @@ The ownership rule is strict:
   viewport, focus, reinsertion anchor, setting, binding, action, schema,
   persistence, helper, or overview behavior.
 
+## 1.14 core slice
+
+- The existing window-height decrease and increase actions resize an active
+  manually floating frame. Tiled stack semantics remain unchanged, while reset
+  and preset-height actions remain tiled-only.
+- Each floating target adds or subtracts `WindowHeightStepPercent` multiplied
+  by the assigned work-area height; the gap is excluded. It snaps to the
+  physical-pixel grid using the assigned output's device-pixel ratio, respects
+  live decorated height constraints, and keeps the required partial-visibility
+  strip reachable.
+- Width and top-left remain unchanged unless the minimal partial-visibility
+  clamp must adjust the origin. Focus, context, reinsertion placement, and all
+  tiled state remain unchanged.
+- A blocked or pending floating target never falls through to a tiled stack
+  mutation. The slice adds no action, binding, setting, schema, persistence,
+  helper, overview behavior, or application policy.
+
 ## Beyond v1
 
 - A removable overview companion presents the authoritative layout with guarded
@@ -223,7 +242,7 @@ Driftile must integrate with, not duplicate:
 - Exposed client minimum and maximum sizes are hard bounds and are revalidated immediately before writes. Unexposed X11 increment and aspect hints never change Driftile's modeled admission, grouping, shared widths, or height partitioning; KWin may still constrain the applied frame on a backend that enforces them.
 - Available-width expansion grows only a fully visible active column up to its shared window constraints, preserves every other fully visible column, and changes width and viewport atomically.
 - Visible-column centering changes only the viewport offset and preserves focus, order, widths, and grouping.
-- Window-height resizing makes the active member the sole fixed or preset member; automatic siblings preserve their relative weights while sharing the remaining height.
+- Tiled window-height resizing makes the active member the sole fixed or preset member; automatic siblings preserve their relative weights while sharing the remaining height.
 - A height action never moves opposite its requested direction after constraints change. An automatic member may become fixed without a frame write when it already touches the requested hard boundary.
 - Resetting a window height returns that member to automatic sizing. A failed stack reflow restores every prior height state and frame.
 - Horizontal window movement merges a singleton into its neighbor or extracts a stacked member into a new adjacent singleton column.
@@ -268,6 +287,12 @@ Driftile must integrate with, not duplicate:
   partial visibility, and commits only after exact current acknowledgement. A
   blocked, pending, nonexact, or stale operation changes no tiled state and
   never falls through to whole-column resizing.
+- Contextual height decrease and increase resize only an active manually
+  floating frame by the configured fraction of its assigned work-area height,
+  excluding the gap. The result uses the assigned output's device-pixel ratio
+  to align its constrained height, preserves width and top-left except for the
+  minimal partial-visibility clamp, and changes no tiled state. Reset and
+  preset-height actions remain tiled-only.
 - KWin alone owns minimization. Driftile registers no minimize action or default shortcut, keeps a minimized tiled window in its exact logical slot, and preserves a minimized manually floating window's exact detached frame for restoration.
 - An automatically layout-excluded window has no layout slot, manual-floating anchor, waiting entry, suspension, or retry state. Commands requiring layout ownership are no-ops; relation-free desktop transfer remains available.
 - A configured application exclusion uses the same automatic-exclusion state,

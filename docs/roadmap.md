@@ -5,8 +5,7 @@ Versions 0.1.0, 1.0.0, 1.1.0, 1.2.0, 1.3.0, 1.4.0, 1.5.0, 1.6.0, 1.7.0,
 delivered milestones and release criteria below are a historical record. The
 remaining post-v1 direction is not a committed release schedule.
 
-Development is on 1.14.0-dev.0. The next bounded scope is not yet committed
-and will be frozen separately.
+Development is on 1.14.0-dev.0. Its bounded scope is frozen below.
 
 ## Foundation (delivered)
 
@@ -60,7 +59,7 @@ The current runtime already:
   frame by the configured work-area step, with exact acknowledgement and zero
   tiled mutation.
 - Cycles preset widths in both directions, adjusts width by 10%, toggles full width, expands into available space within shared constraints, and centers either the active column or all fully visible columns.
-- Adjusts one window's height by 10%, resets it to weighted automatic sizing, and cycles `1/3`, `1/2`, and `2/3` presets with transactional stack reflow.
+- Adjusts one tiled window's height by 10%, resets it to weighted automatic sizing, and cycles `1/3`, `1/2`, and `2/3` presets with transactional stack reflow. The same decrease and increase actions resize an active manually floating frame by the configured work-area height step.
 - Focuses and reorders vertical stack members, contextually merges or extracts the active window, consumes or expels edge members, and inserts directly into the nearest stack across nonparticipating singleton columns.
 - Inserts a visible active member past settled minimized passive peers in the participating source and target columns, including a fully minimized target stack, without changing passive order, height state, minimized state, or hidden frames. Other state blockers fail closed, and state round trips cancel with exact rollback.
 - Toggles the active normal window between tiled and floating states with anchored reinsertion and safe geometry ownership.
@@ -675,6 +674,47 @@ Release criteria (met):
   hidden full and lifecycle VMs, version, exact-SHA CI, and release gates pass
   without widening this slice.
 
+## 1.14.0 (in development)
+
+Version `1.14.0` freezes one bounded runtime slice: the existing window-height
+decrease and increase actions resize an active manually floating frame, while a
+tiled target keeps the existing stack-reflow behavior. Reset and preset-height
+actions remain tiled-only. A blocked or pending floating target never falls
+through to a tiled mutation.
+
+The floating target is
+`originalHeight + direction * windowHeightStep * workArea.height`; the gap is
+excluded. It snaps to the physical-pixel grid using the assigned output's
+device-pixel ratio, then clamps to live decorated minimum and maximum heights
+plus a positive client height. Width and top-left remain unchanged unless the
+established partial-visibility bounds require a minimal origin clamp.
+
+Height shares the bounded per-window size transaction introduced for contextual
+width. The signal is connected before at most one forward frame write, exact
+synchronous or delayed acknowledgement alone commits floating metadata, and 20
+unchanged delayed samples expire the request. Nonexact and stale results receive
+no compensation. Pending size, movement, and centering commands are serialized
+for that window.
+
+This slice changes no tiled height semantics, reset or preset behavior, action,
+binding, setting, configuration or persistence schema, helper, overview,
+application policy, focus, context, reinsertion anchor, or unrelated layout.
+
+Release criteria (pending):
+
+- Unit coverage proves the configured gap-free work-area height step, decorated
+  live bounds, positive client height, device-pixel-ratio snapping, preserved
+  width, minimally clamped origin, partial visibility, exact settlement,
+  bounded expiry, pending serialization, no compensation, and zero tiled
+  mutation.
+- Packaged native Wayland, XWayland, and native X11 checks reuse the existing
+  applications and prove an exact floating-height round trip without changing
+  focus, context, or tiled state. The hidden full VM reuses its real
+  manual-floating application and physical shortcuts.
+- Format, type, lint, unit, deterministic build and package, all-system flake,
+  hidden full and lifecycle VMs, version, exact-SHA CI, and release gates pass
+  without widening this slice.
+
 ## Post-v1
 
 Add interaction and presentation features outside the frozen v1 scope without
@@ -687,6 +727,6 @@ taking over compositor mechanisms.
 - Add optional visual transitions, layout indicators, and concise diagnostics.
 - Keep Plasma's built-in Overview as the compatible baseline.
 - Add pointer-driven overview rearrangement only through public KWin and Plasma
-  extension APIs; it remains deferred beyond 1.13.0.
+  extension APIs; it remains deferred beyond 1.14.0.
 
 The optional overview must remain removable, preserve the authoritative layout state, and fall back cleanly to Plasma's Overview.

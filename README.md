@@ -16,8 +16,8 @@ leaving window, output, and desktop mechanisms to KWin.
 - One shared trailing empty virtual desktop with conservative creation and
   cleanup.
 - Manual floating with directional nudging, work-area centering, contextual
-  width resizing, automatic layout exclusions, minimized-slot retention, and
-  native fullscreen and maximize integration.
+  width and height resizing, automatic layout exclusions, minimized-slot
+  retention, and native fullscreen and maximize integration.
 - Settled recovery for output, scale, work-area, and window-constraint changes.
 - Configurable gaps, application tiling and borderless exclusions, global and
   application-specific initial column widths, column-width presets, resize
@@ -34,7 +34,7 @@ leaving window, output, and desktop mechanisms to KWin.
 ## Status
 
 The latest stable release is [1.13.0](docs/release-notes-1.13.0.md).
-Development is on 1.14.0-dev.0. Its bounded scope will be frozen separately.
+Development is on 1.14.0-dev.0. Its bounded scope is frozen.
 
 Driftile requires KDE Plasma with KWin 6.7 or newer. It targets native Wayland
 and XWayland windows, plus single-output native X11 sessions.

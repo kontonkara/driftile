@@ -130,9 +130,9 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Accepts a desktop reorder only when KWin produces the exact expected same-ID permutation. The operation leaves selections and window memberships unchanged, and the shared empty tail remains pinned.
 - Releases explicitly floating windows from continuous geometry ownership and restores their anchored layout slots on return.
 - Translates or work-area-centers one active manually floating frame through a shared guarded command without a window or layout scan, preserving its reinsertion anchor and every tiled context.
-- Routes the existing width decrease and increase actions to an active manually
-  floating frame through a dedicated per-window transaction without reading or
-  mutating a tiled context.
+- Routes the existing width and window-height decrease and increase actions to
+  an active manually floating frame through a dedicated per-window transaction
+  without reading or mutating a tiled context.
 - Transfers one active relation-free floating window between desktops through a dedicated KWin transaction without changing tiled state or frame geometry.
 - Remembers the last non-minimized tiled and floating focus per context, switches layers, and resolves floating navigation from live frame geometry without changing frames during floating navigation.
 - Skips minimized tiled slots, fully minimized columns, and minimized floating candidates during focus resolution without taking ownership of KWin's minimize mechanism.
@@ -297,23 +297,28 @@ after that acknowledgement. A still-owned inexact result may receive one ordered
 original-frame compensation request; stale ownership, context, or topology stops
 further writes.
 
-Contextual manual-floating width changes use a separate bounded per-window
-transaction. The target starts at
-`originalWidth + direction * columnWidthStep * workArea.width`, snaps to the
-physical-pixel grid, clamps to live decorated minimum and maximum widths plus a
-positive client width, and keeps the configured partial-visibility strip
-reachable. The per-window `frameGeometryChanged` handler is connected before
-exactly one forward frame request. An exact synchronous X11 or XWayland result
-settles inline; an unchanged native Wayland frame remains pending until the
-exact target is observed by a signal or delayed sample, or 20 unchanged delayed
+Contextual manual-floating size changes use a separate bounded per-window
+transaction. Width starts at
+`originalWidth + direction * columnWidthStep * workArea.width`; height starts
+at `originalHeight + direction * windowHeightStep * workArea.height`. Neither
+calculation includes the gap. The requested dimension snaps to the
+physical-pixel grid using the assigned output's device-pixel ratio and clamps
+to its live decorated minimum and maximum plus a positive client extent. The
+other dimension and top-left remain unchanged unless the partial-visibility
+bounds require a minimal origin clamp.
+
+The per-window `frameGeometryChanged` handler is connected before exactly one
+forward frame request. An exact synchronous X11 or XWayland result settles
+inline; an unchanged native Wayland frame remains pending until the exact
+target is observed by a signal or delayed sample, or 20 unchanged delayed
 samples expire the request. Only the exact current target under unchanged
 ownership, context, topology, constraints, and decorations commits floating
 metadata. Any other sample rejects the operation. Because the public KWin API
 exposes no configure serial, this path never issues a compensating frame
-request. One pending operation serializes width, movement, and centering
-commands for that window, and is disconnected on acceptance, rejection, expiry,
-window removal, or runtime shutdown. No tiled model, tiled frame, viewport, or
-persistence state changes.
+request. One pending operation serializes size, movement, and centering
+commands for that window, and is disconnected on acceptance, rejection,
+expiry, window removal, or runtime shutdown. No tiled model, tiled frame,
+viewport, or persistence state changes.
 
 At a stable runtime boundary, Driftile can now capture the complete durable
 model as one canonical codec document without changing layout or KWin state.
@@ -417,6 +422,11 @@ inspected safely within the codec bound.
   manual-floating target uses one constraint-clamped frame request with a
   physically aligned width and never falls through to tiled resizing while
   blocked or pending; a tiled target keeps the whole-column path.
+- Resolve the existing window-height decrease and increase actions
+  contextually: a manual-floating target uses the corresponding work-area
+  height step and one constraint-clamped, physically aligned frame request; a
+  tiled target keeps the stack-reflow path. Reset and preset-height actions
+  remain tiled-only.
 - Leave dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows outside layout ownership. Commands that require layout ownership are no-ops when one is active; desktop transfer may move one relation-free floating window.
 - If a managed window gains an automatic-floating role, remove its slot without writing a stale restore frame or disturbing unrelated order, widths, or viewport state. Re-admit it through normal admission after the role clears.
 - Allow horizontal overflow and viewport scrolling when KWin reports one output.
@@ -476,7 +486,7 @@ inspected safely within the codec bound.
 - Bound horizontal-resize target-mismatch detection to 20 delayed probes and
   rollback recovery to 40 probes, including a 20-sample exact rollback quiet
   period.
-- Keep contextual manual-floating width settlement bounded: constant per-target
+- Keep contextual manual-floating size settlement bounded: constant per-target
   math, one per-window signal connection, at most one forward frame write, at
   most 20 delayed probes, no compensation, and no managed-window, column, or
   layout scan.
@@ -516,12 +526,13 @@ inspected safely within the codec bound.
 - Verify automatic KWin ownership, command no-ops, late role changes, manual-floating separation, and safe readmission.
 - Verify context-local tiled/floating focus memory for manual and automatic floating windows without geometry writes.
 - Verify directional and edge floating focus, stacking tie-breaks, no-wrap boundaries, and exact frame immutability.
-- Verify contextual manual-floating width decrease and increase, configured
-  work-area steps, decorated live constraints, positive client width,
-  physical-pixel snapping, partial visibility, synchronous and delayed exact
-  settlement, bounded unchanged-request expiry, pending-command serialization
-  and cleanup, exact metadata commits, nonexact and stale rejection without
-  compensation, one forward write, and zero tiled mutation.
+- Verify contextual manual-floating width and height decrease and increase,
+  their configured gap-free work-area steps, decorated live constraints,
+  positive client extents, physical-pixel snapping, preservation of the other
+  dimension, partial visibility, synchronous and delayed exact settlement,
+  bounded unchanged-request expiry, pending-command serialization and cleanup,
+  exact metadata commits, nonexact and stale rejection without compensation,
+  one forward write, and zero tiled mutation.
 - Verify vertical focus, member reorder, contextual merge and extraction, suspended members, and structural rollback.
 - Verify direct insertion past settled minimized source and target peers, fully minimized target stacks, skipped-singleton nonparticipation, zero hidden-frame writes, authoritative external frame changes, state-round-trip cancellation, exact rollback, and fail-closed blockers.
 - Verify cross-output pointer adoption before and after a visible target,

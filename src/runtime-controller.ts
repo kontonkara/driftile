@@ -139,7 +139,7 @@ const DEFAULT_COLUMN_WIDTH_PRESETS: readonly ColumnWidth[] = [
 const DEFAULT_GAP = 16;
 const MAX_GAP = 64;
 const MIN_GAP = 0;
-const MAX_MANUAL_FLOATING_WIDTH_SETTLEMENT_PROBES = 20;
+const MAX_MANUAL_FLOATING_SIZE_SETTLEMENT_PROBES = 20;
 const FIXED_SIZE_CONSTRAINTS = 1;
 const FLEXIBLE_SIZE_CONSTRAINTS = 0;
 const MALFORMED_SIZE_CONSTRAINTS = -1;
@@ -523,10 +523,13 @@ interface ManualFloatingFrameCommand extends ActiveWindowCommand {
   readonly topologyRevision: number;
 }
 
-interface PendingManualFloatingWidthChange {
+type ManualFloatingResizeAxis = "height" | "width";
+
+interface PendingManualFloatingSizeChange {
+  readonly axis: ManualFloatingResizeAxis;
   readonly command: ManualFloatingFrameCommand;
   readonly constraintBounds: FrameSizeConstraintBounds;
-  readonly decorationWidth: number;
+  readonly decorationExtent: number;
   readonly handleFrameGeometryChanged: (
     oldGeometry: KWinWindow["frameGeometry"],
   ) => void;
@@ -802,9 +805,9 @@ export class RuntimeController {
   private readonly managedWindows = new Map<WindowId, ManagedWindow>();
   private readonly pendingFullscreenTargets = new Map<WindowId, boolean>();
   private readonly pendingHydratedRestoreBaselines = new Set<WindowId>();
-  private readonly pendingManualFloatingWidthChanges = new Map<
+  private readonly pendingManualFloatingSizeChanges = new Map<
     WindowId,
-    PendingManualFloatingWidthChange
+    PendingManualFloatingSizeChange
   >();
   private readonly observer: WindowObserver;
   private readonly onLayoutStateChanged:
@@ -2119,7 +2122,10 @@ export class RuntimeController {
   }
 
   decreaseColumnWidth(): boolean {
-    const floatingResult = this.resizeActiveManualFloatingWindowWidth(-1);
+    const floatingResult = this.resizeActiveManualFloatingWindowSize(
+      "width",
+      -1,
+    );
 
     if (floatingResult !== null) {
       return floatingResult;
@@ -2129,7 +2135,10 @@ export class RuntimeController {
   }
 
   increaseColumnWidth(): boolean {
-    const floatingResult = this.resizeActiveManualFloatingWindowWidth(1);
+    const floatingResult = this.resizeActiveManualFloatingWindowSize(
+      "width",
+      1,
+    );
 
     if (floatingResult !== null) {
       return floatingResult;
@@ -2151,10 +2160,28 @@ export class RuntimeController {
   }
 
   decreaseWindowHeight(): boolean {
+    const floatingResult = this.resizeActiveManualFloatingWindowSize(
+      "height",
+      -1,
+    );
+
+    if (floatingResult !== null) {
+      return floatingResult;
+    }
+
     return this.resizeActiveWindowHeight("decrease");
   }
 
   increaseWindowHeight(): boolean {
+    const floatingResult = this.resizeActiveManualFloatingWindowSize(
+      "height",
+      1,
+    );
+
+    if (floatingResult !== null) {
+      return floatingResult;
+    }
+
     return this.resizeActiveWindowHeight("increase");
   }
 
@@ -2648,7 +2675,7 @@ export class RuntimeController {
     this.pointerResizeIntent = null;
     this.pointerResizeSettlement = null;
     this.stackEditOperation = null;
-    this.clearPendingManualFloatingWidthChanges();
+    this.clearPendingManualFloatingSizeChanges();
 
     try {
       if (!hydrationWasPending) {
@@ -4218,7 +4245,7 @@ export class RuntimeController {
 
     this.cancelPointerMoveForWindowChange(managedId);
     this.cancelPointerResizeForWindowChange(managedId);
-    this.cancelPendingManualFloatingWidthChange(managedId);
+    this.cancelPendingManualFloatingSizeChange(managedId);
     this.cancelInvalidPendingExpelFocusHandoff();
     const affectedContextKeys = new Set<string>();
     const floating = this.floatingWindows.get(managedId);
@@ -5488,7 +5515,8 @@ export class RuntimeController {
     return null;
   }
 
-  private resizeActiveManualFloatingWindowWidth(
+  private resizeActiveManualFloatingWindowSize(
+    axis: ManualFloatingResizeAxis,
     direction: -1 | 1,
   ): boolean | null {
     const activeWindow = this.workspace.activeWindow;
@@ -5518,26 +5546,27 @@ export class RuntimeController {
 
     const signal = activeWindow.frameGeometryChanged;
     let constraintBounds: FrameSizeConstraintBounds | null;
-    let decorationWidth: number | null;
+    let decorationExtent: number | null;
 
     try {
       constraintBounds = frameSizeConstraintBounds(activeWindow);
-      decorationWidth = validDecorationExtent(
-        command.originalFrame.width,
-        activeWindow.clientGeometry.width,
+      decorationExtent = validDecorationExtent(
+        command.originalFrame[axis],
+        activeWindow.clientGeometry[axis],
       );
     } catch {
       return false;
     }
 
-    if (!signal || !constraintBounds || decorationWidth === null) {
+    if (!signal || !constraintBounds || decorationExtent === null) {
       return false;
     }
 
-    const targetFrame = this.manualFloatingWidthTarget(
+    const targetFrame = this.manualFloatingSizeTarget(
+      axis,
       command,
       constraintBounds,
-      decorationWidth,
+      decorationExtent,
       direction,
     );
 
@@ -5555,32 +5584,33 @@ export class RuntimeController {
     }
 
     const handleFrameGeometryChanged = (): void => {
-      this.handlePendingManualFloatingWidthChange(operation);
+      this.handlePendingManualFloatingSizeChange(operation);
     };
-    const operation: PendingManualFloatingWidthChange = {
+    const operation: PendingManualFloatingSizeChange = {
+      axis,
       command,
       constraintBounds,
-      decorationWidth,
+      decorationExtent,
       handleFrameGeometryChanged,
       signal,
       settlementAttempts: 0,
       status: "pending",
       targetFrame,
     };
-    this.pendingManualFloatingWidthChanges.set(activeId, operation);
+    this.pendingManualFloatingSizeChanges.set(activeId, operation);
 
     try {
       signal.connect(handleFrameGeometryChanged);
     } catch (error) {
-      this.pendingManualFloatingWidthChanges.delete(activeId);
+      this.pendingManualFloatingSizeChanges.delete(activeId);
       operation.status = "rejected";
       console.warn(
-        `[driftile] floating width resize signal connection failed window=${String(activeId)} error=${String(error)}`,
+        `[driftile] floating ${axis} resize signal connection failed window=${String(activeId)} error=${String(error)}`,
       );
       return false;
     }
 
-    if (this.pendingManualFloatingWidthChanges.get(activeId) !== operation) {
+    if (this.pendingManualFloatingSizeChanges.get(activeId) !== operation) {
       return false;
     }
 
@@ -5592,7 +5622,7 @@ export class RuntimeController {
         [{ frame: targetFrame, windowId: activeId }],
         command.context,
         () =>
-          this.pendingManualFloatingWidthChangeIsCurrent(operation) &&
+          this.pendingManualFloatingSizeChangeIsCurrent(operation) &&
           rectsEqual(activeWindow.frameGeometry, command.originalFrame),
       );
     } catch (error) {
@@ -5602,118 +5632,124 @@ export class RuntimeController {
     this.lastWrites = forwardWrites;
 
     if (forwardWrites !== 1) {
-      this.finishPendingManualFloatingWidthChange(operation, "rejected");
+      this.finishPendingManualFloatingSizeChange(operation, "rejected");
 
       if (forwardError !== null) {
         console.warn(
-          `[driftile] floating width resize request failed window=${String(activeId)} error=${forwardError}`,
+          `[driftile] floating ${axis} resize request failed window=${String(activeId)} error=${forwardError}`,
         );
       }
 
       return false;
     }
 
-    if (this.pendingManualFloatingWidthChanges.get(activeId) === operation) {
+    if (this.pendingManualFloatingSizeChanges.get(activeId) === operation) {
       let observedFrame: Rect;
 
       try {
         observedFrame = snapshotRect(activeWindow.frameGeometry);
       } catch {
-        this.finishPendingManualFloatingWidthChange(operation, "rejected");
+        this.finishPendingManualFloatingSizeChange(operation, "rejected");
         return false;
       }
 
       if (rectsEqual(observedFrame, targetFrame)) {
-        this.acceptPendingManualFloatingWidthChange(operation);
+        this.acceptPendingManualFloatingSizeChange(operation);
       } else if (
         !rectsEqual(observedFrame, command.originalFrame) ||
-        !this.pendingManualFloatingWidthChangeIsCurrent(operation)
+        !this.pendingManualFloatingSizeChangeIsCurrent(operation)
       ) {
-        this.finishPendingManualFloatingWidthChange(operation, "rejected");
+        this.finishPendingManualFloatingSizeChange(operation, "rejected");
       }
     }
 
-    if (this.pendingManualFloatingWidthChanges.get(activeId) === operation) {
-      this.schedulePendingManualFloatingWidthChangeProbe(operation);
+    if (this.pendingManualFloatingSizeChanges.get(activeId) === operation) {
+      this.schedulePendingManualFloatingSizeChangeProbe(operation);
     }
 
     return operation.status !== "rejected";
   }
 
-  private manualFloatingWidthTarget(
+  private manualFloatingSizeTarget(
+    axis: ManualFloatingResizeAxis,
     command: ManualFloatingFrameCommand,
     constraintBounds: FrameSizeConstraintBounds,
-    decorationWidth: number,
+    decorationExtent: number,
     direction: -1 | 1,
   ): Rect | null {
     const devicePixelRatio = command.contextGeometry.devicePixelRatio;
     const workArea = command.contextGeometry.workArea;
+    const workAreaExtent = workArea[axis];
 
     if (
       !Number.isFinite(devicePixelRatio) ||
       devicePixelRatio <= 0 ||
-      !Number.isFinite(workArea.width) ||
-      workArea.width <= 0
+      !Number.isFinite(workAreaExtent) ||
+      workAreaExtent <= 0
     ) {
       return null;
     }
 
-    const minimumWidth = ceilToPhysicalPixel(
-      Math.max(constraintBounds.minimumWidth, decorationWidth + 1),
+    const minimumConstraint =
+      axis === "width"
+        ? constraintBounds.minimumWidth
+        : constraintBounds.minimumHeight;
+    const maximumConstraint =
+      axis === "width"
+        ? constraintBounds.maximumWidth
+        : constraintBounds.maximumHeight;
+    const minimumExtent = ceilToPhysicalPixel(
+      Math.max(minimumConstraint, decorationExtent + 1),
       devicePixelRatio,
     );
-    const maximumWidth = Number.isFinite(constraintBounds.maximumWidth)
-      ? floorToPhysicalPixel(constraintBounds.maximumWidth, devicePixelRatio)
+    const maximumExtent = Number.isFinite(maximumConstraint)
+      ? floorToPhysicalPixel(maximumConstraint, devicePixelRatio)
       : Number.POSITIVE_INFINITY;
 
     if (
-      !Number.isFinite(minimumWidth) ||
-      minimumWidth <= decorationWidth ||
-      maximumWidth < minimumWidth
+      !Number.isFinite(minimumExtent) ||
+      minimumExtent <= decorationExtent ||
+      maximumExtent < minimumExtent
     ) {
       return null;
     }
 
-    const requestedWidth =
-      command.originalFrame.width +
-      direction * this.columnWidthStep * workArea.width;
+    const originalExtent = command.originalFrame[axis];
+    const step =
+      axis === "width" ? this.columnWidthStep : this.windowHeightStep;
+    const requestedExtent = originalExtent + direction * step * workAreaExtent;
 
-    if (!Number.isFinite(requestedWidth)) {
+    if (!Number.isFinite(requestedExtent)) {
       return null;
     }
 
-    const width = clamp(
-      roundToPhysicalPixel(requestedWidth, devicePixelRatio),
-      minimumWidth,
-      maximumWidth,
+    const extent = clamp(
+      roundToPhysicalPixel(requestedExtent, devicePixelRatio),
+      minimumExtent,
+      maximumExtent,
     );
-    const progressTolerance = floatingPointTolerance(
-      width,
-      command.originalFrame.width,
-    );
+    const progressTolerance = floatingPointTolerance(extent, originalExtent);
 
     if (
-      (direction > 0 &&
-        width <= command.originalFrame.width + progressTolerance) ||
-      (direction < 0 &&
-        width >= command.originalFrame.width - progressTolerance)
+      (direction > 0 && extent <= originalExtent + progressTolerance) ||
+      (direction < 0 && extent >= originalExtent - progressTolerance)
     ) {
       return null;
     }
 
-    return moveFloatingFrame(
-      { ...command.originalFrame, width },
-      workArea,
-      0,
-      0,
-    );
+    const resizedFrame =
+      axis === "width"
+        ? { ...command.originalFrame, width: extent }
+        : { ...command.originalFrame, height: extent };
+
+    return moveFloatingFrame(resizedFrame, workArea, 0, 0);
   }
 
-  private handlePendingManualFloatingWidthChange(
-    operation: PendingManualFloatingWidthChange,
+  private handlePendingManualFloatingSizeChange(
+    operation: PendingManualFloatingSizeChange,
   ): void {
     if (
-      this.pendingManualFloatingWidthChanges.get(operation.command.activeId) !==
+      this.pendingManualFloatingSizeChanges.get(operation.command.activeId) !==
       operation
     ) {
       return;
@@ -5726,23 +5762,23 @@ export class RuntimeController {
         operation.command.activeWindow.frameGeometry,
       );
     } catch {
-      this.finishPendingManualFloatingWidthChange(operation, "rejected");
+      this.finishPendingManualFloatingSizeChange(operation, "rejected");
       return;
     }
 
     if (!rectsEqual(observedFrame, operation.targetFrame)) {
-      this.finishPendingManualFloatingWidthChange(operation, "rejected");
+      this.finishPendingManualFloatingSizeChange(operation, "rejected");
       return;
     }
 
-    this.acceptPendingManualFloatingWidthChange(operation);
+    this.acceptPendingManualFloatingSizeChange(operation);
   }
 
-  private schedulePendingManualFloatingWidthChangeProbe(
-    operation: PendingManualFloatingWidthChange,
+  private schedulePendingManualFloatingSizeChangeProbe(
+    operation: PendingManualFloatingSizeChange,
   ): void {
     if (
-      this.pendingManualFloatingWidthChanges.get(operation.command.activeId) !==
+      this.pendingManualFloatingSizeChanges.get(operation.command.activeId) !==
         operation ||
       operation.status !== "pending"
     ) {
@@ -5756,7 +5792,7 @@ export class RuntimeController {
         if (
           !this.started ||
           this.runGeneration !== runGeneration ||
-          this.pendingManualFloatingWidthChanges.get(
+          this.pendingManualFloatingSizeChanges.get(
             operation.command.activeId,
           ) !== operation ||
           operation.status !== "pending"
@@ -5772,40 +5808,40 @@ export class RuntimeController {
             operation.command.activeWindow.frameGeometry,
           );
         } catch {
-          this.finishPendingManualFloatingWidthChange(operation, "rejected");
+          this.finishPendingManualFloatingSizeChange(operation, "rejected");
           return;
         }
 
         if (rectsEqual(observedFrame, operation.targetFrame)) {
-          this.acceptPendingManualFloatingWidthChange(operation);
+          this.acceptPendingManualFloatingSizeChange(operation);
           return;
         }
 
         if (
           !rectsEqual(observedFrame, operation.command.originalFrame) ||
-          !this.pendingManualFloatingWidthChangeIsCurrent(operation) ||
+          !this.pendingManualFloatingSizeChangeIsCurrent(operation) ||
           operation.settlementAttempts >=
-            MAX_MANUAL_FLOATING_WIDTH_SETTLEMENT_PROBES
+            MAX_MANUAL_FLOATING_SIZE_SETTLEMENT_PROBES
         ) {
-          this.finishPendingManualFloatingWidthChange(operation, "rejected");
+          this.finishPendingManualFloatingSizeChange(operation, "rejected");
           return;
         }
 
-        this.schedulePendingManualFloatingWidthChangeProbe(operation);
+        this.schedulePendingManualFloatingSizeChangeProbe(operation);
       });
     } catch (error) {
-      this.finishPendingManualFloatingWidthChange(operation, "rejected");
+      this.finishPendingManualFloatingSizeChange(operation, "rejected");
       console.warn(
-        `[driftile] floating width resize settlement scheduling failed window=${String(operation.command.activeId)} error=${String(error)}`,
+        `[driftile] floating ${operation.axis} resize settlement scheduling failed window=${String(operation.command.activeId)} error=${String(error)}`,
       );
     }
   }
 
-  private acceptPendingManualFloatingWidthChange(
-    operation: PendingManualFloatingWidthChange,
+  private acceptPendingManualFloatingSizeChange(
+    operation: PendingManualFloatingSizeChange,
   ): void {
-    if (!this.pendingManualFloatingWidthChangeIsCurrent(operation)) {
-      this.finishPendingManualFloatingWidthChange(operation, "rejected");
+    if (!this.pendingManualFloatingSizeChangeIsCurrent(operation)) {
+      this.finishPendingManualFloatingSizeChange(operation, "rejected");
       return;
     }
 
@@ -5821,17 +5857,17 @@ export class RuntimeController {
         "client",
       );
     } catch {
-      this.finishPendingManualFloatingWidthChange(operation, "rejected");
+      this.finishPendingManualFloatingSizeChange(operation, "rejected");
       return;
     }
 
     if (
       !rectsEqual(acceptedFrame, operation.targetFrame) ||
       !rectsEqual(restoreBaseline.frame, acceptedFrame) ||
-      restoreBaseline.clientFrame.width <= 0 ||
-      !this.pendingManualFloatingWidthChangeIsCurrent(operation)
+      restoreBaseline.clientFrame[operation.axis] <= 0 ||
+      !this.pendingManualFloatingSizeChangeIsCurrent(operation)
     ) {
-      this.finishPendingManualFloatingWidthChange(operation, "rejected");
+      this.finishPendingManualFloatingSizeChange(operation, "rejected");
       return;
     }
 
@@ -5840,17 +5876,17 @@ export class RuntimeController {
       expectedFrame: acceptedFrame,
       restoreBaseline,
     });
-    this.finishPendingManualFloatingWidthChange(operation, "accepted");
+    this.finishPendingManualFloatingSizeChange(operation, "accepted");
   }
 
-  private pendingManualFloatingWidthChangeIsCurrent(
-    operation: PendingManualFloatingWidthChange,
+  private pendingManualFloatingSizeChangeIsCurrent(
+    operation: PendingManualFloatingSizeChange,
   ): boolean {
     const command = operation.command;
 
     if (
       operation.status !== "pending" ||
-      this.pendingManualFloatingWidthChanges.get(command.activeId) !==
+      this.pendingManualFloatingSizeChanges.get(command.activeId) !==
         operation ||
       !this.manualFloatingFrameChangeIsCurrent(command, operation)
     ) {
@@ -5858,16 +5894,16 @@ export class RuntimeController {
     }
 
     let constraintBounds: FrameSizeConstraintBounds | null;
-    let decorationWidth: number | null;
-    let clientWidth: number;
+    let decorationExtent: number | null;
+    let clientExtent: number;
 
     try {
       constraintBounds = frameSizeConstraintBounds(command.activeWindow);
-      decorationWidth = validDecorationExtent(
-        command.activeWindow.frameGeometry.width,
-        command.activeWindow.clientGeometry.width,
+      decorationExtent = validDecorationExtent(
+        command.activeWindow.frameGeometry[operation.axis],
+        command.activeWindow.clientGeometry[operation.axis],
       );
-      clientWidth = command.activeWindow.clientGeometry.width;
+      clientExtent = command.activeWindow.clientGeometry[operation.axis];
     } catch {
       return false;
     }
@@ -5878,10 +5914,10 @@ export class RuntimeController {
         constraintBounds,
         operation.constraintBounds,
       ) &&
-      decorationWidth !== null &&
-      nearlyEqual(decorationWidth, operation.decorationWidth) &&
-      Number.isFinite(clientWidth) &&
-      clientWidth > 0 &&
+      decorationExtent !== null &&
+      nearlyEqual(decorationExtent, operation.decorationExtent) &&
+      Number.isFinite(clientExtent) &&
+      clientExtent > 0 &&
       this.geometry.canApplyFrame(
         command.activeId,
         operation.targetFrame,
@@ -5890,41 +5926,41 @@ export class RuntimeController {
     );
   }
 
-  private finishPendingManualFloatingWidthChange(
-    operation: PendingManualFloatingWidthChange,
+  private finishPendingManualFloatingSizeChange(
+    operation: PendingManualFloatingSizeChange,
     status: "accepted" | "rejected",
   ): void {
     const id = operation.command.activeId;
 
-    if (this.pendingManualFloatingWidthChanges.get(id) !== operation) {
+    if (this.pendingManualFloatingSizeChanges.get(id) !== operation) {
       return;
     }
 
-    this.pendingManualFloatingWidthChanges.delete(id);
+    this.pendingManualFloatingSizeChanges.delete(id);
     operation.status = status;
 
     try {
       operation.signal.disconnect(operation.handleFrameGeometryChanged);
     } catch (error) {
       console.warn(
-        `[driftile] floating width resize signal disconnection failed window=${String(id)} error=${String(error)}`,
+        `[driftile] floating ${operation.axis} resize signal disconnection failed window=${String(id)} error=${String(error)}`,
       );
     }
   }
 
-  private cancelPendingManualFloatingWidthChange(id: WindowId): void {
-    const operation = this.pendingManualFloatingWidthChanges.get(id);
+  private cancelPendingManualFloatingSizeChange(id: WindowId): void {
+    const operation = this.pendingManualFloatingSizeChanges.get(id);
 
     if (operation) {
-      this.finishPendingManualFloatingWidthChange(operation, "rejected");
+      this.finishPendingManualFloatingSizeChange(operation, "rejected");
     }
   }
 
-  private clearPendingManualFloatingWidthChanges(): void {
+  private clearPendingManualFloatingSizeChanges(): void {
     for (const operation of [
-      ...this.pendingManualFloatingWidthChanges.values(),
+      ...this.pendingManualFloatingSizeChanges.values(),
     ]) {
-      this.finishPendingManualFloatingWidthChange(operation, "rejected");
+      this.finishPendingManualFloatingSizeChange(operation, "rejected");
     }
   }
 
@@ -6059,7 +6095,7 @@ export class RuntimeController {
     activeWindow: KWinWindow,
     floating: FloatingWindow,
   ): ManualFloatingFrameCommand | null {
-    if (this.pendingManualFloatingWidthChangeBlocksFrameChange(activeId)) {
+    if (this.pendingManualFloatingSizeChangeBlocksFrameChange(activeId)) {
       return null;
     }
 
@@ -6117,17 +6153,17 @@ export class RuntimeController {
     return this.manualFloatingFrameChangeIsCurrent(command) ? command : null;
   }
 
-  private pendingManualFloatingWidthChangeBlocksFrameChange(
+  private pendingManualFloatingSizeChangeBlocksFrameChange(
     id: WindowId,
   ): boolean {
-    const operation = this.pendingManualFloatingWidthChanges.get(id);
+    const operation = this.pendingManualFloatingSizeChanges.get(id);
 
     if (!operation) {
       return false;
     }
 
-    if (!this.pendingManualFloatingWidthChangeIsCurrent(operation)) {
-      this.finishPendingManualFloatingWidthChange(operation, "rejected");
+    if (!this.pendingManualFloatingSizeChangeIsCurrent(operation)) {
+      this.finishPendingManualFloatingSizeChange(operation, "rejected");
     }
 
     return true;
@@ -6135,9 +6171,9 @@ export class RuntimeController {
 
   private manualFloatingFrameChangeIsCurrent(
     command: ManualFloatingFrameCommand,
-    allowedPendingWidthChange?: PendingManualFloatingWidthChange,
+    allowedPendingSizeChange?: PendingManualFloatingSizeChange,
   ): boolean {
-    const pendingWidthChange = this.pendingManualFloatingWidthChanges.get(
+    const pendingSizeChange = this.pendingManualFloatingSizeChanges.get(
       command.activeId,
     );
 
@@ -6172,8 +6208,8 @@ export class RuntimeController {
       this.unconfirmedFullscreenRetentions.has(command.activeId) ||
       this.pendingExternalFullscreenExtractions.has(command.activeId) ||
       this.fullscreenRequestProbes.has(command.activeId) ||
-      (pendingWidthChange !== undefined &&
-        pendingWidthChange !== allowedPendingWidthChange) ||
+      (pendingSizeChange !== undefined &&
+        pendingSizeChange !== allowedPendingSizeChange) ||
       this.suspendedWindows.has(command.activeId) ||
       this.requestedSuspensions.has(command.activeId) ||
       this.resumeSamples.has(command.activeId) ||

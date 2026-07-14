@@ -147,7 +147,16 @@ applies the shared window constraints.
 
 **Window height step** controls the **Decrease window height** and **Increase window height** actions. The default is `10%`; the range is `1%`–`50%`.
 
-The value is a percentage-point step of the gap-adjusted work-area height, not a percentage of the current frame. Changing it performs no layout work; the next explicit decrease or increase resizes the active stack member and redistributes its automatic siblings. Reset and height presets are unchanged. Window and stack constraints can clamp the result.
+For a tiled active window, the value is a percentage-point step of the
+gap-adjusted work-area height and the existing stack redistribution remains
+unchanged. For an active manually floating window, it is a percentage of the
+assigned work-area height with the gap excluded. The floating target preserves
+width and top-left unless the partial-visibility bounds require a minimal
+origin clamp. It snaps with the assigned output's device-pixel ratio and
+respects live decorated size constraints.
+
+Changing the value performs no layout work. Reset and height-preset actions
+remain tiled-only.
 
 ## Window decorations
 

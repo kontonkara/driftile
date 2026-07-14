@@ -32,7 +32,7 @@ arrow keys are interchangeable unless noted otherwise.
 | Center column or active manually floating window | `Meta+C`                                             |
 | Center fully visible columns                     | `Meta+Ctrl+C`                                        |
 | Decrease or increase column or floating width    | `Meta+-` or `Meta+=`                                 |
-| Decrease or increase active window height by 10% | `Meta+Shift+-` or `Meta+Shift+=`                     |
+| Decrease or increase active window height        | `Meta+Shift+-` or `Meta+Shift+=`                     |
 | Cycle preset window height forward               | `Meta+Ctrl+Shift+R`                                  |
 | Reset active window height to automatic          | `Meta+Ctrl+R`                                        |
 
@@ -73,6 +73,17 @@ only after an exact synchronous or asynchronous acknowledgement. Pending,
 blocked, or native-state width targets are no-ops and never fall through to
 tiled behavior. Existing tiled behavior is unchanged; no action, binding,
 setting, or schema is added.
+
+`Meta+Shift+-` and `Meta+Shift+=` are also contextual. On an active manually
+floating window, they change the decorated frame height by
+`WindowHeightStepPercent` of the assigned work-area height, excluding the gap.
+Width and top-left stay unchanged unless the partial-visibility bounds require
+the minimal origin clamp. The height snaps with the assigned output's
+device-pixel ratio and is clamped to live decorated constraints. Tiled stack
+behavior is unchanged; height state commits only after exact acknowledgement,
+and a blocked or pending floating target never falls through to stack resizing.
+Reset and height-preset actions remain tiled-only. No action, binding, setting,
+or schema is added.
 
 Driftile does not register a minimize action or default shortcut; KWin owns the
 mechanism. A minimized tiled window retains its exact logical slot, and a

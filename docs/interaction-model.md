@@ -56,7 +56,7 @@ stacking-order, or layout scan.
 | Native maximize      | Extract a regular stack member, then toggle it to work-area edges through KWin                    | Available |
 | Minimize focus       | Preserve tiled slots and floating frames; skip minimized windows without wrapping                 | Available |
 | Hidden-member edits  | Preserve documented passive peers; reject every other minimized-member structural edit            | Available |
-| Floating layer       | Toggle state, switch layers, navigate geometrically, nudge, center, and resize width contextually | Available |
+| Floating layer       | Toggle state, switch layers, navigate geometrically, nudge, center, and resize contextually       | Available |
 | Pointer drop         | Reinsert or adopt one active tiled window at one exact visible target                             | Available |
 | Pointer resize       | Adopt one completed horizontal resize as the active column's fixed width                          | Available |
 | Overview companion   | Focus an exact current or non-current thumbnail, or select a non-current number gutter            | Available |
@@ -83,6 +83,18 @@ bounds require a minimal origin clamp that keeps 10–75 logical pixels visible.
 Only an exact synchronous or asynchronous acknowledgement commits state.
 Pending, blocked, or native-state targets fail closed without falling through
 to tiled width changes. This adds no action, binding, setting, or schema.
+
+The existing decrease/increase window-height actions are contextual in the
+same way. With an active manually floating window, they change the decorated
+frame height by `WindowHeightStepPercent` of the assigned work-area height;
+the gap is excluded. Width and top-left stay unchanged unless the established
+partial-visibility bounds require a minimal origin clamp. The target respects
+live decorated constraints and snaps with the assigned output's device-pixel
+ratio. It uses the same exact-acknowledgement and fail-closed ownership path as
+contextual width, so a blocked or pending floating target never reaches tiled
+stack resizing. Tiled semantics are otherwise unchanged, while reset and
+preset-height actions remain tiled-only. This adds no action, binding, setting,
+or schema.
 
 A tiled drag commits on release over exactly one visible tiled target in the
 same context. The target midpoint selects insertion before or after it. Moving
@@ -128,7 +140,8 @@ workspace.
 A stack has at most one fixed or preset window height. Changing a different
 member converts the other members to weighted automatic heights that preserve
 their visible proportions while sharing the remaining work-area height. Reset
-returns the active member to automatic sizing.
+returns the active tiled member to automatic sizing. These stack policies do
+not apply to a manually floating frame.
 
 ## KWin boundary
 
