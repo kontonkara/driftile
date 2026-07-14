@@ -1,23 +1,21 @@
 # Migration
 
-The latest stable release is 1.9.1. Use the steps below when changing release
+The latest stable release is 1.10.0. Use the steps below when changing release
 generations, and never combine files from different releases.
 
-## Upgrade from 1.9.1 to 1.10.0-rc.1
-
-Version 1.10.0-rc.1 is a candidate, not a stable release. To test it:
+## Upgrade from 1.9.1 to 1.10.0
 
 1. Release helper-owned shortcuts with the 1.9.1 helper while it remains
    available.
 2. Disable Driftile and the optional overview in System Settings.
 3. Upgrade the main package, optional overview, and helper to their matching
-   1.10.0-rc.1 archives, or pin the Nix input to `v1.10.0-rc.1` and rebuild.
+   1.10.0 archives, or pin the Nix input to `v1.10.0` and rebuild.
 4. Enable Driftile, review **Applications keeping KWin borders and title
    bars**, then assign shortcuts or claim them with the matching helper.
 5. If installed, re-enable the overview and review its manually assigned
    shortcut.
 
-The candidate adds one safe-default KConfig value:
+The release adds one safe-default KConfig value:
 
 - `ApplicationBorderlessExclusions=""` keeps the existing global borderless
   behavior.
@@ -29,13 +27,30 @@ shortcut actions and bindings, gestures, overview behavior, layout model, and
 persistence format are unchanged.
 
 With Home Manager, `programs.driftile.settings = null` still writes nothing. A
-non-null 1.10.0-rc.1 profile writes
+non-null 1.10.0 profile writes
 `applicationBorderlessExclusions = [ ];` when omitted. Pin the package and
 module to the same tag.
 
-## Roll back from 1.10.0-rc.1 to 1.9.1
+## Upgrade from 1.10.0-rc.1
 
-Release shortcuts with the RC helper, disable Driftile and the
+Release shortcuts with the RC helper, disable Driftile and the optional
+overview, then upgrade the main package, overview, and helper to their matching
+1.10.0 artifacts. For Nix, update the input from `v1.10.0-rc.1` to `v1.10.0`
+and rebuild. Re-enable the installed packages and restore the shortcut profile.
+
+Version 1.10.0 has no runtime, configuration, persistence, action, binding,
+gesture, or overview behavior changes from RC.1.
+
+## Upgrade from 1.9.1 to 1.10.0-rc.1 (historical)
+
+The RC introduced the same additive borderless-exclusion setting and behavior
+as 1.10.0. Its artifacts and original migration boundary remain documented in
+the [1.10.0-rc.1 release notes](release-notes-1.10.0-rc.1.md). Use 1.10.0 for
+new installations.
+
+## Roll back from 1.10.0 to 1.9.1
+
+Release shortcuts with the 1.10.0 helper, disable Driftile and the
 optional overview, then restore their verified 1.9.1 packages and helper. For
 Nix, remove `programs.driftile.settings.applicationBorderlessExclusions` if
 declared, restore the `v1.9.1` input, and rebuild. The additive KConfig key may

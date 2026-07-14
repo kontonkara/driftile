@@ -214,12 +214,12 @@ tools/vm/run.sh lifecycle
 ```
 
 The lifecycle mode opens one non-fullscreen `1366x768` Wayland VM with no
-preinstalled Driftile package. It installs the pinned 1.8.0 script and overview
-archives, keeps the overview disabled and unbound, then unloads the script and
-upgrades both packages to the current build. It verifies package identities,
-runtime digests, the default-off touchpad setting, effect discovery, and the
-unbound overview load cycle. Finally, it exercises Konsole and KDE Calculator,
-removes both packages, and confirms that KWin remains operational.
+preinstalled Driftile package. It installs the pinned published stable script
+and overview archives, keeps the overview disabled and unbound, then unloads
+the script and upgrades both packages to the current build. It verifies package
+identities, runtime digests, the default-off touchpad setting, effect discovery,
+and the unbound overview load cycle. Finally, it exercises Konsole and KDE
+Calculator, removes both packages, and confirms that KWin remains operational.
 
 The script builds `nixosConfigurations.driftile-vm` through `nixos-rebuild build-vm` and asks host KWin for a centered `1440x900` QEMU window with a `1680x1050` guest display. The guest receives 8 virtual CPUs and 8 GiB of memory. Plasma starts a Wayland session, enables Driftile, claims its shortcut profile, and runs the acceptance pool. Separate Konsole processes provide a stable baseline, while the primary structural workflow uses offline Firefox for direct insertion and as a passive peer during stacked maximize, XWayland xterm for minimized-edge navigation, KDE Calculator as a numbered-desktop destination, and fixed-size XWayland `xmessage` for automatic-floating constraints. A final lifecycle pool repeats Firefox, KDE Calculator, and xterm checks after all physical shortcut scenarios. The VM requires borderless state for tiled, fixed-size, manually floating, and application windows. It focuses, minimizes, restores, resizes, and closes real applications while checking their slots, neighboring frames, and exact layout reflow. The desktop workflow also transfers a visible active Konsole while a settled minimized source-column peer retains its slot, state, and frame without writes. `kdotool` reads the active KWin window during these checks.
 
