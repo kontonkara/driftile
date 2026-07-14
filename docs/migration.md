@@ -1,10 +1,37 @@
 # Migration
 
-The latest stable release is 1.11.0. Version 1.12.0-rc.1 is the current
-candidate and is not a stable release. Use the steps below when changing release
+The latest stable release is 1.12.0. Use the steps below when changing release
 generations, and never combine files from different releases.
 
-## Upgrade from 1.11.0 to 1.12.0-rc.1
+## Upgrade from 1.11.0 to 1.12.0
+
+1. Release helper-owned shortcuts with the 1.11.0 helper while it remains
+   available.
+2. Disable Driftile and the optional overview in System Settings.
+3. Upgrade the main package, optional overview, and helper to their matching
+   1.12.0 archives, or pin the Nix input to `v1.12.0` and rebuild.
+4. Enable Driftile, then assign shortcuts or claim them with the 1.12.0 helper.
+5. If installed, re-enable the overview and review its manually assigned
+   shortcut.
+
+The release reuses the existing center-column action and `Meta+C` default to
+center an active manually floating frame in its assigned output and desktop
+work area. It adds no action, binding, setting, configuration schema,
+persistence format, gesture, helper profile, or overview behavior. Package IDs,
+the complete eleven-setting profile, stored layouts, and existing shortcut
+assignments remain compatible with 1.11.0.
+
+## Upgrade from 1.12.0-rc.1
+
+Release shortcuts with the RC helper, disable Driftile and the optional
+overview, then upgrade the main package, overview, and helper to their matching
+1.12.0 artifacts. For Nix, update the input from `v1.12.0-rc.1` to `v1.12.0`
+and rebuild. Re-enable the installed packages and restore the shortcut profile.
+
+Version 1.12.0 has no runtime, configuration, persistence, action, binding,
+gesture, helper profile, or overview behavior changes from RC.1.
+
+## Upgrade from 1.11.0 to 1.12.0-rc.1 (historical)
 
 1. Release helper-owned shortcuts with the 1.11.0 helper while it remains
    available.
@@ -15,16 +42,14 @@ generations, and never combine files from different releases.
 5. If installed, re-enable the overview and review its manually assigned
    shortcut.
 
-The candidate reuses the existing center-column action and `Meta+C` default to
-center an active manually floating frame in its assigned output and desktop
-work area. It adds no action, binding, setting, configuration schema,
-persistence format, gesture, helper profile, or overview behavior. Package IDs,
-the complete eleven-setting profile, stored layouts, and existing shortcut
-assignments remain compatible with 1.11.0.
+The candidate introduced the same manually floating centering behavior as
+1.12.0. Its package IDs, complete eleven-setting profile, stored layouts, and
+existing shortcut assignments remain compatible with 1.11.0. Use 1.12.0 for
+new installations.
 
-## Roll back from 1.12.0-rc.1 to 1.11.0
+## Roll back from 1.12.0 to 1.11.0
 
-Release shortcuts with the RC helper, disable Driftile and the optional
+Release shortcuts with the 1.12.0 helper, disable Driftile and the optional
 overview, then restore their matching verified 1.11.0 packages and helper. For
 NixOS or Home Manager, restore the `v1.11.0` input and rebuild the generation
 that owns each package. Re-enable the packages and restore the 1.11.0 shortcut
