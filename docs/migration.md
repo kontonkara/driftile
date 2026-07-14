@@ -1,22 +1,21 @@
 # Migration
 
-The latest stable release is 1.15.1. Version 1.16.0-rc.1 is the current
-candidate and is not a stable release. Use the steps below when changing release
+The latest stable release is 1.16.0. Use the steps below when changing release
 generations, and never combine files from different releases.
 
-## Upgrade from 1.15.1 to 1.16.0-rc.1
+## Upgrade from 1.15.1 to 1.16.0
 
 1. Release helper-owned shortcuts with the 1.15.1 helper while it remains
    available.
 2. Disable Driftile and the optional overview in System Settings.
 3. Upgrade the main package, optional overview, and helper to their matching
-   1.16.0-rc.1 archives, or pin the Nix input to `v1.16.0-rc.1` and rebuild.
+   1.16.0 archives, or pin the Nix input to `v1.16.0` and rebuild.
 4. Enable Driftile, review **Applications initially floating**, then assign
-   shortcuts or claim them with the RC helper.
+   shortcuts or claim them with the 1.16.0 helper.
 5. If installed, re-enable the overview and review its manually assigned
    shortcut.
 
-The candidate adds one safe-default KConfig value:
+The release adds one safe-default KConfig value:
 
 - `ApplicationInitialFloating=""` preserves 1.15.1 admission behavior.
 
@@ -27,17 +26,58 @@ floating roles take priority. A matching window uses ordinary manual-floating
 ownership and can be tiled with **Toggle floating**. No layout-state migration
 or reset is required.
 
-Same-context tiled pointer moves now outline the exact valid before-or-after
-target half. The feedback is best-effort because KWin's outline is shared;
-cross-context moves remain finish-only. This adds no setting, action, binding,
-or persisted layout field.
+Same-context tiled pointer moves outline the exact valid before-or-after target
+half. The feedback is best-effort because KWin's outline is shared;
+cross-context moves remain finish-only.
+
+Toggling full-width mode off restores the prior column width while retaining
+the current viewport and horizontal anchor. This corrects the RC behavior
+without adding a setting, action, binding, or persisted layout field.
 
 With Home Manager, `programs.driftile.settings = null` still writes nothing. A
-non-null 1.16.0-rc.1 profile writes all twelve settings and uses
-`applicationInitialFloating = [ ];` when omitted. Pin the package and module to
-the same tag.
+non-null 1.16.0 profile writes all twelve settings and uses
+`applicationInitialFloating = [ ];` when omitted. Pin the package and module
+to the same tag.
 
-## Roll back from 1.16.0-rc.1 to 1.15.1
+## Upgrade from 1.16.0-rc.1
+
+Release shortcuts with the RC helper, disable Driftile and the optional
+overview, then upgrade the main package, overview, and helper to their matching
+1.16.0 artifacts. For Nix, update the input from `v1.16.0-rc.1` to `v1.16.0`
+and rebuild. Re-enable the installed packages and restore the shortcut profile.
+
+Stable 1.16.0 changes only the full-width toggle-off behavior described above.
+Configuration, helper profiles, package IDs, and persisted layouts remain
+compatible with RC.1; no reset or conversion is required.
+
+## Roll back from 1.16.0 to 1.15.1
+
+Release shortcuts with the 1.16.0 helper, disable Driftile and the optional
+overview, then restore their matching verified 1.15.1 packages and helper. For
+NixOS or Home Manager, remove
+`programs.driftile.settings.applicationInitialFloating` before restoring the
+`v1.15.1` input, because that module does not expose the attribute, then rebuild
+the generation that owns each package.
+
+The 1.15.1 extension ignores a remaining `ApplicationInitialFloating` KConfig
+key; it may be deleted without resetting layout state. Same-context pointer
+previews disappear after rollback. Re-enable the installed packages and restore
+the 1.15.1 shortcut profile. Persisted layouts and shortcut assignments require
+no conversion.
+
+## Upgrade from 1.15.1 to 1.16.0-rc.1 (historical)
+
+Do not use the candidate for new installations. To reproduce the historical RC
+path, release helper-owned shortcuts, disable Driftile and the optional
+overview, then install their matching 1.16.0-rc.1 artifacts or pin the Nix input
+to `v1.16.0-rc.1`. Re-enable the installed packages, review **Applications
+initially floating**, and restore the shortcut profile.
+
+The candidate introduced same-context pointer previews and
+`ApplicationInitialFloating`. It retained the previous exact viewport restore
+when full-width mode was toggled off; stable 1.16.0 supersedes that behavior.
+
+## Roll back from 1.16.0-rc.1 to 1.15.1 (historical)
 
 Release shortcuts with the RC helper, disable Driftile and the optional
 overview, then restore their matching verified 1.15.1 packages and helper. For

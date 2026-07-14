@@ -1,14 +1,8 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0, 1.1.0, 1.2.0, 1.3.0, 1.4.0, 1.5.0, 1.6.0, 1.7.0,
-1.8.0, 1.9.0, 1.9.1, 1.10.0, 1.11.0, 1.12.0, 1.13.0, 1.14.0, 1.15.0, and
-1.15.1 are released. The delivered milestones and release criteria below are a
-historical record. The remaining post-v1 direction is not a committed release
-schedule.
-
-Release candidate 1.16.0-rc.1 freezes the scope below. Candidate tagging
-requires exact-SHA CI and the hidden full and lifecycle VM gates to pass on the
-unchanged candidate commit.
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.16.0 are
+released. The delivered milestones and release criteria below are a historical
+record. The remaining post-v1 direction is not a committed release schedule.
 
 ## Foundation (delivered)
 
@@ -760,9 +754,9 @@ Release criteria (met):
   full and lifecycle VMs, version, exact-SHA CI, and release gates pass without
   widening this patch.
 
-## 1.16.0 (release candidate)
+## 1.16.0 (released)
 
-Version `1.16.0-rc.1` freezes two changes:
+Version `1.16.0` delivers three bounded changes:
 
 - Same-context pointer drops preview the exact valid target half through KWin's
   public outline API. Updates are coalesced and write no layout or persistence
@@ -770,18 +764,17 @@ Version `1.16.0-rc.1` freezes two changes:
 - Exact application rules start only newly tracked matching normal windows as
   manually floating. Existing or restored ownership wins, and the persistence
   schema is unchanged.
+- Toggling full-width mode off restores only the prior column width. The current
+  viewport and horizontal anchor remain in place, and existing persisted layout
+  documents stay compatible.
 
-Stable promotion also restores only the prior column width when full-width
-mode is toggled off. The current viewport and horizontal anchor remain in
-place, and existing persisted layout documents stay compatible.
+Release criteria (met):
 
-Candidate tagging gates:
-
-- Focused tests cover both behaviors; packaged Wayland, XWayland, and native X11
-  cover transport.
-- Exact-SHA branch CI and the hidden full and lifecycle VMs must pass on the
-  unchanged candidate commit.
-- The tag release workflow must pass to publish the candidate.
+- Focused tests cover all three behaviors; packaged Wayland, XWayland, and
+  native X11 cover transport.
+- Format, type, lint, unit, deterministic build and package, all-system flake,
+  hidden full and lifecycle VMs, version, exact-SHA CI, and release gates pass
+  without widening the slice.
 
 ## Post-v1
 
