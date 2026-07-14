@@ -198,6 +198,15 @@ other KWin-owned roles: tiling commands are no-ops and Driftile does not write
 its frame. Clearing the rule admits an otherwise eligible window as a fresh
 singleton after native-state and interactive-move blockers settle.
 
+An exact application policy can instead make a newly admitted normal window an
+ordinary manually floating window while preserving its KWin frame. The policy
+is fresh-only: existing and hydrated tiled or floating ownership is
+authoritative, and live changes affect only windows first tracked later. Tiling
+exclusions and automatic floating roles take priority. **Toggle floating**
+returns the window to tiling through the normal reinsertion path, using its
+configured application initial column width. No separate persisted state is
+introduced.
+
 Plasma exposes one global virtual-desktop list, and KWin owns its reorder
 mechanism. Driftile can request a one-position move of the desktop currently
 selected on the active output. It never wraps; desktop IDs, per-output

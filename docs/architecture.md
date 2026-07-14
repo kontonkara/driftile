@@ -161,6 +161,12 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   that map in constant time, falls back to the global default, and remains
   subject to the normal window-constraint clamp. Existing columns do not read
   the map again.
+- Parses at most 128 initial-floating application IDs into an exact
+  case-sensitive `desktopFileName` set. A fresh eligible admission performs one
+  constant-time lookup and routes a match through existing manual-floating
+  ownership while preserving its KWin frame. Existing or hydrated ownership is
+  not reclassified; tiling exclusions and automatic floating roles take
+  priority.
 - Parses at most 128 application tiling exclusions into an exact case-sensitive
   `desktopFileName` set. Admission uses one constant-time lookup; a live policy
   replacement scans the observed window set once and schedules only windows
@@ -466,6 +472,9 @@ inspected safely within the codec bound.
 - Replace the bounded application-width lookup atomically on reconfiguration.
   Do not revisit existing columns; schedule only contexts with waiting windows
   that may create a fresh singleton.
+- Replace the bounded initial-floating lookup atomically without revisiting
+  admitted or hydrated windows. A window snapshots the policy when first
+  tracked, so only windows first seen after the replacement use it.
 - Replace the bounded `ApplicationBorderlessExclusions` set atomically.
   Reconfiguration and application-identity signals reconcile decoration
   ownership without geometry writes, focus changes, or model or

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ApplicationBorderlessExclusions } from "../src/application-borderless-exclusions";
+import type { ApplicationInitialFloating } from "../src/application-initial-floating";
 import type { ApplicationColumnWidthOverrides } from "../src/application-overrides";
 import type { ApplicationTilingExclusions } from "../src/application-tiling-exclusions";
 import type { KWinWorkspace } from "../src/platform/kwin/api";
@@ -8,6 +9,7 @@ import type { KWinWorkspace } from "../src/platform/kwin/api";
 interface DeliveredSettings {
   readonly applicationBorderlessExclusions: readonly string[];
   readonly applicationColumnWidths: readonly string[];
+  readonly applicationInitialFloating: readonly string[];
   readonly applicationTilingExclusions: readonly string[];
   readonly borderlessWindows: boolean;
   readonly centerFocusedColumn: boolean;
@@ -25,6 +27,7 @@ type RuntimeSettingsInput = Record<keyof DeliveredSettings, unknown> & {
 interface RuntimeControllerOptions {
   readonly applicationBorderlessExclusions: ApplicationBorderlessExclusions;
   readonly applicationColumnWidths: ApplicationColumnWidthOverrides;
+  readonly applicationInitialFloating: ApplicationInitialFloating;
   readonly applicationTilingExclusions: ApplicationTilingExclusions;
   readonly borderlessWindows: boolean;
   readonly gap: number;
@@ -51,6 +54,8 @@ class RuntimeControllerDouble {
       applicationBorderlessExclusions:
         options.applicationBorderlessExclusions.canonicalEntries,
       applicationColumnWidths: options.applicationColumnWidths.canonicalEntries,
+      applicationInitialFloating:
+        options.applicationInitialFloating.canonicalEntries,
       applicationTilingExclusions:
         options.applicationTilingExclusions.canonicalEntries,
       borderlessWindows: options.borderlessWindows,
@@ -94,6 +99,17 @@ class RuntimeControllerDouble {
       applicationBorderlessExclusions: exclusions.canonicalEntries,
     };
     this.captureBorderDelivery();
+    return true;
+  }
+
+  setApplicationInitialFloating(
+    applications: ApplicationInitialFloating,
+  ): boolean {
+    this.calls.push("applicationInitialFloating");
+    this.state = {
+      ...this.state,
+      applicationInitialFloating: applications.canonicalEntries,
+    };
     return true;
   }
 
@@ -186,6 +202,7 @@ describe("runtime settings delivery", () => {
     };
     const initial = settings({
       applicationBorderlessExclusions: "org.example.InitialBorder",
+      applicationInitialFloating: "org.example.InitialFloat",
       applicationTilingExclusions: "org.example.InitiallyExcluded",
     });
 
@@ -211,6 +228,9 @@ describe("runtime settings delivery", () => {
     expect(controller.deliveredSettings.applicationTilingExclusions).toEqual([
       "org.example.InitiallyExcluded",
     ]);
+    expect(controller.deliveredSettings.applicationInitialFloating).toEqual([
+      "org.example.InitialFloat",
+    ]);
 
     expect(
       runtime.applySettings(
@@ -226,6 +246,7 @@ describe("runtime settings delivery", () => {
     const next = settings({
       applicationBorderlessExclusions: "org.example.NewBorder",
       applicationColumnWidths: "org.example.Editor=75",
+      applicationInitialFloating: "org.example.NewFloat",
       applicationTilingExclusions: "org.example.NewlyExcluded",
       borderlessWindows: false,
       centerFocusedColumn: true,
@@ -239,6 +260,7 @@ describe("runtime settings delivery", () => {
     const expected: DeliveredSettings = {
       applicationBorderlessExclusions: ["org.example.NewBorder"],
       applicationColumnWidths: ["org.example.Editor=75"],
+      applicationInitialFloating: ["org.example.NewFloat"],
       applicationTilingExclusions: ["org.example.NewlyExcluded"],
       borderlessWindows: false,
       centerFocusedColumn: true,
@@ -255,6 +277,7 @@ describe("runtime settings delivery", () => {
       "borderlessWindows",
       "applicationBorderlessExclusions",
       "applicationColumnWidths",
+      "applicationInitialFloating",
       "applicationTilingExclusions",
       "centerFocusedColumn",
       "defaultColumnWidthPercent",
@@ -325,6 +348,7 @@ describe("runtime settings delivery", () => {
     expect(controller.calls).toEqual([
       "applicationBorderlessExclusions",
       "applicationColumnWidths",
+      "applicationInitialFloating",
       "applicationTilingExclusions",
       "centerFocusedColumn",
       "defaultColumnWidthPercent",
@@ -354,6 +378,7 @@ function settings(
   return {
     applicationBorderlessExclusions: "",
     applicationColumnWidths: "",
+    applicationInitialFloating: "",
     applicationTilingExclusions: "",
     borderlessWindows: true,
     centerFocusedColumn: false,
@@ -374,6 +399,7 @@ function snapshot(settingsValue: DeliveredSettings): DeliveredSettings {
       ...settingsValue.applicationBorderlessExclusions,
     ],
     applicationColumnWidths: [...settingsValue.applicationColumnWidths],
+    applicationInitialFloating: [...settingsValue.applicationInitialFloating],
     applicationTilingExclusions: [...settingsValue.applicationTilingExclusions],
     columnWidthPresets: [...settingsValue.columnWidthPresets],
   };

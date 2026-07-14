@@ -9,6 +9,11 @@ import {
   type ApplicationBorderlessExclusions,
 } from "./application-borderless-exclusions";
 import {
+  EMPTY_APPLICATION_INITIAL_FLOATING,
+  sameApplicationInitialFloating,
+  type ApplicationInitialFloating,
+} from "./application-initial-floating";
+import {
   EMPTY_APPLICATION_TILING_EXCLUSIONS,
   sameApplicationTilingExclusions,
   type ApplicationTilingExclusions,
@@ -695,6 +700,7 @@ interface LayoutHydrationCandidate {
 export interface RuntimeControllerOptions {
   readonly applicationBorderlessExclusions?: ApplicationBorderlessExclusions;
   readonly applicationColumnWidths?: ApplicationColumnWidthOverrides;
+  readonly applicationInitialFloating?: ApplicationInitialFloating;
   readonly applicationTilingExclusions?: ApplicationTilingExclusions;
   readonly borderlessWindows?: boolean;
   readonly centerFocusedColumn?: boolean;
@@ -719,6 +725,7 @@ export interface RuntimeControllerOptions {
 export class RuntimeController {
   private applicationBorderlessExclusions: ApplicationBorderlessExclusions;
   private applicationColumnWidths: ApplicationColumnWidthOverrides;
+  private applicationInitialFloating: ApplicationInitialFloating;
   private applicationTilingExclusions: ApplicationTilingExclusions;
   private readonly automaticFloatingWindows = new Set<WindowId>();
   private readonly borderlessSettlementEnabled: boolean;
@@ -778,6 +785,10 @@ export class RuntimeController {
   private readonly geometry: KWinGeometryAdapter;
   private gap: number;
   private hydrationInProgress = false;
+  private readonly initialFloatingPolicyByWindow = new Map<
+    WindowId,
+    ApplicationInitialFloating
+  >();
   private initialLayoutDecodedState: LayoutPersistenceV1 | null = null;
   private initialLayoutHydrationCandidateFingerprint: string | null = null;
   private readonly initialLayoutHydrationQuietSamples: number;
@@ -789,6 +800,7 @@ export class RuntimeController {
   private initialLayoutHydrationStatus: InitialLayoutHydrationStatus = "none";
   private readonly layoutStateForCurrentTopology: (() => string) | undefined;
   private initialLayoutStateDocument: string | null = null;
+  private initialWindowDiscoveryComplete = false;
   private initializing = false;
   private readonly lastFloatingFocus = new Map<string, WindowId>();
   private readonly lastTiledFocus = new Map<string, WindowId>();
@@ -911,6 +923,8 @@ export class RuntimeController {
     this.applicationColumnWidths =
       options.applicationColumnWidths ??
       EMPTY_APPLICATION_COLUMN_WIDTH_OVERRIDES;
+    this.applicationInitialFloating =
+      options.applicationInitialFloating ?? EMPTY_APPLICATION_INITIAL_FLOATING;
     this.applicationTilingExclusions =
       options.applicationTilingExclusions ??
       EMPTY_APPLICATION_TILING_EXCLUSIONS;
@@ -1541,6 +1555,22 @@ export class RuntimeController {
       this.scheduleDeferredRuntimeWork();
     }
 
+    return true;
+  }
+
+  setApplicationInitialFloating(
+    applications: ApplicationInitialFloating,
+  ): boolean {
+    if (
+      sameApplicationInitialFloating(
+        this.applicationInitialFloating,
+        applications,
+      )
+    ) {
+      return false;
+    }
+
+    this.applicationInitialFloating = applications;
     return true;
   }
 
@@ -2597,6 +2627,7 @@ export class RuntimeController {
       this.initialLayoutHydrationRetryToken = null;
       this.initialLayoutHydrationStableSamples = 0;
       this.initialLayoutHydrationWaited = false;
+      this.initialWindowDiscoveryComplete = false;
       this.preserveLoadedLayoutState =
         this.initialLayoutHydrationStatus === "pending";
       this.lastPublishedLayoutState = null;
@@ -2625,6 +2656,7 @@ export class RuntimeController {
 
       try {
         this.observer.start();
+        this.initialWindowDiscoveryComplete = true;
         this.synchronizeWindowBorders();
         this.topologyObserver.start();
         this.desktopLifecycle.start();
@@ -2678,6 +2710,7 @@ export class RuntimeController {
     this.initialLayoutHydrationWaited = false;
     this.initialLayoutHydrationStatus = "none";
     this.initialLayoutStateDocument = null;
+    this.initialWindowDiscoveryComplete = false;
     this.layoutStatePublicationLocked = false;
     this.preserveLoadedLayoutState = false;
     this.preservedFallbackLayoutState = null;
@@ -2744,6 +2777,7 @@ export class RuntimeController {
       this.borderSynchronizationIds.clear();
       this.borderlessSettlementTokens.clear();
       this.floatingWindows.clear();
+      this.initialFloatingPolicyByWindow.clear();
       this.lastFloatingFocus.clear();
       this.lastTiledFocus.clear();
       this.managedWindows.clear();
@@ -2985,6 +3019,17 @@ export class RuntimeController {
   private readonly handleWindowTracked = (id: string): void => {
     const trackedId = windowId(id);
     const source = this.observer.source(id);
+
+    if (
+      this.initialWindowDiscoveryComplete &&
+      source &&
+      this.applicationInitialFloating.canonicalEntries.length > 0
+    ) {
+      this.initialFloatingPolicyByWindow.set(
+        trackedId,
+        this.applicationInitialFloating,
+      );
+    }
 
     this.synchronizeWindowBorder(trackedId, source);
   };
@@ -4521,6 +4566,7 @@ export class RuntimeController {
     this.toggleGeometryTransitions.delete(managedId);
     this.topologyColumnByWindow.delete(managedId);
     this.borderlessSettlementTokens.delete(managedId);
+    this.initialFloatingPolicyByWindow.delete(managedId);
     this.windowAdmissionHistory.delete(managedId);
     this.windowBorderRestore.delete(managedId);
     this.windowDesktopFileNames.delete(managedId);
@@ -17163,6 +17209,10 @@ export class RuntimeController {
         this.pendingHydratedRestoreBaselines.add(id);
       }
 
+      for (const id of candidate.hydratedWindowIds) {
+        this.initialFloatingPolicyByWindow.delete(id);
+      }
+
       return true;
     } catch {
       this.layout = previousLayout;
@@ -18889,14 +18939,11 @@ export class RuntimeController {
       RestoreBaseline | null
     > = new Map(),
   ): number {
-    if (allowOverflow) {
-      return this.admitTopologyWindowGroups(sources, preservedRestoreBaselines);
-    }
-
     if (
-      !this.initializing ||
-      sources.length < 2 ||
-      this.workspace.screens.length !== 1
+      !allowOverflow &&
+      (!this.initializing ||
+        sources.length < 2 ||
+        this.workspace.screens.length !== 1)
     ) {
       let admitted = 0;
 
@@ -18907,47 +18954,72 @@ export class RuntimeController {
       return admitted;
     }
 
-    const groups = new Map<
-      string,
-      { context: ManagedContext; sources: KWinWindow[] }
-    >();
+    const initialFloatingSources: KWinWindow[] = [];
+    const tiledSources: KWinWindow[] = [];
 
     for (const source of sources) {
       const id = windowId(String(source.internalId));
-      const observed = normalizeWindow(source);
-      const context = observed ? managedContext(observed) : null;
 
-      if (
-        !observed ||
-        !context ||
-        this.automaticallyFloats(source) ||
-        this.automaticFloatingWindows.has(id) ||
-        this.managedWindows.has(id)
-      ) {
-        this.forgetWaitingWindow(id);
-        continue;
-      }
-
-      if (!isGeometryWritable(source)) {
-        this.suspendGeometryLease(id);
-        this.scheduleTransientResumeProbe(id);
-        continue;
-      }
-
-      const key = contextKey(context);
-      const group = groups.get(key);
-
-      if (group) {
-        group.sources.push(source);
+      if (this.freshInitialFloatingApplies(id, source)) {
+        initialFloatingSources.push(source);
       } else {
-        groups.set(key, { context, sources: [source] });
+        tiledSources.push(source);
       }
     }
 
-    let admitted = 0;
+    let admitted = allowOverflow
+      ? this.admitTopologyWindowGroups(tiledSources, preservedRestoreBaselines)
+      : 0;
 
-    for (const group of groups.values()) {
-      admitted += this.admitWindowGroup(group.context, group.sources);
+    if (!allowOverflow && tiledSources.length < 2) {
+      for (const source of tiledSources) {
+        admitted += this.tryAdmitWindow(source) ? 1 : 0;
+      }
+    } else if (!allowOverflow) {
+      const groups = new Map<
+        string,
+        { context: ManagedContext; sources: KWinWindow[] }
+      >();
+
+      for (const source of tiledSources) {
+        const id = windowId(String(source.internalId));
+        const observed = normalizeWindow(source);
+        const context = observed ? managedContext(observed) : null;
+
+        if (
+          !observed ||
+          !context ||
+          this.automaticallyFloats(source) ||
+          this.automaticFloatingWindows.has(id) ||
+          this.managedWindows.has(id)
+        ) {
+          this.forgetWaitingWindow(id);
+          continue;
+        }
+
+        if (!isGeometryWritable(source)) {
+          this.suspendGeometryLease(id);
+          this.scheduleTransientResumeProbe(id);
+          continue;
+        }
+
+        const key = contextKey(context);
+        const group = groups.get(key);
+
+        if (group) {
+          group.sources.push(source);
+        } else {
+          groups.set(key, { context, sources: [source] });
+        }
+      }
+
+      for (const group of groups.values()) {
+        admitted += this.admitWindowGroup(group.context, group.sources);
+      }
+    }
+
+    for (const source of initialFloatingSources) {
+      admitted += this.tryAdmitWindow(source) ? 1 : 0;
     }
 
     return admitted;
@@ -19392,6 +19464,7 @@ export class RuntimeController {
         }
 
         this.windowAdmissionHistory.add(candidate.id);
+        this.initialFloatingPolicyByWindow.delete(candidate.id);
 
         runtimeContext.windowIds.add(candidate.id);
         this.managedWindows.set(candidate.id, {
@@ -20142,6 +20215,17 @@ export class RuntimeController {
       return false;
     }
 
+    const initiallyFloating = this.tryAdmitInitiallyFloatingWindow(
+      id,
+      source,
+      context,
+      contextGeometry,
+    );
+
+    if (initiallyFloating !== null) {
+      return initiallyFloating;
+    }
+
     const width = this.constrainedDefaultColumnWidth([source], contextGeometry);
 
     if (!width) {
@@ -20245,6 +20329,67 @@ export class RuntimeController {
     return true;
   }
 
+  private tryAdmitInitiallyFloatingWindow(
+    id: WindowId,
+    source: KWinWindow,
+    context: ManagedContext,
+    contextGeometry: ContextGeometry,
+  ): boolean | null {
+    if (!this.freshInitialFloatingApplies(id, source)) {
+      return null;
+    }
+
+    const key = contextKey(context);
+    let expectedFrame: Rect;
+    let placement: DetachedWindowPlacement | null;
+
+    try {
+      expectedFrame = snapshotRect(source.frameGeometry);
+      placement = this.freshDetachedWindowPlacement(
+        id,
+        source,
+        context,
+        contextGeometry,
+        this.layout.snapshot(context.outputId, context.desktopId),
+      );
+    } catch (error) {
+      this.deferWindow(id, key, contextGeometry.fingerprint);
+      console.warn(
+        `[driftile] initial floating admission deferred window=${String(id)} error=${String(error)}`,
+      );
+      return false;
+    }
+
+    if (!placement) {
+      this.deferWindow(id, key, contextGeometry.fingerprint);
+      return false;
+    }
+
+    this.claimWindowBorder(id, source);
+    const restoreBaseline = this.restoreBaselineForAdmission(
+      id,
+      source,
+      contextGeometry.fingerprint,
+    );
+    this.forgetWaitingWindow(id);
+    this.requestedSuspensions.delete(id);
+    this.resumeSamples.delete(id);
+    this.suspendedWindows.delete(id);
+    this.transientResumeProbes.delete(id);
+    this.floatingWindows.set(id, {
+      currentContextKey: key,
+      expectedFrame,
+      placement,
+      restoreBaseline,
+      sourceContextKey: key,
+    });
+    if (this.workspace.activeWindow === source) {
+      this.lastFloatingFocus.set(key, id);
+    }
+    this.capacityParkBackoffs.delete(key);
+    return true;
+  }
+
   private automaticallyFloats(source: KWinWindow): boolean {
     if (
       source.dialog ||
@@ -20315,6 +20460,30 @@ export class RuntimeController {
       source,
       this.applicationDesktopFileName(source),
       exclusions,
+    );
+  }
+
+  private applicationInitialFloatingApplies(
+    source: KWinWindow,
+    applications: ApplicationInitialFloating,
+  ): boolean {
+    if (!source.normalWindow || applications.canonicalEntries.length === 0) {
+      return false;
+    }
+
+    const desktopFileName = this.applicationDesktopFileName(source);
+    return desktopFileName !== null && applications.excludes(desktopFileName);
+  }
+
+  private freshInitialFloatingApplies(
+    id: WindowId,
+    source: KWinWindow,
+  ): boolean {
+    const policy = this.initialFloatingPolicyByWindow.get(id);
+    return Boolean(
+      policy &&
+      !this.windowAdmissionHistory.has(id) &&
+      this.applicationInitialFloatingApplies(source, policy),
     );
   }
 
@@ -20669,6 +20838,7 @@ export class RuntimeController {
     }
 
     this.automaticFloatingWindows.add(id);
+    this.initialFloatingPolicyByWindow.delete(id);
     const affectedContextKeys = new Set<string>();
     const floating = this.floatingWindows.get(id);
     const transition = this.toggleGeometryTransitions.get(id);
@@ -20942,6 +21112,7 @@ export class RuntimeController {
     const borderRestore = this.windowBorderRestore.get(id);
     const firstAdmission = !this.windowAdmissionHistory.has(id);
     this.windowAdmissionHistory.add(id);
+    this.initialFloatingPolicyByWindow.delete(id);
 
     if (borderRestore?.admissionBaselinePending) {
       borderRestore.admissionBaselinePending = false;

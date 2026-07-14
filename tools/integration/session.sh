@@ -678,6 +678,7 @@ capture_overview_settings() {
   local -a keys=(
     ApplicationBorderlessExclusions
     ApplicationColumnWidths
+    ApplicationInitialFloating
     ApplicationTilingExclusions
     BorderlessWindows
     CenterFocusedColumn
@@ -4025,6 +4026,7 @@ set_gap() {
 set_application_configuration() {
   local borderless_exclusions=${3:-}
   local exclusions=$2
+  local initial_floating=${4:-}
   local widths=$1
 
   kwriteconfig6 \
@@ -4033,6 +4035,13 @@ set_application_configuration() {
     --key ApplicationColumnWidths \
     --type string \
     "$widths" || return 1
+
+  kwriteconfig6 \
+    --file "$XDG_CONFIG_HOME/kwinrc" \
+    --group "Script-${plugin_id}" \
+    --key ApplicationInitialFloating \
+    --type string \
+    "$initial_floating" || return 1
 
   kwriteconfig6 \
     --file "$XDG_CONFIG_HOME/kwinrc" \

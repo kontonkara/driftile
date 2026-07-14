@@ -31,6 +31,10 @@ The ownership rule is strict:
 - Up to 128 application-specific 10%–100% initial singleton widths, matched by
   exact KWin `desktopFileName` with global-default fallback and live constraint
   clamping.
+- Up to 128 exact, case-sensitive KWin `desktopFileName` values whose freshly
+  admitted normal windows start under ordinary manual-floating ownership while
+  retaining their KWin frames. Existing and hydrated ownership is not
+  reclassified.
 - Up to 128 exact KWin `desktopFileName` exclusions that keep matching
   application windows outside tiling and apply live without taking geometry
   ownership.
@@ -189,7 +193,7 @@ The ownership rule is strict:
   focus; global wheel input is deferred because KWin 6.7 exposes no public
   script axis API.
 - Tabbed columns and matching pointer navigation.
-- Additional application-specific policies and an expanded settings UI.
+- Further application-specific policies and an expanded settings UI.
 - Optional visual transitions, layout indicators, and concise diagnostics.
 - Overview pointer rearrangement.
 - Activity-aware layouts.
@@ -328,6 +332,11 @@ Driftile must integrate with, not duplicate:
   setting. Only newly created or freshly admitted singleton columns consult the
   bounded lookup; existing columns keep their width, missing matches use the
   global default, and normal constraints may clamp the result.
+- Initial-floating rules use the same bounded exact-ID policy and apply only at
+  fresh admission. Existing or hydrated ownership wins; tiling exclusions and
+  automatic floating roles take priority. Toggling the resulting ordinary
+  manual-floating window into tiling uses its application initial width and the
+  existing persistence schema.
 - A column-width preset change performs no layout, frame, viewport, focus, or
   persistence write. Existing columns keep their concrete width; later preset
   actions use the replacement cycle and retain normal constraint clamping.

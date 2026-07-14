@@ -691,6 +691,7 @@ QtObject {
         return {
             applicationBorderlessExclusions: KWin.readConfig("ApplicationBorderlessExclusions", ""),
             applicationColumnWidths: KWin.readConfig("ApplicationColumnWidths", ""),
+            applicationInitialFloating: KWin.readConfig("ApplicationInitialFloating", ""),
             applicationTilingExclusions: KWin.readConfig("ApplicationTilingExclusions", ""),
             borderlessWindows: KWin.readConfig("BorderlessWindows", true),
             centerFocusedColumn: KWin.readConfig("CenterFocusedColumn", false),

@@ -693,6 +693,38 @@ describe("KWin shortcut handlers", () => {
     );
   });
 
+  it("exposes exact application initial-floating rules as a bounded list", () => {
+    const initialFloatingEntry = configuration.match(
+      /<entry name="ApplicationInitialFloating" type="String">([\s\S]*?)<\/entry>/,
+    )?.[1];
+    const initialFloatingLabel = configurationUi.match(
+      /<widget class="QLabel" name="applicationInitialFloatingLabel">([\s\S]*?)<\/widget>/,
+    )?.[1];
+    const initialFloatingWidget = configurationUi.match(
+      /<widget class="QPlainTextEdit" name="kcfg_ApplicationInitialFloating">([\s\S]*?)<\/widget>/,
+    )?.[1];
+
+    expect(initialFloatingEntry).toContain(
+      "<label>Applications initially floating by desktop-file ID</label>",
+    );
+    expect(initialFloatingEntry).toContain("<default></default>");
+    expect(initialFloatingLabel).toContain(
+      "<string>Applications initially floating:</string>",
+    );
+    expect(initialFloatingLabel).toContain(
+      "<cstring>kcfg_ApplicationInitialFloating</cstring>",
+    );
+    expect(initialFloatingWidget).toContain(
+      "Enter one exact, case-sensitive desktop-file ID per line.",
+    );
+    expect(initialFloatingWidget).toContain(
+      "New exact matches start as manually floating windows.",
+    );
+    expect(qml).toContain(
+      'applicationInitialFloating: KWin.readConfig("ApplicationInitialFloating", "")',
+    );
+  });
+
   it("exposes exact application tiling exclusions as a bounded list", () => {
     const exclusionsEntry = configuration.match(
       /<entry name="ApplicationTilingExclusions" type="String">([\s\S]*?)<\/entry>/,

@@ -176,6 +176,32 @@
     </widget>
    </item>
    <item>
+    <widget class="QLabel" name="applicationInitialFloatingLabel">
+     <property name="text">
+      <string>Applications initially floating:</string>
+     </property>
+     <property name="buddy">
+      <cstring>kcfg_ApplicationInitialFloating</cstring>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QPlainTextEdit" name="kcfg_ApplicationInitialFloating">
+     <property name="toolTip">
+      <string>Enter one exact, case-sensitive desktop-file ID per line.</string>
+     </property>
+     <property name="whatsThis">
+      <string>Blank lines are ignored. New exact matches start as manually floating windows.</string>
+     </property>
+     <property name="minimumSize">
+      <size>
+       <width>0</width>
+       <height>100</height>
+      </size>
+     </property>
+    </widget>
+   </item>
+   <item>
     <widget class="QLabel" name="applicationTilingExclusionsLabel">
      <property name="text">
       <string>Applications excluded from tiling:</string>

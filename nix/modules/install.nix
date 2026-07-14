@@ -114,6 +114,8 @@ let
     exclusions: lib.concatStringsSep "\n" (builtins.sort builtins.lessThan exclusions);
   applicationBorderlessExclusionType = applicationTilingExclusionType;
   renderApplicationBorderlessExclusions = renderApplicationTilingExclusions;
+  applicationInitialFloatingType = applicationTilingExclusionType;
+  renderApplicationInitialFloating = renderApplicationTilingExclusions;
   strictlyIncreasing =
     values:
     builtins.length values < 2
@@ -181,6 +183,12 @@ in
               type = applicationColumnWidthType;
               default = { };
               description = "Initial column widths keyed by exact desktop-file ID.";
+            };
+
+            applicationInitialFloating = lib.mkOption {
+              type = applicationInitialFloatingType;
+              default = [ ];
+              description = "Exact desktop-file IDs whose newly admitted windows start manually floating.";
             };
 
             applicationTilingExclusions = lib.mkOption {
@@ -293,6 +301,8 @@ in
           ApplicationBorderlessExclusions =
             renderApplicationBorderlessExclusions cfg.settings.applicationBorderlessExclusions;
           ApplicationColumnWidths = renderApplicationColumnWidths cfg.settings.applicationColumnWidths;
+          ApplicationInitialFloating =
+            renderApplicationInitialFloating cfg.settings.applicationInitialFloating;
           ApplicationTilingExclusions = renderApplicationTilingExclusions cfg.settings.applicationTilingExclusions;
           BorderlessWindows = cfg.settings.borderlessWindows;
           CenterFocusedColumn = cfg.settings.centerFocusedColumn;

@@ -80,6 +80,7 @@ export function init(
   const nextController = new RuntimeController(workspace, {
     applicationBorderlessExclusions: settings.applicationBorderlessExclusions,
     applicationColumnWidths: settings.applicationColumnWidths,
+    applicationInitialFloating: settings.applicationInitialFloating,
     applicationTilingExclusions: settings.applicationTilingExclusions,
     borderlessWindows: settings.borderlessWindows,
     clientAreaOption,
@@ -156,6 +157,7 @@ export function applySettings(settingsSnapshot: unknown): boolean {
     settings.applicationBorderlessExclusions,
   );
   controller.setApplicationColumnWidths(settings.applicationColumnWidths);
+  controller.setApplicationInitialFloating(settings.applicationInitialFloating);
   controller.setApplicationTilingExclusions(
     settings.applicationTilingExclusions,
   );

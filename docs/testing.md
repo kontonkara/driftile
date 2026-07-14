@@ -139,9 +139,15 @@ clamping for new singleton columns. Nix module checks verify the canonical
 KConfig encoding from typed Home Manager profiles.
 
 Application-exclusion coverage verifies bounded exact-ID decoding, canonical
-Home Manager encoding, atomic eleven-setting updates, startup exclusion, live
+Home Manager encoding, atomic twelve-setting updates, startup exclusion, live
 release and fresh readmission, native-state blockers, persistence omission,
 constant-time membership checks, and zero writes to excluded frames.
+
+Initial-floating coverage reuses the bounded exact-ID decoder and verifies
+fresh manual-floating admission, an unchanged pre-existing window, and normal
+toggle-back reinsertion. Existing settings transport, automatic-floating,
+hydration, persistence, and manual-floating checks cover the shared mechanics
+without adding a duplicate VM scenario.
 
 `ApplicationBorderlessExclusions` coverage verifies the 65,664-character
 document, 512-character raw-line, 128-entry, and 255-byte ID limits; blank-line
@@ -152,7 +158,7 @@ floating, dialog, transient, and utility windows, global-disable dominance,
 live policy and identity changes, pre-existing borderless state, and
 add or remove paths without geometry writes, focus changes, or layout-state or
 layout-persistence changes. Global-disable and unload cases verify
-ownership-safe restoration separately. Nix checks pin the eleven-field option
+ownership-safe restoration separately. Nix checks pin the twelve-field option
 surface and sorted Home Manager KConfig encoding.
 
 Pointer coverage includes strict visible-target planning, midpoint selection,

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { decodeApplicationBorderlessExclusions } from "../src/application-borderless-exclusions";
+import { decodeApplicationInitialFloating } from "../src/application-initial-floating";
 import { decodeApplicationColumnWidthOverrides } from "../src/application-overrides";
 import { decodeApplicationTilingExclusions } from "../src/application-tiling-exclusions";
 import { decodeColumnWidthPresetPercentages } from "../src/column-width-presets";
@@ -27,6 +28,14 @@ if (!validApplicationBorderlessExclusions) {
   throw new Error("application borderless exclusion fixture is invalid");
 }
 
+const validApplicationInitialFloating = decodeApplicationInitialFloating(
+  "org.example.Floating\norg.example.Floating=tool",
+);
+
+if (!validApplicationInitialFloating) {
+  throw new Error("application initial-floating fixture is invalid");
+}
+
 const validApplicationTilingExclusions = decodeApplicationTilingExclusions(
   "org.example.Legacy\norg.example.Editor=tool",
 );
@@ -44,6 +53,7 @@ if (!validColumnWidthPresets) {
 const validSettings: DriftileSettings = {
   applicationBorderlessExclusions: validApplicationBorderlessExclusions,
   applicationColumnWidths: validApplicationColumnWidths,
+  applicationInitialFloating: validApplicationInitialFloating,
   applicationTilingExclusions: validApplicationTilingExclusions,
   borderlessWindows: false,
   centerFocusedColumn: true,
@@ -59,6 +69,7 @@ const validSettingsInput = {
   applicationBorderlessExclusions:
     "org.example.Decorated\norg.example.Legacy=tool",
   applicationColumnWidths: "org.example.Editor=75",
+  applicationInitialFloating: "org.example.Floating\norg.example.Floating=tool",
   applicationTilingExclusions: "org.example.Legacy\norg.example.Editor=tool",
   borderlessWindows: validSettings.borderlessWindows,
   centerFocusedColumn: validSettings.centerFocusedColumn,
@@ -87,6 +98,9 @@ describe("Driftile settings", () => {
     ).toEqual([]);
     expect(
       DEFAULT_DRIFTILE_SETTINGS.applicationColumnWidths.canonicalEntries,
+    ).toEqual([]);
+    expect(
+      DEFAULT_DRIFTILE_SETTINGS.applicationInitialFloating.canonicalEntries,
     ).toEqual([]);
     expect(
       DEFAULT_DRIFTILE_SETTINGS.applicationTilingExclusions.canonicalEntries,
@@ -120,6 +134,15 @@ describe("Driftile settings", () => {
     expect(decoded?.applicationBorderlessExclusions.canonicalEntries).toEqual(
       validApplicationBorderlessExclusions.canonicalEntries,
     );
+    expect(decoded?.applicationInitialFloating.canonicalEntries).toEqual(
+      validApplicationInitialFloating.canonicalEntries,
+    );
+    expect(
+      decoded?.applicationInitialFloating.excludes("org.example.Floating"),
+    ).toBe(true);
+    expect(
+      decoded?.applicationInitialFloating.excludes("org.example.floating"),
+    ).toBe(false);
     expect(decoded?.applicationTilingExclusions.canonicalEntries).toEqual(
       validApplicationTilingExclusions.canonicalEntries,
     );
@@ -132,6 +155,7 @@ describe("Driftile settings", () => {
     {
       applicationBorderlessExclusions: "",
       applicationColumnWidths: "",
+      applicationInitialFloating: "",
       applicationTilingExclusions: "",
       borderlessWindows: true,
       centerFocusedColumn: false,
@@ -145,6 +169,7 @@ describe("Driftile settings", () => {
     {
       applicationBorderlessExclusions: "org.example.Decorated",
       applicationColumnWidths: "org.example.Browser=80",
+      applicationInitialFloating: "org.example.Floating",
       applicationTilingExclusions: "org.example.Legacy",
       borderlessWindows: false,
       centerFocusedColumn: true,
@@ -165,6 +190,9 @@ describe("Driftile settings", () => {
     expect(decoded?.applicationColumnWidths.canonicalEntries.join("\n")).toBe(
       settings.applicationColumnWidths,
     );
+    expect(
+      decoded?.applicationInitialFloating.canonicalEntries.join("\n"),
+    ).toBe(settings.applicationInitialFloating);
     expect(
       decoded?.applicationTilingExclusions.canonicalEntries.join("\n"),
     ).toBe(settings.applicationTilingExclusions);
@@ -196,6 +224,12 @@ describe("Driftile settings", () => {
       {
         applicationBorderlessExclusions:
           "org.example.Editor\n org.example.Editor ",
+      },
+    ],
+    [
+      "duplicate application initial-floating entries",
+      {
+        applicationInitialFloating: "org.example.Editor\n org.example.Editor ",
       },
     ],
     [
@@ -242,8 +276,10 @@ describe("Driftile settings", () => {
     },
   );
 
-  it("rejects the previous ten-field snapshot", () => {
+  it("rejects the previous eleven-field snapshot", () => {
     const incomplete = {
+      applicationBorderlessExclusions:
+        validSettingsInput.applicationBorderlessExclusions,
       applicationColumnWidths: validSettingsInput.applicationColumnWidths,
       applicationTilingExclusions:
         validSettingsInput.applicationTilingExclusions,
@@ -285,6 +321,13 @@ describe("Driftile settings", () => {
       throw new Error("application borderless exclusion fixture is invalid");
     }
 
+    const changedApplicationInitialFloating =
+      decodeApplicationInitialFloating("org.example.Other");
+
+    if (!changedApplicationInitialFloating) {
+      throw new Error("application initial-floating fixture is invalid");
+    }
+
     const changedColumnWidthPresets =
       decodeColumnWidthPresetPercentages("20,50,90");
 
@@ -304,6 +347,7 @@ describe("Driftile settings", () => {
         applicationBorderlessExclusions: changedApplicationBorderlessExclusions,
       },
       { applicationColumnWidths: changedApplicationColumnWidths },
+      { applicationInitialFloating: changedApplicationInitialFloating },
       { applicationTilingExclusions: changedApplicationTilingExclusions },
       { borderlessWindows: true },
       { centerFocusedColumn: false },

@@ -128,7 +128,7 @@ steps above, then remove Driftile's stored KConfig values and layout snapshot:
 kwriteconfig6 --file kwinrc --group Plugins \
   --key io.github.kontonkara.driftileEnabled --delete ""
 for key in ApplicationBorderlessExclusions ApplicationColumnWidths \
-  ApplicationTilingExclusions BorderlessWindows CenterFocusedColumn \
+  ApplicationInitialFloating ApplicationTilingExclusions BorderlessWindows CenterFocusedColumn \
   ColumnWidthPresets ColumnWidthStepPercent DefaultColumnWidthPercent Gap \
   TouchpadNavigation WindowHeightStepPercent; do
   kwriteconfig6 --file kwinrc \
@@ -186,7 +186,8 @@ Home Manager installs the other, but the modules reject installing the same
 package ID in both scopes for one user. The module does not enable the effect
 or assign its shortcut; see [Overview companion](overview.md).
 
-The 1.15.1 Home Manager module retains the complete eleven-setting profile:
+The unreleased Home Manager module on `main` exposes the complete twelve-setting
+profile:
 
 ```nix
 programs.driftile.settings = {
@@ -194,6 +195,7 @@ programs.driftile.settings = {
   applicationColumnWidths = {
     "org.kde.konsole" = 60;
   };
+  applicationInitialFloating = [ ];
   applicationTilingExclusions = [ ];
   borderlessWindows = true;
   centerFocusedColumn = false;
@@ -206,9 +208,11 @@ programs.driftile.settings = {
 };
 ```
 
-The exclusion list defaults to empty. See
-[Configuration](configuration.md#application-borderless-exclusions) for exact
-matching, limits, and live behavior.
+Application policy lists default to empty. See
+[Configuration](configuration.md#applications-initially-floating) and
+[Application borderless exclusions](configuration.md#application-borderless-exclusions)
+for exact matching, limits, and live behavior. Stable 1.15.1 configurations do
+not yet expose `applicationInitialFloating`.
 
 The profile is independent of package installation. When the package is
 already installed by NixOS or another system module, keep

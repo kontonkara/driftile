@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { decodeApplicationBorderlessExclusions } from "../src/application-borderless-exclusions";
+import { decodeApplicationInitialFloating } from "../src/application-initial-floating";
 import { decodeApplicationColumnWidthOverrides } from "../src/application-overrides";
 import { decodeApplicationTilingExclusions } from "../src/application-tiling-exclusions";
 import {
@@ -7366,6 +7367,69 @@ describe("RuntimeController", () => {
           column.windowIds.includes(windowId("browser-constrained")),
         )?.width,
     ).toEqual({ kind: "fixed", value: 250 });
+  });
+
+  it("floats only newly tracked matching applications until explicitly tiled", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const existing = createTrackedWindow("existing", output, desktop, {
+      desktopFileName: "org.example.Utility",
+    });
+    const added = createTrackedWindow("added", output, desktop, {
+      desktopFileName: "org.example.Utility",
+      frameGeometry: { height: 280, width: 360, x: 71, y: 89 },
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [existing.window],
+    );
+    const scheduler = new ManualScheduler();
+    const applications = requiredApplicationInitialFloating(
+      "org.example.Utility",
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      applicationInitialFloating: applications,
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+      scheduleResume: scheduler.schedule,
+      startupStabilizationProbes: 1,
+    });
+
+    expect(controller.start()).toBe(true);
+    const addedFrame = { ...added.window.frameGeometry };
+    Object.defineProperty(fixture.workspace, "stackingOrder", {
+      configurable: true,
+      value: [existing.window, added.window],
+    });
+    flushManualScheduler(scheduler);
+
+    expect(controller.managedCount).toBe(1);
+    expect(controller.floatingCount).toBe(1);
+    expect(controller.automaticFloatingCount).toBe(0);
+    expect(added.window.frameGeometry).toEqual(addedFrame);
+    expect(added.writeCount).toBe(0);
+    expect(
+      runtimeLayout(controller)
+        .snapshot(outputId(output.name), desktopId(desktop.id))
+        .columns.flatMap((column) => column.windowIds),
+    ).toEqual([windowId("existing")]);
+
+    fixture.workspace.activeWindow = added.window;
+    flushManualScheduler(scheduler);
+    expect(controller.toggleFloating()).toBe(true);
+    flushManualScheduler(scheduler);
+
+    expect(controller.managedCount).toBe(2);
+    expect(controller.floatingCount).toBe(0);
+    expect(
+      runtimeLayout(controller)
+        .snapshot(outputId(output.name), desktopId(desktop.id))
+        .columns.flatMap((column) => column.windowIds),
+    ).toEqual([windowId("existing"), windowId("added")]);
   });
 
   it("bounds column width step changes without scheduling layout work", () => {
@@ -39179,6 +39243,16 @@ function requiredApplicationTilingExclusions(value: string) {
   }
 
   return exclusions;
+}
+
+function requiredApplicationInitialFloating(value: string) {
+  const applications = decodeApplicationInitialFloating(value);
+
+  if (!applications) {
+    throw new Error("application initial floating fixture is invalid");
+  }
+
+  return applications;
 }
 
 function requiredApplicationBorderlessExclusions(value: string) {

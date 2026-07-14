@@ -3,6 +3,19 @@
 The latest stable release is 1.15.1. Use the steps below when changing release
 generations, and never combine files from different releases.
 
+## Unreleased on main
+
+The current `main` branch adds the empty-default `ApplicationInitialFloating`
+setting and the Home Manager
+`programs.driftile.settings.applicationInitialFloating` list. Exact matching is
+case-sensitive. The policy affects only fresh admissions; existing and restored
+window ownership remains unchanged, and no layout-persistence migration is
+required.
+
+Before rolling back to 1.15.1, remove the Home Manager attribute because the
+stable module does not expose it. The older extension ignores a remaining
+KConfig key, which may also be deleted without resetting layout state.
+
 ## Upgrade from 1.15.0 to 1.15.1
 
 1. Release helper-owned shortcuts with the 1.15.0 helper while it remains

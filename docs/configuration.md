@@ -2,7 +2,7 @@
 
 Open **System Settings > Window Management > KWin Scripts** and configure Driftile.
 
-Driftile validates all eleven settings as one snapshot. Applying an invalid value
+Driftile validates all twelve settings as one snapshot. Applying an invalid value
 through an external configuration tool rejects the entire update and preserves
 the active settings; valid changes apply without reloading the extension.
 
@@ -10,12 +10,13 @@ the active settings; valid changes apply without reloading the extension.
 
 `programs.driftile.settings` is `null` by default, so Home Manager writes no
 Driftile setting. A non-null value is one complete typed profile: omitted fields
-take the defaults documented below, and Home Manager writes all eleven values.
+take the defaults documented below, and Home Manager writes all twelve values.
 This profile works with `programs.driftile.enable = false` when the package is
 installed system-wide.
 
 The activation writes only `ApplicationBorderlessExclusions`,
-`ApplicationColumnWidths`, `ApplicationTilingExclusions`,
+`ApplicationColumnWidths`, `ApplicationInitialFloating`,
+`ApplicationTilingExclusions`,
 `BorderlessWindows`, `CenterFocusedColumn`, `Gap`,
 `DefaultColumnWidthPercent`, `ColumnWidthPresets`,
 `ColumnWidthStepPercent`, `TouchpadNavigation`, and
@@ -37,6 +38,10 @@ programs.driftile.settings.applicationColumnWidths = {
   "org.mozilla.firefox" = 80;
 };
 
+programs.driftile.settings.applicationInitialFloating = [
+  "org.kde.kcalc"
+];
+
 programs.driftile.settings.applicationTilingExclusions = [
   "org.kde.spectacle"
 ];
@@ -47,8 +52,8 @@ programs.driftile.settings.touchpadNavigation = true;
 ```
 
 Widths must be `10`–`100`. Width-override IDs are exact and may not contain
-`=`. Exclusion IDs may contain `=` because the whole line is the ID. Home
-Manager accepts at most 128 unique IDs per exclusion policy, rejects blank,
+`=`. Application policy IDs may contain `=` because the whole line is the ID.
+Home Manager accepts at most 128 unique IDs per list policy, rejects blank,
 whitespace-padded, control-containing, or over-255-byte IDs, and writes each
 list in canonical sorted order.
 
@@ -112,6 +117,25 @@ Matching is case-sensitive. Windows without a matching usable ID keep the
 global default. Updating the rules does not resize existing columns; later new
 columns and fresh singleton admissions use the new value, clamped to the live
 window constraints and physical-pixel grid.
+
+## Applications initially floating
+
+**Applications initially floating** starts a matching normal application
+window as an ordinary manually floating window when Driftile first admits it.
+Matching uses the exact, case-sensitive KWin `desktopFileName`; enter one ID per
+line under the same limits as the other application list policies. Driftile
+preserves the frame accepted from KWin.
+
+The policy is fresh-only. It does not reclassify an already admitted window or
+override restored tiled or floating ownership when the setting changes. A
+window snapshots the policy when Driftile first tracks it, including while it
+waits behind a KWin-owned state. Tiling exclusions and automatic floating roles
+such as dialogs, transients, and fixed-size windows take priority.
+
+The normal **Toggle floating** action can tile a window that started manually
+floating. Its application-specific initial column width applies at that point.
+The policy uses existing floating and layout persistence and adds no persistence
+schema field.
 
 ## Application tiling exclusions
 
@@ -184,7 +208,7 @@ The KConfig decoder accepts at most 65,664 characters in the complete document,
 512 characters in each raw line, 128 nonblank unique IDs, and 255 UTF-8 bytes
 in each trimmed ID. It trims surrounding whitespace and ignores blank lines.
 Control characters, invalid UTF-16, an oversized value, or a duplicate after
-trimming rejects the complete eleven-setting snapshot. Accepted IDs have a
+trimming rejects the complete twelve-setting snapshot. Accepted IDs have a
 canonical sorted internal form. Home Manager exposes the same policy as
 `programs.driftile.settings.applicationBorderlessExclusions`, a list rendered
 as a sorted newline-delimited KConfig value.

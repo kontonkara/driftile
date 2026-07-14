@@ -49,6 +49,10 @@ class RuntimeControllerDouble {
     return true;
   }
 
+  setApplicationInitialFloating(): boolean {
+    return true;
+  }
+
   setApplicationTilingExclusions(): boolean {
     return true;
   }
@@ -140,6 +144,9 @@ describe("touchpad navigation", () => {
     expect(mainQml).toContain(
       'applicationBorderlessExclusions: KWin.readConfig("ApplicationBorderlessExclusions", "")',
     );
+    expect(mainQml).toContain(
+      'applicationInitialFloating: KWin.readConfig("ApplicationInitialFloating", "")',
+    );
     expect(
       mainQml.match(
         /root\.appliedTouchpadNavigation = Runtime\.DriftileRuntime\.getTouchpadNavigation\(\);/gu,
@@ -209,6 +216,7 @@ function settings(
   return {
     applicationBorderlessExclusions: "",
     applicationColumnWidths: "",
+    applicationInitialFloating: "",
     applicationTilingExclusions: "",
     borderlessWindows: true,
     centerFocusedColumn: false,

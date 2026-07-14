@@ -268,6 +268,10 @@ let
             "org.example.Browser" = 80;
             "org.example.Editor" = 60;
           };
+          applicationInitialFloating = [
+            "org.example.Terminal"
+            "org.example.Browser"
+          ];
           applicationTilingExclusions = [
             "org.example.Editor=tool"
             "org.example.Browser"
@@ -534,6 +538,9 @@ let
       ApplicationColumnWidths = ''
         org.example.Browser=80
         org.example.Editor=60'';
+      ApplicationInitialFloating = ''
+        org.example.Browser
+        org.example.Terminal'';
       ApplicationTilingExclusions = ''
         org.example.Browser
         org.example.Editor=tool'';
@@ -551,6 +558,7 @@ let
     kwinrc."Script-io.github.kontonkara.driftile" = {
       ApplicationBorderlessExclusions = "";
       ApplicationColumnWidths = "";
+      ApplicationInitialFloating = "";
       ApplicationTilingExclusions = "";
       BorderlessWindows = true;
       CenterFocusedColumn = false;
@@ -599,11 +607,11 @@ assert homeManagerSettings.config.qt.kde.settings == expectedSettings;
 assert homeManagerDefaultSettings.config.qt.kde.settings == expectedDefaultSettings;
 assert
   builtins.length (builtins.attrNames expectedSettings.kwinrc."Script-io.github.kontonkara.driftile")
-  == 11;
+  == 12;
 assert
   builtins.length (
     builtins.attrNames expectedDefaultSettings.kwinrc."Script-io.github.kontonkara.driftile"
-  ) == 11;
+  ) == 12;
 assert
   builtins.length (
     lib.splitString "\n"
@@ -630,6 +638,7 @@ assert
     kwinrc."Script-io.github.kontonkara.driftile" = {
       ApplicationBorderlessExclusions = "";
       ApplicationColumnWidths = "";
+      ApplicationInitialFloating = "";
       ApplicationTilingExclusions = "";
       BorderlessWindows = true;
       CenterFocusedColumn = false;

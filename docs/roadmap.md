@@ -98,7 +98,7 @@ The current runtime already:
 - Registers compact default shortcuts with `H/J/K/L`, arrow, Home/End, and Page Up/Down aliases.
 - Provides a reversible shortcut helper for the bundled defaults and explicit
   JSON v1 profiles; a UI without a Node.js dependency remains future work.
-- Lets Home Manager write the eleven typed settings or generate a portable
+- Lets Home Manager write the twelve typed settings or generate a portable
   shortcut profile without installing a second KWin package; shortcut claiming
   remains explicit.
 - Leaves dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows outside layout ownership, separate from manual floating.
@@ -765,9 +765,12 @@ taking over compositor mechanisms.
   outline the exact before/after target half through KWin's public API. The
   preview is context-local, coalesced, and owns no layout or persistence state;
   cross-context feedback remains deferred.
+- Implemented on `main` and unreleased: an exact application policy starts only
+  freshly admitted matching normal windows under ordinary manual-floating
+  ownership. Existing and hydrated ownership remains authoritative, and the
+  existing persistence schema is unchanged.
 - Add tabbed column presentation and matching pointer navigation.
-- Add application-specific policies beyond initial column widths and an
-  expanded settings UI.
+- Add further application-specific policies and an expanded settings UI.
 - Add optional visual transitions, layout indicators, and concise diagnostics.
 - Keep Plasma's built-in Overview as the compatible baseline.
 - Add pointer-driven overview rearrangement only through public KWin and Plasma
