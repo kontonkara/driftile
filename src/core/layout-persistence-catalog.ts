@@ -2,12 +2,13 @@ import { matchPersistedOutputs } from "./layout-persistence-match";
 import {
   LAYOUT_PERSISTENCE_FORMAT,
   LAYOUT_PERSISTENCE_LIMITS,
+  LAYOUT_PERSISTENCE_VERSION,
   canonicalizePersistedOutput,
   decodeLayoutPersistence,
-  encodeLayoutPersistence,
+  decodeLayoutPersistenceValue,
   type LayoutPersistenceDecodeError,
-  type LayoutPersistenceV1,
-  type PersistedContextV1,
+  type LayoutPersistenceV3,
+  type PersistedContextV3,
   type PersistedOutputV1,
 } from "./layout-persistence";
 
@@ -22,7 +23,7 @@ export interface LayoutPersistenceTopologyV2 {
 }
 
 export interface LayoutPersistenceCatalogSnapshot {
-  readonly state: LayoutPersistenceV1;
+  readonly state: LayoutPersistenceV3;
   readonly topology: LayoutPersistenceTopologyV2 | null;
 }
 
@@ -54,6 +55,7 @@ export type LayoutPersistenceCatalogMergeResult =
     };
 
 class InvalidPersistenceCatalog extends Error {}
+class UnsupportedPersistenceState extends Error {}
 
 export function decodeLayoutPersistenceCatalog(
   document: string,
@@ -76,7 +78,7 @@ export function decodeLayoutPersistenceCatalog(
 
   const version = value["version"];
 
-  if (version === 1) {
+  if (version === 1 || version === LAYOUT_PERSISTENCE_VERSION) {
     const decoded = decodeLayoutPersistence(document);
 
     return decoded.ok
@@ -94,7 +96,11 @@ export function decodeLayoutPersistenceCatalog(
 
   try {
     return { ok: true, value: parseCatalog(value, false) };
-  } catch {
+  } catch (error) {
+    if (error instanceof UnsupportedPersistenceState) {
+      return { error: "unsupported-version", ok: false };
+    }
+
     return { error: "invalid-state", ok: false };
   }
 }
@@ -115,7 +121,7 @@ export function encodeLayoutPersistenceCatalog(
 export function mergeLayoutPersistenceCatalog(
   previous: LayoutPersistenceCatalogV2 | null,
   current: {
-    readonly state: LayoutPersistenceV1;
+    readonly state: LayoutPersistenceV3;
     readonly topology: LayoutPersistenceTopologyV2;
   },
 ): LayoutPersistenceCatalogMergeResult {
@@ -197,7 +203,7 @@ export function selectLayoutPersistenceSnapshot(
 
 export function activeLayoutPersistenceState(
   catalogValue: LayoutPersistenceCatalogV2,
-): LayoutPersistenceV1 {
+): LayoutPersistenceV3 {
   const normalized = parseCatalog(catalogValue, true);
   const active = normalized.snapshots[0];
 
@@ -312,11 +318,14 @@ function parseTopology(value: unknown): LayoutPersistenceTopologyV2 {
   return { outputs };
 }
 
-function canonicalState(value: unknown): LayoutPersistenceV1 {
-  const document = encodeLayoutPersistence(value as LayoutPersistenceV1);
-  const decoded = decodeLayoutPersistence(document);
+function canonicalState(value: unknown): LayoutPersistenceV3 {
+  const decoded = decodeLayoutPersistenceValue(value);
 
   if (!decoded.ok) {
+    if (decoded.error === "unsupported-version") {
+      throw new UnsupportedPersistenceState();
+    }
+
     return invalid();
   }
 
@@ -324,7 +333,7 @@ function canonicalState(value: unknown): LayoutPersistenceV1 {
 }
 
 function validateStateTopology(
-  state: LayoutPersistenceV1,
+  state: LayoutPersistenceV3,
   topology: LayoutPersistenceTopologyV2,
 ): void {
   const topologyByKey = new Map(
@@ -430,8 +439,8 @@ function stripRestoreBaselines(
 }
 
 function stripContextRestoreBaselines(
-  context: PersistedContextV1,
-): PersistedContextV1 {
+  context: PersistedContextV3,
+): PersistedContextV3 {
   return {
     activeColumnIndex: context.activeColumnIndex,
     columns: context.columns.map((column) => ({
@@ -448,6 +457,8 @@ function stripContextRestoreBaselines(
         ...(member.height === undefined ? {} : { height: member.height }),
         windowKey: member.windowKey,
       })),
+      presentation: column.presentation,
+      selectedMemberIndex: column.selectedMemberIndex,
       width: column.width,
     })),
     desktopId: context.desktopId,
@@ -456,7 +467,7 @@ function stripContextRestoreBaselines(
   };
 }
 
-function hasRestoreBaselines(state: LayoutPersistenceV1): boolean {
+function hasRestoreBaselines(state: LayoutPersistenceV3): boolean {
   return state.contexts.some(
     (context) =>
       context.restoreFingerprint !== undefined ||
@@ -466,7 +477,7 @@ function hasRestoreBaselines(state: LayoutPersistenceV1): boolean {
   );
 }
 
-function legacyCatalog(state: LayoutPersistenceV1): LayoutPersistenceCatalogV2 {
+function legacyCatalog(state: LayoutPersistenceV3): LayoutPersistenceCatalogV2 {
   return catalog([{ state, topology: null }]);
 }
 

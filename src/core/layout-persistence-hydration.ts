@@ -15,7 +15,7 @@ import type {
 } from "./layout-engine";
 import {
   LAYOUT_PERSISTENCE_LIMITS,
-  type LayoutPersistenceV1,
+  type LayoutPersistenceV3,
   type PersistedRectV1,
   type PersistedRestoreBaselineV1,
   type PersistedWindowMatchV1,
@@ -152,11 +152,11 @@ type RemappedPersistenceResult =
     }
   | {
       readonly ok: true;
-      readonly value: LayoutPersistenceV1;
+      readonly value: LayoutPersistenceV3;
     };
 
 export function planLayoutHydration(
-  state: LayoutPersistenceV1,
+  state: LayoutPersistenceV3,
   input: LayoutPersistenceHydrationInput,
 ): LayoutPersistenceHydrationResult {
   const structuralFailure = remappableStructureFailure(state);
@@ -182,7 +182,7 @@ export function planLayoutHydration(
 }
 
 function remappableStructureFailure(
-  state: LayoutPersistenceV1,
+  state: LayoutPersistenceV3,
 ): LayoutPersistenceHydrationFailure | null {
   if (
     hasDuplicateBy(state.outputs, (output) => output.key) ||
@@ -204,13 +204,31 @@ function remappableStructureFailure(
     if (hasRestoreBaseline !== (context.restoreFingerprint !== undefined)) {
       return "invalid-persisted-state";
     }
+
+    for (const column of context.columns) {
+      if (
+        !validColumnPresentation(column.presentation) ||
+        !Number.isInteger(column.selectedMemberIndex) ||
+        column.selectedMemberIndex < 0 ||
+        column.selectedMemberIndex >= column.members.length ||
+        (column.presentation === "tabbed" && column.members.length < 2)
+      ) {
+        return "invalid-persisted-state";
+      }
+    }
+  }
+
+  for (const floating of state.floatingWindows) {
+    if (!validColumnPresentation(floating.anchor.columnPresentation)) {
+      return "invalid-persisted-state";
+    }
   }
 
   return null;
 }
 
 export function planExactLayoutHydration(
-  state: LayoutPersistenceV1,
+  state: LayoutPersistenceV3,
   input: LayoutPersistenceHydrationInput,
 ): LayoutPersistenceHydrationResult {
   const liveDesktopIds = new Map<string, LiveLayoutHydrationDesktop>();
@@ -330,6 +348,17 @@ export function planExactLayoutHydration(
     const positions = new Map<string, TiledPosition>();
 
     for (const [columnIndex, persistedColumn] of persisted.columns.entries()) {
+      if (
+        !validColumnPresentation(persistedColumn.presentation) ||
+        !Number.isInteger(persistedColumn.selectedMemberIndex) ||
+        persistedColumn.selectedMemberIndex < 0 ||
+        persistedColumn.selectedMemberIndex >= persistedColumn.members.length ||
+        (persistedColumn.presentation === "tabbed" &&
+          persistedColumn.members.length < 2)
+      ) {
+        return failure("invalid-persisted-state");
+      }
+
       const firstMember = persistedColumn.members[0];
 
       if (!firstMember) {
@@ -402,8 +431,17 @@ export function planExactLayoutHydration(
         }
       }
 
+      const selectedWindowId =
+        plannedWindowIds[persistedColumn.selectedMemberIndex];
+
+      if (selectedWindowId === undefined) {
+        return failure("invalid-persisted-state");
+      }
+
       const column = immutableColumn({
         id: plannedColumnId,
+        presentation: persistedColumn.presentation,
+        selectedWindowId,
         width: immutableWidth(persistedColumn.width),
         ...(hasPersistedHeights
           ? { windowHeights: immutableArray(plannedHeights) }
@@ -453,6 +491,10 @@ export function planExactLayoutHydration(
   const floatingWindows: LayoutPersistenceHydrationFloatingWindow[] = [];
 
   for (const persisted of state.floatingWindows) {
+    if (!validColumnPresentation(persisted.anchor.columnPresentation)) {
+      return failure("invalid-persisted-state");
+    }
+
     const outputName = outputNamesByKey.get(persisted.outputKey);
     const live = windowsByKey.get(persisted.windowKey);
 
@@ -511,6 +553,7 @@ export function planExactLayoutHydration(
     const placement = immutablePlacement({
       columnId: plannedColumnId,
       columnIndex: persisted.anchor.columnIndex,
+      columnPresentation: persisted.anchor.columnPresentation,
       columnWidth: immutableWidth(persisted.anchor.columnWidth),
       desktopId: desktopId(persisted.desktopId),
       memberIndex: persisted.anchor.memberIndex,
@@ -688,7 +731,7 @@ export function resolveLayoutPersistenceWindowIdentities(
 }
 
 function remapPersistenceIdentities(
-  state: LayoutPersistenceV1,
+  state: LayoutPersistenceV3,
   input: LayoutPersistenceHydrationInput,
 ): RemappedPersistenceResult {
   if (!validLiveIdentityDescriptors(input)) {
@@ -754,7 +797,7 @@ function remapPersistenceIdentities(
 
 function unmatchedWindowsCanArrive(
   persistedKeys: readonly string[],
-  persistedWindows: ReadonlyMap<string, LayoutPersistenceV1["windows"][number]>,
+  persistedWindows: ReadonlyMap<string, LayoutPersistenceV3["windows"][number]>,
   persistedCounts: ReadonlyMap<string, number>,
   liveCounts: ReadonlyMap<string, number>,
 ): boolean {
@@ -786,9 +829,9 @@ function unmatchedWindowsCanArrive(
 }
 
 function contextWithoutStaleRestoreBaselines(
-  context: LayoutPersistenceV1["contexts"][number],
+  context: LayoutPersistenceV3["contexts"][number],
   sessionMatchedWindowKeys: ReadonlySet<string>,
-): LayoutPersistenceV1["contexts"][number] {
+): LayoutPersistenceV3["contexts"][number] {
   const removesBaseline = context.columns.some((column) =>
     column.members.some(
       (member) =>
@@ -1023,6 +1066,12 @@ function contextKey(outputName: string, desktop: string): string {
 
 function validIdentifier(value: string): boolean {
   return value.length > 0;
+}
+
+function validColumnPresentation(
+  value: unknown,
+): value is "stacked" | "tabbed" {
+  return value === "stacked" || value === "tabbed";
 }
 
 function immutableColumn(column: LayoutColumnSnapshot): LayoutColumnSnapshot {

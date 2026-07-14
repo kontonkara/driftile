@@ -428,6 +428,9 @@ describe("overview effect package", () => {
 
   it("projects stack heights without mixing pixels and auto weights", () => {
     expect(desktopCard).toContain(
+      'column.presentation === "tabbed"\n                ? [contentHeight]',
+    );
+    expect(desktopCard).toContain(
       "const remaining = Math.max(0, contentHeight - fixedTotal * fixedScale)",
     );
     expect(desktopCard).toContain("remaining * weight / autoWeightTotal");

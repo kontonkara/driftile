@@ -16,7 +16,7 @@ import {
   LAYOUT_PERSISTENCE_LIMITS,
   LAYOUT_PERSISTENCE_VERSION,
   encodeLayoutPersistence,
-  type LayoutPersistenceV1,
+  type LayoutPersistenceV3,
   type PersistedOutputV1,
 } from "../../src/core/layout-persistence";
 
@@ -45,7 +45,7 @@ function state(
   persistedOutput: PersistedOutputV1,
   windowKey: string,
   withBaseline = false,
-): LayoutPersistenceV1 {
+): LayoutPersistenceV3 {
   return {
     contexts: [
       {
@@ -59,6 +59,8 @@ function state(
                 windowKey,
               },
             ],
+            presentation: "stacked",
+            selectedMemberIndex: 0,
             width: { kind: "fixed", value: 720 },
           },
         ],
@@ -72,6 +74,35 @@ function state(
     format: LAYOUT_PERSISTENCE_FORMAT,
     outputs: [persistedOutput],
     version: LAYOUT_PERSISTENCE_VERSION,
+    windows: [{ key: windowKey, liveId: `live-${windowKey}` }],
+  };
+}
+
+function legacyStateV1(persistedOutput: PersistedOutputV1, windowKey: string) {
+  return {
+    contexts: [
+      {
+        activeColumnIndex: 0,
+        columns: [
+          {
+            members: [
+              {
+                height: { clientHeight: 420, kind: "fixed" },
+                windowKey,
+              },
+            ],
+            width: { kind: "fixed", value: 720 },
+          },
+        ],
+        desktopId: "desktop-1",
+        outputKey: persistedOutput.key,
+        viewportOffset: -80,
+      },
+    ],
+    floatingWindows: [],
+    format: LAYOUT_PERSISTENCE_FORMAT,
+    outputs: [persistedOutput],
+    version: 1,
     windows: [{ key: windowKey, liveId: `live-${windowKey}` }],
   };
 }
@@ -145,22 +176,22 @@ function required<T>(value: T | undefined): T {
 }
 
 describe("layout persistence catalog codec", () => {
-  it("decodes a bare v1 document as one incomplete legacy snapshot", () => {
-    const legacyState = state(output("DP-1"), "legacy", true);
-    const decoded = decodeLayoutPersistenceCatalog(
-      encodeLayoutPersistence(legacyState),
-    );
+  it("migrates a bare v1 document into one incomplete v3 snapshot", () => {
+    const activeOutput = output("DP-1");
+    const legacyState = legacyStateV1(activeOutput, "legacy");
+    const migratedState = state(activeOutput, "legacy");
+    const decoded = decodeLayoutPersistenceCatalog(JSON.stringify(legacyState));
 
     expect(decoded).toEqual({
       ok: true,
-      value: catalog({ state: legacyState, topology: null }),
+      value: catalog({ state: migratedState, topology: null }),
     });
 
     if (!decoded.ok) {
       throw new Error("legacy document did not decode");
     }
 
-    expect(activeLayoutPersistenceState(decoded.value)).toEqual(legacyState);
+    expect(activeLayoutPersistenceState(decoded.value)).toEqual(migratedState);
     expect(() => encodeLayoutPersistenceCatalog(decoded.value)).toThrow();
   });
 
@@ -406,7 +437,7 @@ describe("layout persistence catalog codec", () => {
       ok: false,
     });
     expect(
-      decodeLayoutPersistenceCatalog(JSON.stringify({ ...value, version: 3 })),
+      decodeLayoutPersistenceCatalog(JSON.stringify({ ...value, version: 4 })),
     ).toEqual({ error: "unsupported-version", ok: false });
     expect(
       decodeLayoutPersistenceCatalog(
@@ -418,6 +449,61 @@ describe("layout persistence catalog codec", () => {
         " ".repeat(LAYOUT_PERSISTENCE_LIMITS.documentCharacters + 1),
       ),
     ).toEqual({ error: "document-too-large", ok: false });
+  });
+
+  it("migrates nested v1 state and preserves nested future-state errors", () => {
+    const activeOutput = output("DP-1", "serial-1");
+    const topologyValue = topology(activeOutput);
+    const legacy = {
+      format: LAYOUT_PERSISTENCE_FORMAT,
+      snapshots: [
+        {
+          state: legacyStateV1(activeOutput, "legacy"),
+          topology: topologyValue,
+        },
+      ],
+      version: LAYOUT_PERSISTENCE_CATALOG_VERSION,
+    };
+    const decoded = decodeLayoutPersistenceCatalog(JSON.stringify(legacy));
+
+    expect(decoded).toMatchObject({
+      ok: true,
+      value: {
+        snapshots: [
+          {
+            state: {
+              contexts: [
+                {
+                  columns: [
+                    {
+                      presentation: "stacked",
+                      selectedMemberIndex: 0,
+                    },
+                  ],
+                },
+              ],
+              version: 3,
+            },
+          },
+        ],
+        version: 2,
+      },
+    });
+
+    const future = {
+      ...legacy,
+      snapshots: [
+        {
+          ...required(legacy.snapshots[0]),
+          state: { ...required(legacy.snapshots[0]).state, version: 4 },
+        },
+      ],
+    };
+
+    expect(decodeLayoutPersistenceCatalog(JSON.stringify(future))).toEqual({
+      error: "unsupported-version",
+      ok: false,
+    });
   });
 });
 
@@ -616,7 +702,7 @@ describe("layout persistence catalog merge", () => {
         "current",
         4_096,
         256,
-        59,
+        26,
       );
       const outputs = [
         activeOutput,
@@ -685,7 +771,7 @@ function largeFloatingState(
   count: number,
   identifierLength: number,
   tagLength?: number,
-): LayoutPersistenceV1 {
+): LayoutPersistenceV3 {
   const windows = Array.from({ length: count }, (_unused, index) => {
     const key = longIdentifier(`${prefix}-window`, index, identifierLength);
     const liveId = longIdentifier(`${prefix}-live`, index, identifierLength);
@@ -706,6 +792,7 @@ function largeFloatingState(
     floatingWindows: windows.map((window) => ({
       anchor: {
         columnIndex: 0,
+        columnPresentation: "stacked",
         columnWidth: { kind: "fixed", value: 500 },
         memberIndex: 0,
       },

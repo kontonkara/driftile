@@ -75,6 +75,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-1"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-1"),
             width: { kind: "fixed", value: 400 },
             windowIds: [windowId("window-1"), windowId("window-2")],
           },
@@ -83,6 +85,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-2"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-3"),
             width: { kind: "fixed", value: 300 },
             windowIds: [windowId("window-3")],
           },
@@ -91,6 +95,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-3"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-4"),
             width: { kind: "proportion", value: 0.5 },
             windowIds: [windowId("window-4"), windowId("window-5")],
           },
@@ -119,11 +125,15 @@ describe("LayoutEngine", () => {
       columns: [
         {
           id: "column-1",
+          presentation: "stacked",
+          selectedWindowId: "window-1",
           width: { kind: "fixed", value: 400 },
           windowIds: ["window-1"],
         },
         {
           id: "column-3",
+          presentation: "stacked",
+          selectedWindowId: "window-4",
           width: { kind: "proportion", value: 0.5 },
           windowIds: ["window-4"],
         },
@@ -210,6 +220,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-1"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-1"),
             width: { kind: "fixed", value: 240 },
             windowIds: [windowId("window-1")],
           },
@@ -218,6 +230,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-2"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-2"),
             width: { kind: "proportion", value: 0.4 },
             windowIds: [windowId("window-2"), windowId("window-3")],
           },
@@ -226,6 +240,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-3"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-4"),
             width: { kind: "fixed", value: 360 },
             windowIds: [windowId("window-4")],
           },
@@ -251,16 +267,22 @@ describe("LayoutEngine", () => {
       columns: [
         {
           id: "column-2",
+          presentation: "stacked",
+          selectedWindowId: "window-2",
           width: { kind: "proportion", value: 0.4 },
           windowIds: ["window-2", "window-3"],
         },
         {
           id: "column-1",
+          presentation: "stacked",
+          selectedWindowId: "window-1",
           width: { kind: "fixed", value: 240 },
           windowIds: ["window-1"],
         },
         {
           id: "column-3",
+          presentation: "stacked",
+          selectedWindowId: "window-4",
           width: { kind: "fixed", value: 360 },
           windowIds: ["window-4"],
         },
@@ -308,6 +330,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-1"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-1"),
             width: { kind: "fixed", value: 240 },
             windowIds: [windowId("window-1")],
           },
@@ -316,6 +340,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-2"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-2"),
             width: { kind: "proportion", value: 0.4 },
             windowIds: [windowId("window-2"), windowId("window-3")],
           },
@@ -324,6 +350,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-3"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-4"),
             width: { kind: "fixed", value: 360 },
             windowIds: [windowId("window-4")],
           },
@@ -378,6 +406,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-1"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-1"),
             width: { kind: "fixed", value: 300 },
             windowIds: [windowId("window-1")],
           },
@@ -386,6 +416,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-2"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-2"),
             width: { kind: "proportion", value: 0.5 },
             windowIds: [windowId("window-2"), windowId("window-3")],
           },
@@ -453,6 +485,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-stack"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-1"),
             width: { kind: "fixed", value: 420 },
             windowIds: [windowId("window-1"), windowId("window-2")],
           },
@@ -513,6 +547,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-stack"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-1"),
             width: { kind: "fixed", value: 420 },
             windowIds: [windowId("window-1"), windowId("window-2")],
           },
@@ -556,6 +592,247 @@ describe("LayoutEngine", () => {
     );
   });
 
+  it("tracks tabbed presentation and selection without changing dormant heights", () => {
+    const engine = new LayoutEngine();
+
+    engine.restoreColumns({
+      activeColumnId: columnId("stack"),
+      columns: [
+        {
+          column: {
+            id: columnId("stack"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-a"),
+            width: { kind: "fixed", value: 480 },
+            windowHeights: [
+              { kind: "auto", weight: 2 },
+              { clientHeight: 360, kind: "fixed" },
+            ],
+            windowIds: [windowId("window-a"), windowId("window-b")],
+          },
+          index: 0,
+        },
+      ],
+      desktopId: desktop,
+      outputId: output,
+    });
+    const dormantHeights = JSON.stringify(
+      engine.snapshot(output, desktop).columns[0]?.windowHeights,
+    );
+
+    expect(engine.activateWindow(windowId("window-b"))).toBe(true);
+    expect(engine.setColumnPresentation(windowId("window-a"), "tabbed")).toBe(
+      "stacked",
+    );
+    expect(engine.snapshot(output, desktop).columns[0]).toMatchObject({
+      presentation: "tabbed",
+      selectedWindowId: "window-b",
+    });
+    expect(
+      engine.setActiveColumnWindowHeights(windowId("window-b"), [
+        { kind: "auto", weight: 1 },
+        { kind: "auto", weight: 1 },
+      ]),
+    ).toBeNull();
+    expect(engine.toggleActiveColumnPresentation(windowId("window-b"))).toBe(
+      "stacked",
+    );
+    expect(engine.toggleActiveColumnPresentation(windowId("window-b"))).toBe(
+      "tabbed",
+    );
+    expect(
+      JSON.stringify(
+        engine.snapshot(output, desktop).columns[0]?.windowHeights,
+      ),
+    ).toBe(dormantHeights);
+
+    engine.manageWindow({
+      columnId: columnId("single"),
+      desktopId: desktop,
+      outputId: output,
+      width: { kind: "fixed", value: 320 },
+      windowId: windowId("single-window"),
+    });
+    expect(
+      engine.setColumnPresentation(windowId("single-window"), "tabbed"),
+    ).toBeNull();
+  });
+
+  it("keeps destination presentation and normalizes a depleted source", () => {
+    const engine = new LayoutEngine();
+
+    engine.restoreColumns({
+      activeColumnId: columnId("source"),
+      columns: [
+        {
+          column: {
+            id: columnId("source"),
+            presentation: "tabbed",
+            selectedWindowId: windowId("source-b"),
+            width: { kind: "fixed", value: 420 },
+            windowIds: [
+              windowId("source-a"),
+              windowId("source-b"),
+              windowId("source-c"),
+            ],
+          },
+          index: 0,
+        },
+        {
+          column: {
+            id: columnId("target"),
+            presentation: "stacked",
+            selectedWindowId: windowId("target-b"),
+            width: { kind: "fixed", value: 520 },
+            windowIds: [windowId("target-a"), windowId("target-b")],
+          },
+          index: 1,
+        },
+      ],
+      desktopId: desktop,
+      outputId: output,
+    });
+
+    expect(
+      engine.insertActiveWindowIntoColumn(
+        windowId("source-b"),
+        columnId("target"),
+      )?.kind,
+    ).toBe("insert");
+    expect(engine.snapshot(output, desktop).columns).toMatchObject([
+      {
+        presentation: "tabbed",
+        selectedWindowId: "source-c",
+        windowIds: ["source-a", "source-c"],
+      },
+      {
+        presentation: "stacked",
+        selectedWindowId: "source-b",
+        windowIds: ["target-a", "target-b", "source-b"],
+      },
+    ]);
+
+    expect(engine.activateWindow(windowId("source-c"))).toBe(true);
+    expect(
+      engine.insertActiveWindowIntoColumn(
+        windowId("source-c"),
+        columnId("target"),
+      )?.kind,
+    ).toBe("insert");
+    expect(engine.snapshot(output, desktop).columns).toMatchObject([
+      {
+        presentation: "stacked",
+        selectedWindowId: "source-a",
+        windowIds: ["source-a"],
+      },
+      {
+        presentation: "stacked",
+        selectedWindowId: "source-c",
+        windowIds: ["target-a", "target-b", "source-b", "source-c"],
+      },
+    ]);
+  });
+
+  it("keeps surviving attachment state and rejects a tabbed singleton", () => {
+    const engine = new LayoutEngine();
+
+    engine.restoreColumns({
+      activeColumnId: columnId("stack"),
+      columns: [
+        {
+          column: {
+            id: columnId("stack"),
+            presentation: "tabbed",
+            selectedWindowId: windowId("window-a"),
+            width: { kind: "fixed", value: 480 },
+            windowIds: [windowId("window-a"), windowId("window-b")],
+          },
+          index: 0,
+        },
+      ],
+      desktopId: desktop,
+      outputId: output,
+    });
+    const staleDetach = engine.previewWindowDetach(windowId("window-a"));
+
+    expect(staleDetach?.placement.columnPresentation).toBe("tabbed");
+    expect(staleDetach?.layout.columns[0]).toMatchObject({
+      presentation: "stacked",
+      selectedWindowId: "window-b",
+    });
+    expect(engine.selectWindowInColumn(windowId("window-b"))).toBe(true);
+    expect(staleDetach && engine.commitWindowDetach(staleDetach)).toBe(false);
+    expect(engine.selectWindowInColumn(windowId("window-a"))).toBe(true);
+    const detached = engine.previewWindowDetach(windowId("window-a"));
+    expect(detached && engine.commitWindowDetach(detached)).toBe(true);
+    const survivingAttach =
+      detached && engine.previewWindowAttach(detached.placement);
+    expect(survivingAttach?.layout.columns[0]).toMatchObject({
+      presentation: "stacked",
+      selectedWindowId: "window-a",
+    });
+
+    const recreation = new LayoutEngine();
+    expect(
+      recreation.restoreColumns({
+        activeColumnId: columnId("recreated"),
+        columns: [
+          {
+            column: {
+              id: columnId("recreated"),
+              presentation: "tabbed",
+              selectedWindowId: windowId("only-window"),
+              width: { kind: "fixed", value: 360 },
+              windowIds: [windowId("only-window")],
+            },
+            index: 0,
+          },
+        ],
+        desktopId: desktop,
+        outputId: output,
+      }),
+    ).toBe(false);
+    expect(recreation.snapshot(output, desktop).columns).toEqual([]);
+  });
+
+  it("rebases a rollback over a newer same-column selection", () => {
+    const engine = new LayoutEngine();
+
+    engine.restoreColumns({
+      activeColumnId: columnId("stack"),
+      columns: [
+        {
+          column: {
+            id: columnId("stack"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-a"),
+            width: { kind: "fixed", value: 480 },
+            windowIds: [
+              windowId("window-a"),
+              windowId("window-b"),
+              windowId("window-c"),
+            ],
+          },
+          index: 0,
+        },
+      ],
+      desktopId: desktop,
+      outputId: output,
+    });
+    const edit = engine.reinsertWindow(windowId("window-b"), {
+      position: "after",
+      targetWindowId: windowId("window-c"),
+    });
+
+    expect(edit?.kind).toBe("reorder");
+    expect(engine.activateWindow(windowId("window-c"))).toBe(true);
+    expect(edit && engine.rollbackStackEdit(edit.rollback)).toBe(true);
+    expect(engine.snapshot(output, desktop).columns[0]).toMatchObject({
+      selectedWindowId: "window-c",
+      windowIds: ["window-a", "window-b", "window-c"],
+    });
+  });
+
   it("keeps height state through reorder, floating, and whole-column transfer", () => {
     const engine = new LayoutEngine();
     const targetOutput = outputId("HDMI-A-1");
@@ -566,6 +843,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-stack"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-1"),
             width: { kind: "fixed", value: 420 },
             windowIds: [windowId("window-1"), windowId("window-2")],
           },
@@ -608,7 +887,13 @@ describe("LayoutEngine", () => {
     expect(detach && engine.commitWindowDetach(detach)).toBe(true);
 
     const attach = detach && engine.previewWindowAttach(detach.placement);
-    expect(attach?.layout).toEqual(before);
+    expect(attach?.layout).toEqual({
+      ...before,
+      columns: before.columns.map((column) => ({
+        ...column,
+        selectedWindowId: windowId("window-2"),
+      })),
+    });
     expect(attach && engine.commitWindowAttach(attach)).toBe(true);
 
     const parkedColumn = engine.snapshot(output, desktop).columns[0];
@@ -632,7 +917,13 @@ describe("LayoutEngine", () => {
         outputId: output,
       }),
     ).toBe(true);
-    expect(engine.snapshot(output, desktop)).toEqual(before);
+    expect(engine.snapshot(output, desktop)).toEqual({
+      ...before,
+      columns: before.columns.map((column) => ({
+        ...column,
+        selectedWindowId: windowId("window-2"),
+      })),
+    });
 
     const transfer = engine.previewColumnTransfer(windowId("window-2"), {
       columnId: columnId("column-moved"),
@@ -663,6 +954,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-stack"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-1"),
             width: { kind: "fixed", value: 420 },
             windowIds: [windowId("window-1"), windowId("window-2")],
           },
@@ -739,6 +1032,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-1"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-1"),
             width: { kind: "fixed", value: 240 },
             windowIds: [windowId("window-1")],
           },
@@ -747,6 +1042,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-2"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-2"),
             width: { kind: "proportion", value: 0.4 },
             windowIds: [windowId("window-2")],
           },
@@ -755,6 +1052,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-3"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-3"),
             width: { kind: "fixed", value: 360 },
             windowIds: [windowId("window-3")],
           },
@@ -778,11 +1077,15 @@ describe("LayoutEngine", () => {
       columns: [
         {
           id: "column-1",
+          presentation: "stacked",
+          selectedWindowId: "window-2",
           width: { kind: "fixed", value: 240 },
           windowIds: ["window-1", "window-2"],
         },
         {
           id: "column-3",
+          presentation: "stacked",
+          selectedWindowId: "window-3",
           width: { kind: "fixed", value: 360 },
           windowIds: ["window-3"],
         },
@@ -805,6 +1108,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-1"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-1"),
             width: { kind: "proportion", value: 0.4 },
             windowIds: [
               windowId("window-1"),
@@ -817,6 +1122,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-2"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-4"),
             width: { kind: "fixed", value: 320 },
             windowIds: [windowId("window-4")],
           },
@@ -840,16 +1147,22 @@ describe("LayoutEngine", () => {
       columns: [
         {
           id: "column-1",
+          presentation: "stacked",
+          selectedWindowId: "window-1",
           width: { kind: "proportion", value: 0.4 },
           windowIds: ["window-1", "window-3"],
         },
         {
           id: "column:split:window-2",
+          presentation: "stacked",
+          selectedWindowId: "window-2",
           width: { kind: "proportion", value: 0.4 },
           windowIds: ["window-2"],
         },
         {
           id: "column-2",
+          presentation: "stacked",
+          selectedWindowId: "window-4",
           width: { kind: "fixed", value: 320 },
           windowIds: ["window-4"],
         },
@@ -871,6 +1184,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-source"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-source"),
             width: { kind: "fixed", value: 180 },
             windowIds: [windowId("window-source")],
           },
@@ -879,6 +1194,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-middle"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-middle"),
             width: { kind: "fixed", value: 260 },
             windowIds: [windowId("window-middle")],
           },
@@ -887,6 +1204,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-target"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-target-1"),
             width: { kind: "proportion", value: 0.6 },
             windowIds: [
               windowId("window-target-1"),
@@ -912,11 +1231,15 @@ describe("LayoutEngine", () => {
       columns: [
         {
           id: "column-middle",
+          presentation: "stacked",
+          selectedWindowId: "window-middle",
           width: { kind: "fixed", value: 260 },
           windowIds: ["window-middle"],
         },
         {
           id: "column-target",
+          presentation: "stacked",
+          selectedWindowId: "window-source",
           width: { kind: "proportion", value: 0.6 },
           windowIds: ["window-target-1", "window-target-2", "window-source"],
         },
@@ -939,6 +1262,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-target"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-target-1"),
             width: { kind: "fixed", value: 480 },
             windowIds: [
               windowId("window-target-1"),
@@ -950,6 +1275,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-middle"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-middle"),
             width: { kind: "proportion", value: 0.25 },
             windowIds: [windowId("window-middle")],
           },
@@ -958,6 +1285,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-source"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-source-1"),
             width: { kind: "fixed", value: 320 },
             windowIds: [
               windowId("window-source-1"),
@@ -983,16 +1312,22 @@ describe("LayoutEngine", () => {
       columns: [
         {
           id: "column-target",
+          presentation: "stacked",
+          selectedWindowId: "window-source-2",
           width: { kind: "fixed", value: 480 },
           windowIds: ["window-target-1", "window-target-2", "window-source-2"],
         },
         {
           id: "column-middle",
+          presentation: "stacked",
+          selectedWindowId: "window-middle",
           width: { kind: "proportion", value: 0.25 },
           windowIds: ["window-middle"],
         },
         {
           id: "column-source",
+          presentation: "stacked",
+          selectedWindowId: "window-source-1",
           width: { kind: "fixed", value: 320 },
           windowIds: ["window-source-1", "window-source-3"],
         },
@@ -1013,6 +1348,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-target"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-target-1"),
             width: { kind: "fixed", value: 420 },
             windowIds: [
               windowId("window-target-1"),
@@ -1024,6 +1361,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-source"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-source-1"),
             width: { kind: "fixed", value: 300 },
             windowIds: [
               windowId("window-source-1"),
@@ -1035,6 +1374,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-singleton"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-singleton"),
             width: { kind: "fixed", value: 240 },
             windowIds: [windowId("window-singleton")],
           },
@@ -1051,6 +1392,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-foreign"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-foreign-1"),
             width: { kind: "fixed", value: 360 },
             windowIds: [
               windowId("window-foreign-1"),
@@ -1115,6 +1458,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-active"),
+            presentation: "stacked",
+            selectedWindowId: windowId("active-top"),
             width: { kind: "fixed", value: 440 },
             windowHeights: [
               { kind: "auto", weight: 2 },
@@ -1127,6 +1472,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-source"),
+            presentation: "stacked",
+            selectedWindowId: windowId("source-top"),
             width: { kind: "proportion", value: 0.65 },
             windowHeights: [
               { clientHeight: 310, kind: "fixed" },
@@ -1139,6 +1486,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-trailing"),
+            presentation: "stacked",
+            selectedWindowId: windowId("trailing"),
             width: { kind: "fixed", value: 280 },
             windowIds: [windowId("trailing")],
           },
@@ -1163,6 +1512,8 @@ describe("LayoutEngine", () => {
       columns: [
         {
           id: "column-active",
+          presentation: "stacked",
+          selectedWindowId: "active-top",
           width: { kind: "fixed", value: 440 },
           windowHeights: [
             { kind: "auto", weight: 2 },
@@ -1173,11 +1524,15 @@ describe("LayoutEngine", () => {
         },
         {
           id: "column-source",
+          presentation: "stacked",
+          selectedWindowId: "source-bottom",
           width: { kind: "proportion", value: 0.65 },
           windowIds: ["source-bottom"],
         },
         {
           id: "column-trailing",
+          presentation: "stacked",
+          selectedWindowId: "trailing",
           width: { kind: "fixed", value: 280 },
           windowIds: ["trailing"],
         },
@@ -1201,6 +1556,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-active"),
+            presentation: "stacked",
+            selectedWindowId: windowId("active"),
             width: { kind: "proportion", value: 0.4 },
             windowIds: [windowId("active")],
           },
@@ -1209,6 +1566,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-source"),
+            presentation: "stacked",
+            selectedWindowId: windowId("source"),
             width: { kind: "fixed", value: 720 },
             windowHeights: [{ clientHeight: 360, kind: "fixed" }],
             windowIds: [windowId("source")],
@@ -1218,6 +1577,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-trailing"),
+            presentation: "stacked",
+            selectedWindowId: windowId("trailing"),
             width: { kind: "fixed", value: 260 },
             windowIds: [windowId("trailing")],
           },
@@ -1235,11 +1596,15 @@ describe("LayoutEngine", () => {
       columns: [
         {
           id: "column-active",
+          presentation: "stacked",
+          selectedWindowId: "active",
           width: { kind: "proportion", value: 0.4 },
           windowIds: ["active", "source"],
         },
         {
           id: "column-trailing",
+          presentation: "stacked",
+          selectedWindowId: "trailing",
           width: { kind: "fixed", value: 260 },
           windowIds: ["trailing"],
         },
@@ -1259,6 +1624,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-active"),
+            presentation: "stacked",
+            selectedWindowId: windowId("active"),
             width: { kind: "fixed", value: 420 },
             windowIds: [windowId("active")],
           },
@@ -1267,6 +1634,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-source"),
+            presentation: "stacked",
+            selectedWindowId: windowId("source-top"),
             width: { kind: "fixed", value: 360 },
             windowIds: [windowId("source-top"), windowId("source-bottom")],
           },
@@ -1275,6 +1644,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-trailing"),
+            presentation: "stacked",
+            selectedWindowId: windowId("trailing"),
             width: { kind: "fixed", value: 240 },
             windowIds: [windowId("trailing")],
           },
@@ -1307,6 +1678,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-source"),
+            presentation: "stacked",
+            selectedWindowId: windowId("earlier"),
             width: { kind: "proportion", value: 0.45 },
             windowHeights: [
               { kind: "auto", weight: 2 },
@@ -1324,6 +1697,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-trailing"),
+            presentation: "stacked",
+            selectedWindowId: windowId("trailing"),
             width: { kind: "fixed", value: 240 },
             windowIds: [windowId("trailing")],
           },
@@ -1348,6 +1723,8 @@ describe("LayoutEngine", () => {
       columns: [
         {
           id: "column-source",
+          presentation: "stacked",
+          selectedWindowId: "earlier",
           width: { kind: "proportion", value: 0.45 },
           windowHeights: [
             { kind: "auto", weight: 2 },
@@ -1357,6 +1734,8 @@ describe("LayoutEngine", () => {
         },
         {
           id: "column-trailing",
+          presentation: "stacked",
+          selectedWindowId: "trailing",
           width: { kind: "fixed", value: 240 },
           windowIds: ["trailing"],
         },
@@ -1376,6 +1755,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-source"),
+            presentation: "stacked",
+            selectedWindowId: windowId("survivor"),
             width: { kind: "fixed", value: 420 },
             windowIds: [
               windowId("survivor"),
@@ -1388,6 +1769,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-trailing"),
+            presentation: "stacked",
+            selectedWindowId: windowId("trailing"),
             width: { kind: "fixed", value: 240 },
             windowIds: [windowId("trailing")],
           },
@@ -1427,6 +1810,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-leading"),
+            presentation: "stacked",
+            selectedWindowId: windowId("leading"),
             width: { kind: "fixed", value: 250 },
             windowIds: [windowId("leading")],
           },
@@ -1435,6 +1820,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-active"),
+            presentation: "stacked",
+            selectedWindowId: windowId("source-top"),
             width: { kind: "proportion", value: 0.45 },
             windowHeights: [
               { kind: "auto", weight: 3 },
@@ -1447,6 +1834,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-existing-right"),
+            presentation: "stacked",
+            selectedWindowId: windowId("existing-right"),
             width: { kind: "fixed", value: 610 },
             windowIds: [windowId("existing-right")],
           },
@@ -1472,21 +1861,29 @@ describe("LayoutEngine", () => {
       columns: [
         {
           id: "column-leading",
+          presentation: "stacked",
+          selectedWindowId: "leading",
           width: { kind: "fixed", value: 250 },
           windowIds: ["leading"],
         },
         {
           id: "column-active",
+          presentation: "stacked",
+          selectedWindowId: "source-top",
           width: { kind: "proportion", value: 0.45 },
           windowIds: ["source-top"],
         },
         {
           id: "column-expelled",
+          presentation: "stacked",
+          selectedWindowId: "source-bottom",
           width: { kind: "proportion", value: 0.45 },
           windowIds: ["source-bottom"],
         },
         {
           id: "column-existing-right",
+          presentation: "stacked",
+          selectedWindowId: "existing-right",
           width: { kind: "fixed", value: 610 },
           windowIds: ["existing-right"],
         },
@@ -1510,6 +1907,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-active"),
+            presentation: "stacked",
+            selectedWindowId: windowId("active-1"),
             width: { kind: "fixed", value: 300 },
             windowIds: [windowId("active-1"), windowId("active-2")],
           },
@@ -1518,6 +1917,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-right"),
+            presentation: "stacked",
+            selectedWindowId: windowId("right"),
             width: { kind: "fixed", value: 360 },
             windowIds: [windowId("right")],
           },
@@ -1613,6 +2014,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-1"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-1"),
             width: { kind: "fixed", value: 300 },
             windowIds: [
               windowId("window-1"),
@@ -1657,6 +2060,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-1"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-1"),
             width: { kind: "fixed", value: 300 },
             windowIds: [windowId("window-1"), windowId("window-2")],
           },
@@ -1688,6 +2093,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-1"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-1"),
             width: { kind: "fixed", value: 300 },
             windowIds: [windowId("window-1"), windowId("window-2")],
           },
@@ -1696,6 +2103,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-2"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-3"),
             width: { kind: "fixed", value: 300 },
             windowIds: [windowId("window-3")],
           },
@@ -1754,6 +2163,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-1"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-1"),
             width: { kind: "fixed", value: 240 },
             windowIds: [windowId("window-1")],
           },
@@ -1762,6 +2173,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-2"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-2"),
             width: { kind: "proportion", value: 0.4 },
             windowIds: [windowId("window-2")],
           },
@@ -1770,6 +2183,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-3"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-3"),
             width: { kind: "fixed", value: 360 },
             windowIds: [windowId("window-3")],
           },
@@ -1790,6 +2205,7 @@ describe("LayoutEngine", () => {
     expect(preview.placement).toEqual({
       columnId: "column-2",
       columnIndex: 1,
+      columnPresentation: "stacked",
       columnWidth: { kind: "proportion", value: 0.4 },
       desktopId: "desktop-1",
       memberIndex: 0,
@@ -1810,11 +2226,15 @@ describe("LayoutEngine", () => {
       columns: [
         {
           id: "column-1",
+          presentation: "stacked",
+          selectedWindowId: "window-1",
           width: { kind: "fixed", value: 240 },
           windowIds: ["window-1"],
         },
         {
           id: "column-3",
+          presentation: "stacked",
+          selectedWindowId: "window-3",
           width: { kind: "fixed", value: 360 },
           windowIds: ["window-3"],
         },
@@ -1839,6 +2259,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-left"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-left"),
             width: { kind: "fixed", value: 200 },
             windowIds: [windowId("window-left")],
           },
@@ -1847,6 +2269,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-stack"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-1"),
             width: { kind: "fixed", value: 420 },
             windowIds: [
               windowId("window-1"),
@@ -1859,6 +2283,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-right"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-right"),
             width: { kind: "fixed", value: 300 },
             windowIds: [windowId("window-right")],
           },
@@ -1908,6 +2334,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-left"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-left"),
             width: { kind: "fixed", value: 200 },
             windowIds: [windowId("window-left")],
           },
@@ -1916,6 +2344,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-stack"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-a"),
             width: { kind: "fixed", value: 420 },
             windowIds: [
               windowId("window-a"),
@@ -1928,6 +2358,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-right"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-right"),
             width: { kind: "fixed", value: 300 },
             windowIds: [windowId("window-right")],
           },
@@ -1989,16 +2421,22 @@ describe("LayoutEngine", () => {
       columns: [
         {
           id: "column-left",
+          presentation: "stacked",
+          selectedWindowId: "window-left",
           width: { kind: "fixed", value: 200 },
           windowIds: ["window-left"],
         },
         {
           id: "column-right",
+          presentation: "stacked",
+          selectedWindowId: "window-right",
           width: { kind: "fixed", value: 440 },
           windowIds: ["window-right"],
         },
         {
           id: "column-stack",
+          presentation: "stacked",
+          selectedWindowId: "window-b",
           width: { kind: "fixed", value: 500 },
           windowIds: ["window-a", "window-b", "window-x", "window-c"],
         },
@@ -2021,6 +2459,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-a"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-a"),
             width: { kind: "fixed", value: 240 },
             windowIds: [windowId("window-a")],
           },
@@ -2029,6 +2469,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-b"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-b"),
             width: { kind: "fixed", value: 333 },
             windowIds: [windowId("window-b")],
           },
@@ -2037,6 +2479,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-c"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-c"),
             width: { kind: "fixed", value: 360 },
             windowIds: [windowId("window-c")],
           },
@@ -2045,6 +2489,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-d"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-d"),
             width: { kind: "fixed", value: 280 },
             windowIds: [windowId("window-d")],
           },
@@ -2083,21 +2529,29 @@ describe("LayoutEngine", () => {
       columns: [
         {
           id: "column-a",
+          presentation: "stacked",
+          selectedWindowId: "window-a",
           width: { kind: "fixed", value: 260 },
           windowIds: ["window-a"],
         },
         {
           id: "column-b",
+          presentation: "stacked",
+          selectedWindowId: "window-b",
           width: { kind: "fixed", value: 333 },
           windowIds: ["window-b"],
         },
         {
           id: "column-d",
+          presentation: "stacked",
+          selectedWindowId: "window-d",
           width: { kind: "fixed", value: 280 },
           windowIds: ["window-d"],
         },
         {
           id: "column-c",
+          presentation: "stacked",
+          selectedWindowId: "window-c",
           width: { kind: "fixed", value: 360 },
           windowIds: ["window-c"],
         },
@@ -2118,6 +2572,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-a"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-a"),
             width: { kind: "fixed", value: 200 },
             windowIds: [windowId("window-a")],
           },
@@ -2126,6 +2582,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-b"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-b"),
             width: { kind: "fixed", value: 300 },
             windowIds: [windowId("window-b")],
           },
@@ -2134,6 +2592,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-c"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-c"),
             width: { kind: "fixed", value: 400 },
             windowIds: [windowId("window-c")],
           },
@@ -2142,6 +2602,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-d"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-d"),
             width: { kind: "fixed", value: 500 },
             windowIds: [windowId("window-d")],
           },
@@ -2185,6 +2647,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-left"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-left"),
             width: { kind: "fixed", value: 200 },
             windowIds: [windowId("window-left")],
           },
@@ -2193,6 +2657,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-stack"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-a"),
             width: { kind: "fixed", value: 420 },
             windowIds: [
               windowId("window-a"),
@@ -2205,6 +2671,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("column-right"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-right"),
             width: { kind: "fixed", value: 300 },
             windowIds: [windowId("window-right")],
           },
@@ -2228,6 +2696,8 @@ describe("LayoutEngine", () => {
           {
             column: {
               id: columnId("column-stack"),
+              presentation: "stacked",
+              selectedWindowId: windowId("window-x"),
               width: { kind: "fixed", value: 640 },
               windowIds: [windowId("window-x")],
             },
@@ -2246,6 +2716,8 @@ describe("LayoutEngine", () => {
 
     expect(memberAttach.layout.columns[1]).toEqual({
       id: "column-stack",
+      presentation: "stacked",
+      selectedWindowId: "window-b",
       width: { kind: "fixed", value: 640 },
       windowIds: ["window-x", "window-b"],
     });
@@ -2290,6 +2762,8 @@ describe("LayoutEngine", () => {
       columns: [
         {
           id: "column-only",
+          presentation: "stacked",
+          selectedWindowId: "window-only",
           width: { kind: "proportion", value: 0.6 },
           windowIds: ["window-only"],
         },
@@ -2476,16 +2950,22 @@ describe("LayoutEngine", () => {
       columns: [
         {
           id: "column-live-1",
+          presentation: "stacked",
+          selectedWindowId: "window-live-1",
           width: { kind: "fixed", value: 250 },
           windowIds: ["window-live-1"],
         },
         {
           id: "column-fresh",
+          presentation: "stacked",
+          selectedWindowId: "window-floating",
           width: { kind: "fixed", value: 480 },
           windowIds: ["window-floating"],
         },
         {
           id: "column-live-2",
+          presentation: "stacked",
+          selectedWindowId: "window-live-2",
           width: { kind: "fixed", value: 250 },
           windowIds: ["window-live-2"],
         },
@@ -2678,6 +3158,8 @@ describe("LayoutEngine", () => {
           {
             column: {
               id: columnId("column-1"),
+              presentation: "stacked",
+              selectedWindowId: windowId("window-1"),
               width: { kind: "fixed", value: 240 },
               windowIds: [windowId("window-1"), windowId("window-2")],
             },
@@ -2686,6 +3168,8 @@ describe("LayoutEngine", () => {
           {
             column: {
               id: columnId("column-2"),
+              presentation: "stacked",
+              selectedWindowId: windowId("window-3"),
               width: { kind: "proportion", value: 0.4 },
               windowIds: [windowId("window-3")],
             },
@@ -2694,6 +3178,8 @@ describe("LayoutEngine", () => {
           {
             column: {
               id: columnId("column-3"),
+              presentation: "stacked",
+              selectedWindowId: windowId("window-4"),
               width: { kind: "fixed", value: 360 },
               windowIds: [windowId("window-4")],
             },
@@ -2725,6 +3211,8 @@ describe("LayoutEngine", () => {
           {
             column: {
               id: columnId("column-1"),
+              presentation: "stacked",
+              selectedWindowId: windowId("window-1"),
               width: { kind: "fixed", value: 240 },
               windowIds: [windowId("window-1"), windowId("window-2")],
             },
@@ -2733,6 +3221,8 @@ describe("LayoutEngine", () => {
           {
             column: {
               id: columnId("column-3"),
+              presentation: "stacked",
+              selectedWindowId: windowId("window-4"),
               width: { kind: "fixed", value: 360 },
               windowIds: [windowId("window-4")],
             },
@@ -2749,16 +3239,22 @@ describe("LayoutEngine", () => {
       columns: [
         {
           id: "column-1",
+          presentation: "stacked",
+          selectedWindowId: "window-1",
           width: { kind: "fixed", value: 240 },
           windowIds: ["window-1", "window-2"],
         },
         {
           id: "column-2",
+          presentation: "stacked",
+          selectedWindowId: "window-3",
           width: { kind: "proportion", value: 0.4 },
           windowIds: ["window-3"],
         },
         {
           id: "column-3",
+          presentation: "stacked",
+          selectedWindowId: "window-4",
           width: { kind: "fixed", value: 360 },
           windowIds: ["window-4"],
         },
@@ -2787,6 +3283,8 @@ describe("LayoutEngine", () => {
           {
             column: {
               id: columnId("column-1"),
+              presentation: "stacked",
+              selectedWindowId: windowId("window-1"),
               width: { kind: "proportion", value: 0.5 },
               windowIds: [windowId("window-1")],
             },
@@ -2795,6 +3293,8 @@ describe("LayoutEngine", () => {
           {
             column: {
               id: columnId("column-3"),
+              presentation: "stacked",
+              selectedWindowId: windowId("window-3"),
               width: { kind: "proportion", value: 0.5 },
               windowIds: [windowId("window-3")],
             },
@@ -2818,6 +3318,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("source-a"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-a"),
             width: { kind: "fixed", value: 240 },
             windowIds: [windowId("window-a")],
           },
@@ -2826,6 +3328,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("source-stack"),
+            presentation: "tabbed",
+            selectedWindowId: windowId("window-b1"),
             width: { kind: "proportion", value: 0.4 },
             windowIds: [
               windowId("window-b1"),
@@ -2838,6 +3342,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("source-c"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-c"),
             width: { kind: "fixed", value: 360 },
             windowIds: [windowId("window-c")],
           },
@@ -2854,6 +3360,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("target-a"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-target-a"),
             width: { kind: "fixed", value: 280 },
             windowIds: [windowId("window-target-a")],
           },
@@ -2862,6 +3370,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("target-b"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-target-b"),
             width: { kind: "fixed", value: 420 },
             windowIds: [windowId("window-target-b")],
           },
@@ -2891,11 +3401,15 @@ describe("LayoutEngine", () => {
       columns: [
         {
           id: "source-a",
+          presentation: "stacked",
+          selectedWindowId: "window-a",
           width: { kind: "fixed", value: 240 },
           windowIds: ["window-a"],
         },
         {
           id: "source-c",
+          presentation: "stacked",
+          selectedWindowId: "window-c",
           width: { kind: "fixed", value: 360 },
           windowIds: ["window-c"],
         },
@@ -2909,16 +3423,22 @@ describe("LayoutEngine", () => {
       columns: [
         {
           id: "target-a",
+          presentation: "stacked",
+          selectedWindowId: "window-target-a",
           width: { kind: "fixed", value: 280 },
           windowIds: ["window-target-a"],
         },
         {
           id: "transferred",
+          presentation: "tabbed",
+          selectedWindowId: "window-b1",
           width: { kind: "proportion", value: 0.4 },
           windowIds: ["window-b1", "window-b2", "window-b3"],
         },
         {
           id: "target-b",
+          presentation: "stacked",
+          selectedWindowId: "window-target-b",
           width: { kind: "fixed", value: 420 },
           windowIds: ["window-target-b"],
         },
@@ -2955,6 +3475,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("source-only"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-a"),
             width: { kind: "fixed", value: 515 },
             windowIds: [windowId("window-a"), windowId("window-b")],
           },
@@ -2987,6 +3509,8 @@ describe("LayoutEngine", () => {
       columns: [
         {
           id: "target-only",
+          presentation: "stacked",
+          selectedWindowId: "window-a",
           width: { kind: "fixed", value: 515 },
           windowIds: ["window-a", "window-b"],
         },
@@ -3012,6 +3536,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("source-active"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-active-a"),
             width: { kind: "fixed", value: 300 },
             windowIds: [
               windowId("window-active-a"),
@@ -3023,6 +3549,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("source-inactive"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-inactive"),
             width: { kind: "fixed", value: 320 },
             windowIds: [windowId("window-inactive")],
           },
@@ -3038,6 +3566,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("target-collision"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-target"),
             width: { kind: "fixed", value: 340 },
             windowIds: [windowId("window-target")],
           },
@@ -3205,6 +3735,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("source-a"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-a"),
             width: { kind: "fixed", value: 240 },
             windowIds: [windowId("window-a")],
           },
@@ -3213,6 +3745,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("source-b"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-b"),
             width: { kind: "proportion", value: 0.4 },
             windowIds: [windowId("window-b")],
           },
@@ -3221,6 +3755,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("source-c"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-c"),
             width: { kind: "fixed", value: 360 },
             windowIds: [windowId("window-c")],
           },
@@ -3237,6 +3773,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("target-a"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-target-a"),
             width: { kind: "fixed", value: 280 },
             windowIds: [windowId("window-target-a")],
           },
@@ -3245,6 +3783,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("target-b"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-target-b"),
             width: { kind: "fixed", value: 420 },
             windowIds: [windowId("window-target-b")],
           },
@@ -3274,11 +3814,15 @@ describe("LayoutEngine", () => {
       columns: [
         {
           id: "source-a",
+          presentation: "stacked",
+          selectedWindowId: "window-a",
           width: { kind: "fixed", value: 240 },
           windowIds: ["window-a"],
         },
         {
           id: "source-c",
+          presentation: "stacked",
+          selectedWindowId: "window-c",
           width: { kind: "fixed", value: 360 },
           windowIds: ["window-c"],
         },
@@ -3292,16 +3836,22 @@ describe("LayoutEngine", () => {
       columns: [
         {
           id: "target-a",
+          presentation: "stacked",
+          selectedWindowId: "window-target-a",
           width: { kind: "fixed", value: 280 },
           windowIds: ["window-target-a"],
         },
         {
           id: "transferred",
+          presentation: "stacked",
+          selectedWindowId: "window-b",
           width: { kind: "proportion", value: 0.4 },
           windowIds: ["window-b"],
         },
         {
           id: "target-b",
+          presentation: "stacked",
+          selectedWindowId: "window-target-b",
           width: { kind: "fixed", value: 420 },
           windowIds: ["window-target-b"],
         },
@@ -3343,6 +3893,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("source-stack"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-a"),
             width: { kind: "fixed", value: 515 },
             windowIds: [
               windowId("window-a"),
@@ -3372,6 +3924,8 @@ describe("LayoutEngine", () => {
       columns: [
         {
           id: "source-stack",
+          presentation: "stacked",
+          selectedWindowId: "window-a",
           width: { kind: "fixed", value: 515 },
           windowIds: ["window-a", "window-c"],
         },
@@ -3385,6 +3939,8 @@ describe("LayoutEngine", () => {
       columns: [
         {
           id: "target-only",
+          presentation: "stacked",
+          selectedWindowId: "window-b",
           width: { kind: "fixed", value: 515 },
           windowIds: ["window-b"],
         },
@@ -3666,6 +4222,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("stack"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-a"),
             width: { kind: "proportion", value: 0.45 },
             windowHeights: [
               { kind: "auto", weight: 2 },
@@ -3697,6 +4255,7 @@ describe("LayoutEngine", () => {
       columns: [
         {
           ...before.columns[0],
+          selectedWindowId: "window-b",
           windowHeights: [
             { kind: "auto", weight: 2 },
             { kind: "auto", weight: 4 },
@@ -3719,6 +4278,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("source"),
+            presentation: "stacked",
+            selectedWindowId: windowId("source-a"),
             width: { kind: "fixed", value: 360 },
             windowHeights: [
               { kind: "auto", weight: 2 },
@@ -3731,6 +4292,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("destination"),
+            presentation: "stacked",
+            selectedWindowId: windowId("target-a"),
             width: { kind: "fixed", value: 700 },
             windowHeights: [
               { index: 0, kind: "preset" },
@@ -3757,11 +4320,15 @@ describe("LayoutEngine", () => {
       columns: [
         {
           id: "source",
+          presentation: "stacked",
+          selectedWindowId: "source-a",
           width: { kind: "fixed", value: 360 },
           windowIds: ["source-a"],
         },
         {
           id: "destination",
+          presentation: "stacked",
+          selectedWindowId: "moved",
           width: { kind: "fixed", value: 700 },
           windowHeights: [
             { index: 0, kind: "preset" },
@@ -3788,6 +4355,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("source"),
+            presentation: "stacked",
+            selectedWindowId: windowId("moved"),
             width: { kind: "fixed", value: 310 },
             windowHeights: [{ clientHeight: 280, kind: "fixed" }],
             windowIds: [windowId("moved")],
@@ -3797,6 +4366,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("destination"),
+            presentation: "stacked",
+            selectedWindowId: windowId("target"),
             width: { kind: "proportion", value: 0.6 },
             windowIds: [windowId("target")],
           },
@@ -3819,6 +4390,8 @@ describe("LayoutEngine", () => {
       columns: [
         {
           id: "destination",
+          presentation: "stacked",
+          selectedWindowId: "moved",
           width: { kind: "proportion", value: 0.6 },
           windowIds: ["target", "moved"],
         },
@@ -3841,6 +4414,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("stack"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-a"),
             width: { kind: "fixed", value: 400 },
             windowIds: [windowId("window-a"), windowId("window-b")],
           },
@@ -3909,6 +4484,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("source"),
+            presentation: "stacked",
+            selectedWindowId: windowId("moved"),
             width: { kind: "fixed", value: 400 },
             windowIds: [windowId("moved"), windowId("source-peer")],
           },
@@ -3917,6 +4494,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("active"),
+            presentation: "stacked",
+            selectedWindowId: windowId("active-window"),
             width: { kind: "fixed", value: 400 },
             windowIds: [windowId("active-window")],
           },
@@ -3955,6 +4534,8 @@ describe("LayoutEngine", () => {
               {
                 column: {
                   id: columnId("stack"),
+                  presentation: "stacked",
+                  selectedWindowId: windowId(ids[0] ?? ""),
                   width: { kind: "fixed", value: 400 },
                   windowIds: ids.map(windowId),
                 },
@@ -4001,6 +4582,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("destination"),
+            presentation: "stacked",
+            selectedWindowId: windowId("target"),
             width: { kind: "fixed", value: 640 },
             windowIds: [windowId("target")],
           },
@@ -4009,6 +4592,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("source"),
+            presentation: "stacked",
+            selectedWindowId: windowId("moved"),
             width: { kind: "fixed", value: 320 },
             windowIds: [windowId("moved"), windowId("source-peer")],
           },
@@ -4029,11 +4614,15 @@ describe("LayoutEngine", () => {
       columns: [
         {
           id: "destination",
+          presentation: "stacked",
+          selectedWindowId: "moved",
           width: { kind: "fixed", value: 640 },
           windowIds: ["moved", "target"],
         },
         {
           id: "source",
+          presentation: "stacked",
+          selectedWindowId: "source-peer",
           width: { kind: "fixed", value: 320 },
           windowIds: ["source-peer"],
         },
@@ -4051,6 +4640,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("source-left"),
+            presentation: "stacked",
+            selectedWindowId: windowId("source-left-window"),
             width: { kind: "fixed", value: 240 },
             windowIds: [windowId("source-left-window")],
           },
@@ -4059,6 +4650,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("source-moved"),
+            presentation: "stacked",
+            selectedWindowId: windowId("moved"),
             width: { kind: "fixed", value: 310 },
             windowHeights: [{ clientHeight: 380, kind: "fixed" }],
             windowIds: [windowId("moved")],
@@ -4068,6 +4661,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("source-right"),
+            presentation: "stacked",
+            selectedWindowId: windowId("source-right-window"),
             width: { kind: "fixed", value: 360 },
             windowIds: [windowId("source-right-window")],
           },
@@ -4084,6 +4679,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("target"),
+            presentation: "stacked",
+            selectedWindowId: windowId("target-window"),
             width: { kind: "proportion", value: 0.7 },
             windowIds: [windowId("target-window")],
           },
@@ -4114,11 +4711,15 @@ describe("LayoutEngine", () => {
       columns: [
         {
           id: "source-left",
+          presentation: "stacked",
+          selectedWindowId: "source-left-window",
           width: { kind: "fixed", value: 240 },
           windowIds: ["source-left-window"],
         },
         {
           id: "source-right",
+          presentation: "stacked",
+          selectedWindowId: "source-right-window",
           width: { kind: "fixed", value: 360 },
           windowIds: ["source-right-window"],
         },
@@ -4132,6 +4733,8 @@ describe("LayoutEngine", () => {
       columns: [
         {
           id: "target",
+          presentation: "stacked",
+          selectedWindowId: "moved",
           width: { kind: "proportion", value: 0.7 },
           windowIds: ["moved", "target-window"],
         },
@@ -4162,6 +4765,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("source-stack"),
+            presentation: "stacked",
+            selectedWindowId: windowId("source-a"),
             width: { kind: "fixed", value: 310 },
             windowHeights: [
               { kind: "auto", weight: 2 },
@@ -4187,6 +4792,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("target-left"),
+            presentation: "stacked",
+            selectedWindowId: windowId("target-left-window"),
             width: { kind: "fixed", value: 280 },
             windowIds: [windowId("target-left-window")],
           },
@@ -4195,6 +4802,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("target-stack"),
+            presentation: "stacked",
+            selectedWindowId: windowId("target-a"),
             width: { kind: "proportion", value: 0.62 },
             windowHeights: [
               { kind: "auto", weight: 3 },
@@ -4232,6 +4841,8 @@ describe("LayoutEngine", () => {
       columns: [
         {
           id: "source-stack",
+          presentation: "stacked",
+          selectedWindowId: "source-a",
           width: { kind: "fixed", value: 310 },
           windowHeights: [
             { kind: "auto", weight: 2 },
@@ -4248,6 +4859,8 @@ describe("LayoutEngine", () => {
         targetBefore.columns[0],
         {
           id: "target-stack",
+          presentation: "stacked",
+          selectedWindowId: "moved",
           width: { kind: "proportion", value: 0.62 },
           windowHeights: [
             { kind: "auto", weight: 3 },
@@ -4276,6 +4889,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("source-inactive"),
+            presentation: "stacked",
+            selectedWindowId: windowId("inactive"),
             width: { kind: "fixed", value: 260 },
             windowIds: [windowId("inactive")],
           },
@@ -4284,6 +4899,8 @@ describe("LayoutEngine", () => {
         {
           column: {
             id: columnId("source-active"),
+            presentation: "stacked",
+            selectedWindowId: windowId("active"),
             width: { kind: "fixed", value: 320 },
             windowIds: [windowId("active")],
           },

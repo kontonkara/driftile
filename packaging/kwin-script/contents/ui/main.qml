@@ -621,6 +621,12 @@ QtObject {
         sequence: "Meta+F"
         onActivated: Runtime.DriftileRuntime.maximizeColumn()
     }
+    readonly property ShortcutHandler toggleColumnTabbedDisplayShortcut: ShortcutHandler {
+        name: "driftile_toggle_column_tabbed_display"
+        text: "Driftile: Toggle tabbed column"
+        sequence: "Meta+W"
+        onActivated: Runtime.DriftileRuntime.toggleColumnTabbedDisplay()
+    }
     readonly property ShortcutHandler expandColumnToAvailableWidthShortcut: ShortcutHandler {
         name: "driftile_expand_column_to_available_width"
         text: "Driftile: Expand column to available width"

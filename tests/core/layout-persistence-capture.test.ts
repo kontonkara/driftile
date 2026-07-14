@@ -44,12 +44,16 @@ describe("layout persistence capture", () => {
                     windowKey: "window-2",
                   },
                 ],
+                presentation: "tabbed",
+                selectedMemberIndex: 1,
                 width: { kind: "fixed", value: 420 },
               },
               {
                 fullWidthRestore: { kind: "fixed", value: 720 },
                 fullWidthRestoreViewportOffset: -310,
                 members: [{ windowKey: "window-3" }],
+                presentation: "stacked",
+                selectedMemberIndex: 0,
                 width: { kind: "proportion", value: 1 },
               },
             ],
@@ -62,6 +66,8 @@ describe("layout persistence capture", () => {
             columns: [
               {
                 members: [{ windowKey: "window-4" }],
+                presentation: "stacked",
+                selectedMemberIndex: 0,
                 width: { kind: "proportion", value: 0.5 },
               },
             ],
@@ -74,6 +80,7 @@ describe("layout persistence capture", () => {
           {
             anchor: {
               columnIndex: 0,
+              columnPresentation: "tabbed",
               columnWidth: { kind: "fixed", value: 420 },
               memberIndex: 1,
               nextWindowKey: "window-2",
@@ -90,7 +97,7 @@ describe("layout persistence capture", () => {
           { key: "DP-1", name: "DP-1" },
           { key: "HDMI-A-1", name: "HDMI-A-1" },
         ],
-        version: 1,
+        version: 3,
         windows: [
           { key: "floating-1", liveId: "floating-1" },
           { key: "window-1", liveId: "window-1" },
@@ -316,7 +323,7 @@ describe("layout persistence capture", () => {
         floatingWindows: [],
         format: "driftile-layout",
         outputs: [],
-        version: 1,
+        version: 3,
         windows: [],
       },
     });
@@ -372,6 +379,7 @@ describe("layout persistence capture", () => {
 
     expect(anchor).toEqual({
       columnIndex: 7,
+      columnPresentation: "stacked",
       columnWidth: { kind: "fixed", value: 400 },
       memberIndex: 4,
     });
@@ -525,6 +533,8 @@ function representativeInput(): LayoutPersistenceCaptureInput {
       columns: [
         {
           id: columnId("column-1"),
+          presentation: "tabbed",
+          selectedWindowId: windowId("window-2"),
           width: { kind: "fixed", value: 420 },
           windowHeights: [
             { kind: "auto", weight: 2 },
@@ -565,6 +575,7 @@ function representativeInput(): LayoutPersistenceCaptureInput {
         placement("floating-1", {
           columnId: columnId("column-1"),
           columnIndex: 0,
+          columnPresentation: "tabbed",
           columnWidth: { kind: "fixed", value: 420 },
           memberIndex: 1,
           nextWindowId: windowId("window-2"),
@@ -654,8 +665,16 @@ function column(
   windows: readonly string[],
   width: LayoutColumnSnapshot["width"] = { kind: "fixed", value: 400 },
 ): LayoutColumnSnapshot {
+  const selected = windows[0];
+
+  if (selected === undefined) {
+    throw new Error("test column must contain a window");
+  }
+
   return {
     id: columnId(id),
+    presentation: "stacked",
+    selectedWindowId: windowId(selected),
     width,
     windowIds: windows.map(windowId),
   };
@@ -678,6 +697,7 @@ function placement(
     previousWindowId: null,
     windowId: windowId(id),
     ...overrides,
+    columnPresentation: overrides.columnPresentation ?? "stacked",
   };
 }
 

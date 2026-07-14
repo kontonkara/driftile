@@ -474,6 +474,11 @@ function appendColumnWindows(
     return;
   }
 
+  if (column.presentation === "tabbed") {
+    appendTabbedWindows(output, column, left, width, input);
+    return;
+  }
+
   if (column.windowHeights) {
     appendWeightedHeightWindows(output, column, left, width, input);
     return;
@@ -513,6 +518,66 @@ function appendColumnWindows(
   }
 }
 
+function appendTabbedWindows(
+  output: WindowGeometry[],
+  column: LayoutColumnSnapshot,
+  left: number,
+  width: number,
+  input: StripGeometryInput,
+): void {
+  validateColumnWindowHeights(column);
+  const verticalSpan = snapSpan(
+    input.workArea.y + input.gap,
+    input.workArea.y + input.workArea.height - input.gap,
+    input.devicePixelRatio,
+    input.pixelGridOrigin.y,
+  );
+
+  if (verticalSpan.length <= 0) {
+    throw new RangeError(
+      "work area is too small for the requested window gaps",
+    );
+  }
+
+  for (const windowId of column.windowIds) {
+    const suppliedBounds = input.windowHeightBounds?.get(windowId);
+
+    if (suppliedBounds) {
+      const bounds = resolveWindowHeightBounds(
+        suppliedBounds,
+        input.devicePixelRatio,
+      );
+      const tolerance = floatingPointTolerance(
+        verticalSpan.length,
+        bounds.minimumFrameHeight,
+        Number.isFinite(bounds.maximumFrameHeight)
+          ? bounds.maximumFrameHeight
+          : verticalSpan.length,
+      );
+
+      if (
+        verticalSpan.length + tolerance < bounds.minimumFrameHeight ||
+        verticalSpan.length - tolerance > bounds.maximumFrameHeight
+      ) {
+        throw new RangeError(
+          "tabbed window height bounds cannot accept the common frame",
+        );
+      }
+    }
+
+    output.push({
+      columnId: column.id,
+      frame: {
+        height: verticalSpan.length,
+        width,
+        x: left,
+        y: verticalSpan.start,
+      },
+      windowId,
+    });
+  }
+}
+
 interface ResolvedWindowHeightBounds {
   readonly decorationHeight: number;
   readonly maximumFrameHeight: number;
@@ -532,23 +597,7 @@ function appendWeightedHeightWindows(
     throw new RangeError("window height state does not match the column");
   }
 
-  let nonAutomaticIndex = -1;
-
-  for (const [index, height] of heights.entries()) {
-    validateWindowHeight(height);
-
-    if (height.kind === "auto") {
-      continue;
-    }
-
-    if (nonAutomaticIndex >= 0) {
-      throw new RangeError(
-        "a column can contain at most one non-automatic window height",
-      );
-    }
-
-    nonAutomaticIndex = index;
-  }
+  const nonAutomaticIndex = validateColumnWindowHeights(column);
 
   const availableHeight =
     input.workArea.height - input.gap * (column.windowIds.length + 1);
@@ -917,17 +966,63 @@ function resolveWindowHeightBounds(
   };
 }
 
-function validateWindowHeight(height: WindowHeight): void {
-  if (
-    (height.kind === "auto" &&
-      (!Number.isFinite(height.weight) || height.weight <= 0)) ||
-    (height.kind === "fixed" &&
-      (!Number.isFinite(height.clientHeight) || height.clientHeight <= 0)) ||
-    (height.kind === "preset" &&
-      (!Number.isInteger(height.index) || height.index < 0))
-  ) {
+function validateWindowHeight(height: unknown): asserts height is WindowHeight {
+  if (typeof height !== "object" || height === null) {
     throw new RangeError("window height state is invalid");
   }
+
+  const state = height as Record<string, unknown>;
+
+  if (
+    (state["kind"] === "auto" &&
+      typeof state["weight"] === "number" &&
+      Number.isFinite(state["weight"]) &&
+      state["weight"] > 0) ||
+    (state["kind"] === "fixed" &&
+      typeof state["clientHeight"] === "number" &&
+      Number.isFinite(state["clientHeight"]) &&
+      state["clientHeight"] > 0) ||
+    (state["kind"] === "preset" &&
+      typeof state["index"] === "number" &&
+      Number.isInteger(state["index"]) &&
+      state["index"] >= 0)
+  ) {
+    return;
+  }
+
+  throw new RangeError("window height state is invalid");
+}
+
+function validateColumnWindowHeights(column: LayoutColumnSnapshot): number {
+  const heights = column.windowHeights;
+
+  if (!heights) {
+    return -1;
+  }
+
+  if (heights.length !== column.windowIds.length) {
+    throw new RangeError("window height state does not match the column");
+  }
+
+  let nonAutomaticIndex = -1;
+
+  for (const [index, height] of heights.entries()) {
+    validateWindowHeight(height);
+
+    if (height.kind === "auto") {
+      continue;
+    }
+
+    if (nonAutomaticIndex >= 0) {
+      throw new RangeError(
+        "a column can contain at most one non-automatic window height",
+      );
+    }
+
+    nonAutomaticIndex = index;
+  }
+
+  return nonAutomaticIndex;
 }
 
 function validateSizePolicy(width: ColumnWidth, label: string): void {
@@ -981,6 +1076,28 @@ function validateInput(input: StripGeometryInput): void {
   if (input.devicePixelRatio <= 0) {
     throw new RangeError("device pixel ratio must be greater than zero");
   }
+
+  for (const column of input.context.columns) {
+    if (
+      !isKnownColumnPresentation(column.presentation) ||
+      column.windowIds.length === 0 ||
+      !column.windowIds.includes(column.selectedWindowId) ||
+      (column.presentation === "tabbed" && column.windowIds.length < 2)
+    ) {
+      throw new RangeError("column presentation state is invalid");
+    }
+
+    if (
+      column.windowHeights &&
+      column.windowHeights.length !== column.windowIds.length
+    ) {
+      throw new RangeError("window height state does not match the column");
+    }
+  }
+}
+
+function isKnownColumnPresentation(presentation: unknown): boolean {
+  return presentation === "stacked" || presentation === "tabbed";
 }
 
 interface SnappedSpan {

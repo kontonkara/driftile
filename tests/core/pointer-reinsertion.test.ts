@@ -135,6 +135,43 @@ describe("planPointerWindowDrop", () => {
     ).toBeNull();
   });
 
+  it("hit-tests only the selected member of an overlapping tabbed column", () => {
+    const input = fixture();
+    const sourceColumn = input.context.columns[0];
+    const targetColumn = input.context.columns[1];
+    const targetFrame = input.windows[1]?.frame;
+
+    if (!sourceColumn || !targetColumn || !targetFrame) {
+      throw new Error("expected a tabbed destination fixture");
+    }
+
+    const context: LayoutContextSnapshot = {
+      ...input.context,
+      columns: [
+        sourceColumn,
+        {
+          ...targetColumn,
+          presentation: "tabbed",
+          selectedWindowId: windowId("target-b"),
+        },
+      ],
+    };
+    const windows = input.windows.map((candidate) =>
+      candidate.windowId === "target-b"
+        ? { ...candidate, frame: targetFrame }
+        : candidate,
+    );
+
+    expect(
+      planPointerWindowDrop({
+        ...input,
+        context,
+        cursor: { x: 250, y: 25 },
+        windows,
+      }),
+    ).toEqual({ position: "before", targetWindowId: "target-b" });
+  });
+
   it("rejects a dragged-window hit and an ineffective adjacent drop", () => {
     const input = fixture();
     const sameColumnContext: LayoutContextSnapshot = {
@@ -143,6 +180,8 @@ describe("planPointerWindowDrop", () => {
       columns: [
         {
           id: columnId("stack"),
+          presentation: "stacked",
+          selectedWindowId: windowId("dragged"),
           width: { kind: "fixed", value: 400 },
           windowIds: [windowId("dragged"), windowId("target-a")],
         },
@@ -187,6 +226,8 @@ describe("planPointerWindowDrop", () => {
         ...input.context.columns,
         {
           id: columnId("duplicate"),
+          presentation: "stacked",
+          selectedWindowId: windowId("target-a"),
           width: { kind: "fixed", value: 200 },
           windowIds: [windowId("target-a")],
         },
@@ -397,11 +438,15 @@ function fixture(
     columns: [
       {
         id: columnId("dragged-column"),
+        presentation: "stacked",
+        selectedWindowId: windowId("dragged"),
         width: { kind: "fixed", value: 300 },
         windowIds: [windowId("dragged")],
       },
       {
         id: columnId("target-column"),
+        presentation: "stacked",
+        selectedWindowId: windowId("target-a"),
         width: { kind: "fixed", value: 400 },
         windowIds: [windowId("target-a"), windowId("target-b")],
       },
@@ -477,6 +522,8 @@ function sameColumnNoOpFixture(): PointerWindowDropInput {
       columns: [
         {
           id: columnId("stack"),
+          presentation: "stacked",
+          selectedWindowId: windowId("dragged"),
           width: { kind: "fixed", value: 400 },
           windowIds: [windowId("dragged"), windowId("target-a")],
         },

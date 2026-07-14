@@ -344,6 +344,12 @@ export function maximizeWindowToEdges(): void {
   runCommand((activeController) => activeController.maximizeWindowToEdges());
 }
 
+export function toggleColumnTabbedDisplay(): void {
+  runCommand((activeController) =>
+    activeController.toggleColumnTabbedDisplay(),
+  );
+}
+
 export function moveWindowToPreviousDesktop(): void {
   runCommand((activeController) =>
     activeController.moveWindowToPreviousDesktop(),

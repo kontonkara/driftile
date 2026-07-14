@@ -32,6 +32,7 @@ export type PointerExternalWindowDropTarget = WindowReinsertionTarget;
 
 interface ContextWindowPlacement {
   readonly columnId: ColumnId;
+  readonly dropTarget: boolean;
   readonly memberIndex: number;
 }
 
@@ -218,6 +219,7 @@ function pointerWindowDropMatch(
 
     if (
       snapshot.windowId === draggedWindowId ||
+      !placement.dropTarget ||
       !containsPoint(snapshot.frame, cursor)
     ) {
       continue;
@@ -269,6 +271,10 @@ function contextWindowPlacements(
       !validColumnWidth(column.width) ||
       !Array.isArray(column.windowIds) ||
       column.windowIds.length === 0 ||
+      (column.presentation !== "stacked" && column.presentation !== "tabbed") ||
+      (column.presentation === "tabbed" && column.windowIds.length < 2) ||
+      typeof column.selectedWindowId !== "string" ||
+      !column.windowIds.includes(column.selectedWindowId) ||
       !validWindowHeights(column.windowHeights, column.windowIds.length)
     ) {
       return null;
@@ -295,6 +301,9 @@ function contextWindowPlacements(
 
       placements.set(savedWindowId, {
         columnId: savedColumnId,
+        dropTarget:
+          column.presentation === "stacked" ||
+          savedWindowId === column.selectedWindowId,
         memberIndex,
       });
     }

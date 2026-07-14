@@ -1,7 +1,11 @@
-import type { ColumnWidth, WindowHeight } from "./layout-engine";
+import type {
+  ColumnPresentation,
+  ColumnWidth,
+  WindowHeight,
+} from "./layout-engine";
 
 export const LAYOUT_PERSISTENCE_FORMAT = "driftile-layout";
-export const LAYOUT_PERSISTENCE_VERSION = 1;
+export const LAYOUT_PERSISTENCE_VERSION = 3;
 
 export const LAYOUT_PERSISTENCE_LIMITS = Object.freeze({
   columnsPerContext: 512,
@@ -59,24 +63,27 @@ export interface PersistedColumnMemberV1 {
   readonly windowKey: string;
 }
 
-export interface PersistedColumnV1 {
+export interface PersistedColumnV3 {
   readonly fullWidthRestore?: ColumnWidth;
   readonly fullWidthRestoreViewportOffset?: number;
   readonly members: readonly PersistedColumnMemberV1[];
+  readonly presentation: ColumnPresentation;
+  readonly selectedMemberIndex: number;
   readonly width: ColumnWidth;
 }
 
-export interface PersistedContextV1 {
+export interface PersistedContextV3 {
   readonly activeColumnIndex: number | null;
-  readonly columns: readonly PersistedColumnV1[];
+  readonly columns: readonly PersistedColumnV3[];
   readonly desktopId: string;
   readonly outputKey: string;
   readonly restoreFingerprint?: string;
   readonly viewportOffset: number;
 }
 
-export interface PersistedFloatingAnchorV1 {
+export interface PersistedFloatingAnchorV3 {
   readonly columnIndex: number;
+  readonly columnPresentation: ColumnPresentation;
   readonly columnWidth: ColumnWidth;
   readonly memberIndex: number;
   readonly nextWindowKey?: string;
@@ -84,16 +91,16 @@ export interface PersistedFloatingAnchorV1 {
   readonly windowHeight?: WindowHeight;
 }
 
-export interface PersistedFloatingWindowV1 {
-  readonly anchor: PersistedFloatingAnchorV1;
+export interface PersistedFloatingWindowV3 {
+  readonly anchor: PersistedFloatingAnchorV3;
   readonly desktopId: string;
   readonly outputKey: string;
   readonly windowKey: string;
 }
 
-export interface LayoutPersistenceV1 {
-  readonly contexts: readonly PersistedContextV1[];
-  readonly floatingWindows: readonly PersistedFloatingWindowV1[];
+export interface LayoutPersistenceV3 {
+  readonly contexts: readonly PersistedContextV3[];
+  readonly floatingWindows: readonly PersistedFloatingWindowV3[];
   readonly format: typeof LAYOUT_PERSISTENCE_FORMAT;
   readonly outputs: readonly PersistedOutputV1[];
   readonly version: typeof LAYOUT_PERSISTENCE_VERSION;
@@ -113,13 +120,13 @@ export type LayoutPersistenceDecodeResult =
     }
   | {
       readonly ok: true;
-      readonly value: LayoutPersistenceV1;
+      readonly value: LayoutPersistenceV3;
     };
 
 class InvalidPersistenceState extends Error {}
 
-export function encodeLayoutPersistence(state: LayoutPersistenceV1): string {
-  const document = `${JSON.stringify(parseV1(state))}\n`;
+export function encodeLayoutPersistence(state: LayoutPersistenceV3): string {
+  const document = `${JSON.stringify(parseV3(state))}\n`;
 
   if (document.length > LAYOUT_PERSISTENCE_LIMITS.documentCharacters) {
     invalid();
@@ -143,18 +150,31 @@ export function decodeLayoutPersistence(
     return { error: "invalid-json", ok: false };
   }
 
+  return decodeLayoutPersistenceValue(parsed);
+}
+
+export function decodeLayoutPersistenceValue(
+  value: unknown,
+): LayoutPersistenceDecodeResult {
   if (
-    isRecord(parsed) &&
-    parsed["format"] === LAYOUT_PERSISTENCE_FORMAT &&
-    typeof parsed["version"] === "number" &&
-    Number.isInteger(parsed["version"]) &&
-    parsed["version"] !== LAYOUT_PERSISTENCE_VERSION
+    isRecord(value) &&
+    value["format"] === LAYOUT_PERSISTENCE_FORMAT &&
+    typeof value["version"] === "number" &&
+    Number.isInteger(value["version"]) &&
+    value["version"] !== 1 &&
+    value["version"] !== LAYOUT_PERSISTENCE_VERSION
   ) {
     return { error: "unsupported-version", ok: false };
   }
 
   try {
-    return { ok: true, value: parseV1(parsed) };
+    return {
+      ok: true,
+      value:
+        isRecord(value) && value["version"] === 1
+          ? parseLegacyV1(value)
+          : parseV3(value),
+    };
   } catch {
     return { error: "invalid-state", ok: false };
   }
@@ -164,7 +184,15 @@ export function canonicalizePersistedOutput(value: unknown): PersistedOutputV1 {
   return parseOutput(value);
 }
 
-function parseV1(value: unknown): LayoutPersistenceV1 {
+function parseV3(value: unknown): LayoutPersistenceV3 {
+  return parseState(value, false);
+}
+
+function parseLegacyV1(value: unknown): LayoutPersistenceV3 {
+  return parseState(value, true);
+}
+
+function parseState(value: unknown, legacy: boolean): LayoutPersistenceV3 {
   const state = recordWithKeys(
     value,
     ["contexts", "floatingWindows", "format", "outputs", "version", "windows"],
@@ -173,7 +201,7 @@ function parseV1(value: unknown): LayoutPersistenceV1 {
 
   if (
     state["format"] !== LAYOUT_PERSISTENCE_FORMAT ||
-    state["version"] !== LAYOUT_PERSISTENCE_VERSION
+    state["version"] !== (legacy ? 1 : LAYOUT_PERSISTENCE_VERSION)
   ) {
     invalid();
   }
@@ -189,11 +217,11 @@ function parseV1(value: unknown): LayoutPersistenceV1 {
   const contexts = boundedArray(
     state["contexts"],
     LAYOUT_PERSISTENCE_LIMITS.contexts,
-  ).map(parseContext);
+  ).map((context) => parseContext(context, legacy));
   const floatingWindows = boundedArray(
     state["floatingWindows"],
     LAYOUT_PERSISTENCE_LIMITS.floatingWindows,
-  ).map(parseFloatingWindow);
+  ).map((floating) => parseFloatingWindow(floating, legacy));
 
   validateReferences(outputs, windows, contexts, floatingWindows);
 
@@ -273,7 +301,7 @@ function parseWindowMatch(value: unknown): PersistedWindowMatchV1 {
   };
 }
 
-function parseContext(value: unknown): PersistedContextV1 {
+function parseContext(value: unknown, legacy: boolean): PersistedContextV3 {
   const context = recordWithKeys(
     value,
     [
@@ -289,7 +317,7 @@ function parseContext(value: unknown): PersistedContextV1 {
     context["columns"],
     LAYOUT_PERSISTENCE_LIMITS.columnsPerContext,
     false,
-  ).map(parseColumn);
+  ).map((column) => parseColumn(column, legacy));
   const activeColumnIndex = nullableIndex(
     context["activeColumnIndex"],
     columns.length,
@@ -316,10 +344,12 @@ function parseContext(value: unknown): PersistedContextV1 {
   };
 }
 
-function parseColumn(value: unknown): PersistedColumnV1 {
+function parseColumn(value: unknown, legacy: boolean): PersistedColumnV3 {
   const column = recordWithKeys(
     value,
-    ["members", "width"],
+    legacy
+      ? ["members", "width"]
+      : ["members", "presentation", "selectedMemberIndex", "width"],
     ["fullWidthRestore", "fullWidthRestoreViewportOffset"],
   );
   const members = boundedArray(
@@ -328,6 +358,12 @@ function parseColumn(value: unknown): PersistedColumnV1 {
     false,
   ).map(parseColumnMember);
   const width = parseWidth(column["width"]);
+  const presentation = legacy
+    ? "stacked"
+    : parseColumnPresentation(column["presentation"]);
+  const selectedMemberIndex = legacy
+    ? 0
+    : boundedIndex(column["selectedMemberIndex"], members.length);
   const fullWidthRestore =
     column["fullWidthRestore"] === undefined
       ? undefined
@@ -346,6 +382,7 @@ function parseColumn(value: unknown): PersistedColumnV1 {
 
   if (
     nonAutomaticHeights > 1 ||
+    (presentation === "tabbed" && members.length < 2) ||
     (fullWidthRestore !== undefined &&
       (width.kind !== "proportion" || width.value !== 1)) ||
     (fullWidthRestore === undefined &&
@@ -360,6 +397,8 @@ function parseColumn(value: unknown): PersistedColumnV1 {
       ? {}
       : { fullWidthRestoreViewportOffset }),
     members,
+    presentation,
+    selectedMemberIndex,
     width,
   };
 }
@@ -423,7 +462,10 @@ function parseRect(value: unknown): PersistedRectV1 {
   };
 }
 
-function parseFloatingWindow(value: unknown): PersistedFloatingWindowV1 {
+function parseFloatingWindow(
+  value: unknown,
+  legacy: boolean,
+): PersistedFloatingWindowV3 {
   const floating = recordWithKeys(
     value,
     ["anchor", "desktopId", "outputKey", "windowKey"],
@@ -431,17 +473,22 @@ function parseFloatingWindow(value: unknown): PersistedFloatingWindowV1 {
   );
 
   return {
-    anchor: parseFloatingAnchor(floating["anchor"]),
+    anchor: parseFloatingAnchor(floating["anchor"], legacy),
     desktopId: identifier(floating["desktopId"]),
     outputKey: identifier(floating["outputKey"]),
     windowKey: identifier(floating["windowKey"]),
   };
 }
 
-function parseFloatingAnchor(value: unknown): PersistedFloatingAnchorV1 {
+function parseFloatingAnchor(
+  value: unknown,
+  legacy: boolean,
+): PersistedFloatingAnchorV3 {
   const anchor = recordWithKeys(
     value,
-    ["columnIndex", "columnWidth", "memberIndex"],
+    legacy
+      ? ["columnIndex", "columnWidth", "memberIndex"]
+      : ["columnIndex", "columnPresentation", "columnWidth", "memberIndex"],
     ["nextWindowKey", "previousWindowKey", "windowHeight"],
   );
   const nextWindowKey = optionalIdentifier(anchor["nextWindowKey"]);
@@ -467,6 +514,9 @@ function parseFloatingAnchor(value: unknown): PersistedFloatingAnchorV1 {
       anchor["columnIndex"],
       LAYOUT_PERSISTENCE_LIMITS.columnsPerContext,
     ),
+    columnPresentation: legacy
+      ? "stacked"
+      : parseColumnPresentation(anchor["columnPresentation"]),
     columnWidth: parseWidth(anchor["columnWidth"]),
     memberIndex: boundedIndex(
       anchor["memberIndex"],
@@ -476,6 +526,14 @@ function parseFloatingAnchor(value: unknown): PersistedFloatingAnchorV1 {
     ...(previousWindowKey === undefined ? {} : { previousWindowKey }),
     ...(windowHeight === undefined ? {} : { windowHeight }),
   };
+}
+
+function parseColumnPresentation(value: unknown): ColumnPresentation {
+  if (value !== "stacked" && value !== "tabbed") {
+    invalid();
+  }
+
+  return value;
 }
 
 function parseWidth(value: unknown): ColumnWidth {
@@ -527,8 +585,8 @@ function isDefaultWindowHeight(height: WindowHeight | undefined): boolean {
 function validateReferences(
   outputs: readonly PersistedOutputV1[],
   windows: readonly PersistedWindowV1[],
-  contexts: readonly PersistedContextV1[],
-  floatingWindows: readonly PersistedFloatingWindowV1[],
+  contexts: readonly PersistedContextV3[],
+  floatingWindows: readonly PersistedFloatingWindowV3[],
 ): void {
   const outputKeys = uniqueValues(outputs.map((output) => output.key));
   const windowKeys = uniqueValues(windows.map((window) => window.key));
@@ -629,8 +687,8 @@ function uniqueValues(values: readonly string[]): ReadonlySet<string> {
 }
 
 function compareContexts(
-  left: PersistedContextV1,
-  right: PersistedContextV1,
+  left: PersistedContextV3,
+  right: PersistedContextV3,
 ): number {
   return (
     compareStrings(left.outputKey, right.outputKey) ||

@@ -46,6 +46,7 @@ import {
   LayoutEngine,
   columnWindowHeights,
   previewColumnRestoration,
+  type ColumnPresentation,
   type ColumnWidth,
   type ColumnStackEditPreview,
   type DetachedWindowPlacement,
@@ -78,7 +79,7 @@ import {
 } from "./core/layout-persistence-capture";
 import {
   decodeLayoutPersistence,
-  type LayoutPersistenceV1,
+  type LayoutPersistenceV3,
 } from "./core/layout-persistence";
 import {
   findAdjacentOutput,
@@ -796,7 +797,7 @@ export class RuntimeController {
     WindowId,
     ApplicationInitialFloating
   >();
-  private initialLayoutDecodedState: LayoutPersistenceV1 | null = null;
+  private initialLayoutDecodedState: LayoutPersistenceV3 | null = null;
   private initialLayoutHydrationCandidateFingerprint: string | null = null;
   private readonly initialLayoutHydrationQuietSamples: number;
   private initialLayoutHydrationRetryRemaining = 0;
@@ -849,6 +850,7 @@ export class RuntimeController {
   private pendingDefaultColumnWidth: ColumnWidth | null = null;
   private pendingGap: number | null = null;
   private readonly pendingWindowSyncs = new Set<WindowId>();
+  private readonly pendingTabbedNormalizations = new Set<WindowId>();
   private readonly resumeSamples = new Map<WindowId, ResumeSample>();
   private readonly schedule: (callback: () => void) => void;
   private readonly scheduleResume: (callback: () => void) => void;
@@ -2125,6 +2127,30 @@ export class RuntimeController {
     return true;
   }
 
+  toggleColumnTabbedDisplay(): boolean {
+    const command = this.prepareActiveColumnCommand();
+
+    if (!command || this.hasCapacityMutationInFlight(command.context.key)) {
+      return false;
+    }
+
+    const target: ColumnPresentation =
+      command.activeColumn.presentation === "stacked" ? "tabbed" : "stacked";
+    let previous: ColumnPresentation | null = null;
+
+    return this.applyActiveColumnMutation(
+      command,
+      "column presentation toggle",
+      () => {
+        previous = this.layout.setColumnPresentation(command.activeId, target);
+        return previous !== null;
+      },
+      () =>
+        previous !== null &&
+        this.layout.setColumnPresentation(command.activeId, previous) !== null,
+    );
+  }
+
   moveWindowToPreviousDesktop(): boolean {
     return this.moveActiveWindowToDesktop({
       direction: -1,
@@ -2796,6 +2822,7 @@ export class RuntimeController {
       this.pendingDefaultColumnWidth = null;
       this.pendingGap = null;
       this.pendingWindowSyncs.clear();
+      this.pendingTabbedNormalizations.clear();
       this.ownershipFollowUpRequired = false;
       this.ownershipRefreshInProgress = false;
       this.requestedSuspensions.clear();
@@ -2888,6 +2915,8 @@ export class RuntimeController {
       return 0;
     }
 
+    this.normalizePendingTabbedColumns(sampledGeometries);
+
     this.dirtyContexts.clear();
 
     let writeCount = 0;
@@ -2916,6 +2945,157 @@ export class RuntimeController {
     }
 
     return writeCount;
+  }
+
+  private normalizePendingTabbedColumns(
+    sampledGeometries: ReadonlyMap<string, ContextGeometry>,
+  ): void {
+    if (this.pendingTabbedNormalizations.size === 0) {
+      return;
+    }
+
+    const normalizedColumns = new Set<string>();
+    let stateChanged = false;
+
+    for (const id of [...this.pendingTabbedNormalizations]) {
+      const owner = this.managedWindows.get(id);
+      const context = owner ? this.contexts.get(owner.contextKey) : undefined;
+
+      if (!owner || !context) {
+        this.pendingTabbedNormalizations.delete(id);
+        continue;
+      }
+
+      const snapshot = this.layout.snapshot(
+        context.outputId,
+        context.desktopId,
+      );
+      const column = snapshot.columns.find((candidate) =>
+        candidate.windowIds.includes(id),
+      );
+
+      if (!column || column.presentation !== "tabbed") {
+        this.pendingTabbedNormalizations.delete(id);
+        continue;
+      }
+
+      const geometry = sampledGeometries.get(context.key);
+
+      if (!geometry) {
+        continue;
+      }
+
+      const normalizationKey = `${context.key}\u0000${String(column.id)}`;
+
+      if (normalizedColumns.has(normalizationKey)) {
+        this.pendingTabbedNormalizations.delete(id);
+        continue;
+      }
+
+      normalizedColumns.add(normalizationKey);
+
+      const selected = this.observer.source(column.selectedWindowId);
+
+      if (!selected || selected.minimized) {
+        const fallback = this.tabbedSelectionFallback(column);
+
+        if (fallback && this.layout.selectWindowInColumn(fallback)) {
+          stateChanged = true;
+          const fallbackWindow = this.observer.source(fallback);
+
+          if (
+            fallbackWindow &&
+            snapshot.activeColumnId === column.id &&
+            this.workspace.activeWindow?.minimized === true
+          ) {
+            this.requestWindowFocus(
+              fallback,
+              fallbackWindow,
+              context.key,
+              "tiling",
+            );
+          }
+        }
+      }
+
+      if (!this.tabbedColumnRespectsConstraints(snapshot, column, geometry)) {
+        const memberId = column.windowIds[0];
+
+        if (
+          memberId &&
+          this.layout.setColumnPresentation(memberId, "stacked") !== null
+        ) {
+          this.markContextDirty(context);
+          stateChanged = true;
+        }
+      }
+
+      for (const memberId of column.windowIds) {
+        this.pendingTabbedNormalizations.delete(memberId);
+      }
+    }
+
+    if (stateChanged) {
+      this.requestLayoutStatePublication();
+    }
+  }
+
+  private tabbedSelectionFallback(
+    column: LayoutColumnSnapshot,
+  ): WindowId | null {
+    const selectedIndex = column.windowIds.indexOf(column.selectedWindowId);
+
+    if (selectedIndex < 0) {
+      return null;
+    }
+
+    for (
+      let index = selectedIndex + 1;
+      index < column.windowIds.length;
+      index += 1
+    ) {
+      const id = column.windowIds[index];
+
+      if (id && !this.observer.source(id)?.minimized) {
+        return id;
+      }
+    }
+
+    for (let index = selectedIndex - 1; index >= 0; index -= 1) {
+      const id = column.windowIds[index];
+
+      if (id && !this.observer.source(id)?.minimized) {
+        return id;
+      }
+    }
+
+    return null;
+  }
+
+  private tabbedColumnRespectsConstraints(
+    snapshot: LayoutContextSnapshot,
+    column: LayoutColumnSnapshot,
+    geometry: ContextGeometry,
+  ): boolean {
+    let solved: ReturnType<typeof solveStripGeometry>;
+
+    try {
+      solved = this.solveContextGeometry(snapshot, geometry);
+    } catch {
+      return false;
+    }
+
+    const frames = new Map(
+      solved.windows
+        .filter((window) => window.columnId === column.id)
+        .map((window) => [window.windowId, window.frame] as const),
+    );
+
+    return column.windowIds.every((id) => {
+      const source = this.observer.source(id);
+      const frame = frames.get(id);
+      return Boolean(source && frame && respectsSizeConstraints(frame, source));
+    });
   }
 
   private readonly handleCurrentDesktopChanged = (
@@ -4194,6 +4374,10 @@ export class RuntimeController {
       return;
     }
 
+    if (cause === "constraints") {
+      this.pendingTabbedNormalizations.add(changedId);
+    }
+
     const desktopFileNameChange =
       cause === "classification" && source
         ? this.trackWindowDesktopFileNameChange(changedId, source)
@@ -4306,6 +4490,8 @@ export class RuntimeController {
     if (this.borderSynchronizationIds.has(changedId)) {
       return;
     }
+
+    this.pendingTabbedNormalizations.add(changedId);
 
     if (
       source === this.interactiveResizeSource &&
@@ -4567,6 +4753,7 @@ export class RuntimeController {
     this.pendingHydratedRestoreBaselines.delete(managedId);
     this.deleteUnconfirmedFullscreenTarget(managedId);
     this.pendingWindowSyncs.delete(managedId);
+    this.pendingTabbedNormalizations.delete(managedId);
     this.forgetWaitingWindow(managedId);
     this.requestedSuspensions.delete(managedId);
     this.resumeSamples.delete(managedId);
@@ -4689,6 +4876,10 @@ export class RuntimeController {
 
     if (changed && context) {
       this.markContextDirty(context);
+
+      if (!this.preserveLoadedLayoutState) {
+        this.requestLayoutStatePublication();
+      }
 
       if (!this.initializing) {
         this.scheduleWork();
@@ -5688,31 +5879,14 @@ export class RuntimeController {
       return false;
     }
 
-    const activeIndex = command.activeColumn.windowIds.indexOf(
-      command.activeId,
-    );
-    const step = direction === "up" ? -1 : 1;
-    let targetId: WindowId | null = null;
+    const selectedId =
+      command.activeColumn.presentation === "tabbed"
+        ? command.activeColumn.selectedWindowId
+        : command.activeId;
+    let targetId = this.layout.adjacentWindowInColumn(selectedId, direction);
 
-    for (
-      let index = activeIndex + step;
-      index >= 0 && index < command.activeColumn.windowIds.length;
-      index += step
-    ) {
-      const candidateId = command.activeColumn.windowIds[index];
-
-      if (!candidateId) {
-        break;
-      }
-
-      const candidate = this.observer.source(candidateId);
-
-      if (candidate?.minimized) {
-        continue;
-      }
-
-      targetId = candidateId;
-      break;
+    while (targetId && this.observer.source(targetId)?.minimized) {
+      targetId = this.layout.adjacentWindowInColumn(targetId, direction);
     }
 
     if (!targetId) {
@@ -5738,9 +5912,20 @@ export class RuntimeController {
     const rememberedTiledFocus = this.lastTiledFocus.get(key);
     this.lastWrites = 0;
 
+    if (
+      command.activeColumn.presentation === "tabbed" &&
+      !this.layout.selectWindowInColumn(targetId)
+    ) {
+      return false;
+    }
+
     if (this.requestWindowFocus(targetId, target, key, "tiling")) {
       this.rememberLayerFocus(targetId, target);
       return true;
+    }
+
+    if (command.activeColumn.presentation === "tabbed") {
+      this.layout.selectWindowInColumn(selectedId);
     }
 
     this.recoverRejectedFocus(
@@ -5816,6 +6001,11 @@ export class RuntimeController {
   private firstNonMinimizedColumnMember(
     column: LayoutColumnSnapshot,
   ): WindowId | null {
+    if (column.presentation === "tabbed") {
+      const selected = this.observer.source(column.selectedWindowId);
+      return selected && !selected.minimized ? column.selectedWindowId : null;
+    }
+
     for (const id of column.windowIds) {
       if (!this.observer.source(id)?.minimized) {
         return id;
@@ -6775,6 +6965,8 @@ export class RuntimeController {
     if (
       !command ||
       this.hasCapacityMutationInFlight(command.context.key) ||
+      (command.activeColumn.presentation === "tabbed" &&
+        command.activeColumn.selectedWindowId !== command.activeId) ||
       !this.columnMembersAreStackTransferEligible(
         command.activeColumn,
         command.context,
@@ -10783,7 +10975,11 @@ export class RuntimeController {
   private resizeActiveWindowHeight(action: WindowHeightResizeAction): boolean {
     const command = this.prepareActiveColumnCommand();
 
-    if (!command || this.hasCapacityMutationInFlight(command.context.key)) {
+    if (
+      !command ||
+      command.activeColumn.presentation === "tabbed" ||
+      this.hasCapacityMutationInFlight(command.context.key)
+    ) {
       return false;
     }
 
@@ -11627,6 +11823,7 @@ export class RuntimeController {
     return {
       columnId: detachedColumnId,
       columnIndex,
+      columnPresentation: "stacked",
       columnWidth: width,
       desktopId: managedContext.desktopId,
       memberIndex: 0,
@@ -17334,6 +17531,8 @@ export class RuntimeController {
         const metadata: TopologyColumnMetadata = {
           column: {
             id: column.id,
+            presentation: column.presentation,
+            selectedWindowId: column.selectedWindowId,
             width: { ...column.width },
             ...(column.windowHeights
               ? {
@@ -18407,6 +18606,8 @@ export class RuntimeController {
         this.initializing = false;
       }
     }
+
+    this.normalizePendingTabbedColumns(sampledGeometries);
 
     const dirtyContextKeys = [...this.dirtyContexts];
     this.dirtyContexts.clear();
@@ -19645,6 +19846,8 @@ export class RuntimeController {
         >;
         readonly column: {
           id: ColumnId;
+          presentation: ColumnPresentation;
+          selectedWindowId: WindowId;
           width: ColumnWidth;
           windowHeights?: WindowHeight[];
           windowIds: WindowId[];
@@ -19684,6 +19887,8 @@ export class RuntimeController {
           candidates: [],
           column: {
             id: plannedColumnId,
+            presentation: metadata?.column.presentation ?? "stacked",
+            selectedWindowId: candidate.id,
             width,
             windowIds: [],
           },
@@ -19693,6 +19898,10 @@ export class RuntimeController {
 
       planned.candidates.push(candidate);
       planned.column.windowIds.push(candidate.id);
+
+      if (metadata?.column.selectedWindowId === candidate.id) {
+        planned.column.selectedWindowId = candidate.id;
+      }
 
       if (metadata?.column.windowHeights) {
         const sourceIndex = metadata.column.windowIds.indexOf(candidate.id);
@@ -19710,6 +19919,10 @@ export class RuntimeController {
     let plannedColumns = [...plannedByKey.values()];
 
     for (const planned of plannedColumns) {
+      if (planned.column.windowIds.length === 1) {
+        planned.column.presentation = "stacked";
+      }
+
       const heights = planned.column.windowHeights;
 
       if (!heights) {
@@ -23499,6 +23712,8 @@ function layoutContextSnapshotsEqual(
     if (
       !candidate ||
       column.id !== candidate.id ||
+      column.presentation !== candidate.presentation ||
+      column.selectedWindowId !== candidate.selectedWindowId ||
       column.width.kind !== candidate.width.kind ||
       column.width.value !== candidate.width.value ||
       column.windowIds.length !== candidate.windowIds.length ||

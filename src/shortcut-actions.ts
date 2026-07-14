@@ -455,6 +455,11 @@ const shortcutActionCatalog = [
     defaultSequence: "Meta+F",
   },
   {
+    name: "driftile_toggle_column_tabbed_display",
+    text: "Driftile: Toggle tabbed column",
+    defaultSequence: "Meta+W",
+  },
+  {
     name: "driftile_expand_column_to_available_width",
     text: "Driftile: Expand column to available width",
     defaultSequence: "Meta+Ctrl+F",

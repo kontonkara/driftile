@@ -13,7 +13,7 @@ import {
   LAYOUT_PERSISTENCE_VERSION,
   decodeLayoutPersistence,
   encodeLayoutPersistence,
-  type LayoutPersistenceV1,
+  type LayoutPersistenceV3,
   type PersistedOutputV1,
 } from "../src/core/layout-persistence";
 import type { KWinOutput } from "../src/platform/kwin/api";
@@ -53,7 +53,7 @@ function topology(
   return { outputs };
 }
 
-function state(...outputs: readonly PersistedOutputV1[]): LayoutPersistenceV1 {
+function state(...outputs: readonly PersistedOutputV1[]): LayoutPersistenceV3 {
   const windows = outputs.map((persistedOutput, index) => ({
     key: `window-${String(index)}`,
     liveId: `live-window-${String(index)}`,
@@ -64,6 +64,7 @@ function state(...outputs: readonly PersistedOutputV1[]): LayoutPersistenceV1 {
     floatingWindows: outputs.map((persistedOutput, index) => ({
       anchor: {
         columnIndex: 0,
+        columnPresentation: "stacked",
         columnWidth: { kind: "fixed", value: 800 },
         memberIndex: 0,
       },
@@ -78,9 +79,26 @@ function state(...outputs: readonly PersistedOutputV1[]): LayoutPersistenceV1 {
   };
 }
 
+function legacyStateV1(...outputs: readonly PersistedOutputV1[]) {
+  const current = state(...outputs);
+
+  return {
+    ...current,
+    floatingWindows: current.floatingWindows.map((floating) => ({
+      ...floating,
+      anchor: {
+        columnIndex: floating.anchor.columnIndex,
+        columnWidth: floating.anchor.columnWidth,
+        memberIndex: floating.anchor.memberIndex,
+      },
+    })),
+    version: 1,
+  };
+}
+
 function snapshot(
   persistedTopology: LayoutPersistenceTopologyV2,
-  persistedState: LayoutPersistenceV1,
+  persistedState: LayoutPersistenceV3,
 ): LayoutPersistenceCatalogSnapshot {
   return { state: persistedState, topology: persistedTopology };
 }
@@ -152,7 +170,8 @@ describe("runtime layout persistence bridge", () => {
 
   it("selects and canonicalizes a valid bare v1 document", () => {
     const active = output("DP-1", "serial-active");
-    const legacy = state(persistedOutput(active));
+    const migrated = state(persistedOutput(active));
+    const legacy = legacyStateV1(persistedOutput(active));
     const document = JSON.stringify(legacy);
     const persistence = createRuntimeLayoutPersistence(
       mutableWorkspace([active]),
@@ -160,9 +179,9 @@ describe("runtime layout persistence bridge", () => {
       undefined,
     );
 
-    expect(persistence.initialState).toBe(encodeLayoutPersistence(legacy));
+    expect(persistence.initialState).toBe(encodeLayoutPersistence(migrated));
     expect(persistence.stateForCurrentTopology()).toBe(
-      encodeLayoutPersistence(legacy),
+      encodeLayoutPersistence(migrated),
     );
     expect(persistence.onStateChanged).toBeUndefined();
   });
@@ -220,7 +239,7 @@ describe("runtime layout persistence bridge", () => {
     expect(persistence.stateForCurrentTopology()).toBe("");
   });
 
-  it("keeps a canonical bare v1 state available after topology changes", () => {
+  it("keeps a canonical bare v3 state available after topology changes", () => {
     const first = output("DP-1", "serial-first");
     const legacy = state(persistedOutput(first));
     const workspace = mutableWorkspace([first]);
@@ -385,7 +404,7 @@ describe("runtime layout persistence bridge", () => {
   it.each([
     ["invalid json", "{"],
     [
-      "invalid v1",
+      "invalid v3",
       JSON.stringify({
         format: LAYOUT_PERSISTENCE_FORMAT,
         version: LAYOUT_PERSISTENCE_VERSION,
@@ -393,7 +412,7 @@ describe("runtime layout persistence bridge", () => {
     ],
     [
       "future",
-      JSON.stringify({ format: LAYOUT_PERSISTENCE_FORMAT, version: 3 }),
+      JSON.stringify({ format: LAYOUT_PERSISTENCE_FORMAT, version: 4 }),
     ],
     ["oversize", " ".repeat(LAYOUT_PERSISTENCE_LIMITS.documentCharacters + 1)],
   ])(

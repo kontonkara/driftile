@@ -7,6 +7,7 @@ import {
 import { columnId, desktopId, outputId, windowId } from "../../src/core/ids";
 import type {
   ColumnWidth,
+  LayoutColumnSnapshot,
   LayoutContextSnapshot,
   WindowHeight,
 } from "../../src/core/layout-engine";
@@ -638,6 +639,130 @@ describe("solveStripGeometry", () => {
     );
   });
 
+  it("overlays tabbed members inside normal outer gaps and ignores heights", () => {
+    const context = createContext([{ kind: "fixed", value: 600 }]);
+    const tabbedColumn: LayoutColumnSnapshot = {
+      id: columnId("column-1"),
+      presentation: "tabbed",
+      selectedWindowId: windowId("window-2"),
+      width: { kind: "fixed", value: 600 },
+      windowHeights: [
+        { clientHeight: 120, kind: "fixed" },
+        { kind: "auto", weight: 7 },
+        { kind: "auto", weight: 2 },
+      ],
+      windowIds: [
+        windowId("window-1"),
+        windowId("window-2"),
+        windowId("window-3"),
+      ],
+    };
+    const input = {
+      context: {
+        ...context,
+        columns: [tabbedColumn],
+      },
+      devicePixelRatio: 1,
+      gap: 16,
+      pixelGridOrigin: { x: 100, y: 50 },
+      windowHeightBounds: new Map([
+        [
+          windowId("window-1"),
+          { maximumClientHeight: 1_048, minimumClientHeight: 1_048 },
+        ],
+        [
+          windowId("window-2"),
+          {
+            decorationHeight: 20,
+            maximumClientHeight: 1_028,
+            minimumClientHeight: 1_028,
+          },
+        ],
+      ]),
+      workArea: { height: 1080, width: 1920, x: 100, y: 50 },
+    };
+    const result = solveStripGeometry(input);
+
+    expect(result.windows).toEqual([
+      {
+        columnId: "column-1",
+        frame: { height: 1048, width: 600, x: 116, y: 66 },
+        windowId: "window-1",
+      },
+      {
+        columnId: "column-1",
+        frame: { height: 1048, width: 600, x: 116, y: 66 },
+        windowId: "window-2",
+      },
+      {
+        columnId: "column-1",
+        frame: { height: 1048, width: 600, x: 116, y: 66 },
+        windowId: "window-3",
+      },
+    ]);
+
+    const solveColumn = (column: LayoutColumnSnapshot) =>
+      solveStripGeometry({
+        ...input,
+        context: { ...input.context, columns: [column] },
+      });
+
+    expect(() =>
+      solveColumn({
+        ...tabbedColumn,
+        selectedWindowId: windowId("missing"),
+      }),
+    ).toThrow("column presentation state is invalid");
+    expect(() =>
+      solveColumn({
+        ...tabbedColumn,
+        selectedWindowId: windowId("window-1"),
+        windowHeights: [{ kind: "auto", weight: 1 }],
+        windowIds: [windowId("window-1")],
+      }),
+    ).toThrow("column presentation state is invalid");
+    expect(() =>
+      solveColumn({
+        ...tabbedColumn,
+        presentation: "invalid",
+      } as unknown as LayoutColumnSnapshot),
+    ).toThrow("column presentation state is invalid");
+    expect(() =>
+      solveColumn({
+        ...tabbedColumn,
+        windowHeights: [{ kind: "auto", weight: 1 }],
+      }),
+    ).toThrow("window height state does not match the column");
+    expect(() =>
+      solveColumn({
+        ...tabbedColumn,
+        windowHeights: [
+          { kind: "auto", weight: 0 },
+          { kind: "auto", weight: 1 },
+          { kind: "auto", weight: 1 },
+        ],
+      }),
+    ).toThrow("window height state is invalid");
+    expect(() =>
+      solveColumn({
+        ...tabbedColumn,
+        windowHeights: [
+          { clientHeight: 100, kind: "fixed" },
+          { index: 0, kind: "preset" },
+          { kind: "auto", weight: 1 },
+        ],
+      }),
+    ).toThrow("at most one non-automatic");
+    expect(() =>
+      solveStripGeometry({
+        ...input,
+        windowHeightBounds: new Map([
+          [windowId("window-1"), { maximumClientHeight: 1_047 }],
+        ]),
+      }),
+    ).toThrow("tabbed window height bounds cannot accept the common frame");
+  });
+
   it("distributes automatic height by weight around one fixed client height", () => {
     const context = createContext([{ kind: "fixed", value: 600 }]);
     const column = context.columns[0];
@@ -1233,6 +1358,8 @@ function createContext(widths: readonly ColumnWidth[]): LayoutContextSnapshot {
       widths.length === 0 ? null : columnId(`column-${String(widths.length)}`),
     columns: widths.map((width, index) => ({
       id: columnId(`column-${String(index + 1)}`),
+      presentation: "stacked",
+      selectedWindowId: windowId(`window-${String(index + 1)}`),
       width,
       windowIds: [windowId(`window-${String(index + 1)}`)],
     })),

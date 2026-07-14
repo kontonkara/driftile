@@ -7,7 +7,7 @@ import {
 import {
   LAYOUT_PERSISTENCE_FORMAT,
   LAYOUT_PERSISTENCE_VERSION,
-  type LayoutPersistenceV1,
+  type LayoutPersistenceV3,
 } from "../../src/core/layout-persistence";
 import { LayoutEngine } from "../../src/core/layout-engine";
 
@@ -33,6 +33,8 @@ describe("exact layout persistence hydration", () => {
               columns: [
                 {
                   id: "column:live-a",
+                  presentation: "tabbed",
+                  selectedWindowId: "live-b",
                   width: { kind: "fixed", value: 420 },
                   windowHeights: [
                     { kind: "auto", weight: 2 },
@@ -43,6 +45,8 @@ describe("exact layout persistence hydration", () => {
                 },
                 {
                   id: "column:live-d",
+                  presentation: "stacked",
+                  selectedWindowId: "live-d",
                   width: { kind: "proportion", value: 1 },
                   windowIds: ["live-d"],
                 },
@@ -59,6 +63,8 @@ describe("exact layout persistence hydration", () => {
               columns: [
                 {
                   id: "column:live-e",
+                  presentation: "stacked",
+                  selectedWindowId: "live-e",
                   width: { kind: "proportion", value: 0.5 },
                   windowIds: ["live-e"],
                 },
@@ -75,6 +81,7 @@ describe("exact layout persistence hydration", () => {
             placement: {
               columnId: "column:live-a",
               columnIndex: 0,
+              columnPresentation: "tabbed",
               columnWidth: { kind: "fixed", value: 420 },
               desktopId: "desktop-1",
               memberIndex: 1,
@@ -92,6 +99,7 @@ describe("exact layout persistence hydration", () => {
             placement: {
               columnId: "column:live-floating-new",
               columnIndex: 1,
+              columnPresentation: "stacked",
               columnWidth: { kind: "proportion", value: 0.4 },
               desktopId: "desktop-2",
               memberIndex: 0,
@@ -132,7 +140,7 @@ describe("exact layout persistence hydration", () => {
     const state = representativeState();
     const context = required(state.contexts[0]);
     const fullWidthColumn = required(context.columns[1]);
-    const legacyState: LayoutPersistenceV1 = {
+    const legacyState: LayoutPersistenceV3 = {
       ...state,
       contexts: [
         {
@@ -142,6 +150,8 @@ describe("exact layout persistence hydration", () => {
             {
               fullWidthRestore: required(fullWidthColumn.fullWidthRestore),
               members: fullWidthColumn.members,
+              presentation: fullWidthColumn.presentation,
+              selectedMemberIndex: fullWidthColumn.selectedMemberIndex,
               width: fullWidthColumn.width,
             },
           ],
@@ -215,13 +225,14 @@ describe("exact layout persistence hydration", () => {
 
   it("produces contexts and floating placements consumable by LayoutEngine", () => {
     const baseState = representativeState();
-    const state: LayoutPersistenceV1 = {
+    const state: LayoutPersistenceV3 = {
       ...baseState,
       floatingWindows: [
         ...baseState.floatingWindows,
         {
           anchor: {
             columnIndex: 1,
+            columnPresentation: "stacked",
             columnWidth: { kind: "proportion", value: 1 },
             memberIndex: 1,
             previousWindowKey: "tiled-d",
@@ -328,12 +339,13 @@ describe("exact layout persistence hydration", () => {
   });
 
   it("plans a floating-only context with an independent fallback column", () => {
-    const state: LayoutPersistenceV1 = {
+    const state: LayoutPersistenceV3 = {
       contexts: [],
       floatingWindows: [
         {
           anchor: {
             columnIndex: 4,
+            columnPresentation: "stacked",
             columnWidth: { kind: "fixed", value: 500 },
             memberIndex: 2,
           },
@@ -371,6 +383,7 @@ describe("exact layout persistence hydration", () => {
             placement: {
               columnId: "column:live-floating",
               columnIndex: 4,
+              columnPresentation: "stacked",
               columnWidth: { kind: "fixed", value: 500 },
               desktopId: "desktop-1",
               memberIndex: 2,
@@ -393,9 +406,9 @@ describe("exact layout persistence hydration", () => {
     [
       string,
       (
-        state: LayoutPersistenceV1,
+        state: LayoutPersistenceV3,
         input: LayoutPersistenceHydrationInput,
-      ) => readonly [LayoutPersistenceV1, LayoutPersistenceHydrationInput],
+      ) => readonly [LayoutPersistenceV3, LayoutPersistenceHydrationInput],
       string,
     ]
   >([
@@ -541,7 +554,7 @@ describe("exact layout persistence hydration", () => {
       key: `window-${String(index)}`,
       liveId: `live-${String(index)}`,
     }));
-    const state: LayoutPersistenceV1 = {
+    const state: LayoutPersistenceV3 = {
       contexts: [
         {
           activeColumnIndex: 0,
@@ -556,6 +569,8 @@ describe("exact layout persistence hydration", () => {
                   ).key,
                 }),
               ),
+              presentation: "stacked" as const,
+              selectedMemberIndex: 0,
               width: { kind: "fixed" as const, value: 400 },
             }),
           ),
@@ -598,7 +613,7 @@ describe("exact layout persistence hydration", () => {
 describe("layout persistence hydration identity fallback", () => {
   it("remaps a renamed output and a replaced window without changing the layout", () => {
     const baseState = representativeState();
-    const state: LayoutPersistenceV1 = {
+    const state: LayoutPersistenceV3 = {
       ...baseState,
       outputs: baseState.outputs.map((output) =>
         output.key === "primary-output"
@@ -680,7 +695,7 @@ describe("layout persistence hydration identity fallback", () => {
 
   it("prefers exact identities even when optional metadata conflicts", () => {
     const baseState = representativeState();
-    const state: LayoutPersistenceV1 = {
+    const state: LayoutPersistenceV3 = {
       ...baseState,
       outputs: baseState.outputs.map((output) =>
         output.key === "primary-output"
@@ -723,7 +738,7 @@ describe("layout persistence hydration identity fallback", () => {
 
   it("retains exact restore baselines and drops session-matched baselines", () => {
     const baseState = representativeState();
-    const state: LayoutPersistenceV1 = {
+    const state: LayoutPersistenceV3 = {
       ...baseState,
       contexts: baseState.contexts.map((context) =>
         context.outputKey === "primary-output"
@@ -774,7 +789,7 @@ describe("layout persistence hydration identity fallback", () => {
   it("drops every restore baseline when all baseline owners use session identities", () => {
     const baseState = representativeState();
     const sessionKeys = new Set(["tiled-a", "tiled-b", "tiled-c", "tiled-d"]);
-    const state: LayoutPersistenceV1 = {
+    const state: LayoutPersistenceV3 = {
       ...baseState,
       contexts: baseState.contexts.map((context) =>
         context.outputKey === "primary-output"
@@ -880,7 +895,7 @@ describe("layout persistence hydration identity fallback", () => {
 
   it("waits when every missing strong window can still arrive", () => {
     const baseState = representativeState();
-    const state: LayoutPersistenceV1 = {
+    const state: LayoutPersistenceV3 = {
       ...baseState,
       windows: baseState.windows.map((window) => {
         if (window.key === "tiled-a") {
@@ -918,7 +933,7 @@ describe("layout persistence hydration identity fallback", () => {
 
   it("does not wait when another unresolved identity is ambiguous", () => {
     const baseState = representativeState();
-    const state: LayoutPersistenceV1 = {
+    const state: LayoutPersistenceV3 = {
       ...baseState,
       windows: baseState.windows.map((window) => {
         if (window.key === "tiled-a") {
@@ -966,7 +981,7 @@ describe("layout persistence hydration identity fallback", () => {
   it("does not wait behind an already matched weak identity", () => {
     const baseState = representativeState();
     const weakDescriptor = { desktopFileName: "org.example.Weak" } as const;
-    const state: LayoutPersistenceV1 = {
+    const state: LayoutPersistenceV3 = {
       ...baseState,
       windows: baseState.windows.map((window) => {
         if (window.key === "tiled-a") {
@@ -1008,7 +1023,7 @@ describe("layout persistence hydration identity fallback", () => {
 
   it("does not use resource names to disambiguate a shared strong identity", () => {
     const baseState = representativeState();
-    const state: LayoutPersistenceV1 = {
+    const state: LayoutPersistenceV3 = {
       ...baseState,
       windows: baseState.windows.map((window) => {
         if (window.key !== "tiled-a" && window.key !== "tiled-b") {
@@ -1091,7 +1106,7 @@ describe("layout persistence hydration identity fallback", () => {
       "tiled-a",
       editorWindowMatch("primary"),
     );
-    const state: LayoutPersistenceV1 = {
+    const state: LayoutPersistenceV3 = {
       ...baseState,
       outputs: baseState.outputs.map((output) =>
         output.key === "primary-output"
@@ -1122,7 +1137,7 @@ describe("layout persistence hydration identity fallback", () => {
 
   it("does not sanitize duplicate persisted output names during fallback", () => {
     const baseState = representativeState();
-    const state: LayoutPersistenceV1 = {
+    const state: LayoutPersistenceV3 = {
       ...baseState,
       outputs: baseState.outputs.map((output) => ({
         ...output,
@@ -1164,7 +1179,7 @@ describe("layout persistence hydration identity fallback", () => {
 
   it("does not sanitize duplicate persisted window identities during fallback", () => {
     const baseState = representativeState();
-    const state: LayoutPersistenceV1 = {
+    const state: LayoutPersistenceV3 = {
       ...baseState,
       windows: baseState.windows.map((window) => {
         if (window.key === "tiled-a") {
@@ -1211,7 +1226,7 @@ describe("layout persistence hydration identity fallback", () => {
       "tiled-a",
       editorWindowMatch("primary"),
     );
-    const state: LayoutPersistenceV1 = {
+    const state: LayoutPersistenceV3 = {
       ...baseState,
       contexts: baseState.contexts.map((context) =>
         context.outputKey === "primary-output"
@@ -1269,7 +1284,7 @@ describe("layout persistence hydration identity fallback", () => {
   });
 });
 
-function representativeState(): LayoutPersistenceV1 {
+function representativeState(): LayoutPersistenceV3 {
   return {
     contexts: [
       {
@@ -1288,12 +1303,16 @@ function representativeState(): LayoutPersistenceV1 {
                 windowKey: "tiled-c",
               },
             ],
+            presentation: "tabbed",
+            selectedMemberIndex: 1,
             width: { kind: "fixed", value: 420 },
           },
           {
             fullWidthRestore: { kind: "fixed", value: 720 },
             fullWidthRestoreViewportOffset: -310,
             members: [{ windowKey: "tiled-d" }],
+            presentation: "stacked",
+            selectedMemberIndex: 0,
             width: { kind: "proportion", value: 1 },
           },
         ],
@@ -1307,6 +1326,8 @@ function representativeState(): LayoutPersistenceV1 {
         columns: [
           {
             members: [{ windowKey: "tiled-e" }],
+            presentation: "stacked",
+            selectedMemberIndex: 0,
             width: { kind: "proportion", value: 0.5 },
           },
         ],
@@ -1319,6 +1340,7 @@ function representativeState(): LayoutPersistenceV1 {
       {
         anchor: {
           columnIndex: 0,
+          columnPresentation: "tabbed",
           columnWidth: { kind: "fixed", value: 420 },
           memberIndex: 1,
           nextWindowKey: "tiled-b",
@@ -1332,6 +1354,7 @@ function representativeState(): LayoutPersistenceV1 {
       {
         anchor: {
           columnIndex: 1,
+          columnPresentation: "stacked",
           columnWidth: { kind: "proportion", value: 0.4 },
           memberIndex: 0,
         },
@@ -1412,12 +1435,12 @@ function editorWindowMatch(tag: string) {
 }
 
 function withStaleWindow(
-  state: LayoutPersistenceV1,
+  state: LayoutPersistenceV3,
   key: string,
   sessionMatch: NonNullable<
-    LayoutPersistenceV1["windows"][number]["sessionMatch"]
+    LayoutPersistenceV3["windows"][number]["sessionMatch"]
   >,
-): LayoutPersistenceV1 {
+): LayoutPersistenceV3 {
   return {
     ...state,
     windows: state.windows.map((window) =>
@@ -1433,7 +1456,7 @@ function replaceWindowIdentity(
   currentLiveId: string,
   liveId: string,
   descriptor: NonNullable<
-    LayoutPersistenceV1["windows"][number]["sessionMatch"]
+    LayoutPersistenceV3["windows"][number]["sessionMatch"]
   >,
   change: Partial<LayoutPersistenceHydrationInput["windows"][number]> = {},
 ): LayoutPersistenceHydrationInput {

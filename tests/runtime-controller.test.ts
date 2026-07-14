@@ -1223,10 +1223,14 @@ function createKnownOutputHistorySnapshot(
                   windowKey: "left-stack-2",
                 },
               ],
+              presentation: "stacked",
+              selectedMemberIndex: 0,
               width: { kind: "fixed", value: 300 },
             },
             {
               members: [{ windowKey: "left-active" }],
+              presentation: "stacked",
+              selectedMemberIndex: 0,
               width: { kind: "fixed", value: 400 },
             },
           ],
@@ -1248,10 +1252,14 @@ function createKnownOutputHistorySnapshot(
                   windowKey: "right-stack-2",
                 },
               ],
+              presentation: "stacked",
+              selectedMemberIndex: 0,
               width: { kind: "fixed", value: 300 },
             },
             {
               members: [{ windowKey: "right-active" }],
+              presentation: "stacked",
+              selectedMemberIndex: 0,
               width: { kind: "fixed", value: 400 },
             },
           ],
@@ -1266,6 +1274,8 @@ function createKnownOutputHistorySnapshot(
               fullWidthRestore: { kind: "fixed", value: 420 },
               fullWidthRestoreViewportOffset: 37,
               members: [{ windowKey: "right-full-width" }],
+              presentation: "stacked",
+              selectedMemberIndex: 0,
               width: { kind: "proportion", value: 1 },
             },
           ],
@@ -1277,7 +1287,7 @@ function createKnownOutputHistorySnapshot(
       floatingWindows: [],
       format: "driftile-layout",
       outputs: [historicalLeftOutput, historicalRightOutput],
-      version: 1,
+      version: 3,
       windows: [
         "left-stack-1",
         "left-stack-2",
@@ -4359,6 +4369,8 @@ describe("RuntimeController", () => {
       });
       expect(fullscreen.columns[1]).toEqual({
         id: `column:${activeId}`,
+        presentation: "stacked",
+        selectedWindowId: activeId,
         width: { kind: "proportion", value: 0.45 },
         windowIds: [activeId],
       });
@@ -4413,6 +4425,8 @@ describe("RuntimeController", () => {
     });
     expect(fullscreen.columns[1]).toEqual({
       id: "column:window-2",
+      presentation: "stacked",
+      selectedWindowId: "window-2",
       width: { kind: "proportion", value: 0.45 },
       windowIds: ["window-2"],
     });
@@ -5648,6 +5662,8 @@ describe("RuntimeController", () => {
       });
       expect(maximized.columns[1]).toEqual({
         id: `column:${activeId}`,
+        presentation: "stacked",
+        selectedWindowId: activeId,
         width: { kind: "proportion", value: 0.45 },
         windowIds: [activeId],
       });
@@ -5702,6 +5718,8 @@ describe("RuntimeController", () => {
     });
     expect(maximized.columns[1]).toEqual({
       id: "column:window-2",
+      presentation: "stacked",
+      selectedWindowId: "window-2",
       width: { kind: "proportion", value: 0.45 },
       windowIds: ["window-2"],
     });
@@ -8474,6 +8492,8 @@ describe("RuntimeController", () => {
           {
             column: {
               id: columnId("column:first"),
+              presentation: "stacked",
+              selectedWindowId: windowId("first"),
               width: { kind: "fixed", value: 700 },
               windowIds: [windowId("first")],
             },
@@ -8482,6 +8502,8 @@ describe("RuntimeController", () => {
           {
             column: {
               id: columnId("column:second"),
+              presentation: "stacked",
+              selectedWindowId: windowId("second"),
               width: { kind: "fixed", value: 700 },
               windowIds: [windowId("second")],
             },
@@ -8499,6 +8521,8 @@ describe("RuntimeController", () => {
           {
             column: {
               id: columnId("column:other"),
+              presentation: "stacked",
+              selectedWindowId: windowId("other"),
               width: { kind: "proportion", value: 0.5 },
               windowIds: [windowId("other")],
             },
@@ -10421,9 +10445,17 @@ describe("RuntimeController", () => {
     expect(controller.focusUp()).toBe(false);
     expect(fixture.activationCount).toBe(activationCount + 4);
     expect(minimized.every(({ window }) => window.minimized)).toBe(true);
+    const afterFocus = {
+      ...before,
+      columns: before.columns.map((column) =>
+        column.id === columnId("column:stack")
+          ? { ...column, selectedWindowId: windowId("window-1") }
+          : column,
+      ),
+    };
     expect(
       layout.snapshot(outputId(output.name), desktopId(desktop.id)),
-    ).toEqual(before);
+    ).toEqual(afterFocus);
     expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
     expect(windows.map(({ writeCount }) => writeCount)).toEqual(writes);
 
@@ -10434,7 +10466,7 @@ describe("RuntimeController", () => {
     flushManualScheduler(scheduler);
     expect(
       layout.snapshot(outputId(output.name), desktopId(desktop.id)),
-    ).toEqual(before);
+    ).toEqual(afterFocus);
     expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
     expect(windows.map(({ writeCount }) => writeCount)).toEqual(writes);
     const restoredStack = layout.snapshot(
@@ -10570,7 +10602,13 @@ describe("RuntimeController", () => {
     expect(minimizedWindows.every(({ window }) => window.minimized)).toBe(true);
     expect(
       layout.snapshot(outputId(output.name), desktopId(desktop.id)).columns,
-    ).toEqual(beforeColumns);
+    ).toEqual(
+      beforeColumns.map((column) =>
+        column.id === columnId("column:right")
+          ? { ...column, selectedWindowId: windowId("window-9") }
+          : column,
+      ),
+    );
     expect(minimizedWindows.map(({ window }) => window.frameGeometry)).toEqual(
       minimizedFrames,
     );
@@ -11841,6 +11879,7 @@ describe("RuntimeController", () => {
       },
     ]);
     fixture.workspace.activeWindow = windows[1]?.window ?? null;
+    flushManualScheduler(scheduler);
 
     expect(controller.insertWindowIntoStackRight()).toBe(true);
     expect(scheduler.pendingCount).toBe(0);
@@ -11908,6 +11947,8 @@ describe("RuntimeController", () => {
       [
         {
           id: "column:active",
+          presentation: "stacked",
+          selectedWindowId: "window-2",
           width: { kind: "fixed", value: 300 },
           windowHeights: [
             { kind: "auto", weight: 2 },
@@ -11917,6 +11958,8 @@ describe("RuntimeController", () => {
         },
         {
           id: "column:source",
+          presentation: "stacked",
+          selectedWindowId: "window-4",
           width: { kind: "fixed", value: 260 },
           windowHeights: [
             { clientHeight: 330, kind: "fixed" },
@@ -11926,6 +11969,8 @@ describe("RuntimeController", () => {
         },
         {
           id: "column:trailing",
+          presentation: "stacked",
+          selectedWindowId: "window-5",
           width: { kind: "fixed", value: 360 },
           windowIds: ["window-5"],
         },
@@ -11956,6 +12001,8 @@ describe("RuntimeController", () => {
       columns: [
         {
           id: "column:active",
+          presentation: "stacked",
+          selectedWindowId: "window-2",
           width: { kind: "fixed", value: 300 },
           windowHeights: [
             { kind: "auto", weight: 2 },
@@ -11966,11 +12013,15 @@ describe("RuntimeController", () => {
         },
         {
           id: "column:source",
+          presentation: "stacked",
+          selectedWindowId: "window-4",
           width: { kind: "fixed", value: 260 },
           windowIds: ["window-4"],
         },
         {
           id: "column:trailing",
+          presentation: "stacked",
+          selectedWindowId: "window-5",
           width: { kind: "fixed", value: 360 },
           windowIds: ["window-5"],
         },
@@ -12626,6 +12677,8 @@ describe("RuntimeController", () => {
         [
           {
             id: "column:source",
+            presentation: "stacked",
+            selectedWindowId: `window-${String(expectedFocusIndex + 1)}`,
             width: { kind: "proportion", value: 0.45 },
             windowHeights: [
               { kind: "auto", weight: 2 },
@@ -12663,6 +12716,8 @@ describe("RuntimeController", () => {
         columns: [
           {
             id: "column:source",
+            presentation: "stacked",
+            selectedWindowId: `window-${String(expectedFocusIndex + 1)}`,
             width: { kind: "proportion", value: 0.45 },
             windowHeights: [
               { kind: "auto", weight: 2 },
@@ -12672,11 +12727,15 @@ describe("RuntimeController", () => {
           },
           {
             id: "column:window-3",
+            presentation: "stacked",
+            selectedWindowId: "window-3",
             width: { kind: "proportion", value: 0.45 },
             windowIds: ["window-3"],
           },
           {
             id: "column:existing-right",
+            presentation: "stacked",
+            selectedWindowId: "window-4",
             width: { kind: "fixed", value: 240 },
             windowIds: ["window-4"],
           },
@@ -14936,6 +14995,255 @@ describe("RuntimeController", () => {
     expect(fixture.workspace.activeWindow).toBe(active.window);
     expect(fixture.activationCount).toBe(activationCount);
     expect(other.writeCount).toBe(otherWrites);
+  });
+
+  it("toggles a stack into tabbed display without changing height state", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const active = createTrackedWindow("window-2", output, desktop);
+    const third = createTrackedWindow("window-3", output, desktop);
+    const windows = [first, active, third];
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map(({ window }) => window),
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    controller.start();
+    const layout = installTestLayout(
+      controller,
+      output,
+      desktop,
+      "column:stack",
+      [
+        {
+          id: "column:stack",
+          selectedWindowId: "window-2",
+          width: { kind: "fixed", value: 300 },
+          windowIds: ["window-1", "window-2", "window-3"],
+        },
+      ],
+    );
+    fixture.workspace.activeWindow = active.window;
+    const stackedHeights = activeColumnWindowHeights(
+      controller,
+      output,
+      desktop,
+    );
+
+    expect(controller.toggleColumnTabbedDisplay()).toBe(true);
+    let snapshot = layout.snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    expect(snapshot.columns[0]?.presentation).toBe("tabbed");
+    expect(snapshot.columns[0]?.selectedWindowId).toBe(windowId("window-2"));
+    const tabbedFrame = active.window.frameGeometry;
+    expect(tabbedFrame.y).toBe(10);
+    expect(tabbedFrame.y + tabbedFrame.height).toBe(790);
+    expect(windows.map(({ window }) => window.frameGeometry)).toEqual([
+      tabbedFrame,
+      tabbedFrame,
+      tabbedFrame,
+    ]);
+    expect(activeColumnWindowHeights(controller, output, desktop)).toEqual(
+      stackedHeights,
+    );
+
+    const noResizeState = captureTrackedWindowState(windows);
+
+    for (const resize of [
+      controller.decreaseWindowHeight.bind(controller),
+      controller.increaseWindowHeight.bind(controller),
+      controller.resetWindowHeight.bind(controller),
+      controller.switchPresetWindowHeight.bind(controller),
+      controller.switchPresetWindowHeightBack.bind(controller),
+    ]) {
+      expect(resize()).toBe(false);
+    }
+
+    expectTrackedWindowState(windows, noResizeState);
+    const writesBeforeFocus = windows.map(({ writeCount }) => writeCount);
+
+    expect(controller.focusUp()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(first.window);
+    expect(controller.focusUp()).toBe(false);
+    expect(controller.focusDown()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+    expect(controller.focusDown()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(third.window);
+    expect(controller.focusDown()).toBe(false);
+    expect(controller.focusUp()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+    expect(windows.map(({ writeCount }) => writeCount)).toEqual(
+      writesBeforeFocus,
+    );
+
+    expect(controller.moveWindowDown()).toBe(true);
+    snapshot = layout.snapshot(outputId(output.name), desktopId(desktop.id));
+    expect(snapshot.columns[0]?.windowIds).toEqual([
+      windowId("window-1"),
+      windowId("window-3"),
+      windowId("window-2"),
+    ]);
+    expect(snapshot.columns[0]?.selectedWindowId).toBe(windowId("window-2"));
+    expect(controller.moveWindowDown()).toBe(false);
+    expect(windows.map(({ writeCount }) => writeCount)).toEqual(
+      writesBeforeFocus,
+    );
+
+    expect(controller.toggleColumnTabbedDisplay()).toBe(true);
+    snapshot = layout.snapshot(outputId(output.name), desktopId(desktop.id));
+    expect(snapshot.columns[0]?.presentation).toBe("stacked");
+    expect(activeColumnWindowHeights(controller, output, desktop)).toEqual(
+      stackedHeights,
+    );
+    expect(
+      new Set(windows.map(({ window }) => window.frameGeometry.y)).size,
+    ).toBe(3);
+  });
+
+  it("rejects incompatible tabbed geometry and normalizes later constraints", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const active = createTrackedWindow("window-2", output, desktop);
+    const windows = [first, active];
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map(({ window }) => window),
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+    const constraints = first.window as unknown as {
+      maxSize: KWinWindow["maxSize"];
+    };
+
+    controller.start();
+    const layout = installTestLayout(
+      controller,
+      output,
+      desktop,
+      "column:stack",
+      [
+        {
+          id: "column:stack",
+          selectedWindowId: "window-2",
+          width: { kind: "fixed", value: 300 },
+          windowIds: ["window-1", "window-2"],
+        },
+      ],
+    );
+    fixture.workspace.activeWindow = active.window;
+    flushManualScheduler(scheduler);
+    constraints.maxSize = { height: 650, width: 10_000 };
+    first.maximizeableChanged.emit(false);
+    flushManualScheduler(scheduler);
+    const before = layout.snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const beforeFrames = captureTrackedWindowState(windows);
+
+    expect(controller.toggleColumnTabbedDisplay()).toBe(false);
+    expect(
+      layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+    ).toEqual(before);
+    expectTrackedWindowState(windows, beforeFrames);
+
+    constraints.maxSize = { height: 10_000, width: 10_000 };
+    first.maximizeableChanged.emit(true);
+    flushManualScheduler(scheduler);
+    expect(controller.toggleColumnTabbedDisplay()).toBe(true);
+    expect(
+      layout.snapshot(outputId(output.name), desktopId(desktop.id)).columns[0]
+        ?.presentation,
+    ).toBe("tabbed");
+
+    constraints.maxSize = { height: 650, width: 10_000 };
+    first.maximizeableChanged.emit(false);
+    flushManualScheduler(scheduler);
+    expect(
+      layout.snapshot(outputId(output.name), desktopId(desktop.id)).columns[0]
+        ?.presentation,
+    ).toBe("stacked");
+    expect(windows.map(({ window }) => window.frameGeometry.height)).toEqual([
+      385, 385,
+    ]);
+  });
+
+  it("selects a live successor when an inactive tabbed member minimizes", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const selected = createTrackedWindow("window-2", output, desktop);
+    const successor = createTrackedWindow("window-3", output, desktop);
+    const active = createTrackedWindow("window-4", output, desktop);
+    const windows = [first, selected, successor, active];
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map(({ window }) => window),
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+
+    controller.start();
+    const layout = installTestLayout(
+      controller,
+      output,
+      desktop,
+      "column:active",
+      [
+        {
+          id: "column:tabs",
+          presentation: "tabbed",
+          selectedWindowId: "window-2",
+          width: { kind: "fixed", value: 300 },
+          windowIds: ["window-1", "window-2", "window-3"],
+        },
+        {
+          id: "column:active",
+          selectedWindowId: "window-4",
+          width: { kind: "fixed", value: 300 },
+          windowIds: ["window-4"],
+        },
+      ],
+    );
+    fixture.workspace.activeWindow = active.window;
+    flushManualScheduler(scheduler);
+    const activationCount = fixture.activationCount;
+
+    setWindowState("minimized", selected, true);
+    flushManualScheduler(scheduler);
+    const snapshot = layout.snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    expect(snapshot.activeColumnId).toBe(columnId("column:active"));
+    expect(snapshot.columns[0]?.selectedWindowId).toBe(windowId("window-3"));
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+    expect(fixture.activationCount).toBe(activationCount);
   });
 
   it.each([
@@ -23407,6 +23715,8 @@ describe("RuntimeController", () => {
         {
           column: {
             id: columnId("column:stack"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-1"),
             width: { kind: "fixed", value: 300 },
             windowIds: [windowId("window-1"), windowId("window-2")],
           },
@@ -23537,6 +23847,8 @@ describe("RuntimeController", () => {
         {
           column: {
             id: columnId("column:stack"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-1"),
             width: { kind: "fixed", value: 300 },
             windowIds: [windowId("window-1"), windowId("window-2")],
           },
@@ -23545,6 +23857,8 @@ describe("RuntimeController", () => {
         {
           column: {
             id: columnId("column:released"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-3"),
             width: { kind: "fixed", value: 300 },
             windowIds: [windowId("window-3")],
           },
@@ -23553,6 +23867,8 @@ describe("RuntimeController", () => {
         {
           column: {
             id: columnId("column:trailing"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-4"),
             width: { kind: "fixed", value: 300 },
             windowIds: [windowId("window-4")],
           },
@@ -23882,6 +24198,8 @@ describe("RuntimeController", () => {
         {
           column: {
             id: columnId("column:other"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-2"),
             width: { kind: "fixed", value: 300 },
             windowIds: [windowId("window-2")],
           },
@@ -23890,6 +24208,8 @@ describe("RuntimeController", () => {
         {
           column: {
             id: columnId("column:group"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-3"),
             width: { kind: "fixed", value: 500 },
             windowIds: [windowId("window-1"), windowId("window-3")],
           },
@@ -24352,6 +24672,8 @@ describe("RuntimeController", () => {
         {
           column: {
             id: columnId("column:other"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-3"),
             width: { kind: "proportion", value: 0.5 },
             windowIds: [windowId("window-3")],
           },
@@ -24360,6 +24682,8 @@ describe("RuntimeController", () => {
         {
           column: {
             id: columnId("column:group"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-2"),
             width: { kind: "proportion", value: 0.5 },
             windowIds: [windowId("window-1"), windowId("window-2")],
           },
@@ -26913,6 +27237,8 @@ describe("RuntimeController", () => {
         columns: [
           {
             id: columnId("column:source"),
+            presentation: "stacked",
+            selectedWindowId: windowId("source"),
             width: { kind: "proportion", value: 0.5 },
             windowIds: [windowId("source")],
           },
@@ -26931,6 +27257,8 @@ describe("RuntimeController", () => {
         columns: [
           {
             id: columnId("column:target"),
+            presentation: "stacked",
+            selectedWindowId: windowId("dragged"),
             width: { kind: "fixed", value: 360 },
             windowHeights:
               position === "before"
@@ -28200,10 +28528,17 @@ describe("RuntimeController", () => {
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
       ),
-    ).toEqual(beforeLayout);
+    ).toEqual({
+      ...beforeLayout,
+      columns: beforeLayout.columns.map((column) =>
+        column.id === columnId("column:stack")
+          ? { ...column, selectedWindowId: windowId("passive") }
+          : column,
+      ),
+    });
     expect(setup.active.window.frameGeometry).toEqual(beforeFrame);
     expect(setup.fixture.workspace.activeWindow).toBe(setup.passive.window);
-    expect(setup.published).toHaveLength(publicationCount);
+    expect(setup.published).toHaveLength(publicationCount + 1);
   });
 
   it("rejects a pointer resize that starts with a suspended source", () => {
@@ -29247,6 +29582,8 @@ describe("RuntimeController", () => {
       columns: [
         {
           id: columnId("column:right-stack-1"),
+          presentation: "stacked",
+          selectedWindowId: windowId("right-stack-1"),
           width: { kind: "fixed", value: 300 },
           windowHeights: [
             { clientHeight: 240, kind: "fixed" },
@@ -29256,6 +29593,8 @@ describe("RuntimeController", () => {
         },
         {
           id: columnId("column:right-active"),
+          presentation: "stacked",
+          selectedWindowId: windowId("right-active"),
           width: { kind: "fixed", value: 400 },
           windowIds: [windowId("right-active")],
         },
@@ -29274,6 +29613,8 @@ describe("RuntimeController", () => {
       columns: [
         {
           id: columnId("column:right-full-width"),
+          presentation: "stacked",
+          selectedWindowId: windowId("right-full-width"),
           width: { kind: "proportion", value: 1 },
           windowIds: [windowId("right-full-width")],
         },
@@ -29685,6 +30026,8 @@ describe("RuntimeController", () => {
             columns: [
               {
                 members: [{ windowKey: "returned-window" }],
+                presentation: "stacked",
+                selectedMemberIndex: 0,
                 width: { kind: "fixed", value: 360 },
               },
             ],
@@ -29696,7 +30039,7 @@ describe("RuntimeController", () => {
         floatingWindows: [],
         format: "driftile-layout",
         outputs: [historicalReturnedOutput],
-        version: 1,
+        version: 3,
         windows: [{ key: "returned-window", liveId: "returned-window" }],
       },
       topology: {
@@ -29726,6 +30069,8 @@ describe("RuntimeController", () => {
           {
             column: {
               id: columnId("column:active-1"),
+              presentation: "stacked",
+              selectedWindowId: windowId("active-1"),
               width: { kind: "proportion", value: 1 },
               windowIds: [windowId("active-1")],
             },
@@ -29734,6 +30079,8 @@ describe("RuntimeController", () => {
           {
             column: {
               id: columnId("column:active-2"),
+              presentation: "stacked",
+              selectedWindowId: windowId("active-2"),
               width: { kind: "fixed", value: 300 },
               windowIds: [windowId("active-2")],
             },
@@ -29742,6 +30089,8 @@ describe("RuntimeController", () => {
           {
             column: {
               id: columnId("column:active-3"),
+              presentation: "stacked",
+              selectedWindowId: windowId("active-3"),
               width: { kind: "fixed", value: 300 },
               windowIds: [windowId("active-3")],
             },
@@ -31672,6 +32021,8 @@ describe("RuntimeController", () => {
         {
           column: {
             id: columnId("column:group"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-1"),
             width: { kind: "fixed", value: 700 },
             windowIds: [windowId("window-1"), windowId("window-2")],
           },
@@ -31680,6 +32031,8 @@ describe("RuntimeController", () => {
         {
           column: {
             id: columnId("column:active"),
+            presentation: "stacked",
+            selectedWindowId: windowId("window-3"),
             width: { kind: "fixed", value: 300 },
             windowIds: [windowId("window-3")],
           },
@@ -31751,11 +32104,15 @@ describe("RuntimeController", () => {
     ).toEqual([
       {
         id: "column:group",
+        presentation: "stacked",
+        selectedWindowId: "window-2",
         width: { kind: "fixed", value: 700 },
         windowIds: ["window-1", "window-2"],
       },
       {
         id: "column:active",
+        presentation: "stacked",
+        selectedWindowId: "window-3",
         width: { kind: "fixed", value: 300 },
         windowIds: ["window-3"],
       },
@@ -31826,12 +32183,16 @@ describe("RuntimeController", () => {
     ).toEqual([
       {
         id: "column:group",
+        presentation: "stacked",
+        selectedWindowId: "window-2",
         width: { kind: "fixed", value: 700 },
         windowHeights: groupWindowHeights,
         windowIds: ["window-1", "window-2"],
       },
       {
         id: "column:active",
+        presentation: "stacked",
+        selectedWindowId: "window-3",
         width: { kind: "fixed", value: 300 },
         windowIds: ["window-3"],
       },
@@ -31892,6 +32253,8 @@ describe("RuntimeController", () => {
       ).columns,
     ).toContainEqual({
       id: "column:group",
+      presentation: "stacked",
+      selectedWindowId: "window-1",
       width: { kind: "fixed", value: 700 },
       windowIds: ["window-1"],
     });
@@ -33547,6 +33910,8 @@ describe("RuntimeController desktop transfers", () => {
 
     expect(retainedColumn).toEqual({
       id: sourceColumn.id,
+      presentation: sourceColumn.presentation,
+      selectedWindowId: windowId("source-2"),
       width: sourceColumn.width,
       windowHeights: heights.slice(0, 2),
       windowIds: [windowId("source"), windowId("source-2")],
@@ -34161,6 +34526,8 @@ describe("RuntimeController desktop transfers", () => {
         {
           column: {
             id: columnId("column:stack"),
+            presentation: "stacked",
+            selectedWindowId: windowId("moved"),
             width: { kind: "fixed", value: 620 },
             windowIds: [windowId("source"), windowId("moved")],
           },
@@ -34169,6 +34536,8 @@ describe("RuntimeController desktop transfers", () => {
         {
           column: {
             id: columnId("column:trailing"),
+            presentation: "stacked",
+            selectedWindowId: windowId("trailing"),
             width: { kind: "fixed", value: 300 },
             windowIds: [windowId("trailing")],
           },
@@ -34184,6 +34553,8 @@ describe("RuntimeController desktop transfers", () => {
         {
           column: {
             id: columnId("column:destination"),
+            presentation: "stacked",
+            selectedWindowId: windowId("destination"),
             width: { kind: "fixed", value: 280 },
             windowIds: [windowId("destination")],
           },
@@ -37116,6 +37487,8 @@ function createOutputTransferFixture(
           {
             column: {
               id: columnId("column:moved"),
+              presentation: "stacked",
+              selectedWindowId: windowId("moved"),
               width: {
                 kind: "proportion",
                 value: options.movedWidth ?? 0.5,
@@ -37130,6 +37503,8 @@ function createOutputTransferFixture(
             {
               column: {
                 id: columnId("column:source"),
+                presentation: "stacked",
+                selectedWindowId: windowId("moved"),
                 width: {
                   kind: "proportion",
                   value: options.movedWidth ?? 0.5,
@@ -37143,6 +37518,8 @@ function createOutputTransferFixture(
             {
               column: {
                 id: columnId("column:source"),
+                presentation: "stacked",
+                selectedWindowId: windowId("source"),
                 width: { kind: "proportion", value: 0.5 },
                 windowIds: [windowId("source")],
               },
@@ -37151,6 +37528,8 @@ function createOutputTransferFixture(
             {
               column: {
                 id: columnId("column:moved"),
+                presentation: "stacked",
+                selectedWindowId: windowId("moved"),
                 width: {
                   kind: "proportion",
                   value: options.movedWidth ?? 0.5,
@@ -37175,6 +37554,8 @@ function createOutputTransferFixture(
             ? (options.targetColumnId ?? "column:destination")
             : `column:destination-${String(index + 1)}`,
         ),
+        presentation: "stacked",
+        selectedWindowId: windowId(String(window.window.internalId)),
         width: {
           kind: "proportion" as const,
           value: options.targetColumnWidth ?? 0.5,
@@ -37312,6 +37693,8 @@ function createExternalPointerDropRuntimeFixture(
           id: columnId(
             sameOutputCrossDesktop ? "column:source" : "column:dragged",
           ),
+          presentation: "stacked",
+          selectedWindowId: windowId("dragged"),
           width: { kind: "proportion", value: 0.5 },
           windowIds: sameOutputCrossDesktop
             ? [windowId("source"), windowId("dragged")]
@@ -37329,6 +37712,8 @@ function createExternalPointerDropRuntimeFixture(
       {
         column: {
           id: columnId("column:target"),
+          presentation: "stacked",
+          selectedWindowId: windowId("target"),
           width: { kind: "fixed", value: 360 },
           windowHeights: [{ clientHeight: 240, kind: "fixed" }],
           windowIds: [windowId("target")],
@@ -37348,6 +37733,8 @@ function createExternalPointerDropRuntimeFixture(
         {
           column: {
             id: columnId("column:unrelated"),
+            presentation: "stacked",
+            selectedWindowId: windowId("unrelated"),
             width: { kind: "fixed", value: 340 },
             windowHeights: [{ clientHeight: 260, kind: "fixed" }],
             windowIds: [windowId("unrelated")],
@@ -37674,6 +38061,8 @@ function createDesktopTransferFixture(
           {
             column: {
               id: columnId("column:source"),
+              presentation: "stacked",
+              selectedWindowId: windowId("moved"),
               width: { kind: "proportion", value: 0.5 },
               windowIds: [
                 ...sources.map((window) =>
@@ -37689,6 +38078,8 @@ function createDesktopTransferFixture(
           {
             column: {
               id: columnId("column:source"),
+              presentation: "stacked",
+              selectedWindowId: windowId("source"),
               width: { kind: "proportion", value: 0.5 },
               windowIds: [windowId("source")],
             },
@@ -37697,6 +38088,8 @@ function createDesktopTransferFixture(
           {
             column: {
               id: columnId("column:moved"),
+              presentation: "stacked",
+              selectedWindowId: windowId("moved"),
               width: { kind: "proportion", value: 0.5 },
               windowIds: [windowId("moved")],
             },
@@ -37715,6 +38108,8 @@ function createDesktopTransferFixture(
             ? (options.targetColumnId ?? "column:destination")
             : `column:destination-${String(index + 1)}`,
         ),
+        presentation: "stacked",
+        selectedWindowId: windowId(String(window.window.internalId)),
         width: { kind: "proportion" as const, value: 0.5 },
         windowIds: [windowId(String(window.window.internalId))],
       },
@@ -37911,6 +38306,8 @@ function activeColumnWindowHeights(
 
 interface TestLayoutColumn {
   readonly id: string;
+  readonly presentation?: "stacked" | "tabbed";
+  readonly selectedWindowId?: string;
   readonly width: {
     readonly kind: "fixed" | "proportion";
     readonly value: number;
@@ -37929,21 +38326,31 @@ function installTestLayout(
   const layout = new LayoutEngine();
   const restored = layout.restoreColumns({
     activeColumnId: columnId(activeColumnId),
-    columns: columns.map((column, index) => ({
-      column: {
-        id: columnId(column.id),
-        width: { ...column.width },
-        ...(column.windowHeights
-          ? {
-              windowHeights: column.windowHeights.map((height) => ({
-                ...height,
-              })),
-            }
-          : {}),
-        windowIds: column.windowIds.map((id) => windowId(id)),
-      },
-      index,
-    })),
+    columns: columns.map((column, index) => {
+      const selectedWindowId = column.selectedWindowId ?? column.windowIds[0];
+
+      if (!selectedWindowId) {
+        throw new Error("test layout columns need at least one window");
+      }
+
+      return {
+        column: {
+          id: columnId(column.id),
+          presentation: column.presentation ?? "stacked",
+          selectedWindowId: windowId(selectedWindowId),
+          width: { ...column.width },
+          ...(column.windowHeights
+            ? {
+                windowHeights: column.windowHeights.map((height) => ({
+                  ...height,
+                })),
+              }
+            : {}),
+          windowIds: column.windowIds.map((id) => windowId(id)),
+        },
+        index,
+      };
+    }),
     desktopId: desktopId(desktop.id),
     outputId: outputId(output.name),
   });
@@ -38039,6 +38446,8 @@ function createPointerResizeRuntimeFixture(
       {
         column: {
           id: columnId("column:stack"),
+          presentation: "stacked",
+          selectedWindowId: windowId("active"),
           width: { kind: "fixed", value: 400 },
           windowHeights: [
             { clientHeight: 260, kind: "fixed" },
@@ -38053,6 +38462,8 @@ function createPointerResizeRuntimeFixture(
             {
               column: {
                 id: columnId("column:adjacent"),
+                presentation: "stacked" as const,
+                selectedWindowId: windowId("adjacent"),
                 width: { kind: "fixed" as const, value: 320 },
                 windowIds: [windowId("adjacent")],
               },
@@ -38070,6 +38481,8 @@ function createPointerResizeRuntimeFixture(
       {
         column: {
           id: columnId("column:unrelated"),
+          presentation: "stacked",
+          selectedWindowId: windowId("unrelated"),
           width: { kind: "fixed", value: 320 },
           windowIds: [windowId("unrelated")],
         },
@@ -38270,6 +38683,8 @@ function createDirectInsertionFixture(): DirectInsertionFixture {
     [
       {
         id: "column:target",
+        presentation: "stacked",
+        selectedWindowId: "target-passive",
         width: { kind: "fixed", value: 380 },
         windowHeights: [
           { clientHeight: 200, kind: "fixed" },
@@ -38279,11 +38694,15 @@ function createDirectInsertionFixture(): DirectInsertionFixture {
       },
       {
         id: "column:skipped",
+        presentation: "stacked",
+        selectedWindowId: "skipped",
         width: { kind: "fixed", value: 140 },
         windowIds: ["skipped"],
       },
       {
         id: "column:source",
+        presentation: "stacked",
+        selectedWindowId: "source-visible",
         width: { kind: "fixed", value: 420 },
         windowHeights: [
           { kind: "auto", weight: 2 },
@@ -38294,6 +38713,8 @@ function createDirectInsertionFixture(): DirectInsertionFixture {
       },
       {
         id: "column:trailing",
+        presentation: "stacked",
+        selectedWindowId: "trailing",
         width: { kind: "fixed", value: 360 },
         windowIds: ["trailing"],
       },
@@ -38333,6 +38754,8 @@ function directInsertionLayout(): unknown {
     columns: [
       {
         id: "column:target",
+        presentation: "stacked",
+        selectedWindowId: "active",
         width: { kind: "fixed", value: 380 },
         windowHeights: [
           { clientHeight: 200, kind: "fixed" },
@@ -38343,11 +38766,15 @@ function directInsertionLayout(): unknown {
       },
       {
         id: "column:skipped",
+        presentation: "stacked",
+        selectedWindowId: "skipped",
         width: { kind: "fixed", value: 140 },
         windowIds: ["skipped"],
       },
       {
         id: "column:source",
+        presentation: "stacked",
+        selectedWindowId: "source-visible",
         width: { kind: "fixed", value: 420 },
         windowHeights: [
           { kind: "auto", weight: 2 },
@@ -38357,6 +38784,8 @@ function directInsertionLayout(): unknown {
       },
       {
         id: "column:trailing",
+        presentation: "stacked",
+        selectedWindowId: "trailing",
         width: { kind: "fixed", value: 360 },
         windowIds: ["trailing"],
       },
@@ -38414,6 +38843,8 @@ function createMinimizedExpelFixture(
     [
       {
         id: "column:source",
+        presentation: "stacked",
+        selectedWindowId: "earlier",
         width: { kind: "proportion", value: 0.44 },
         windowHeights: [
           { kind: "auto", weight: 2 },
@@ -38475,6 +38906,8 @@ function minimizedExpelLayout(activeColumnId = "column:source"): unknown {
     columns: [
       {
         id: "column:source",
+        presentation: "stacked",
+        selectedWindowId: expect.any(String) as unknown as string,
         width: { kind: "proportion", value: 0.44 },
         windowHeights: [
           { kind: "auto", weight: 2 },
@@ -38486,11 +38919,15 @@ function minimizedExpelLayout(activeColumnId = "column:source"): unknown {
       },
       {
         id: "column:moved-bottom",
+        presentation: "stacked",
+        selectedWindowId: "moved-bottom",
         width: { kind: "proportion", value: 0.44 },
         windowIds: ["moved-bottom"],
       },
       {
         id: "column:trailing",
+        presentation: "stacked",
+        selectedWindowId: "trailing",
         width: { kind: "fixed", value: 200 },
         windowIds: ["trailing"],
       },
@@ -38507,6 +38944,8 @@ function minimizedExpelLayoutAfterMovedRemoval(): unknown {
     columns: [
       {
         id: "column:source",
+        presentation: "stacked",
+        selectedWindowId: expect.any(String) as unknown as string,
         width: { kind: "proportion", value: 0.44 },
         windowHeights: [
           { kind: "auto", weight: 2 },
@@ -38518,6 +38957,8 @@ function minimizedExpelLayoutAfterMovedRemoval(): unknown {
       },
       {
         id: "column:trailing",
+        presentation: "stacked",
+        selectedWindowId: "trailing",
         width: { kind: "fixed", value: 200 },
         windowIds: ["trailing"],
       },
@@ -38534,6 +38975,8 @@ function minimizedExpelReplacementLayout(): unknown {
     columns: [
       {
         id: "column:source",
+        presentation: "stacked",
+        selectedWindowId: expect.any(String) as unknown as string,
         width: { kind: "proportion", value: 0.44 },
         windowHeights: [
           { kind: "auto", weight: 2 },
@@ -38545,11 +38988,15 @@ function minimizedExpelReplacementLayout(): unknown {
       },
       {
         id: "column:moved-bottom",
+        presentation: "stacked",
+        selectedWindowId: "moved-bottom",
         width: { kind: "proportion", value: 0.5 },
         windowIds: ["moved-bottom"],
       },
       {
         id: "column:trailing",
+        presentation: "stacked",
+        selectedWindowId: "trailing",
         width: { kind: "fixed", value: 200 },
         windowIds: ["trailing"],
       },
@@ -38566,6 +39013,8 @@ function minimizedExpelLayoutAfterPredecessorRemoval(): unknown {
     columns: [
       {
         id: "column:source",
+        presentation: "stacked",
+        selectedWindowId: "moved-bottom",
         width: { kind: "proportion", value: 0.44 },
         windowHeights: [
           { kind: "auto", weight: 2 },
@@ -38577,6 +39026,8 @@ function minimizedExpelLayoutAfterPredecessorRemoval(): unknown {
       },
       {
         id: "column:trailing",
+        presentation: "stacked",
+        selectedWindowId: "trailing",
         width: { kind: "fixed", value: 200 },
         windowIds: ["trailing"],
       },
@@ -38593,6 +39044,8 @@ function minimizedExpelPredecessorReplacementLayout(): unknown {
     columns: [
       {
         id: "column:source",
+        presentation: "stacked",
+        selectedWindowId: "moved-bottom",
         width: { kind: "proportion", value: 0.44 },
         windowHeights: [
           { kind: "auto", weight: 2 },
@@ -38604,11 +39057,15 @@ function minimizedExpelPredecessorReplacementLayout(): unknown {
       },
       {
         id: "column:predecessor",
+        presentation: "stacked",
+        selectedWindowId: "predecessor",
         width: { kind: "proportion", value: 0.5 },
         windowIds: ["predecessor"],
       },
       {
         id: "column:trailing",
+        presentation: "stacked",
+        selectedWindowId: "trailing",
         width: { kind: "fixed", value: 200 },
         windowIds: ["trailing"],
       },
@@ -38656,6 +39113,8 @@ function createMinimizedConsumeFixture(): MinimizedConsumeFixture {
     [
       {
         id: "column:active",
+        presentation: "stacked",
+        selectedWindowId: "active",
         width: { kind: "fixed", value: 420 },
         windowHeights: [
           { kind: "auto", weight: 2 },
@@ -38665,6 +39124,8 @@ function createMinimizedConsumeFixture(): MinimizedConsumeFixture {
       },
       {
         id: "column:source",
+        presentation: "stacked",
+        selectedWindowId: "source-peer",
         width: { kind: "proportion", value: 0.32 },
         windowHeights: [
           { clientHeight: 310, kind: "fixed" },
@@ -38674,6 +39135,8 @@ function createMinimizedConsumeFixture(): MinimizedConsumeFixture {
       },
       {
         id: "column:trailing",
+        presentation: "stacked",
+        selectedWindowId: "trailing",
         width: { kind: "fixed", value: 180 },
         windowIds: ["trailing"],
       },
@@ -38713,6 +39176,8 @@ function minimizedConsumeLayout(): unknown {
     columns: [
       {
         id: "column:active",
+        presentation: "stacked",
+        selectedWindowId: "active",
         width: { kind: "fixed", value: 420 },
         windowHeights: [
           { kind: "auto", weight: 2 },
@@ -38723,11 +39188,15 @@ function minimizedConsumeLayout(): unknown {
       },
       {
         id: "column:source",
+        presentation: "stacked",
+        selectedWindowId: "source-peer",
         width: { kind: "proportion", value: 0.32 },
         windowIds: ["source-peer"],
       },
       {
         id: "column:trailing",
+        presentation: "stacked",
+        selectedWindowId: "trailing",
         width: { kind: "fixed", value: 180 },
         windowIds: ["trailing"],
       },
@@ -38744,6 +39213,8 @@ function minimizedConsumeLayoutAfterMovedRemoval(): unknown {
     columns: [
       {
         id: "column:active",
+        presentation: "stacked",
+        selectedWindowId: "active",
         width: { kind: "fixed", value: 420 },
         windowHeights: [
           { kind: "auto", weight: 2 },
@@ -38753,11 +39224,15 @@ function minimizedConsumeLayoutAfterMovedRemoval(): unknown {
       },
       {
         id: "column:source",
+        presentation: "stacked",
+        selectedWindowId: "source-peer",
         width: { kind: "proportion", value: 0.32 },
         windowIds: ["source-peer"],
       },
       {
         id: "column:trailing",
+        presentation: "stacked",
+        selectedWindowId: "trailing",
         width: { kind: "fixed", value: 180 },
         windowIds: ["trailing"],
       },
@@ -38774,6 +39249,8 @@ function minimizedConsumeLayoutAfterMovedReplacement(): unknown {
     columns: [
       {
         id: "column:active",
+        presentation: "stacked",
+        selectedWindowId: "active",
         width: { kind: "fixed", value: 420 },
         windowHeights: [
           { kind: "auto", weight: 2 },
@@ -38783,16 +39260,22 @@ function minimizedConsumeLayoutAfterMovedReplacement(): unknown {
       },
       {
         id: "column:moved-top",
+        presentation: "stacked",
+        selectedWindowId: "moved-top",
         width: { kind: "proportion", value: 0.5 },
         windowIds: ["moved-top"],
       },
       {
         id: "column:source",
+        presentation: "stacked",
+        selectedWindowId: "source-peer",
         width: { kind: "proportion", value: 0.32 },
         windowIds: ["source-peer"],
       },
       {
         id: "column:trailing",
+        presentation: "stacked",
+        selectedWindowId: "trailing",
         width: { kind: "fixed", value: 180 },
         windowIds: ["trailing"],
       },
@@ -39549,6 +40032,8 @@ function installGroupedCapacityLayout(
       {
         column: {
           id: columnId("column:group"),
+          presentation: "stacked",
+          selectedWindowId: windowId("window-1"),
           width: { kind: "fixed", value: 700 },
           ...(groupWindowHeights
             ? {
@@ -39564,6 +40049,8 @@ function installGroupedCapacityLayout(
       {
         column: {
           id: columnId("column:active"),
+          presentation: "stacked",
+          selectedWindowId: windowId("window-3"),
           width: { kind: "fixed", value: 300 },
           windowIds: [windowId("window-3")],
         },

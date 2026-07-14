@@ -217,6 +217,10 @@ const expectedHandlers: Readonly<
     activated: "Runtime.DriftileRuntime.maximizeColumn()",
     sequence: "Meta+F",
   },
+  driftile_toggle_column_tabbed_display: {
+    activated: "Runtime.DriftileRuntime.toggleColumnTabbedDisplay()",
+    sequence: "Meta+W",
+  },
   driftile_maximize_window_to_edges: {
     activated: "Runtime.DriftileRuntime.maximizeWindowToEdges()",
     sequence: "Meta+M",
@@ -463,7 +467,7 @@ describe("KWin shortcut handlers", () => {
   });
 
   it("keeps the canonical action catalog synchronized with QML", () => {
-    expect(shortcutActions).toHaveLength(104);
+    expect(shortcutActions).toHaveLength(105);
     expect(shortcutActions).toEqual(
       handlers.map(({ name, sequence, text }) => ({
         name,
@@ -473,7 +477,7 @@ describe("KWin shortcut handlers", () => {
     );
     expect(
       shortcutActions.filter((action) => action.defaultSequence !== undefined),
-    ).toHaveLength(86);
+    ).toHaveLength(87);
     expect(
       shortcutActions.filter((action) => action.defaultSequence === undefined),
     ).toHaveLength(18);
@@ -504,7 +508,7 @@ describe("KWin shortcut handlers", () => {
       shortcutBindings.map(({ name, sequence }) => ({ name, sequence })),
     );
 
-    expect(shortcutBindings).toHaveLength(86);
+    expect(shortcutBindings).toHaveLength(87);
     expect(shortcutBindings).toEqual(
       shortcutActions.flatMap((action) =>
         action.defaultSequence === undefined
@@ -519,10 +523,10 @@ describe("KWin shortcut handlers", () => {
             ],
       ),
     );
-    expect(shortcutProfileId).toHaveLength(3604);
+    expect(shortcutProfileId).toHaveLength(3652);
     expect(
       createHash("sha256").update(shortcutProfileId, "utf8").digest("hex"),
-    ).toBe("c1cbd4bca194a60b832538fab44c7495e62d837c0ec68b00036bbe9f8e31d126");
+    ).toBe("879bbf116246e4de93dc13d9223452c24a88d00dd3c69c02d0f228b612d971eb");
   });
 
   it("leaves operations without an equivalent default unbound", () => {

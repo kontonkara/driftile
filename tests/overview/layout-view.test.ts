@@ -11,7 +11,7 @@ import {
   LAYOUT_PERSISTENCE_LIMITS,
   LAYOUT_PERSISTENCE_VERSION,
   encodeLayoutPersistence,
-  type LayoutPersistenceV1,
+  type LayoutPersistenceV3,
   type PersistedOutputV1,
 } from "../../src/core/layout-persistence";
 import {
@@ -39,7 +39,7 @@ const externalOutput = Object.freeze({
   serialNumber: "external-1",
 } satisfies PersistedOutputV1);
 
-function representativeState(): LayoutPersistenceV1 {
+function representativeState(): LayoutPersistenceV3 {
   return {
     contexts: [
       {
@@ -60,6 +60,8 @@ function representativeState(): LayoutPersistenceV1 {
               },
               { windowKey: "stored-b" },
             ],
+            presentation: "tabbed",
+            selectedMemberIndex: 1,
             width: { kind: "proportion", value: 1 },
           },
           {
@@ -69,6 +71,8 @@ function representativeState(): LayoutPersistenceV1 {
                 windowKey: "stored-c",
               },
             ],
+            presentation: "stacked",
+            selectedMemberIndex: 0,
             width: { kind: "fixed", value: 640 },
           },
         ],
@@ -87,6 +91,8 @@ function representativeState(): LayoutPersistenceV1 {
                 windowKey: "stored-d",
               },
             ],
+            presentation: "stacked",
+            selectedMemberIndex: 0,
             width: { kind: "proportion", value: 0.5 },
           },
         ],
@@ -99,6 +105,7 @@ function representativeState(): LayoutPersistenceV1 {
       {
         anchor: {
           columnIndex: 0,
+          columnPresentation: "tabbed",
           columnWidth: { kind: "proportion", value: 1 },
           memberIndex: 1,
           nextWindowKey: "stored-b",
@@ -130,7 +137,7 @@ function topology(
 }
 
 function snapshot(
-  state: LayoutPersistenceV1,
+  state: LayoutPersistenceV3,
   persistedTopology: LayoutPersistenceTopologyV2,
 ): LayoutPersistenceCatalogSnapshot {
   return { state, topology: persistedTopology };
@@ -212,7 +219,7 @@ function expectDeepFrozen(value: unknown): void {
 function oneWindowState(
   persistedOutput: PersistedOutputV1,
   suffix: string,
-): LayoutPersistenceV1 {
+): LayoutPersistenceV3 {
   return {
     contexts: [
       {
@@ -220,6 +227,8 @@ function oneWindowState(
         columns: [
           {
             members: [{ windowKey: `stored-${suffix}` }],
+            presentation: "stacked",
+            selectedMemberIndex: 0,
             width: { kind: "fixed", value: 600 },
           },
         ],
@@ -247,13 +256,8 @@ describe("projectOverviewLayout", () => {
           columns: [
             {
               fullWidthRestore: { kind: "fixed", value: 800 },
-              members: [
-                {
-                  height: { clientHeight: 480, kind: "fixed" },
-                  windowId: "live-a",
-                },
-                { windowId: "live-b" },
-              ],
+              members: [{ windowId: "live-b" }],
+              presentation: "tabbed",
               width: { kind: "proportion", value: 1 },
             },
             {
@@ -263,6 +267,7 @@ describe("projectOverviewLayout", () => {
                   windowId: "live-c",
                 },
               ],
+              presentation: "stacked",
               width: { kind: "fixed", value: 640 },
             },
           ],
@@ -280,6 +285,7 @@ describe("projectOverviewLayout", () => {
                   windowId: "live-d",
                 },
               ],
+              presentation: "stacked",
               width: { kind: "proportion", value: 0.5 },
             },
           ],
@@ -321,6 +327,7 @@ describe("projectOverviewLayout", () => {
         },
       ],
     });
+    expect(JSON.stringify(projected.contexts)).not.toContain("live-a");
     expectDeepFrozen(projected);
     expect(JSON.stringify(projected)).not.toContain("restoreBaseline");
     expect(JSON.stringify(projected)).not.toContain("restoreFingerprint");
@@ -380,7 +387,7 @@ describe("projectOverviewLayout", () => {
       JSON.stringify({
         format: LAYOUT_PERSISTENCE_FORMAT,
         snapshots: [],
-        version: LAYOUT_PERSISTENCE_CATALOG_VERSION + 1,
+        version: LAYOUT_PERSISTENCE_CATALOG_VERSION + 2,
       }),
       "unsupported-version",
     ],
@@ -396,7 +403,7 @@ describe("projectOverviewLayout", () => {
     });
   });
 
-  it("rejects a bare v1 state with no authoritative topology", () => {
+  it("rejects a bare v3 state with no authoritative topology", () => {
     expect(
       projectOverviewLayout(
         encodeLayoutPersistence(representativeState()),
@@ -524,6 +531,13 @@ describe("projectOverviewLayout", () => {
       "window-mismatch",
     ],
     [
+      "a stale hidden tab member",
+      liveLayout({
+        windowIds: ["live-b", "live-c", "live-d", "live-floating"],
+      }),
+      "window-mismatch",
+    ],
+    [
       "too many windows",
       liveLayout({
         windowIds: Array.from(
@@ -562,7 +576,7 @@ describe("projectOverviewLayout", () => {
       key: `stored-${String(index)}`,
       liveId: `live-${String(index)}`,
     }));
-    const state: LayoutPersistenceV1 = {
+    const state: LayoutPersistenceV3 = {
       contexts: Array.from({ length: contextCount }, (_value, contextIndex) => {
         const contextWindows = windows.slice(
           contextIndex * windowsPerContext,
@@ -573,6 +587,8 @@ describe("projectOverviewLayout", () => {
           activeColumnIndex: 0,
           columns: contextWindows.map((window) => ({
             members: [{ windowKey: window.key }],
+            presentation: "stacked" as const,
+            selectedMemberIndex: 0,
             width: { kind: "fixed" as const, value: 600 },
           })),
           desktopId: `desktop-${String(contextIndex)}`,

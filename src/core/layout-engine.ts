@@ -5,6 +5,8 @@ export interface ColumnWidth {
   readonly value: number;
 }
 
+export type ColumnPresentation = "stacked" | "tabbed";
+
 export type WindowHeight =
   | {
       readonly kind: "auto";
@@ -21,6 +23,8 @@ export type WindowHeight =
 
 export interface LayoutColumnSnapshot {
   readonly id: ColumnId;
+  readonly presentation: ColumnPresentation;
+  readonly selectedWindowId: WindowId;
   readonly width: ColumnWidth;
   readonly windowHeights?: readonly WindowHeight[];
   readonly windowIds: readonly WindowId[];
@@ -77,6 +81,7 @@ export interface ManageWindowCommand {
 export interface DetachedWindowPlacement {
   readonly columnId: ColumnId;
   readonly columnIndex: number;
+  readonly columnPresentation: ColumnPresentation;
   readonly columnWidth: ColumnWidth;
   readonly desktopId: DesktopId;
   readonly memberIndex: number;
@@ -181,6 +186,8 @@ export interface WindowHeightEditResult {
 
 interface LayoutColumn {
   readonly id: ColumnId;
+  presentation: ColumnPresentation;
+  selectedWindowId: WindowId;
   readonly width: ColumnWidth;
   windowHeights?: WindowHeight[];
   readonly windowIds: WindowId[];
@@ -188,7 +195,9 @@ interface LayoutColumn {
 
 interface LayoutContext {
   activeColumnId: ColumnId | null;
+  readonly columnById: Map<ColumnId, LayoutColumn>;
   readonly columnIds: Set<ColumnId>;
+  readonly columnIndexById: Map<ColumnId, number>;
   readonly columns: LayoutColumn[];
   readonly desktopId: DesktopId;
   readonly outputId: OutputId;
@@ -198,6 +207,7 @@ interface LayoutContext {
 interface ManagedWindowPlacement {
   readonly columnId: ColumnId;
   readonly contextKey: string;
+  readonly memberIndex: number;
 }
 
 interface StackEditSnapshots {
@@ -300,23 +310,26 @@ export class LayoutEngine {
 
     const column: LayoutColumn = {
       id: command.columnId,
+      presentation: "stacked",
+      selectedWindowId: command.windowId,
       width: { ...command.width },
       windowIds: [command.windowId],
     };
     const activeIndex =
       context.activeColumnId === null
         ? -1
-        : context.columns.findIndex(
-            (candidate) => candidate.id === context.activeColumnId,
-          );
+        : liveColumnIndex(context, context.activeColumnId);
     const insertionIndex =
       activeIndex < 0 ? context.columns.length : activeIndex + 1;
 
     context.columns.splice(insertionIndex, 0, column);
+    context.columnById.set(column.id, column);
     context.columnIds.add(column.id);
+    this.reindexColumnIndices(context, insertionIndex);
     this.placements.set(command.windowId, {
       columnId: column.id,
       contextKey: key,
+      memberIndex: 0,
     });
 
     return true;
@@ -335,11 +348,91 @@ export class LayoutEngine {
       return false;
     }
 
-    if (context.activeColumnId === placement.columnId) {
+    const column = context.columnById.get(placement.columnId);
+
+    if (!column || column.windowIds[placement.memberIndex] !== windowId) {
       return false;
     }
 
+    const changed =
+      context.activeColumnId !== placement.columnId ||
+      column.selectedWindowId !== windowId;
     context.activeColumnId = placement.columnId;
+    column.selectedWindowId = windowId;
+    return changed;
+  }
+
+  setColumnPresentation(
+    windowId: WindowId,
+    presentation: ColumnPresentation,
+  ): ColumnPresentation | null {
+    const placement = this.placements.get(windowId);
+    const context = placement
+      ? this.contexts.get(placement.contextKey)
+      : undefined;
+    const column = placement
+      ? context?.columnById.get(placement.columnId)
+      : undefined;
+
+    if (
+      !placement ||
+      !column ||
+      column.windowIds[placement.memberIndex] !== windowId ||
+      column.presentation === presentation ||
+      (presentation === "tabbed" && column.windowIds.length < 2)
+    ) {
+      return null;
+    }
+
+    const previous = column.presentation;
+    column.presentation = presentation;
+    return previous;
+  }
+
+  toggleActiveColumnPresentation(
+    windowId: WindowId,
+  ): ColumnPresentation | null {
+    const placement = this.placements.get(windowId);
+    const context = placement
+      ? this.contexts.get(placement.contextKey)
+      : undefined;
+    const column = placement
+      ? context?.columnById.get(placement.columnId)
+      : undefined;
+
+    if (
+      !placement ||
+      !context ||
+      !column ||
+      context.activeColumnId !== column.id ||
+      column.windowIds[placement.memberIndex] !== windowId
+    ) {
+      return null;
+    }
+
+    const next = column.presentation === "stacked" ? "tabbed" : "stacked";
+    return this.setColumnPresentation(windowId, next) === null ? null : next;
+  }
+
+  selectWindowInColumn(windowId: WindowId): boolean {
+    const placement = this.placements.get(windowId);
+    const context = placement
+      ? this.contexts.get(placement.contextKey)
+      : undefined;
+    const column = placement
+      ? context?.columnById.get(placement.columnId)
+      : undefined;
+
+    if (
+      !placement ||
+      !column ||
+      column.windowIds[placement.memberIndex] !== windowId ||
+      column.selectedWindowId === windowId
+    ) {
+      return false;
+    }
+
+    column.selectedWindowId = windowId;
     return true;
   }
 
@@ -359,9 +452,7 @@ export class LayoutEngine {
       return null;
     }
 
-    const columnIndex = context.columns.findIndex(
-      (column) => column.id === placement.columnId,
-    );
+    const columnIndex = liveColumnIndex(context, placement.columnId);
 
     if (columnIndex < 0) {
       return null;
@@ -369,7 +460,7 @@ export class LayoutEngine {
 
     const targetIndex =
       direction === "left" ? columnIndex - 1 : columnIndex + 1;
-    return context.columns[targetIndex]?.windowIds[0] ?? null;
+    return context.columns[targetIndex]?.selectedWindowId ?? null;
   }
 
   edgeWindow(windowId: WindowId, edge: HorizontalEdge): WindowId | null {
@@ -392,7 +483,7 @@ export class LayoutEngine {
       return null;
     }
 
-    return target.windowIds[0] ?? null;
+    return target.selectedWindowId;
   }
 
   adjacentWindowInColumn(
@@ -406,15 +497,13 @@ export class LayoutEngine {
     }
 
     const context = this.contexts.get(placement.contextKey);
-    const column = context?.columns.find(
-      (candidate) => candidate.id === placement.columnId,
-    );
+    const column = context?.columnById.get(placement.columnId);
 
     if (!column) {
       return null;
     }
 
-    const windowIndex = column.windowIds.indexOf(windowId);
+    const windowIndex = placement.memberIndex;
 
     if (windowIndex < 0) {
       return null;
@@ -441,13 +530,11 @@ export class LayoutEngine {
       return null;
     }
 
-    const sourceIndex = context.columns.findIndex(
-      (column) => column.id === placement.columnId,
-    );
+    const sourceIndex = liveColumnIndex(context, placement.columnId);
     const source = context.columns[sourceIndex];
-    const windowIndex = source?.windowIds.indexOf(windowId) ?? -1;
+    const windowIndex = placement.memberIndex;
 
-    if (!source || windowIndex < 0) {
+    if (!source || source.windowIds[windowIndex] !== windowId) {
       return null;
     }
 
@@ -465,11 +552,16 @@ export class LayoutEngine {
 
       appendDefaultMutableWindowHeight(target);
       target.windowIds.push(windowId);
+      target.selectedWindowId = windowId;
       context.columns.splice(sourceIndex, 1);
+      context.columnById.delete(source.id);
       context.columnIds.delete(source.id);
+      context.columnIndexById.delete(source.id);
+      this.reindexColumnIndices(context, sourceIndex);
       this.placements.set(windowId, {
         columnId: target.id,
         contextKey: placement.contextKey,
+        memberIndex: target.windowIds.length - 1,
       });
       context.activeColumnId = target.id;
       kind = "merge";
@@ -478,20 +570,25 @@ export class LayoutEngine {
         return null;
       }
 
-      removeMutableColumnWindowHeight(source, windowIndex);
-      source.windowIds.splice(windowIndex, 1);
+      removeMutableColumnWindow(source, windowIndex);
+      this.reindexColumnPlacements(placement.contextKey, source, windowIndex);
       const column: LayoutColumn = {
         id: newColumnId,
+        presentation: "stacked",
+        selectedWindowId: windowId,
         width: { ...source.width },
         windowIds: [windowId],
       };
       const insertionIndex =
         direction === "left" ? sourceIndex : sourceIndex + 1;
       context.columns.splice(insertionIndex, 0, column);
+      context.columnById.set(column.id, column);
       context.columnIds.add(column.id);
+      this.reindexColumnIndices(context, insertionIndex);
       this.placements.set(windowId, {
         columnId: column.id,
         contextKey: placement.contextKey,
+        memberIndex: 0,
       });
       context.activeColumnId = column.id;
       kind = "extract";
@@ -533,12 +630,12 @@ export class LayoutEngine {
       }
     }
 
-    const windowIndex = source?.windowIds.indexOf(windowId) ?? -1;
+    const windowIndex = placement.memberIndex;
 
     if (
       !source ||
       sourceIndex < 0 ||
-      windowIndex < 0 ||
+      source.windowIds[windowIndex] !== windowId ||
       !target ||
       target.windowIds.length < 2
     ) {
@@ -547,19 +644,24 @@ export class LayoutEngine {
 
     const before = this.snapshot(context.outputId, context.desktopId);
     const sourceDisappears = source.windowIds.length === 1;
-    removeMutableColumnWindowHeight(source, windowIndex);
-    source.windowIds.splice(windowIndex, 1);
+    removeMutableColumnWindow(source, windowIndex);
+    this.reindexColumnPlacements(placement.contextKey, source, windowIndex);
     appendDefaultMutableWindowHeight(target);
     target.windowIds.push(windowId);
+    target.selectedWindowId = windowId;
 
     if (sourceDisappears) {
       context.columns.splice(sourceIndex, 1);
+      context.columnById.delete(source.id);
       context.columnIds.delete(source.id);
+      context.columnIndexById.delete(source.id);
+      this.reindexColumnIndices(context, sourceIndex);
     }
 
     this.placements.set(windowId, {
       columnId: target.id,
       contextKey: placement.contextKey,
+      memberIndex: target.windowIds.length - 1,
     });
     context.activeColumnId = target.id;
     return this.createStackEditResult(
@@ -584,9 +686,7 @@ export class LayoutEngine {
       return null;
     }
 
-    const targetIndex = context.columns.findIndex(
-      (column) => column.id === placement.columnId,
-    );
+    const targetIndex = liveColumnIndex(context, placement.columnId);
     const target = context.columns[targetIndex];
     const source = context.columns[targetIndex + 1];
     const movedWindowId = source?.windowIds[0];
@@ -616,6 +716,8 @@ export class LayoutEngine {
     const sourceWindowHeights = withoutSnapshotWindowHeight(nextSource, 0);
     columns[targetIndex] = {
       id: nextTarget.id,
+      presentation: nextTarget.presentation,
+      selectedWindowId: nextTarget.selectedWindowId,
       width: nextTarget.width,
       ...(targetWindowHeights ? { windowHeights: targetWindowHeights } : {}),
       windowIds: [...nextTarget.windowIds, movedWindowId],
@@ -626,6 +728,11 @@ export class LayoutEngine {
     } else {
       columns[targetIndex + 1] = {
         id: nextSource.id,
+        presentation:
+          nextSource.windowIds.length === 2
+            ? "stacked"
+            : nextSource.presentation,
+        selectedWindowId: selectedWindowAfterSnapshotRemoval(nextSource, 0),
         width: nextSource.width,
         ...(sourceWindowHeights ? { windowHeights: sourceWindowHeights } : {}),
         windowIds: nextSource.windowIds.slice(1),
@@ -660,9 +767,7 @@ export class LayoutEngine {
       return null;
     }
 
-    const sourceIndex = context.columns.findIndex(
-      (column) => column.id === placement.columnId,
-    );
+    const sourceIndex = liveColumnIndex(context, placement.columnId);
     const source = context.columns[sourceIndex];
     const movedWindowId = source?.windowIds[source.windowIds.length - 1];
 
@@ -692,12 +797,20 @@ export class LayoutEngine {
     );
     columns[sourceIndex] = {
       id: nextSource.id,
+      presentation:
+        nextSource.windowIds.length === 2 ? "stacked" : nextSource.presentation,
+      selectedWindowId: selectedWindowAfterSnapshotRemoval(
+        nextSource,
+        nextSource.windowIds.length - 1,
+      ),
       width: nextSource.width,
       ...(sourceWindowHeights ? { windowHeights: sourceWindowHeights } : {}),
       windowIds: nextSource.windowIds.slice(0, -1),
     };
     columns.splice(sourceIndex + 1, 0, {
       id: newColumnId,
+      presentation: "stacked",
+      selectedWindowId: movedWindowId,
       width: nextSource.width,
       windowIds: [movedWindowId],
     });
@@ -768,15 +881,13 @@ export class LayoutEngine {
       return null;
     }
 
-    const column = context.columns.find(
-      (candidate) => candidate.id === placement.columnId,
-    );
+    const column = context.columnById.get(placement.columnId);
 
     if (!column) {
       return null;
     }
 
-    const windowIndex = column.windowIds.indexOf(windowId);
+    const windowIndex = placement.memberIndex;
     const targetIndex = direction === "up" ? windowIndex - 1 : windowIndex + 1;
     const target = column.windowIds[targetIndex];
 
@@ -788,6 +899,12 @@ export class LayoutEngine {
     swapMutableColumnWindowHeights(column, windowIndex, targetIndex);
     column.windowIds[windowIndex] = target;
     column.windowIds[targetIndex] = windowId;
+    column.selectedWindowId = windowId;
+    this.reindexColumnPlacements(
+      placement.contextKey,
+      column,
+      Math.min(windowIndex, targetIndex),
+    );
     return this.createStackEditResult(
       "reorder",
       before,
@@ -879,7 +996,7 @@ export class LayoutEngine {
     if (
       before.outputId !== after.outputId ||
       before.desktopId !== after.desktopId ||
-      !sameContextColumns(current, rollbackAfter) ||
+      !sameRollbackContextColumns(current, rollbackAfter) ||
       !sameWindowSet(rollbackBefore, rollbackAfter)
     ) {
       return false;
@@ -894,11 +1011,31 @@ export class LayoutEngine {
     }
 
     context.columns.length = 0;
+    context.columnById.clear();
     context.columnIds.clear();
+    context.columnIndexById.clear();
+    const currentColumns = new Map(
+      current.columns.map((column) => [column.id, column] as const),
+    );
+    const afterColumns = new Map(
+      rollbackAfter.columns.map((column) => [column.id, column] as const),
+    );
+    const key = contextKey(context.outputId, context.desktopId);
 
     for (const snapshot of rollbackBefore.columns) {
+      const currentColumn = currentColumns.get(snapshot.id);
+      const afterColumn = afterColumns.get(snapshot.id);
+      const selectedWindowId =
+        currentColumn &&
+        afterColumn &&
+        currentColumn.selectedWindowId !== afterColumn.selectedWindowId &&
+        snapshot.windowIds.includes(currentColumn.selectedWindowId)
+          ? currentColumn.selectedWindowId
+          : snapshot.selectedWindowId;
       const column: LayoutColumn = {
         id: snapshot.id,
+        presentation: snapshot.presentation,
+        selectedWindowId,
         width: { ...snapshot.width },
         ...(snapshot.windowHeights
           ? { windowHeights: snapshot.windowHeights.map(cloneWindowHeight) }
@@ -906,15 +1043,19 @@ export class LayoutEngine {
         windowIds: [...snapshot.windowIds],
       };
       context.columns.push(column);
+      context.columnById.set(column.id, column);
       context.columnIds.add(column.id);
 
-      for (const id of column.windowIds) {
+      for (const [memberIndex, id] of column.windowIds.entries()) {
         this.placements.set(id, {
           columnId: column.id,
-          contextKey: contextKey(context.outputId, context.desktopId),
+          contextKey: key,
+          memberIndex,
         });
       }
     }
+
+    this.reindexColumnIndices(context);
 
     const afterActiveColumnSurvived = rollbackAfter.columns.some(
       (column) => column.id === after.activeColumnId,
@@ -954,9 +1095,7 @@ export class LayoutEngine {
       return false;
     }
 
-    const columnIndex = context.columns.findIndex(
-      (column) => column.id === placement.columnId,
-    );
+    const columnIndex = liveColumnIndex(context, placement.columnId);
     const targetIndex =
       direction === "left" ? columnIndex - 1 : columnIndex + 1;
     const column = context.columns[columnIndex];
@@ -968,6 +1107,8 @@ export class LayoutEngine {
 
     context.columns[columnIndex] = target;
     context.columns[targetIndex] = column;
+    context.columnIndexById.set(column.id, targetIndex);
+    context.columnIndexById.set(target.id, columnIndex);
     return true;
   }
 
@@ -987,9 +1128,7 @@ export class LayoutEngine {
       return null;
     }
 
-    const columnIndex = context.columns.findIndex(
-      (column) => column.id === placement.columnId,
-    );
+    const columnIndex = liveColumnIndex(context, placement.columnId);
     const targetIndex = edge === "first" ? 0 : context.columns.length - 1;
 
     if (columnIndex < 0 || columnIndex === targetIndex) {
@@ -1004,6 +1143,7 @@ export class LayoutEngine {
     }
 
     context.columns.splice(targetIndex, 0, column);
+    this.reindexColumnIndices(context, Math.min(columnIndex, targetIndex));
     return this.createStackEditResult(
       "reorder",
       before,
@@ -1028,9 +1168,7 @@ export class LayoutEngine {
       return null;
     }
 
-    const columnIndex = context.columns.findIndex(
-      (candidate) => candidate.id === placement.columnId,
-    );
+    const columnIndex = liveColumnIndex(context, placement.columnId);
     const column = context.columns[columnIndex];
 
     if (
@@ -1041,7 +1179,9 @@ export class LayoutEngine {
     }
 
     const previous = { ...column.width };
-    context.columns[columnIndex] = { ...column, width: { ...width } };
+    const replacement = { ...column, width: { ...width } };
+    context.columns[columnIndex] = replacement;
+    context.columnById.set(replacement.id, replacement);
     return previous;
   }
 
@@ -1062,11 +1202,13 @@ export class LayoutEngine {
       return null;
     }
 
-    const column = context.columns.find(
-      (candidate) => candidate.id === placement.columnId,
-    );
+    const column = context.columnById.get(placement.columnId);
 
-    if (!column || heights.length !== column.windowIds.length) {
+    if (
+      !column ||
+      column.presentation === "tabbed" ||
+      heights.length !== column.windowIds.length
+    ) {
       return null;
     }
 
@@ -1149,8 +1291,9 @@ export class LayoutEngine {
       return null;
     }
 
-    const sourceColumnIndex = source.columns.findIndex(
-      (column) => column.id === managedPlacement.columnId,
+    const sourceColumnIndex = liveColumnIndex(
+      source,
+      managedPlacement.columnId,
     );
     const sourceColumn = source.columns[sourceColumnIndex];
 
@@ -1209,6 +1352,8 @@ export class LayoutEngine {
       targetActiveIndex < 0 ? targetColumns.length : targetActiveIndex + 1;
     targetColumns.splice(targetInsertionIndex, 0, {
       id: target.columnId,
+      presentation: transferredColumn.presentation,
+      selectedWindowId: transferredColumn.selectedWindowId,
       width: transferredColumn.width,
       ...(transferredColumn.windowHeights
         ? {
@@ -1321,8 +1466,9 @@ export class LayoutEngine {
       return null;
     }
 
-    const sourceColumnIndex = source.columns.findIndex(
-      (column) => column.id === managedPlacement.columnId,
+    const sourceColumnIndex = liveColumnIndex(
+      source,
+      managedPlacement.columnId,
     );
     const sourceColumn = source.columns[sourceColumnIndex];
     const sourceMemberIndex = sourceColumn?.windowIds.indexOf(windowId) ?? -1;
@@ -1373,6 +1519,12 @@ export class LayoutEngine {
         );
         sourceColumns.push({
           id: column.id,
+          presentation:
+            column.windowIds.length === 2 ? "stacked" : column.presentation,
+          selectedWindowId: selectedWindowAfterSnapshotRemoval(
+            column,
+            sourceMemberIndex,
+          ),
           width: column.width,
           ...(windowHeights ? { windowHeights } : {}),
           windowIds,
@@ -1398,6 +1550,8 @@ export class LayoutEngine {
       targetActiveIndex < 0 ? targetColumns.length : targetActiveIndex + 1;
     targetColumns.splice(targetInsertionIndex, 0, {
       id: target.columnId,
+      presentation: "stacked",
+      selectedWindowId: windowId,
       width: sourceColumn.width,
       windowIds: [windowId],
     });
@@ -1504,6 +1658,12 @@ export class LayoutEngine {
       );
       sourceColumns.push({
         id: column.id,
+        presentation:
+          column.windowIds.length === 2 ? "stacked" : column.presentation,
+        selectedWindowId: selectedWindowAfterSnapshotRemoval(
+          column,
+          sourceMemberIndex,
+        ),
         width: column.width,
         ...(windowHeights ? { windowHeights } : {}),
         windowIds,
@@ -1540,6 +1700,8 @@ export class LayoutEngine {
       index === targetColumnIndex
         ? {
             id: column.id,
+            presentation: column.presentation,
+            selectedWindowId: windowId,
             width: column.width,
             ...(compactTargetWindowHeights
               ? { windowHeights: compactTargetWindowHeights }
@@ -1648,13 +1810,11 @@ export class LayoutEngine {
       return null;
     }
 
-    const columnIndex = context.columns.findIndex(
-      (column) => column.id === managedPlacement.columnId,
-    );
+    const columnIndex = liveColumnIndex(context, managedPlacement.columnId);
     const column = context.columns[columnIndex];
-    const memberIndex = column?.windowIds.indexOf(windowId) ?? -1;
+    const memberIndex = managedPlacement.memberIndex;
 
-    if (!column || memberIndex < 0) {
+    if (!column || column.windowIds[memberIndex] !== windowId) {
       return null;
     }
 
@@ -1665,6 +1825,7 @@ export class LayoutEngine {
     const placement = immutableDetachedWindowPlacement({
       columnId: column.id,
       columnIndex,
+      columnPresentation: column.presentation,
       columnWidth: column.width,
       desktopId: context.desktopId,
       memberIndex,
@@ -1696,6 +1857,14 @@ export class LayoutEngine {
         );
         columns.push({
           id: candidate.id,
+          presentation:
+            candidate.windowIds.length === 2
+              ? "stacked"
+              : candidate.presentation,
+          selectedWindowId: selectedWindowAfterSnapshotRemoval(
+            candidate,
+            memberIndex,
+          ),
           width: candidate.width,
           ...(windowHeights ? { windowHeights } : {}),
           windowIds,
@@ -1768,7 +1937,7 @@ export class LayoutEngine {
     );
     const after = previewWindowAttachment(before, saved);
 
-    if (!after) {
+    if (!after || !validContextSnapshot(after)) {
       return null;
     }
 
@@ -1818,9 +1987,7 @@ export class LayoutEngine {
       return false;
     }
 
-    const columnIndex = context.columns.findIndex(
-      (column) => column.id === placement.columnId,
-    );
+    const columnIndex = liveColumnIndex(context, placement.columnId);
 
     if (columnIndex < 0) {
       this.placements.delete(windowId);
@@ -1833,20 +2000,22 @@ export class LayoutEngine {
       return false;
     }
 
-    const windowIndex = column.windowIds.indexOf(windowId);
+    const windowIndex = placement.memberIndex;
 
-    if (windowIndex < 0) {
+    if (column.windowIds[windowIndex] !== windowId) {
       this.placements.delete(windowId);
       return false;
     }
 
-    removeMutableColumnWindowHeight(column, windowIndex);
-    column.windowIds.splice(windowIndex, 1);
+    removeMutableColumnWindow(column, windowIndex);
     this.placements.delete(windowId);
 
     if (column.windowIds.length === 0) {
       context.columns.splice(columnIndex, 1);
+      context.columnById.delete(column.id);
       context.columnIds.delete(column.id);
+      context.columnIndexById.delete(column.id);
+      this.reindexColumnIndices(context, columnIndex);
 
       if (context.activeColumnId === column.id) {
         const nextColumn =
@@ -1857,6 +2026,8 @@ export class LayoutEngine {
       if (context.columns.length === 0) {
         this.contexts.delete(placement.contextKey);
       }
+    } else {
+      this.reindexColumnPlacements(placement.contextKey, column, windowIndex);
     }
 
     return true;
@@ -1883,9 +2054,10 @@ export class LayoutEngine {
       return null;
     }
 
-    const activeIndex = context.columns.findIndex(
-      (column) => column.id === context.activeColumnId,
-    );
+    const activeIndex =
+      context.activeColumnId === null
+        ? -1
+        : liveColumnIndex(context, context.activeColumnId);
     const retainedEntries: Array<{
       readonly column: LayoutColumn;
       readonly index: number;
@@ -1943,6 +2115,14 @@ export class LayoutEngine {
             ? column
             : {
                 id: column.id,
+                presentation:
+                  retainedWindowIds.length === 1
+                    ? "stacked"
+                    : column.presentation,
+                selectedWindowId: selectedWindowAfterRetaining(
+                  column,
+                  retainedWindowIds,
+                ),
                 width: column.width,
                 ...(compactHeights ? { windowHeights: compactHeights } : {}),
                 windowIds: retainedWindowIds,
@@ -1961,11 +2141,17 @@ export class LayoutEngine {
 
     context.columns.length = 0;
     context.columns.push(...retainedEntries.map((entry) => entry.column));
+    context.columnById.clear();
     context.columnIds.clear();
+    context.columnIndexById.clear();
 
     for (const entry of retainedEntries) {
+      context.columnById.set(entry.column.id, entry.column);
       context.columnIds.add(entry.column.id);
+      this.reindexColumnPlacements(key, entry.column);
     }
+
+    this.reindexColumnIndices(context);
 
     if (
       context.activeColumnId !== null &&
@@ -2017,9 +2203,10 @@ export class LayoutEngine {
       return false;
     }
 
-    const activeIndex = context.columns.findIndex(
-      (column) => column.id === context.activeColumnId,
-    );
+    const activeIndex =
+      context.activeColumnId === null
+        ? -1
+        : liveColumnIndex(context, context.activeColumnId);
     const retainedEntries = context.columns
       .map((column, index) => ({ column, index }))
       .filter((entry) => !removedIds.has(entry.column.id));
@@ -2035,10 +2222,13 @@ export class LayoutEngine {
       }
 
       context.columnIds.delete(column.id);
+      context.columnById.delete(column.id);
+      context.columnIndexById.delete(column.id);
     }
 
     context.columns.length = 0;
     context.columns.push(...retained);
+    this.reindexColumnIndices(context);
 
     if (
       context.activeColumnId !== null &&
@@ -2101,11 +2291,15 @@ export class LayoutEngine {
       existing ??
       this.getOrCreateContext(key, command.outputId, command.desktopId);
     context.columns.length = 0;
+    context.columnById.clear();
     context.columnIds.clear();
+    context.columnIndexById.clear();
 
     for (const column of restored.columns) {
       const mutableColumn: LayoutColumn = {
         id: column.id,
+        presentation: column.presentation,
+        selectedWindowId: column.selectedWindowId,
         width: { ...column.width },
         ...(column.windowHeights
           ? { windowHeights: column.windowHeights.map(cloneWindowHeight) }
@@ -2113,15 +2307,19 @@ export class LayoutEngine {
         windowIds: [...column.windowIds],
       };
       context.columns.push(mutableColumn);
+      context.columnById.set(mutableColumn.id, mutableColumn);
       context.columnIds.add(mutableColumn.id);
 
-      for (const id of mutableColumn.windowIds) {
+      for (const [memberIndex, id] of mutableColumn.windowIds.entries()) {
         this.placements.set(id, {
           columnId: mutableColumn.id,
           contextKey: key,
+          memberIndex,
         });
       }
     }
+
+    this.reindexColumnIndices(context);
 
     context.activeColumnId = restored.activeColumnId;
     context.viewportOffset = restored.viewportOffset;
@@ -2145,6 +2343,8 @@ export class LayoutEngine {
       activeColumnId: context.activeColumnId,
       columns: context.columns.map((column) => ({
         id: column.id,
+        presentation: column.presentation,
+        selectedWindowId: column.selectedWindowId,
         width: { ...column.width },
         ...(column.windowHeights
           ? { windowHeights: column.windowHeights.map(cloneWindowHeight) }
@@ -2236,7 +2436,9 @@ export class LayoutEngine {
 
     const context: LayoutContext = {
       activeColumnId: null,
+      columnById: new Map<ColumnId, LayoutColumn>(),
       columnIds: new Set<ColumnId>(),
+      columnIndexById: new Map<ColumnId, number>(),
       columns: [],
       desktopId,
       outputId,
@@ -2250,10 +2452,14 @@ export class LayoutEngine {
     const key = contextKey(snapshot.outputId, snapshot.desktopId);
 
     for (const column of snapshot.columns) {
-      for (const id of column.windowIds) {
+      for (const [memberIndex, id] of column.windowIds.entries()) {
         const placement = this.placements.get(id);
 
-        if (placement?.contextKey !== key || placement.columnId !== column.id) {
+        if (
+          placement?.contextKey !== key ||
+          placement.columnId !== column.id ||
+          placement.memberIndex !== memberIndex
+        ) {
           return false;
         }
       }
@@ -2276,11 +2482,15 @@ export class LayoutEngine {
       snapshot.desktopId,
     );
     context.columns.length = 0;
+    context.columnById.clear();
     context.columnIds.clear();
+    context.columnIndexById.clear();
 
     for (const saved of snapshot.columns) {
       const column: LayoutColumn = {
         id: saved.id,
+        presentation: saved.presentation,
+        selectedWindowId: saved.selectedWindowId,
         width: { ...saved.width },
         ...(saved.windowHeights
           ? { windowHeights: saved.windowHeights.map(cloneWindowHeight) }
@@ -2288,15 +2498,54 @@ export class LayoutEngine {
         windowIds: [...saved.windowIds],
       };
       context.columns.push(column);
+      context.columnById.set(column.id, column);
       context.columnIds.add(column.id);
 
-      for (const id of column.windowIds) {
-        this.placements.set(id, { columnId: column.id, contextKey: key });
+      for (const [memberIndex, id] of column.windowIds.entries()) {
+        this.placements.set(id, {
+          columnId: column.id,
+          contextKey: key,
+          memberIndex,
+        });
       }
     }
 
+    this.reindexColumnIndices(context);
+
     context.activeColumnId = snapshot.activeColumnId;
     context.viewportOffset = snapshot.viewportOffset;
+  }
+
+  private reindexColumnPlacements(
+    key: string,
+    column: LayoutColumn,
+    startIndex = 0,
+  ): void {
+    for (
+      let memberIndex = startIndex;
+      memberIndex < column.windowIds.length;
+      memberIndex += 1
+    ) {
+      const id = column.windowIds[memberIndex];
+
+      if (id !== undefined) {
+        this.placements.set(id, {
+          columnId: column.id,
+          contextKey: key,
+          memberIndex,
+        });
+      }
+    }
+  }
+
+  private reindexColumnIndices(context: LayoutContext, startIndex = 0): void {
+    for (let index = startIndex; index < context.columns.length; index += 1) {
+      const column = context.columns[index];
+
+      if (column) {
+        context.columnIndexById.set(column.id, index);
+      }
+    }
   }
 }
 
@@ -2372,6 +2621,8 @@ function previewWindowReinsertion(
       columnIndex === sourceColumnIndex
         ? {
             id: column.id,
+            presentation: column.presentation,
+            selectedWindowId: windowId,
             width: column.width,
             ...(compactHeights ? { windowHeights: compactHeights } : {}),
             windowIds,
@@ -2411,6 +2662,12 @@ function previewWindowReinsertion(
       if (sourceWindowIds.length > 0) {
         columns.push({
           id: column.id,
+          presentation:
+            sourceWindowIds.length === 1 ? "stacked" : column.presentation,
+          selectedWindowId: selectedWindowAfterSnapshotRemoval(
+            column,
+            sourceMemberIndex,
+          ),
           width: column.width,
           ...(sourceWindowHeights
             ? { windowHeights: sourceWindowHeights }
@@ -2425,6 +2682,8 @@ function previewWindowReinsertion(
     if (columnIndex === targetColumnIndex) {
       columns.push({
         id: column.id,
+        presentation: column.presentation,
+        selectedWindowId: windowId,
         width: column.width,
         ...(compactDestinationHeights
           ? { windowHeights: compactDestinationHeights }
@@ -2507,6 +2766,8 @@ function previewWindowAttachment(
       index === survivingColumnIndex
         ? {
             id: column.id,
+            presentation: column.presentation,
+            selectedWindowId: placement.windowId,
             width: column.width,
             ...(compactHeights ? { windowHeights: compactHeights } : {}),
             windowIds,
@@ -2532,6 +2793,8 @@ function previewWindowAttachment(
     );
     const restoredColumn: LayoutColumnSnapshot = {
       id: placement.columnId,
+      presentation: placement.columnPresentation,
+      selectedWindowId: placement.windowId,
       width: placement.columnWidth,
       ...(placement.windowHeight &&
       !isDefaultWindowHeight(placement.windowHeight)
@@ -2583,6 +2846,7 @@ function immutableDetachedWindowPlacement(
   return Object.freeze({
     columnId: placement.columnId,
     columnIndex: placement.columnIndex,
+    columnPresentation: placement.columnPresentation,
     columnWidth: Object.freeze({ ...placement.columnWidth }),
     desktopId: placement.desktopId,
     memberIndex: placement.memberIndex,
@@ -2607,6 +2871,8 @@ function cloneColumnSnapshot(
 ): LayoutColumnSnapshot {
   return {
     id: column.id,
+    presentation: column.presentation,
+    selectedWindowId: column.selectedWindowId,
     width: { ...column.width },
     ...(column.windowHeights
       ? { windowHeights: column.windowHeights.map(cloneWindowHeight) }
@@ -2634,6 +2900,8 @@ function immutableContextSnapshot(
   const columns = snapshot.columns.map((column) =>
     Object.freeze({
       id: column.id,
+      presentation: column.presentation,
+      selectedWindowId: column.selectedWindowId,
       width: Object.freeze({ ...column.width }),
       ...(column.windowHeights
         ? {
@@ -2677,6 +2945,7 @@ function validDetachedWindowPlacement(
     typeof placement["desktopId"] === "string" &&
     typeof placement["outputId"] === "string" &&
     typeof windowId === "string" &&
+    validColumnPresentation(placement["columnPresentation"]) &&
     nullableIdentifier(nextColumnId) &&
     nullableIdentifier(nextWindowId) &&
     nullableIdentifier(previousColumnId) &&
@@ -2752,7 +3021,7 @@ export function previewColumnRestoration(
     readonly viewportOffset?: number;
   } = {},
 ): LayoutContextSnapshot | null {
-  if (placements.length === 0) {
+  if (placements.length === 0 || !validTransferContextSnapshot(context)) {
     return null;
   }
 
@@ -2781,6 +3050,9 @@ export function previewColumnRestoration(
         column.windowHeights,
         column.windowIds.length,
       ) ||
+      !validColumnPresentation(column.presentation) ||
+      (column.presentation === "tabbed" && column.windowIds.length < 2) ||
+      !column.windowIds.includes(column.selectedWindowId) ||
       columnIds.has(column.id)
     ) {
       return null;
@@ -2798,6 +3070,8 @@ export function previewColumnRestoration(
 
     restoredSlots.set(index, {
       id: column.id,
+      presentation: column.presentation,
+      selectedWindowId: column.selectedWindowId,
       width: { ...column.width },
       ...(column.windowHeights
         ? { windowHeights: column.windowHeights.map(cloneWindowHeight) }
@@ -2825,6 +3099,8 @@ export function previewColumnRestoration(
 
     columns.push({
       id: currentColumn.id,
+      presentation: currentColumn.presentation,
+      selectedWindowId: currentColumn.selectedWindowId,
       width: { ...currentColumn.width },
       ...(currentColumn.windowHeights
         ? {
@@ -2864,6 +3140,10 @@ function contextKey(outputId: OutputId, desktopId: DesktopId): string {
   return `${outputId}\u0000${desktopId}`;
 }
 
+function liveColumnIndex(context: LayoutContext, columnId: ColumnId): number {
+  return context.columnIndexById.get(columnId) ?? -1;
+}
+
 function sameContextStructure(
   left: LayoutContextSnapshot,
   right: LayoutContextSnapshot,
@@ -2887,6 +3167,34 @@ function sameContextColumns(
       return (
         candidate !== undefined &&
         column.id === candidate.id &&
+        column.presentation === candidate.presentation &&
+        column.selectedWindowId === candidate.selectedWindowId &&
+        column.width.kind === candidate.width.kind &&
+        column.width.value === candidate.width.value &&
+        sameColumnWindowHeights(column, candidate) &&
+        column.windowIds.length === candidate.windowIds.length &&
+        column.windowIds.every(
+          (window, windowIndex) => window === candidate.windowIds[windowIndex],
+        )
+      );
+    })
+  );
+}
+
+function sameRollbackContextColumns(
+  left: LayoutContextSnapshot,
+  right: LayoutContextSnapshot,
+): boolean {
+  return (
+    left.outputId === right.outputId &&
+    left.desktopId === right.desktopId &&
+    left.columns.length === right.columns.length &&
+    left.columns.every((column, index) => {
+      const candidate = right.columns[index];
+      return (
+        candidate !== undefined &&
+        column.id === candidate.id &&
+        column.presentation === candidate.presentation &&
         column.width.kind === candidate.width.kind &&
         column.width.value === candidate.width.value &&
         sameColumnWindowHeights(column, candidate) &&
@@ -2985,12 +3293,26 @@ function contextWithoutWindows(
       : undefined;
     columns.push({
       id: column.id,
+      presentation:
+        retainedIndices.length === 1 ? "stacked" : column.presentation,
+      selectedWindowId: selectedWindowAfterRetaining(
+        column,
+        retainedIndices.map((index) => {
+          const id = column.windowIds[index];
+
+          if (id === undefined) {
+            throw new Error("window order is out of sync");
+          }
+
+          return id;
+        }),
+      ),
       width: { ...column.width },
       ...(compactHeights ? { windowHeights: compactHeights } : {}),
       windowIds: retainedIndices.map((index) => {
         const id = column.windowIds[index];
 
-        if (!id) {
+        if (id === undefined) {
           throw new Error("window order is out of sync");
         }
 
@@ -3079,6 +3401,9 @@ function validContextSnapshot(snapshot: LayoutContextSnapshot): boolean {
     if (
       columnIds.has(column.id) ||
       column.windowIds.length === 0 ||
+      !validColumnPresentation(column.presentation) ||
+      (column.presentation === "tabbed" && column.windowIds.length < 2) ||
+      !column.windowIds.includes(column.selectedWindowId) ||
       !validSerializedWindowHeights(
         column.windowHeights,
         column.windowIds.length,
@@ -3141,6 +3466,71 @@ function compactWindowHeights(
 
 function isDefaultWindowHeight(height: WindowHeight): boolean {
   return height.kind === "auto" && height.weight === 1;
+}
+
+function validColumnPresentation(
+  presentation: unknown,
+): presentation is ColumnPresentation {
+  return presentation === "stacked" || presentation === "tabbed";
+}
+
+function selectedWindowAfterSnapshotRemoval(
+  column: LayoutColumnSnapshot,
+  removedIndex: number,
+): WindowId {
+  if (column.selectedWindowId !== column.windowIds[removedIndex]) {
+    return column.selectedWindowId;
+  }
+
+  const selected =
+    column.windowIds[removedIndex + 1] ?? column.windowIds[removedIndex - 1];
+
+  if (selected === undefined) {
+    throw new Error("a retained column must have a selected window");
+  }
+
+  return selected;
+}
+
+function selectedWindowAfterRetaining(
+  column: Pick<LayoutColumnSnapshot, "selectedWindowId" | "windowIds">,
+  retainedWindowIds: readonly WindowId[],
+): WindowId {
+  const retained = new Set(retainedWindowIds);
+
+  if (retained.has(column.selectedWindowId)) {
+    return column.selectedWindowId;
+  }
+
+  const selectedIndex = column.windowIds.indexOf(column.selectedWindowId);
+
+  for (
+    let index = selectedIndex + 1;
+    index < column.windowIds.length;
+    index += 1
+  ) {
+    const candidate = column.windowIds[index];
+
+    if (candidate !== undefined && retained.has(candidate)) {
+      return candidate;
+    }
+  }
+
+  for (let index = selectedIndex - 1; index >= 0; index -= 1) {
+    const candidate = column.windowIds[index];
+
+    if (candidate !== undefined && retained.has(candidate)) {
+      return candidate;
+    }
+  }
+
+  const first = retainedWindowIds[0];
+
+  if (first === undefined) {
+    throw new Error("a retained column must have a selected window");
+  }
+
+  return first;
 }
 
 function assertValidWindowHeights(heights: readonly WindowHeight[]): void {
@@ -3262,6 +3652,32 @@ function removeMutableColumnWindowHeight(
   }
 
   setMutableColumnWindowHeights(column, heights);
+}
+
+function removeMutableColumnWindow(
+  column: LayoutColumn,
+  index: number,
+): WindowId | undefined {
+  const selectedWindowId =
+    column.selectedWindowId === column.windowIds[index]
+      ? (column.windowIds[index + 1] ?? column.windowIds[index - 1])
+      : column.selectedWindowId;
+  removeMutableColumnWindowHeight(column, index);
+  const [removed] = column.windowIds.splice(index, 1);
+
+  if (column.windowIds.length > 0) {
+    if (selectedWindowId === undefined) {
+      throw new Error("a retained column must have a selected window");
+    }
+
+    column.selectedWindowId = selectedWindowId;
+
+    if (column.windowIds.length === 1) {
+      column.presentation = "stacked";
+    }
+  }
+
+  return removed;
 }
 
 function appendDefaultMutableWindowHeight(column: LayoutColumn): void {

@@ -10,10 +10,10 @@ import {
   LAYOUT_PERSISTENCE_FORMAT,
   LAYOUT_PERSISTENCE_LIMITS,
   LAYOUT_PERSISTENCE_VERSION,
-  type LayoutPersistenceV1,
+  type LayoutPersistenceV3,
   type PersistedColumnMemberV1,
-  type PersistedContextV1,
-  type PersistedFloatingWindowV1,
+  type PersistedContextV3,
+  type PersistedFloatingWindowV3,
   type PersistedOutputV1,
   type PersistedRectV1,
   type PersistedRestoreBaselineV1,
@@ -151,7 +151,7 @@ export function captureLayoutPersistence(
   const outputs = new Map<string, PersistedOutputV1>();
   const windows = new Map<string, PersistedWindowV1>();
   const ownedWindowIds = new Set<string>();
-  const contexts: PersistedContextV1[] = [];
+  const contexts: PersistedContextV3[] = [];
 
   for (const context of input.contexts) {
     const outputName = String(context.layout.outputId);
@@ -166,12 +166,15 @@ export function captureLayoutPersistence(
       activeColumnIndex,
       columns: context.layout.columns.map((column) => {
         const heights = column.windowHeights;
+        const selectedMemberIndex = column.windowIds.indexOf(
+          column.selectedWindowId,
+        );
 
         if (
-          heights !== undefined &&
-          heights.length !== column.windowIds.length
+          selectedMemberIndex < 0 ||
+          (heights !== undefined && heights.length !== column.windowIds.length)
         ) {
-          invalid("window height state must cover every column member");
+          invalid("column state must select one member and align all heights");
         }
 
         const members = column.windowIds.map((id, memberIndex) => {
@@ -204,6 +207,8 @@ export function captureLayoutPersistence(
                     }),
               }),
           members,
+          presentation: column.presentation,
+          selectedMemberIndex,
           width: cloneWidth(column.width),
         };
       }),
@@ -214,7 +219,7 @@ export function captureLayoutPersistence(
     });
   }
 
-  const floatingWindows: PersistedFloatingWindowV1[] = [];
+  const floatingWindows: PersistedFloatingWindowV3[] = [];
 
   for (const floating of input.floatingWindows) {
     const placement = floating.placement;
@@ -235,6 +240,7 @@ export function captureLayoutPersistence(
     floatingWindows.push({
       anchor: {
         columnIndex: placement.columnIndex,
+        columnPresentation: placement.columnPresentation,
         columnWidth: cloneWidth(placement.columnWidth),
         memberIndex: placement.memberIndex,
         ...anchors,
@@ -248,7 +254,7 @@ export function captureLayoutPersistence(
     });
   }
 
-  const state: LayoutPersistenceV1 = {
+  const state: LayoutPersistenceV3 = {
     contexts,
     floatingWindows,
     format: LAYOUT_PERSISTENCE_FORMAT,

@@ -11,7 +11,7 @@ import type { LayoutPersistenceHydrationInput } from "../../src/core/layout-pers
 import {
   LAYOUT_PERSISTENCE_FORMAT,
   LAYOUT_PERSISTENCE_VERSION,
-  type LayoutPersistenceV1,
+  type LayoutPersistenceV3,
   type PersistedOutputV1,
 } from "../../src/core/layout-persistence";
 
@@ -47,6 +47,8 @@ describe("known-output layout persistence hydration", () => {
               columns: [
                 {
                   id: "column:live-editor",
+                  presentation: "tabbed",
+                  selectedWindowId: "live-chat",
                   width: { kind: "fixed", value: 620 },
                   windowHeights: [
                     { kind: "auto", weight: 2 },
@@ -56,6 +58,8 @@ describe("known-output layout persistence hydration", () => {
                 },
                 {
                   id: "column:live-terminal",
+                  presentation: "stacked",
+                  selectedWindowId: "live-terminal",
                   width: { kind: "proportion", value: 1 },
                   windowIds: ["live-terminal"],
                 },
@@ -109,7 +113,7 @@ describe("known-output layout persistence hydration", () => {
 
   it("reports a safe no-op when the returned output has no historical contexts", () => {
     const historical = representativeSnapshot();
-    const state: LayoutPersistenceV1 = {
+    const state: LayoutPersistenceV3 = {
       ...historical.state,
       contexts: historical.state.contexts.filter(
         (context) => context.outputKey === historicalOther.key,
@@ -193,7 +197,7 @@ describe("known-output layout persistence hydration", () => {
 
   it("rejects weak and ambiguous cross-session window identities", () => {
     const historical = representativeSnapshot();
-    const weak: LayoutPersistenceV1 = {
+    const weak: LayoutPersistenceV3 = {
       ...historical.state,
       windows: historical.state.windows.map((window) =>
         window.key === "editor"
@@ -210,7 +214,7 @@ describe("known-output layout persistence hydration", () => {
       "unresolved-live-window",
     );
 
-    const ambiguousState: LayoutPersistenceV1 = {
+    const ambiguousState: LayoutPersistenceV3 = {
       ...historical.state,
       windows: historical.state.windows.map((window) =>
         window.key === "editor" || window.key === "chat"
@@ -267,7 +271,7 @@ describe("known-output layout persistence hydration", () => {
 
   it("keeps persisted identity ambiguity global across outputs", () => {
     const historical = representativeSnapshot();
-    const state: LayoutPersistenceV1 = {
+    const state: LayoutPersistenceV3 = {
       ...historical.state,
       windows: historical.state.windows.map((window) =>
         window.key === "other-window"
@@ -291,7 +295,7 @@ describe("known-output layout persistence hydration", () => {
 
   it("keeps strong persisted projections global across outputs", () => {
     const historical = representativeSnapshot();
-    const state: LayoutPersistenceV1 = {
+    const state: LayoutPersistenceV3 = {
       ...historical.state,
       windows: historical.state.windows.map((window) => {
         if (window.key === "editor") {
@@ -336,7 +340,7 @@ describe("known-output layout persistence hydration", () => {
 
   it("reserves exact identities globally before planning the returned subset", () => {
     const historical = representativeSnapshot();
-    const state: LayoutPersistenceV1 = {
+    const state: LayoutPersistenceV3 = {
       ...historical.state,
       windows: historical.state.windows.map((window) =>
         window.key === "other-window"
@@ -376,7 +380,7 @@ describe("known-output layout persistence hydration", () => {
 
   it("rejects restore baselines anywhere in a historical snapshot", () => {
     const historical = representativeSnapshot();
-    const state: LayoutPersistenceV1 = {
+    const state: LayoutPersistenceV3 = {
       ...historical.state,
       contexts: historical.state.contexts.map((context) => {
         if (context.outputKey !== historicalOther.key) {
@@ -412,12 +416,13 @@ describe("known-output layout persistence hydration", () => {
 
   it("rejects floating ownership on the returned historical output", () => {
     const historical = representativeSnapshot();
-    const state: LayoutPersistenceV1 = {
+    const state: LayoutPersistenceV3 = {
       ...historical.state,
       floatingWindows: [
         {
           anchor: {
             columnIndex: 1,
+            columnPresentation: "stacked",
             columnWidth: { kind: "fixed", value: 500 },
             memberIndex: 0,
             previousWindowKey: "terminal",
@@ -552,12 +557,16 @@ function representativeSnapshot(): LayoutPersistenceCatalogSnapshot {
                   windowKey: "chat",
                 },
               ],
+              presentation: "tabbed",
+              selectedMemberIndex: 1,
               width: { kind: "fixed", value: 620 },
             },
             {
               fullWidthRestore: { kind: "fixed", value: 840 },
               fullWidthRestoreViewportOffset: -270,
               members: [{ windowKey: "terminal" }],
+              presentation: "stacked",
+              selectedMemberIndex: 0,
               width: { kind: "proportion", value: 1 },
             },
           ],
@@ -570,6 +579,8 @@ function representativeSnapshot(): LayoutPersistenceCatalogSnapshot {
           columns: [
             {
               members: [{ windowKey: "other-window" }],
+              presentation: "stacked",
+              selectedMemberIndex: 0,
               width: { kind: "proportion", value: 1 },
             },
           ],
@@ -676,7 +687,7 @@ function persistedWindow(
   key: string,
   liveId: string,
   sessionMatch: NonNullable<
-    LayoutPersistenceV1["windows"][number]["sessionMatch"]
+    LayoutPersistenceV3["windows"][number]["sessionMatch"]
   >,
 ) {
   return { key, liveId, sessionMatch };

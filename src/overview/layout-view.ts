@@ -7,12 +7,13 @@ import {
   LAYOUT_PERSISTENCE_LIMITS,
   type LayoutPersistenceDecodeError,
   type PersistedColumnMemberV1,
-  type PersistedColumnV1,
-  type PersistedFloatingAnchorV1,
+  type PersistedColumnV3,
+  type PersistedFloatingAnchorV3,
   type PersistedOutputV1,
 } from "../core/layout-persistence";
 
-export type OverviewColumnWidth = PersistedColumnV1["width"];
+export type OverviewColumnPresentation = PersistedColumnV3["presentation"];
+export type OverviewColumnWidth = PersistedColumnV3["width"];
 export type OverviewWindowHeight = NonNullable<
   PersistedColumnMemberV1["height"]
 >;
@@ -46,6 +47,7 @@ export interface OverviewLayoutMember {
 export interface OverviewLayoutColumn {
   readonly fullWidthRestore?: OverviewColumnWidth;
   readonly members: readonly OverviewLayoutMember[];
+  readonly presentation: OverviewColumnPresentation;
   readonly width: OverviewColumnWidth;
 }
 
@@ -181,7 +183,14 @@ export function projectOverviewLayout(
       activeColumnIndex: context.activeColumnIndex,
       columns: Object.freeze(
         context.columns.map((column) => {
-          recordOperations(metrics, column.members.length);
+          const members =
+            column.presentation === "tabbed"
+              ? column.members.slice(
+                  column.selectedMemberIndex,
+                  column.selectedMemberIndex + 1,
+                )
+              : column.members;
+          recordOperations(metrics, members.length);
 
           return Object.freeze({
             ...(column.fullWidthRestore === undefined
@@ -190,7 +199,7 @@ export function projectOverviewLayout(
                   fullWidthRestore: freezeWidth(column.fullWidthRestore),
                 }),
             members: Object.freeze(
-              column.members.map((member) =>
+              members.map((member) =>
                 Object.freeze({
                   ...(member.height === undefined
                     ? {}
@@ -199,6 +208,7 @@ export function projectOverviewLayout(
                 }),
               ),
             ),
+            presentation: column.presentation,
             width: freezeWidth(column.width),
           });
         }),
@@ -435,7 +445,7 @@ function referencesAreCurrent(
 }
 
 function projectFloatingAnchor(
-  anchor: PersistedFloatingAnchorV1,
+  anchor: PersistedFloatingAnchorV3,
   windowIdByKey: ReadonlyMap<string, string>,
 ): OverviewFloatingAnchor {
   return Object.freeze({

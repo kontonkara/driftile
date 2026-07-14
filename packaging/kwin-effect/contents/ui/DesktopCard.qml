@@ -185,7 +185,9 @@ Rectangle {
         for (let columnIndex = 0; columnIndex < columns.length; columnIndex += 1) {
             const column = columns[columnIndex];
             const columnWidth = widthForColumn(column.width);
-            const memberHeights = heightsForMembers(column.members);
+            const memberHeights = column.presentation === "tabbed"
+                ? [contentHeight]
+                : heightsForMembers(column.members);
             let memberY = 0;
 
             for (let memberIndex = 0; memberIndex < column.members.length; memberIndex += 1) {
