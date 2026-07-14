@@ -782,9 +782,11 @@ Release criteria (met):
 ## 1.17.0 (in development)
 
 The scope is frozen to reorganizing the existing twelve-setting generic KWin
-configuration UI into General and Applications tabs. Every KConfig key and
-runtime behavior remains unchanged, and verification may add at most one
-structural test. No other feature belongs to 1.17.0.
+configuration UI into two tabs. General contains the existing eight global and
+layout controls; Applications contains the existing four application policy
+controls. Every KConfig key, twelve-setting snapshot rule, and live runtime
+behavior remains unchanged. Verification adds one structural test and no other
+feature belongs to 1.17.0. Further application policies remain post-v1 work.
 
 ## Post-v1
 

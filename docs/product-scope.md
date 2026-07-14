@@ -48,6 +48,9 @@ The ownership rule is strict:
 - Configurable 1–50 percentage-point step for contextual height decrease and
   increase actions: the active stack member when tiled, or the active manually
   floating window when detached.
+- One settings page groups the existing twelve controls into eight General and
+  four Applications controls without changing KConfig keys, snapshot
+  validation, or live behavior.
 - Output-local commands unless a transfer is explicit.
 - Work-area, size-constraint, fullscreen, minimized-window compatibility, dialog handling, and settled virtual-output recovery.
 - Hard client minimum and maximum bounds with cached detection of silent visible-window changes; unexposed increment and aspect hints do not alter Driftile's tiled model, while applied frames remain subject to KWin.
@@ -193,7 +196,7 @@ The ownership rule is strict:
   focus; global wheel input is deferred because KWin 6.7 exposes no public
   script axis API.
 - Tabbed columns and matching pointer navigation.
-- Further application-specific policies and an expanded settings UI.
+- Further application-specific policies.
 - Optional visual transitions, layout indicators, and concise diagnostics.
 - Overview pointer rearrangement.
 - Activity-aware layouts.

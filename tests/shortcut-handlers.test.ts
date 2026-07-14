@@ -566,6 +566,64 @@ describe("KWin shortcut handlers", () => {
     );
   });
 
+  it("groups the existing settings into ordered general and applications tabs", () => {
+    const settingsTabsStart = configurationUi.indexOf(
+      '<widget class="QTabWidget" name="settingsTabs">',
+    );
+    const generalTabStart = configurationUi.indexOf(
+      '<widget class="QWidget" name="generalTab">',
+      settingsTabsStart,
+    );
+    const applicationsTabStart = configurationUi.indexOf(
+      '<widget class="QWidget" name="applicationsTab">',
+      generalTabStart,
+    );
+    const controlNames = (section: string): readonly string[] =>
+      Array.from(
+        section.matchAll(/<widget\b[^>]*\bname="(kcfg_[^"]+)"/g),
+        (match) => match[1] ?? "",
+      );
+    const generalControls = [
+      "kcfg_BorderlessWindows",
+      "kcfg_CenterFocusedColumn",
+      "kcfg_TouchpadNavigation",
+      "kcfg_Gap",
+      "kcfg_DefaultColumnWidthPercent",
+      "kcfg_ColumnWidthStepPercent",
+      "kcfg_ColumnWidthPresets",
+      "kcfg_WindowHeightStepPercent",
+    ];
+    const applicationControls = [
+      "kcfg_ApplicationColumnWidths",
+      "kcfg_ApplicationInitialFloating",
+      "kcfg_ApplicationTilingExclusions",
+      "kcfg_ApplicationBorderlessExclusions",
+    ];
+
+    expect(settingsTabsStart).toBeGreaterThan(-1);
+    expect(generalTabStart).toBeGreaterThan(settingsTabsStart);
+    expect(applicationsTabStart).toBeGreaterThan(generalTabStart);
+
+    const generalTab = configurationUi.slice(
+      generalTabStart,
+      applicationsTabStart,
+    );
+    const applicationsTab = configurationUi.slice(applicationsTabStart);
+
+    expect(generalTab).toMatch(
+      /<attribute name="title">\s*<string>General<\/string>/,
+    );
+    expect(applicationsTab).toMatch(
+      /<attribute name="title">\s*<string>Applications<\/string>/,
+    );
+    expect(controlNames(generalTab)).toEqual(generalControls);
+    expect(controlNames(applicationsTab)).toEqual(applicationControls);
+    expect(controlNames(configurationUi)).toEqual([
+      ...generalControls,
+      ...applicationControls,
+    ]);
+  });
+
   it("exposes borderless windows as a user setting", () => {
     expect(metadata["X-KDE-ConfigModule"]).toBe(
       "kwin/effects/configs/kcm_kwin4_genericscripted",

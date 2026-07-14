@@ -2,9 +2,18 @@
 
 Open **System Settings > Window Management > KWin Scripts** and configure Driftile.
 
-Driftile validates all twelve settings as one snapshot. Applying an invalid value
-through an external configuration tool rejects the entire update and preserves
-the active settings; valid changes apply without reloading the extension.
+The settings page groups the existing controls into two tabs:
+
+- **General**: window decorations, focus centering, touchpad navigation, window
+  gap, default column width, column width step and presets, and window height
+  step.
+- **Applications**: initial column widths, initial floating rules, tiling
+  exclusions, and decoration exclusions.
+
+This grouping changes no KConfig key or live behavior. Driftile still validates
+all twelve settings as one snapshot. Applying an invalid value through an
+external configuration tool rejects the entire update and preserves the active
+settings; valid changes apply without reloading the extension.
 
 ## Home Manager
 
