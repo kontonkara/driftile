@@ -12,6 +12,9 @@ that desktop. The current desktop's gutter remains inert.
 In 1.9.0, a left click on a valid non-current thumbnail selects its desktop
 and then focuses that exact window. Current-card focus remains direct.
 
+In 1.19.0, a tabbed column contributes only its selected member's thumbnail.
+The companion does not expose hidden tab members or provide tab controls.
+
 The 1.18.0 release does not change overview behavior.
 
 The released 1.6.0 package remains presentation-only.
@@ -75,9 +78,9 @@ assign its shortcut explicitly.
 ## Safety boundary
 
 On activation, the effect accepts only two identical reads of a valid current
-layout snapshot whose outputs, desktops, and referenced windows match KWin. A
-missing, changing, legacy, corrupt, future, oversized, or stale snapshot keeps
-the effect closed.
+v2 catalog with canonical logical state whose outputs, desktops, and referenced
+windows match KWin. A missing, changing, legacy, corrupt, future, oversized, or
+stale snapshot keeps the effect closed.
 
 Current-card thumbnail focus is unchanged: the effect revalidates the direct
 live window object, exact internal ID, output, desktop and activity memberships,
@@ -111,6 +114,8 @@ geometry, or settings, register a screen edge, assign a shortcut, or provide
 drag, rearrangement, or keyboard navigation. The 1.9.0 slice adds no
 action, binding, setting, schema, private API, or timer and performs no window,
 stacking-order, or layout scan. It does not infer columns from window geometry.
+Tabbed projection adds no persistent tab strip, pointer tab selection,
+animation, setting, settings UI, or private API.
 Disabling or uninstalling it leaves the main extension and Plasma's built-in
 Overview unchanged.
 

@@ -18,6 +18,15 @@ engine.
 The startup workload is a synthetic scale guard. Its 1,000 singleton columns
 exceed the persisted per-context limit and are not a recommended user layout.
 
+## Tabbed-column budget
+
+The 1.19.0 slice keeps selection and focus resolution constant time. A toggle,
+member reorder, merge, split, or selected-member departure may visit only the
+affected column and is `O(S)` in that column's member count. It adds no timer,
+workspace scan, stacking-order scan, or persistent presentation surface.
+Proportional small-and-large fixtures guard these bounds without expanding the
+application matrix.
+
 Run only these budgets with:
 
 ```bash

@@ -24,6 +24,7 @@ arrow keys are interchangeable unless noted otherwise.
 | Move active column to another output             | `Meta+Ctrl+Shift+H/J/K/L` or `Meta+Ctrl+Shift+Arrow` |
 | Toggle floating                                  | `Meta+V`                                             |
 | Switch focus between tiled and floating layers   | `Meta+Shift+V`                                       |
+| Toggle stacked or tabbed column presentation     | `Meta+W`                                             |
 | Toggle native fullscreen                         | `Meta+Shift+F`                                       |
 | Toggle native maximize to work-area edges        | `Meta+M`                                             |
 | Cycle preset column width forward or back        | `Meta+R` or `Meta+Shift+R`                           |
@@ -40,6 +41,12 @@ Single-window desktop/output transfer, direct insertion into the nearest
 existing stack, one-way tiled/floating layer focus, resetting a column width,
 and reverse window-height preset cycling are registered without default keys.
 Assign them in **System Settings > Keyboard > Shortcuts** if needed.
+
+Version 1.19.0 adds only `Meta+W`. It toggles the active tiled column between
+stacked and tabbed presentation and has no alias. In tabbed presentation,
+`Meta+J/K` selects the next or previous member and `Meta+Ctrl+J/K` reorders the
+selected member, both without wrapping. Height adjustment, reset, and preset
+actions are no-ops until stacked presentation is restored.
 
 Layer focus is context-local. It restores the last focused non-minimized window
 in the other layer. Minimized slots are skipped, but any other blocker on the
@@ -168,9 +175,12 @@ KGlobalAccel is the live source of truth for shortcuts. Assignments changed in
 optional helper performs one explicit transaction; it does not watch a profile
 file or override later System Settings changes.
 
-Plasma already owns some default sequences. A release provides the optional
-versioned helper documented in [Installation](installation.md). From a source
-checkout, enable Driftile and claim the complete default profile explicitly:
+Plasma already owns some default sequences. Plasma normally assigns `Meta+W`
+to its Overview. Claiming the 1.19.0 default profile temporarily transfers that
+chord to Driftile; releasing the profile restores the unchanged Overview
+assignment. A release provides the optional versioned helper documented in
+[Installation](installation.md). From a source checkout, enable Driftile and
+claim the complete default profile explicitly:
 
 ```bash
 npm run shortcuts:claim

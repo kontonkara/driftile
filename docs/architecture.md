@@ -56,6 +56,7 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   unchanged, current v2 catalog.
 - Projects snapshot zero into a baseline-free, immutable view model after exact
   live output, desktop, and window validation.
+- Projects only the selected member of a tabbed column as its thumbnail.
 - Uses only public KWin QML types to enrich live thumbnails and screen context.
 - Keeps each rendered thumbnail's direct live window object in its QML delegate;
   the object does not enter projected or persisted state.
@@ -245,22 +246,36 @@ RuntimeState
   pointerResizeSettlement: { contextKey, targets, rollbackFrames, phase, attempts, stableSamples }
 ```
 
-`LayoutContext` owns columns, per-window automatic weights or fixed/preset heights, viewport offset, and the last applied geometry fingerprint. A managed window owns an optional decoration-independent client restore baseline plus the exact frame observed at capture time. A manually floating window remains observed but has no layout or geometry owner; its detached placement records stable anchors for reinsertion. An automatically floating window has no layout slot, floating anchor, waiting entry, suspension, or retry state. Role-based and configured application exclusions share this ownership path; the bounded configured lookup is constant time. A minimized tiled window remains suspended in its exact logical slot, while a minimized manually floating window keeps its exact detached frame. Reconcile excludes suspended windows until KWin releases geometry authority. Waiting windows have no layout owner. KWin objects never enter core state.
+`LayoutContext` owns columns, each column's stacked or tabbed presentation and
+selected window ID, per-window automatic weights or fixed/preset heights,
+viewport offset, and the last applied geometry fingerprint. A managed window
+owns an optional decoration-independent client restore baseline plus the exact
+frame observed at capture time. A manually floating window remains observed
+but has no layout or geometry owner; its detached placement records stable
+anchors for reinsertion. An automatically floating window has no layout slot,
+floating anchor, waiting entry, suspension, or retry state. Role-based and
+configured application exclusions share this ownership path; the bounded
+configured lookup is constant time. A minimized tiled window remains suspended
+in its exact logical slot, while a minimized manually floating window keeps its
+exact detached frame. Reconcile excludes suspended windows until KWin releases
+geometry authority. Waiting windows have no layout owner. KWin objects never
+enter core state.
 
 ## Persistence boundary
 
-The persistence foundation is a bounded, versioned JSON codec in core. A v2
-document keeps at most four most-recent output-topology snapshots under one
-4 MiB limit. Each snapshot records the complete output descriptor set, including
-outputs without owned windows, plus a validated v1 logical state. The current
-snapshot may keep context-guarded restore baselines; every historical snapshot
-is baseline-free. Bare v1 documents remain valid startup input and migrate on
-the next successful publication. Older runtimes see v2 as unsupported and keep
-it write-locked.
+The persistence foundation is a bounded, versioned JSON codec in core. The v2
+catalog keeps at most four most-recent output-topology snapshots under one
+4 MiB limit. Each snapshot records the complete output descriptor set,
+including outputs without owned windows, plus a validated canonical v3 logical
+state. The current snapshot may keep context-guarded restore baselines; every
+historical snapshot is baseline-free. Bare and catalog-nested v1 logical state
+remain valid startup input and migrate to v3 on the next successful
+publication. The catalog version stays v2. Runtimes without v3 state support
+reject that nested state and keep the store write-locked.
 
 Logical state stores output and window descriptors, column and stack order,
-width and height policies, viewport offsets, full-width restore widths and
-viewport positions,
+column presentation, the selected member by bounded index, width and height
+policies, viewport offsets, full-width restore widths and viewport positions,
 manual-floating reinsertion anchors, and context-guarded tiled restore
 baselines. The catalog and nested state codecs reject unknown fields, invalid
 references, ambiguous output identities, impossible layout policies, oversized
@@ -385,6 +400,16 @@ inspected safely within the codec bound.
 - Expand only a fully visible active column up to its shared window constraints, keep every other fully visible column on screen, and commit its width and viewport change atomically.
 - Center a fully visible column group with a viewport-only transaction; permit signed viewport offsets when exact centering requires them.
 - Preserve signed viewport positions across width and structural changes while the active column remains visible; reveal it only after it leaves the work area.
+- Give every non-minimized member of a tabbed column one identical frame using
+  the existing column width and normal outer gaps. Select and raise one member
+  without scanning another column or the workspace.
+- Keep tabbed focus and reorder within the active column without wrapping.
+  Height commands are no-ops while tabbed; their stored policies remain
+  dormant until stacked presentation returns.
+- Let the target presentation win when a member enters another column. Create
+  every split or extracted singleton as stacked, preserve a whole moved
+  column's presentation, and select a departing member's successor or, at the
+  end, its predecessor.
 - Keep at most one fixed or preset height in a stack. When another member is changed, preserve the remaining members' visible proportions as automatic weights and distribute the remaining work-area height among them.
 - Apply active-window height changes transactionally across the affected stack, preserving focus, order, width, and every prior height state on failure.
 - Apply stack edits with compare-and-swap model rollback and exact compensating frame writes after partial failure. Pin every writable ID to its captured KWin object so a same-ID replacement never receives stale writes. Rebase rollback across authoritative participant removal or context departure only when every surviving column, member, width, and height state still matches the applied edit.

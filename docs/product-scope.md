@@ -18,7 +18,9 @@ The ownership rule is strict:
   adoption at one exact visible tiled target after KWin moves the active tiled
   window to a selected desktop or another visible output.
 - Finish-only horizontal pointer-resize adoption for the active tiled column.
-- Vertical window stacks within columns.
+- Vertical window stacks and tabbed presentation within columns.
+- One selected member per column; tabbed members share one frame while the
+  selected member owns focus and stacking intent.
 - Per-window height adjustment, weighted automatic stack distribution, and height presets.
 - Managed, manually floating, automatically layout-excluded, and ignored window states.
 - Optional borderless presentation for application windows with exact
@@ -181,6 +183,34 @@ The ownership rule is strict:
   mutation. The slice adds no action, binding, setting, schema, persistence,
   helper, overview behavior, or application policy.
 
+## 1.19 core slice
+
+- `Meta+W` is the only new default binding. It toggles the active tiled column
+  between stacked and tabbed presentation without changing membership, order,
+  width, focus, or viewport.
+- Every non-minimized member of a tabbed column receives the same frame. That
+  frame uses the existing column width and the normal configured outer gaps;
+  the selected member is focused and raised through public KWin APIs.
+- Focus down or up selects the next or previous member without wrapping. Move
+  down or up reorders the selected member and keeps it selected.
+- Height decrease, increase, reset, and preset commands are no-ops while the
+  active column is tabbed. Existing height policies remain dormant and are
+  restored when the column returns to stacked presentation.
+- A member entering an existing column adopts the target column's
+  presentation. Cross-column merges use the same target-wins rule. Any split
+  or extraction that creates a singleton creates it in stacked presentation.
+- When the selected member leaves, the member now at its index is selected;
+  if no successor remains, the immediate predecessor is selected. A whole
+  column move preserves its presentation and selected member.
+- Canonical logical state advances from v1 to v3 and persists presentation
+  plus selection. Bare and catalog-nested v1 state migrate on successful
+  publication. The bounded topology catalog remains v2.
+- The optional overview renders only the selected member's thumbnail for a
+  tabbed column. It remains read-only and separately installable.
+- The slice adds no persistent tab strip, pointer tab navigation, animation,
+  setting, settings UI, private API, or compositor-owned surface. Tests cover
+  only the new behavior and include proportional operation-count guards.
+
 ## Beyond v1
 
 - Same-context tiled pointer moves use KWin's public outline mechanism to mark
@@ -195,7 +225,7 @@ The ownership rule is strict:
 - Optional five-finger horizontal touchpad navigation reuses tiled column
   focus; global wheel input is deferred because KWin 6.7 exposes no public
   script axis API.
-- Tabbed columns and matching pointer navigation.
+- Pointer tab navigation and a transient presentation surface.
 - Further application-specific policies.
 - Optional visual transitions, layout indicators, and concise diagnostics.
 - Overview pointer rearrangement.

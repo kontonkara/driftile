@@ -9,6 +9,7 @@ Driftile uses one keyboard grammar and does not wrap at layout boundaries:
 - `U/I` address the next and previous virtual desktop; `Page Down/Page Up` are aliases.
 - Adding `Shift` reorders the currently selected desktop one global position down or up.
 - `1..9` address a virtual desktop directly; adding `Ctrl` moves the active column there.
+- `W` toggles the active tiled column between stacked and tabbed presentation.
 
 Optional five-finger touchpad navigation reuses horizontal column focus: a
 completed left swipe focuses right, and a completed right swipe focuses left.
@@ -60,7 +61,7 @@ stacking-order, or layout scan.
 | Pointer drop         | Preview and reinsert one active tiled window at one exact visible target                          | Available |
 | Pointer resize       | Adopt one completed horizontal resize as the active column's fixed width                          | Available |
 | Overview companion   | Focus an exact current or non-current thumbnail, or select a non-current number gutter            | Available |
-| Tabbed columns       | Toggle a column between stacked and tabbed presentation without changing navigation               | Future    |
+| Tabbed columns       | Toggle presentation; select or reorder members with the existing vertical grammar                 | 1.19.0    |
 | Pointer navigation   | Provide wheel navigation through the shared layout model                                          | Future    |
 
 Single-window transfers will remain available as secondary, unbound actions.
@@ -150,6 +151,19 @@ member converts the other members to weighted automatic heights that preserve
 their visible proportions while sharing the remaining work-area height. Reset
 returns the active tiled member to automatic sizing. These stack policies do
 not apply to a manually floating frame.
+
+In 1.19.0, `Meta+W` toggles the active tiled column between stacked and tabbed
+presentation. A tabbed column gives every non-minimized member the same frame,
+using the normal configured outer gaps. Focus down or up selects the next or
+previous member without wrapping; move down or up reorders that member and
+keeps it selected. Height commands are no-ops while tabbed, and the dormant
+height policies return unchanged when stacked presentation is restored.
+
+When a window joins an existing column, the target presentation wins. A split
+or extraction creates a stacked singleton. If the selected member leaves, its
+successor is selected when present, otherwise its predecessor. Whole-column
+moves preserve presentation and selection. This slice adds no persistent tab
+strip, pointer tab selection, animation, setting, settings UI, or private API.
 
 ## KWin boundary
 

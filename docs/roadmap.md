@@ -2,7 +2,8 @@
 
 Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.18.0 are
 released. The delivered milestones and release criteria below are a historical
-record. The remaining post-v1 direction is not a committed release schedule.
+record. Version 1.19.0 has a frozen scope; later direction is not a committed
+release schedule.
 
 ## Foundation (delivered)
 
@@ -834,12 +835,52 @@ Release criteria (met):
 
 No other feature belongs to 1.18.0.
 
+## 1.19.0 (frozen)
+
+Version `1.19.0` adds one column presentation mode. `Meta+W` is the only new
+default binding and toggles the active tiled column between stacked and tabbed
+presentation. Every non-minimized tabbed member receives the same frame with
+the existing width and normal outer gaps. The selected member owns focus and
+stacking intent.
+
+The existing vertical grammar remains authoritative: focus down or up selects
+the next or previous member without wrapping, and move down or up reorders the
+selected member. Height commands are no-ops while tabbed and preserve dormant
+height policies for restoration. An existing target column keeps its mode when
+a member enters; a split or extraction creates a stacked singleton. A whole
+column transfer preserves its mode and selection. A departing selection chooses
+its successor, then its predecessor at the end.
+
+Canonical logical state advances from v1 to v3 for presentation and selection.
+Bare and nested v1 state migrate on publication, while the bounded topology
+catalog remains v2. The optional overview projects only the selected tabbed
+member's thumbnail.
+
+The release adds no persistent tab strip or indicator, pointer tab navigation,
+animation, setting, settings UI, private API, or compositor-owned surface.
+
+Release criteria:
+
+- Focused model and geometry tests cover toggling, selection, reorder, normal
+  outer gaps, dormant heights, target-wins merges, stacked splits, transfers,
+  and successor/predecessor fallback.
+- Persistence tests cover v1-to-v3 migration inside the unchanged v2 catalog;
+  overview tests require one selected thumbnail per tabbed column.
+- The existing shortcut transaction covers the single `Meta+W` claim and
+  restores Plasma's unchanged Overview assignment on release.
+- Small and large column fixtures enforce constant-time selection and
+  column-local structural work. No unrelated application or VM pool is added.
+- Standard quality, package, Nix, backend integration, hidden VM, lifecycle,
+  exact-SHA CI, and release gates pass before publication.
+
+No other feature belongs to 1.19.0.
+
 ## Post-v1
 
 Add interaction and presentation features outside the frozen v1 scope without
 taking over compositor mechanisms.
 
-- Add tabbed column presentation and matching pointer navigation.
+- Add pointer tab navigation and an optional transient presentation surface.
 - Add further application-specific policies.
 - Add optional visual transitions, layout indicators, and concise diagnostics.
 - Keep Plasma's built-in Overview as the compatible baseline.

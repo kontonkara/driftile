@@ -63,8 +63,9 @@ normalization, fail-closed decoding of corrupt or future state, exact live-ID
 precedence, globally unique session descriptors, ambiguous-match rejection,
 output serial and connector policies, deterministic ordering, and the maximum
 persisted window count without pairwise scanning. Catalog coverage verifies
-bare-v1 migration, strict canonical v2 snapshots, complete topologies with empty
-outputs, serial-aware MRU deduplication, active-only restore baselines, callback
+bare and nested v1 migration to canonical v3 logical state inside strict v2
+catalogs, complete topologies with empty outputs, serial-aware MRU
+deduplication, active-only restore baselines, callback
 failure rollback, four-entry and 4 MiB eviction, and full-topology startup
 selection. Known-output planning covers global identity uniqueness, connector
 renames, exact target-window ownership, and fail-closed baseline and floating
@@ -116,6 +117,18 @@ other output, frames, memberships, settings, persisted layout, and Plasma's
 built-in Overview must remain unchanged. Native X11 retains static fallback and
 toggle-only lifecycle coverage without claiming end-to-end selection or
 cross-desktop activation.
+
+The 1.19.0 test slice is proportional to its behavior. Core cases cover
+stacked/tabbed toggling, identical tabbed frames with normal outer gaps,
+selected-member focus and reorder, dormant height-policy restoration,
+target-wins insertion and merge, stacked singleton creation, whole-column
+transfer, and successor-then-predecessor selection. Persistence cases cover v1
+migration to canonical v3 state while the catalog remains v2. Overview cases
+require one selected thumbnail per tabbed column. Existing shortcut ownership
+coverage adds the single `Meta+W` claim and reversible Overview restoration.
+Small and large column fixtures enforce the operation bounds. No new
+application, backend, VM scenario, persistent indicator, pointer path,
+animation, settings surface, or private API belongs to this slice.
 
 In the following unit list, zero writes to floating windows means ambient
 layout work; explicit manual-floating movement, centering, or contextual size
