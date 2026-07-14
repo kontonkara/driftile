@@ -3285,7 +3285,7 @@ describe("RuntimeController", () => {
     expect(tracked.window.frameGeometry).toEqual(entryFrame);
   });
 
-  it("restores the full-width toggle's prior column view", () => {
+  it("restores persisted column width at its current viewport anchor", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
     const windows = Array.from({ length: 3 }, (_value, index) =>
@@ -3348,11 +3348,12 @@ describe("RuntimeController", () => {
       viewportOffset: 495,
     });
     expect(restored.maximizeColumn()).toBe(true);
-    expect(runtimeLayout(restored).snapshot(outputKey, desktopKey)).toEqual(
-      priorLayout,
-    );
+    expect(runtimeLayout(restored).snapshot(outputKey, desktopKey)).toEqual({
+      ...priorLayout,
+      viewportOffset: 495,
+    });
     expect(windows.map(({ window }) => window.frameGeometry)).toEqual(
-      priorFrames,
+      priorFrames.map((frame) => ({ ...frame, x: frame.x - 10 })),
     );
     expect(
       decodeLayoutPersistence(requiredLayoutDocument(restored)),
@@ -3366,7 +3367,7 @@ describe("RuntimeController", () => {
               { width: { kind: "proportion", value: 0.5 } },
               { width: { kind: "proportion", value: 0.5 } },
             ],
-            viewportOffset: 485,
+            viewportOffset: 495,
           },
         ],
       },
