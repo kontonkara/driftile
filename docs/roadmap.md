@@ -4,6 +4,9 @@ Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.16.0 are
 released. The delivered milestones and release criteria below are a historical
 record. The remaining post-v1 direction is not a committed release schedule.
 
+Development is on 1.17.0-dev.0. Its scope is frozen to the settings-page
+reorganization in the 1.17.0 section below.
+
 ## Foundation (delivered)
 
 - Build and package a declarative KWin script with a TypeScript runtime.
@@ -776,13 +779,20 @@ Release criteria (met):
   hidden full and lifecycle VMs, version, exact-SHA CI, and release gates pass
   without widening the slice.
 
+## 1.17.0 (in development)
+
+The scope is frozen to reorganizing the existing twelve-setting generic KWin
+configuration UI into General and Applications tabs. Every KConfig key and
+runtime behavior remains unchanged, and verification may add at most one
+structural test. No other feature belongs to 1.17.0.
+
 ## Post-v1
 
 Add interaction and presentation features outside the frozen v1 scope without
 taking over compositor mechanisms.
 
 - Add tabbed column presentation and matching pointer navigation.
-- Add further application-specific policies and an expanded settings UI.
+- Add further application-specific policies.
 - Add optional visual transitions, layout indicators, and concise diagnostics.
 - Keep Plasma's built-in Overview as the compatible baseline.
 - Add pointer-driven overview rearrangement only through public KWin and Plasma
