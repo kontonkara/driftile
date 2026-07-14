@@ -231,10 +231,11 @@ Driftile must integrate with, not duplicate:
 - The shared trailing empty desktop is pinned at the end; it cannot move or be crossed by another desktop.
 - If the shared trailing desktop becomes occupied, Driftile appends another through KWin.
 - Driftile removes only a redundant, empty, unselected tail created by its current run; externally created desktops are never removed.
-- A manually floating window has no Driftile geometry owner and returns only through the explicit toggle.
+- A manually floating window remains outside continuous layout geometry ownership and returns only through the explicit toggle. Its directional move shortcuts perform one guarded frame translation.
 - Retiling a manually floating window restores a surviving anchored slot when possible and captures the latest floating frame as the next safe restore baseline.
 - Layer focus remains inside the active `(output, desktop)` context and restores the last non-minimized tiled or floating window. Minimized slots are skipped, while any other blocker on the selected remembered or ordered target fails closed without fallback. Selecting a tiled target in another column reveals it with the normal minimal scroll; ownership never changes.
 - Directional floating focus chooses the nearest positive center distance on the requested axis; first and last choose frame-x extremes. Minimized windows are excluded, and no action wraps or writes geometry.
+- Directional floating movement requests a 50-logical-pixel translation and keeps only the minimum visible strip required by the frame size. It preserves size, focus, context, reinsertion placement, and every tiled layout.
 - KWin alone owns minimization. Driftile registers no minimize action or default shortcut, keeps a minimized tiled window in its exact logical slot, and preserves a minimized manually floating window's exact detached frame for restoration.
 - An automatically layout-excluded window has no layout slot, manual-floating anchor, waiting entry, suspension, or retry state. Commands requiring layout ownership are no-ops; relation-free desktop transfer remains available.
 - A configured application exclusion uses the same automatic-exclusion state,

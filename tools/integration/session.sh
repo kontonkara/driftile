@@ -6124,6 +6124,29 @@ verify_floating_navigation_step() {
     fail "Driftile changed floating $protocol frames after $shortcut: $(describe_layout "${window_titles[@]}")"
 }
 
+verify_floating_move_step() {
+  local protocol=$1
+  local shortcut=$2
+  local active_title=$3
+  local index
+  local -a geometry_pairs
+  local -a window_titles=()
+
+  shift 3
+  geometry_pairs=("$@")
+
+  for ((index = 0; index < ${#geometry_pairs[@]}; index += 2)); do
+    window_titles+=("${geometry_pairs[index]}")
+  done
+
+  invoke_shortcut "$shortcut" || \
+    fail "KGlobalAccel could not invoke $shortcut for floating $protocol movement"
+  wait_for_active "$active_title" || \
+    fail "Driftile changed $protocol focus after $shortcut: active=$(describe_active_windows "${window_titles[@]}")"
+  wait_for_geometries "${geometry_pairs[@]}" || \
+    fail "Driftile did not apply the exact floating $protocol movement after $shortcut: $(describe_layout "${window_titles[@]}")"
+}
+
 verify_manual_floating_navigation() {
   local protocol=$1
   local first_tiled_title=$2
@@ -6214,6 +6237,43 @@ verify_manual_floating_navigation() {
   verify_floating_navigation_step \
     "$protocol" "driftile_focus_column_last" "${navigation_titles[2]}" \
     "${geometry_pairs[@]}"
+
+  activate_window "${navigation_titles[1]}" || \
+    fail "KWin could not focus the center $protocol floating window before movement"
+  wait_for_active "${navigation_titles[1]}" || \
+    fail "KWin did not focus the center $protocol floating window before movement"
+  verify_floating_move_step \
+    "$protocol" "driftile_move_column_left" "${navigation_titles[1]}" \
+    "${navigation_titles[0]}" "80,80,360,240" \
+    "${navigation_titles[1]}" "410,240,360,240" \
+    "${navigation_titles[2]}" "840,440,360,240" \
+    "$first_tiled_title" "16,16,616,336" \
+    "$active_tiled_title" "16,368,616,336" \
+    "$right_tiled_title" "648,16,616,688"
+  verify_floating_move_step \
+    "$protocol" "driftile_move_window_up" "${navigation_titles[1]}" \
+    "${navigation_titles[0]}" "80,80,360,240" \
+    "${navigation_titles[1]}" "410,190,360,240" \
+    "${navigation_titles[2]}" "840,440,360,240" \
+    "$first_tiled_title" "16,16,616,336" \
+    "$active_tiled_title" "16,368,616,336" \
+    "$right_tiled_title" "648,16,616,688"
+  verify_floating_move_step \
+    "$protocol" "driftile_move_column_right" "${navigation_titles[1]}" \
+    "${navigation_titles[0]}" "80,80,360,240" \
+    "${navigation_titles[1]}" "460,190,360,240" \
+    "${navigation_titles[2]}" "840,440,360,240" \
+    "$first_tiled_title" "16,16,616,336" \
+    "$active_tiled_title" "16,368,616,336" \
+    "$right_tiled_title" "648,16,616,688"
+  verify_floating_move_step \
+    "$protocol" "driftile_move_window_down" "${navigation_titles[1]}" \
+    "${navigation_titles[0]}" "80,80,360,240" \
+    "${navigation_titles[1]}" "460,240,360,240" \
+    "${navigation_titles[2]}" "840,440,360,240" \
+    "$first_tiled_title" "16,16,616,336" \
+    "$active_tiled_title" "16,368,616,336" \
+    "$right_tiled_title" "648,16,616,688"
 
   for title in "${navigation_pids[@]}"; do
     stop_client "$title"

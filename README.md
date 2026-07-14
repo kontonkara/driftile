@@ -15,8 +15,8 @@ leaving window, output, and desktop mechanisms to KWin.
   exact visible-target adoption after a KWin-owned output or desktop move.
 - One shared trailing empty virtual desktop with conservative creation and
   cleanup.
-- Manual floating, automatic layout exclusions, minimized-slot retention, and
-  native fullscreen and maximize integration.
+- Manual floating with directional nudging, automatic layout exclusions,
+  minimized-slot retention, and native fullscreen and maximize integration.
 - Settled recovery for output, scale, work-area, and window-constraint changes.
 - Configurable gaps, application tiling and borderless exclusions, global and
   application-specific initial column widths, column-width presets, resize

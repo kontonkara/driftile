@@ -6365,7 +6365,14 @@ let
         local desktop_source_width
         local direct_insert_verified
         local first_trailing_desktop_id=""
+        local floating_left_frame
+        local floating_left_up_frame
+        local floating_second_height
         local floating_second_frame
+        local floating_second_width
+        local floating_second_x
+        local floating_second_y
+        local floating_up_frame
         local gap_first_frame
         local gap_third_frame
         local horizontal_extraction_verified
@@ -6795,6 +6802,51 @@ let
         fi
         floating_second_frame=$stable_second_frame
         record_focus_state "window B floated from its tiled column"
+
+        if ! frame_is_valid "$floating_second_frame"; then
+          record_focus_state "window B floating movement baseline was invalid"
+          return 1
+        fi
+        IFS=, read -r \
+          floating_second_x \
+          floating_second_y \
+          floating_second_width \
+          floating_second_height \
+          <<< "$floating_second_frame"
+        floating_left_frame="$((floating_second_x - 50)),$floating_second_y,$floating_second_width,$floating_second_height"
+        floating_left_up_frame="$((floating_second_x - 50)),$((floating_second_y - 50)),$floating_second_width,$floating_second_height"
+        floating_up_frame="$floating_second_x,$((floating_second_y - 50)),$floating_second_width,$floating_second_height"
+
+        if ! request_physical_shortcut floating-move-left \
+          || ! wait_for_frames \
+            "$stable_first_frame" \
+            "$floating_left_frame" \
+            "$stable_third_frame" \
+          || ! wait_for_active "$title_b" \
+          || ! request_physical_shortcut floating-move-up \
+          || ! wait_for_frames \
+            "$stable_first_frame" \
+            "$floating_left_up_frame" \
+            "$stable_third_frame" \
+          || ! wait_for_active "$title_b" \
+          || ! request_physical_shortcut floating-move-right \
+          || ! wait_for_frames \
+            "$stable_first_frame" \
+            "$floating_up_frame" \
+            "$stable_third_frame" \
+          || ! wait_for_active "$title_b" \
+          || ! request_physical_shortcut floating-move-down \
+          || ! wait_for_frames \
+            "$stable_first_frame" \
+            "$floating_second_frame" \
+            "$stable_third_frame" \
+          || ! wait_for_active "$title_b"; then
+          record_focus_state \
+            "physical manual floating movement did not preserve exact frames and focus"
+          return 1
+        fi
+        record_focus_state \
+          "physical manual floating shortcuts moved window B by exact 50-pixel steps"
 
         IFS=, read -r \
           tiled_first_x \

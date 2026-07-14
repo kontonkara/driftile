@@ -15522,6 +15522,252 @@ describe("RuntimeController", () => {
     expect(unrelated.writeCount).toBe(unrelatedWrites);
   });
 
+  it("nudges a manual-floating window while preserving tiled ownership", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop, {
+      frameGeometry: { height: 310, width: 280, x: 40, y: 50 },
+    });
+    const active = createTrackedWindow("window-2", output, desktop, {
+      frameGeometry: { height: 320, width: 280, x: 360, y: 240 },
+    });
+    const third = createTrackedWindow("window-3", output, desktop, {
+      frameGeometry: { height: 330, width: 300, x: 660, y: 70 },
+    });
+    const windows = [first, active, third];
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map(({ window }) => window),
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+    });
+
+    controller.start();
+    fixture.workspace.activeWindow = active.window;
+    expect(controller.toggleFloating()).toBe(true);
+    const activeId = windowId("window-2");
+    const floatingWindows = (
+      controller as unknown as {
+        readonly floatingWindows: ReadonlyMap<
+          WindowId,
+          {
+            readonly expectedFrame: KWinWindow["frameGeometry"];
+            readonly restoreBaseline: {
+              readonly clientFrame: KWinWindow["clientGeometry"];
+              readonly frame: KWinWindow["frameGeometry"];
+            };
+          }
+        >;
+      }
+    ).floatingWindows;
+    const tiledLayout = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const tiledFrames = [first, third].map(({ window }) => ({
+      ...window.frameGeometry,
+    }));
+    const managedCount = controller.managedCount;
+    const activationCount = fixture.activationCount;
+    const expectNudge = (
+      move: () => boolean,
+      expectedFrame: KWinWindow["frameGeometry"],
+    ): void => {
+      const writes = windows.map(({ writeCount }) => writeCount);
+
+      expect(move()).toBe(true);
+      expect(active.window.frameGeometry).toEqual(expectedFrame);
+      expect(windows.map(({ writeCount }) => writeCount)).toEqual([
+        writes[0],
+        (writes[1] ?? 0) + 1,
+        writes[2],
+      ]);
+      expect(controller.lastWriteCount).toBe(1);
+      expect(controller.floatingCount).toBe(1);
+      expect(controller.managedCount).toBe(managedCount);
+      expect(fixture.workspace.activeWindow).toBe(active.window);
+      expect(fixture.activationCount).toBe(activationCount);
+      expect(
+        runtimeLayout(controller).snapshot(
+          outputId(output.name),
+          desktopId(desktop.id),
+        ),
+      ).toEqual(tiledLayout);
+      expect([first, third].map(({ window }) => window.frameGeometry)).toEqual(
+        tiledFrames,
+      );
+      expect(floatingWindows.get(activeId)).toMatchObject({
+        expectedFrame,
+        restoreBaseline: {
+          clientFrame: expectedFrame,
+          frame: expectedFrame,
+        },
+      });
+    };
+
+    const rejectedState = captureTrackedWindowState(windows);
+    expect(controller.moveWindowLeft()).toBe(false);
+    expect(controller.moveWindowRight()).toBe(false);
+    expectTrackedWindowState(windows, rejectedState);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(tiledLayout);
+
+    const floatingBeforeRejectedMove = floatingWindows.get(activeId);
+    const frameBeforeRejectedMove = { ...active.window.frameGeometry };
+    active.setWriteBehavior(() => {});
+    expect(controller.moveColumnLeft()).toBe(false);
+    active.setWriteBehavior(null);
+    expect(active.window.frameGeometry).toEqual(frameBeforeRejectedMove);
+    expect(floatingWindows.get(activeId)).toBe(floatingBeforeRejectedMove);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(tiledLayout);
+
+    const floatingBeforeConstrainedMove = floatingWindows.get(activeId);
+    const constrainedFrame = { ...active.window.frameGeometry };
+    const constrainedWrites = windows.map(({ writeCount }) => writeCount);
+    let constrainedWriteAttempt = 0;
+    active.setWriteBehavior((frame, commit) => {
+      constrainedWriteAttempt += 1;
+
+      if (constrainedWriteAttempt === 1) {
+        active.setFrameGeometry({ ...frame, x: frame.x + 1 });
+      } else {
+        commit();
+      }
+    });
+    expect(controller.moveColumnLeft()).toBe(false);
+    active.setWriteBehavior(null);
+    expect(constrainedWriteAttempt).toBe(2);
+    expect(active.window.frameGeometry).toEqual(constrainedFrame);
+    expect(windows.map(({ writeCount }) => writeCount)).toEqual([
+      constrainedWrites[0],
+      (constrainedWrites[1] ?? 0) + 2,
+      constrainedWrites[2],
+    ]);
+    expect(controller.lastWriteCount).toBe(2);
+    expect(floatingWindows.get(activeId)).toBe(floatingBeforeConstrainedMove);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(tiledLayout);
+
+    const floatingBeforeDelayedMove = floatingWindows.get(activeId);
+    const delayedOriginalFrame = { ...active.window.frameGeometry };
+    const delayedTargetFrame = { ...delayedOriginalFrame, x: 310 };
+    const delayedWriteCount = active.writeCount;
+    const delayedWrites: Array<{
+      readonly commit: () => void;
+      readonly frame: KWinWindow["frameGeometry"];
+    }> = [];
+    active.setWriteBehavior((frame, commit) => {
+      delayedWrites.push({ commit, frame });
+    });
+    expect(controller.moveColumnLeft()).toBe(false);
+    active.setWriteBehavior(null);
+    expect(active.window.frameGeometry).toEqual(delayedOriginalFrame);
+    expect(active.writeCount).toBe(delayedWriteCount + 2);
+    expect(controller.lastWriteCount).toBe(2);
+    expect(delayedWrites.map(({ frame }) => frame)).toEqual([
+      delayedTargetFrame,
+      delayedOriginalFrame,
+    ]);
+
+    for (const write of delayedWrites) {
+      write.commit();
+    }
+
+    expect(active.window.frameGeometry).toEqual(delayedOriginalFrame);
+    expect(floatingWindows.get(activeId)).toBe(floatingBeforeDelayedMove);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(tiledLayout);
+
+    active.setFrameGeometry({ height: 4, width: 4, x: 20, y: 20 });
+    expectNudge(controller.moveColumnLeft.bind(controller), {
+      height: 4,
+      width: 4,
+      x: 0,
+      y: 20,
+    });
+    active.setFrameGeometry({ height: 320, width: 280, x: 360, y: 240 });
+
+    expectNudge(controller.moveColumnLeft.bind(controller), {
+      height: 320,
+      width: 280,
+      x: 310,
+      y: 240,
+    });
+    expectNudge(controller.moveWindowUp.bind(controller), {
+      height: 320,
+      width: 280,
+      x: 310,
+      y: 190,
+    });
+    expectNudge(controller.moveColumnRight.bind(controller), {
+      height: 320,
+      width: 280,
+      x: 360,
+      y: 190,
+    });
+    expectNudge(controller.moveWindowDown.bind(controller), {
+      height: 320,
+      width: 280,
+      x: 360,
+      y: 240,
+    });
+
+    for (let step = 1; step <= 12; step += 1) {
+      expectNudge(controller.moveColumnLeft.bind(controller), {
+        height: 320,
+        width: 280,
+        x: Math.max(-210, 360 - step * 50),
+        y: 240,
+      });
+    }
+
+    const movedFrame = { ...active.window.frameGeometry };
+    expect(movedFrame.x).toBe(-210);
+    expect(movedFrame.x).toBeLessThan(output.geometry.x);
+    expect(movedFrame.x + movedFrame.width).toBe(70);
+    const boundaryWrites = active.writeCount;
+    expect(controller.moveColumnLeft()).toBe(false);
+    expect(active.window.frameGeometry).toEqual(movedFrame);
+    expect(active.writeCount).toBe(boundaryWrites);
+
+    expect(controller.toggleFloating()).toBe(true);
+    expect(controller.floatingCount).toBe(0);
+    expect(controller.toggleFloating()).toBe(true);
+    expect(controller.floatingCount).toBe(1);
+    expect(active.window.frameGeometry).toEqual(movedFrame);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+    expect(floatingWindows.get(activeId)).toMatchObject({
+      expectedFrame: movedFrame,
+      restoreBaseline: {
+        clientFrame: movedFrame,
+        frame: movedFrame,
+      },
+    });
+  });
+
   it("round-trips a stacked middle member into the current column width", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };

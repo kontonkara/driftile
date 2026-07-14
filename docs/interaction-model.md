@@ -56,7 +56,7 @@ stacking-order, or layout scan.
 | Native maximize      | Extract a regular stack member, then toggle it to work-area edges through KWin                    | Available |
 | Minimize focus       | Preserve tiled slots and floating frames; skip minimized windows without wrapping                 | Available |
 | Hidden-member edits  | Preserve documented passive peers; reject every other minimized-member structural edit            | Available |
-| Floating layer       | Toggle state, switch layers, and navigate floating windows geometrically                          | Available |
+| Floating layer       | Toggle state, switch layers, navigate geometrically, and nudge the active window                  | Available |
 | Pointer drop         | Reinsert or adopt one active tiled window at one exact visible target                             | Available |
 | Pointer resize       | Adopt one completed horizontal resize as the active column's fixed width                          | Available |
 | Overview companion   | Focus an exact current or non-current thumbnail, or select a non-current number gutter            | Available |

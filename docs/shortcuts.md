@@ -13,9 +13,9 @@ arrow keys are interchangeable unless noted otherwise.
 | Focus desktop 1 through 9                        | `Meta+1..9`                                          |
 | Move selected desktop one position down          | `Meta+Shift+U` or `Meta+Shift+Page Down`             |
 | Move selected desktop one position up            | `Meta+Shift+I` or `Meta+Shift+Page Up`               |
-| Move column left or right                        | `Meta+Ctrl+H/L` or `Meta+Ctrl+Left/Right`            |
+| Move column; nudge floating left or right        | `Meta+Ctrl+H/L` or `Meta+Ctrl+Left/Right`            |
 | Move active column to first or last              | `Meta+Ctrl+Home/End`                                 |
-| Move window down or up in a column               | `Meta+Ctrl+J/K` or `Meta+Ctrl+Down/Up`               |
+| Move window; nudge floating down or up           | `Meta+Ctrl+J/K` or `Meta+Ctrl+Down/Up`               |
 | Consume or expel the active window left or right | `Meta+[` or `Meta+]`                                 |
 | Consume the right column's top window            | `Meta+,`                                             |
 | Expel the active column's bottom window          | `Meta+.`                                             |
@@ -51,6 +51,13 @@ When a floating window is active, `H/J/K/L` select the nearest floating-window
 center on the requested axis. `Home/End` select the leftmost or rightmost
 floating frame. Navigation stays inside the current output and desktop, does
 not wrap, skips minimized windows, and leaves every frame unchanged.
+
+`Meta+Ctrl+H/J/K/L` and the matching arrows move an active manually floating
+window by 50 logical pixels. The frame may move partly outside the work area,
+but 10–75 pixels remain visible on each axis depending on its size; a frame
+smaller than 10 pixels stays fully visible. The action preserves frame size,
+focus, output, desktop, and every tiled layout. Automatic layout exclusions
+remain under KWin geometry ownership.
 
 Driftile does not register a minimize action or default shortcut; KWin owns the
 mechanism. A minimized tiled window retains its exact logical slot, and a

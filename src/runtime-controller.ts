@@ -142,6 +142,9 @@ const MIN_GAP = 0;
 const FIXED_SIZE_CONSTRAINTS = 1;
 const FLEXIBLE_SIZE_CONSTRAINTS = 0;
 const MALFORMED_SIZE_CONSTRAINTS = -1;
+const FLOATING_WINDOW_MOVE_STEP = 50;
+const MAXIMUM_FLOATING_WINDOW_VISIBLE_EXTENT = 75;
+const MINIMUM_FLOATING_WINDOW_VISIBLE_EXTENT = 10;
 const MAX_CAPACITY_PARK_ATTEMPTS = 20;
 const MAX_BORDERLESS_SETTLEMENT_PROBES = 20;
 const MAX_EXTERNAL_FULLSCREEN_EXTRACTION_ATTEMPTS = 20;
@@ -508,6 +511,15 @@ interface ActiveWindowCommand {
   readonly context: ManagedContext;
   readonly contextGeometry: ContextGeometry;
   readonly contextKey: string;
+}
+
+interface ManualFloatingMoveCommand extends ActiveWindowCommand {
+  readonly desktop: KWinVirtualDesktop;
+  readonly floating: FloatingWindow;
+  readonly originalFrame: KWinWindow["frameGeometry"];
+  readonly output: KWinOutput;
+  readonly stateRevision: number;
+  readonly topologyRevision: number;
 }
 
 interface ResumeSample {
@@ -1674,10 +1686,28 @@ export class RuntimeController {
   }
 
   moveColumnLeft(): boolean {
+    const floatingResult = this.moveActiveManualFloatingWindow(
+      -FLOATING_WINDOW_MOVE_STEP,
+      0,
+    );
+
+    if (floatingResult !== null) {
+      return floatingResult;
+    }
+
     return this.moveActiveColumn("left");
   }
 
   moveColumnRight(): boolean {
+    const floatingResult = this.moveActiveManualFloatingWindow(
+      FLOATING_WINDOW_MOVE_STEP,
+      0,
+    );
+
+    if (floatingResult !== null) {
+      return floatingResult;
+    }
+
     return this.moveActiveColumn("right");
   }
 
@@ -1698,10 +1728,28 @@ export class RuntimeController {
   }
 
   moveWindowUp(): boolean {
+    const floatingResult = this.moveActiveManualFloatingWindow(
+      0,
+      -FLOATING_WINDOW_MOVE_STEP,
+    );
+
+    if (floatingResult !== null) {
+      return floatingResult;
+    }
+
     return this.moveActiveWindowVertically("up");
   }
 
   moveWindowDown(): boolean {
+    const floatingResult = this.moveActiveManualFloatingWindow(
+      0,
+      FLOATING_WINDOW_MOVE_STEP,
+    );
+
+    if (floatingResult !== null) {
+      return floatingResult;
+    }
+
     return this.moveActiveWindowVertically("down");
   }
 
@@ -5400,6 +5448,332 @@ export class RuntimeController {
     }
 
     return null;
+  }
+
+  private moveActiveManualFloatingWindow(
+    deltaX: number,
+    deltaY: number,
+  ): boolean | null {
+    const activeWindow = this.workspace.activeWindow;
+
+    if (!activeWindow) {
+      return null;
+    }
+
+    const activeId = windowId(String(activeWindow.internalId));
+    const floating = this.floatingWindows.get(activeId);
+
+    if (!floating) {
+      return null;
+    }
+
+    this.lastWrites = 0;
+    const command = this.prepareManualFloatingMove(
+      activeId,
+      activeWindow,
+      floating,
+    );
+
+    if (!command) {
+      return false;
+    }
+
+    const targetFrame = moveFloatingFrame(
+      command.originalFrame,
+      command.contextGeometry.workArea,
+      deltaX,
+      deltaY,
+    );
+
+    if (
+      rectsEqual(targetFrame, command.originalFrame) ||
+      !this.manualFloatingMoveIsCurrent(command) ||
+      !this.geometry.canApplyFrame(
+        command.activeId,
+        targetFrame,
+        command.context,
+      )
+    ) {
+      return false;
+    }
+
+    let forwardWrites = 0;
+    let forwardError: string | null = null;
+
+    try {
+      forwardWrites = this.geometry.apply(
+        [{ frame: targetFrame, windowId: command.activeId }],
+        command.context,
+        () =>
+          this.manualFloatingMoveIsCurrent(command) &&
+          rectsEqual(command.activeWindow.frameGeometry, command.originalFrame),
+      );
+    } catch (error) {
+      forwardError = String(error);
+    }
+
+    let acceptedFrame: Rect | null = null;
+    let restoreBaseline: RestoreBaseline | null = null;
+
+    try {
+      if (
+        forwardError === null &&
+        forwardWrites === 1 &&
+        rectsEqual(command.activeWindow.frameGeometry, targetFrame) &&
+        this.manualFloatingMoveIsCurrent(command)
+      ) {
+        acceptedFrame = snapshotRect(command.activeWindow.frameGeometry);
+        restoreBaseline = this.captureRestoreBaseline(
+          command.activeWindow,
+          command.contextGeometry.fingerprint,
+          "client",
+        );
+      }
+    } catch (error) {
+      forwardError = String(error);
+    }
+
+    if (
+      acceptedFrame &&
+      restoreBaseline &&
+      rectsEqual(acceptedFrame, targetFrame) &&
+      rectsEqual(restoreBaseline.frame, acceptedFrame) &&
+      this.manualFloatingMoveIsCurrent(command) &&
+      rectsEqual(command.activeWindow.frameGeometry, acceptedFrame)
+    ) {
+      this.floatingWindows.set(command.activeId, {
+        ...command.floating,
+        expectedFrame: acceptedFrame,
+        restoreBaseline,
+      });
+      this.lastWrites = 1;
+      return true;
+    }
+
+    const compensationWrites = this.compensateManualFloatingMove(
+      command,
+      targetFrame,
+      forwardWrites,
+    );
+    this.lastWrites = forwardWrites + compensationWrites;
+
+    if (forwardError !== null) {
+      console.warn(
+        `[driftile] floating move rolled back window=${String(command.activeId)} error=${forwardError}`,
+      );
+    }
+
+    return false;
+  }
+
+  private prepareManualFloatingMove(
+    activeId: WindowId,
+    activeWindow: KWinWindow,
+    floating: FloatingWindow,
+  ): ManualFloatingMoveCommand | null {
+    const context = layerFocusContext(activeWindow);
+
+    if (!context) {
+      return null;
+    }
+
+    const contextKeyValue = contextKey(context);
+    const output = this.workspace.screens.find(
+      (candidate) => candidate.name === context.outputId,
+    );
+    const desktop = this.workspace.desktops.find(
+      (candidate) => candidate.id === context.desktopId,
+    );
+
+    if (!output || !desktop) {
+      return null;
+    }
+
+    const topologyRevision = this.topologyRevision;
+    const stateRevision = this.windowStateRevisions.get(activeId) ?? 0;
+    let contextGeometry: ContextGeometry | null;
+    let originalFrame: Rect;
+
+    try {
+      contextGeometry = this.geometry.contextGeometry(
+        context.outputId,
+        context.desktopId,
+      );
+      originalFrame = snapshotRect(activeWindow.frameGeometry);
+    } catch {
+      return null;
+    }
+
+    if (!contextGeometry) {
+      return null;
+    }
+
+    const command: ManualFloatingMoveCommand = {
+      activeId,
+      activeWindow,
+      context,
+      contextGeometry,
+      contextKey: contextKeyValue,
+      desktop,
+      floating,
+      originalFrame,
+      output,
+      stateRevision,
+      topologyRevision,
+    };
+
+    return this.manualFloatingMoveIsCurrent(command) ? command : null;
+  }
+
+  private manualFloatingMoveIsCurrent(
+    command: ManualFloatingMoveCommand,
+  ): boolean {
+    if (
+      !this.started ||
+      !this.startupCompleted ||
+      this.initializing ||
+      this.hydrationInProgress ||
+      this.stackEditOperation !== null ||
+      this.windowTransferOperation !== null ||
+      this.stackedNativeStateOperation !== null ||
+      this.startupStabilizationToken !== null ||
+      this.hasUnsettledTopology() ||
+      this.hasTopologyBarrier() ||
+      this.ownershipRefreshInProgress ||
+      this.interactiveResizeSource !== null ||
+      this.pointerMoveIntent !== null ||
+      this.pointerResizeIntent !== null ||
+      this.pointerResizeSettlement !== null ||
+      this.pendingExpelFocusHandoff !== null ||
+      this.workspace.activeWindow !== command.activeWindow ||
+      this.observer.source(command.activeId) !== command.activeWindow ||
+      this.floatingWindows.get(command.activeId) !== command.floating ||
+      command.floating.currentContextKey !== command.contextKey ||
+      this.managedWindows.has(command.activeId) ||
+      this.automaticFloatingWindows.has(command.activeId) ||
+      this.pendingWindowSyncs.has(command.activeId) ||
+      this.waitingWindowContexts.has(command.activeId) ||
+      this.pendingHydratedRestoreBaselines.has(command.activeId) ||
+      this.pendingFullscreenTargets.has(command.activeId) ||
+      this.unconfirmedFullscreenTargets.has(command.activeId) ||
+      this.unconfirmedFullscreenRetentions.has(command.activeId) ||
+      this.pendingExternalFullscreenExtractions.has(command.activeId) ||
+      this.fullscreenRequestProbes.has(command.activeId) ||
+      this.suspendedWindows.has(command.activeId) ||
+      this.requestedSuspensions.has(command.activeId) ||
+      this.resumeSamples.has(command.activeId) ||
+      this.transientResumeProbes.has(command.activeId) ||
+      this.capacityLeaseByWindow.has(command.activeId) ||
+      this.capacitySupersededParkWindows.has(command.activeId) ||
+      this.toggleGeometryTransitions.has(command.activeId) ||
+      this.borderSynchronizationIds.has(command.activeId) ||
+      this.borderlessSettlementTokens.has(command.activeId) ||
+      this.topologyRevision !== command.topologyRevision ||
+      (this.windowStateRevisions.get(command.activeId) ?? 0) !==
+        command.stateRevision ||
+      !this.workspace.screens.includes(command.output) ||
+      !this.workspace.desktops.includes(command.desktop) ||
+      command.activeWindow.output !== command.output ||
+      command.activeWindow.desktops.length !== 1 ||
+      command.activeWindow.desktops[0] !== command.desktop ||
+      currentDesktopForOutput(this.workspace, command.output) !==
+        command.desktop ||
+      !isGeometryWritable(command.activeWindow) ||
+      this.applicationTilingExclusionApplies(command.activeWindow) ||
+      this.automaticallyFloats(command.activeWindow)
+    ) {
+      return false;
+    }
+
+    const liveContext = layerFocusContext(command.activeWindow);
+
+    if (!liveContext || contextKey(liveContext) !== command.contextKey) {
+      return false;
+    }
+
+    let contextGeometry: ContextGeometry | null;
+
+    try {
+      contextGeometry = this.geometry.contextGeometry(
+        command.context.outputId,
+        command.context.desktopId,
+      );
+    } catch {
+      return false;
+    }
+
+    return (
+      contextGeometry !== null &&
+      contextGeometry.fingerprint === command.contextGeometry.fingerprint
+    );
+  }
+
+  private compensateManualFloatingMove(
+    command: ManualFloatingMoveCommand,
+    targetFrame: Rect,
+    forwardWrites: number,
+  ): number {
+    let forwardFrame: Rect;
+
+    try {
+      forwardFrame = snapshotRect(command.activeWindow.frameGeometry);
+    } catch {
+      return 0;
+    }
+
+    if (
+      forwardWrites !== 1 ||
+      !this.manualFloatingMoveIsCurrent(command) ||
+      !floatingMoveResultIsTransactionOwned(
+        command.originalFrame,
+        targetFrame,
+        forwardFrame,
+        command.contextGeometry.workArea,
+      ) ||
+      !this.geometry.canApplyFrame(
+        command.activeId,
+        command.originalFrame,
+        command.context,
+      )
+    ) {
+      return 0;
+    }
+
+    let compensationWrites = 0;
+
+    try {
+      compensationWrites = this.geometry.apply(
+        [{ frame: command.originalFrame, windowId: command.activeId }],
+        command.context,
+        () =>
+          this.manualFloatingMoveIsCurrent(command) &&
+          rectsEqual(command.activeWindow.frameGeometry, forwardFrame),
+      );
+    } catch (error) {
+      console.warn(
+        `[driftile] floating move compensation failed window=${String(command.activeId)} error=${String(error)}`,
+      );
+      return compensationWrites;
+    }
+
+    let restored: boolean;
+
+    try {
+      restored = rectsEqual(
+        command.activeWindow.frameGeometry,
+        command.originalFrame,
+      );
+    } catch {
+      restored = false;
+    }
+
+    if (compensationWrites !== 1 || !restored) {
+      console.warn(
+        `[driftile] floating move compensation was not acknowledged window=${String(command.activeId)}`,
+      );
+    }
+
+    return compensationWrites;
   }
 
   private moveActiveColumn(direction: HorizontalDirection): boolean {
@@ -22343,6 +22717,117 @@ function clampFrameToWorkArea(frame: Rect, workArea: Rect): Rect {
     x: clamp(frame.x, workArea.x, maximumX),
     y: clamp(frame.y, workArea.y, maximumY),
   };
+}
+
+function moveFloatingFrame(
+  frame: Rect,
+  workArea: Rect,
+  deltaX: number,
+  deltaY: number,
+): Rect {
+  const maximumOffscreenX = maximumFloatingWindowOffscreenExtent(frame.width);
+  const maximumOffscreenY = maximumFloatingWindowOffscreenExtent(frame.height);
+
+  return {
+    height: frame.height,
+    width: frame.width,
+    x: clamp(
+      frame.x + deltaX,
+      workArea.x - maximumOffscreenX,
+      workArea.x + workArea.width - frame.width + maximumOffscreenX,
+    ),
+    y: clamp(
+      frame.y + deltaY,
+      workArea.y - maximumOffscreenY,
+      workArea.y + workArea.height - frame.height + maximumOffscreenY,
+    ),
+  };
+}
+
+function maximumFloatingWindowOffscreenExtent(size: number): number {
+  const visibleExtent = clamp(
+    size / 4,
+    MINIMUM_FLOATING_WINDOW_VISIBLE_EXTENT,
+    MAXIMUM_FLOATING_WINDOW_VISIBLE_EXTENT,
+  );
+  return Math.max(0, size - visibleExtent);
+}
+
+function floatingMoveResultIsTransactionOwned(
+  originalFrame: Rect,
+  targetFrame: Rect,
+  resultFrame: Rect,
+  workArea: Rect,
+): boolean {
+  if (
+    !nearlyEqual(resultFrame.width, originalFrame.width) ||
+    !nearlyEqual(resultFrame.height, originalFrame.height)
+  ) {
+    return false;
+  }
+
+  if (rectsEqual(resultFrame, originalFrame)) {
+    return true;
+  }
+
+  if (!floatingFramePositionIsVisible(resultFrame, workArea)) {
+    return false;
+  }
+
+  const constrainedTarget = clampFrameToWorkArea(targetFrame, workArea);
+  const minimumX = Math.min(
+    originalFrame.x,
+    targetFrame.x,
+    constrainedTarget.x,
+  );
+  const maximumX = Math.max(
+    originalFrame.x,
+    targetFrame.x,
+    constrainedTarget.x,
+  );
+  const minimumY = Math.min(
+    originalFrame.y,
+    targetFrame.y,
+    constrainedTarget.y,
+  );
+  const maximumY = Math.max(
+    originalFrame.y,
+    targetFrame.y,
+    constrainedTarget.y,
+  );
+
+  return (
+    numberWithinInclusiveBounds(resultFrame.x, minimumX, maximumX) &&
+    numberWithinInclusiveBounds(resultFrame.y, minimumY, maximumY)
+  );
+}
+
+function floatingFramePositionIsVisible(frame: Rect, workArea: Rect): boolean {
+  const maximumOffscreenX = maximumFloatingWindowOffscreenExtent(frame.width);
+  const maximumOffscreenY = maximumFloatingWindowOffscreenExtent(frame.height);
+
+  return (
+    numberWithinInclusiveBounds(
+      frame.x,
+      workArea.x - maximumOffscreenX,
+      workArea.x + workArea.width - frame.width + maximumOffscreenX,
+    ) &&
+    numberWithinInclusiveBounds(
+      frame.y,
+      workArea.y - maximumOffscreenY,
+      workArea.y + workArea.height - frame.height + maximumOffscreenY,
+    )
+  );
+}
+
+function numberWithinInclusiveBounds(
+  value: number,
+  minimum: number,
+  maximum: number,
+): boolean {
+  return (
+    Number.isFinite(value) && value >= minimum - 1e-6 && value <= maximum + 1e-6
+  );
 }
 
 function rectIsContainedInWorkArea(frame: Rect, workArea: Rect): boolean {

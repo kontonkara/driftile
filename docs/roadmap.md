@@ -556,12 +556,17 @@ Release criteria (met):
 
 ## 1.11.0 (in development, scope frozen)
 
-Version `1.11.0` reuses the existing left, right, up, and down move actions to
-nudge the active manually floating window by exactly 50 logical pixels on the
-requested axis. Each successful command preserves the frame size, focus,
-output, desktop, floating anchor, and every tiled layout. Native-state or
-ownership changes and an inexact KWin geometry result make the command fail
-closed without adopting the altered frame.
+Version `1.11.0` reuses the existing column-left, column-right, window-up, and
+window-down actions to move the active manually floating window by 50 logical
+pixels. The target is constrained only enough to keep a size-dependent 10–75
+pixel strip visible on each axis; dimensions below 10 pixels remain fully
+visible. Each successful command preserves the frame size, focus, output,
+desktop, floating anchor, and every tiled layout.
+An inexact result is rejected without updating floating metadata. A still-owned
+constrained or delayed result receives an ordered request to restore the
+original frame; native-state, ownership, context changes, or an unacknowledged
+request stop further writes and leave geometry with KWin. Tiled state is never
+committed by this path.
 
 Automatic-floating and layout-excluded windows remain outside Driftile's
 geometry ownership and receive no frame writes. This slice adds no actions,
@@ -571,9 +576,11 @@ overview behavior, and preserves directional move behavior for tiled windows.
 Release criteria:
 
 - The four existing directional move paths translate only an active manually
-  floating frame by exactly 50 logical pixels without resizing it.
-- Blocked, stale, rejected, or externally constrained operations preserve the
-  original frame and all layout state.
+  floating frame by 50 logical pixels before enforcing its partial-visibility
+  bounds, without resizing it.
+- Blocked or stale preflight operations perform no write. A still-owned
+  constrained or delayed result requests original-frame compensation, while
+  every failure preserves all tiled layout state and floating metadata.
 - Unit and packaged integration checks cover the bounded behavior on supported
   window-system paths without expanding the application matrix.
 
