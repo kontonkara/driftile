@@ -4,6 +4,9 @@ Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.17.0 are
 released. The delivered milestones and release criteria below are a historical
 record. The remaining post-v1 direction is not a committed release schedule.
 
+Version `1.18.0-rc.1` is the current release candidate. Its scope is frozen to
+the application-specific horizontal focus policy in the 1.18.0 section below.
+
 ## Foundation (delivered)
 
 - Build and package a declarative KWin script with a TypeScript runtime.
@@ -96,7 +99,7 @@ The current runtime already:
 - Registers compact default shortcuts with `H/J/K/L`, arrow, Home/End, and Page Up/Down aliases.
 - Provides a reversible shortcut helper for the bundled defaults and explicit
   JSON v1 profiles; a UI without a Node.js dependency remains future work.
-- Lets Home Manager write the twelve typed settings or generate a portable
+- Lets Home Manager write the thirteen typed settings or generate a portable
   shortcut profile without installing a second KWin package; shortcut claiming
   remains explicit.
 - Leaves dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows outside layout ownership, separate from manual floating.
@@ -802,14 +805,14 @@ Release criteria (met):
 No other feature belongs to 1.17.0. Further application policies remain
 post-v1 work.
 
-## 1.18.0 (in development)
+## 1.18.0 (release candidate)
 
-The scope is frozen to one application-specific horizontal focus policy. An
-empty `ApplicationFocusCentering` list preserves 1.17.0 behavior. Each exact,
-case-sensitive KWin `desktopFileName` match centers the destination selected by
-a successful left, right, first, or last tiled-focus action. The existing
-global option still centers every destination, and the two policies are
-combined.
+Version `1.18.0-rc.1` freezes one application-specific horizontal focus policy.
+An empty `ApplicationFocusCentering` list preserves 1.17.0 behavior. Each
+exact, case-sensitive KWin `desktopFileName` match centers the destination
+selected by a successful left, right, first, or last tiled-focus action. The
+existing global option still centers every destination, and the two policies
+are combined.
 
 A stacked destination checks only its selected member. Unmatched targets and
 failed center previews retain the normal minimal reveal. Replacing the bounded
@@ -817,14 +820,16 @@ set performs no immediate layout, viewport, focus, geometry, or persistence
 write. The slice adds no action, binding, layout-state field, overview behavior,
 helper behavior, or compositor mechanism.
 
-Development criteria:
+Candidate tagging gates:
 
 - Existing behavior coverage verifies selected-member matching, unmatched
   minimal reveal, global fallback, and write-free reconfiguration.
 - Existing settings, KConfig, KCM, Home Manager, and package checks expand from
   twelve to thirteen fields without a parallel test suite.
-- Format, type, lint, focused unit and module checks, deterministic package,
-  exact-SHA CI, and hidden release-checkpoint VMs must pass before publication.
+- Format, type, lint, unit, deterministic build and package, all-system flake,
+  hidden full and lifecycle VMs, version, and exact-SHA CI must pass on the
+  unchanged candidate commit.
+- The tag release workflow must pass before publishing the candidate assets.
 
 No other feature belongs to 1.18.0.
 

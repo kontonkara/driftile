@@ -1,7 +1,52 @@
 # Migration
 
-The latest stable release is 1.17.0. Use the steps below when changing release
-generations, and never combine files from different releases.
+The latest stable release is 1.17.0. Version 1.18.0-rc.1 is the current
+candidate and is not a stable release. Use the steps below when changing
+release generations, and never combine files from different releases.
+
+## Upgrade from 1.17.0 to 1.18.0-rc.1
+
+1. Release helper-owned shortcuts with the 1.17.0 helper while it remains
+   available.
+2. Disable Driftile and the optional overview in System Settings.
+3. Upgrade the main package, optional overview, and helper to their matching
+   1.18.0-rc.1 archives, or pin the Nix input to `v1.18.0-rc.1` and rebuild.
+4. Enable Driftile, review **Applications centered during horizontal focus**,
+   then restore the shortcut profile.
+5. If installed, re-enable the overview and review its manually assigned
+   shortcut.
+
+The candidate adds one safe-default KConfig value:
+
+- `ApplicationFocusCentering=""` preserves 1.17.0 focus behavior.
+
+Each nonblank line matches one exact, case-sensitive KWin `desktopFileName`.
+A successful left, right, first, or last tiled-focus action centers a matching
+selected destination when a center preview can be prepared. The global
+centering option still centers every destination, and a stacked column checks
+only the member selected by that action. Unmatched targets and failed center
+previews retain normal minimal reveal. Replacing the list does not immediately
+move windows, change the viewport or focus, or write layout state.
+
+The package IDs, actions, bindings, shortcut helper, overview behavior, and
+persisted layout format remain unchanged. No layout-state migration is
+required. A non-null Home Manager profile now writes thirteen settings and uses
+`applicationFocusCentering = [ ];` when omitted; pin the package and module to
+the same tag.
+
+## Roll back from 1.18.0-rc.1 to 1.17.0
+
+Release shortcuts with the RC helper, disable Driftile and the optional
+overview, then restore their matching verified 1.17.0 packages and helper. For
+NixOS or Home Manager, remove
+`programs.driftile.settings.applicationFocusCentering` before restoring the
+`v1.17.0` input because that module does not expose the attribute, then rebuild
+the generation that owns each package.
+
+The 1.17.0 extension ignores a remaining `ApplicationFocusCentering` KConfig
+key; it may be deleted without resetting layout state. Re-enable the installed
+packages and restore the 1.17.0 shortcut profile. Persisted layouts, actions,
+bindings, and overview behavior require no conversion.
 
 ## Upgrade from 1.16.0 to 1.17.0
 
