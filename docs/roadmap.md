@@ -5,8 +5,9 @@ Versions 0.1.0, 1.0.0, 1.1.0, 1.2.0, 1.3.0, 1.4.0, 1.5.0, 1.6.0, 1.7.0,
 milestones and release criteria below are a historical record. The remaining
 post-v1 direction is not a committed release schedule.
 
-Development is on 1.13.0-dev.0. Its bounded scope is frozen below and remains
-in development until every release criterion passes.
+Release candidate 1.13.0-rc.1 freezes the scope below. Feature and packaged
+integration validation is complete. Candidate tagging requires exact-SHA CI and
+the hidden full and lifecycle VM gates to pass in sequence.
 
 ## Foundation (delivered)
 
@@ -627,13 +628,13 @@ Release criteria (met):
 - Unit, packaged Wayland, XWayland, native X11, and hidden full-VM checks reuse
   existing windows and applications.
 
-## 1.13.0 (in development)
+## 1.13.0 (release candidate)
 
-Version `1.13.0` freezes one bounded runtime slice: the existing width decrease
-and increase actions resize an active manually floating frame, while tiled
-targets keep the existing whole-column behavior. Other width actions remain
-tiled-only. A blocked or pending floating target never falls through to tiled
-resizing.
+Version `1.13.0-rc.1` freezes one bounded runtime slice: the existing width
+decrease and increase actions resize an active manually floating frame, while
+tiled targets keep the existing whole-column behavior. Other width actions
+remain tiled-only. A blocked or pending floating target never falls through to
+tiled resizing.
 
 The target is
 `originalWidth + direction * columnWidthStep * workArea.width`, snapped to the
@@ -658,7 +659,7 @@ This slice changes no tiled model, tiled frame, viewport, focus, reinsertion
 anchor, setting, action, binding, configuration schema, persistence, helper,
 overview, or application matrix.
 
-Release criteria (pending):
+Candidate validation completed:
 
 - Unit coverage proves the configured work-area math, decorated live bounds,
   positive client width, physical-pixel snapping, partial visibility, immediate
@@ -669,8 +670,15 @@ Release criteria (pending):
   applications and prove exact width round trips without changing focus,
   context, or tiled state.
 - Format, type, lint, unit, deterministic build and package, all-system flake,
-  hidden full and lifecycle VMs, version, lifecycle, exact-SHA CI, and release
-  gates pass for the candidate without widening this slice.
+  and version checks pass without widening this slice.
+
+Candidate tagging gates:
+
+- Commit the candidate metadata and verify quality, native Wayland, and native
+  X11 jobs in exact-SHA branch CI.
+- Run the hidden full and lifecycle VMs on that unchanged candidate commit.
+- Create the candidate tag only after both gates pass, then require the tag
+  release workflow and its release checks to pass before publication.
 
 ## Post-v1
 
