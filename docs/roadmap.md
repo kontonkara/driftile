@@ -1,9 +1,10 @@
 # Roadmap
 
 Versions 0.1.0, 1.0.0, 1.1.0, 1.2.0, 1.3.0, 1.4.0, 1.5.0, 1.6.0, 1.7.0,
-1.8.0, 1.9.0, 1.9.1, 1.10.0, 1.11.0, 1.12.0, 1.13.0, 1.14.0, and 1.15.0 are
-released. The delivered milestones and release criteria below are a historical
-record. The remaining post-v1 direction is not a committed release schedule.
+1.8.0, 1.9.0, 1.9.1, 1.10.0, 1.11.0, 1.12.0, 1.13.0, 1.14.0, 1.15.0, and
+1.15.1 are released. The delivered milestones and release criteria below are a
+historical record. The remaining post-v1 direction is not a committed release
+schedule.
 
 ## Foundation (delivered)
 
@@ -738,6 +739,22 @@ Release criteria (met):
 - Format, type, lint, unit, deterministic build and package, all-system flake,
   hidden full and lifecycle VMs, version, exact-SHA CI, and release gates pass
   without widening this slice.
+
+## 1.15.1 (released)
+
+Version `1.15.1` fixes viewport-edge handling when focus reveals a newly opened
+column beside an inactive full-width column. Edge reveals retain the configured
+outer gap for the assigned work area and device-pixel ratio, while an inactive
+full-width frame is parked wholly beyond the opposite edge. It changes no
+state, configuration schema, action, or binding.
+
+Release criteria (met):
+
+- Focused geometry coverage proves dynamic outer-gap preservation and complete
+  inactive full-width parking across work-area sizes and fractional scale.
+- Format, type, lint, unit, deterministic build and package, all-system flake,
+  full and lifecycle VMs, version, exact-SHA CI, and release gates pass without
+  widening this patch.
 
 ## Post-v1
 

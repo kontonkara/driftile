@@ -1,7 +1,35 @@
 # Migration
 
-The latest stable release is 1.15.0. Use the steps below when changing release
+The latest stable release is 1.15.1. Use the steps below when changing release
 generations, and never combine files from different releases.
+
+## Upgrade from 1.15.0 to 1.15.1
+
+1. Release helper-owned shortcuts with the 1.15.0 helper while it remains
+   available.
+2. Disable Driftile and the optional overview in System Settings.
+3. Upgrade the main package, optional overview, and helper to their matching
+   1.15.1 archives, or pin the Nix input to `v1.15.1` and rebuild.
+4. Enable Driftile, then assign shortcuts or claim them with the 1.15.1 helper.
+5. If installed, re-enable the overview and review its manually assigned
+   shortcut.
+
+The patch keeps focus-revealed columns inside dynamic outer gaps and parks an
+inactive full-width frame completely beyond the opposite viewport edge. The
+clearance uses the assigned output's current work area, configured gap, and
+device-pixel ratio.
+
+Configuration, persisted layout state, actions, bindings, helper profiles, and
+shortcut assignments remain compatible with 1.15.0. No reset or migration is
+required.
+
+## Roll back from 1.15.1 to 1.15.0
+
+Release shortcuts with the 1.15.1 helper, disable Driftile and the optional
+overview, then restore their matching verified 1.15.0 packages and helper. For
+NixOS or Home Manager, restore the `v1.15.0` input and rebuild the generation
+that owns each package. Re-enable the packages and restore the 1.15.0 shortcut
+profile. No setting cleanup or layout-state reset is required.
 
 ## Upgrade from 1.14.0 to 1.15.0
 

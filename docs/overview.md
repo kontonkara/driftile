@@ -12,7 +12,7 @@ that desktop. The current desktop's gutter remains inert.
 In 1.9.0, a left click on a valid non-current thumbnail selects its desktop
 and then focuses that exact window. Current-card focus remains direct.
 
-The 1.15.0 release does not change overview behavior.
+The 1.15.1 release does not change overview behavior.
 
 The released 1.6.0 package remains presentation-only.
 
@@ -22,8 +22,8 @@ the authoritative layout snapshot.
 
 ## Install a release
 
-The [1.15.0 package](release-notes-1.15.0.md) is the latest stable release.
-Download `driftile-overview-1.15.0.kwineffect` and `SHA256SUMS` from that
+The [1.15.1 package](release-notes-1.15.1.md) is the latest stable release.
+Download `driftile-overview-1.15.1.kwineffect` and `SHA256SUMS` from that
 release, then verify the archive:
 
 ```console
@@ -34,7 +34,7 @@ Install the overview package as the desktop user:
 
 ```bash
 kpackagetool6 --type=KWin/Effect \
-  --install ./driftile-overview-1.15.0.kwineffect
+  --install ./driftile-overview-1.15.1.kwineffect
 ```
 
 To build the same versioned archive from source, run `npm ci` followed by
@@ -58,7 +58,7 @@ uninstalling the package.
 
 ## NixOS and Home Manager
 
-The 1.15.0 flake exposes the effect separately as
+The 1.15.1 flake exposes the effect separately as
 `packages.<system>.driftile-overview`. The NixOS and Home Manager modules keep
 it opt-in:
 
