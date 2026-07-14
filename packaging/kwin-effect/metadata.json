@@ -13,7 +13,7 @@
     "Id": "io.github.kontonkara.driftile.overview",
     "License": "GPL-3.0-or-later",
     "Name": "Driftile Overview",
-    "Version": "1.14.0",
+    "Version": "1.15.0-dev.0",
     "Website": "https://github.com/kontonkara/driftile"
   },
   "X-Plasma-API": "declarativescript",
