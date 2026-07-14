@@ -34,6 +34,9 @@ leaving window, output, and desktop mechanisms to KWin.
 
 The latest stable release is [1.10.0](docs/release-notes-1.10.0.md).
 
+Development is on `1.11.0-dev.0`, with the bounded 1.11.0 scope frozen in the
+roadmap.
+
 Driftile requires KDE Plasma with KWin 6.7 or newer. It targets native Wayland
 and XWayland windows, plus single-output native X11 sessions.
 

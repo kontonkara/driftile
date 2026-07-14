@@ -554,6 +554,29 @@ Release criteria (met):
   ownership of pre-existing borderless state.
 - Parser, runtime, Home Manager, Wayland, XWayland, and native X11 checks pass.
 
+## 1.11.0 (in development, scope frozen)
+
+Version `1.11.0` reuses the existing left, right, up, and down move actions to
+nudge the active manually floating window by exactly 50 logical pixels on the
+requested axis. Each successful command preserves the frame size, focus,
+output, desktop, floating anchor, and every tiled layout. Native-state or
+ownership changes and an inexact KWin geometry result make the command fail
+closed without adopting the altered frame.
+
+Automatic-floating and layout-excluded windows remain outside Driftile's
+geometry ownership and receive no frame writes. This slice adds no actions,
+bindings, settings, or configuration schema, does not change persistence or
+overview behavior, and preserves directional move behavior for tiled windows.
+
+Release criteria:
+
+- The four existing directional move paths translate only an active manually
+  floating frame by exactly 50 logical pixels without resizing it.
+- Blocked, stale, rejected, or externally constrained operations preserve the
+  original frame and all layout state.
+- Unit and packaged integration checks cover the bounded behavior on supported
+  window-system paths without expanding the application matrix.
+
 ## Post-v1
 
 Add interaction and presentation features outside the frozen v1 scope without
