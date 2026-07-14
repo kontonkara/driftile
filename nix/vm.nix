@@ -6440,6 +6440,9 @@ let
         local default_width_delivery_first_frame
         local default_width_delivery_second_frame
         local default_width_delivery_third_frame
+        local default_gap_restore_first_frame
+        local default_gap_restore_second_frame
+        local default_gap_restore_third_frame
         local default_width_restore_first_frame
         local default_width_restore_second_frame
         local default_width_restore_third_frame
@@ -6535,7 +6538,7 @@ let
 
         activate_window "$title_c" \
           && wait_for_active "$title_c" \
-          && wait_for_layout -800 32 864 \
+          && wait_for_layout -816 16 848 \
           || return 1
         record_focus_state "window C activated"
 
@@ -6581,37 +6584,37 @@ let
 
         invoke_shortcut "driftile_move_column_left" \
           && wait_for_active "$title_c" \
-          && wait_for_layout -800 864 32 \
+          && wait_for_layout -816 848 16 \
           || return 1
         record_focus_state "column C moved left"
 
         invoke_shortcut "driftile_move_column_right" \
           && wait_for_active "$title_c" \
-          && wait_for_layout -800 32 864 \
+          && wait_for_layout -816 16 848 \
           || return 1
         record_focus_state "column C moved right"
 
         invoke_shortcut "driftile_focus_column_left" \
           && wait_for_active "$title_b" \
-          && wait_for_layout -800 32 864 \
+          && wait_for_layout -816 16 848 \
           || return 1
         record_focus_state "focus left to B invoked"
 
         invoke_shortcut "driftile_focus_column_left" \
           && wait_for_active "$title_a" \
-          && wait_for_layout 0 832 1664 \
+          && wait_for_layout 16 848 1680 \
           || return 1
         record_focus_state "focus left to A invoked"
 
         invoke_shortcut "driftile_focus_column_right" \
           && wait_for_active "$title_b" \
-          && wait_for_layout 0 832 1664 \
+          && wait_for_layout 16 848 1680 \
           || return 1
         record_focus_state "focus right to B invoked"
 
         invoke_shortcut "driftile_focus_column_right" \
           && wait_for_active "$title_c" \
-          && wait_for_layout -800 32 864 \
+          && wait_for_layout -816 16 848 \
           || return 1
         record_focus_state "focus right to C invoked"
 
@@ -6650,24 +6653,27 @@ let
         configured_default_width=$((
           (70 * ((2 * baseline_second_width + 48) - 16) + 50) / 100 - 16
         ))
-        default_width_delivery_first_frame="$((baseline_first_x + 8)),$((baseline_first_y + 8)),$((baseline_first_width - 12)),$((baseline_first_height - 16))"
-        default_width_delivery_second_frame="$((baseline_second_x + 4)),$((baseline_second_y + 8)),$((baseline_second_width - 12)),$((baseline_second_height - 16))"
-        default_width_delivery_third_frame="$baseline_third_x,$((baseline_third_y + 8)),$((baseline_third_width - 12)),$((baseline_third_height - 16))"
-        configured_default_first_frame=$stable_first_frame
-        configured_default_second_frame="$baseline_second_x,$baseline_second_y,$configured_default_width,$baseline_second_height"
-        configured_default_third_frame="$((baseline_third_x + configured_default_width - baseline_second_width)),$baseline_third_y,$baseline_third_width,$baseline_third_height"
+        default_width_delivery_first_frame="$((baseline_first_x + 12)),$((baseline_first_y + 8)),$((baseline_first_width - 12)),$((baseline_first_height - 16))"
+        default_width_delivery_second_frame="$((baseline_second_x + 8)),$((baseline_second_y + 8)),$((baseline_second_width - 12)),$((baseline_second_height - 16))"
+        default_width_delivery_third_frame="$((baseline_third_x + 4)),$((baseline_third_y + 8)),$((baseline_third_width - 12)),$((baseline_third_height - 16))"
+        default_gap_restore_first_frame="$((baseline_first_x + 4)),$baseline_first_y,$baseline_first_width,$baseline_first_height"
+        default_gap_restore_second_frame="$((baseline_second_x + 4)),$baseline_second_y,$baseline_second_width,$baseline_second_height"
+        default_gap_restore_third_frame="$((baseline_third_x + 4)),$baseline_third_y,$baseline_third_width,$baseline_third_height"
+        configured_default_first_frame=$default_gap_restore_first_frame
+        configured_default_second_frame="$((baseline_second_x + 4)),$baseline_second_y,$configured_default_width,$baseline_second_height"
+        configured_default_third_frame="$((baseline_third_x + configured_default_width - baseline_second_width + 4)),$baseline_third_y,$baseline_third_width,$baseline_third_height"
         configured_step_width=$((
           (60 * (baseline_second_width + 16) + 50) / 100 - 16
         ))
-        configured_step_second_frame="$baseline_second_x,$baseline_second_y,$configured_step_width,$baseline_second_height"
-        configured_step_third_frame="$((baseline_third_x + configured_step_width - baseline_second_width)),$baseline_third_y,$baseline_third_width,$baseline_third_height"
+        configured_step_second_frame="$((baseline_second_x + 4)),$baseline_second_y,$configured_step_width,$baseline_second_height"
+        configured_step_third_frame="$((baseline_third_x + configured_step_width - baseline_second_width + 4)),$baseline_third_y,$baseline_third_width,$baseline_third_height"
         configured_height_step_value=$((
           (80 * (baseline_second_height + 16) + 50) / 100 - 16
         ))
-        configured_height_step_second_frame="$baseline_second_x,$baseline_second_y,$baseline_second_width,$configured_height_step_value"
+        configured_height_step_second_frame="$((baseline_second_x + 4)),$baseline_second_y,$baseline_second_width,$configured_height_step_value"
         default_width_restore_first_frame=$default_width_delivery_first_frame
-        default_width_restore_second_frame="$((baseline_second_x + 4)),$((baseline_second_y + 8)),$((configured_default_width - 14)),$((baseline_second_height - 16))"
-        default_width_restore_third_frame="$((baseline_third_x + configured_default_width - baseline_second_width - 2)),$((baseline_third_y + 8)),$((baseline_third_width - 12)),$((baseline_third_height - 16))"
+        default_width_restore_second_frame="$((baseline_second_x + 8)),$((baseline_second_y + 8)),$((configured_default_width - 14)),$((baseline_second_height - 16))"
+        default_width_restore_third_frame="$((baseline_third_x + configured_default_width - baseline_second_width + 2)),$((baseline_third_y + 8)),$((baseline_third_width - 12)),$((baseline_third_height - 16))"
 
         if ! set_layout_configuration 70 10 10 24 \
           || ! wait_for_frames \
@@ -6676,9 +6682,9 @@ let
             "$default_width_delivery_third_frame" \
           || ! set_gap 16 \
           || ! wait_for_frames \
-            "$stable_first_frame" \
-            "$stable_second_frame" \
-            "$stable_third_frame" \
+            "$default_gap_restore_first_frame" \
+            "$default_gap_restore_second_frame" \
+            "$default_gap_restore_third_frame" \
           || ! wait_for_active "$title_b"; then
           restore_layout_configuration >/dev/null 2>&1 || true
           record_focus_state "configured default column width delivery failed"
@@ -6712,15 +6718,15 @@ let
             "$configured_default_third_frame" \
           || ! invoke_shortcut "driftile_reset_column_width" \
           || ! wait_for_frames \
-            "$stable_first_frame" \
-            "$stable_second_frame" \
-            "$stable_third_frame" \
+            "$default_gap_restore_first_frame" \
+            "$default_gap_restore_second_frame" \
+            "$default_gap_restore_third_frame" \
           || ! wait_for_active "$title_b"; then
           restore_layout_configuration >/dev/null 2>&1 || true
           record_focus_state "default column width restoration failed"
           return 1
         fi
-        record_focus_state "default column width restored exact baseline frames"
+        record_focus_state "default column width restored exact default-gap frames"
 
         if ! set_layout_configuration 50 20 10 24 \
           || ! wait_for_frames \
@@ -6730,9 +6736,9 @@ let
           || ! wait_for_active "$title_b" \
           || ! set_gap 16 \
           || ! wait_for_frames \
-            "$stable_first_frame" \
-            "$stable_second_frame" \
-            "$stable_third_frame" \
+            "$default_gap_restore_first_frame" \
+            "$default_gap_restore_second_frame" \
+            "$default_gap_restore_third_frame" \
           || ! wait_for_active "$title_b"; then
           restore_layout_configuration >/dev/null 2>&1 || true
           record_focus_state "configured column-width step delivery failed"
@@ -6743,15 +6749,15 @@ let
 
         if ! invoke_shortcut "driftile_decrease_column_width" \
           || ! wait_for_frames \
-            "$stable_first_frame" \
+            "$default_gap_restore_first_frame" \
             "$configured_step_second_frame" \
             "$configured_step_third_frame" \
           || ! wait_for_active "$title_b" \
           || ! invoke_shortcut "driftile_increase_column_width" \
           || ! wait_for_frames \
-            "$stable_first_frame" \
-            "$stable_second_frame" \
-            "$stable_third_frame" \
+            "$default_gap_restore_first_frame" \
+            "$default_gap_restore_second_frame" \
+            "$default_gap_restore_third_frame" \
           || ! wait_for_active "$title_b"; then
           restore_layout_configuration >/dev/null 2>&1 || true
           record_focus_state "configured column-width step round trip failed"
@@ -6768,15 +6774,15 @@ let
           || ! wait_for_active "$title_b" \
           || ! set_gap 16 \
           || ! wait_for_frames \
-            "$stable_first_frame" \
-            "$stable_second_frame" \
-            "$stable_third_frame" \
+            "$default_gap_restore_first_frame" \
+            "$default_gap_restore_second_frame" \
+            "$default_gap_restore_third_frame" \
           || ! wait_for_active "$title_b"; then
           restore_layout_configuration >/dev/null 2>&1 || true
           record_focus_state "default column-width step restoration failed"
           return 1
         fi
-        record_focus_state "default column-width step restored exact baseline frames"
+        record_focus_state "default column-width step restored exact default-gap frames"
 
         if ! set_layout_configuration 50 10 20 24 \
           || ! wait_for_frames \
@@ -6786,9 +6792,9 @@ let
           || ! wait_for_active "$title_b" \
           || ! set_gap 16 \
           || ! wait_for_frames \
-            "$stable_first_frame" \
-            "$stable_second_frame" \
-            "$stable_third_frame" \
+            "$default_gap_restore_first_frame" \
+            "$default_gap_restore_second_frame" \
+            "$default_gap_restore_third_frame" \
           || ! wait_for_active "$title_b"; then
           restore_layout_configuration >/dev/null 2>&1 || true
           record_focus_state "configured window-height step delivery failed"
@@ -6799,21 +6805,21 @@ let
 
         if ! invoke_shortcut "driftile_decrease_window_height" \
           || ! wait_for_frames \
-            "$stable_first_frame" \
+            "$default_gap_restore_first_frame" \
             "$configured_height_step_second_frame" \
-            "$stable_third_frame" \
+            "$default_gap_restore_third_frame" \
           || ! wait_for_active "$title_b" \
           || ! invoke_shortcut "driftile_increase_window_height" \
           || ! wait_for_frames \
-            "$stable_first_frame" \
-            "$stable_second_frame" \
-            "$stable_third_frame" \
+            "$default_gap_restore_first_frame" \
+            "$default_gap_restore_second_frame" \
+            "$default_gap_restore_third_frame" \
           || ! wait_for_active "$title_b" \
           || ! invoke_shortcut "driftile_reset_window_height" \
           || ! wait_for_frames \
-            "$stable_first_frame" \
-            "$stable_second_frame" \
-            "$stable_third_frame" \
+            "$default_gap_restore_first_frame" \
+            "$default_gap_restore_second_frame" \
+            "$default_gap_restore_third_frame" \
           || ! wait_for_active "$title_b"; then
           restore_layout_configuration >/dev/null 2>&1 || true
           record_focus_state "configured window-height step round trip failed"
@@ -6830,15 +6836,15 @@ let
           || ! wait_for_active "$title_b" \
           || ! set_gap 16 \
           || ! wait_for_frames \
-            "$stable_first_frame" \
-            "$stable_second_frame" \
-            "$stable_third_frame" \
+            "$default_gap_restore_first_frame" \
+            "$default_gap_restore_second_frame" \
+            "$default_gap_restore_third_frame" \
           || ! wait_for_active "$title_b"; then
           restore_layout_configuration >/dev/null 2>&1 || true
           record_focus_state "default window-height step restoration failed"
           return 1
         fi
-        record_focus_state "default window-height step restored exact baseline frames"
+        record_focus_state "default window-height step restored exact default-gap frames"
 
         invoke_shortcut "driftile_increase_column_width" \
           && wait_for_middle_width \
@@ -8823,25 +8829,25 @@ let
       verify_physical_edge_shortcuts() {
         request_physical_shortcut home \
           && wait_for_active "$title_a" \
-          && wait_for_layout 0 832 1664 \
+          && wait_for_layout 16 848 1680 \
           || return 1
         record_focus_state "physical Meta+Home focused the first column"
 
         request_physical_shortcut end \
           && wait_for_active "$title_c" \
-          && wait_for_layout -800 32 864 \
+          && wait_for_layout -816 16 848 \
           || return 1
         record_focus_state "physical Meta+End focused the last column"
 
         request_physical_shortcut ctrl-home \
           && wait_for_active "$title_c" \
-          && wait_for_layout 832 1664 0 \
+          && wait_for_layout 848 1680 16 \
           || return 1
         record_focus_state "physical Meta+Ctrl+Home moved the column first"
 
         request_physical_shortcut ctrl-end \
           && wait_for_active "$title_c" \
-          && wait_for_layout -800 32 864 \
+          && wait_for_layout -816 16 848 \
           || return 1
         record_focus_state "physical Meta+Ctrl+End moved the column last"
       }
@@ -9232,7 +9238,7 @@ let
         IFS=, read -r full_third_x _ _ _ \
           <<< "$stable_third_frame"
         usable_right=$((
-          original_third_x + original_third_width - original_gap
+          original_third_x + original_third_width
         ))
         usable_left=$((usable_right - full_second_width))
 
@@ -9373,6 +9379,216 @@ let
         fi
         record_focus_state \
           "physical column-view shortcut viewport restored before application tests"
+      }
+
+      verify_full_width_successor_edge_gaps() {
+        local active_caption=""
+        local attempt
+        local baseline_first
+        local baseline_second
+        local baseline_third
+        local cleanup_verified=true
+        local current_pair=""
+        local current_predecessor_frame=""
+        local current_successor_frame=""
+        local full_frame=""
+        local full_height=0
+        local full_right=0
+        local full_width=0
+        local full_x=0
+        local full_y=0
+        local gap=""
+        local left_exclusion=0
+        local original_frame=""
+        local original_width=0
+        local predecessor_frame=""
+        local predecessor_height=0
+        local predecessor_pid=""
+        local predecessor_right=0
+        local predecessor_title="Driftile VM Full-width Konsole"
+        local predecessor_width=0
+        local predecessor_x=0
+        local predecessor_y=0
+        local previous_pair=""
+        local stable_samples=0
+        local successor_frame=""
+        local successor_height=0
+        local successor_pid=""
+        local successor_right=0
+        local successor_title="Driftile VM Full-width KDE Calculator"
+        local successor_width=0
+        local successor_x=0
+        local successor_y=0
+        local verified=false
+
+        if ! set_current_desktop "$primary_desktop_id" \
+          || ! activate_window "$title_c" \
+          || ! wait_for_active "$title_c" \
+          || ! capture_stable_frames; then
+          record_focus_state "full-width successor baseline failed"
+          return 1
+        fi
+        baseline_first=$stable_first_frame
+        baseline_second=$stable_second_frame
+        baseline_third=$stable_third_frame
+
+        if ! set_current_desktop "$secondary_desktop_id"; then
+          record_focus_state "full-width successor desktop setup failed"
+          return 1
+        fi
+
+        if start_konsole_window \
+            predecessor_pid \
+            predecessor_title \
+            "$predecessor_title" \
+          && activate_window "$predecessor_title" \
+          && wait_for_active "$predecessor_title" \
+          && original_frame=$(capture_stable_window_frame "$predecessor_title") \
+          && invoke_shortcut "driftile_maximize_column" \
+          && full_frame=$(capture_stable_window_frame "$predecessor_title") \
+          && start_kcalc_window \
+            successor_pid \
+            successor_title \
+            "$successor_title" \
+          && activate_window "$successor_title" \
+          && wait_for_active "$successor_title"; then
+          for ((attempt = 0; attempt < 100; attempt += 1)); do
+            current_predecessor_frame=$(
+              window_frame "$predecessor_title" 2>/dev/null || true
+            )
+            current_successor_frame=$(
+              window_frame "$successor_title" 2>/dev/null || true
+            )
+            active_caption=$(active_window_caption 2>/dev/null || true)
+            current_pair="$current_predecessor_frame|$current_successor_frame|$active_caption"
+
+            if frame_is_valid "$current_predecessor_frame" \
+              && frame_is_valid "$current_successor_frame" \
+              && [[ "$active_caption" == "$successor_title" ]]; then
+              if [[ "$current_pair" == "$previous_pair" ]]; then
+                stable_samples=$((stable_samples + 1))
+              else
+                stable_samples=1
+              fi
+
+              if ((stable_samples >= 2)); then
+                predecessor_frame=$current_predecessor_frame
+                successor_frame=$current_successor_frame
+                break
+              fi
+            else
+              stable_samples=0
+            fi
+
+            previous_pair=$current_pair
+            sleep 0.1
+          done
+
+          gap=$(
+            ${pkgs.kdePackages.kconfig}/bin/kreadconfig6 \
+              --file "$HOME/.config/kwinrc" \
+              --group "Script-${pluginId}" \
+              --key Gap \
+              --default 16 \
+              2>/dev/null || true
+          )
+
+          if frame_is_valid "$original_frame" \
+            && frame_is_valid "$full_frame" \
+            && frame_is_valid "$predecessor_frame" \
+            && frame_is_valid "$successor_frame" \
+            && [[ "$gap" =~ ^[1-9][0-9]*$ ]]; then
+            IFS=, read -r _ _ original_width _ <<< "$original_frame"
+            IFS=, read -r full_x full_y full_width full_height \
+              <<< "$full_frame"
+            IFS=, read -r \
+              predecessor_x \
+              predecessor_y \
+              predecessor_width \
+              predecessor_height \
+              <<< "$predecessor_frame"
+            IFS=, read -r \
+              successor_x \
+              successor_y \
+              successor_width \
+              successor_height \
+              <<< "$successor_frame"
+            full_right=$((full_x + full_width))
+            left_exclusion=$((full_x - (2 * gap)))
+            predecessor_right=$((predecessor_x + predecessor_width))
+            successor_right=$((successor_x + successor_width))
+
+            if ((full_width > original_width \
+              && predecessor_width == full_width \
+              && predecessor_right <= left_exclusion \
+              && successor_x > full_x \
+              && successor_right == full_right \
+              && predecessor_y == full_y \
+              && predecessor_height == full_height \
+              && successor_y == full_y \
+              && successor_height == full_height)); then
+              verified=true
+              record_focus_state \
+                "new real window preserved both full-width viewport edge gaps"
+            fi
+          fi
+        fi
+
+        if [[ -n "$successor_pid" ]]; then
+          terminate_process "$successor_pid"
+          successor_pid=""
+
+          if ! wait_for_window_gone "$successor_title"; then
+            cleanup_verified=false
+          fi
+        fi
+
+        if [[ -n "$predecessor_pid" ]]; then
+          if ! frame_is_valid "$full_frame" \
+            || ! frame_is_valid "$original_frame" \
+            || ! activate_window "$predecessor_title" \
+            || ! wait_for_active "$predecessor_title" \
+            || ! wait_for_named_frames "$predecessor_title" "$full_frame" \
+            || ! invoke_shortcut "driftile_maximize_column" \
+            || ! wait_for_named_frames "$predecessor_title" "$original_frame"; then
+            cleanup_verified=false
+          fi
+
+          terminate_process "$predecessor_pid"
+          predecessor_pid=""
+
+          if ! wait_for_window_gone "$predecessor_title"; then
+            cleanup_verified=false
+          fi
+        fi
+
+        if ! set_current_desktop "$primary_desktop_id" \
+          || ! activate_window "$title_c" \
+          || ! wait_for_active "$title_c" \
+          || ! wait_for_frames \
+            "$baseline_first" \
+            "$baseline_second" \
+            "$baseline_third"; then
+          cleanup_verified=false
+        fi
+
+        if [[ "$verified" == true && "$cleanup_verified" == true ]]; then
+          return 0
+        fi
+
+        record_focus_state "full-width successor edge-gap verification failed"
+        {
+          printf 'configured gap: %s\n' "''${gap:-unavailable}"
+          printf 'original predecessor frame: %s\n' "$original_frame"
+          printf 'full-width predecessor frame: %s\n' "$full_frame"
+          printf 'parked predecessor frame: %s\n' "$predecessor_frame"
+          printf 'active successor frame: %s\n' "$successor_frame"
+          printf 'expected active right edge: %s\n' "$full_right"
+          printf 'maximum predecessor right edge: %s\n' "$left_exclusion"
+          printf 'verified: %s\n' "$verified"
+          printf 'cleanup verified: %s\n' "$cleanup_verified"
+        } >> /tmp/shared/driftile-focus-diagnostics
+        return 1
       }
 
       verify_physical_fullscreen_shortcut() {
@@ -11490,6 +11706,7 @@ let
         && verify_configured_column_width_presets \
         && verify_physical_height_shortcuts \
         && verify_physical_column_view_shortcuts \
+        && verify_full_width_successor_edge_gaps \
         && verify_physical_fullscreen_shortcut \
         && verify_physical_maximize_shortcut \
         && verify_real_applications \
