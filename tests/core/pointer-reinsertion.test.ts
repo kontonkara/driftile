@@ -5,6 +5,7 @@ import type { LayoutContextSnapshot } from "../../src/core/layout-engine";
 import {
   planPointerExternalWindowDrop,
   planPointerWindowDrop,
+  planPointerWindowDropPreview,
   type PointerExternalWindowDropInput,
   type PointerWindowDropInput,
 } from "../../src/core/pointer-reinsertion";
@@ -32,6 +33,72 @@ describe("planPointerWindowDrop", () => {
       targetWindowId: "target-a",
     });
     expect(Object.isFrozen(before)).toBe(true);
+  });
+
+  it.each([
+    {
+      expected: {
+        frame: { height: 51, width: 99, x: 201, y: 0 },
+        target: { position: "before", targetWindowId: "target-a" },
+      },
+      input: () => ({
+        ...fractionalPreviewFixture(),
+        cursor: { x: 250, y: 50.999 },
+      }),
+      name: "before",
+    },
+    {
+      expected: {
+        frame: { height: 51, width: 99, x: 201, y: 51 },
+        target: { position: "after", targetWindowId: "target-a" },
+      },
+      input: () => ({
+        ...fractionalPreviewFixture(),
+        cursor: { x: 250, y: 51 },
+      }),
+      name: "after",
+    },
+    {
+      expected: null,
+      input: sameColumnNoOpFixture,
+      name: "same-column no-op",
+    },
+    {
+      expected: null,
+      input: () => ({
+        ...fractionalPreviewFixture(),
+        cursor: { x: Number.NaN, y: 25 },
+      }),
+      name: "invalid input",
+    },
+    {
+      expected: null,
+      input: () => ({
+        ...fixture({
+          targetAFrame: {
+            height: Number.MIN_VALUE,
+            width: 100,
+            x: 200,
+            y: 0,
+          },
+        }),
+        cursor: { x: 250, y: 0 },
+      }),
+      name: "unrepresentable target half",
+    },
+  ])("plans an immutable $name preview", ({ expected, input }) => {
+    const previewInput = input();
+    const preview = planPointerWindowDropPreview(previewInput);
+
+    expect(preview).toEqual(expected);
+
+    if (preview) {
+      expect(preview.target).toEqual(planPointerWindowDrop(previewInput));
+      expect(preview.frame.height).toBeGreaterThan(0);
+      expect(Object.isFrozen(preview)).toBe(true);
+      expect(Object.isFrozen(preview.frame)).toBe(true);
+      expect(Object.isFrozen(preview.target)).toBe(true);
+    }
   });
 
   it("uses half-open hit regions for adjacent target frames", () => {
@@ -389,6 +456,47 @@ function externalFixture(): PointerExternalWindowDropInput {
     draggedWindowId: input.draggedWindowId,
     visibleArea: input.visibleArea,
     windows: input.windows.slice(1),
+  };
+}
+
+function fractionalPreviewFixture(): PointerWindowDropInput {
+  return fixture({
+    targetAFrame: { height: 101.5, width: 99.25, x: 200.5, y: 0.25 },
+    targetBFrame: { height: 100, width: 99.25, x: 200.5, y: 110 },
+  });
+}
+
+function sameColumnNoOpFixture(): PointerWindowDropInput {
+  const input = fixture();
+
+  return {
+    ...input,
+    context: {
+      ...input.context,
+      activeColumnId: columnId("stack"),
+      columns: [
+        {
+          id: columnId("stack"),
+          width: { kind: "fixed", value: 400 },
+          windowIds: [windowId("dragged"), windowId("target-a")],
+        },
+      ],
+    },
+    cursor: { x: 250, y: 25 },
+    windows: [
+      geometry("dragged", "stack", {
+        height: 100,
+        width: 100,
+        x: 0,
+        y: 0,
+      }),
+      geometry("target-a", "stack", {
+        height: 100,
+        width: 100,
+        x: 200,
+        y: 0,
+      }),
+    ],
   };
 }
 

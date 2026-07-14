@@ -78,6 +78,7 @@ import { diffWindowGeometries } from "./core/reconcile";
 import {
   planPointerExternalWindowDrop,
   planPointerWindowDrop,
+  planPointerWindowDropPreview,
   type PointerWindowDropTarget,
 } from "./core/pointer-reinsertion";
 import {
@@ -411,6 +412,8 @@ interface PointerMoveIntent {
   readonly generation: number;
   readonly participants: readonly PointerMoveParticipant[];
   readonly phase: "dragging" | "finished";
+  readonly previewVisibleArea: Rect;
+  readonly previewWindows: readonly WindowGeometry[];
   readonly source: KWinWindow;
   readonly sourceDesktop: KWinVirtualDesktop;
   readonly sourceOutput: KWinOutput;
@@ -700,6 +703,7 @@ export interface RuntimeControllerOptions {
   readonly columnWidthPresets?: readonly ColumnWidth[];
   readonly createRect?: KWinRectFactory;
   readonly gap?: number;
+  readonly hidePointerDropPreview?: () => void;
   readonly layoutHydrationQuietSamples?: number;
   readonly layoutHydrationRetryProbes?: number;
   readonly layoutStateForCurrentTopology?: () => string;
@@ -707,6 +711,7 @@ export interface RuntimeControllerOptions {
   readonly onLayoutStateChanged?: (canonicalState: string) => void;
   readonly schedule?: (callback: () => void) => void;
   readonly scheduleResume?: (callback: () => void) => void;
+  readonly showPointerDropPreview?: (frame: Rect) => void;
   readonly startupStabilizationProbes?: number;
   readonly windowHeightPresets?: readonly ColumnWidth[];
 }
@@ -815,6 +820,11 @@ export class RuntimeController {
   private readonly pendingAdmissionContexts = new Set<string>();
   private interactiveResizeSource: KWinWindow | null = null;
   private pointerMoveIntent: PointerMoveIntent | null = null;
+  private pointerDropPreviewBlocked = false;
+  private pointerDropPreviewCursorConnected = false;
+  private pointerDropPreviewFrame: Rect | null = null;
+  private pointerDropPreviewScheduleToken: object | null = null;
+  private pointerDropPreviewUnavailable = false;
   private pointerResizeIntent: PointerResizeIntent | null = null;
   private pointerResizeSettlement: PointerResizeSettlement | null = null;
   private pendingDefaultColumnWidth: ColumnWidth | null = null;
@@ -823,6 +833,8 @@ export class RuntimeController {
   private readonly resumeSamples = new Map<WindowId, ResumeSample>();
   private readonly schedule: (callback: () => void) => void;
   private readonly scheduleResume: (callback: () => void) => void;
+  private readonly hidePointerDropPreview: (() => void) | undefined;
+  private readonly showPointerDropPreview: ((frame: Rect) => void) | undefined;
   private pendingMutationWrites = 0;
   private scheduledMutationWrites = 0;
   private workFlushDepth = 0;
@@ -919,6 +931,7 @@ export class RuntimeController {
     );
     this.layoutStateForCurrentTopology = options.layoutStateForCurrentTopology;
     this.knownLayoutSnapshots = options.knownLayoutSnapshots;
+    this.hidePointerDropPreview = options.hidePointerDropPreview;
     this.onLayoutStateChanged = options.onLayoutStateChanged;
     this.schedule =
       options.schedule ??
@@ -926,6 +939,7 @@ export class RuntimeController {
         callback();
       });
     this.scheduleResume = options.scheduleResume ?? this.schedule;
+    this.showPointerDropPreview = options.showPointerDropPreview;
     this.startupStabilizationProbes = Math.max(
       0,
       Math.trunc(options.startupStabilizationProbes ?? 0),
@@ -2593,7 +2607,9 @@ export class RuntimeController {
       this.borderlessContextReconciliationPending = false;
       this.borderlessReconciliationPending = false;
       this.interactiveResizeSource = null;
-      this.pointerMoveIntent = null;
+      this.clearPointerMoveIntent();
+      this.pointerDropPreviewUnavailable =
+        this.pointerDropPreviewFrame !== null;
       this.pointerResizeIntent = null;
       this.pointerResizeSettlement = null;
       this.startupCompleted = false;
@@ -2671,7 +2687,7 @@ export class RuntimeController {
     this.borderlessContextReconciliationPending = false;
     this.borderlessReconciliationPending = false;
     this.interactiveResizeSource = null;
-    this.pointerMoveIntent = null;
+    this.clearPointerMoveIntent();
     this.pointerResizeIntent = null;
     this.pointerResizeSettlement = null;
     this.stackEditOperation = null;
@@ -2711,7 +2727,7 @@ export class RuntimeController {
       this.contexts.clear();
       this.pendingExpelFocusHandoff = null;
       this.interactiveResizeSource = null;
-      this.pointerMoveIntent = null;
+      this.clearPointerMoveIntent();
       this.pointerResizeIntent = null;
       this.pointerResizeSettlement = null;
       this.stackEditOperation = null;
@@ -2996,7 +3012,7 @@ export class RuntimeController {
 
     this.interactiveResizeSource = source ?? null;
 
-    this.pointerMoveIntent = null;
+    this.clearPointerMoveIntent();
     this.pointerResizeIntent = null;
 
     if (
@@ -3210,7 +3226,7 @@ export class RuntimeController {
   };
 
   private readonly handleInteractiveMoveStarted = (id: string): void => {
-    this.pointerMoveIntent = null;
+    this.clearPointerMoveIntent();
     this.pointerResizeIntent = null;
     const draggedWindowId = windowId(id);
     const source = this.observer.source(id);
@@ -3359,11 +3375,28 @@ export class RuntimeController {
       initialFrame: snapshotRect(source.frameGeometry),
       participants,
       phase: "dragging",
+      previewVisibleArea: snapshotRect(contextGeometry.workArea),
+      previewWindows: solved.windows.map((window) => ({
+        columnId: window.columnId,
+        frame: snapshotRect(window.frame),
+        windowId: window.windowId,
+      })),
       source,
       sourceDesktop,
       sourceOutput,
       topologyRevision: this.topologyRevision,
     };
+    this.startPointerDropPreviewTracking();
+  };
+
+  private readonly handlePointerDropPreviewCursorChanged = (): void => {
+    const intent = this.pointerMoveIntent;
+
+    if (!intent || intent.phase !== "dragging") {
+      return;
+    }
+
+    this.schedulePointerDropPreview();
   };
 
   private readonly handleInteractiveMoveFinished = (id: string): void => {
@@ -3373,6 +3406,8 @@ export class RuntimeController {
       return;
     }
 
+    this.stopPointerDropPreviewTracking();
+    this.clearPointerDropPreview();
     const source = this.observer.source(id);
     const cursor = this.workspace.cursorPos;
     const observed = source ? normalizeWindow(source) : null;
@@ -3391,7 +3426,7 @@ export class RuntimeController {
       !this.settledPointerMoveSourceIsEligible(source) ||
       !finalCursor
     ) {
-      this.pointerMoveIntent = null;
+      this.clearPointerMoveIntent();
       return;
     }
 
@@ -3403,7 +3438,7 @@ export class RuntimeController {
         contextKey(liveContext) !== intent.contextKey ||
         rectsEqual(source.frameGeometry, intent.initialFrame))
     ) {
-      this.pointerMoveIntent = null;
+      this.clearPointerMoveIntent();
       return;
     }
 
@@ -3415,6 +3450,211 @@ export class RuntimeController {
       phase: "finished",
     };
   };
+
+  private schedulePointerDropPreview(): void {
+    if (
+      this.pointerDropPreviewUnavailable ||
+      !this.showPointerDropPreview ||
+      !this.hidePointerDropPreview ||
+      this.pointerDropPreviewScheduleToken !== null
+    ) {
+      return;
+    }
+
+    const token = {};
+    this.pointerDropPreviewScheduleToken = token;
+
+    try {
+      this.schedule(() => {
+        if (this.pointerDropPreviewScheduleToken !== token) {
+          return;
+        }
+
+        this.pointerDropPreviewScheduleToken = null;
+        this.updatePointerDropPreview();
+      });
+    } catch (error) {
+      if (this.pointerDropPreviewScheduleToken === token) {
+        this.pointerDropPreviewScheduleToken = null;
+      }
+
+      this.disablePointerDropPreview(error);
+    }
+  }
+
+  private updatePointerDropPreview(): void {
+    const intent = this.pointerMoveIntent;
+    const cursor = this.workspace.cursorPos;
+    const context = intent ? this.contexts.get(intent.contextKey) : undefined;
+
+    if (
+      !intent ||
+      intent.phase !== "dragging" ||
+      !cursor ||
+      !Number.isFinite(cursor.x) ||
+      !Number.isFinite(cursor.y) ||
+      !context ||
+      context.geometryFingerprint !== intent.contextFingerprint ||
+      !this.isContextVisible(context) ||
+      intent.generation !== this.runGeneration ||
+      intent.topologyRevision !== this.topologyRevision ||
+      intent.gap !== this.gap ||
+      this.workspace.activeWindow !== intent.source ||
+      !this.interactiveMoveSourceIsEligible(intent.source) ||
+      this.hasStructuralCapacityState(context.key) ||
+      this.toggleTransitionPending(context.key) ||
+      !this.pointerMoveParticipantsAreCurrent(intent, context, true)
+    ) {
+      this.clearPointerDropPreview();
+      return;
+    }
+
+    const preview = planPointerWindowDropPreview({
+      context: intent.before,
+      cursor: { x: cursor.x, y: cursor.y },
+      draggedWindowId: intent.draggedWindowId,
+      visibleArea: intent.previewVisibleArea,
+      windows: intent.previewWindows,
+    });
+
+    if (!preview) {
+      this.clearPointerDropPreview();
+      return;
+    }
+
+    this.showPointerDropPreviewFrame(preview.frame);
+  }
+
+  private showPointerDropPreviewFrame(frame: Rect): void {
+    if (
+      this.pointerDropPreviewUnavailable ||
+      this.pointerDropPreviewBlocked ||
+      !this.showPointerDropPreview ||
+      !this.hidePointerDropPreview
+    ) {
+      return;
+    }
+
+    if (
+      this.pointerDropPreviewFrame !== null &&
+      rectsEqual(this.pointerDropPreviewFrame, frame)
+    ) {
+      return;
+    }
+
+    if (this.pointerDropPreviewHasConflictingOutline()) {
+      this.pointerDropPreviewBlocked = true;
+      this.pointerDropPreviewFrame = null;
+      return;
+    }
+
+    const nextFrame = snapshotRect(frame);
+    this.pointerDropPreviewFrame = nextFrame;
+
+    try {
+      this.showPointerDropPreview(nextFrame);
+    } catch (error) {
+      this.disablePointerDropPreview(error);
+    }
+  }
+
+  private clearPointerDropPreview(): void {
+    if (this.pointerDropPreviewFrame === null) {
+      return;
+    }
+
+    const conflictingOutline = this.pointerDropPreviewHasConflictingOutline();
+
+    if (conflictingOutline) {
+      this.pointerDropPreviewBlocked = true;
+      this.pointerDropPreviewFrame = null;
+      return;
+    }
+
+    try {
+      this.hidePointerDropPreview?.();
+      this.pointerDropPreviewFrame = null;
+    } catch (error) {
+      this.disablePointerDropPreview(error);
+    }
+  }
+
+  private disablePointerDropPreview(error: unknown): void {
+    const hidePreview =
+      this.pointerDropPreviewFrame !== null &&
+      !this.pointerDropPreviewHasConflictingOutline();
+    this.pointerDropPreviewUnavailable = true;
+    this.pointerDropPreviewScheduleToken = null;
+
+    if (hidePreview) {
+      try {
+        this.hidePointerDropPreview?.();
+        this.pointerDropPreviewFrame = null;
+      } catch (cleanupError) {
+        console.warn(
+          `[driftile] pointer drop preview cleanup failed error=${String(cleanupError)}`,
+        );
+      }
+    } else if (this.pointerDropPreviewFrame !== null) {
+      this.pointerDropPreviewBlocked = true;
+      this.pointerDropPreviewFrame = null;
+    }
+
+    console.warn(
+      `[driftile] pointer drop preview disabled error=${String(error)}`,
+    );
+  }
+
+  private pointerDropPreviewHasConflictingOutline(): boolean {
+    const frame = this.pointerDropPreviewFrame;
+
+    for (const window of this.workspace.stackingOrder) {
+      if (
+        window.outline === true &&
+        (frame === null || !rectsEqual(window.frameGeometry, frame))
+      ) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private startPointerDropPreviewTracking(): void {
+    if (
+      this.pointerDropPreviewCursorConnected ||
+      !this.showPointerDropPreview ||
+      !this.hidePointerDropPreview ||
+      !this.workspace.cursorPosChanged
+    ) {
+      return;
+    }
+
+    this.workspace.cursorPosChanged.connect(
+      this.handlePointerDropPreviewCursorChanged,
+    );
+    this.pointerDropPreviewCursorConnected = true;
+  }
+
+  private stopPointerDropPreviewTracking(): void {
+    this.pointerDropPreviewScheduleToken = null;
+
+    if (!this.pointerDropPreviewCursorConnected) {
+      return;
+    }
+
+    this.workspace.cursorPosChanged?.disconnect(
+      this.handlePointerDropPreviewCursorChanged,
+    );
+    this.pointerDropPreviewCursorConnected = false;
+  }
+
+  private clearPointerMoveIntent(): void {
+    this.pointerMoveIntent = null;
+    this.stopPointerDropPreviewTracking();
+    this.clearPointerDropPreview();
+    this.pointerDropPreviewBlocked = false;
+  }
 
   private prepareExternalPointerDrop(
     intent: PointerMoveIntent,
@@ -3684,7 +3924,7 @@ export class RuntimeController {
     );
 
     if (nextKey !== null && !intermediateContext) {
-      this.pointerMoveIntent = null;
+      this.clearPointerMoveIntent();
       return false;
     }
 
@@ -3716,7 +3956,7 @@ export class RuntimeController {
     }
 
     if (external.completedAttempts >= MAX_POINTER_EXTERNAL_CONTEXT_PROBES) {
-      this.pointerMoveIntent = null;
+      this.clearPointerMoveIntent();
       return false;
     }
 
@@ -3747,7 +3987,7 @@ export class RuntimeController {
       });
     } catch (error) {
       external.probePending = false;
-      this.pointerMoveIntent = null;
+      this.clearPointerMoveIntent();
       this.resumeSamples.delete(id);
       this.suspendedWindows.delete(id);
       console.warn(
@@ -3816,7 +4056,7 @@ export class RuntimeController {
         (participant) => participant.id === id,
       )
     ) {
-      this.pointerMoveIntent = null;
+      this.clearPointerMoveIntent();
     }
   }
 
@@ -3854,7 +4094,7 @@ export class RuntimeController {
       source !== intent.source ||
       !this.pointerMoveSourceHasStableOwnership(source)
     ) {
-      this.pointerMoveIntent = null;
+      this.clearPointerMoveIntent();
     }
   }
 
@@ -4313,7 +4553,7 @@ export class RuntimeController {
     allowSuspended = false,
   ): void => {
     if (this.pointerMoveIntent && window !== this.pointerMoveIntent.source) {
-      this.pointerMoveIntent = null;
+      this.clearPointerMoveIntent();
     }
 
     if (
@@ -13398,7 +13638,7 @@ export class RuntimeController {
 
     const reject = (): false => {
       if (this.pointerMoveIntent === intent) {
-        this.pointerMoveIntent = null;
+        this.clearPointerMoveIntent();
       }
 
       return false;
@@ -13653,7 +13893,7 @@ export class RuntimeController {
       }
 
       if (this.pointerMoveIntent === intent) {
-        this.pointerMoveIntent = null;
+        this.clearPointerMoveIntent();
       }
 
       for (const key of [intent.contextKey, external.contextKey]) {
@@ -15254,7 +15494,7 @@ export class RuntimeController {
 
     const reject = (): false => {
       if (this.pointerMoveIntent === intent) {
-        this.pointerMoveIntent = null;
+        this.clearPointerMoveIntent();
       }
 
       return false;
@@ -15337,7 +15577,7 @@ export class RuntimeController {
         this.pointerMoveParticipantsAreCurrent(intent, context),
     );
     const edit = editState.value;
-    this.pointerMoveIntent = null;
+    this.clearPointerMoveIntent();
 
     if (!applied || !edit) {
       return false;
@@ -15364,6 +15604,7 @@ export class RuntimeController {
   private pointerMoveParticipantsAreCurrent(
     intent: PointerMoveIntent,
     context: RuntimeContext,
+    allowInteractiveSource = false,
   ): boolean {
     if (
       intent.participants.length !== context.windowIds.size ||
@@ -15386,12 +15627,14 @@ export class RuntimeController {
         (participant.id === intent.draggedWindowId ||
           (this.windowStateRevisions.get(participant.id) ?? 0) ===
             participant.stateRevision) &&
-        this.stackTransferMemberIsEligible(
-          participant.id,
-          participant.window,
-          context,
-          false,
-        ),
+        (allowInteractiveSource && participant.id === intent.draggedWindowId
+          ? this.interactiveMoveSourceIsEligible(participant.window)
+          : this.stackTransferMemberIsEligible(
+              participant.id,
+              participant.window,
+              context,
+              false,
+            )),
       );
     });
   }
@@ -17095,7 +17338,7 @@ export class RuntimeController {
       return;
     }
 
-    this.pointerMoveIntent = null;
+    this.clearPointerMoveIntent();
     this.pointerResizeIntent = null;
     this.topologyKnownOutputRestorations.clear();
 

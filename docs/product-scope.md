@@ -14,9 +14,9 @@ The ownership rule is strict:
 
 - One horizontal strip of columns per `(output, desktop)` context.
 - Deterministic window insertion, ordering, focus, movement, resizing, and scrolling.
-- Finish-only pointer reinsertion within one context, plus adoption at one exact
-  visible tiled target after KWin moves the active tiled window to a selected
-  desktop on the same output or to another visible output.
+- Live same-context pointer-drop feedback with finish-only reinsertion, plus
+  adoption at one exact visible tiled target after KWin moves the active tiled
+  window to a selected desktop or another visible output.
 - Finish-only horizontal pointer-resize adoption for the active tiled column.
 - Vertical window stacks within columns.
 - Per-window height adjustment, weighted automatic stack distribution, and height presets.
@@ -176,13 +176,18 @@ The ownership rule is strict:
 
 ## Beyond v1
 
+- Same-context tiled pointer moves use KWin's public outline mechanism to mark
+  the valid target half. Updates are coalesced, write no layout or persistence
+  state, and use a best-effort conflict guard for KWin's shared outline. Target
+  planning is `O(V)` within the visible context; changed targets also guard the
+  stacking order. Cross-context moves remain finish-only without a preview.
+
 - A removable overview companion presents the authoritative layout with guarded
   current- and cross-desktop focus plus desktop selection while Plasma's
   built-in Overview remains the compatible fallback.
 - Optional five-finger horizontal touchpad navigation reuses tiled column
   focus; global wheel input is deferred because KWin 6.7 exposes no public
   script axis API.
-- Visual drop feedback for pointer operations.
 - Tabbed columns and matching pointer navigation.
 - Additional application-specific policies and an expanded settings UI.
 - Optional visual transitions, layout indicators, and concise diagnostics.

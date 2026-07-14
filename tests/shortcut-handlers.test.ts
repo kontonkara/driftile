@@ -867,11 +867,19 @@ describe("KWin shortcut handlers", () => {
     expect(qml).toContain("function readSettings()");
     expect(qml).toContain("root.applySettings(root.readSettings())");
     expect(qml).toMatch(
-      /Runtime\.DriftileRuntime\.init\([\s\S]*root\.readSettings\(\), loadedLayoutState,[\s\S]*root\.queueLayoutState\)/,
+      /Runtime\.DriftileRuntime\.init\([\s\S]*root\.readSettings\(\), loadedLayoutState,[\s\S]*root\.queueLayoutState,\s*root\.showDropPreview,\s*root\.hideDropPreview\)/,
+    );
+    expect(qml).toMatch(
+      /function showDropPreview\(x, y, width, height\) \{\s*Workspace\.showOutline\(x, y, width, height\);\s*\}/,
+    );
+    expect(qml).toMatch(
+      /function hideDropPreview\(\) \{\s*Workspace\.hideOutline\(\);\s*\}/,
     );
     expect(runtime).toContain(
       "const settings = decodeSettings(settingsSnapshot)",
     );
+    expect(runtime).toContain("hidePointerDropPreview");
+    expect(runtime).toContain("showPointerDropPreview");
     expect(runtime).toContain("decodeDriftileSettings(value)");
     expect(runtime).toContain(
       "sameDriftileSettings(appliedSettings, settings)",
@@ -888,7 +896,7 @@ describe("KWin shortcut handlers", () => {
       'StandardPaths.writableLocation(StandardPaths.GenericConfigLocation) + "/driftile-layout-state.ini"',
     );
     expect(qml).toMatch(
-      /const loadedLayoutState = layoutStateStore\.load\(\);[\s\S]*Runtime\.DriftileRuntime\.init\([\s\S]*loadedLayoutState,[\s\S]*root\.queueLayoutState\)/,
+      /const loadedLayoutState = layoutStateStore\.load\(\);[\s\S]*Runtime\.DriftileRuntime\.init\([\s\S]*loadedLayoutState,[\s\S]*root\.queueLayoutState,[\s\S]*root\.hideDropPreview\)/,
     );
     expect(qml).toMatch(
       /Component\.onDestruction:[\s\S]*flushLayoutState\(\);[\s\S]*layoutStateStore\.flush\(\);[\s\S]*Runtime\.DriftileRuntime\.destroy\(\);/,

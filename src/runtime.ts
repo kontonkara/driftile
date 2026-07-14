@@ -1,3 +1,4 @@
+import type { Rect } from "./core/geometry";
 import type { KWinWorkspace } from "./platform/kwin/api";
 import type { KWinRectFactory } from "./platform/kwin/geometry-adapter";
 import { RuntimeController } from "./runtime-controller";
@@ -27,6 +28,8 @@ export function init(
   settingsSnapshot: unknown,
   loadedLayoutState: unknown,
   onLayoutStateChanged: unknown,
+  showDropPreview?: unknown,
+  hideDropPreview?: unknown,
 ): void {
   const settings = decodeSettings(settingsSnapshot);
 
@@ -47,6 +50,33 @@ export function init(
     typeof loadedLayoutState === "string" ? loadedLayoutState : "",
     layoutStateChanged,
   );
+  const showDropPreviewCallback =
+    typeof showDropPreview === "function"
+      ? (showDropPreview as (
+          x: number,
+          y: number,
+          width: number,
+          height: number,
+        ) => void)
+      : null;
+  const hideDropPreviewCallback =
+    typeof hideDropPreview === "function"
+      ? (hideDropPreview as () => void)
+      : null;
+  const previewCallbacks =
+    showDropPreviewCallback && hideDropPreviewCallback
+      ? {
+          hidePointerDropPreview: hideDropPreviewCallback,
+          showPointerDropPreview: (frame: Rect) => {
+            showDropPreviewCallback(
+              frame.x,
+              frame.y,
+              frame.width,
+              frame.height,
+            );
+          },
+        }
+      : {};
   const nextController = new RuntimeController(workspace, {
     applicationBorderlessExclusions: settings.applicationBorderlessExclusions,
     applicationColumnWidths: settings.applicationColumnWidths,
@@ -62,6 +92,7 @@ export function init(
     knownLayoutSnapshots: () => layoutPersistence.snapshots(),
     schedule,
     scheduleResume,
+    ...previewCallbacks,
     startupStabilizationProbes: STARTUP_STABILIZATION_PROBES,
     ...(layoutPersistence.onStateChanged === undefined
       ? {}

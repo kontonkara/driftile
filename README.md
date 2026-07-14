@@ -11,8 +11,9 @@ leaving window, output, and desktop mechanisms to KWin.
 - Horizontal scrollable columns with optional vertical window stacks.
 - Keyboard-driven focus, movement, reordering, resizing, centering, and
   transfers between desktops and outputs.
-- Finish-only pointer reinsertion and horizontal column-resize adoption, plus
-  exact visible-target adoption after a KWin-owned output or desktop move.
+- Live same-context drop-target feedback with finish-only pointer reinsertion
+  and horizontal resize adoption, plus exact target adoption after a
+  KWin-owned output or desktop move.
 - One shared trailing empty virtual desktop with conservative creation and
   cleanup.
 - Manual floating with directional nudging, work-area centering, contextual
@@ -34,6 +35,8 @@ leaving window, output, and desktop mechanisms to KWin.
 ## Status
 
 The latest stable release is [1.15.1](docs/release-notes-1.15.1.md).
+The feature list tracks the current `main` branch; unreleased work is marked in
+the [roadmap](docs/roadmap.md).
 
 Driftile requires KDE Plasma with KWin 6.7 or newer. It targets native Wayland
 and XWayland windows, plus single-output native X11 sessions.

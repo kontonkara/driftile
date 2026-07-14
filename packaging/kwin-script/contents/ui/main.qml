@@ -715,6 +715,14 @@ QtObject {
         return Qt.rect(x, y, width, height);
     }
 
+    function showDropPreview(x, y, width, height) {
+        Workspace.showOutline(x, y, width, height);
+    }
+
+    function hideDropPreview() {
+        Workspace.hideOutline();
+    }
+
     function schedule(callback) {
         Qt.callLater(callback);
     }
@@ -739,7 +747,9 @@ QtObject {
                                     root.createRect, root.schedule,
                                     root.scheduleResume,
                                     root.readSettings(), loadedLayoutState,
-                                    root.queueLayoutState);
+                                    root.queueLayoutState,
+                                    root.showDropPreview,
+                                    root.hideDropPreview);
         root.appliedTouchpadNavigation = Runtime.DriftileRuntime.getTouchpadNavigation();
     }
     Component.onDestruction: {

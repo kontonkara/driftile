@@ -87,11 +87,11 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Holds initial admission through a one-second signal grace, then plans existing windows as one batch.
 - Defers external output and desktop transfers, then re-owns each window in its destination context.
 - Suspends geometry writes while KWin owns a window-state transition and resumes after its restored frame stabilizes.
-- Captures tiled move intent once, plans a drop from the final cursor position,
-  and commits the shared layout transaction only after geometry authority
-  stabilizes. A completed KWin-owned move to another visible output may be
-  adopted into one exact tiled target; stale or absent targets use ordinary
-  destination admission.
+- Captures tiled move intent once, coalesces live same-context target previews,
+  and plans the committed drop from the final cursor position only after
+  geometry authority stabilizes. A completed KWin-owned move to another
+  visible output may be adopted into one exact tiled target; stale or absent
+  targets use ordinary destination admission.
 - Reuses that finish-only transaction after KWin selects another desktop on the
   same output and changes the window membership. It probes only a pending
   visible destination, leaves the hidden source geometry untouched, and falls
@@ -234,7 +234,7 @@ RuntimeState
   toggleGeometryTransitions: Map<WindowId, { contextKey, expectedFrame, settlementArmed }>
   desktopLifecycle: { ownedDesktopIds, pendingMutation }
   topologyBarrier: { revision, affectedOutputs, stableSample }
-  pointerMoveIntent: { contextKey, layoutSnapshot, participants, finalCursor, sourceOutput, sourceDesktop, externalDrop }
+  pointerMoveIntent: { contextKey, layoutSnapshot, participants, previewGeometry, finalCursor, sourceOutput, sourceDesktop, externalDrop }
   pointerResizeIntent: { contextKey, layoutSnapshot, participants, initialFrame, acceptedFrame, activeColumnId }
   pointerResizeSettlement: { contextKey, targets, rollbackFrames, phase, attempts, stableSamples }
 ```

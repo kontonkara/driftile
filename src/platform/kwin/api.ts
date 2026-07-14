@@ -76,6 +76,7 @@ export interface KWinWindow {
   readonly noBorderChanged?: KWinSignal<[]>;
   readonly normalWindow: boolean;
   readonly onAllDesktops: boolean;
+  readonly outline?: boolean;
   readonly output: KWinOutput | null;
   readonly outputChanged?: KWinSignal<[oldOutput?: KWinOutput | null]>;
   readonly requestedTileChanged?: KWinSignal<[]>;
@@ -98,6 +99,7 @@ export interface KWinWorkspace {
   activeWindow: KWinWindow | null;
   readonly activeScreen: KWinOutput | null;
   readonly cursorPos?: KWinPoint;
+  readonly cursorPosChanged?: KWinSignal<[]>;
   currentDesktop: KWinVirtualDesktop | null;
   readonly desktops: readonly KWinVirtualDesktop[];
   readonly screens: readonly KWinOutput[];

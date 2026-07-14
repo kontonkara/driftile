@@ -390,6 +390,7 @@ function createTrackedWindow(
 
 interface WorkspaceFixture {
   readonly activationCount: number;
+  readonly cursorPosChanged: Signal<[]>;
   readonly currentDesktopChanged: Signal<
     [
       previous: KWinVirtualDesktop | null,
@@ -435,6 +436,7 @@ function createWorkspace(
   windows: readonly KWinWindow[],
   perOutputDesktops = true,
 ): WorkspaceFixture {
+  const cursorPosChanged = new Signal<[]>();
   const currentDesktopChanged = new Signal<
     [
       previous: KWinVirtualDesktop | null,
@@ -559,6 +561,7 @@ function createWorkspace(
     currentDesktop,
     currentDesktopChanged,
     cursorPos: cursorPosition,
+    cursorPosChanged,
     desktops,
     screens: currentOutputs,
     screensChanged,
@@ -613,6 +616,7 @@ function createWorkspace(
     get activationCount() {
       return activationCount;
     },
+    cursorPosChanged,
     currentDesktopChanged,
     get desktopSwitchCount() {
       return desktopSwitchCount;
@@ -623,6 +627,7 @@ function createWorkspace(
     screensChanged,
     setCursorPosition: (x, y) => {
       cursorPosition = { x, y };
+      cursorPosChanged.emit();
     },
     setActivationBehavior: (behavior) => {
       activationBehavior = behavior;
@@ -28203,11 +28208,17 @@ describe("RuntimeController", () => {
     );
     const scheduler = new ManualScheduler();
     const published: string[] = [];
+    const previews: KWinWindow["frameGeometry"][] = [];
+    let hiddenPreviews = 0;
     const controller = new RuntimeController(fixture.workspace, {
       clientAreaOption: 2,
       gap: 10,
+      hidePointerDropPreview: () => {
+        hiddenPreviews += 1;
+      },
       onLayoutStateChanged: (document) => published.push(document),
       schedule: scheduler.schedule,
+      showPointerDropPreview: (frame) => previews.push({ ...frame }),
     });
 
     controller.start();
@@ -28221,8 +28232,19 @@ describe("RuntimeController", () => {
     });
     dragged.moveResizedChanged.emit();
     dragged.interactiveMoveResizeStarted.emit();
+    const firstTargetFrame = { ...target.window.frameGeometry };
     dragged.setFrameGeometry({ height: 780, width: 485, x: 80, y: 400 });
+    fixture.setCursorPosition(200, 600);
     fixture.setCursorPosition(200, 650);
+    flushManualScheduler(scheduler);
+
+    expect(previews).toEqual([
+      {
+        ...firstTargetFrame,
+        height: firstTargetFrame.height / 2,
+        y: firstTargetFrame.y + firstTargetFrame.height / 2,
+      },
+    ]);
     Object.defineProperty(dragged.window, "move", {
       configurable: true,
       value: false,
@@ -28231,6 +28253,7 @@ describe("RuntimeController", () => {
     dragged.interactiveMoveResizeFinished.emit();
     flushManualScheduler(scheduler);
 
+    expect(hiddenPreviews).toBe(1);
     expect(testLayoutColumns(controller, output, desktop)).toEqual([
       { id: "column:target", windowIds: ["target", "dragged"] },
     ]);
@@ -28252,12 +28275,19 @@ describe("RuntimeController", () => {
     });
     dragged.moveResizedChanged.emit();
     dragged.interactiveMoveResizeStarted.emit();
+    const secondTargetFrame = { ...target.window.frameGeometry };
     dragged.setFrameGeometry({
       ...dragged.window.frameGeometry,
       x: 120,
       y: 80,
     });
     fixture.setCursorPosition(200, 100);
+    flushManualScheduler(scheduler);
+
+    expect(previews[previews.length - 1]).toEqual({
+      ...secondTargetFrame,
+      height: Math.round(secondTargetFrame.height / 2),
+    });
     Object.defineProperty(dragged.window, "move", {
       configurable: true,
       value: false,
@@ -28272,6 +28302,7 @@ describe("RuntimeController", () => {
     expect(dragged.window.frameGeometry.y).toBeLessThan(
       target.window.frameGeometry.y,
     );
+    expect(hiddenPreviews).toBe(2);
     expect(published).toHaveLength(3);
   });
 

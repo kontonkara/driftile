@@ -761,7 +761,10 @@ Release criteria (met):
 Add interaction and presentation features outside the frozen v1 scope without
 taking over compositor mechanisms.
 
-- Add visual drop feedback for pointer operations.
+- Implemented on `main` for the next release: same-context pointer drops
+  outline the exact before/after target half through KWin's public API. The
+  preview is context-local, coalesced, and owns no layout or persistence state;
+  cross-context feedback remains deferred.
 - Add tabbed column presentation and matching pointer navigation.
 - Add application-specific policies beyond initial column widths and an
   expanded settings UI.

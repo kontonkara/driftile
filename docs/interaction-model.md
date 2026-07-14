@@ -43,25 +43,25 @@ stacking-order, or layout scan.
 
 ## Delivery contract
 
-| Area                 | Required behavior                                                                                 | Target    |
-| -------------------- | ------------------------------------------------------------------------------------------------- | --------- |
-| Horizontal strip     | Focus and reorder columns; focus or move to first and last; reveal with minimal scrolling         | Available |
-| Vertical column      | Focus and reorder members; consume or expel active, top, or bottom members                        | Available |
-| Column view          | Cycle `1/3`, `1/2`, and `2/3` widths in both directions; adjust by 10%; toggle full width; center | Available |
-| Advanced column view | Fill available width and center all fully visible columns                                         | Available |
-| Window height        | Adjust one window by 10%; reset to automatic; cycle `1/3`, `1/2`, and `2/3` presets               | Available |
-| Virtual desktops     | Focus adjacent or numbered desktops; reorder when KWin supports it; transfer a column or window   | Available |
-| Outputs              | Focus an adjacent output and transfer the whole active column                                     | Available |
-| Fullscreen           | Extract a regular stack member, then toggle native fullscreen through KWin                        | Available |
-| Native maximize      | Extract a regular stack member, then toggle it to work-area edges through KWin                    | Available |
-| Minimize focus       | Preserve tiled slots and floating frames; skip minimized windows without wrapping                 | Available |
-| Hidden-member edits  | Preserve documented passive peers; reject every other minimized-member structural edit            | Available |
-| Floating layer       | Toggle state, switch layers, navigate geometrically, nudge, center, and resize contextually       | Available |
-| Pointer drop         | Reinsert or adopt one active tiled window at one exact visible target                             | Available |
-| Pointer resize       | Adopt one completed horizontal resize as the active column's fixed width                          | Available |
-| Overview companion   | Focus an exact current or non-current thumbnail, or select a non-current number gutter            | Available |
-| Tabbed columns       | Toggle a column between stacked and tabbed presentation without changing navigation               | Future    |
-| Pointer navigation   | Provide wheel navigation through the shared layout model                                          | Future    |
+| Area                 | Required behavior                                                                                 | Target      |
+| -------------------- | ------------------------------------------------------------------------------------------------- | ----------- |
+| Horizontal strip     | Focus and reorder columns; focus or move to first and last; reveal with minimal scrolling         | Available   |
+| Vertical column      | Focus and reorder members; consume or expel active, top, or bottom members                        | Available   |
+| Column view          | Cycle `1/3`, `1/2`, and `2/3` widths in both directions; adjust by 10%; toggle full width; center | Available   |
+| Advanced column view | Fill available width and center all fully visible columns                                         | Available   |
+| Window height        | Adjust one window by 10%; reset to automatic; cycle `1/3`, `1/2`, and `2/3` presets               | Available   |
+| Virtual desktops     | Focus adjacent or numbered desktops; reorder when KWin supports it; transfer a column or window   | Available   |
+| Outputs              | Focus an adjacent output and transfer the whole active column                                     | Available   |
+| Fullscreen           | Extract a regular stack member, then toggle native fullscreen through KWin                        | Available   |
+| Native maximize      | Extract a regular stack member, then toggle it to work-area edges through KWin                    | Available   |
+| Minimize focus       | Preserve tiled slots and floating frames; skip minimized windows without wrapping                 | Available   |
+| Hidden-member edits  | Preserve documented passive peers; reject every other minimized-member structural edit            | Available   |
+| Floating layer       | Toggle state, switch layers, navigate geometrically, nudge, center, and resize contextually       | Available   |
+| Pointer drop         | Preview and reinsert one active tiled window at one exact visible target                          | Development |
+| Pointer resize       | Adopt one completed horizontal resize as the active column's fixed width                          | Available   |
+| Overview companion   | Focus an exact current or non-current thumbnail, or select a non-current number gutter            | Available   |
+| Tabbed columns       | Toggle a column between stacked and tabbed presentation without changing navigation               | Future      |
+| Pointer navigation   | Provide wheel navigation through the shared layout model                                          | Future      |
 
 Single-window transfers will remain available as secondary, unbound actions.
 Default desktop and output transfer shortcuts must move the whole active column.
@@ -101,6 +101,14 @@ same context. The target midpoint selects insertion before or after it. Moving
 within a stack retains the window-height policy; moving into another column
 retains the destination width and gives the moved window automatic height.
 
+During that same-context drag, Driftile outlines the target's upper or lower
+half to match the pending insertion. Cursor events are coalesced and the
+immutable layout snapshot is not rewritten. KWin exposes one shared outline
+without an ownership token, so Driftile checks it before target changes and
+cleanup, then disables feedback for the drag if another outline conflicts. The
+coexistence check is necessarily best-effort. Cross-desktop and cross-output
+moves remain finish-only without a preview.
+
 KWin owns desktop selection and window membership. After KWin moves the active
 window to a selected visible desktop on the same output, Driftile can adopt it
 before or after the exact tiled target under the release point. A pending
@@ -132,10 +140,10 @@ attempted target request and releases after 20 exact samples. If rollback is
 not confirmed within 40 probes, ordinary deferred recovery runs; when KWin has
 taken native-state geometry ownership, it receives no competing frame write.
 Late configure delivery is rechecked, and focus changes are replayed after
-cleanup. Pointer adoption is finish-only and adds no visual feedback, setting,
-action, binding, or persistence schema. Planning, validation, reflow, and
-compensation use `O(V)` work in the visible context without scanning the
-workspace.
+cleanup. Pointer adoption adds no setting, action, binding, or persistence
+schema. Planning, validation, reflow, and compensation use `O(V)` work in the
+visible context. A changed preview target also performs one stacking-order
+guard because KWin's outline is shared.
 
 A stack has at most one fixed or preset window height. Changing a different
 member converts the other members to weighted automatic heights that preserve

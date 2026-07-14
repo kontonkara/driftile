@@ -15,6 +15,11 @@ export interface PointerWindowDropInput {
 
 export type PointerWindowDropTarget = WindowReinsertionTarget;
 
+export interface PointerWindowDropPreview {
+  readonly frame: Rect;
+  readonly target: PointerWindowDropTarget;
+}
+
 export interface PointerExternalWindowDropInput {
   readonly context: LayoutContextSnapshot;
   readonly cursor: Point;
@@ -30,9 +35,50 @@ interface ContextWindowPlacement {
   readonly memberIndex: number;
 }
 
+interface PointerWindowDropMatch {
+  readonly frame: Rect;
+  readonly target: PointerWindowDropTarget;
+}
+
+interface WindowGeometrySnapshot {
+  readonly columnId: ColumnId;
+  readonly frame: Rect;
+  readonly windowId: WindowId;
+}
+
 export function planPointerWindowDrop(
   input: PointerWindowDropInput,
 ): PointerWindowDropTarget | null {
+  return planPointerWindowDropMatch(input)?.target ?? null;
+}
+
+export function planPointerWindowDropPreview(
+  input: PointerWindowDropInput,
+): PointerWindowDropPreview | null {
+  const match = planPointerWindowDropMatch(input);
+
+  if (!match) {
+    return null;
+  }
+
+  const frame = pointerWindowDropPreviewFrame(
+    match.frame,
+    match.target.position,
+  );
+
+  if (!frame) {
+    return null;
+  }
+
+  return Object.freeze({
+    frame,
+    target: match.target,
+  });
+}
+
+function planPointerWindowDropMatch(
+  input: PointerWindowDropInput,
+): PointerWindowDropMatch | null {
   if (
     !isRecord(input) ||
     typeof input.draggedWindowId !== "string" ||
@@ -50,7 +96,7 @@ export function planPointerWindowDrop(
     return null;
   }
 
-  const target = pointerWindowDropTarget(
+  const match = pointerWindowDropMatch(
     placements,
     input.cursor,
     input.draggedWindowId,
@@ -58,19 +104,23 @@ export function planPointerWindowDrop(
     input.windows,
   );
 
-  if (!target) {
+  if (!match) {
     return null;
   }
 
-  const targetPlacement = placements.get(target.targetWindowId);
+  const targetPlacement = placements.get(match.target.targetWindowId);
 
   if (!targetPlacement) {
     return null;
   }
 
-  return isSameColumnNoOp(draggedPlacement, targetPlacement, target.position)
+  return isSameColumnNoOp(
+    draggedPlacement,
+    targetPlacement,
+    match.target.position,
+  )
     ? null
-    : target;
+    : match;
 }
 
 export function planPointerExternalWindowDrop(
@@ -92,70 +142,108 @@ export function planPointerExternalWindowDrop(
     return null;
   }
 
-  return pointerWindowDropTarget(
-    placements,
-    input.cursor,
-    input.draggedWindowId,
-    input.visibleArea,
-    input.windows,
+  return (
+    pointerWindowDropMatch(
+      placements,
+      input.cursor,
+      input.draggedWindowId,
+      input.visibleArea,
+      input.windows,
+    )?.target ?? null
   );
 }
 
-function pointerWindowDropTarget(
+function pointerWindowDropPreviewFrame(
+  targetFrame: Rect,
+  position: PointerWindowDropTarget["position"],
+): Rect | null {
+  const left = Math.round(targetFrame.x);
+  const right = Math.round(targetFrame.x + targetFrame.width);
+  const top = Math.round(targetFrame.y);
+  const bottom = Math.round(targetFrame.y + targetFrame.height);
+  const split = Math.round(targetFrame.y + targetFrame.height / 2);
+
+  if (
+    !Number.isSafeInteger(left) ||
+    !Number.isSafeInteger(right) ||
+    !Number.isSafeInteger(top) ||
+    !Number.isSafeInteger(bottom) ||
+    !Number.isSafeInteger(split) ||
+    !(right > left) ||
+    !(split > top) ||
+    !(split < bottom)
+  ) {
+    return null;
+  }
+
+  return Object.freeze({
+    height: position === "before" ? split - top : bottom - split,
+    width: right - left,
+    x: left,
+    y: position === "before" ? top : split,
+  });
+}
+
+function pointerWindowDropMatch(
   placements: ReadonlyMap<WindowId, ContextWindowPlacement>,
   cursor: Point,
   draggedWindowId: WindowId,
   visibleArea: Rect,
   windows: readonly WindowGeometry[],
-): PointerWindowDropTarget | null {
+): PointerWindowDropMatch | null {
   if (!containsPoint(visibleArea, cursor)) {
     return null;
   }
 
   const geometryWindowIds = new Set<WindowId>();
-  let target: PointerWindowDropTarget | null = null;
+  let match: PointerWindowDropMatch | null = null;
 
   for (const geometry of windows) {
-    if (!validWindowGeometry(geometry)) {
+    const snapshot = snapshotWindowGeometry(geometry);
+
+    if (!snapshot) {
       return null;
     }
 
-    if (geometryWindowIds.has(geometry.windowId)) {
+    if (geometryWindowIds.has(snapshot.windowId)) {
       return null;
     }
 
-    geometryWindowIds.add(geometry.windowId);
-    const placement = placements.get(geometry.windowId);
+    geometryWindowIds.add(snapshot.windowId);
+    const placement = placements.get(snapshot.windowId);
 
-    if (!placement || placement.columnId !== geometry.columnId) {
+    if (!placement || placement.columnId !== snapshot.columnId) {
       return null;
     }
 
     if (
-      geometry.windowId === draggedWindowId ||
-      !containsPoint(geometry.frame, cursor)
+      snapshot.windowId === draggedWindowId ||
+      !containsPoint(snapshot.frame, cursor)
     ) {
       continue;
     }
 
-    if (target) {
+    if (match) {
       return null;
     }
 
-    target = Object.freeze({
-      position:
-        cursor.y < geometry.frame.y + geometry.frame.height / 2
-          ? "before"
-          : "after",
-      targetWindowId: geometry.windowId,
-    });
+    match = {
+      frame: snapshot.frame,
+      target: Object.freeze({
+        position:
+          cursor.y < snapshot.frame.y + snapshot.frame.height / 2
+            ? "before"
+            : "after",
+        targetWindowId: snapshot.windowId,
+      }),
+    };
   }
 
-  if (geometryWindowIds.size !== placements.size || !target) {
+  if (geometryWindowIds.size !== placements.size || !match) {
     return null;
   }
 
-  return target;
+  return match;
 }
 
 function contextWindowPlacements(
@@ -302,13 +390,43 @@ function isSameColumnNoOp(
   return insertionIndex === dragged.memberIndex;
 }
 
-function validWindowGeometry(value: unknown): value is WindowGeometry {
-  return (
-    isRecord(value) &&
-    typeof value.columnId === "string" &&
-    typeof value.windowId === "string" &&
-    isUsableRect(value.frame)
-  );
+function snapshotWindowGeometry(value: unknown): WindowGeometrySnapshot | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  try {
+    const columnIdValue = value.columnId;
+    const frameValue = value.frame;
+    const windowIdValue = value.windowId;
+
+    if (
+      typeof columnIdValue !== "string" ||
+      typeof windowIdValue !== "string" ||
+      !isRecord(frameValue)
+    ) {
+      return null;
+    }
+
+    const frame = {
+      height: frameValue.height,
+      width: frameValue.width,
+      x: frameValue.x,
+      y: frameValue.y,
+    };
+
+    if (!isUsableRect(frame)) {
+      return null;
+    }
+
+    return {
+      columnId: columnIdValue as ColumnId,
+      frame,
+      windowId: windowIdValue as WindowId,
+    };
+  } catch {
+    return null;
+  }
 }
 
 function isFinitePoint(value: unknown): value is Point {
