@@ -1,13 +1,9 @@
 # Roadmap
 
 Versions 0.1.0, 1.0.0, 1.1.0, 1.2.0, 1.3.0, 1.4.0, 1.5.0, 1.6.0, 1.7.0,
-1.8.0, 1.9.0, 1.9.1, 1.10.0, 1.11.0, 1.12.0, 1.13.0, and 1.14.0 are released.
-The delivered milestones and release criteria below are a historical record.
-The remaining post-v1 direction is not a committed release schedule.
-
-Release candidate 1.15.0-rc.1 freezes the scope below. Feature and packaged
-integration validation is complete. Candidate tagging requires exact-SHA CI and
-the hidden full and lifecycle VM gates to pass in sequence.
+1.8.0, 1.9.0, 1.9.1, 1.10.0, 1.11.0, 1.12.0, 1.13.0, 1.14.0, and 1.15.0 are
+released. The delivered milestones and release criteria below are a historical
+record. The remaining post-v1 direction is not a committed release schedule.
 
 ## Foundation (delivered)
 
@@ -720,15 +716,18 @@ Release criteria (met):
   hidden full and lifecycle VMs, version, exact-SHA CI, and release gates pass
   without widening this slice.
 
-## 1.15.0 (release candidate)
+## 1.15.0 (released)
 
-Version `1.15.0-rc.1` freezes one bounded geometry slice: the active full-width
+Version `1.15.0` delivers one bounded geometry slice: the active full-width
 frame remains inside equal configured outer gaps. Adjacent frames stay at least
 one physically aligned configured gap beyond the corresponding viewport edge;
 a zero gap adds no clearance. It changes no state, configuration schema,
 action, or binding.
 
-Candidate validation completed:
+Version `1.15.0-rc.1` validated the final behavior before stable promotion;
+1.15.0 has no runtime or configuration changes from that candidate.
+
+Release criteria (met):
 
 - Unit coverage proves equal outer gaps, aligned neighbor clearance across
   fractional device-pixel ratios, zero-gap behavior, exact restoration, and
@@ -737,15 +736,8 @@ Candidate validation completed:
   scenario and prove exact neighbor coordinates and restoration. The hidden
   full VM reuses its real Konsole windows, existing action, and checkpoint.
 - Format, type, lint, unit, deterministic build and package, all-system flake,
-  and version checks pass without widening this slice.
-
-Candidate tagging gates:
-
-- Commit the candidate metadata and verify quality, native Wayland, and native
-  X11 jobs in exact-SHA branch CI.
-- Run the hidden full and lifecycle VMs on that unchanged candidate commit.
-- Create the candidate tag only after both gates pass, then require the tag
-  release workflow and its release checks to pass before publication.
+  hidden full and lifecycle VMs, version, exact-SHA CI, and release gates pass
+  without widening this slice.
 
 ## Post-v1
 

@@ -1,21 +1,20 @@
 # Migration
 
-The latest stable release is 1.14.0. Version 1.15.0-rc.1 is the current
-candidate and is not a stable release. Use the steps below when changing release
+The latest stable release is 1.15.0. Use the steps below when changing release
 generations, and never combine files from different releases.
 
-## Upgrade from 1.14.0 to 1.15.0-rc.1
+## Upgrade from 1.14.0 to 1.15.0
 
 1. Release helper-owned shortcuts with the 1.14.0 helper while it remains
    available.
 2. Disable Driftile and the optional overview in System Settings.
 3. Upgrade the main package, optional overview, and helper to their matching
-   1.15.0-rc.1 archives, or pin the Nix input to `v1.15.0-rc.1` and rebuild.
-4. Enable Driftile, then assign shortcuts or claim them with the RC helper.
+   1.15.0 archives, or pin the Nix input to `v1.15.0` and rebuild.
+4. Enable Driftile, then assign shortcuts or claim them with the 1.15.0 helper.
 5. If installed, re-enable the overview and review its manually assigned
    shortcut.
 
-The candidate refines the existing full-width mode. The active frame remains
+The release refines the existing full-width mode. The active frame remains
 inside equal configured outer gaps, while adjacent frames stay at least one
 physically aligned configured gap beyond the corresponding viewport edge. A
 zero gap adds no clearance. Toggling the mode again restores the exact prior
@@ -28,9 +27,36 @@ complete eleven-setting profile, stored layouts, and existing shortcut
 assignments remain compatible with 1.14.0. No setting or layout-state migration
 is required.
 
-## Roll back from 1.15.0-rc.1 to 1.14.0
+## Upgrade from 1.15.0-rc.1
 
 Release shortcuts with the RC helper, disable Driftile and the optional
+overview, then upgrade the main package, overview, and helper to their matching
+1.15.0 artifacts. For Nix, update the input from `v1.15.0-rc.1` to `v1.15.0`
+and rebuild. Re-enable the installed packages and restore the shortcut profile.
+
+Version 1.15.0 has no runtime, configuration, persistence, action, binding,
+gesture, helper profile, overview behavior, or application-policy changes from
+RC.1.
+
+## Upgrade from 1.14.0 to 1.15.0-rc.1 (historical)
+
+1. Release helper-owned shortcuts with the 1.14.0 helper while it remains
+   available.
+2. Disable Driftile and the optional overview in System Settings.
+3. Upgrade the main package, optional overview, and helper to their matching
+   1.15.0-rc.1 archives, or pin the Nix input to `v1.15.0-rc.1` and rebuild.
+4. Enable Driftile, then assign shortcuts or claim them with the RC helper.
+5. If installed, re-enable the overview and review its manually assigned
+   shortcut.
+
+The candidate introduced the same refined full-width geometry as 1.15.0. Its
+package IDs, complete eleven-setting profile, stored layouts, and existing
+shortcut assignments remain compatible with 1.14.0. Use 1.15.0 for new
+installations.
+
+## Roll back from 1.15.0 to 1.14.0
+
+Release shortcuts with the 1.15.0 helper, disable Driftile and the optional
 overview, then restore their matching verified 1.14.0 packages and helper. For
 NixOS or Home Manager, restore the `v1.14.0` input and rebuild the generation
 that owns each package. Re-enable the packages and restore the 1.14.0 shortcut
