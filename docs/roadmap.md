@@ -2,8 +2,9 @@
 
 Versions 0.1.0, 1.0.0, 1.1.0, 1.2.0, 1.3.0, 1.4.0, 1.5.0, 1.6.0, 1.7.0,
 1.8.0, 1.9.0, 1.9.1, and 1.10.0 are released. The delivered milestones and
-release criteria below are a historical record. The remaining post-v1 direction
-is not a committed release schedule.
+release criteria below are a historical record. Version 1.11.0-rc.1 is the
+current candidate. The remaining post-v1 direction is not a committed release
+schedule.
 
 ## Foundation (delivered)
 
@@ -554,14 +555,15 @@ Release criteria (met):
   ownership of pre-existing borderless state.
 - Parser, runtime, Home Manager, Wayland, XWayland, and native X11 checks pass.
 
-## 1.11.0 (in development, scope frozen)
+## 1.11.0 (release candidate)
 
-Version `1.11.0` reuses the existing column-left, column-right, window-up, and
-window-down actions to move the active manually floating window by 50 logical
-pixels. The target is constrained only enough to keep a size-dependent 10–75
-pixel strip visible on each axis; dimensions below 10 pixels remain fully
-visible. Each successful command preserves the frame size, focus, output,
-desktop, floating anchor, and every tiled layout.
+Version `1.11.0-rc.1` freezes a bounded slice that reuses the existing
+column-left, column-right, window-up, and window-down actions to move the active
+manually floating window by 50 logical pixels. The target is constrained only
+enough to keep a size-dependent 10–75 pixel strip visible on each axis;
+dimensions below 10 pixels remain fully visible. Each successful command
+preserves the frame size, focus, output, desktop, floating anchor, and every
+tiled layout.
 An inexact result is rejected without updating floating metadata. A still-owned
 constrained or delayed result receives an ordered request to restore the
 original frame; native-state, ownership, context changes, or an unacknowledged
@@ -573,7 +575,7 @@ geometry ownership and receive no frame writes. This slice adds no actions,
 bindings, settings, or configuration schema, does not change persistence or
 overview behavior, and preserves directional move behavior for tiled windows.
 
-Release criteria:
+Candidate criteria (met):
 
 - The four existing directional move paths translate only an active manually
   floating frame by 50 logical pixels before enforcing its partial-visibility
