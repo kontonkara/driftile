@@ -22157,7 +22157,7 @@ describe("RuntimeController", () => {
     expect(second.window.frameGeometry).toMatchObject({ width: 485, x: 505 });
   });
 
-  it("centers a full-width column and restores the exact viewport", () => {
+  it("restores column width at its current viewport anchor", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
     const windows = Array.from({ length: 3 }, (_value, index) =>
@@ -22248,11 +22248,11 @@ describe("RuntimeController", () => {
     );
 
     expect(controller.maximizeColumn()).toBe(true);
-    expect(layout.snapshot(outputKey, desktopKey).viewportOffset).toBe(485);
+    expect(layout.snapshot(outputKey, desktopKey).viewportOffset).toBe(495);
     expect(windows.map(({ window }) => window.frameGeometry)).toEqual([
-      { height: 780, width: 485, x: -475, y: 10 },
-      { height: 780, width: 485, x: 20, y: 10 },
-      { height: 780, width: 485, x: 515, y: 10 },
+      { height: 780, width: 485, x: -485, y: 10 },
+      { height: 780, width: 485, x: 10, y: 10 },
+      { height: 780, width: 485, x: 505, y: 10 },
     ]);
     expect(fixture.workspace.activeWindow).toBe(middle.window);
   });

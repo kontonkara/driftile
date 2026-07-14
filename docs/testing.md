@@ -83,7 +83,8 @@ sampling, retry cancellation, topology-barrier fallback, minimized and hidden
 write suppression, extra-window
 admission, full-width outer-gap placement, adjacent-frame clearance of at least
 one physically aligned configured gap beyond each viewport edge, zero-gap
-no-clearance, exact viewport restoration, stale-state preservation,
+no-clearance, current-viewport retention during width restoration,
+stale-state preservation,
 context-guarded
 original restore baselines across repeated reloads, manual-floating
 current-context capture with source-exact rollback, and permanent future-version

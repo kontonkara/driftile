@@ -9167,8 +9167,13 @@ let
         local full_second_x
         local full_second_y
         local full_third_x
+        local restored_first_frame
+        local restored_second_frame
+        local restored_third_frame
         local original_first_frame
+        local original_first_height
         local original_first_width
+        local original_first_y
         local original_gap
         local original_second_frame
         local original_second_height
@@ -9176,8 +9181,10 @@ let
         local original_second_x
         local original_second_y
         local original_third_frame
+        local original_third_height
         local original_third_width
         local original_third_x
+        local original_third_y
         local setup_second_width
         local setup_second_x
         local setup_third_width
@@ -9192,7 +9199,11 @@ let
         original_first_frame=$stable_first_frame
         original_second_frame=$stable_second_frame
         original_third_frame=$stable_third_frame
-        IFS=, read -r _ _ original_first_width _ \
+        IFS=, read -r \
+          _ \
+          original_first_y \
+          original_first_width \
+          original_first_height \
           <<< "$original_first_frame"
         IFS=, read -r \
           original_second_x \
@@ -9200,7 +9211,11 @@ let
           original_second_width \
           original_second_height \
           <<< "$original_second_frame"
-        IFS=, read -r original_third_x _ original_third_width _ \
+        IFS=, read -r \
+          original_third_x \
+          original_third_y \
+          original_third_width \
+          original_third_height \
           <<< "$original_third_frame"
         original_gap=$((
           original_third_x - original_second_x - original_second_width
@@ -9241,6 +9256,21 @@ let
           original_third_x + original_third_width
         ))
         usable_left=$((usable_right - full_second_width))
+        printf -v restored_first_frame '%s,%s,%s,%s' \
+          "$((full_second_x - original_gap - original_first_width))" \
+          "$original_first_y" \
+          "$original_first_width" \
+          "$original_first_height"
+        printf -v restored_second_frame '%s,%s,%s,%s' \
+          "$full_second_x" \
+          "$original_second_y" \
+          "$original_second_width" \
+          "$original_second_height"
+        printf -v restored_third_frame '%s,%s,%s,%s' \
+          "$((full_second_x + original_second_width + original_gap))" \
+          "$original_third_y" \
+          "$original_third_width" \
+          "$original_third_height"
 
         if ((original_gap <= 0 \
           || usable_right <= usable_left \
@@ -9263,19 +9293,24 @@ let
             "$original_second_width" \
             "$original_third_width" \
           || ! wait_for_frames \
-            "$original_first_frame" \
-            "$original_second_frame" \
-            "$original_third_frame" \
+            "$restored_first_frame" \
+            "$restored_second_frame" \
+            "$restored_third_frame" \
           || ! activate_window "$title_c" \
           || ! wait_for_active "$title_c" \
           || ! wait_for_frames \
-            "$original_first_frame" \
-            "$original_second_frame" \
-            "$original_third_frame" \
+            "$restored_first_frame" \
+            "$restored_second_frame" \
+            "$restored_third_frame" \
           || ! activate_window "$title_b" \
           || ! wait_for_active "$title_b"; then
           record_focus_state \
-            "available-width baseline restoration failed"
+            "full-width viewport retention failed"
+          {
+            printf 'expected restored frame A: %s\n' "$restored_first_frame"
+            printf 'expected restored frame B: %s\n' "$restored_second_frame"
+            printf 'expected restored frame C: %s\n' "$restored_third_frame"
+          } >> /tmp/shared/driftile-focus-diagnostics
           return 1
         fi
 
@@ -9365,20 +9400,20 @@ let
           || ! activate_window "$title_c" \
           || ! wait_for_active "$title_c" \
           || ! wait_for_frames \
-            "$original_first_frame" \
-            "$original_second_frame" \
-            "$original_third_frame"; then
+            "$restored_first_frame" \
+            "$restored_second_frame" \
+            "$restored_third_frame"; then
           record_focus_state \
-            "physical column-view shortcut viewport restoration failed"
+            "physical column-view shortcut viewport retention failed"
           {
-            printf 'expected frame A: %s\n' "$original_first_frame"
-            printf 'expected frame B: %s\n' "$original_second_frame"
-            printf 'expected frame C: %s\n' "$original_third_frame"
+            printf 'expected frame A: %s\n' "$restored_first_frame"
+            printf 'expected frame B: %s\n' "$restored_second_frame"
+            printf 'expected frame C: %s\n' "$restored_third_frame"
           } >> /tmp/shared/driftile-focus-diagnostics
           return 1
         fi
         record_focus_state \
-          "physical column-view shortcut viewport restored before application tests"
+          "physical column-view shortcut viewport retained before application tests"
       }
 
       verify_full_width_successor_edge_gaps() {

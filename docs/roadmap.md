@@ -771,6 +771,10 @@ Version `1.16.0-rc.1` freezes two changes:
   manually floating. Existing or restored ownership wins, and the persistence
   schema is unchanged.
 
+Stable promotion also restores only the prior column width when full-width
+mode is toggled off. The current viewport and horizontal anchor remain in
+place, and existing persisted layout documents stay compatible.
+
 Candidate tagging gates:
 
 - Focused tests cover both behaviors; packaged Wayland, XWayland, and native X11

@@ -2252,12 +2252,6 @@ export class RuntimeController {
       command.context.key,
       command.activeColumn.id,
     );
-    const restoreViewportOffset = restore
-      ? this.columnFullWidthRestoreViewportOffset(
-          command.context.key,
-          command.activeColumn.id,
-        )
-      : undefined;
     const target = restore ?? { kind: "proportion", value: 1 };
 
     if (sameColumnWidth(command.activeColumn.width, target)) {
@@ -2278,15 +2272,7 @@ export class RuntimeController {
       return true;
     }
 
-    const resized =
-      restoreViewportOffset === undefined
-        ? this.applyColumnWidth(command, target, "column maximize")
-        : this.applyColumnWidthAndViewport(
-            command,
-            target,
-            restoreViewportOffset,
-            "column maximize",
-          );
+    const resized = this.applyColumnWidth(command, target, "column maximize");
 
     if (!resized) {
       return false;
@@ -10741,48 +10727,6 @@ export class RuntimeController {
           null,
       accept,
       rollbackFrames,
-    );
-  }
-
-  private applyColumnWidthAndViewport(
-    command: ActiveColumnCommand,
-    width: ColumnWidth,
-    viewportOffset: number,
-    label: string,
-  ): boolean {
-    let previousWidth: ColumnWidth | null = null;
-
-    return this.applyActiveColumnMutation(
-      command,
-      label,
-      () => {
-        previousWidth = this.layout.setActiveColumnWidth(
-          command.activeId,
-          width,
-        );
-
-        if (previousWidth === null) {
-          return false;
-        }
-
-        if (
-          this.layout.setViewportOffset(
-            command.context.outputId,
-            command.context.desktopId,
-            viewportOffset,
-          )
-        ) {
-          return true;
-        }
-
-        this.layout.setActiveColumnWidth(command.activeId, previousWidth);
-        previousWidth = null;
-        return false;
-      },
-      () =>
-        previousWidth !== null &&
-        this.layout.setActiveColumnWidth(command.activeId, previousWidth) !==
-          null,
     );
   }
 
