@@ -1,13 +1,9 @@
 # Roadmap
 
 Versions 0.1.0, 1.0.0, 1.1.0, 1.2.0, 1.3.0, 1.4.0, 1.5.0, 1.6.0, 1.7.0,
-1.8.0, 1.9.0, 1.9.1, 1.10.0, 1.11.0, and 1.12.0 are released. The delivered
-milestones and release criteria below are a historical record. The remaining
-post-v1 direction is not a committed release schedule.
-
-Release candidate 1.13.0-rc.1 freezes the scope below. Feature and packaged
-integration validation is complete. Candidate tagging requires exact-SHA CI and
-the hidden full and lifecycle VM gates to pass in sequence.
+1.8.0, 1.9.0, 1.9.1, 1.10.0, 1.11.0, 1.12.0, and 1.13.0 are released. The
+delivered milestones and release criteria below are a historical record. The
+remaining post-v1 direction is not a committed release schedule.
 
 ## Foundation (delivered)
 
@@ -628,13 +624,13 @@ Release criteria (met):
 - Unit, packaged Wayland, XWayland, native X11, and hidden full-VM checks reuse
   existing windows and applications.
 
-## 1.13.0 (release candidate)
+## 1.13.0 (released)
 
-Version `1.13.0-rc.1` freezes one bounded runtime slice: the existing width
-decrease and increase actions resize an active manually floating frame, while
-tiled targets keep the existing whole-column behavior. Other width actions
-remain tiled-only. A blocked or pending floating target never falls through to
-tiled resizing.
+Version `1.13.0` delivers one bounded runtime slice: the existing width decrease
+and increase actions resize an active manually floating frame, while tiled
+targets keep the existing whole-column behavior. Other width actions remain
+tiled-only. A blocked or pending floating target never falls through to tiled
+resizing.
 
 The target is
 `originalWidth + direction * columnWidthStep * workArea.width`, snapped to the
@@ -659,7 +655,10 @@ This slice changes no tiled model, tiled frame, viewport, focus, reinsertion
 anchor, setting, action, binding, configuration schema, persistence, helper,
 overview, or application matrix.
 
-Candidate validation completed:
+Version `1.13.0-rc.1` validated the final behavior before stable promotion;
+1.13.0 has no runtime or configuration changes from that candidate.
+
+Release criteria (met):
 
 - Unit coverage proves the configured work-area math, decorated live bounds,
   positive client width, physical-pixel snapping, partial visibility, immediate
@@ -670,15 +669,8 @@ Candidate validation completed:
   applications and prove exact width round trips without changing focus,
   context, or tiled state.
 - Format, type, lint, unit, deterministic build and package, all-system flake,
-  and version checks pass without widening this slice.
-
-Candidate tagging gates:
-
-- Commit the candidate metadata and verify quality, native Wayland, and native
-  X11 jobs in exact-SHA branch CI.
-- Run the hidden full and lifecycle VMs on that unchanged candidate commit.
-- Create the candidate tag only after both gates pass, then require the tag
-  release workflow and its release checks to pass before publication.
+  hidden full and lifecycle VMs, version, exact-SHA CI, and release gates pass
+  without widening this slice.
 
 ## Post-v1
 
