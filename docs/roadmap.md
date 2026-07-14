@@ -4,8 +4,8 @@ Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.16.0 are
 released. The delivered milestones and release criteria below are a historical
 record. The remaining post-v1 direction is not a committed release schedule.
 
-Development is on 1.17.0-dev.0. Its scope is frozen to the settings-page
-reorganization in the 1.17.0 section below.
+Version `1.17.0-rc.1` is the current release candidate. Its scope is frozen to
+the settings-page reorganization in the 1.17.0 section below.
 
 ## Foundation (delivered)
 
@@ -779,14 +779,27 @@ Release criteria (met):
   hidden full and lifecycle VMs, version, exact-SHA CI, and release gates pass
   without widening the slice.
 
-## 1.17.0 (in development)
+## 1.17.0 (release candidate)
 
-The scope is frozen to reorganizing the existing twelve-setting generic KWin
-configuration UI into two tabs. General contains the existing eight global and
-layout controls; Applications contains the existing four application policy
-controls. Every KConfig key, twelve-setting snapshot rule, and live runtime
-behavior remains unchanged. Verification adds one structural test and no other
-feature belongs to 1.17.0. Further application policies remain post-v1 work.
+Version `1.17.0-rc.1` freezes one behavior-preserving UI change: the existing
+twelve-setting generic KWin configuration page is grouped into two tabs.
+General contains the existing eight global and layout controls; Applications
+contains the existing four application policy controls. Every KConfig key,
+twelve-setting snapshot rule, and live runtime behavior remains unchanged. The
+candidate adds no setting, action, binding, persistence field, overview
+behavior, or helper behavior.
+
+Candidate tagging gates:
+
+- One structural test verifies both tab labels, the eight/four control split,
+  and the unchanged twelve-key set.
+- Format, type, lint, unit, deterministic build and package, all-system flake,
+  hidden full and lifecycle VMs, version, and exact-SHA CI must pass on the
+  unchanged candidate commit.
+- The tag release workflow must pass before publishing the candidate assets.
+
+No other feature belongs to 1.17.0. Further application policies remain
+post-v1 work.
 
 ## Post-v1
 

@@ -36,8 +36,8 @@ leaving window, output, and desktop mechanisms to KWin.
 ## Status
 
 The latest stable release is [1.16.0](docs/release-notes-1.16.0.md).
-Development is on 1.17.0-dev.0 with a frozen settings-page reorganization
-scope.
+The current candidate is
+[1.17.0-rc.1](docs/release-notes-1.17.0-rc.1.md). It is not a stable release.
 The feature list tracks the current `main` branch; release state is recorded in
 the [roadmap](docs/roadmap.md).
 
@@ -110,6 +110,7 @@ checks.
 - [Testing](docs/testing.md)
 - [Performance](docs/performance.md)
 - [Roadmap](docs/roadmap.md)
+- [1.17.0-rc.1 release notes](docs/release-notes-1.17.0-rc.1.md)
 - [1.16.0 release notes](docs/release-notes-1.16.0.md)
 - [1.16.0-rc.1 release notes](docs/release-notes-1.16.0-rc.1.md)
 - [1.15.1 release notes](docs/release-notes-1.15.1.md)
