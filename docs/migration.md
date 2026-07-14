@@ -1,30 +1,40 @@
 # Migration
 
-The latest stable release is 1.16.0. Version 1.17.0-rc.1 is the current
-candidate and is not a stable release. Use the steps below when changing release
+The latest stable release is 1.17.0. Use the steps below when changing release
 generations, and never combine files from different releases.
 
-## Upgrade from 1.16.0 to 1.17.0-rc.1
+## Upgrade from 1.16.0 to 1.17.0
 
 1. Release helper-owned shortcuts with the 1.16.0 helper while it remains
    available.
 2. Disable Driftile and the optional overview in System Settings.
 3. Upgrade the main package, optional overview, and helper to their matching
-   1.17.0-rc.1 archives, or pin the Nix input to `v1.17.0-rc.1` and rebuild.
+   1.17.0 archives, or pin the Nix input to `v1.17.0` and rebuild.
 4. Enable Driftile and review its existing settings under the **General** and
    **Applications** tabs, then restore the shortcut profile.
 5. If installed, re-enable the overview and review its manually assigned
    shortcut.
 
-The candidate only groups the existing twelve KWin settings into eight
+The release only groups the existing twelve KWin settings into eight
 **General** controls and four **Applications** controls. Every KConfig key,
 twelve-setting snapshot rule, and live runtime behavior remains unchanged. It
 adds no setting, action, binding, persistence field, overview behavior, or
 helper behavior. No configuration or layout-state migration is required.
 
-## Roll back from 1.17.0-rc.1 to 1.16.0
+## Upgrade from 1.17.0-rc.1
 
 Release shortcuts with the RC helper, disable Driftile and the optional
+overview, then upgrade the main package, overview, and helper to their matching
+1.17.0 artifacts. For Nix, update the input from `v1.17.0-rc.1` to `v1.17.0`
+and rebuild. Re-enable the installed packages and restore the shortcut profile.
+
+Stable 1.17.0 adds no behavior or data change after RC.1. Configuration, helper
+profiles, package IDs, actions, bindings, persisted layouts, and overview
+behavior remain compatible; no reset or conversion is required.
+
+## Roll back from 1.17.0 to 1.16.0
+
+Release shortcuts with the 1.17.0 helper, disable Driftile and the optional
 overview, then restore their matching verified 1.16.0 packages and helper. For
 NixOS or Home Manager, restore the `v1.16.0` input and rebuild the generation
 that owns each package. Re-enable the installed packages and restore the 1.16.0
