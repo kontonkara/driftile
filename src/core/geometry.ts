@@ -68,9 +68,29 @@ export function solveStripGeometry(input: StripGeometryInput): StripGeometry {
     };
   }
 
-  const columnWidths = input.context.columns.map((column) =>
-    resolveColumnWidth(column.width, input.workArea.width, input.gap),
-  );
+  let fullWidthActiveColumnIndex = -1;
+  let fullWidthActiveColumnOffset = 0;
+  let resolvedColumnOffset = input.gap;
+  const columnWidths = input.context.columns.map((column, columnIndex) => {
+    const width = resolveColumnWidth(
+      column.width,
+      input.workArea.width,
+      input.gap,
+    );
+
+    if (
+      column.id === input.context.activeColumnId &&
+      column.width.kind === "proportion" &&
+      column.width.value === 1
+    ) {
+      fullWidthActiveColumnIndex = columnIndex;
+      fullWidthActiveColumnOffset = resolvedColumnOffset;
+    }
+
+    resolvedColumnOffset += width + input.gap;
+
+    return width;
+  });
   const stripWidth =
     sum(columnWidths) + input.gap * (input.context.columns.length + 1);
   const stripOverflow = stripWidth - input.workArea.width;
@@ -101,6 +121,49 @@ export function solveStripGeometry(input: StripGeometryInput): StripGeometry {
     input.gap,
     input.devicePixelRatio,
   );
+  let fullWidthLeftNeighborShift = 0;
+  let fullWidthRightNeighborShift = 0;
+
+  if (fullWidthActiveColumnIndex >= 0) {
+    const fullWidthActiveColumnWidth = columnWidths[fullWidthActiveColumnIndex];
+
+    if (fullWidthActiveColumnWidth === undefined) {
+      throw new Error("full-width column resolution failed");
+    }
+
+    const activeColumnLeft =
+      input.workArea.x + fullWidthActiveColumnOffset - revealedViewportOffset;
+    const unshiftedLeftNeighborEnd = snapToPixelGrid(
+      activeColumnLeft - input.gap,
+      input.devicePixelRatio,
+      input.pixelGridOrigin.x,
+    );
+    const unshiftedRightNeighborStart = snapToPixelGrid(
+      activeColumnLeft + fullWidthActiveColumnWidth + input.gap,
+      input.devicePixelRatio,
+      input.pixelGridOrigin.x,
+    );
+    const clearance = snapUpToPixelGrid(input.gap, input.devicePixelRatio);
+    const leftNeighborLimit = snapDownToPixelGrid(
+      input.workArea.x - clearance,
+      input.devicePixelRatio,
+      input.pixelGridOrigin.x,
+    );
+    const rightNeighborLimit = snapUpToPixelGrid(
+      input.workArea.x + input.workArea.width + clearance,
+      input.devicePixelRatio,
+      input.pixelGridOrigin.x,
+    );
+
+    fullWidthLeftNeighborShift = Math.min(
+      0,
+      leftNeighborLimit - unshiftedLeftNeighborEnd,
+    );
+    fullWidthRightNeighborShift = Math.max(
+      0,
+      rightNeighborLimit - unshiftedRightNeighborStart,
+    );
+  }
   const windows: WindowGeometry[] = [];
   let columnOffset = input.gap;
 
@@ -119,10 +182,16 @@ export function solveStripGeometry(input: StripGeometryInput): StripGeometry {
       input.devicePixelRatio,
       input.pixelGridOrigin.x,
     );
+    const fullWidthNeighborShift =
+      columnIndex < fullWidthActiveColumnIndex
+        ? fullWidthLeftNeighborShift
+        : columnIndex > fullWidthActiveColumnIndex
+          ? fullWidthRightNeighborShift
+          : 0;
     appendColumnWindows(
       windows,
       column,
-      horizontalSpan.start,
+      horizontalSpan.start + fullWidthNeighborShift,
       horizontalSpan.length,
       input,
     );
@@ -869,22 +938,37 @@ function snapSpan(
   };
 }
 
-function snapToPixelGrid(value: number, devicePixelRatio: number): number {
-  return roundPhysicalPixel(value, devicePixelRatio, 0) / devicePixelRatio;
+function snapToPixelGrid(
+  value: number,
+  devicePixelRatio: number,
+  origin = 0,
+): number {
+  return (
+    origin +
+    roundPhysicalPixel(value, devicePixelRatio, origin) / devicePixelRatio
+  );
 }
 
-function snapUpToPixelGrid(value: number, devicePixelRatio: number): number {
-  const physicalValue = value * devicePixelRatio;
+function snapUpToPixelGrid(
+  value: number,
+  devicePixelRatio: number,
+  origin = 0,
+): number {
+  const physicalValue = (value - origin) * devicePixelRatio;
   const tolerance = floatingPointTolerance(physicalValue);
 
-  return Math.ceil(physicalValue - tolerance) / devicePixelRatio;
+  return origin + Math.ceil(physicalValue - tolerance) / devicePixelRatio;
 }
 
-function snapDownToPixelGrid(value: number, devicePixelRatio: number): number {
-  const physicalValue = value * devicePixelRatio;
+function snapDownToPixelGrid(
+  value: number,
+  devicePixelRatio: number,
+  origin = 0,
+): number {
+  const physicalValue = (value - origin) * devicePixelRatio;
   const tolerance = floatingPointTolerance(physicalValue);
 
-  return Math.floor(physicalValue + tolerance) / devicePixelRatio;
+  return origin + Math.floor(physicalValue + tolerance) / devicePixelRatio;
 }
 
 function moveByPhysicalPixels(

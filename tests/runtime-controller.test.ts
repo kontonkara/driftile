@@ -22107,9 +22107,9 @@ describe("RuntimeController", () => {
     expect(controller.maximizeColumn()).toBe(true);
     expect(layout.snapshot(outputKey, desktopKey).viewportOffset).toBe(495);
     expect(windows.map(({ window }) => window.frameGeometry)).toEqual([
-      { height: 780, width: 485, x: -485, y: 10 },
+      { height: 780, width: 485, x: -495, y: 10 },
       { height: 780, width: 980, x: 10, y: 10 },
-      { height: 780, width: 485, x: 1000, y: 10 },
+      { height: 780, width: 485, x: 1010, y: 10 },
     ]);
 
     const maximizedLayout = layout.snapshot(outputKey, desktopKey);

@@ -9241,8 +9241,8 @@ let
           || full_second_width <= original_second_width \
           || full_second_x != usable_left \
           || full_second_x + full_second_width != usable_right \
-          || full_first_x + full_first_width > usable_left - original_gap \
-          || full_third_x < usable_right + original_gap \
+          || full_first_x + full_first_width > usable_left - (2 * original_gap) \
+          || full_third_x < usable_right + (2 * original_gap) \
           || full_second_y != original_second_y \
           || full_second_height != original_second_height)); then
           record_focus_state \

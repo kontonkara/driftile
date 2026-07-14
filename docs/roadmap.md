@@ -5,8 +5,7 @@ Versions 0.1.0, 1.0.0, 1.1.0, 1.2.0, 1.3.0, 1.4.0, 1.5.0, 1.6.0, 1.7.0,
 The delivered milestones and release criteria below are a historical record.
 The remaining post-v1 direction is not a committed release schedule.
 
-Development is on 1.15.0-dev.0. The next bounded scope is not yet committed
-and will be frozen separately.
+Development is on 1.15.0-dev.0. Its bounded geometry scope is frozen below.
 
 ## Foundation (delivered)
 
@@ -718,6 +717,22 @@ Release criteria (met):
 - Format, type, lint, unit, deterministic build and package, all-system flake,
   hidden full and lifecycle VMs, version, exact-SHA CI, and release gates pass
   without widening this slice.
+
+## 1.15.0 (frozen scope)
+
+This bounded geometry slice keeps the active full-width frame inside equal
+configured outer gaps. Adjacent frames stay at least one physically aligned
+configured gap beyond the corresponding viewport edge; a zero gap adds no
+clearance. It changes no state, configuration schema, action, or binding.
+
+Acceptance criteria:
+
+- Both viewport edges preserve the configured outer gaps around the active
+  full-width frame.
+- Every adjacent frame stays at least one physically aligned configured gap
+  beyond its corresponding viewport edge; a zero gap adds no clearance.
+- Existing full-width restoration and transaction rollback remain exact
+  without state, schema, or binding changes.
 
 ## Post-v1
 
