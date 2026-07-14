@@ -1,10 +1,43 @@
 # Migration
 
-The latest stable release is 1.13.0. Version 1.14.0-rc.1 is the current
-candidate and is not a stable release. Use the steps below when changing release
+The latest stable release is 1.14.0. Use the steps below when changing release
 generations, and never combine files from different releases.
 
-## Upgrade from 1.13.0 to 1.14.0-rc.1
+## Upgrade from 1.13.0 to 1.14.0
+
+1. Release helper-owned shortcuts with the 1.13.0 helper while it remains
+   available.
+2. Disable Driftile and the optional overview in System Settings.
+3. Upgrade the main package, optional overview, and helper to their matching
+   1.14.0 archives, or pin the Nix input to `v1.14.0` and rebuild.
+4. Enable Driftile, then assign shortcuts or claim them with the 1.14.0 helper.
+5. If installed, re-enable the overview and review its manually assigned
+   shortcut.
+
+The release contextually reuses the existing window-height decrease and increase
+actions and `WindowHeightStepPercent` for an active manually floating frame.
+Tiled targets retain their existing stack-reflow behavior; reset and
+height-preset actions remain tiled-only. An existing custom height step now also
+applies to manually floating frames.
+
+It adds no action, binding, setting, configuration or persistence schema,
+helper profile, overview behavior, or application policy. Package IDs, the
+complete eleven-setting profile, stored layouts, and existing shortcut
+assignments remain compatible with 1.13.0. No setting or layout-state migration
+is required.
+
+## Upgrade from 1.14.0-rc.1
+
+Release shortcuts with the RC helper, disable Driftile and the optional
+overview, then upgrade the main package, overview, and helper to their matching
+1.14.0 artifacts. For Nix, update the input from `v1.14.0-rc.1` to `v1.14.0`
+and rebuild. Re-enable the installed packages and restore the shortcut profile.
+
+Version 1.14.0 has no runtime, configuration, persistence, action, binding,
+gesture, helper profile, overview behavior, or application-policy changes from
+RC.1.
+
+## Upgrade from 1.13.0 to 1.14.0-rc.1 (historical)
 
 1. Release helper-owned shortcuts with the 1.13.0 helper while it remains
    available.
@@ -15,21 +48,14 @@ generations, and never combine files from different releases.
 5. If installed, re-enable the overview and review its manually assigned
    shortcut.
 
-The candidate contextually reuses the existing window-height decrease and
-increase actions and `WindowHeightStepPercent` for an active manually floating
-frame. Tiled targets retain their existing stack-reflow behavior; reset and
-height-preset actions remain tiled-only. An existing custom height step now
-also applies to manually floating frames.
+The candidate introduced the same contextual manually floating height behavior
+as 1.14.0. Its package IDs, complete eleven-setting profile, stored layouts,
+and existing shortcut assignments remain compatible with 1.13.0. Use 1.14.0
+for new installations.
 
-It adds no action, binding, setting, configuration or persistence schema,
-helper profile, overview behavior, or application policy. Package IDs, the
-complete eleven-setting profile, stored layouts, and existing shortcut
-assignments remain compatible with 1.13.0. No setting or layout-state migration
-is required.
+## Roll back from 1.14.0 to 1.13.0
 
-## Roll back from 1.14.0-rc.1 to 1.13.0
-
-Release shortcuts with the RC helper, disable Driftile and the optional
+Release shortcuts with the 1.14.0 helper, disable Driftile and the optional
 overview, then restore their matching verified 1.13.0 packages and helper. For
 NixOS or Home Manager, restore the `v1.13.0` input and rebuild the generation
 that owns each package. Re-enable the packages and restore the 1.13.0 shortcut

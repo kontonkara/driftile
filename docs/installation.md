@@ -1,9 +1,8 @@
 # Installation
 
-Driftile 1.14.0-rc.1 is the current candidate and is not a stable release;
-1.13.0 remains the latest stable version. It requires KDE Plasma with KWin 6.7
-or newer and `kpackagetool6`, and targets Wayland, XWayland, and a single-output
-native X11 session.
+Driftile 1.14.0 is the latest stable release. It requires KDE Plasma with KWin
+6.7 or newer and `kpackagetool6`, and targets Wayland, XWayland, and a
+single-output native X11 session.
 Touchpad navigation is available only on native Wayland. Run all commands as
 the desktop user, not with `sudo`.
 
@@ -11,11 +10,11 @@ the desktop user, not with `sudo`.
 
 Download these files from the same release:
 
-- `driftile-1.14.0-rc.1.kwinscript`
-- `driftile-overview-1.14.0-rc.1.kwineffect` if using the optional overview
+- `driftile-1.14.0.kwinscript`
+- `driftile-overview-1.14.0.kwineffect` if using the optional overview
 - `SHA256SUMS`
 - `LICENSE`
-- `driftile-shortcuts-1.14.0-rc.1.mjs` if using the optional shortcut helper
+- `driftile-shortcuts-1.14.0.mjs` if using the optional shortcut helper
 
 Verify every downloaded release asset before installing it:
 
@@ -27,7 +26,7 @@ Install the KWin package:
 
 ```bash
 kpackagetool6 --type=KWin/Script \
-  --install ./driftile-1.14.0-rc.1.kwinscript
+  --install ./driftile-1.14.0.kwinscript
 ```
 
 Open **System Settings > Window Management > KWin Scripts**, enable
@@ -37,7 +36,7 @@ the layout and presentation settings described in
 
 ## Configure shortcuts
 
-Driftile works without the companion helper. The 1.14.0-rc.1 helper claims the
+Driftile works without the companion helper. The 1.14.0 helper claims the
 bundled defaults and accepts custom profiles. Any action can instead be
 assigned manually.
 
@@ -48,8 +47,8 @@ Driftile before running it, and keep the helper until its saved claim has been
 released.
 
 ```bash
-node ./driftile-shortcuts-1.14.0-rc.1.mjs claim
-node ./driftile-shortcuts-1.14.0-rc.1.mjs check
+node ./driftile-shortcuts-1.14.0.mjs claim
+node ./driftile-shortcuts-1.14.0.mjs check
 ```
 
 `claim` transactionally saves and replaces active conflicting assignments.
@@ -57,7 +56,7 @@ node ./driftile-shortcuts-1.14.0-rc.1.mjs check
 after the claim:
 
 ```bash
-node ./driftile-shortcuts-1.14.0-rc.1.mjs release
+node ./driftile-shortcuts-1.14.0.mjs release
 ```
 
 Do not use `--force` unless replacing later manual edits is intentional. See
@@ -68,9 +67,9 @@ Pass the same custom file to `claim` and `check`. `release` reads the saved
 transaction and rejects `--profile`:
 
 ```bash
-node ./driftile-shortcuts-1.14.0-rc.1.mjs claim --profile ./shortcuts.json
-node ./driftile-shortcuts-1.14.0-rc.1.mjs check --profile ./shortcuts.json
-node ./driftile-shortcuts-1.14.0-rc.1.mjs release
+node ./driftile-shortcuts-1.14.0.mjs claim --profile ./shortcuts.json
+node ./driftile-shortcuts-1.14.0.mjs check --profile ./shortcuts.json
+node ./driftile-shortcuts-1.14.0.mjs release
 ```
 
 Release the current claim before claiming a changed profile.
@@ -149,7 +148,7 @@ The flake exposes packages and installation modules for `x86_64-linux` and
 `aarch64-linux`. Add Driftile as an input:
 
 ```nix
-inputs.driftile.url = "github:kontonkara/driftile/v1.14.0-rc.1";
+inputs.driftile.url = "github:kontonkara/driftile/v1.14.0";
 ```
 
 For a system-wide NixOS installation, import the NixOS module:
@@ -175,7 +174,7 @@ modules = [
 ];
 ```
 
-The 1.14.0-rc.1 module exposes the optional overview as a separate package. It
+The 1.14.0 module exposes the optional overview as a separate package. It
 remains disabled unless requested:
 
 ```nix
@@ -187,8 +186,7 @@ Home Manager installs the other, but the modules reject installing the same
 package ID in both scopes for one user. The module does not enable the effect
 or assign its shortcut; see [Overview companion](overview.md).
 
-The 1.14.0-rc.1 Home Manager module retains the complete eleven-setting
-profile:
+The 1.14.0 Home Manager module retains the complete eleven-setting profile:
 
 ```nix
 programs.driftile.settings = {
@@ -275,4 +273,4 @@ Source builds use `nix build`; the development shell is available through
 See [Compatibility](compatibility.md) for current platform, geometry, toolkit,
 and hardware limits. Read [Migration](migration.md) before changing release or
 installation generations. Release details are in the
-[1.14.0-rc.1 release notes](release-notes-1.14.0-rc.1.md).
+[1.14.0 release notes](release-notes-1.14.0.md).
