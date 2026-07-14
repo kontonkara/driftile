@@ -22493,7 +22493,7 @@ describe("RuntimeController", () => {
     expect(fixture.activationCount).toBe(0);
   });
 
-  it("keeps outer gaps when a new window follows a full-width column", () => {
+  it("left-anchors a new successor after a full-width column", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
     const first = createTrackedWindow("window-1", output, desktop);
@@ -22522,7 +22522,7 @@ describe("RuntimeController", () => {
 
     expect(controller.managedCount).toBe(2);
     expect(first.window.frameGeometry).toMatchObject({ width: 980, x: -990 });
-    expect(second.window.frameGeometry).toMatchObject({ width: 485, x: 505 });
+    expect(second.window.frameGeometry).toMatchObject({ width: 485, x: 10 });
   });
 
   it("restores column width at its current viewport anchor", () => {

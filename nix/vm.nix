@@ -9752,15 +9752,15 @@ let
             if ((full_width > original_width \
               && predecessor_width == full_width \
               && predecessor_right <= left_exclusion \
-              && successor_x > full_x \
-              && successor_right == full_right \
+              && successor_x == full_x \
+              && successor_right < full_right \
               && predecessor_y == full_y \
               && predecessor_height == full_height \
               && successor_y == full_y \
               && successor_height == full_height)); then
               verified=true
               record_focus_state \
-                "new real window preserved both full-width viewport edge gaps"
+                "new real window anchored at the left gap after a full-width predecessor"
             fi
           fi
         fi
@@ -9814,7 +9814,7 @@ let
           printf 'full-width predecessor frame: %s\n' "$full_frame"
           printf 'parked predecessor frame: %s\n' "$predecessor_frame"
           printf 'active successor frame: %s\n' "$successor_frame"
-          printf 'expected active right edge: %s\n' "$full_right"
+          printf 'expected active left edge: %s\n' "$full_x"
           printf 'maximum predecessor right edge: %s\n' "$left_exclusion"
           printf 'verified: %s\n' "$verified"
           printf 'cleanup verified: %s\n' "$cleanup_verified"

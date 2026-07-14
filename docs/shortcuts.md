@@ -140,6 +140,8 @@ corresponding viewport edge. A full-width frame remains outside that edge when
 focus moves to a neighboring column; a zero gap adds no clearance. Toggling it
 again restores the prior column width while retaining the current viewport and
 horizontal anchor. This geometry rule adds no state, schema, or binding.
+The immediate normal successor of an inactive full-width column starts at the
+left work-area gap while the predecessor stays beyond the left viewport edge.
 
 Available-width expansion grows the active column into the unused horizontal
 space, up to its shared window constraints, without hiding any currently fully

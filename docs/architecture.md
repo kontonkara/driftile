@@ -397,6 +397,7 @@ inspected safely within the codec bound.
 - Keep adjacent and direct-edge column reorders inside the active context and roll back the exact model order if geometry application cannot complete.
 - Apply active-column width changes transactionally, preserving focus, grouping, and the prior width on failure.
 - Pin the active full-width frame between equal configured outer gaps, place adjacent frames at least one physically aligned configured gap beyond the corresponding viewport edge, keep an inactive full-width frame outside that edge, add no clearance when the gap is zero, and restore its prior width without moving the current viewport or horizontal anchor. Apply that width restoration transactionally and retain the compatible persistence format without adding state, schema, or bindings.
+- Place the immediate normal successor of an inactive full-width column at the left work-area gap while keeping the predecessor beyond the left viewport edge.
 - Expand only a fully visible active column up to its shared window constraints, keep every other fully visible column on screen, and commit its width and viewport change atomically.
 - Center a fully visible column group with a viewport-only transaction; permit signed viewport offsets when exact centering requires them.
 - Preserve signed viewport positions across width and structural changes while the active column remains visible; reveal it only after it leaves the work area.

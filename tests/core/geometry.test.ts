@@ -181,11 +181,12 @@ describe("solveStripGeometry", () => {
     });
     const [previous, active] = result.windows;
 
-    expect(result.viewportOffset).toBe(952);
+    expect(result.maxViewportOffset).toBe(1904);
+    expect(result.viewportOffset).toBe(1904);
     expect(previous?.frame).toMatchObject({ width: 1888, x: -1804 });
     expect((previous?.frame.x ?? 0) + (previous?.frame.width ?? 0)).toBe(84);
-    expect(active?.frame).toMatchObject({ width: 936, x: 1068 });
-    expect((active?.frame.x ?? 0) + (active?.frame.width ?? 0)).toBe(2004);
+    expect(active?.frame).toMatchObject({ width: 936, x: 116 });
+    expect((active?.frame.x ?? 0) + (active?.frame.width ?? 0)).toBe(1052);
   });
 
   it.each([1.25, 1.5, 1.75, 2.5])(
