@@ -1497,6 +1497,25 @@ let
           >/dev/null
       }
 
+      set_application_focus_centering() {
+        local value=$1
+
+        ${pkgs.kdePackages.kconfig}/bin/kwriteconfig6 \
+          --file "$HOME/.config/kwinrc" \
+          --group "Script-${pluginId}" \
+          --key ApplicationFocusCentering \
+          --type string \
+          "$value" \
+          || return 1
+
+        busctl --user call \
+          org.kde.KWin \
+          /KWin \
+          org.kde.KWin \
+          reconfigure \
+          >/dev/null
+      }
+
       set_application_column_widths() {
         local value=$1
 
@@ -7689,6 +7708,7 @@ let
 
       verify_center_focused_column_configuration() {
         local attempt
+        local application_target
         local canonical_first
         local canonical_second
         local canonical_third
@@ -7697,15 +7717,19 @@ let
         local centered_third
         local disabled_verified=false
         local enabled_verified=false
+        local nonmatching_application="io.github.kontonkara.driftile.vm.nonmatch"
         local output_frame
         local work_area
 
         if ! set_center_focused_column false \
+          || ! set_application_focus_centering "" \
           || ! activate_window "$title_a" \
           || ! wait_for_active "$title_a" \
           || ! activate_window "$title_c" \
           || ! wait_for_active "$title_c" \
           || ! capture_stable_frames; then
+          set_application_focus_centering "" >/dev/null 2>&1 || true
+          set_center_focused_column false >/dev/null 2>&1 || true
           record_focus_state \
             "focused-column centering baseline setup failed"
           return 1
@@ -7735,6 +7759,8 @@ let
             "$canonical_first" \
             "$canonical_second" \
             "$canonical_third"; then
+          set_application_focus_centering "" >/dev/null 2>&1 || true
+          set_center_focused_column false >/dev/null 2>&1 || true
           record_focus_state \
             "disabled focused-column centering changed the minimal reveal"
           return 1
@@ -7749,6 +7775,7 @@ let
             "$canonical_second" \
             "$canonical_third"; then
           set_center_focused_column false >/dev/null 2>&1 || true
+          set_application_focus_centering "" >/dev/null 2>&1 || true
           record_focus_state \
             "enabling focused-column centering changed settled state"
           return 1
@@ -7779,6 +7806,7 @@ let
 
         if [[ "$enabled_verified" != true ]]; then
           set_center_focused_column false >/dev/null 2>&1 || true
+          set_application_focus_centering "" >/dev/null 2>&1 || true
           activate_window "$title_c" >/dev/null 2>&1 || true
           wait_for_active "$title_c" >/dev/null 2>&1 || true
           wait_for_frames \
@@ -7804,6 +7832,7 @@ let
             "$centered_second" \
             "$centered_third"; then
           set_center_focused_column false >/dev/null 2>&1 || true
+          set_application_focus_centering "" >/dev/null 2>&1 || true
           record_focus_state \
             "disabling focused-column centering changed settled state"
           return 1
@@ -7835,6 +7864,7 @@ let
             "$canonical_second" \
             "$canonical_third"; then
           set_center_focused_column false >/dev/null 2>&1 || true
+          set_application_focus_centering "" >/dev/null 2>&1 || true
           activate_window "$title_c" >/dev/null 2>&1 || true
           wait_for_active "$title_c" >/dev/null 2>&1 || true
           wait_for_frames \
@@ -7849,6 +7879,172 @@ let
         fi
         record_focus_state \
           "focused-column centering live toggle restored the exact baseline after $((attempt + 1)) focus probes"
+
+        application_target=$(
+          window_desktop_file_contains "$title_b" 2>/dev/null || true
+        )
+
+        if [[ -z "$application_target" \
+          || "$application_target" == "$nonmatching_application" ]] \
+          || ! set_application_focus_centering "$nonmatching_application" \
+          || ! wait_for_active "$title_c" \
+          || ! wait_for_frames \
+            "$canonical_first" \
+            "$canonical_second" \
+            "$canonical_third" \
+          || ! invoke_shortcut "driftile_focus_column_left" \
+          || ! wait_for_active "$title_b" \
+          || ! wait_for_frames \
+            "$canonical_first" \
+            "$canonical_second" \
+            "$canonical_third" \
+          || ! invoke_shortcut "driftile_focus_column_right" \
+          || ! wait_for_active "$title_c" \
+          || ! wait_for_frames \
+            "$canonical_first" \
+            "$canonical_second" \
+            "$canonical_third" \
+          || ! set_application_focus_centering "" \
+          || ! wait_for_frames \
+            "$canonical_first" \
+            "$canonical_second" \
+            "$canonical_third"; then
+          set_application_focus_centering "" >/dev/null 2>&1 || true
+          set_center_focused_column false >/dev/null 2>&1 || true
+          activate_window "$title_c" >/dev/null 2>&1 || true
+          wait_for_active "$title_c" >/dev/null 2>&1 || true
+          wait_for_frames \
+            "$canonical_first" \
+            "$canonical_second" \
+            "$canonical_third" \
+            >/dev/null 2>&1 \
+            || true
+          record_focus_state \
+            "nonmatching application focus centering changed minimal reveal"
+          return 1
+        fi
+        record_focus_state \
+          "nonmatching application focus centering preserved minimal reveal"
+
+        enabled_verified=false
+        disabled_verified=false
+
+        if [[ -z "$application_target" ]] \
+          || ! set_application_focus_centering "$application_target" \
+          || ! wait_for_active "$title_c" \
+          || ! wait_for_frames \
+            "$canonical_first" \
+            "$canonical_second" \
+            "$canonical_third"; then
+          set_application_focus_centering "" >/dev/null 2>&1 || true
+          set_center_focused_column false >/dev/null 2>&1 || true
+          record_focus_state \
+            "application focus-centering baseline setup failed"
+          return 1
+        fi
+        record_focus_state \
+          "matching application focus-centering list preserved settled state"
+
+        for ((attempt = 0; attempt < 30; attempt += 1)); do
+          if activate_window "$title_c" \
+            && wait_for_active "$title_c" \
+            && wait_for_frames \
+              "$canonical_first" \
+              "$canonical_second" \
+              "$canonical_third" \
+            && invoke_shortcut "driftile_focus_column_left" \
+            && wait_for_active "$title_b" \
+            && capture_stable_frames \
+            && focused_column_frames_are_centered \
+              "$canonical_first" \
+              "$canonical_second" \
+              "$canonical_third" \
+              "$stable_first_frame" \
+              "$stable_second_frame" \
+              "$stable_third_frame" \
+              "$work_area"; then
+            enabled_verified=true
+            break
+          fi
+        done
+
+        if [[ "$enabled_verified" != true ]]; then
+          set_application_focus_centering "" >/dev/null 2>&1 || true
+          set_center_focused_column false >/dev/null 2>&1 || true
+          activate_window "$title_c" >/dev/null 2>&1 || true
+          wait_for_active "$title_c" >/dev/null 2>&1 || true
+          wait_for_frames \
+            "$canonical_first" \
+            "$canonical_second" \
+            "$canonical_third" \
+            >/dev/null 2>&1 \
+            || true
+          record_focus_state \
+            "matching application focus-centering rule did not center B"
+          return 1
+        fi
+        centered_first=$stable_first_frame
+        centered_second=$stable_second_frame
+        centered_third=$stable_third_frame
+        record_focus_state \
+          "matching application focus-centering rule translated the viewport after $((attempt + 1)) focus probes"
+
+        if ! set_application_focus_centering "" \
+          || ! wait_for_active "$title_b" \
+          || ! wait_for_frames \
+            "$centered_first" \
+            "$centered_second" \
+            "$centered_third"; then
+          set_application_focus_centering "" >/dev/null 2>&1 || true
+          set_center_focused_column false >/dev/null 2>&1 || true
+          record_focus_state \
+            "clearing application focus centering changed settled state"
+          return 1
+        fi
+        record_focus_state \
+          "clearing application focus centering preserved settled state"
+
+        for ((attempt = 0; attempt < 30; attempt += 1)); do
+          if activate_window "$title_c" \
+            && wait_for_active "$title_c" \
+            && wait_for_frames \
+              "$canonical_first" \
+              "$canonical_second" \
+              "$canonical_third" \
+            && invoke_shortcut "driftile_focus_column_left" \
+            && wait_for_active "$title_b" \
+            && capture_stable_frames \
+            && [[ "$stable_first_frame" == "$canonical_first" \
+              && "$stable_second_frame" == "$canonical_second" \
+              && "$stable_third_frame" == "$canonical_third" ]]; then
+            disabled_verified=true
+            break
+          fi
+        done
+
+        if [[ "$disabled_verified" != true ]] \
+          || ! invoke_shortcut "driftile_focus_column_right" \
+          || ! wait_for_active "$title_c" \
+          || ! wait_for_frames \
+            "$canonical_first" \
+            "$canonical_second" \
+            "$canonical_third"; then
+          set_application_focus_centering "" >/dev/null 2>&1 || true
+          set_center_focused_column false >/dev/null 2>&1 || true
+          activate_window "$title_c" >/dev/null 2>&1 || true
+          wait_for_active "$title_c" >/dev/null 2>&1 || true
+          wait_for_frames \
+            "$canonical_first" \
+            "$canonical_second" \
+            "$canonical_third" \
+            >/dev/null 2>&1 \
+            || true
+          record_focus_state \
+            "clearing application focus centering did not restore minimal reveal"
+          return 1
+        fi
+        record_focus_state \
+          "application focus-centering cleanup restored the exact baseline after $((attempt + 1)) focus probes"
       }
 
       request_physical_shortcut() {
