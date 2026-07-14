@@ -1,8 +1,9 @@
 # Installation
 
-Driftile 1.15.1 is the latest stable release. It requires KDE Plasma with KWin
-6.7 or newer and `kpackagetool6`, and targets Wayland, XWayland, and a
-single-output native X11 session.
+Driftile 1.16.0-rc.1 is the current candidate and is not a stable release;
+1.15.1 remains the latest stable version. It requires KDE Plasma with KWin 6.7
+or newer and `kpackagetool6`, and targets Wayland, XWayland, and a single-output
+native X11 session.
 Touchpad navigation is available only on native Wayland. Run all commands as
 the desktop user, not with `sudo`.
 
@@ -10,11 +11,11 @@ the desktop user, not with `sudo`.
 
 Download these files from the same release:
 
-- `driftile-1.15.1.kwinscript`
-- `driftile-overview-1.15.1.kwineffect` if using the optional overview
+- `driftile-1.16.0-rc.1.kwinscript`
+- `driftile-overview-1.16.0-rc.1.kwineffect` if using the optional overview
 - `SHA256SUMS`
 - `LICENSE`
-- `driftile-shortcuts-1.15.1.mjs` if using the optional shortcut helper
+- `driftile-shortcuts-1.16.0-rc.1.mjs` if using the optional shortcut helper
 
 Verify every downloaded release asset before installing it:
 
@@ -26,7 +27,7 @@ Install the KWin package:
 
 ```bash
 kpackagetool6 --type=KWin/Script \
-  --install ./driftile-1.15.1.kwinscript
+  --install ./driftile-1.16.0-rc.1.kwinscript
 ```
 
 Open **System Settings > Window Management > KWin Scripts**, enable
@@ -36,7 +37,7 @@ the layout and presentation settings described in
 
 ## Configure shortcuts
 
-Driftile works without the companion helper. The 1.15.1 helper claims the
+Driftile works without the companion helper. The 1.16.0-rc.1 helper claims the
 bundled defaults and accepts custom profiles. Any action can instead be
 assigned manually.
 
@@ -47,8 +48,8 @@ Driftile before running it, and keep the helper until its saved claim has been
 released.
 
 ```bash
-node ./driftile-shortcuts-1.15.1.mjs claim
-node ./driftile-shortcuts-1.15.1.mjs check
+node ./driftile-shortcuts-1.16.0-rc.1.mjs claim
+node ./driftile-shortcuts-1.16.0-rc.1.mjs check
 ```
 
 `claim` transactionally saves and replaces active conflicting assignments.
@@ -56,7 +57,7 @@ node ./driftile-shortcuts-1.15.1.mjs check
 after the claim:
 
 ```bash
-node ./driftile-shortcuts-1.15.1.mjs release
+node ./driftile-shortcuts-1.16.0-rc.1.mjs release
 ```
 
 Do not use `--force` unless replacing later manual edits is intentional. See
@@ -67,9 +68,9 @@ Pass the same custom file to `claim` and `check`. `release` reads the saved
 transaction and rejects `--profile`:
 
 ```bash
-node ./driftile-shortcuts-1.15.1.mjs claim --profile ./shortcuts.json
-node ./driftile-shortcuts-1.15.1.mjs check --profile ./shortcuts.json
-node ./driftile-shortcuts-1.15.1.mjs release
+node ./driftile-shortcuts-1.16.0-rc.1.mjs claim --profile ./shortcuts.json
+node ./driftile-shortcuts-1.16.0-rc.1.mjs check --profile ./shortcuts.json
+node ./driftile-shortcuts-1.16.0-rc.1.mjs release
 ```
 
 Release the current claim before claiming a changed profile.
@@ -148,7 +149,7 @@ The flake exposes packages and installation modules for `x86_64-linux` and
 `aarch64-linux`. Add Driftile as an input:
 
 ```nix
-inputs.driftile.url = "github:kontonkara/driftile/v1.15.1";
+inputs.driftile.url = "github:kontonkara/driftile/v1.16.0-rc.1";
 ```
 
 For a system-wide NixOS installation, import the NixOS module:
@@ -174,7 +175,7 @@ modules = [
 ];
 ```
 
-The 1.15.1 module exposes the optional overview as a separate package. It
+The 1.16.0-rc.1 module exposes the optional overview as a separate package. It
 remains disabled unless requested:
 
 ```nix
@@ -186,8 +187,7 @@ Home Manager installs the other, but the modules reject installing the same
 package ID in both scopes for one user. The module does not enable the effect
 or assign its shortcut; see [Overview companion](overview.md).
 
-The unreleased Home Manager module on `main` exposes the complete twelve-setting
-profile:
+The 1.16.0-rc.1 Home Manager module exposes the complete twelve-setting profile:
 
 ```nix
 programs.driftile.settings = {
@@ -211,8 +211,7 @@ programs.driftile.settings = {
 Application policy lists default to empty. See
 [Configuration](configuration.md#applications-initially-floating) and
 [Application borderless exclusions](configuration.md#application-borderless-exclusions)
-for exact matching, limits, and live behavior. Stable 1.15.1 configurations do
-not yet expose `applicationInitialFloating`.
+for exact matching, limits, and live behavior.
 
 The profile is independent of package installation. When the package is
 already installed by NixOS or another system module, keep
@@ -220,7 +219,7 @@ already installed by NixOS or another system module, keep
 Manager. See [Configuration](configuration.md#home-manager) for ownership and
 reload behavior.
 
-The current Home Manager module can also generate a custom shortcut profile:
+The 1.16.0-rc.1 Home Manager module can also generate a custom shortcut profile:
 
 ```nix
 programs.driftile.shortcuts = {
@@ -277,4 +276,4 @@ Source builds use `nix build`; the development shell is available through
 See [Compatibility](compatibility.md) for current platform, geometry, toolkit,
 and hardware limits. Read [Migration](migration.md) before changing release or
 installation generations. Release details are in the
-[1.15.1 release notes](release-notes-1.15.1.md).
+[1.16.0-rc.1 release notes](release-notes-1.16.0-rc.1.md).

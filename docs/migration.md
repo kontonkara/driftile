@@ -1,20 +1,56 @@
 # Migration
 
-The latest stable release is 1.15.1. Use the steps below when changing release
+The latest stable release is 1.15.1. Version 1.16.0-rc.1 is the current
+candidate and is not a stable release. Use the steps below when changing release
 generations, and never combine files from different releases.
 
-## Unreleased on main
+## Upgrade from 1.15.1 to 1.16.0-rc.1
 
-The current `main` branch adds the empty-default `ApplicationInitialFloating`
-setting and the Home Manager
-`programs.driftile.settings.applicationInitialFloating` list. Exact matching is
-case-sensitive. The policy affects only fresh admissions; existing and restored
-window ownership remains unchanged, and no layout-persistence migration is
-required.
+1. Release helper-owned shortcuts with the 1.15.1 helper while it remains
+   available.
+2. Disable Driftile and the optional overview in System Settings.
+3. Upgrade the main package, optional overview, and helper to their matching
+   1.16.0-rc.1 archives, or pin the Nix input to `v1.16.0-rc.1` and rebuild.
+4. Enable Driftile, review **Applications initially floating**, then assign
+   shortcuts or claim them with the RC helper.
+5. If installed, re-enable the overview and review its manually assigned
+   shortcut.
 
-Before rolling back to 1.15.1, remove the Home Manager attribute because the
-stable module does not expose it. The older extension ignores a remaining
-KConfig key, which may also be deleted without resetting layout state.
+The candidate adds one safe-default KConfig value:
+
+- `ApplicationInitialFloating=""` preserves 1.15.1 admission behavior.
+
+Each nonblank line matches one exact, case-sensitive KWin `desktopFileName`.
+The policy affects only fresh admissions. Existing windows and restored tiled
+or floating ownership remain unchanged, while tiling exclusions and automatic
+floating roles take priority. A matching window uses ordinary manual-floating
+ownership and can be tiled with **Toggle floating**. No layout-state migration
+or reset is required.
+
+Same-context tiled pointer moves now outline the exact valid before-or-after
+target half. The feedback is best-effort because KWin's outline is shared;
+cross-context moves remain finish-only. This adds no setting, action, binding,
+or persisted layout field.
+
+With Home Manager, `programs.driftile.settings = null` still writes nothing. A
+non-null 1.16.0-rc.1 profile writes all twelve settings and uses
+`applicationInitialFloating = [ ];` when omitted. Pin the package and module to
+the same tag.
+
+## Roll back from 1.16.0-rc.1 to 1.15.1
+
+Release shortcuts with the RC helper, disable Driftile and the optional
+overview, then restore their matching verified 1.15.1 packages and helper. For
+NixOS or Home Manager, remove
+`programs.driftile.settings.applicationInitialFloating` before restoring the
+`v1.15.1` input, because that module does not expose the attribute, then rebuild
+the generation that owns each package.
+
+The 1.15.1 extension ignores a remaining `ApplicationInitialFloating` KConfig
+key; it may be deleted without resetting layout state. The pointer preview
+disappears when the candidate package is removed. Re-enable the installed
+packages and restore the 1.15.1 shortcut profile. Persisted layouts and shortcut
+assignments require no conversion.
 
 ## Upgrade from 1.15.0 to 1.15.1
 

@@ -6,8 +6,9 @@ Versions 0.1.0, 1.0.0, 1.1.0, 1.2.0, 1.3.0, 1.4.0, 1.5.0, 1.6.0, 1.7.0,
 historical record. The remaining post-v1 direction is not a committed release
 schedule.
 
-Development is on 1.16.0-dev.0. Its scope is frozen to the two items in the
-1.16.0 section below.
+Release candidate 1.16.0-rc.1 freezes the scope below. Candidate tagging
+requires exact-SHA CI and the hidden full and lifecycle VM gates to pass on the
+unchanged candidate commit.
 
 ## Foundation (delivered)
 
@@ -759,21 +760,24 @@ Release criteria (met):
   full and lifecycle VMs, version, exact-SHA CI, and release gates pass without
   widening this patch.
 
-## 1.16.0 (in development)
+## 1.16.0 (release candidate)
 
-The scope is frozen to two already implemented interaction and configuration
-changes:
+Version `1.16.0-rc.1` freezes two changes:
 
-- Same-context pointer drops show the exact valid target half through KWin's
-  public outline API. Updates are coalesced and own no layout or persistence
-  state; cross-context feedback remains finish-only.
-- An exact application policy starts only newly tracked matching normal windows
-  under ordinary manual-floating ownership. Existing and hydrated ownership
-  wins, and the persistence schema is unchanged.
+- Same-context pointer drops preview the exact valid target half through KWin's
+  public outline API. Updates are coalesced and write no layout or persistence
+  state. Cross-context feedback remains finish-only.
+- Exact application rules start only newly tracked matching normal windows as
+  manually floating. Existing or restored ownership wins, and the persistence
+  schema is unchanged.
 
-No additional feature belongs to 1.16.0. Focused tests cover the new behavior;
-the existing X11 and Wayland scenarios cover packaged transport. Full and
-lifecycle VMs are reserved for the release checkpoint.
+Candidate tagging gates:
+
+- Focused tests cover both behaviors; packaged Wayland, XWayland, and native X11
+  cover transport.
+- Exact-SHA branch CI and the hidden full and lifecycle VMs must pass on the
+  unchanged candidate commit.
+- The tag release workflow must pass to publish the candidate.
 
 ## Post-v1
 
