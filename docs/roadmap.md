@@ -5,7 +5,9 @@ Versions 0.1.0, 1.0.0, 1.1.0, 1.2.0, 1.3.0, 1.4.0, 1.5.0, 1.6.0, 1.7.0,
 The delivered milestones and release criteria below are a historical record.
 The remaining post-v1 direction is not a committed release schedule.
 
-Development is on 1.15.0-dev.0. Its bounded geometry scope is frozen below.
+Release candidate 1.15.0-rc.1 freezes the scope below. Feature and packaged
+integration validation is complete. Candidate tagging requires exact-SHA CI and
+the hidden full and lifecycle VM gates to pass in sequence.
 
 ## Foundation (delivered)
 
@@ -718,21 +720,32 @@ Release criteria (met):
   hidden full and lifecycle VMs, version, exact-SHA CI, and release gates pass
   without widening this slice.
 
-## 1.15.0 (frozen scope)
+## 1.15.0 (release candidate)
 
-This bounded geometry slice keeps the active full-width frame inside equal
-configured outer gaps. Adjacent frames stay at least one physically aligned
-configured gap beyond the corresponding viewport edge; a zero gap adds no
-clearance. It changes no state, configuration schema, action, or binding.
+Version `1.15.0-rc.1` freezes one bounded geometry slice: the active full-width
+frame remains inside equal configured outer gaps. Adjacent frames stay at least
+one physically aligned configured gap beyond the corresponding viewport edge;
+a zero gap adds no clearance. It changes no state, configuration schema,
+action, or binding.
 
-Acceptance criteria:
+Candidate validation completed:
 
-- Both viewport edges preserve the configured outer gaps around the active
-  full-width frame.
-- Every adjacent frame stays at least one physically aligned configured gap
-  beyond its corresponding viewport edge; a zero gap adds no clearance.
-- Existing full-width restoration and transaction rollback remain exact
-  without state, schema, or binding changes.
+- Unit coverage proves equal outer gaps, aligned neighbor clearance across
+  fractional device-pixel ratios, zero-gap behavior, exact restoration, and
+  transaction rollback without state, schema, or binding changes.
+- Packaged native Wayland, XWayland, and native X11 checks reuse the existing
+  scenario and prove exact neighbor coordinates and restoration. The hidden
+  full VM reuses its real Konsole windows, existing action, and checkpoint.
+- Format, type, lint, unit, deterministic build and package, all-system flake,
+  and version checks pass without widening this slice.
+
+Candidate tagging gates:
+
+- Commit the candidate metadata and verify quality, native Wayland, and native
+  X11 jobs in exact-SHA branch CI.
+- Run the hidden full and lifecycle VMs on that unchanged candidate commit.
+- Create the candidate tag only after both gates pass, then require the tag
+  release workflow and its release checks to pass before publication.
 
 ## Post-v1
 
