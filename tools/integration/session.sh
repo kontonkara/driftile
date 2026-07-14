@@ -6910,10 +6910,10 @@ verify_consume_and_expel_window() {
   invoke_shortcut "driftile_move_window_left" || \
     fail "KGlobalAccel could not prepare the right $protocol source stack"
   wait_for_geometries \
-    "$first_title" "-600,16,616,336" \
-    "$second_title" "-600,368,616,336" \
-    "$third_title" "32,16,616,336" \
-    "$fourth_title" "32,368,616,336" || \
+    "$first_title" "-616,16,616,336" \
+    "$second_title" "-616,368,616,336" \
+    "$third_title" "16,16,616,336" \
+    "$fourth_title" "16,368,616,336" || \
     fail "Driftile did not prepare the right $protocol source stack: $(describe_layout "$first_title" "$second_title" "$third_title" "$fourth_title")"
   wait_for_active "$fourth_title" || \
     fail "Driftile changed $protocol focus while preparing the right source stack"
@@ -6978,19 +6978,19 @@ verify_consume_and_expel_window() {
   wait_for_active "$fourth_title" || \
     fail "KWin did not focus the last $protocol column for bounded edits"
   wait_for_geometries \
-    "$first_title" "-600,16,616,336" \
-    "$second_title" "-600,368,616,336" \
-    "$third_title" "32,16,616,688" \
-    "$fourth_title" "664,16,616,688" || \
+    "$first_title" "-616,16,616,336" \
+    "$second_title" "-616,368,616,336" \
+    "$third_title" "16,16,616,688" \
+    "$fourth_title" "648,16,616,688" || \
     fail "Driftile did not reveal the last $protocol column before bounded edits: $(describe_layout "$first_title" "$second_title" "$third_title" "$fourth_title")"
 
   invoke_shortcut "driftile_consume_window_into_column" || \
     fail "KGlobalAccel could not invoke the bounded $protocol consume action"
   wait_for_geometries \
-    "$first_title" "-600,16,616,336" \
-    "$second_title" "-600,368,616,336" \
-    "$third_title" "32,16,616,688" \
-    "$fourth_title" "664,16,616,688" || \
+    "$first_title" "-616,16,616,336" \
+    "$second_title" "-616,368,616,336" \
+    "$third_title" "16,16,616,688" \
+    "$fourth_title" "648,16,616,688" || \
     fail "Driftile changed the $protocol layout while consuming at the right boundary: $(describe_layout "$first_title" "$second_title" "$third_title" "$fourth_title")"
   wait_for_active "$fourth_title" || \
     fail "Driftile changed $protocol focus while consuming at the right boundary"
@@ -6998,10 +6998,10 @@ verify_consume_and_expel_window() {
   invoke_shortcut "driftile_expel_window_from_column" || \
     fail "KGlobalAccel could not invoke the bounded $protocol expel action"
   wait_for_geometries \
-    "$first_title" "-600,16,616,336" \
-    "$second_title" "-600,368,616,336" \
-    "$third_title" "32,16,616,688" \
-    "$fourth_title" "664,16,616,688" || \
+    "$first_title" "-616,16,616,336" \
+    "$second_title" "-616,368,616,336" \
+    "$third_title" "16,16,616,688" \
+    "$fourth_title" "648,16,616,688" || \
     fail "Driftile changed the $protocol layout while expelling from a singleton: $(describe_layout "$first_title" "$second_title" "$third_title" "$fourth_title")"
   wait_for_active "$fourth_title" || \
     fail "Driftile changed $protocol focus while expelling from a singleton"
@@ -7615,20 +7615,20 @@ verify_consume_past_minimized_peers() {
   invoke_shortcut "driftile_move_window_left" || \
     fail "KGlobalAccel could not prepare the $protocol consume source stack"
   wait_for_geometries \
-    "$first_title" "-600,16,616,336" \
-    "$active_title" "-600,368,616,336" \
-    "$moved_title" "32,368,616,336" \
-    "$minimized_source_title" "32,16,616,336" || \
+    "$first_title" "-616,16,616,336" \
+    "$active_title" "-616,368,616,336" \
+    "$moved_title" "16,368,616,336" \
+    "$minimized_source_title" "16,16,616,336" || \
     fail "Driftile did not settle the $protocol source stack before minimized-peer consume: $(describe_layout "$first_title" "$active_title" "$moved_title" "$minimized_source_title")"
   wait_for_active "$moved_title" || \
     fail "Driftile changed $protocol focus while forming the minimized-peer consume source stack"
   invoke_shortcut "driftile_move_window_up" || \
     fail "KGlobalAccel could not move the visible $protocol source member above its passive peer"
   wait_for_geometries \
-    "$first_title" "-600,16,616,336" \
-    "$active_title" "-600,368,616,336" \
-    "$moved_title" "32,16,616,336" \
-    "$minimized_source_title" "32,368,616,336" || \
+    "$first_title" "-616,16,616,336" \
+    "$active_title" "-616,368,616,336" \
+    "$moved_title" "16,16,616,336" \
+    "$minimized_source_title" "16,368,616,336" || \
     fail "Driftile did not settle the reordered $protocol source stack before minimized-peer consume: $(describe_layout "$first_title" "$active_title" "$moved_title" "$minimized_source_title")"
   wait_for_active "$moved_title" || \
     fail "Driftile changed $protocol focus while reordering the minimized-peer consume source stack"
@@ -8157,11 +8157,11 @@ verify_xterm_resize_increment_policy() {
   local xterm_hints
   local xterm_id
   local xterm_pid
-  local tiled_first="-1232,16,616,688"
-  local tiled_second="-600,16,616,688"
-  local tiled_third="32,16,616,688"
-  local tiled_xterm="664,16,616,688"
-  local narrower_xterm="664,16,490,688"
+  local tiled_first="-1248,16,616,688"
+  local tiled_second="-616,16,616,688"
+  local tiled_third="16,16,616,688"
+  local tiled_xterm="648,16,616,688"
+  local narrower_xterm="648,16,490,688"
 
   original_first=$(capture_stable_geometry "$first_title") || \
     fail "the first $protocol window did not stabilize before xterm resize-increment acceptance"
@@ -8290,10 +8290,10 @@ verify_live_hard_constraint_recovery() {
   local constrained_width
   local client_pid
   local attempt
-  local tiled_first="-1232,16,616,688"
-  local tiled_second="-600,16,616,688"
-  local tiled_third="32,16,616,688"
-  local tiled_client="664,16,616,688"
+  local tiled_first="-1248,16,616,688"
+  local tiled_second="-616,16,616,688"
+  local tiled_third="16,16,616,688"
+  local tiled_client="648,16,616,688"
 
   case "$client_kind" in
     gtk3)
@@ -8799,9 +8799,9 @@ run_scenario() {
   wait_for_script_state true || fail "KWin did not report Driftile as loaded"
   claim_shortcut_profile
   wait_for_layout \
-    "$first_title" "-600,16,616,688" \
-    "$second_title" "32,16,616,688" \
-    "$third_title" "664,16,616,688" || \
+    "$first_title" "-616,16,616,688" \
+    "$second_title" "16,16,616,688" \
+    "$third_title" "648,16,616,688" || \
     fail "Driftile did not reveal the third $protocol window: $(describe_layout "$first_title" "$second_title" "$third_title")"
 
   for title in "$first_title" "$second_title" "$third_title"; do
@@ -8818,9 +8818,9 @@ run_scenario() {
   done
 
   wait_for_layout \
-    "$first_title" "-600,16,616,688" \
-    "$second_title" "32,16,616,688" \
-    "$third_title" "664,16,616,688" || \
+    "$first_title" "-616,16,616,688" \
+    "$second_title" "16,16,616,688" \
+    "$third_title" "648,16,616,688" || \
     fail "Driftile changed the $protocol layout while restoring decorations: $(describe_layout "$first_title" "$second_title" "$third_title")"
 
   set_borderless_windows true || \
@@ -8832,9 +8832,9 @@ run_scenario() {
   done
 
   wait_for_layout \
-    "$first_title" "-600,16,616,688" \
-    "$second_title" "32,16,616,688" \
-    "$third_title" "664,16,616,688" || \
+    "$first_title" "-616,16,616,688" \
+    "$second_title" "16,16,616,688" \
+    "$third_title" "648,16,616,688" || \
     fail "Driftile changed the $protocol layout while removing decorations: $(describe_layout "$first_title" "$second_title" "$third_title")"
 
   verify_horizontal_pointer_resize_adoption \
@@ -8850,9 +8850,9 @@ run_scenario() {
     fail "KWin could not minimize the $protocol gap-test window"
   wait_for_state_and_geometries \
     "$gap_minimized_id" minimized true \
-    "$first_title" "-600,16,616,688" \
-    "$second_title" "32,16,616,688" \
-    "$third_title" "664,16,616,688" || \
+    "$first_title" "-616,16,616,688" \
+    "$second_title" "16,16,616,688" \
+    "$third_title" "648,16,616,688" || \
     fail "Driftile changed the minimized $protocol gap-test slot: $(describe_layout "$first_title" "$second_title" "$third_title")"
   gap_minimized_frame=$(capture_stable_geometry "$second_title") || \
     fail "the minimized $protocol gap-test frame did not stabilize"
@@ -8860,9 +8860,9 @@ run_scenario() {
   set_gap 24 || fail "KWin could not apply the $protocol window gap"
   wait_for_state_and_geometries \
     "$gap_minimized_id" minimized true \
-    "$first_title" "-592,24,604,672" \
+    "$first_title" "-608,24,604,672" \
     "$second_title" "$gap_minimized_frame" \
-    "$third_title" "664,24,604,672" || \
+    "$third_title" "648,24,604,672" || \
     fail "Driftile did not apply the live $protocol window gap without touching the minimized slot: $(describe_layout "$first_title" "$second_title" "$third_title")"
   wait_for_active "$third_title" || \
     fail "Driftile changed $protocol focus while applying the window gap"
@@ -8871,16 +8871,16 @@ run_scenario() {
     fail "KWin could not restore the $protocol gap-test window"
   wait_for_state_and_geometries \
     "$gap_minimized_id" minimized false \
-    "$first_title" "-592,24,604,672" \
-    "$second_title" "36,24,604,672" \
-    "$third_title" "664,24,604,672" || \
+    "$first_title" "-608,24,604,672" \
+    "$second_title" "20,24,604,672" \
+    "$third_title" "648,24,604,672" || \
     fail "Driftile did not restore the $protocol gap-test window into its live slot: $(describe_layout "$first_title" "$second_title" "$third_title")"
 
   set_gap 16 || fail "KWin could not restore the $protocol window gap"
   wait_for_layout \
-    "$first_title" "-600,16,616,688" \
-    "$second_title" "32,16,616,688" \
-    "$third_title" "664,16,616,688" || \
+    "$first_title" "-616,16,616,688" \
+    "$second_title" "16,16,616,688" \
+    "$third_title" "648,16,616,688" || \
     fail "Driftile did not restore the default $protocol window gap: $(describe_layout "$first_title" "$second_title" "$third_title")"
   wait_for_active "$third_title" || \
     fail "Driftile changed $protocol focus while restoring the window gap"
@@ -8889,18 +8889,18 @@ run_scenario() {
   set_layout_configuration 70 10 10 24 || \
     fail "KWin could not apply the $protocol layout configuration"
   wait_for_layout \
-    "$first_title" "-592,24,604,672" \
-    "$second_title" "36,24,604,672" \
-    "$third_title" "664,24,604,672" || \
+    "$first_title" "-608,24,604,672" \
+    "$second_title" "20,24,604,672" \
+    "$third_title" "648,24,604,672" || \
     fail "Driftile changed existing $protocol widths while applying the configuration barrier: $(describe_layout "$first_title" "$second_title" "$third_title")"
   wait_for_active "$third_title" || \
     fail "Driftile changed $protocol focus at the configuration barrier"
   invoke_shortcut "driftile_reset_column_width" || \
     fail "KGlobalAccel could not reset the active $protocol column to its configured width"
   wait_for_layout \
-    "$first_title" "-831,24,604,672" \
-    "$second_title" "-203,24,604,672" \
-    "$third_title" "425,24,855,672" || \
+    "$first_title" "-855,24,604,672" \
+    "$second_title" "-227,24,604,672" \
+    "$third_title" "401,24,855,672" || \
     fail "Driftile did not use the exact configured $protocol default column width: $(describe_layout "$first_title" "$second_title" "$third_title")"
   wait_for_active "$third_title" || \
     fail "Driftile changed $protocol focus while resetting to the configured width"
@@ -8908,32 +8908,32 @@ run_scenario() {
   set_layout_configuration 50 10 10 16 || \
     fail "KWin could not restore the $protocol layout configuration"
   wait_for_layout \
-    "$first_title" "-853,16,616,688" \
-    "$second_title" "-221,16,616,688" \
-    "$third_title" "411,16,869,688" || \
+    "$first_title" "-869,16,616,688" \
+    "$second_title" "-237,16,616,688" \
+    "$third_title" "395,16,869,688" || \
     fail "Driftile did not preserve the active $protocol 70% width before explicit reset: $(describe_layout "$first_title" "$second_title" "$third_title")"
   wait_for_active "$third_title" || \
     fail "Driftile changed $protocol focus while restoring the layout configuration"
   invoke_shortcut "driftile_reset_column_width" || \
     fail "KGlobalAccel could not restore the active $protocol column width"
   wait_for_layout \
-    "$first_title" "-853,16,616,688" \
-    "$second_title" "-221,16,616,688" \
-    "$third_title" "411,16,616,688" || \
+    "$first_title" "-869,16,616,688" \
+    "$second_title" "-237,16,616,688" \
+    "$third_title" "395,16,616,688" || \
     fail "Driftile did not restore the exact default $protocol column width: $(describe_layout "$first_title" "$second_title" "$third_title")"
   activate_window "$first_title" || \
     fail "KWin could not reveal the first $protocol column after default-width acceptance"
   wait_for_layout \
-    "$first_title" "0,16,616,688" \
-    "$second_title" "632,16,616,688" \
-    "$third_title" "1264,16,616,688" || \
+    "$first_title" "16,16,616,688" \
+    "$second_title" "648,16,616,688" \
+    "$third_title" "1280,16,616,688" || \
     fail "Driftile did not normalize the $protocol viewport after default-width acceptance: $(describe_layout "$first_title" "$second_title" "$third_title")"
   activate_window "$third_title" || \
     fail "KWin could not restore active $protocol focus after default-width acceptance"
   wait_for_layout \
-    "$first_title" "-600,16,616,688" \
-    "$second_title" "32,16,616,688" \
-    "$third_title" "664,16,616,688" || \
+    "$first_title" "-616,16,616,688" \
+    "$second_title" "16,16,616,688" \
+    "$third_title" "648,16,616,688" || \
     fail "Driftile did not restore the exact $protocol viewport after default-width acceptance: $(describe_layout "$first_title" "$second_title" "$third_title")"
   wait_for_active "$third_title" || \
     fail "Driftile changed $protocol focus after default-width acceptance"
@@ -8942,18 +8942,18 @@ run_scenario() {
   set_layout_configuration 50 20 10 24 || \
     fail "KWin could not apply the $protocol column-width step configuration"
   wait_for_layout \
-    "$first_title" "-592,24,604,672" \
-    "$second_title" "36,24,604,672" \
-    "$third_title" "664,24,604,672" || \
+    "$first_title" "-608,24,604,672" \
+    "$second_title" "20,24,604,672" \
+    "$third_title" "648,24,604,672" || \
     fail "Driftile changed existing $protocol width policies at the step configuration barrier: $(describe_layout "$first_title" "$second_title" "$third_title")"
   wait_for_active "$third_title" || \
     fail "Driftile changed $protocol focus at the step configuration barrier"
   set_gap 16 || \
     fail "KWin could not remove the temporary $protocol step configuration gap"
   wait_for_layout \
-    "$first_title" "-600,16,616,688" \
-    "$second_title" "32,16,616,688" \
-    "$third_title" "664,16,616,688" || \
+    "$first_title" "-616,16,616,688" \
+    "$second_title" "16,16,616,688" \
+    "$third_title" "648,16,616,688" || \
     fail "Driftile did not preserve the exact $protocol layout before the configured step: $(describe_layout "$first_title" "$second_title" "$third_title")"
   wait_for_active "$third_title" || \
     fail "Driftile changed $protocol focus before the configured step"
@@ -8961,18 +8961,18 @@ run_scenario() {
   invoke_shortcut "driftile_decrease_column_width" || \
     fail "KGlobalAccel could not apply the configured $protocol decrease step"
   wait_for_layout \
-    "$first_title" "-600,16,616,688" \
-    "$second_title" "32,16,616,688" \
-    "$third_title" "664,16,363,688" || \
+    "$first_title" "-616,16,616,688" \
+    "$second_title" "16,16,616,688" \
+    "$third_title" "648,16,363,688" || \
     fail "Driftile did not decrease the active $protocol column by exactly 20 percentage points: $(describe_layout "$first_title" "$second_title" "$third_title")"
   wait_for_active "$third_title" || \
     fail "Driftile changed $protocol focus after the configured decrease step"
   invoke_shortcut "driftile_increase_column_width" || \
     fail "KGlobalAccel could not apply the configured $protocol increase step"
   wait_for_layout \
-    "$first_title" "-600,16,616,688" \
-    "$second_title" "32,16,616,688" \
-    "$third_title" "664,16,616,688" || \
+    "$first_title" "-616,16,616,688" \
+    "$second_title" "16,16,616,688" \
+    "$third_title" "648,16,616,688" || \
     fail "Driftile did not restore the exact $protocol layout after the configured step round trip: $(describe_layout "$first_title" "$second_title" "$third_title")"
   wait_for_active "$third_title" || \
     fail "Driftile changed $protocol focus after the configured step round trip"
@@ -8980,16 +8980,16 @@ run_scenario() {
   set_layout_configuration 50 10 10 24 || \
     fail "KWin could not restore the $protocol column-width step configuration"
   wait_for_layout \
-    "$first_title" "-592,24,604,672" \
-    "$second_title" "36,24,604,672" \
-    "$third_title" "664,24,604,672" || \
+    "$first_title" "-608,24,604,672" \
+    "$second_title" "20,24,604,672" \
+    "$third_title" "648,24,604,672" || \
     fail "Driftile did not expose the restored $protocol step delivery barrier: $(describe_layout "$first_title" "$second_title" "$third_title")"
   set_gap 16 || \
     fail "KWin could not restore the default $protocol gap after the step acceptance"
   wait_for_layout \
-    "$first_title" "-600,16,616,688" \
-    "$second_title" "32,16,616,688" \
-    "$third_title" "664,16,616,688" || \
+    "$first_title" "-616,16,616,688" \
+    "$second_title" "16,16,616,688" \
+    "$third_title" "648,16,616,688" || \
     fail "Driftile did not restore the exact $protocol baseline after the step acceptance: $(describe_layout "$first_title" "$second_title" "$third_title")"
   wait_for_active "$third_title" || \
     fail "Driftile changed $protocol focus while restoring the default step"
@@ -8998,18 +8998,18 @@ run_scenario() {
   set_layout_configuration 50 10 20 24 || \
     fail "KWin could not apply the $protocol window-height step configuration"
   wait_for_layout \
-    "$first_title" "-592,24,604,672" \
-    "$second_title" "36,24,604,672" \
-    "$third_title" "664,24,604,672" || \
+    "$first_title" "-608,24,604,672" \
+    "$second_title" "20,24,604,672" \
+    "$third_title" "648,24,604,672" || \
     fail "Driftile changed existing $protocol height policies at the height-step configuration barrier: $(describe_layout "$first_title" "$second_title" "$third_title")"
   wait_for_active "$third_title" || \
     fail "Driftile changed $protocol focus at the height-step configuration barrier"
   set_gap 16 || \
     fail "KWin could not remove the temporary $protocol height-step gap"
   wait_for_layout \
-    "$first_title" "-600,16,616,688" \
-    "$second_title" "32,16,616,688" \
-    "$third_title" "664,16,616,688" || \
+    "$first_title" "-616,16,616,688" \
+    "$second_title" "16,16,616,688" \
+    "$third_title" "648,16,616,688" || \
     fail "Driftile did not preserve the exact $protocol layout before the configured height step: $(describe_layout "$first_title" "$second_title" "$third_title")"
   wait_for_active "$third_title" || \
     fail "Driftile changed $protocol focus before the configured height step"
@@ -9017,42 +9017,42 @@ run_scenario() {
   invoke_shortcut "driftile_decrease_window_height" || \
     fail "KGlobalAccel could not apply the configured $protocol height decrease"
   wait_for_layout \
-    "$first_title" "-600,16,616,688" \
-    "$second_title" "32,16,616,688" \
-    "$third_title" "664,16,616,547" || \
+    "$first_title" "-616,16,616,688" \
+    "$second_title" "16,16,616,688" \
+    "$third_title" "648,16,616,547" || \
     fail "Driftile did not decrease the active $protocol window by exactly 20 percentage points: $(describe_layout "$first_title" "$second_title" "$third_title")"
   wait_for_active "$third_title" || \
     fail "Driftile changed $protocol focus after the configured height decrease"
   invoke_shortcut "driftile_increase_window_height" || \
     fail "KGlobalAccel could not apply the configured $protocol height increase"
   wait_for_layout \
-    "$first_title" "-600,16,616,688" \
-    "$second_title" "32,16,616,688" \
-    "$third_title" "664,16,616,688" || \
+    "$first_title" "-616,16,616,688" \
+    "$second_title" "16,16,616,688" \
+    "$third_title" "648,16,616,688" || \
     fail "Driftile did not restore the exact $protocol layout after the configured height-step round trip: $(describe_layout "$first_title" "$second_title" "$third_title")"
   wait_for_active "$third_title" || \
     fail "Driftile changed $protocol focus after the configured height-step round trip"
   invoke_shortcut "driftile_reset_window_height" || \
     fail "KGlobalAccel could not restore automatic $protocol window height after the configured step"
   wait_for_layout \
-    "$first_title" "-600,16,616,688" \
-    "$second_title" "32,16,616,688" \
-    "$third_title" "664,16,616,688" || \
+    "$first_title" "-616,16,616,688" \
+    "$second_title" "16,16,616,688" \
+    "$third_title" "648,16,616,688" || \
     fail "Driftile changed the exact $protocol baseline while restoring automatic height: $(describe_layout "$first_title" "$second_title" "$third_title")"
 
   set_layout_configuration 50 10 10 24 || \
     fail "KWin could not restore the $protocol window-height step configuration"
   wait_for_layout \
-    "$first_title" "-592,24,604,672" \
-    "$second_title" "36,24,604,672" \
-    "$third_title" "664,24,604,672" || \
+    "$first_title" "-608,24,604,672" \
+    "$second_title" "20,24,604,672" \
+    "$third_title" "648,24,604,672" || \
     fail "Driftile did not expose the restored $protocol height-step delivery barrier: $(describe_layout "$first_title" "$second_title" "$third_title")"
   set_gap 16 || \
     fail "KWin could not restore the default $protocol gap after height-step acceptance"
   wait_for_layout \
-    "$first_title" "-600,16,616,688" \
-    "$second_title" "32,16,616,688" \
-    "$third_title" "664,16,616,688" || \
+    "$first_title" "-616,16,616,688" \
+    "$second_title" "16,16,616,688" \
+    "$third_title" "648,16,616,688" || \
     fail "Driftile did not restore the exact $protocol baseline after height-step acceptance: $(describe_layout "$first_title" "$second_title" "$third_title")"
   wait_for_active "$third_title" || \
     fail "Driftile changed $protocol focus while restoring the default height step"
@@ -9093,9 +9093,9 @@ run_scenario() {
   wait_for_active "$first_title" || \
     fail "Driftile did not focus the first $protocol column"
   wait_for_layout \
-    "$first_title" "0,16,616,688" \
-    "$second_title" "632,16,616,688" \
-    "$third_title" "1264,16,616,688" || \
+    "$first_title" "16,16,616,688" \
+    "$second_title" "648,16,616,688" \
+    "$third_title" "1280,16,616,688" || \
     fail "Driftile did not reveal the first $protocol column: $(describe_layout "$first_title" "$second_title" "$third_title")"
 
   invoke_shortcut "driftile_focus_column_last" || \
@@ -9103,9 +9103,9 @@ run_scenario() {
   wait_for_active "$third_title" || \
     fail "Driftile did not focus the last $protocol column"
   wait_for_layout \
-    "$first_title" "-600,16,616,688" \
-    "$second_title" "32,16,616,688" \
-    "$third_title" "664,16,616,688" || \
+    "$first_title" "-616,16,616,688" \
+    "$second_title" "16,16,616,688" \
+    "$third_title" "648,16,616,688" || \
     fail "Driftile did not reveal the last $protocol column: $(describe_layout "$first_title" "$second_title" "$third_title")"
 
   invoke_shortcut "driftile_move_column_to_first" || \
@@ -9113,9 +9113,9 @@ run_scenario() {
   wait_for_active "$third_title" || \
     fail "Driftile changed focus while moving the $protocol column first"
   wait_for_layout \
-    "$first_title" "632,16,616,688" \
-    "$second_title" "1264,16,616,688" \
-    "$third_title" "0,16,616,688" || \
+    "$first_title" "648,16,616,688" \
+    "$second_title" "1280,16,616,688" \
+    "$third_title" "16,16,616,688" || \
     fail "Driftile did not move the active $protocol column first: $(describe_layout "$first_title" "$second_title" "$third_title")"
 
   invoke_shortcut "driftile_move_column_to_last" || \
@@ -9123,23 +9123,23 @@ run_scenario() {
   wait_for_active "$third_title" || \
     fail "Driftile changed focus while moving the $protocol column last"
   wait_for_layout \
-    "$first_title" "-600,16,616,688" \
-    "$second_title" "32,16,616,688" \
-    "$third_title" "664,16,616,688" || \
+    "$first_title" "-616,16,616,688" \
+    "$second_title" "16,16,616,688" \
+    "$third_title" "648,16,616,688" || \
     fail "Driftile did not move the active $protocol column last: $(describe_layout "$first_title" "$second_title" "$third_title")"
 
   activate_window "$first_title" || fail "KWin could not activate the first $protocol window"
   wait_for_layout \
-    "$first_title" "0,16,616,688" \
-    "$second_title" "632,16,616,688" \
-    "$third_title" "1264,16,616,688" || \
+    "$first_title" "16,16,616,688" \
+    "$second_title" "648,16,616,688" \
+    "$third_title" "1280,16,616,688" || \
     fail "Driftile did not reveal the first $protocol window: $(describe_layout "$first_title" "$second_title" "$third_title")"
 
   activate_window "$third_title" || fail "KWin could not reactivate the third $protocol window"
   wait_for_layout \
-    "$first_title" "-600,16,616,688" \
-    "$second_title" "32,16,616,688" \
-    "$third_title" "664,16,616,688" || \
+    "$first_title" "-616,16,616,688" \
+    "$second_title" "16,16,616,688" \
+    "$third_title" "648,16,616,688" || \
     fail "Driftile did not reveal the third $protocol window again: $(describe_layout "$first_title" "$second_title" "$third_title")"
 
   wait_for_shortcut "driftile_move_column_left" || \
@@ -9149,17 +9149,17 @@ run_scenario() {
   invoke_shortcut "driftile_move_column_left" || \
     fail "KGlobalAccel could not invoke the move-left shortcut"
   wait_for_layout \
-    "$first_title" "-600,16,616,688" \
-    "$second_title" "664,16,616,688" \
-    "$third_title" "32,16,616,688" || \
+    "$first_title" "-616,16,616,688" \
+    "$second_title" "648,16,616,688" \
+    "$third_title" "16,16,616,688" || \
     fail "Driftile did not move the active $protocol column left: $(describe_layout "$first_title" "$second_title" "$third_title")"
 
   invoke_shortcut "driftile_move_column_right" || \
     fail "KGlobalAccel could not invoke the move-right shortcut"
   wait_for_layout \
-    "$first_title" "-600,16,616,688" \
-    "$second_title" "32,16,616,688" \
-    "$third_title" "664,16,616,688" || \
+    "$first_title" "-616,16,616,688" \
+    "$second_title" "16,16,616,688" \
+    "$third_title" "648,16,616,688" || \
     fail "Driftile did not move the active $protocol column right: $(describe_layout "$first_title" "$second_title" "$third_title")"
 
   activate_window "$second_title" || \
@@ -9167,9 +9167,9 @@ run_scenario() {
   wait_for_active "$second_title" || \
     fail "KWin did not focus the middle $protocol window before stack editing"
   wait_for_layout \
-    "$first_title" "-600,16,616,688" \
-    "$second_title" "32,16,616,688" \
-    "$third_title" "664,16,616,688" || \
+    "$first_title" "-616,16,616,688" \
+    "$second_title" "16,16,616,688" \
+    "$third_title" "648,16,616,688" || \
     fail "Driftile did not preserve the middle $protocol column before stack editing: $(describe_layout "$first_title" "$second_title" "$third_title")"
 
   wait_for_shortcut "driftile_focus_window_up" || \
@@ -9344,10 +9344,10 @@ run_scenario() {
   wait_for_active "$fourth_title" || \
     fail "KWin did not focus the direct $protocol stack insertion window"
   wait_for_geometries \
-    "$first_title" "-600,16,616,336" \
-    "$second_title" "-600,368,616,336" \
-    "$third_title" "32,16,616,688" \
-    "$fourth_title" "664,16,616,688" || \
+    "$first_title" "-616,16,616,336" \
+    "$second_title" "-616,368,616,336" \
+    "$third_title" "16,16,616,688" \
+    "$fourth_title" "648,16,616,688" || \
     fail "Driftile did not prepare the direct $protocol stack insertion: $(describe_layout "$first_title" "$second_title" "$third_title" "$fourth_title")"
 
   verify_consume_and_expel_window \
@@ -9367,10 +9367,10 @@ run_scenario() {
     fail "KWin could not minimize the second passive direct-insertion $protocol peer"
   wait_for_state_and_geometries \
     "$direct_passive_id" minimized true \
-    "$first_title" "-600,16,616,336" \
-    "$second_title" "-600,368,616,336" \
-    "$third_title" "32,16,616,688" \
-    "$fourth_title" "664,16,616,688" || \
+    "$first_title" "-616,16,616,336" \
+    "$second_title" "-616,368,616,336" \
+    "$third_title" "16,16,616,688" \
+    "$fourth_title" "648,16,616,688" || \
     fail "Driftile changed the $protocol fixture while settling the direct-insertion peer: $(describe_layout "$first_title" "$second_title" "$third_title" "$fourth_title")"
   wait_for_window_state "$direct_second_passive_id" minimized true || \
     fail "Driftile restored the second passive direct-insertion $protocol peer"
@@ -9662,9 +9662,9 @@ run_scenario() {
   invoke_shortcut "driftile_focus_column_right" || \
     fail "KGlobalAccel could not focus the right $protocol column"
   wait_for_layout \
-    "$first_title" "-600,16,616,688" \
-    "$second_title" "32,16,616,688" \
-    "$third_title" "664,16,616,688" || \
+    "$first_title" "-616,16,616,688" \
+    "$second_title" "16,16,616,688" \
+    "$third_title" "648,16,616,688" || \
     fail "Driftile did not reveal the right $protocol column after stack editing: $(describe_layout "$first_title" "$second_title" "$third_title")"
   wait_for_active "$third_title" || \
     fail "Driftile did not focus the right $protocol column after stack editing"
@@ -9672,9 +9672,9 @@ run_scenario() {
   invoke_shortcut "driftile_focus_column_left" || \
     fail "KGlobalAccel could not restore focus to the middle $protocol column"
   wait_for_layout \
-    "$first_title" "-600,16,616,688" \
-    "$second_title" "32,16,616,688" \
-    "$third_title" "664,16,616,688" || \
+    "$first_title" "-616,16,616,688" \
+    "$second_title" "16,16,616,688" \
+    "$third_title" "648,16,616,688" || \
     fail "Driftile changed the restored three-column $protocol layout: $(describe_layout "$first_title" "$second_title" "$third_title")"
   wait_for_active "$second_title" || \
     fail "Driftile did not restore focus to the middle $protocol column"
@@ -9682,9 +9682,9 @@ run_scenario() {
   invoke_shortcut "driftile_toggle_floating" || \
     fail "KGlobalAccel could not float the middle $protocol window"
   wait_for_layout \
-    "$first_title" "-600,16,616,688" \
+    "$first_title" "-616,16,616,688" \
     "$second_title" "$second_baseline" \
-    "$third_title" "32,16,616,688" || \
+    "$third_title" "16,16,616,688" || \
     fail "Driftile did not preserve the tiled view while floating the middle $protocol window: $(describe_layout "$first_title" "$second_title" "$third_title")"
   wait_for_active "$second_title" || \
     fail "Driftile changed $protocol focus after floating the middle window"
@@ -9693,9 +9693,9 @@ run_scenario() {
     "$protocol" \
     "$second_title" \
     "$third_title" \
-    "$first_title" "-600,16,616,688" \
+    "$first_title" "-616,16,616,688" \
     "$second_title" "$second_baseline" \
-    "$third_title" "32,16,616,688"
+    "$third_title" "16,16,616,688"
 
   activate_window "$second_title" || \
     fail "KWin could not restore floating $protocol focus before retiling"
@@ -9705,9 +9705,9 @@ run_scenario() {
   invoke_shortcut "driftile_toggle_floating" || \
     fail "KGlobalAccel could not retile the middle $protocol window"
   wait_for_layout \
-    "$first_title" "-600,16,616,688" \
-    "$second_title" "32,16,616,688" \
-    "$third_title" "664,16,616,688" || \
+    "$first_title" "-616,16,616,688" \
+    "$second_title" "16,16,616,688" \
+    "$third_title" "648,16,616,688" || \
     fail "Driftile did not restore the middle $protocol window to its original slot: $(describe_layout "$first_title" "$second_title" "$third_title")"
   wait_for_active "$second_title" || \
     fail "Driftile changed $protocol focus after retiling the middle window"
@@ -9737,9 +9737,9 @@ run_scenario() {
   invoke_shortcut "driftile_increase_column_width" || \
     fail "KGlobalAccel could not invoke the increase-width shortcut"
   wait_for_layout \
-    "$first_title" "-600,16,616,688" \
-    "$second_title" "32,16,742,688" \
-    "$third_title" "790,16,616,688" || \
+    "$first_title" "-616,16,616,688" \
+    "$second_title" "16,16,742,688" \
+    "$third_title" "774,16,616,688" || \
     fail "Driftile did not increase the active $protocol column width: $(describe_layout "$first_title" "$second_title" "$third_title")"
   wait_for_active "$second_title" || \
     fail "Driftile changed $protocol focus after increasing column width"
@@ -9747,9 +9747,9 @@ run_scenario() {
   invoke_shortcut "driftile_decrease_column_width" || \
     fail "KGlobalAccel could not invoke the decrease-width shortcut"
   wait_for_layout \
-    "$first_title" "-600,16,616,688" \
-    "$second_title" "32,16,616,688" \
-    "$third_title" "664,16,616,688" || \
+    "$first_title" "-616,16,616,688" \
+    "$second_title" "16,16,616,688" \
+    "$third_title" "648,16,616,688" || \
     fail "Driftile did not restore the active $protocol column width after decreasing: $(describe_layout "$first_title" "$second_title" "$third_title")"
   wait_for_active "$second_title" || \
     fail "Driftile changed $protocol focus after restoring column width"
@@ -9757,9 +9757,9 @@ run_scenario() {
   invoke_shortcut "driftile_decrease_column_width" || \
     fail "KGlobalAccel could not invoke the decrease-width shortcut"
   wait_for_layout \
-    "$first_title" "-600,16,616,688" \
-    "$second_title" "32,16,490,688" \
-    "$third_title" "538,16,616,688" || \
+    "$first_title" "-616,16,616,688" \
+    "$second_title" "16,16,490,688" \
+    "$third_title" "522,16,616,688" || \
     fail "Driftile did not decrease the active $protocol column width: $(describe_layout "$first_title" "$second_title" "$third_title")"
   wait_for_active "$second_title" || \
     fail "Driftile changed $protocol focus after decreasing column width"
@@ -9767,9 +9767,9 @@ run_scenario() {
   invoke_shortcut "driftile_reset_column_width" || \
     fail "KGlobalAccel could not invoke the reset-width shortcut"
   wait_for_layout \
-    "$first_title" "-600,16,616,688" \
-    "$second_title" "32,16,616,688" \
-    "$third_title" "664,16,616,688" || \
+    "$first_title" "-616,16,616,688" \
+    "$second_title" "16,16,616,688" \
+    "$third_title" "648,16,616,688" || \
     fail "Driftile did not reset the active $protocol column width: $(describe_layout "$first_title" "$second_title" "$third_title")"
   wait_for_active "$second_title" || \
     fail "Driftile changed $protocol focus after resetting column width"
@@ -9777,9 +9777,9 @@ run_scenario() {
   invoke_shortcut "driftile_switch_preset_column_width" || \
     fail "KGlobalAccel could not invoke the preset-width shortcut"
   wait_for_layout \
-    "$first_title" "-600,16,616,688" \
-    "$second_title" "32,16,827,688" \
-    "$third_title" "875,16,616,688" || \
+    "$first_title" "-616,16,616,688" \
+    "$second_title" "16,16,827,688" \
+    "$third_title" "859,16,616,688" || \
     fail "Driftile did not select the next $protocol preset width: $(describe_layout "$first_title" "$second_title" "$third_title")"
   wait_for_active "$second_title" || \
     fail "Driftile changed $protocol focus after selecting a preset width"
@@ -9787,9 +9787,9 @@ run_scenario() {
   invoke_shortcut "driftile_switch_preset_column_width_back" || \
     fail "KGlobalAccel could not invoke the reverse preset-width shortcut"
   wait_for_layout \
-    "$first_title" "-600,16,616,688" \
-    "$second_title" "32,16,616,688" \
-    "$third_title" "664,16,616,688" || \
+    "$first_title" "-616,16,616,688" \
+    "$second_title" "16,16,616,688" \
+    "$third_title" "648,16,616,688" || \
     fail "Driftile did not restore the previous $protocol preset width: $(describe_layout "$first_title" "$second_title" "$third_title")"
 
   invoke_shortcut "driftile_maximize_column" || \
@@ -9802,9 +9802,9 @@ run_scenario() {
   invoke_shortcut "driftile_maximize_column" || \
     fail "KGlobalAccel could not restore the maximized column"
   wait_for_layout \
-    "$first_title" "-600,16,616,688" \
-    "$second_title" "32,16,616,688" \
-    "$third_title" "664,16,616,688" || \
+    "$first_title" "-616,16,616,688" \
+    "$second_title" "16,16,616,688" \
+    "$third_title" "648,16,616,688" || \
     fail "Driftile did not restore the maximized $protocol column width: $(describe_layout "$first_title" "$second_title" "$third_title")"
 
   invoke_shortcut "driftile_center_column" || \
@@ -10737,12 +10737,12 @@ run_multi_output_scenario() {
     fail "KScreen did not disable Virtual-1"
 
   wait_for_geometries \
-    "${titles[0]}" "-2496,16,616,688" \
-    "${titles[1]}" "-1864,16,616,688" \
-    "${titles[2]}" "-1232,16,616,688" \
-    "${titles[3]}" "-600,16,616,688" \
-    "${titles[4]}" "32,16,616,688" \
-    "${titles[5]}" "664,16,616,688" || \
+    "${titles[0]}" "-2512,16,616,688" \
+    "${titles[1]}" "-1880,16,616,688" \
+    "${titles[2]}" "-1248,16,616,688" \
+    "${titles[3]}" "-616,16,616,688" \
+    "${titles[4]}" "16,16,616,688" \
+    "${titles[5]}" "648,16,616,688" || \
     fail "Driftile did not merge the $protocol windows onto the remaining output: $(describe_layout "${titles[@]}")"
 
   output_frame=$(single_output_work_area "$protocol") || \
@@ -10766,12 +10766,12 @@ run_multi_output_scenario() {
   wait_for_active "${titles[5]}" || \
     fail "KWin did not restore focus after the reachability sweep"
   wait_for_geometries \
-    "${titles[0]}" "-2496,16,616,688" \
-    "${titles[1]}" "-1864,16,616,688" \
-    "${titles[2]}" "-1232,16,616,688" \
-    "${titles[3]}" "-600,16,616,688" \
-    "${titles[4]}" "32,16,616,688" \
-    "${titles[5]}" "664,16,616,688" || \
+    "${titles[0]}" "-2512,16,616,688" \
+    "${titles[1]}" "-1880,16,616,688" \
+    "${titles[2]}" "-1248,16,616,688" \
+    "${titles[3]}" "-616,16,616,688" \
+    "${titles[4]}" "16,16,616,688" \
+    "${titles[5]}" "648,16,616,688" || \
     fail "Driftile did not restore the merged $protocol layout after the reachability sweep: $(describe_layout "${titles[@]}")"
 
   kscreen-doctor \
