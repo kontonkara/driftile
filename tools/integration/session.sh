@@ -2404,6 +2404,54 @@ centered_frame_in_work_area() {
     '
 }
 
+stepped_floating_width_frame() {
+  local work_area=$1
+  local frame=$2
+  local step_percent=$3
+  local direction=$4
+
+  jq --exit-status --null-input --raw-output \
+    --arg workArea "$work_area" \
+    --arg frame "$frame" \
+    --argjson stepPercent "$step_percent" \
+    --arg direction "$direction" '
+      def rect($raw):
+        ($raw | split(",") | map(tonumber)) as $values
+        | {
+            x: $values[0],
+            y: $values[1],
+            width: $values[2],
+            height: $values[3]
+          };
+      def coordinate:
+        (((. * 1000000) | round) / 1000000) | tostring;
+      (rect($workArea)) as $work
+      | (rect($frame)) as $window
+      | select($stepPercent >= 1 and $stepPercent <= 50)
+      | (
+          if $direction == "increase" then 1
+          elif $direction == "decrease" then -1
+          else empty
+          end
+        ) as $directionSign
+      | ($work.width * $stepPercent / 100 * $directionSign) as $widthStep
+      | ($window.width + $widthStep) as $width
+      | select($width > 0)
+      | select(
+          $window.x >= $work.x
+          and ($window.x + $width) <= ($work.x + $work.width)
+        )
+      | [
+          $window.x,
+          $window.y,
+          $width,
+          $window.height
+        ]
+      | map(coordinate)
+      | join(",")
+    '
+}
+
 frames_intersect() {
   local first=$1
   local second=$2
@@ -6154,7 +6202,7 @@ verify_floating_navigation_step() {
     fail "Driftile changed floating $protocol frames after $shortcut: $(describe_layout "${window_titles[@]}")"
 }
 
-verify_floating_move_step() {
+verify_floating_geometry_step() {
   local protocol=$1
   local shortcut=$2
   local active_title=$3
@@ -6170,11 +6218,11 @@ verify_floating_move_step() {
   done
 
   invoke_shortcut "$shortcut" || \
-    fail "KGlobalAccel could not invoke $shortcut for floating $protocol movement"
+    fail "KGlobalAccel could not invoke $shortcut for floating $protocol geometry"
   wait_for_active "$active_title" || \
     fail "Driftile changed $protocol focus after $shortcut: active=$(describe_active_windows "${window_titles[@]}")"
   wait_for_geometries "${geometry_pairs[@]}" || \
-    fail "Driftile did not apply the exact floating $protocol movement after $shortcut: $(describe_layout "${window_titles[@]}")"
+    fail "Driftile did not apply the exact floating $protocol geometry after $shortcut: $(describe_layout "${window_titles[@]}")"
 }
 
 verify_manual_floating_navigation() {
@@ -6183,8 +6231,13 @@ verify_manual_floating_navigation() {
   local active_tiled_title=$3
   local right_tiled_title=$4
   local centered_frame
+  local floating_context
+  local increased_frame
+  local restored_frame
+  local selected_desktop
   local title
   local work_area
+  local width_step_percent
   local -a navigation_pids=()
   local -a navigation_titles=(
     "driftile-floating-navigation-${protocol}-a"
@@ -6274,7 +6327,7 @@ verify_manual_floating_navigation() {
     fail "KWin could not focus the center $protocol floating window before movement"
   wait_for_active "${navigation_titles[1]}" || \
     fail "KWin did not focus the center $protocol floating window before movement"
-  verify_floating_move_step \
+  verify_floating_geometry_step \
     "$protocol" "driftile_move_column_left" "${navigation_titles[1]}" \
     "${navigation_titles[0]}" "80,80,360,240" \
     "${navigation_titles[1]}" "410,240,360,240" \
@@ -6282,7 +6335,7 @@ verify_manual_floating_navigation() {
     "$first_tiled_title" "16,16,616,336" \
     "$active_tiled_title" "16,368,616,336" \
     "$right_tiled_title" "648,16,616,688"
-  verify_floating_move_step \
+  verify_floating_geometry_step \
     "$protocol" "driftile_move_window_up" "${navigation_titles[1]}" \
     "${navigation_titles[0]}" "80,80,360,240" \
     "${navigation_titles[1]}" "410,190,360,240" \
@@ -6290,7 +6343,7 @@ verify_manual_floating_navigation() {
     "$first_tiled_title" "16,16,616,336" \
     "$active_tiled_title" "16,368,616,336" \
     "$right_tiled_title" "648,16,616,688"
-  verify_floating_move_step \
+  verify_floating_geometry_step \
     "$protocol" "driftile_move_column_right" "${navigation_titles[1]}" \
     "${navigation_titles[0]}" "80,80,360,240" \
     "${navigation_titles[1]}" "460,190,360,240" \
@@ -6298,7 +6351,7 @@ verify_manual_floating_navigation() {
     "$first_tiled_title" "16,16,616,336" \
     "$active_tiled_title" "16,368,616,336" \
     "$right_tiled_title" "648,16,616,688"
-  verify_floating_move_step \
+  verify_floating_geometry_step \
     "$protocol" "driftile_move_window_down" "${navigation_titles[1]}" \
     "${navigation_titles[0]}" "80,80,360,240" \
     "${navigation_titles[1]}" "460,240,360,240" \
@@ -6308,7 +6361,52 @@ verify_manual_floating_navigation() {
     "$right_tiled_title" "648,16,616,688"
 
   work_area=$(single_output_work_area "$protocol") || \
-    fail "KWin did not expose the single-output $protocol work area for floating centering"
+    fail "KWin did not expose the single-output $protocol work area for floating geometry"
+  width_step_percent=$(kreadconfig6 \
+    --file "$XDG_CONFIG_HOME/kwinrc" \
+    --group "Script-${plugin_id}" \
+    --key ColumnWidthStepPercent \
+    --default 10) || \
+    fail "KWin did not expose the configured $protocol floating-width step"
+  increased_frame=$(stepped_floating_width_frame \
+    "$work_area" "460,240,360,240" "$width_step_percent" increase) || \
+    fail "the increased $protocol floating frame could not be calculated"
+  restored_frame=$(stepped_floating_width_frame \
+    "$work_area" "$increased_frame" "$width_step_percent" decrease) || \
+    fail "the restored $protocol floating frame could not be calculated"
+  [[ "$restored_frame" == "460,240,360,240" ]] || \
+    fail "the configured $protocol floating-width step did not form an exact round trip"
+  floating_context=$(window_desktop_transfer_state "${navigation_titles[1]}") || \
+    fail "KWin did not expose the $protocol floating window context before resizing"
+  selected_desktop=$(current_desktop_id) || \
+    fail "KWin did not expose the selected desktop before floating $protocol resizing"
+
+  verify_floating_geometry_step \
+    "$protocol" "driftile_increase_column_width" "${navigation_titles[1]}" \
+    "${navigation_titles[0]}" "80,80,360,240" \
+    "${navigation_titles[1]}" "$increased_frame" \
+    "${navigation_titles[2]}" "840,440,360,240" \
+    "$first_tiled_title" "16,16,616,336" \
+    "$active_tiled_title" "16,368,616,336" \
+    "$right_tiled_title" "648,16,616,688"
+  [[ "$(window_desktop_transfer_state "${navigation_titles[1]}")" == "$floating_context" ]] || \
+    fail "Driftile changed the $protocol floating window context after increasing its width"
+  [[ "$(current_desktop_id)" == "$selected_desktop" ]] || \
+    fail "Driftile changed the selected desktop after increasing the floating $protocol width"
+
+  verify_floating_geometry_step \
+    "$protocol" "driftile_decrease_column_width" "${navigation_titles[1]}" \
+    "${navigation_titles[0]}" "80,80,360,240" \
+    "${navigation_titles[1]}" "$restored_frame" \
+    "${navigation_titles[2]}" "840,440,360,240" \
+    "$first_tiled_title" "16,16,616,336" \
+    "$active_tiled_title" "16,368,616,336" \
+    "$right_tiled_title" "648,16,616,688"
+  [[ "$(window_desktop_transfer_state "${navigation_titles[1]}")" == "$floating_context" ]] || \
+    fail "Driftile changed the $protocol floating window context after restoring its width"
+  [[ "$(current_desktop_id)" == "$selected_desktop" ]] || \
+    fail "Driftile changed the selected desktop after restoring the floating $protocol width"
+
   centered_frame=$(
     centered_frame_in_work_area "$work_area" "80,80,360,240"
   ) || fail "the centered $protocol floating frame could not be calculated"

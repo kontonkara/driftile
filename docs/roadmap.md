@@ -5,8 +5,8 @@ Versions 0.1.0, 1.0.0, 1.1.0, 1.2.0, 1.3.0, 1.4.0, 1.5.0, 1.6.0, 1.7.0,
 milestones and release criteria below are a historical record. The remaining
 post-v1 direction is not a committed release schedule.
 
-Development is on 1.13.0-dev.0. The next bounded scope is not yet committed
-and will be frozen separately.
+Development is on 1.13.0-dev.0. Its bounded scope is frozen below and remains
+in development until every release criterion passes.
 
 ## Foundation (delivered)
 
@@ -56,6 +56,9 @@ The current runtime already:
 - Parks deterministic whole columns when a new multi-output capacity limit no longer fits, preferring non-active columns, then retries waiting windows.
 - Focuses adjacent and edge columns, and reorders the active whole column left, right, first, or last with context-local shortcuts and transactional geometry rollback.
 - Decreases, increases, or resets the active whole column width with grouped constraints and transactional rollback.
+- Reuses width decrease and increase to resize an active manually floating
+  frame by the configured work-area step, with exact acknowledgement and zero
+  tiled mutation.
 - Cycles preset widths in both directions, adjusts width by 10%, toggles full width, expands into available space within shared constraints, and centers either the active column or all fully visible columns.
 - Adjusts one window's height by 10%, resets it to weighted automatic sizing, and cycles `1/3`, `1/2`, and `2/3` presets with transactional stack reflow.
 - Focuses and reorders vertical stack members, contextually merges or extracts the active window, consumes or expels edge members, and inserts directly into the nearest stack across nonparticipating singleton columns.
@@ -624,6 +627,51 @@ Release criteria (met):
 - Unit, packaged Wayland, XWayland, native X11, and hidden full-VM checks reuse
   existing windows and applications.
 
+## 1.13.0 (in development)
+
+Version `1.13.0` freezes one bounded runtime slice: the existing width decrease
+and increase actions resize an active manually floating frame, while tiled
+targets keep the existing whole-column behavior. Other width actions remain
+tiled-only. A blocked or pending floating target never falls through to tiled
+resizing.
+
+The target is
+`originalWidth + direction * columnWidthStep * workArea.width`, snapped to the
+physical-pixel grid and clamped to live decorated minimum and maximum widths, a
+positive client width, and the established partial-visibility bounds. The
+calculation uses constant per-target math and performs no managed-window,
+column, or layout scan.
+
+The per-window geometry signal is connected before one forward frame request.
+An exact synchronous X11 or XWayland result settles immediately; an unchanged
+native Wayland frame remains pending until the exact target is observed by a
+geometry signal or delayed sample. Twenty unchanged delayed samples expire an
+unacknowledged request. Floating metadata commits only for the exact current
+target under unchanged ownership, context, topology, constraints, and
+decorations. Nonexact and stale results are rejected without compensation
+because the public KWin API exposes no configure serial. Pending width,
+movement, and centering commands are serialized for that window, and
+acceptance, rejection, expiry, removal, and shutdown release the pending signal
+and ownership.
+
+This slice changes no tiled model, tiled frame, viewport, focus, reinsertion
+anchor, setting, action, binding, configuration schema, persistence, helper,
+overview, or application matrix.
+
+Release criteria (pending):
+
+- Unit coverage proves the configured work-area math, decorated live bounds,
+  positive client width, physical-pixel snapping, partial visibility, immediate
+  and delayed exact settlement, bounded unchanged-request expiry, pending
+  serialization and cleanup, exact-only metadata commits, nonexact and stale
+  rejection, one forward write, no compensation, and zero tiled mutation.
+- Packaged native Wayland, XWayland, and native X11 checks reuse the existing
+  applications and prove exact width round trips without changing focus,
+  context, or tiled state.
+- Format, type, lint, unit, deterministic build and package, all-system flake,
+  hidden full and lifecycle VMs, version, lifecycle, exact-SHA CI, and release
+  gates pass for the candidate without widening this slice.
+
 ## Post-v1
 
 Add interaction and presentation features outside the frozen v1 scope without
@@ -636,6 +684,6 @@ taking over compositor mechanisms.
 - Add optional visual transitions, layout indicators, and concise diagnostics.
 - Keep Plasma's built-in Overview as the compatible baseline.
 - Add pointer-driven overview rearrangement only through public KWin and Plasma
-  extension APIs; it remains deferred beyond 1.12.0.
+  extension APIs; it remains deferred beyond 1.13.0.
 
 The optional overview must remain removable, preserve the authoritative layout state, and fall back cleanly to Plasma's Overview.

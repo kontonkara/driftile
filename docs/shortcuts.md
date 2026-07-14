@@ -31,7 +31,7 @@ arrow keys are interchangeable unless noted otherwise.
 | Expand active column into available width        | `Meta+Ctrl+F`                                        |
 | Center column or active manually floating window | `Meta+C`                                             |
 | Center fully visible columns                     | `Meta+Ctrl+C`                                        |
-| Decrease or increase column width by 10%         | `Meta+-` or `Meta+=`                                 |
+| Decrease or increase column or floating width    | `Meta+-` or `Meta+=`                                 |
 | Decrease or increase active window height by 10% | `Meta+Shift+-` or `Meta+Shift+=`                     |
 | Cycle preset window height forward               | `Meta+Ctrl+Shift+R`                                  |
 | Reset active window height to automatic          | `Meta+Ctrl+R`                                        |
@@ -59,13 +59,20 @@ smaller than 10 pixels stays fully visible. The action preserves frame size,
 focus, output, desktop, and every tiled layout. Automatic layout exclusions
 remain under KWin geometry ownership.
 
-`Meta+C` centers an active manually floating frame in its assigned output and
-desktop work area. Each smaller dimension uses its exact logical midpoint; an
-oversized dimension starts at that work area's origin. The guarded command
-preserves size, focus, context, reinsertion placement, and every tiled layout.
-An already centered, blocked, automatically excluded, or stale target is a
-no-op. With a tiled window active, the existing column-centering behavior is
-unchanged.
+`Meta+C`, `Meta+-`, and `Meta+=` act contextually on an active manually
+floating window. `Meta+C` centers its frame in the assigned output and desktop
+work area: each smaller dimension uses its exact logical midpoint, while an
+oversized dimension starts at the work-area origin. The width keys change the
+decorated frame width by the configured step percentage of the assigned
+work-area width, excluding the gap. Height and top-left stay unchanged unless
+the partial-visibility bounds require the minimal origin clamp that keeps 10–75
+logical pixels visible. Both preserve focus, context, reinsertion placement,
+and every tiled layout; centering also preserves size. An already centered,
+automatically excluded, or stale center target is a no-op. Width state commits
+only after an exact synchronous or asynchronous acknowledgement. Pending,
+blocked, or native-state width targets are no-ops and never fall through to
+tiled behavior. Existing tiled behavior is unchanged; no action, binding,
+setting, or schema is added.
 
 Driftile does not register a minimize action or default shortcut; KWin owns the
 mechanism. A minimized tiled window retains its exact logical slot, and a

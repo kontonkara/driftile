@@ -38,7 +38,9 @@ The ownership rule is strict:
   an empty configuration retains the built-in exact thirds.
 - Optional best-effort centering for successful left, right, first, and last
   tiled focus navigation without changing other focus paths.
-- Configurable 1–50 percentage-point step for explicit column-width decrease and increase actions.
+- Configurable 1–50 percentage-point step for contextual width decrease and
+  increase actions: the active whole column when tiled, or the active manually
+  floating window when detached.
 - Configurable 1–50 percentage-point step for explicit active-window height decrease and increase actions.
 - Output-local commands unless a transfer is explicit.
 - Work-area, size-constraint, fullscreen, minimized-window compatibility, dialog handling, and settled virtual-output recovery.
@@ -129,6 +131,29 @@ The ownership rule is strict:
   desktops, and the window's observed desktop and activity membership entries
   `M`, retains no work, and issues at most one desktop write, one focus write,
   and one deactivation.
+
+## 1.13 core slice
+
+- The existing width decrease and increase actions resize an active manually
+  floating window. Other width actions retain their tiled-only behavior, and a
+  blocked or pending floating target never falls through to a tiled mutation.
+- Each target adds or subtracts the configured column-width step multiplied by
+  the assigned work-area width, snaps to the physical-pixel grid, clamps to live
+  decorated minimum and maximum widths with a positive client width, and keeps
+  the required partial-visibility strip reachable.
+- The command makes at most one forward frame request. Exact synchronous
+  X11/XWayland acceptance or an exact later native Wayland geometry signal may
+  commit floating metadata only while the target and all ownership guards
+  remain current.
+- A nonexact or stale result commits no metadata and receives no compensating
+  write because the public KWin API provides no configure serial. While a
+  request is pending, further width, movement, and centering commands for that
+  window are rejected; 20 unchanged delayed samples, removal, or shutdown clear
+  the pending ownership.
+- Target calculation uses constant per-target math and performs no managed-window,
+  column, or layout scan. The operation changes no tiled model, tiled frame,
+  viewport, focus, reinsertion anchor, setting, binding, action, schema,
+  persistence, helper, or overview behavior.
 
 ## Beyond v1
 
@@ -237,6 +262,12 @@ Driftile must integrate with, not duplicate:
 - Directional floating focus chooses the nearest positive center distance on the requested axis; first and last choose frame-x extremes. Minimized windows are excluded, and no action wraps or writes geometry.
 - Directional floating movement requests a 50-logical-pixel translation and keeps only the minimum visible strip required by the frame size. It preserves size, focus, context, reinsertion placement, and every tiled layout.
 - Contextual centering places each manually floating frame dimension at the exact logical midpoint of its assigned work area, or at the work-area origin when that dimension is oversized. It performs no window, column, or layout enumeration and preserves the same ownership and state boundaries as directional movement.
+- Contextual width decrease and increase resize only an active manually floating
+  frame by the configured fraction of its assigned work-area width. The result
+  has a physically aligned width, respects live decorated constraints and
+  partial visibility, and commits only after exact current acknowledgement. A
+  blocked, pending, nonexact, or stale operation changes no tiled state and
+  never falls through to whole-column resizing.
 - KWin alone owns minimization. Driftile registers no minimize action or default shortcut, keeps a minimized tiled window in its exact logical slot, and preserves a minimized manually floating window's exact detached frame for restoration.
 - An automatically layout-excluded window has no layout slot, manual-floating anchor, waiting entry, suspension, or retry state. Commands requiring layout ownership are no-ops; relation-free desktop transfer remains available.
 - A configured application exclusion uses the same automatic-exclusion state,

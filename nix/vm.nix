@@ -6448,6 +6448,9 @@ let
         local direct_insert_verified
         local first_trailing_desktop_id=""
         local floating_center_frame
+        local floating_decreased_frame
+        local floating_decreased_width
+        local floating_desktop
         local floating_left_frame
         local floating_left_up_frame
         local floating_output_frame
@@ -6457,7 +6460,10 @@ let
         local floating_second_x
         local floating_second_y
         local floating_up_frame
+        local floating_width_delta
+        local floating_width_step_percent
         local floating_work_area
+        local floating_work_area_width
         local gap_first_frame
         local gap_third_frame
         local horizontal_extraction_verified
@@ -6970,6 +6976,106 @@ let
         floating_second_frame=$floating_center_frame
         record_focus_state \
           "physical Meta+C centered the real manual floating window exactly"
+
+        if ! floating_width_step_percent=$(
+          ${pkgs.kdePackages.kconfig}/bin/kreadconfig6 \
+            --file "$HOME/.config/kwinrc" \
+            --group "Script-${pluginId}" \
+            --key ColumnWidthStepPercent \
+            --default 10
+        ); then
+          record_focus_state \
+            "manual floating width checkpoint could not read its configured step"
+          return 1
+        fi
+
+        if [[ ! "$floating_width_step_percent" =~ ^[1-9][0-9]*$ ]] \
+          || ((floating_width_step_percent > 50)); then
+          record_focus_state \
+            "manual floating width checkpoint received an invalid configured step"
+          return 1
+        fi
+
+        IFS=, read -r _ _ floating_work_area_width _ \
+          <<< "$floating_work_area"
+        IFS=, read -r \
+          floating_second_x \
+          floating_second_y \
+          floating_second_width \
+          floating_second_height \
+          <<< "$floating_second_frame"
+        floating_width_delta=$((
+          (floating_work_area_width * floating_width_step_percent + 50) / 100
+        ))
+        floating_decreased_width=$((
+          floating_second_width - floating_width_delta
+        ))
+        floating_decreased_frame="$floating_second_x,$floating_second_y,$floating_decreased_width,$floating_second_height"
+
+        if ((floating_width_delta <= 0 \
+          || floating_decreased_width <= 0)) \
+          || ! frame_is_valid "$floating_decreased_frame"; then
+          record_focus_state \
+            "manual floating width checkpoint target was invalid"
+          return 1
+        fi
+
+        floating_desktop=$(current_desktop_id 2>/dev/null || true)
+
+        if [[ -z "$floating_desktop" ]] \
+          || ! window_is_on_desktop "$title_b" "$floating_desktop" \
+          || ! window_desktop_output_state_contains \
+            "$title_b" \
+            "$floating_output_frame" \
+            >/dev/null; then
+          record_focus_state \
+            "manual floating width checkpoint context was unavailable"
+          return 1
+        fi
+
+        if ! request_physical_shortcut floating-width-minus \
+          || ! wait_for_frames \
+            "$stable_first_frame" \
+            "$floating_decreased_frame" \
+            "$stable_third_frame" \
+          || ! wait_for_precise_window_frame \
+            "$title_b" \
+            "$floating_decreased_frame" \
+          || ! wait_for_active "$title_b" \
+          || [[ "$(current_desktop_id 2>/dev/null || true)" \
+            != "$floating_desktop" ]] \
+          || ! window_is_on_desktop "$title_b" "$floating_desktop" \
+          || ! window_desktop_output_state_contains \
+            "$title_b" \
+            "$floating_output_frame" \
+            >/dev/null; then
+          record_focus_state \
+            "physical Meta+- did not preserve the exact floating frame and context"
+          return 1
+        fi
+
+        if ! request_physical_shortcut floating-width-equal \
+          || ! wait_for_frames \
+            "$stable_first_frame" \
+            "$floating_second_frame" \
+            "$stable_third_frame" \
+          || ! wait_for_precise_window_frame \
+            "$title_b" \
+            "$floating_second_frame" \
+          || ! wait_for_active "$title_b" \
+          || [[ "$(current_desktop_id 2>/dev/null || true)" \
+            != "$floating_desktop" ]] \
+          || ! window_is_on_desktop "$title_b" "$floating_desktop" \
+          || ! window_desktop_output_state_contains \
+            "$title_b" \
+            "$floating_output_frame" \
+            >/dev/null; then
+          record_focus_state \
+            "physical Meta+= did not restore the exact floating frame and context"
+          return 1
+        fi
+        record_focus_state \
+          "physical Meta+- and Meta+= resized the manual floating window by the configured work-area step and restored it exactly"
 
         IFS=, read -r \
           tiled_first_x \

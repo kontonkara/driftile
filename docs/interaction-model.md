@@ -56,7 +56,7 @@ stacking-order, or layout scan.
 | Native maximize      | Extract a regular stack member, then toggle it to work-area edges through KWin                    | Available |
 | Minimize focus       | Preserve tiled slots and floating frames; skip minimized windows without wrapping                 | Available |
 | Hidden-member edits  | Preserve documented passive peers; reject every other minimized-member structural edit            | Available |
-| Floating layer       | Toggle state, switch layers, navigate geometrically, nudge, and center the active window          | Available |
+| Floating layer       | Toggle state, switch layers, navigate geometrically, nudge, center, and resize width contextually | Available |
 | Pointer drop         | Reinsert or adopt one active tiled window at one exact visible target                             | Available |
 | Pointer resize       | Adopt one completed horizontal resize as the active column's fixed width                          | Available |
 | Overview companion   | Focus an exact current or non-current thumbnail, or select a non-current number gutter            | Available |
@@ -74,6 +74,15 @@ starts at the work-area origin. The command does not resize, change focus or
 membership, or modify a tiled layout. Automatic exclusions and native-state,
 interactive, minimized, stale, or otherwise blocked manual-floating targets do
 not fall through to tiled centering.
+
+The existing decrease/increase column-width actions are also contextual. With
+an active manually floating window, they change the decorated frame width by
+the configured step percentage of its assigned work-area width; the gap is
+excluded. Height and top-left stay unchanged unless the partial-visibility
+bounds require a minimal origin clamp that keeps 10–75 logical pixels visible.
+Only an exact synchronous or asynchronous acknowledgement commits state.
+Pending, blocked, or native-state targets fail closed without falling through
+to tiled width changes. This adds no action, binding, setting, or schema.
 
 A tiled drag commits on release over exactly one visible tiled target in the
 same context. The target midpoint selects insertion before or after it. Moving
