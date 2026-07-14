@@ -129,9 +129,10 @@ and floating ownership is unchanged.
 
 Full-width mode keeps the active frame inside equal configured outer gaps.
 Adjacent frames stay at least one physically aligned configured gap beyond the
-corresponding viewport edge; a zero gap adds no clearance. Toggling it again
-restores the prior column width and viewport position. This geometry rule adds
-no state, schema, or binding.
+corresponding viewport edge. A full-width frame remains outside that edge when
+focus moves to a neighboring column; a zero gap adds no clearance. Toggling it
+again restores the prior column width and viewport position. This geometry
+rule adds no state, schema, or binding.
 
 Available-width expansion grows the active column into the unused horizontal
 space, up to its shared window constraints, without hiding any currently fully

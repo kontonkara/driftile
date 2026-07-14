@@ -101,14 +101,14 @@ describe("solveStripGeometry", () => {
     ]);
 
     expect(result.maxViewportOffset).toBe(952);
-    expect(result.viewportOffset).toBe(936);
+    expect(result.viewportOffset).toBe(952);
     expect(result.windows.map((window) => window.frame.x)).toEqual([
-      -820, 132, 1084,
+      -836, 116, 1068,
     ]);
-    expect(result.windows[2]?.frame.x).toBe(1084);
+    expect(result.windows[2]?.frame.x).toBe(1068);
     expect(
       (result.windows[2]?.frame.x ?? 0) + (result.windows[2]?.frame.width ?? 0),
-    ).toBe(2020);
+    ).toBe(2004);
   });
 
   it("does not scroll when the active column is already fully visible", () => {
@@ -161,6 +161,30 @@ describe("solveStripGeometry", () => {
     expect(active?.frame).toMatchObject({ width: 1888, x: 116 });
     expect((active?.frame.x ?? 0) + (active?.frame.width ?? 0)).toBe(2004);
     expect(next?.frame.x).toBe(2036);
+  });
+
+  it("keeps outer gaps when a new column follows a full-width column", () => {
+    const context = createContext([
+      { kind: "proportion", value: 1 },
+      { kind: "proportion", value: 0.5 },
+    ]);
+    const result = solveStripGeometry({
+      context: {
+        ...context,
+        activeColumnId: columnId("column-2"),
+      },
+      devicePixelRatio: 1,
+      gap: 16,
+      pixelGridOrigin: { x: 100, y: 50 },
+      workArea: { height: 1080, width: 1920, x: 100, y: 50 },
+    });
+    const [previous, active] = result.windows;
+
+    expect(result.viewportOffset).toBe(952);
+    expect(previous?.frame).toMatchObject({ width: 1888, x: -1804 });
+    expect((previous?.frame.x ?? 0) + (previous?.frame.width ?? 0)).toBe(84);
+    expect(active?.frame).toMatchObject({ width: 936, x: 1068 });
+    expect((active?.frame.x ?? 0) + (active?.frame.width ?? 0)).toBe(2004);
   });
 
   it.each([1.25, 1.5, 1.75, 2.5])(
@@ -269,7 +293,7 @@ describe("solveStripGeometry", () => {
     expect(next?.frame.x).toBe(2020);
   });
 
-  it("reveals a column on the left without restoring an outer gap", () => {
+  it("reveals a column on the left with its outer gap", () => {
     const context = createContext([
       { kind: "proportion", value: 0.5 },
       { kind: "proportion", value: 0.5 },
@@ -288,8 +312,8 @@ describe("solveStripGeometry", () => {
       workArea: { height: 1080, width: 1920, x: 100, y: 50 },
     });
 
-    expect(result.viewportOffset).toBe(16);
-    expect(result.windows[0]?.frame.x).toBe(100);
+    expect(result.viewportOffset).toBe(0);
+    expect(result.windows[0]?.frame.x).toBe(116);
   });
 
   it("keeps every fitting active column inside the work area", () => {
@@ -546,8 +570,8 @@ describe("solveStripGeometry", () => {
   });
 
   it.each([
-    { expectedOffset: 176, initialOffset: 175 },
-    { expectedOffset: 1762, initialOffset: 1763 },
+    { expectedOffset: 192, initialOffset: 175 },
+    { expectedOffset: 1746, initialOffset: 1763 },
   ])(
     "snaps a reveal from $initialOffset toward the valid pixel interval",
     ({ expectedOffset, initialOffset }) => {
@@ -571,10 +595,10 @@ describe("solveStripGeometry", () => {
       const target = result.windows[5];
 
       expect(result.viewportOffset).toBe(expectedOffset);
-      expect(target?.frame.x).toBeGreaterThanOrEqual(100);
+      expect(target?.frame.x).toBeGreaterThanOrEqual(116);
       expect(
         (target?.frame.x ?? 0) + (target?.frame.width ?? 0),
-      ).toBeLessThanOrEqual(2020);
+      ).toBeLessThanOrEqual(2004);
     },
   );
 

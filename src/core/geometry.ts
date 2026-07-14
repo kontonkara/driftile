@@ -68,6 +68,7 @@ export function solveStripGeometry(input: StripGeometryInput): StripGeometry {
     };
   }
 
+  let activeColumnIndex = -1;
   let fullWidthActiveColumnIndex = -1;
   let fullWidthActiveColumnOffset = 0;
   let resolvedColumnOffset = input.gap;
@@ -78,13 +79,13 @@ export function solveStripGeometry(input: StripGeometryInput): StripGeometry {
       input.gap,
     );
 
-    if (
-      column.id === input.context.activeColumnId &&
-      column.width.kind === "proportion" &&
-      column.width.value === 1
-    ) {
-      fullWidthActiveColumnIndex = columnIndex;
-      fullWidthActiveColumnOffset = resolvedColumnOffset;
+    if (column.id === input.context.activeColumnId) {
+      activeColumnIndex = columnIndex;
+
+      if (column.width.kind === "proportion" && column.width.value === 1) {
+        fullWidthActiveColumnIndex = columnIndex;
+        fullWidthActiveColumnOffset = resolvedColumnOffset;
+      }
     }
 
     resolvedColumnOffset += width + input.gap;
@@ -123,6 +124,17 @@ export function solveStripGeometry(input: StripGeometryInput): StripGeometry {
   );
   let fullWidthLeftNeighborShift = 0;
   let fullWidthRightNeighborShift = 0;
+  const clearance = snapUpToPixelGrid(input.gap, input.devicePixelRatio);
+  const leftNeighborLimit = snapDownToPixelGrid(
+    input.workArea.x - clearance,
+    input.devicePixelRatio,
+    input.pixelGridOrigin.x,
+  );
+  const rightNeighborLimit = snapUpToPixelGrid(
+    input.workArea.x + input.workArea.width + clearance,
+    input.devicePixelRatio,
+    input.pixelGridOrigin.x,
+  );
 
   if (fullWidthActiveColumnIndex >= 0) {
     const fullWidthActiveColumnWidth = columnWidths[fullWidthActiveColumnIndex];
@@ -143,18 +155,6 @@ export function solveStripGeometry(input: StripGeometryInput): StripGeometry {
       input.devicePixelRatio,
       input.pixelGridOrigin.x,
     );
-    const clearance = snapUpToPixelGrid(input.gap, input.devicePixelRatio);
-    const leftNeighborLimit = snapDownToPixelGrid(
-      input.workArea.x - clearance,
-      input.devicePixelRatio,
-      input.pixelGridOrigin.x,
-    );
-    const rightNeighborLimit = snapUpToPixelGrid(
-      input.workArea.x + input.workArea.width + clearance,
-      input.devicePixelRatio,
-      input.pixelGridOrigin.x,
-    );
-
     fullWidthLeftNeighborShift = Math.min(
       0,
       leftNeighborLimit - unshiftedLeftNeighborEnd,
@@ -188,10 +188,27 @@ export function solveStripGeometry(input: StripGeometryInput): StripGeometry {
         : columnIndex > fullWidthActiveColumnIndex
           ? fullWidthRightNeighborShift
           : 0;
+    const shiftedLeft = horizontalSpan.start + fullWidthNeighborShift;
+    const shiftedRight = shiftedLeft + horizontalSpan.length;
+    let inactiveFullWidthShift = 0;
+
+    if (
+      activeColumnIndex >= 0 &&
+      column.id !== input.context.activeColumnId &&
+      column.width.kind === "proportion" &&
+      column.width.value === 1
+    ) {
+      if (columnIndex < activeColumnIndex) {
+        inactiveFullWidthShift = Math.min(0, leftNeighborLimit - shiftedRight);
+      } else if (columnIndex > activeColumnIndex) {
+        inactiveFullWidthShift = Math.max(0, rightNeighborLimit - shiftedLeft);
+      }
+    }
+
     appendColumnWindows(
       windows,
       column,
-      horizontalSpan.start + fullWidthNeighborShift,
+      shiftedLeft + inactiveFullWidthShift,
       horizontalSpan.length,
       input,
     );
@@ -229,7 +246,24 @@ function extendMaxViewportOffset(
     terminalStart += width + input.gap;
   }
 
-  const viewportEnd = input.workArea.x + input.workArea.width;
+  const viewportPadding = clamp(
+    (input.workArea.width - terminalWidth) / 2,
+    0,
+    input.gap,
+  );
+  const paddedViewportStart = input.workArea.x + viewportPadding;
+  const paddedViewportEnd =
+    input.workArea.x + input.workArea.width - viewportPadding;
+  const paddedPhysicalStart = snapUpToPixelGrid(
+    paddedViewportStart,
+    input.devicePixelRatio,
+    input.pixelGridOrigin.x,
+  );
+  const paddedPhysicalEnd = snapDownToPixelGrid(
+    paddedViewportEnd,
+    input.devicePixelRatio,
+    input.pixelGridOrigin.x,
+  );
   let maxViewportOffset = initialOffset;
 
   for (
@@ -245,6 +279,16 @@ function extendMaxViewportOffset(
       input.pixelGridOrigin.x,
     );
     const terminalEnd = terminal.start + terminal.length;
+    const paddedViewportTolerance = floatingPointTolerance(
+      paddedViewportStart,
+      paddedViewportEnd,
+      terminal.length,
+    );
+    const viewportEnd =
+      terminal.length <=
+      paddedPhysicalEnd - paddedPhysicalStart + paddedViewportTolerance
+        ? paddedViewportEnd
+        : input.workArea.x + input.workArea.width;
     const tolerance = floatingPointTolerance(viewportEnd, terminalEnd);
 
     if (
@@ -304,6 +348,7 @@ function revealActiveColumn(
         maxViewportOffset,
         workArea,
         pixelGridOrigin,
+        gap,
         devicePixelRatio,
       );
     }
@@ -321,9 +366,22 @@ function revealColumnSpan(
   maxViewportOffset: number,
   workArea: Rect,
   pixelGridOrigin: number,
+  gap: number,
   devicePixelRatio: number,
 ): number {
-  const viewportEnd = workArea.x + workArea.width;
+  const viewportPadding = clamp((workArea.width - columnWidth) / 2, 0, gap);
+  const paddedViewportStart = workArea.x + viewportPadding;
+  const paddedViewportEnd = workArea.x + workArea.width - viewportPadding;
+  const paddedPhysicalStart = snapUpToPixelGrid(
+    paddedViewportStart,
+    devicePixelRatio,
+    pixelGridOrigin,
+  );
+  const paddedPhysicalEnd = snapDownToPixelGrid(
+    paddedViewportEnd,
+    devicePixelRatio,
+    pixelGridOrigin,
+  );
   let revealedOffset = viewportOffset;
 
   for (
@@ -339,8 +397,22 @@ function revealColumnSpan(
       pixelGridOrigin,
     );
     const targetEnd = target.start + target.length;
+    const paddedViewportTolerance = floatingPointTolerance(
+      paddedViewportStart,
+      paddedViewportEnd,
+      target.length,
+    );
+    const targetFitsPaddedViewport =
+      target.length <=
+      paddedPhysicalEnd - paddedPhysicalStart + paddedViewportTolerance;
+    const viewportStart = targetFitsPaddedViewport
+      ? paddedViewportStart
+      : workArea.x;
+    const viewportEnd = targetFitsPaddedViewport
+      ? paddedViewportEnd
+      : workArea.x + workArea.width;
     const tolerance = floatingPointTolerance(
-      workArea.x,
+      viewportStart,
       viewportEnd,
       target.start,
       targetEnd,
@@ -349,16 +421,16 @@ function revealColumnSpan(
     let correctionDistance = 0;
 
     if (target.length <= workArea.width + tolerance) {
-      if (target.start < workArea.x - tolerance) {
+      if (target.start < viewportStart - tolerance) {
         correctionDirection = -1;
-        correctionDistance = workArea.x - target.start;
+        correctionDistance = viewportStart - target.start;
       } else if (targetEnd > viewportEnd + tolerance) {
         correctionDirection = 1;
         correctionDistance = targetEnd - viewportEnd;
       }
-    } else if (target.start > workArea.x + tolerance) {
+    } else if (target.start > viewportStart + tolerance) {
       correctionDirection = 1;
-      correctionDistance = target.start - workArea.x;
+      correctionDistance = target.start - viewportStart;
     } else if (targetEnd < viewportEnd - tolerance) {
       correctionDirection = -1;
       correctionDistance = viewportEnd - targetEnd;

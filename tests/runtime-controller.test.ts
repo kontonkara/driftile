@@ -10053,14 +10053,14 @@ describe("RuntimeController", () => {
     expect(controller.focusFirstColumn()).toBe(true);
     expect(fixture.workspace.activeWindow).toBe(windows[0]?.window);
     expect(windows.map((window) => window.window.frameGeometry.x)).toEqual([
-      0, 495, 990,
+      10, 505, 1000,
     ]);
     expect(controller.focusFirstColumn()).toBe(false);
 
     expect(controller.focusLastColumn()).toBe(true);
     expect(fixture.workspace.activeWindow).toBe(windows[2]?.window);
     expect(windows.map((window) => window.window.frameGeometry.x)).toEqual([
-      -475, 20, 515,
+      -485, 10, 505,
     ]);
     expect(controller.focusLastColumn()).toBe(false);
     expect(fixture.activationCount).toBe(2);
@@ -17833,10 +17833,10 @@ describe("RuntimeController", () => {
       );
       expect(setup.fixture.workspace.activeWindow).toBe(setup.target.window);
       expect(after.activeColumnId).toBe(columnId("column:target"));
-      expect(after.viewportOffset).toBe(direction === "right" ? 640 : 10);
+      expect(after.viewportOffset).toBe(direction === "right" ? 650 : 0);
       expect(setup.target.window.frameGeometry).toMatchObject({
         width: 400,
-        x: direction === "right" ? 600 : 0,
+        x: direction === "right" ? 590 : 10,
       });
       expect(activationSnapshot).toEqual(after);
       expect(activationFrame).toEqual(setup.target.window.frameGeometry);
@@ -20541,11 +20541,11 @@ describe("RuntimeController", () => {
       windows.map((window) => window.window.frameGeometry.x);
 
     controller.start();
-    expect(positions()).toEqual([-475, 20, 515]);
+    expect(positions()).toEqual([-485, 10, 505]);
     expect(controller.moveColumnLeft()).toBe(true);
-    expect(positions()).toEqual([-475, 515, 20]);
+    expect(positions()).toEqual([-485, 505, 10]);
     expect(controller.moveColumnLeft()).toBe(true);
-    expect(positions()).toEqual([495, 990, 0]);
+    expect(positions()).toEqual([505, 1000, 10]);
     const writesAtBoundary = windows.map((window) => window.writeCount);
     expect(controller.moveColumnLeft()).toBe(false);
     expect(windows.map((window) => window.writeCount)).toEqual(
@@ -20553,9 +20553,9 @@ describe("RuntimeController", () => {
     );
 
     expect(controller.moveColumnRight()).toBe(true);
-    expect(positions()).toEqual([0, 990, 495]);
+    expect(positions()).toEqual([10, 1000, 505]);
     expect(controller.moveColumnRight()).toBe(true);
-    expect(positions()).toEqual([-475, 20, 515]);
+    expect(positions()).toEqual([-485, 10, 505]);
     expect(controller.moveColumnRight()).toBe(false);
     expect(fixture.workspace.activeWindow).toBe(windows[2]?.window);
     expect(fixture.activationCount).toBe(0);
@@ -20588,7 +20588,7 @@ describe("RuntimeController", () => {
 
     controller.start();
     expect(controller.moveColumnToFirst()).toBe(true);
-    expect(positions()).toEqual([495, 990, 0]);
+    expect(positions()).toEqual([505, 1000, 10]);
     expect(testLayoutColumns(controller, output, desktop)).toEqual([
       { id: "column:window-3", windowIds: ["window-3"] },
       { id: "column:window-1", windowIds: ["window-1"] },
@@ -20597,7 +20597,7 @@ describe("RuntimeController", () => {
     expect(controller.moveColumnToFirst()).toBe(false);
 
     expect(controller.moveColumnToLast()).toBe(true);
-    expect(positions()).toEqual([-475, 20, 515]);
+    expect(positions()).toEqual([-485, 10, 505]);
     expect(testLayoutColumns(controller, output, desktop)).toEqual([
       { id: "column:window-1", windowIds: ["window-1"] },
       { id: "column:window-2", windowIds: ["window-2"] },
@@ -20709,7 +20709,7 @@ describe("RuntimeController", () => {
     expect(scheduler.pendingCount).toBe(0);
     expect(controller.moveColumnLeft()).toBe(true);
     expect(windows.map((window) => window.window.frameGeometry.x)).toEqual([
-      -475, 515, 20,
+      -485, 505, 10,
     ]);
   });
 
@@ -22056,6 +22056,38 @@ describe("RuntimeController", () => {
     expect(fixture.activationCount).toBe(0);
   });
 
+  it("keeps outer gaps when a new window follows a full-width column", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+    const second = createTrackedWindow("window-2", output, desktop);
+
+    controller.start();
+    expect(controller.maximizeColumn()).toBe(true);
+    expect(first.window.frameGeometry).toMatchObject({ width: 980, x: 10 });
+
+    fixture.workspace.activeWindow = second.window;
+    fixture.windowAdded.emit(second.window);
+    scheduler.flush();
+
+    expect(controller.managedCount).toBe(2);
+    expect(first.window.frameGeometry).toMatchObject({ width: 980, x: -990 });
+    expect(second.window.frameGeometry).toMatchObject({ width: 485, x: 505 });
+  });
+
   it("centers a full-width column and restores the exact viewport", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
@@ -22903,7 +22935,7 @@ describe("RuntimeController", () => {
     controller.reconcile();
     expect(
       active.window.frameGeometry.x + active.window.frameGeometry.width,
-    ).toBe(990.4);
+    ).toBe(989.6);
 
     expect(controller.centerVisibleColumns()).toBe(true);
     const after = runtimeLayout(controller).snapshot(
@@ -25041,7 +25073,7 @@ describe("RuntimeController", () => {
     scheduler.flush();
     expect(
       [first, second, third].map(({ window }) => window.frameGeometry.x),
-    ).toEqual([-475, 20, 515]);
+    ).toEqual([-485, 10, 505]);
   });
 
   it.each(WINDOW_STATE_TRANSITIONS)(
@@ -25126,7 +25158,7 @@ describe("RuntimeController", () => {
     expect(fixture.workspace.activeWindow).toBe(first.window);
     expect(
       [first, second, third].map(({ window }) => window.frameGeometry.x),
-    ).toEqual([0, 495, 990]);
+    ).toEqual([10, 505, 1000]);
   });
 
   it("blocks geometry immediately when maximize is requested", () => {
@@ -25839,7 +25871,7 @@ describe("RuntimeController", () => {
     expect(controller.managedCount).toBe(3);
     expect(
       [first, second, third].map(({ window }) => window.frameGeometry.x),
-    ).toEqual([-475, 20, 515]);
+    ).toEqual([-485, 10, 505]);
 
     expect(controller.focusLeft()).toBe(true);
     expect(controller.lastWriteCount).toBe(0);
@@ -25847,7 +25879,7 @@ describe("RuntimeController", () => {
     expect(controller.lastWriteCount).toBe(3);
     expect(
       [first, second, third].map(({ window }) => window.frameGeometry.x),
-    ).toEqual([0, 495, 990]);
+    ).toEqual([10, 505, 1000]);
 
     expect(controller.focusRight()).toBe(true);
     expect(controller.lastWriteCount).toBe(0);
@@ -25855,7 +25887,7 @@ describe("RuntimeController", () => {
     expect(controller.lastWriteCount).toBe(3);
     expect(
       [first, second, third].map(({ window }) => window.frameGeometry.x),
-    ).toEqual([-475, 20, 515]);
+    ).toEqual([-485, 10, 505]);
   });
 
   it("keeps overflow windows unmanaged when more than one output exists", () => {
@@ -26154,23 +26186,23 @@ describe("RuntimeController", () => {
     controller.start();
     fixture.workspace.activeWindow = firstWindows[2]?.window ?? null;
     expect(firstWindows.map(({ window }) => window.frameGeometry.x)).toEqual([
-      -475, 20, 515,
+      -485, 10, 505,
     ]);
 
     fixture.setCurrentDesktop(output, secondDesktop);
     fixture.workspace.activeWindow = secondWindows[0]?.window ?? null;
     expect(secondWindows.map(({ window }) => window.frameGeometry.x)).toEqual([
-      0, 495, 990,
+      10, 505, 1000,
     ]);
 
     fixture.setCurrentDesktop(output, firstDesktop);
     expect(firstWindows.map(({ window }) => window.frameGeometry.x)).toEqual([
-      -475, 20, 515,
+      -485, 10, 505,
     ]);
 
     fixture.setCurrentDesktop(output, secondDesktop);
     expect(secondWindows.map(({ window }) => window.frameGeometry.x)).toEqual([
-      0, 495, 990,
+      10, 505, 1000,
     ]);
   });
 
@@ -26214,9 +26246,9 @@ describe("RuntimeController", () => {
     scheduler.flush();
     expect(controller.lastWriteCount).toBe(3);
     expect(controller.managedCount).toBe(3);
-    expect(first.window.frameGeometry.x).toBe(-475);
-    expect(second.window.frameGeometry.x).toBe(20);
-    expect(third.window.frameGeometry.x).toBe(515);
+    expect(first.window.frameGeometry.x).toBe(-485);
+    expect(second.window.frameGeometry.x).toBe(10);
+    expect(third.window.frameGeometry.x).toBe(505);
 
     fixture.windowRemoved.emit(first.window);
     scheduler.flush();
@@ -26226,9 +26258,9 @@ describe("RuntimeController", () => {
         outputId(output.name),
         desktopId(desktop.id),
       ).viewportOffset,
-    ).toBe(485);
-    expect(second.window.frameGeometry.x).toBe(-475);
-    expect(third.window.frameGeometry.x).toBe(20);
+    ).toBe(495);
+    expect(second.window.frameGeometry.x).toBe(-485);
+    expect(third.window.frameGeometry.x).toBe(10);
   });
 
   it("performance budget: settles sustained lifecycle changes", () => {
@@ -29984,9 +30016,9 @@ describe("RuntimeController", () => {
     flushTopologyRecovery(resumeScheduler, workScheduler);
 
     expect(fixture.workspace.activeWindow).toBe(first.window);
-    expect(first.window.frameGeometry.x).toBe(200);
-    expect(second.window.frameGeometry.x).toBe(695);
-    expect(third.window.frameGeometry.x).toBe(1190);
+    expect(first.window.frameGeometry.x).toBe(210);
+    expect(second.window.frameGeometry.x).toBe(705);
+    expect(third.window.frameGeometry.x).toBe(1200);
   });
 
   it("starts the topology barrier before focus can use a silent work-area change", () => {
@@ -32420,12 +32452,12 @@ describe("RuntimeController", () => {
     const frames = (windows: readonly TrackedWindow[]) =>
       windows.map((window) => window.window.frameGeometry);
     const mergedFrames = [
-      { height: 780, width: 485, x: -1960, y: 10 },
-      { height: 780, width: 485, x: -1465, y: 10 },
-      { height: 780, width: 485, x: -970, y: 10 },
-      { height: 780, width: 485, x: -475, y: 10 },
-      { height: 780, width: 485, x: 20, y: 10 },
-      { height: 780, width: 485, x: 515, y: 10 },
+      { height: 780, width: 485, x: -1970, y: 10 },
+      { height: 780, width: 485, x: -1475, y: 10 },
+      { height: 780, width: 485, x: -980, y: 10 },
+      { height: 780, width: 485, x: -485, y: 10 },
+      { height: 780, width: 485, x: 10, y: 10 },
+      { height: 780, width: 485, x: 505, y: 10 },
     ];
 
     expect(frames(first.windows)).toEqual(mergedFrames);
@@ -32537,7 +32569,7 @@ describe("RuntimeController", () => {
     flushTopologyRecovery(resumeScheduler, workScheduler);
 
     expect(windows.map((window) => window.window.frameGeometry.x)).toEqual([
-      30, 525, 1020, 1515,
+      20, 515, 1010, 1505,
     ]);
   });
 
