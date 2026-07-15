@@ -1317,6 +1317,21 @@ Release criteria (met):
 
 No other feature belongs to 1.31.0.
 
+## 1.32.0 (in development)
+
+The current slice adds four unbound alternatives to vertical focus and window
+movement. They navigate or reorder within the active column, then use the
+previous or next desktop only at the corresponding boundary. Existing default
+vertical bindings remain unchanged; users may assign the alternatives in
+System Settings or replace the four ordinary actions through a custom JSON v1
+shortcut profile.
+
+Focus skips minimized peers when detecting a visible edge. Reordering treats
+minimized peers as structural members, so it moves across them before reaching
+the true first or last slot. Manual floating focus and movement stay local.
+Blocked, stale, or otherwise failed operations never fall through to a desktop
+change.
+
 ## Post-v1
 
 Add interaction and presentation features outside the frozen v1 scope without

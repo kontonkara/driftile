@@ -43,6 +43,42 @@ existing stack, one-way tiled/floating layer focus, contextual width reset, and
 reverse width and height preset cycling are registered without default keys.
 Assign them in **System Settings > Keyboard > Shortcuts** if needed.
 
+Four alternative vertical-boundary actions are also unbound by default:
+
+- **Focus up or previous desktop** and **Focus down or next desktop** navigate
+  inside the active column, then change desktop only at its visible boundary.
+- **Move window up or to previous desktop** and **Move window down or to next
+  desktop** reorder inside the active column, then transfer the window only at
+  its structural boundary.
+
+The existing `Meta+J/K`, `Meta+Down/Up`, and matching `Meta+Ctrl` bindings keep
+their current behavior. Assign the alternatives manually, or use a custom JSON
+v1 profile to replace those four ordinary vertical actions:
+
+```json
+{
+  "version": 1,
+  "bindings": {
+    "driftile_focus_window_up_or_previous_desktop": ["Meta+K", "Meta+Up"],
+    "driftile_focus_window_down_or_next_desktop": ["Meta+J", "Meta+Down"],
+    "driftile_move_window_up_or_to_previous_desktop": [
+      "Meta+Ctrl+K",
+      "Meta+Ctrl+Up"
+    ],
+    "driftile_move_window_down_or_to_next_desktop": [
+      "Meta+Ctrl+J",
+      "Meta+Ctrl+Down"
+    ]
+  }
+}
+```
+
+Focus skips minimized peers when deciding whether a visible boundary was
+reached. Reordering still counts minimized peers in the column, so it crosses
+them before transferring at the true first or last slot. Manual floating focus
+and movement remain local, and blocked or stale operations never fall through
+to a desktop change.
+
 The four preset actions retain the IDs
 `driftile_switch_preset_column_width`,
 `driftile_switch_preset_column_width_back`,
