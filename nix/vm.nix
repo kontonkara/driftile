@@ -1067,6 +1067,7 @@ let
             shortcutNames 2>/dev/null || true)
 
           if [[ "$shortcuts" == *"driftile_focus_column_left"* \
+            && "$shortcuts" == *"driftile_close_window"* \
             && "$shortcuts" == *"driftile_focus_column_right"* \
             && "$shortcuts" == *"driftile_focus_column_first"* \
             && "$shortcuts" == *"driftile_focus_column_last"* \
@@ -5274,6 +5275,63 @@ let
             "$baseline_third"; then
           record_focus_state \
             "real application layout restoration failed"
+          {
+            printf 'expected frame A: %s\n' "$baseline_first"
+            printf 'expected frame B: %s\n' "$baseline_second"
+            printf 'expected frame C: %s\n' "$baseline_third"
+          } >> /tmp/shared/driftile-focus-diagnostics
+          return 1
+        fi
+      }
+
+      close_real_application_physically_and_restore() {
+        local baseline_first=$3
+        local baseline_second=$4
+        local baseline_third=$5
+        local pid=$2
+        local query=$1
+
+        if ! wait_for_active_contains "$query"; then
+          record_real_application_state \
+            "real application was not active before physical close" \
+            "$query"
+          terminate_process "$pid"
+          wait_for_window_gone_contains "$query" >/dev/null 2>&1 || true
+          return 1
+        fi
+
+        if ! request_physical_shortcut close-window; then
+          record_real_application_state \
+            "physical close shortcut was not delivered" \
+            "$query"
+          terminate_process "$pid"
+          wait_for_window_gone_contains "$query" >/dev/null 2>&1 || true
+          return 1
+        fi
+
+        if ! wait_for_window_gone_contains "$query"; then
+          record_real_application_state \
+            "physical close shortcut did not close the real application" \
+            "$query"
+          terminate_process "$pid"
+          wait_for_window_gone_contains "$query" >/dev/null 2>&1 || true
+          return 1
+        fi
+
+        terminate_process "$pid"
+
+        if ! activate_window "$title_c" || ! wait_for_active "$title_c"; then
+          record_focus_state \
+            "physical close layout focus restoration failed"
+          return 1
+        fi
+
+        if ! wait_for_singleton_layout \
+            "$baseline_first" \
+            "$baseline_second" \
+            "$baseline_third"; then
+          record_focus_state \
+            "physical close layout restoration failed"
           {
             printf 'expected frame A: %s\n' "$baseline_first"
             printf 'expected frame B: %s\n' "$baseline_second"
@@ -11277,12 +11335,15 @@ let
           return 1
         fi
 
-        if ! close_real_application_and_restore \
+        if ! close_real_application_physically_and_restore \
             "$firefox_query" \
             "$firefox_pid" \
             "$baseline_first" \
             "$baseline_second" \
             "$baseline_third"; then
+          if ! rm -rf -- "$firefox_profile"; then
+            record_focus_state "Firefox profile cleanup failed"
+          fi
           return 1
         fi
         if ! rm -rf -- "$firefox_profile"; then
@@ -11290,7 +11351,8 @@ let
           return 1
         fi
 
-        record_focus_state "Firefox closed and the tiled layout reflowed"
+        record_focus_state \
+          "Firefox closed through physical Meta+Q and the tiled layout reflowed"
 
         activate_window "$title_c" \
           && wait_for_active "$title_c" \
