@@ -453,6 +453,13 @@ describe("overview effect package", () => {
       "windowPresentation.tiledPresentation.selected",
     );
     expect(tab).toContain("!windowPresentation.tiledPresentation.selected");
+    for (const visual of [thumbnail, tab]) {
+      expect(visual).toContain(
+        "card.keyboardSelectionId === card.navigationTargetId(windowPresentation.windowId)",
+      );
+      expect(visual).not.toContain("isSelectedNavigationTarget");
+    }
+    expect(desktopCard).not.toContain("function isSelectedNavigationTarget(");
     expect(desktopCard.match(/border\.color: "#ffd166"/gu)).toHaveLength(2);
     expect(desktopCard.match(/keyboardSelected \? 3 : 0/gu)).toHaveLength(2);
     expect(

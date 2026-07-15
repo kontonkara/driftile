@@ -99,7 +99,6 @@ Rectangle {
             desktopId: modelData
             floatingWindows: root.floatingFor(modelData)
             keyboardSelectionId: root.keyboardSelectionId
-            navigationScene: root
             screen: root.targetScreen
             onNavigationTargetsChanged: Qt.callLater(root.repairKeyboardSelection)
             onDesktopTapped: (candidate, expectedDesktopId, expectedScreen) => root.selectDesktop(

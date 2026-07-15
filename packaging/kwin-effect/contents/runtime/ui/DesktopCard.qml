@@ -11,7 +11,6 @@ Rectangle {
     required property var floatingWindows
     required property var screen
     property string keyboardSelectionId: ""
-    property var navigationScene: null
 
     signal desktopTapped(var candidate, string expectedDesktopId, var expectedScreen)
     signal navigationTargetsChanged()
@@ -178,8 +177,8 @@ Rectangle {
 
                     readonly property bool keyboardTarget: !windowPresentation.tiledPresentation
                         || windowPresentation.tiledPresentation.selected
-                    readonly property bool keyboardSelected: keyboardTarget && card.isSelectedNavigationTarget(
-                                                                         windowPresentation, thumbnailShell)
+                    readonly property bool keyboardSelected: keyboardTarget
+                        && card.keyboardSelectionId === card.navigationTargetId(windowPresentation.windowId)
 
                     x: windowPresentation.frame ? windowPresentation.frame.x : 0
                     y: windowPresentation.frame ? windowPresentation.frame.y : 0
@@ -231,8 +230,8 @@ Rectangle {
                         ? windowPresentation.tiledPresentation.tabFrame : null
                     readonly property bool keyboardTarget: windowPresentation.tiledPresentation
                         && !windowPresentation.tiledPresentation.selected
-                    readonly property bool keyboardSelected: keyboardTarget && card.isSelectedNavigationTarget(
-                                                                         windowPresentation, tabShell)
+                    readonly property bool keyboardSelected: keyboardTarget
+                        && card.keyboardSelectionId === card.navigationTargetId(windowPresentation.windowId)
 
                     x: frame ? frame.x : 0
                     y: frame ? frame.y : 0
@@ -323,16 +322,6 @@ Rectangle {
         }
 
         return targets;
-    }
-
-    function isSelectedNavigationTarget(presentation, visual) {
-        if (!navigationScene || !presentation || !visual || !visual.keyboardTarget
-                || keyboardSelectionId !== navigationTargetId(presentation.windowId)
-                || !windowIsActionable(presentation.candidate)) {
-            return false;
-        }
-
-        return clippedNavigationRect(visual, navigationScene) !== null;
     }
 
     function navigationTargetId(windowId) {
