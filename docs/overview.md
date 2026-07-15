@@ -17,8 +17,8 @@ a compact ordered strip for its live members. A left click on a different
 valid tab uses the same guarded focus path. The main script remains the sole
 owner of layout state and records the resulting selection.
 
-Version 1.21.0 is in development and adds keyboard selection without changing
-the pointer paths or layout ownership.
+Version 1.21.0 adds keyboard selection without changing the pointer paths or
+layout ownership.
 
 The companion is disabled by default. When enabled with a fresh shortcut
 record, `Meta+O` toggles it. KGlobalAccel preserves an existing assignment
@@ -29,25 +29,26 @@ publishes the authoritative layout snapshot.
 
 ## Keyboard navigation
 
-On opening, the overview selects the active actionable window when available.
-Otherwise it selects the first actionable target on the current desktop, then
-the first actionable target in visual order. Arrow keys move spatially in the
-requested direction without wrapping.
+On opening, the overview selects the actionable target for the active window
+when available. It falls back to the first actionable target on the current
+desktop, then the first actionable target in visual order. Arrow keys move
+spatially in the requested direction without wrapping.
 
 `Enter`, `Return`, and `Space` run the selected target's existing guarded
-window-focus or desktop-selection path. `Escape` closes the effect without an
-action. In a tabbed column, the selected member is represented only by its
-large thumbnail; each other actionable member is represented by its tab.
-Minimized, invalid, and clipped items are excluded from keyboard selection.
-Desktop gutters remain pointer-only and are not keyboard targets.
+public KWin window-focus or desktop-selection path. `Escape` closes the effect
+without an action. In a tabbed column, the selected member is represented only
+by its large thumbnail; each other actionable member is represented by its
+tab. Minimized, invalid, and fully clipped items are excluded. A partially
+clipped target remains actionable, and spatial navigation uses only its visible
+intersection. Desktop gutters remain pointer-only and are not keyboard targets.
 
-This 1.21.0 work adds no layout, setting, persistence field, private API, or
-global shortcut. Pointer behavior remains unchanged.
+The interaction adds no layout or persistent state, KConfig value, shortcut,
+schema, or private API. Pointer behavior remains unchanged.
 
 ## Install a release
 
-Download `driftile-overview-1.20.0.kwineffect` and `SHA256SUMS` from the stable
-[1.20.0 release](release-notes-1.20.0.md), then verify the archive:
+Download `driftile-overview-1.21.0.kwineffect` and `SHA256SUMS` from the stable
+[1.21.0 release](release-notes-1.21.0.md), then verify the archive:
 
 ```console
 $ sha256sum --check --ignore-missing SHA256SUMS
@@ -57,7 +58,7 @@ Install the overview package as the desktop user:
 
 ```bash
 kpackagetool6 --type=KWin/Effect \
-  --install ./driftile-overview-1.20.0.kwineffect
+  --install ./driftile-overview-1.21.0.kwineffect
 ```
 
 To build the same versioned archive from source, run `npm ci` followed by
@@ -81,7 +82,7 @@ uninstalling the package.
 
 ## NixOS and Home Manager
 
-The 1.20.0 flake exposes the effect separately as
+The 1.21.0 flake exposes the effect separately as
 `packages.<system>.driftile-overview`. The NixOS and Home Manager modules keep
 it opt-in:
 
@@ -94,6 +95,13 @@ system-wide main package can be combined with a per-user overview. Do not
 install the same package ID through both NixOS and Home Manager for one user.
 Neither module enables the effect in KWin; enable it in Desktop Effects and
 adjust its shortcut only if needed.
+
+## Validation
+
+The stable artifacts passed exact-SHA CI. One hidden full Wayland VM
+checkpoint exercised the packaged overview with physical keyboard input; the
+focused core and QML checks cover selection, movement, exclusions, activation,
+and closing semantics.
 
 ## Safety boundary
 

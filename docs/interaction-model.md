@@ -42,6 +42,16 @@ rollback. This adds no action, binding, setting, schema, private API, timer,
 move, geometry write, or membership write, and performs no window,
 stacking-order, or layout scan.
 
+In 1.21.0, opening the optional overview selects the active window's actionable
+target when available, then falls back to the current desktop and visual order.
+Arrow keys move spatially without wrapping. `Enter`, `Return`, and `Space`
+reuse the selected thumbnail or tab's guarded public KWin activation path;
+`Escape` closes without acting. A selected tabbed member appears only as its
+large thumbnail, other actionable members appear as tabs, and minimized,
+invalid, or fully clipped items are skipped. A partially clipped target uses
+its visible intersection for spatial navigation. The interaction changes no
+layout or persistent state, setting, shortcut, schema, or pointer path.
+
 ## Delivery contract
 
 | Area                 | Required behavior                                                                                 | Target    |
@@ -60,7 +70,7 @@ stacking-order, or layout scan.
 | Floating layer       | Toggle state, switch layers, navigate geometrically, nudge, center, and resize contextually       | Available |
 | Pointer drop         | Preview and reinsert one active tiled window at one exact visible target                          | Available |
 | Pointer resize       | Adopt one completed horizontal resize as the active column's fixed width                          | Available |
-| Overview companion   | Focus an exact current or non-current thumbnail, or select a non-current number gutter            | Available |
+| Overview companion   | Activate exact thumbnails or tabs by pointer or keyboard; select a non-current number gutter      | Available |
 | Tabbed columns       | Toggle presentation; select or reorder members with the existing vertical grammar                 | 1.19.0    |
 | Pointer navigation   | Provide wheel navigation through the shared layout model                                          | Future    |
 
@@ -165,15 +175,15 @@ successor is selected when present, otherwise its predecessor. Whole-column
 moves preserve presentation and selection. This slice adds no persistent tab
 strip, pointer tab selection, animation, setting, settings UI, or private API.
 
-In the 1.20 development line, a fresh column reads the global `stacked` or
-`tabbed` default and then applies an exact application override when present. A
-tabbed singleton retains that state across removal, extraction, transfer,
-floating reinsertion, and persistence; it has the same frame as a stacked
-singleton until another member joins. Existing target columns still keep their
-own presentation. Confirmed selection in a multi-window tabbed column may show
-a passive Plasma OSD, controlled by one setting and implemented without an
-input-grabbing effect or managed window. The optional overview keeps minimized
-members as visible disabled tabs rather than offering invalid focus targets.
+In 1.20.0, a fresh column reads the global `stacked` or `tabbed` default and
+then applies an exact application override when present. A tabbed singleton
+retains that state across removal, extraction, transfer, floating reinsertion,
+and persistence; it has the same frame as a stacked singleton until another
+member joins. Existing target columns still keep their own presentation.
+Confirmed selection in a multi-window tabbed column may show a passive Plasma
+OSD, controlled by one setting and implemented without an input-grabbing
+effect or managed window. The optional overview keeps minimized members as
+visible disabled tabs rather than offering invalid focus targets.
 
 ## KWin boundary
 

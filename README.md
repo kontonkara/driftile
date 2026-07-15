@@ -38,8 +38,7 @@ leaving window, output, and desktop mechanisms to KWin.
 
 ## Status
 
-The latest stable release is [1.20.0](docs/release-notes-1.20.0.md).
-Keyboard navigation in the optional overview is in development for 1.21.0.
+The latest stable release is [1.21.0](docs/release-notes-1.21.0.md).
 The feature list tracks the current `main` branch; release state is recorded in
 the [roadmap](docs/roadmap.md).
 
@@ -98,8 +97,7 @@ Upgrade requests a Plasma session restart only when the installed and next
 fixed bootstraps differ.
 
 `nix develop` provides the source toolchain, and `nix build` builds the KWin
-package. See [Testing](docs/testing.md) for unit, integration, and visible VM
-checks.
+package. See [Testing](docs/testing.md) for unit, integration, and VM checks.
 
 ## Documentation
 
@@ -116,6 +114,7 @@ checks.
 - [Testing](docs/testing.md)
 - [Performance](docs/performance.md)
 - [Roadmap](docs/roadmap.md)
+- [1.21.0 release notes](docs/release-notes-1.21.0.md)
 - [1.20.0 release notes](docs/release-notes-1.20.0.md)
 - [1.19.0 release notes](docs/release-notes-1.19.0.md)
 - [1.19.0-rc.1 release notes](docs/release-notes-1.19.0-rc.1.md)

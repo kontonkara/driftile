@@ -1,13 +1,11 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.20.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.21.0 are
 released. The delivered milestones and release criteria below are a historical
-record. Version 1.21.0 is in development; later direction is not a committed
-release schedule.
+record. Later direction is not a committed release schedule.
 
-Stable 1.20.0 completes configurable initial tab presentation, overview tab
-selection, passive tab feedback, and a fresh `Meta+O` overview default without
-taking over compositor mechanisms.
+Stable 1.21.0 adds spatial keyboard navigation to the optional overview without
+changing layout ownership, settings, persistence, or pointer paths.
 
 ## Foundation (delivered)
 
@@ -924,27 +922,28 @@ Release criteria (met):
 
 No other feature belongs to 1.20.0.
 
-## 1.21.0 (in development)
+## 1.21.0 (released)
 
 Version `1.21.0` adds keyboard navigation to the optional overview. Opening the
 effect selects the active actionable window when available, otherwise the
 first actionable target on the current desktop, then the first actionable
 target in visual order. Arrow keys move spatially without wrapping.
 
-`Enter`, `Return`, and `Space` use the selected target's existing guarded
-activation path. `Escape` closes the effect. A selected tabbed member appears
-once as its large thumbnail; other actionable members appear as tab targets.
-Minimized, invalid, and clipped items are excluded.
+`Enter`, `Return`, and `Space` use the selected target's existing guarded public
+KWin activation path. `Escape` closes the effect. A selected tabbed member
+appears once as its large thumbnail; other actionable members appear as tab
+targets. Minimized, invalid, and fully clipped items are excluded; partially
+clipped targets use their visible intersection.
 
-The slice adds no layout behavior, setting, persistence field, private API,
-global shortcut, drag, or rearrangement.
+The slice adds no layout or persistent state, KConfig value, shortcut, schema,
+private API, drag, or rearrangement.
 
-Release criteria:
+Release criteria (met):
 
 - Focused core and QML tests cover initial selection, directional movement,
   tab target identity, exclusions, activation, and closing.
-- Build, package, and exact-SHA CI pass, followed by one hidden checkpoint VM
-  before release.
+- Build, package, and exact-SHA CI pass. One hidden full Wayland VM checkpoint
+  exercises the packaged overview through physical keyboard input.
 - No unrelated application or test matrix is added.
 
 No other feature belongs to 1.21.0.

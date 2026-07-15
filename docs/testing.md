@@ -131,6 +131,16 @@ active. Shortcut coverage assigns `Meta+O` only to a fresh overview action and
 preserves every existing assignment. Existing backend and VM scenarios cover
 the packaged behavior without adding a new test pool or private API.
 
+The 1.21.0 release slice remains effect-only. Focused core tests cover active
+and fallback selection, deterministic spatial movement without wrapping, and
+invalid or missing targets. QML checks cover thumbnail and tab identity,
+minimized and fully clipped exclusions, visible clipping bounds, guarded
+activation keys, and `Escape`.
+
+Build, package, and exact-SHA CI cover the stable artifacts. One hidden full
+Wayland VM checkpoint routes physical keyboard input through the packaged
+effect; no new application or backend matrix is added.
+
 In the following unit list, zero writes to floating windows means ambient
 layout work; explicit manual-floating movement, centering, or contextual size
 resizing owns its guarded frame request.
@@ -311,16 +321,16 @@ bytes, the full KGlobalAccel action list, the loaded core extension, and the
 built-in Overview state. The journal must report exactly two handler creations
 and destructions without component diagnostics, and cleanup restores `false`.
 
-At the same settled pointer layout, the primary
-VM confirms that the separately installed overview effect is disabled and
-registers `Meta+O`. It loads the effect through KWin, invokes its action through
-KGlobalAccel without assigning another chord, leaves the overview visible for
-three seconds, and rejects component errors. Its baseline requires the same
-valid v2 layout digest for 400 ms before frame and focus capture. After closing
-and unloading the effect, it requires identical frames, focus, desktops,
-persisted layout bytes, and built-in Overview state. The retained
-action is invoked once more to prove it is inert after unload, while the main
-extension remains loaded.
+At the same settled pointer layout, the primary VM confirms that the separately
+installed overview effect is disabled and registers `Meta+O`. It loads the
+effect through KWin, opens it with physical `Meta+O`, and uses physical
+`Enter` to activate the initial XWayland target. A second pass uses physical
+`Up` and `Enter` to activate Firefox; a third confirms that physical `Escape`
+closes without changing the active application. The checkpoint rejects
+component errors and preserves frames, desktops, persisted layout bytes, and
+Plasma's built-in Overview. After unloading the effect, the retained action is
+invoked once more to prove it is inert while the main extension remains
+loaded. The stable 1.21.0 release runs this single full checkpoint hidden.
 
 The host injects real keyboard shortcuts and absolute `Meta+left` drags through QEMU QMP, so Plasma routing and pointer behavior cannot hide behind direct invocation. The pointer checkpoint moves native Wayland Firefox into an XWayland xterm column, verifies destination width and order, then reorders the resulting stack. A second physical drag moves native Wayland Firefox through a KWin-owned same-output desktop switch, releases it over a fresh XWayland target, and verifies destination order and width, active focus, unchanged hidden primary-desktop frames, and exact cleanup. The VM also verifies both desktop-reorder directions and aliases against real applications while preserving desktop IDs, selection, window memberships, focus, frames, and the shared tail. It applies and restores a live gap while a real Konsole window is floating. For default width and both resize steps, it co-delivers each policy with a temporary gap barrier, restores the gap, then proves exact existing frames before the explicit action. The remaining checks cover dynamic desktops, minimized-slot navigation, column reorder, horizontal extraction, explicit consume and expel past minimized peers, tiled and floating transfers, transfer boundaries, layer navigation, stack editing, fullscreen and maximize, sizing, and viewport scrolling with native Wayland and XWayland clients. The real xterm path also verifies advertised character-cell resize increments and exact off-lattice tiled geometry. See [Shortcuts](shortcuts.md).
 
