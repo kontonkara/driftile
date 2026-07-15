@@ -88,6 +88,8 @@ npm run uninstall:dev
 They release an owned shortcut profile and unload Driftile before changing the
 installed package. Install and upgrade leave the extension disabled; follow
 their printed steps to enable Driftile and optionally claim the default profile.
+Upgrade requests a Plasma session restart only when the installed and next
+fixed bootstraps differ.
 
 `nix develop` provides the source toolchain, and `nix build` builds the KWin
 package. See [Testing](docs/testing.md) for unit, integration, and visible VM

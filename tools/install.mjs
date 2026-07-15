@@ -1,4 +1,6 @@
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { buildProject, buildShortcutTool } from "./build.mjs";
@@ -11,7 +13,12 @@ const actions = {
 const pluginId = "io.github.kontonkara.driftile";
 const pluginKey = `${pluginId}Enabled`;
 const rootDirectory = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const dataHome =
+  process.env.XDG_DATA_HOME && process.env.XDG_DATA_HOME.length > 0
+    ? process.env.XDG_DATA_HOME
+    : resolve(homedir(), ".local/share");
 const defaultPaths = {
+  installedPackageDirectory: resolve(dataHome, "kwin/scripts", pluginId),
   packageDirectory: resolve(rootDirectory, "dist/kwin-script"),
   shortcutTool: resolve(rootDirectory, "dist/bin/driftile-shortcuts.mjs"),
 };
@@ -26,10 +33,12 @@ export async function runInstallLifecycle(action, dependencies = {}) {
   const buildPackage = dependencies.buildProject ?? buildProject;
   const buildShortcuts = dependencies.buildShortcutTool ?? buildShortcutTool;
   const log = dependencies.log ?? console.log;
-  const paths = dependencies.paths ?? defaultPaths;
+  const paths = { ...defaultPaths, ...dependencies.paths };
   const run = dependencies.runCommand ?? runCommand;
   const sleep = dependencies.sleep ?? delay;
   const pollAttempts = dependencies.unloadPollAttempts ?? unloadPollAttempts;
+  const needsBootstrapRestart =
+    dependencies.bootstrapRestartRequired ?? bootstrapRestartRequired;
 
   if (!Number.isInteger(pollAttempts) || pollAttempts < 1) {
     throw new Error("Unload poll attempts must be a positive integer");
@@ -40,6 +49,13 @@ export async function runInstallLifecycle(action, dependencies = {}) {
   } else {
     await buildPackage();
   }
+
+  const restartRequired =
+    action === "upgrade" &&
+    needsBootstrapRestart(
+      paths.packageDirectory,
+      paths.installedPackageDirectory,
+    );
 
   run(process.execPath, [paths.shortcutTool, "release"]);
   run("kwriteconfig6", [
@@ -68,7 +84,7 @@ export async function runInstallLifecycle(action, dependencies = {}) {
   run("kpackagetool6", ["--type=KWin/Script", actions[action], target]);
 
   if (action !== "remove") {
-    log(enableInstructions(action));
+    log(enableInstructions(action, restartRequired));
   }
 }
 
@@ -127,17 +143,33 @@ export function parseScriptLoadedReply(output) {
   return reply.data[0];
 }
 
-function enableInstructions(action) {
+export function bootstrapRestartRequired(
+  packageDirectory,
+  installedPackageDirectory,
+  readFile = readFileSync,
+) {
+  try {
+    const relativePath = "contents/ui/main.qml";
+    const nextBootstrap = readFile(resolve(packageDirectory, relativePath));
+    const installedBootstrap = readFile(
+      resolve(installedPackageDirectory, relativePath),
+    );
+
+    return !nextBootstrap.equals(installedBootstrap);
+  } catch {
+    return true;
+  }
+}
+
+function enableInstructions(action, restartRequired) {
   const lines = ["Driftile is installed and disabled."];
 
-  if (action === "upgrade") {
-    lines.push(
-      "Restart the Plasma session once before enabling this 1.19.0 upgrade.",
-    );
+  if (restartRequired) {
+    lines.push("Restart the Plasma session once before enabling this upgrade.");
   }
 
   lines.push(
-    action === "upgrade"
+    restartRequired
       ? "Then enable it and claim its shortcut profile with:"
       : "Enable it and claim its shortcut profile with:",
     `  kwriteconfig6 --file kwinrc --group Plugins --key ${pluginKey} --type bool true`,

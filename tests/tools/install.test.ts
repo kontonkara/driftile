@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  bootstrapRestartRequired,
   parseScriptLoadedReply,
   runInstallLifecycle,
 } from "../../tools/install.mjs";
@@ -52,9 +53,20 @@ describe("development package lifecycle", () => {
       ]),
       {
         type: "log",
-        value: expectedInstructions("upgrade"),
+        value: expectedInstructions("upgrade", false),
       },
     ]);
+  });
+
+  it("requests a restart when upgrading an incompatible bootstrap", async () => {
+    const harness = createHarness([false], 100, true);
+
+    await runInstallLifecycle("upgrade", harness.dependencies);
+
+    expect(harness.events[harness.events.length - 1]).toEqual({
+      type: "log",
+      value: expectedInstructions("upgrade", true),
+    });
   });
 
   it("installs the package disabled and prints exact activation steps", async () => {
@@ -139,9 +151,36 @@ describe("development package lifecycle", () => {
       parseScriptLoadedReply('{"data":["false"],"type":"b"}'),
     ).toThrow("KWin returned an invalid script state");
   });
+
+  it("compares installed and next bootstrap bytes conservatively", () => {
+    const files = new Map([
+      ["/next/contents/ui/main.qml", Buffer.from("stable")],
+      ["/matching/contents/ui/main.qml", Buffer.from("stable")],
+      ["/legacy/contents/ui/main.qml", Buffer.from("legacy")],
+    ]);
+    const readFile = (path: string) => {
+      const value = files.get(path);
+
+      if (!value) {
+        throw new Error("missing bootstrap");
+      }
+
+      return value;
+    };
+
+    expect(bootstrapRestartRequired("/next", "/matching", readFile)).toBe(
+      false,
+    );
+    expect(bootstrapRestartRequired("/next", "/legacy", readFile)).toBe(true);
+    expect(bootstrapRestartRequired("/next", "/missing", readFile)).toBe(true);
+  });
 });
 
-function createHarness(scriptStates: readonly boolean[], pollAttempts = 100) {
+function createHarness(
+  scriptStates: readonly boolean[],
+  pollAttempts = 100,
+  restartRequired = false,
+) {
   const events: Event[] = [];
   let failBuild = false;
   let failRelease = false;
@@ -149,6 +188,7 @@ function createHarness(scriptStates: readonly boolean[], pollAttempts = 100) {
 
   return {
     dependencies: {
+      bootstrapRestartRequired: () => restartRequired,
       buildProject: () => {
         events.push({ type: "build-package" });
 
@@ -258,17 +298,18 @@ function stateCommand(): CommandEvent {
   );
 }
 
-function expectedInstructions(action: "install" | "upgrade"): string {
+function expectedInstructions(
+  action: "install" | "upgrade",
+  restartRequired = false,
+): string {
   const lines = ["Driftile is installed and disabled."];
 
-  if (action === "upgrade") {
-    lines.push(
-      "Restart the Plasma session once before enabling this 1.19.0 upgrade.",
-    );
+  if (restartRequired) {
+    lines.push("Restart the Plasma session once before enabling this upgrade.");
   }
 
   lines.push(
-    action === "upgrade"
+    restartRequired
       ? "Then enable it and claim its shortcut profile with:"
       : "Enable it and claim its shortcut profile with:",
     `  kwriteconfig6 --file kwinrc --group Plugins --key ${pluginId}Enabled --type bool true`,
