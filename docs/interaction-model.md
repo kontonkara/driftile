@@ -130,6 +130,16 @@ structural index, clamped to the last column. The transaction retains the
 column's members, presentation, width, and focus; rejected geometry restores
 the previous order.
 
+Adjacent-window swap exchanges the focused member with the selected member of
+the neighboring column while keeping focus on the same window. A
+singleton-to-singleton swap moves both complete columns. Explicit stacked and
+tabbed actions complement the existing presentation toggle.
+
+Previous-window focus keeps an in-memory MRU order for tiled and manually
+floating windows across layout contexts. It skips minimized windows and
+automatic popups. Committing the current entry before activation makes
+repeated use toggle between the latest pair.
+
 The existing center-column action is contextual. With an active manually
 floating window, it centers each non-oversized dimension at the exact logical
 midpoint of the assigned output and desktop work area; an oversized dimension

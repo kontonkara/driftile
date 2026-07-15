@@ -141,6 +141,17 @@ rejected target leaves the previous focus layer unchanged.
 structural position. An oversized position clamps to the last column. The
 current position, floating focus, and rejected geometry remain no-ops.
 
+Five further actions are unbound. `driftile_focus_window_previous` returns to
+the most recently focused tiled or manually floating window; repeated use
+toggles between the latest pair. Minimized windows and automatic popups are
+skipped, and the history lasts only for the current session.
+
+`driftile_swap_window_left` and `driftile_swap_window_right` exchange the
+active window with the selected member of an adjacent column. Two singleton
+columns move as complete columns. `driftile_set_column_stacked_display` and
+`driftile_set_column_tabbed_display` select a presentation explicitly; choosing
+the current presentation is a no-op.
+
 The four preset actions retain the IDs
 `driftile_switch_preset_column_width`,
 `driftile_switch_preset_column_width_back`,

@@ -1402,6 +1402,13 @@ structural position, clamping past the final column. Members, width,
 presentation, and focus move together. Floating focus and rejected geometry
 leave the layout unchanged.
 
+Five unbound interaction actions add adjacent-window swap, explicit stacked or
+tabbed selection, and previous-window focus. Swap preserves the active window
+and exchanges it with the adjacent selected member; two singleton columns move
+whole. Previous-window history is session-only, includes tiled and manually
+floating windows across contexts, and skips minimized windows and automatic
+popups.
+
 ## Post-v1
 
 Add interaction and presentation features outside the frozen v1 scope without
