@@ -1347,6 +1347,12 @@ Natural direction is enabled by default, preserving the content-following
 left-swipe-to-right-column mapping; disabling it reverses both directions. The
 two added typed settings do not change layout persistence.
 
+The optional transition effect excludes launchers, popups, transient dialogs,
+and other non-movable windows. Repeated KWin geometry notifications retarget
+independent position and size animations from their current visual values
+instead of cancelling and restarting them. Home Manager can optionally own the
+bounded transition duration without taking package-installation ownership.
+
 ## Post-v1
 
 Add interaction and presentation features outside the frozen v1 scope without

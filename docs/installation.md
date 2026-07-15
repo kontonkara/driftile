@@ -239,10 +239,16 @@ package:
 
 ```nix
 programs.driftile.transitions.enable = true;
+programs.driftile.transitions.duration = 180;
 ```
 
 Installation does not enable the effect in KWin. Enable **Driftile
 Transitions** in **Desktop Effects** after rebuilding.
+
+`transitions.duration` is a Home Manager-only nullable integer from `0` to
+`1000` milliseconds. Its default is `null`, which leaves the existing KWin
+setting untouched. It can manage an effect installed in another scope without
+setting `transitions.enable`.
 
 Main-script, overview, and transition ownership are independent. NixOS may
 install one while Home Manager installs another, but the modules reject
@@ -251,7 +257,7 @@ does not enable its effect in KWin. On a fresh shortcut record, the enabled
 overview offers `Meta+O`; upgrades preserve the current KGlobalAccel
 assignment. See [Overview companion](overview.md).
 
-The current Home Manager module exposes the complete seventeen-setting profile:
+The current Home Manager module exposes the complete nineteen-setting profile:
 
 ```nix
 programs.driftile.settings = {
