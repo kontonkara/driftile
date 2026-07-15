@@ -44,6 +44,9 @@ The ownership rule is strict:
 - Up to 16 configurable, strictly increasing 10%–100% column-width presets for
   contextual tiled or manual-floating actions; an empty configuration retains
   the built-in exact thirds.
+- Up to 16 configurable, strictly increasing integer 10%–100% window-height
+  presets for tiled or contextual manual-floating actions; an empty
+  configuration retains the exact `1/3`, `1/2`, and `2/3` proportions.
 - Optional best-effort centering for successful left, right, first, and last
   tiled focus navigation, globally or for up to 128 exact, case-sensitive KWin
   `desktopFileName` targets, without changing other focus paths.
@@ -53,7 +56,7 @@ The ownership rule is strict:
 - Configurable 1–50 percentage-point step for contextual height decrease and
   increase actions: the active stack member when tiled, or the active manually
   floating window when detached.
-- One settings page groups sixteen controls into ten General and six
+- One settings page groups seventeen controls into eleven General and six
   Applications controls.
 - Output-local commands unless a transfer is explicit.
 - Work-area, size-constraint, fullscreen, minimized-window compatibility, dialog handling, and settled virtual-output recovery.
@@ -353,19 +356,26 @@ The ownership rule is strict:
   persistence field, helper or overview behavior, KWin API, private API,
   backend, integration, application, or VM matrix.
 
-## 1.29 contextual floating height-preset slice
+## 1.29 height-preset controls slice
 
 - Existing forward and reverse window-height preset actions target one active
-  relation-free manually floating window when that layer is active. The fixed
-  `1/3`, `1/2`, and `2/3` cycle wraps in both directions; window-height reset
-  remains tiled-only.
-- Each raw proportional frame height is
-  `fraction * (workArea.height - gap) - gap`. The start at
+  relation-free manually floating window when that layer is active. Blank
+  `WindowHeightPresets` uses the exact `1/3`, `1/2`, and `2/3` cycle; custom
+  input contains 1–16 strictly increasing integer percentages from 10 through 100. Both cycles wrap in either direction, and window-height reset remains
+  tiled-only.
+- Each custom raw frame height is
+  `percentage / 100 * (workArea.height - gap) - gap`. The start at
   `workArea.y + gap` and the end at `start + rawHeight` are snapped to the
   assigned output's pixel grid before subtraction. Forward selects the first
   resolved height more than one logical pixel above the current frame and
   reverse the last resolved height more than one logical pixel below it,
   wrapping to the first or last preset.
+- Fresh shortcut records assign forward width cycling to `Meta+R` and forward
+  height cycling to `Meta+Shift+R`; both reverse actions are unbound. Existing
+  action IDs and KGlobalAccel assignments are preserved.
+- The helper's default profile follows that mapping. Release migration must
+  account for an older helper-owned profile before the replacement profile is
+  claimed.
 - The shared manual-floating size transaction applies live decorated
   constraints and partial reachability, issues at most one frame request, and
   commits only after exact acknowledgement. Width, focus, context, reinsertion
@@ -374,9 +384,13 @@ The ownership rule is strict:
 - Automatic, related, minimized, native-state, interactive, pending, stale, or
   otherwise blocked active floating targets fail closed without reaching the
   tiled path.
-- The frozen slice adds no action, binding, setting, schema, persistence
-  behavior, helper or overview behavior, KWin API, private API, backend,
-  integration, application, or VM matrix.
+- Replacing the configured height cycle performs no immediate geometry, layout,
+  frame, viewport, focus, or persistence write. Existing tiled preset selection
+  remains semantically stable; only a later explicit tiled or eligible
+  manual-floating preset action reads the replacement cycle. The slice adds no
+  action ID, layout-persistence field, overview behavior, KWin API, private API,
+  backend, or application matrix. The existing VM contract changes without a
+  current VM validation claim.
 
 ## Beyond v1
 
@@ -505,11 +519,13 @@ Driftile must integrate with, not duplicate:
   excluding the gap. The result uses the assigned output's device-pixel ratio
   to align its constrained height, preserves width and top-left except for the
   minimal partial-visibility clamp, and changes no tiled state.
-- Contextual height-preset forward and reverse actions cycle the fixed `1/3`,
-  `1/2`, and `2/3` frame heights for one eligible manually floating window.
-  They reuse exact acknowledgement, decorated constraints, assigned-output
-  pixel alignment, and partial reachability without changing focus, context,
-  reinsertion anchor, or tiled state. Reset remains tiled-only.
+- Contextual height-preset forward and reverse actions cycle configured frame
+  heights for one eligible manually floating window. A blank configuration uses
+  the exact `1/3`, `1/2`, and `2/3` proportions; custom percentages use the
+  gap-adjusted work-area formula. Both paths reuse exact acknowledgement,
+  decorated constraints, assigned-output pixel alignment, and partial
+  reachability without changing focus, context, reinsertion anchor, or tiled
+  state. Reset remains tiled-only.
 - KWin alone owns minimization. Driftile registers no minimize action or default shortcut, keeps a minimized tiled window in its exact logical slot, and preserves a minimized manually floating window's exact detached frame for restoration.
 - An automatically layout-excluded window has no layout slot, manual-floating anchor, waiting entry, suspension, or retry state. Commands requiring layout ownership are no-ops; relation-free desktop transfer remains available.
 - A configured application exclusion uses the same automatic-exclusion state,
@@ -548,6 +564,11 @@ Driftile must integrate with, not duplicate:
 - A column-width preset change performs no layout, frame, viewport, focus, or
   persistence write. Existing columns keep their concrete width; later preset
   actions use the replacement cycle and retain normal constraint clamping.
+- A window-height preset change performs no layout, frame, viewport, focus, or
+  persistence write. Existing tiled height policies and floating frames remain
+  unchanged, including the semantic selection of an existing tiled preset;
+  later explicit tiled or eligible manual-floating actions use the replacement
+  cycle with the normal constraint and pixel-grid rules.
 - Horizontal-focus centering runs inside the successful tiled focus transaction
   and uses the existing physical-pixel viewport calculation. The global flag
   and bounded exact application set are combined, and a stacked destination

@@ -146,6 +146,10 @@ let
     presets: builtins.length presets <= 16 && strictlyIncreasing presets
   );
   renderColumnWidthPresets = presets: lib.concatStringsSep "," (map toString presets);
+  windowHeightPresetType = lib.types.addCheck (lib.types.listOf (lib.types.ints.between 10 100)) (
+    presets: builtins.length presets <= 16 && strictlyIncreasing presets
+  );
+  renderWindowHeightPresets = presets: lib.concatStringsSep "," (map toString presets);
   systemMainInstallEnabled = lib.attrByPath [
     "programs"
     "driftile"
@@ -285,6 +289,12 @@ in
               description = "Column width adjustment in percentage points.";
             };
 
+            windowHeightPresets = lib.mkOption {
+              type = windowHeightPresetType;
+              default = [ ];
+              description = "Strictly increasing window height presets in percent; an empty list uses the built-in thirds.";
+            };
+
             windowHeightStepPercent = lib.mkOption {
               type = lib.types.ints.between 1 50;
               default = 10;
@@ -363,6 +373,7 @@ in
           Gap = cfg.settings.gap;
           ShowTabIndicator = cfg.settings.showTabIndicator;
           TouchpadNavigation = cfg.settings.touchpadNavigation;
+          WindowHeightPresets = renderWindowHeightPresets cfg.settings.windowHeightPresets;
           WindowHeightStepPercent = cfg.settings.windowHeightStepPercent;
         };
       }

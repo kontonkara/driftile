@@ -214,17 +214,28 @@ SHA `9a5d0ab` passes CI quality in 2:41, native X11 in 3:02, and Wayland in
 reused without a new integration, application, backend, or VM matrix. This
 release makes no VM validation claim.
 
-The frozen 1.29.0 development slice adds focused preset-specific runtime
-coverage for forward and reverse wrapping, the three fixed proportional
-targets, gap-adjusted assigned-output pixel-grid resolution, preserved width,
-focus, context, reinsertion anchor, and tiled layouts, one immediate frame
-request, and related or pending fail-closed targets. Existing shared
-manual-floating size coverage supplies decorated constraints, partial
-reachability, delayed exact acknowledgement, repeated-command serialization,
-cleanup, exact metadata commits, and stale-result rejection. Shortcut
-registration and tiled height-preset coverage is also reused without a new
-integration, application, backend, or VM matrix. The slice makes no VM
-validation claim.
+The frozen 1.29.0 development slice adds focused decoder, settings-transport,
+and runtime coverage for `WindowHeightPresets`. It verifies the blank exact
+`1/3`, `1/2`, and `2/3` fallback, 1–16 strictly increasing integer percentages
+from 10 through 100, live replacement without geometry, layout, frame,
+viewport, focus, or persistence writes, stable existing tiled preset selection,
+and later tiled use of the replacement cycle.
+Manual-floating cases cover forward and reverse wrapping, gap-adjusted
+assigned-output pixel-grid resolution, preserved width, focus, context,
+reinsertion anchor, and tiled layouts, one immediate frame request, and related
+or pending fail-closed targets. Existing shared manual-floating size coverage
+supplies decorated constraints, partial reachability, delayed exact
+acknowledgement, repeated-command serialization, cleanup, exact metadata
+commits, and stale-result rejection.
+
+Shortcut contracts verify `Meta+R` for forward width, `Meta+Shift+R` for
+forward height, unbound reverse actions, unchanged action IDs, and preservation
+of existing KGlobalAccel assignments. The helper's default profile changes with
+that mapping; release migration must account for the previous helper-owned
+profile. The existing full Wayland VM contract retains its application pool,
+invokes reverse width cycling directly by action ID, and routes physical
+`Meta+Shift+R` through forward height cycling. No current VM validation claim
+is made.
 
 In the following unit list, zero writes to floating windows means ambient
 layout work; explicit manual-floating movement, centering, or contextual size
@@ -240,7 +251,8 @@ request. It covers immediate and delayed exact acknowledgement, repeated-command
 serialization, cleanup, exact metadata commits, nonexact and stale rejection,
 fail-closed ineligible targets, and zero tiled mutation. Window-height reset
 remains on the tiled path. The frozen 1.29.0 criteria add only the contextual
-manual-floating forward and reverse preset cases described above.
+manual-floating forward and reverse preset cases, configurable cycle coverage,
+and shortcut contracts described above.
 
 Application-width coverage verifies the bounded one-entry-per-line decoder,
 10%–100% values, the 128-entry limit, duplicate and malformed rejection, exact
@@ -250,7 +262,7 @@ clamping for new singleton columns. Nix module checks verify the canonical
 KConfig encoding from typed Home Manager profiles.
 
 Application-exclusion coverage verifies bounded exact-ID decoding, canonical
-Home Manager encoding, atomic sixteen-setting updates, startup exclusion, live
+Home Manager encoding, atomic seventeen-setting updates, startup exclusion, live
 release and fresh readmission, native-state blockers, persistence omission,
 constant-time membership checks, and zero writes to excluded frames.
 
@@ -269,7 +281,7 @@ floating, dialog, transient, and utility windows, global-disable dominance,
 live policy and identity changes, pre-existing borderless state, and
 add or remove paths without geometry writes, focus changes, or layout-state or
 layout-persistence changes. Global-disable and unload cases verify
-ownership-safe restoration separately. Nix checks pin the sixteen-field option
+ownership-safe restoration separately. Nix checks pin the seventeen-field option
 surface and sorted Home Manager KConfig encoding.
 
 Pointer coverage includes strict visible-target planning, midpoint selection,
@@ -395,9 +407,16 @@ pixel before the disabled baseline is restored.
 
 The same VM applies the custom column-width preset list `25,75` to an active
 Konsole column. Physical `Meta+R` input selects 75%, wraps forward to 25%, and
-physical `Meta+Shift+R` wraps back to 75%. Each frame is checked against the
-gap-adjusted output proportion before the setting is cleared and the exact
-baseline layout is restored.
+direct invocation of `driftile_switch_preset_column_width_back` wraps back to
+75%. Each frame is checked against the gap-adjusted output proportion before
+the setting is cleared and the exact baseline layout is restored.
+
+The existing stacked Konsole scenario then applies the custom window-height
+preset list `25,75`. Physical `Meta+Shift+R` selects the 75% target through the
+forward height action. Physical `Meta+Ctrl+R` restores automatic heights before
+the temporary preset list is cleared, and the exact stack remains unchanged by
+configuration cleanup. These contract changes reuse the existing application
+pool and have no current VM validation claim.
 
 At the settled Firefox, Konsole, and XWayland xterm pointer layout, the primary
 VM first verifies that touchpad navigation defaults to disabled, then applies

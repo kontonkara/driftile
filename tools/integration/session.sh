@@ -689,6 +689,7 @@ capture_overview_settings() {
     DefaultColumnWidthPercent
     Gap
     TouchpadNavigation
+    WindowHeightPresets
     WindowHeightStepPercent
   )
 

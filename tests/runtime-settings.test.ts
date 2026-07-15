@@ -22,6 +22,7 @@ interface DeliveredSettings {
   readonly defaultColumnPresentation: "stacked" | "tabbed";
   readonly defaultColumnWidthPercent: number;
   readonly gap: number;
+  readonly windowHeightPresets: readonly number[];
   readonly windowHeightStepPercent: number;
 }
 
@@ -78,6 +79,7 @@ class RuntimeControllerDouble {
       defaultColumnPresentation: options.defaultColumnPresentation,
       defaultColumnWidthPercent: 10,
       gap: options.gap,
+      windowHeightPresets: [],
       windowHeightStepPercent: 1,
     };
     controllerInstances.push(this);
@@ -220,6 +222,12 @@ class RuntimeControllerDouble {
     this.state = { ...this.state, windowHeightStepPercent: value };
     return true;
   }
+
+  setWindowHeightPresets(values: readonly number[]): boolean {
+    this.calls.push("windowHeightPresets");
+    this.state = { ...this.state, windowHeightPresets: [...values] };
+    return true;
+  }
 }
 
 afterEach(() => {
@@ -246,6 +254,7 @@ describe("runtime settings delivery", () => {
       applicationBorderlessExclusions: "org.example.InitialBorder",
       applicationInitialFloating: "org.example.InitialFloat",
       applicationTilingExclusions: "org.example.InitiallyExcluded",
+      windowHeightPresets: "30,60,90",
     });
 
     runtime.init(
@@ -272,6 +281,9 @@ describe("runtime settings delivery", () => {
     ]);
     expect(controller.deliveredSettings.applicationInitialFloating).toEqual([
       "org.example.InitialFloat",
+    ]);
+    expect(controller.deliveredSettings.windowHeightPresets).toEqual([
+      30, 60, 90,
     ]);
 
     expect(
@@ -300,6 +312,7 @@ describe("runtime settings delivery", () => {
       defaultColumnWidthPercent: 65,
       gap: 7,
       touchpadNavigation: true,
+      windowHeightPresets: "25,50,75",
       windowHeightStepPercent: 17,
     });
     const expected: DeliveredSettings = {
@@ -316,6 +329,7 @@ describe("runtime settings delivery", () => {
       defaultColumnPresentation: "tabbed",
       defaultColumnWidthPercent: 65,
       gap: 7,
+      windowHeightPresets: [25, 50, 75],
       windowHeightStepPercent: 17,
     };
 
@@ -334,6 +348,7 @@ describe("runtime settings delivery", () => {
       "defaultColumnWidthPercent",
       "columnWidthPresets",
       "columnWidthStepPercent",
+      "windowHeightPresets",
       "windowHeightStepPercent",
       "gap",
     ]);
@@ -408,6 +423,7 @@ describe("runtime settings delivery", () => {
       "defaultColumnWidthPercent",
       "columnWidthPresets",
       "columnWidthStepPercent",
+      "windowHeightPresets",
       "windowHeightStepPercent",
       "gap",
       "borderlessWindows",
@@ -445,6 +461,7 @@ function settings(
     gap: 16,
     showTabIndicator: true,
     touchpadNavigation: false,
+    windowHeightPresets: "",
     windowHeightStepPercent: 10,
     ...overrides,
   };
@@ -464,5 +481,6 @@ function snapshot(settingsValue: DeliveredSettings): DeliveredSettings {
     applicationInitialFloating: [...settingsValue.applicationInitialFloating],
     applicationTilingExclusions: [...settingsValue.applicationTilingExclusions],
     columnWidthPresets: [...settingsValue.columnWidthPresets],
+    windowHeightPresets: [...settingsValue.windowHeightPresets],
   };
 }

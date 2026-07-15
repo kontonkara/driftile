@@ -26,8 +26,9 @@ leaving window, output, and desktop mechanisms to KWin.
 - Configurable gaps, application initial floating, tiling and borderless
   exclusions, global and application-specific initial column widths,
   global and application-specific initial stacked or tabbed presentation,
-  column-width presets, resize steps, global and application-specific
-  horizontal focus centering, and optional borderless presentation.
+  column-width and window-height presets, resize steps, global and
+  application-specific horizontal focus centering, and optional borderless
+  presentation.
 - Optional passive Plasma OSD feedback when a multi-window tabbed member is
   activated or its column enters tabbed presentation.
 - Optional five-finger horizontal touchpad navigation on native Wayland.
@@ -48,9 +49,14 @@ leaving window, output, and desktop mechanisms to KWin.
 The latest stable release is [1.28.0](docs/release-notes-1.28.0.md).
 The feature list tracks the current `main` branch; release state is recorded in
 the [roadmap](docs/roadmap.md).
-Development for 1.29.0 is frozen to contextual forward and reverse
-window-height preset cycling for one eligible manually floating window.
-Window-height reset remains tiled-only.
+Development for 1.29.0 is frozen to configurable window-height preset cycling
+for tiled windows and one eligible manually floating window. A blank cycle
+keeps the exact `1/3`, `1/2`, and `2/3` proportions; custom cycles accept 1–16
+strictly increasing integer percentages from 10 through 100. Fresh shortcut
+records use `Meta+R` for forward width cycling and `Meta+Shift+R` for forward
+height cycling; both reverse actions are unbound, while existing action IDs and
+KGlobalAccel assignments remain unchanged. Window-height reset stays
+tiled-only.
 
 Driftile requires KDE Plasma with KWin 6.7 or newer. It targets native Wayland
 and XWayland windows, plus single-output native X11 sessions.

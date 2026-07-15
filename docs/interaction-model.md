@@ -70,25 +70,25 @@ setting, shortcut, persistence, or KWin state.
 
 ## Delivery contract
 
-| Area                 | Required behavior                                                                                 | Target    |
-| -------------------- | ------------------------------------------------------------------------------------------------- | --------- |
-| Horizontal strip     | Focus and reorder columns; focus or move to first and last; reveal with minimal scrolling         | Available |
-| Vertical column      | Focus and reorder members; consume or expel active, top, or bottom members                        | Available |
-| Column view          | Cycle `1/3`, `1/2`, and `2/3` widths in both directions; adjust by 10%; toggle full width; center | Available |
-| Advanced column view | Fill available width and center all fully visible columns                                         | Available |
-| Window height        | Adjust one window by 10%; reset to automatic; cycle `1/3`, `1/2`, and `2/3` presets               | Available |
-| Virtual desktops     | Focus adjacent or numbered desktops; reorder when KWin supports it; transfer a column or window   | Available |
-| Outputs              | Focus an adjacent output and transfer the active column or floating window                        | Available |
-| Fullscreen           | Extract a regular stack member, then toggle native fullscreen through KWin                        | Available |
-| Native maximize      | Extract a regular stack member, then toggle it to work-area edges through KWin                    | Available |
-| Minimize focus       | Preserve tiled slots and floating frames; skip minimized windows without wrapping                 | Available |
-| Hidden-member edits  | Preserve documented passive peers; reject every other minimized-member structural edit            | Available |
-| Floating layer       | Toggle state, switch layers, navigate geometrically, nudge, center, and resize contextually       | Available |
-| Pointer drop         | Preview and reinsert one active tiled window at one exact visible target                          | Available |
-| Pointer resize       | Adopt one completed horizontal resize as the active column's fixed width                          | Available |
-| Overview companion   | Activate targets; select and reorder desktop cards; show the passive active-column layout badge   | Available |
-| Tabbed columns       | Toggle presentation; select or reorder members with the existing vertical grammar                 | 1.19.0    |
-| Pointer navigation   | Provide wheel navigation through the shared layout model                                          | Future    |
+| Area                 | Required behavior                                                                               | Target    |
+| -------------------- | ----------------------------------------------------------------------------------------------- | --------- |
+| Horizontal strip     | Focus and reorder columns; focus or move to first and last; reveal with minimal scrolling       | Available |
+| Vertical column      | Focus and reorder members; consume or expel active, top, or bottom members                      | Available |
+| Column view          | Cycle configured widths in both directions; adjust by 10%; toggle full width; center            | Available |
+| Advanced column view | Fill available width and center all fully visible columns                                       | Available |
+| Window height        | Adjust one window by 10%; reset to automatic; cycle configured presets                          | Available |
+| Virtual desktops     | Focus adjacent or numbered desktops; reorder when KWin supports it; transfer a column or window | Available |
+| Outputs              | Focus an adjacent output and transfer the active column or floating window                      | Available |
+| Fullscreen           | Extract a regular stack member, then toggle native fullscreen through KWin                      | Available |
+| Native maximize      | Extract a regular stack member, then toggle it to work-area edges through KWin                  | Available |
+| Minimize focus       | Preserve tiled slots and floating frames; skip minimized windows without wrapping               | Available |
+| Hidden-member edits  | Preserve documented passive peers; reject every other minimized-member structural edit          | Available |
+| Floating layer       | Toggle state, switch layers, navigate geometrically, nudge, center, and resize contextually     | Available |
+| Pointer drop         | Preview and reinsert one active tiled window at one exact visible target                        | Available |
+| Pointer resize       | Adopt one completed horizontal resize as the active column's fixed width                        | Available |
+| Overview companion   | Activate targets; select and reorder desktop cards; show the passive active-column layout badge | Available |
+| Tabbed columns       | Toggle presentation; select or reorder members with the existing vertical grammar               | 1.19.0    |
+| Pointer navigation   | Provide wheel navigation through the shared layout model                                        | Future    |
 
 Adjacent and numbered single-window transfers remain secondary, unbound
 actions. Default desktop and output transfer shortcuts must move the whole
@@ -123,8 +123,8 @@ resolves as `percentage / 100 * (workArea.width - gap) - gap`, then uses the
 assigned output's pixel grid, live decorated constraints, and established
 partial-visibility clamp. Automatic, related, pending, native-state, or
 otherwise blocked floating targets fail closed without reaching tiled width
-changes. Tiled behavior is unchanged. This adds no action, default binding,
-setting, schema, persistence behavior, helper behavior, or KWin API.
+changes. Tiled behavior is unchanged. The geometry path adds no persistence or
+helper behavior and requires no additional KWin API.
 
 The existing decrease/increase window-height actions are contextual in the
 same way. With an active manually floating window, they change the decorated
@@ -137,23 +137,25 @@ contextual width, so a blocked or pending floating target never reaches tiled
 stack resizing. Tiled semantics are otherwise unchanged.
 
 The existing forward and reverse window-height preset actions are contextual
-for one active relation-free manually floating window. The fixed `1/3`, `1/2`,
-and `2/3` cycle resolves a raw frame height as
-`fraction * (workArea.height - gap) - gap`. Driftile snaps the canonical
-start at `workArea.y + gap` and the end at `start + rawHeight` to the assigned
-output's pixel grid before subtracting them. Forward selects the first resolved
-height more than one logical pixel above the current frame and wraps to the
-first preset; reverse selects the last resolved height more than one logical
-pixel below the current frame and wraps to the last.
+for one active relation-free manually floating window. Blank
+`WindowHeightPresets` uses the exact `1/3`, `1/2`, and `2/3` proportions. A
+custom value contains 1–16 strictly increasing integer percentages from 10
+through 100; each raw frame height is
+`percentage / 100 * (workArea.height - gap) - gap`. Driftile snaps the
+canonical start at `workArea.y + gap` and the end at `start + rawHeight` to the
+assigned output's pixel grid before subtracting them. Forward selects the first
+resolved height more than one logical pixel above the current frame and wraps
+to the first preset; reverse selects the last resolved height more than one
+logical pixel below the current frame and wraps to the last.
 
 The shared manual-floating size transaction applies live decorated constraints
 and the established partial-reachability clamp. It preserves width, focus,
 context, reinsertion anchor, and every tiled layout; top-left changes only for
 the minimal reachability clamp. One frame request commits only after exact
 acknowledgement. A blocked active floating target fails closed without reaching
-the tiled path. Window-height reset remains tiled-only. This adds no action,
-default binding, setting, schema, persistence, helper, overview, KWin API, or
-private API.
+the tiled path. Replacing the configured cycle schedules no geometry, layout,
+viewport, or focus write; only later explicit preset actions read it.
+Window-height reset remains tiled-only.
 
 The existing unbound insert-left and insert-right actions are also contextual
 for one active relation-free manually floating window. Direction compares the

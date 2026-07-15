@@ -96,6 +96,10 @@ class RuntimeControllerDouble {
     return true;
   }
 
+  setWindowHeightPresets(): boolean {
+    return true;
+  }
+
   setWindowHeightStepPercent(): boolean {
     return true;
   }
@@ -247,6 +251,7 @@ function settings(
     gap: 16,
     showTabIndicator: true,
     touchpadNavigation: false,
+    windowHeightPresets: "",
     windowHeightStepPercent: 10,
     ...overrides,
   };

@@ -1595,6 +1595,25 @@ let
           >/dev/null
       }
 
+      set_window_height_presets() {
+        local value=$1
+
+        ${pkgs.kdePackages.kconfig}/bin/kwriteconfig6 \
+          --file "$HOME/.config/kwinrc" \
+          --group "Script-${pluginId}" \
+          --key WindowHeightPresets \
+          --type string \
+          "$value" \
+          || return 1
+
+        busctl --user call \
+          org.kde.KWin \
+          /KWin \
+          org.kde.KWin \
+          reconfigure \
+          >/dev/null
+      }
+
       set_layout_configuration() {
         ${pkgs.kdePackages.kconfig}/bin/kwriteconfig6 \
           --file "$HOME/.config/kwinrc" \
@@ -9565,7 +9584,8 @@ let
                 window_frame_width "$title_c" 2>/dev/null || true
               )
 
-              if request_physical_shortcut preset-back-wrap \
+              if invoke_shortcut \
+                "driftile_switch_preset_column_width_back" \
                 && wait_for_window_width_near \
                   "$title_c" "$expected_wide_width" 2 \
                 && wait_for_active "$title_c"; then
@@ -9594,7 +9614,7 @@ let
         if [[ "$presets_verified" == true \
           && "$cleanup_verified" == true ]]; then
           record_focus_state \
-            "configured column-width presets wrapped through physical shortcuts"
+            "configured column-width presets wrapped forward physically and backward by action ID"
           return 0
         fi
 
@@ -9777,26 +9797,41 @@ let
         record_focus_state \
           "stacked height increase restored B and sibling A heights"
 
-        request_physical_shortcut ctrl-shift-r \
-          && wait_for_stacked_height_relation \
+        if ! set_window_height_presets "25,75" \
+          || ! request_physical_shortcut height-preset-next \
+          || ! wait_for_stacked_height_relation \
             active-larger \
             "$stack_first_frame" \
             "$stack_second_frame" \
             "$stack_third_frame" \
-          && wait_for_active "$title_b" \
-          || return 1
+          || ! wait_for_active "$title_b"; then
+          set_window_height_presets "" >/dev/null 2>&1 || true
+          record_focus_state \
+            "physical Meta+Shift+R did not select the configured taller B preset"
+          return 1
+        fi
         record_focus_state \
-          "physical Meta+Ctrl+Shift+R selected a taller B preset"
+          "physical Meta+Shift+R selected the configured taller B preset"
 
-        request_physical_shortcut ctrl-r \
-          && wait_for_frames \
+        if ! request_physical_shortcut ctrl-r \
+          || ! wait_for_frames \
             "$stack_first_frame" \
             "$stack_second_frame" \
             "$stack_third_frame" \
-          && wait_for_active "$title_b" \
-          || return 1
+          || ! wait_for_active "$title_b" \
+          || ! set_window_height_presets "" \
+          || ! wait_for_frames \
+            "$stack_first_frame" \
+            "$stack_second_frame" \
+            "$stack_third_frame" \
+          || ! wait_for_active "$title_b"; then
+          set_window_height_presets "" >/dev/null 2>&1 || true
+          record_focus_state \
+            "physical height preset cleanup did not restore the stack"
+          return 1
+        fi
         record_focus_state \
-          "physical Meta+Ctrl+R restored automatic stack heights"
+          "physical Meta+Ctrl+R restored automatic stack heights and cleared the configured presets"
 
         if ! invoke_shortcut "driftile_move_window_right" \
           || ! wait_for_singleton_layout \

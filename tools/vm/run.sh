@@ -180,7 +180,6 @@ monitor_guest() {
     [ctrl-j]=false
     [ctrl-k]=false
     [ctrl-r]=false
-    [ctrl-shift-r]=false
     [desktop-1]=false
     [desktop-9]=false
     [desktop-ctrl-2]=false
@@ -206,6 +205,7 @@ monitor_guest() {
     [floating-up]=false
     [floating-width-equal]=false
     [floating-width-minus]=false
+    [height-preset-next]=false
     [home]=false
     [m-enter]=false
     [m-exit]=false
@@ -218,7 +218,6 @@ monitor_guest() {
     [overview-open]=false
     [overview-up]=false
     [period]=false
-    [preset-back-wrap]=false
     [preset-next]=false
     [preset-next-wrap]=false
     [shift-equal]=false
@@ -251,7 +250,6 @@ monitor_guest() {
       period \
       preset-next \
       preset-next-wrap \
-      preset-back-wrap \
       desktop-1 \
       desktop-9 \
       desktop-ctrl-2 \
@@ -272,7 +270,7 @@ monitor_guest() {
       equal \
       shift-minus \
       shift-equal \
-      ctrl-shift-r \
+      height-preset-next \
       ctrl-r \
       ctrl-f \
       ctrl-c \
@@ -1335,7 +1333,7 @@ send_physical_shortcut() {
     preset-next|preset-next-wrap)
       input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"r"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"r"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
       ;;
-    preset-back-wrap)
+    height-preset-next)
       input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"shift"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"r"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"r"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"shift"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
       ;;
     tabbed-enter|tabbed-exit)
@@ -1376,9 +1374,6 @@ send_physical_shortcut() {
       ;;
     shift-equal)
       input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"shift"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"equal"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"equal"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"shift"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
-      ;;
-    ctrl-shift-r)
-      input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"ctrl"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"shift"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"r"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"r"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"shift"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"ctrl"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
       ;;
     ctrl-r)
       input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"ctrl"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"r"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"r"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"ctrl"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'

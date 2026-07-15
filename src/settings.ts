@@ -41,6 +41,12 @@ import {
   type ColumnWidthPresetPercentages,
 } from "./column-width-presets";
 import type { ColumnPresentation } from "./core/layout-engine";
+import {
+  decodeWindowHeightPresetPercentages,
+  EMPTY_WINDOW_HEIGHT_PRESET_PERCENTAGES,
+  sameWindowHeightPresetPercentages,
+  type WindowHeightPresetPercentages,
+} from "./window-height-presets";
 
 const MIN_GAP = 0;
 const MAX_GAP = 64;
@@ -48,7 +54,7 @@ const MIN_DEFAULT_COLUMN_WIDTH_PERCENT = 10;
 const MAX_DEFAULT_COLUMN_WIDTH_PERCENT = 100;
 const MIN_RESIZE_STEP_PERCENT = 1;
 const MAX_RESIZE_STEP_PERCENT = 50;
-const SETTINGS_FIELD_COUNT = 16;
+const SETTINGS_FIELD_COUNT = 17;
 
 export interface DriftileSettings {
   readonly applicationBorderlessExclusions: ApplicationBorderlessExclusions;
@@ -66,6 +72,7 @@ export interface DriftileSettings {
   readonly gap: number;
   readonly showTabIndicator: boolean;
   readonly touchpadNavigation: boolean;
+  readonly windowHeightPresets: WindowHeightPresetPercentages;
   readonly windowHeightStepPercent: number;
 }
 
@@ -85,6 +92,7 @@ export const DEFAULT_DRIFTILE_SETTINGS: DriftileSettings = Object.freeze({
   gap: 16,
   showTabIndicator: true,
   touchpadNavigation: false,
+  windowHeightPresets: EMPTY_WINDOW_HEIGHT_PRESET_PERCENTAGES,
   windowHeightStepPercent: 10,
 });
 
@@ -114,6 +122,7 @@ export function decodeDriftileSettings(
     !owns(candidate, "gap") ||
     !owns(candidate, "showTabIndicator") ||
     !owns(candidate, "touchpadNavigation") ||
+    !owns(candidate, "windowHeightPresets") ||
     !owns(candidate, "windowHeightStepPercent")
   ) {
     return null;
@@ -148,6 +157,9 @@ export function decodeDriftileSettings(
   const gap = candidate["gap"];
   const showTabIndicator = candidate["showTabIndicator"];
   const touchpadNavigation = candidate["touchpadNavigation"];
+  const windowHeightPresets = decodeWindowHeightPresetPercentages(
+    candidate["windowHeightPresets"],
+  );
   const windowHeightStepPercent = candidate["windowHeightStepPercent"];
 
   if (
@@ -174,6 +186,7 @@ export function decodeDriftileSettings(
     !isBoundedInteger(gap, MIN_GAP, MAX_GAP) ||
     typeof showTabIndicator !== "boolean" ||
     typeof touchpadNavigation !== "boolean" ||
+    !windowHeightPresets ||
     !isBoundedInteger(
       windowHeightStepPercent,
       MIN_RESIZE_STEP_PERCENT,
@@ -199,6 +212,7 @@ export function decodeDriftileSettings(
     gap,
     showTabIndicator,
     touchpadNavigation,
+    windowHeightPresets,
     windowHeightStepPercent,
   });
 }
@@ -244,6 +258,10 @@ export function sameDriftileSettings(
     left.gap === right.gap &&
     left.showTabIndicator === right.showTabIndicator &&
     left.touchpadNavigation === right.touchpadNavigation &&
+    sameWindowHeightPresetPercentages(
+      left.windowHeightPresets,
+      right.windowHeightPresets,
+    ) &&
     left.windowHeightStepPercent === right.windowHeightStepPercent
   );
 }

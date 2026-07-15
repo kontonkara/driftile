@@ -468,11 +468,10 @@ const expectedHandlers: Readonly<
   },
   driftile_switch_preset_column_width_back: {
     activated: "Runtime.DriftileRuntime.switchPresetColumnWidthBack()",
-    sequence: "Meta+Shift+R",
   },
   driftile_switch_preset_window_height: {
     activated: "Runtime.DriftileRuntime.switchPresetWindowHeight()",
-    sequence: "Meta+Ctrl+Shift+R",
+    sequence: "Meta+Shift+R",
   },
   driftile_switch_preset_window_height_back: {
     activated: "Runtime.DriftileRuntime.switchPresetWindowHeightBack()",
@@ -529,10 +528,10 @@ describe("KWin shortcut handlers", () => {
     );
     expect(
       shortcutActions.filter((action) => action.defaultSequence !== undefined),
-    ).toHaveLength(88);
+    ).toHaveLength(87);
     expect(
       shortcutActions.filter((action) => action.defaultSequence === undefined),
-    ).toHaveLength(27);
+    ).toHaveLength(28);
   });
 
   it("uses unique lowercase action identifiers and key sequences", () => {
@@ -560,7 +559,7 @@ describe("KWin shortcut handlers", () => {
       shortcutBindings.map(({ name, sequence }) => ({ name, sequence })),
     );
 
-    expect(shortcutBindings).toHaveLength(88);
+    expect(shortcutBindings).toHaveLength(87);
     expect(shortcutBindings).toEqual(
       shortcutActions.flatMap((action) =>
         action.defaultSequence === undefined
@@ -575,10 +574,10 @@ describe("KWin shortcut handlers", () => {
             ],
       ),
     );
-    expect(shortcutProfileId).toHaveLength(3684);
+    expect(shortcutProfileId).toHaveLength(3633);
     expect(
       createHash("sha256").update(shortcutProfileId, "utf8").digest("hex"),
-    ).toBe("5b6ad4e1b9cb9ba8bc57b931f6d20d72fec7c86bd38320ea460aec49ad2cdf59");
+    ).toBe("f24b88d67799e9987ff6bbc19eaaa41656292b5074c4ff74b49d0802353464f8");
   });
 
   it("leaves operations without an equivalent default unbound", () => {
@@ -614,6 +613,7 @@ describe("KWin shortcut handlers", () => {
       "driftile_move_window_to_previous_desktop",
       "driftile_move_window_to_previous_desktop_page_up",
       "driftile_reset_column_width",
+      "driftile_switch_preset_column_width_back",
       "driftile_switch_preset_window_height_back",
     ]);
   });
@@ -659,6 +659,7 @@ describe("KWin shortcut handlers", () => {
       "kcfg_ColumnWidthStepPercent",
       "kcfg_ColumnWidthPresets",
       "kcfg_WindowHeightStepPercent",
+      "kcfg_WindowHeightPresets",
     ];
     const applicationControls = [
       "kcfg_ApplicationColumnPresentations",
@@ -1129,6 +1130,40 @@ describe("KWin shortcut handlers", () => {
     );
     expect(runtime).toContain(
       "controller.setWindowHeightStepPercent(settings.windowHeightStepPercent)",
+    );
+  });
+
+  it("exposes a bounded custom window-height preset cycle", () => {
+    const presetsEntry = configuration.match(
+      /<entry name="WindowHeightPresets" type="String">([\s\S]*?)<\/entry>/,
+    )?.[1];
+    const presetsLabel = configurationUi.match(
+      /<widget class="QLabel" name="windowHeightPresetsLabel">([\s\S]*?)<\/widget>/,
+    )?.[1];
+    const presetsWidget = configurationUi.match(
+      /<widget class="QLineEdit" name="kcfg_WindowHeightPresets">([\s\S]*?)<\/widget>/,
+    )?.[1];
+
+    expect(presetsEntry).toContain(
+      "<label>Window height presets in percent</label>",
+    );
+    expect(presetsEntry).toContain("<default></default>");
+    expect(presetsLabel).toContain("<string>Window height presets:</string>");
+    expect(presetsLabel).toContain(
+      "<cstring>kcfg_WindowHeightPresets</cstring>",
+    );
+    expect(presetsWidget).toContain("Comma-separated");
+    expect(presetsWidget).toContain(
+      "Blank uses the built-in 1/3, 1/2, and 2/3 proportions.",
+    );
+    expect(qml).toContain(
+      'windowHeightPresets: KWin.readConfig("WindowHeightPresets", "")',
+    );
+    expect(runtime).toMatch(
+      /nextController\.setWindowHeightPresets\(\s*settings\.windowHeightPresets\.percentages,\s*\)/u,
+    );
+    expect(runtime).toContain(
+      "controller.setWindowHeightPresets(settings.windowHeightPresets.percentages)",
     );
   });
 

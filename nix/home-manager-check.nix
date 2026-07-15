@@ -69,6 +69,11 @@ let
         gap = 7;
         showTabIndicator = false;
         touchpadNavigation = true;
+        windowHeightPresets = [
+          30
+          60
+          90
+        ];
         windowHeightStepPercent = 17;
       };
       shortcuts = {
@@ -189,13 +194,14 @@ assert
       Gap = 7;
       ShowTabIndicator = false;
       TouchpadNavigation = true;
+      WindowHeightPresets = "30,60,90";
       WindowHeightStepPercent = 17;
     };
   };
 assert
   builtins.length (
     builtins.attrNames standalone.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile"
-  ) == 16;
+  ) == 17;
 assert
   standalone.config.xdg.configFile."driftile/shortcuts.json".text == ''
     {"bindings":{"driftile_focus_column_left":["Meta+A"],"driftile_reset_column_width":[]},"version":1}
@@ -225,6 +231,7 @@ assert
       Gap = 8;
       ShowTabIndicator = true;
       TouchpadNavigation = false;
+      WindowHeightPresets = "";
       WindowHeightStepPercent = 10;
     };
   };

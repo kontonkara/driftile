@@ -131,6 +131,9 @@ export function init(
   nextController.setCenterFocusedColumn(settings.centerFocusedColumn);
   nextController.setColumnWidthPresets(settings.columnWidthPresets.percentages);
   nextController.setColumnWidthStepPercent(settings.columnWidthStepPercent);
+  nextController.setWindowHeightPresets(
+    settings.windowHeightPresets.percentages,
+  );
   nextController.setWindowHeightStepPercent(settings.windowHeightStepPercent);
 
   if (!nextController.start(layoutPersistence.initialState)) {
@@ -196,6 +199,7 @@ export function applySettings(settingsSnapshot: unknown): boolean {
   controller.setDefaultColumnWidthPercent(settings.defaultColumnWidthPercent);
   controller.setColumnWidthPresets(settings.columnWidthPresets.percentages);
   controller.setColumnWidthStepPercent(settings.columnWidthStepPercent);
+  controller.setWindowHeightPresets(settings.windowHeightPresets.percentages);
   controller.setWindowHeightStepPercent(settings.windowHeightStepPercent);
   controller.setGap(settings.gap);
 

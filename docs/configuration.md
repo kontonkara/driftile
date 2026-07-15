@@ -6,11 +6,11 @@ The settings page groups the existing controls into two tabs:
 
 - **General**: window decorations, focus centering, touchpad navigation, window
   gap, tab feedback, default column presentation and width, column width step
-  and presets, and window height step.
+  and presets, and window height step and presets.
 - **Applications**: initial column widths and presentation, focus centering,
   initial floating rules, tiling exclusions, and decoration exclusions.
 
-Driftile validates all sixteen settings as one snapshot. Applying an invalid
+Driftile validates all seventeen settings as one snapshot. Applying an invalid
 value through an external configuration tool rejects the entire update and
 preserves the active settings; valid changes apply without reloading the
 extension.
@@ -19,7 +19,8 @@ extension.
 
 `programs.driftile.settings` is `null` by default, so Home Manager writes no
 Driftile setting. A non-null value is one complete typed profile: omitted fields
-take the defaults documented below, and Home Manager writes all sixteen values.
+take the defaults documented below, and Home Manager writes all seventeen
+values.
 This profile works with `programs.driftile.enable = false` when the package is
 installed system-wide.
 
@@ -29,10 +30,11 @@ The activation writes only `ApplicationBorderlessExclusions`,
 `ApplicationInitialFloating`, `ApplicationTilingExclusions`,
 `BorderlessWindows`, `CenterFocusedColumn`, `Gap`,
 `DefaultColumnPresentation`, `DefaultColumnWidthPercent`, `ColumnWidthPresets`,
-`ColumnWidthStepPercent`, `ShowTabIndicator`, `TouchpadNavigation`, and
-`WindowHeightStepPercent` in Driftile's `kwinrc` group. It does not replace
-the file or manage shortcuts. A running KWin session is asked to reconfigure
-on a best-effort basis; otherwise the values apply on its next reload or start.
+`ColumnWidthStepPercent`, `ShowTabIndicator`, `TouchpadNavigation`,
+`WindowHeightPresets`, and `WindowHeightStepPercent` in Driftile's `kwinrc`
+group. It does not replace the file or manage shortcuts. A running KWin session
+is asked to reconfigure on a best-effort basis; otherwise the values apply on
+its next reload or start.
 
 Declare application widths as a typed attribute set and exclusions as lists.
 Home Manager sorts desktop-file IDs before writing newline-delimited KConfig
@@ -69,6 +71,7 @@ programs.driftile.settings.columnWidthPresets = [ 20 50 80 ];
 programs.driftile.settings.defaultColumnPresentation = "stacked";
 programs.driftile.settings.showTabIndicator = true;
 programs.driftile.settings.touchpadNavigation = true;
+programs.driftile.settings.windowHeightPresets = [ 25 50 75 ];
 ```
 
 Widths must be `10`–`100`; presentations are `stacked` or `tabbed`. Attribute
@@ -257,9 +260,20 @@ width and top-left unless the partial-visibility bounds require a minimal
 origin clamp. It snaps with the assigned output's device-pixel ratio and
 respects live decorated size constraints.
 
-Changing the value performs no layout work. The fixed `1/3`, `1/2`, and `2/3`
-height-preset cycle is independent of this setting and applies contextually to
-an eligible manually floating window. Window-height reset remains tiled-only.
+Changing the value performs no layout work. Window-height presets are configured
+separately, and window-height reset remains tiled-only.
+
+## Window height presets
+
+**Window height presets** controls the forward and reverse preset actions for
+the active tiled window or one eligible relation-free manually floating window.
+A blank KConfig value or an empty Home Manager list preserves the built-in exact
+`1/3`, `1/2`, and `2/3` proportions. A custom value contains 1–16 strictly
+increasing integer percentages from `10` to `100`.
+
+Changing the list performs no immediate layout, frame, focus, or persistence
+work. Later explicit height-preset actions read the new cycle. Window-height
+step and reset actions are unchanged.
 
 ## Window decorations
 
@@ -287,7 +301,7 @@ The KConfig decoder accepts at most 65,664 characters in the complete document,
 512 characters in each raw line, 128 nonblank unique IDs, and 255 UTF-8 bytes
 in each trimmed ID. It trims surrounding whitespace and ignores blank lines.
 Control characters, invalid UTF-16, an oversized value, or a duplicate after
-trimming rejects the complete sixteen-setting snapshot. Accepted IDs have a
+trimming rejects the complete seventeen-setting snapshot. Accepted IDs have a
 canonical sorted internal form. Home Manager exposes the same policy as
 `programs.driftile.settings.applicationBorderlessExclusions`, a list rendered
 as a sorted newline-delimited KConfig value.

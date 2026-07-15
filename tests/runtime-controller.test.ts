@@ -17352,6 +17352,8 @@ describe("RuntimeController", () => {
     });
 
     expect(controller.setWindowHeightStepPercent(20)).toBe(true);
+    expect(controller.setWindowHeightPresets([25, 60, 90])).toBe(true);
+    expect(controller.setWindowHeightPresets([25, 60, 90])).toBe(false);
     expect(controller.start()).toBe(true);
     fixture.workspace.activeWindow = active.window;
     expect(controller.toggleFloating()).toBe(true);
@@ -17488,23 +17490,23 @@ describe("RuntimeController", () => {
     active.setFrameGeometry(originalFrame);
     expectResize(
       controller.switchPresetWindowHeight.bind(controller),
-      { height: 344.8, width: 280, x: 360, y: 240 },
-      { height: 310.8, width: 260, x: 368, y: 264 },
+      { height: 420.8, width: 280, x: 360, y: 240 },
+      { height: 386.8, width: 260, x: 368, y: 264 },
     );
     expectResize(
       controller.switchPresetWindowHeightBack.bind(controller),
-      { height: 217.6, width: 280, x: 360, y: 240 },
-      { height: 183.6, width: 260, x: 368, y: 264 },
+      { height: 153.6, width: 280, x: 360, y: 240 },
+      { height: 119.6, width: 260, x: 368, y: 264 },
     );
     expectResize(
       controller.switchPresetWindowHeightBack.bind(controller),
-      { height: 472, width: 280, x: 360, y: 240 },
-      { height: 438, width: 260, x: 368, y: 264 },
+      { height: 480, width: 280, x: 360, y: 240 },
+      { height: 446, width: 260, x: 368, y: 264 },
     );
     expectResize(
       controller.switchPresetWindowHeight.bind(controller),
-      { height: 217.6, width: 280, x: 360, y: 240 },
-      { height: 183.6, width: 260, x: 368, y: 264 },
+      { height: 153.6, width: 280, x: 360, y: 240 },
+      { height: 119.6, width: 260, x: 368, y: 264 },
     );
   });
 
@@ -22658,6 +22660,110 @@ describe("RuntimeController", () => {
     expect(activeColumnWindowHeights(controller, output, desktop)).toEqual([
       { index: 2, kind: "preset" },
     ]);
+  });
+
+  it("keeps selected height policies stable across live preset profiles", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const active = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [active.window],
+    );
+    const published: string[] = [];
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      onLayoutStateChanged: (document) => published.push(document),
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(controller.switchPresetWindowHeight()).toBe(true);
+    expect(controller.switchPresetWindowHeight()).toBe(true);
+    expect(controller.switchPresetWindowHeight()).toBe(true);
+    expect(active.window.frameGeometry.height).toBe(517);
+    expect(activeColumnWindowHeights(controller, output, desktop)).toEqual([
+      { index: 2, kind: "preset" },
+    ]);
+
+    const legacyDocument = requiredLayoutDocument(controller);
+    const legacyWrites = active.writeCount;
+    const legacyActivations = fixture.activationCount;
+    const legacyPublications = published.length;
+
+    expect(controller.setWindowHeightPresets([25, 50])).toBe(true);
+    expect(controller.setWindowHeightPresets([25, 50])).toBe(false);
+    expect(controller.reconcile()).toBe(0);
+    expect(active.window.frameGeometry.height).toBe(517);
+    expect(active.writeCount).toBe(legacyWrites);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+    expect(fixture.activationCount).toBe(legacyActivations);
+    expect(requiredLayoutDocument(controller)).toBe(legacyDocument);
+    expect(published).toHaveLength(legacyPublications);
+    expect(activeColumnWindowHeights(controller, output, desktop)).toEqual([
+      { index: 2, kind: "preset" },
+    ]);
+
+    expect(controller.switchPresetWindowHeight()).toBe(true);
+    expect(active.window.frameGeometry.height).toBe(188);
+    expect(activeColumnWindowHeights(controller, output, desktop)).toEqual([
+      { index: 125, kind: "preset" },
+    ]);
+    const customDocument = requiredLayoutDocument(controller);
+
+    expect(decodeLayoutPersistence(customDocument)).toMatchObject({
+      ok: true,
+      value: {
+        contexts: [
+          {
+            columns: [
+              {
+                members: [{ height: { index: 125, kind: "preset" } }],
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    const customWrites = active.writeCount;
+    const customActivations = fixture.activationCount;
+    const customPublications = published.length;
+
+    expect(controller.setWindowHeightPresets([30, 60])).toBe(true);
+    expect(controller.reconcile()).toBe(0);
+    expect(active.window.frameGeometry.height).toBe(188);
+    expect(active.writeCount).toBe(customWrites);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+    expect(fixture.activationCount).toBe(customActivations);
+    expect(requiredLayoutDocument(controller)).toBe(customDocument);
+    expect(published).toHaveLength(customPublications);
+    expect(activeColumnWindowHeights(controller, output, desktop)).toEqual([
+      { index: 125, kind: "preset" },
+    ]);
+
+    expect(controller.switchPresetWindowHeight()).toBe(true);
+    expect(active.window.frameGeometry.height).toBe(227);
+    expect(activeColumnWindowHeights(controller, output, desktop)).toEqual([
+      { index: 130, kind: "preset" },
+    ]);
+    controller.stop();
+
+    const restored = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    expect(restored.start(customDocument)).toBe(true);
+    expect(active.window.frameGeometry.height).toBe(188);
+    expect(activeColumnWindowHeights(restored, output, desktop)).toEqual([
+      { index: 125, kind: "preset" },
+    ]);
+    expect(requiredLayoutDocument(restored)).toBe(customDocument);
+    restored.stop();
   });
 
   it("stores decorated fixed heights in client coordinates", () => {

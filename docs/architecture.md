@@ -218,6 +218,10 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Replaces at most 16 column-width presets atomically without layout work;
   existing columns and floating frames retain their widths, and later
   contextual preset actions read the new cycle.
+- Replaces at most 16 strictly increasing integer window-height presets from
+  10% through 100% atomically without geometry or layout work. A blank cycle
+  retains the exact `1/3`, `1/2`, and `2/3` proportions; later tiled or
+  contextual floating preset actions read the current cycle.
 - Optionally centers the destination of successful horizontal tiled focus
   navigation inside the existing focus transaction. Other focus paths retain
   minimal reveal and a failed center preview falls back without rejecting focus.
@@ -361,12 +365,16 @@ transaction. Width steps start at
 start at `originalHeight + direction * windowHeightStep * workArea.height`.
 Width presets and reset resolve their configured percentage as
 `percentage / 100 * (workArea.width - gap) - gap`, matching singleton layout
-resolution. Preset and reset targets additionally require a relation-free
-manual-floating window. The requested dimension snaps to the physical-pixel
-grid using the assigned output's device-pixel ratio and clamps to its live
-decorated minimum and maximum plus a positive client extent. The other
-dimension and top-left remain unchanged unless the partial-visibility bounds
-require a minimal origin clamp.
+resolution. A blank window-height preset cycle uses the exact `1/3`, `1/2`, and
+`2/3` proportions; custom heights resolve as
+`percentage / 100 * (workArea.height - gap) - gap`. Their canonical start at
+`workArea.y + gap` and end at `start + rawHeight` snap to the assigned output's
+pixel grid before subtraction. Preset and reset width targets and preset-height
+targets additionally require a relation-free manual-floating window. The
+requested dimension snaps to the physical-pixel grid using the assigned
+output's device-pixel ratio and clamps to its live decorated minimum and maximum
+plus a positive client extent. The other dimension and top-left remain
+unchanged unless the partial-visibility bounds require a minimal origin clamp.
 
 The per-window `frameGeometryChanged` handler is connected before exactly one
 forward frame request. An exact synchronous X11 or XWayland result settles
@@ -512,9 +520,11 @@ inspected safely within the codec bound.
   height step and one constraint-clamped, physically aligned frame request; a
   tiled target keeps the stack-reflow path.
 - Resolve the existing forward and reverse window-height preset actions
-  contextually: an eligible manual-floating target cycles the fixed `1/3`,
-  `1/2`, and `2/3` frame heights with wrapping. Resolve each proportion against
-  the gap-adjusted work-area height, snap the canonical start and end to the
+  contextually: an eligible manual-floating target cycles the configured frame
+  heights with wrapping. A blank cycle uses exact `1/3`, `1/2`, and `2/3`
+  proportions; a custom cycle contains 1–16 strictly increasing integer
+  percentages from 10 through 100. Resolve custom percentages against the
+  gap-adjusted work-area height, snap the canonical start and end to the
   assigned-output pixel grid, then reuse the guarded one-request exact-ack size
   transaction with decorated constraints and partial reachability. Reset
   remains tiled-only.
@@ -565,6 +575,8 @@ inspected safely within the codec bound.
   ownership without geometry writes, focus changes, or model or
   layout-persistence changes; interactive resize and settlement retain priority.
 - Replace the bounded column-width preset cycle without changing model values,
+  frames, viewport state, or focus.
+- Replace the bounded window-height preset cycle without changing model values,
   frames, viewport state, or focus.
 - Replace the bounded application focus-centering set atomically without
   moving the current layout. Horizontal focus checks the selected target in
@@ -678,6 +690,8 @@ inspected safely within the codec bound.
   persistence omission, and zero writes to excluded frames.
 - Verify width-step bounds, no-write live changes, exact percentage-point actions, hard-bound clamps, and rollback.
 - Verify height-step bounds, no-write live changes, exact stack redistribution, decorated constraints, physical-pixel clamps, and rollback.
+- Verify window-height preset bounds, canonical ordering, exact blank defaults,
+  custom proportional targets, pixel-grid snapping, and no-write live changes.
 - Verify one-step desktop reordering in both directions, all four default shortcut handlers, boundary and tail no-ops, unavailable or rejected mechanisms, wrong permutations, and the pinned tail. Unit and multi-output integration coverage preserve every output selection; integration and visible-VM coverage preserve live IDs, memberships, focus, and frames.
 - Verify shared trailing-desktop creation, guarded removal, silent mutation rejection, and preservation of external desktops.
 - Exercise live output reconfiguration against an isolated real KWin session.

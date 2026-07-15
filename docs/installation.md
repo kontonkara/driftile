@@ -140,7 +140,7 @@ for key in ApplicationBorderlessExclusions ApplicationColumnPresentations \
   ApplicationTilingExclusions BorderlessWindows CenterFocusedColumn \
   ColumnWidthPresets ColumnWidthStepPercent DefaultColumnPresentation \
   DefaultColumnWidthPercent Gap ShowTabIndicator TouchpadNavigation \
-  WindowHeightStepPercent; do
+  WindowHeightPresets WindowHeightStepPercent; do
   kwriteconfig6 --file kwinrc \
     --group Script-io.github.kontonkara.driftile \
     --key "$key" --delete ""
@@ -198,7 +198,7 @@ in KWin. On a fresh shortcut record, the enabled effect offers `Meta+O`;
 upgrades preserve the current KGlobalAccel assignment. See [Overview
 companion](overview.md).
 
-The current Home Manager module exposes the complete sixteen-setting profile:
+The current Home Manager module exposes the complete seventeen-setting profile:
 
 ```nix
 programs.driftile.settings = {
@@ -221,14 +221,17 @@ programs.driftile.settings = {
   defaultColumnWidthPercent = 50;
   columnWidthStepPercent = 10;
   touchpadNavigation = false;
+  windowHeightPresets = [ ];
   windowHeightStepPercent = 10;
 };
 ```
 
-Application policy lists default to empty. See
+Application policy lists default to empty; an empty `windowHeightPresets` list
+keeps the exact built-in `1/3`, `1/2`, and `2/3` cycle. See
 [Application column presentation](configuration.md#application-column-presentation),
 [Horizontal focus centering](configuration.md#horizontal-focus-centering),
 [Applications initially floating](configuration.md#applications-initially-floating),
+[Window height presets](configuration.md#window-height-presets),
 and
 [Application borderless exclusions](configuration.md#application-borderless-exclusions)
 for exact matching, limits, and live behavior.

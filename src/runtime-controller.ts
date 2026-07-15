@@ -30,7 +30,13 @@ import {
 } from "./application-tiling-exclusions";
 import { COLUMN_WIDTH_PRESET_LIMITS } from "./column-width-presets";
 import {
-  DEFAULT_WINDOW_HEIGHT_PRESETS,
+  DEFAULT_WINDOW_HEIGHT_PRESET_CYCLE,
+  WINDOW_HEIGHT_PRESET_RESOLUTION_TABLE,
+  sameWindowHeightPresetCycles,
+  windowHeightPresetCycleFromPercentages,
+  type WindowHeightPresetCycleEntry,
+} from "./window-height-presets";
+import {
   solveStripGeometry,
   type Point,
   type Rect,
@@ -763,7 +769,6 @@ export interface RuntimeControllerOptions {
   ) => void;
   readonly showPointerDropPreview?: (frame: Rect) => void;
   readonly startupStabilizationProbes?: number;
-  readonly windowHeightPresets?: readonly ColumnWidth[];
 }
 
 export class RuntimeController {
@@ -909,7 +914,8 @@ export class RuntimeController {
   private defaultColumnPresentation: ColumnPresentation;
   private defaultColumnWidth: ColumnWidth;
   private windowHeightStep = DEFAULT_WINDOW_HEIGHT_STEP_PERCENT / 100;
-  private readonly windowHeightPresets: readonly ColumnWidth[];
+  private windowHeightPresetCycle: readonly WindowHeightPresetCycleEntry[] =
+    DEFAULT_WINDOW_HEIGHT_PRESET_CYCLE;
   private readonly requestedSuspensions = new Map<
     WindowId,
     Set<WindowSuspensionRequest>
@@ -1023,9 +1029,6 @@ export class RuntimeController {
     this.columnWidthPresets = (
       options.columnWidthPresets ?? DEFAULT_COLUMN_WIDTH_PRESETS
     ).map((width) => ({ ...width }));
-    this.windowHeightPresets = (
-      options.windowHeightPresets ?? DEFAULT_WINDOW_HEIGHT_PRESETS
-    ).map((height) => ({ ...height }));
     this.createRect =
       options.createRect ??
       ((x, y, width, height) => ({ height, width, x, y }));
@@ -1794,6 +1797,20 @@ export class RuntimeController {
     }
 
     this.windowHeightStep = step;
+    return true;
+  }
+
+  setWindowHeightPresets(percentages: readonly number[]): boolean {
+    const cycle = windowHeightPresetCycleFromPercentages(percentages);
+
+    if (
+      !cycle ||
+      sameWindowHeightPresetCycles(this.windowHeightPresetCycle, cycle)
+    ) {
+      return false;
+    }
+
+    this.windowHeightPresetCycle = cycle;
     return true;
   }
 
@@ -6606,7 +6623,7 @@ export class RuntimeController {
     let last: number | null = null;
     let selected: number | null = null;
 
-    for (const preset of this.windowHeightPresets) {
+    for (const { policy: preset } of this.windowHeightPresetCycle) {
       const unresolved =
         preset.kind === "fixed"
           ? preset.value + decorationExtent
@@ -12720,67 +12737,72 @@ export class RuntimeController {
     maximumHeight: number,
     direction: -1 | 1,
   ): number | null {
-    const presets = this.windowHeightPresets;
+    const presets = this.windowHeightPresetCycle;
 
     if (presets.length === 0) {
       return null;
     }
 
-    if (
-      current.kind === "preset" &&
-      current.index >= 0 &&
-      current.index < presets.length
-    ) {
-      const next =
-        (current.index + (direction > 0 ? 1 : presets.length - 1)) %
-        presets.length;
-      return next === current.index ? null : next;
+    let currentIndex = -1;
+
+    if (current.kind === "preset") {
+      for (let index = 0; index < presets.length; index += 1) {
+        if (presets[index]?.stateIndex === current.index) {
+          currentIndex = index;
+          break;
+        }
+      }
     }
 
-    const resolved = presets.map((preset) => {
+    if (currentIndex >= 0) {
+      const nextIndex =
+        (currentIndex + (direction > 0 ? 1 : presets.length - 1)) %
+        presets.length;
+      return nextIndex === currentIndex
+        ? null
+        : (presets[nextIndex]?.stateIndex ?? null);
+    }
+
+    let first: number | null = null;
+    let last: number | null = null;
+    let selected: number | null = null;
+
+    for (const preset of presets) {
       const requested =
-        preset.kind === "fixed"
-          ? preset.value + decorationHeight
-          : preset.value * (contextGeometry.workArea.height - this.gap) -
+        preset.policy.kind === "fixed"
+          ? preset.policy.value + decorationHeight
+          : preset.policy.value * (contextGeometry.workArea.height - this.gap) -
             this.gap;
 
       if (!Number.isFinite(requested) || requested <= 0) {
-        return null;
+        continue;
       }
 
-      return clamp(
+      const resolved = clamp(
         roundToPhysicalPixel(requested, contextGeometry.devicePixelRatio),
         minimumHeight,
         maximumHeight,
       );
-    });
-    let targetIndex = -1;
 
-    if (direction > 0) {
-      targetIndex = resolved.findIndex(
-        (height) =>
-          height !== null &&
-          height > currentFrameHeight + WINDOW_HEIGHT_PRESET_CYCLE_TOLERANCE,
-      );
-      targetIndex = targetIndex < 0 ? 0 : targetIndex;
-    } else {
-      for (let index = resolved.length - 1; index >= 0; index -= 1) {
-        const height = resolved[index];
+      first ??= preset.stateIndex;
+      last = preset.stateIndex;
 
+      if (direction > 0) {
         if (
-          height !== undefined &&
-          height !== null &&
-          height < currentFrameHeight - WINDOW_HEIGHT_PRESET_CYCLE_TOLERANCE
+          selected === null &&
+          resolved > currentFrameHeight + WINDOW_HEIGHT_PRESET_CYCLE_TOLERANCE
         ) {
-          targetIndex = index;
-          break;
+          selected = preset.stateIndex;
         }
+      } else if (
+        resolved <
+        currentFrameHeight - WINDOW_HEIGHT_PRESET_CYCLE_TOLERANCE
+      ) {
+        selected = preset.stateIndex;
       }
-
-      targetIndex = targetIndex < 0 ? presets.length - 1 : targetIndex;
     }
 
-    return resolved[targetIndex] === null ? null : targetIndex;
+    return selected ?? (direction > 0 ? first : last);
   }
 
   private resizedColumnWidth(
@@ -13928,7 +13950,7 @@ export class RuntimeController {
     return solveStripGeometry({
       ...input,
       windowHeightBounds,
-      windowHeightPresets: this.windowHeightPresets,
+      windowHeightPresets: WINDOW_HEIGHT_PRESET_RESOLUTION_TABLE,
     });
   }
 

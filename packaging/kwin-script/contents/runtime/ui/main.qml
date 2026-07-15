@@ -664,7 +664,6 @@ QtObject {
     readonly property ShortcutHandler switchPresetColumnWidthBackShortcut: ShortcutHandler {
         name: "driftile_switch_preset_column_width_back"
         text: "Driftile: Switch preset column width back"
-        sequence: "Meta+Shift+R"
         onActivated: Runtime.DriftileRuntime.switchPresetColumnWidthBack()
     }
     readonly property ShortcutHandler maximizeColumnShortcut: ShortcutHandler {
@@ -725,7 +724,7 @@ QtObject {
     readonly property ShortcutHandler switchPresetWindowHeightShortcut: ShortcutHandler {
         name: "driftile_switch_preset_window_height"
         text: "Driftile: Switch preset window height"
-        sequence: "Meta+Ctrl+Shift+R"
+        sequence: "Meta+Shift+R"
         onActivated: Runtime.DriftileRuntime.switchPresetWindowHeight()
     }
     readonly property ShortcutHandler switchPresetWindowHeightBackShortcut: ShortcutHandler {
@@ -768,6 +767,7 @@ QtObject {
             gap: KWin.readConfig("Gap", 16),
             showTabIndicator: KWin.readConfig("ShowTabIndicator", true),
             touchpadNavigation: KWin.readConfig("TouchpadNavigation", false),
+            windowHeightPresets: KWin.readConfig("WindowHeightPresets", ""),
             windowHeightStepPercent: KWin.readConfig("WindowHeightStepPercent", 10)
         };
     }

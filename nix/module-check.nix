@@ -297,6 +297,11 @@ let
           gap = 7;
           showTabIndicator = false;
           touchpadNavigation = true;
+          windowHeightPresets = [
+            30
+            60
+            90
+          ];
           windowHeightStepPercent = 17;
         };
       }
@@ -352,6 +357,16 @@ let
       ]
       {
         programs.driftile.settings.columnWidthPresets = builtins.genList (index: index + 10) 16;
+      }
+      { };
+  homeManagerMaximumHeightPresets =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.settings.windowHeightPresets = builtins.genList (index: index + 10) 16;
       }
       { };
   homeManagerSettingsWithSystemInstall =
@@ -504,6 +519,23 @@ let
       ];
     }
     { columnWidthPresets = builtins.genList (index: index + 10) 17; }
+    { windowHeightPresets = [ 9 ]; }
+    { windowHeightPresets = [ 101 ]; }
+    { windowHeightPresets = [ 50.5 ]; }
+    { windowHeightPresets = [ "50" ]; }
+    {
+      windowHeightPresets = [
+        50
+        50
+      ];
+    }
+    {
+      windowHeightPresets = [
+        50
+        40
+      ];
+    }
+    { windowHeightPresets = builtins.genList (index: index + 10) 17; }
     { windowHeightStepPercent = 0; }
     { windowHeightStepPercent = 51; }
     { applicationColumnWidths."org.example.Editor" = 9; }
@@ -618,6 +650,7 @@ let
       Gap = 7;
       ShowTabIndicator = false;
       TouchpadNavigation = true;
+      WindowHeightPresets = "30,60,90";
       WindowHeightStepPercent = 17;
     };
   };
@@ -638,6 +671,7 @@ let
       Gap = 16;
       ShowTabIndicator = true;
       TouchpadNavigation = false;
+      WindowHeightPresets = "";
       WindowHeightStepPercent = 10;
     };
   };
@@ -678,11 +712,11 @@ assert homeManagerSettings.config.qt.kde.settings == expectedSettings;
 assert homeManagerDefaultSettings.config.qt.kde.settings == expectedDefaultSettings;
 assert
   builtins.length (builtins.attrNames expectedSettings.kwinrc."Script-io.github.kontonkara.driftile")
-  == 16;
+  == 17;
 assert
   builtins.length (
     builtins.attrNames expectedDefaultSettings.kwinrc."Script-io.github.kontonkara.driftile"
-  ) == 16;
+  ) == 17;
 assert
   builtins.length (
     lib.splitString "\n"
@@ -715,6 +749,9 @@ assert
   homeManagerMaximumPresets.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ColumnWidthPresets
   == "10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25";
 assert
+  homeManagerMaximumHeightPresets.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".WindowHeightPresets
+  == "10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25";
+assert
   homeManagerSettingsWithSystemInstall.config.qt.kde.settings == {
     kwinrc."Script-io.github.kontonkara.driftile" = {
       ApplicationBorderlessExclusions = "";
@@ -732,6 +769,7 @@ assert
       Gap = 8;
       ShowTabIndicator = true;
       TouchpadNavigation = false;
+      WindowHeightPresets = "";
       WindowHeightStepPercent = 10;
     };
   };

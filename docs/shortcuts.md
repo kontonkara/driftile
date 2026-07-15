@@ -28,20 +28,27 @@ arrow keys are interchangeable unless noted otherwise.
 | Toggle native fullscreen                         | `Meta+Shift+F`                                       |
 | Toggle native maximize to work-area edges        | `Meta+M`                                             |
 | Close active window                              | `Meta+Q`                                             |
-| Cycle preset column or floating width            | `Meta+R` or `Meta+Shift+R`                           |
+| Cycle preset column or floating width forward    | `Meta+R`                                             |
 | Toggle full-width column                         | `Meta+F`                                             |
 | Expand active column into available width        | `Meta+Ctrl+F`                                        |
 | Center column or active manually floating window | `Meta+C`                                             |
 | Center fully visible columns                     | `Meta+Ctrl+C`                                        |
 | Decrease or increase column or floating width    | `Meta+-` or `Meta+=`                                 |
 | Decrease or increase active window height        | `Meta+Shift+-` or `Meta+Shift+=`                     |
-| Cycle preset window height forward               | `Meta+Ctrl+Shift+R`                                  |
+| Cycle preset window height forward               | `Meta+Shift+R`                                       |
 | Reset active window height to automatic          | `Meta+Ctrl+R`                                        |
 
 Single-window desktop/output transfer, direct insertion into the nearest
 existing stack, one-way tiled/floating layer focus, contextual width reset, and
-reverse window-height preset cycling are registered without default keys.
+reverse width and height preset cycling are registered without default keys.
 Assign them in **System Settings > Keyboard > Shortcuts** if needed.
+
+The four preset actions retain the IDs
+`driftile_switch_preset_column_width`,
+`driftile_switch_preset_column_width_back`,
+`driftile_switch_preset_window_height`, and
+`driftile_switch_preset_window_height_back`. KGlobalAccel preserves existing
+assignments; only a fresh shortcut record receives the forward defaults above.
 
 `driftile_move_window_to_desktop_1` through
 `driftile_move_window_to_desktop_9` directly transfer one active window to a
@@ -111,16 +118,16 @@ only after an exact synchronous or asynchronous acknowledgement. Pending,
 blocked, or native-state width targets are no-ops and never fall through to
 tiled behavior. Existing tiled behavior is unchanged.
 
-`Meta+R`, `Meta+Shift+R`, and the unbound **Reset column width** action are also
-contextual. A relation-free manually floating target reads the configured
-column-width presets or global default. Each percentage uses the same
-gap-adjusted singleton resolution, live decorated constraints, assigned-output
-pixel grid, and partial-visibility bounds as tiled width resolution. Height,
-focus, context, reinsertion placement, and every tiled layout stay unchanged.
-Only exact acknowledgement commits the frame. Automatic, related, pending, or
-otherwise blocked floating targets are no-ops without tiled fallback. No
-action, default binding, setting, schema, persistence behavior, or helper
-behavior is added.
+`Meta+R`, the unbound reverse-preset action, and the unbound **Reset column
+width** action are also contextual. A relation-free manually floating target
+reads the configured column-width presets or global default. Each percentage
+uses the same gap-adjusted singleton resolution, live decorated constraints,
+assigned-output pixel grid, and partial-visibility bounds as tiled width
+resolution. Height, focus, context, reinsertion placement, and every tiled
+layout stay unchanged. Only exact acknowledgement commits the frame.
+Automatic, related, pending, or otherwise blocked floating targets are no-ops
+without tiled fallback. The geometry path adds no persistence or helper
+behavior.
 
 `Meta+Shift+-` and `Meta+Shift+=` are also contextual. On an active manually
 floating window, they change the decorated frame height by
@@ -131,18 +138,22 @@ device-pixel ratio and is clamped to live decorated constraints. Tiled stack
 behavior is unchanged; height state commits only after exact acknowledgement,
 and a blocked or pending floating target never falls through to stack resizing.
 
-Forward and reverse window-height preset actions are also contextual for one
-active relation-free manually floating window. They cycle the fixed `1/3`,
-`1/2`, and `2/3` targets in either direction with wrapping. Each raw target is
-`fraction * (workArea.height - gap) - gap`; the start at
+`Meta+Shift+R` and the unbound reverse window-height preset action are also
+contextual for one active relation-free manually floating window.
+`WindowHeightPresets` accepts 1–16 strictly increasing integer percentages from
+10 through 100; a blank value uses the exact `1/3`, `1/2`, and `2/3`
+proportions. Custom targets resolve as
+`percentage / 100 * (workArea.height - gap) - gap`. The canonical start at
 `workArea.y + gap` and the end at `start + rawHeight` are snapped to the
-assigned output's pixel grid. The shared one-request transaction applies
-decorated constraints and partial reachability while preserving width, focus,
-context, reinsertion anchor, and every tiled layout; top-left changes only for
-the minimal reachability clamp. Only exact acknowledgement commits. A blocked
-active floating target fails closed without tiled fallback.
-Window-height reset remains tiled-only. No action, default binding, setting,
-schema, persistence, helper, overview, or KWin API is added.
+assigned output's pixel grid for both cycles.
+
+The shared one-request transaction applies decorated constraints and partial
+reachability while preserving width, focus, context, reinsertion anchor, and
+every tiled layout; top-left changes only for the minimal reachability clamp.
+Only exact acknowledgement commits. A blocked active floating target fails
+closed without tiled fallback. Changing `WindowHeightPresets` performs no
+immediate geometry, layout, viewport, or focus write. Window-height reset
+remains tiled-only.
 
 Driftile does not register a minimize action or default shortcut; KWin owns the
 mechanism. A minimized tiled window retains its exact logical slot, and a
@@ -173,9 +184,6 @@ logical slots, height state, minimized state, and frames, and receive no
 desktop, output, or geometry writes. Minimized windows elsewhere in the source
 or target context and other undocumented hidden-member edits remain
 fail-closed. These secondary actions remain unbound by default.
-
-Window-height presets are `1/3`, `1/2`, and `2/3` of the work area, with gaps
-included in the calculation.
 
 Native maximize extracts an active member of a regular vertical stack into a
 new singleton column immediately to the right. The column remains separate

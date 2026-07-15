@@ -7,9 +7,10 @@ record. Later direction is not a committed release schedule.
 Stable 1.28.0 makes existing unbound direct-insertion actions contextual for one
 relation-free manually floating window.
 
-The frozen 1.29.0 development slice makes existing forward and reverse
-window-height preset actions contextual for one eligible manually floating
-window. Window-height reset remains tiled-only.
+The frozen 1.29.0 development slice makes the window-height preset cycle
+configurable for tiled windows and one eligible manually floating window,
+updates fresh default bindings, and preserves existing shortcut assignments.
+Window-height reset remains tiled-only.
 
 ## Foundation (delivered)
 
@@ -63,7 +64,11 @@ The current runtime already:
   eligible manually floating frame through the shared exact-acknowledgement
   transaction with zero tiled mutation.
 - Cycles preset widths in both directions, adjusts width by 10%, toggles full width, expands into available space within shared constraints, and centers either the active column or all fully visible columns.
-- Adjusts one tiled window's height by 10%, resets it to weighted automatic sizing, and cycles `1/3`, `1/2`, and `2/3` presets with transactional stack reflow. The same decrease and increase actions resize an active manually floating frame by the configured work-area height step.
+- Adjusts one tiled window's height by 10%, resets it to weighted automatic
+  sizing, and cycles configured height presets with transactional stack reflow.
+  A blank cycle keeps the exact `1/3`, `1/2`, and `2/3` proportions. The same
+  decrease, increase, and preset actions operate contextually on an eligible
+  manually floating frame.
 - Focuses and reorders vertical stack members, contextually merges or extracts the active window, consumes or expels edge members, and inserts directly into the nearest stack across nonparticipating singleton columns.
 - Inserts a visible active member past settled minimized passive peers in the participating source and target columns, including a fully minimized target stack, without changing passive order, height state, minimized state, or hidden frames. Other state blockers fail closed, and state round trips cancel with exact rollback.
 - Toggles the active normal window between tiled and floating states with anchored reinsertion and safe geometry ownership.
@@ -95,6 +100,11 @@ The current runtime already:
 - Configures up to 16 strictly increasing column-width presets for later tiled
   or manual-floating actions without changing existing widths; a blank
   configuration retains the built-in exact thirds.
+- Configures up to 16 strictly increasing integer 10%–100% window-height
+  presets for later explicit tiled or eligible manual-floating actions without
+  changing layouts, frames, viewports, focus, persistence, or the semantic
+  selection of an existing tiled preset. A blank configuration retains the
+  exact `1/3`, `1/2`, and `2/3` proportions.
 - Optionally centers successful horizontal tiled focus navigation without
   changing vertical, floating, layer, or direct application focus.
 - Configures a 1–50 percentage-point explicit column-width step without reflowing existing layouts.
@@ -102,10 +112,13 @@ The current runtime already:
 - Treats exposed client minimum and maximum sizes as hard bounds, detects silent changes on visible tracked windows, does not model unexposed X11 increment and aspect hints, and leaves backend enforcement to KWin.
 - Runs a deterministic 128-cycle add, focus, minimize, restore, and remove regression with synchronous geometry acknowledgements and bounded scheduler settlement.
 - Keeps one shared trailing desktop empty and removes only redundant tails created by the current run.
-- Registers compact default shortcuts with `H/J/K/L`, arrow, Home/End, and Page Up/Down aliases.
+- Registers compact default shortcuts with `H/J/K/L`, arrow, Home/End, and Page
+  Up/Down aliases. Fresh records use `Meta+R` for forward width presets and
+  `Meta+Shift+R` for forward height presets; both reverse actions are unbound,
+  while existing action IDs and KGlobalAccel assignments remain unchanged.
 - Provides a reversible shortcut helper for the bundled defaults and explicit
   JSON v1 profiles; a UI without a Node.js dependency remains future work.
-- Lets Home Manager write the sixteen typed settings or generate a portable
+- Lets Home Manager write the seventeen typed settings or generate a portable
   shortcut profile without installing a second KWin package; shortcut claiming
   remains explicit.
 - Leaves dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows outside layout ownership, separate from manual floating.
@@ -1148,15 +1161,28 @@ No other feature belongs to 1.28.0.
 ## 1.29.0 (in development)
 
 Existing forward and reverse window-height preset actions are contextual for
-one active relation-free manually floating window. The fixed `1/3`, `1/2`, and
-`2/3` cycle wraps in both directions. Each raw proportional frame height is
-`fraction * (workArea.height - gap) - gap`; the start at
+one active relation-free manually floating window. Blank
+`WindowHeightPresets` keeps the exact `1/3`, `1/2`, and `2/3` cycle; custom
+input accepts 1–16 strictly increasing integer percentages from 10 through 100.
+Both cycles wrap in either direction. A custom raw frame height is
+`percentage / 100 * (workArea.height - gap) - gap`; the start at
 `workArea.y + gap` and the end at `start + rawHeight` are snapped to the
 assigned output's pixel grid before subtraction. Forward selects the first
 resolved height more than one logical pixel above the current frame and wraps
 to the first preset. Reverse selects the last resolved height more than one
 logical pixel below the current frame and wraps to the last. Window-height
 reset remains tiled-only.
+
+Changing the cycle performs no immediate geometry, layout, frame, viewport,
+focus, or persistence write. Existing tiled preset selection remains
+semantically stable; only a later explicit tiled or eligible manual-floating
+preset action reads the replacement cycle.
+
+Fresh shortcut records assign forward width cycling to `Meta+R` and forward
+height cycling to `Meta+Shift+R`; both reverse actions are unbound. Action IDs
+and existing KGlobalAccel assignments remain unchanged. The helper's bundled
+default profile follows the new mapping, so release migration must account for
+an older helper-owned profile before the replacement profile is claimed.
 
 The shared manual-floating size transaction applies live decorated constraints
 and partial reachability, issues at most one frame request, and commits only
@@ -1168,22 +1194,29 @@ without reaching the tiled path.
 
 Release criteria:
 
-- New focused runtime coverage must verify forward and reverse wrapping, all
-  three proportional targets, gap-adjusted start/end pixel snapping, preserved
+- Focused setting and runtime coverage must verify bounded canonical custom
+  input, the blank exact-thirds fallback, live no-write replacement, stable
+  existing tiled selection, later tiled selection from the replacement cycle,
+  and forward or reverse wrapping for an eligible manual-floating target.
+- Manual-floating cases must retain gap-adjusted start/end pixel snapping,
   width, focus, context, reinsertion anchor, unchanged tiled layouts, one
   immediate frame request, and related or pending fail-closed targets.
 - Existing shared manual-floating size coverage must continue to verify
   decorated constraints, partial reachability, delayed exact acknowledgement,
   repeated-command serialization, cleanup, exact metadata commits, and stale
   result rejection.
+- Shortcut contracts must verify `Meta+R` for forward width, `Meta+Shift+R` for
+  forward height, unbound reverse actions, stable action IDs, preserved existing
+  assignments, and the changed helper default profile. Release migration must
+  cover the previous helper-owned profile.
 - Formatting, type, lint, focused unit, package, Nix evaluation, and Nix build
   gates must pass before exact-SHA CI.
-- Existing shortcut registration and tiled height-preset coverage is reused
-  without a new integration, application, backend, or VM matrix. The slice
-  makes no VM validation claim.
-- The slice adds no action, binding, setting, schema, persistence behavior,
-  helper or overview behavior, KWin API, private API, backend, integration,
-  application, or VM matrix.
+- The existing full Wayland VM contract must retain its current application
+  pool, invoke reverse width cycling directly by action ID, and route physical
+  `Meta+Shift+R` through forward height cycling. No current VM validation claim
+  is made.
+- The slice adds no action ID, layout-persistence field, overview behavior,
+  KWin API, private API, backend, or application matrix.
 
 No other feature belongs to 1.29.0.
 
