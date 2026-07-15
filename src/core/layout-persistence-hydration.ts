@@ -210,8 +210,7 @@ function remappableStructureFailure(
         !validColumnPresentation(column.presentation) ||
         !Number.isInteger(column.selectedMemberIndex) ||
         column.selectedMemberIndex < 0 ||
-        column.selectedMemberIndex >= column.members.length ||
-        (column.presentation === "tabbed" && column.members.length < 2)
+        column.selectedMemberIndex >= column.members.length
       ) {
         return "invalid-persisted-state";
       }
@@ -352,9 +351,7 @@ export function planExactLayoutHydration(
         !validColumnPresentation(persistedColumn.presentation) ||
         !Number.isInteger(persistedColumn.selectedMemberIndex) ||
         persistedColumn.selectedMemberIndex < 0 ||
-        persistedColumn.selectedMemberIndex >= persistedColumn.members.length ||
-        (persistedColumn.presentation === "tabbed" &&
-          persistedColumn.members.length < 2)
+        persistedColumn.selectedMemberIndex >= persistedColumn.members.length
       ) {
         return failure("invalid-persisted-state");
       }

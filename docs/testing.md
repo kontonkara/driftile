@@ -156,7 +156,7 @@ clamping for new singleton columns. Nix module checks verify the canonical
 KConfig encoding from typed Home Manager profiles.
 
 Application-exclusion coverage verifies bounded exact-ID decoding, canonical
-Home Manager encoding, atomic thirteen-setting updates, startup exclusion, live
+Home Manager encoding, atomic fifteen-setting updates, startup exclusion, live
 release and fresh readmission, native-state blockers, persistence omission,
 constant-time membership checks, and zero writes to excluded frames.
 
@@ -175,7 +175,7 @@ floating, dialog, transient, and utility windows, global-disable dominance,
 live policy and identity changes, pre-existing borderless state, and
 add or remove paths without geometry writes, focus changes, or layout-state or
 layout-persistence changes. Global-disable and unload cases verify
-ownership-safe restoration separately. Nix checks pin the thirteen-field option
+ownership-safe restoration separately. Nix checks pin the fifteen-field option
 surface and sorted Home Manager KConfig encoding.
 
 Pointer coverage includes strict visible-target planning, midpoint selection,
@@ -260,10 +260,11 @@ tools/vm/run.sh lifecycle
 
 The lifecycle mode opens one non-fullscreen `1366x768` Wayland VM with no
 preinstalled Driftile package. It installs the pinned published stable script
-and overview archives, keeps the overview disabled and unbound, then unloads
+and overview archives, keeps that overview disabled and unbound, then unloads
 the script and upgrades both packages to the current build. It verifies package
 identities, runtime digests, the default-off touchpad setting, effect discovery,
-and the unbound overview load cycle. The upgraded script must also register the
+the stable unbound overview load cycle, and preservation of that unbound
+assignment after the upgrade. The upgraded script must also register the
 current close-window action after reloading the stable fixed bootstrap. Its
 nonce-scoped selector resolves the new content-addressed runtime inside the
 shared KWin QML engine. The full VM independently loads the same bootstrap in a
@@ -312,12 +313,12 @@ and destructions without component diagnostics, and cleanup restores `false`.
 
 At the same settled pointer layout, the primary
 VM confirms that the separately installed overview effect is disabled and
-unbound. It loads the effect through KWin, invokes its unbound action through
-KGlobalAccel without assigning a test chord, leaves the overview visible for
+registers `Meta+O`. It loads the effect through KWin, invokes its action through
+KGlobalAccel without assigning another chord, leaves the overview visible for
 three seconds, and rejects component errors. Its baseline requires the same
 valid v2 layout digest for 400 ms before frame and focus capture. After closing
 and unloading the effect, it requires identical frames, focus, desktops,
-persisted layout bytes, and built-in Overview state. The retained unbound
+persisted layout bytes, and built-in Overview state. The retained
 action is invoked once more to prove it is inert after unload, while the main
 extension remains loaded.
 

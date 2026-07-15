@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { decodeApplicationBorderlessExclusions } from "../src/application-borderless-exclusions";
 import { decodeApplicationInitialFloating } from "../src/application-initial-floating";
+import { decodeApplicationColumnPresentations } from "../src/application-column-presentations";
 import { decodeApplicationColumnWidthOverrides } from "../src/application-overrides";
 import { decodeApplicationFocusCentering } from "../src/application-focus-centering";
 import { decodeApplicationTilingExclusions } from "../src/application-tiling-exclusions";
@@ -18,6 +19,15 @@ const validApplicationColumnWidths = decodeApplicationColumnWidthOverrides(
 
 if (!validApplicationColumnWidths) {
   throw new Error("application override fixture is invalid");
+}
+
+const validApplicationColumnPresentations =
+  decodeApplicationColumnPresentations(
+    "org.example.Browser=tabbed\norg.example.Editor=stacked",
+  );
+
+if (!validApplicationColumnPresentations) {
+  throw new Error("application column-presentation fixture is invalid");
 }
 
 const validApplicationBorderlessExclusions =
@@ -61,6 +71,7 @@ if (!validColumnWidthPresets) {
 
 const validSettings: DriftileSettings = {
   applicationBorderlessExclusions: validApplicationBorderlessExclusions,
+  applicationColumnPresentations: validApplicationColumnPresentations,
   applicationColumnWidths: validApplicationColumnWidths,
   applicationFocusCentering: validApplicationFocusCentering,
   applicationInitialFloating: validApplicationInitialFloating,
@@ -71,6 +82,7 @@ const validSettings: DriftileSettings = {
   columnWidthStepPercent: 25,
   defaultColumnWidthPercent: 75,
   gap: 32,
+  showTabIndicator: false,
   touchpadNavigation: true,
   windowHeightStepPercent: 20,
 };
@@ -78,6 +90,8 @@ const validSettings: DriftileSettings = {
 const validSettingsInput = {
   applicationBorderlessExclusions:
     "org.example.Decorated\norg.example.Legacy=tool",
+  applicationColumnPresentations:
+    "org.example.Browser=tabbed\norg.example.Editor=stacked",
   applicationColumnWidths: "org.example.Editor=75",
   applicationFocusCentering: "org.example.Browser\norg.example.Editor",
   applicationInitialFloating: "org.example.Floating\norg.example.Floating=tool",
@@ -88,6 +102,7 @@ const validSettingsInput = {
   columnWidthStepPercent: validSettings.columnWidthStepPercent,
   defaultColumnWidthPercent: validSettings.defaultColumnWidthPercent,
   gap: validSettings.gap,
+  showTabIndicator: validSettings.showTabIndicator,
   touchpadNavigation: validSettings.touchpadNavigation,
   windowHeightStepPercent: validSettings.windowHeightStepPercent,
 };
@@ -100,6 +115,7 @@ describe("Driftile settings", () => {
       columnWidthStepPercent: 10,
       defaultColumnWidthPercent: 50,
       gap: 16,
+      showTabIndicator: true,
       touchpadNavigation: false,
       windowHeightStepPercent: 10,
     });
@@ -109,6 +125,9 @@ describe("Driftile settings", () => {
     ).toEqual([]);
     expect(
       DEFAULT_DRIFTILE_SETTINGS.applicationColumnWidths.canonicalEntries,
+    ).toEqual([]);
+    expect(
+      DEFAULT_DRIFTILE_SETTINGS.applicationColumnPresentations.canonicalEntries,
     ).toEqual([]);
     expect(
       DEFAULT_DRIFTILE_SETTINGS.applicationInitialFloating.canonicalEntries,
@@ -139,12 +158,26 @@ describe("Driftile settings", () => {
       columnWidthStepPercent: validSettings.columnWidthStepPercent,
       defaultColumnWidthPercent: validSettings.defaultColumnWidthPercent,
       gap: validSettings.gap,
+      showTabIndicator: validSettings.showTabIndicator,
       touchpadNavigation: validSettings.touchpadNavigation,
       windowHeightStepPercent: validSettings.windowHeightStepPercent,
     });
     expect(decoded?.applicationColumnWidths.canonicalEntries).toEqual(
       validApplicationColumnWidths.canonicalEntries,
     );
+    expect(decoded?.applicationColumnPresentations.canonicalEntries).toEqual(
+      validApplicationColumnPresentations.canonicalEntries,
+    );
+    expect(
+      decoded?.applicationColumnPresentations.columnPresentationFor(
+        "org.example.Browser",
+      ),
+    ).toBe("tabbed");
+    expect(
+      decoded?.applicationColumnPresentations.columnPresentationFor(
+        "org.example.Editor",
+      ),
+    ).toBe("stacked");
     expect(decoded?.applicationBorderlessExclusions.canonicalEntries).toEqual(
       validApplicationBorderlessExclusions.canonicalEntries,
     );
@@ -177,6 +210,7 @@ describe("Driftile settings", () => {
   it.each([
     {
       applicationBorderlessExclusions: "",
+      applicationColumnPresentations: "",
       applicationColumnWidths: "",
       applicationFocusCentering: "",
       applicationInitialFloating: "",
@@ -187,11 +221,13 @@ describe("Driftile settings", () => {
       columnWidthStepPercent: 1,
       defaultColumnWidthPercent: 10,
       gap: 0,
+      showTabIndicator: false,
       touchpadNavigation: false,
       windowHeightStepPercent: 1,
     },
     {
       applicationBorderlessExclusions: "org.example.Decorated",
+      applicationColumnPresentations: "org.example.Browser=tabbed",
       applicationColumnWidths: "org.example.Browser=80",
       applicationFocusCentering: "org.example.Browser",
       applicationInitialFloating: "org.example.Floating",
@@ -202,6 +238,7 @@ describe("Driftile settings", () => {
       columnWidthStepPercent: 50,
       defaultColumnWidthPercent: 100,
       gap: 64,
+      showTabIndicator: true,
       touchpadNavigation: true,
       windowHeightStepPercent: 50,
     },
@@ -215,6 +252,9 @@ describe("Driftile settings", () => {
     expect(decoded?.applicationColumnWidths.canonicalEntries.join("\n")).toBe(
       settings.applicationColumnWidths,
     );
+    expect(
+      decoded?.applicationColumnPresentations.canonicalEntries.join("\n"),
+    ).toBe(settings.applicationColumnPresentations);
     expect(decoded?.applicationFocusCentering.canonicalEntries.join("\n")).toBe(
       settings.applicationFocusCentering,
     );
@@ -233,6 +273,7 @@ describe("Driftile settings", () => {
       columnWidthStepPercent: settings.columnWidthStepPercent,
       defaultColumnWidthPercent: settings.defaultColumnWidthPercent,
       gap: settings.gap,
+      showTabIndicator: settings.showTabIndicator,
       touchpadNavigation: settings.touchpadNavigation,
       windowHeightStepPercent: settings.windowHeightStepPercent,
     });
@@ -241,11 +282,16 @@ describe("Driftile settings", () => {
   it.each([
     ["a non-boolean borderless setting", { borderlessWindows: 1 }],
     ["a non-boolean centering setting", { centerFocusedColumn: 1 }],
+    ["a non-boolean tab-indicator setting", { showTabIndicator: 1 }],
     ["a non-boolean touchpad setting", { touchpadNavigation: 1 }],
     ["invalid column-width presets", { columnWidthPresets: "50,40" }],
     [
       "invalid application overrides",
       { applicationColumnWidths: "org.example.Editor=9" },
+    ],
+    [
+      "invalid application column presentation",
+      { applicationColumnPresentations: "org.example.Editor=tiled" },
     ],
     [
       "duplicate application borderless exclusions",
@@ -310,11 +356,12 @@ describe("Driftile settings", () => {
     },
   );
 
-  it("rejects the previous twelve-field snapshot", () => {
+  it("rejects the previous thirteen-field snapshot", () => {
     const incomplete = {
       applicationBorderlessExclusions:
         validSettingsInput.applicationBorderlessExclusions,
       applicationColumnWidths: validSettingsInput.applicationColumnWidths,
+      applicationFocusCentering: validSettingsInput.applicationFocusCentering,
       applicationInitialFloating: validSettingsInput.applicationInitialFloating,
       applicationTilingExclusions:
         validSettingsInput.applicationTilingExclusions,
@@ -347,6 +394,13 @@ describe("Driftile settings", () => {
 
     if (!changedApplicationColumnWidths) {
       throw new Error("application override fixture is invalid");
+    }
+
+    const changedApplicationColumnPresentations =
+      decodeApplicationColumnPresentations("org.example.Editor=tabbed");
+
+    if (!changedApplicationColumnPresentations) {
+      throw new Error("application column-presentation fixture is invalid");
     }
 
     const changedApplicationBorderlessExclusions =
@@ -388,6 +442,9 @@ describe("Driftile settings", () => {
       {
         applicationBorderlessExclusions: changedApplicationBorderlessExclusions,
       },
+      {
+        applicationColumnPresentations: changedApplicationColumnPresentations,
+      },
       { applicationColumnWidths: changedApplicationColumnWidths },
       { applicationFocusCentering: changedApplicationFocusCentering },
       { applicationInitialFloating: changedApplicationInitialFloating },
@@ -398,6 +455,7 @@ describe("Driftile settings", () => {
       { columnWidthStepPercent: 26 },
       { defaultColumnWidthPercent: 76 },
       { gap: 33 },
+      { showTabIndicator: true },
       { touchpadNavigation: false },
       { windowHeightStepPercent: 21 },
     ]) {

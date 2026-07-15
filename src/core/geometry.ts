@@ -1123,8 +1123,7 @@ function validateInput(input: StripGeometryInput): void {
     if (
       !isKnownColumnPresentation(column.presentation) ||
       column.windowIds.length === 0 ||
-      !column.windowIds.includes(column.selectedWindowId) ||
-      (column.presentation === "tabbed" && column.windowIds.length < 2)
+      !column.windowIds.includes(column.selectedWindowId)
     ) {
       throw new RangeError("column presentation state is invalid");
     }

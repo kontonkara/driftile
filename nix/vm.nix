@@ -110,6 +110,7 @@ let
       overview_plugin_id="io.github.kontonkara.driftile.overview"
       overview_shortcut="driftile_toggle_overview"
       overview_shortcut_text="Driftile: Toggle overview"
+      overview_default_keys='[[268435535,0,0,0]]'
       plasma_overview_effect_id="overview"
       layout_state_file="''${XDG_CONFIG_HOME:-$HOME/.config}/driftile-layout-state.ini"
 
@@ -4617,9 +4618,9 @@ let
           overview_checkpoint_failure "KGlobalAccel did not expose the overview action"
           return 1
         }
-        if [[ "$overview_keys" != "[]" ]]; then
+        if [[ "$overview_keys" != "$overview_default_keys" ]]; then
           overview_checkpoint_failure \
-            "the overview action was unexpectedly bound: $overview_keys"
+            "the overview action did not expose its default Meta+O assignment: $overview_keys"
           return 1
         fi
 
@@ -4636,7 +4637,7 @@ let
 
         if ! invoke_shortcut "$overview_shortcut" \
           || ! wait_for_effect_active_state "$overview_plugin_id" true; then
-          overview_checkpoint_failure "the unbound KGlobalAccel action did not open the overview"
+          overview_checkpoint_failure "the KGlobalAccel action did not open the overview"
           return 1
         fi
 
@@ -4681,10 +4682,15 @@ let
             "KGlobalAccel did not expose the retained overview action"
           return 1
         }
-        if [[ "$overview_keys" != "[]" ]] \
-          || ! invoke_shortcut "$overview_shortcut"; then
+        if [[ "$overview_keys" != "$overview_default_keys" ]]; then
           overview_checkpoint_failure \
-            "the retained overview action was bound or could not be invoked"
+            "the unloaded overview action did not retain its Meta+O assignment: $overview_keys"
+          return 1
+        fi
+
+        if ! invoke_shortcut "$overview_shortcut"; then
+          overview_checkpoint_failure \
+            "the retained inert overview action could not be invoked"
           return 1
         fi
 

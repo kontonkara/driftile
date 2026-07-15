@@ -5,6 +5,12 @@ import {
   type ApplicationColumnWidthOverrides,
 } from "./application-overrides";
 import {
+  decodeApplicationColumnPresentations,
+  EMPTY_APPLICATION_COLUMN_PRESENTATIONS,
+  sameApplicationColumnPresentations,
+  type ApplicationColumnPresentations,
+} from "./application-column-presentations";
+import {
   decodeApplicationBorderlessExclusions,
   EMPTY_APPLICATION_BORDERLESS_EXCLUSIONS,
   sameApplicationBorderlessExclusions,
@@ -41,10 +47,11 @@ const MIN_DEFAULT_COLUMN_WIDTH_PERCENT = 10;
 const MAX_DEFAULT_COLUMN_WIDTH_PERCENT = 100;
 const MIN_RESIZE_STEP_PERCENT = 1;
 const MAX_RESIZE_STEP_PERCENT = 50;
-const SETTINGS_FIELD_COUNT = 13;
+const SETTINGS_FIELD_COUNT = 15;
 
 export interface DriftileSettings {
   readonly applicationBorderlessExclusions: ApplicationBorderlessExclusions;
+  readonly applicationColumnPresentations: ApplicationColumnPresentations;
   readonly applicationColumnWidths: ApplicationColumnWidthOverrides;
   readonly applicationFocusCentering: ApplicationFocusCentering;
   readonly applicationInitialFloating: ApplicationInitialFloating;
@@ -55,12 +62,14 @@ export interface DriftileSettings {
   readonly columnWidthStepPercent: number;
   readonly defaultColumnWidthPercent: number;
   readonly gap: number;
+  readonly showTabIndicator: boolean;
   readonly touchpadNavigation: boolean;
   readonly windowHeightStepPercent: number;
 }
 
 export const DEFAULT_DRIFTILE_SETTINGS: DriftileSettings = Object.freeze({
   applicationBorderlessExclusions: EMPTY_APPLICATION_BORDERLESS_EXCLUSIONS,
+  applicationColumnPresentations: EMPTY_APPLICATION_COLUMN_PRESENTATIONS,
   applicationColumnWidths: EMPTY_APPLICATION_COLUMN_WIDTH_OVERRIDES,
   applicationFocusCentering: EMPTY_APPLICATION_FOCUS_CENTERING,
   applicationInitialFloating: EMPTY_APPLICATION_INITIAL_FLOATING,
@@ -71,6 +80,7 @@ export const DEFAULT_DRIFTILE_SETTINGS: DriftileSettings = Object.freeze({
   columnWidthStepPercent: 10,
   defaultColumnWidthPercent: 50,
   gap: 16,
+  showTabIndicator: true,
   touchpadNavigation: false,
   windowHeightStepPercent: 10,
 });
@@ -87,6 +97,7 @@ export function decodeDriftileSettings(
   if (
     Reflect.ownKeys(candidate).length !== SETTINGS_FIELD_COUNT ||
     !owns(candidate, "applicationBorderlessExclusions") ||
+    !owns(candidate, "applicationColumnPresentations") ||
     !owns(candidate, "applicationColumnWidths") ||
     !owns(candidate, "applicationFocusCentering") ||
     !owns(candidate, "applicationInitialFloating") ||
@@ -97,6 +108,7 @@ export function decodeDriftileSettings(
     !owns(candidate, "columnWidthStepPercent") ||
     !owns(candidate, "defaultColumnWidthPercent") ||
     !owns(candidate, "gap") ||
+    !owns(candidate, "showTabIndicator") ||
     !owns(candidate, "touchpadNavigation") ||
     !owns(candidate, "windowHeightStepPercent")
   ) {
@@ -105,6 +117,9 @@ export function decodeDriftileSettings(
 
   const applicationBorderlessExclusions = decodeApplicationBorderlessExclusions(
     candidate["applicationBorderlessExclusions"],
+  );
+  const applicationColumnPresentations = decodeApplicationColumnPresentations(
+    candidate["applicationColumnPresentations"],
   );
   const applicationColumnWidths = decodeApplicationColumnWidthOverrides(
     candidate["applicationColumnWidths"],
@@ -126,11 +141,13 @@ export function decodeDriftileSettings(
   const columnWidthStepPercent = candidate["columnWidthStepPercent"];
   const defaultColumnWidthPercent = candidate["defaultColumnWidthPercent"];
   const gap = candidate["gap"];
+  const showTabIndicator = candidate["showTabIndicator"];
   const touchpadNavigation = candidate["touchpadNavigation"];
   const windowHeightStepPercent = candidate["windowHeightStepPercent"];
 
   if (
     !applicationBorderlessExclusions ||
+    !applicationColumnPresentations ||
     !applicationColumnWidths ||
     !applicationFocusCentering ||
     !applicationInitialFloating ||
@@ -149,6 +166,7 @@ export function decodeDriftileSettings(
       MAX_DEFAULT_COLUMN_WIDTH_PERCENT,
     ) ||
     !isBoundedInteger(gap, MIN_GAP, MAX_GAP) ||
+    typeof showTabIndicator !== "boolean" ||
     typeof touchpadNavigation !== "boolean" ||
     !isBoundedInteger(
       windowHeightStepPercent,
@@ -161,6 +179,7 @@ export function decodeDriftileSettings(
 
   return Object.freeze({
     applicationBorderlessExclusions,
+    applicationColumnPresentations,
     applicationColumnWidths,
     applicationFocusCentering,
     applicationInitialFloating,
@@ -171,6 +190,7 @@ export function decodeDriftileSettings(
     columnWidthStepPercent,
     defaultColumnWidthPercent,
     gap,
+    showTabIndicator,
     touchpadNavigation,
     windowHeightStepPercent,
   });
@@ -184,6 +204,10 @@ export function sameDriftileSettings(
     sameApplicationBorderlessExclusions(
       left.applicationBorderlessExclusions,
       right.applicationBorderlessExclusions,
+    ) &&
+    sameApplicationColumnPresentations(
+      left.applicationColumnPresentations,
+      right.applicationColumnPresentations,
     ) &&
     sameApplicationColumnWidthOverrides(
       left.applicationColumnWidths,
@@ -210,6 +234,7 @@ export function sameDriftileSettings(
     left.columnWidthStepPercent === right.columnWidthStepPercent &&
     left.defaultColumnWidthPercent === right.defaultColumnWidthPercent &&
     left.gap === right.gap &&
+    left.showTabIndicator === right.showTabIndicator &&
     left.touchpadNavigation === right.touchpadNavigation &&
     left.windowHeightStepPercent === right.windowHeightStepPercent
   );

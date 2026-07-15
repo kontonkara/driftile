@@ -100,7 +100,7 @@ The current runtime already:
 - Registers compact default shortcuts with `H/J/K/L`, arrow, Home/End, and Page Up/Down aliases.
 - Provides a reversible shortcut helper for the bundled defaults and explicit
   JSON v1 profiles; a UI without a Node.js dependency remains future work.
-- Lets Home Manager write the thirteen typed settings or generate a portable
+- Lets Home Manager write the fifteen typed settings or generate a portable
   shortcut profile without installing a second KWin package; shortcut claiming
   remains explicit.
 - Leaves dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows outside layout ownership, separate from manual floating.
@@ -887,25 +887,36 @@ No other feature belongs to 1.19.0.
 
 ## 1.20.0 (in development)
 
-Version `1.20.0` adds pointer tab selection to the optional overview. A tabbed
-column keeps one large selected thumbnail and exposes every live member in a
-compact ordered tab strip. Selecting another tab uses the existing guarded
-public KWin focus path; the main runtime remains the sole owner of layout state
-and records the resulting selection.
+Version `1.20.0` completes one bounded tab-workflow slice. The optional
+overview keeps one selected thumbnail, exposes every live tabbed member in a
+compact ordered strip, and offers `Meta+O` for a fresh shortcut record when
+enabled while preserving existing assignments. Selection reuses
+the existing guarded public KWin focus path and fails closed for stale,
+deleted, minimized, hidden, or non-input windows.
 
-The interaction fails closed for stale, deleted, minimized, hidden, or
-non-input windows. It adds no action, binding, setting, persistence field,
-layout write, private API, second window model, or new application matrix.
+`ApplicationColumnPresentations` assigns `stacked` or `tabbed` to fresh
+columns by exact `desktopFileName`. A tabbed singleton is now valid durable
+state, so later insertion immediately uses the requested presentation. Splits,
+expels, fresh single-window transfers, and initially floating reinsertion read
+the moved application's current rule; existing target columns still win
+merges. Existing columns are unchanged by live reconfiguration.
+
+Confirmed activation in a multi-window tabbed column and a successful
+transition into tabbed presentation can show Plasma's passive OSD.
+`ShowTabIndicator` enables it by default and can disable it without a layout
+write. The surface adds no managed window, input interception, polling,
+private API, compositor replacement, or persistence field.
 
 Release criteria:
 
-- Projection preserves every tab member and the selected index in linear time.
-- Tab and thumbnail hit regions do not overlap; stacked and floating previews
-  retain their existing behavior.
-- Existing guarded focus checks cover current and non-current desktops, while
-  rejected targets leave the overview open and state unchanged.
-- Targeted tests, one hidden VM checkpoint, packaging, exact-SHA CI, and release
-  gates pass without widening this slice.
+- Overview projection preserves every tab member and selected index in linear
+  time; tab and thumbnail hit regions do not overlap.
+- Initial-presentation lookup is constant-time, singleton tabbed state survives
+  every supported lifecycle, and target-wins merging remains unchanged.
+- The indicator is emitted only after confirmed multi-tab activation or entry
+  and remains silent when disabled or while an overview effect is active.
+- Targeted checks, one hidden VM checkpoint, packaging, exact-SHA CI, and
+  release gates pass without adding an application matrix.
 
 No other feature belongs to 1.20.0.
 
@@ -914,8 +925,6 @@ No other feature belongs to 1.20.0.
 Add interaction and presentation features outside the frozen v1 scope without
 taking over compositor mechanisms.
 
-- Add pointer tab navigation and an optional transient presentation surface.
-- Add further application-specific policies.
 - Add optional visual transitions, layout indicators, and concise diagnostics.
 - Keep Plasma's built-in Overview as the compatible baseline.
 - Add pointer-driven overview rearrangement only through public KWin and Plasma

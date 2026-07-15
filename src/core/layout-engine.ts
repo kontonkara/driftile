@@ -43,6 +43,11 @@ export interface LayoutColumnPlacement {
   readonly index: number;
 }
 
+export interface TabIndicatorState {
+  readonly selectedIndex: number;
+  readonly tabCount: number;
+}
+
 export interface RemoveColumnsCommand {
   readonly columnIds: readonly ColumnId[];
   readonly desktopId: DesktopId;
@@ -74,6 +79,7 @@ export interface ManageWindowCommand {
   readonly columnId: ColumnId;
   readonly desktopId: DesktopId;
   readonly outputId: OutputId;
+  readonly presentation?: ColumnPresentation;
   readonly width: ColumnWidth;
   readonly windowId: WindowId;
 }
@@ -113,6 +119,7 @@ export interface WindowTransferTarget {
   readonly columnId: ColumnId;
   readonly desktopId: DesktopId;
   readonly outputId: OutputId;
+  readonly presentation?: ColumnPresentation;
 }
 
 export type WindowReinsertionPosition = "after" | "before";
@@ -310,7 +317,7 @@ export class LayoutEngine {
 
     const column: LayoutColumn = {
       id: command.columnId,
-      presentation: "stacked",
+      presentation: command.presentation ?? "stacked",
       selectedWindowId: command.windowId,
       width: { ...command.width },
       windowIds: [command.windowId],
@@ -378,8 +385,7 @@ export class LayoutEngine {
       !placement ||
       !column ||
       column.windowIds[placement.memberIndex] !== windowId ||
-      column.presentation === presentation ||
-      (presentation === "tabbed" && column.windowIds.length < 2)
+      column.presentation === presentation
     ) {
       return null;
     }
@@ -434,6 +440,32 @@ export class LayoutEngine {
 
     column.selectedWindowId = windowId;
     return true;
+  }
+
+  tabIndicator(windowId: WindowId): TabIndicatorState | null {
+    const placement = this.placements.get(windowId);
+    const context = placement
+      ? this.contexts.get(placement.contextKey)
+      : undefined;
+    const column = placement
+      ? context?.columnById.get(placement.columnId)
+      : undefined;
+
+    if (
+      !placement ||
+      !column ||
+      column.presentation !== "tabbed" ||
+      column.windowIds.length < 2 ||
+      column.selectedWindowId !== windowId ||
+      column.windowIds[placement.memberIndex] !== windowId
+    ) {
+      return null;
+    }
+
+    return {
+      selectedIndex: placement.memberIndex,
+      tabCount: column.windowIds.length,
+    };
   }
 
   adjacentWindow(
@@ -517,6 +549,7 @@ export class LayoutEngine {
     windowId: WindowId,
     direction: HorizontalDirection,
     newColumnId: ColumnId,
+    newColumnPresentation: ColumnPresentation = "stacked",
   ): StackEditResult | null {
     const placement = this.placements.get(windowId);
 
@@ -574,7 +607,7 @@ export class LayoutEngine {
       this.reindexColumnPlacements(placement.contextKey, source, windowIndex);
       const column: LayoutColumn = {
         id: newColumnId,
-        presentation: "stacked",
+        presentation: newColumnPresentation,
         selectedWindowId: windowId,
         width: { ...source.width },
         windowIds: [windowId],
@@ -728,10 +761,7 @@ export class LayoutEngine {
     } else {
       columns[targetIndex + 1] = {
         id: nextSource.id,
-        presentation:
-          nextSource.windowIds.length === 2
-            ? "stacked"
-            : nextSource.presentation,
+        presentation: nextSource.presentation,
         selectedWindowId: selectedWindowAfterSnapshotRemoval(nextSource, 0),
         width: nextSource.width,
         ...(sourceWindowHeights ? { windowHeights: sourceWindowHeights } : {}),
@@ -750,6 +780,7 @@ export class LayoutEngine {
   previewExpelWindowFromColumn(
     activeWindowId: WindowId,
     newColumnId: ColumnId,
+    newColumnPresentation: ColumnPresentation = "stacked",
   ): ColumnStackEditPreview | null {
     const placement = this.placements.get(activeWindowId);
 
@@ -797,8 +828,7 @@ export class LayoutEngine {
     );
     columns[sourceIndex] = {
       id: nextSource.id,
-      presentation:
-        nextSource.windowIds.length === 2 ? "stacked" : nextSource.presentation,
+      presentation: nextSource.presentation,
       selectedWindowId: selectedWindowAfterSnapshotRemoval(
         nextSource,
         nextSource.windowIds.length - 1,
@@ -809,7 +839,7 @@ export class LayoutEngine {
     };
     columns.splice(sourceIndex + 1, 0, {
       id: newColumnId,
-      presentation: "stacked",
+      presentation: newColumnPresentation,
       selectedWindowId: movedWindowId,
       width: nextSource.width,
       windowIds: [movedWindowId],
@@ -1519,8 +1549,7 @@ export class LayoutEngine {
         );
         sourceColumns.push({
           id: column.id,
-          presentation:
-            column.windowIds.length === 2 ? "stacked" : column.presentation,
+          presentation: column.presentation,
           selectedWindowId: selectedWindowAfterSnapshotRemoval(
             column,
             sourceMemberIndex,
@@ -1550,7 +1579,7 @@ export class LayoutEngine {
       targetActiveIndex < 0 ? targetColumns.length : targetActiveIndex + 1;
     targetColumns.splice(targetInsertionIndex, 0, {
       id: target.columnId,
-      presentation: "stacked",
+      presentation: target.presentation ?? "stacked",
       selectedWindowId: windowId,
       width: sourceColumn.width,
       windowIds: [windowId],
@@ -1658,8 +1687,7 @@ export class LayoutEngine {
       );
       sourceColumns.push({
         id: column.id,
-        presentation:
-          column.windowIds.length === 2 ? "stacked" : column.presentation,
+        presentation: column.presentation,
         selectedWindowId: selectedWindowAfterSnapshotRemoval(
           column,
           sourceMemberIndex,
@@ -1857,10 +1885,7 @@ export class LayoutEngine {
         );
         columns.push({
           id: candidate.id,
-          presentation:
-            candidate.windowIds.length === 2
-              ? "stacked"
-              : candidate.presentation,
+          presentation: candidate.presentation,
           selectedWindowId: selectedWindowAfterSnapshotRemoval(
             candidate,
             memberIndex,
@@ -2115,10 +2140,7 @@ export class LayoutEngine {
             ? column
             : {
                 id: column.id,
-                presentation:
-                  retainedWindowIds.length === 1
-                    ? "stacked"
-                    : column.presentation,
+                presentation: column.presentation,
                 selectedWindowId: selectedWindowAfterRetaining(
                   column,
                   retainedWindowIds,
@@ -2662,8 +2684,7 @@ function previewWindowReinsertion(
       if (sourceWindowIds.length > 0) {
         columns.push({
           id: column.id,
-          presentation:
-            sourceWindowIds.length === 1 ? "stacked" : column.presentation,
+          presentation: column.presentation,
           selectedWindowId: selectedWindowAfterSnapshotRemoval(
             column,
             sourceMemberIndex,
@@ -2980,7 +3001,9 @@ function validWindowTransferTarget(
     isRecord(target) &&
     typeof target["columnId"] === "string" &&
     typeof target["desktopId"] === "string" &&
-    typeof target["outputId"] === "string"
+    typeof target["outputId"] === "string" &&
+    (target["presentation"] === undefined ||
+      validColumnPresentation(target["presentation"]))
   );
 }
 
@@ -3051,7 +3074,6 @@ export function previewColumnRestoration(
         column.windowIds.length,
       ) ||
       !validColumnPresentation(column.presentation) ||
-      (column.presentation === "tabbed" && column.windowIds.length < 2) ||
       !column.windowIds.includes(column.selectedWindowId) ||
       columnIds.has(column.id)
     ) {
@@ -3293,8 +3315,7 @@ function contextWithoutWindows(
       : undefined;
     columns.push({
       id: column.id,
-      presentation:
-        retainedIndices.length === 1 ? "stacked" : column.presentation,
+      presentation: column.presentation,
       selectedWindowId: selectedWindowAfterRetaining(
         column,
         retainedIndices.map((index) => {
@@ -3402,7 +3423,6 @@ function validContextSnapshot(snapshot: LayoutContextSnapshot): boolean {
       columnIds.has(column.id) ||
       column.windowIds.length === 0 ||
       !validColumnPresentation(column.presentation) ||
-      (column.presentation === "tabbed" && column.windowIds.length < 2) ||
       !column.windowIds.includes(column.selectedWindowId) ||
       !validSerializedWindowHeights(
         column.windowHeights,
@@ -3671,10 +3691,6 @@ function removeMutableColumnWindow(
     }
 
     column.selectedWindowId = selectedWindowId;
-
-    if (column.windowIds.length === 1) {
-      column.presentation = "stacked";
-    }
   }
 
   return removed;

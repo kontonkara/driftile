@@ -17,9 +17,12 @@ column and adds a compact ordered strip for its live members. A left click on a
 different valid tab uses the same guarded focus path. The main script remains
 the sole owner of layout state and records the resulting selection.
 
-The companion is disabled by default and has no default shortcut or screen
-edge. It requires the main Driftile KWin script because that script publishes
-the authoritative layout snapshot.
+The companion is disabled by default. When enabled with a fresh shortcut
+record, `Meta+O` toggles it. KGlobalAccel preserves an existing assignment
+across upgrades, including an explicitly unbound action, so review it in
+**System Settings > Keyboard > Shortcuts** after upgrading. The effect has no
+screen edge and requires the main Driftile KWin script because that script
+publishes the authoritative layout snapshot.
 
 ## Install a release
 
@@ -41,8 +44,8 @@ To build the same versioned archive from source, run `npm ci` followed by
 `npm run package`; the archive is written to `dist/`.
 
 Enable **Driftile Overview** in **System Settings > Window Management > Desktop
-Effects**. Assign its toggle action in **System Settings > Keyboard >
-Shortcuts** if wanted. The action is deliberately unbound.
+Effects**. Change `Meta+O` in **System Settings > Keyboard > Shortcuts** if
+another assignment is preferred.
 
 Disable the effect before upgrading or removing it. Remove the package with:
 
@@ -70,7 +73,7 @@ The main script and overview can be installed independently. For example, a
 system-wide main package can be combined with a per-user overview. Do not
 install the same package ID through both NixOS and Home Manager for one user.
 Neither module enables the effect in KWin; enable it in Desktop Effects and
-assign its shortcut explicitly.
+adjust its shortcut only if needed.
 
 ## Safety boundary
 

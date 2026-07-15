@@ -12,6 +12,10 @@
       <label>Center tiled columns after horizontal focus navigation</label>
       <default>false</default>
     </entry>
+    <entry name="ShowTabIndicator" type="Bool">
+      <label>Show a transient OSD for tabbed-window selection</label>
+      <default>true</default>
+    </entry>
     <entry name="TouchpadNavigation" type="Bool">
       <label>Enable five-finger horizontal touchpad navigation</label>
       <default>false</default>
@@ -43,6 +47,10 @@
       <default>10</default>
       <min>1</min>
       <max>50</max>
+    </entry>
+    <entry name="ApplicationColumnPresentations" type="String">
+      <label>Column presentations by desktop-file ID</label>
+      <default></default>
     </entry>
     <entry name="ApplicationColumnWidths" type="String">
       <label>Initial column widths by desktop-file ID</label>

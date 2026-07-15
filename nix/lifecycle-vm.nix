@@ -1087,16 +1087,16 @@ let
       overview_keys=$(shortcut_keys "$overview_shortcut" "$overview_shortcut_text") \
         || fail_test "KGlobalAccel did not expose the overview assignment"
       [[ "$overview_keys" == "[]" ]] \
-        || fail_test "the overview action was unexpectedly bound: $overview_keys"
+        || fail_test "the upgrade changed the preserved unbound overview assignment: $overview_keys"
       wait_for_script_state true \
         || fail_test "loading the overview unloaded the current runtime"
-      progress "current overview loaded with an unbound action"
+      progress "current overview preserved the published unbound assignment"
 
       unload_overview_effect
       overview_keys=$(shortcut_keys "$overview_shortcut" "$overview_shortcut_text") \
         || fail_test "KGlobalAccel did not retain the unloaded overview action"
       [[ "$overview_keys" == "[]" ]] \
-        || fail_test "the unloaded overview action gained an assignment: $overview_keys"
+        || fail_test "unloading changed the preserved unbound overview assignment: $overview_keys"
       wait_for_script_state true \
         || fail_test "unloading the overview unloaded the current runtime"
       run_checked \

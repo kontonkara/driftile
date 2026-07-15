@@ -22,15 +22,17 @@ leaving window, output, and desktop mechanisms to KWin.
 - Settled recovery for output, scale, work-area, and window-constraint changes.
 - Configurable gaps, application initial floating, tiling and borderless
   exclusions, global and application-specific initial column widths,
-  column-width presets, resize steps, global and application-specific
-  horizontal focus centering, and optional borderless presentation.
+  application-specific initial stacked or tabbed presentation, column-width
+  presets, resize steps, global and application-specific horizontal focus
+  centering, and optional borderless presentation.
+- Optional passive Plasma OSD feedback when a multi-window tabbed member is
+  activated or its column enters tabbed presentation.
 - Optional five-finger horizontal touchpad navigation on native Wayland.
 - Exact extension-reload restoration, conservative cross-session restoration,
   and fail-closed restoration when a known output returns.
 - An optional overview companion that presents the authoritative layout; the
-  1.7.0 release adds guarded current-card focus, while 1.8.0 adds guarded
-  non-current desktop selection from number gutters. The 1.9.0 release also
-  activates an exact non-current thumbnail after guarded desktop selection.
+  current development line adds guarded pointer selection for every member of
+  a tabbed column.
 - An optional reversible shortcut helper with custom JSON profiles.
 
 ## Status
@@ -64,7 +66,9 @@ modules, upgrades, and safe removal. See [Migration](docs/migration.md) before
 changing release generations.
 
 The release artifacts also provide the separate overview effect. It is
-disabled and unbound by default; see [Overview companion](docs/overview.md).
+disabled by default and offers `Meta+O` for a fresh shortcut record when
+enabled. Existing KGlobalAccel assignments are preserved; see [Overview
+companion](docs/overview.md).
 
 ## Development
 

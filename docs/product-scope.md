@@ -51,7 +51,7 @@ The ownership rule is strict:
 - Configurable 1–50 percentage-point step for contextual height decrease and
   increase actions: the active stack member when tiled, or the active manually
   floating window when detached.
-- One settings page groups thirteen controls into eight General and five
+- One settings page groups fifteen controls into nine General and six
   Applications controls.
 - Output-local commands unless a transfer is explicit.
 - Work-area, size-constraint, fullscreen, minimized-window compatibility, dialog handling, and settled virtual-output recovery.
@@ -214,6 +214,20 @@ The ownership rule is strict:
   setting, settings UI, private API, or compositor-owned surface. Tests cover
   only the new behavior and include proportional operation-count guards.
 
+## 1.20 core slice
+
+- The optional overview exposes every live tabbed member as a pointer target
+  while keeping one selected thumbnail and the guarded focus path.
+- `ApplicationColumnPresentations` assigns `stacked` or `tabbed` to fresh
+  columns by exact `desktopFileName`. Singleton tabbed state is valid and
+  persists until explicitly changed; an existing target column still wins a
+  merge.
+- Confirmed multi-tab activation or entry shows an optional passive Plasma OSD.
+  It adds no window, input grab, polling loop, or private KWin API.
+- The optional overview offers `Meta+O` for a fresh shortcut record when
+  enabled, preserves existing assignments, and remains separately installable
+  and disabled by default.
+
 ## Beyond v1
 
 - Same-context tiled pointer moves use KWin's public outline mechanism to mark
@@ -228,8 +242,6 @@ The ownership rule is strict:
 - Optional five-finger horizontal touchpad navigation reuses tiled column
   focus; global wheel input is deferred because KWin 6.7 exposes no public
   script axis API.
-- Pointer tab navigation and a transient presentation surface.
-- Further application-specific policies.
 - Optional visual transitions, layout indicators, and concise diagnostics.
 - Overview pointer rearrangement.
 - Activity-aware layouts.

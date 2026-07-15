@@ -5,6 +5,7 @@
 ```text
 QML bridge -> TypeScript runtime -> core -> reconcile -> KWin
 stable layout snapshot -> overview projector -> guarded KWin effect -> KWin focus or desktop selection
+confirmed tab selection -> guarded callback -> passive Plasma OSD
 ```
 
 Events travel from KWin through the bridge into the runtime. Commands and resulting geometry operations travel toward KWin.
@@ -20,6 +21,8 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   content-addressed directory.
 - Passes the KWin workspace object to the runtime.
 - Hosts QML-only shortcut handlers.
+- Sends bounded tab-selection text to Plasma's asynchronous OSD service when
+  enabled; it creates no KWin-managed surface and does not intercept input.
 - Keeps the optional touchpad gesture Loader inactive by default; only an
   accepted complete settings snapshot may create or destroy its two handlers.
 - Provides event-loop and minimum-delay schedulers for batched work and transition stabilization.
@@ -62,7 +65,8 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   unchanged, current v2 catalog.
 - Projects snapshot zero into a baseline-free, immutable view model after exact
   live output, desktop, and window validation.
-- Projects only the selected member of a tabbed column as its thumbnail.
+- Projects every tabbed member as an ordered target and only the selected
+  member as the large thumbnail.
 - Uses only public KWin QML types to enrich live thumbnails and screen context.
 - Keeps each rendered thumbnail's direct live window object in its QML delegate;
   the object does not enter projected or persisted state.
@@ -82,13 +86,17 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   `KWin.Workspace.currentDesktop` fallback. Pre-selection rejection leaves the
   effect open. After confirmed selection, late invalidation or focus rejection
   keeps the selected desktop, closes the stale effect, and performs no rollback.
-- Adds no action, binding, setting, schema, private API, timer, move, geometry
-  write, membership write, or screen-edge mechanism. It performs no window,
+- Offers `Meta+O` for a fresh KGlobalAccel record through KWin's public
+  shortcut handler and preserves existing assignments. It adds no schema,
+  private API, move, geometry write, membership write, or screen-edge
+  mechanism. It performs no window,
   stacking-order, or layout scan. KWin owns desktop switching and focus.
 
 ### TypeScript runtime
 
 - Models eligible windows from every existing output and desktop context.
+- Resolves exact application presentation rules through one constant-time
+  lookup whenever a fresh column is formed.
 - Normalizes QML/KWin objects into stable IDs and plain data.
 - Batches event bursts, marks dirty contexts, and reconciles only visible desktops.
 - Holds initial admission through a one-second signal grace, then plans existing windows as one batch.
@@ -413,10 +421,10 @@ inspected safely within the codec bound.
 - Keep tabbed focus and reorder within the active column without wrapping.
   Height commands are no-ops while tabbed; their stored policies remain
   dormant until stacked presentation returns.
-- Let the target presentation win when a member enters another column. Create
-  every split or extracted singleton as stacked, preserve a whole moved
-  column's presentation, and select a departing member's successor or, at the
-  end, its predecessor.
+- Let the target presentation win when a member enters another column. A fresh
+  singleton uses its application's configured presentation and retains it
+  while depleted; preserve a whole moved column's presentation, and select a
+  departing member's successor or, at the end, its predecessor.
 - Keep at most one fixed or preset height in a stack. When another member is changed, preserve the remaining members' visible proportions as automatic weights and distribute the remaining work-area height among them.
 - Apply active-window height changes transactionally across the affected stack, preserving focus, order, width, and every prior height state on failure.
 - Apply stack edits with compare-and-swap model rollback and exact compensating frame writes after partial failure. Pin every writable ID to its captured KWin object so a same-ID replacement never receives stale writes. Rebase rollback across authoritative participant removal or context departure only when every surviving column, member, width, and height state still matches the applied edit.

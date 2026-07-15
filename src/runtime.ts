@@ -30,6 +30,7 @@ export function init(
   onLayoutStateChanged: unknown,
   showDropPreview?: unknown,
   hideDropPreview?: unknown,
+  showTabIndicator?: unknown,
 ): void {
   const settings = decodeSettings(settingsSnapshot);
 
@@ -77,8 +78,30 @@ export function init(
           },
         }
       : {};
+  const showTabIndicatorCallback =
+    typeof showTabIndicator === "function"
+      ? (showTabIndicator as (
+          selectedIndex: number,
+          tabCount: number,
+          caption: string,
+        ) => void)
+      : null;
+  const indicatorCallbacks = showTabIndicatorCallback
+    ? {
+        showTabIndicator: (
+          selectedIndex: number,
+          tabCount: number,
+          caption: string,
+        ) => {
+          if (appliedSettings?.showTabIndicator === true) {
+            showTabIndicatorCallback(selectedIndex, tabCount, caption);
+          }
+        },
+      }
+    : {};
   const nextController = new RuntimeController(workspace, {
     applicationBorderlessExclusions: settings.applicationBorderlessExclusions,
+    applicationColumnPresentations: settings.applicationColumnPresentations,
     applicationColumnWidths: settings.applicationColumnWidths,
     applicationFocusCentering: settings.applicationFocusCentering,
     applicationInitialFloating: settings.applicationInitialFloating,
@@ -94,6 +117,7 @@ export function init(
     knownLayoutSnapshots: () => layoutPersistence.snapshots(),
     schedule,
     scheduleResume,
+    ...indicatorCallbacks,
     ...previewCallbacks,
     startupStabilizationProbes: STARTUP_STABILIZATION_PROBES,
     ...(layoutPersistence.onStateChanged === undefined
@@ -156,6 +180,9 @@ export function applySettings(settingsSnapshot: unknown): boolean {
 
   controller.setApplicationBorderlessExclusions(
     settings.applicationBorderlessExclusions,
+  );
+  controller.setApplicationColumnPresentations(
+    settings.applicationColumnPresentations,
   );
   controller.setApplicationColumnWidths(settings.applicationColumnWidths);
   controller.setApplicationFocusCentering(settings.applicationFocusCentering);

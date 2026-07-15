@@ -40,6 +40,10 @@ let
           "org.example.Browser" = 80;
           "org.example.Editor" = 60;
         };
+        applicationColumnPresentations = {
+          "org.example.Browser" = "tabbed";
+          "org.example.Editor" = "stacked";
+        };
         applicationFocusCentering = [
           "org.example.Terminal"
           "org.example.Browser"
@@ -62,6 +66,7 @@ let
         columnWidthStepPercent = 13;
         defaultColumnWidthPercent = 65;
         gap = 7;
+        showTabIndicator = false;
         touchpadNavigation = true;
         windowHeightStepPercent = 17;
       };
@@ -159,6 +164,9 @@ assert
       ApplicationBorderlessExclusions = ''
         org.example.Browser
         org.example.Terminal'';
+      ApplicationColumnPresentations = ''
+        org.example.Browser=tabbed
+        org.example.Editor=stacked'';
       ApplicationColumnWidths = ''
         org.example.Browser=80
         org.example.Editor=60'';
@@ -177,6 +185,7 @@ assert
       ColumnWidthStepPercent = 13;
       DefaultColumnWidthPercent = 65;
       Gap = 7;
+      ShowTabIndicator = false;
       TouchpadNavigation = true;
       WindowHeightStepPercent = 17;
     };
@@ -184,7 +193,7 @@ assert
 assert
   builtins.length (
     builtins.attrNames standalone.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile"
-  ) == 13;
+  ) == 15;
 assert
   standalone.config.xdg.configFile."driftile/shortcuts.json".text == ''
     {"bindings":{"driftile_focus_column_left":["Meta+A"],"driftile_reset_column_width":[]},"version":1}
@@ -200,6 +209,7 @@ assert
   settingsOnly.config.qt.kde.settings == {
     kwinrc."Script-io.github.kontonkara.driftile" = {
       ApplicationBorderlessExclusions = "";
+      ApplicationColumnPresentations = "";
       ApplicationColumnWidths = "";
       ApplicationFocusCentering = "";
       ApplicationInitialFloating = "";
@@ -210,6 +220,7 @@ assert
       ColumnWidthStepPercent = 10;
       DefaultColumnWidthPercent = 50;
       Gap = 8;
+      ShowTabIndicator = true;
       TouchpadNavigation = false;
       WindowHeightStepPercent = 10;
     };

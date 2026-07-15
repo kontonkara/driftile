@@ -264,6 +264,10 @@ let
             "org.example.Terminal"
             "org.example.Browser"
           ];
+          applicationColumnPresentations = {
+            "org.example.Browser" = "tabbed";
+            "org.example.Editor" = "stacked";
+          };
           applicationColumnWidths = {
             "org.example.Browser" = 80;
             "org.example.Editor" = 60;
@@ -290,6 +294,7 @@ let
           columnWidthStepPercent = 13;
           defaultColumnWidthPercent = 65;
           gap = 7;
+          showTabIndicator = false;
           touchpadNavigation = true;
           windowHeightStepPercent = 17;
         };
@@ -319,6 +324,21 @@ let
           builtins.genList (index: {
             name = "org.example.App${toString index}";
             value = 50;
+          }) 128
+        );
+      }
+      { };
+  homeManagerMaximumPresentations =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.settings.applicationColumnPresentations = builtins.listToAttrs (
+          builtins.genList (index: {
+            name = "org.example.App${toString index}";
+            value = if index == 0 then "tabbed" else "stacked";
           }) 128
         );
       }
@@ -457,6 +477,7 @@ let
     }
     { borderlessWindows = "false"; }
     { centerFocusedColumn = "true"; }
+    { showTabIndicator = "true"; }
     { touchpadNavigation = "true"; }
     { gap = -1; }
     { gap = 65; }
@@ -505,6 +526,19 @@ let
         builtins.genList (index: {
           name = "org.example.App${toString index}";
           value = 50;
+        }) 129
+      );
+    }
+    { applicationColumnPresentations."org.example.Editor" = "split"; }
+    { applicationColumnPresentations."" = "tabbed"; }
+    { applicationColumnPresentations." org.example.Editor" = "tabbed"; }
+    { applicationColumnPresentations."org.example.Editor=" = "tabbed"; }
+    { applicationColumnPresentations."org.example\nEditor" = "tabbed"; }
+    {
+      applicationColumnPresentations = builtins.listToAttrs (
+        builtins.genList (index: {
+          name = "org.example.App${toString index}";
+          value = "stacked";
         }) 129
       );
     }
@@ -558,6 +592,9 @@ let
       ApplicationBorderlessExclusions = ''
         org.example.Browser
         org.example.Terminal'';
+      ApplicationColumnPresentations = ''
+        org.example.Browser=tabbed
+        org.example.Editor=stacked'';
       ApplicationColumnWidths = ''
         org.example.Browser=80
         org.example.Editor=60'';
@@ -576,6 +613,7 @@ let
       ColumnWidthStepPercent = 13;
       DefaultColumnWidthPercent = 65;
       Gap = 7;
+      ShowTabIndicator = false;
       TouchpadNavigation = true;
       WindowHeightStepPercent = 17;
     };
@@ -583,6 +621,7 @@ let
   expectedDefaultSettings = {
     kwinrc."Script-io.github.kontonkara.driftile" = {
       ApplicationBorderlessExclusions = "";
+      ApplicationColumnPresentations = "";
       ApplicationColumnWidths = "";
       ApplicationFocusCentering = "";
       ApplicationInitialFloating = "";
@@ -593,6 +632,7 @@ let
       ColumnWidthStepPercent = 10;
       DefaultColumnWidthPercent = 50;
       Gap = 16;
+      ShowTabIndicator = true;
       TouchpadNavigation = false;
       WindowHeightStepPercent = 10;
     };
@@ -634,11 +674,16 @@ assert homeManagerSettings.config.qt.kde.settings == expectedSettings;
 assert homeManagerDefaultSettings.config.qt.kde.settings == expectedDefaultSettings;
 assert
   builtins.length (builtins.attrNames expectedSettings.kwinrc."Script-io.github.kontonkara.driftile")
-  == 13;
+  == 15;
 assert
   builtins.length (
     builtins.attrNames expectedDefaultSettings.kwinrc."Script-io.github.kontonkara.driftile"
-  ) == 13;
+  ) == 15;
+assert
+  builtins.length (
+    lib.splitString "\n"
+      homeManagerMaximumPresentations.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ApplicationColumnPresentations
+  ) == 128;
 assert
   builtins.length (
     lib.splitString "\n"
@@ -669,6 +714,7 @@ assert
   homeManagerSettingsWithSystemInstall.config.qt.kde.settings == {
     kwinrc."Script-io.github.kontonkara.driftile" = {
       ApplicationBorderlessExclusions = "";
+      ApplicationColumnPresentations = "";
       ApplicationColumnWidths = "";
       ApplicationFocusCentering = "";
       ApplicationInitialFloating = "";
@@ -679,6 +725,7 @@ assert
       ColumnWidthStepPercent = 10;
       DefaultColumnWidthPercent = 50;
       Gap = 8;
+      ShowTabIndicator = true;
       TouchpadNavigation = false;
       WindowHeightStepPercent = 10;
     };

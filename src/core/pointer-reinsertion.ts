@@ -272,7 +272,6 @@ function contextWindowPlacements(
       !Array.isArray(column.windowIds) ||
       column.windowIds.length === 0 ||
       (column.presentation !== "stacked" && column.presentation !== "tabbed") ||
-      (column.presentation === "tabbed" && column.windowIds.length < 2) ||
       typeof column.selectedWindowId !== "string" ||
       !column.windowIds.includes(column.selectedWindowId) ||
       !validWindowHeights(column.windowHeights, column.windowIds.length)

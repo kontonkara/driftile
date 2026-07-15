@@ -89,19 +89,36 @@ let
     && value == lib.strings.trim value
     && !hasEcmaScriptNonAsciiPadding value
     && !hasControlCharacter value;
-  validColumnWidthDesktopFileName = value: validDesktopFileName value && !lib.hasInfix "=" value;
+  validMappedDesktopFileName = value: validDesktopFileName value && !lib.hasInfix "=" value;
   applicationColumnWidthType =
     lib.types.addCheck (lib.types.attrsOf (lib.types.ints.between 10 100))
       (
         widths:
         builtins.length (builtins.attrNames widths) <= 128
-        && lib.all validColumnWidthDesktopFileName (builtins.attrNames widths)
+        && lib.all validMappedDesktopFileName (builtins.attrNames widths)
       );
   renderApplicationColumnWidths =
     widths:
     lib.concatStringsSep "\n" (
       map (desktopFileName: "${desktopFileName}=${toString widths.${desktopFileName}}") (
         builtins.sort builtins.lessThan (builtins.attrNames widths)
+      )
+    );
+  applicationColumnPresentationType =
+    lib.types.addCheck (lib.types.attrsOf (lib.types.enum [
+      "stacked"
+      "tabbed"
+    ]))
+      (
+        presentations:
+        builtins.length (builtins.attrNames presentations) <= 128
+        && lib.all validMappedDesktopFileName (builtins.attrNames presentations)
+      );
+  renderApplicationColumnPresentations =
+    presentations:
+    lib.concatStringsSep "\n" (
+      map (desktopFileName: "${desktopFileName}=${presentations.${desktopFileName}}") (
+        builtins.sort builtins.lessThan (builtins.attrNames presentations)
       )
     );
   applicationTilingExclusionType = lib.types.addCheck (lib.types.listOf lib.types.str) (
@@ -181,6 +198,12 @@ in
               description = "Exact desktop-file IDs keeping KWin borders and title bars.";
             };
 
+            applicationColumnPresentations = lib.mkOption {
+              type = applicationColumnPresentationType;
+              default = { };
+              description = "Default stacked or tabbed column presentations keyed by exact desktop-file ID.";
+            };
+
             applicationColumnWidths = lib.mkOption {
               type = applicationColumnWidthType;
               default = { };
@@ -215,6 +238,12 @@ in
               type = lib.types.bool;
               default = false;
               description = "Whether horizontal tiled focus navigation centers the destination column.";
+            };
+
+            showTabIndicator = lib.mkOption {
+              type = lib.types.bool;
+              default = true;
+              description = "Whether tab selection shows a transient Plasma OSD.";
             };
 
             touchpadNavigation = lib.mkOption {
@@ -308,6 +337,8 @@ in
         qt.kde.settings.kwinrc."Script-${pluginId}" = {
           ApplicationBorderlessExclusions =
             renderApplicationBorderlessExclusions cfg.settings.applicationBorderlessExclusions;
+          ApplicationColumnPresentations =
+            renderApplicationColumnPresentations cfg.settings.applicationColumnPresentations;
           ApplicationColumnWidths = renderApplicationColumnWidths cfg.settings.applicationColumnWidths;
           ApplicationFocusCentering =
             renderApplicationFocusCentering cfg.settings.applicationFocusCentering;
@@ -320,6 +351,7 @@ in
           ColumnWidthStepPercent = cfg.settings.columnWidthStepPercent;
           DefaultColumnWidthPercent = cfg.settings.defaultColumnWidthPercent;
           Gap = cfg.settings.gap;
+          ShowTabIndicator = cfg.settings.showTabIndicator;
           TouchpadNavigation = cfg.settings.touchpadNavigation;
           WindowHeightStepPercent = cfg.settings.windowHeightStepPercent;
         };

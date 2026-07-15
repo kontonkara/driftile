@@ -17,6 +17,13 @@ QtObject {
         location: StandardPaths.writableLocation(StandardPaths.GenericConfigLocation) + "/driftile-layout-state.ini"
     }
 
+    readonly property DBusCall tabIndicatorCall: DBusCall {
+        service: "org.kde.plasmashell"
+        path: "/org/kde/osdService"
+        dbusInterface: "org.kde.osdService"
+        method: "showText"
+    }
+
     readonly property Timer resumeTimer: Timer {
         interval: 50
         repeat: false
@@ -702,6 +709,7 @@ QtObject {
     function readSettings() {
         return {
             applicationBorderlessExclusions: KWin.readConfig("ApplicationBorderlessExclusions", ""),
+            applicationColumnPresentations: KWin.readConfig("ApplicationColumnPresentations", ""),
             applicationColumnWidths: KWin.readConfig("ApplicationColumnWidths", ""),
             applicationFocusCentering: KWin.readConfig("ApplicationFocusCentering", ""),
             applicationInitialFloating: KWin.readConfig("ApplicationInitialFloating", ""),
@@ -712,6 +720,7 @@ QtObject {
             columnWidthStepPercent: KWin.readConfig("ColumnWidthStepPercent", 10),
             defaultColumnWidthPercent: KWin.readConfig("DefaultColumnWidthPercent", 50),
             gap: KWin.readConfig("Gap", 16),
+            showTabIndicator: KWin.readConfig("ShowTabIndicator", true),
             touchpadNavigation: KWin.readConfig("TouchpadNavigation", false),
             windowHeightStepPercent: KWin.readConfig("WindowHeightStepPercent", 10)
         };
@@ -735,6 +744,21 @@ QtObject {
 
     function hideDropPreview() {
         Workspace.hideOutline();
+    }
+
+    function showTabIndicator(index, count, caption) {
+        if (Workspace.isEffectActive("overview")
+                || Workspace.isEffectActive("io.github.kontonkara.driftile.overview")) {
+            return;
+        }
+
+        const position = Number(index) + 1;
+        const title = String(caption).trim();
+        const text = title.length > 0
+            ? `Tab ${position}/${String(count)}: ${title}`
+            : `Tab ${position}/${String(count)}`;
+        tabIndicatorCall.arguments = ["view-list-icons", text];
+        tabIndicatorCall.call();
     }
 
     function schedule(callback) {
@@ -763,7 +787,8 @@ QtObject {
                                     root.readSettings(), loadedLayoutState,
                                     root.queueLayoutState,
                                     root.showDropPreview,
-                                    root.hideDropPreview);
+                                    root.hideDropPreview,
+                                    root.showTabIndicator);
         root.appliedTouchpadNavigation = Runtime.DriftileRuntime.getTouchpadNavigation();
     }
     Component.onDestruction: {

@@ -28,6 +28,13 @@
         </widget>
        </item>
        <item>
+        <widget class="QCheckBox" name="kcfg_ShowTabIndicator">
+         <property name="text">
+          <string>Show a transient OSD for tabbed-window selection</string>
+         </property>
+        </widget>
+       </item>
+       <item>
         <widget class="QCheckBox" name="kcfg_TouchpadNavigation">
          <property name="text">
           <string>Enable five-finger horizontal touchpad navigation</string>
@@ -189,6 +196,32 @@
        <string>Applications</string>
       </attribute>
       <layout class="QVBoxLayout" name="applicationsLayout">
+       <item>
+        <widget class="QLabel" name="applicationColumnPresentationsLabel">
+         <property name="text">
+          <string>Application column presentations:</string>
+         </property>
+         <property name="buddy">
+          <cstring>kcfg_ApplicationColumnPresentations</cstring>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPlainTextEdit" name="kcfg_ApplicationColumnPresentations">
+         <property name="toolTip">
+          <string>Enter up to 128 exact desktop-file ID and presentation pairs, one per line, for example org.gnome.Evince=tabbed.</string>
+         </property>
+         <property name="whatsThis">
+          <string>Each nonempty line selects stacked or tabbed presentation when a matching application creates a column. Use desktop-file-id=stacked or desktop-file-id=tabbed.</string>
+         </property>
+         <property name="minimumSize">
+          <size>
+           <width>0</width>
+           <height>100</height>
+          </size>
+         </property>
+        </widget>
+       </item>
        <item>
         <widget class="QLabel" name="applicationColumnWidthsLabel">
          <property name="text">

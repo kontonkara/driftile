@@ -43,6 +43,11 @@ existing stack, one-way tiled/floating layer focus, resetting a column width,
 and reverse window-height preset cycling are registered without default keys.
 Assign them in **System Settings > Keyboard > Shortcuts** if needed.
 
+On a fresh shortcut record, the separately installed overview effect offers
+`Meta+O` when enabled. KGlobalAccel preserves the current assignment across
+effect unloads and upgrades; the retained action is inert while unloaded. Its
+assignment is managed through the same Shortcuts page.
+
 Version 1.19.0 adds `Meta+W` and `Meta+Q`. `Meta+W` toggles the active tiled
 column between stacked and tabbed presentation and has no alias. In tabbed
 presentation, `Meta+J/K` selects the next or previous member and

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { decodeApplicationBorderlessExclusions } from "../src/application-borderless-exclusions";
+import { decodeApplicationColumnPresentations } from "../src/application-column-presentations";
 import { decodeApplicationInitialFloating } from "../src/application-initial-floating";
 import { decodeApplicationColumnWidthOverrides } from "../src/application-overrides";
 import { decodeApplicationFocusCentering } from "../src/application-focus-centering";
@@ -7387,6 +7388,72 @@ describe("RuntimeController", () => {
           column.windowIds.includes(windowId("browser-constrained")),
         )?.width,
     ).toEqual({ kind: "fixed", value: 250 });
+  });
+
+  it("applies exact application presentations to new singleton columns", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const target = createTrackedWindow("target", output, desktop, {
+      desktopFileName: "org.example.Editor.preview",
+    });
+    const editor = createTrackedWindow("editor", output, desktop, {
+      desktopFileName: "org.example.Editor",
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [target.window, editor.window],
+    );
+    const presentations = decodeApplicationColumnPresentations(
+      "org.example.Editor=tabbed",
+    );
+
+    if (!presentations) {
+      throw new Error("application presentation fixture is invalid");
+    }
+
+    const controller = new RuntimeController(fixture.workspace, {
+      applicationColumnPresentations: presentations,
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(
+      runtimeLayout(controller)
+        .snapshot(outputId(output.name), desktopId(desktop.id))
+        .columns.map((column) => [column.presentation, column.windowIds]),
+    ).toEqual([
+      ["stacked", [windowId("target")]],
+      ["tabbed", [windowId("editor")]],
+    ]);
+
+    fixture.workspace.activeWindow = editor.window;
+    expect(controller.moveWindowLeft()).toBe(true);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ).columns,
+    ).toMatchObject([
+      {
+        presentation: "stacked",
+        windowIds: ["target", "editor"],
+      },
+    ]);
+
+    expect(controller.moveWindowRight()).toBe(true);
+    expect(
+      runtimeLayout(controller)
+        .snapshot(outputId(output.name), desktopId(desktop.id))
+        .columns.map((column) => [column.presentation, column.windowIds]),
+    ).toEqual([
+      ["stacked", [windowId("target")]],
+      ["tabbed", [windowId("editor")]],
+    ]);
   });
 
   it("floats only newly tracked matching applications until explicitly tiled", () => {
@@ -15011,9 +15078,11 @@ describe("RuntimeController", () => {
       [desktop],
       windows.map(({ window }) => window),
     );
+    const showTabIndicator = vi.fn();
     const controller = new RuntimeController(fixture.workspace, {
       clientAreaOption: 2,
       gap: 10,
+      showTabIndicator,
     });
 
     controller.start();
@@ -15038,7 +15107,10 @@ describe("RuntimeController", () => {
       desktop,
     );
 
+    expect(showTabIndicator).not.toHaveBeenCalled();
     expect(controller.toggleColumnTabbedDisplay()).toBe(true);
+    expect(showTabIndicator).toHaveBeenCalledTimes(1);
+    expect(showTabIndicator).toHaveBeenLastCalledWith(1, 3, "");
     let snapshot = layout.snapshot(
       outputId(output.name),
       desktopId(desktop.id),
@@ -15072,11 +15144,21 @@ describe("RuntimeController", () => {
     expectTrackedWindowState(windows, noResizeState);
     const writesBeforeFocus = windows.map(({ writeCount }) => writeCount);
 
+    showTabIndicator.mockClear();
     expect(controller.focusUp()).toBe(true);
     expect(fixture.workspace.activeWindow).toBe(first.window);
+    expect(showTabIndicator).toHaveBeenLastCalledWith(0, 3, "");
     expect(controller.focusUp()).toBe(false);
+    expect(showTabIndicator).toHaveBeenCalledTimes(1);
+    showTabIndicator.mockClear();
+    fixture.setActivationBehavior(() => undefined);
+    expect(controller.focusDown()).toBe(false);
+    expect(fixture.workspace.activeWindow).toBe(first.window);
+    expect(showTabIndicator).not.toHaveBeenCalled();
+    fixture.setActivationBehavior(null);
     expect(controller.focusDown()).toBe(true);
     expect(fixture.workspace.activeWindow).toBe(active.window);
+    expect(showTabIndicator).toHaveBeenLastCalledWith(1, 3, "");
     expect(controller.focusDown()).toBe(true);
     expect(fixture.workspace.activeWindow).toBe(third.window);
     expect(controller.focusDown()).toBe(false);
@@ -15099,7 +15181,9 @@ describe("RuntimeController", () => {
       writesBeforeFocus,
     );
 
+    showTabIndicator.mockClear();
     expect(controller.toggleColumnTabbedDisplay()).toBe(true);
+    expect(showTabIndicator).not.toHaveBeenCalled();
     snapshot = layout.snapshot(outputId(output.name), desktopId(desktop.id));
     expect(snapshot.columns[0]?.presentation).toBe("stacked");
     expect(activeColumnWindowHeights(controller, output, desktop)).toEqual(

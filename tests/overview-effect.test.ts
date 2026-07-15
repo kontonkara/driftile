@@ -44,10 +44,10 @@ describe("overview effect package", () => {
     expect(metadata).not.toHaveProperty("X-KWin-Border-Activate");
   });
 
-  it("registers one unbound toggle action and no screen edge", () => {
+  it("registers one Meta+O toggle action and no screen edge", () => {
     expect(controller.match(/KWin\.ShortcutHandler\s*\{/gu)).toHaveLength(1);
     expect(controller).toContain('name: "driftile_toggle_overview"');
-    expect(controller).not.toMatch(/\bsequence\s*:/u);
+    expect(controller).toContain('sequence: "Meta+O"');
     expect(controller).not.toMatch(/ScreenEdge|registerScreenEdge/u);
     expect(main).not.toContain("ShortcutHandler");
   });

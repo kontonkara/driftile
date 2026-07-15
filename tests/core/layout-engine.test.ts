@@ -592,7 +592,7 @@ describe("LayoutEngine", () => {
     );
   });
 
-  it("tracks tabbed presentation and selection without changing dormant heights", () => {
+  it("tracks tabbed selection and accepts an initial singleton presentation", () => {
     const engine = new LayoutEngine();
 
     engine.restoreColumns({
@@ -628,6 +628,11 @@ describe("LayoutEngine", () => {
       presentation: "tabbed",
       selectedWindowId: "window-b",
     });
+    expect(engine.tabIndicator(windowId("window-b"))).toEqual({
+      selectedIndex: 1,
+      tabCount: 2,
+    });
+    expect(engine.tabIndicator(windowId("window-a"))).toBeNull();
     expect(
       engine.setActiveColumnWindowHeights(windowId("window-b"), [
         { kind: "auto", weight: 1 },
@@ -650,15 +655,19 @@ describe("LayoutEngine", () => {
       columnId: columnId("single"),
       desktopId: desktop,
       outputId: output,
+      presentation: "tabbed",
       width: { kind: "fixed", value: 320 },
       windowId: windowId("single-window"),
     });
-    expect(
-      engine.setColumnPresentation(windowId("single-window"), "tabbed"),
-    ).toBeNull();
+    expect(engine.snapshot(output, desktop).columns[1]).toMatchObject({
+      presentation: "tabbed",
+      selectedWindowId: "single-window",
+      windowIds: ["single-window"],
+    });
+    expect(engine.tabIndicator(windowId("single-window"))).toBeNull();
   });
 
-  it("keeps destination presentation and normalizes a depleted source", () => {
+  it("keeps destination and depleted source presentations", () => {
     const engine = new LayoutEngine();
 
     engine.restoreColumns({
@@ -721,7 +730,7 @@ describe("LayoutEngine", () => {
     ).toBe("insert");
     expect(engine.snapshot(output, desktop).columns).toMatchObject([
       {
-        presentation: "stacked",
+        presentation: "tabbed",
         selectedWindowId: "source-a",
         windowIds: ["source-a"],
       },
@@ -731,9 +740,10 @@ describe("LayoutEngine", () => {
         windowIds: ["target-a", "target-b", "source-b", "source-c"],
       },
     ]);
+    expect(engine.tabIndicator(windowId("source-a"))).toBeNull();
   });
 
-  it("keeps surviving attachment state and rejects a tabbed singleton", () => {
+  it("preserves a tabbed singleton through detachment and attachment", () => {
     const engine = new LayoutEngine();
 
     engine.restoreColumns({
@@ -757,7 +767,7 @@ describe("LayoutEngine", () => {
 
     expect(staleDetach?.placement.columnPresentation).toBe("tabbed");
     expect(staleDetach?.layout.columns[0]).toMatchObject({
-      presentation: "stacked",
+      presentation: "tabbed",
       selectedWindowId: "window-b",
     });
     expect(engine.selectWindowInColumn(windowId("window-b"))).toBe(true);
@@ -765,11 +775,19 @@ describe("LayoutEngine", () => {
     expect(engine.selectWindowInColumn(windowId("window-a"))).toBe(true);
     const detached = engine.previewWindowDetach(windowId("window-a"));
     expect(detached && engine.commitWindowDetach(detached)).toBe(true);
+    expect(engine.tabIndicator(windowId("window-b"))).toBeNull();
     const survivingAttach =
       detached && engine.previewWindowAttach(detached.placement);
     expect(survivingAttach?.layout.columns[0]).toMatchObject({
-      presentation: "stacked",
+      presentation: "tabbed",
       selectedWindowId: "window-a",
+    });
+    expect(survivingAttach && engine.commitWindowAttach(survivingAttach)).toBe(
+      true,
+    );
+    expect(engine.tabIndicator(windowId("window-a"))).toEqual({
+      selectedIndex: 0,
+      tabCount: 2,
     });
 
     const recreation = new LayoutEngine();
@@ -791,8 +809,13 @@ describe("LayoutEngine", () => {
         desktopId: desktop,
         outputId: output,
       }),
-    ).toBe(false);
-    expect(recreation.snapshot(output, desktop).columns).toEqual([]);
+    ).toBe(true);
+    expect(recreation.snapshot(output, desktop).columns[0]).toMatchObject({
+      presentation: "tabbed",
+      selectedWindowId: "only-window",
+      windowIds: ["only-window"],
+    });
+    expect(recreation.tabIndicator(windowId("only-window"))).toBeNull();
   });
 
   it("rebases a rollback over a newer same-column selection", () => {
@@ -1099,7 +1122,7 @@ describe("LayoutEngine", () => {
     expect(edit && engine.rollbackStackEdit(edit.rollback)).toBe(false);
   });
 
-  it("extracts an active stack member beside its source and rolls back", () => {
+  it("extracts an active stack member with the requested presentation", () => {
     const engine = new LayoutEngine();
 
     engine.restoreColumns({
@@ -1139,6 +1162,7 @@ describe("LayoutEngine", () => {
       windowId("window-2"),
       "right",
       columnId("column:split:window-2"),
+      "tabbed",
     );
 
     expect(edit?.kind).toBe("extract");
@@ -1154,7 +1178,7 @@ describe("LayoutEngine", () => {
         },
         {
           id: "column:split:window-2",
-          presentation: "stacked",
+          presentation: "tabbed",
           selectedWindowId: "window-2",
           width: { kind: "proportion", value: 0.4 },
           windowIds: ["window-2"],
@@ -1171,6 +1195,7 @@ describe("LayoutEngine", () => {
       outputId: "DP-1",
       viewportOffset: 40,
     });
+    expect(engine.tabIndicator(windowId("window-2"))).toBeNull();
     expect(edit && engine.rollbackStackEdit(edit.rollback)).toBe(true);
     expect(engine.snapshot(output, desktop)).toEqual(before);
   });
@@ -1801,7 +1826,7 @@ describe("LayoutEngine", () => {
     expect(engine.snapshot(output, desktop)).toEqual(recolumned);
   });
 
-  it("previews expelling the bottom member into a right-hand singleton", () => {
+  it("previews expelling the bottom member with the requested presentation", () => {
     const engine = new LayoutEngine();
 
     engine.restoreColumns({
@@ -1850,6 +1875,7 @@ describe("LayoutEngine", () => {
     const preview = engine.previewExpelWindowFromColumn(
       windowId("source-top"),
       columnId("column-expelled"),
+      "tabbed",
     );
 
     expect(preview).toMatchObject({
@@ -1875,7 +1901,7 @@ describe("LayoutEngine", () => {
         },
         {
           id: "column-expelled",
-          presentation: "stacked",
+          presentation: "tabbed",
           selectedWindowId: "source-bottom",
           width: { kind: "proportion", value: 0.45 },
           windowIds: ["source-bottom"],
@@ -3725,7 +3751,7 @@ describe("LayoutEngine", () => {
     expect(engine.snapshot(targetOutput, desktop)).toEqual(targetChanged);
   });
 
-  it("previews and atomically transfers an active singleton after the target active column", () => {
+  it("transfers an active singleton with the requested presentation", () => {
     const engine = new LayoutEngine();
     const targetOutput = outputId("HDMI-A-1");
 
@@ -3801,6 +3827,7 @@ describe("LayoutEngine", () => {
       columnId: columnId("transferred"),
       desktopId: desktop,
       outputId: targetOutput,
+      presentation: "tabbed",
     });
 
     if (!preview) {
@@ -3843,7 +3870,7 @@ describe("LayoutEngine", () => {
         },
         {
           id: "transferred",
-          presentation: "stacked",
+          presentation: "tabbed",
           selectedWindowId: "window-b",
           width: { kind: "proportion", value: 0.4 },
           windowIds: ["window-b"],

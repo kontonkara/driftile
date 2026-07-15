@@ -4,6 +4,11 @@ import {
   type ApplicationColumnWidthOverrides,
 } from "./application-overrides";
 import {
+  EMPTY_APPLICATION_COLUMN_PRESENTATIONS,
+  sameApplicationColumnPresentations,
+  type ApplicationColumnPresentations,
+} from "./application-column-presentations";
+import {
   EMPTY_APPLICATION_BORDERLESS_EXCLUSIONS,
   sameApplicationBorderlessExclusions,
   type ApplicationBorderlessExclusions,
@@ -705,6 +710,7 @@ interface LayoutHydrationCandidate {
 
 export interface RuntimeControllerOptions {
   readonly applicationBorderlessExclusions?: ApplicationBorderlessExclusions;
+  readonly applicationColumnPresentations?: ApplicationColumnPresentations;
   readonly applicationColumnWidths?: ApplicationColumnWidthOverrides;
   readonly applicationFocusCentering?: ApplicationFocusCentering;
   readonly applicationInitialFloating?: ApplicationInitialFloating;
@@ -724,6 +730,11 @@ export interface RuntimeControllerOptions {
   readonly onLayoutStateChanged?: (canonicalState: string) => void;
   readonly schedule?: (callback: () => void) => void;
   readonly scheduleResume?: (callback: () => void) => void;
+  readonly showTabIndicator?: (
+    selectedIndex: number,
+    tabCount: number,
+    caption: string,
+  ) => void;
   readonly showPointerDropPreview?: (frame: Rect) => void;
   readonly startupStabilizationProbes?: number;
   readonly windowHeightPresets?: readonly ColumnWidth[];
@@ -731,6 +742,7 @@ export interface RuntimeControllerOptions {
 
 export class RuntimeController {
   private applicationBorderlessExclusions: ApplicationBorderlessExclusions;
+  private applicationColumnPresentations: ApplicationColumnPresentations;
   private applicationColumnWidths: ApplicationColumnWidthOverrides;
   private applicationFocusCentering: ApplicationFocusCentering;
   private applicationInitialFloating: ApplicationInitialFloating;
@@ -856,6 +868,9 @@ export class RuntimeController {
   private readonly scheduleResume: (callback: () => void) => void;
   private readonly hidePointerDropPreview: (() => void) | undefined;
   private readonly showPointerDropPreview: ((frame: Rect) => void) | undefined;
+  private readonly showTabIndicator:
+    | ((selectedIndex: number, tabCount: number, caption: string) => void)
+    | undefined;
   private pendingMutationWrites = 0;
   private scheduledMutationWrites = 0;
   private workFlushDepth = 0;
@@ -929,6 +944,9 @@ export class RuntimeController {
     this.applicationBorderlessExclusions =
       options.applicationBorderlessExclusions ??
       EMPTY_APPLICATION_BORDERLESS_EXCLUSIONS;
+    this.applicationColumnPresentations =
+      options.applicationColumnPresentations ??
+      EMPTY_APPLICATION_COLUMN_PRESENTATIONS;
     this.applicationColumnWidths =
       options.applicationColumnWidths ??
       EMPTY_APPLICATION_COLUMN_WIDTH_OVERRIDES;
@@ -965,6 +983,7 @@ export class RuntimeController {
       });
     this.scheduleResume = options.scheduleResume ?? this.schedule;
     this.showPointerDropPreview = options.showPointerDropPreview;
+    this.showTabIndicator = options.showTabIndicator;
     this.startupStabilizationProbes = Math.max(
       0,
       Math.trunc(options.startupStabilizationProbes ?? 0),
@@ -1569,6 +1588,35 @@ export class RuntimeController {
     return true;
   }
 
+  setApplicationColumnPresentations(
+    presentations: ApplicationColumnPresentations,
+  ): boolean {
+    if (
+      sameApplicationColumnPresentations(
+        this.applicationColumnPresentations,
+        presentations,
+      )
+    ) {
+      return false;
+    }
+
+    this.applicationColumnPresentations = presentations;
+
+    if (!this.started) {
+      return true;
+    }
+
+    for (const key of this.waitingWindowIds.keys()) {
+      this.pendingAdmissionContexts.add(key);
+    }
+
+    if (this.pendingAdmissionContexts.size > 0) {
+      this.scheduleDeferredRuntimeWork();
+    }
+
+    return true;
+  }
+
   setApplicationFocusCentering(
     applications: ApplicationFocusCentering,
   ): boolean {
@@ -1970,6 +2018,7 @@ export class RuntimeController {
     const preview = this.layout.previewExpelWindowFromColumn(
       command.activeId,
       newColumnId,
+      this.initialColumnPresentation(this.observer.source(movedWindowId)),
     );
 
     if (!preview) {
@@ -2138,7 +2187,7 @@ export class RuntimeController {
       command.activeColumn.presentation === "stacked" ? "tabbed" : "stacked";
     let previous: ColumnPresentation | null = null;
 
-    return this.applyActiveColumnMutation(
+    const toggled = this.applyActiveColumnMutation(
       command,
       "column presentation toggle",
       () => {
@@ -2149,6 +2198,12 @@ export class RuntimeController {
         previous !== null &&
         this.layout.setColumnPresentation(command.activeId, previous) !== null,
     );
+
+    if (toggled && target === "tabbed") {
+      this.announceTabSelection(command.activeId);
+    }
+
+    return toggled;
   }
 
   moveWindowToPreviousDesktop(): boolean {
@@ -4874,7 +4929,11 @@ export class RuntimeController {
     const changed = this.layout.activateWindow(id);
     const context = this.contexts.get(owner.contextKey);
 
-    if (changed && context) {
+    if (!context) {
+      return;
+    }
+
+    if (changed) {
       this.markContextDirty(context);
 
       if (!this.preserveLoadedLayoutState) {
@@ -4885,7 +4944,33 @@ export class RuntimeController {
         this.scheduleWork();
       }
     }
+
+    if (!this.initializing) {
+      this.announceTabSelection(id);
+    }
   };
+
+  private announceTabSelection(id: WindowId): void {
+    const callback = this.showTabIndicator;
+    const indicator = callback ? this.layout.tabIndicator(id) : null;
+    const source = indicator ? this.observer.source(id) : undefined;
+
+    if (!callback || !indicator || !source || source.deleted) {
+      return;
+    }
+
+    try {
+      callback(
+        indicator.selectedIndex,
+        indicator.tabCount,
+        typeof source.caption === "string"
+          ? source.caption
+          : (source.desktopFileName ?? source.resourceClass ?? ""),
+      );
+    } catch (error) {
+      console.warn(`[driftile] tab indicator failed error=${String(error)}`);
+    }
+  }
 
   private focusWindowLayer(requestedLayer?: WindowLayer): boolean {
     const active = this.workspace.activeWindow;
@@ -6917,6 +7002,9 @@ export class RuntimeController {
     }
 
     const newColumnId = this.extractedColumnId(command);
+    const newColumnPresentation = this.initialColumnPresentation(
+      this.observer.source(command.activeId),
+    );
     const editState: { value: StackEditResult | null } = { value: null };
     const moved = this.applyActiveColumnMutation(
       command,
@@ -6926,6 +7014,7 @@ export class RuntimeController {
           command.activeId,
           direction,
           newColumnId,
+          newColumnPresentation,
         );
         return editState.value !== null;
       },
@@ -7328,6 +7417,7 @@ export class RuntimeController {
     const preview = this.layout.previewExpelWindowFromColumn(
       command.activeId,
       newColumnId,
+      this.initialColumnPresentation(this.observer.source(movedWindowId)),
     );
 
     if (!preview || preview.movedWindowId !== movedWindowId) {
@@ -8431,6 +8521,7 @@ export class RuntimeController {
           columnId: targetColumnId,
           desktopId: targetContext.desktopId,
           outputId: targetContext.outputId,
+          presentation: this.initialColumnPresentation(active.activeWindow),
         });
 
     if (!previewValue) {
@@ -9689,6 +9780,7 @@ export class RuntimeController {
           columnId: targetColumnId,
           desktopId: targetContext.desktopId,
           outputId: targetContext.outputId,
+          presentation: this.initialColumnPresentation(active.activeWindow),
         });
 
     if (!previewValue) {
@@ -11823,7 +11915,7 @@ export class RuntimeController {
     return {
       columnId: detachedColumnId,
       columnIndex,
-      columnPresentation: "stacked",
+      columnPresentation: this.initialColumnPresentation(activeWindow),
       columnWidth: width,
       desktopId: managedContext.desktopId,
       memberIndex: 0,
@@ -13534,6 +13626,7 @@ export class RuntimeController {
             preparation.activeId,
             "right",
             preparation.newColumnId,
+            this.initialColumnPresentation(preparation.activeWindow),
           );
 
           if (!candidate) {
@@ -19887,7 +19980,9 @@ export class RuntimeController {
           candidates: [],
           column: {
             id: plannedColumnId,
-            presentation: metadata?.column.presentation ?? "stacked",
+            presentation:
+              metadata?.column.presentation ??
+              this.initialColumnPresentation(candidate.source),
             selectedWindowId: candidate.id,
             width,
             windowIds: [],
@@ -19919,10 +20014,6 @@ export class RuntimeController {
     let plannedColumns = [...plannedByKey.values()];
 
     for (const planned of plannedColumns) {
-      if (planned.column.windowIds.length === 1) {
-        planned.column.presentation = "stacked";
-      }
-
       const heights = planned.column.windowHeights;
 
       if (!heights) {
@@ -20186,6 +20277,7 @@ export class RuntimeController {
         columnId: columnId(`column:${String(candidate.id)}`),
         desktopId: context.desktopId,
         outputId: context.outputId,
+        presentation: this.initialColumnPresentation(candidate.source),
         width,
         windowId: candidate.id,
       });
@@ -20432,6 +20524,7 @@ export class RuntimeController {
       columnId: columnId(`column:${observed.id}`),
       desktopId: context.desktopId,
       outputId: context.outputId,
+      presentation: this.initialColumnPresentation(source),
       width,
       windowId: id,
     });
@@ -23164,6 +23257,22 @@ export class RuntimeController {
     return percent === undefined
       ? this.defaultColumnWidth
       : { kind: "proportion", value: percent / 100 };
+  }
+
+  private initialColumnPresentation(
+    source: KWinWindow | undefined,
+  ): ColumnPresentation {
+    const desktopFileName = source?.desktopFileName;
+
+    if (typeof desktopFileName !== "string") {
+      return "stacked";
+    }
+
+    return (
+      this.applicationColumnPresentations.columnPresentationFor(
+        desktopFileName,
+      ) ?? "stacked"
+    );
   }
 
   private canApplyLayout(maxViewportOffset: number): boolean {

@@ -19,6 +19,7 @@ QtObject {
     readonly property KWin.ShortcutHandler toggleShortcut: KWin.ShortcutHandler {
         name: "driftile_toggle_overview"
         text: "Driftile: Toggle overview"
+        sequence: "Meta+O"
         onActivated: controller.toggle()
     }
 

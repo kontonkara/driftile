@@ -382,7 +382,6 @@ function parseColumn(value: unknown, legacy: boolean): PersistedColumnV3 {
 
   if (
     nonAutomaticHeights > 1 ||
-    (presentation === "tabbed" && members.length < 2) ||
     (fullWidthRestore !== undefined &&
       (width.kind !== "proportion" || width.value !== 1)) ||
     (fullWidthRestore === undefined &&

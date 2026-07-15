@@ -5,12 +5,12 @@ Open **System Settings > Window Management > KWin Scripts** and configure Drifti
 The settings page groups the existing controls into two tabs:
 
 - **General**: window decorations, focus centering, touchpad navigation, window
-  gap, default column width, column width step and presets, and window height
-  step.
-- **Applications**: initial column widths, focus centering, initial floating
-  rules, tiling exclusions, and decoration exclusions.
+  gap, tab feedback, default column width, column width step and presets, and
+  window height step.
+- **Applications**: initial column widths and presentation, focus centering,
+  initial floating rules, tiling exclusions, and decoration exclusions.
 
-Driftile validates all thirteen settings as one snapshot. Applying an invalid
+Driftile validates all fifteen settings as one snapshot. Applying an invalid
 value through an external configuration tool rejects the entire update and
 preserves the active settings; valid changes apply without reloading the
 extension.
@@ -19,16 +19,17 @@ extension.
 
 `programs.driftile.settings` is `null` by default, so Home Manager writes no
 Driftile setting. A non-null value is one complete typed profile: omitted fields
-take the defaults documented below, and Home Manager writes all thirteen values.
+take the defaults documented below, and Home Manager writes all fifteen values.
 This profile works with `programs.driftile.enable = false` when the package is
 installed system-wide.
 
 The activation writes only `ApplicationBorderlessExclusions`,
-`ApplicationColumnWidths`, `ApplicationFocusCentering`,
+`ApplicationColumnPresentations`, `ApplicationColumnWidths`,
+`ApplicationFocusCentering`,
 `ApplicationInitialFloating`, `ApplicationTilingExclusions`,
 `BorderlessWindows`, `CenterFocusedColumn`, `Gap`,
 `DefaultColumnWidthPercent`, `ColumnWidthPresets`,
-`ColumnWidthStepPercent`, `TouchpadNavigation`, and
+`ColumnWidthStepPercent`, `ShowTabIndicator`, `TouchpadNavigation`, and
 `WindowHeightStepPercent` in Driftile's `kwinrc` group. It does not replace
 the file or manage shortcuts. A running KWin session is asked to reconfigure
 on a best-effort basis; otherwise the values apply on its next reload or start.
@@ -47,6 +48,10 @@ programs.driftile.settings.applicationColumnWidths = {
   "org.mozilla.firefox" = 80;
 };
 
+programs.driftile.settings.applicationColumnPresentations = {
+  "org.mozilla.firefox" = "tabbed";
+};
+
 programs.driftile.settings.applicationFocusCentering = [
   "org.mozilla.firefox"
 ];
@@ -61,11 +66,12 @@ programs.driftile.settings.applicationTilingExclusions = [
 
 programs.driftile.settings.centerFocusedColumn = false;
 programs.driftile.settings.columnWidthPresets = [ 20 50 80 ];
+programs.driftile.settings.showTabIndicator = true;
 programs.driftile.settings.touchpadNavigation = true;
 ```
 
-Widths must be `10`–`100`. Width-override IDs are exact and may not contain
-`=`. Application policy IDs may contain `=` because the whole line is the ID.
+Widths must be `10`–`100`; presentations are `stacked` or `tabbed`. Attribute
+set IDs are exact and may not contain `=`. List policy IDs may contain `=`.
 Home Manager accepts at most 128 unique IDs per list policy, rejects blank,
 whitespace-padded, control-containing, or over-255-byte IDs, and writes each
 list in canonical sorted order.
@@ -80,6 +86,15 @@ required.
 Open **System Settings > Keyboard > Shortcuts** and search for **Driftile** to
 change any registered action. KGlobalAccel stores and applies assignments live;
 the KWin-script settings page does not maintain a second copy.
+
+## Tab indicator
+
+**Show a transient OSD for tabbed-window selection** is enabled by default.
+Confirmed activation of a member in a multi-window tabbed column, including a
+successful transition into tabbed presentation, uses Plasma's passive OSD and
+never creates a managed window or captures input. The OSD remains silent while
+Plasma's or Driftile's overview is active. Disable the option without changing
+column state or shortcuts.
 
 ## Horizontal focus centering
 
@@ -141,6 +156,22 @@ Matching is case-sensitive. Windows without a matching usable ID keep the
 global default. Updating the rules does not resize existing columns; later new
 columns and fresh singleton admissions use the new value, clamped to the live
 window constraints and physical-pixel grid.
+
+## Application column presentation
+
+**Application column presentation** sets the initial display mode of a new
+column by exact KWin `desktopFileName`. Enter one
+`desktop-file-id=stacked|tabbed` rule per line. Matching is case-sensitive;
+blank lines are ignored, and malformed, duplicate, or over-limit rules reject
+the complete settings update. At most 128 rules are accepted, and IDs are
+limited to 255 UTF-8 bytes.
+
+A tabbed singleton keeps that mode even though it looks like a stacked
+singleton. When another window joins, the column is immediately tabbed. A
+split, expel, fresh cross-context transfer, or initially floating window that
+later forms its own column uses the moved application's current rule. Existing
+columns are not rewritten when the setting changes, and a window joining an
+existing column always adopts the target column's mode.
 
 ## Applications initially floating
 
@@ -232,7 +263,7 @@ The KConfig decoder accepts at most 65,664 characters in the complete document,
 512 characters in each raw line, 128 nonblank unique IDs, and 255 UTF-8 bytes
 in each trimmed ID. It trims surrounding whitespace and ignores blank lines.
 Control characters, invalid UTF-16, an oversized value, or a duplicate after
-trimming rejects the complete thirteen-setting snapshot. Accepted IDs have a
+trimming rejects the complete fifteen-setting snapshot. Accepted IDs have a
 canonical sorted internal form. Home Manager exposes the same policy as
 `programs.driftile.settings.applicationBorderlessExclusions`, a list rendered
 as a sorted newline-delimited KConfig value.

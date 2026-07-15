@@ -192,14 +192,18 @@ programs.driftile.overview.enable = true;
 Main-script and overview ownership are independent. NixOS may install one while
 Home Manager installs the other, but the modules reject installing the same
 package ID in both scopes for one user. The module does not enable the effect
-or assign its shortcut; see [Overview companion](overview.md).
+in KWin. On a fresh shortcut record, the enabled effect offers `Meta+O`;
+upgrades preserve the current KGlobalAccel assignment. See [Overview
+companion](overview.md).
 
-The 1.19.0 Home Manager module exposes the complete thirteen-setting
-profile:
+The current Home Manager module exposes the complete fifteen-setting profile:
 
 ```nix
 programs.driftile.settings = {
   applicationBorderlessExclusions = [ ];
+  applicationColumnPresentations = {
+    "org.mozilla.firefox" = "tabbed";
+  };
   applicationColumnWidths = {
     "org.kde.konsole" = 60;
   };
@@ -210,6 +214,7 @@ programs.driftile.settings = {
   centerFocusedColumn = false;
   columnWidthPresets = [ 20 50 80 ];
   gap = 16;
+  showTabIndicator = true;
   defaultColumnWidthPercent = 50;
   columnWidthStepPercent = 10;
   touchpadNavigation = false;
@@ -218,6 +223,7 @@ programs.driftile.settings = {
 ```
 
 Application policy lists default to empty. See
+[Application column presentation](configuration.md#application-column-presentation),
 [Horizontal focus centering](configuration.md#horizontal-focus-centering),
 [Applications initially floating](configuration.md#applications-initially-floating),
 and

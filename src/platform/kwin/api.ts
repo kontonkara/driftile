@@ -36,6 +36,7 @@ export interface KWinOutput {
 }
 
 export interface KWinWindow {
+  readonly caption?: string;
   readonly clientGeometry: KWinRect;
   readonly clientGeometryChanged?: KWinSignal<[oldGeometry: KWinRect]>;
   readonly decorationChanged?: KWinSignal<[]>;

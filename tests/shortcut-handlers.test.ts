@@ -615,6 +615,7 @@ describe("KWin shortcut handlers", () => {
     const generalControls = [
       "kcfg_BorderlessWindows",
       "kcfg_CenterFocusedColumn",
+      "kcfg_ShowTabIndicator",
       "kcfg_TouchpadNavigation",
       "kcfg_Gap",
       "kcfg_DefaultColumnWidthPercent",
@@ -623,6 +624,7 @@ describe("KWin shortcut handlers", () => {
       "kcfg_WindowHeightStepPercent",
     ];
     const applicationControls = [
+      "kcfg_ApplicationColumnPresentations",
       "kcfg_ApplicationColumnWidths",
       "kcfg_ApplicationFocusCentering",
       "kcfg_ApplicationInitialFloating",
@@ -720,6 +722,26 @@ describe("KWin shortcut handlers", () => {
     );
   });
 
+  it("exposes the tab indicator as a live user setting", () => {
+    const indicatorEntry = configuration.match(
+      /<entry name="ShowTabIndicator" type="Bool">([\s\S]*?)<\/entry>/,
+    )?.[1];
+    const indicatorWidget = configurationUi.match(
+      /<widget class="QCheckBox" name="kcfg_ShowTabIndicator">([\s\S]*?)<\/widget>/,
+    )?.[1];
+
+    expect(indicatorEntry).toContain(
+      "<label>Show a transient OSD for tabbed-window selection</label>",
+    );
+    expect(indicatorEntry).toContain("<default>true</default>");
+    expect(indicatorWidget).toContain(
+      "<string>Show a transient OSD for tabbed-window selection</string>",
+    );
+    expect(qml).toContain(
+      `showTabIndicator: KWin.readConfig("ShowTabIndicator", ${String(DEFAULT_DRIFTILE_SETTINGS.showTabIndicator)})`,
+    );
+  });
+
   it("exposes the window gap as a live bounded user setting", () => {
     const gapEntry = configuration.match(
       /<entry name="Gap" type="Int">([\s\S]*?)<\/entry>/,
@@ -804,6 +826,34 @@ describe("KWin shortcut handlers", () => {
     expect(runtime).toContain(
       "controller.setApplicationColumnWidths(settings.applicationColumnWidths)",
     );
+  });
+
+  it("exposes exact application column presentations as a bounded map", () => {
+    const presentationsEntry = configuration.match(
+      /<entry name="ApplicationColumnPresentations" type="String">([\s\S]*?)<\/entry>/,
+    )?.[1];
+    const presentationsWidget = configurationUi.match(
+      /<widget class="QPlainTextEdit" name="kcfg_ApplicationColumnPresentations">([\s\S]*?)<\/widget>/,
+    )?.[1];
+
+    expect(presentationsEntry).toContain(
+      "<label>Column presentations by desktop-file ID</label>",
+    );
+    expect(presentationsEntry).toContain("<default></default>");
+    expect(configurationUi).toContain(
+      "<string>Application column presentations:</string>",
+    );
+    expect(presentationsWidget).toContain("org.gnome.Evince=tabbed");
+    expect(presentationsWidget).toContain(
+      "Use desktop-file-id=stacked or desktop-file-id=tabbed.",
+    );
+    expect(qml).toContain(
+      'applicationColumnPresentations: KWin.readConfig("ApplicationColumnPresentations", "")',
+    );
+    expect(runtime).toContain(
+      "applicationColumnPresentations: settings.applicationColumnPresentations",
+    );
+    expect(runtime).toContain("controller.setApplicationColumnPresentations(");
   });
 
   it("exposes exact application initial-floating rules as a bounded list", () => {
@@ -1012,7 +1062,7 @@ describe("KWin shortcut handlers", () => {
     expect(qml).toContain("function readSettings()");
     expect(qml).toContain("root.applySettings(root.readSettings())");
     expect(qml).toMatch(
-      /Runtime\.DriftileRuntime\.init\([\s\S]*root\.readSettings\(\), loadedLayoutState,[\s\S]*root\.queueLayoutState,\s*root\.showDropPreview,\s*root\.hideDropPreview\)/,
+      /Runtime\.DriftileRuntime\.init\([\s\S]*root\.readSettings\(\), loadedLayoutState,[\s\S]*root\.queueLayoutState,\s*root\.showDropPreview,\s*root\.hideDropPreview,\s*root\.showTabIndicator\)/,
     );
     expect(qml).toMatch(
       /function showDropPreview\(x, y, width, height\) \{\s*Workspace\.showOutline\(x, y, width, height\);\s*\}/,
@@ -1041,7 +1091,7 @@ describe("KWin shortcut handlers", () => {
       'StandardPaths.writableLocation(StandardPaths.GenericConfigLocation) + "/driftile-layout-state.ini"',
     );
     expect(qml).toMatch(
-      /const loadedLayoutState = layoutStateStore\.load\(\);[\s\S]*Runtime\.DriftileRuntime\.init\([\s\S]*loadedLayoutState,[\s\S]*root\.queueLayoutState,[\s\S]*root\.hideDropPreview\)/,
+      /const loadedLayoutState = layoutStateStore\.load\(\);[\s\S]*Runtime\.DriftileRuntime\.init\([\s\S]*loadedLayoutState,[\s\S]*root\.queueLayoutState,[\s\S]*root\.hideDropPreview,[\s\S]*root\.showTabIndicator\)/,
     );
     expect(qml).toMatch(
       /Component\.onDestruction:[\s\S]*flushLayoutState\(\);[\s\S]*layoutStateStore\.flush\(\);[\s\S]*Runtime\.DriftileRuntime\.destroy\(\);/,
