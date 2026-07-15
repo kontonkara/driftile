@@ -10970,6 +10970,7 @@ verify_settings_persistence_transport || \
 detect_desktop_reorder_capability || \
   fail "KWin desktop reorder capability could not be detected"
 prepare_test_desktops || fail "KWin could not create the second integration virtual desktop"
+restore_layout_configuration || fail "KWin could not pin the integration layout fixture"
 
 case "${DRIFTILE_SMOKE_SCENARIO:-single-output}" in
   multi-output)
