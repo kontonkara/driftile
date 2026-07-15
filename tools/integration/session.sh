@@ -35,7 +35,8 @@ readonly output_router_plugin_id="io.github.kontonkara.driftile.integration-outp
 readonly output_router_ready_shortcut="Driftile Integration Output Router Ready"
 readonly output_transfer_state_probe_plugin_id="io.github.kontonkara.driftile.integration-output-transfer-state-probe"
 readonly output_transfer_state_verified_shortcut_prefix="Driftile Integration Output Transfer State Verified"
-readonly plugin_main_qml="$XDG_DATA_HOME/kwin/scripts/$plugin_id/contents/ui/main.qml"
+readonly plugin_package_directory="$XDG_DATA_HOME/kwin/scripts/$plugin_id"
+readonly plugin_metadata="$plugin_package_directory/metadata.json"
 readonly settings_persistence_probe_plugin_id="io.github.kontonkara.driftile.integration-settings-persistence-probe"
 readonly settings_persistence_probe_file="$XDG_CONFIG_HOME/driftile-settings-persistence-probe.ini"
 readonly stable_sample_count=2
@@ -2929,10 +2930,36 @@ unload_driftile_script() {
   wait_for_script_state false
 }
 
+resolve_plugin_main_qml() {
+  local contents_directory
+  local main_script
+  local main_script_path
+
+  [[ -f "$plugin_metadata" ]] || return 1
+  main_script=$(jq --exit-status --raw-output '
+    .["X-Plasma-MainScript"]
+    | select(type == "string")
+    | select(length > 0)
+    | select(startswith("/") | not)
+    | select(split("/") | all(. != "" and . != "." and . != ".."))
+    | select(test("[\u0000-\u001f\u007f]") | not)
+  ' "$plugin_metadata") || return 1
+
+  contents_directory=$(realpath --canonicalize-existing -- \
+    "$plugin_package_directory/contents") || return 1
+  main_script_path=$(realpath --canonicalize-existing -- \
+    "$contents_directory/$main_script") || return 1
+
+  [[ "$main_script_path" == "$contents_directory/"* ]] || return 1
+  [[ -f "$main_script_path" ]] || return 1
+  printf '%s' "$main_script_path"
+}
+
 load_driftile_script() {
   local load_result
+  local plugin_main_qml
 
-  [[ -f "$plugin_main_qml" ]] || return 1
+  plugin_main_qml=$(resolve_plugin_main_qml) || return 1
   load_result=$(busctl --user call \
     org.kde.KWin \
     /Scripting \
