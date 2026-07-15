@@ -275,6 +275,48 @@ let
         programs.driftile.settings = null;
       }
       { };
+  homeManagerTransitionDurationMinimum =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.transitions.duration = 0;
+      }
+      { };
+  homeManagerTransitionDurationMaximum =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.transitions.duration = 1000;
+      }
+      { };
+  homeManagerTransitionDurationUnmanaged =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.transitions.duration = null;
+      }
+      { };
+  homeManagerTransitionDurationWithSystemInstall =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.transitions.duration = 240;
+      }
+      {
+        programs.driftile.transitions.enable = true;
+      };
   homeManagerOptionSurface =
     evaluate homeManagerModule
       [
@@ -666,6 +708,25 @@ let
       );
     in
     !evaluated.success;
+  invalidTransitionDurationRejected =
+    duration:
+    let
+      evaluated = builtins.tryEval (
+        builtins.deepSeq
+          (evaluate homeManagerModule
+            [
+              "home"
+              "packages"
+            ]
+            {
+              programs.driftile.transitions.duration = duration;
+            }
+            { }
+          ).config.qt.kde.settings
+          true
+      );
+    in
+    !evaluated.success;
   expectedSettings = {
     kwinrc."Script-io.github.kontonkara.driftile" = {
       ApplicationBorderlessExclusions = ''
@@ -752,8 +813,29 @@ assert homeManagerWithoutProfile.config.xdg.configFile == { };
 assert homeManagerWithoutSettings.config.qt.kde.settings == { };
 assert homeManagerOptionSurface.options.programs.driftile ? settings;
 assert homeManagerOptionSurface.options.programs.driftile ? transitions;
+assert homeManagerOptionSurface.options.programs.driftile.transitions ? duration;
 assert nixosOptionSurface.options.programs.driftile ? transitions;
+assert !(nixosOptionSurface.options.programs.driftile.transitions ? duration);
 assert !(nixosOptionSurface.options.programs.driftile ? settings);
+assert packagePaths [ "home" "packages" ] homeManagerTransitionDurationMinimum == [ ];
+assert packagePaths [ "home" "packages" ] homeManagerTransitionDurationMaximum == [ ];
+assert packagePaths [ "home" "packages" ] homeManagerTransitionDurationWithSystemInstall == [ ];
+assert
+  homeManagerTransitionDurationMinimum.config.qt.kde.settings == {
+    kwinrc."Effect-io.github.kontonkara.driftile.transitions".Duration = 0;
+  };
+assert
+  homeManagerTransitionDurationMaximum.config.qt.kde.settings == {
+    kwinrc."Effect-io.github.kontonkara.driftile.transitions".Duration = 1000;
+  };
+assert homeManagerTransitionDurationUnmanaged.config.qt.kde.settings == { };
+assert
+  homeManagerTransitionDurationWithSystemInstall.config.qt.kde.settings == {
+    kwinrc."Effect-io.github.kontonkara.driftile.transitions".Duration = 240;
+  };
+assert invalidTransitionDurationRejected (-1);
+assert invalidTransitionDurationRejected 1001;
+assert invalidTransitionDurationRejected 1.5;
 assert packagePaths [ "home" "packages" ] homeManagerSettings == [ ];
 assert
   packagePaths [ "home" "packages" ] homeManagerDefaultSettings == [ (toString defaultPackage) ];

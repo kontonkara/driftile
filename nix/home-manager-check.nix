@@ -122,6 +122,27 @@ let
   transitionsDisabled = evaluateHome {
     programs.driftile.transitions.package = pkgs.hello;
   } { };
+  transitionDurationMinimum = evaluateHome {
+    programs.driftile.transitions.duration = 0;
+  } { };
+  transitionDurationMaximum = evaluateHome {
+    programs.driftile.transitions.duration = 1000;
+  } { };
+  transitionDurationUnmanaged = evaluateHome {
+    programs.driftile.transitions.duration = null;
+  } { };
+  invalidTransitionDurationRejected =
+    duration:
+    let
+      evaluated = builtins.tryEval (
+        builtins.deepSeq
+          (evaluateHome {
+            programs.driftile.transitions.duration = duration;
+          } { }).config.qt.kde.settings
+          true
+      );
+    in
+    !evaluated.success;
   systemConfiguration = lib.nixosSystem {
     inherit system;
     modules = [
@@ -222,6 +243,20 @@ assert transitionsPackageCount transitionsOverride == 0;
 assert lib.elem (toString pkgs.hello) (homePackagePaths transitionsOverride);
 assert transitionsPackageCount transitionsDisabled == 0;
 assert !lib.elem (toString pkgs.hello) (homePackagePaths transitionsDisabled);
+assert transitionsPackageCount transitionDurationMinimum == 0;
+assert transitionsPackageCount transitionDurationMaximum == 0;
+assert
+  transitionDurationMinimum.config.qt.kde.settings == {
+    kwinrc."Effect-io.github.kontonkara.driftile.transitions".Duration = 0;
+  };
+assert
+  transitionDurationMaximum.config.qt.kde.settings == {
+    kwinrc."Effect-io.github.kontonkara.driftile.transitions".Duration = 1000;
+  };
+assert transitionDurationUnmanaged.config.qt.kde.settings == { };
+assert invalidTransitionDurationRejected (-1);
+assert invalidTransitionDurationRejected 1001;
+assert invalidTransitionDurationRejected 1.5;
 assert
   standalone.config.qt.kde.settings == {
     kwinrc."Script-io.github.kontonkara.driftile" = {

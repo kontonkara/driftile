@@ -190,16 +190,24 @@ in
       };
     };
 
-    transitions = {
-      enable = lib.mkEnableOption "installation of the Driftile transition effect";
+    transitions =
+      {
+        enable = lib.mkEnableOption "installation of the Driftile transition effect";
 
-      package = lib.mkOption {
-        type = lib.types.package;
-        default = self.packages.${system}."driftile-transitions";
-        defaultText = lib.literalExpression "inputs.driftile.packages.\${pkgs.stdenv.hostPlatform.system}.\"driftile-transitions\"";
-        description = "The Driftile transition effect package to install.";
+        package = lib.mkOption {
+          type = lib.types.package;
+          default = self.packages.${system}."driftile-transitions";
+          defaultText = lib.literalExpression "inputs.driftile.packages.\${pkgs.stdenv.hostPlatform.system}.\"driftile-transitions\"";
+          description = "The Driftile transition effect package to install.";
+        };
+      }
+      // lib.optionalAttrs homeSettings {
+        duration = lib.mkOption {
+          type = lib.types.nullOr (lib.types.ints.between 0 1000);
+          default = null;
+          description = "Transition duration in milliseconds; null leaves the KConfig value unmanaged.";
+        };
       };
-    };
   }
   // lib.optionalAttrs shortcutConfigFile {
     shortcuts = lib.mkOption {
@@ -420,6 +428,12 @@ in
           WindowHeightPresets = renderWindowHeightPresets cfg.settings.windowHeightPresets;
           WindowHeightStepPercent = cfg.settings.windowHeightStepPercent;
         };
+      }
+    ))
+    (lib.optionalAttrs homeSettings (
+      lib.mkIf (cfg.transitions.duration != null) {
+        qt.kde.settings.kwinrc."Effect-${pluginId}.transitions".Duration =
+          cfg.transitions.duration;
       }
     ))
   ];
