@@ -26,6 +26,9 @@ a stable release; 1.18.0 remains the latest stable version.
   predecessor to the current work area's left configured gap, independent of
   display resolution, while keeping the predecessor beyond the left viewport
   edge.
+- Adds the KWin refresh step required by the source install and upgrade
+  activation instructions so an in-place upgrade cannot reuse a cached QML
+  bridge.
 
 ## Candidate artifacts
 
