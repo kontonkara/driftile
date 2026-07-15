@@ -427,6 +427,33 @@ const expectedHandlers: Readonly<
     activated: "Runtime.DriftileRuntime.moveColumnToLast()",
     sequence: "Meta+Ctrl+End",
   },
+  driftile_move_column_to_index_1: {
+    activated: "Runtime.DriftileRuntime.moveColumnToIndex(1)",
+  },
+  driftile_move_column_to_index_2: {
+    activated: "Runtime.DriftileRuntime.moveColumnToIndex(2)",
+  },
+  driftile_move_column_to_index_3: {
+    activated: "Runtime.DriftileRuntime.moveColumnToIndex(3)",
+  },
+  driftile_move_column_to_index_4: {
+    activated: "Runtime.DriftileRuntime.moveColumnToIndex(4)",
+  },
+  driftile_move_column_to_index_5: {
+    activated: "Runtime.DriftileRuntime.moveColumnToIndex(5)",
+  },
+  driftile_move_column_to_index_6: {
+    activated: "Runtime.DriftileRuntime.moveColumnToIndex(6)",
+  },
+  driftile_move_column_to_index_7: {
+    activated: "Runtime.DriftileRuntime.moveColumnToIndex(7)",
+  },
+  driftile_move_column_to_index_8: {
+    activated: "Runtime.DriftileRuntime.moveColumnToIndex(8)",
+  },
+  driftile_move_column_to_index_9: {
+    activated: "Runtime.DriftileRuntime.moveColumnToIndex(9)",
+  },
   driftile_move_column_to_next_desktop: {
     activated: "Runtime.DriftileRuntime.moveColumnToNextDesktop()",
     sequence: "Meta+Ctrl+U",
@@ -642,7 +669,7 @@ describe("KWin shortcut handlers", () => {
   });
 
   it("keeps the canonical action catalog synchronized with QML", () => {
-    expect(shortcutActions).toHaveLength(156);
+    expect(shortcutActions).toHaveLength(165);
     expect(shortcutActions).toEqual(
       handlers.map(({ name, sequence, text }) => ({
         name,
@@ -655,7 +682,7 @@ describe("KWin shortcut handlers", () => {
     ).toHaveLength(88);
     expect(
       shortcutActions.filter((action) => action.defaultSequence === undefined),
-    ).toHaveLength(68);
+    ).toHaveLength(77);
   });
 
   it("uses unique lowercase action identifiers and key sequences", () => {
@@ -752,6 +779,15 @@ describe("KWin shortcut handlers", () => {
       "driftile_insert_window_into_stack_right",
       "driftile_move_column_left_or_to_output_left",
       "driftile_move_column_right_or_to_output_right",
+      "driftile_move_column_to_index_1",
+      "driftile_move_column_to_index_2",
+      "driftile_move_column_to_index_3",
+      "driftile_move_column_to_index_4",
+      "driftile_move_column_to_index_5",
+      "driftile_move_column_to_index_6",
+      "driftile_move_column_to_index_7",
+      "driftile_move_column_to_index_8",
+      "driftile_move_column_to_index_9",
       "driftile_move_window_down_or_to_next_desktop",
       "driftile_move_window_down_or_to_output_down",
       "driftile_move_window_to_desktop_1",

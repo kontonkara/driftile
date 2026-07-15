@@ -381,6 +381,51 @@ QtObject {
         sequence: "Meta+Ctrl+End"
         onActivated: Runtime.DriftileRuntime.moveColumnToLast()
     }
+    readonly property ShortcutHandler moveColumnToIndex1Shortcut: ShortcutHandler {
+        name: "driftile_move_column_to_index_1"
+        text: "Driftile: Move column to position 1"
+        onActivated: Runtime.DriftileRuntime.moveColumnToIndex(1)
+    }
+    readonly property ShortcutHandler moveColumnToIndex2Shortcut: ShortcutHandler {
+        name: "driftile_move_column_to_index_2"
+        text: "Driftile: Move column to position 2"
+        onActivated: Runtime.DriftileRuntime.moveColumnToIndex(2)
+    }
+    readonly property ShortcutHandler moveColumnToIndex3Shortcut: ShortcutHandler {
+        name: "driftile_move_column_to_index_3"
+        text: "Driftile: Move column to position 3"
+        onActivated: Runtime.DriftileRuntime.moveColumnToIndex(3)
+    }
+    readonly property ShortcutHandler moveColumnToIndex4Shortcut: ShortcutHandler {
+        name: "driftile_move_column_to_index_4"
+        text: "Driftile: Move column to position 4"
+        onActivated: Runtime.DriftileRuntime.moveColumnToIndex(4)
+    }
+    readonly property ShortcutHandler moveColumnToIndex5Shortcut: ShortcutHandler {
+        name: "driftile_move_column_to_index_5"
+        text: "Driftile: Move column to position 5"
+        onActivated: Runtime.DriftileRuntime.moveColumnToIndex(5)
+    }
+    readonly property ShortcutHandler moveColumnToIndex6Shortcut: ShortcutHandler {
+        name: "driftile_move_column_to_index_6"
+        text: "Driftile: Move column to position 6"
+        onActivated: Runtime.DriftileRuntime.moveColumnToIndex(6)
+    }
+    readonly property ShortcutHandler moveColumnToIndex7Shortcut: ShortcutHandler {
+        name: "driftile_move_column_to_index_7"
+        text: "Driftile: Move column to position 7"
+        onActivated: Runtime.DriftileRuntime.moveColumnToIndex(7)
+    }
+    readonly property ShortcutHandler moveColumnToIndex8Shortcut: ShortcutHandler {
+        name: "driftile_move_column_to_index_8"
+        text: "Driftile: Move column to position 8"
+        onActivated: Runtime.DriftileRuntime.moveColumnToIndex(8)
+    }
+    readonly property ShortcutHandler moveColumnToIndex9Shortcut: ShortcutHandler {
+        name: "driftile_move_column_to_index_9"
+        text: "Driftile: Move column to position 9"
+        onActivated: Runtime.DriftileRuntime.moveColumnToIndex(9)
+    }
     readonly property ShortcutHandler moveWindowLeftShortcut: ShortcutHandler {
         name: "driftile_move_window_left"
         text: "Driftile: Consume or expel window left"

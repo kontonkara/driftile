@@ -483,6 +483,23 @@ describe("LayoutEngine", () => {
     expect(first && engine.rollbackStackEdit(first.rollback)).toBe(true);
     expect(engine.snapshot(output, desktop, activity)).toEqual(before);
 
+    const indexed = engine.moveActiveColumnToIndex(windowId("window-3"), 99);
+    expect(indexed?.kind).toBe("reorder");
+    expect(
+      engine
+        .snapshot(output, desktop, activity)
+        .columns.map((column) => column.id),
+    ).toEqual(["column-1", "column-3", "column-2"]);
+    expect(indexed && engine.rollbackStackEdit(indexed.rollback)).toBe(true);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(before);
+    expect(engine.moveActiveColumnToIndex(windowId("window-3"), 2)).toBeNull();
+    expect(engine.moveActiveColumnToIndex(windowId("window-3"), 0)).toBeNull();
+    expect(
+      engine.moveActiveColumnToIndex(windowId("window-3"), 1.5),
+    ).toBeNull();
+    expect(engine.moveActiveColumnToIndex(windowId("window-1"), 2)).toBeNull();
+    expect(engine.moveActiveColumnToIndex(windowId("missing"), 2)).toBeNull();
+
     const last = engine.moveActiveColumnToEdge(windowId("window-2"), "last");
     expect(last?.kind).toBe("reorder");
     expect(engine.snapshot(output, desktop, activity)).toEqual({

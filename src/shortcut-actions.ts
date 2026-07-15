@@ -230,6 +230,42 @@ const shortcutActionCatalog = [
     defaultSequence: "Meta+Ctrl+End",
   },
   {
+    name: "driftile_move_column_to_index_1",
+    text: "Driftile: Move column to position 1",
+  },
+  {
+    name: "driftile_move_column_to_index_2",
+    text: "Driftile: Move column to position 2",
+  },
+  {
+    name: "driftile_move_column_to_index_3",
+    text: "Driftile: Move column to position 3",
+  },
+  {
+    name: "driftile_move_column_to_index_4",
+    text: "Driftile: Move column to position 4",
+  },
+  {
+    name: "driftile_move_column_to_index_5",
+    text: "Driftile: Move column to position 5",
+  },
+  {
+    name: "driftile_move_column_to_index_6",
+    text: "Driftile: Move column to position 6",
+  },
+  {
+    name: "driftile_move_column_to_index_7",
+    text: "Driftile: Move column to position 7",
+  },
+  {
+    name: "driftile_move_column_to_index_8",
+    text: "Driftile: Move column to position 8",
+  },
+  {
+    name: "driftile_move_column_to_index_9",
+    text: "Driftile: Move column to position 9",
+  },
+  {
     name: "driftile_move_window_left",
     text: "Driftile: Consume or expel window left",
     defaultSequence: "Meta+[",

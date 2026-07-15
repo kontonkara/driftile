@@ -23715,6 +23715,47 @@ describe("RuntimeController", () => {
     expect(fixture.activationCount).toBe(0);
   });
 
+  it("moves the active column directly to a one-based strip index", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const windows = [
+      createTrackedWindow("window-1", output, desktop),
+      createTrackedWindow("window-2", output, desktop),
+      createTrackedWindow("window-3", output, desktop),
+    ];
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map((window) => window.window),
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+    const positions = () =>
+      windows.map((window) => window.window.frameGeometry.x);
+
+    controller.start();
+    expect(controller.moveColumnToIndex(2)).toBe(true);
+    expect(positions()).toEqual([-485, 505, 10]);
+    expect(testLayoutColumns(controller, output, desktop)).toEqual([
+      { id: "column:window-1", windowIds: ["window-1"] },
+      { id: "column:window-3", windowIds: ["window-3"] },
+      { id: "column:window-2", windowIds: ["window-2"] },
+    ]);
+
+    expect(controller.moveColumnToIndex(9)).toBe(true);
+    expect(positions()).toEqual([-485, 10, 505]);
+    expect(controller.moveColumnToIndex(3)).toBe(false);
+    expect(controller.moveColumnToIndex(0)).toBe(false);
+    expect(controller.moveColumnToIndex(1.5)).toBe(false);
+    expect(controller.moveColumnToIndex(10)).toBe(false);
+    expect(fixture.workspace.activeWindow).toBe(windows[2]?.window);
+    expect(fixture.activationCount).toBe(0);
+  });
+
   it("rolls back a direct edge move after a partial geometry failure", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };

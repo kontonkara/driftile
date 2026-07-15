@@ -1343,6 +1343,53 @@ export class LayoutEngine {
     );
   }
 
+  moveActiveColumnToIndex(
+    windowId: WindowId,
+    index: number,
+  ): StackEditResult | null {
+    if (!Number.isInteger(index) || index < 1) {
+      return null;
+    }
+
+    const placement = this.placements.get(windowId);
+
+    if (!placement) {
+      return null;
+    }
+
+    const context = this.contexts.get(placement.contextKey);
+
+    if (!context || context.activeColumnId !== placement.columnId) {
+      return null;
+    }
+
+    const columnIndex = liveColumnIndex(context, placement.columnId);
+    const targetIndex = Math.min(index, context.columns.length) - 1;
+
+    if (columnIndex < 0 || columnIndex === targetIndex) {
+      return null;
+    }
+
+    const before = this.snapshot(
+      context.outputId,
+      context.desktopId,
+      context.activityId,
+    );
+    const [column] = context.columns.splice(columnIndex, 1);
+
+    if (!column) {
+      return null;
+    }
+
+    context.columns.splice(targetIndex, 0, column);
+    this.reindexColumnIndices(context, Math.min(columnIndex, targetIndex));
+    return this.createStackEditResult(
+      "reorder",
+      before,
+      this.snapshot(context.outputId, context.desktopId, context.activityId),
+    );
+  }
+
   setActiveColumnWidth(
     windowId: WindowId,
     width: ColumnWidth,

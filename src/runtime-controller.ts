@@ -2365,6 +2365,14 @@ export class RuntimeController {
     return this.moveActiveColumnToEdge("last");
   }
 
+  moveColumnToIndex(index: number): boolean {
+    if (!Number.isInteger(index) || index < 1 || index > 9) {
+      return false;
+    }
+
+    return this.moveActiveColumnToIndex(index);
+  }
+
   moveWindowLeft(): boolean {
     return this.moveActiveWindowHorizontally("left");
   }
@@ -9162,6 +9170,38 @@ export class RuntimeController {
         editState.value = this.layout.moveActiveColumnToEdge(
           command.activeId,
           edge,
+        );
+        return editState.value !== null;
+      },
+      () =>
+        editState.value !== null &&
+        this.layout.rollbackStackEdit(editState.value.rollback),
+    );
+    const edit = editState.value;
+
+    if (!moved || !edit) {
+      return false;
+    }
+
+    this.layout.discardStackEditRollback(edit.rollback);
+    return true;
+  }
+
+  private moveActiveColumnToIndex(index: number): boolean {
+    const command = this.prepareActiveColumnCommand();
+
+    if (!command || this.hasPendingCapacityState(command.context.key)) {
+      return false;
+    }
+
+    const editState: { value: StackEditResult | null } = { value: null };
+    const moved = this.applyActiveColumnMutation(
+      command,
+      "column index move",
+      () => {
+        editState.value = this.layout.moveActiveColumnToIndex(
+          command.activeId,
+          index,
         );
         return editState.value !== null;
       },
