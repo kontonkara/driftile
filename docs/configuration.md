@@ -44,8 +44,12 @@ defaults to `180`, and follows Plasma's global animation-speed setting. A value
 of `0` disables animation.
 
 The effect animates automatic position and size changes without writing window
-geometry. It stays inactive during manual move or resize, fullscreen, overview,
-and other active fullscreen effects.
+geometry. Manual move or resize and fullscreen remain ineligible. Geometry
+changes received while another fullscreen or workspace transition owns
+presentation are coalesced per window and replayed once when that ownership
+ends. Deletion, configuration reload, or true ineligibility discards the
+pending change. Replay uses no timer or private API and writes neither geometry
+nor persistence.
 
 Launchers, popups, transient dialogs, frameless shell overlays, and other
 non-movable windows are outside the effect. Consecutive KWin geometry updates

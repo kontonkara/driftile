@@ -120,7 +120,10 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Observes public frame-geometry signals and animates only presentation through
   `Effect.Size` and `Effect.Translation`; it never writes window geometry.
 - Skips manual move or resize, hidden, minimized, fullscreen, special, and
-  non-normal windows and yields while another fullscreen effect is active.
+  non-normal windows. Geometry changes received while another fullscreen or
+  workspace transition owns presentation are coalesced per window and replayed
+  once when ownership ends; true ineligibility, configuration reload, or
+  deletion discards pending work.
 - Cancels superseded per-window animations in constant time, follows Plasma's
   global animation-speed factor, and exposes one bounded duration setting.
 - Scans the stacking order only once when loaded and tracks later windows by

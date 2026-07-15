@@ -1378,7 +1378,11 @@ output, and existing default bindings remain unchanged.
 
 The optional transition effect also excludes frameless keep-above or
 switcher-skipping shell overlays. Rapid geometry updates continue retargeting
-the active animation instead of restarting it.
+the active animation instead of restarting it. Geometry changes received while
+another fullscreen or workspace transition owns presentation are coalesced per
+window and replayed once when ownership ends. True ineligibility, configuration
+reload, or deletion discards pending work; replay adds no timer, geometry or
+persistence write, or private API.
 
 Ten unbound focus-traversal alternatives add first/last column wrapping,
 vertical-edge continuation into an adjacent column, and direct or wrapping
