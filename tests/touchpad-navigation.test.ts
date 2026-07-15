@@ -88,6 +88,10 @@ class RuntimeControllerDouble {
     return true;
   }
 
+  setDefaultColumnPresentation(): boolean {
+    return true;
+  }
+
   setGap(): boolean {
     return true;
   }
@@ -238,6 +242,7 @@ function settings(
     centerFocusedColumn: false,
     columnWidthPresets: "",
     columnWidthStepPercent: 10,
+    defaultColumnPresentation: "stacked",
     defaultColumnWidthPercent: 50,
     gap: 16,
     showTabIndicator: true,

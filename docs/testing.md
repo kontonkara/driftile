@@ -156,7 +156,7 @@ clamping for new singleton columns. Nix module checks verify the canonical
 KConfig encoding from typed Home Manager profiles.
 
 Application-exclusion coverage verifies bounded exact-ID decoding, canonical
-Home Manager encoding, atomic fifteen-setting updates, startup exclusion, live
+Home Manager encoding, atomic sixteen-setting updates, startup exclusion, live
 release and fresh readmission, native-state blockers, persistence omission,
 constant-time membership checks, and zero writes to excluded frames.
 
@@ -175,7 +175,7 @@ floating, dialog, transient, and utility windows, global-disable dominance,
 live policy and identity changes, pre-existing borderless state, and
 add or remove paths without geometry writes, focus changes, or layout-state or
 layout-persistence changes. Global-disable and unload cases verify
-ownership-safe restoration separately. Nix checks pin the fifteen-field option
+ownership-safe restoration separately. Nix checks pin the sixteen-field option
 surface and sorted Home Manager KConfig encoding.
 
 Pointer coverage includes strict visible-target planning, midpoint selection,

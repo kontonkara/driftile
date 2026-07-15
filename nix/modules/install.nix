@@ -270,6 +270,15 @@ in
               description = "Default column width as a percentage.";
             };
 
+            defaultColumnPresentation = lib.mkOption {
+              type = lib.types.enum [
+                "stacked"
+                "tabbed"
+              ];
+              default = "stacked";
+              description = "Default presentation for newly created columns.";
+            };
+
             columnWidthStepPercent = lib.mkOption {
               type = lib.types.ints.between 1 50;
               default = 10;
@@ -349,6 +358,7 @@ in
           CenterFocusedColumn = cfg.settings.centerFocusedColumn;
           ColumnWidthPresets = renderColumnWidthPresets cfg.settings.columnWidthPresets;
           ColumnWidthStepPercent = cfg.settings.columnWidthStepPercent;
+          DefaultColumnPresentation = cfg.settings.defaultColumnPresentation;
           DefaultColumnWidthPercent = cfg.settings.defaultColumnWidthPercent;
           Gap = cfg.settings.gap;
           ShowTabIndicator = cfg.settings.showTabIndicator;

@@ -618,6 +618,7 @@ describe("KWin shortcut handlers", () => {
       "kcfg_ShowTabIndicator",
       "kcfg_TouchpadNavigation",
       "kcfg_Gap",
+      "kcfg_DefaultColumnPresentation",
       "kcfg_DefaultColumnWidthPercent",
       "kcfg_ColumnWidthStepPercent",
       "kcfg_ColumnWidthPresets",
@@ -798,6 +799,43 @@ describe("KWin shortcut handlers", () => {
     );
     expect(qml).toContain(
       `defaultColumnWidthPercent: KWin.readConfig("DefaultColumnWidthPercent", ${String(DEFAULT_DRIFTILE_SETTINGS.defaultColumnWidthPercent)})`,
+    );
+  });
+
+  it("exposes the default column presentation as an exact string setting", () => {
+    const presentationEntry = configuration.match(
+      /<entry name="DefaultColumnPresentation" type="String">([\s\S]*?)<\/entry>/,
+    )?.[1];
+    const presentationLabel = configurationUi.match(
+      /<widget class="QLabel" name="defaultColumnPresentationLabel">([\s\S]*?)<\/widget>/,
+    )?.[1];
+    const presentationWidget = configurationUi.match(
+      /<widget class="QComboBox" name="kcfg_DefaultColumnPresentation">([\s\S]*?)<\/widget>/,
+    )?.[1];
+
+    expect(presentationEntry).toContain(
+      "<label>Default column presentation</label>",
+    );
+    expect(presentationEntry).toContain("<default>stacked</default>");
+    expect(presentationLabel).toContain(
+      "<string>Default column presentation:</string>",
+    );
+    expect(presentationLabel).toContain(
+      "<cstring>kcfg_DefaultColumnPresentation</cstring>",
+    );
+    expect(presentationWidget).toMatch(
+      /<property name="kcfg_property" stdset="0">\s*<string>currentText<\/string>/,
+    );
+    expect(
+      Array.from(
+        presentationWidget?.matchAll(
+          /<item>\s*<property name="text">\s*<string>([^<]+)<\/string>/g,
+        ) ?? [],
+        (match) => match[1],
+      ),
+    ).toEqual(["stacked", "tabbed"]);
+    expect(qml).toContain(
+      `defaultColumnPresentation: KWin.readConfig("DefaultColumnPresentation", "${DEFAULT_DRIFTILE_SETTINGS.defaultColumnPresentation}")`,
     );
   });
 

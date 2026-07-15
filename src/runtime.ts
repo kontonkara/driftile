@@ -109,6 +109,7 @@ export function init(
     borderlessWindows: settings.borderlessWindows,
     clientAreaOption,
     createRect,
+    defaultColumnPresentation: settings.defaultColumnPresentation,
     gap: settings.gap,
     layoutHydrationQuietSamples: LAYOUT_HYDRATION_QUIET_SAMPLES,
     layoutHydrationRetryProbes: LAYOUT_HYDRATION_RETRY_PROBES,
@@ -191,6 +192,7 @@ export function applySettings(settingsSnapshot: unknown): boolean {
     settings.applicationTilingExclusions,
   );
   controller.setCenterFocusedColumn(settings.centerFocusedColumn);
+  controller.setDefaultColumnPresentation(settings.defaultColumnPresentation);
   controller.setDefaultColumnWidthPercent(settings.defaultColumnWidthPercent);
   controller.setColumnWidthPresets(settings.columnWidthPresets.percentages);
   controller.setColumnWidthStepPercent(settings.columnWidthStepPercent);

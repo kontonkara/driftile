@@ -165,13 +165,15 @@ successor is selected when present, otherwise its predecessor. Whole-column
 moves preserve presentation and selection. This slice adds no persistent tab
 strip, pointer tab selection, animation, setting, settings UI, or private API.
 
-In the 1.20 development line, a fresh column instead reads its application's
-exact `stacked` or `tabbed` rule. A tabbed singleton retains that state across
-removal, extraction, transfer, floating reinsertion, and persistence; it has
-the same frame as a stacked singleton until another member joins. Existing
-target columns still keep their own presentation. Confirmed selection in a
-multi-window tabbed column may show a passive Plasma OSD, controlled by one
-setting and implemented without an input-grabbing effect or managed window.
+In the 1.20 development line, a fresh column reads the global `stacked` or
+`tabbed` default and then applies an exact application override when present. A
+tabbed singleton retains that state across removal, extraction, transfer,
+floating reinsertion, and persistence; it has the same frame as a stacked
+singleton until another member joins. Existing target columns still keep their
+own presentation. Confirmed selection in a multi-window tabbed column may show
+a passive Plasma OSD, controlled by one setting and implemented without an
+input-grabbing effect or managed window. The optional overview keeps minimized
+members as visible disabled tabs rather than offering invalid focus targets.
 
 ## KWin boundary
 

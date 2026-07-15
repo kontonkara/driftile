@@ -721,6 +721,7 @@ export interface RuntimeControllerOptions {
   readonly columnWidth?: ColumnWidth;
   readonly columnWidthPresets?: readonly ColumnWidth[];
   readonly createRect?: KWinRectFactory;
+  readonly defaultColumnPresentation?: ColumnPresentation;
   readonly gap?: number;
   readonly hidePointerDropPreview?: () => void;
   readonly layoutHydrationQuietSamples?: number;
@@ -880,6 +881,7 @@ export class RuntimeController {
   private startupStabilizationToken: object | null = null;
   private started = false;
   private startupCompleted = false;
+  private defaultColumnPresentation: ColumnPresentation;
   private defaultColumnWidth: ColumnWidth;
   private windowHeightStep = DEFAULT_WINDOW_HEIGHT_STEP_PERCENT / 100;
   private readonly windowHeightPresets: readonly ColumnWidth[];
@@ -963,6 +965,8 @@ export class RuntimeController {
       typeof options.centerFocusedColumn === "boolean"
         ? options.centerFocusedColumn
         : false;
+    this.defaultColumnPresentation =
+      options.defaultColumnPresentation ?? "stacked";
     this.gap = normalizeGap(options.gap ?? DEFAULT_GAP) ?? DEFAULT_GAP;
     this.initialLayoutHydrationQuietSamples = normalizeProbeCount(
       options.layoutHydrationQuietSamples ?? 2,
@@ -1601,6 +1605,28 @@ export class RuntimeController {
     }
 
     this.applicationColumnPresentations = presentations;
+
+    if (!this.started) {
+      return true;
+    }
+
+    for (const key of this.waitingWindowIds.keys()) {
+      this.pendingAdmissionContexts.add(key);
+    }
+
+    if (this.pendingAdmissionContexts.size > 0) {
+      this.scheduleDeferredRuntimeWork();
+    }
+
+    return true;
+  }
+
+  setDefaultColumnPresentation(presentation: ColumnPresentation): boolean {
+    if (this.defaultColumnPresentation === presentation) {
+      return false;
+    }
+
+    this.defaultColumnPresentation = presentation;
 
     if (!this.started) {
       return true;
@@ -23265,13 +23291,13 @@ export class RuntimeController {
     const desktopFileName = source?.desktopFileName;
 
     if (typeof desktopFileName !== "string") {
-      return "stacked";
+      return this.defaultColumnPresentation;
     }
 
     return (
       this.applicationColumnPresentations.columnPresentationFor(
         desktopFileName,
-      ) ?? "stacked"
+      ) ?? this.defaultColumnPresentation
     );
   }
 

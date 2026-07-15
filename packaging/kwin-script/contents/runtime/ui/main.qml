@@ -718,6 +718,7 @@ QtObject {
             centerFocusedColumn: KWin.readConfig("CenterFocusedColumn", false),
             columnWidthPresets: KWin.readConfig("ColumnWidthPresets", ""),
             columnWidthStepPercent: KWin.readConfig("ColumnWidthStepPercent", 10),
+            defaultColumnPresentation: KWin.readConfig("DefaultColumnPresentation", "stacked"),
             defaultColumnWidthPercent: KWin.readConfig("DefaultColumnWidthPercent", 50),
             gap: KWin.readConfig("Gap", 16),
             showTabIndicator: KWin.readConfig("ShowTabIndicator", true),

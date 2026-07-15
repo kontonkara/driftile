@@ -88,10 +88,11 @@ visibility, minimized and deleted state, and input eligibility. It retains or
 requests `KWin.Workspace.activeWindow` and closes only after confirmed focus.
 An invalid, stale, or rejected request leaves the effect open.
 
-Tab selection uses that same live-window path. Only the selected member has a
-large thumbnail, every live member keeps one non-overlapping tab target, and
-the selected tab is inert. Deleted, minimized, explicitly hidden, stale, or
-non-input targets are rejected without a layout or settings write.
+Tab selection uses that same live-window path. Only the selected non-minimized
+member has a large thumbnail. Every live member keeps one non-overlapping tab;
+minimized members remain visible but disabled, and the selected tab is inert.
+Deleted, minimized, explicitly hidden, stale, or non-input targets are rejected
+without a layout or settings write.
 
 A non-current thumbnail first revalidates the exact active effect, model, live
 screen, projected output, direct desktop object and ID, direct window object and

@@ -117,7 +117,7 @@ Rectangle {
                 desktop: card.desktop
                 screenName: card.screen ? String(card.screen.name) : ""
                 windowModel: KWin.WindowModel {}
-                minimizedWindows: false
+                minimizedWindows: true
                 windowType: ~KWin.WindowFilterModel.Dock & ~KWin.WindowFilterModel.Desktop &
                             ~KWin.WindowFilterModel.Notification & ~KWin.WindowFilterModel.CriticalNotification
             }
@@ -129,6 +129,7 @@ Rectangle {
                 readonly property var tiledPresentation: card.tiledPresentations[windowId]
                 readonly property var frame: card.frameForWindow(model.window, windowId)
                 readonly property bool selectedThumbnail: !tiledPresentation || tiledPresentation.selected
+                readonly property bool minimizedWindow: model.window ? model.window.minimized : false
 
                 width: viewport.width
                 height: viewport.height
@@ -142,7 +143,8 @@ Rectangle {
                     width: windowPresentation.frame ? Math.max(1, windowPresentation.frame.width) : 0
                     height: windowPresentation.frame ? Math.max(1, windowPresentation.frame.height) : 0
                     visible: windowPresentation.selectedThumbnail && windowPresentation.frame !== null
-                             && windowPresentation.frame !== undefined && model.window && !model.window.minimized
+                             && windowPresentation.frame !== undefined && model.window
+                             && !windowPresentation.minimizedWindow
                     clip: true
 
                     Rectangle {
@@ -181,12 +183,17 @@ Rectangle {
                     y: frame ? frame.y : 0
                     width: frame ? frame.width : 0
                     height: frame ? frame.height : 0
-                    visible: frame !== null && model.window && !model.window.minimized
-                    color: windowPresentation.tiledPresentation && windowPresentation.tiledPresentation.selected
-                           ? "#7085a8" : "#34435a"
+                    visible: frame !== null && model.window
+                    opacity: windowPresentation.minimizedWindow ? 0.6 : 1
+                    color: windowPresentation.minimizedWindow ? "#252e3d"
+                                                               : windowPresentation.tiledPresentation
+                                                                 && windowPresentation.tiledPresentation.selected
+                                                                 ? "#7085a8" : "#34435a"
                     border.width: 1
-                    border.color: windowPresentation.tiledPresentation && windowPresentation.tiledPresentation.selected
-                                  ? "#f4f8ff" : "#71839e"
+                    border.color: windowPresentation.minimizedWindow ? "#536176"
+                                                                     : windowPresentation.tiledPresentation
+                                                                       && windowPresentation.tiledPresentation.selected
+                                                                       ? "#f4f8ff" : "#71839e"
                     radius: 2
                     clip: true
 
@@ -198,7 +205,7 @@ Rectangle {
                                                                    : windowPresentation.tiledPresentation
                                                                      ? String(windowPresentation.tiledPresentation.memberIndex + 1)
                                                                      : ""
-                        color: "#f3f7ff"
+                        color: windowPresentation.minimizedWindow ? "#8a96a8" : "#f3f7ff"
                         font.pixelSize: Math.max(8, Math.min(12, tabShell.height * 0.55))
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
@@ -209,7 +216,8 @@ Rectangle {
                         acceptedButtons: Qt.LeftButton
                         acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
                         enabled: tabShell.visible && windowPresentation.tiledPresentation
-                                 && !windowPresentation.tiledPresentation.selected && card.desktop && card.screen
+                                 && !windowPresentation.tiledPresentation.selected
+                                 && !windowPresentation.minimizedWindow && card.desktop && card.screen
                         onTapped: card.windowTapped(model.window, windowPresentation.windowId, card.desktop,
                                                     card.desktopId, card.screen)
                     }

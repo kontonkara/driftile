@@ -7390,7 +7390,7 @@ describe("RuntimeController", () => {
     ).toEqual({ kind: "fixed", value: 250 });
   });
 
-  it("applies exact application presentations to new singleton columns", () => {
+  it("lets exact application presentations override the global default", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
     const target = createTrackedWindow("target", output, desktop, {
@@ -7407,7 +7407,7 @@ describe("RuntimeController", () => {
       [target.window, editor.window],
     );
     const presentations = decodeApplicationColumnPresentations(
-      "org.example.Editor=tabbed",
+      "org.example.Editor=stacked",
     );
 
     if (!presentations) {
@@ -7418,6 +7418,7 @@ describe("RuntimeController", () => {
       applicationColumnPresentations: presentations,
       clientAreaOption: 2,
       columnWidth: { kind: "fixed", value: 300 },
+      defaultColumnPresentation: "tabbed",
       gap: 10,
     });
 
@@ -7427,8 +7428,8 @@ describe("RuntimeController", () => {
         .snapshot(outputId(output.name), desktopId(desktop.id))
         .columns.map((column) => [column.presentation, column.windowIds]),
     ).toEqual([
-      ["stacked", [windowId("target")]],
-      ["tabbed", [windowId("editor")]],
+      ["tabbed", [windowId("target")]],
+      ["stacked", [windowId("editor")]],
     ]);
 
     fixture.workspace.activeWindow = editor.window;
@@ -7440,7 +7441,7 @@ describe("RuntimeController", () => {
       ).columns,
     ).toMatchObject([
       {
-        presentation: "stacked",
+        presentation: "tabbed",
         windowIds: ["target", "editor"],
       },
     ]);
@@ -7451,8 +7452,45 @@ describe("RuntimeController", () => {
         .snapshot(outputId(output.name), desktopId(desktop.id))
         .columns.map((column) => [column.presentation, column.windowIds]),
     ).toEqual([
-      ["stacked", [windowId("target")]],
-      ["tabbed", [windowId("editor")]],
+      ["tabbed", [windowId("target")]],
+      ["stacked", [windowId("editor")]],
+    ]);
+  });
+
+  it("applies a changed default presentation only to future columns", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const existing = createTrackedWindow("existing", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [existing.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      schedule: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(controller.setDefaultColumnPresentation("tabbed")).toBe(true);
+    expect(controller.setDefaultColumnPresentation("tabbed")).toBe(false);
+    expect(scheduler.pendingCount).toBe(0);
+
+    const added = createTrackedWindow("added", output, desktop);
+    fixture.windowAdded.emit(added.window);
+    flushManualScheduler(scheduler);
+
+    expect(
+      runtimeLayout(controller)
+        .snapshot(outputId(output.name), desktopId(desktop.id))
+        .columns.map((column) => [column.presentation, column.windowIds]),
+    ).toEqual([
+      ["stacked", [windowId("existing")]],
+      ["tabbed", [windowId("added")]],
     ]);
   });
 
@@ -25097,6 +25135,11 @@ describe("RuntimeController", () => {
     expect(workScheduler.pendingCount).toBe(0);
     expect(resumeScheduler.pendingCount).toBe(0);
 
+    expect(controller.setDefaultColumnPresentation("tabbed")).toBe(true);
+    expect(workScheduler.pendingCount).toBe(1);
+    flushManualScheduler(workScheduler);
+    expect(state.waitingWindowContexts.has(windowId("window-1"))).toBe(true);
+
     workAreaHeight = 800;
     trackedOutput.setGeometry({ height: 800, width: 1000, x: 0, y: 0 });
     trackedOutput.geometryChanged.emit();
@@ -25105,6 +25148,12 @@ describe("RuntimeController", () => {
     expect(controller.managedCount).toBe(1);
     expect(controller.lastWriteCount).toBe(1);
     expect(state.waitingWindowContexts.size).toBe(0);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      ).columns[0]?.presentation,
+    ).toBe("tabbed");
     expect(active.window.frameGeometry).toEqual({
       height: 780,
       width: 485,

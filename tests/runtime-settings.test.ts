@@ -19,6 +19,7 @@ interface DeliveredSettings {
   readonly centerFocusedColumn: boolean;
   readonly columnWidthPresets: readonly number[];
   readonly columnWidthStepPercent: number;
+  readonly defaultColumnPresentation: "stacked" | "tabbed";
   readonly defaultColumnWidthPercent: number;
   readonly gap: number;
   readonly windowHeightStepPercent: number;
@@ -37,6 +38,7 @@ interface RuntimeControllerOptions {
   readonly applicationInitialFloating: ApplicationInitialFloating;
   readonly applicationTilingExclusions: ApplicationTilingExclusions;
   readonly borderlessWindows: boolean;
+  readonly defaultColumnPresentation: "stacked" | "tabbed";
   readonly gap: number;
   readonly schedule: (callback: () => void) => void;
 }
@@ -73,6 +75,7 @@ class RuntimeControllerDouble {
       centerFocusedColumn: false,
       columnWidthPresets: [],
       columnWidthStepPercent: 1,
+      defaultColumnPresentation: options.defaultColumnPresentation,
       defaultColumnWidthPercent: 10,
       gap: options.gap,
       windowHeightStepPercent: 1,
@@ -200,6 +203,12 @@ class RuntimeControllerDouble {
     return true;
   }
 
+  setDefaultColumnPresentation(value: "stacked" | "tabbed"): boolean {
+    this.calls.push("defaultColumnPresentation");
+    this.state = { ...this.state, defaultColumnPresentation: value };
+    return true;
+  }
+
   setGap(value: number): boolean {
     this.calls.push("gap");
     this.state = { ...this.state, gap: value };
@@ -287,6 +296,7 @@ describe("runtime settings delivery", () => {
       centerFocusedColumn: true,
       columnWidthPresets: "20,50,80",
       columnWidthStepPercent: 13,
+      defaultColumnPresentation: "tabbed",
       defaultColumnWidthPercent: 65,
       gap: 7,
       touchpadNavigation: true,
@@ -303,6 +313,7 @@ describe("runtime settings delivery", () => {
       centerFocusedColumn: true,
       columnWidthPresets: [20, 50, 80],
       columnWidthStepPercent: 13,
+      defaultColumnPresentation: "tabbed",
       defaultColumnWidthPercent: 65,
       gap: 7,
       windowHeightStepPercent: 17,
@@ -319,6 +330,7 @@ describe("runtime settings delivery", () => {
       "applicationInitialFloating",
       "applicationTilingExclusions",
       "centerFocusedColumn",
+      "defaultColumnPresentation",
       "defaultColumnWidthPercent",
       "columnWidthPresets",
       "columnWidthStepPercent",
@@ -392,6 +404,7 @@ describe("runtime settings delivery", () => {
       "applicationInitialFloating",
       "applicationTilingExclusions",
       "centerFocusedColumn",
+      "defaultColumnPresentation",
       "defaultColumnWidthPercent",
       "columnWidthPresets",
       "columnWidthStepPercent",
@@ -427,6 +440,7 @@ function settings(
     centerFocusedColumn: false,
     columnWidthPresets: "",
     columnWidthStepPercent: 10,
+    defaultColumnPresentation: "stacked",
     defaultColumnWidthPercent: 50,
     gap: 16,
     showTabIndicator: true,

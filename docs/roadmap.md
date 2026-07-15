@@ -100,7 +100,7 @@ The current runtime already:
 - Registers compact default shortcuts with `H/J/K/L`, arrow, Home/End, and Page Up/Down aliases.
 - Provides a reversible shortcut helper for the bundled defaults and explicit
   JSON v1 profiles; a UI without a Node.js dependency remains future work.
-- Lets Home Manager write the fifteen typed settings or generate a portable
+- Lets Home Manager write the sixteen typed settings or generate a portable
   shortcut profile without installing a second KWin package; shortcut claiming
   remains explicit.
 - Leaves dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows outside layout ownership, separate from manual floating.
@@ -888,18 +888,20 @@ No other feature belongs to 1.19.0.
 ## 1.20.0 (in development)
 
 Version `1.20.0` completes one bounded tab-workflow slice. The optional
-overview keeps one selected thumbnail, exposes every live tabbed member in a
-compact ordered strip, and offers `Meta+O` for a fresh shortcut record when
-enabled while preserving existing assignments. Selection reuses
+overview keeps one selected thumbnail, exposes every non-minimized live tabbed
+member in a compact ordered strip, retains disabled tabs for minimized members,
+and offers `Meta+O` for a fresh shortcut record when enabled while preserving
+existing assignments. Selection reuses
 the existing guarded public KWin focus path and fails closed for stale,
 deleted, minimized, hidden, or non-input windows.
 
-`ApplicationColumnPresentations` assigns `stacked` or `tabbed` to fresh
-columns by exact `desktopFileName`. A tabbed singleton is now valid durable
-state, so later insertion immediately uses the requested presentation. Splits,
-expels, fresh single-window transfers, and initially floating reinsertion read
-the moved application's current rule; existing target columns still win
-merges. Existing columns are unchanged by live reconfiguration.
+`DefaultColumnPresentation` selects `stacked` or `tabbed` for unmatched fresh
+columns. `ApplicationColumnPresentations` overrides it by exact
+`desktopFileName`. A tabbed singleton is now valid durable state, so later
+insertion immediately uses the requested presentation. Splits, expels, fresh
+single-window transfers, and initially floating reinsertion read the moved
+application's current policy; existing target columns still win merges.
+Existing and restored columns are unchanged by live reconfiguration.
 
 Confirmed activation in a multi-window tabbed column and a successful
 transition into tabbed presentation can show Plasma's passive OSD.
@@ -912,7 +914,8 @@ Release criteria:
 - Overview projection preserves every tab member and selected index in linear
   time; tab and thumbnail hit regions do not overlap.
 - Initial-presentation lookup is constant-time, singleton tabbed state survives
-  every supported lifecycle, and target-wins merging remains unchanged.
+  every supported lifecycle, application rules override the global default,
+  and target-wins merging remains unchanged.
 - The indicator is emitted only after confirmed multi-tab activation or entry
   and remains silent when disabled or while an overview effect is active.
 - Targeted checks, one hidden VM checkpoint, packaging, exact-SHA CI, and
@@ -929,5 +932,6 @@ taking over compositor mechanisms.
 - Keep Plasma's built-in Overview as the compatible baseline.
 - Add pointer-driven overview rearrangement only through public KWin and Plasma
   extension APIs; it remains deferred beyond 1.14.0.
+- Add activity-aware layout ownership as a separate persisted-context milestone.
 
 The optional overview must remain removable, preserve the authoritative layout state, and fall back cleanly to Plasma's Overview.

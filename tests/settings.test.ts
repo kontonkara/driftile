@@ -80,6 +80,7 @@ const validSettings: DriftileSettings = {
   centerFocusedColumn: true,
   columnWidthPresets: validColumnWidthPresets,
   columnWidthStepPercent: 25,
+  defaultColumnPresentation: "tabbed",
   defaultColumnWidthPercent: 75,
   gap: 32,
   showTabIndicator: false,
@@ -100,6 +101,7 @@ const validSettingsInput = {
   centerFocusedColumn: validSettings.centerFocusedColumn,
   columnWidthPresets: validSettings.columnWidthPresets.canonicalValue,
   columnWidthStepPercent: validSettings.columnWidthStepPercent,
+  defaultColumnPresentation: validSettings.defaultColumnPresentation,
   defaultColumnWidthPercent: validSettings.defaultColumnWidthPercent,
   gap: validSettings.gap,
   showTabIndicator: validSettings.showTabIndicator,
@@ -113,6 +115,7 @@ describe("Driftile settings", () => {
       borderlessWindows: true,
       centerFocusedColumn: false,
       columnWidthStepPercent: 10,
+      defaultColumnPresentation: "stacked",
       defaultColumnWidthPercent: 50,
       gap: 16,
       showTabIndicator: true,
@@ -156,6 +159,7 @@ describe("Driftile settings", () => {
       centerFocusedColumn: validSettings.centerFocusedColumn,
       columnWidthPresets: validSettings.columnWidthPresets,
       columnWidthStepPercent: validSettings.columnWidthStepPercent,
+      defaultColumnPresentation: validSettings.defaultColumnPresentation,
       defaultColumnWidthPercent: validSettings.defaultColumnWidthPercent,
       gap: validSettings.gap,
       showTabIndicator: validSettings.showTabIndicator,
@@ -219,6 +223,7 @@ describe("Driftile settings", () => {
       centerFocusedColumn: false,
       columnWidthPresets: "10",
       columnWidthStepPercent: 1,
+      defaultColumnPresentation: "stacked",
       defaultColumnWidthPercent: 10,
       gap: 0,
       showTabIndicator: false,
@@ -236,6 +241,7 @@ describe("Driftile settings", () => {
       centerFocusedColumn: true,
       columnWidthPresets: "100",
       columnWidthStepPercent: 50,
+      defaultColumnPresentation: "tabbed",
       defaultColumnWidthPercent: 100,
       gap: 64,
       showTabIndicator: true,
@@ -271,6 +277,7 @@ describe("Driftile settings", () => {
       borderlessWindows: settings.borderlessWindows,
       centerFocusedColumn: settings.centerFocusedColumn,
       columnWidthStepPercent: settings.columnWidthStepPercent,
+      defaultColumnPresentation: settings.defaultColumnPresentation,
       defaultColumnWidthPercent: settings.defaultColumnWidthPercent,
       gap: settings.gap,
       showTabIndicator: settings.showTabIndicator,
@@ -284,6 +291,7 @@ describe("Driftile settings", () => {
     ["a non-boolean centering setting", { centerFocusedColumn: 1 }],
     ["a non-boolean tab-indicator setting", { showTabIndicator: 1 }],
     ["a non-boolean touchpad setting", { touchpadNavigation: 1 }],
+    ["an invalid default presentation", { defaultColumnPresentation: "tiled" }],
     ["invalid column-width presets", { columnWidthPresets: "50,40" }],
     [
       "invalid application overrides",
@@ -356,24 +364,9 @@ describe("Driftile settings", () => {
     },
   );
 
-  it("rejects the previous thirteen-field snapshot", () => {
-    const incomplete = {
-      applicationBorderlessExclusions:
-        validSettingsInput.applicationBorderlessExclusions,
-      applicationColumnWidths: validSettingsInput.applicationColumnWidths,
-      applicationFocusCentering: validSettingsInput.applicationFocusCentering,
-      applicationInitialFloating: validSettingsInput.applicationInitialFloating,
-      applicationTilingExclusions:
-        validSettingsInput.applicationTilingExclusions,
-      borderlessWindows: validSettings.borderlessWindows,
-      centerFocusedColumn: validSettings.centerFocusedColumn,
-      columnWidthPresets: validSettingsInput.columnWidthPresets,
-      columnWidthStepPercent: validSettings.columnWidthStepPercent,
-      defaultColumnWidthPercent: validSettings.defaultColumnWidthPercent,
-      gap: validSettings.gap,
-      touchpadNavigation: validSettings.touchpadNavigation,
-      windowHeightStepPercent: validSettings.windowHeightStepPercent,
-    };
+  it("rejects the previous fifteen-field snapshot", () => {
+    const incomplete: Record<string, unknown> = { ...validSettingsInput };
+    delete incomplete["defaultColumnPresentation"];
 
     expect(decodeDriftileSettings(incomplete)).toBeNull();
   });
@@ -453,6 +446,7 @@ describe("Driftile settings", () => {
       { centerFocusedColumn: false },
       { columnWidthPresets: changedColumnWidthPresets },
       { columnWidthStepPercent: 26 },
+      { defaultColumnPresentation: "stacked" as const },
       { defaultColumnWidthPercent: 76 },
       { gap: 33 },
       { showTabIndicator: true },

@@ -40,6 +40,7 @@ import {
   sameColumnWidthPresetPercentages,
   type ColumnWidthPresetPercentages,
 } from "./column-width-presets";
+import type { ColumnPresentation } from "./core/layout-engine";
 
 const MIN_GAP = 0;
 const MAX_GAP = 64;
@@ -47,7 +48,7 @@ const MIN_DEFAULT_COLUMN_WIDTH_PERCENT = 10;
 const MAX_DEFAULT_COLUMN_WIDTH_PERCENT = 100;
 const MIN_RESIZE_STEP_PERCENT = 1;
 const MAX_RESIZE_STEP_PERCENT = 50;
-const SETTINGS_FIELD_COUNT = 15;
+const SETTINGS_FIELD_COUNT = 16;
 
 export interface DriftileSettings {
   readonly applicationBorderlessExclusions: ApplicationBorderlessExclusions;
@@ -60,6 +61,7 @@ export interface DriftileSettings {
   readonly centerFocusedColumn: boolean;
   readonly columnWidthPresets: ColumnWidthPresetPercentages;
   readonly columnWidthStepPercent: number;
+  readonly defaultColumnPresentation: ColumnPresentation;
   readonly defaultColumnWidthPercent: number;
   readonly gap: number;
   readonly showTabIndicator: boolean;
@@ -78,6 +80,7 @@ export const DEFAULT_DRIFTILE_SETTINGS: DriftileSettings = Object.freeze({
   centerFocusedColumn: false,
   columnWidthPresets: EMPTY_COLUMN_WIDTH_PRESET_PERCENTAGES,
   columnWidthStepPercent: 10,
+  defaultColumnPresentation: "stacked",
   defaultColumnWidthPercent: 50,
   gap: 16,
   showTabIndicator: true,
@@ -106,6 +109,7 @@ export function decodeDriftileSettings(
     !owns(candidate, "centerFocusedColumn") ||
     !owns(candidate, "columnWidthPresets") ||
     !owns(candidate, "columnWidthStepPercent") ||
+    !owns(candidate, "defaultColumnPresentation") ||
     !owns(candidate, "defaultColumnWidthPercent") ||
     !owns(candidate, "gap") ||
     !owns(candidate, "showTabIndicator") ||
@@ -139,6 +143,7 @@ export function decodeDriftileSettings(
     candidate["columnWidthPresets"],
   );
   const columnWidthStepPercent = candidate["columnWidthStepPercent"];
+  const defaultColumnPresentation = candidate["defaultColumnPresentation"];
   const defaultColumnWidthPercent = candidate["defaultColumnWidthPercent"];
   const gap = candidate["gap"];
   const showTabIndicator = candidate["showTabIndicator"];
@@ -160,6 +165,7 @@ export function decodeDriftileSettings(
       MIN_RESIZE_STEP_PERCENT,
       MAX_RESIZE_STEP_PERCENT,
     ) ||
+    !isColumnPresentation(defaultColumnPresentation) ||
     !isBoundedInteger(
       defaultColumnWidthPercent,
       MIN_DEFAULT_COLUMN_WIDTH_PERCENT,
@@ -188,6 +194,7 @@ export function decodeDriftileSettings(
     centerFocusedColumn,
     columnWidthPresets,
     columnWidthStepPercent,
+    defaultColumnPresentation,
     defaultColumnWidthPercent,
     gap,
     showTabIndicator,
@@ -232,6 +239,7 @@ export function sameDriftileSettings(
       right.columnWidthPresets,
     ) &&
     left.columnWidthStepPercent === right.columnWidthStepPercent &&
+    left.defaultColumnPresentation === right.defaultColumnPresentation &&
     left.defaultColumnWidthPercent === right.defaultColumnWidthPercent &&
     left.gap === right.gap &&
     left.showTabIndicator === right.showTabIndicator &&
@@ -242,6 +250,10 @@ export function sameDriftileSettings(
 
 function owns(value: object, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function isColumnPresentation(value: unknown): value is ColumnPresentation {
+  return value === "stacked" || value === "tabbed";
 }
 
 function isBoundedInteger(

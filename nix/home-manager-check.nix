@@ -64,6 +64,7 @@ let
           80
         ];
         columnWidthStepPercent = 13;
+        defaultColumnPresentation = "tabbed";
         defaultColumnWidthPercent = 65;
         gap = 7;
         showTabIndicator = false;
@@ -183,6 +184,7 @@ assert
       CenterFocusedColumn = true;
       ColumnWidthPresets = "20,50,80";
       ColumnWidthStepPercent = 13;
+      DefaultColumnPresentation = "tabbed";
       DefaultColumnWidthPercent = 65;
       Gap = 7;
       ShowTabIndicator = false;
@@ -193,7 +195,7 @@ assert
 assert
   builtins.length (
     builtins.attrNames standalone.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile"
-  ) == 15;
+  ) == 16;
 assert
   standalone.config.xdg.configFile."driftile/shortcuts.json".text == ''
     {"bindings":{"driftile_focus_column_left":["Meta+A"],"driftile_reset_column_width":[]},"version":1}
@@ -218,6 +220,7 @@ assert
       CenterFocusedColumn = false;
       ColumnWidthPresets = "";
       ColumnWidthStepPercent = 10;
+      DefaultColumnPresentation = "stacked";
       DefaultColumnWidthPercent = 50;
       Gap = 8;
       ShowTabIndicator = true;

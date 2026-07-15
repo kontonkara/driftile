@@ -51,7 +51,7 @@ The ownership rule is strict:
 - Configurable 1–50 percentage-point step for contextual height decrease and
   increase actions: the active stack member when tiled, or the active manually
   floating window when detached.
-- One settings page groups fifteen controls into nine General and six
+- One settings page groups sixteen controls into ten General and six
   Applications controls.
 - Output-local commands unless a transfer is explicit.
 - Work-area, size-constraint, fullscreen, minimized-window compatibility, dialog handling, and settled virtual-output recovery.
@@ -216,8 +216,11 @@ The ownership rule is strict:
 
 ## 1.20 core slice
 
-- The optional overview exposes every live tabbed member as a pointer target
-  while keeping one selected thumbnail and the guarded focus path.
+- The optional overview exposes every non-minimized live tabbed member as a
+  pointer target, keeps a disabled tab for each minimized member, and retains
+  one selected thumbnail plus the guarded focus path.
+- `DefaultColumnPresentation` selects `stacked` or `tabbed` for unmatched fresh
+  columns without rewriting existing or restored state.
 - `ApplicationColumnPresentations` assigns `stacked` or `tabbed` to fresh
   columns by exact `desktopFileName`. Singleton tabbed state is valid and
   persists until explicitly changed; an existing target column still wins a
@@ -230,18 +233,6 @@ The ownership rule is strict:
 
 ## Beyond v1
 
-- Same-context tiled pointer moves use KWin's public outline mechanism to mark
-  the valid target half. Updates are coalesced, write no layout or persistence
-  state, and use a best-effort conflict guard for KWin's shared outline. Target
-  planning is `O(V)` within the visible context; changed targets also guard the
-  stacking order. Cross-context moves remain finish-only without a preview.
-
-- A removable overview companion presents the authoritative layout with guarded
-  current- and cross-desktop focus plus desktop selection while Plasma's
-  built-in Overview remains the compatible fallback.
-- Optional five-finger horizontal touchpad navigation reuses tiled column
-  focus; global wheel input is deferred because KWin 6.7 exposes no public
-  script axis API.
 - Optional visual transitions, layout indicators, and concise diagnostics.
 - Overview pointer rearrangement.
 - Activity-aware layouts.

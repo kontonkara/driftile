@@ -32,6 +32,10 @@
       <min>10</min>
       <max>100</max>
     </entry>
+    <entry name="DefaultColumnPresentation" type="String">
+      <label>Default column presentation</label>
+      <default>stacked</default>
+    </entry>
     <entry name="ColumnWidthStepPercent" type="Int">
       <label>Column width step in percent</label>
       <default>10</default>

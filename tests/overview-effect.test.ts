@@ -114,6 +114,7 @@ describe("overview effect package", () => {
     expect(desktopCard).toContain("KWin.WindowThumbnail");
     expect(desktopCard.match(/KWin\.WindowModel\s*\{/gu)).toHaveLength(1);
     expect(desktopCard.match(/KWin\.WindowFilterModel\s*\{/gu)).toHaveLength(1);
+    expect(desktopCard).toContain("minimizedWindows: true");
     const kwinWrites =
       qmlSources
         .join("\n")
@@ -181,6 +182,7 @@ describe("overview effect package", () => {
     expect(thumbnail).toContain(
       "enabled: thumbnailShell.visible && card.desktop && card.screen",
     );
+    expect(thumbnail).toContain("!windowPresentation.minimizedWindow");
     expect(thumbnail).not.toContain("enabled: card.current");
     expect(thumbnail).toContain(
       "card.windowTapped(model.window, windowPresentation.windowId, card.desktop,",
@@ -192,6 +194,14 @@ describe("overview effect package", () => {
     );
     expect(tab).toContain("enabled: tabShell.visible");
     expect(tab).toContain("!windowPresentation.tiledPresentation.selected");
+    expect(tab).toContain("!windowPresentation.minimizedWindow");
+    expect(tab).toContain("visible: frame !== null && model.window");
+    expect(tab).toContain(
+      "opacity: windowPresentation.minimizedWindow ? 0.6 : 1",
+    );
+    expect(tab).toContain(
+      'color: windowPresentation.minimizedWindow ? "#8a96a8" : "#f3f7ff"',
+    );
     expect(tab).toContain(
       "model.window && model.window.caption ? String(model.window.caption)",
     );

@@ -196,7 +196,7 @@ in KWin. On a fresh shortcut record, the enabled effect offers `Meta+O`;
 upgrades preserve the current KGlobalAccel assignment. See [Overview
 companion](overview.md).
 
-The current Home Manager module exposes the complete fifteen-setting profile:
+The current Home Manager module exposes the complete sixteen-setting profile:
 
 ```nix
 programs.driftile.settings = {
@@ -213,6 +213,7 @@ programs.driftile.settings = {
   borderlessWindows = true;
   centerFocusedColumn = false;
   columnWidthPresets = [ 20 50 80 ];
+  defaultColumnPresentation = "stacked";
   gap = 16;
   showTabIndicator = true;
   defaultColumnWidthPercent = 50;

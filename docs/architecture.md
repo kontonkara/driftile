@@ -65,8 +65,9 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   unchanged, current v2 catalog.
 - Projects snapshot zero into a baseline-free, immutable view model after exact
   live output, desktop, and window validation.
-- Projects every tabbed member as an ordered target and only the selected
-  member as the large thumbnail.
+- Projects every tabbed member as an ordered entry, exposes only non-minimized
+  members as targets, and uses only the selected non-minimized member as the
+  large thumbnail.
 - Uses only public KWin QML types to enrich live thumbnails and screen context.
 - Keeps each rendered thumbnail's direct live window object in its QML delegate;
   the object does not enter projected or persisted state.
@@ -96,7 +97,8 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 
 - Models eligible windows from every existing output and desktop context.
 - Resolves exact application presentation rules through one constant-time
-  lookup whenever a fresh column is formed.
+  lookup whenever a fresh column is formed, then falls back to the configured
+  global presentation.
 - Normalizes QML/KWin objects into stable IDs and plain data.
 - Batches event bursts, marks dirty contexts, and reconciles only visible desktops.
 - Holds initial admission through a one-second signal grace, then plans existing windows as one batch.

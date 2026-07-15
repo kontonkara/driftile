@@ -292,6 +292,7 @@ let
             80
           ];
           columnWidthStepPercent = 13;
+          defaultColumnPresentation = "tabbed";
           defaultColumnWidthPercent = 65;
           gap = 7;
           showTabIndicator = false;
@@ -479,6 +480,7 @@ let
     { centerFocusedColumn = "true"; }
     { showTabIndicator = "true"; }
     { touchpadNavigation = "true"; }
+    { defaultColumnPresentation = "columns"; }
     { gap = -1; }
     { gap = 65; }
     { defaultColumnWidthPercent = 9; }
@@ -611,6 +613,7 @@ let
       CenterFocusedColumn = true;
       ColumnWidthPresets = "20,50,80";
       ColumnWidthStepPercent = 13;
+      DefaultColumnPresentation = "tabbed";
       DefaultColumnWidthPercent = 65;
       Gap = 7;
       ShowTabIndicator = false;
@@ -630,6 +633,7 @@ let
       CenterFocusedColumn = false;
       ColumnWidthPresets = "";
       ColumnWidthStepPercent = 10;
+      DefaultColumnPresentation = "stacked";
       DefaultColumnWidthPercent = 50;
       Gap = 16;
       ShowTabIndicator = true;
@@ -674,11 +678,11 @@ assert homeManagerSettings.config.qt.kde.settings == expectedSettings;
 assert homeManagerDefaultSettings.config.qt.kde.settings == expectedDefaultSettings;
 assert
   builtins.length (builtins.attrNames expectedSettings.kwinrc."Script-io.github.kontonkara.driftile")
-  == 15;
+  == 16;
 assert
   builtins.length (
     builtins.attrNames expectedDefaultSettings.kwinrc."Script-io.github.kontonkara.driftile"
-  ) == 15;
+  ) == 16;
 assert
   builtins.length (
     lib.splitString "\n"
@@ -723,6 +727,7 @@ assert
       CenterFocusedColumn = false;
       ColumnWidthPresets = "";
       ColumnWidthStepPercent = 10;
+      DefaultColumnPresentation = "stacked";
       DefaultColumnWidthPercent = 50;
       Gap = 8;
       ShowTabIndicator = true;

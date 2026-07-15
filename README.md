@@ -22,9 +22,9 @@ leaving window, output, and desktop mechanisms to KWin.
 - Settled recovery for output, scale, work-area, and window-constraint changes.
 - Configurable gaps, application initial floating, tiling and borderless
   exclusions, global and application-specific initial column widths,
-  application-specific initial stacked or tabbed presentation, column-width
-  presets, resize steps, global and application-specific horizontal focus
-  centering, and optional borderless presentation.
+  global and application-specific initial stacked or tabbed presentation,
+  column-width presets, resize steps, global and application-specific
+  horizontal focus centering, and optional borderless presentation.
 - Optional passive Plasma OSD feedback when a multi-window tabbed member is
   activated or its column enters tabbed presentation.
 - Optional five-finger horizontal touchpad navigation on native Wayland.

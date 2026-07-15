@@ -5,12 +5,12 @@ Open **System Settings > Window Management > KWin Scripts** and configure Drifti
 The settings page groups the existing controls into two tabs:
 
 - **General**: window decorations, focus centering, touchpad navigation, window
-  gap, tab feedback, default column width, column width step and presets, and
-  window height step.
+  gap, tab feedback, default column presentation and width, column width step
+  and presets, and window height step.
 - **Applications**: initial column widths and presentation, focus centering,
   initial floating rules, tiling exclusions, and decoration exclusions.
 
-Driftile validates all fifteen settings as one snapshot. Applying an invalid
+Driftile validates all sixteen settings as one snapshot. Applying an invalid
 value through an external configuration tool rejects the entire update and
 preserves the active settings; valid changes apply without reloading the
 extension.
@@ -19,7 +19,7 @@ extension.
 
 `programs.driftile.settings` is `null` by default, so Home Manager writes no
 Driftile setting. A non-null value is one complete typed profile: omitted fields
-take the defaults documented below, and Home Manager writes all fifteen values.
+take the defaults documented below, and Home Manager writes all sixteen values.
 This profile works with `programs.driftile.enable = false` when the package is
 installed system-wide.
 
@@ -28,7 +28,7 @@ The activation writes only `ApplicationBorderlessExclusions`,
 `ApplicationFocusCentering`,
 `ApplicationInitialFloating`, `ApplicationTilingExclusions`,
 `BorderlessWindows`, `CenterFocusedColumn`, `Gap`,
-`DefaultColumnWidthPercent`, `ColumnWidthPresets`,
+`DefaultColumnPresentation`, `DefaultColumnWidthPercent`, `ColumnWidthPresets`,
 `ColumnWidthStepPercent`, `ShowTabIndicator`, `TouchpadNavigation`, and
 `WindowHeightStepPercent` in Driftile's `kwinrc` group. It does not replace
 the file or manage shortcuts. A running KWin session is asked to reconfigure
@@ -66,6 +66,7 @@ programs.driftile.settings.applicationTilingExclusions = [
 
 programs.driftile.settings.centerFocusedColumn = false;
 programs.driftile.settings.columnWidthPresets = [ 20 50 80 ];
+programs.driftile.settings.defaultColumnPresentation = "stacked";
 programs.driftile.settings.showTabIndicator = true;
 programs.driftile.settings.touchpadNavigation = true;
 ```
@@ -137,6 +138,17 @@ default key binding.
 
 Changes apply live to visible tiled contexts. Window order, widths, height policies, focus, manually floating frames, automatically excluded windows, and minimized frames stay unchanged. Hidden desktops use the new value when they become visible.
 
+## Default column presentation
+
+**Default column presentation** selects `stacked` or `tabbed` for every fresh
+column without an exact application rule. The default is `stacked`. A tabbed
+singleton retains that mode, so the next member immediately joins a tabbed
+column.
+
+Changing the value affects waiting admissions and columns created later. It
+does not rewrite existing or restored columns, and a window joining an existing
+column still adopts that target column's presentation.
+
 ## Default column width
 
 **Default column width** sets the proportional width for newly admitted columns, fresh cross-context retiles, and the **Reset column width** action. Structural splits and extractions inherit their source width. The default is `50%`; the range is `10%`–`100%`.
@@ -153,9 +165,9 @@ ignored, duplicate IDs and malformed rules reject the complete settings update,
 and at most 128 rules are accepted. IDs are limited to 255 UTF-8 bytes.
 
 Matching is case-sensitive. Windows without a matching usable ID keep the
-global default. Updating the rules does not resize existing columns; later new
-columns and fresh singleton admissions use the new value, clamped to the live
-window constraints and physical-pixel grid.
+global width default. Updating the rules does not resize existing columns;
+later new columns and fresh singleton admissions use the new value, clamped to
+the live window constraints and physical-pixel grid.
 
 ## Application column presentation
 
@@ -165,6 +177,9 @@ column by exact KWin `desktopFileName`. Enter one
 blank lines are ignored, and malformed, duplicate, or over-limit rules reject
 the complete settings update. At most 128 rules are accepted, and IDs are
 limited to 255 UTF-8 bytes.
+
+An exact application rule overrides **Default column presentation**. Windows
+without a matching usable ID use that global default.
 
 A tabbed singleton keeps that mode even though it looks like a stacked
 singleton. When another window joins, the column is immediately tabbed. A
@@ -263,7 +278,7 @@ The KConfig decoder accepts at most 65,664 characters in the complete document,
 512 characters in each raw line, 128 nonblank unique IDs, and 255 UTF-8 bytes
 in each trimmed ID. It trims surrounding whitespace and ignores blank lines.
 Control characters, invalid UTF-16, an oversized value, or a duplicate after
-trimming rejects the complete fifteen-setting snapshot. Accepted IDs have a
+trimming rejects the complete sixteen-setting snapshot. Accepted IDs have a
 canonical sorted internal form. Home Manager exposes the same policy as
 `programs.driftile.settings.applicationBorderlessExclusions`, a list rendered
 as a sorted newline-delimited KConfig value.
