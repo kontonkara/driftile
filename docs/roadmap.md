@@ -4,8 +4,9 @@ Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.19.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-The `1.19.0-rc.1` candidate froze the exact 1.19.0 scope; stable 1.19.0 adds no
-behavior or data change.
+The `1.19.0-rc.1` candidate froze the exact layout and persistence scope.
+Stable 1.19.0 adds only `Meta+Q` for KWin-owned active-window closing, with no
+layout, configuration, persistence, or overview change.
 
 ## Foundation (delivered)
 
@@ -839,11 +840,10 @@ No other feature belongs to 1.18.0.
 
 ## 1.19.0 (released)
 
-Version `1.19.0` delivers one column presentation mode. `Meta+W` is the only
-new default binding and toggles the active tiled column between stacked and
-tabbed presentation. Every non-minimized tabbed member receives the same frame
-with the existing width and normal outer gaps. The selected member owns focus
-and stacking intent.
+Version `1.19.0` delivers one column presentation mode. `Meta+W` toggles the
+active tiled column between stacked and tabbed presentation. Every
+non-minimized tabbed member receives the same frame with the existing width and
+normal outer gaps. The selected member owns focus and stacking intent.
 
 The existing vertical grammar remains authoritative: focus down or up selects
 the next or previous member without wrapping, and move down or up reorders the
@@ -861,8 +861,10 @@ member's thumbnail.
 The release adds no persistent tab strip or indicator, pointer tab navigation,
 animation, setting, settings UI, private API, or compositor-owned surface.
 
-The 1.19.0-rc.1 candidate froze this exact scope; stable 1.19.0 adds no further
-behavior or data change.
+The 1.19.0-rc.1 candidate froze this layout and persistence scope. Stable
+1.19.0 adds one action and default binding: `Meta+Q` delegates closing the
+active window to KWin. `Meta+C` remains the contextual centering action. The
+addition changes no layout, configuration, persistence, or overview behavior.
 
 Release criteria (met):
 
@@ -871,12 +873,12 @@ Release criteria (met):
   and successor/predecessor fallback.
 - Persistence tests cover v1-to-v3 migration inside the unchanged v2 catalog;
   overview tests require one selected thumbnail per tabbed column.
-- The existing shortcut transaction covers the single `Meta+W` claim and
-  restores Plasma's unchanged Overview assignment on release.
+- The shortcut transaction covers the `Meta+W` and `Meta+Q` claims and restores
+  their unchanged prior assignments on release.
 - Small and large column fixtures enforce constant-time selection and
   column-local structural work. No unrelated application or VM pool is added.
 - Standard quality, package, Nix, backend integration, hidden full and
-  lifecycle VMs, version, and exact-SHA CI pass on the unchanged release
+  lifecycle VMs, version, and exact-SHA CI pass on the final stable release
   commit.
 - The release workflow publishes assets only after all prerequisite jobs and
   release gates pass.

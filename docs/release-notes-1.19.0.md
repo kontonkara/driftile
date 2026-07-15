@@ -42,8 +42,12 @@ verify them with `SHA256SUMS`:
   resolution.
 - Refreshes KWin during source install and upgrade activation so an in-place
   upgrade cannot reuse a cached QML bridge.
+- Adds `Meta+Q` as the default close-active-window binding, delegated to KWin.
+  `Meta+C` remains the contextual centering action.
 
-Stable 1.19.0 adds no behavior or data change after 1.19.0-rc.1.
+Compared with 1.19.0-rc.1, stable 1.19.0 adds only the close-window action and
+its `Meta+Q` default. It changes no layout behavior, configuration,
+persistence, package ID, or overview behavior.
 
 ## Migration
 
@@ -60,7 +64,7 @@ or
   coverage verifies tabbed presentation and the full-width successor fix.
 - Format, type, lint, unit, deterministic build and package, all-system flake,
   backend integration, hidden full and lifecycle VMs, version, and exact-SHA CI
-  cover the unchanged release commit.
+  cover the final stable release commit.
 - The release workflow publishes assets only after all prerequisite jobs and
   release gates pass.
 

@@ -14,7 +14,8 @@ generations, and never combine files from different releases.
 4. Upgrade the main package, optional overview, and helper to their matching
    1.19.0 archives, or pin the Nix input to `v1.19.0` and rebuild.
 5. Enable Driftile and restore the shortcut profile. The release adds
-   `Meta+W` for toggling the active tiled column's presentation.
+   `Meta+W` for toggling the active tiled column's presentation and `Meta+Q`
+   for closing the active window.
 6. If installed, re-enable the matching overview package and review its
    manually assigned shortcut.
 
@@ -31,8 +32,9 @@ successor of an inactive full-width column now starts at the left work-area
 gap.
 
 The release adds no setting or settings field. Package IDs remain unchanged.
-The 1.19.0 shortcut helper adds `Meta+W`; its transactional release restores an
-unchanged prior assignment.
+The 1.19.0 shortcut helper adds `Meta+W` and `Meta+Q`; its transactional release
+restores unchanged prior assignments. `Meta+C` remains the contextual centering
+action.
 
 ## Upgrade from 1.19.0-rc.1
 
@@ -41,9 +43,11 @@ overview, then upgrade the main package, overview, and helper to their matching
 1.19.0 artifacts. For Nix, update the input from `v1.19.0-rc.1` to `v1.19.0`
 and rebuild. Re-enable the installed packages and restore the shortcut profile.
 
-Stable 1.19.0 adds no behavior or data change after RC.1. Configuration, helper
-profiles, package IDs, actions, bindings, logical v3 layouts, and overview
-behavior remain compatible; no reset or conversion is required.
+Stable 1.19.0 adds one action and default binding after RC.1: `Meta+Q` delegates
+closing the active window to KWin. Restore the stable helper profile to claim
+this binding. `Meta+C` remains the contextual centering action. Layout behavior,
+configuration, persistence, package IDs, logical v3 state, and overview
+behavior remain unchanged; no reset or conversion is required.
 
 ## Roll back from 1.19.0 to 1.18.0
 

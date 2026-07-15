@@ -27,6 +27,7 @@ arrow keys are interchangeable unless noted otherwise.
 | Toggle stacked or tabbed column presentation     | `Meta+W`                                             |
 | Toggle native fullscreen                         | `Meta+Shift+F`                                       |
 | Toggle native maximize to work-area edges        | `Meta+M`                                             |
+| Close active window                              | `Meta+Q`                                             |
 | Cycle preset column width forward or back        | `Meta+R` or `Meta+Shift+R`                           |
 | Toggle full-width column                         | `Meta+F`                                             |
 | Expand active column into available width        | `Meta+Ctrl+F`                                        |
@@ -42,11 +43,13 @@ existing stack, one-way tiled/floating layer focus, resetting a column width,
 and reverse window-height preset cycling are registered without default keys.
 Assign them in **System Settings > Keyboard > Shortcuts** if needed.
 
-Version 1.19.0 adds only `Meta+W`. It toggles the active tiled column between
-stacked and tabbed presentation and has no alias. In tabbed presentation,
-`Meta+J/K` selects the next or previous member and `Meta+Ctrl+J/K` reorders the
-selected member, both without wrapping. Height adjustment, reset, and preset
-actions are no-ops until stacked presentation is restored.
+Version 1.19.0 adds `Meta+W` and `Meta+Q`. `Meta+W` toggles the active tiled
+column between stacked and tabbed presentation and has no alias. In tabbed
+presentation, `Meta+J/K` selects the next or previous member and
+`Meta+Ctrl+J/K` reorders the selected member, both without wrapping. Height
+adjustment, reset, and preset actions are no-ops until stacked presentation is
+restored. `Meta+Q` delegates closing the active window to KWin. `Meta+C`
+remains the contextual centering action.
 
 Layer focus is context-local. It restores the last focused non-minimized window
 in the other layer. Minimized slots are skipped, but any other blocker on the

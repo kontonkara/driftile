@@ -185,9 +185,8 @@ The ownership rule is strict:
 
 ## 1.19 core slice
 
-- `Meta+W` is the only new default binding. It toggles the active tiled column
-  between stacked and tabbed presentation without changing membership, order,
-  width, focus, or viewport.
+- `Meta+W` toggles the active tiled column between stacked and tabbed
+  presentation without changing membership, order, width, focus, or viewport.
 - Every non-minimized member of a tabbed column receives the same frame. That
   frame uses the existing column width and the normal configured outer gaps;
   the selected member is focused and raised through public KWin APIs.
@@ -207,6 +206,10 @@ The ownership rule is strict:
   publication. The bounded topology catalog remains v2.
 - The optional overview renders only the selected member's thumbnail for a
   tabbed column. It remains read-only and separately installable.
+- Stable 1.19.0 adds one action and default binding after RC.1: `Meta+Q`
+  delegates closing the active window to KWin. `Meta+C` remains the contextual
+  centering action. This addition changes no layout behavior, configuration,
+  persistence, or overview behavior.
 - The slice adds no persistent tab strip, pointer tab navigation, animation,
   setting, settings UI, private API, or compositor-owned surface. Tests cover
   only the new behavior and include proportional operation-count guards.
