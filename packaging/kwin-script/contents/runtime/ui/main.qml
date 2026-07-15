@@ -161,6 +161,51 @@ QtObject {
         sequence: "Meta+End"
         onActivated: Runtime.DriftileRuntime.focusLastColumn()
     }
+    readonly property ShortcutHandler focusColumn1Shortcut: ShortcutHandler {
+        name: "driftile_focus_column_1"
+        text: "Driftile: Focus column 1"
+        onActivated: Runtime.DriftileRuntime.focusColumn(1)
+    }
+    readonly property ShortcutHandler focusColumn2Shortcut: ShortcutHandler {
+        name: "driftile_focus_column_2"
+        text: "Driftile: Focus column 2"
+        onActivated: Runtime.DriftileRuntime.focusColumn(2)
+    }
+    readonly property ShortcutHandler focusColumn3Shortcut: ShortcutHandler {
+        name: "driftile_focus_column_3"
+        text: "Driftile: Focus column 3"
+        onActivated: Runtime.DriftileRuntime.focusColumn(3)
+    }
+    readonly property ShortcutHandler focusColumn4Shortcut: ShortcutHandler {
+        name: "driftile_focus_column_4"
+        text: "Driftile: Focus column 4"
+        onActivated: Runtime.DriftileRuntime.focusColumn(4)
+    }
+    readonly property ShortcutHandler focusColumn5Shortcut: ShortcutHandler {
+        name: "driftile_focus_column_5"
+        text: "Driftile: Focus column 5"
+        onActivated: Runtime.DriftileRuntime.focusColumn(5)
+    }
+    readonly property ShortcutHandler focusColumn6Shortcut: ShortcutHandler {
+        name: "driftile_focus_column_6"
+        text: "Driftile: Focus column 6"
+        onActivated: Runtime.DriftileRuntime.focusColumn(6)
+    }
+    readonly property ShortcutHandler focusColumn7Shortcut: ShortcutHandler {
+        name: "driftile_focus_column_7"
+        text: "Driftile: Focus column 7"
+        onActivated: Runtime.DriftileRuntime.focusColumn(7)
+    }
+    readonly property ShortcutHandler focusColumn8Shortcut: ShortcutHandler {
+        name: "driftile_focus_column_8"
+        text: "Driftile: Focus column 8"
+        onActivated: Runtime.DriftileRuntime.focusColumn(8)
+    }
+    readonly property ShortcutHandler focusColumn9Shortcut: ShortcutHandler {
+        name: "driftile_focus_column_9"
+        text: "Driftile: Focus column 9"
+        onActivated: Runtime.DriftileRuntime.focusColumn(9)
+    }
     readonly property ShortcutHandler focusUpShortcut: ShortcutHandler {
         name: "driftile_focus_window_up"
         text: "Driftile: Focus up"

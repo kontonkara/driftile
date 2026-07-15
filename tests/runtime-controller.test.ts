@@ -11061,6 +11061,293 @@ describe("RuntimeController", () => {
     expect(fixture.activationCount).toBe(2);
   });
 
+  it("focuses one-based visible columns and clamps past the last column", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const windows = Array.from({ length: 5 }, (_value, index) =>
+      createTrackedWindow(`indexed-${String(index + 1)}`, output, desktop),
+    );
+    const [first, hidden, stackedHidden, stackedVisible, last] = windows;
+
+    if (!first || !hidden || !stackedHidden || !stackedVisible || !last) {
+      throw new Error("missing indexed column focus fixture");
+    }
+
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map(({ window }) => window),
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+      schedule: scheduler.schedule,
+      scheduleResume: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    const layout = installTestLayout(
+      controller,
+      output,
+      desktop,
+      "column:last",
+      [
+        {
+          id: "column:first",
+          width: { kind: "fixed", value: 300 },
+          windowIds: ["indexed-1"],
+        },
+        {
+          id: "column:hidden",
+          width: { kind: "fixed", value: 300 },
+          windowIds: ["indexed-2"],
+        },
+        {
+          id: "column:stacked",
+          width: { kind: "fixed", value: 300 },
+          windowIds: ["indexed-3", "indexed-4"],
+        },
+        {
+          id: "column:last",
+          width: { kind: "fixed", value: 300 },
+          windowIds: ["indexed-5"],
+        },
+      ],
+    );
+
+    for (const minimized of [hidden, stackedHidden]) {
+      setWindowState("minimized", minimized, true);
+    }
+
+    flushManualScheduler(scheduler);
+    layout.activateWindow(windowId("indexed-5"));
+    fixture.workspace.activeWindow = last.window;
+
+    for (const index of [
+      0,
+      10,
+      -1,
+      1.5,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+    ]) {
+      expect(controller.focusColumn(index)).toBe(false);
+    }
+
+    expect(controller.focusColumn(1)).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(first.window);
+    expect(controller.focusColumn(2)).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(stackedVisible.window);
+    expect(controller.focusColumn(9)).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(last.window);
+    expect(controller.focusColumn(3)).toBe(false);
+    expect(fixture.workspace.activeWindow).toBe(last.window);
+
+    const before = layout.snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
+    );
+    blockWindowFocus(controller, first, "restore settling");
+    const activationCount = fixture.activationCount;
+
+    expect(controller.focusColumn(1)).toBe(false);
+    expect(fixture.workspace.activeWindow).toBe(last.window);
+    expect(fixture.activationCount).toBe(activationCount);
+    expect(
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
+    ).toEqual(before);
+  });
+
+  it("focuses the selected member of an indexed tabbed column", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const windows = Array.from({ length: 4 }, (_value, index) =>
+      createTrackedWindow(`tab-${String(index + 1)}`, output, desktop),
+    );
+    const [sourceFirst, sourceSelected, tabFirst, tabSelected] = windows;
+
+    if (!sourceFirst || !sourceSelected || !tabFirst || !tabSelected) {
+      throw new Error("missing indexed tabbed focus fixture");
+    }
+
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map(({ window }) => window),
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    expect(controller.start()).toBe(true);
+    const layout = installTestLayout(
+      controller,
+      output,
+      desktop,
+      "column:source",
+      [
+        {
+          id: "column:source",
+          presentation: "tabbed",
+          selectedWindowId: "tab-2",
+          width: { kind: "fixed", value: 300 },
+          windowIds: ["tab-1", "tab-2"],
+        },
+        {
+          id: "column:tabs",
+          presentation: "tabbed",
+          selectedWindowId: "tab-4",
+          width: { kind: "fixed", value: 300 },
+          windowIds: ["tab-3", "tab-4"],
+        },
+      ],
+    );
+    fixture.workspace.activeWindow = sourceSelected.window;
+
+    expect(controller.focusColumn(2)).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(tabSelected.window);
+    expect(
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ).columns[1]?.selectedWindowId,
+    ).toBe(windowId("tab-4"));
+
+    expect(controller.focusColumn(1)).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(sourceSelected.window);
+    const before = layout.snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
+    );
+    fixture.setActivationBehavior(() => undefined);
+
+    expect(controller.focusColumn(2)).toBe(false);
+    fixture.setActivationBehavior(null);
+    expect(fixture.workspace.activeWindow).toBe(sourceSelected.window);
+    expect(
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
+    ).toEqual(before);
+  });
+
+  it("atomically focuses and centers an indexed column from floating", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const windows = Array.from({ length: 4 }, (_value, index) =>
+      createTrackedWindow(`layer-${String(index + 1)}`, output, desktop),
+    );
+    const [first, second, target, floating] = windows;
+
+    if (!first || !second || !target || !floating) {
+      throw new Error("missing indexed layer focus fixture");
+    }
+
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map(({ window }) => window),
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      centerFocusedColumn: true,
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(controller.toggleFloating()).toBe(true);
+    const layout = installTestLayout(
+      controller,
+      output,
+      desktop,
+      "column:first",
+      [
+        {
+          id: "column:first",
+          width: { kind: "fixed", value: 400 },
+          windowIds: ["layer-1"],
+        },
+        {
+          id: "column:second",
+          width: { kind: "fixed", value: 400 },
+          windowIds: ["layer-2"],
+        },
+        {
+          id: "column:target",
+          width: { kind: "fixed", value: 400 },
+          windowIds: ["layer-3"],
+        },
+      ],
+    );
+    fixture.workspace.activeWindow = first.window;
+    fixture.workspace.activeWindow = floating.window;
+    const activations: string[] = [];
+    fixture.windowActivated.connect((window) => {
+      if (window) {
+        activations.push(String(window.internalId));
+      }
+    });
+    const before = layout.snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
+    );
+    const key = `${output.name}\u0000${desktop.id}\u0000${FALLBACK_ACTIVITY_ID}`;
+    const state = controller as unknown as {
+      readonly lastFloatingFocus: ReadonlyMap<string, WindowId>;
+      readonly lastTiledFocus: ReadonlyMap<string, WindowId>;
+    };
+    const rememberedFloating = state.lastFloatingFocus.get(key);
+    const rememberedTiled = state.lastTiledFocus.get(key);
+    fixture.setActivationBehavior(() => undefined);
+
+    expect(controller.focusColumn(3)).toBe(false);
+    fixture.setActivationBehavior(null);
+    expect(fixture.workspace.activeWindow).toBe(floating.window);
+    expect(activations).toEqual([]);
+    expect(
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
+    ).toEqual(before);
+    expect(state.lastFloatingFocus.get(key)).toBe(rememberedFloating);
+    expect(state.lastTiledFocus.get(key)).toBe(rememberedTiled);
+
+    expect(controller.focusColumn(3)).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(target.window);
+    expect(activations).toEqual(["layer-3"]);
+    expect(
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ).activeColumnId,
+    ).toBe(columnId("column:target"));
+    expect(
+      target.window.frameGeometry.x + target.window.frameGeometry.width / 2,
+    ).toBe(500);
+  });
+
   it("wraps column focus only after reaching a visible boundary", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };

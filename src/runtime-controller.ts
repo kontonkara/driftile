@@ -2027,6 +2027,87 @@ export class RuntimeController {
     return this.focusHorizontal("last");
   }
 
+  focusColumn(index: number): boolean {
+    if (!Number.isInteger(index) || index < 1 || index > 9) {
+      return false;
+    }
+
+    const active = this.workspace.activeWindow;
+
+    if (
+      !this.started ||
+      this.stackEditOperation ||
+      this.windowTransferOperation ||
+      this.startupStabilizationToken !== null ||
+      this.hasTopologyBarrier() ||
+      !active
+    ) {
+      return false;
+    }
+
+    const activeId = windowId(String(active.internalId));
+    const context = this.resolveLayerFocusContext(active);
+
+    if (!context) {
+      return false;
+    }
+
+    const key = contextKey(context);
+    const activeLayer = this.focusAvailableWindowLayer(activeId, active, key);
+
+    if (!activeLayer) {
+      return false;
+    }
+
+    if (activeLayer === "tiling") {
+      const command = this.prepareActiveColumnCommand();
+
+      if (!command) {
+        return false;
+      }
+
+      const targetId = this.indexedVisibleColumnTarget(command.before, index);
+      return targetId ? this.focusTiledColumnTarget(command, targetId) : false;
+    }
+
+    const snapshot = this.layout.snapshot(
+      context.outputId,
+      context.desktopId,
+      context.activityId,
+    );
+    const targetId = this.indexedVisibleColumnTarget(snapshot, index);
+    const target = targetId ? this.observer.source(targetId) : undefined;
+
+    if (
+      !targetId ||
+      !target ||
+      this.focusAvailableWindowLayer(targetId, target, key) !== "tiling"
+    ) {
+      return false;
+    }
+
+    const rememberedTiledFocus = this.lastTiledFocus.get(key);
+    this.lastFloatingFocus.set(key, activeId);
+    this.lastWrites = 0;
+
+    if (
+      !this.focusTiledLayerTarget(
+        targetId,
+        target,
+        context,
+        key,
+        active,
+        rememberedTiledFocus,
+        true,
+      )
+    ) {
+      return false;
+    }
+
+    this.rememberLayerFocus(targetId, target);
+    return true;
+  }
+
   focusUp(): boolean {
     return this.focusWithinActiveColumn("up");
   }
@@ -6326,6 +6407,7 @@ export class RuntimeController {
     key: string,
     originalActive: KWinWindow,
     rememberedTiledFocus: WindowId | undefined,
+    applyFocusCentering = false,
   ): boolean {
     const rememberedFloatingFocus = this.lastFloatingFocus.get(key);
     const snapshot = this.layout.snapshot(
@@ -6385,7 +6467,10 @@ export class RuntimeController {
     const focused = this.applyActiveColumnMutation(
       command,
       "layer column focus",
-      () => this.layout.activateWindow(targetId),
+      () =>
+        applyFocusCentering
+          ? this.activateColumnFocus(command, targetId, target)
+          : this.layout.activateWindow(targetId),
       () => this.layout.activateWindow(command.activeId),
       () => {
         if (
@@ -6466,7 +6551,7 @@ export class RuntimeController {
     const targetColumn = before.columns.find((column) =>
       column.windowIds.includes(targetId),
     );
-    const rollbackId = activeColumn?.windowIds[0];
+    const rollbackId = activeColumn?.selectedWindowId;
     const contextGeometry = sampledGeometries.get(key);
 
     if (
@@ -7322,6 +7407,13 @@ export class RuntimeController {
       return false;
     }
 
+    return this.focusTiledColumnTarget(command, targetId);
+  }
+
+  private focusTiledColumnTarget(
+    command: ActiveColumnCommand,
+    targetId: WindowId,
+  ): boolean {
     const targetOwner = this.managedWindows.get(targetId);
     const target = this.observer.source(targetId);
     const originalActive = this.observer.source(command.activeId);
@@ -7339,42 +7431,10 @@ export class RuntimeController {
 
     const rememberedFloatingFocus = this.lastFloatingFocus.get(key);
     const rememberedTiledFocus = this.lastTiledFocus.get(key);
-    const centerTarget =
-      this.centerFocusedColumn || this.applicationCentersOnFocus(target);
-    const centered =
-      centerTarget && !this.hasCapacityMutationInFlight(command.context.key)
-        ? this.centeredColumnView(command, targetId)
-        : null;
-    const desiredViewportOffset = centered?.desiredViewportOffset ?? null;
     const focused = this.applyActiveColumnMutation(
       command,
       "column focus",
-      () => {
-        if (!this.layout.activateWindow(targetId)) {
-          return false;
-        }
-
-        if (
-          desiredViewportOffset === null ||
-          nearlyEqual(desiredViewportOffset, command.before.viewportOffset)
-        ) {
-          return true;
-        }
-
-        if (
-          this.layout.setViewportOffset(
-            command.context.outputId,
-            command.context.desktopId,
-            command.context.activityId,
-            desiredViewportOffset,
-          )
-        ) {
-          return true;
-        }
-
-        this.layout.activateWindow(command.activeId);
-        return false;
-      },
+      () => this.activateColumnFocus(command, targetId, target),
       () => this.layout.activateWindow(command.activeId),
       () =>
         this.workspace.activeWindow === originalActive &&
@@ -7395,6 +7455,45 @@ export class RuntimeController {
 
     this.rememberLayerFocus(targetId, target);
     return true;
+  }
+
+  private activateColumnFocus(
+    command: ActiveColumnCommand,
+    targetId: WindowId,
+    target: KWinWindow,
+  ): boolean {
+    if (!this.layout.activateWindow(targetId)) {
+      return false;
+    }
+
+    const centerTarget =
+      this.centerFocusedColumn || this.applicationCentersOnFocus(target);
+    const centered =
+      centerTarget && !this.hasCapacityMutationInFlight(command.context.key)
+        ? this.centeredColumnView(command, targetId)
+        : null;
+    const desiredViewportOffset = centered?.desiredViewportOffset ?? null;
+
+    if (
+      desiredViewportOffset === null ||
+      nearlyEqual(desiredViewportOffset, command.before.viewportOffset)
+    ) {
+      return true;
+    }
+
+    if (
+      this.layout.setViewportOffset(
+        command.context.outputId,
+        command.context.desktopId,
+        command.context.activityId,
+        desiredViewportOffset,
+      )
+    ) {
+      return true;
+    }
+
+    this.layout.activateWindow(command.activeId);
+    return false;
   }
 
   private centeredColumnView(
@@ -7916,12 +8015,39 @@ export class RuntimeController {
     }
 
     for (const id of column.windowIds) {
-      if (!this.observer.source(id)?.minimized) {
+      const source = this.observer.source(id);
+
+      if (source && !source.minimized) {
         return id;
       }
     }
 
     return null;
+  }
+
+  private indexedVisibleColumnTarget(
+    snapshot: LayoutContextSnapshot,
+    index: number,
+  ): WindowId | null {
+    let lastVisibleId: WindowId | null = null;
+    let visibleIndex = 0;
+
+    for (const column of snapshot.columns) {
+      const candidateId = this.firstNonMinimizedColumnMember(column);
+
+      if (!candidateId) {
+        continue;
+      }
+
+      lastVisibleId = candidateId;
+      visibleIndex += 1;
+
+      if (visibleIndex === index) {
+        return candidateId;
+      }
+    }
+
+    return lastVisibleId;
   }
 
   private resizeActiveManualFloatingWindowSize(

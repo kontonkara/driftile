@@ -52,6 +52,42 @@ const shortcutActionCatalog = [
     defaultSequence: "Meta+End",
   },
   {
+    name: "driftile_focus_column_1",
+    text: "Driftile: Focus column 1",
+  },
+  {
+    name: "driftile_focus_column_2",
+    text: "Driftile: Focus column 2",
+  },
+  {
+    name: "driftile_focus_column_3",
+    text: "Driftile: Focus column 3",
+  },
+  {
+    name: "driftile_focus_column_4",
+    text: "Driftile: Focus column 4",
+  },
+  {
+    name: "driftile_focus_column_5",
+    text: "Driftile: Focus column 5",
+  },
+  {
+    name: "driftile_focus_column_6",
+    text: "Driftile: Focus column 6",
+  },
+  {
+    name: "driftile_focus_column_7",
+    text: "Driftile: Focus column 7",
+  },
+  {
+    name: "driftile_focus_column_8",
+    text: "Driftile: Focus column 8",
+  },
+  {
+    name: "driftile_focus_column_9",
+    text: "Driftile: Focus column 9",
+  },
+  {
     name: "driftile_focus_window_up",
     text: "Driftile: Focus up",
     defaultSequence: "Meta+K",

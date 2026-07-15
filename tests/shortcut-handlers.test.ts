@@ -104,6 +104,33 @@ const expectedHandlers: Readonly<
     activated: "Runtime.DriftileRuntime.focusLastColumn()",
     sequence: "Meta+End",
   },
+  driftile_focus_column_1: {
+    activated: "Runtime.DriftileRuntime.focusColumn(1)",
+  },
+  driftile_focus_column_2: {
+    activated: "Runtime.DriftileRuntime.focusColumn(2)",
+  },
+  driftile_focus_column_3: {
+    activated: "Runtime.DriftileRuntime.focusColumn(3)",
+  },
+  driftile_focus_column_4: {
+    activated: "Runtime.DriftileRuntime.focusColumn(4)",
+  },
+  driftile_focus_column_5: {
+    activated: "Runtime.DriftileRuntime.focusColumn(5)",
+  },
+  driftile_focus_column_6: {
+    activated: "Runtime.DriftileRuntime.focusColumn(6)",
+  },
+  driftile_focus_column_7: {
+    activated: "Runtime.DriftileRuntime.focusColumn(7)",
+  },
+  driftile_focus_column_8: {
+    activated: "Runtime.DriftileRuntime.focusColumn(8)",
+  },
+  driftile_focus_column_9: {
+    activated: "Runtime.DriftileRuntime.focusColumn(9)",
+  },
   driftile_focus_column_right: {
     activated: "Runtime.DriftileRuntime.focusRight()",
     sequence: "Meta+L",
@@ -615,7 +642,7 @@ describe("KWin shortcut handlers", () => {
   });
 
   it("keeps the canonical action catalog synchronized with QML", () => {
-    expect(shortcutActions).toHaveLength(147);
+    expect(shortcutActions).toHaveLength(156);
     expect(shortcutActions).toEqual(
       handlers.map(({ name, sequence, text }) => ({
         name,
@@ -628,7 +655,7 @@ describe("KWin shortcut handlers", () => {
     ).toHaveLength(88);
     expect(
       shortcutActions.filter((action) => action.defaultSequence === undefined),
-    ).toHaveLength(59);
+    ).toHaveLength(68);
   });
 
   it("uses unique lowercase action identifiers and key sequences", () => {
@@ -684,6 +711,15 @@ describe("KWin shortcut handlers", () => {
         .map((handler) => handler.name)
         .sort(),
     ).toEqual([
+      "driftile_focus_column_1",
+      "driftile_focus_column_2",
+      "driftile_focus_column_3",
+      "driftile_focus_column_4",
+      "driftile_focus_column_5",
+      "driftile_focus_column_6",
+      "driftile_focus_column_7",
+      "driftile_focus_column_8",
+      "driftile_focus_column_9",
       "driftile_focus_column_left_or_last",
       "driftile_focus_column_or_output_left",
       "driftile_focus_column_or_output_right",
