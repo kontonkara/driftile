@@ -206,25 +206,17 @@ export function solveStripGeometry(input: StripGeometryInput): StripGeometry {
           : 0;
     const shiftedLeft = horizontalSpan.start + fullWidthNeighborShift;
     const shiftedRight = shiftedLeft + horizontalSpan.length;
-    let inactiveFullWidthShift = 0;
-
-    if (
+    const inactiveFullWidthPredecessorShift =
       activeColumnIndex >= 0 &&
-      column.id !== input.context.activeColumnId &&
-      column.width.kind === "proportion" &&
-      column.width.value === 1
-    ) {
-      if (columnIndex < activeColumnIndex) {
-        inactiveFullWidthShift = Math.min(0, leftNeighborLimit - shiftedRight);
-      } else if (columnIndex > activeColumnIndex) {
-        inactiveFullWidthShift = Math.max(0, rightNeighborLimit - shiftedLeft);
-      }
-    }
+      columnIndex < activeColumnIndex &&
+      isSemanticFullWidth(column)
+        ? Math.min(0, leftNeighborLimit - shiftedRight)
+        : 0;
 
     appendColumnWindows(
       windows,
       column,
-      shiftedLeft + inactiveFullWidthShift,
+      shiftedLeft + inactiveFullWidthPredecessorShift,
       horizontalSpan.length,
       input,
     );

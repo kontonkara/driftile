@@ -164,6 +164,31 @@ describe("solveStripGeometry", () => {
     expect(next?.frame.x).toBe(2036);
   });
 
+  it("keeps a full-width successor visible beside an active normal column", () => {
+    const context = createContext([
+      { kind: "proportion", value: 0.5 },
+      { kind: "proportion", value: 0.5 },
+      { kind: "proportion", value: 1 },
+    ]);
+    const result = solveStripGeometry({
+      context: {
+        ...context,
+        activeColumnId: columnId("column-2"),
+        viewportOffset: 952,
+      },
+      devicePixelRatio: 1,
+      gap: 16,
+      pixelGridOrigin: { x: 100, y: 50 },
+      workArea: { height: 1080, width: 1920, x: 100, y: 50 },
+    });
+    const [, active, successor] = result.windows;
+
+    expect(result.viewportOffset).toBe(952);
+    expect(active?.frame).toMatchObject({ width: 936, x: 116 });
+    expect(successor?.frame).toMatchObject({ width: 1888, x: 1068 });
+    expect(successor?.frame.x).toBeLessThan(2020);
+  });
+
   it("keeps outer gaps when a new column follows a full-width column", () => {
     const context = createContext([
       { kind: "proportion", value: 1 },
