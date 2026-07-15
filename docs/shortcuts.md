@@ -181,9 +181,10 @@ optional helper performs one explicit transaction; it does not watch a profile
 file or override later System Settings changes.
 
 Plasma already owns some default sequences. Plasma normally assigns `Meta+W`
-to its Overview. Claiming the 1.19.0 default profile temporarily transfers that
-chord to Driftile; releasing the profile restores the unchanged Overview
-assignment. A release provides the optional versioned helper documented in
+to its Overview and may assign `Meta+Q` to the Activity Switcher. Claiming the
+1.19.0 default profile temporarily transfers those chords to Driftile;
+releasing the profile restores the unchanged Plasma assignments. A release
+provides the optional versioned helper documented in
 [Installation](installation.md). From a source checkout, enable Driftile and
 claim the complete default profile explicitly:
 
