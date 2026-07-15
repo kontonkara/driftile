@@ -1,7 +1,33 @@
 # Migration
 
-The latest stable release is 1.29.0. Use the steps below when changing release
+The latest stable release is 1.30.0. Use the steps below when changing release
 generations, and never combine files from different releases.
+
+## Upgrade from 1.29.0 to 1.30.0
+
+1. If the 1.29.0 helper owns the shortcut profile, run its `release` command
+   before replacing it. Stop on a preserved manual-edit conflict; do not use
+   `--force`.
+2. Disable Driftile and the optional overview in System Settings.
+3. Install the matching 1.30.0 main package, optional overview, and helper, or
+   pin the Nix input to `v1.30.0` and rebuild.
+4. Re-enable Driftile and the optional overview.
+5. If using the helper, claim the unchanged profile with the 1.30.0 helper and
+   run `check` with the same optional custom profile.
+
+This release adds no setting, action, helper profile, persistence, schema,
+overview, or API change. Existing configuration, shortcuts, and layout state
+remain compatible; no layout conversion or KConfig edit is required. Matching
+1.30.0 artifacts are still required.
+
+## Roll back from 1.30.0 to 1.29.0
+
+Release a helper-owned profile with the 1.30.0 helper, disable Driftile and the
+optional overview, then restore their matching verified 1.29.0 artifacts. For
+NixOS or Home Manager, restore the input to `v1.29.0` and rebuild each owning
+generation. Re-enable the installed packages and reclaim the unchanged helper
+profile if used. Existing configuration, shortcuts, and layout state need no
+conversion.
 
 ## Upgrade from 1.28.0 to 1.29.0
 

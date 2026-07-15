@@ -296,13 +296,21 @@ destination width, automatic moved height, partial-frame compensation, no
 output or desktop mechanism writes, and ordinary singleton admission for
 empty, stale, ambiguous, or raced targets.
 
-The 1.30.0 development slice adds focused unit coverage for empty horizontal
+The 1.30.0 release adds focused unit coverage for empty horizontal
 gutters before, between, and after visible columns; clipped previews; malformed
 or incomplete geometry; and ineffective adjacent singleton targets. Core cases
 cover distant whole-column preservation, stack-member extraction before or
 after its own or another column, passive order, height and selection retention,
 automatic moved height, collision rejection, and exact rollback. Existing
 exact-window and cross-context cases remain unchanged.
+
+Exact feature SHA `3985dd9562493b4808c3086159a6b191a6506ee1` passes the grouped
+local check across 36 files and 1,558 tests, the reproducible package check,
+all-system Nix evaluation, and the native Nix build. CI run `29424914946`
+passes quality, native X11, and Wayland. One hidden full Wayland VM at the same
+SHA passes the existing mixed Konsole, Firefox, KCalc, and XWayland pool plus
+the physical pointer and shortcut baseline. It did not physically exercise the
+new gutter target, and no visible VM was run.
 
 Cross-desktop unit cases cover the 2x2 matrix of output-local or global desktop
 resolution and membership-before-finish or finish-before-membership event

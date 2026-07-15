@@ -1,13 +1,13 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.29.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.30.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.29.0 makes the window-height preset cycle configurable for tiled
-windows and one eligible manually floating window, updates fresh default
-bindings, and preserves existing shortcut assignments. Window-height reset
-remains tiled-only.
+Stable 1.30.0 adds same-context empty horizontal gutter targets to tiled-window
+dragging. Exact-window targets keep precedence and their existing stack
+behavior. Gutter targets keep the window in a separate column and never cross
+outputs or desktops.
 
 ## Foundation (delivered)
 
@@ -1222,9 +1222,9 @@ Release criteria (met):
 
 No other feature belongs to 1.29.0.
 
-## 1.30.0 (in development)
+## 1.30.0 (released)
 
-The current slice adds same-context column-boundary targets to tiled pointer
+Stable 1.30.0 adds same-context column-boundary targets to tiled pointer
 dragging. Releasing in an empty horizontal gutter before, between, or after
 visible columns keeps the dragged window separate. A singleton moves as one
 complete column with its width, presentation, selected member, height state,
@@ -1240,16 +1240,27 @@ move. The slice stays on public interactive-move, cursor, frame, and outline
 APIs and adds no input grab, private API, action, binding, setting, or
 persistence field.
 
-Development criteria:
+Release criteria (met):
 
 - Pure planning covers before, between, and after gutters, preview clipping,
   strict geometry validation, and ineffective singleton boundaries.
 - Atomic layout coverage preserves whole-column metadata and passive stack
   state, rejects missing or colliding targets, and rolls back exactly.
-- Runtime wiring must revalidate the captured same-context intent before one
+- Runtime wiring revalidates the captured same-context intent before one
   commit while leaving exact-window and cross-context behavior unchanged.
-- Grouped format, type, lint, unit, package, Nix, CI, and hidden-VM gates must
-  pass before release.
+- Exact feature SHA `3985dd9562493b4808c3086159a6b191a6506ee1` passes the grouped
+  local check across 36 files and 1,558 tests, the reproducible package check,
+  all-system Nix evaluation, and the native Nix build.
+- The same SHA passes CI run `29424914946`, including quality, native X11, and
+  Wayland jobs.
+- One hidden full Wayland VM checkpoint at the exact SHA passes the existing
+  mixed Konsole, Firefox, KCalc, and XWayland pool plus the physical pointer and
+  shortcut baseline. It did not physically exercise the new gutter target; no
+  visible VM was run.
+- The release adds no setting, action, helper profile, persistence, schema,
+  overview, KWin API, or private API change.
+
+No other feature belongs to 1.30.0.
 
 ## Post-v1
 

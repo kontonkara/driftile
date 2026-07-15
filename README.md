@@ -47,23 +47,15 @@ leaving window, output, and desktop mechanisms to KWin.
 
 ## Status
 
-The latest stable release is [1.29.0](docs/release-notes-1.29.0.md).
+The latest stable release is [1.30.0](docs/release-notes-1.30.0.md).
 The feature list tracks the current `main` branch; release state is recorded in
 the [roadmap](docs/roadmap.md).
-Version 1.29.0 adds configurable window-height preset cycling for tiled windows
-and one eligible manually floating window. A blank cycle keeps the exact `1/3`,
-`1/2`, and `2/3` proportions; custom cycles accept 1–16 strictly increasing
-integer percentages from 10 through 100. Fresh shortcut records use `Meta+R`
-for forward width cycling and `Meta+Shift+R` for forward height cycling; both
-reverse actions are unbound, while existing action IDs and KGlobalAccel
-assignments remain unchanged. Window-height reset stays tiled-only.
-
-Version 1.30.0 is in development. Releasing a tiled-window drag into an empty
-horizontal gutter before, between, or after visible columns keeps the window in
-a separate same-context column. A singleton moves as one complete column; a
-stack member is extracted into a new column. Drops over an exact window retain
-the existing stack insertion or reorder behavior. Empty-gutter drops across
-outputs or desktops are not supported.
+Version 1.30.0 adds same-context empty horizontal gutter targets to tiled-window
+dragging. A singleton moves as one complete column; a stack member is extracted
+with the source width, automatic height, and its current application or global
+initial presentation. Exact-window drops retain precedence and their existing
+stack behavior. The viewport follows active-column reveal rules, and gutter
+drops never cross outputs or desktops.
 
 Driftile requires KDE Plasma with KWin 6.7 or newer. It targets native Wayland
 and XWayland windows, plus single-output native X11 sessions.
@@ -137,6 +129,7 @@ package. See [Testing](docs/testing.md) for unit, integration, and VM checks.
 - [Testing](docs/testing.md)
 - [Performance](docs/performance.md)
 - [Roadmap](docs/roadmap.md)
+- [1.30.0 release notes](docs/release-notes-1.30.0.md)
 - [1.29.0 release notes](docs/release-notes-1.29.0.md)
 - [1.28.0 release notes](docs/release-notes-1.28.0.md)
 - [1.27.0 release notes](docs/release-notes-1.27.0.md)
