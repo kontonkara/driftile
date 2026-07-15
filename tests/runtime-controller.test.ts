@@ -11255,6 +11255,184 @@ describe("RuntimeController", () => {
     expect(fixture.workspace.activeWindow).toBe(windows[4]?.window);
   });
 
+  it("focuses one-based visible positions in a stacked column and clamps", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const windows = Array.from({ length: 5 }, (_value, index) =>
+      createTrackedWindow(`direct-${String(index + 1)}`, output, desktop),
+    );
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map(({ window }) => window),
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+      scheduleResume: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    const layout = installTestLayout(
+      controller,
+      output,
+      desktop,
+      "column:direct",
+      [
+        {
+          id: "column:direct",
+          width: { kind: "fixed", value: 300 },
+          windowIds: windows.map(({ window }) => String(window.internalId)),
+        },
+      ],
+    );
+    const first = windows[0];
+    const minimized = windows[1];
+    const third = windows[2];
+    const fifth = windows[4];
+
+    if (!first || !minimized || !third || !fifth) {
+      throw new Error("missing direct stacked focus fixture");
+    }
+
+    setWindowState("minimized", minimized, true);
+    flushManualScheduler(scheduler);
+    layout.activateWindow(windowId("direct-1"));
+    fixture.workspace.activeWindow = first.window;
+
+    expect(controller.focusWindowInColumn(2)).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(third.window);
+    expect(controller.focusWindowInColumn(9)).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(fifth.window);
+    expect(controller.focusWindowInColumn(4)).toBe(false);
+    expect(fixture.workspace.activeWindow).toBe(fifth.window);
+  });
+
+  it("selects tabbed positions and rolls selection back after rejection", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("direct-first", output, desktop);
+    const second = createTrackedWindow("direct-second", output, desktop);
+    const third = createTrackedWindow("direct-third", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window, third.window, second.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    expect(controller.start()).toBe(true);
+    const layout = installTestLayout(
+      controller,
+      output,
+      desktop,
+      "column:direct-tabs",
+      [
+        {
+          id: "column:direct-tabs",
+          presentation: "tabbed",
+          selectedWindowId: "direct-first",
+          width: { kind: "fixed", value: 300 },
+          windowIds: ["direct-first", "direct-second", "direct-third"],
+        },
+      ],
+    );
+    fixture.workspace.activeWindow = first.window;
+
+    expect(controller.focusWindowInColumn(2)).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(second.window);
+    fixture.setActivationBehavior(() => undefined);
+
+    expect(controller.focusWindowInColumn(3)).toBe(false);
+    expect(fixture.workspace.activeWindow).toBe(second.window);
+    expect(
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ).columns[0]?.selectedWindowId,
+    ).toBe(windowId("direct-second"));
+  });
+
+  it("rejects invalid positions and direct focus from a floating window", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const tiled = createTrackedWindow("direct-tiled", output, desktop);
+    const floating = createTrackedWindow("direct-floating", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [tiled.window, floating.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    expect(controller.start()).toBe(true);
+
+    for (const index of [
+      0,
+      10,
+      -1,
+      1.5,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+    ]) {
+      expect(controller.focusWindowInColumn(index)).toBe(false);
+    }
+
+    expect(controller.toggleFloating()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(floating.window);
+    expect(controller.focusWindowInColumn(1)).toBe(false);
+    expect(fixture.workspace.activeWindow).toBe(floating.window);
+  });
+
+  it("fails closed when a direct position resolves to a blocked target", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const active = createTrackedWindow("direct-active", output, desktop);
+    const blocked = createTrackedWindow("direct-blocked", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [blocked.window, active.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    expect(controller.start()).toBe(true);
+    installTestLayout(controller, output, desktop, "column:direct", [
+      {
+        id: "column:direct",
+        width: { kind: "fixed", value: 300 },
+        windowIds: ["direct-active", "direct-blocked"],
+      },
+    ]);
+    fixture.workspace.activeWindow = active.window;
+    blockWindowFocus(controller, blocked, "restore settling");
+    const activationCount = fixture.activationCount;
+
+    expect(controller.focusWindowInColumn(2)).toBe(false);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+    expect(fixture.activationCount).toBe(activationCount);
+  });
+
   it("rolls back tab selection when wrapped focus is rejected", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };

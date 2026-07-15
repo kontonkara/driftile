@@ -2035,6 +2035,55 @@ export class RuntimeController {
     return this.focusWithinActiveColumn("down");
   }
 
+  focusWindowInColumn(index: number): boolean {
+    if (!Number.isInteger(index) || index < 1 || index > 9) {
+      return false;
+    }
+
+    const activeWindow = this.workspace.activeWindow;
+
+    if (
+      !activeWindow ||
+      this.floatingWindows.has(windowId(String(activeWindow.internalId)))
+    ) {
+      return false;
+    }
+
+    const command = this.prepareActiveColumnCommand();
+
+    if (!command) {
+      return false;
+    }
+
+    const selectedId =
+      command.activeColumn.presentation === "tabbed"
+        ? command.activeColumn.selectedWindowId
+        : command.activeId;
+    let lastVisibleId: WindowId | null = null;
+    let targetId: WindowId | null = null;
+    let visibleIndex = 0;
+
+    for (const id of command.activeColumn.windowIds) {
+      if (this.observer.source(id)?.minimized === true) {
+        continue;
+      }
+
+      lastVisibleId = id;
+      visibleIndex += 1;
+
+      if (visibleIndex === index) {
+        targetId = id;
+        break;
+      }
+    }
+
+    return this.focusActiveColumnMember(
+      command,
+      selectedId,
+      targetId ?? lastVisibleId,
+    );
+  }
+
   focusWindowDownOrColumnLeft(): boolean {
     return this.focusWithinActiveColumn("down", {
       direction: "left",

@@ -228,6 +228,33 @@ const expectedHandlers: Readonly<
   driftile_focus_window_down_or_top: {
     activated: "Runtime.DriftileRuntime.focusWindowDownOrTop()",
   },
+  driftile_focus_window_in_column_1: {
+    activated: "Runtime.DriftileRuntime.focusWindowInColumn(1)",
+  },
+  driftile_focus_window_in_column_2: {
+    activated: "Runtime.DriftileRuntime.focusWindowInColumn(2)",
+  },
+  driftile_focus_window_in_column_3: {
+    activated: "Runtime.DriftileRuntime.focusWindowInColumn(3)",
+  },
+  driftile_focus_window_in_column_4: {
+    activated: "Runtime.DriftileRuntime.focusWindowInColumn(4)",
+  },
+  driftile_focus_window_in_column_5: {
+    activated: "Runtime.DriftileRuntime.focusWindowInColumn(5)",
+  },
+  driftile_focus_window_in_column_6: {
+    activated: "Runtime.DriftileRuntime.focusWindowInColumn(6)",
+  },
+  driftile_focus_window_in_column_7: {
+    activated: "Runtime.DriftileRuntime.focusWindowInColumn(7)",
+  },
+  driftile_focus_window_in_column_8: {
+    activated: "Runtime.DriftileRuntime.focusWindowInColumn(8)",
+  },
+  driftile_focus_window_in_column_9: {
+    activated: "Runtime.DriftileRuntime.focusWindowInColumn(9)",
+  },
   driftile_focus_window_bottom: {
     activated: "Runtime.DriftileRuntime.focusWindowBottom()",
   },
@@ -588,7 +615,7 @@ describe("KWin shortcut handlers", () => {
   });
 
   it("keeps the canonical action catalog synchronized with QML", () => {
-    expect(shortcutActions).toHaveLength(138);
+    expect(shortcutActions).toHaveLength(147);
     expect(shortcutActions).toEqual(
       handlers.map(({ name, sequence, text }) => ({
         name,
@@ -601,7 +628,7 @@ describe("KWin shortcut handlers", () => {
     ).toHaveLength(88);
     expect(
       shortcutActions.filter((action) => action.defaultSequence === undefined),
-    ).toHaveLength(50);
+    ).toHaveLength(59);
   });
 
   it("uses unique lowercase action identifiers and key sequences", () => {
@@ -670,6 +697,15 @@ describe("KWin shortcut handlers", () => {
       "driftile_focus_window_down_or_next_desktop",
       "driftile_focus_window_down_or_output_down",
       "driftile_focus_window_down_or_top",
+      "driftile_focus_window_in_column_1",
+      "driftile_focus_window_in_column_2",
+      "driftile_focus_window_in_column_3",
+      "driftile_focus_window_in_column_4",
+      "driftile_focus_window_in_column_5",
+      "driftile_focus_window_in_column_6",
+      "driftile_focus_window_in_column_7",
+      "driftile_focus_window_in_column_8",
+      "driftile_focus_window_in_column_9",
       "driftile_focus_window_top",
       "driftile_focus_window_up_or_bottom",
       "driftile_focus_window_up_or_column_left",

@@ -120,6 +120,42 @@ const shortcutActionCatalog = [
     text: "Driftile: Focus up or bottom",
   },
   {
+    name: "driftile_focus_window_in_column_1",
+    text: "Driftile: Focus window 1 in column",
+  },
+  {
+    name: "driftile_focus_window_in_column_2",
+    text: "Driftile: Focus window 2 in column",
+  },
+  {
+    name: "driftile_focus_window_in_column_3",
+    text: "Driftile: Focus window 3 in column",
+  },
+  {
+    name: "driftile_focus_window_in_column_4",
+    text: "Driftile: Focus window 4 in column",
+  },
+  {
+    name: "driftile_focus_window_in_column_5",
+    text: "Driftile: Focus window 5 in column",
+  },
+  {
+    name: "driftile_focus_window_in_column_6",
+    text: "Driftile: Focus window 6 in column",
+  },
+  {
+    name: "driftile_focus_window_in_column_7",
+    text: "Driftile: Focus window 7 in column",
+  },
+  {
+    name: "driftile_focus_window_in_column_8",
+    text: "Driftile: Focus window 8 in column",
+  },
+  {
+    name: "driftile_focus_window_in_column_9",
+    text: "Driftile: Focus window 9 in column",
+  },
+  {
     name: "driftile_move_column_left",
     text: "Driftile: Move column left",
     defaultSequence: "Meta+Ctrl+H",
