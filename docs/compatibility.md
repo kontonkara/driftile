@@ -11,15 +11,9 @@
   API. Enabling it in a native X11 session is a safe no-op.
 - Desktop reordering fails closed when the KWin X11 scripting backend does not
   expose the required method.
-- The optional overview lifecycle is verified with native Wayland, XWayland,
-  two virtual Wayland outputs, and single-output native X11. It uses the same
-  exact snapshot validation on every backend. Guarded current-card focus is
-  additionally verified for native Wayland and XWayland targets in the
-  two-output Wayland scenario. The same physical scenario verifies per-output
-  desktop selection and cross-desktop thumbnail activation in both protocol
-  passes, each with an exact target and last-active decoy. Native X11 keeps
-  static coverage of the guarded single-output global fallback; end-to-end
-  selection or cross-desktop activation is not claimed there.
+- The optional overview supports the same Wayland, XWayland, and single-output
+  native X11 baseline. Desktop selection and cross-desktop thumbnail
+  activation remain unverified on native X11.
 
 ## Installation portability
 
@@ -48,10 +42,9 @@ the same KPackage archives and portable installation procedure.
 
 ## Display hardware limits
 
-Automated coverage uses virtual Wayland outputs, Xvfb, and a visible virtual
-machine. Output scale and position changes plus virtual output removal and
-re-enablement are covered. Real GPU combinations, physical connector hot-plug,
-and a wider hardware matrix remain unverified.
+Output scale and position changes plus virtual output removal and re-enablement
+are covered. Real GPU combinations, physical connector hot-plug, and a wider
+hardware matrix remain unverified.
 
 ## Integration boundary
 

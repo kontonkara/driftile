@@ -82,6 +82,8 @@ limits.
 Driftile is under active development. Use the
 [latest stable release](https://github.com/kontonkara/driftile/releases/latest)
 for regular installation; `main` may include unreleased behavior.
+For problems, follow the [troubleshooting guide](docs/troubleshooting.md) and
+[open an issue](https://github.com/kontonkara/driftile/issues/new).
 
 ## Documentation
 
@@ -89,6 +91,7 @@ for regular installation; `main` may include unreleased behavior.
 - [Configuration](docs/configuration.md)
 - [Shortcuts](docs/shortcuts.md)
 - [Troubleshooting](docs/troubleshooting.md)
+- [Interaction model](docs/interaction-model.md)
 - [Optional overview](docs/overview.md)
 - [Documentation index](docs/README.md)
 

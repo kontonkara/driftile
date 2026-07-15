@@ -185,7 +185,8 @@ the KWin process and the reproduction interval.
 
 State whether the affected application is native Wayland, XWayland, or native
 X11 when known. Remove unrelated sensitive application output before sharing
-the log.
+the log, then [open a GitHub issue](https://github.com/kontonkara/driftile/issues/new)
+with the collected details.
 
 ## Disable or uninstall safely
 
