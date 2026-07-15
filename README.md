@@ -8,7 +8,7 @@ leaving window, output, and desktop mechanisms to KWin.
 
 ## Features
 
-- Horizontal scrollable columns with optional vertical window stacks.
+- Horizontal scrollable columns with stacked or tabbed window presentation.
 - Keyboard-driven focus, movement, reordering, resizing, centering, and
   transfers between desktops and outputs.
 - Live same-context drop-target feedback with finish-only pointer reinsertion
@@ -36,6 +36,8 @@ leaving window, output, and desktop mechanisms to KWin.
 ## Status
 
 The latest stable release is [1.18.0](docs/release-notes-1.18.0.md).
+The current candidate is
+[1.19.0-rc.1](docs/release-notes-1.19.0-rc.1.md). It is not a stable release.
 The feature list tracks the current `main` branch; release state is recorded in
 the [roadmap](docs/roadmap.md).
 
@@ -108,6 +110,7 @@ checks.
 - [Testing](docs/testing.md)
 - [Performance](docs/performance.md)
 - [Roadmap](docs/roadmap.md)
+- [1.19.0-rc.1 release notes](docs/release-notes-1.19.0-rc.1.md)
 - [1.18.0 release notes](docs/release-notes-1.18.0.md)
 - [1.18.0-rc.1 release notes](docs/release-notes-1.18.0-rc.1.md)
 - [1.17.0 release notes](docs/release-notes-1.17.0.md)

@@ -1,7 +1,52 @@
 # Migration
 
-The latest stable release is 1.18.0. Use the steps below when changing release
-generations, and never combine files from different releases.
+The latest stable release is 1.18.0. Version 1.19.0-rc.1 is the current
+candidate and is not a stable release. Use the steps below when changing
+release generations, and never combine files from different releases.
+
+## Upgrade from 1.18.0 to 1.19.0-rc.1
+
+1. Release helper-owned shortcuts with the 1.18.0 helper while it remains
+   available.
+2. Disable Driftile and the optional overview in System Settings.
+3. Back up
+   `${XDG_CONFIG_HOME:-$HOME/.config}/driftile-layout-state.ini` before starting
+   the candidate.
+4. Upgrade the main package, optional overview, and helper to their matching
+   1.19.0-rc.1 archives, or pin the Nix input to `v1.19.0-rc.1` and rebuild.
+5. Enable Driftile and restore the shortcut profile. The candidate adds
+   `Meta+W` for toggling the active tiled column's presentation.
+6. If installed, re-enable the matching overview package and review its
+   manually assigned shortcut.
+
+The candidate accepts existing bare and catalog-nested logical v1 state, then
+publishes canonical v3 state with each column's presentation and selected
+member. The bounded topology catalog remains v2. This migration happens on the
+first successful publication even if no column has been made tabbed.
+
+Tabbed presentation overlays every non-minimized member at one column frame.
+Vertical focus selects members without wrapping, vertical move reorders them,
+and height commands remain inactive until stacked presentation returns. The
+optional overview projects only the selected member. The immediate normal
+successor of an inactive full-width column now starts at the left work-area
+gap.
+
+The candidate adds no setting or settings field. Package IDs remain unchanged.
+The 1.19.0 shortcut helper adds `Meta+W`; its transactional release restores an
+unchanged prior assignment.
+
+## Roll back from 1.19.0-rc.1 to 1.18.0
+
+Release shortcuts with the candidate helper, disable Driftile and the optional
+overview, then restore their matching verified 1.18.0 packages and helper. For
+NixOS or Home Manager, restore the `v1.18.0` input and rebuild the generation
+that owns each package.
+
+The 1.18.0 runtime cannot read logical v3 state. Restore the layout-state backup
+made before the candidate was first enabled. If no backup is available, remove
+the state file while Driftile is disabled and accept a fresh layout on the next
+start. Re-enable the installed packages and restore the 1.18.0 shortcut
+profile.
 
 ## Upgrade from 1.17.0 to 1.18.0
 
