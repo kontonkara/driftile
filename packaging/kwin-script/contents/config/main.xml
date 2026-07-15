@@ -28,7 +28,7 @@
     </entry>
     <entry name="DefaultColumnWidthPercent" type="Int">
       <label>Default column width in percent</label>
-      <default>50</default>
+      <default>33</default>
       <min>10</min>
       <max>100</max>
     </entry>

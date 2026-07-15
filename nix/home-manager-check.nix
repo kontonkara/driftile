@@ -227,7 +227,7 @@ assert
       ColumnWidthPresets = "";
       ColumnWidthStepPercent = 10;
       DefaultColumnPresentation = "stacked";
-      DefaultColumnWidthPercent = 50;
+      DefaultColumnWidthPercent = 33;
       Gap = 8;
       ShowTabIndicator = true;
       TouchpadNavigation = false;

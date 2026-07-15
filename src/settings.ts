@@ -88,7 +88,7 @@ export const DEFAULT_DRIFTILE_SETTINGS: DriftileSettings = Object.freeze({
   columnWidthPresets: EMPTY_COLUMN_WIDTH_PRESET_PERCENTAGES,
   columnWidthStepPercent: 10,
   defaultColumnPresentation: "stacked",
-  defaultColumnWidthPercent: 50,
+  defaultColumnWidthPercent: 33,
   gap: 16,
   showTabIndicator: true,
   touchpadNavigation: false,

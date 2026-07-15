@@ -817,7 +817,7 @@ describe("KWin shortcut handlers", () => {
     expect(widthEntry).toContain(
       "<label>Default column width in percent</label>",
     );
-    expect(widthEntry).toContain("<default>50</default>");
+    expect(widthEntry).toContain("<default>33</default>");
     expect(widthEntry).toContain("<min>10</min>");
     expect(widthEntry).toContain("<max>100</max>");
     expect(widthLabel).toContain("<string>Default column width:</string>");
@@ -832,7 +832,7 @@ describe("KWin shortcut handlers", () => {
       /<property name="maximum">\s*<number>100<\/number>/,
     );
     expect(widthWidget).toMatch(
-      /<property name="value">\s*<number>50<\/number>/,
+      /<property name="value">\s*<number>33<\/number>/,
     );
     expect(qml).toContain(
       `defaultColumnWidthPercent: KWin.readConfig("DefaultColumnWidthPercent", ${String(DEFAULT_DRIFTILE_SETTINGS.defaultColumnWidthPercent)})`,

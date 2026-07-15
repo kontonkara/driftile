@@ -763,7 +763,7 @@ QtObject {
             columnWidthPresets: KWin.readConfig("ColumnWidthPresets", ""),
             columnWidthStepPercent: KWin.readConfig("ColumnWidthStepPercent", 10),
             defaultColumnPresentation: KWin.readConfig("DefaultColumnPresentation", "stacked"),
-            defaultColumnWidthPercent: KWin.readConfig("DefaultColumnWidthPercent", 50),
+            defaultColumnWidthPercent: KWin.readConfig("DefaultColumnWidthPercent", 33),
             gap: KWin.readConfig("Gap", 16),
             showTabIndicator: KWin.readConfig("ShowTabIndicator", true),
             touchpadNavigation: KWin.readConfig("TouchpadNavigation", false),

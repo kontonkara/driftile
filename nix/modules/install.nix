@@ -270,7 +270,7 @@ in
 
             defaultColumnWidthPercent = lib.mkOption {
               type = lib.types.ints.between 10 100;
-              default = 50;
+              default = 33;
               description = "Default column width as a percentage.";
             };
 
