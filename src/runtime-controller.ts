@@ -102,7 +102,9 @@ import {
   planPointerColumnDrop,
   planPointerColumnDropPreview,
   planPointerExternalColumnDrop,
+  planPointerExternalColumnDropPreview,
   planPointerExternalWindowDrop,
+  planPointerExternalWindowDropPreview,
   planPointerWindowDrop,
   planPointerWindowDropPreview,
   type PointerExternalColumnDropTarget,
@@ -480,6 +482,7 @@ interface PointerMoveIntent {
   readonly initialFrame: Rect;
   readonly draggedWindowId: WindowId;
   readonly externalDrop: PointerExternalDropIntent | null;
+  readonly floating: FloatingWindow | null;
   readonly finishedFrame: Rect | null;
   readonly finalCursor: Point | null;
   readonly gap: number;
@@ -3765,12 +3768,18 @@ export class RuntimeController {
       this.workspace.activeWindow !== source ||
       !this.interactiveMoveSourceIsEligible(source) ||
       this.automaticFloatingWindows.has(draggedWindowId) ||
-      this.floatingWindows.has(draggedWindowId) ||
       this.waitingWindowContexts.has(draggedWindowId) ||
       this.requestedSuspensions.has(draggedWindowId) ||
       this.pendingHydratedRestoreBaselines.has(draggedWindowId) ||
       !this.toggleGeometrySettled(draggedWindowId)
     ) {
+      return;
+    }
+
+    const floating = this.floatingWindows.get(draggedWindowId);
+
+    if (floating) {
+      this.beginFloatingPointerMove(draggedWindowId, source, floating);
       return;
     }
 
@@ -3888,6 +3897,7 @@ export class RuntimeController {
       contextKey: context.key,
       draggedWindowId,
       externalDrop: null,
+      floating: null,
       finalCursor: null,
       finishedFrame: null,
       gap: this.gap,
@@ -3909,6 +3919,136 @@ export class RuntimeController {
     this.startPointerDropPreviewTracking();
   };
 
+  private beginFloatingPointerMove(
+    draggedWindowId: WindowId,
+    source: KWinWindow,
+    floating: FloatingWindow,
+  ): void {
+    const observed = normalizeWindow(source);
+    const liveContext = observed ? managedContext(observed) : null;
+    const key = liveContext ? contextKey(liveContext) : null;
+    const context = key ? this.contexts.get(key) : undefined;
+    const sourceOutput = liveContext
+      ? this.workspace.screens.find(
+          (candidate) => candidate.name === String(liveContext.outputId),
+        )
+      : undefined;
+    const sourceDesktop = sourceOutput
+      ? currentDesktopForOutput(this.workspace, sourceOutput)
+      : null;
+
+    if (
+      !liveContext ||
+      !key ||
+      !context ||
+      !sourceOutput ||
+      !sourceDesktop ||
+      floating.currentContextKey !== key ||
+      source.output !== sourceOutput ||
+      sourceDesktop.id !== String(liveContext.desktopId) ||
+      this.managedWindows.has(draggedWindowId) ||
+      this.pendingManualFloatingSizeChanges.has(draggedWindowId) ||
+      this.automaticallyFloats(source) ||
+      !this.isContextVisible(context) ||
+      this.dirtyContexts.has(key) ||
+      this.pendingAdmissionContexts.has(key) ||
+      this.hasStructuralCapacityState(key) ||
+      this.toggleTransitionPending(key)
+    ) {
+      return;
+    }
+
+    const sampledGeometries = this.sampleSettledVisibleContextGeometries();
+    const contextGeometry = sampledGeometries?.get(key);
+
+    if (
+      !sampledGeometries ||
+      !contextGeometry ||
+      contextGeometry.fingerprint !== context.geometryFingerprint
+    ) {
+      return;
+    }
+
+    const before = this.layout.snapshot(context.outputId, context.desktopId);
+
+    if (before.columns.length === 0) {
+      return;
+    }
+
+    const participants: PointerMoveParticipant[] = [];
+
+    for (const column of before.columns) {
+      for (const participantId of column.windowIds) {
+        const participant = this.observer.source(participantId);
+
+        if (
+          !participant ||
+          this.pendingWindowSyncs.has(participantId) ||
+          !this.stackTransferMemberIsEligible(
+            participantId,
+            participant,
+            context,
+            false,
+          )
+        ) {
+          return;
+        }
+
+        participants.push({
+          id: participantId,
+          stateRevision: this.windowStateRevisions.get(participantId) ?? 0,
+          window: participant,
+        });
+      }
+    }
+
+    if (
+      participants.length === 0 ||
+      participants.length !== context.windowIds.size
+    ) {
+      return;
+    }
+
+    let solved: ReturnType<typeof solveStripGeometry>;
+
+    try {
+      solved = this.solveContextGeometry(before, contextGeometry);
+    } catch {
+      return;
+    }
+
+    if (solved.windows.length !== participants.length) {
+      return;
+    }
+
+    this.pointerMoveIntent = {
+      before,
+      contextFingerprint: contextGeometry.fingerprint,
+      contextKey: key,
+      draggedWindowId,
+      externalDrop: null,
+      finalCursor: null,
+      finishedFrame: null,
+      floating,
+      gap: this.gap,
+      generation: this.runGeneration,
+      initialFrame: snapshotRect(source.frameGeometry),
+      participants,
+      phase: "dragging",
+      previewVisibleArea: snapshotRect(contextGeometry.workArea),
+      previewWindows: solved.windows.map((window) => ({
+        columnId: window.columnId,
+        frame: snapshotRect(window.frame),
+        windowId: window.windowId,
+      })),
+      source,
+      sourceDesktop,
+      sourceOutput,
+      topologyRevision: this.topologyRevision,
+    };
+    this.startPointerDropPreviewTracking();
+  }
+
   private readonly handlePointerDropPreviewCursorChanged = (): void => {
     const intent = this.pointerMoveIntent;
 
@@ -3923,6 +4063,11 @@ export class RuntimeController {
     const intent = this.pointerMoveIntent;
 
     if (!intent || String(intent.draggedWindowId) !== id) {
+      return;
+    }
+
+    if (intent.floating) {
+      this.finishFloatingPointerMove(id, intent);
       return;
     }
 
@@ -3971,6 +4116,68 @@ export class RuntimeController {
     };
   };
 
+  private finishFloatingPointerMove(
+    id: string,
+    intent: PointerMoveIntent,
+  ): void {
+    this.stopPointerDropPreviewTracking();
+    this.clearPointerDropPreview();
+    const source = this.observer.source(id);
+    const cursor = this.workspace.cursorPos;
+    const observed = source ? normalizeWindow(source) : null;
+    const liveContext = observed ? managedContext(observed) : null;
+    const context = this.contexts.get(intent.contextKey);
+    const finalCursor =
+      cursor && Number.isFinite(cursor.x) && Number.isFinite(cursor.y)
+        ? { x: cursor.x, y: cursor.y }
+        : null;
+
+    if (
+      intent.phase !== "dragging" ||
+      !intent.floating ||
+      !source ||
+      source !== intent.source ||
+      this.workspace.activeWindow !== source ||
+      source.move ||
+      !this.settledPointerMoveSourceIsEligible(source) ||
+      !finalCursor ||
+      !liveContext ||
+      contextKey(liveContext) !== intent.contextKey ||
+      source.output !== intent.sourceOutput ||
+      currentDesktopForOutput(this.workspace, intent.sourceOutput)?.id !==
+        intent.sourceDesktop.id ||
+      !context ||
+      context.geometryFingerprint !== intent.contextFingerprint ||
+      intent.generation !== this.runGeneration ||
+      intent.topologyRevision !== this.topologyRevision ||
+      intent.gap !== this.gap ||
+      !this.floatingPointerMoveParticipantsAreCurrent(intent, context)
+    ) {
+      this.clearPointerMoveIntent();
+      return;
+    }
+
+    const target = this.planExternalPointerInsertionTarget({
+      context: intent.before,
+      cursor: finalCursor,
+      draggedWindowId: intent.draggedWindowId,
+      visibleArea: intent.previewVisibleArea,
+      windows: intent.previewWindows,
+    });
+
+    if (!target) {
+      this.clearPointerMoveIntent();
+      return;
+    }
+
+    this.pointerMoveIntent = {
+      ...intent,
+      finalCursor,
+      finishedFrame: snapshotRect(source.frameGeometry),
+      phase: "finished",
+    };
+  }
+
   private schedulePointerDropPreview(): void {
     if (
       this.pointerDropPreviewUnavailable ||
@@ -4006,6 +4213,11 @@ export class RuntimeController {
     const intent = this.pointerMoveIntent;
     const cursor = this.workspace.cursorPos;
     const context = intent ? this.contexts.get(intent.contextKey) : undefined;
+
+    if (intent?.floating) {
+      this.updateFloatingPointerDropPreview(intent, cursor, context);
+      return;
+    }
 
     if (
       !intent ||
@@ -4044,6 +4256,57 @@ export class RuntimeController {
     }
 
     const columnPreview = planPointerColumnDropPreview(input);
+
+    if (!columnPreview) {
+      this.clearPointerDropPreview();
+      return;
+    }
+
+    this.showPointerDropPreviewFrame(columnPreview.frame);
+  }
+
+  private updateFloatingPointerDropPreview(
+    intent: PointerMoveIntent,
+    cursor: Point | null | undefined,
+    context: RuntimeContext | undefined,
+  ): void {
+    if (
+      intent.phase !== "dragging" ||
+      !intent.floating ||
+      !cursor ||
+      !Number.isFinite(cursor.x) ||
+      !Number.isFinite(cursor.y) ||
+      !context ||
+      context.geometryFingerprint !== intent.contextFingerprint ||
+      !this.isContextVisible(context) ||
+      intent.generation !== this.runGeneration ||
+      intent.topologyRevision !== this.topologyRevision ||
+      intent.gap !== this.gap ||
+      this.workspace.activeWindow !== intent.source ||
+      !this.interactiveMoveSourceIsEligible(intent.source) ||
+      this.hasStructuralCapacityState(context.key) ||
+      this.toggleTransitionPending(context.key) ||
+      !this.floatingPointerMoveParticipantsAreCurrent(intent, context)
+    ) {
+      this.clearPointerDropPreview();
+      return;
+    }
+
+    const input = {
+      context: intent.before,
+      cursor: { x: cursor.x, y: cursor.y },
+      draggedWindowId: intent.draggedWindowId,
+      visibleArea: intent.previewVisibleArea,
+      windows: intent.previewWindows,
+    };
+    const windowPreview = planPointerExternalWindowDropPreview(input);
+
+    if (windowPreview) {
+      this.showPointerDropPreviewFrame(windowPreview.frame);
+      return;
+    }
+
+    const columnPreview = planPointerExternalColumnDropPreview(input);
 
     if (!columnPreview) {
       this.clearPointerDropPreview();
@@ -4742,10 +5005,12 @@ export class RuntimeController {
   }
 
   private cancelPointerMoveForWindowChange(id: WindowId): void {
+    const intent = this.pointerMoveIntent;
+
     if (
-      this.pointerMoveIntent?.participants.some(
-        (participant) => participant.id === id,
-      )
+      intent &&
+      (intent.participants.some((participant) => participant.id === id) ||
+        (intent.floating !== null && intent.draggedWindowId === id))
     ) {
       this.clearPointerMoveIntent();
     }
@@ -4768,6 +5033,18 @@ export class RuntimeController {
     const intent = this.pointerMoveIntent;
 
     if (!intent) {
+      return;
+    }
+
+    if (intent.floating && id === intent.draggedWindowId) {
+      if (
+        !source ||
+        source !== intent.source ||
+        !this.pointerMoveSourceHasStableOwnership(source)
+      ) {
+        this.clearPointerMoveIntent();
+      }
+
       return;
     }
 
@@ -4856,6 +5133,7 @@ export class RuntimeController {
     const pointerContextChangeContinues =
       cause === "context" &&
       pointerIntent?.draggedWindowId === changedId &&
+      pointerIntent.floating === null &&
       source !== undefined &&
       pointerIntent.source === source &&
       (source.move || pointerIntent.phase === "finished") &&
@@ -15758,7 +16036,12 @@ export class RuntimeController {
     const intent = this.pointerMoveIntent;
     const external = intent?.externalDrop;
 
-    if (!intent || !external || intent.draggedWindowId !== id) {
+    if (
+      !intent ||
+      intent.floating !== null ||
+      !external ||
+      intent.draggedWindowId !== id
+    ) {
       return false;
     }
 
@@ -17745,6 +18028,129 @@ export class RuntimeController {
     );
   }
 
+  private commitFinishedFloatingPointerMove(
+    id: WindowId,
+    source: KWinWindow,
+    floating: FloatingWindow,
+    nextContext: ManagedContext,
+  ): boolean {
+    const intent = this.pointerMoveIntent;
+
+    if (
+      !intent?.floating ||
+      intent.externalDrop !== null ||
+      intent.draggedWindowId !== id
+    ) {
+      return false;
+    }
+
+    const reject = (): false => {
+      if (this.pointerMoveIntent === intent) {
+        this.clearPointerMoveIntent();
+      }
+
+      return false;
+    };
+    const context = this.contexts.get(intent.contextKey);
+
+    if (
+      intent.phase !== "finished" ||
+      !intent.finalCursor ||
+      !intent.finishedFrame ||
+      intent.source !== source ||
+      intent.floating !== floating ||
+      this.floatingWindows.get(id) !== floating ||
+      contextKey(nextContext) !== intent.contextKey ||
+      !context ||
+      context.geometryFingerprint !== intent.contextFingerprint ||
+      intent.generation !== this.runGeneration ||
+      intent.topologyRevision !== this.topologyRevision ||
+      intent.gap !== this.gap ||
+      this.workspace.activeWindow !== source ||
+      source.output !== intent.sourceOutput ||
+      currentDesktopForOutput(this.workspace, intent.sourceOutput)?.id !==
+        intent.sourceDesktop.id ||
+      !this.settledPointerMoveSourceIsEligible(source) ||
+      !rectsEqual(source.frameGeometry, intent.finishedFrame) ||
+      this.managedWindows.has(id) ||
+      this.hasStructuralCapacityState(context.key) ||
+      this.toggleTransitionPending(context.key) ||
+      !this.floatingPointerMoveParticipantsAreCurrent(intent, context) ||
+      !layoutContextSnapshotsEqual(
+        this.layout.snapshot(context.outputId, context.desktopId),
+        intent.before,
+      )
+    ) {
+      return reject();
+    }
+
+    const contextGeometry = this.pointerMoveContextGeometry(intent, context);
+
+    if (!contextGeometry) {
+      return reject();
+    }
+
+    let solved: ReturnType<typeof solveStripGeometry>;
+
+    try {
+      solved = this.solveContextGeometry(intent.before, contextGeometry);
+    } catch {
+      return reject();
+    }
+
+    if (solved.windows.length !== intent.participants.length) {
+      return reject();
+    }
+
+    const target = this.planExternalPointerInsertionTarget({
+      context: intent.before,
+      cursor: intent.finalCursor,
+      draggedWindowId: id,
+      visibleArea: contextGeometry.workArea,
+      windows: solved.windows,
+    });
+
+    if (!target) {
+      return reject();
+    }
+
+    const preview =
+      target.kind === "window"
+        ? this.layout.previewWindowAttachToWindow(id, {
+            desktopId: context.desktopId,
+            outputId: context.outputId,
+            ...target.value,
+          })
+        : this.layout.previewWindowAttachToColumnBoundary(id, {
+            columnId: this.availableColumnId(intent.before, id, "pointer"),
+            desktopId: context.desktopId,
+            outputId: context.outputId,
+            presentation: floating.placement.columnPresentation,
+            width: floating.placement.columnWidth,
+            ...target.value,
+          });
+
+    if (!preview) {
+      return reject();
+    }
+
+    const command: ActiveWindowCommand = {
+      activeId: id,
+      activeWindow: source,
+      context: nextContext,
+      contextGeometry,
+      contextKey: intent.contextKey,
+    };
+    this.clearPointerMoveIntent();
+    return this.attachFloatingWindow(
+      command,
+      floating,
+      intent.before,
+      preview,
+      "floating pointer tiling",
+    );
+  }
+
   private commitFinishedPointerMove(
     id: WindowId,
     source: KWinWindow,
@@ -17754,6 +18160,7 @@ export class RuntimeController {
 
     if (
       !intent ||
+      intent.floating !== null ||
       intent.externalDrop !== null ||
       intent.draggedWindowId !== id
     ) {
@@ -18455,6 +18862,99 @@ export class RuntimeController {
             )),
       );
     });
+  }
+
+  private floatingPointerMoveParticipantsAreCurrent(
+    intent: PointerMoveIntent,
+    context: RuntimeContext,
+  ): boolean {
+    const floating = intent.floating;
+    const source = this.observer.source(intent.draggedWindowId);
+    const observed = source ? normalizeWindow(source) : null;
+    const liveContext = observed ? managedContext(observed) : null;
+
+    if (
+      !floating ||
+      source !== intent.source ||
+      this.floatingWindows.get(intent.draggedWindowId) !== floating ||
+      this.managedWindows.has(intent.draggedWindowId) ||
+      !liveContext ||
+      contextKey(liveContext) !== context.key ||
+      floating.currentContextKey !== context.key ||
+      intent.participants.length !== context.windowIds.size ||
+      this.floatingPointerContextHasPendingSync(intent, context) ||
+      !layoutContextSnapshotsEqual(
+        this.layout.snapshot(context.outputId, context.desktopId),
+        intent.before,
+      )
+    ) {
+      return false;
+    }
+
+    return intent.participants.every((participant) => {
+      const participantSource = this.observer.source(participant.id);
+      const owner = this.managedWindows.get(participant.id);
+      const participantObserved = participantSource
+        ? normalizeWindow(participantSource)
+        : null;
+      const participantContext = participantObserved
+        ? managedContext(participantObserved)
+        : null;
+
+      return Boolean(
+        participantSource === participant.window &&
+        owner?.contextKey === context.key &&
+        context.windowIds.has(participant.id) &&
+        participantContext &&
+        contextKey(participantContext) === context.key &&
+        (this.windowStateRevisions.get(participant.id) ?? 0) ===
+          participant.stateRevision &&
+        this.stackTransferMemberIsEligible(
+          participant.id,
+          participant.window,
+          context,
+          false,
+        ),
+      );
+    });
+  }
+
+  private floatingPointerContextHasPendingSync(
+    intent: PointerMoveIntent,
+    context: RuntimeContext,
+  ): boolean {
+    if (this.pendingWindowSyncs.size === 0) {
+      return false;
+    }
+
+    const participantIds = new Set(
+      intent.participants.map((participant) => participant.id),
+    );
+
+    for (const id of this.pendingWindowSyncs) {
+      if (id === intent.draggedWindowId) {
+        continue;
+      }
+
+      if (
+        participantIds.has(id) ||
+        this.managedWindows.get(id)?.contextKey === context.key ||
+        this.waitingWindowContexts.get(id) === context.key ||
+        this.capacityLeaseByWindow.get(id)?.contextKey === context.key
+      ) {
+        return true;
+      }
+
+      const source = this.observer.source(id);
+      const observed = source ? normalizeWindow(source) : null;
+      const liveContext = observed ? managedContext(observed) : null;
+
+      if (liveContext && contextKey(liveContext) === context.key) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   private pointerContextHasPendingSync(
@@ -21618,6 +22118,15 @@ export class RuntimeController {
       }
 
       if (floating) {
+        if (resumed && nextContext) {
+          this.commitFinishedFloatingPointerMove(
+            id,
+            source,
+            floating,
+            nextContext,
+          );
+        }
+
         this.forgetWaitingWindow(id);
 
         if (capacityLease) {

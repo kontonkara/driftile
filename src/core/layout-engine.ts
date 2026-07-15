@@ -134,6 +134,19 @@ export interface ColumnReinsertionTarget {
   readonly targetColumnId: ColumnId;
 }
 
+export interface WindowAttachInsertionTarget extends WindowReinsertionTarget {
+  readonly desktopId: DesktopId;
+  readonly outputId: OutputId;
+}
+
+export interface WindowAttachColumnInsertionTarget extends ColumnReinsertionTarget {
+  readonly columnId: ColumnId;
+  readonly desktopId: DesktopId;
+  readonly outputId: OutputId;
+  readonly presentation: ColumnPresentation;
+  readonly width: ColumnWidth;
+}
+
 export interface WindowTransferInsertionTarget extends WindowReinsertionTarget {
   readonly desktopId: DesktopId;
   readonly outputId: OutputId;
@@ -2196,13 +2209,143 @@ export class LayoutEngine {
       return null;
     }
 
-    const preview = Object.freeze({ layout: after }) as WindowAttachPreview;
-    this.windowAttachPreviews.set(preview, {
-      after,
-      before,
-      windowId: saved.windowId,
+    return this.createWindowAttachPreview(saved.windowId, before, after);
+  }
+
+  previewWindowAttachToWindow(
+    windowId: WindowId,
+    target: WindowAttachInsertionTarget,
+  ): WindowAttachPreview | null {
+    if (
+      typeof windowId !== "string" ||
+      !validWindowAttachInsertionTarget(target) ||
+      this.placements.has(windowId)
+    ) {
+      return null;
+    }
+
+    const key = contextKey(target.outputId, target.desktopId);
+    const targetPlacement = this.placements.get(target.targetWindowId);
+    const context = this.contexts.get(key);
+
+    if (!context || targetPlacement?.contextKey !== key) {
+      return null;
+    }
+
+    const before = immutableContextSnapshot(
+      this.snapshot(target.outputId, target.desktopId),
+    );
+    const targetColumnIndex = before.columns.findIndex(
+      (column) => column.id === targetPlacement.columnId,
+    );
+    const targetColumn = before.columns[targetColumnIndex];
+    const targetMemberIndex = targetPlacement.memberIndex;
+
+    if (
+      !targetColumn ||
+      targetColumn.windowIds[targetMemberIndex] !== target.targetWindowId ||
+      !validContextSnapshot(before) ||
+      !this.placementsMatchSnapshot(before)
+    ) {
+      return null;
+    }
+
+    const insertionIndex =
+      targetMemberIndex + (target.position === "after" ? 1 : 0);
+    const windowIds = [...targetColumn.windowIds];
+    windowIds.splice(insertionIndex, 0, windowId);
+    const windowHeights =
+      columnWindowHeights(targetColumn).map(cloneWindowHeight);
+    windowHeights.splice(insertionIndex, 0, automaticWindowHeight());
+    const compactHeights = compactWindowHeights(windowHeights);
+    const columns = before.columns.map((column, index) =>
+      index === targetColumnIndex
+        ? {
+            id: column.id,
+            presentation: column.presentation,
+            selectedWindowId: windowId,
+            width: column.width,
+            ...(compactHeights ? { windowHeights: compactHeights } : {}),
+            windowIds,
+          }
+        : column,
+    );
+    const after = immutableContextSnapshot({
+      activeColumnId: targetColumn.id,
+      columns,
+      desktopId: before.desktopId,
+      outputId: before.outputId,
+      viewportOffset: before.viewportOffset,
     });
-    return preview;
+
+    if (!validContextSnapshot(after)) {
+      return null;
+    }
+
+    return this.createWindowAttachPreview(windowId, before, after);
+  }
+
+  previewWindowAttachToColumnBoundary(
+    windowId: WindowId,
+    target: WindowAttachColumnInsertionTarget,
+  ): WindowAttachPreview | null {
+    if (
+      typeof windowId !== "string" ||
+      !validWindowAttachColumnInsertionTarget(target) ||
+      this.placements.has(windowId)
+    ) {
+      return null;
+    }
+
+    const key = contextKey(target.outputId, target.desktopId);
+    const context = this.contexts.get(key);
+
+    if (!context) {
+      return null;
+    }
+
+    const before = immutableContextSnapshot(
+      this.snapshot(target.outputId, target.desktopId),
+    );
+    const targetColumnIndex = before.columns.findIndex(
+      (column) => column.id === target.targetColumnId,
+    );
+
+    if (
+      targetColumnIndex < 0 ||
+      before.columns.some(
+        (column) =>
+          column.id === target.columnId || column.windowIds.includes(windowId),
+      ) ||
+      !validContextSnapshot(before) ||
+      !this.placementsMatchSnapshot(before)
+    ) {
+      return null;
+    }
+
+    const columns = [...before.columns];
+    const insertionIndex =
+      targetColumnIndex + (target.position === "after" ? 1 : 0);
+    columns.splice(insertionIndex, 0, {
+      id: target.columnId,
+      presentation: target.presentation,
+      selectedWindowId: windowId,
+      width: { ...target.width },
+      windowIds: [windowId],
+    });
+    const after = immutableContextSnapshot({
+      activeColumnId: target.columnId,
+      columns,
+      desktopId: before.desktopId,
+      outputId: before.outputId,
+      viewportOffset: before.viewportOffset,
+    });
+
+    if (!validContextSnapshot(after)) {
+      return null;
+    }
+
+    return this.createWindowAttachPreview(windowId, before, after);
   }
 
   commitWindowAttach(preview: WindowAttachPreview): boolean {
@@ -2654,6 +2797,16 @@ export class LayoutEngine {
       targetBefore,
       windowId,
     });
+    return preview;
+  }
+
+  private createWindowAttachPreview(
+    windowId: WindowId,
+    before: LayoutContextSnapshot,
+    after: LayoutContextSnapshot,
+  ): WindowAttachPreview {
+    const preview = Object.freeze({ layout: after }) as WindowAttachPreview;
+    this.windowAttachPreviews.set(preview, { after, before, windowId });
     return preview;
   }
 
@@ -3356,6 +3509,26 @@ function validWindowTransferInsertionTarget(
     validWindowReinsertionTarget(target) &&
     typeof target["desktopId"] === "string" &&
     typeof target["outputId"] === "string"
+  );
+}
+
+function validWindowAttachInsertionTarget(
+  target: unknown,
+): target is WindowAttachInsertionTarget {
+  return validWindowTransferInsertionTarget(target);
+}
+
+function validWindowAttachColumnInsertionTarget(
+  target: unknown,
+): target is WindowAttachColumnInsertionTarget {
+  return (
+    isRecord(target) &&
+    validColumnReinsertionTarget(target) &&
+    typeof target["columnId"] === "string" &&
+    typeof target["desktopId"] === "string" &&
+    typeof target["outputId"] === "string" &&
+    validColumnPresentation(target["presentation"]) &&
+    validWidth(target["width"])
   );
 }
 

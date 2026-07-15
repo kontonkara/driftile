@@ -31,6 +31,11 @@ export interface PointerExternalWindowDropInput {
 
 export type PointerExternalWindowDropTarget = WindowReinsertionTarget;
 
+export interface PointerExternalWindowDropPreview {
+  readonly frame: Rect;
+  readonly target: PointerExternalWindowDropTarget;
+}
+
 export interface PointerExternalColumnDropInput {
   readonly context: LayoutContextSnapshot;
   readonly cursor: Point;
@@ -40,6 +45,11 @@ export interface PointerExternalColumnDropInput {
 }
 
 export type PointerExternalColumnDropTarget = ColumnReinsertionTarget;
+
+export interface PointerExternalColumnDropPreview {
+  readonly frame: Rect;
+  readonly target: PointerExternalColumnDropTarget;
+}
 
 export interface PointerColumnDropInput {
   readonly context: LayoutContextSnapshot;
@@ -181,6 +191,36 @@ function planPointerWindowDropMatch(
 export function planPointerExternalWindowDrop(
   input: PointerExternalWindowDropInput,
 ): PointerExternalWindowDropTarget | null {
+  return planPointerExternalWindowDropMatch(input)?.target ?? null;
+}
+
+export function planPointerExternalWindowDropPreview(
+  input: PointerExternalWindowDropInput,
+): PointerExternalWindowDropPreview | null {
+  const match = planPointerExternalWindowDropMatch(input);
+
+  if (!match) {
+    return null;
+  }
+
+  const frame = pointerWindowDropPreviewFrame(
+    match.frame,
+    match.target.position,
+  );
+
+  if (!frame) {
+    return null;
+  }
+
+  return Object.freeze({
+    frame,
+    target: match.target,
+  });
+}
+
+function planPointerExternalWindowDropMatch(
+  input: PointerExternalWindowDropInput,
+): PointerWindowDropMatch | null {
   if (
     !isRecord(input) ||
     typeof input.draggedWindowId !== "string" ||
@@ -197,14 +237,12 @@ export function planPointerExternalWindowDrop(
     return null;
   }
 
-  return (
-    pointerWindowDropMatch(
-      placements,
-      input.cursor,
-      input.draggedWindowId,
-      input.visibleArea,
-      input.windows,
-    )?.target ?? null
+  return pointerWindowDropMatch(
+    placements,
+    input.cursor,
+    input.draggedWindowId,
+    input.visibleArea,
+    input.windows,
   );
 }
 
@@ -217,6 +255,33 @@ export function planPointerColumnDrop(
 export function planPointerExternalColumnDrop(
   input: PointerExternalColumnDropInput,
 ): PointerExternalColumnDropTarget | null {
+  return planPointerExternalColumnDropMatch(input)?.target ?? null;
+}
+
+export function planPointerExternalColumnDropPreview(
+  input: PointerExternalColumnDropInput,
+): PointerExternalColumnDropPreview | null {
+  const match = planPointerExternalColumnDropMatch(input);
+
+  if (!match) {
+    return null;
+  }
+
+  const frame = pointerColumnDropPreviewFrame(match, input.visibleArea);
+
+  if (!frame) {
+    return null;
+  }
+
+  return Object.freeze({
+    frame,
+    target: match.target,
+  });
+}
+
+function planPointerExternalColumnDropMatch(
+  input: PointerExternalColumnDropInput,
+): PointerColumnDropMatch | null {
   if (
     !isRecord(input) ||
     typeof input.draggedWindowId !== "string" ||
@@ -244,10 +309,23 @@ export function planPointerExternalColumnDrop(
     return null;
   }
 
-  return (
-    pointerColumnGapMatch(geometry.spans, input.cursor.x, input.visibleArea)
-      ?.target ?? null
+  const gap = pointerColumnGapMatch(
+    geometry.spans,
+    input.cursor.x,
+    input.visibleArea,
   );
+
+  if (!gap) {
+    return null;
+  }
+
+  return {
+    bottom: geometry.bottom,
+    gapLeft: gap.left,
+    gapRight: gap.right,
+    target: gap.target,
+    top: geometry.top,
+  };
 }
 
 export function planPointerColumnDropPreview(

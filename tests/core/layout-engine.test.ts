@@ -2476,6 +2476,215 @@ describe("LayoutEngine", () => {
     expect(engine.commitWindowAttach(attached)).toBe(false);
   });
 
+  it.each([
+    {
+      expectedHeights: [
+        { kind: "auto", weight: 1 },
+        { clientHeight: 240, kind: "fixed" },
+      ],
+      expectedWindowIds: ["window-floating", "window-b"],
+      position: "before",
+    },
+    {
+      expectedHeights: [
+        { clientHeight: 240, kind: "fixed" },
+        { kind: "auto", weight: 1 },
+      ],
+      expectedWindowIds: ["window-b", "window-floating"],
+      position: "after",
+    },
+  ] as const)(
+    "attaches an unowned window $position an exact target member",
+    ({ expectedHeights, expectedWindowIds, position }) => {
+      const engine = new LayoutEngine();
+
+      expect(
+        engine.restoreColumns({
+          activeColumnId: null,
+          columns: [
+            {
+              column: {
+                id: columnId("column-target"),
+                presentation: "tabbed",
+                selectedWindowId: windowId("window-b"),
+                width: { kind: "fixed", value: 480 },
+                windowHeights: [{ clientHeight: 240, kind: "fixed" }],
+                windowIds: [windowId("window-b")],
+              },
+              index: 0,
+            },
+          ],
+          desktopId: desktop,
+          outputId: output,
+          viewportOffset: 87,
+        }),
+      ).toBe(true);
+      const before = engine.snapshot(output, desktop);
+      const attached = engine.previewWindowAttachToWindow(
+        windowId("window-floating"),
+        {
+          desktopId: desktop,
+          outputId: output,
+          position,
+          targetWindowId: windowId("window-b"),
+        },
+      );
+
+      if (!attached) {
+        throw new Error("expected an exact-target attachment preview");
+      }
+
+      expect(engine.snapshot(output, desktop)).toEqual(before);
+      expect(attached.layout).toMatchObject({
+        activeColumnId: "column-target",
+        columns: [
+          {
+            id: "column-target",
+            presentation: "tabbed",
+            selectedWindowId: "window-floating",
+            width: { kind: "fixed", value: 480 },
+            windowHeights: expectedHeights,
+            windowIds: expectedWindowIds,
+          },
+        ],
+        viewportOffset: 87,
+      });
+      expect(engine.commitWindowAttach(attached)).toBe(true);
+      expect(engine.snapshot(output, desktop)).toEqual(attached.layout);
+      expect(engine.commitWindowAttach(attached)).toBe(false);
+    },
+  );
+
+  it.each([
+    {
+      expectedColumnIds: ["column-floating", "column-right"],
+      position: "before",
+    },
+    {
+      expectedColumnIds: ["column-right", "column-floating"],
+      position: "after",
+    },
+  ] as const)(
+    "attaches an unowned singleton $position a target column",
+    ({ expectedColumnIds, position }) => {
+      const engine = new LayoutEngine();
+
+      expect(
+        engine.manageWindow({
+          columnId: columnId("column-right"),
+          desktopId: desktop,
+          outputId: output,
+          width: { kind: "fixed", value: 300 },
+          windowId: windowId("window-right"),
+        }),
+      ).toBe(true);
+      expect(engine.setViewportOffset(output, desktop, 53)).toBe(true);
+      const before = engine.snapshot(output, desktop);
+      const attached = engine.previewWindowAttachToColumnBoundary(
+        windowId("window-floating"),
+        {
+          columnId: columnId("column-floating"),
+          desktopId: desktop,
+          outputId: output,
+          position,
+          presentation: "tabbed",
+          targetColumnId: columnId("column-right"),
+          width: { kind: "proportion", value: 0.4 },
+        },
+      );
+
+      if (!attached) {
+        throw new Error("expected a column-boundary attachment preview");
+      }
+
+      expect(engine.snapshot(output, desktop)).toEqual(before);
+      expect(attached.layout.columns.map((column) => column.id)).toEqual(
+        expectedColumnIds,
+      );
+      expect(attached.layout).toMatchObject({
+        activeColumnId: "column-floating",
+        columns: expect.arrayContaining([
+          {
+            id: "column-floating",
+            presentation: "tabbed",
+            selectedWindowId: "window-floating",
+            width: { kind: "proportion", value: 0.4 },
+            windowIds: ["window-floating"],
+          },
+        ]),
+        viewportOffset: 53,
+      });
+      expect(engine.commitWindowAttach(attached)).toBe(true);
+      expect(engine.snapshot(output, desktop)).toEqual(attached.layout);
+    },
+  );
+
+  it("rejects invalid pointer attachment targets without mutation", () => {
+    const engine = new LayoutEngine();
+
+    engine.manageWindow({
+      columnId: columnId("column-2"),
+      desktopId: desktop,
+      outputId: output,
+      width: { kind: "fixed", value: 300 },
+      windowId: windowId("window-2"),
+    });
+    engine.setViewportOffset(output, desktop, 70);
+    const before = engine.snapshot(output, desktop);
+
+    expect(
+      engine.previewWindowAttachToWindow(windowId("window-2"), {
+        desktopId: desktop,
+        outputId: output,
+        position: "after",
+        targetWindowId: windowId("window-2"),
+      }),
+    ).toBeNull();
+    expect(
+      engine.previewWindowAttachToColumnBoundary(windowId("window-floating"), {
+        columnId: columnId("column-2"),
+        desktopId: desktop,
+        outputId: output,
+        position: "after",
+        presentation: "stacked",
+        targetColumnId: columnId("column-2"),
+        width: { kind: "fixed", value: 420 },
+      }),
+    ).toBeNull();
+    expect(engine.snapshot(output, desktop)).toEqual(before);
+  });
+
+  it("rejects a stale pointer attachment commit", () => {
+    const engine = new LayoutEngine();
+
+    engine.manageWindow({
+      columnId: columnId("column-target"),
+      desktopId: desktop,
+      outputId: output,
+      width: { kind: "fixed", value: 300 },
+      windowId: windowId("window-target"),
+    });
+    const stale = engine.previewWindowAttachToWindow(
+      windowId("window-floating"),
+      {
+        desktopId: desktop,
+        outputId: output,
+        position: "after",
+        targetWindowId: windowId("window-target"),
+      },
+    );
+
+    if (!stale) {
+      throw new Error("expected a stale attachment preview fixture");
+    }
+
+    expect(engine.setViewportOffset(output, desktop, 1)).toBe(true);
+    const changed = engine.snapshot(output, desktop);
+    expect(engine.commitWindowAttach(stale)).toBe(false);
+    expect(engine.snapshot(output, desktop)).toEqual(changed);
+    expect(engine.commitWindowAttach(stale)).toBe(false);
+  });
+
   it("recreates a vanished singleton column by its live anchors and saved width", () => {
     const engine = new LayoutEngine();
 

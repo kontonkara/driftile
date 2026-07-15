@@ -6,7 +6,9 @@ import {
   planPointerColumnDrop,
   planPointerColumnDropPreview,
   planPointerExternalColumnDrop,
+  planPointerExternalColumnDropPreview,
   planPointerExternalWindowDrop,
+  planPointerExternalWindowDropPreview,
   planPointerWindowDrop,
   planPointerWindowDropPreview,
   type PointerColumnDropInput,
@@ -524,16 +526,22 @@ describe("planPointerColumnDrop", () => {
 });
 
 describe("planPointerExternalWindowDrop", () => {
-  it("selects a complete destination target around its vertical midpoint", () => {
-    const input = externalFixture();
-    const before = planPointerExternalWindowDrop({
+  it("selects and previews a complete destination target around its vertical midpoint", () => {
+    const input = externalFixture(fractionalPreviewFixture());
+    const beforeInput = {
       ...input,
-      cursor: { x: 250, y: 49.999 },
-    });
-    const after = planPointerExternalWindowDrop({
+      cursor: { x: 250, y: 50.999 },
+    };
+    const afterInput = {
       ...input,
-      cursor: { x: 250, y: 50 },
-    });
+      cursor: { x: 250, y: 51 },
+    };
+    const beforeSnapshot = structuredClone(beforeInput);
+    const afterSnapshot = structuredClone(afterInput);
+    const before = planPointerExternalWindowDrop(beforeInput);
+    const after = planPointerExternalWindowDrop(afterInput);
+    const beforePreview = planPointerExternalWindowDropPreview(beforeInput);
+    const afterPreview = planPointerExternalWindowDropPreview(afterInput);
 
     expect(before).toEqual({
       position: "before",
@@ -543,7 +551,20 @@ describe("planPointerExternalWindowDrop", () => {
       position: "after",
       targetWindowId: "target-a",
     });
+    expect(beforePreview).toEqual({
+      frame: { height: 51, width: 99, x: 201, y: 0 },
+      target: before,
+    });
+    expect(afterPreview).toEqual({
+      frame: { height: 51, width: 99, x: 201, y: 51 },
+      target: after,
+    });
     expect(Object.isFrozen(before)).toBe(true);
+    expect(Object.isFrozen(beforePreview)).toBe(true);
+    expect(Object.isFrozen(beforePreview?.frame)).toBe(true);
+    expect(Object.isFrozen(beforePreview?.target)).toBe(true);
+    expect(beforeInput).toEqual(beforeSnapshot);
+    expect(afterInput).toEqual(afterSnapshot);
   });
 
   it("rejects outside, ambiguous, and incomplete destination hits", () => {
@@ -564,9 +585,53 @@ describe("planPointerExternalWindowDrop", () => {
       planPointerExternalWindowDrop({ ...input, windows: overlapping }),
     ).toBeNull();
     expect(
+      planPointerExternalWindowDropPreview({
+        ...input,
+        windows: overlapping,
+      }),
+    ).toBeNull();
+    expect(
       planPointerExternalWindowDrop({
         ...input,
         windows: input.windows.slice(1),
+      }),
+    ).toBeNull();
+    expect(
+      planPointerExternalWindowDropPreview({
+        ...input,
+        windows: input.windows.slice(1),
+      }),
+    ).toBeNull();
+  });
+
+  it("rejects invalid preview coordinates and unrepresentable target halves", () => {
+    const input = externalFixture();
+
+    expect(
+      planPointerExternalWindowDropPreview({
+        ...input,
+        cursor: { x: Number.NaN, y: 25 },
+      }),
+    ).toBeNull();
+    expect(
+      planPointerExternalWindowDropPreview({
+        ...input,
+        visibleArea: { ...input.visibleArea, width: 0 },
+      }),
+    ).toBeNull();
+    expect(
+      planPointerExternalWindowDropPreview({
+        ...externalFixture(
+          fixture({
+            targetAFrame: {
+              height: Number.MIN_VALUE,
+              width: 100,
+              x: 200,
+              y: 0,
+            },
+          }),
+        ),
+        cursor: { x: 250, y: 0 },
       }),
     ).toBeNull();
   });
@@ -617,22 +682,76 @@ describe("planPointerExternalWindowDrop", () => {
         null as unknown as Parameters<typeof planPointerExternalWindowDrop>[0],
       ),
     ).toBeNull();
+    expect(
+      planPointerExternalWindowDropPreview(
+        null as unknown as Parameters<
+          typeof planPointerExternalWindowDropPreview
+        >[0],
+      ),
+    ).toBeNull();
   });
 });
 
 describe("planPointerExternalColumnDrop", () => {
   it.each([
-    ["before", 25, { position: "before", targetColumnId: "left-column" }],
-    ["between", 175, { position: "after", targetColumnId: "left-column" }],
-    ["after", 475, { position: "after", targetColumnId: "right-column" }],
-  ] as const)("selects the %s destination gutter", (_name, x, expected) => {
-    const target = planPointerExternalColumnDrop({
-      ...externalColumnDropFixture(),
-      cursor: { x, y: 100 },
-    });
+    [
+      "before",
+      25,
+      { position: "before", targetColumnId: "left-column" },
+      { height: 220, width: 50, x: 0, y: 10 },
+    ],
+    [
+      "between",
+      175,
+      { position: "after", targetColumnId: "left-column" },
+      { height: 220, width: 50, x: 150, y: 10 },
+    ],
+    [
+      "after",
+      475,
+      { position: "after", targetColumnId: "right-column" },
+      { height: 220, width: 50, x: 450, y: 10 },
+    ],
+  ] as const)(
+    "selects and previews the %s destination gutter",
+    (_name, x, expected, frame) => {
+      const input = {
+        ...externalColumnDropFixture(),
+        cursor: { x, y: 100 },
+      };
+      const snapshot = structuredClone(input);
+      const target = planPointerExternalColumnDrop(input);
+      const preview = planPointerExternalColumnDropPreview(input);
 
-    expect(target).toEqual(expected);
-    expect(Object.isFrozen(target)).toBe(true);
+      expect(target).toEqual(expected);
+      expect(preview).toEqual({ frame, target: expected });
+      expect(Object.isFrozen(target)).toBe(true);
+      expect(Object.isFrozen(preview)).toBe(true);
+      expect(Object.isFrozen(preview?.frame)).toBe(true);
+      expect(Object.isFrozen(preview?.target)).toBe(true);
+      expect(input).toEqual(snapshot);
+    },
+  );
+
+  it("clips an external column preview to the visible tiled envelope", () => {
+    const input = {
+      ...clippedColumnDropFixture(),
+      draggedWindowId: windowId("external"),
+    };
+    const preview = planPointerExternalColumnDropPreview(input);
+
+    expect(preview).toEqual({
+      frame: { height: 300, width: 50, x: 50, y: 0 },
+      target: { position: "after", targetColumnId: "left-column" },
+    });
+    expect(preview?.target).toEqual(planPointerExternalColumnDrop(input));
+  });
+
+  it("leaves an exact destination-window hit to the window planner", () => {
+    const input = externalFixture();
+
+    expect(planPointerExternalWindowDropPreview(input)).not.toBeNull();
+    expect(planPointerExternalColumnDropPreview(input)).toBeNull();
   });
 
   it.each([
@@ -686,10 +805,25 @@ describe("planPointerExternalColumnDrop", () => {
         draggedWindowId: windowId("left-window"),
       }),
     ],
+    [
+      "invalid cursor",
+      (input: PointerExternalColumnDropInput) => ({
+        ...input,
+        cursor: { x: Number.POSITIVE_INFINITY, y: 100 },
+      }),
+    ],
+    [
+      "invalid visible area",
+      (input: PointerExternalColumnDropInput) => ({
+        ...input,
+        visibleArea: { ...input.visibleArea, height: 0 },
+      }),
+    ],
   ] as const)("fails closed for %s", (_name, mutate) => {
-    expect(
-      planPointerExternalColumnDrop(mutate(externalColumnDropFixture())),
-    ).toBeNull();
+    const input = mutate(externalColumnDropFixture());
+
+    expect(planPointerExternalColumnDrop(input)).toBeNull();
+    expect(planPointerExternalColumnDropPreview(input)).toBeNull();
   });
 });
 
@@ -748,8 +882,9 @@ function fixture(
   };
 }
 
-function externalFixture(): PointerExternalWindowDropInput {
-  const input = fixture();
+function externalFixture(
+  input: PointerWindowDropInput = fixture(),
+): PointerExternalWindowDropInput {
   const targetColumn = input.context.columns[1];
 
   if (!targetColumn) {
