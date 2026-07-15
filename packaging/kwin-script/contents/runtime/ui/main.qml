@@ -139,6 +139,16 @@ QtObject {
         text: "Driftile: Focus column or output right"
         onActivated: Runtime.DriftileRuntime.focusColumnOrOutputRight()
     }
+    readonly property ShortcutHandler focusColumnRightOrFirstShortcut: ShortcutHandler {
+        name: "driftile_focus_column_right_or_first"
+        text: "Driftile: Focus column right or first"
+        onActivated: Runtime.DriftileRuntime.focusColumnRightOrFirst()
+    }
+    readonly property ShortcutHandler focusColumnLeftOrLastShortcut: ShortcutHandler {
+        name: "driftile_focus_column_left_or_last"
+        text: "Driftile: Focus column left or last"
+        onActivated: Runtime.DriftileRuntime.focusColumnLeftOrLast()
+    }
     readonly property ShortcutHandler focusFirstColumnShortcut: ShortcutHandler {
         name: "driftile_focus_column_first"
         text: "Driftile: Focus first column"
@@ -194,6 +204,46 @@ QtObject {
         name: "driftile_focus_window_down_or_output_down"
         text: "Driftile: Focus window or output down"
         onActivated: Runtime.DriftileRuntime.focusWindowOrOutputDown()
+    }
+    readonly property ShortcutHandler focusWindowDownOrColumnLeftShortcut: ShortcutHandler {
+        name: "driftile_focus_window_down_or_column_left"
+        text: "Driftile: Focus down or column left"
+        onActivated: Runtime.DriftileRuntime.focusWindowDownOrColumnLeft()
+    }
+    readonly property ShortcutHandler focusWindowDownOrColumnRightShortcut: ShortcutHandler {
+        name: "driftile_focus_window_down_or_column_right"
+        text: "Driftile: Focus down or column right"
+        onActivated: Runtime.DriftileRuntime.focusWindowDownOrColumnRight()
+    }
+    readonly property ShortcutHandler focusWindowUpOrColumnLeftShortcut: ShortcutHandler {
+        name: "driftile_focus_window_up_or_column_left"
+        text: "Driftile: Focus up or column left"
+        onActivated: Runtime.DriftileRuntime.focusWindowUpOrColumnLeft()
+    }
+    readonly property ShortcutHandler focusWindowUpOrColumnRightShortcut: ShortcutHandler {
+        name: "driftile_focus_window_up_or_column_right"
+        text: "Driftile: Focus up or column right"
+        onActivated: Runtime.DriftileRuntime.focusWindowUpOrColumnRight()
+    }
+    readonly property ShortcutHandler focusWindowTopShortcut: ShortcutHandler {
+        name: "driftile_focus_window_top"
+        text: "Driftile: Focus top window"
+        onActivated: Runtime.DriftileRuntime.focusWindowTop()
+    }
+    readonly property ShortcutHandler focusWindowBottomShortcut: ShortcutHandler {
+        name: "driftile_focus_window_bottom"
+        text: "Driftile: Focus bottom window"
+        onActivated: Runtime.DriftileRuntime.focusWindowBottom()
+    }
+    readonly property ShortcutHandler focusWindowDownOrTopShortcut: ShortcutHandler {
+        name: "driftile_focus_window_down_or_top"
+        text: "Driftile: Focus down or top"
+        onActivated: Runtime.DriftileRuntime.focusWindowDownOrTop()
+    }
+    readonly property ShortcutHandler focusWindowUpOrBottomShortcut: ShortcutHandler {
+        name: "driftile_focus_window_up_or_bottom"
+        text: "Driftile: Focus up or bottom"
+        onActivated: Runtime.DriftileRuntime.focusWindowUpOrBottom()
     }
     readonly property ShortcutHandler moveColumnLeftShortcut: ShortcutHandler {
         name: "driftile_move_column_left"

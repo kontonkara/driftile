@@ -217,8 +217,26 @@ type DesktopTransferTarget =
       readonly index: number;
       readonly kind: "index";
     };
+type VerticalEdge = "bottom" | "top";
 type FloatingFocusDestination =
-  HorizontalDirection | HorizontalEdge | VerticalDirection;
+  HorizontalDirection | HorizontalEdge | VerticalDirection | VerticalEdge;
+type VerticalFocusBoundary =
+  | {
+      readonly direction: HorizontalDirection;
+      readonly kind: "column";
+    }
+  | {
+      readonly direction: DesktopReorderDirection;
+      readonly kind: "desktop";
+    }
+  | {
+      readonly destination: VerticalEdge;
+      readonly kind: "edge";
+    }
+  | {
+      readonly direction: OutputDirection;
+      readonly kind: "output";
+    };
 type StackedNativeState = "fullscreen" | "maximize";
 type WindowLayer = "floating" | "tiling";
 type PointerResize = PointerHorizontalResize | PointerVerticalResize;
@@ -1985,6 +2003,14 @@ export class RuntimeController {
     return this.focusHorizontal("right");
   }
 
+  focusColumnRightOrFirst(): boolean {
+    return this.focusHorizontal("right", undefined, "first");
+  }
+
+  focusColumnLeftOrLast(): boolean {
+    return this.focusHorizontal("left", undefined, "last");
+  }
+
   focusColumnOrOutputLeft(): boolean {
     return this.focusHorizontal("left", "left");
   }
@@ -2009,20 +2035,82 @@ export class RuntimeController {
     return this.focusWithinActiveColumn("down");
   }
 
+  focusWindowDownOrColumnLeft(): boolean {
+    return this.focusWithinActiveColumn("down", {
+      direction: "left",
+      kind: "column",
+    });
+  }
+
+  focusWindowDownOrColumnRight(): boolean {
+    return this.focusWithinActiveColumn("down", {
+      direction: "right",
+      kind: "column",
+    });
+  }
+
+  focusWindowUpOrColumnLeft(): boolean {
+    return this.focusWithinActiveColumn("up", {
+      direction: "left",
+      kind: "column",
+    });
+  }
+
+  focusWindowUpOrColumnRight(): boolean {
+    return this.focusWithinActiveColumn("up", {
+      direction: "right",
+      kind: "column",
+    });
+  }
+
+  focusWindowTop(): boolean {
+    return this.focusActiveColumnEdge("top");
+  }
+
+  focusWindowBottom(): boolean {
+    return this.focusActiveColumnEdge("bottom");
+  }
+
+  focusWindowDownOrTop(): boolean {
+    return this.focusWithinActiveColumn("down", {
+      destination: "top",
+      kind: "edge",
+    });
+  }
+
+  focusWindowUpOrBottom(): boolean {
+    return this.focusWithinActiveColumn("up", {
+      destination: "bottom",
+      kind: "edge",
+    });
+  }
+
   focusWindowOrOutputUp(): boolean {
-    return this.focusWithinActiveColumn("up", undefined, "up");
+    return this.focusWithinActiveColumn("up", {
+      direction: "up",
+      kind: "output",
+    });
   }
 
   focusWindowOrOutputDown(): boolean {
-    return this.focusWithinActiveColumn("down", undefined, "down");
+    return this.focusWithinActiveColumn("down", {
+      direction: "down",
+      kind: "output",
+    });
   }
 
   focusUpOrPreviousDesktop(): boolean {
-    return this.focusWithinActiveColumn("up", -1);
+    return this.focusWithinActiveColumn("up", {
+      direction: -1,
+      kind: "desktop",
+    });
   }
 
   focusDownOrNextDesktop(): boolean {
-    return this.focusWithinActiveColumn("down", 1);
+    return this.focusWithinActiveColumn("down", {
+      direction: 1,
+      kind: "desktop",
+    });
   }
 
   focusPreviousDesktop(): boolean {
@@ -6972,6 +7060,7 @@ export class RuntimeController {
 
   private focusFloatingWindow(
     destination: FloatingFocusDestination,
+    boundaryDestination?: FloatingFocusDestination,
   ): boolean | null {
     const active = this.workspace.activeWindow;
 
@@ -7007,12 +7096,21 @@ export class RuntimeController {
       return false;
     }
 
-    const target = this.floatingNavigationTarget(
+    let target = this.floatingNavigationTarget(
       active,
       activeId,
       key,
       destination,
     );
+
+    if (!target && boundaryDestination !== undefined) {
+      target = this.floatingNavigationTarget(
+        active,
+        activeId,
+        key,
+        boundaryDestination,
+      );
+    }
 
     if (!target || target === active) {
       return false;
@@ -7079,12 +7177,29 @@ export class RuntimeController {
         continue;
       }
 
+      const candidateCenterY = frame.y + frame.height / 2;
+
+      if (destination === "top") {
+        if (!target || candidateCenterY < best) {
+          target = candidate;
+          best = candidateCenterY;
+        }
+        continue;
+      }
+
+      if (destination === "bottom") {
+        if (!target || candidateCenterY >= best) {
+          target = candidate;
+          best = candidateCenterY;
+        }
+        continue;
+      }
+
       if (candidateId === activeId) {
         continue;
       }
 
       const candidateCenterX = frame.x + frame.width / 2;
-      const candidateCenterY = frame.y + frame.height / 2;
       const distance =
         destination === "left"
           ? activeCenterX - candidateCenterX
@@ -7106,8 +7221,12 @@ export class RuntimeController {
   private focusHorizontal(
     destination: HorizontalDirection | HorizontalEdge,
     boundaryOutputDirection?: OutputDirection,
+    boundaryDestination?: HorizontalEdge,
   ): boolean {
-    const floatingResult = this.focusFloatingWindow(destination);
+    const floatingResult = this.focusFloatingWindow(
+      destination,
+      boundaryDestination,
+    );
 
     if (floatingResult !== null) {
       return floatingResult;
@@ -7119,7 +7238,25 @@ export class RuntimeController {
       return false;
     }
 
-    const targetId = this.horizontalFocusTarget(command, destination);
+    return this.focusHorizontalTarget(
+      command,
+      destination,
+      boundaryOutputDirection,
+      boundaryDestination,
+    );
+  }
+
+  private focusHorizontalTarget(
+    command: ActiveColumnCommand,
+    destination: HorizontalDirection | HorizontalEdge,
+    boundaryOutputDirection?: OutputDirection,
+    boundaryDestination?: HorizontalEdge,
+  ): boolean {
+    let targetId = this.horizontalFocusTarget(command, destination);
+
+    if (!targetId && boundaryDestination !== undefined) {
+      targetId = this.horizontalFocusTarget(command, boundaryDestination);
+    }
 
     if (!targetId) {
       if (
@@ -7288,10 +7425,12 @@ export class RuntimeController {
 
   private focusWithinActiveColumn(
     direction: VerticalDirection,
-    boundaryDesktopDirection?: DesktopReorderDirection,
-    boundaryOutputDirection?: OutputDirection,
+    boundary?: VerticalFocusBoundary,
   ): boolean {
-    const floatingResult = this.focusFloatingWindow(direction);
+    const floatingResult = this.focusFloatingWindow(
+      direction,
+      boundary?.kind === "edge" ? boundary.destination : undefined,
+    );
 
     if (floatingResult !== null) {
       return floatingResult;
@@ -7324,19 +7463,90 @@ export class RuntimeController {
           )
           .every((id) => this.observer.source(id)?.minimized === true);
 
-      if (boundaryDesktopDirection !== undefined && atVisibleBoundary) {
-        return boundaryDesktopDirection === -1
+      if (!boundary || !atVisibleBoundary) {
+        return false;
+      }
+
+      if (boundary.kind === "desktop") {
+        return boundary.direction === -1
           ? this.focusPreviousDesktop()
           : this.focusNextDesktop();
       }
 
-      if (boundaryOutputDirection !== undefined && atVisibleBoundary) {
-        return this.focusAdjacentOutputAtBoundary(
-          command,
-          boundaryOutputDirection,
-        );
+      if (boundary.kind === "output") {
+        return this.focusAdjacentOutputAtBoundary(command, boundary.direction);
       }
 
+      if (boundary.kind === "column") {
+        return this.focusHorizontalTarget(command, boundary.direction);
+      }
+
+      targetId = this.activeColumnEdgeTarget(
+        command.activeColumn,
+        boundary.destination,
+      );
+    }
+
+    return this.focusActiveColumnMember(command, selectedId, targetId);
+  }
+
+  private focusActiveColumnEdge(destination: VerticalEdge): boolean {
+    const floatingResult = this.focusFloatingWindow(destination);
+
+    if (floatingResult !== null) {
+      return floatingResult;
+    }
+
+    const command = this.prepareActiveColumnCommand();
+
+    if (!command) {
+      return false;
+    }
+
+    const selectedId =
+      command.activeColumn.presentation === "tabbed"
+        ? command.activeColumn.selectedWindowId
+        : command.activeId;
+    const targetId = this.activeColumnEdgeTarget(
+      command.activeColumn,
+      destination,
+    );
+
+    return this.focusActiveColumnMember(command, selectedId, targetId);
+  }
+
+  private activeColumnEdgeTarget(
+    column: LayoutColumnSnapshot,
+    destination: VerticalEdge,
+  ): WindowId | null {
+    const start = destination === "top" ? 0 : column.windowIds.length - 1;
+    const step = destination === "top" ? 1 : -1;
+
+    for (
+      let index = start;
+      index >= 0 && index < column.windowIds.length;
+      index += step
+    ) {
+      const id = column.windowIds[index];
+
+      if (!id) {
+        break;
+      }
+
+      if (this.observer.source(id)?.minimized !== true) {
+        return id;
+      }
+    }
+
+    return null;
+  }
+
+  private focusActiveColumnMember(
+    command: ActiveColumnCommand,
+    selectedId: WindowId,
+    targetId: WindowId | null,
+  ): boolean {
+    if (!targetId || targetId === selectedId) {
       return false;
     }
 

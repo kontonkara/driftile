@@ -11061,6 +11061,294 @@ describe("RuntimeController", () => {
     expect(fixture.activationCount).toBe(2);
   });
 
+  it("wraps column focus only after reaching a visible boundary", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const windows = [
+      createTrackedWindow("left", output, desktop),
+      createTrackedWindow("center", output, desktop),
+      createTrackedWindow("right", output, desktop),
+    ];
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map(({ window }) => window),
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    expect(controller.start()).toBe(true);
+    fixture.workspace.activeWindow = windows[1]?.window ?? null;
+    controller.reconcile();
+
+    expect(controller.focusColumnRightOrFirst()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(windows[2]?.window);
+    expect(controller.focusColumnRightOrFirst()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(windows[0]?.window);
+    expect(controller.focusColumnLeftOrLast()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(windows[2]?.window);
+  });
+
+  it.each([
+    {
+      action: (controller: RuntimeController) =>
+        controller.focusWindowDownOrColumnLeft(),
+      adjacentId: "left-top",
+      initialId: "center-top",
+      localId: "center-bottom",
+      name: "down or left",
+    },
+    {
+      action: (controller: RuntimeController) =>
+        controller.focusWindowDownOrColumnRight(),
+      adjacentId: "right-top",
+      initialId: "center-top",
+      localId: "center-bottom",
+      name: "down or right",
+    },
+    {
+      action: (controller: RuntimeController) =>
+        controller.focusWindowUpOrColumnLeft(),
+      adjacentId: "left-top",
+      initialId: "center-bottom",
+      localId: "center-top",
+      name: "up or left",
+    },
+    {
+      action: (controller: RuntimeController) =>
+        controller.focusWindowUpOrColumnRight(),
+      adjacentId: "right-top",
+      initialId: "center-bottom",
+      localId: "center-top",
+      name: "up or right",
+    },
+  ] as const)(
+    "focuses $name locally before crossing the column boundary",
+    ({ action, adjacentId, initialId, localId }) => {
+      const output = createOutput("DP-1", 0);
+      const desktop = { id: "desktop-1" };
+      const windows = [
+        createTrackedWindow("left-top", output, desktop),
+        createTrackedWindow("left-bottom", output, desktop),
+        createTrackedWindow("center-top", output, desktop),
+        createTrackedWindow("center-bottom", output, desktop),
+        createTrackedWindow("right-top", output, desktop),
+        createTrackedWindow("right-bottom", output, desktop),
+      ];
+      const byId = new Map(
+        windows.map((tracked) => [String(tracked.window.internalId), tracked]),
+      );
+      const fixture = createWorkspace(
+        output,
+        desktop,
+        [output],
+        [desktop],
+        windows.map(({ window }) => window),
+      );
+      const controller = new RuntimeController(fixture.workspace, {
+        clientAreaOption: 2,
+        columnWidth: { kind: "fixed", value: 300 },
+        gap: 10,
+      });
+
+      expect(controller.start()).toBe(true);
+      const layout = installTestLayout(
+        controller,
+        output,
+        desktop,
+        "column:center",
+        [
+          {
+            id: "column:left",
+            width: { kind: "fixed", value: 300 },
+            windowIds: ["left-top", "left-bottom"],
+          },
+          {
+            id: "column:center",
+            width: { kind: "fixed", value: 300 },
+            windowIds: ["center-top", "center-bottom"],
+          },
+          {
+            id: "column:right",
+            width: { kind: "fixed", value: 300 },
+            windowIds: ["right-top", "right-bottom"],
+          },
+        ],
+      );
+      const initial = byId.get(initialId);
+      const local = byId.get(localId);
+      const adjacent = byId.get(adjacentId);
+
+      if (!initial || !local || !adjacent) {
+        throw new Error("missing boundary focus fixture");
+      }
+
+      layout.activateWindow(windowId(initialId));
+      fixture.workspace.activeWindow = initial.window;
+
+      expect(action(controller)).toBe(true);
+      expect(fixture.workspace.activeWindow).toBe(local.window);
+      expect(action(controller)).toBe(true);
+      expect(fixture.workspace.activeWindow).toBe(adjacent.window);
+    },
+  );
+
+  it("focuses visible column edges and wraps vertically", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const windows = Array.from({ length: 5 }, (_value, index) =>
+      createTrackedWindow(`window-${String(index + 1)}`, output, desktop),
+    );
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map(({ window }) => window),
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+      scheduleResume: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    const layout = installTestLayout(
+      controller,
+      output,
+      desktop,
+      "column:stack",
+      [
+        {
+          id: "column:stack",
+          width: { kind: "fixed", value: 300 },
+          windowIds: windows.map(({ window }) => String(window.internalId)),
+        },
+      ],
+    );
+    const minimizedTop = windows[0];
+    const minimizedBottom = windows[3];
+
+    if (!minimizedTop || !minimizedBottom) {
+      throw new Error("missing vertical edge fixture");
+    }
+
+    setWindowState("minimized", minimizedTop, true);
+    setWindowState("minimized", minimizedBottom, true);
+    flushManualScheduler(scheduler);
+    layout.activateWindow(windowId("window-3"));
+    fixture.workspace.activeWindow = windows[2]?.window ?? null;
+
+    expect(controller.focusWindowTop()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(windows[1]?.window);
+    expect(controller.focusWindowBottom()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(windows[4]?.window);
+    expect(controller.focusWindowDownOrTop()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(windows[1]?.window);
+    expect(controller.focusWindowUpOrBottom()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(windows[4]?.window);
+  });
+
+  it("rolls back tab selection when wrapped focus is rejected", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const top = createTrackedWindow("top", output, desktop);
+    const selected = createTrackedWindow("selected", output, desktop);
+    const bottom = createTrackedWindow("bottom", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [top.window, bottom.window, selected.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    expect(controller.start()).toBe(true);
+    const layout = installTestLayout(
+      controller,
+      output,
+      desktop,
+      "column:tabs",
+      [
+        {
+          id: "column:tabs",
+          presentation: "tabbed",
+          selectedWindowId: "top",
+          width: { kind: "fixed", value: 300 },
+          windowIds: ["top", "selected", "bottom"],
+        },
+      ],
+    );
+    fixture.workspace.activeWindow = top.window;
+    fixture.setActivationBehavior(() => undefined);
+
+    expect(controller.focusWindowUpOrBottom()).toBe(false);
+    expect(fixture.workspace.activeWindow).toBe(top.window);
+    expect(
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ).columns[0]?.selectedWindowId,
+    ).toBe(windowId("top"));
+
+    fixture.setActivationBehavior(null);
+    expect(controller.focusWindowUpOrBottom()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(bottom.window);
+  });
+
+  it("does not cross a column after a blocked vertical target", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const active = createTrackedWindow("active", output, desktop);
+    const blocked = createTrackedWindow("blocked", output, desktop);
+    const right = createTrackedWindow("right", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [right.window, blocked.window, active.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+      scheduleResume: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    installTestLayout(controller, output, desktop, "column:active", [
+      {
+        id: "column:active",
+        width: { kind: "fixed", value: 300 },
+        windowIds: ["active", "blocked"],
+      },
+      {
+        id: "column:right",
+        width: { kind: "fixed", value: 300 },
+        windowIds: ["right"],
+      },
+    ]);
+    fixture.workspace.activeWindow = active.window;
+    blockWindowFocus(controller, blocked, "restore settling");
+
+    expect(controller.focusWindowDownOrColumnRight()).toBe(false);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+    expect(fixture.workspace.activeWindow).not.toBe(right.window);
+  });
+
   it("centers configured horizontal targets with global fallback", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
@@ -20898,6 +21186,113 @@ describe("RuntimeController", () => {
     const activationCount = fixture.activationCount;
     expect(controller.focusLeft()).toBe(false);
     expect(fixture.workspace.activeWindow).toBe(bottomTie.window);
+    expect(fixture.activationCount).toBe(activationCount);
+  });
+
+  it("wraps floating focus to geometric column and vertical edges", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const tiled = createTrackedWindow("tiled", output, desktop);
+    const leftmost = createTrackedWindow("leftmost", output, desktop);
+    const topByCenter = createTrackedWindow("top-by-center", output, desktop);
+    const bottomByCenter = createTrackedWindow(
+      "bottom-by-center",
+      output,
+      desktop,
+    );
+    const edgeDecoy = createTrackedWindow("edge-decoy", output, desktop);
+    const active = createTrackedWindow("active", output, desktop);
+    const floating = [leftmost, topByCenter, bottomByCenter, edgeDecoy, active];
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [tiled.window, ...floating.map(({ window }) => window)],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    expect(controller.start()).toBe(true);
+
+    for (const candidate of floating) {
+      fixture.workspace.activeWindow = candidate.window;
+      expect(controller.toggleFloating()).toBe(true);
+    }
+
+    leftmost.setFrameGeometry({ height: 100, width: 100, x: 100, y: 450 });
+    topByCenter.setFrameGeometry({ height: 100, width: 100, x: 300, y: 100 });
+    bottomByCenter.setFrameGeometry({
+      height: 100,
+      width: 100,
+      x: 500,
+      y: 800,
+    });
+    edgeDecoy.setFrameGeometry({
+      height: 1_400,
+      width: 50,
+      x: 600,
+      y: 0,
+    });
+    active.setFrameGeometry({ height: 200, width: 100, x: 900, y: 400 });
+    fixture.workspace.activeWindow = active.window;
+
+    expect(controller.focusColumnRightOrFirst()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(leftmost.window);
+    expect(controller.focusColumnLeftOrLast()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+    expect(controller.focusWindowTop()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(topByCenter.window);
+    expect(controller.focusWindowBottom()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(bottomByCenter.window);
+    expect(controller.focusWindowDownOrColumnLeft()).toBe(false);
+    expect(fixture.workspace.activeWindow).toBe(bottomByCenter.window);
+    expect(controller.focusWindowDownOrTop()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(topByCenter.window);
+    expect(controller.focusWindowUpOrBottom()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(bottomByCenter.window);
+  });
+
+  it("does not wrap floating focus past an unavailable directional target", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const tiled = createTrackedWindow("tiled", output, desktop);
+    const edge = createTrackedWindow("edge", output, desktop);
+    const blocked = createTrackedWindow("blocked", output, desktop);
+    const active = createTrackedWindow("active", output, desktop);
+    const floating = [edge, blocked, active];
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [tiled.window, ...floating.map(({ window }) => window)],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    expect(controller.start()).toBe(true);
+
+    for (const candidate of floating) {
+      fixture.workspace.activeWindow = candidate.window;
+      expect(controller.toggleFloating()).toBe(true);
+    }
+
+    edge.setFrameGeometry({ height: 100, width: 100, x: 100, y: 100 });
+    active.setFrameGeometry({ height: 100, width: 100, x: 500, y: 500 });
+    blocked.setFrameGeometry({ height: 100, width: 100, x: 600, y: 600 });
+    fixture.workspace.activeWindow = active.window;
+    blockWindowFocus(controller, blocked, "restore settling");
+    const activationCount = fixture.activationCount;
+
+    expect(controller.focusColumnRightOrFirst()).toBe(false);
+    expect(controller.focusWindowDownOrTop()).toBe(false);
+    expect(controller.focusWindowDownOrColumnLeft()).toBe(false);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
     expect(fixture.activationCount).toBe(activationCount);
   });
 

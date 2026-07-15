@@ -34,6 +34,14 @@ const shortcutActionCatalog = [
     text: "Driftile: Focus column or output right",
   },
   {
+    name: "driftile_focus_column_right_or_first",
+    text: "Driftile: Focus column right or first",
+  },
+  {
+    name: "driftile_focus_column_left_or_last",
+    text: "Driftile: Focus column left or last",
+  },
+  {
     name: "driftile_focus_column_first",
     text: "Driftile: Focus first column",
     defaultSequence: "Meta+Home",
@@ -78,6 +86,38 @@ const shortcutActionCatalog = [
   {
     name: "driftile_focus_window_down_or_output_down",
     text: "Driftile: Focus window or output down",
+  },
+  {
+    name: "driftile_focus_window_down_or_column_left",
+    text: "Driftile: Focus down or column left",
+  },
+  {
+    name: "driftile_focus_window_down_or_column_right",
+    text: "Driftile: Focus down or column right",
+  },
+  {
+    name: "driftile_focus_window_up_or_column_left",
+    text: "Driftile: Focus up or column left",
+  },
+  {
+    name: "driftile_focus_window_up_or_column_right",
+    text: "Driftile: Focus up or column right",
+  },
+  {
+    name: "driftile_focus_window_top",
+    text: "Driftile: Focus top window",
+  },
+  {
+    name: "driftile_focus_window_bottom",
+    text: "Driftile: Focus bottom window",
+  },
+  {
+    name: "driftile_focus_window_down_or_top",
+    text: "Driftile: Focus down or top",
+  },
+  {
+    name: "driftile_focus_window_up_or_bottom",
+    text: "Driftile: Focus up or bottom",
   },
   {
     name: "driftile_move_column_left",
