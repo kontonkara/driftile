@@ -7007,8 +7007,15 @@ export class RuntimeController {
       return false;
     }
 
+    const operationReference: {
+      current: PendingManualFloatingSizeChange | null;
+    } = { current: null };
     const handleFrameGeometryChanged = (): void => {
-      this.handlePendingManualFloatingSizeChange(operation);
+      const current = operationReference.current;
+
+      if (current) {
+        this.handlePendingManualFloatingSizeChange(current);
+      }
     };
     const operation: PendingManualFloatingSizeChange = {
       axis,
@@ -7022,6 +7029,7 @@ export class RuntimeController {
       status: "pending",
       targetFrame,
     };
+    operationReference.current = operation;
     this.pendingManualFloatingSizeChanges.set(activeId, operation);
 
     try {
