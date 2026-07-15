@@ -12,8 +12,9 @@ nix flake check --all-systems --no-build
 `npm run package:check` performs the slower release gate: it rebuilds the main
 script, overview effect, helper, and manifest twice, compares exact bytes,
 validates `SHA256SUMS`, and requires each KPackage's exact file list, plugin ID,
-metadata version, and disabled-by-default policy. The main archive contract is
-checked independently from the optional effect.
+metadata version, content-addressed runtime directory, and disabled-by-default
+policy. It recomputes each runtime address from exact QML and JavaScript bytes.
+The main archive contract is checked independently from the optional effect.
 The flake check evaluates both modules for every supported architecture. It
 also uses the pinned official Home Manager to verify standalone installation,
 settings-only NixOS coexistence, generated profiles, independent main and
@@ -260,7 +261,9 @@ preinstalled Driftile package. It installs the pinned published stable script
 and overview archives, keeps the overview disabled and unbound, then unloads
 the script and upgrades both packages to the current build. It verifies package
 identities, runtime digests, the default-off touchpad setting, effect discovery,
-and the unbound overview load cycle. Finally, it exercises Konsole and KDE
+and the unbound overview load cycle. The upgraded script must also register the
+current close-window action through its metadata-selected entrypoint, which
+rejects a stale in-memory runtime. Finally, it exercises Konsole and KDE
 Calculator, removes both packages, and confirms that KWin remains operational.
 
 The script builds `nixosConfigurations.driftile-vm` through `nixos-rebuild build-vm` and asks host KWin for a centered `1440x900` QEMU window with a `1680x1050` guest display. The guest receives 8 virtual CPUs and 8 GiB of memory. Plasma starts a Wayland session, enables Driftile, claims its shortcut profile, and runs the acceptance pool. Separate Konsole processes provide a stable baseline, while the primary structural workflow uses offline Firefox for direct insertion and as a passive peer during stacked maximize, XWayland xterm for minimized-edge navigation, KDE Calculator as a numbered-desktop destination, and fixed-size XWayland `xmessage` for automatic-floating constraints. A final lifecycle pool repeats Firefox, KDE Calculator, and xterm checks after all physical shortcut scenarios. The VM requires borderless state for tiled, fixed-size, manually floating, and application windows. It focuses, minimizes, restores, resizes, and closes real applications while checking their slots, neighboring frames, and exact layout reflow. The desktop workflow also transfers a visible active Konsole while a settled minimized source-column peer retains its slot, state, and frame without writes. `kdotool` reads the active KWin window during these checks.

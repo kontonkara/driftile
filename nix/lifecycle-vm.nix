@@ -11,7 +11,9 @@ let
   overviewShortcut = "driftile_toggle_overview";
   overviewShortcutText = "Driftile: Toggle overview";
   pluginMetadata = builtins.fromJSON (builtins.readFile ../packaging/kwin-script/metadata.json);
-  overviewPluginMetadata = builtins.fromJSON (builtins.readFile ../packaging/kwin-effect/metadata.json);
+  overviewPluginMetadata = builtins.fromJSON (
+    builtins.readFile ../packaging/kwin-effect/metadata.json
+  );
   currentVersion = pluginMetadata.KPlugin.Version;
   currentOverviewVersion = overviewPluginMetadata.KPlugin.Version;
   publishedVersion = "1.18.0";
@@ -44,8 +46,11 @@ let
 
         test "$(jq -er '.KPlugin.Id' package/metadata.json)" = ${pluginId}
         test "$(jq -er '.KPlugin.Version' package/metadata.json)" = ${currentVersion}
-        test -f package/contents/code/main.js
-        test -f package/contents/ui/main.qml
+        main_script=$(jq -er '."X-Plasma-MainScript"' package/metadata.json)
+        [[ "$main_script" =~ ^runtime/[0-9a-f]{64}/ui/main\.qml$ ]]
+        runtime_script="''${main_script%/ui/main.qml}/code/main.js"
+        test -f "package/contents/$main_script"
+        test -f "package/contents/$runtime_script"
         test -z "$(find package -type l -print -quit)"
 
         find package -exec touch -h -d @315532800 {} +
@@ -73,8 +78,11 @@ let
         test "$(jq -er '.KPlugin.Id' package/metadata.json)" = ${overviewPluginId}
         test "$(jq -er '.KPlugin.Version' package/metadata.json)" = ${currentOverviewVersion}
         test "$(jq -er '.KPlugin.EnabledByDefault' package/metadata.json)" = false
-        test -f package/contents/code/main.js
-        test -f package/contents/ui/main.qml
+        main_script=$(jq -er '."X-Plasma-MainScript"' package/metadata.json)
+        [[ "$main_script" =~ ^runtime/[0-9a-f]{64}/ui/main\.qml$ ]]
+        runtime_script="''${main_script%/ui/main.qml}/code/main.js"
+        test -f "package/contents/$main_script"
+        test -f "package/contents/$runtime_script"
         test -z "$(find package -type l -print -quit)"
 
         find package -exec touch -h -d @315532800 {} +
@@ -103,6 +111,7 @@ let
       readonly overview_plugin_id=${overviewPluginId}
       readonly overview_shortcut=${overviewShortcut}
       readonly overview_shortcut_text="${overviewShortcutText}"
+      readonly close_shortcut=driftile_close_window
       readonly published_archive=${publishedArchive}
       readonly published_overview_archive=${publishedOverviewArchive}
       readonly current_archive=${currentArchive}
@@ -112,10 +121,9 @@ let
       readonly current_overview_version=${currentOverviewVersion}
       readonly data_home="''${XDG_DATA_HOME:-$HOME/.local/share}"
       readonly installed_package="$data_home/kwin/scripts/$plugin_id"
-      readonly installed_main="$installed_package/contents/ui/main.qml"
-      readonly installed_runtime="$installed_package/contents/code/main.js"
+      readonly installed_metadata="$installed_package/metadata.json"
       readonly installed_overview_package="$data_home/kwin/effects/$overview_plugin_id"
-      readonly installed_overview_runtime="$installed_overview_package/contents/code/main.js"
+      readonly installed_overview_metadata="$installed_overview_package/metadata.json"
       readonly runner_title="Driftile release lifecycle"
       result_written=false
       test_kcalc_pid=""
@@ -195,9 +203,88 @@ let
           "$1"
       }
 
+      runtime_script_from_main() {
+        local main_script=$1
+        local runtime_root
+
+        case "$main_script" in
+          ui/main.qml)
+            printf '%s' code/main.js
+            ;;
+          runtime/*/ui/main.qml)
+            runtime_root="''${main_script%/ui/main.qml}"
+            [[ "$runtime_root" =~ ^runtime/[0-9a-f]{64}$ ]] || return 1
+            printf '%s/code/main.js' "$runtime_root"
+            ;;
+          *)
+            return 1
+            ;;
+        esac
+      }
+
+      metadata_main_script() {
+        jq --exit-status --raw-output '."X-Plasma-MainScript"' "$1"
+      }
+
+      metadata_runtime_script() {
+        local main_script
+
+        main_script=$(metadata_main_script "$1") || return 1
+        runtime_script_from_main "$main_script"
+      }
+
+      installed_main_path() {
+        local main_script
+
+        main_script=$(metadata_main_script "$installed_metadata") || return 1
+        printf '%s/contents/%s' "$installed_package" "$main_script"
+      }
+
+      installed_runtime_path() {
+        local runtime_script
+
+        runtime_script=$(metadata_runtime_script "$installed_metadata") || return 1
+        printf '%s/contents/%s' "$installed_package" "$runtime_script"
+      }
+
+      installed_package_has_runtime() {
+        local main_path
+        local runtime_path
+
+        main_path=$(installed_main_path) || return 1
+        runtime_path=$(installed_runtime_path) || return 1
+        [[ -f "$main_path" && -f "$runtime_path" ]]
+      }
+
+      installed_overview_main_path() {
+        local main_script
+
+        main_script=$(metadata_main_script "$installed_overview_metadata") || return 1
+        printf '%s/contents/%s' "$installed_overview_package" "$main_script"
+      }
+
+      installed_overview_runtime_path() {
+        local runtime_script
+
+        runtime_script=$(metadata_runtime_script "$installed_overview_metadata") || return 1
+        printf '%s/contents/%s' "$installed_overview_package" "$runtime_script"
+      }
+
+      installed_overview_has_runtime() {
+        local main_path
+        local runtime_path
+
+        main_path=$(installed_overview_main_path) || return 1
+        runtime_path=$(installed_overview_runtime_path) || return 1
+        [[ -f "$main_path" && -f "$runtime_path" ]]
+      }
+
       load_installed_script() {
+        local installed_main
         local load_result
 
+        installed_main=$(installed_main_path) \
+          || fail_test "the installed entry point metadata is invalid"
         [[ -f "$installed_main" ]] \
           || fail_test "the installed entry point is missing"
         load_result=$(busctl --user call \
@@ -253,6 +340,40 @@ let
           | jq --exit-status --raw-output '.KPlugin.EnabledByDefault'
       }
 
+      archive_main_path() {
+        local main_script
+
+        main_script=$(unzip -p "$1" metadata.json \
+          | jq --exit-status --raw-output '."X-Plasma-MainScript"') \
+          || return 1
+        printf 'contents/%s' "$main_script"
+      }
+
+      archive_runtime_path() {
+        local main_script
+        local runtime_script
+
+        main_script=$(unzip -p "$1" metadata.json \
+          | jq --exit-status --raw-output '."X-Plasma-MainScript"') \
+          || return 1
+        runtime_script=$(runtime_script_from_main "$main_script") || return 1
+        printf 'contents/%s' "$runtime_script"
+      }
+
+      archive_contains_main() {
+        local main_path
+
+        main_path=$(archive_main_path "$1") || return 1
+        [[ "$(unzip -Z1 "$1" "$main_path")" == "$main_path" ]]
+      }
+
+      archive_contains_runtime() {
+        local runtime_path
+
+        runtime_path=$(archive_runtime_path "$1") || return 1
+        [[ "$(unzip -Z1 "$1" "$runtime_path")" == "$runtime_path" ]]
+      }
+
       config_default() {
         local config_file=$1
         local entry_name=$2
@@ -290,8 +411,10 @@ let
 
       archive_runtime_digest() {
         local digest
+        local runtime_path
 
-        digest=$(unzip -p "$1" contents/code/main.js | sha256sum) || return 1
+        runtime_path=$(archive_runtime_path "$1") || return 1
+        digest=$(unzip -p "$1" "$runtime_path" | sha256sum) || return 1
         printf '%s' "''${digest%% *}"
       }
 
@@ -313,8 +436,10 @@ let
 
       runtime_digest() {
         local digest
+        local runtime_path
 
-        digest=$(sha256sum "$installed_runtime") || return 1
+        runtime_path=$(installed_runtime_path) || return 1
+        digest=$(sha256sum "$runtime_path") || return 1
         printf '%s' "''${digest%% *}"
       }
 
@@ -353,8 +478,10 @@ let
 
       overview_runtime_digest() {
         local digest
+        local runtime_path
 
-        digest=$(sha256sum "$installed_overview_runtime") || return 1
+        runtime_path=$(installed_overview_runtime_path) || return 1
+        digest=$(sha256sum "$runtime_path") || return 1
         printf '%s' "''${digest%% *}"
       }
 
@@ -634,6 +761,12 @@ let
           else
             printf 'false\n'
           fi
+          printf 'close-window action registered: '
+          if shortcut_is_registered "$close_shortcut"; then
+            printf 'true\n'
+          else
+            printf 'false\n'
+          fi
           printf '\noverview KPackage matches:\n'
           kpackagetool6 --type=KWin/Effect --list 2>&1 \
             | grep --fixed-strings "$overview_plugin_id" \
@@ -695,6 +828,22 @@ let
         || fail_test "the current overview archive package ID is unexpected"
       [[ "$(archive_enabled_by_default "$current_overview_archive")" == false ]] \
         || fail_test "the current overview archive was enabled by default"
+      archive_contains_main "$published_archive" \
+        || fail_test "the published archive entry point is missing or invalid"
+      archive_contains_runtime "$published_archive" \
+        || fail_test "the published archive runtime is missing or invalid"
+      archive_contains_main "$published_overview_archive" \
+        || fail_test "the published overview entry point is missing or invalid"
+      archive_contains_runtime "$published_overview_archive" \
+        || fail_test "the published overview runtime is missing or invalid"
+      archive_contains_main "$current_archive" \
+        || fail_test "the current archive entry point is missing or invalid"
+      archive_contains_runtime "$current_archive" \
+        || fail_test "the current archive runtime is missing or invalid"
+      archive_contains_main "$current_overview_archive" \
+        || fail_test "the current overview entry point is missing or invalid"
+      archive_contains_runtime "$current_overview_archive" \
+        || fail_test "the current overview runtime is missing or invalid"
       published_archive_runtime_digest=$(archive_runtime_digest "$published_archive") \
         || fail_test "the published archive runtime could not be hashed"
       published_overview_archive_runtime_digest=$(archive_runtime_digest "$published_overview_archive") \
@@ -740,6 +889,8 @@ let
         || fail_test "the installed published metadata is unexpected"
       [[ "$(installed_plugin_id)" == "$plugin_id" ]] \
         || fail_test "the installed published package ID is unexpected"
+      installed_package_has_runtime \
+        || fail_test "the installed published entry point or runtime is missing"
       published_runtime_digest=$(runtime_digest) \
         || fail_test "the published runtime could not be hashed"
       [[ "$published_runtime_digest" == "$published_archive_runtime_digest" ]] \
@@ -750,6 +901,8 @@ let
         || fail_test "the installed published overview package ID is unexpected"
       [[ "$(overview_installed_enabled_by_default)" == false ]] \
         || fail_test "the installed published overview was enabled by default"
+      installed_overview_has_runtime \
+        || fail_test "the installed published overview entry point or runtime is missing"
       published_overview_runtime_digest=$(overview_runtime_digest) \
         || fail_test "the published overview runtime could not be hashed"
       [[ "$published_overview_runtime_digest" == "$published_overview_archive_runtime_digest" ]] \
@@ -782,6 +935,8 @@ let
         || fail_test "the upgraded metadata did not change"
       [[ "$(installed_plugin_id)" == "$plugin_id" ]] \
         || fail_test "the upgraded package ID changed"
+      installed_package_has_runtime \
+        || fail_test "the upgraded entry point or runtime is missing"
       current_runtime_digest=$(runtime_digest) \
         || fail_test "the current runtime could not be hashed"
       [[ "$current_runtime_digest" == "$current_archive_runtime_digest" ]] \
@@ -796,6 +951,8 @@ let
         || fail_test "the upgraded overview package ID changed"
       [[ "$(overview_installed_enabled_by_default)" == false ]] \
         || fail_test "the upgraded overview was enabled by default"
+      installed_overview_has_runtime \
+        || fail_test "the upgraded overview entry point or runtime is missing"
       current_overview_runtime_digest=$(overview_runtime_digest) \
         || fail_test "the upgraded overview runtime could not be hashed"
       [[ "$current_overview_runtime_digest" == "$current_overview_archive_runtime_digest" ]] \
@@ -812,6 +969,8 @@ let
 
       set_enabled true
       load_installed_script
+      wait_for_shortcut_registration_state "$close_shortcut" true \
+        || fail_test "the current runtime did not register the close-window action"
       app_konsole_title="Driftile lifecycle Konsole application"
       app_kcalc_title="Driftile lifecycle Calculator application"
       start_test_konsole "$app_konsole_title" \
