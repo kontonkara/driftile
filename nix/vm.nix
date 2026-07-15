@@ -9834,8 +9834,7 @@ let
                 window_frame_width "$title_c" 2>/dev/null || true
               )
 
-              if invoke_shortcut \
-                "driftile_switch_preset_column_width_back" \
+              if request_physical_shortcut preset-back \
                 && wait_for_window_width_near \
                   "$title_c" "$expected_wide_width" 2 \
                 && wait_for_active "$title_c"; then
@@ -9864,7 +9863,7 @@ let
         if [[ "$presets_verified" == true \
           && "$cleanup_verified" == true ]]; then
           record_focus_state \
-            "configured column-width presets wrapped forward physically and backward by action ID"
+            "configured column-width presets wrapped forward physically and backward with Meta+Shift+R"
           return 0
         fi
 
@@ -10057,11 +10056,11 @@ let
           || ! wait_for_active "$title_b"; then
           set_window_height_presets "" >/dev/null 2>&1 || true
           record_focus_state \
-            "physical Meta+Shift+R did not select the configured taller B preset"
+            "physical Meta+Ctrl+Shift+R did not select the configured taller B preset"
           return 1
         fi
         record_focus_state \
-          "physical Meta+Shift+R selected the configured taller B preset"
+          "physical Meta+Ctrl+Shift+R selected the configured taller B preset"
 
         if ! request_physical_shortcut ctrl-r \
           || ! wait_for_frames \

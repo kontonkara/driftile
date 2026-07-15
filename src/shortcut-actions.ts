@@ -503,6 +503,7 @@ const shortcutActionCatalog = [
   {
     name: "driftile_switch_preset_column_width_back",
     text: "Driftile: Switch preset column width back",
+    defaultSequence: "Meta+Shift+R",
   },
   {
     name: "driftile_maximize_column",
@@ -552,7 +553,7 @@ const shortcutActionCatalog = [
   {
     name: "driftile_switch_preset_window_height",
     text: "Driftile: Switch preset window height",
-    defaultSequence: "Meta+Shift+R",
+    defaultSequence: "Meta+Ctrl+Shift+R",
   },
   {
     name: "driftile_switch_preset_window_height_back",

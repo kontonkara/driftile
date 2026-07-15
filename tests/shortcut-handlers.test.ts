@@ -483,10 +483,11 @@ const expectedHandlers: Readonly<
   },
   driftile_switch_preset_column_width_back: {
     activated: "Runtime.DriftileRuntime.switchPresetColumnWidthBack()",
+    sequence: "Meta+Shift+R",
   },
   driftile_switch_preset_window_height: {
     activated: "Runtime.DriftileRuntime.switchPresetWindowHeight()",
-    sequence: "Meta+Shift+R",
+    sequence: "Meta+Ctrl+Shift+R",
   },
   driftile_switch_preset_window_height_back: {
     activated: "Runtime.DriftileRuntime.switchPresetWindowHeightBack()",
@@ -543,10 +544,10 @@ describe("KWin shortcut handlers", () => {
     );
     expect(
       shortcutActions.filter((action) => action.defaultSequence !== undefined),
-    ).toHaveLength(87);
+    ).toHaveLength(88);
     expect(
       shortcutActions.filter((action) => action.defaultSequence === undefined),
-    ).toHaveLength(33);
+    ).toHaveLength(32);
   });
 
   it("uses unique lowercase action identifiers and key sequences", () => {
@@ -574,7 +575,7 @@ describe("KWin shortcut handlers", () => {
       shortcutBindings.map(({ name, sequence }) => ({ name, sequence })),
     );
 
-    expect(shortcutBindings).toHaveLength(87);
+    expect(shortcutBindings).toHaveLength(88);
     expect(shortcutBindings).toEqual(
       shortcutActions.flatMap((action) =>
         action.defaultSequence === undefined
@@ -589,10 +590,10 @@ describe("KWin shortcut handlers", () => {
             ],
       ),
     );
-    expect(shortcutProfileId).toHaveLength(3633);
+    expect(shortcutProfileId).toHaveLength(3684);
     expect(
       createHash("sha256").update(shortcutProfileId, "utf8").digest("hex"),
-    ).toBe("f24b88d67799e9987ff6bbc19eaaa41656292b5074c4ff74b49d0802353464f8");
+    ).toBe("5b6ad4e1b9cb9ba8bc57b931f6d20d72fec7c86bd38320ea460aec49ad2cdf59");
   });
 
   it("leaves operations without an equivalent default unbound", () => {
@@ -633,7 +634,6 @@ describe("KWin shortcut handlers", () => {
       "driftile_move_window_to_previous_desktop_page_up",
       "driftile_move_window_up_or_to_previous_desktop",
       "driftile_reset_column_width",
-      "driftile_switch_preset_column_width_back",
       "driftile_switch_preset_window_height_back",
     ]);
   });
