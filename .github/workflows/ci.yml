@@ -61,6 +61,7 @@ jobs:
             dist/driftile-*.kwinscript
             dist/driftile-overview-*.kwineffect
             dist/driftile-shortcuts-*.mjs
+            dist/driftile-transitions-*.kwineffect
           if-no-files-found: error
           retention-days: 7
 
@@ -127,6 +128,7 @@ jobs:
             dist/driftile-*.kwinscript \
             dist/driftile-overview-*.kwineffect \
             dist/driftile-shortcuts-*.mjs \
+            dist/driftile-transitions-*.kwineffect \
             --notes-file "docs/release-notes-${GITHUB_REF_NAME#v}.md" \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
