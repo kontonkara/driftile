@@ -347,8 +347,8 @@ The ownership rule is strict:
 - Floating ownership and the tiled layout remain unchanged while guarded
   geometry writes are staged. Failure compensates frames that retain valid
   write ownership and otherwise schedules dirty-context recovery. Automatic,
-  related, minimized, native-state, pending, stale, or unsafe target and
-  context states fail closed without tiled fallback.
+  related, minimized, native-state, pending, stale, or unsafe active windows,
+  plus unsafe target and context states, fail closed without tiled fallback.
 - The frozen slice adds no action, default binding, setting, schema,
   persistence field, helper or overview behavior, KWin API, private API,
   backend, integration, application, or VM matrix.
@@ -458,8 +458,13 @@ Driftile must integrate with, not duplicate:
 - The shared trailing empty desktop is pinned at the end; it cannot move or be crossed by another desktop.
 - If the shared trailing desktop becomes occupied, Driftile appends another through KWin.
 - Driftile removes only a redundant, empty, unselected tail created by its current run; externally created desktops are never removed.
-- A manually floating window remains outside continuous layout geometry ownership and returns only through the explicit toggle. Its directional move and work-area centering shortcuts each perform one guarded frame transaction.
-- Retiling a manually floating window restores a surviving anchored slot when possible and captures the latest floating frame as the next safe restore baseline.
+- A manually floating window remains outside continuous layout geometry
+  ownership until toggle-back or guarded direct insertion commits. Its
+  directional move and work-area centering shortcuts each perform one guarded
+  frame transaction.
+- Toggle-back restores a surviving anchored slot when possible. Guarded direct
+  insertion attaches to the selected target stack. Both capture the latest
+  floating frame as the next safe restore baseline.
 - Layer focus remains inside the active `(output, desktop)` context and restores the last non-minimized tiled or floating window. Minimized slots are skipped, while any other blocker on the selected remembered or ordered target fails closed without fallback. Selecting a tiled target in another column reveals it with the normal minimal scroll; ownership never changes.
 - Directional floating focus chooses the nearest positive center distance on the requested axis; first and last choose frame-x extremes. Minimized windows are excluded, and no action wraps or writes geometry.
 - Directional floating movement requests a 50-logical-pixel translation and keeps only the minimum visible strip required by the frame size. It preserves size, focus, context, reinsertion placement, and every tiled layout.

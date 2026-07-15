@@ -153,7 +153,7 @@ height becomes automatic. Floating ownership and the tiled layout stay
 unchanged while guarded geometry writes are staged. Failure compensates frames
 that still have valid write ownership and otherwise schedules dirty-context
 recovery. Automatic, related, minimized, native-state, pending, or stale active
-targets are no-ops. The path adds no action, default binding, setting, schema,
+windows are no-ops. The path adds no action, default binding, setting, schema,
 persistence field, helper, overview, KWin API, or private API.
 
 A tiled drag commits on release over exactly one visible tiled target in the

@@ -1,14 +1,11 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.27.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.28.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.27.0 makes existing width-preset and reset actions contextual for one
+Stable 1.28.0 makes existing unbound direct-insertion actions contextual for one
 relation-free manually floating window.
-
-The frozen 1.28.0 development slice makes existing unbound direct-insertion
-actions contextual for one relation-free manually floating window.
 
 ## Foundation (delivered)
 
@@ -1110,7 +1107,7 @@ Release criteria (met):
 
 No other feature belongs to 1.27.0.
 
-## 1.28.0 (in development)
+## 1.28.0 (released)
 
 Existing unbound insert-left and insert-right actions contextually retile one
 active relation-free manually floating window. Direction compares its frame's
@@ -1124,17 +1121,18 @@ width and stacked or tabbed presentation, and uses automatic height. Floating
 ownership and the tiled layout remain unchanged while guarded geometry writes
 are staged. Failed transitions compensate frames that retain captured write
 ownership and otherwise enter dirty-context recovery. Automatic, related,
-minimized, native-state, pending, stale, unsafe-target, and unsafe-context cases
-fail closed without tiled fallback.
+minimized, native-state, pending, stale, or unsafe active windows, plus unsafe
+target and context states, fail closed without tiled fallback.
 
-Release criteria:
+Release criteria (met):
 
 - Focused runtime coverage verifies both directions, singleton skipping, target
   width and presentation adoption, automatic height, retained focus, ownership
   transfer, related-window rejection, state-round-trip compensation, and
   no-target rejection without tiled fallback.
 - Formatting, type, lint, focused unit, package, Nix evaluation, and Nix build
-  gates pass before exact-SHA CI.
+  gates pass. Exact feature SHA `9a5d0ab` passes CI quality in 2:41, native X11
+  in 3:02, and Wayland in 7:12.
 - Existing shortcut registration and tiled direct-insertion coverage is reused
   without a new integration, application, backend, or VM matrix. The slice
   makes no VM validation claim.

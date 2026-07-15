@@ -63,9 +63,11 @@ callback, successful activation, and normal close intentionally show no OSD.
 Driftile tiles normal, resizable application windows. It intentionally leaves
 dialogs, modal or transient windows, non-resizable or fixed-size normal
 windows, special windows, and all-desktop windows outside layout ownership. A
-manually floating window returns only through **Toggle floating**. KWin retains
-geometry authority while a window is fullscreen, maximized, minimized,
-interactively moved or resized, or natively tiled.
+manually floating window returns through **Toggle floating** or a guarded direct
+insertion action. Toggle-back restores a surviving anchored slot; direct
+insertion attaches to the selected target stack. KWin retains geometry authority
+while a window is fullscreen, maximized, minimized, interactively moved or
+resized, or natively tiled.
 
 Also check **Applications excluded from tiling** in Driftile's settings. The
 entries match KWin's exact, case-sensitive `desktopFileName`; clearing a match

@@ -158,7 +158,9 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Resolves numbered desktop targets against KWin's global list, clamps to the shared empty tail, and reuses either the transactional whole-column or single-window transfer path.
 - Focuses adjacent desktops on the active output, with a global fallback and no wrapping.
 - Accepts a desktop reorder only when KWin produces the exact expected same-ID permutation. The operation leaves selections and window memberships unchanged, and the shared empty tail remains pinned.
-- Releases explicitly floating windows from continuous geometry ownership and restores their anchored layout slots on return.
+- Releases explicitly floating windows from continuous geometry ownership.
+  Toggle-back restores a surviving anchored slot; guarded direct insertion
+  attaches to the selected target stack.
 - Translates or work-area-centers one active manually floating frame through a shared guarded command without a window or layout scan, preserving its reinsertion anchor and every tiled context.
 - Routes existing width decrease/increase, width-preset, width-reset, and
   window-height decrease/increase actions to an eligible manually floating frame

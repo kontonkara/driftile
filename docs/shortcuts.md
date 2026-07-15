@@ -62,7 +62,7 @@ automatic, and focus is retained. Floating ownership and the tiled layout stay
 unchanged while guarded geometry writes are staged. Failure compensates frames
 that still have valid write ownership and otherwise schedules dirty-context
 recovery. Automatic, related, minimized, native-state, pending, stale, or
-otherwise unsafe targets fail closed without tiled fallback. This adds no
+otherwise unsafe active windows fail closed without tiled fallback. This adds no
 action, default binding, setting, schema, persistence field, helper, overview,
 or KWin API.
 
