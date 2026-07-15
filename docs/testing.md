@@ -167,17 +167,22 @@ covers current-attempt identity, rejection-only ordering, one best-effort OSD
 request, internal reason logging, and silent cancellation, stale, success, and
 normal-close paths. QML lint and the package check cover the effect source and
 release archive. The hidden lifecycle baseline installs public 1.23.0 packages
-and upgrades them to matching current packages; it validates packaging
+and upgrades them to matching 1.24.0 packages; it validates packaging
 lifecycle, not rejection feedback. Exact-SHA CI remains required before the
 release tag. This slice makes no feature-VM coverage claim and adds no backend
 or application matrix.
 
-The 1.25.0 development slice reuses the existing output-transfer fixtures and
+The 1.25.0 release slice reuses the existing output-transfer fixtures and
 multi-output checkpoint. Focused runtime cases cover one manual and one
 automatic relation-free floating target, destination-desktop adoption,
 unchanged tiled contexts, zero frame writes, missing-API and relationship
-rejection, and bounded output, membership, and focus compensation. The slice
-adds no application or backend matrix.
+rejection, and bounded output, membership, and focus compensation. Package and
+Nix evaluation and build gates pass. A headless real-KWin Wayland multi-output
+run covers the contextual transfer and reverse path. A hidden two-head VM
+confirms the packaged multi-output baseline. A hidden lifecycle VM upgrades
+public 1.24.0 packages to matching 1.25.0 packages, exercises real applications,
+and removes both packages. Exact feature SHA `918eeb0` passes CI quality,
+native X11, and Wayland jobs. The slice adds no application or backend matrix.
 
 In the following unit list, zero writes to floating windows means ambient
 layout work; explicit manual-floating movement, centering, or contextual size

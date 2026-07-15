@@ -31,6 +31,8 @@ attempt is rejected. The user-facing message is generic; the exact technical
 reason remains in the KWin journal. A canceled attempt, stale callback,
 successful activation, or normal close is silent.
 
+Version 1.25.0 leaves overview behavior unchanged.
+
 The companion is disabled by default. When enabled with a fresh shortcut
 record, `Meta+O` toggles it. KGlobalAccel preserves an existing assignment
 across upgrades, including an explicitly unbound action, so review it in
@@ -100,8 +102,8 @@ activation, and normal close remain silent.
 
 ## Install a release
 
-Download `driftile-overview-1.24.0.kwineffect` and `SHA256SUMS` from the stable
-[1.24.0 release](release-notes-1.24.0.md), then verify the archive:
+Download `driftile-overview-1.25.0.kwineffect` and `SHA256SUMS` from the stable
+[1.25.0 release](release-notes-1.25.0.md), then verify the archive:
 
 ```console
 $ sha256sum --check --ignore-missing SHA256SUMS
@@ -111,7 +113,7 @@ Install the overview package as the desktop user:
 
 ```bash
 kpackagetool6 --type=KWin/Effect \
-  --install ./driftile-overview-1.24.0.kwineffect
+  --install ./driftile-overview-1.25.0.kwineffect
 ```
 
 To build the same versioned archive from source, run `npm ci` followed by
@@ -135,7 +137,7 @@ uninstalling the package.
 
 ## NixOS and Home Manager
 
-The 1.24.0 flake exposes the effect separately as
+The 1.25.0 flake exposes the effect separately as
 `packages.<system>.driftile-overview`. The NixOS and Home Manager modules keep
 it opt-in:
 
@@ -151,12 +153,13 @@ adjust its shortcut only if needed.
 
 ## Validation
 
-A focused overview contract test covers current-attempt identity, one
-rejection-only OSD request, and silent cancellation, stale, success, and normal
-close paths. QML lint and the package check cover the effect source and release
-archive. The hidden lifecycle VM upgrades public 1.23.0 packages to matching
-current packages; it validates packaging lifecycle, not OSD behavior. Exact-SHA
-CI is the final release gate. This slice makes no full feature VM claim.
+Version 1.25.0 does not change the companion. A focused overview contract test
+covers current-attempt identity, one rejection-only OSD request, and silent
+cancellation, stale, success, and normal close paths. QML lint and the package
+check cover the effect source and release archive. The hidden lifecycle VM
+upgrades public 1.24.0 packages to matching 1.25.0 packages; it validates
+packaging lifecycle, not OSD behavior. Exact-SHA CI is the final release gate.
+This slice makes no full feature VM claim.
 
 ## Safety boundary
 

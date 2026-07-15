@@ -43,7 +43,7 @@ leaving window, output, and desktop mechanisms to KWin.
 
 ## Status
 
-The latest stable release is [1.24.0](docs/release-notes-1.24.0.md).
+The latest stable release is [1.25.0](docs/release-notes-1.25.0.md).
 The feature list tracks the current `main` branch; release state is recorded in
 the [roadmap](docs/roadmap.md).
 
@@ -119,6 +119,7 @@ package. See [Testing](docs/testing.md) for unit, integration, and VM checks.
 - [Testing](docs/testing.md)
 - [Performance](docs/performance.md)
 - [Roadmap](docs/roadmap.md)
+- [1.25.0 release notes](docs/release-notes-1.25.0.md)
 - [1.24.0 release notes](docs/release-notes-1.24.0.md)
 - [1.23.0 release notes](docs/release-notes-1.23.0.md)
 - [1.22.0 release notes](docs/release-notes-1.22.0.md)

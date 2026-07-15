@@ -1,16 +1,12 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.24.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.25.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.24.0 adds one best-effort passive Plasma OSD after a current overview
-activation attempt is rejected, without adding input, layout, settings,
-shortcuts, or persistence.
-
-The frozen 1.25.0 development slice makes existing output-transfer actions
-contextual for one active relation-free floating window. KWin remains the sole
-owner of output movement and final frame placement.
+Stable 1.25.0 makes existing output-transfer actions contextual for one active
+relation-free floating window. KWin remains the sole owner of output movement
+and final frame placement.
 
 ## Foundation (delivered)
 
@@ -1018,14 +1014,14 @@ Release criteria (met):
   ordering, one OSD request, and silent cancellation, stale, success, and normal
   close paths.
 - Formatting, the focused overview check, QML lint, and the package check pass.
-- The hidden lifecycle VM upgrades public 1.23.0 packages to matching current
+- The hidden lifecycle VM upgrades public 1.23.0 packages to matching 1.24.0
   packages. It validates packaging lifecycle, not OSD behavior.
 - Exact-SHA CI passes before the release tag. This slice makes no full
   feature VM claim.
 
 No other feature belongs to 1.24.0.
 
-## 1.25.0 (in development)
+## 1.25.0 (released)
 
 The existing directional output-transfer actions move one active manual or
 automatic floating window when the floating layer is active. The command uses
@@ -1037,13 +1033,18 @@ tiled layout during success or bounded compensation. Modal, transient,
 native-state, minimized, interactive, settling, stale, or otherwise unsafe
 targets fail closed without entering the tiled transfer path.
 
-Release criteria:
+Release criteria (met):
 
 - Focused runtime coverage confirms manual and automatic ownership, target
   desktop adoption, unchanged tiled contexts, zero frame writes, relationship
   guards, missing-API rejection, and bounded compensation.
-- Formatting, type, lint, focused unit, package, hidden multi-output checkpoint,
-  and exact-SHA CI pass without a new application or backend matrix.
+- Package checks, Nix evaluation, and Nix build gates pass.
+- A headless real-KWin Wayland multi-output run covers the contextual transfer
+  and reverse path. A hidden two-head VM confirms the packaged multi-output
+  baseline.
+- A hidden lifecycle VM upgrades public 1.24.0 packages to matching 1.25.0
+  packages and verifies clean removal.
+- Exact feature SHA `918eeb0` passes CI quality, native X11, and Wayland jobs.
 
 No other feature belongs to 1.25.0.
 

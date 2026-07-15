@@ -1,7 +1,31 @@
 # Migration
 
-The latest stable release is 1.24.0. Use the steps below when changing release
+The latest stable release is 1.25.0. Use the steps below when changing release
 generations, and never combine files from different releases.
+
+## Upgrade from 1.24.0 to 1.25.0
+
+1. Release helper-owned shortcuts with the 1.24.0 helper while it remains
+   available.
+2. Disable Driftile and the optional overview in System Settings.
+3. Upgrade the main package, optional overview, and helper to their matching
+   1.25.0 artifacts, or pin the Nix input to `v1.25.0` and rebuild.
+4. Re-enable Driftile and, if installed, the optional overview.
+
+The release makes existing output-transfer actions contextual for one active
+relation-free floating window. Overview and helper behavior remain unchanged.
+No data conversion, Plasma session restart, KConfig edit, setting, action,
+binding, shortcut default, or persistence-schema migration is required.
+
+## Roll back from 1.25.0 to 1.24.0
+
+Release shortcuts with the 1.25.0 helper, disable Driftile and the optional
+overview, then restore their matching verified 1.24.0 packages and helper. For
+NixOS or Home Manager, restore the input to `v1.24.0` and rebuild each owning
+generation. Re-enable the installed packages and restore the 1.24.0 shortcut
+profile. Existing settings and layout state remain compatible; no data
+conversion, Plasma session restart, KConfig edit, shortcut change, or
+persistence migration is required.
 
 ## Upgrade from 1.23.0 to 1.24.0
 
