@@ -56,7 +56,7 @@ const MIN_RESIZE_STEP_PERCENT = 1;
 const MAX_RESIZE_STEP_PERCENT = 50;
 const MIN_TOUCHPAD_NAVIGATION_FINGER_COUNT = 3;
 const MAX_TOUCHPAD_NAVIGATION_FINGER_COUNT = 5;
-const SETTINGS_FIELD_COUNT = 19;
+const SETTINGS_FIELD_COUNT = 20;
 
 export interface DriftileSettings {
   readonly applicationBorderlessExclusions: ApplicationBorderlessExclusions;
@@ -76,6 +76,7 @@ export interface DriftileSettings {
   readonly touchpadNavigation: boolean;
   readonly touchpadNavigationFingerCount: number;
   readonly touchpadNaturalScroll: boolean;
+  readonly touchpadWorkspaceNavigation: boolean;
   readonly windowHeightPresets: WindowHeightPresetPercentages;
   readonly windowHeightStepPercent: number;
 }
@@ -98,6 +99,7 @@ export const DEFAULT_DRIFTILE_SETTINGS: DriftileSettings = Object.freeze({
   touchpadNavigation: false,
   touchpadNavigationFingerCount: 5,
   touchpadNaturalScroll: true,
+  touchpadWorkspaceNavigation: false,
   windowHeightPresets: EMPTY_WINDOW_HEIGHT_PRESET_PERCENTAGES,
   windowHeightStepPercent: 10,
 });
@@ -130,6 +132,7 @@ export function decodeDriftileSettings(
     !owns(candidate, "touchpadNavigation") ||
     !owns(candidate, "touchpadNavigationFingerCount") ||
     !owns(candidate, "touchpadNaturalScroll") ||
+    !owns(candidate, "touchpadWorkspaceNavigation") ||
     !owns(candidate, "windowHeightPresets") ||
     !owns(candidate, "windowHeightStepPercent")
   ) {
@@ -168,6 +171,7 @@ export function decodeDriftileSettings(
   const touchpadNavigationFingerCount =
     candidate["touchpadNavigationFingerCount"];
   const touchpadNaturalScroll = candidate["touchpadNaturalScroll"];
+  const touchpadWorkspaceNavigation = candidate["touchpadWorkspaceNavigation"];
   const windowHeightPresets = decodeWindowHeightPresetPercentages(
     candidate["windowHeightPresets"],
   );
@@ -203,6 +207,7 @@ export function decodeDriftileSettings(
       MAX_TOUCHPAD_NAVIGATION_FINGER_COUNT,
     ) ||
     typeof touchpadNaturalScroll !== "boolean" ||
+    typeof touchpadWorkspaceNavigation !== "boolean" ||
     !windowHeightPresets ||
     !isBoundedInteger(
       windowHeightStepPercent,
@@ -231,6 +236,7 @@ export function decodeDriftileSettings(
     touchpadNavigation,
     touchpadNavigationFingerCount,
     touchpadNaturalScroll,
+    touchpadWorkspaceNavigation,
     windowHeightPresets,
     windowHeightStepPercent,
   });
@@ -280,6 +286,7 @@ export function sameDriftileSettings(
     left.touchpadNavigationFingerCount ===
       right.touchpadNavigationFingerCount &&
     left.touchpadNaturalScroll === right.touchpadNaturalScroll &&
+    left.touchpadWorkspaceNavigation === right.touchpadWorkspaceNavigation &&
     sameWindowHeightPresetPercentages(
       left.windowHeightPresets,
       right.windowHeightPresets,

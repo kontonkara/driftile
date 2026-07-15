@@ -20,6 +20,10 @@
       <label>Enable horizontal touchpad navigation</label>
       <default>false</default>
     </entry>
+    <entry name="TouchpadWorkspaceNavigation" type="Bool">
+      <label>Enable vertical touchpad desktop navigation</label>
+      <default>false</default>
+    </entry>
     <entry name="TouchpadNavigationFingerCount" type="Int">
       <label>Touchpad navigation finger count</label>
       <default>5</default>
@@ -27,7 +31,7 @@
       <max>5</max>
     </entry>
     <entry name="TouchpadNaturalScroll" type="Bool">
-      <label>Use natural horizontal swipe direction</label>
+      <label>Use natural swipe direction</label>
       <default>true</default>
     </entry>
     <entry name="Gap" type="Int">

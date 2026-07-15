@@ -31,6 +31,7 @@ type RuntimeSettingsInput = Record<keyof DeliveredSettings, unknown> & {
   readonly touchpadNaturalScroll: unknown;
   readonly touchpadNavigation: unknown;
   readonly touchpadNavigationFingerCount: unknown;
+  readonly touchpadWorkspaceNavigation: unknown;
 };
 
 interface RuntimeControllerOptions {
@@ -287,6 +288,7 @@ describe("runtime settings delivery", () => {
     expect(controller.deliveredSettings.windowHeightPresets).toEqual([
       30, 60, 90,
     ]);
+    expect(runtime.getTouchpadWorkspaceNavigation()).toBe(false);
 
     expect(
       runtime.applySettings(
@@ -316,6 +318,7 @@ describe("runtime settings delivery", () => {
       touchpadNavigation: true,
       touchpadNavigationFingerCount: 3,
       touchpadNaturalScroll: false,
+      touchpadWorkspaceNavigation: true,
       windowHeightPresets: "25,50,75",
       windowHeightStepPercent: 17,
     });
@@ -341,6 +344,7 @@ describe("runtime settings delivery", () => {
     expect(runtime.getTouchpadNavigation()).toBe(true);
     expect(runtime.getTouchpadNavigationFingerCount()).toBe(3);
     expect(runtime.getTouchpadNaturalScroll()).toBe(false);
+    expect(runtime.getTouchpadWorkspaceNavigation()).toBe(true);
     expect(controller.calls).toEqual([
       "borderlessWindows",
       "applicationBorderlessExclusions",
@@ -469,6 +473,7 @@ function settings(
     touchpadNavigation: false,
     touchpadNavigationFingerCount: 5,
     touchpadNaturalScroll: true,
+    touchpadWorkspaceNavigation: false,
     windowHeightPresets: "",
     windowHeightStepPercent: 10,
     ...overrides,

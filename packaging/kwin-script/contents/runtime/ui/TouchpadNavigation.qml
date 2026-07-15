@@ -4,8 +4,8 @@ import org.kde.kwin
 QtObject {
     id: root
 
-    property int fingerCount: 5
-    property bool naturalScroll: true
+    required property int fingerCount
+    required property bool naturalScroll
 
     signal focusLeftRequested()
     signal focusRightRequested()

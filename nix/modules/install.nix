@@ -281,6 +281,12 @@ in
               description = "Whether horizontal touchpad swipes navigate tiled columns.";
             };
 
+            touchpadWorkspaceNavigation = lib.mkOption {
+              type = lib.types.bool;
+              default = false;
+              description = "Whether vertical touchpad swipes navigate virtual desktops.";
+            };
+
             touchpadNavigationFingerCount = lib.mkOption {
               type = lib.types.ints.between 3 5;
               default = 5;
@@ -425,6 +431,7 @@ in
           TouchpadNavigation = cfg.settings.touchpadNavigation;
           TouchpadNavigationFingerCount = cfg.settings.touchpadNavigationFingerCount;
           TouchpadNaturalScroll = cfg.settings.touchpadNaturalScroll;
+          TouchpadWorkspaceNavigation = cfg.settings.touchpadWorkspaceNavigation;
           WindowHeightPresets = renderWindowHeightPresets cfg.settings.windowHeightPresets;
           WindowHeightStepPercent = cfg.settings.windowHeightStepPercent;
         };

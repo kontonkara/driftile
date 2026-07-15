@@ -28,6 +28,7 @@ const expectedRuntimeEntries = [
   "code/main.js",
   "ui/LayoutStateStore.qml",
   "ui/TouchpadNavigation.qml",
+  "ui/TouchpadWorkspaceNavigation.qml",
   "ui/main.qml",
 ];
 const expectedOverviewPackageEntries = [

@@ -673,6 +673,7 @@ describe("KWin shortcut handlers", () => {
       "kcfg_CenterFocusedColumn",
       "kcfg_ShowTabIndicator",
       "kcfg_TouchpadNavigation",
+      "kcfg_TouchpadWorkspaceNavigation",
       "kcfg_TouchpadNavigationFingerCount",
       "kcfg_TouchpadNaturalScroll",
       "kcfg_Gap",
@@ -799,6 +800,29 @@ describe("KWin shortcut handlers", () => {
     );
     expect(qml).toContain(
       `showTabIndicator: KWin.readConfig("ShowTabIndicator", ${String(DEFAULT_DRIFTILE_SETTINGS.showTabIndicator)})`,
+    );
+  });
+
+  it("exposes opt-in vertical touchpad desktop navigation", () => {
+    const workspaceNavigationEntry = configuration.match(
+      /<entry name="TouchpadWorkspaceNavigation" type="Bool">([\s\S]*?)<\/entry>/,
+    )?.[1];
+    const workspaceNavigationWidget = configurationUi.match(
+      /<widget class="QCheckBox" name="kcfg_TouchpadWorkspaceNavigation">([\s\S]*?)<\/widget>/,
+    )?.[1];
+
+    expect(workspaceNavigationEntry).toContain(
+      "<label>Enable vertical touchpad desktop navigation</label>",
+    );
+    expect(workspaceNavigationEntry).toContain("<default>false</default>");
+    expect(workspaceNavigationWidget).toContain(
+      "<string>Enable vertical touchpad desktop navigation</string>",
+    );
+    expect(workspaceNavigationWidget).toContain(
+      "<string>Swipe vertically to focus the adjacent virtual desktop.</string>",
+    );
+    expect(runtime).toContain(
+      "export function getTouchpadWorkspaceNavigation(): boolean",
     );
   });
 

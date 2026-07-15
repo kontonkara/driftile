@@ -223,6 +223,10 @@ export function getTouchpadNaturalScroll(): boolean {
   return appliedSettings?.touchpadNaturalScroll ?? true;
 }
 
+export function getTouchpadWorkspaceNavigation(): boolean {
+  return appliedSettings?.touchpadWorkspaceNavigation === true;
+}
+
 function decodeSettings(value: unknown): DriftileSettings | null {
   const settings = decodeDriftileSettings(value);
 

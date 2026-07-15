@@ -72,6 +72,7 @@ let
         touchpadNavigation = true;
         touchpadNavigationFingerCount = 4;
         touchpadNaturalScroll = false;
+        touchpadWorkspaceNavigation = true;
         windowHeightPresets = [
           30
           60
@@ -289,6 +290,7 @@ assert
       TouchpadNavigation = true;
       TouchpadNavigationFingerCount = 4;
       TouchpadNaturalScroll = false;
+      TouchpadWorkspaceNavigation = true;
       WindowHeightPresets = "30,60,90";
       WindowHeightStepPercent = 17;
     };
@@ -296,7 +298,7 @@ assert
 assert
   builtins.length (
     builtins.attrNames standalone.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile"
-  ) == 19;
+  ) == 20;
 assert
   standalone.config.xdg.configFile."driftile/shortcuts.json".text == ''
     {"bindings":{"driftile_focus_column_left":["Meta+A"],"driftile_reset_column_width":[]},"version":1}
@@ -333,6 +335,7 @@ assert
       TouchpadNavigation = false;
       TouchpadNavigationFingerCount = 5;
       TouchpadNaturalScroll = true;
+      TouchpadWorkspaceNavigation = false;
       WindowHeightPresets = "";
       WindowHeightStepPercent = 10;
     };

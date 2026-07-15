@@ -10,6 +10,7 @@ QtObject {
     property var nextResumeCallbacks: []
     property var resumeCallbacks: []
     property bool appliedTouchpadNavigation: false
+    property bool appliedTouchpadWorkspaceNavigation: false
     property int appliedTouchpadNavigationFingerCount: 5
     property bool appliedTouchpadNaturalScroll: true
 
@@ -64,9 +65,7 @@ QtObject {
     }
 
     readonly property Loader touchpadNavigationLoader: Loader {
-        active: root.appliedTouchpadNavigation
-        source: "TouchpadNavigation.qml"
-        onLoaded: root.updateTouchpadNavigationHandler()
+        active: false
     }
 
     readonly property Connections touchpadNavigationConnection: Connections {
@@ -79,6 +78,23 @@ QtObject {
 
         function onFocusRightRequested() {
             Runtime.DriftileRuntime.focusRight()
+        }
+    }
+
+    readonly property Loader touchpadWorkspaceNavigationLoader: Loader {
+        active: false
+    }
+
+    readonly property Connections touchpadWorkspaceNavigationConnection: Connections {
+        ignoreUnknownSignals: true
+        target: touchpadWorkspaceNavigationLoader.item
+
+        function onFocusPreviousDesktopRequested() {
+            Runtime.DriftileRuntime.focusPreviousDesktop()
+        }
+
+        function onFocusNextDesktopRequested() {
+            Runtime.DriftileRuntime.focusNextDesktop()
         }
     }
 
@@ -795,6 +811,7 @@ QtObject {
             gap: KWin.readConfig("Gap", 16),
             showTabIndicator: KWin.readConfig("ShowTabIndicator", true),
             touchpadNavigation: KWin.readConfig("TouchpadNavigation", false),
+            touchpadWorkspaceNavigation: KWin.readConfig("TouchpadWorkspaceNavigation", false),
             touchpadNavigationFingerCount: KWin.readConfig("TouchpadNavigationFingerCount", 5),
             touchpadNaturalScroll: KWin.readConfig("TouchpadNaturalScroll", true),
             windowHeightPresets: KWin.readConfig("WindowHeightPresets", ""),
@@ -807,21 +824,61 @@ QtObject {
             return;
         }
 
-        root.appliedTouchpadNavigation = Runtime.DriftileRuntime.getTouchpadNavigation();
-        root.appliedTouchpadNavigationFingerCount = Runtime.DriftileRuntime.getTouchpadNavigationFingerCount();
-        root.appliedTouchpadNaturalScroll = Runtime.DriftileRuntime.getTouchpadNaturalScroll();
-        root.updateTouchpadNavigationHandler();
+        root.refreshTouchpadNavigationHandlers(false);
     }
 
-    function updateTouchpadNavigationHandler() {
-        const handler = touchpadNavigationLoader.item;
+    function refreshTouchpadNavigationHandlers(force) {
+        const touchpadNavigation = Runtime.DriftileRuntime.getTouchpadNavigation();
+        const touchpadWorkspaceNavigation = Runtime.DriftileRuntime.getTouchpadWorkspaceNavigation();
+        const fingerCount = Runtime.DriftileRuntime.getTouchpadNavigationFingerCount();
+        const naturalScroll = Runtime.DriftileRuntime.getTouchpadNaturalScroll();
+        const gesturePropertiesChanged = fingerCount !== root.appliedTouchpadNavigationFingerCount
+            || naturalScroll !== root.appliedTouchpadNaturalScroll;
+        const touchpadNavigationChanged = touchpadNavigation !== root.appliedTouchpadNavigation;
+        const touchpadWorkspaceNavigationChanged = touchpadWorkspaceNavigation
+            !== root.appliedTouchpadWorkspaceNavigation;
 
-        if (handler === null) {
+        root.appliedTouchpadNavigation = touchpadNavigation;
+        root.appliedTouchpadWorkspaceNavigation = touchpadWorkspaceNavigation;
+        root.appliedTouchpadNavigationFingerCount = fingerCount;
+        root.appliedTouchpadNaturalScroll = naturalScroll;
+
+        if (force || touchpadNavigationChanged || gesturePropertiesChanged) {
+            root.rebuildTouchpadNavigationHandler();
+        }
+        if (force || touchpadWorkspaceNavigationChanged || gesturePropertiesChanged) {
+            root.rebuildTouchpadWorkspaceNavigationHandler();
+        }
+    }
+
+    function rebuildTouchpadNavigationHandler() {
+        touchpadNavigationLoader.active = false;
+        touchpadNavigationLoader.source = "";
+
+        if (!root.appliedTouchpadNavigation) {
             return;
         }
 
-        handler.fingerCount = root.appliedTouchpadNavigationFingerCount;
-        handler.naturalScroll = root.appliedTouchpadNaturalScroll;
+        touchpadNavigationLoader.setSource("TouchpadNavigation.qml", {
+            fingerCount: root.appliedTouchpadNavigationFingerCount,
+            naturalScroll: root.appliedTouchpadNaturalScroll
+        });
+        touchpadNavigationLoader.active = true;
+    }
+
+    function rebuildTouchpadWorkspaceNavigationHandler() {
+        touchpadWorkspaceNavigationLoader.active = false;
+        touchpadWorkspaceNavigationLoader.source = "";
+
+        if (!root.appliedTouchpadWorkspaceNavigation) {
+            return;
+        }
+
+        touchpadWorkspaceNavigationLoader.setSource("TouchpadWorkspaceNavigation.qml", {
+            fingerCount: root.appliedTouchpadNavigationFingerCount,
+            naturalScroll: root.appliedTouchpadNaturalScroll
+        });
+        touchpadWorkspaceNavigationLoader.active = true;
     }
 
     function createRect(x, y, width, height) {
@@ -879,10 +936,7 @@ QtObject {
                                     root.showDropPreview,
                                     root.hideDropPreview,
                                     root.showTabIndicator);
-        root.appliedTouchpadNavigation = Runtime.DriftileRuntime.getTouchpadNavigation();
-        root.appliedTouchpadNavigationFingerCount = Runtime.DriftileRuntime.getTouchpadNavigationFingerCount();
-        root.appliedTouchpadNaturalScroll = Runtime.DriftileRuntime.getTouchpadNaturalScroll();
-        root.updateTouchpadNavigationHandler();
+        root.refreshTouchpadNavigationHandlers(true);
     }
     Component.onDestruction: {
         try {

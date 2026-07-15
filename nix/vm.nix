@@ -4586,11 +4586,26 @@ let
           --default false
       }
 
-      set_touchpad_navigation() {
+      read_touchpad_workspace_navigation() {
+        ${pkgs.kdePackages.kconfig}/bin/kreadconfig6 \
+          --file "''${XDG_CONFIG_HOME:-$HOME/.config}/kwinrc" \
+          --group "Script-${pluginId}" \
+          --key TouchpadWorkspaceNavigation \
+          --default false
+      }
+
+      set_touchpad_navigation_modes() {
         ${pkgs.kdePackages.kconfig}/bin/kwriteconfig6 \
           --file "''${XDG_CONFIG_HOME:-$HOME/.config}/kwinrc" \
           --group "Script-${pluginId}" \
           --key TouchpadNavigation \
+          --type bool \
+          "$1" || return 1
+
+        ${pkgs.kdePackages.kconfig}/bin/kwriteconfig6 \
+          --file "''${XDG_CONFIG_HOME:-$HOME/.config}/kwinrc" \
+          --group "Script-${pluginId}" \
+          --key TouchpadWorkspaceNavigation \
           --type bool \
           "$1" || return 1
 
@@ -4605,9 +4620,11 @@ let
       restore_touchpad_navigation() {
         local result=0
 
-        set_touchpad_navigation false || result=1
+        set_touchpad_navigation_modes false || result=1
         sleep 0.4
         [[ "$(read_touchpad_navigation 2>/dev/null || true)" == false ]] \
+          || result=1
+        [[ "$(read_touchpad_workspace_navigation 2>/dev/null || true)" == false ]] \
           || result=1
         return "$result"
       }
@@ -4617,6 +4634,8 @@ let
         local destroyed_count
         local diagnostics=""
         local journal
+        local workspace_created_count
+        local workspace_destroyed_count
 
         journal=$(journalctl \
           --user \
@@ -4629,9 +4648,15 @@ let
         destroyed_count=$(grep -Foc \
           '[driftile] touchpad-navigation lifecycle=destroyed' \
           <<< "$journal" || true)
+        workspace_created_count=$(grep -Foc \
+          '[driftile] touchpad-workspace-navigation lifecycle=created' \
+          <<< "$journal" || true)
+        workspace_destroyed_count=$(grep -Foc \
+          '[driftile] touchpad-workspace-navigation lifecycle=destroyed' \
+          <<< "$journal" || true)
 
         if diagnostics=$(printf '%s\n' "$journal" \
-          | grep -Fi -- 'TouchpadNavigation.qml' \
+          | grep -Ei -- 'Touchpad(Navigation|WorkspaceNavigation)\.qml' \
           | grep -Ei \
             '(^|[[:space:]:])qml([[:space:]:]|$)|qqml|component|error|fail(ed|ure)?|unavailable|not[[:space:]]+a[[:space:]]+type|is[[:space:]]+not[[:space:]]+installed|cannot[[:space:]]+(assign|create|load)|invalid'); then
           {
@@ -4641,12 +4666,16 @@ let
           return 1
         fi
 
-        if ((created_count != 2 || destroyed_count != 2)); then
+        if ((created_count != 2 || destroyed_count != 2 \
+          || workspace_created_count != 2 || workspace_destroyed_count != 2)); then
           {
             printf '\n[touchpad-navigation lifecycle mismatch]\n'
-            printf 'created: %s\ndestroyed: %s\n' \
+            printf 'horizontal created: %s\nhorizontal destroyed: %s\n' \
               "$created_count" \
               "$destroyed_count"
+            printf 'vertical created: %s\nvertical destroyed: %s\n' \
+              "$workspace_created_count" \
+              "$workspace_destroyed_count"
           } >> /tmp/shared/driftile-focus-diagnostics
           return 1
         fi
@@ -4666,6 +4695,11 @@ let
           record_focus_state "touchpad navigation was not disabled by default"
           result=1
         fi
+        if [[ "$(read_touchpad_workspace_navigation 2>/dev/null || true)" != false ]]; then
+          record_focus_state \
+            "touchpad workspace navigation was not disabled by default"
+          result=1
+        fi
 
         if ((result == 0)); then
           baseline_checkpoint=$(capture_touchpad_navigation_checkpoint "$@") \
@@ -4683,9 +4717,9 @@ let
               state=disabled
             fi
 
-            if ! set_touchpad_navigation "$expected"; then
+            if ! set_touchpad_navigation_modes "$expected"; then
               record_focus_state \
-                "live touchpad navigation could not be $state"
+                "live touchpad navigation modes could not be $state"
               result=1
               break
             fi
@@ -4695,7 +4729,13 @@ let
 
             if [[ "$(read_touchpad_navigation 2>/dev/null || true)" != "$expected" ]]; then
               record_focus_state \
-                "touchpad navigation did not retain the $state value"
+                "horizontal touchpad navigation did not retain the $state value"
+              result=1
+              break
+            fi
+            if [[ "$(read_touchpad_workspace_navigation 2>/dev/null || true)" != "$expected" ]]; then
+              record_focus_state \
+                "vertical touchpad navigation did not retain the $state value"
               result=1
               break
             fi
