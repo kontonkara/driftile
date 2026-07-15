@@ -271,7 +271,7 @@ The ownership rule is strict:
 - The slice adds no input handler, animation, setting, shortcut, persistence
   field, layout mutation, window scan, or KWin write.
 
-## 1.24 optional overview slice (in development)
+## 1.24 optional overview slice
 
 - A rejected current activation attempt requests exactly one best-effort
   passive Plasma OSD with a generic message. The exact technical reason remains

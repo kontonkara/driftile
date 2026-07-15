@@ -1,14 +1,12 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.23.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.24.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.23.0 adds one read-only active-column layout badge to each optional
-overview desktop card without adding input, layout, settings, or persistence.
-
-Version 1.24.0 is in development. Its frozen scope adds rejection-only overview
-feedback; it is not released.
+Stable 1.24.0 adds one best-effort passive Plasma OSD after a current overview
+activation attempt is rejected, without adding input, layout, settings,
+shortcuts, or persistence.
 
 ## Foundation (delivered)
 
@@ -999,7 +997,7 @@ Release criteria (met):
 
 No other feature belongs to 1.23.0.
 
-## 1.24.0 (in development)
+## 1.24.0 (released)
 
 Version `1.24.0` requests one best-effort passive Plasma OSD only after the
 current overview activation attempt is rejected. The user-facing message is
@@ -1010,13 +1008,16 @@ The added feedback handler is constant time and adds no setting, shortcut,
 input handler, KWin or layout write, persistence field, or scan beyond the
 existing activation snapshot.
 
-Release criteria:
+Release criteria (met):
 
 - One focused QML contract check covers current-attempt identity, rejection-only
   ordering, one OSD request, and silent cancellation, stale, success, and normal
   close paths.
-- Formatting, the focused overview check, QML lint, packaging, and exact-SHA CI
-  pass. This slice makes no VM coverage claim.
+- Formatting, the focused overview check, QML lint, and the package check pass.
+- The hidden lifecycle VM upgrades public 1.23.0 packages to matching current
+  packages. It validates packaging lifecycle, not OSD behavior.
+- Exact-SHA CI passes before the release tag. This slice makes no full
+  feature VM claim.
 
 No other feature belongs to 1.24.0.
 

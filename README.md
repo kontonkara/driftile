@@ -36,18 +36,15 @@ leaving window, output, and desktop mechanisms to KWin.
   non-wrapping spatial keyboard navigation between actionable targets. A
   guarded number-gutter drag reorders desktop cards while protecting the
   shared trailing empty desktop, and a passive badge reports each card's
-  active-column presentation and logical width.
+  active-column presentation and logical width. A rejected current activation
+  attempt requests one best-effort generic Plasma OSD.
 - An optional reversible shortcut helper with custom JSON profiles.
 
 ## Status
 
-The latest stable release is [1.23.0](docs/release-notes-1.23.0.md).
+The latest stable release is [1.24.0](docs/release-notes-1.24.0.md).
 The feature list tracks the current `main` branch; release state is recorded in
 the [roadmap](docs/roadmap.md).
-
-Version 1.24.0 is in development. Its frozen scope adds one best-effort Plasma
-OSD when the current overview activation attempt is rejected; every other exit
-path remains silent.
 
 Driftile requires KDE Plasma with KWin 6.7 or newer. It targets native Wayland
 and XWayland windows, plus single-output native X11 sessions.
@@ -121,6 +118,7 @@ package. See [Testing](docs/testing.md) for unit, integration, and VM checks.
 - [Testing](docs/testing.md)
 - [Performance](docs/performance.md)
 - [Roadmap](docs/roadmap.md)
+- [1.24.0 release notes](docs/release-notes-1.24.0.md)
 - [1.23.0 release notes](docs/release-notes-1.23.0.md)
 - [1.22.0 release notes](docs/release-notes-1.22.0.md)
 - [1.21.0 release notes](docs/release-notes-1.21.0.md)

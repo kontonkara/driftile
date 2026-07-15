@@ -162,15 +162,15 @@ published 1.22.0 packages and upgrade to matching 1.23.0 packages. Packaging and
 exact-SHA CI cover the stable artifacts; this slice adds no full feature VM,
 backend, or application matrix.
 
-The 1.24.0 development slice remains effect-only. Before release, one focused
-QML contract check must cover current-attempt identity, rejection-only ordering,
-one best-effort OSD request, internal reason logging, and silent cancellation,
-stale, success, and normal-close paths. Formatting, that focused check, QML
-lint, packaging, and exact-SHA CI are required. The concurrently advanced
-hidden lifecycle baseline installs public 1.23.0 packages and upgrades them to
-the matching current packages; it validates packaging lifecycle, not rejection
-feedback. This slice makes no feature-VM coverage claim and adds no backend or
-application matrix.
+The 1.24.0 release slice remains effect-only. One focused QML contract test
+covers current-attempt identity, rejection-only ordering, one best-effort OSD
+request, internal reason logging, and silent cancellation, stale, success, and
+normal-close paths. QML lint and the package check cover the effect source and
+release archive. The hidden lifecycle baseline installs public 1.23.0 packages
+and upgrades them to matching current packages; it validates packaging
+lifecycle, not rejection feedback. Exact-SHA CI remains required before the
+release tag. This slice makes no feature-VM coverage claim and adds no backend
+or application matrix.
 
 In the following unit list, zero writes to floating windows means ambient
 layout work; explicit manual-floating movement, centering, or contextual size
