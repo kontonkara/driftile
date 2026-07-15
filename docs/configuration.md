@@ -15,6 +15,26 @@ value through an external configuration tool rejects the entire update and
 preserves the active settings; valid changes apply without reloading the
 extension.
 
+## Optional overview gesture
+
+The separately installed **Driftile Overview** effect uses a four-finger up
+swipe to open and a down swipe to close by default. Configure or disable the
+gesture from the effect's settings. Finger counts range from `3` to `5`.
+
+Home Manager leaves these KConfig values unmanaged by default. A complete
+profile can own both independently of package installation:
+
+```nix
+programs.driftile.overview.touchpadGesture = {
+  enable = true;
+  fingerCount = 4;
+};
+```
+
+Use a different count from vertical desktop navigation and Plasma's built-in
+Overview, or disable the overlapping gesture, so each global direction has one
+owner.
+
 ## Optional transitions
 
 The separately installed **Driftile Transitions** effect is disabled by

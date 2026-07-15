@@ -15,6 +15,8 @@
 - The optional overview supports the same Wayland, XWayland, and single-output
   native X11 baseline. Desktop selection and cross-desktop thumbnail
   activation remain unverified on native X11.
+- The overview's optional `3`–`5`-finger open/close gesture uses the native
+  Wayland gesture API and is a safe no-op on native X11.
 - The optional transition effect uses KWin's public scripted-effect animation
   API on Wayland and X11. It is installed and enabled independently from the
   layout script and requires a compositor backend on which KWin reports

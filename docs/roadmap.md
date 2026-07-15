@@ -1356,6 +1356,12 @@ independent position and size animations from their current visual values
 instead of cancelling and restarting them. Home Manager can optionally own the
 bounded transition duration without taking package-installation ownership.
 
+The optional overview registers a configurable `3`–`5`-finger vertical swipe
+pair, defaulting to four fingers. Up opens the effect and down closes an active
+or pending activation. The pair is recreated from initial KWin gesture
+properties when its enable state or finger count changes. Home Manager may own
+the complete pair independently of package installation.
+
 ## Post-v1
 
 Add interaction and presentation features outside the frozen v1 scope without

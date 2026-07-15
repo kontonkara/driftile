@@ -110,6 +110,9 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   private API, window move, geometry write, membership write, or screen-edge
   mechanism. It performs no window,
   stacking-order, or layout scan. KWin owns desktop switching and focus.
+- Keeps its configurable vertical touchpad gesture pair in an inactive Loader
+  when disabled and recreates it with initial finger-count properties after a
+  live configuration change. Up opens; down closes without a layout write.
 
 ### Transition companion
 

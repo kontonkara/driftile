@@ -233,7 +233,15 @@ remains disabled unless requested:
 
 ```nix
 programs.driftile.overview.enable = true;
+programs.driftile.overview.touchpadGesture = {
+  enable = true;
+  fingerCount = 4;
+};
 ```
+
+`overview.touchpadGesture` is a Home Manager-only nullable profile. Its default
+is `null`, which leaves the effect's existing gesture values untouched; it can
+manage an overview installed in another scope.
 
 The modules also expose the optional transition effect as an independent
 package:

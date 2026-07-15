@@ -47,12 +47,29 @@ Version 1.31.0 projects only the current activity. Changing the current
 activity or available activity set closes an open companion before it can act
 on stale delegates.
 
+Version 1.32.0 adds an optional four-finger vertical touchpad gesture. An up
+swipe opens the companion and a down swipe closes an active or pending
+activation. The gesture can be disabled or changed to `3`–`5` fingers in the
+effect settings.
+
 The companion is disabled by default. When enabled with a fresh shortcut
 record, `Meta+O` toggles it. KGlobalAccel preserves an existing assignment
 across upgrades, including an explicitly unbound action, so review it in
 **System Settings > Keyboard > Shortcuts** after upgrading. The effect has no
 screen edge and requires the main Driftile KWin script because that script
 publishes the authoritative layout snapshot.
+
+## Touchpad gesture
+
+The overview effect registers one up/down touchpad pair while its gesture
+setting is enabled. The default is four fingers: up opens the overview and down
+closes an open or still-loading activation. Partial and cancelled gestures do
+nothing, and changing the setting recreates the pair without restarting KWin.
+
+The gesture uses KWin's native Wayland API and is a safe no-op on native X11.
+Plasma's built-in Overview also uses four-finger vertical gestures. Disable
+one overview gesture or choose a free count; vertical desktop navigation must
+also use a different count so each global direction has one owner.
 
 ## Keyboard navigation
 
@@ -135,7 +152,8 @@ To build the same versioned archive from source, run `npm ci` followed by
 
 Enable **Driftile Overview** in **System Settings > Window Management > Desktop
 Effects**. Change `Meta+O` in **System Settings > Keyboard > Shortcuts** if
-another assignment is preferred.
+another assignment is preferred. Use the effect's configure button to change
+or disable its touchpad gesture.
 
 Disable the effect before upgrading or removing it. Remove the package with:
 
@@ -159,11 +177,23 @@ it opt-in:
 programs.driftile.overview.enable = true;
 ```
 
+Home Manager can additionally manage the gesture independently of package
+ownership:
+
+```nix
+programs.driftile.overview.touchpadGesture = {
+  enable = true;
+  fingerCount = 4;
+};
+```
+
 The main script and overview can be installed independently. For example, a
 system-wide main package can be combined with a per-user overview. Do not
 install the same package ID through both NixOS and Home Manager for one user.
 Neither module enables the effect in KWin; enable it in Desktop Effects and
-adjust its shortcut only if needed.
+adjust its shortcut or touchpad gesture only if needed. The Home Manager-only
+nullable `touchpadGesture` profile can manage an effect installed in another
+scope; `null` leaves both KConfig values untouched.
 
 ## Validation
 
@@ -217,10 +247,10 @@ effect does not switch activities, move windows, write memberships, outputs,
 geometry, or settings, register a screen edge, or assign another shortcut.
 Desktop-card drag may change only the global desktop order through the guarded
 public path above. Keyboard activation reuses the existing guarded paths. The
-interaction adds no action, binding, setting, schema, private API, second
-window model, or timer and
-performs no window, stacking-order, or layout scan. It does not infer columns
-from window geometry or add animation or settings UI.
+overview gesture adds no shortcut action, input grab, persistence field,
+private API, second window model, timer, or KWin write. Pointer and keyboard
+interaction still perform no window, stacking-order, or layout scan. The
+effect does not infer columns from window geometry or add animation.
 Disabling or uninstalling it leaves the main extension and Plasma's built-in
 Overview unchanged.
 
