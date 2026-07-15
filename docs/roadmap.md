@@ -8,6 +8,9 @@ Stable 1.22.0 adds guarded number-gutter desktop-card reordering to the optional
 overview through public KWin APIs without changing layout ownership, settings,
 or persistence.
 
+Version 1.23.0 is in development with one read-only active-column layout badge
+in each optional overview desktop card.
+
 ## Foundation (delivered)
 
 - Build and package a declarative KWin script with a TypeScript runtime.
@@ -975,12 +978,33 @@ Release criteria (met):
 
 No other feature belongs to 1.22.0.
 
+## 1.23.0 (in development)
+
+Version `1.23.0` adds one passive active-column badge to each desktop card in
+the optional overview. It reports `stacked` or `tabbed` and the logical width as
+a percentage or logical pixels. The badge stays inside the visible column span
+and is hidden rather than clipped when the complete label does not fit.
+
+The implementation reads only the projected active-column index, that column,
+and its existing rendered delegate. It adds no input handler, animation,
+setting, shortcut, persistence field, layout mutation, window scan, or KWin
+write.
+
+Release criteria:
+
+- One focused QML contract check covers the label grammar, fail-closed
+  visibility, bottom placement, and constant-time delegate lookup.
+- Formatting, the focused overview check, QML lint, packaging, and exact-SHA CI
+  pass without a new VM or application matrix.
+
+No other feature belongs to 1.23.0.
+
 ## Post-v1
 
 Add interaction and presentation features outside the frozen v1 scope without
 taking over compositor mechanisms.
 
-- Add optional visual transitions, layout indicators, and concise diagnostics.
+- Add optional visual transitions and concise diagnostics.
 - Keep Plasma's built-in Overview as the compatible baseline.
 - Add activity-aware layout ownership as a separate persisted-context milestone.
 

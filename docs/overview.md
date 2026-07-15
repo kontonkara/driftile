@@ -23,6 +23,9 @@ layout ownership.
 Version 1.22.0 adds guarded desktop-card reordering from the number gutter
 without changing layout ownership.
 
+Current 1.23 development adds one read-only active-column layout badge to each
+desktop card without adding input or layout behavior.
+
 The companion is disabled by default. When enabled with a fresh shortcut
 record, `Meta+O` toggles it. KGlobalAccel preserves an existing assignment
 across upgrades, including an explicitly unbound action, so review it in
@@ -64,6 +67,19 @@ desktop-change signal then closes the effect on every output.
 The interaction adds no setting, shortcut, persistence field, private API,
 window move, timer, or workspace window scan. Pointer updates are constant time;
 validation scans only the bounded desktop and output lists at grab and release.
+
+## Active-column layout badge
+
+Each desktop card shows one compact badge over the visible part of its active
+column. The badge reports `stacked` or `tabbed` followed by the logical width as
+a percentage or logical pixels, for example `stacked · 50%` or
+`tabbed · 720 px`.
+
+The badge is read-only and does not capture pointer input. It is hidden when the
+active column, presentation, width, or visible area cannot be validated, or
+when the card is too small to show the complete label. Its lookup is constant
+time and adds no window scan, setting, persistence field, animation, or KWin
+write.
 
 ## Install a release
 

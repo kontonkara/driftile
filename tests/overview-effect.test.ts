@@ -394,6 +394,51 @@ describe("overview effect package", () => {
     );
   });
 
+  it("shows one fail-closed active-column layout badge with constant-time lookup", () => {
+    const badge = desktopCard.slice(
+      desktopCard.indexOf("id: activeColumnBadge"),
+      desktopCard.indexOf("function collectNavigationTargets("),
+    );
+    const badgeFormatters = desktopCard.slice(
+      desktopCard.indexOf("function layoutBadgeLabel("),
+      desktopCard.indexOf("function heightsForMembers("),
+    );
+
+    expect(desktopCard.match(/id: activeColumnBadge\b/gu)).toHaveLength(1);
+    expect(desktopCard).toContain("id: columnRepeater");
+    expect(desktopCard).toContain(
+      "onItemAdded: card.columnDelegateRevision += 1",
+    );
+    expect(desktopCard).toContain(
+      "onItemRemoved: card.columnDelegateRevision += 1",
+    );
+    expect(badge).toContain("card.context.activeColumnIndex");
+    expect(badge).toContain("card.context.columns[activeColumnIndex]");
+    expect(badge).toContain("card.columnDelegateRevision");
+    expect(desktopCard).toContain("return repeater.itemAt(columnIndex)");
+    expect(badge).toContain("Math.max(0, activeColumnShell.x)");
+    expect(badge).toContain(
+      "Math.min(viewport.width, activeColumnShell.x + activeColumnShell.width)",
+    );
+    expect(badge).toContain("y: viewport.height - height - 4");
+    expect(badge).toContain("viewport.height >= 28");
+    expect(badge).toContain("visibleWidth >= labelWidth + 20");
+    expect(badgeFormatters).toContain('column.presentation !== "stacked"');
+    expect(badgeFormatters).toContain('column.presentation !== "tabbed"');
+    expect(badgeFormatters).toContain(
+      "`${column.presentation} · ${widthLabel}`",
+    );
+    expect(badgeFormatters).toContain('width.kind === "fixed"');
+    expect(badgeFormatters).toContain('width.kind !== "proportion"');
+    expect(badgeFormatters).toContain('"<1 px"');
+    expect(badgeFormatters).toContain("`${Math.round(width.value)} px`");
+    expect(badgeFormatters).toContain('return "<0.1%"');
+    expect(badgeFormatters).toContain("`${whole}.${fraction}%`");
+    expect(`${badge}\n${badgeFormatters}`).not.toMatch(
+      /columnFrame\(|\b(?:for|while)\s*\(|\.(?:map|reduce)\(|KWin\.|WindowModel|\b[A-Za-z][A-Za-z0-9]*Handler\s*\{|MouseArea|Behavior|Animation/u,
+    );
+  });
+
   it("navigates only live visible window targets with unmodified keys", () => {
     const keyHandler = scene.slice(
       scene.indexOf("Keys.onPressed:"),

@@ -35,6 +35,7 @@ Rectangle {
                                                                                  1
     readonly property var tiledPresentations: buildTiledPresentations()
     readonly property var floatingWindowIds: buildFloatingWindowIds()
+    property int columnDelegateRevision: 0
 
     color: desktopReorderSource ? "#f050607a" : current ? "#f02b3548" : "#dc171e2a"
     border.width: current ? 2 : 1
@@ -109,7 +110,12 @@ Rectangle {
         clip: true
 
         Repeater {
+            id: columnRepeater
+
             model: card.columns
+
+            onItemAdded: card.columnDelegateRevision += 1
+            onItemRemoved: card.columnDelegateRevision += 1
 
             Rectangle {
                 id: columnShell
@@ -325,6 +331,49 @@ Rectangle {
                 }
             }
         }
+
+        Rectangle {
+            id: activeColumnBadge
+
+            readonly property int activeColumnIndex: card.context
+                && Number.isInteger(card.context.activeColumnIndex) ? card.context.activeColumnIndex : -1
+            readonly property var activeColumn: activeColumnIndex >= 0 && activeColumnIndex < card.columns.length
+                ? card.context.columns[activeColumnIndex] : null
+            readonly property var activeColumnShell: card.columnDelegateAt(columnRepeater, activeColumnIndex,
+                                                                            card.columnDelegateRevision)
+            readonly property bool frameValid: activeColumnShell !== null
+                && Number.isFinite(activeColumnShell.x) && Number.isFinite(activeColumnShell.width)
+                && activeColumnShell.width > 0
+            readonly property real visibleLeft: frameValid ? Math.max(0, activeColumnShell.x) : 0
+            readonly property real visibleRight: frameValid
+                ? Math.min(viewport.width, activeColumnShell.x + activeColumnShell.width) : 0
+            readonly property real visibleWidth: Math.max(0, visibleRight - visibleLeft)
+            readonly property string label: card.layoutBadgeLabel(activeColumn)
+            readonly property real labelWidth: Math.ceil(activeColumnBadgeText.implicitWidth)
+
+            x: visibleLeft + 4
+            y: viewport.height - height - 4
+            width: labelWidth + 12
+            height: 20
+            visible: viewport.height >= 28 && label.length > 0 && frameValid
+                     && visibleWidth >= labelWidth + 20
+            color: "#e61a2230"
+            border.width: 1
+            border.color: "#9fc2ff"
+            radius: 4
+            z: 9000
+
+            Text {
+                id: activeColumnBadgeText
+
+                anchors.centerIn: parent
+                text: activeColumnBadge.label
+                color: "#f3f7ff"
+                font.bold: true
+                font.pixelSize: 11
+                textFormat: Text.PlainText
+            }
+        }
     }
 
     function collectNavigationTargets(sceneItem) {
@@ -523,6 +572,46 @@ Rectangle {
         }
 
         return Math.max(1, width.value * contentWidth);
+    }
+
+    function layoutBadgeLabel(column) {
+        if (!column || (column.presentation !== "stacked" && column.presentation !== "tabbed")) {
+            return "";
+        }
+
+        const widthLabel = layoutBadgeWidthLabel(column.width);
+        return widthLabel.length > 0 ? `${column.presentation} · ${widthLabel}` : "";
+    }
+
+    function columnDelegateAt(repeater, columnIndex, revision) {
+        if (!repeater || !Number.isInteger(revision) || revision < 0 || columnIndex < 0
+                || columnIndex >= repeater.count) {
+            return null;
+        }
+
+        return repeater.itemAt(columnIndex);
+    }
+
+    function layoutBadgeWidthLabel(width) {
+        if (!width || !Number.isFinite(width.value) || width.value <= 0) {
+            return "";
+        }
+
+        if (width.kind === "fixed") {
+            return width.value < 0.5 ? "<1 px" : `${Math.round(width.value)} px`;
+        }
+        if (width.kind !== "proportion") {
+            return "";
+        }
+
+        const tenths = Math.round(width.value * 1000);
+        if (tenths === 0) {
+            return "<0.1%";
+        }
+
+        const whole = Math.floor(tenths / 10);
+        const fraction = tenths % 10;
+        return fraction === 0 ? `${whole}%` : `${whole}.${fraction}%`;
     }
 
     function heightsForMembers(members) {

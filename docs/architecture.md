@@ -85,6 +85,10 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   change calls public `KWin.Workspace.moveDesktop` once; its synchronous
   `desktopsChanged` signal closes every scene. Cancellation and stale state are
   write-free.
+- Renders one pass-through active-column badge per desktop card from the
+  immutable presentation and width already in the projected model. It performs
+  one direct column and delegate lookup, clips to the visible column span, and
+  hides rather than truncating or guessing invalid state.
 - Selects a non-current card through public `KWin.SceneView.currentDesktop`, or
   the guarded single-output `KWin.Workspace.currentDesktop` fallback, and
   requires an exact confirmation. Thumbnail activation then revalidates the

@@ -260,9 +260,20 @@ The ownership rule is strict:
 - The slice adds no setting, shortcut, persistence field, window move, private
   API, timer, or workspace window scan.
 
+## 1.23 optional overview slice
+
+- Each desktop card exposes one passive badge for its active column. It reports
+  the validated `stacked` or `tabbed` presentation and a compact logical width,
+  rounded to one decimal percentage point or one logical pixel.
+- The badge reads only the active column and its existing rendered delegate. It
+  is hidden for invalid state, a fully clipped column, a short card, or a visible
+  span that cannot contain the complete label.
+- The slice adds no input handler, animation, setting, shortcut, persistence
+  field, layout mutation, window scan, or KWin write.
+
 ## Beyond v1
 
-- Optional visual transitions, layout indicators, and concise diagnostics.
+- Optional visual transitions and concise diagnostics.
 - Activity-aware layouts.
 
 ## Compatibility
