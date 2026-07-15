@@ -48,6 +48,7 @@ export interface OverviewLayoutColumn {
   readonly fullWidthRestore?: OverviewColumnWidth;
   readonly members: readonly OverviewLayoutMember[];
   readonly presentation: OverviewColumnPresentation;
+  readonly selectedMemberIndex: number;
   readonly width: OverviewColumnWidth;
 }
 
@@ -183,14 +184,7 @@ export function projectOverviewLayout(
       activeColumnIndex: context.activeColumnIndex,
       columns: Object.freeze(
         context.columns.map((column) => {
-          const members =
-            column.presentation === "tabbed"
-              ? column.members.slice(
-                  column.selectedMemberIndex,
-                  column.selectedMemberIndex + 1,
-                )
-              : column.members;
-          recordOperations(metrics, members.length);
+          recordOperations(metrics, column.members.length);
 
           return Object.freeze({
             ...(column.fullWidthRestore === undefined
@@ -199,7 +193,7 @@ export function projectOverviewLayout(
                   fullWidthRestore: freezeWidth(column.fullWidthRestore),
                 }),
             members: Object.freeze(
-              members.map((member) =>
+              column.members.map((member) =>
                 Object.freeze({
                   ...(member.height === undefined
                     ? {}
@@ -209,6 +203,7 @@ export function projectOverviewLayout(
               ),
             ),
             presentation: column.presentation,
+            selectedMemberIndex: column.selectedMemberIndex,
             width: freezeWidth(column.width),
           });
         }),

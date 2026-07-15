@@ -112,6 +112,8 @@ describe("overview effect package", () => {
     expect(desktopCard).toContain("KWin.WindowModel");
     expect(desktopCard).toContain("KWin.WindowFilterModel");
     expect(desktopCard).toContain("KWin.WindowThumbnail");
+    expect(desktopCard.match(/KWin\.WindowModel\s*\{/gu)).toHaveLength(1);
+    expect(desktopCard.match(/KWin\.WindowFilterModel\s*\{/gu)).toHaveLength(1);
     const kwinWrites =
       qmlSources
         .join("\n")
@@ -153,14 +155,25 @@ describe("overview effect package", () => {
       desktopCard.indexOf("id: numberGutter"),
       desktopCard.indexOf("id: viewport"),
     );
+    const windowPresentation = desktopCard.slice(
+      desktopCard.indexOf("id: windowPresentation"),
+      desktopCard.indexOf("function indexOfDesktop("),
+    );
     const thumbnail = desktopCard.slice(
       desktopCard.indexOf("id: thumbnailShell"),
+      desktopCard.indexOf("id: tabShell"),
+    );
+    const tab = desktopCard.slice(
+      desktopCard.indexOf("id: tabShell"),
       desktopCard.indexOf("function indexOfDesktop("),
     );
 
-    expect(desktopCard.match(/\bTapHandler\s*\{/gu)).toHaveLength(2);
+    expect(desktopCard.match(/\bTapHandler\s*\{/gu)).toHaveLength(3);
     expect(numberGutter.match(/\bTapHandler\s*\{/gu)).toHaveLength(1);
     expect(thumbnail.match(/\bTapHandler\s*\{/gu)).toHaveLength(1);
+    expect(tab.match(/\bTapHandler\s*\{/gu)).toHaveLength(1);
+    expect(windowPresentation).toContain("width: viewport.width");
+    expect(windowPresentation).toContain("height: viewport.height");
     expect(thumbnail).toContain("acceptedButtons: Qt.LeftButton");
     expect(thumbnail).toContain(
       "acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad",
@@ -170,9 +183,23 @@ describe("overview effect package", () => {
     );
     expect(thumbnail).not.toContain("enabled: card.current");
     expect(thumbnail).toContain(
-      "card.windowTapped(model.window, thumbnailShell.windowId, card.desktop, card.desktopId,",
+      "card.windowTapped(model.window, windowPresentation.windowId, card.desktop,",
     );
-    expect(thumbnail).toContain("card.screen)");
+    expect(thumbnail).toContain("card.desktopId, card.screen)");
+    expect(tab).toContain("acceptedButtons: Qt.LeftButton");
+    expect(tab).toContain(
+      "acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad",
+    );
+    expect(tab).toContain("enabled: tabShell.visible");
+    expect(tab).toContain("!windowPresentation.tiledPresentation.selected");
+    expect(tab).toContain(
+      "model.window && model.window.caption ? String(model.window.caption)",
+    );
+    expect(tab).toContain("elide: Text.ElideRight");
+    expect(tab).toContain(
+      "card.windowTapped(model.window, windowPresentation.windowId, card.desktop,",
+    );
+    expect(tab).toContain("card.desktopId, card.screen)");
     expect(scene).toMatch(
       /onWindowTapped:\s*\(candidate, expectedWindowId, expectedDesktop, expectedDesktopId, expectedScreen\)\s*=>\s*root\.focusWindow\(candidate, expectedWindowId, expectedDesktop, expectedDesktopId,\s*expectedScreen\)/u,
     );
@@ -466,8 +493,32 @@ describe("overview effect package", () => {
   });
 
   it("projects stack heights without mixing pixels and auto weights", () => {
-    expect(desktopCard).toContain(
-      'column.presentation === "tabbed"\n                ? [contentHeight]',
+    const presentations = desktopCard.slice(
+      desktopCard.indexOf("function buildTiledPresentations("),
+      desktopCard.indexOf("function buildFloatingWindowIds("),
+    );
+
+    expect(presentations).toContain(
+      "const presentations = Object.create(null)",
+    );
+    expect(presentations).toContain(
+      'const tabbed = column.presentation === "tabbed"',
+    );
+    expect(presentations).toContain(
+      "const selected = !tabbed || memberIndex === column.selectedMemberIndex",
+    );
+    expect(presentations).toContain("thumbnailFrame: selected ? {");
+    expect(presentations).toContain("} : null");
+    expect(presentations).toContain("tabWidth * memberIndex");
+    expect(presentations).toContain("const stripBodyGap = gap");
+    expect(presentations).toContain(
+      "const tabHeight = Math.max(1, tabStripHeight - stripBodyGap)",
+    );
+    expect(presentations).toContain(
+      "const thumbnailY = tabbed ? tabStripHeight + stripBodyGap / 2 : gap / 2",
+    );
+    expect(presentations).toContain(
+      "return Math.max(1, Math.min(28, contentHeight * 0.16))",
     );
     expect(desktopCard).toContain(
       "const remaining = Math.max(0, contentHeight - fixedTotal * fixedScale)",

@@ -24,7 +24,7 @@ Rectangle {
                                                                                   1
     readonly property real verticalScale: screen && screen.geometry.height > 0 ? contentHeight / screen.geometry.height :
                                                                                  1
-    readonly property var tiledPlacements: buildTiledPlacements()
+    readonly property var tiledPresentations: buildTiledPresentations()
     readonly property var floatingWindowIds: buildFloatingWindowIds()
 
     color: current ? "#f02b3548" : "#dc171e2a"
@@ -94,13 +94,15 @@ Rectangle {
                     Rectangle {
                         required property int index
 
-                        readonly property var memberFrame:
-                            card.tiledPlacements[columnShell.modelData.members[index].windowId]
+                        readonly property var memberPresentation:
+                            card.tiledPresentations[columnShell.modelData.members[index].windowId]
+                        readonly property var memberFrame: memberPresentation ? memberPresentation.thumbnailFrame : null
 
                         anchors.left: parent.left
                         anchors.right: parent.right
                         y: memberFrame ? memberFrame.y : 0
                         height: memberFrame ? memberFrame.height : 0
+                        visible: memberFrame !== null
                         color: "transparent"
                         border.width: 1
                         border.color: "#304057"
@@ -121,42 +123,96 @@ Rectangle {
             }
 
             Item {
-                id: thumbnailShell
+                id: windowPresentation
 
                 readonly property string windowId: model.window ? String(model.window.internalId) : ""
+                readonly property var tiledPresentation: card.tiledPresentations[windowId]
                 readonly property var frame: card.frameForWindow(model.window, windowId)
+                readonly property bool selectedThumbnail: !tiledPresentation || tiledPresentation.selected
 
-                x: frame ? frame.x : 0
-                y: frame ? frame.y : 0
-                width: frame ? Math.max(1, frame.width) : 0
-                height: frame ? Math.max(1, frame.height) : 0
-                visible: frame !== null && frame !== undefined && model.window && !model.window.minimized
+                width: viewport.width
+                height: viewport.height
                 z: frame && frame.floating ? 1000 + index : 100 + index
-                clip: true
+
+                Item {
+                    id: thumbnailShell
+
+                    x: windowPresentation.frame ? windowPresentation.frame.x : 0
+                    y: windowPresentation.frame ? windowPresentation.frame.y : 0
+                    width: windowPresentation.frame ? Math.max(1, windowPresentation.frame.width) : 0
+                    height: windowPresentation.frame ? Math.max(1, windowPresentation.frame.height) : 0
+                    visible: windowPresentation.selectedThumbnail && windowPresentation.frame !== null
+                             && windowPresentation.frame !== undefined && model.window && !model.window.minimized
+                    clip: true
+
+                    Rectangle {
+                        anchors.fill: parent
+                        color: "#131a25"
+                    }
+
+                    KWin.WindowThumbnail {
+                        anchors.fill: parent
+                        wId: model.window.internalId
+                    }
+
+                    Rectangle {
+                        anchors.fill: parent
+                        color: "transparent"
+                        border.width: KWin.Workspace.activeWindow === model.window ? 2 : 1
+                        border.color: KWin.Workspace.activeWindow === model.window ? "#f4f8ff" : "#71839e"
+                    }
+
+                    TapHandler {
+                        acceptedButtons: Qt.LeftButton
+                        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                        enabled: thumbnailShell.visible && card.desktop && card.screen
+                        onTapped: card.windowTapped(model.window, windowPresentation.windowId, card.desktop,
+                                                    card.desktopId, card.screen)
+                    }
+                }
 
                 Rectangle {
-                    anchors.fill: parent
-                    color: "#131a25"
-                }
+                    id: tabShell
 
-                KWin.WindowThumbnail {
-                    anchors.fill: parent
-                    wId: model.window.internalId
-                }
+                    readonly property var frame: windowPresentation.tiledPresentation
+                        ? windowPresentation.tiledPresentation.tabFrame : null
 
-                Rectangle {
-                    anchors.fill: parent
-                    color: "transparent"
-                    border.width: KWin.Workspace.activeWindow === model.window ? 2 : 1
-                    border.color: KWin.Workspace.activeWindow === model.window ? "#f4f8ff" : "#71839e"
-                }
+                    x: frame ? frame.x : 0
+                    y: frame ? frame.y : 0
+                    width: frame ? frame.width : 0
+                    height: frame ? frame.height : 0
+                    visible: frame !== null && model.window && !model.window.minimized
+                    color: windowPresentation.tiledPresentation && windowPresentation.tiledPresentation.selected
+                           ? "#7085a8" : "#34435a"
+                    border.width: 1
+                    border.color: windowPresentation.tiledPresentation && windowPresentation.tiledPresentation.selected
+                                  ? "#f4f8ff" : "#71839e"
+                    radius: 2
+                    clip: true
 
-                TapHandler {
-                    acceptedButtons: Qt.LeftButton
-                    acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
-                    enabled: thumbnailShell.visible && card.desktop && card.screen
-                    onTapped: card.windowTapped(model.window, thumbnailShell.windowId, card.desktop, card.desktopId,
-                                                card.screen)
+                    Text {
+                        anchors.fill: parent
+                        anchors.leftMargin: 4
+                        anchors.rightMargin: 4
+                        text: model.window && model.window.caption ? String(model.window.caption)
+                                                                   : windowPresentation.tiledPresentation
+                                                                     ? String(windowPresentation.tiledPresentation.memberIndex + 1)
+                                                                     : ""
+                        color: "#f3f7ff"
+                        font.pixelSize: Math.max(8, Math.min(12, tabShell.height * 0.55))
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
+
+                    TapHandler {
+                        acceptedButtons: Qt.LeftButton
+                        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                        enabled: tabShell.visible && windowPresentation.tiledPresentation
+                                 && !windowPresentation.tiledPresentation.selected && card.desktop && card.screen
+                        onTapped: card.windowTapped(model.window, windowPresentation.windowId, card.desktop,
+                                                    card.desktopId, card.screen)
+                    }
                 }
             }
         }
@@ -173,10 +229,10 @@ Rectangle {
         return 0;
     }
 
-    function buildTiledPlacements() {
-        const placements = Object.create(null);
+    function buildTiledPresentations() {
+        const presentations = Object.create(null);
         if (!context || !screen) {
-            return placements;
+            return presentations;
         }
 
         const gap = Math.max(2, Math.min(8, contentWidth * 0.008));
@@ -185,20 +241,36 @@ Rectangle {
         for (let columnIndex = 0; columnIndex < columns.length; columnIndex += 1) {
             const column = columns[columnIndex];
             const columnWidth = widthForColumn(column.width);
-            const memberHeights = column.presentation === "tabbed"
-                ? [contentHeight]
-                : heightsForMembers(column.members);
+            const tabbed = column.presentation === "tabbed";
+            const memberHeights = tabbed ? [] : heightsForMembers(column.members);
+            const tabStripHeight = tabbed ? boundedTabStripHeight() : 0;
+            const tabWidth = tabbed ? Math.max(1, columnWidth - gap) / Math.max(1, column.members.length) : 0;
+            const stripBodyGap = gap;
+            const tabHeight = Math.max(1, tabStripHeight - stripBodyGap);
+            const thumbnailY = tabbed ? tabStripHeight + stripBodyGap / 2 : gap / 2;
+            const tabbedThumbnailHeight = Math.max(1, contentHeight - thumbnailY - gap / 2);
             let memberY = 0;
 
             for (let memberIndex = 0; memberIndex < column.members.length; memberIndex += 1) {
                 const member = column.members[memberIndex];
-                const memberHeight = memberHeights[memberIndex];
-                placements[member.windowId] = {
-                    floating: false,
-                    height: Math.max(1, memberHeight - gap),
-                    width: Math.max(1, columnWidth - gap),
-                    x: columnX + gap / 2,
-                    y: memberY + gap / 2
+                const memberHeight = tabbed ? contentHeight : memberHeights[memberIndex];
+                const selected = !tabbed || memberIndex === column.selectedMemberIndex;
+                presentations[member.windowId] = {
+                    memberIndex,
+                    selected,
+                    tabFrame: tabbed ? {
+                        height: tabHeight,
+                        width: tabWidth,
+                        x: columnX + gap / 2 + tabWidth * memberIndex,
+                        y: gap / 2
+                    } : null,
+                    thumbnailFrame: selected ? {
+                        floating: false,
+                        height: tabbed ? tabbedThumbnailHeight : Math.max(1, memberHeight - gap),
+                        width: Math.max(1, columnWidth - gap),
+                        x: columnX + gap / 2,
+                        y: tabbed ? thumbnailY : memberY + gap / 2
+                    } : null
                 };
                 memberY += memberHeight;
             }
@@ -206,7 +278,11 @@ Rectangle {
             columnX += columnWidth;
         }
 
-        return placements;
+        return presentations;
+    }
+
+    function boundedTabStripHeight() {
+        return Math.max(1, Math.min(28, contentHeight * 0.16));
     }
 
     function buildFloatingWindowIds() {
@@ -295,9 +371,9 @@ Rectangle {
     }
 
     function frameForWindow(window, windowId) {
-        const tiled = tiledPlacements[windowId];
+        const tiled = tiledPresentations[windowId];
         if (tiled !== undefined) {
-            return tiled;
+            return tiled.thumbnailFrame;
         }
         if (!window || floatingWindowIds[windowId] !== true || !screen) {
             return null;

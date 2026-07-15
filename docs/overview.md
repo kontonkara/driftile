@@ -12,11 +12,10 @@ that desktop. The current desktop's gutter remains inert.
 In 1.9.0, a left click on a valid non-current thumbnail selects its desktop
 and then focuses that exact window. Current-card focus remains direct.
 
-The 1.19.0 release projects only the selected member's thumbnail from a tabbed
-column. The companion does not expose hidden tab members or provide tab
-controls.
-
-The released 1.6.0 package remains presentation-only.
+The 1.20.0 development line keeps one large selected thumbnail for a tabbed
+column and adds a compact ordered strip for its live members. A left click on a
+different valid tab uses the same guarded focus path. The main script remains
+the sole owner of layout state and records the resulting selection.
 
 The companion is disabled by default and has no default shortcut or screen
 edge. It requires the main Driftile KWin script because that script publishes
@@ -86,6 +85,11 @@ visibility, minimized and deleted state, and input eligibility. It retains or
 requests `KWin.Workspace.activeWindow` and closes only after confirmed focus.
 An invalid, stale, or rejected request leaves the effect open.
 
+Tab selection uses that same live-window path. Only the selected member has a
+large thumbnail, every live member keeps one non-overlapping tab target, and
+the selected tab is inert. Deleted, minimized, explicitly hidden, stale, or
+non-input targets are rejected without a layout or settings write.
+
 A non-current thumbnail first revalidates the exact active effect, model, live
 screen, projected output, direct desktop object and ID, direct window object and
 ID, current activity, memberships, state, and input eligibility. The window may
@@ -109,11 +113,10 @@ Ordinary KWin activation may raise the window, and Driftile's existing focus
 handling may reveal its tiled column. Beyond a confirmed desktop request, the
 effect does not switch activities, move windows, write memberships, outputs,
 geometry, or settings, register a screen edge, assign a shortcut, or provide
-drag, rearrangement, or keyboard navigation. The 1.9.0 slice adds no
-action, binding, setting, schema, private API, or timer and performs no window,
-stacking-order, or layout scan. It does not infer columns from window geometry.
-Tabbed projection adds no persistent tab strip, pointer tab selection,
-animation, setting, settings UI, or private API.
+drag, rearrangement, or keyboard navigation. The interaction adds no action,
+binding, setting, schema, private API, second window model, or timer and
+performs no window, stacking-order, or layout scan. It does not infer columns
+from window geometry or add animation or settings UI.
 Disabling or uninstalling it leaves the main extension and Plasma's built-in
 Overview unchanged.
 

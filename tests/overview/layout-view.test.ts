@@ -256,8 +256,15 @@ describe("projectOverviewLayout", () => {
           columns: [
             {
               fullWidthRestore: { kind: "fixed", value: 800 },
-              members: [{ windowId: "live-b" }],
+              members: [
+                {
+                  height: { clientHeight: 480, kind: "fixed" },
+                  windowId: "live-a",
+                },
+                { windowId: "live-b" },
+              ],
               presentation: "tabbed",
+              selectedMemberIndex: 1,
               width: { kind: "proportion", value: 1 },
             },
             {
@@ -268,6 +275,7 @@ describe("projectOverviewLayout", () => {
                 },
               ],
               presentation: "stacked",
+              selectedMemberIndex: 0,
               width: { kind: "fixed", value: 640 },
             },
           ],
@@ -286,6 +294,7 @@ describe("projectOverviewLayout", () => {
                 },
               ],
               presentation: "stacked",
+              selectedMemberIndex: 0,
               width: { kind: "proportion", value: 0.5 },
             },
           ],
@@ -327,7 +336,6 @@ describe("projectOverviewLayout", () => {
         },
       ],
     });
-    expect(JSON.stringify(projected.contexts)).not.toContain("live-a");
     expectDeepFrozen(projected);
     expect(JSON.stringify(projected)).not.toContain("restoreBaseline");
     expect(JSON.stringify(projected)).not.toContain("restoreFingerprint");

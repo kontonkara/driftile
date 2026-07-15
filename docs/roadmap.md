@@ -885,6 +885,30 @@ Release criteria (met):
 
 No other feature belongs to 1.19.0.
 
+## 1.20.0 (in development)
+
+Version `1.20.0` adds pointer tab selection to the optional overview. A tabbed
+column keeps one large selected thumbnail and exposes every live member in a
+compact ordered tab strip. Selecting another tab uses the existing guarded
+public KWin focus path; the main runtime remains the sole owner of layout state
+and records the resulting selection.
+
+The interaction fails closed for stale, deleted, minimized, hidden, or
+non-input windows. It adds no action, binding, setting, persistence field,
+layout write, private API, second window model, or new application matrix.
+
+Release criteria:
+
+- Projection preserves every tab member and the selected index in linear time.
+- Tab and thumbnail hit regions do not overlap; stacked and floating previews
+  retain their existing behavior.
+- Existing guarded focus checks cover current and non-current desktops, while
+  rejected targets leave the overview open and state unchanged.
+- Targeted tests, one hidden VM checkpoint, packaging, exact-SHA CI, and release
+  gates pass without widening this slice.
+
+No other feature belongs to 1.20.0.
+
 ## Post-v1
 
 Add interaction and presentation features outside the frozen v1 scope without
