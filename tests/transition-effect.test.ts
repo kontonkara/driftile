@@ -53,6 +53,8 @@ interface WindowStub {
   normalWindow: boolean;
   managed: boolean;
   moveable: boolean;
+  hasDecoration: boolean;
+  keepAbove: boolean;
   move: boolean;
   resize: boolean;
   skipSwitcher: boolean;
@@ -109,6 +111,8 @@ function createWindow(overrides: Partial<WindowStub> = {}): WindowStub {
     normalWindow: true,
     managed: true,
     moveable: true,
+    hasDecoration: true,
+    keepAbove: false,
     move: false,
     resize: false,
     skipSwitcher: false,
@@ -306,6 +310,8 @@ describe("transition effect package", () => {
       { normalWindow: false },
       { managed: false },
       { moveable: false },
+      { hasDecoration: false, keepAbove: true },
+      { hasDecoration: false, skipSwitcher: true },
       { transientFor: () => createWindow() },
     ];
 
@@ -363,7 +369,7 @@ describe("transition effect package", () => {
     expect(configuredHarness.animationRequests[0]?.duration).toBe(1000);
   });
 
-  it("retargets consecutive position and size changes without cancellation", () => {
+  it("retargets consecutive geometry changes without restarting active attributes", () => {
     const harness = createHarness();
     changeGeometry(harness.window, {
       x: 40,
@@ -374,6 +380,12 @@ describe("transition effect package", () => {
     changeGeometry(harness.window, {
       x: 60,
       y: 70,
+      width: 500,
+      height: 300,
+    });
+    changeGeometry(harness.window, {
+      x: 80,
+      y: 90,
       width: 500,
       height: 300,
     });
@@ -388,6 +400,11 @@ describe("transition effect package", () => {
       {
         animationId: 2,
         target: { value1: 310, value2: 220 },
+        duration: 180,
+      },
+      {
+        animationId: 2,
+        target: { value1: 330, value2: 240 },
         duration: 180,
       },
     ]);

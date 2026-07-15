@@ -166,6 +166,7 @@ class DriftileTransitionsEffect {
       window.normalWindow &&
       window.managed &&
       window.moveable &&
+      (window.hasDecoration || (!window.keepAbove && !window.skipSwitcher)) &&
       !window.move &&
       !window.resize
     );
