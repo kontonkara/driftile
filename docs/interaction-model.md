@@ -84,8 +84,8 @@ setting, shortcut, persistence, or KWin state.
 | Minimize focus       | Preserve tiled slots and floating frames; skip minimized windows without wrapping               | Available |
 | Hidden-member edits  | Preserve documented passive peers; reject every other minimized-member structural edit          | Available |
 | Floating layer       | Toggle state, switch layers, navigate geometrically, nudge, center, and resize contextually     | Available |
-| Pointer drop         | Reinsert one active tiled window at an exact visible window or empty visible column gutter      | Available |
-| Pointer resize       | Adopt one completed horizontal resize as the active column's fixed width                        | Available |
+| Pointer drop         | Reinsert a tiled window or tile a manual floating window at an exact window or empty gutter     | Available |
+| Pointer resize       | Adopt one completed horizontal column resize or vertical stacked-window resize                  | Available |
 | Overview companion   | Activate targets; select and reorder desktop cards; show the passive active-column layout badge | Available |
 | Tabbed columns       | Toggle presentation; select or reorder members with the existing vertical grammar               | 1.19.0    |
 | Pointer navigation   | Provide wheel navigation through the shared layout model                                        | Future    |

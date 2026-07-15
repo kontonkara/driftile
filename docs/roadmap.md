@@ -1266,29 +1266,30 @@ No other feature belongs to 1.30.0.
 
 ## 1.31.0 (in development)
 
-The current slice extends empty horizontal gutter targets to a move that KWin
-has already completed between visible outputs or selected desktops. An exact
-window under the release point keeps priority and the existing destination
-stack behavior. Otherwise, a valid gutter creates a separate singleton at that
-boundary with source width, automatic height, and current application or global
-initial presentation.
+The current package completes five related interaction changes. Cross-context
+gutter drops create a separate automatic-height singleton after KWin moves a
+tiled window to another visible output or selected desktop. A manually floating
+window can be dragged onto an exact tiled window half or an empty gutter in its
+current context; the exact window wins and live feedback shows the target.
+Completed top or bottom resizes adopt the active stacked window's height while
+the existing left or right path retains column-width adoption.
 
-Cross-context targeting remains finish-only without live feedback. Driftile
-does not request output, desktop-selection, or membership changes. It reuses
-the existing immutable two-context preview, guarded geometry transaction,
-owned compensation, and ordinary singleton fallback. The hidden source desktop
-receives no geometry writes. The slice adds no setting, action, binding,
-persistence field, overview change, KWin API, or private API.
+Normal active columns keep a right full-width successor at its natural strip
+position, closing the active window selects a suitable surviving window, and a
+missing default-width setting now creates 33% columns. Explicit user settings
+and existing columns remain unchanged. All pointer paths stay finish-only and
+use public KWin APIs; the package adds no binding, persistence field, overview
+change, compositor fork, or private API.
 
 Development criteria:
 
-- Destination-only planning covers before, between, and after gutters and
-  rejects incomplete, duplicate, or overlapping geometry.
-- Atomic layout transfer preserves passive source state and inserts one fresh
-  automatic-height singleton without mutating either context before commit.
-- Runtime coverage includes one cross-output success, one cross-desktop
-  success, and one invalidated-boundary fallback while retaining exact-window
-  priority and the existing transfer isolation guarantees.
+- Exact-window and gutter planning rejects incomplete, duplicate, overlapping,
+  or stale geometry without mutating layout ownership.
+- Atomic attach and resize paths preserve passive state, focus, unrelated
+  contexts, saved floating placement, and explicit width configuration.
+- Runtime coverage includes cross-output and cross-desktop gutter adoption,
+  both manual-floating targets, vertical resize adoption, close-focus recovery,
+  and full-width successor visibility.
 - Focused grouped checks, exact-SHA CI, and a warranted hidden VM checkpoint
   must pass before release.
 

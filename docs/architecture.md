@@ -294,7 +294,7 @@ RuntimeState
   toggleGeometryTransitions: Map<WindowId, { contextKey, expectedFrame, settlementArmed }>
   desktopLifecycle: { ownedDesktopIds, pendingMutation }
   topologyBarrier: { revision, affectedOutputs, stableSample }
-  pointerMoveIntent: { contextKey, layoutSnapshot, participants, previewGeometry, finalCursor, sourceOutput, sourceDesktop, externalDrop }
+  pointerMoveIntent: { contextKey, layoutSnapshot, participants, previewGeometry, finalCursor, sourceOutput, sourceDesktop, externalDrop, floating }
   pointerResizeIntent: { contextKey, layoutSnapshot, participants, initialFrame, acceptedFrame, activeColumnId }
   pointerResizeSettlement: { contextKey, targets, rollbackFrames, phase, attempts, stableSamples }
 ```
@@ -488,6 +488,10 @@ inspected safely within the codec bound.
   unchanged while guarded geometry writes stage the attach preview. On commit,
   append and select the active window with automatic height while the target
   width and stacked or tabbed presentation win and focus remains active.
+- During a same-context drag of one manually floating window, preview the exact
+  tiled window half before any empty gutter. Attach only after KWin finishes the
+  move and the geometry lease settles; a gutter singleton restores the saved
+  width and presentation.
   Compensate a failed transition only for frames that retain captured write
   ownership; otherwise leave replacement state untouched and schedule
   dirty-context recovery.

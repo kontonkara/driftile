@@ -18,7 +18,10 @@ The ownership rule is strict:
   exact-window-first adoption into a window or empty destination gutter after
   KWin moves the active tiled window to a selected desktop or another visible
   output.
-- Finish-only horizontal pointer-resize adoption for the active tiled column.
+- Finish-only pointer tiling for one relation-free manually floating window in
+  the same context, with exact-window priority over empty gutters.
+- Finish-only horizontal column-width and vertical stacked-window-height
+  pointer-resize adoption.
 - Vertical window stacks and tabbed presentation within columns.
 - One selected member per column; tabbed members share one frame while the
   selected member owns focus and stacking intent.

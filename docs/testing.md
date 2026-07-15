@@ -319,6 +319,12 @@ cross-desktop, and invalidated-boundary fallback. Exact-window priority and the
 existing signal-order matrix remain covered by their prior cases. The slice
 adds no backend, application, integration, or VM scenario.
 
+The same package adds focused cases for right full-width successor visibility,
+focus recovery after active-window removal, the 33% missing-setting default,
+top and bottom stacked-window resize adoption, and exact-window or empty-gutter
+tiling of a manually floating window. These paths reuse the existing grouped
+integration and VM baselines instead of adding another matrix.
+
 Cross-desktop unit cases cover the 2x2 matrix of output-local or global desktop
 resolution and membership-before-finish or finish-before-membership event
 order. They verify bounded pending-destination settlement, fallback when the

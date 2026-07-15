@@ -157,7 +157,7 @@ column still adopts that target column's presentation.
 **Default column width** sets the proportional width for newly admitted columns,
 fresh cross-context retiles, and the contextual **Reset column width** action.
 Structural splits and extractions inherit their source width. The default is
-`50%`; the range is `10%`–`100%`.
+`33%`; the range is `10%`–`100%`.
 
 A cross-context pointer drop into an empty column gutter is a structural
 extraction and keeps the source width. Ordinary destination fallback is a fresh

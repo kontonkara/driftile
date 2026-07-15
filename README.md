@@ -56,12 +56,12 @@ with the source width, automatic height, and its current application or global
 initial presentation. Exact-window drops retain precedence and their existing
 stack behavior. The viewport follows active-column reveal rules.
 
-Version 1.31.0 is in development. After KWin moves the active tiled window to
-another visible output or selected desktop, releasing in a destination gutter creates
-a separate column with the source width, automatic height, and current initial
-presentation. Exact-window targets still win. Cross-context targeting remains
-finish-only without live feedback, and an invalid target keeps KWin's move and
-uses ordinary singleton admission.
+Version 1.31.0 is in development. It extends gutter drops across visible
+contexts, keeps a right full-width successor visible beside a normal active
+column, restores focus after the active window closes, and defaults new columns
+to 33% unless the user configured another value. Completed pointer gestures can
+also adopt vertical stack heights or tile a manually floating window into an
+exact window half or an empty same-context gutter.
 
 Driftile requires KDE Plasma with KWin 6.7 or newer. It targets native Wayland
 and XWayland windows, plus single-output native X11 sessions.
