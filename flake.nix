@@ -47,6 +47,7 @@
           outputs = [
             "out"
             "overview"
+            "transitions"
           ];
           src = self;
 
@@ -80,6 +81,11 @@
             cp -r dist/kwin-effect/. \
               "$overview/share/kwin/effects/io.github.kontonkara.driftile.overview/"
 
+            install -d \
+              "$transitions/share/kwin/effects/io.github.kontonkara.driftile.transitions"
+            cp -r dist/kwin-transition-effect/. \
+              "$transitions/share/kwin/effects/io.github.kontonkara.driftile.transitions/"
+
             runHook postInstall
           '';
 
@@ -101,6 +107,7 @@
           home-manager = import ./nix/home-manager-check.nix {
             defaultPackage = self.packages.${system}.driftile;
             defaultOverviewPackage = self.packages.${system}."driftile-overview";
+            defaultTransitionsPackage = self.packages.${system}."driftile-transitions";
             inherit
               home-manager
               homeManagerModule
@@ -113,6 +120,7 @@
           modules = import ./nix/module-check.nix {
             defaultPackage = self.packages.${system}.driftile;
             defaultOverviewPackage = self.packages.${system}."driftile-overview";
+            defaultTransitionsPackage = self.packages.${system}."driftile-transitions";
             inherit
               homeManagerModule
               nixosModule
@@ -123,6 +131,7 @@
           package-layout = pkgs.runCommand "driftile-package-layout-check" { } ''
             main=${self.packages.${system}.driftile}
             overview=${self.packages.${system}."driftile-overview"}
+            transitions=${self.packages.${system}."driftile-transitions"}
 
             test -d "$main/share/kwin/scripts/io.github.kontonkara.driftile"
             test -x "$main/bin/driftile-shortcuts"
@@ -142,6 +151,15 @@
             test "$(find "$overview/share" -mindepth 1 -maxdepth 1 | wc -l)" -eq 1
             test "$(find "$overview/share/kwin" -mindepth 1 -maxdepth 1 | wc -l)" -eq 1
             test "$(find "$overview/share/kwin/effects" -mindepth 1 -maxdepth 1 | wc -l)" -eq 1
+
+            test -d "$transitions/share/kwin/effects/io.github.kontonkara.driftile.transitions"
+            test ! -e "$transitions/share/kwin/scripts"
+            test ! -e "$transitions/bin"
+            test ! -e "$transitions/libexec"
+            test "$(find "$transitions" -mindepth 1 -maxdepth 1 | wc -l)" -eq 1
+            test "$(find "$transitions/share" -mindepth 1 -maxdepth 1 | wc -l)" -eq 1
+            test "$(find "$transitions/share/kwin" -mindepth 1 -maxdepth 1 | wc -l)" -eq 1
+            test "$(find "$transitions/share/kwin/effects" -mindepth 1 -maxdepth 1 | wc -l)" -eq 1
 
             touch "$out"
           '';
@@ -166,6 +184,7 @@
         in
         {
           "driftile-overview" = driftile.overview;
+          "driftile-transitions" = driftile.transitions;
           inherit driftile;
           default = driftile;
         }

@@ -1,6 +1,7 @@
 {
   defaultPackage,
   defaultOverviewPackage,
+  defaultTransitionsPackage,
   homeManagerModule,
   lib,
   nixosModule,
@@ -74,6 +75,7 @@ let
         programs.driftile = {
           package = pkgs.hello;
           overview.package = pkgs.hello;
+          transitions.package = pkgs.hello;
         };
       } { };
       mainEnabled = evaluate module packageOptionPath {
@@ -94,10 +96,26 @@ let
           package = pkgs.hello;
         };
       } { };
+      transitionsEnabled = evaluate module packageOptionPath {
+        programs.driftile.transitions.enable = true;
+      } { };
+      transitionsOverridden = evaluate module packageOptionPath {
+        programs.driftile.transitions = {
+          enable = true;
+          package = pkgs.hello;
+        };
+      } { };
       bothEnabled = evaluate module packageOptionPath {
         programs.driftile = {
           enable = true;
           overview.enable = true;
+        };
+      } { };
+      allEnabled = evaluate module packageOptionPath {
+        programs.driftile = {
+          enable = true;
+          overview.enable = true;
+          transitions.enable = true;
         };
       } { };
     in
@@ -107,9 +125,18 @@ let
     assert packagePaths packageOptionPath overviewEnabled == [ (toString defaultOverviewPackage) ];
     assert packagePaths packageOptionPath overviewOverridden == [ (toString pkgs.hello) ];
     assert
+      packagePaths packageOptionPath transitionsEnabled == [ (toString defaultTransitionsPackage) ];
+    assert packagePaths packageOptionPath transitionsOverridden == [ (toString pkgs.hello) ];
+    assert
       packagePaths packageOptionPath bothEnabled == [
         (toString defaultPackage)
         (toString defaultOverviewPackage)
+      ];
+    assert
+      packagePaths packageOptionPath allEnabled == [
+        (toString defaultPackage)
+        (toString defaultOverviewPackage)
+        (toString defaultTransitionsPackage)
       ];
     true;
 
@@ -136,6 +163,18 @@ let
       }
       {
         programs.driftile.overview.enable = true;
+      };
+  homeManagerTransitionsCollision =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.transitions.enable = true;
+      }
+      {
+        programs.driftile.transitions.enable = true;
       };
   homeManagerMainWithSystemOverview =
     evaluate homeManagerModule
@@ -687,6 +726,7 @@ in
 assert homeManagerValid;
 assert map (entry: entry.assertion) homeManagerCollision.config.assertions == [ false ];
 assert map (entry: entry.assertion) homeManagerOverviewCollision.config.assertions == [ false ];
+assert map (entry: entry.assertion) homeManagerTransitionsCollision.config.assertions == [ false ];
 assert map (entry: entry.assertion) homeManagerMainWithSystemOverview.config.assertions == [ true ];
 assert map (entry: entry.assertion) homeManagerOverviewWithSystemMain.config.assertions == [ true ];
 assert
@@ -701,6 +741,8 @@ assert homeManagerProfileWithSystemInstall.config.xdg.configFile ? "driftile/sho
 assert homeManagerWithoutProfile.config.xdg.configFile == { };
 assert homeManagerWithoutSettings.config.qt.kde.settings == { };
 assert homeManagerOptionSurface.options.programs.driftile ? settings;
+assert homeManagerOptionSurface.options.programs.driftile ? transitions;
+assert nixosOptionSurface.options.programs.driftile ? transitions;
 assert !(nixosOptionSurface.options.programs.driftile ? settings);
 assert packagePaths [ "home" "packages" ] homeManagerSettings == [ ];
 assert

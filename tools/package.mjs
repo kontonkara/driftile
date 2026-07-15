@@ -16,6 +16,10 @@ import { releaseVersion } from "./release-version.mjs";
 const rootDirectory = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const packageDirectory = resolve(rootDirectory, "dist/kwin-script");
 const overviewPackageDirectory = resolve(rootDirectory, "dist/kwin-effect");
+const transitionPackageDirectory = resolve(
+  rootDirectory,
+  "dist/kwin-transition-effect",
+);
 const outputDirectory = resolve(rootDirectory, "dist");
 const licenseSource = resolve(rootDirectory, "LICENSE");
 const licenseArtifact = resolve(outputDirectory, "LICENSE");
@@ -32,6 +36,10 @@ export async function packageProject() {
     outputDirectory,
     `driftile-overview-${version}.kwineffect`,
   );
+  const transitionArtifactPath = resolve(
+    outputDirectory,
+    `driftile-transitions-${version}.kwineffect`,
+  );
   const shortcutArtifactPath = resolve(
     outputDirectory,
     `driftile-shortcuts-${version}.mjs`,
@@ -47,6 +55,11 @@ export async function packageProject() {
     overviewArtifactPath,
     timestamp,
   );
+  await createDeterministicArchive(
+    transitionPackageDirectory,
+    transitionArtifactPath,
+    timestamp,
+  );
 
   await Promise.all([
     copyFile(licenseSource, licenseArtifact),
@@ -58,6 +71,7 @@ export async function packageProject() {
     licenseArtifact,
     overviewArtifactPath,
     shortcutArtifactPath,
+    transitionArtifactPath,
   ].sort(compareFilenames);
   const checksumLines = await Promise.all(
     releaseArtifacts.map(async (releaseArtifact) => {
@@ -84,6 +98,7 @@ async function removeOldArtifacts() {
       entry.name === "SHA256SUMS" ||
       /^driftile(?:-[^/]+)?\.kwinscript$/u.test(entry.name) ||
       /^driftile-overview(?:-[^/]+)?\.kwineffect$/u.test(entry.name) ||
+      /^driftile-transitions(?:-[^/]+)?\.kwineffect$/u.test(entry.name) ||
       /^driftile-shortcuts-[^/]+\.mjs$/u.test(entry.name)
     ) {
       await rm(resolve(outputDirectory, entry.name), {

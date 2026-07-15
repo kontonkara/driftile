@@ -161,6 +161,12 @@ let
     "overview"
     "enable"
   ] false osConfig;
+  systemTransitionsInstallEnabled = lib.attrByPath [
+    "programs"
+    "driftile"
+    "transitions"
+    "enable"
+  ] false osConfig;
 in
 {
   options.programs.driftile = {
@@ -181,6 +187,17 @@ in
         default = self.packages.${system}."driftile-overview";
         defaultText = lib.literalExpression "inputs.driftile.packages.\${pkgs.stdenv.hostPlatform.system}.\"driftile-overview\"";
         description = "The Driftile overview effect package to install.";
+      };
+    };
+
+    transitions = {
+      enable = lib.mkEnableOption "installation of the Driftile transition effect";
+
+      package = lib.mkOption {
+        type = lib.types.package;
+        default = self.packages.${system}."driftile-transitions";
+        defaultText = lib.literalExpression "inputs.driftile.packages.\${pkgs.stdenv.hostPlatform.system}.\"driftile-transitions\"";
+        description = "The Driftile transition effect package to install.";
       };
     };
   }
@@ -330,6 +347,19 @@ in
             {
               assertion = !systemOverviewInstallEnabled;
               message = "Install the Driftile overview effect through either NixOS or Home Manager for a user, not both.";
+            }
+          ];
+        })
+      ]
+    ))
+    (lib.mkIf cfg.transitions.enable (
+      lib.mkMerge [
+        (lib.setAttrByPath packageOptionPath [ cfg.transitions.package ])
+        (lib.optionalAttrs preventSystemInstall {
+          assertions = [
+            {
+              assertion = !systemTransitionsInstallEnabled;
+              message = "Install the Driftile transition effect through either NixOS or Home Manager for a user, not both.";
             }
           ];
         })

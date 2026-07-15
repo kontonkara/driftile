@@ -16,6 +16,7 @@ const licenseArtifact = resolve(outputDirectory, "LICENSE");
 const checksumManifestPath = resolve(outputDirectory, "SHA256SUMS");
 const pluginId = "io.github.kontonkara.driftile";
 const overviewPluginId = "io.github.kontonkara.driftile.overview";
+const transitionPluginId = "io.github.kontonkara.driftile.transitions";
 const expectedPackageEntries = [
   "contents/config/main.xml",
   "contents/runtime/selector.qml",
@@ -41,6 +42,12 @@ const expectedOverviewRuntimeEntries = [
   "ui/OverviewScene.qml",
   "ui/main.qml",
 ];
+const expectedTransitionPackageEntries = [
+  "contents/code/main.js",
+  "contents/config/main.xml",
+  "contents/ui/config.ui",
+  "metadata.json",
+];
 const packageArtifact = resolve(
   outputDirectory,
   `driftile-${version}.kwinscript`,
@@ -49,11 +56,16 @@ const overviewPackageArtifact = resolve(
   outputDirectory,
   `driftile-overview-${version}.kwineffect`,
 );
+const transitionPackageArtifact = resolve(
+  outputDirectory,
+  `driftile-transitions-${version}.kwineffect`,
+);
 const releaseArtifacts = [
   licenseArtifact,
   packageArtifact,
   overviewPackageArtifact,
   resolve(outputDirectory, `driftile-shortcuts-${version}.mjs`),
+  transitionPackageArtifact,
 ].sort(compareFilenames);
 const packagedAssets = [...releaseArtifacts, checksumManifestPath];
 
@@ -111,6 +123,17 @@ await verifyPackageMetadata(
     pluginId: overviewPluginId,
   },
 );
+await verifyPackageMetadata(
+  transitionPackageArtifact,
+  resolve(rootDirectory, "packaging/kwin-transition-effect/metadata.json"),
+  {
+    configModule: "kcm_kwin4_genericscripted",
+    mainScript: null,
+    packageStructure: "KWin/Effect",
+    plasmaApi: "javascript",
+    pluginId: transitionPluginId,
+  },
+);
 await Promise.all([
   verifyArchivedSourceFile(
     packageArtifact,
@@ -121,6 +144,30 @@ await Promise.all([
     overviewPackageArtifact,
     "contents/ui/main.qml",
     resolve(rootDirectory, "packaging/kwin-effect/contents/ui/main.qml"),
+  ),
+  verifyArchivedSourceFile(
+    transitionPackageArtifact,
+    "contents/code/main.js",
+    resolve(
+      rootDirectory,
+      "packaging/kwin-transition-effect/contents/code/main.js",
+    ),
+  ),
+  verifyArchivedSourceFile(
+    transitionPackageArtifact,
+    "contents/config/main.xml",
+    resolve(
+      rootDirectory,
+      "packaging/kwin-transition-effect/contents/config/main.xml",
+    ),
+  ),
+  verifyArchivedSourceFile(
+    transitionPackageArtifact,
+    "contents/ui/config.ui",
+    resolve(
+      rootDirectory,
+      "packaging/kwin-transition-effect/contents/ui/config.ui",
+    ),
   ),
 ]);
 const packageRuntimeHash = packagedRuntimeHash(packageArtifact);
@@ -142,6 +189,11 @@ verifyPackageEntries(
     overviewRuntimeHash,
   ),
   "overview effect",
+);
+verifyPackageEntries(
+  transitionPackageArtifact,
+  expectedTransitionPackageEntries,
+  "transition effect",
 );
 verifyRuntimeHash(packageArtifact, expectedRuntimeEntries, packageRuntimeHash);
 verifyRuntimeHash(
@@ -177,12 +229,25 @@ await verifyKPackageInstalls([
     packageType: "KWin/Script",
     pluginId,
     relativeInstallPath: `kwin/scripts/${pluginId}`,
+    requiredEntries: ["contents/ui/main.qml", "contents/runtime/selector.qml"],
   },
   {
     artifact: overviewPackageArtifact,
     packageType: "KWin/Effect",
     pluginId: overviewPluginId,
     relativeInstallPath: `kwin/effects/${overviewPluginId}`,
+    requiredEntries: ["contents/ui/main.qml", "contents/runtime/selector.qml"],
+  },
+  {
+    artifact: transitionPackageArtifact,
+    packageType: "KWin/Effect",
+    pluginId: transitionPluginId,
+    relativeInstallPath: `kwin/effects/${transitionPluginId}`,
+    requiredEntries: [
+      "contents/code/main.js",
+      "contents/config/main.xml",
+      "contents/ui/config.ui",
+    ],
   },
 ]);
 
@@ -235,7 +300,14 @@ function packageEntries(artifact) {
 async function verifyPackageMetadata(
   artifact,
   sourceMetadataPath,
-  { forbidConfigModule = false, packageStructure, pluginId: expectedPluginId },
+  {
+    configModule,
+    forbidConfigModule = false,
+    mainScript = "ui/main.qml",
+    packageStructure,
+    plasmaApi = "declarativescript",
+    pluginId: expectedPluginId,
+  },
 ) {
   const archivedMetadata = runUnzip(["-p", artifact, "metadata.json"]);
   let metadata;
@@ -252,8 +324,12 @@ async function verifyPackageMetadata(
     throw new Error("packaged metadata differs from its repository source");
   }
 
-  if (metadata["X-Plasma-MainScript"] !== "ui/main.qml") {
-    throw new Error("KWin package metadata must use the fixed main entrypoint");
+  if (
+    mainScript === null
+      ? "X-Plasma-MainScript" in metadata
+      : metadata["X-Plasma-MainScript"] !== mainScript
+  ) {
+    throw new Error("KWin package metadata has an unexpected main entrypoint");
   }
 
   if (metadata["KPackageStructure"] !== packageStructure) {
@@ -272,12 +348,19 @@ async function verifyPackageMetadata(
     throw new Error("KWin package metadata must be disabled by default");
   }
 
-  if (metadata["X-Plasma-API"] !== "declarativescript") {
-    throw new Error("KWin package metadata must use the declarative API");
+  if (metadata["X-Plasma-API"] !== plasmaApi) {
+    throw new Error("KWin package metadata has an unexpected Plasma API");
   }
 
   if (forbidConfigModule && "X-KDE-ConfigModule" in metadata) {
     throw new Error("overview effect metadata must not expose a config module");
+  }
+
+  if (
+    configModule !== undefined &&
+    metadata["X-KDE-ConfigModule"] !== configModule
+  ) {
+    throw new Error("KWin package metadata has an unexpected config module");
   }
 }
 
@@ -388,9 +471,10 @@ async function verifyKPackageInstalls(packages) {
         );
       }
 
-      await readFile(resolve(installedDirectory, "contents/ui/main.qml"));
-      await readFile(
-        resolve(installedDirectory, "contents/runtime/selector.qml"),
+      await Promise.all(
+        package_.requiredEntries.map((entry) =>
+          readFile(resolve(installedDirectory, entry)),
+        ),
       );
     }
   } finally {

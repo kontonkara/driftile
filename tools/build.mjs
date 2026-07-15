@@ -22,6 +22,14 @@ const overviewRuntimeOutput = resolve(
   overviewPackageOutput,
   "contents/runtime/code/main.js",
 );
+const transitionPackageSource = resolve(
+  rootDirectory,
+  "packaging/kwin-transition-effect",
+);
+const transitionPackageOutput = resolve(
+  rootDirectory,
+  "dist/kwin-transition-effect",
+);
 const shortcutToolOutput = resolve(
   rootDirectory,
   "dist/bin/driftile-shortcuts.mjs",
@@ -35,10 +43,12 @@ export async function buildProject() {
   await Promise.all([
     rm(packageOutput, { force: true, recursive: true }),
     rm(overviewPackageOutput, { force: true, recursive: true }),
+    rm(transitionPackageOutput, { force: true, recursive: true }),
   ]);
   await Promise.all([
     cp(packageSource, packageOutput, { recursive: true }),
     cp(overviewPackageSource, overviewPackageOutput, { recursive: true }),
+    cp(transitionPackageSource, transitionPackageOutput, { recursive: true }),
   ]);
   await Promise.all([
     mkdir(dirname(runtimeOutput), { recursive: true }),
