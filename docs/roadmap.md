@@ -1,12 +1,12 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.19.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.20.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-The `1.19.0-rc.1` candidate froze the exact layout and persistence scope.
-Stable 1.19.0 adds only `Meta+Q` for KWin-owned active-window closing, with no
-layout, configuration, persistence, or overview change.
+Stable 1.20.0 completes configurable initial tab presentation, overview tab
+selection, passive tab feedback, and a fresh `Meta+O` overview default without
+taking over compositor mechanisms.
 
 ## Foundation (delivered)
 
@@ -885,7 +885,7 @@ Release criteria (met):
 
 No other feature belongs to 1.19.0.
 
-## 1.20.0 (in development)
+## 1.20.0 (released)
 
 Version `1.20.0` completes one bounded tab-workflow slice. The optional
 overview keeps one selected thumbnail, exposes every non-minimized live tabbed
@@ -909,7 +909,7 @@ transition into tabbed presentation can show Plasma's passive OSD.
 write. The surface adds no managed window, input interception, polling,
 private API, compositor replacement, or persistence field.
 
-Release criteria:
+Release criteria (met):
 
 - Overview projection preserves every tab member and selected index in linear
   time; tab and thumbnail hit regions do not overlap.

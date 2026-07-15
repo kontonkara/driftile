@@ -31,13 +31,13 @@ leaving window, output, and desktop mechanisms to KWin.
 - Exact extension-reload restoration, conservative cross-session restoration,
   and fail-closed restoration when a known output returns.
 - An optional overview companion that presents the authoritative layout; the
-  current development line adds guarded pointer selection for every member of
-  a tabbed column.
+  tab strip provides guarded pointer selection for every live member of a
+  tabbed column and keeps minimized members visible but disabled.
 - An optional reversible shortcut helper with custom JSON profiles.
 
 ## Status
 
-The latest stable release is [1.19.0](docs/release-notes-1.19.0.md).
+The latest stable release is [1.20.0](docs/release-notes-1.20.0.md).
 The feature list tracks the current `main` branch; release state is recorded in
 the [roadmap](docs/roadmap.md).
 
@@ -114,6 +114,7 @@ checks.
 - [Testing](docs/testing.md)
 - [Performance](docs/performance.md)
 - [Roadmap](docs/roadmap.md)
+- [1.20.0 release notes](docs/release-notes-1.20.0.md)
 - [1.19.0 release notes](docs/release-notes-1.19.0.md)
 - [1.19.0-rc.1 release notes](docs/release-notes-1.19.0-rc.1.md)
 - [1.18.0 release notes](docs/release-notes-1.18.0.md)

@@ -1,7 +1,56 @@
 # Migration
 
-The latest stable release is 1.19.0. Use the steps below when changing release
+The latest stable release is 1.20.0. Use the steps below when changing release
 generations, and never combine files from different releases.
+
+## Upgrade from 1.19.0 to 1.20.0
+
+1. Release helper-owned shortcuts with the 1.19.0 helper while it remains
+   available.
+2. Disable Driftile and the optional overview in System Settings.
+3. Upgrade the main package, optional overview, and helper to their matching
+   1.20.0 artifacts, or pin the Nix input to `v1.20.0` and rebuild.
+4. Enable Driftile and review the default column presentation, application
+   presentation rules, and tab indicator setting.
+5. If installed, re-enable the overview. A fresh shortcut record receives
+   `Meta+O`; an existing assignment, including an unbound action, is preserved.
+
+The release adds three safe-default KConfig values:
+
+- `DefaultColumnPresentation="stacked"` preserves the existing fresh-column
+  behavior.
+- `ApplicationColumnPresentations=""` adds no application override.
+- `ShowTabIndicator=true` enables passive Plasma OSD feedback for confirmed
+  multi-tab activation or entry into tabbed presentation.
+
+Application presentation rules match the exact, case-sensitive KWin
+`desktopFileName` and override the global default for fresh columns. Existing
+and restored columns remain unchanged when either policy changes. Tabbed
+singletons are durable, so a later insertion immediately uses their selected
+presentation.
+
+The optional overview adds an ordered strip for every live tabbed member.
+Minimized members remain visible but disabled; valid tabs reuse the guarded
+window-focus path. The package IDs and logical v3 persistence format remain
+unchanged, so no layout conversion or Plasma session restart is required.
+
+## Roll back from 1.20.0 to 1.19.0
+
+Before disabling 1.20.0, toggle every tabbed singleton column back to stacked
+presentation. Version 1.19.0 rejects a persisted tabbed column with fewer than
+two members.
+
+Release shortcuts with the 1.20.0 helper, disable Driftile and the optional
+overview, then restore their matching verified 1.19.0 packages and helper. For
+NixOS or Home Manager, remove `defaultColumnPresentation`,
+`applicationColumnPresentations`, and `showTabIndicator` from the settings
+profile before restoring the `v1.19.0` input, then rebuild the generation that
+owns each package.
+
+The additive KConfig keys may remain because 1.19.0 ignores them. Multi-window
+tabbed columns and logical v3 state remain compatible. Re-enable the installed
+packages and restore the 1.19.0 shortcut profile; the older overview returns
+to selected-thumbnail-only projection.
 
 ## Upgrade from 1.18.0 to 1.19.0
 

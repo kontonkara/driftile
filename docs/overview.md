@@ -12,10 +12,10 @@ that desktop. The current desktop's gutter remains inert.
 In 1.9.0, a left click on a valid non-current thumbnail selects its desktop
 and then focuses that exact window. Current-card focus remains direct.
 
-The 1.20.0 development line keeps one large selected thumbnail for a tabbed
-column and adds a compact ordered strip for its live members. A left click on a
-different valid tab uses the same guarded focus path. The main script remains
-the sole owner of layout state and records the resulting selection.
+Version 1.20.0 keeps one large selected thumbnail for a tabbed column and adds
+a compact ordered strip for its live members. A left click on a different
+valid tab uses the same guarded focus path. The main script remains the sole
+owner of layout state and records the resulting selection.
 
 The companion is disabled by default. When enabled with a fresh shortcut
 record, `Meta+O` toggles it. KGlobalAccel preserves an existing assignment
@@ -26,8 +26,8 @@ publishes the authoritative layout snapshot.
 
 ## Install a release
 
-Download `driftile-overview-1.19.0.kwineffect` and `SHA256SUMS` from the stable
-[1.19.0 release](release-notes-1.19.0.md), then verify the archive:
+Download `driftile-overview-1.20.0.kwineffect` and `SHA256SUMS` from the stable
+[1.20.0 release](release-notes-1.20.0.md), then verify the archive:
 
 ```console
 $ sha256sum --check --ignore-missing SHA256SUMS
@@ -37,7 +37,7 @@ Install the overview package as the desktop user:
 
 ```bash
 kpackagetool6 --type=KWin/Effect \
-  --install ./driftile-overview-1.19.0.kwineffect
+  --install ./driftile-overview-1.20.0.kwineffect
 ```
 
 To build the same versioned archive from source, run `npm ci` followed by
@@ -61,7 +61,7 @@ uninstalling the package.
 
 ## NixOS and Home Manager
 
-The 1.19.0 flake exposes the effect separately as
+The 1.20.0 flake exposes the effect separately as
 `packages.<system>.driftile-overview`. The NixOS and Home Manager modules keep
 it opt-in:
 
