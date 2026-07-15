@@ -80,6 +80,14 @@ Review the ownership boundary and current exclusions in
 may change the window's role, size constraints, desktop membership, or native
 tiling state.
 
+## A pointer drop joins a stack instead of creating a column
+
+A drop over an exact window uses stack insertion or reorder behavior. To keep
+the dragged window separate, release it in an empty horizontal gutter before,
+between, or after visible columns in the same output and desktop. Empty-gutter
+drops do not cross outputs or desktops, and moving a singleton onto its current
+adjacent boundary is intentionally a no-op.
+
 ## A window keeps or loses KWin decorations unexpectedly
 
 First check **Hide KWin borders and title bars on application windows**.

@@ -84,7 +84,7 @@ setting, shortcut, persistence, or KWin state.
 | Minimize focus       | Preserve tiled slots and floating frames; skip minimized windows without wrapping               | Available |
 | Hidden-member edits  | Preserve documented passive peers; reject every other minimized-member structural edit          | Available |
 | Floating layer       | Toggle state, switch layers, navigate geometrically, nudge, center, and resize contextually     | Available |
-| Pointer drop         | Preview and reinsert one active tiled window at one exact visible target                        | Available |
+| Pointer drop         | Reinsert one active tiled window at an exact visible window or empty visible column gutter      | Available |
 | Pointer resize       | Adopt one completed horizontal resize as the active column's fixed width                        | Available |
 | Overview companion   | Activate targets; select and reorder desktop cards; show the passive active-column layout badge | Available |
 | Tabbed columns       | Toggle presentation; select or reorder members with the existing vertical grammar               | 1.19.0    |
@@ -175,18 +175,27 @@ recovery. Automatic, related, minimized, native-state, pending, or stale active
 windows are no-ops. The path adds no action, default binding, setting, schema,
 persistence field, helper, overview, KWin API, or private API.
 
-A tiled drag commits on release over exactly one visible tiled target in the
-same context. The target midpoint selects insertion before or after it. Moving
-within a stack retains the window-height policy; moving into another column
-retains the destination width and gives the moved window automatic height.
+A tiled drag commits on release over either one exact visible window or an
+empty horizontal gutter in the same context. An exact-window drop uses its
+vertical midpoint to insert or reorder inside a stack. A gutter before, between,
+or after visible columns keeps the dragged window in a separate column.
 
-During that same-context drag, Driftile outlines the target's upper or lower
-half to match the pending insertion. Cursor events are coalesced and the
+For a gutter drop, a singleton moves as one complete column, retaining its ID,
+width, presentation, selected member, and height state. A stack member is
+extracted into a new singleton with the source width, automatic height, and
+configured application or global initial presentation; passive members retain
+their order, heights, presentation, and successor-or-predecessor selection. The
+viewport follows the existing active-column reveal rules. Ineffective
+boundaries are no-ops.
+
+During that same-context drag, Driftile outlines either the target window half
+or the selected horizontal gutter. Cursor events are coalesced and the
 immutable layout snapshot is not rewritten. KWin exposes one shared outline
 without an ownership token, so Driftile checks it before target changes and
 cleanup, then disables feedback for the drag if another outline conflicts. The
-coexistence check is necessarily best-effort. Cross-desktop and cross-output
-moves remain finish-only without a preview.
+coexistence check is necessarily best-effort. Empty-gutter drops across outputs
+or desktops are unsupported; existing cross-context adoption still requires an
+exact visible window and remains finish-only without a preview.
 
 KWin owns desktop selection and window membership. After KWin moves the active
 window to a selected visible desktop on the same output, Driftile can adopt it

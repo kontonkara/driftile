@@ -296,6 +296,14 @@ destination width, automatic moved height, partial-frame compensation, no
 output or desktop mechanism writes, and ordinary singleton admission for
 empty, stale, ambiguous, or raced targets.
 
+The 1.30.0 development slice adds focused unit coverage for empty horizontal
+gutters before, between, and after visible columns; clipped previews; malformed
+or incomplete geometry; and ineffective adjacent singleton targets. Core cases
+cover distant whole-column preservation, stack-member extraction before or
+after its own or another column, passive order, height and selection retention,
+automatic moved height, collision rejection, and exact rollback. Existing
+exact-window and cross-context cases remain unchanged.
+
 Cross-desktop unit cases cover the 2x2 matrix of output-local or global desktop
 resolution and membership-before-finish or finish-before-membership event
 order. They verify bounded pending-destination settlement, fallback when the

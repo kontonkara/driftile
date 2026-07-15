@@ -57,6 +57,7 @@ import {
   LayoutEngine,
   columnWindowHeights,
   previewColumnRestoration,
+  type ColumnReinsertionTarget,
   type ColumnPresentation,
   type ColumnWidth,
   type ColumnStackEditPreview,
@@ -98,6 +99,8 @@ import {
 } from "./core/output-navigation";
 import { diffWindowGeometries } from "./core/reconcile";
 import {
+  planPointerColumnDrop,
+  planPointerColumnDropPreview,
   planPointerExternalWindowDrop,
   planPointerWindowDrop,
   planPointerWindowDropPreview,
@@ -148,6 +151,7 @@ const MAX_RESIZE_STEP_PERCENT = 50;
 const MIN_DEFAULT_COLUMN_WIDTH_PERCENT = 10;
 const MIN_RESIZE_STEP_PERCENT = 1;
 const MAX_POINTER_EXTERNAL_CONTEXT_PROBES = 20;
+const MAX_POINTER_COLUMN_DROP_SETTLEMENT_PROBES = 20;
 const MAX_POINTER_RESIZE_COMPENSATION_PROBES = 40;
 const MAX_POINTER_RESIZE_SETTLEMENT_PROBES = 20;
 const DEFAULT_COLUMN_WIDTH: ColumnWidth = {
@@ -179,6 +183,7 @@ const MAX_TOPOLOGY_SAMPLE_ATTEMPTS = 20;
 const MAX_TRANSIENT_RESUME_PROBES = 20;
 const MINIMUM_COLUMN_WIDTH = 64;
 const REQUIRED_CAPACITY_PARK_SAMPLES = 2;
+const REQUIRED_POINTER_COLUMN_DROP_SETTLEMENT_SAMPLES = 2;
 const REQUIRED_POINTER_RESIZE_COMPENSATION_SAMPLES = 20;
 const REQUIRED_POINTER_RESIZE_SETTLEMENT_SAMPLES = 2;
 const WINDOW_HEIGHT_PRESET_CYCLE_TOLERANCE = 1;
@@ -464,6 +469,41 @@ interface PointerMoveIntent {
   readonly sourceDesktop: KWinVirtualDesktop;
   readonly sourceOutput: KWinOutput;
   readonly topologyRevision: number;
+}
+
+interface PointerColumnDropPlan {
+  readonly editKind: StackEditResult["kind"];
+  readonly newColumnId: ColumnId;
+  readonly presentation: ColumnPresentation;
+  readonly target: ColumnReinsertionTarget;
+  readonly targetLayout: LayoutContextSnapshot;
+  readonly windows: readonly WindowGeometry[];
+}
+
+interface PointerColumnDropWindow {
+  readonly baseline: Rect;
+  readonly constraints: FrameSizeConstraintBounds;
+  readonly rollback: WindowGeometry;
+  readonly source: KWinWindow;
+  readonly stateRevision: number;
+  readonly target: WindowGeometry;
+}
+
+interface PointerColumnDropSettlement {
+  aborting: boolean;
+  attempts: number;
+  readonly command: ActiveColumnCommand;
+  readonly editKind: StackEditResult["kind"];
+  readonly forwardAttemptedIds: Set<WindowId>;
+  forwardWrites: number;
+  readonly intent: PointerMoveIntent;
+  readonly newColumnId: ColumnId;
+  pending: boolean;
+  readonly presentation: ColumnPresentation;
+  stableSamples: number;
+  readonly target: ColumnReinsertionTarget;
+  readonly targetLayout: LayoutContextSnapshot;
+  readonly windows: ReadonlyMap<WindowId, PointerColumnDropWindow>;
 }
 
 interface PointerResizeParticipant {
@@ -883,6 +923,8 @@ export class RuntimeController {
   private readonly pendingAdmissionContexts = new Set<string>();
   private interactiveResizeSource: KWinWindow | null = null;
   private pointerMoveIntent: PointerMoveIntent | null = null;
+  private pointerColumnDropSettlement: PointerColumnDropSettlement | null =
+    null;
   private pointerDropPreviewBlocked = false;
   private pointerDropPreviewCursorConnected = false;
   private pointerDropPreviewFrame: Rect | null = null;
@@ -1346,6 +1388,7 @@ export class RuntimeController {
 
     if (
       this.interactiveResizeSource !== null ||
+      this.pointerColumnDropSettlement !== null ||
       this.pointerResizeSettlement !== null
     ) {
       this.borderlessReconciliationPending = true;
@@ -1376,6 +1419,7 @@ export class RuntimeController {
 
     if (
       this.interactiveResizeSource !== null ||
+      this.pointerColumnDropSettlement !== null ||
       this.pointerResizeSettlement !== null
     ) {
       this.borderlessReconciliationPending = true;
@@ -2866,6 +2910,7 @@ export class RuntimeController {
       this.borderlessReconciliationPending = false;
       this.interactiveResizeSource = null;
       this.clearPointerMoveIntent();
+      this.pointerColumnDropSettlement = null;
       this.pointerDropPreviewUnavailable =
         this.pointerDropPreviewFrame !== null;
       this.pointerResizeIntent = null;
@@ -2948,6 +2993,7 @@ export class RuntimeController {
     this.borderlessReconciliationPending = false;
     this.interactiveResizeSource = null;
     this.clearPointerMoveIntent();
+    this.pointerColumnDropSettlement = null;
     this.pointerResizeIntent = null;
     this.pointerResizeSettlement = null;
     this.stackEditOperation = null;
@@ -2988,6 +3034,7 @@ export class RuntimeController {
       this.pendingExpelFocusHandoff = null;
       this.interactiveResizeSource = null;
       this.clearPointerMoveIntent();
+      this.pointerColumnDropSettlement = null;
       this.pointerResizeIntent = null;
       this.pointerResizeSettlement = null;
       this.stackEditOperation = null;
@@ -3360,12 +3407,24 @@ export class RuntimeController {
     const addedContext = managedContext(window);
 
     if (addedContext) {
-      this.capacityParkBackoffs.delete(contextKey(addedContext));
+      const addedContextKey = contextKey(addedContext);
+      this.capacityParkBackoffs.delete(addedContextKey);
+
+      if (
+        this.pointerColumnDropSettlement?.intent.contextKey === addedContextKey
+      ) {
+        this.abortPointerColumnDropSettlement(
+          this.pointerColumnDropSettlement,
+          "the pointer drop context gained a window",
+        );
+        this.pendingWindowSyncs.add(addedId);
+        return;
+      }
 
       if (
         (this.interactiveResizeSource !== null ||
           this.pointerResizeSettlement !== null) &&
-        this.pointerResizeIntent?.contextKey === contextKey(addedContext)
+        this.pointerResizeIntent?.contextKey === addedContextKey
       ) {
         this.pointerResizeIntent = null;
       }
@@ -3938,20 +3997,147 @@ export class RuntimeController {
       return;
     }
 
-    const preview = planPointerWindowDropPreview({
+    const input = {
       context: intent.before,
       cursor: { x: cursor.x, y: cursor.y },
       draggedWindowId: intent.draggedWindowId,
       visibleArea: intent.previewVisibleArea,
       windows: intent.previewWindows,
-    });
+    };
+    const preview = planPointerWindowDropPreview(input);
 
-    if (!preview) {
+    if (preview) {
+      this.showPointerDropPreviewFrame(preview.frame);
+      return;
+    }
+
+    const columnPreview = planPointerColumnDropPreview(input);
+
+    if (!columnPreview) {
       this.clearPointerDropPreview();
       return;
     }
 
-    this.showPointerDropPreviewFrame(preview.frame);
+    this.showPointerDropPreviewFrame(columnPreview.frame);
+  }
+
+  private pointerMoveContextGeometry(
+    intent: PointerMoveIntent,
+    context: RuntimeContext,
+  ): ContextGeometry | null {
+    try {
+      const geometry = this.geometry.contextGeometry(
+        context.outputId,
+        context.desktopId,
+      );
+
+      return this.contexts.get(intent.contextKey) === context &&
+        context.geometryFingerprint === intent.contextFingerprint &&
+        geometry?.fingerprint === intent.contextFingerprint
+        ? geometry
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private buildPointerColumnDropPlan(
+    intent: PointerMoveIntent,
+    context: RuntimeContext,
+    contextGeometry: ContextGeometry,
+    target: ColumnReinsertionTarget,
+  ): PointerColumnDropPlan | null {
+    if (
+      this.pointerColumnDropSettlement ||
+      this.stackEditOperation ||
+      this.pointerMoveIntent !== intent ||
+      !layoutContextSnapshotsEqual(
+        this.layout.snapshot(context.outputId, context.desktopId),
+        intent.before,
+      )
+    ) {
+      return null;
+    }
+
+    const newColumnId = this.availableColumnId(
+      intent.before,
+      intent.draggedWindowId,
+      "pointer",
+    );
+    const presentation = this.initialColumnPresentation(intent.source);
+    const edit = this.layout.reinsertWindowAtColumnBoundary(
+      intent.draggedWindowId,
+      target,
+      newColumnId,
+      presentation,
+    );
+
+    if (!edit) {
+      return null;
+    }
+
+    let plan: PointerColumnDropPlan | null = null;
+
+    try {
+      const edited = this.layout.snapshot(context.outputId, context.desktopId);
+      const solved = this.solveContextGeometry(edited, contextGeometry);
+
+      if (
+        solved.windows.length === intent.participants.length &&
+        this.canApplyLayout(solved.maxViewportOffset) &&
+        solved.windows.every((window) => {
+          const source = this.observer.source(window.windowId);
+          return Boolean(
+            source && respectsSizeConstraints(window.frame, source),
+          );
+        })
+      ) {
+        plan = {
+          editKind: edit.kind,
+          newColumnId,
+          presentation,
+          target: { ...target },
+          targetLayout: {
+            ...edited,
+            viewportOffset: solved.viewportOffset,
+          },
+          windows: solved.windows.map((window) => ({
+            columnId: window.columnId,
+            frame: snapshotRect(window.frame),
+            windowId: window.windowId,
+          })),
+        };
+      }
+    } catch {
+      plan = null;
+    }
+
+    let restored = false;
+
+    try {
+      restored = this.layout.rollbackStackEdit(edit.rollback);
+    } catch {
+      // Recovery below owns the context after an atomic planning failure.
+    }
+
+    if (
+      !restored ||
+      !layoutContextSnapshotsEqual(
+        this.layout.snapshot(context.outputId, context.desktopId),
+        intent.before,
+      )
+    ) {
+      for (const participant of intent.participants) {
+        this.pendingWindowSyncs.add(participant.id);
+      }
+
+      this.markContextDirty(context);
+      this.clearPointerMoveIntent();
+      this.scheduleWork();
+      return null;
+    }
+
+    return plan;
   }
 
   private showPointerDropPreviewFrame(frame: Rect): void {
@@ -4079,6 +4265,16 @@ export class RuntimeController {
   }
 
   private clearPointerMoveIntent(): void {
+    const settlement = this.pointerColumnDropSettlement;
+
+    if (this.started && settlement?.intent === this.pointerMoveIntent) {
+      this.abortPointerColumnDropSettlement(
+        settlement,
+        "the pointer move intent was invalidated",
+      );
+      return;
+    }
+
     this.pointerMoveIntent = null;
     this.stopPointerDropPreviewTracking();
     this.clearPointerDropPreview();
@@ -17244,16 +17440,31 @@ export class RuntimeController {
       return reject();
     }
 
-    const target: PointerWindowDropTarget | null = planPointerWindowDrop({
+    const input = {
       context: command.before,
       cursor: intent.finalCursor,
       draggedWindowId: id,
       visibleArea: command.contextGeometry.workArea,
       windows: solved.windows,
-    });
+    };
+    const target: PointerWindowDropTarget | null = planPointerWindowDrop(input);
 
     if (!target) {
-      return reject();
+      const columnTarget = planPointerColumnDrop(input);
+
+      if (
+        !columnTarget ||
+        !this.beginPointerColumnDropSettlement(
+          intent,
+          command,
+          solved.windows,
+          columnTarget,
+        )
+      ) {
+        return reject();
+      }
+
+      return true;
     }
 
     const editState: { value: StackEditResult | null } = { value: null };
@@ -17300,6 +17511,541 @@ export class RuntimeController {
 
     this.requestLayoutStatePublication();
     return true;
+  }
+
+  private beginPointerColumnDropSettlement(
+    intent: PointerMoveIntent,
+    command: ActiveColumnCommand,
+    beforeWindows: readonly WindowGeometry[],
+    target: ColumnReinsertionTarget,
+  ): boolean {
+    const context = command.context;
+
+    if (
+      this.pointerColumnDropSettlement ||
+      this.stackEditOperation ||
+      this.pendingDefaultColumnWidth !== null ||
+      this.pendingGap !== null ||
+      this.hasTopologyBarrier() ||
+      this.dirtyContexts.has(context.key) ||
+      this.pendingAdmissionContexts.has(context.key) ||
+      this.hasPendingCapacityState(context.key) ||
+      this.waitingWindowIds.has(context.key) ||
+      this.toggleTransitionPending(context.key) ||
+      !this.pointerMoveParticipantsAreCurrent(intent, context)
+    ) {
+      return false;
+    }
+
+    const plan = this.buildPointerColumnDropPlan(
+      intent,
+      context,
+      command.contextGeometry,
+      target,
+    );
+
+    if (!plan) {
+      return false;
+    }
+
+    const beforeById = new Map(
+      beforeWindows.map((window) => [window.windowId, window] as const),
+    );
+    const participantById = new Map(
+      intent.participants.map((participant) => [participant.id, participant]),
+    );
+    const targetIds = plan.windows.map((window) => window.windowId);
+    const observed = this.geometry.observedFrames(targetIds, context);
+    const windows = new Map<WindowId, PointerColumnDropWindow>();
+
+    if (observed.size !== targetIds.length) {
+      return false;
+    }
+
+    for (const targetWindow of plan.windows) {
+      const id = targetWindow.windowId;
+      const before = beforeById.get(id);
+      const participant = participantById.get(id);
+      const source = this.observer.source(id);
+      const baseline = observed.get(id);
+      const constraints = source ? frameSizeConstraintBounds(source) : null;
+      const expectedFrame =
+        id === intent.draggedWindowId ? intent.finishedFrame : before?.frame;
+
+      if (
+        !before ||
+        !participant ||
+        !source ||
+        !baseline ||
+        source !== participant.window ||
+        !constraints ||
+        !expectedFrame ||
+        !rectsEqual(source.frameGeometry, expectedFrame) ||
+        !respectsSizeConstraints(before.frame, source) ||
+        !respectsSizeConstraints(targetWindow.frame, source) ||
+        !this.geometry.canApplyFrame(id, before.frame, context) ||
+        !this.geometry.canApplyFrame(id, targetWindow.frame, context)
+      ) {
+        return false;
+      }
+
+      windows.set(id, {
+        baseline: snapshotRect(baseline),
+        constraints: { ...constraints },
+        rollback: {
+          columnId: before.columnId,
+          frame: snapshotRect(before.frame),
+          windowId: id,
+        },
+        source,
+        stateRevision: this.windowStateRevisions.get(id) ?? 0,
+        target: {
+          columnId: targetWindow.columnId,
+          frame: snapshotRect(targetWindow.frame),
+          windowId: id,
+        },
+      });
+    }
+
+    if (
+      windows.size === 0 ||
+      windows.size !== intent.participants.length ||
+      windows.size !== beforeWindows.length
+    ) {
+      return false;
+    }
+
+    const changes = diffWindowGeometries(
+      [...windows.values()].map((window) => window.target),
+      observed,
+    );
+    const operation: PointerColumnDropSettlement = {
+      aborting: false,
+      attempts: 0,
+      command,
+      editKind: plan.editKind,
+      forwardAttemptedIds: new Set(),
+      forwardWrites: 0,
+      intent,
+      newColumnId: plan.newColumnId,
+      pending: false,
+      presentation: plan.presentation,
+      stableSamples: 0,
+      target: plan.target,
+      targetLayout: plan.targetLayout,
+      windows,
+    };
+    this.pointerColumnDropSettlement = operation;
+    this.stackEditOperation = operation;
+    this.dirtyContexts.delete(context.key);
+
+    for (const change of changes) {
+      operation.forwardAttemptedIds.add(change.windowId);
+      const applied = this.geometry.apply([change], context, (current) => {
+        const window = operation.windows.get(current.windowId);
+        return Boolean(
+          this.pointerColumnDropSettlement === operation &&
+          this.stackEditOperation === operation &&
+          this.pointerMoveIntent === intent &&
+          window &&
+          this.observer.source(current.windowId) === window.source,
+        );
+      });
+      operation.forwardWrites += applied;
+
+      if (applied !== 1) {
+        this.abortPointerColumnDropSettlement(
+          operation,
+          "a target geometry request was rejected",
+        );
+        return true;
+      }
+    }
+
+    this.schedulePointerColumnDropSettlement(operation);
+    return true;
+  }
+
+  private schedulePointerColumnDropSettlement(
+    operation: PointerColumnDropSettlement,
+  ): void {
+    if (
+      !this.started ||
+      this.pointerColumnDropSettlement !== operation ||
+      operation.pending
+    ) {
+      return;
+    }
+
+    operation.pending = true;
+    const generation = this.runGeneration;
+    let schedulerReturned = false;
+
+    try {
+      this.scheduleResume(() => {
+        if (
+          !this.started ||
+          this.runGeneration !== generation ||
+          this.pointerColumnDropSettlement !== operation
+        ) {
+          return;
+        }
+
+        const synchronous = !schedulerReturned;
+
+        if (!synchronous) {
+          operation.pending = false;
+        }
+
+        try {
+          this.probePointerColumnDropSettlement(operation);
+        } catch (error) {
+          this.abortPointerColumnDropSettlement(
+            operation,
+            `settlement probe failed: ${String(error)}`,
+          );
+        }
+
+        if (synchronous && this.pointerColumnDropSettlement === operation) {
+          operation.pending = false;
+        }
+
+        if (
+          this.pointerColumnDropSettlement === operation &&
+          !operation.pending
+        ) {
+          this.schedulePointerColumnDropSettlement(operation);
+        }
+      });
+      schedulerReturned = true;
+    } catch (error) {
+      operation.pending = false;
+      this.abortPointerColumnDropSettlement(
+        operation,
+        `settlement scheduling failed: ${String(error)}`,
+      );
+    }
+  }
+
+  private probePointerColumnDropSettlement(
+    operation: PointerColumnDropSettlement,
+  ): void {
+    operation.attempts += 1;
+
+    if (!this.pointerColumnDropStateIsCurrent(operation)) {
+      this.abortPointerColumnDropSettlement(
+        operation,
+        "the captured pointer state changed",
+      );
+      return;
+    }
+
+    if (this.pointerColumnDropTargetFramesMatch(operation)) {
+      operation.stableSamples += 1;
+
+      if (
+        operation.stableSamples >=
+        REQUIRED_POINTER_COLUMN_DROP_SETTLEMENT_SAMPLES
+      ) {
+        this.commitPointerColumnDropSettlement(operation);
+      }
+
+      return;
+    }
+
+    operation.stableSamples = 0;
+
+    if (operation.attempts >= MAX_POINTER_COLUMN_DROP_SETTLEMENT_PROBES) {
+      this.abortPointerColumnDropSettlement(
+        operation,
+        "target geometry did not settle",
+      );
+    }
+  }
+
+  private commitPointerColumnDropSettlement(
+    operation: PointerColumnDropSettlement,
+  ): void {
+    if (
+      !this.pointerColumnDropStateIsCurrent(operation) ||
+      !this.pointerColumnDropTargetFramesMatch(operation)
+    ) {
+      this.abortPointerColumnDropSettlement(
+        operation,
+        "target acceptance changed before commit",
+      );
+      return;
+    }
+
+    const context = operation.command.context;
+    const edit = this.layout.reinsertWindowAtColumnBoundary(
+      operation.intent.draggedWindowId,
+      operation.target,
+      operation.newColumnId,
+      operation.presentation,
+    );
+
+    if (edit) {
+      this.layout.setViewportOffset(
+        context.outputId,
+        context.desktopId,
+        operation.targetLayout.viewportOffset,
+      );
+    }
+
+    if (
+      !edit ||
+      edit.kind !== operation.editKind ||
+      !layoutContextSnapshotsEqual(
+        this.layout.snapshot(context.outputId, context.desktopId),
+        operation.targetLayout,
+      ) ||
+      !this.pointerColumnDropWindowsAreCurrent(operation) ||
+      !this.pointerColumnDropTargetFramesMatch(operation)
+    ) {
+      if (edit) {
+        this.layout.rollbackStackEdit(edit.rollback);
+        this.layout.setViewportOffset(
+          context.outputId,
+          context.desktopId,
+          operation.command.before.viewportOffset,
+        );
+      }
+
+      this.abortPointerColumnDropSettlement(
+        operation,
+        "the settled layout commit was rejected",
+      );
+      return;
+    }
+
+    this.layout.discardStackEditRollback(edit.rollback);
+    this.pointerColumnDropSettlement = null;
+
+    if (this.stackEditOperation === operation) {
+      this.stackEditOperation = null;
+    }
+
+    this.finishPointerColumnDropIntent(operation.intent);
+    this.dirtyContexts.delete(context.key);
+    this.recordPendingMutationWrites(operation.forwardWrites);
+    this.reconcileColumnFullWidthRestore(
+      context.key,
+      operation.command.before,
+      operation.targetLayout,
+    );
+    this.capacityParkBackoffs.delete(context.key);
+    this.requestLayoutStatePublication();
+    this.scheduleWork();
+  }
+
+  private abortPointerColumnDropSettlement(
+    operation: PointerColumnDropSettlement,
+    failure: string,
+  ): void {
+    if (this.pointerColumnDropSettlement !== operation) {
+      return;
+    }
+
+    if (operation.aborting) {
+      return;
+    }
+
+    operation.aborting = true;
+
+    const context = operation.command.context;
+    let compensationWrites = 0;
+
+    for (const id of this.pointerColumnDropContextOwnsRollback(operation)
+      ? operation.forwardAttemptedIds
+      : []) {
+      const window = operation.windows.get(id);
+
+      if (
+        !window ||
+        !this.pointerColumnDropWindowIsCurrent(operation, id) ||
+        !this.pointerColumnDropRollbackFrameIsOwned(window)
+      ) {
+        continue;
+      }
+
+      compensationWrites += this.geometry.apply(
+        [window.rollback],
+        context,
+        (change) =>
+          change.windowId === id &&
+          this.pointerColumnDropSettlement === operation &&
+          this.pointerColumnDropContextOwnsRollback(operation) &&
+          this.pointerColumnDropWindowIsCurrent(operation, id) &&
+          this.pointerColumnDropRollbackFrameIsOwned(window),
+      );
+    }
+
+    this.pointerColumnDropSettlement = null;
+
+    if (this.stackEditOperation === operation) {
+      this.stackEditOperation = null;
+    }
+
+    this.finishPointerColumnDropIntent(operation.intent);
+
+    for (const id of operation.windows.keys()) {
+      this.pendingWindowSyncs.add(id);
+    }
+
+    const liveContext = this.contexts.get(context.key);
+
+    if (liveContext) {
+      this.markContextDirty(liveContext);
+    }
+
+    this.recordPendingMutationWrites(
+      operation.forwardWrites + compensationWrites,
+    );
+    this.scheduleDeferredRuntimeWork();
+    console.warn(
+      `[driftile] pointer column drop recovery deferred context=${context.key} error=${failure}`,
+    );
+  }
+
+  private finishPointerColumnDropIntent(intent: PointerMoveIntent): void {
+    if (this.pointerMoveIntent === intent) {
+      this.pointerMoveIntent = null;
+    }
+
+    this.stopPointerDropPreviewTracking();
+    this.clearPointerDropPreview();
+    this.pointerDropPreviewBlocked = false;
+  }
+
+  private pointerColumnDropStateIsCurrent(
+    operation: PointerColumnDropSettlement,
+  ): boolean {
+    const intent = operation.intent;
+    const context = operation.command.context;
+
+    return (
+      this.pointerColumnDropContextIsCaptured(operation) &&
+      !operation.aborting &&
+      this.workspace.activeWindow === intent.source &&
+      this.settledPointerMoveSourceIsEligible(intent.source) &&
+      intent.source.output === intent.sourceOutput &&
+      currentDesktopForOutput(this.workspace, intent.sourceOutput)?.id ===
+        intent.sourceDesktop.id &&
+      this.pendingDefaultColumnWidth === null &&
+      this.pendingGap === null &&
+      !this.hasTopologyBarrier() &&
+      !this.dirtyContexts.has(context.key) &&
+      !this.pendingAdmissionContexts.has(context.key) &&
+      !this.hasPendingCapacityState(context.key) &&
+      !this.waitingWindowIds.has(context.key) &&
+      !this.toggleTransitionPending(context.key) &&
+      !this.pointerContextHasPendingSync(intent, context) &&
+      this.pointerColumnDropWindowsAreCurrent(operation)
+    );
+  }
+
+  private pointerColumnDropWindowsAreCurrent(
+    operation: PointerColumnDropSettlement,
+  ): boolean {
+    return (
+      operation.windows.size === operation.command.context.windowIds.size &&
+      [...operation.windows.keys()].every((id) =>
+        this.pointerColumnDropWindowIsCurrent(operation, id),
+      )
+    );
+  }
+
+  private pointerColumnDropWindowIsCurrent(
+    operation: PointerColumnDropSettlement,
+    id: WindowId,
+  ): boolean {
+    const window = operation.windows.get(id);
+    const context = operation.command.context;
+    const source = this.observer.source(id);
+    const owner = this.managedWindows.get(id);
+    const observed = source ? normalizeWindow(source) : null;
+    const liveContext = observed ? managedContext(observed) : null;
+    const constraints = source ? frameSizeConstraintBounds(source) : null;
+
+    return Boolean(
+      window &&
+      source === window.source &&
+      owner?.contextKey === context.key &&
+      context.windowIds.has(id) &&
+      liveContext &&
+      contextKey(liveContext) === context.key &&
+      !this.suspendedWindows.has(id) &&
+      !this.requestedSuspensions.has(id) &&
+      !this.floatingWindows.has(id) &&
+      !this.waitingWindowContexts.has(id) &&
+      !this.automaticFloatingWindows.has(id) &&
+      !this.automaticallyFloats(window.source) &&
+      !this.toggleGeometryTransitions.has(id) &&
+      isGeometryWritable(window.source) &&
+      constraints &&
+      frameSizeConstraintBoundsEqual(constraints, window.constraints) &&
+      (this.windowStateRevisions.get(id) ?? 0) === window.stateRevision &&
+      this.geometry.canApplyFrame(id, window.rollback.frame, context),
+    );
+  }
+
+  private pointerColumnDropContextOwnsRollback(
+    operation: PointerColumnDropSettlement,
+  ): boolean {
+    const intent = operation.intent;
+    const context = operation.command.context;
+
+    return (
+      this.pointerColumnDropContextIsCaptured(operation) &&
+      this.workspace.screens.includes(intent.sourceOutput) &&
+      currentDesktopForOutput(this.workspace, intent.sourceOutput)?.id ===
+        intent.sourceDesktop.id &&
+      this.isContextVisible(context) &&
+      !this.hasTopologyBarrier()
+    );
+  }
+
+  private pointerColumnDropContextIsCaptured(
+    operation: PointerColumnDropSettlement,
+  ): boolean {
+    const intent = operation.intent;
+    const context = operation.command.context;
+
+    return Boolean(
+      this.started &&
+      this.pointerColumnDropSettlement === operation &&
+      this.stackEditOperation === operation &&
+      this.pointerMoveIntent === intent &&
+      intent.generation === this.runGeneration &&
+      intent.topologyRevision === this.topologyRevision &&
+      intent.gap === this.gap &&
+      this.contexts.get(context.key) === context &&
+      this.pointerMoveContextGeometry(intent, context) &&
+      layoutContextSnapshotsEqual(
+        this.layout.snapshot(context.outputId, context.desktopId),
+        operation.command.before,
+      ),
+    );
+  }
+
+  private pointerColumnDropRollbackFrameIsOwned(
+    window: PointerColumnDropWindow,
+  ): boolean {
+    const current = window.source.frameGeometry;
+    return (
+      rectsEqual(current, window.target.frame) ||
+      rectsEqual(current, window.baseline) ||
+      rectsEqual(current, window.rollback.frame)
+    );
+  }
+
+  private pointerColumnDropTargetFramesMatch(
+    operation: PointerColumnDropSettlement,
+  ): boolean {
+    return [...operation.windows.values()].every((window) =>
+      rectsEqual(window.source.frameGeometry, window.target.frame),
+    );
   }
 
   private pointerMoveParticipantsAreCurrent(

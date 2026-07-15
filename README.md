@@ -13,9 +13,10 @@ leaving window, output, and desktop mechanisms to KWin.
   transfers between desktops and outputs, including direct numbered
   single-window desktop targets and contextual transfers for the active
   floating layer.
-- Live same-context drop-target feedback with finish-only pointer reinsertion
-  and horizontal resize adoption, plus exact target adoption after a
-  KWin-owned output or desktop move.
+- Live same-context drop-target feedback for exact windows and empty horizontal
+  column gutters, with finish-only pointer reinsertion and horizontal resize
+  adoption, plus exact target adoption after a KWin-owned output or desktop
+  move.
 - One shared trailing empty virtual desktop with conservative creation and
   cleanup.
 - Manual floating with directional nudging, work-area centering, contextual
@@ -56,6 +57,13 @@ integer percentages from 10 through 100. Fresh shortcut records use `Meta+R`
 for forward width cycling and `Meta+Shift+R` for forward height cycling; both
 reverse actions are unbound, while existing action IDs and KGlobalAccel
 assignments remain unchanged. Window-height reset stays tiled-only.
+
+Version 1.30.0 is in development. Releasing a tiled-window drag into an empty
+horizontal gutter before, between, or after visible columns keeps the window in
+a separate same-context column. A singleton moves as one complete column; a
+stack member is extracted into a new column. Drops over an exact window retain
+the existing stack insertion or reorder behavior. Empty-gutter drops across
+outputs or desktops are not supported.
 
 Driftile requires KDE Plasma with KWin 6.7 or newer. It targets native Wayland
 and XWayland windows, plus single-output native X11 sessions.

@@ -29506,6 +29506,118 @@ describe("RuntimeController", () => {
     expect(published).toHaveLength(3);
   });
 
+  it("commits a column-boundary drop only after two exact frame samples", () => {
+    const setup = createPointerColumnDropRuntimeFixture(true);
+    const before = testLayoutColumns(
+      setup.controller,
+      setup.output,
+      setup.desktop,
+    );
+    const publicationCount = setup.published.length;
+    const delayedWrites = new ManualScheduler();
+
+    for (const tracked of setup.windows) {
+      tracked.setWriteBehavior((_frame, commit) => {
+        delayedWrites.schedule(commit);
+      });
+    }
+
+    beginPointerColumnBoundaryDrop(setup);
+    flushUntil(
+      setup.scheduler,
+      () => pointerColumnDropSettlementActive(setup.controller),
+      "pointer column drop did not start",
+    );
+
+    expect(delayedWrites.pendingCount).toBeGreaterThan(0);
+    expect(
+      testLayoutColumns(setup.controller, setup.output, setup.desktop),
+    ).toEqual(before);
+    expect(setup.published).toHaveLength(publicationCount);
+
+    flushManualScheduler(delayedWrites);
+    setup.scheduler.flush();
+    expect(
+      testLayoutColumns(setup.controller, setup.output, setup.desktop),
+    ).toEqual(before);
+
+    setup.scheduler.flush();
+    expect(
+      testLayoutColumns(setup.controller, setup.output, setup.desktop),
+    ).toEqual([
+      { id: "column:first", windowIds: ["first"] },
+      { id: "column:dragged", windowIds: ["dragged"] },
+      { id: "column:second", windowIds: ["second"] },
+      { id: "column:source", windowIds: ["peer"] },
+    ]);
+    expect(
+      runtimeLayout(setup.controller)
+        .snapshot(outputId(setup.output.name), desktopId(setup.desktop.id))
+        .columns.find((column) => column.id === "column:dragged")?.presentation,
+    ).toBe("tabbed");
+
+    flushManualScheduler(setup.scheduler);
+    expect(setup.published).toHaveLength(publicationCount + 1);
+  });
+
+  it("supersedes a late column-boundary write and accepts a later retry", () => {
+    const setup = createPointerColumnDropRuntimeFixture();
+    const before = testLayoutColumns(
+      setup.controller,
+      setup.output,
+      setup.desktop,
+    );
+    const rollbackFrame = { ...setup.dragged.window.frameGeometry };
+    const publicationCount = setup.published.length;
+    const delayedWrites = new ManualScheduler();
+    let rejected = false;
+
+    setup.dragged.setWriteBehavior((_frame, commit) => {
+      delayedWrites.schedule(commit);
+    });
+    setup.second.setWriteBehavior((_frame, commit) => {
+      if (!rejected) {
+        rejected = true;
+        throw new Error("target write rejected");
+      }
+
+      commit();
+    });
+
+    beginPointerColumnBoundaryDrop(setup);
+    flushUntil(
+      setup.scheduler,
+      () => delayedWrites.pendingCount >= 2,
+      "pointer column rollback was not queued",
+    );
+
+    expect(
+      testLayoutColumns(setup.controller, setup.output, setup.desktop),
+    ).toEqual(before);
+    expect(setup.published).toHaveLength(publicationCount);
+
+    delayedWrites.flush();
+    expect(setup.dragged.window.frameGeometry).not.toEqual(rollbackFrame);
+    delayedWrites.flush();
+    expect(setup.dragged.window.frameGeometry).toEqual(rollbackFrame);
+    flushManualScheduler(setup.scheduler);
+    expect(setup.published).toHaveLength(publicationCount);
+
+    setup.dragged.setWriteBehavior(null);
+    setup.second.setWriteBehavior(null);
+    beginPointerColumnBoundaryDrop(setup);
+    flushManualScheduler(setup.scheduler);
+
+    expect(
+      testLayoutColumns(setup.controller, setup.output, setup.desktop),
+    ).toEqual([
+      { id: "column:first", windowIds: ["first"] },
+      { id: "column:dragged", windowIds: ["dragged"] },
+      { id: "column:second", windowIds: ["second"] },
+    ]);
+    expect(setup.published).toHaveLength(publicationCount + 1);
+  });
+
   it("restores the original tiled slot after an invalid pointer drop", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
@@ -39581,6 +39693,141 @@ function testLayoutColumns(
       id: String(column.id),
       windowIds: column.windowIds.map(String),
     }));
+}
+
+interface PointerColumnDropRuntimeFixture {
+  readonly controller: RuntimeController;
+  readonly desktop: KWinVirtualDesktop;
+  readonly dragged: TrackedWindow;
+  readonly fixture: WorkspaceFixture;
+  readonly output: KWinOutput;
+  readonly published: string[];
+  readonly scheduler: ManualScheduler;
+  readonly second: TrackedWindow;
+  readonly windows: readonly TrackedWindow[];
+}
+
+function createPointerColumnDropRuntimeFixture(
+  stackedSource = false,
+): PointerColumnDropRuntimeFixture {
+  const output = createOutput("DP-1", 0);
+  const desktop = { id: "desktop-1" };
+  const first = createTrackedWindow("first", output, desktop);
+  const second = createTrackedWindow("second", output, desktop);
+  const peer = stackedSource
+    ? createTrackedWindow("peer", output, desktop)
+    : null;
+  const dragged = createTrackedWindow("dragged", output, desktop);
+  const windows = [first, second, ...(peer ? [peer] : []), dragged];
+  const fixture = createWorkspace(
+    output,
+    desktop,
+    [output],
+    [desktop],
+    windows.map((tracked) => tracked.window),
+  );
+  const scheduler = new ManualScheduler();
+  const published: string[] = [];
+  const controller = new RuntimeController(fixture.workspace, {
+    clientAreaOption: 2,
+    ...(stackedSource ? { defaultColumnPresentation: "tabbed" as const } : {}),
+    gap: 10,
+    onLayoutStateChanged: (document) => published.push(document),
+    schedule: scheduler.schedule,
+  });
+
+  if (!controller.start()) {
+    throw new Error("could not start pointer column drop fixture");
+  }
+
+  const sourceColumnId = stackedSource ? "column:source" : "column:dragged";
+  installTestLayout(controller, output, desktop, sourceColumnId, [
+    {
+      id: "column:first",
+      width: { kind: "fixed", value: 240 },
+      windowIds: ["first"],
+    },
+    {
+      id: "column:second",
+      width: { kind: "fixed", value: 240 },
+      windowIds: ["second"],
+    },
+    {
+      id: sourceColumnId,
+      selectedWindowId: "dragged",
+      width: { kind: "fixed", value: 240 },
+      windowIds: stackedSource ? ["peer", "dragged"] : ["dragged"],
+    },
+  ]);
+  controller.requestLayoutStatePublication();
+  controller.flushLayoutStatePublication();
+
+  return {
+    controller,
+    desktop,
+    dragged,
+    fixture,
+    output,
+    published,
+    scheduler,
+    second,
+    windows,
+  };
+}
+
+function beginPointerColumnBoundaryDrop(
+  setup: PointerColumnDropRuntimeFixture,
+): void {
+  Object.defineProperty(setup.dragged.window, "move", {
+    configurable: true,
+    value: true,
+  });
+  setup.dragged.moveResizedChanged.emit();
+  setup.dragged.interactiveMoveResizeStarted.emit();
+  setup.dragged.setFrameGeometry({
+    ...setup.dragged.window.frameGeometry,
+    x: 700,
+  });
+  setup.fixture.setCursorPosition(255, 400);
+  Object.defineProperty(setup.dragged.window, "move", {
+    configurable: true,
+    value: false,
+  });
+  setup.dragged.moveResizedChanged.emit();
+  setup.dragged.interactiveMoveResizeFinished.emit();
+}
+
+function pointerColumnDropSettlementActive(
+  controller: RuntimeController,
+): boolean {
+  return Boolean(
+    (
+      controller as unknown as {
+        readonly pointerColumnDropSettlement: unknown;
+      }
+    ).pointerColumnDropSettlement,
+  );
+}
+
+function flushUntil(
+  scheduler: ManualScheduler,
+  predicate: () => boolean,
+  failure: string,
+): void {
+  let callbacks = 0;
+
+  while (
+    !predicate() &&
+    scheduler.pendingCount > 0 &&
+    callbacks < MAX_SCHEDULED_SETTLEMENT_CALLBACKS
+  ) {
+    scheduler.flush();
+    callbacks += 1;
+  }
+
+  if (!predicate()) {
+    throw new Error(failure);
+  }
 }
 
 interface PointerResizeRuntimeFixture {

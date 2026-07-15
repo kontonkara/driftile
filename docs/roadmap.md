@@ -1222,6 +1222,35 @@ Release criteria (met):
 
 No other feature belongs to 1.29.0.
 
+## 1.30.0 (in development)
+
+The current slice adds same-context column-boundary targets to tiled pointer
+dragging. Releasing in an empty horizontal gutter before, between, or after
+visible columns keeps the dragged window separate. A singleton moves as one
+complete column with its width, presentation, selected member, height state,
+and active identity intact. A stack member becomes a new singleton with source
+width, automatic height, and configured application or global initial
+presentation while passive source state is preserved. The viewport follows the
+existing active-column reveal rules.
+
+Exact-window drops retain their existing stack insertion or reorder semantics.
+Empty-gutter targets do not cross outputs or desktops; existing cross-context
+adoption still requires one exact visible tiled window after KWin completes the
+move. The slice stays on public interactive-move, cursor, frame, and outline
+APIs and adds no input grab, private API, action, binding, setting, or
+persistence field.
+
+Development criteria:
+
+- Pure planning covers before, between, and after gutters, preview clipping,
+  strict geometry validation, and ineffective singleton boundaries.
+- Atomic layout coverage preserves whole-column metadata and passive stack
+  state, rejects missing or colliding targets, and rolls back exactly.
+- Runtime wiring must revalidate the captured same-context intent before one
+  commit while leaving exact-window and cross-context behavior unchanged.
+- Grouped format, type, lint, unit, package, Nix, CI, and hidden-VM gates must
+  pass before release.
+
 ## Post-v1
 
 Add interaction and presentation features outside the frozen v1 scope without

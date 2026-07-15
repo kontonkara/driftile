@@ -119,9 +119,11 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Suspends geometry writes while KWin owns a window-state transition and resumes after its restored frame stabilizes.
 - Captures tiled move intent once, coalesces live same-context target previews,
   and plans the committed drop from the final cursor position only after
-  geometry authority stabilizes. A completed KWin-owned move to another
-  visible output may be adopted into one exact tiled target; stale or absent
-  targets use ordinary destination admission.
+  geometry authority stabilizes. An exact-window target keeps stack insertion;
+  an empty horizontal gutter before, between, or after visible columns selects
+  a column boundary. Gutter targeting never crosses a context. A completed
+  KWin-owned move to another visible output may still be adopted into one exact
+  tiled window; stale or absent targets use ordinary destination admission.
 - Reuses that finish-only transaction after KWin selects another desktop on the
   same output and changes the window membership. It probes only a pending
   visible destination, leaves the hidden source geometry untouched, and falls
@@ -151,6 +153,10 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Resizes the active whole column within grouped window constraints, cycles presets, toggles full width, uses available visible space up to those constraints, centers one or all fully visible columns, and retries waiting capacity after a successful shrink.
 - Adjusts one tiled window's height, resets it to weighted automatic sizing, and cycles height presets while reflowing its stack atomically.
 - Focuses vertical stack members; reorders, merges, and extracts them while preserving KWin focus.
+- Reorders a dragged singleton as one complete column at a selected boundary.
+  A dragged stack member becomes an automatic-height singleton with the source
+  width while passive source order, heights, presentation, and selection remain
+  intact.
 - Consumes the immediate right column's top member or expels the active column's bottom member through rollback-safe stack edits while retaining focus in the active column.
 - Resolves directional output neighbors from logical output geometry and transfers the active column atomically between contexts; secondary actions transfer one tiled window.
 - Applies desktop and output mechanisms member-by-member with the active member last, keeps it visible through cross-desktop output moves, commits both core contexts together, and compensates every owned field and frame on failure.
@@ -491,6 +497,9 @@ inspected safely within the codec bound.
   bounded number of times, apply no hidden-source geometry, and isolate every
   unrelated context. If destination writes partially apply, compensate them
   exactly before singleton admission.
+- Keep empty-gutter targeting on the public KWin scripting boundary: reuse the
+  existing interactive-move lifecycle, cursor and frame data, and public
+  outline feedback. Add no input grab, compositor hook, or private API.
 - For finish-only horizontal resize adoption, compare the initial and accepted
   final frames only after KWin finishes. Accept exactly one changed horizontal
   edge with unchanged vertical edges, and require the same settled visible

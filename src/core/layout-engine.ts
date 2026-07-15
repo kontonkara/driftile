@@ -129,6 +129,11 @@ export interface WindowReinsertionTarget {
   readonly targetWindowId: WindowId;
 }
 
+export interface ColumnReinsertionTarget {
+  readonly position: WindowReinsertionPosition;
+  readonly targetColumnId: ColumnId;
+}
+
 export interface WindowTransferInsertionTarget extends WindowReinsertionTarget {
   readonly desktopId: DesktopId;
   readonly outputId: OutputId;
@@ -235,6 +240,11 @@ interface WindowHeightEditSnapshots {
 interface WindowReinsertionPreview {
   readonly after: LayoutContextSnapshot;
   readonly kind: "insert" | "merge" | "reorder";
+}
+
+interface ColumnBoundaryReinsertionPreview {
+  readonly after: LayoutContextSnapshot;
+  readonly kind: "extract" | "reorder";
 }
 
 interface WindowDetachPreviewState {
@@ -980,6 +990,77 @@ export class LayoutEngine {
     }
 
     const reinsertion = previewWindowReinsertion(before, windowId, target);
+
+    if (
+      !reinsertion ||
+      !validContextSnapshot(reinsertion.after) ||
+      !sameWindowSet(before, reinsertion.after) ||
+      sameContextSnapshot(before, reinsertion.after)
+    ) {
+      return null;
+    }
+
+    this.replaceContext(reinsertion.after);
+    return this.createStackEditResult(
+      reinsertion.kind,
+      before,
+      reinsertion.after,
+    );
+  }
+
+  reinsertWindowAtColumnBoundary(
+    windowId: WindowId,
+    target: ColumnReinsertionTarget,
+    newColumnId: ColumnId,
+    newColumnPresentation: ColumnPresentation = "stacked",
+  ): StackEditResult | null {
+    if (!validColumnReinsertionTarget(target)) {
+      return null;
+    }
+
+    const placement = this.placements.get(windowId);
+
+    if (!placement) {
+      return null;
+    }
+
+    const context = this.contexts.get(placement.contextKey);
+
+    if (!context || context.activeColumnId !== placement.columnId) {
+      return null;
+    }
+
+    const before = this.snapshot(context.outputId, context.desktopId);
+
+    if (
+      !validContextSnapshot(before) ||
+      !this.placementsMatchSnapshot(before)
+    ) {
+      return null;
+    }
+
+    const source = before.columns.find(
+      (column) => column.id === placement.columnId,
+    );
+
+    if (
+      !source ||
+      source.windowIds[placement.memberIndex] !== windowId ||
+      (source.windowIds.length > 1 &&
+        (typeof newColumnId !== "string" ||
+          context.columnIds.has(newColumnId) ||
+          !validColumnPresentation(newColumnPresentation)))
+    ) {
+      return null;
+    }
+
+    const reinsertion = previewColumnBoundaryReinsertion(
+      before,
+      windowId,
+      target,
+      newColumnId,
+      newColumnPresentation,
+    );
 
     if (
       !reinsertion ||
@@ -2727,6 +2808,97 @@ function previewWindowReinsertion(
   };
 }
 
+function previewColumnBoundaryReinsertion(
+  context: LayoutContextSnapshot,
+  windowId: WindowId,
+  target: ColumnReinsertionTarget,
+  newColumnId: ColumnId,
+  newColumnPresentation: ColumnPresentation,
+): ColumnBoundaryReinsertionPreview | null {
+  const sourceColumnIndex = context.columns.findIndex((column) =>
+    column.windowIds.includes(windowId),
+  );
+  const targetColumnIndex = context.columns.findIndex(
+    (column) => column.id === target.targetColumnId,
+  );
+  const source = context.columns[sourceColumnIndex];
+
+  if (!source || targetColumnIndex < 0) {
+    return null;
+  }
+
+  if (source.windowIds.length === 1) {
+    if (sourceColumnIndex === targetColumnIndex) {
+      return null;
+    }
+
+    const columns = [...context.columns];
+    const [movedColumn] = columns.splice(sourceColumnIndex, 1);
+
+    if (!movedColumn) {
+      return null;
+    }
+
+    const targetIndexAfterRemoval =
+      targetColumnIndex > sourceColumnIndex
+        ? targetColumnIndex - 1
+        : targetColumnIndex;
+    const insertionIndex =
+      targetIndexAfterRemoval + (target.position === "after" ? 1 : 0);
+    columns.splice(insertionIndex, 0, movedColumn);
+    return {
+      after: immutableContextSnapshot({ ...context, columns }),
+      kind: "reorder",
+    };
+  }
+
+  const sourceMemberIndex = source.windowIds.indexOf(windowId);
+
+  if (sourceMemberIndex < 0) {
+    return null;
+  }
+
+  const sourceWindowIds = [...source.windowIds];
+  sourceWindowIds.splice(sourceMemberIndex, 1);
+  const sourceWindowHeights = withoutSnapshotWindowHeight(
+    source,
+    sourceMemberIndex,
+    false,
+  );
+  const retainedSource: LayoutColumnSnapshot = {
+    id: source.id,
+    presentation: source.presentation,
+    selectedWindowId: selectedWindowAfterSnapshotRemoval(
+      source,
+      sourceMemberIndex,
+    ),
+    width: source.width,
+    ...(sourceWindowHeights ? { windowHeights: sourceWindowHeights } : {}),
+    windowIds: sourceWindowIds,
+  };
+  const extracted: LayoutColumnSnapshot = {
+    id: newColumnId,
+    presentation: newColumnPresentation,
+    selectedWindowId: windowId,
+    width: source.width,
+    windowIds: [windowId],
+  };
+  const columns = context.columns.map((column, columnIndex) =>
+    columnIndex === sourceColumnIndex ? retainedSource : column,
+  );
+  const insertionIndex =
+    targetColumnIndex + (target.position === "after" ? 1 : 0);
+  columns.splice(insertionIndex, 0, extracted);
+  return {
+    after: immutableContextSnapshot({
+      ...context,
+      activeColumnId: newColumnId,
+      columns,
+    }),
+    kind: "extract",
+  };
+}
+
 function previewWindowAttachment(
   context: LayoutContextSnapshot,
   placement: DetachedWindowPlacement,
@@ -3014,6 +3186,16 @@ function validWindowReinsertionTarget(
     isRecord(target) &&
     (target["position"] === "after" || target["position"] === "before") &&
     typeof target["targetWindowId"] === "string"
+  );
+}
+
+function validColumnReinsertionTarget(
+  target: unknown,
+): target is ColumnReinsertionTarget {
+  return (
+    isRecord(target) &&
+    (target["position"] === "after" || target["position"] === "before") &&
+    typeof target["targetColumnId"] === "string"
   );
 }
 

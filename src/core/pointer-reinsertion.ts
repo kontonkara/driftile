@@ -1,5 +1,6 @@
 import type { Point, Rect, WindowGeometry } from "./geometry";
 import type {
+  ColumnReinsertionTarget,
   LayoutContextSnapshot,
   WindowReinsertionTarget,
 } from "./layout-engine";
@@ -30,6 +31,21 @@ export interface PointerExternalWindowDropInput {
 
 export type PointerExternalWindowDropTarget = WindowReinsertionTarget;
 
+export interface PointerColumnDropInput {
+  readonly context: LayoutContextSnapshot;
+  readonly cursor: Point;
+  readonly draggedWindowId: WindowId;
+  readonly visibleArea: Rect;
+  readonly windows: readonly WindowGeometry[];
+}
+
+export type PointerColumnDropTarget = ColumnReinsertionTarget;
+
+export interface PointerColumnDropPreview {
+  readonly frame: Rect;
+  readonly target: PointerColumnDropTarget;
+}
+
 interface ContextWindowPlacement {
   readonly columnId: ColumnId;
   readonly dropTarget: boolean;
@@ -45,6 +61,28 @@ interface WindowGeometrySnapshot {
   readonly columnId: ColumnId;
   readonly frame: Rect;
   readonly windowId: WindowId;
+}
+
+interface ColumnGeometrySpan {
+  readonly columnId: ColumnId;
+  readonly left: number;
+  readonly right: number;
+}
+
+interface ColumnGeometrySnapshot {
+  readonly bottom: number;
+  readonly sourceColumnIndex: number;
+  readonly sourceIsSingleton: boolean;
+  readonly spans: readonly ColumnGeometrySpan[];
+  readonly top: number;
+}
+
+interface PointerColumnDropMatch {
+  readonly bottom: number;
+  readonly gapLeft: number;
+  readonly gapRight: number;
+  readonly target: PointerColumnDropTarget;
+  readonly top: number;
 }
 
 export function planPointerWindowDrop(
@@ -152,6 +190,328 @@ export function planPointerExternalWindowDrop(
       input.windows,
     )?.target ?? null
   );
+}
+
+export function planPointerColumnDrop(
+  input: PointerColumnDropInput,
+): PointerColumnDropTarget | null {
+  return planPointerColumnDropMatch(input)?.target ?? null;
+}
+
+export function planPointerColumnDropPreview(
+  input: PointerColumnDropInput,
+): PointerColumnDropPreview | null {
+  const match = planPointerColumnDropMatch(input);
+
+  if (!match) {
+    return null;
+  }
+
+  const frame = pointerColumnDropPreviewFrame(match, input.visibleArea);
+
+  if (!frame) {
+    return null;
+  }
+
+  return Object.freeze({
+    frame,
+    target: match.target,
+  });
+}
+
+function planPointerColumnDropMatch(
+  input: PointerColumnDropInput,
+): PointerColumnDropMatch | null {
+  if (
+    !isRecord(input) ||
+    typeof input.draggedWindowId !== "string" ||
+    !isFinitePoint(input.cursor) ||
+    !isUsableRect(input.visibleArea) ||
+    !Array.isArray(input.windows) ||
+    !containsPoint(input.visibleArea, input.cursor)
+  ) {
+    return null;
+  }
+
+  const placements = contextWindowPlacements(input.context);
+
+  if (!placements || !placements.has(input.draggedWindowId)) {
+    return null;
+  }
+
+  const geometry = snapshotColumnGeometry(
+    input.context,
+    input.draggedWindowId,
+    placements,
+    input.windows,
+  );
+
+  if (!geometry) {
+    return null;
+  }
+
+  const gap = pointerColumnGapMatch(
+    geometry.spans,
+    input.cursor.x,
+    input.visibleArea,
+  );
+
+  if (
+    !gap ||
+    (geometry.sourceIsSingleton &&
+      (gap.insertionBoundary === geometry.sourceColumnIndex ||
+        gap.insertionBoundary === geometry.sourceColumnIndex + 1))
+  ) {
+    return null;
+  }
+
+  return {
+    bottom: geometry.bottom,
+    gapLeft: gap.left,
+    gapRight: gap.right,
+    target: gap.target,
+    top: geometry.top,
+  };
+}
+
+function snapshotColumnGeometry(
+  context: LayoutContextSnapshot,
+  draggedWindowId: WindowId,
+  placements: ReadonlyMap<WindowId, ContextWindowPlacement>,
+  windows: readonly WindowGeometry[],
+): ColumnGeometrySnapshot | null {
+  const geometries = new Map<WindowId, WindowGeometrySnapshot>();
+  let top = Number.POSITIVE_INFINITY;
+  let bottom = Number.NEGATIVE_INFINITY;
+
+  for (const geometry of windows) {
+    const snapshot = snapshotWindowGeometry(geometry);
+
+    if (!snapshot || geometries.has(snapshot.windowId)) {
+      return null;
+    }
+
+    const placement = placements.get(snapshot.windowId);
+
+    if (!placement || placement.columnId !== snapshot.columnId) {
+      return null;
+    }
+
+    geometries.set(snapshot.windowId, snapshot);
+    top = Math.min(top, snapshot.frame.y);
+    bottom = Math.max(bottom, snapshot.frame.y + snapshot.frame.height);
+  }
+
+  if (geometries.size !== placements.size || context.columns.length === 0) {
+    return null;
+  }
+
+  const spans: ColumnGeometrySpan[] = [];
+  let previousRight = Number.NEGATIVE_INFINITY;
+  let sourceColumnIndex = -1;
+  let sourceIsSingleton = false;
+
+  for (const [columnIndex, column] of context.columns.entries()) {
+    const firstWindowId = column.windowIds[0];
+    const firstGeometry =
+      firstWindowId === undefined ? undefined : geometries.get(firstWindowId);
+
+    if (!firstGeometry) {
+      return null;
+    }
+
+    const left = firstGeometry.frame.x;
+    const right = firstGeometry.frame.x + firstGeometry.frame.width;
+
+    if (left < previousRight) {
+      return null;
+    }
+
+    for (const memberId of column.windowIds) {
+      const memberGeometry = geometries.get(memberId);
+
+      if (
+        !memberGeometry ||
+        memberGeometry.frame.x !== left ||
+        memberGeometry.frame.x + memberGeometry.frame.width !== right
+      ) {
+        return null;
+      }
+    }
+
+    spans.push({ columnId: column.id, left, right });
+    previousRight = right;
+
+    if (column.windowIds.includes(draggedWindowId)) {
+      sourceColumnIndex = columnIndex;
+      sourceIsSingleton = column.windowIds.length === 1;
+    }
+  }
+
+  if (
+    sourceColumnIndex < 0 ||
+    !Number.isFinite(top) ||
+    !Number.isFinite(bottom) ||
+    !(bottom > top)
+  ) {
+    return null;
+  }
+
+  return {
+    bottom,
+    sourceColumnIndex,
+    sourceIsSingleton,
+    spans,
+    top,
+  };
+}
+
+function pointerColumnGapMatch(
+  spans: readonly ColumnGeometrySpan[],
+  cursorX: number,
+  visibleArea: Rect,
+): {
+  readonly insertionBoundary: number;
+  readonly left: number;
+  readonly right: number;
+  readonly target: PointerColumnDropTarget;
+} | null {
+  const first = spans[0];
+
+  if (!first) {
+    return null;
+  }
+
+  for (const span of spans) {
+    if (cursorX >= span.left && cursorX < span.right) {
+      return null;
+    }
+  }
+
+  const beforeFirst = clippedHorizontalGap(
+    visibleArea.x,
+    first.left,
+    visibleArea,
+  );
+
+  if (beforeFirst && containsHalfOpen(beforeFirst, cursorX)) {
+    return {
+      insertionBoundary: 0,
+      left: beforeFirst.left,
+      right: beforeFirst.right,
+      target: Object.freeze({
+        position: "before",
+        targetColumnId: first.columnId,
+      }),
+    };
+  }
+
+  for (let columnIndex = 0; columnIndex + 1 < spans.length; columnIndex += 1) {
+    const leftColumn = spans[columnIndex];
+    const rightColumn = spans[columnIndex + 1];
+
+    if (!leftColumn || !rightColumn) {
+      return null;
+    }
+
+    const interior = clippedHorizontalGap(
+      leftColumn.right,
+      rightColumn.left,
+      visibleArea,
+    );
+
+    if (interior && containsHalfOpen(interior, cursorX)) {
+      return {
+        insertionBoundary: columnIndex + 1,
+        left: interior.left,
+        right: interior.right,
+        target: Object.freeze({
+          position: "after",
+          targetColumnId: leftColumn.columnId,
+        }),
+      };
+    }
+  }
+
+  const last = spans[spans.length - 1];
+
+  if (!last) {
+    return null;
+  }
+
+  const afterLast = clippedHorizontalGap(
+    last.right,
+    visibleArea.x + visibleArea.width,
+    visibleArea,
+  );
+
+  if (!afterLast || !containsHalfOpen(afterLast, cursorX)) {
+    return null;
+  }
+
+  return {
+    insertionBoundary: spans.length,
+    left: afterLast.left,
+    right: afterLast.right,
+    target: Object.freeze({
+      position: "after",
+      targetColumnId: last.columnId,
+    }),
+  };
+}
+
+function pointerColumnDropPreviewFrame(
+  match: PointerColumnDropMatch,
+  visibleArea: Rect,
+): Rect | null {
+  const left = Math.round(match.gapLeft);
+  const right = Math.round(match.gapRight);
+  const top = Math.round(Math.max(match.top, visibleArea.y));
+  const bottom = Math.round(
+    Math.min(match.bottom, visibleArea.y + visibleArea.height),
+  );
+  const width = right - left;
+  const height = bottom - top;
+
+  if (
+    !Number.isSafeInteger(left) ||
+    !Number.isSafeInteger(right) ||
+    !Number.isSafeInteger(top) ||
+    !Number.isSafeInteger(bottom) ||
+    !Number.isSafeInteger(width) ||
+    !Number.isSafeInteger(height) ||
+    width <= 0 ||
+    height <= 0
+  ) {
+    return null;
+  }
+
+  return Object.freeze({
+    height,
+    width,
+    x: left,
+    y: top,
+  });
+}
+
+function clippedHorizontalGap(
+  left: number,
+  right: number,
+  visibleArea: Rect,
+): { readonly left: number; readonly right: number } | null {
+  const clippedLeft = Math.max(left, visibleArea.x);
+  const clippedRight = Math.min(right, visibleArea.x + visibleArea.width);
+
+  return clippedRight > clippedLeft
+    ? { left: clippedLeft, right: clippedRight }
+    : null;
+}
+
+function containsHalfOpen(
+  interval: { readonly left: number; readonly right: number },
+  value: number,
+): boolean {
+  return value >= interval.left && value < interval.right;
 }
 
 function pointerWindowDropPreviewFrame(

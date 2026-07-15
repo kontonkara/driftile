@@ -3,9 +3,12 @@ import type { Rect, WindowGeometry } from "../../src/core/geometry";
 import { columnId, desktopId, outputId, windowId } from "../../src/core/ids";
 import type { LayoutContextSnapshot } from "../../src/core/layout-engine";
 import {
+  planPointerColumnDrop,
+  planPointerColumnDropPreview,
   planPointerExternalWindowDrop,
   planPointerWindowDrop,
   planPointerWindowDropPreview,
+  type PointerColumnDropInput,
   type PointerExternalWindowDropInput,
   type PointerWindowDropInput,
 } from "../../src/core/pointer-reinsertion";
@@ -330,6 +333,194 @@ describe("planPointerWindowDrop", () => {
   });
 });
 
+describe("planPointerColumnDrop", () => {
+  it("selects canonical interior and outer insertion targets", () => {
+    const sourceFirst = columnDropFixture({ sourceIndex: 0 });
+    const sourceLast = columnDropFixture({ sourceIndex: 2 });
+
+    expect(
+      planPointerColumnDrop({
+        ...sourceFirst,
+        cursor: { x: 325, y: 100 },
+      }),
+    ).toEqual({ position: "after", targetColumnId: "middle-column" });
+    expect(
+      planPointerColumnDrop({
+        ...sourceFirst,
+        cursor: { x: 475, y: 100 },
+      }),
+    ).toEqual({ position: "after", targetColumnId: "right-column" });
+    expect(
+      planPointerColumnDrop({
+        ...sourceLast,
+        cursor: { x: 25, y: 100 },
+      }),
+    ).toEqual({ position: "before", targetColumnId: "left-column" });
+  });
+
+  it("leaves exact-window hits to the exact-window planner", () => {
+    const input = fixture();
+    const cursor = { x: 250, y: 25 };
+
+    expect(planPointerWindowDrop({ ...input, cursor })).toEqual({
+      position: "before",
+      targetWindowId: "target-a",
+    });
+    expect(planPointerColumnDrop({ ...input, cursor })).toBeNull();
+    expect(
+      planPointerColumnDrop({ ...input, cursor: { x: 250, y: 250 } }),
+    ).toBeNull();
+  });
+
+  it("rejects both original insertion boundaries for a singleton source", () => {
+    const input = columnDropFixture({ sourceIndex: 1 });
+
+    expect(
+      planPointerColumnDrop({ ...input, cursor: { x: 175, y: 100 } }),
+    ).toBeNull();
+    expect(
+      planPointerColumnDrop({ ...input, cursor: { x: 325, y: 100 } }),
+    ).toBeNull();
+  });
+
+  it("keeps a source-column boundary valid for a stacked member", () => {
+    const input = stackedSourceColumnDropFixture();
+
+    expect(planPointerColumnDrop(input)).toEqual({
+      position: "after",
+      targetColumnId: "source-column",
+    });
+  });
+
+  it("clips half-open gutters and preview height to the visible tiled envelope", () => {
+    const input = clippedColumnDropFixture();
+    const preview = planPointerColumnDropPreview(input);
+
+    expect(preview).toEqual({
+      frame: { height: 300, width: 50, x: 50, y: 0 },
+      target: { position: "after", targetColumnId: "left-column" },
+    });
+    expect(Object.isFrozen(preview)).toBe(true);
+    expect(Object.isFrozen(preview?.frame)).toBe(true);
+    expect(Object.isFrozen(preview?.target)).toBe(true);
+    expect(
+      planPointerColumnDrop({ ...input, cursor: { x: 50, y: 100 } }),
+    ).toEqual({ position: "after", targetColumnId: "left-column" });
+    expect(
+      planPointerColumnDrop({ ...input, cursor: { x: 100, y: 100 } }),
+    ).toBeNull();
+  });
+
+  it("rounds preview edges before deriving its dimensions", () => {
+    const input = columnDropFixture({ sourceIndex: 2 });
+    const preview = planPointerColumnDropPreview({
+      ...input,
+      cursor: { x: 175, y: 100 },
+      visibleArea: { height: 299.5, width: 499.5, x: 0.25, y: 0.25 },
+      windows: input.windows.map((candidate) => {
+        if (candidate.columnId === "left-column") {
+          return {
+            ...candidate,
+            frame: { height: 311, width: 99.7, x: 50.4, y: -5.4 },
+          };
+        }
+
+        if (candidate.columnId === "middle-column") {
+          return {
+            ...candidate,
+            frame: { height: 220, width: 99.6, x: 200.6, y: 10 },
+          };
+        }
+
+        return {
+          ...candidate,
+          frame: { height: 200, width: 99.2, x: 350.8, y: 30 },
+        };
+      }),
+    });
+
+    expect(preview?.frame).toEqual({
+      height: 300,
+      width: 51,
+      x: 150,
+      y: 0,
+    });
+
+    const huge = stackedSourceColumnDropFixture();
+    expect(
+      planPointerColumnDropPreview({
+        ...huge,
+        cursor: { x: 0, y: 100 },
+        visibleArea: {
+          height: 200,
+          width: Number.MAX_SAFE_INTEGER * 2,
+          x: -Number.MAX_SAFE_INTEGER,
+          y: 0,
+        },
+        windows: huge.windows.map((candidate) => ({
+          ...candidate,
+          frame: {
+            ...candidate.frame,
+            width: 1,
+            x:
+              candidate.columnId === "source-column"
+                ? -Number.MAX_SAFE_INTEGER
+                : Number.MAX_SAFE_INTEGER - 1,
+          },
+        })),
+      }),
+    ).toBeNull();
+  });
+
+  it.each([
+    {
+      mutate: (input: PointerColumnDropInput): PointerColumnDropInput => ({
+        ...input,
+        windows: input.windows.slice(1),
+      }),
+      name: "missing geometry",
+    },
+    {
+      mutate: (input: PointerColumnDropInput): PointerColumnDropInput => ({
+        ...input,
+        windows: input.windows.map((candidate) =>
+          candidate.windowId === "source-peer"
+            ? { ...candidate, frame: { ...candidate.frame, x: 1 } }
+            : candidate,
+        ),
+      }),
+      name: "inconsistent member bounds",
+    },
+    {
+      mutate: (input: PointerColumnDropInput): PointerColumnDropInput => ({
+        ...input,
+        windows: input.windows.map((candidate) =>
+          candidate.columnId === "target-column"
+            ? { ...candidate, frame: { ...candidate.frame, x: 50 } }
+            : candidate,
+        ),
+      }),
+      name: "overlapping column spans",
+    },
+    {
+      mutate: (input: PointerColumnDropInput): PointerColumnDropInput => ({
+        ...input,
+        cursor: { x: 100, y: 100 },
+        windows: input.windows.map((candidate) =>
+          candidate.columnId === "target-column"
+            ? { ...candidate, frame: { ...candidate.frame, x: 100 } }
+            : candidate,
+        ),
+      }),
+      name: "zero-width gutter",
+    },
+  ])("rejects $name", ({ mutate }) => {
+    expect(
+      planPointerColumnDrop(mutate(stackedSourceColumnDropFixture())),
+    ).toBeNull();
+  });
+});
+
 describe("planPointerExternalWindowDrop", () => {
   it("selects a complete destination target around its vertical midpoint", () => {
     const input = externalFixture();
@@ -501,6 +692,134 @@ function externalFixture(): PointerExternalWindowDropInput {
     draggedWindowId: input.draggedWindowId,
     visibleArea: input.visibleArea,
     windows: input.windows.slice(1),
+  };
+}
+
+function columnDropFixture(options: {
+  readonly sourceIndex: number;
+}): PointerColumnDropInput {
+  const logicalColumns = [
+    {
+      column: "left-column",
+      frame: { height: 180, width: 100, x: 50, y: 20 },
+      window: "left-window",
+    },
+    {
+      column: "middle-column",
+      frame: { height: 220, width: 100, x: 200, y: 10 },
+      window: "middle-window",
+    },
+    {
+      column: "right-column",
+      frame: { height: 200, width: 100, x: 350, y: 30 },
+      window: "right-window",
+    },
+  ];
+  const source = logicalColumns[options.sourceIndex];
+
+  if (!source) {
+    throw new Error("expected a source column fixture");
+  }
+
+  return {
+    context: {
+      activeColumnId: columnId(source.column),
+      columns: logicalColumns.map((candidate) => ({
+        id: columnId(candidate.column),
+        presentation: "stacked" as const,
+        selectedWindowId: windowId(candidate.window),
+        width: { kind: "fixed" as const, value: candidate.frame.width },
+        windowIds: [windowId(candidate.window)],
+      })),
+      desktopId: desktopId("desktop-1"),
+      outputId: outputId("DP-1"),
+      viewportOffset: 0,
+    },
+    cursor: { x: 325, y: 100 },
+    draggedWindowId: windowId(source.window),
+    visibleArea,
+    windows: logicalColumns.map((candidate) =>
+      geometry(candidate.window, candidate.column, candidate.frame),
+    ),
+  };
+}
+
+function stackedSourceColumnDropFixture(): PointerColumnDropInput {
+  return {
+    context: {
+      activeColumnId: columnId("source-column"),
+      columns: [
+        {
+          id: columnId("source-column"),
+          presentation: "stacked",
+          selectedWindowId: windowId("dragged"),
+          width: { kind: "fixed", value: 100 },
+          windowIds: [windowId("dragged"), windowId("source-peer")],
+        },
+        {
+          id: columnId("target-column"),
+          presentation: "stacked",
+          selectedWindowId: windowId("target"),
+          width: { kind: "fixed", value: 100 },
+          windowIds: [windowId("target")],
+        },
+      ],
+      desktopId: desktopId("desktop-1"),
+      outputId: outputId("DP-1"),
+      viewportOffset: 0,
+    },
+    cursor: { x: 150, y: 100 },
+    draggedWindowId: windowId("dragged"),
+    visibleArea,
+    windows: [
+      geometry("dragged", "source-column", {
+        height: 100,
+        width: 100,
+        x: 0,
+        y: 0,
+      }),
+      geometry("source-peer", "source-column", {
+        height: 100,
+        width: 100,
+        x: 0,
+        y: 100,
+      }),
+      geometry("target", "target-column", {
+        height: 200,
+        width: 100,
+        x: 200,
+        y: 0,
+      }),
+    ],
+  };
+}
+
+function clippedColumnDropFixture(): PointerColumnDropInput {
+  const input = columnDropFixture({ sourceIndex: 2 });
+
+  return {
+    ...input,
+    cursor: { x: 75, y: 100 },
+    windows: input.windows.map((candidate) => {
+      if (candidate.columnId === "left-column") {
+        return {
+          ...candidate,
+          frame: { height: 370, width: 100, x: -50, y: -20 },
+        };
+      }
+
+      if (candidate.columnId === "middle-column") {
+        return {
+          ...candidate,
+          frame: { height: 220, width: 100, x: 100, y: 10 },
+        };
+      }
+
+      return {
+        ...candidate,
+        frame: { height: 200, width: 100, x: 260, y: 30 },
+      };
+    }),
   };
 }
 

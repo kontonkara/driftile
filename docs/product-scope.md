@@ -458,7 +458,17 @@ Driftile must integrate with, not duplicate:
 - Resetting a window height returns that member to automatic sizing. A failed stack reflow restores every prior height state and frame.
 - Horizontal window movement merges a singleton into its neighbor or extracts a stacked member into a new adjacent singleton column.
 - Merge preserves the destination width; extraction copies the source width; both preserve focus and member order.
-- A same-context tiled pointer drop targets one visible window. Its vertical midpoint selects before or after; cross-column insertion adopts automatic height and the destination width, while same-stack reorder retains height policy. Invalidated or ambiguous intent restores the original slot.
+- A same-context tiled pointer drop may target one exact visible window or an
+  empty horizontal gutter before, between, or after visible columns. Drops over
+  an exact window retain stack insertion or reorder semantics. A gutter drop
+  moves a singleton as one complete column or extracts a stack member into a
+  new singleton with source width, automatic height, and configured application
+  or global initial presentation. Passive source state is preserved and the
+  viewport follows the existing active-column reveal rules. Invalid, ambiguous,
+  or ineffective intent leaves the original layout unchanged.
+- Empty-gutter column targeting does not cross outputs or desktops. Existing
+  cross-context adoption remains limited to one exact visible tiled window
+  after KWin completes the move.
 - After KWin moves an active normal tiled window to another visible output, Driftile may adopt that move by inserting it before or after the tiled window under the cursor. The target midpoint selects the position, the destination column width is retained, and the moved window adopts automatic height. KWin remains the sole owner of physical output and desktop movement. An empty, invalidated, ambiguous, or raced target falls back to ordinary destination admission as a singleton instead of reversing KWin's move.
 - After KWin selects another visible desktop on the same output and moves the active normal tiled window there, Driftile may adopt it on release over exactly one tiled target in that selected desktop. The target midpoint selects before or after, the destination width is retained, and the moved window adopts automatic height. A pending destination receives bounded settlement probes; an unavailable, invalidated, ambiguous, stale, or raced target keeps KWin's move and uses singleton admission. The hidden source receives no geometry writes.
 - Cross-desktop pointer adoption adds no visual feedback, setting, shortcut action, binding, or persistence-schema field.
