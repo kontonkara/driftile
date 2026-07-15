@@ -1,14 +1,11 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.26.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.27.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.26.0 adds nine unbound numbered single-window desktop actions by
-reusing the existing indexed transfer transaction.
-
-The frozen 1.27.0 development slice makes existing width-preset and reset
-actions contextual for one relation-free manually floating window.
+Stable 1.27.0 makes existing width-preset and reset actions contextual for one
+relation-free manually floating window.
 
 ## Foundation (delivered)
 
@@ -1081,10 +1078,10 @@ Release criteria (met):
 
 No other feature belongs to 1.26.0.
 
-## 1.27.0 (in development)
+## 1.27.0 (released)
 
 Existing width-preset forward/back actions and the unbound width-reset action
-become contextual for one relation-free manually floating window. Presets read
+are contextual for one relation-free manually floating window. Presets read
 the configured cycle; reset reads the global default. Targets use the exact
 gap-adjusted singleton resolution, assigned-output pixel grid, live decorated
 constraints, and established partial-reachability bounds.
@@ -1093,15 +1090,18 @@ The shared manual-floating size transaction issues at most one frame request
 and commits only after exact acknowledgement. Automatic, related, pending, or
 otherwise blocked floating targets fail closed without reaching the tiled path.
 
-Release criteria:
+Release criteria (met):
 
 - Focused runtime coverage verifies forward/back cycling, reset, configured
   percentages, singleton resolution, constraints, reachability, exact
   acknowledgement, unchanged tiled state, and fail-closed targets.
 - Formatting, type, lint, focused unit, package, Nix evaluation, and Nix build
-  gates pass before exact-SHA CI.
+  gates pass.
+- Exact feature SHA `4bac7ea` passes CI quality in 2:36, native X11 in 3:07,
+  and Wayland in 6:31.
 - Existing packaged width settlement and tiled preset/reset coverage is reused
   without a new backend, integration, application, or VM matrix.
+- This release makes no VM validation claim.
 - The slice adds no action, default binding, setting, schema, persistence
   behavior, helper or overview behavior, or KWin API.
 

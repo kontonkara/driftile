@@ -195,12 +195,14 @@ passes CI quality, native X11, and Wayland jobs. A hidden lifecycle VM upgrades
 public 1.25.0 packages to matching 1.26.0 packages, exercises Konsole and KDE
 Calculator, removes both packages, and confirms that KWin remains usable.
 
-The frozen 1.27.0 development slice uses focused runtime coverage for contextual
+The 1.27.0 release slice uses focused runtime coverage for contextual
 manual-floating preset cycling and reset, including configured percentages,
 singleton pixel resolution, constraints, reachability, exact acknowledgement,
-and fail-closed automatic, related, blocked, and pending targets. Existing
-packaged width settlement and tiled preset/reset coverage is reused without a
-new backend, integration, application, or VM matrix.
+and fail-closed automatic, related, blocked, and pending targets. Exact feature
+SHA `4bac7ea` passes CI quality in 2:36, native X11 in 3:07, and Wayland in 6:31.
+Existing packaged width settlement and tiled preset/reset coverage is reused
+without a new backend, integration, application, or VM matrix. This release
+makes no VM validation claim.
 
 In the following unit list, zero writes to floating windows means ambient
 layout work; explicit manual-floating movement, centering, or contextual size
