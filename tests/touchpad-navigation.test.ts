@@ -213,7 +213,7 @@ describe("touchpad navigation", () => {
     expect(runtimeSource).toMatch(
       /export function getTouchpadNavigation\(\): boolean \{\s*return appliedSettings\?\.touchpadNavigation === true;\s*\}/u,
     );
-    expect(packageCheck).toContain('"contents/ui/TouchpadNavigation.qml"');
+    expect(packageCheck).toContain('"ui/TouchpadNavigation.qml"');
   });
 });
 
