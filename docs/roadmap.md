@@ -113,9 +113,10 @@ The current runtime already:
 - Runs a deterministic 128-cycle add, focus, minimize, restore, and remove regression with synchronous geometry acknowledgements and bounded scheduler settlement.
 - Keeps one shared trailing desktop empty and removes only redundant tails created by the current run.
 - Registers compact default shortcuts with `H/J/K/L`, arrow, Home/End, and Page
-  Up/Down aliases. Fresh records use `Meta+R` for forward width presets and
-  `Meta+Shift+R` for forward height presets; both reverse actions are unbound,
-  while existing action IDs and KGlobalAccel assignments remain unchanged.
+  Up/Down aliases. Fresh records use `Meta+R` and `Meta+Shift+R` for forward
+  and reverse width presets, plus `Meta+Ctrl+Shift+R` for forward height
+  presets. Reverse height remains unbound; existing action IDs and KGlobalAccel
+  assignments remain unchanged.
 - Provides a reversible shortcut helper for the bundled defaults and explicit
   JSON v1 profiles; a UI without a Node.js dependency remains future work.
 - Lets Home Manager write the twenty typed settings or generate a portable
@@ -1361,6 +1362,12 @@ pair, defaulting to four fingers. Up opens the effect and down closes an active
 or pending activation. The pair is recreated from initial KWin gesture
 properties when its enable state or finger count changes. Home Manager may own
 the complete pair independently of package installation.
+
+Fresh shortcut records align the complete preset-width pair: `Meta+R` cycles
+forward and `Meta+Shift+R` cycles backward. Forward window-height cycling moves
+to `Meta+Ctrl+Shift+R`; reverse height stays unbound. Action IDs and existing
+KGlobalAccel assignments remain unchanged, while the optional helper follows
+the new default profile.
 
 ## Post-v1
 

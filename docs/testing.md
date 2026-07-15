@@ -452,17 +452,16 @@ pixel before the disabled baseline is restored.
 
 The same VM applies the custom column-width preset list `25,75` to an active
 Konsole column. Physical `Meta+R` input selects 75%, wraps forward to 25%, and
-direct invocation of `driftile_switch_preset_column_width_back` wraps back to
-75%. Each frame is checked against the gap-adjusted output proportion before
-the setting is cleared and the exact baseline layout is restored.
+physical `Meta+Shift+R` wraps back to 75% through the reverse-width action.
+Each frame is checked against the gap-adjusted output proportion before the
+setting is cleared and the exact baseline layout is restored.
 
 The existing stacked Konsole scenario then applies the custom window-height
-preset list `25,75`. Physical `Meta+Shift+R` selects the 75% target through the
-forward height action. Physical `Meta+Ctrl+R` restores automatic heights before
-the temporary preset list is cleared, and the exact stack remains unchanged by
-configuration cleanup. The hidden full Wayland checkpoint at exact SHA
-`9093c121a33b3ec72fce6602267cf29b88423192` passed this path with the existing
-mixed application pool. No visible VM was run for this slice.
+preset list `25,75`. Physical `Meta+Ctrl+Shift+R` selects the 75% target through
+the forward-height action. Physical `Meta+Ctrl+R` restores automatic heights
+before the temporary preset list is cleared, and the exact stack remains
+unchanged by configuration cleanup. The existing backend and application
+matrix is reused.
 
 At the settled Firefox, Konsole, and XWayland xterm pointer layout, the primary
 VM first verifies that both touchpad modes default to disabled, then applies

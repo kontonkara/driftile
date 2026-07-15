@@ -28,19 +28,19 @@ arrow keys are interchangeable unless noted otherwise.
 | Toggle native fullscreen                         | `Meta+Shift+F`                                       |
 | Toggle native maximize to work-area edges        | `Meta+M`                                             |
 | Close active window                              | `Meta+Q`                                             |
-| Cycle preset column or floating width forward    | `Meta+R`                                             |
+| Cycle preset column or floating width            | `Meta+R` forward, `Meta+Shift+R` backward            |
 | Toggle full-width column                         | `Meta+F`                                             |
 | Expand active column into available width        | `Meta+Ctrl+F`                                        |
 | Center column or active manually floating window | `Meta+C`                                             |
 | Center fully visible columns                     | `Meta+Ctrl+C`                                        |
 | Decrease or increase column or floating width    | `Meta+-` or `Meta+=`                                 |
 | Decrease or increase active window height        | `Meta+Shift+-` or `Meta+Shift+=`                     |
-| Cycle preset window height forward               | `Meta+Shift+R`                                       |
+| Cycle preset window height forward               | `Meta+Ctrl+Shift+R`                                  |
 | Reset active window height to automatic          | `Meta+Ctrl+R`                                        |
 
 Single-window desktop/output transfer, direct insertion into the nearest
 existing stack, one-way tiled/floating layer focus, contextual width reset, and
-reverse width and height preset cycling are registered without default keys.
+reverse height preset cycling are registered without default keys.
 Assign them in **System Settings > Keyboard > Shortcuts** if needed.
 
 **Focus last-used desktop** (`driftile_focus_last_used_desktop`) is also
@@ -95,7 +95,8 @@ The four preset actions retain the IDs
 `driftile_switch_preset_column_width_back`,
 `driftile_switch_preset_window_height`, and
 `driftile_switch_preset_window_height_back`. KGlobalAccel preserves existing
-assignments; only a fresh shortcut record receives the forward defaults above.
+assignments. Fresh records use `Meta+R` and `Meta+Shift+R` for width, and
+`Meta+Ctrl+Shift+R` for forward height; reverse height remains unbound.
 
 `driftile_move_window_to_desktop_1` through
 `driftile_move_window_to_desktop_9` directly transfer one active window to a
@@ -165,8 +166,8 @@ only after an exact synchronous or asynchronous acknowledgement. Pending,
 blocked, or native-state width targets are no-ops and never fall through to
 tiled behavior. Existing tiled behavior is unchanged.
 
-`Meta+R`, the unbound reverse-preset action, and the unbound **Reset column
-width** action are also contextual. A relation-free manually floating target
+`Meta+R`, `Meta+Shift+R`, and the unbound **Reset column width** action are also
+contextual. A relation-free manually floating target
 reads the configured column-width presets or global default. Each percentage
 uses the same gap-adjusted singleton resolution, live decorated constraints,
 assigned-output pixel grid, and partial-visibility bounds as tiled width
@@ -185,8 +186,8 @@ device-pixel ratio and is clamped to live decorated constraints. Tiled stack
 behavior is unchanged; height state commits only after exact acknowledgement,
 and a blocked or pending floating target never falls through to stack resizing.
 
-`Meta+Shift+R` and the unbound reverse window-height preset action are also
-contextual for one active relation-free manually floating window.
+`Meta+Ctrl+Shift+R` and the unbound reverse window-height preset action are
+also contextual for one active relation-free manually floating window.
 `WindowHeightPresets` accepts 1–16 strictly increasing integer percentages from
 10 through 100; a blank value uses the exact `1/3`, `1/2`, and `2/3`
 proportions. Custom targets resolve as
