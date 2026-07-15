@@ -131,6 +131,7 @@ function createHarness(
   const window = options.window ?? createWindow();
   const windowAdded = createSignal<[WindowStub]>();
   const windowDeleted = createSignal<[WindowStub]>();
+  const hasActiveFullScreenEffectChanged = createSignal<[]>();
   const configChanged = createSignal<[]>();
   const animationRequests: AnimationRequest[] = [];
   const cancelledAnimations: unknown[] = [];
@@ -144,6 +145,7 @@ function createHarness(
     stackingOrder: [window],
     windowAdded,
     windowDeleted,
+    hasActiveFullScreenEffectChanged,
   };
 
   runInNewContext(script, {
@@ -189,6 +191,10 @@ function createHarness(
     retargetCalls,
     setConfiguredDuration(duration: number) {
       configuredDuration = duration;
+    },
+    setFullScreenEffectActive(active: boolean) {
+      effects.hasActiveFullScreenEffect = active;
+      effects.hasActiveFullScreenEffectChanged.emit();
     },
     window,
     windowDeleted,
@@ -345,6 +351,71 @@ describe("transition effect package", () => {
     expect(script).not.toMatch(/resourceClass|resourceName|windowClass/u);
   });
 
+  it("replays collapsed geometry after a fullscreen effect ends", () => {
+    const harness = createHarness();
+    harness.setFullScreenEffectActive(true);
+
+    changeGeometry(harness.window, {
+      x: 40,
+      y: 50,
+      width: 400,
+      height: 250,
+    });
+    changeGeometry(harness.window, {
+      x: 60,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+    changeGeometry(harness.window, {
+      x: 80,
+      y: 90,
+      width: 500,
+      height: 300,
+    });
+
+    expect(harness.animationRequests).toHaveLength(0);
+    expect(harness.retargetCalls).toHaveLength(0);
+
+    harness.setFullScreenEffectActive(false);
+
+    expect(harness.animationRequests).toHaveLength(1);
+    expect(harness.animationRequests[0]).toMatchObject({
+      animations: [
+        {
+          type: "size",
+          from: { value1: 300, value2: 200 },
+          to: { value1: 500, value2: 300 },
+        },
+        {
+          type: "position",
+          from: { value1: 170, value2: 130 },
+          to: { value1: 330, value2: 240 },
+        },
+      ],
+    });
+
+    changeGeometry(harness.window, {
+      x: 100,
+      y: 110,
+      width: 600,
+      height: 350,
+    });
+    expect(harness.animationRequests).toHaveLength(1);
+    expect(harness.retargetCalls).toEqual([
+      {
+        animationId: 1,
+        target: { value1: 600, value2: 350 },
+        duration: 180,
+      },
+      {
+        animationId: 2,
+        target: { value1: 400, value2: 285 },
+        duration: 180,
+      },
+    ]);
+  });
+
   it("respects zero global duration and reloads bounded configuration", () => {
     const disabledHarness = createHarness({ scaledDuration: 0 });
     changeGeometry(disabledHarness.window, {
@@ -479,5 +550,61 @@ describe("transition effect package", () => {
 
     harness.windowDeleted.emit(harness.window);
     expect(harness.cancelledAnimations).toEqual([1, 2, 3, 4, 5, 6]);
+
+    const configHarness = createHarness();
+    configHarness.setFullScreenEffectActive(true);
+    changeGeometry(configHarness.window, {
+      x: 40,
+      y: 50,
+      width: 400,
+      height: 250,
+    });
+    configHarness.configChanged.emit();
+    configHarness.setFullScreenEffectActive(false);
+    expect(configHarness.animationRequests).toHaveLength(0);
+
+    const deletedHarness = createHarness();
+    deletedHarness.setFullScreenEffectActive(true);
+    changeGeometry(deletedHarness.window, {
+      x: 40,
+      y: 50,
+      width: 400,
+      height: 250,
+    });
+    deletedHarness.windowDeleted.emit(deletedHarness.window);
+    deletedHarness.setFullScreenEffectActive(false);
+    expect(deletedHarness.animationRequests).toHaveLength(0);
+
+    const ineligibleHarness = createHarness();
+    ineligibleHarness.setFullScreenEffectActive(true);
+    changeGeometry(ineligibleHarness.window, {
+      x: 40,
+      y: 50,
+      width: 400,
+      height: 250,
+    });
+    ineligibleHarness.window.move = true;
+    ineligibleHarness.setFullScreenEffectActive(false);
+    expect(ineligibleHarness.animationRequests).toHaveLength(0);
+
+    ineligibleHarness.window.move = false;
+    changeGeometry(ineligibleHarness.window, {
+      x: 60,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+    expect(ineligibleHarness.animationRequests[0]?.animations).toMatchObject([
+      {
+        type: "size",
+        from: { value1: 400, value2: 250 },
+        to: { value1: 500, value2: 300 },
+      },
+      {
+        type: "position",
+        from: { value1: 240, value2: 175 },
+        to: { value1: 310, value2: 220 },
+      },
+    ]);
   });
 });

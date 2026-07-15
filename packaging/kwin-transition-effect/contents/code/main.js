@@ -7,6 +7,7 @@ const DEFAULT_DURATION = 180;
 const MAXIMUM_DURATION = 1000;
 const MANAGED_PROPERTY = "driftileTransitionsManaged";
 const ANIMATION_PROPERTY = "driftileTransitionAnimation";
+const DEFERRED_PROPERTY = "driftileDeferredTransition";
 const POSITION_ANIMATION = "position";
 const SIZE_ANIMATION = "size";
 
@@ -18,6 +19,11 @@ class DriftileTransitionsEffect {
     effect.configChanged.connect(this.loadConfig.bind(this));
     effects.windowAdded.connect(this.manage.bind(this));
     effects.windowDeleted.connect(this.unmanage.bind(this));
+    if (effects.hasActiveFullScreenEffectChanged) {
+      effects.hasActiveFullScreenEffectChanged.connect(
+        this.onFullScreenEffectChanged.bind(this),
+      );
+    }
 
     this.loadConfig();
     for (const window of effects.stackingOrder) {
@@ -35,7 +41,7 @@ class DriftileTransitionsEffect {
 
     this.duration = animationTime(baseDuration);
     for (const window of this.managedWindows) {
-      this.cancelWindowAnimation(window);
+      this.clearWindowTransitions(window);
     }
   }
 
@@ -56,7 +62,7 @@ class DriftileTransitionsEffect {
       return;
     }
 
-    this.cancelWindowAnimation(window);
+    this.clearWindowTransitions(window);
     delete window[MANAGED_PROPERTY];
     const index = this.managedWindows.indexOf(window);
     if (index >= 0) {
@@ -70,13 +76,76 @@ class DriftileTransitionsEffect {
       !this.isEligible(window) ||
       !this.isValidGeometry(oldGeometry)
     ) {
-      this.cancelWindowAnimation(window);
+      this.clearWindowTransitions(window);
       return;
     }
 
     const newGeometry = window.geometry;
     if (!this.isValidGeometry(newGeometry)) {
+      this.clearWindowTransitions(window);
+      return;
+    }
+
+    if (!this.geometryChanged(oldGeometry, newGeometry)) {
+      return;
+    }
+
+    if (effects.hasActiveFullScreenEffect) {
+      this.deferWindowTransition(window, oldGeometry);
+      return;
+    }
+
+    if (window[DEFERRED_PROPERTY] !== undefined) {
+      this.replayDeferredTransition(window);
+      return;
+    }
+
+    this.animateWindowTransition(window, oldGeometry, newGeometry);
+  }
+
+  onFullScreenEffectChanged() {
+    if (effects.hasActiveFullScreenEffect) {
+      return;
+    }
+
+    for (const window of this.managedWindows) {
+      this.replayDeferredTransition(window);
+    }
+  }
+
+  deferWindowTransition(window, oldGeometry) {
+    if (window[DEFERRED_PROPERTY] !== undefined) {
+      return;
+    }
+
+    this.cancelWindowAnimation(window);
+    window[DEFERRED_PROPERTY] = this.copyGeometry(oldGeometry);
+  }
+
+  replayDeferredTransition(window) {
+    const oldGeometry = window && window[DEFERRED_PROPERTY];
+    if (oldGeometry === undefined) {
+      return;
+    }
+
+    delete window[DEFERRED_PROPERTY];
+    const newGeometry = window.geometry;
+    if (
+      effects.hasActiveFullScreenEffect ||
+      this.duration <= 0 ||
+      !this.isEligible(window) ||
+      !this.isValidGeometry(oldGeometry) ||
+      !this.isValidGeometry(newGeometry)
+    ) {
       this.cancelWindowAnimation(window);
+      return;
+    }
+
+    this.animateWindowTransition(window, oldGeometry, newGeometry);
+  }
+
+  animateWindowTransition(window, oldGeometry, newGeometry) {
+    if (!this.geometryChanged(oldGeometry, newGeometry)) {
       return;
     }
 
@@ -152,7 +221,6 @@ class DriftileTransitionsEffect {
 
   isEligible(window) {
     return (
-      !effects.hasActiveFullScreenEffect &&
       window.visible &&
       !window.deleted &&
       !window.minimized &&
@@ -170,6 +238,24 @@ class DriftileTransitionsEffect {
       !window.move &&
       !window.resize
     );
+  }
+
+  geometryChanged(oldGeometry, newGeometry) {
+    return (
+      oldGeometry.x !== newGeometry.x ||
+      oldGeometry.y !== newGeometry.y ||
+      oldGeometry.width !== newGeometry.width ||
+      oldGeometry.height !== newGeometry.height
+    );
+  }
+
+  copyGeometry(geometry) {
+    return {
+      x: geometry.x,
+      y: geometry.y,
+      width: geometry.width,
+      height: geometry.height,
+    };
   }
 
   windowAnimationState(window) {
@@ -229,6 +315,15 @@ class DriftileTransitionsEffect {
       cancel(state[POSITION_ANIMATION]);
     }
     delete window[ANIMATION_PROPERTY];
+  }
+
+  clearWindowTransitions(window) {
+    if (!window) {
+      return;
+    }
+
+    this.cancelWindowAnimation(window);
+    delete window[DEFERRED_PROPERTY];
   }
 }
 
