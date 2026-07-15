@@ -210,6 +210,10 @@ type DesktopTransferTarget =
       readonly kind: "adjacent";
     }
   | {
+      readonly desktopId: DesktopId;
+      readonly kind: "id";
+    }
+  | {
       readonly index: number;
       readonly kind: "index";
     };
@@ -222,6 +226,11 @@ type PointerResize = PointerHorizontalResize | PointerVerticalResize;
 interface WindowRemovalFocus {
   readonly contextKey: string;
   readonly layer: WindowLayer;
+}
+
+interface DesktopSelectionHistory {
+  readonly currentDesktopId: DesktopId;
+  readonly previousDesktopId: DesktopId | null;
 }
 
 interface ManagedContext {
@@ -898,6 +907,11 @@ export class RuntimeController {
   private columnWidthStep = DEFAULT_COLUMN_WIDTH_STEP_PERCENT / 100;
   private columnWidthPresets: readonly ColumnWidth[];
   private readonly contexts = new Map<string, RuntimeContext>();
+  private readonly desktopHistoryRecordingSuppressions = new Set<object>();
+  private readonly desktopSelectionHistory = new Map<
+    KWinOutput,
+    DesktopSelectionHistory
+  >();
   private readonly createRect: KWinRectFactory;
   private readonly dirtyContexts = new Set<string>();
   private readonly desktopLifecycle: DesktopLifecycle;
@@ -1122,6 +1136,7 @@ export class RuntimeController {
     this.activities = new KWinActivityAdapter(workspace);
     this.desktopLifecycle = new DesktopLifecycle(workspace, {
       changed: () => {
+        this.reconcileDesktopSelectionHistory();
         this.scheduleWork();
       },
     });
@@ -2008,6 +2023,44 @@ export class RuntimeController {
     }
 
     return this.focusDesktopTarget({ index, kind: "index" });
+  }
+
+  focusLastUsedDesktop(): boolean {
+    if (
+      !this.started ||
+      this.stackEditOperation ||
+      this.windowTransferOperation ||
+      this.hasTopologyBarrier()
+    ) {
+      return false;
+    }
+
+    const output = this.workspace.activeScreen;
+
+    if (!output || !this.workspace.screens.includes(output)) {
+      return false;
+    }
+
+    const current = currentDesktopForOutput(this.workspace, output);
+    const history = this.desktopSelectionHistory.get(output);
+
+    if (
+      !current ||
+      !history ||
+      history.currentDesktopId !== desktopId(current.id) ||
+      history.previousDesktopId === null ||
+      history.previousDesktopId === history.currentDesktopId ||
+      !this.workspace.desktops.some(
+        (desktop) => desktop.id === history.previousDesktopId,
+      )
+    ) {
+      return false;
+    }
+
+    return this.focusDesktopTarget({
+      desktopId: history.previousDesktopId,
+      kind: "id",
+    });
   }
 
   moveDesktopDown(): boolean {
@@ -3033,9 +3086,12 @@ export class RuntimeController {
       this.started = true;
       this.lastOutputCount = this.workspace.screens.length;
       this.knownOutputInstances.clear();
+      this.desktopSelectionHistory.clear();
+      this.reconcileDesktopSelectionHistory();
       this.workspace.currentDesktopChanged.connect(
         this.handleCurrentDesktopChanged,
       );
+      this.workspace.desktopsChanged?.connect(this.handleDesktopsChanged);
       this.workspace.currentActivityChanged?.connect(
         this.handleCurrentActivityChanged,
       );
@@ -3142,6 +3198,7 @@ export class RuntimeController {
       this.workspace.currentDesktopChanged.disconnect(
         this.handleCurrentDesktopChanged,
       );
+      this.workspace.desktopsChanged?.disconnect(this.handleDesktopsChanged);
       this.workspace.currentActivityChanged?.disconnect(
         this.handleCurrentActivityChanged,
       );
@@ -3154,6 +3211,7 @@ export class RuntimeController {
       this.observer.stop();
       this.layout = new LayoutEngine();
       this.knownOutputInstances.clear();
+      this.desktopSelectionHistory.clear();
       this.lastSettledTopology = null;
       this.contexts.clear();
       this.pendingExpelFocusHandoff = null;
@@ -3462,7 +3520,7 @@ export class RuntimeController {
   }
 
   private readonly handleCurrentDesktopChanged = (
-    _previous: KWinVirtualDesktop | null,
+    previous: KWinVirtualDesktop | null,
     current?: KWinVirtualDesktop | null,
     output?: KWinOutput,
   ): void => {
@@ -3491,6 +3549,10 @@ export class RuntimeController {
     let dirtied = false;
 
     if (liveCurrent) {
+      if (this.desktopHistoryRecordingSuppressions.size === 0) {
+        this.recordDesktopSelection(previous, liveCurrent, output);
+      }
+
       const outputNames = globalDesktop
         ? this.workspace.screens.map((candidate) => candidate.name)
         : output
@@ -3553,6 +3615,10 @@ export class RuntimeController {
     }
 
     this.scheduleWork();
+  };
+
+  private readonly handleDesktopsChanged = (): void => {
+    this.reconcileDesktopSelectionHistory();
   };
 
   private readonly handleWindowAdded = (window: ObservedWindow): void => {
@@ -6615,8 +6681,52 @@ export class RuntimeController {
       return false;
     }
 
-    this.switchDesktop(targetDesktop, output);
+    const topologyRevision = this.topologyRevision;
+    const runGeneration = this.runGeneration;
+    const historySuppression = {};
+
+    this.desktopHistoryRecordingSuppressions.add(historySuppression);
+
+    try {
+      this.switchDesktop(targetDesktop, output);
+    } catch {
+      // The live selection below remains authoritative when KWin rejects a request.
+    } finally {
+      this.desktopHistoryRecordingSuppressions.delete(historySuppression);
+    }
+
+    if (
+      !this.desktopSelectionTransitionIsConfirmed(
+        output,
+        targetDesktop,
+        topologyRevision,
+        runGeneration,
+      )
+    ) {
+      return false;
+    }
+
+    this.recordDesktopSelection(current, targetDesktop, output);
     return true;
+  }
+
+  private desktopSelectionTransitionIsConfirmed(
+    output: KWinOutput,
+    targetDesktop: KWinVirtualDesktop,
+    topologyRevision: number,
+    runGeneration: number,
+  ): boolean {
+    return (
+      this.started &&
+      this.runGeneration === runGeneration &&
+      this.topologyRevision === topologyRevision &&
+      !this.hasTopologyBarrier() &&
+      this.workspace.screens.includes(output) &&
+      this.workspace.desktops.some(
+        (desktop) => desktop.id === targetDesktop.id,
+      ) &&
+      currentDesktopForOutput(this.workspace, output)?.id === targetDesktop.id
+    );
   }
 
   private moveSelectedDesktop(direction: DesktopReorderDirection): boolean {
@@ -6651,11 +6761,145 @@ export class RuntimeController {
       return currentIndex + target.direction;
     }
 
+    if (target.kind === "id") {
+      return this.workspace.desktops.findIndex(
+        (desktop) => desktop.id === target.desktopId,
+      );
+    }
+
     if (!validDesktopIndex(target.index)) {
       return -1;
     }
 
     return Math.min(target.index - 1, this.workspace.desktops.length - 1);
+  }
+
+  private reconcileDesktopSelectionHistory(): void {
+    if (!this.started) {
+      this.desktopSelectionHistory.clear();
+      return;
+    }
+
+    const liveOutputs = new Set(this.workspace.screens);
+    const liveDesktopIds = new Set(
+      this.workspace.desktops.map((desktop) => desktopId(desktop.id)),
+    );
+
+    for (const output of this.desktopSelectionHistory.keys()) {
+      if (!liveOutputs.has(output)) {
+        this.desktopSelectionHistory.delete(output);
+      }
+    }
+
+    for (const output of liveOutputs) {
+      const current = currentDesktopForOutput(this.workspace, output);
+      const currentDesktopId = current ? desktopId(current.id) : null;
+
+      if (!currentDesktopId || !liveDesktopIds.has(currentDesktopId)) {
+        this.desktopSelectionHistory.delete(output);
+        continue;
+      }
+
+      const history = this.desktopSelectionHistory.get(output);
+
+      if (!history) {
+        this.desktopSelectionHistory.set(output, {
+          currentDesktopId,
+          previousDesktopId: null,
+        });
+        continue;
+      }
+
+      if (history.currentDesktopId !== currentDesktopId) {
+        this.desktopSelectionHistory.set(output, {
+          currentDesktopId,
+          previousDesktopId: liveDesktopIds.has(history.currentDesktopId)
+            ? history.currentDesktopId
+            : null,
+        });
+        continue;
+      }
+
+      if (
+        history.previousDesktopId !== null &&
+        (!liveDesktopIds.has(history.previousDesktopId) ||
+          history.previousDesktopId === currentDesktopId)
+      ) {
+        this.desktopSelectionHistory.set(output, {
+          currentDesktopId,
+          previousDesktopId: null,
+        });
+      }
+    }
+  }
+
+  private recordDesktopSelection(
+    previous: KWinVirtualDesktop | null,
+    current: KWinVirtualDesktop,
+    output?: KWinOutput,
+  ): void {
+    if (!this.started) {
+      return;
+    }
+
+    const liveDesktopIds = new Set(
+      this.workspace.desktops.map((desktop) => desktopId(desktop.id)),
+    );
+    const currentDesktopId = desktopId(current.id);
+
+    if (!liveDesktopIds.has(currentDesktopId)) {
+      return;
+    }
+
+    const globalDesktop =
+      typeof this.workspace.currentDesktopForScreen !== "function";
+    const outputs = globalDesktop
+      ? this.workspace.screens
+      : output && this.workspace.screens.includes(output)
+        ? [output]
+        : [];
+    const eventPreviousDesktopId = previous ? desktopId(previous.id) : null;
+
+    for (const candidate of outputs) {
+      if (
+        currentDesktopForOutput(this.workspace, candidate)?.id !== current.id
+      ) {
+        continue;
+      }
+
+      const history = this.desktopSelectionHistory.get(candidate);
+
+      if (history?.currentDesktopId === currentDesktopId) {
+        if (
+          history.previousDesktopId !== null &&
+          (!liveDesktopIds.has(history.previousDesktopId) ||
+            history.previousDesktopId === currentDesktopId)
+        ) {
+          this.desktopSelectionHistory.set(candidate, {
+            currentDesktopId,
+            previousDesktopId: null,
+          });
+        }
+
+        continue;
+      }
+
+      const previousDesktopId =
+        eventPreviousDesktopId !== null &&
+        eventPreviousDesktopId !== currentDesktopId &&
+        liveDesktopIds.has(eventPreviousDesktopId)
+          ? eventPreviousDesktopId
+          : history &&
+              history.currentDesktopId !== currentDesktopId &&
+              liveDesktopIds.has(history.currentDesktopId)
+            ? history.currentDesktopId
+            : null;
+
+      this.desktopSelectionHistory.set(candidate, {
+        currentDesktopId,
+        previousDesktopId,
+      });
+    }
   }
 
   private focusFloatingWindow(
@@ -9493,13 +9737,21 @@ export class RuntimeController {
       targetContextKey,
     };
     this.windowTransferOperation = operation;
-    let transferred: boolean;
+    let transferred = false;
 
     try {
       transferred = this.applyFloatingDesktopTransfer(command, operation);
     } finally {
       if (this.windowTransferOperation === operation) {
         this.windowTransferOperation = null;
+      }
+
+      if (transferred) {
+        this.recordDesktopSelection(
+          command.sourceDesktop,
+          command.targetDesktop,
+          command.output,
+        );
       }
 
       this.handleWindowActivated(this.workspace.activeWindow);
@@ -10187,9 +10439,10 @@ export class RuntimeController {
       targetContextKey,
     };
     this.windowTransferOperation = operation;
+    let transferred = false;
 
     try {
-      const transferred = this.applyDesktopTransfer(
+      transferred = this.applyDesktopTransfer(
         command,
         preview,
         sourceLayout,
@@ -10217,6 +10470,14 @@ export class RuntimeController {
 
       if (this.windowTransferOperation === operation) {
         this.windowTransferOperation = null;
+      }
+
+      if (transferred) {
+        this.recordDesktopSelection(
+          command.sourceDesktop,
+          command.targetDesktop,
+          command.output,
+        );
       }
 
       for (const key of [active.contextKey, targetContextKey]) {
@@ -21181,6 +21442,7 @@ export class RuntimeController {
     this.clearPointerMoveIntent();
     this.pointerResizeIntent = null;
     this.topologyKnownOutputRestorations.clear();
+    this.reconcileDesktopSelectionHistory();
 
     const canceledTransitionKeys = new Set<string>();
 

@@ -318,6 +318,11 @@ QtObject {
         sequence: "Meta+PgDown"
         onActivated: Runtime.DriftileRuntime.focusNextDesktop()
     }
+    readonly property ShortcutHandler focusLastUsedDesktopShortcut: ShortcutHandler {
+        name: "driftile_focus_last_used_desktop"
+        text: "Driftile: Focus last-used desktop"
+        onActivated: Runtime.DriftileRuntime.focusLastUsedDesktop()
+    }
     readonly property ShortcutHandler moveDesktopDownShortcut: ShortcutHandler {
         name: "driftile_move_desktop_down"
         text: "Driftile: Move desktop down"

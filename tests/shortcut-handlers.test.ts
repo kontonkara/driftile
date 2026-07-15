@@ -139,6 +139,9 @@ const expectedHandlers: Readonly<
   driftile_focus_floating: {
     activated: "Runtime.DriftileRuntime.focusFloating()",
   },
+  driftile_focus_last_used_desktop: {
+    activated: "Runtime.DriftileRuntime.focusLastUsedDesktop()",
+  },
   driftile_focus_next_desktop: {
     activated: "Runtime.DriftileRuntime.focusNextDesktop()",
     sequence: "Meta+U",
@@ -530,7 +533,7 @@ describe("KWin shortcut handlers", () => {
   });
 
   it("keeps the canonical action catalog synchronized with QML", () => {
-    expect(shortcutActions).toHaveLength(119);
+    expect(shortcutActions).toHaveLength(120);
     expect(shortcutActions).toEqual(
       handlers.map(({ name, sequence, text }) => ({
         name,
@@ -543,7 +546,7 @@ describe("KWin shortcut handlers", () => {
     ).toHaveLength(87);
     expect(
       shortcutActions.filter((action) => action.defaultSequence === undefined),
-    ).toHaveLength(32);
+    ).toHaveLength(33);
   });
 
   it("uses unique lowercase action identifiers and key sequences", () => {
@@ -600,6 +603,7 @@ describe("KWin shortcut handlers", () => {
         .sort(),
     ).toEqual([
       "driftile_focus_floating",
+      "driftile_focus_last_used_desktop",
       "driftile_focus_tiling",
       "driftile_focus_window_down_or_next_desktop",
       "driftile_focus_window_up_or_previous_desktop",

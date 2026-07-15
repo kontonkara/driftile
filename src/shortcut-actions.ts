@@ -198,6 +198,10 @@ const shortcutActionCatalog = [
     defaultSequence: "Meta+PgDown",
   },
   {
+    name: "driftile_focus_last_used_desktop",
+    text: "Driftile: Focus last-used desktop",
+  },
+  {
     name: "driftile_move_desktop_down",
     text: "Driftile: Move desktop down",
     defaultSequence: "Meta+Shift+U",

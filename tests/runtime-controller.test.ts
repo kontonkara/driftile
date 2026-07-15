@@ -35981,6 +35981,216 @@ describe("RuntimeController", () => {
     expect(fixture.desktopSwitchCount).toBe(2);
   });
 
+  it("toggles the last-used desktop after external and controller selections", () => {
+    const output = createOutput("DP-1", 0);
+    const desktops = [
+      { id: "desktop-1" },
+      { id: "desktop-2" },
+      { id: "desktop-3" },
+    ] as const;
+    const fixture = createWorkspace(
+      output,
+      desktops[0],
+      [output],
+      desktops,
+      [],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(controller.focusLastUsedDesktop()).toBe(false);
+
+    fixture.setCurrentDesktop(output, desktops[1]);
+    expect(controller.focusLastUsedDesktop()).toBe(true);
+    expect(fixture.workspace.currentDesktopForScreen?.(output)).toBe(
+      desktops[0],
+    );
+    expect(controller.focusLastUsedDesktop()).toBe(true);
+    expect(fixture.workspace.currentDesktopForScreen?.(output)).toBe(
+      desktops[1],
+    );
+
+    expect(controller.focusDesktop(3)).toBe(true);
+    expect(controller.focusLastUsedDesktop()).toBe(true);
+    expect(fixture.workspace.currentDesktopForScreen?.(output)).toBe(
+      desktops[1],
+    );
+    expect(controller.focusLastUsedDesktop()).toBe(true);
+    expect(fixture.workspace.currentDesktopForScreen?.(output)).toBe(
+      desktops[2],
+    );
+  });
+
+  it("isolates last-used desktop history by output", () => {
+    const activeOutput = createOutput("DP-1", 0);
+    const otherOutput = createOutput("HDMI-A-1", 1000);
+    const desktops = [
+      { id: "desktop-1" },
+      { id: "desktop-2" },
+      { id: "desktop-3" },
+    ] as const;
+    const fixture = createWorkspace(
+      activeOutput,
+      desktops[0],
+      [activeOutput, otherOutput],
+      desktops,
+      [],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+    });
+
+    expect(controller.start()).toBe(true);
+    fixture.setCurrentDesktop(activeOutput, desktops[1]);
+    fixture.setCurrentDesktop(otherOutput, desktops[2]);
+
+    expect(controller.focusLastUsedDesktop()).toBe(true);
+    expect(fixture.workspace.currentDesktopForScreen?.(activeOutput)).toBe(
+      desktops[0],
+    );
+    expect(fixture.workspace.currentDesktopForScreen?.(otherOutput)).toBe(
+      desktops[2],
+    );
+
+    Object.defineProperty(fixture.workspace, "activeScreen", {
+      configurable: true,
+      value: otherOutput,
+    });
+    expect(controller.focusLastUsedDesktop()).toBe(true);
+    expect(fixture.workspace.currentDesktopForScreen?.(activeOutput)).toBe(
+      desktops[0],
+    );
+    expect(fixture.workspace.currentDesktopForScreen?.(otherOutput)).toBe(
+      desktops[0],
+    );
+    expect(controller.focusLastUsedDesktop()).toBe(true);
+    expect(fixture.workspace.currentDesktopForScreen?.(otherOutput)).toBe(
+      desktops[2],
+    );
+  });
+
+  it("updates every output history through the global desktop fallback", () => {
+    const activeOutput = createOutput("DP-1", 0);
+    const otherOutput = createOutput("HDMI-A-1", 1000);
+    const desktops = [{ id: "desktop-1" }, { id: "desktop-2" }] as const;
+    const fixture = createWorkspace(
+      activeOutput,
+      desktops[0],
+      [activeOutput, otherOutput],
+      desktops,
+      [],
+      false,
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+    });
+
+    expect(controller.start()).toBe(true);
+    fixture.setCurrentDesktop(activeOutput, desktops[1]);
+    expect(controller.focusLastUsedDesktop()).toBe(true);
+    expect(fixture.workspace.currentDesktop).toBe(desktops[0]);
+
+    Object.defineProperty(fixture.workspace, "activeScreen", {
+      configurable: true,
+      value: otherOutput,
+    });
+    expect(controller.focusLastUsedDesktop()).toBe(true);
+    expect(fixture.workspace.currentDesktop).toBe(desktops[1]);
+  });
+
+  it("rejects failed desktop requests without poisoning history", () => {
+    const output = createOutput("DP-1", 0);
+    const desktops = [{ id: "desktop-1" }, { id: "desktop-2" }] as const;
+    const fixture = createWorkspace(
+      output,
+      desktops[0],
+      [output],
+      desktops,
+      [],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+    });
+
+    expect(controller.start()).toBe(true);
+    fixture.setDesktopSwitchBehavior(() => undefined);
+    expect(controller.focusDesktop(2)).toBe(false);
+    expect(controller.focusLastUsedDesktop()).toBe(false);
+
+    fixture.setDesktopSwitchBehavior((_desktop, targetOutput, commit) => {
+      commit();
+      fixture.setCurrentDesktop(targetOutput, desktops[0]);
+    });
+    expect(controller.focusDesktop(2)).toBe(false);
+    expect(fixture.workspace.currentDesktopForScreen?.(output)).toBe(
+      desktops[0],
+    );
+    expect(controller.focusLastUsedDesktop()).toBe(false);
+  });
+
+  it("prunes removed desktops and replaced outputs from history", () => {
+    const output = createOutput("DP-1", 0);
+    const replacement = createOutput("DP-1", 0);
+    const desktopsChanged = new Signal<[]>();
+    const first = { id: "desktop-1" };
+    const second = { id: "desktop-2" };
+    let desktops: readonly KWinVirtualDesktop[] = [first, second];
+    const fixture = createWorkspace(output, first, [output], desktops, []);
+    Object.defineProperties(fixture.workspace, {
+      desktops: {
+        configurable: true,
+        get: () => desktops,
+      },
+      desktopsChanged: {
+        configurable: true,
+        value: desktopsChanged,
+      },
+    });
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+    });
+
+    expect(controller.start()).toBe(true);
+    fixture.setCurrentDesktop(output, second);
+    desktops = [second];
+    desktopsChanged.emit();
+    expect(controller.focusLastUsedDesktop()).toBe(false);
+
+    desktops = [first, second];
+    desktopsChanged.emit();
+    fixture.setScreens([replacement]);
+    fixture.screensChanged.emit();
+    Object.defineProperty(fixture.workspace, "activeScreen", {
+      configurable: true,
+      value: replacement,
+    });
+    expect(controller.focusLastUsedDesktop()).toBe(false);
+  });
+
+  it("clears last-used desktop history across runtime lifecycles", () => {
+    const output = createOutput("DP-1", 0);
+    const desktops = [{ id: "desktop-1" }, { id: "desktop-2" }] as const;
+    const fixture = createWorkspace(
+      output,
+      desktops[0],
+      [output],
+      desktops,
+      [],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+    });
+
+    expect(controller.start()).toBe(true);
+    fixture.setCurrentDesktop(output, desktops[1]);
+    controller.stop();
+    expect(controller.focusLastUsedDesktop()).toBe(false);
+    expect(controller.start()).toBe(true);
+    expect(controller.focusLastUsedDesktop()).toBe(false);
+  });
+
   it("preserves runtime state while desktop reorder moves down and exactly back up", () => {
     const setup = createDesktopReorderRuntimeFixture();
     const contexts = [setup.activeOutput, setup.otherOutput].flatMap((output) =>
@@ -36352,6 +36562,20 @@ describe("RuntimeController desktop transfers", () => {
       { id: "column:moved", windowIds: ["moved"] },
     ]);
     expect(controller.managedCount).toBe(2);
+  });
+
+  it("records a successful desktop transfer for last-used toggling", () => {
+    const transfer = createDesktopTransferFixture();
+
+    expect(transfer.controller.moveWindowToNextDesktop()).toBe(true);
+    expect(transfer.controller.focusLastUsedDesktop()).toBe(true);
+    expect(
+      transfer.fixture.workspace.currentDesktopForScreen?.(transfer.output),
+    ).toBe(transfer.desktops[0]);
+    expect(transfer.controller.focusLastUsedDesktop()).toBe(true);
+    expect(
+      transfer.fixture.workspace.currentDesktopForScreen?.(transfer.output),
+    ).toBe(transfer.desktops[1]);
   });
 
   it("focuses within a stack before crossing a visible desktop boundary", () => {
@@ -38274,6 +38498,7 @@ describe("RuntimeController desktop transfers", () => {
       ),
     ).toEqual(before);
     expect(moved.desktopWriteCount).toBe(2);
+    expect(controller.focusLastUsedDesktop()).toBe(false);
   });
 
   it("rejects a desktop rule and tolerates reentrant desktop and activation signals", () => {
@@ -38387,6 +38612,7 @@ describe("RuntimeController desktop transfers", () => {
         FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(targetSnapshot);
+    expect(controller.focusLastUsedDesktop()).toBe(false);
   });
 
   it("preserves an external destination frame during partial rollback", () => {

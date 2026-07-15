@@ -295,6 +295,10 @@ export function focusNextDesktop(): void {
   runCommand((activeController) => activeController.focusNextDesktop());
 }
 
+export function focusLastUsedDesktop(): void {
+  runCommand((activeController) => activeController.focusLastUsedDesktop());
+}
+
 export function focusDesktop(index: number): void {
   runCommand((activeController) => activeController.focusDesktop(index));
 }
