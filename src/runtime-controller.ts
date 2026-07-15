@@ -111,7 +111,11 @@ import {
 } from "./core/pointer-reinsertion";
 import {
   inferPointerHorizontalResize,
+  inferPointerVerticalResize,
+  type PointerHorizontalResize,
   type PointerHorizontalResizeEdge,
+  type PointerVerticalResize,
+  type PointerVerticalResizeEdge,
 } from "./core/pointer-resize";
 import type {
   KWinOutput,
@@ -208,6 +212,7 @@ type FloatingFocusDestination =
   HorizontalDirection | HorizontalEdge | VerticalDirection;
 type StackedNativeState = "fullscreen" | "maximize";
 type WindowLayer = "floating" | "tiling";
+type PointerResize = PointerHorizontalResize | PointerVerticalResize;
 
 interface WindowRemovalFocus {
   readonly contextKey: string;
@@ -539,7 +544,7 @@ interface PointerResizeIntent {
   readonly beforeFrame: Rect;
   readonly contextFingerprint: string;
   readonly contextKey: string;
-  readonly edge: PointerHorizontalResizeEdge | null;
+  readonly edge: PointerHorizontalResizeEdge | PointerVerticalResizeEdge | null;
   readonly gap: number;
   readonly generation: number;
   readonly participants: readonly PointerResizeParticipant[];
@@ -561,6 +566,16 @@ interface PointerResizeSettlementWindow {
   readonly targetFrame: Rect;
 }
 
+type PointerResizeTarget =
+  | {
+      readonly kind: "column-width";
+      readonly width: ColumnWidth;
+    }
+  | {
+      readonly heights: readonly WindowHeight[];
+      readonly kind: "window-height";
+    };
+
 interface PointerResizeSettlement {
   attempts: number;
   readonly command: ActiveColumnCommand;
@@ -572,8 +587,8 @@ interface PointerResizeSettlement {
   pending: boolean;
   phase: "compensating" | "forward";
   stableSamples: number;
+  readonly target: PointerResizeTarget;
   readonly targetLayout: LayoutContextSnapshot;
-  readonly targetWidth: ColumnWidth;
   readonly windowById: ReadonlyMap<WindowId, PointerResizeSettlementWindow>;
   readonly windows: readonly PointerResizeSettlementWindow[];
 }
@@ -3697,10 +3712,9 @@ export class RuntimeController {
     const source = this.observer.source(id);
     const observed = source ? normalizeWindow(source) : null;
     const liveContext = observed ? managedContext(observed) : null;
-    const inferred = inferPointerHorizontalResize(
-      intent.beforeFrame,
-      acceptedFrame,
-    );
+    const inferred =
+      inferPointerHorizontalResize(intent.beforeFrame, acceptedFrame) ??
+      inferPointerVerticalResize(intent.beforeFrame, acceptedFrame);
 
     if (
       intent.phase !== "resizing" ||
@@ -12983,14 +12997,28 @@ export class RuntimeController {
       }
     }
 
+    return this.applyWindowHeightPolicy(
+      command,
+      nextHeights,
+      "window height resize",
+    );
+  }
+
+  private applyWindowHeightPolicy(
+    command: ActiveColumnCommand,
+    heights: readonly WindowHeight[],
+    label: string,
+    accept?: () => boolean,
+    rollbackFrames?: ReadonlyMap<WindowId, Rect>,
+  ): boolean {
     const rollbackState: { current?: WindowHeightEditRollback } = {};
     const applied = this.applyActiveColumnMutation(
       command,
-      "window height resize",
+      label,
       () => {
         const edit = this.layout.setActiveColumnWindowHeights(
           command.activeId,
-          nextHeights,
+          heights,
         );
 
         if (edit) {
@@ -13006,6 +13034,8 @@ export class RuntimeController {
           this.layout.rollbackWindowHeightEdit(rollback)
         );
       },
+      accept,
+      rollbackFrames,
     );
     const rollback = rollbackState.current;
 
@@ -16647,7 +16677,8 @@ export class RuntimeController {
     };
     const acceptedFrame = intent.acceptedFrame;
     const inferred = acceptedFrame
-      ? inferPointerHorizontalResize(intent.beforeFrame, acceptedFrame)
+      ? (inferPointerHorizontalResize(intent.beforeFrame, acceptedFrame) ??
+        inferPointerVerticalResize(intent.beforeFrame, acceptedFrame))
       : null;
 
     if (
@@ -16698,16 +16729,86 @@ export class RuntimeController {
       return reject();
     }
 
-    const target: ColumnWidth = {
-      kind: "fixed",
-      value: inferred.width,
-    };
+    const target = this.pointerResizeTarget(intent, command, inferred);
 
-    if (!this.beginPointerResizeSettlement(intent, command, target)) {
+    if (
+      !target ||
+      !this.beginPointerResizeSettlement(intent, command, target)
+    ) {
       return reject();
     }
 
     return true;
+  }
+
+  private pointerResizeTarget(
+    intent: PointerResizeIntent,
+    command: ActiveColumnCommand,
+    inferred: PointerResize,
+  ): PointerResizeTarget | null {
+    if ("width" in inferred) {
+      return {
+        kind: "column-width",
+        width: { kind: "fixed", value: inferred.width },
+      };
+    }
+
+    if (
+      command.activeColumn.presentation !== "stacked" ||
+      command.activeColumn.windowIds.length < 2
+    ) {
+      return null;
+    }
+
+    const activeIndex = command.activeColumn.windowIds.indexOf(
+      command.activeId,
+    );
+    const currentHeights = columnWindowHeights(command.activeColumn);
+    const currentActiveHeight = currentHeights[activeIndex];
+
+    if (activeIndex < 0 || !currentActiveHeight) {
+      return null;
+    }
+
+    const currentFrames = new Map(
+      intent.participants.map(
+        (participant) => [participant.id, participant.beforeFrame] as const,
+      ),
+    );
+    const heights =
+      currentActiveHeight.kind === "auto"
+        ? this.normalizedAutomaticWindowHeights(
+            command.activeColumn.windowIds,
+            currentFrames,
+          )
+        : currentHeights.map((height) => ({ ...height }));
+    const metrics = this.activeWindowHeightMetrics(command, activeIndex);
+
+    if (!heights || !metrics) {
+      return null;
+    }
+
+    const targetClientHeight = inferred.height - metrics.decorationHeight;
+    const tolerance = floatingPointTolerance(
+      inferred.height,
+      metrics.minimumHeight,
+      metrics.maximumHeight,
+    );
+
+    if (
+      !Number.isFinite(targetClientHeight) ||
+      targetClientHeight <= 0 ||
+      inferred.height < metrics.minimumHeight - tolerance ||
+      inferred.height > metrics.maximumHeight + tolerance
+    ) {
+      return null;
+    }
+
+    heights[activeIndex] = {
+      clientHeight: targetClientHeight,
+      kind: "fixed",
+    };
+    return { heights, kind: "window-height" };
   }
 
   private pointerResizeParticipantsAreCurrent(
@@ -16780,28 +16881,49 @@ export class RuntimeController {
   private beginPointerResizeSettlement(
     intent: PointerResizeIntent,
     command: ActiveColumnCommand,
-    targetWidth: ColumnWidth,
+    target: PointerResizeTarget,
   ): boolean {
-    const targetGeometry = this.previewActiveColumnView(
-      command,
-      targetWidth,
-      command.before.viewportOffset,
-    );
+    const targetPreview: LayoutContextSnapshot = {
+      ...command.before,
+      columns: command.before.columns.map((column) => {
+        if (column.id !== intent.activeColumnId) {
+          return column;
+        }
+
+        return target.kind === "column-width"
+          ? { ...column, width: { ...target.width } }
+          : {
+              ...column,
+              windowHeights: target.heights.map((height) => ({ ...height })),
+            };
+      }),
+    };
+    let targetGeometry: ReturnType<typeof solveStripGeometry>;
+
+    try {
+      targetGeometry = this.solveContextGeometry(
+        targetPreview,
+        command.contextGeometry,
+      );
+    } catch {
+      return false;
+    }
 
     if (
-      !targetGeometry ||
-      !this.canApplyLayout(targetGeometry.maxViewportOffset)
+      !this.canApplyLayout(targetGeometry.maxViewportOffset) ||
+      (target.kind === "window-height" &&
+        !targetGeometry.windows.some(
+          (window) =>
+            window.windowId === intent.resizedWindowId &&
+            intent.acceptedFrame !== null &&
+            nearlyEqual(window.frame.height, intent.acceptedFrame.height),
+        ))
     ) {
       return false;
     }
 
     const targetLayout: LayoutContextSnapshot = {
-      ...command.before,
-      columns: command.before.columns.map((column) =>
-        column.id === intent.activeColumnId
-          ? { ...column, width: { ...targetWidth } }
-          : column,
-      ),
+      ...targetPreview,
       viewportOffset: targetGeometry.viewportOffset,
     };
     const writableTargets = targetGeometry.windows.filter(
@@ -16908,8 +17030,14 @@ export class RuntimeController {
       pending: false,
       phase: "forward",
       stableSamples: 0,
+      target:
+        target.kind === "column-width"
+          ? { kind: "column-width", width: { ...target.width } }
+          : {
+              heights: target.heights.map((height) => ({ ...height })),
+              kind: "window-height",
+            },
       targetLayout,
-      targetWidth: { ...targetWidth },
       windowById,
       windows,
     };
@@ -17157,18 +17285,32 @@ export class RuntimeController {
         (window) => [window.id, window.rollbackFrame] as const,
       ),
     );
+    const label =
+      operation.target.kind === "column-width"
+        ? "pointer column resize"
+        : "pointer window resize";
+    const accept = () =>
+      this.pointerResizeSettlementStateIsCurrent(
+        operation,
+        operation.targetLayout,
+      ) && this.pointerResizeSettlementFramesMatch(operation, "target");
     this.lastWrites = 0;
-    const applied = this.applyColumnWidth(
-      operation.command,
-      operation.targetWidth,
-      "pointer column resize",
-      () =>
-        this.pointerResizeSettlementStateIsCurrent(
-          operation,
-          operation.targetLayout,
-        ) && this.pointerResizeSettlementFramesMatch(operation, "target"),
-      rollbackFrames,
-    );
+    const applied =
+      operation.target.kind === "column-width"
+        ? this.applyColumnWidth(
+            operation.command,
+            operation.target.width,
+            label,
+            accept,
+            rollbackFrames,
+          )
+        : this.applyWindowHeightPolicy(
+            operation.command,
+            operation.target.heights,
+            label,
+            accept,
+            rollbackFrames,
+          );
 
     if (!applied) {
       operation.compensationWrites += this.lastWrites;
@@ -17198,11 +17340,15 @@ export class RuntimeController {
 
     this.dirtyContexts.delete(operation.command.context.key);
     this.recordPendingMutationWrites(writes);
-    this.deleteColumnFullWidthRestore(
-      operation.command.context.key,
-      operation.intent.activeColumnId,
-    );
-    this.finishColumnWidthChange(operation.command.context.key);
+
+    if (operation.target.kind === "column-width") {
+      this.deleteColumnFullWidthRestore(
+        operation.command.context.key,
+        operation.intent.activeColumnId,
+      );
+      this.finishColumnWidthChange(operation.command.context.key);
+    }
+
     this.requestLayoutStatePublication();
     this.scheduleWork();
   }
@@ -17282,9 +17428,13 @@ export class RuntimeController {
     operation: PointerResizeSettlement,
   ): void {
     const failure = operation.failure ?? "target geometry was rejected";
+    const label =
+      operation.target.kind === "column-width"
+        ? "pointer column resize"
+        : "pointer window resize";
     this.finishPointerResizeSettlement(operation);
     console.warn(
-      `[driftile] pointer column resize rolled back context=${operation.command.context.key} error=${failure}`,
+      `[driftile] ${label} rolled back context=${operation.command.context.key} error=${failure}`,
     );
   }
 
@@ -17292,9 +17442,13 @@ export class RuntimeController {
     operation: PointerResizeSettlement,
     failure: string,
   ): void {
+    const label =
+      operation.target.kind === "column-width"
+        ? "pointer column resize"
+        : "pointer window resize";
     this.finishPointerResizeSettlement(operation);
     console.warn(
-      `[driftile] pointer column resize recovery deferred context=${operation.command.context.key} error=${failure}`,
+      `[driftile] ${label} recovery deferred context=${operation.command.context.key} error=${failure}`,
     );
   }
 
@@ -17564,13 +17718,20 @@ export class RuntimeController {
       return false;
     }
 
-    const previous = this.layout.setActiveColumnWidth(
-      operation.intent.resizedWindowId,
-      beforeColumn.width,
-    );
+    if (operation.target.kind === "column-width") {
+      this.layout.setActiveColumnWidth(
+        operation.intent.resizedWindowId,
+        beforeColumn.width,
+      );
+    } else {
+      const edit = this.layout.setActiveColumnWindowHeights(
+        operation.intent.resizedWindowId,
+        columnWindowHeights(beforeColumn),
+      );
 
-    if (!previous) {
-      return false;
+      if (edit) {
+        this.layout.discardWindowHeightEditRollback(edit.rollback);
+      }
     }
 
     this.layout.setViewportOffset(

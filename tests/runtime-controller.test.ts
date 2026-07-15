@@ -28647,6 +28647,145 @@ describe("RuntimeController", () => {
     },
   );
 
+  it.each(["top", "bottom"] as const)(
+    "commits a vertical pointer resize from the %s edge after KWin releases geometry",
+    (edge) => {
+      const setup = createPointerResizeRuntimeFixture();
+      const beforeLayout = setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      );
+      const unrelatedLayout = setup.layout.snapshot(
+        outputId(setup.unrelatedOutput.name),
+        desktopId(setup.desktop.id),
+      );
+      const unrelatedState = captureTrackedWindowState([setup.unrelated]);
+      const passiveFrame = { ...setup.passive.window.frameGeometry };
+      const activeFrame = { ...setup.active.window.frameGeometry };
+      const acceptedHeight =
+        edge === "top" ? activeFrame.height + 40 : activeFrame.height - 40;
+      const acceptedFrame = pointerVerticalResizeAcceptedFrame(
+        activeFrame,
+        edge,
+        acceptedHeight,
+      );
+      const publicationCount = setup.published.length;
+      const activationCount = setup.fixture.activationCount;
+
+      beginPointerColumnResize(setup, acceptedFrame);
+
+      expect(setup.active.window.frameGeometry).toEqual(acceptedFrame);
+      expect(
+        setup.layout.snapshot(
+          outputId(setup.output.name),
+          desktopId(setup.desktop.id),
+        ),
+      ).toEqual(beforeLayout);
+      expect(setup.published).toHaveLength(publicationCount);
+
+      finishPointerColumnResize(setup);
+
+      const afterLayout = setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      );
+      expect(afterLayout).toEqual({
+        ...beforeLayout,
+        columns: beforeLayout.columns.map((column) =>
+          column.id === columnId("column:stack")
+            ? {
+                ...column,
+                windowHeights: [
+                  {
+                    kind: "auto",
+                    weight: passiveFrame.height / activeFrame.height,
+                  },
+                  { clientHeight: acceptedHeight, kind: "fixed" },
+                ],
+              }
+            : column,
+        ),
+      });
+      expect(setup.passive.window.frameGeometry).toMatchObject({
+        width: passiveFrame.width,
+        x: passiveFrame.x,
+        y: passiveFrame.y,
+      });
+      expect(setup.active.window.frameGeometry).toMatchObject({
+        height: acceptedHeight,
+        width: activeFrame.width,
+        x: activeFrame.x,
+      });
+      expect(
+        setup.active.window.frameGeometry.y +
+          setup.active.window.frameGeometry.height,
+      ).toBe(activeFrame.y + activeFrame.height);
+      expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+      expect(setup.fixture.activationCount).toBe(activationCount);
+      expect(
+        setup.layout.snapshot(
+          outputId(setup.unrelatedOutput.name),
+          desktopId(setup.desktop.id),
+        ),
+      ).toEqual(unrelatedLayout);
+      expectTrackedWindowState([setup.unrelated], unrelatedState);
+      expect(setup.published).toHaveLength(publicationCount + 1);
+    },
+  );
+
+  it("rolls back a rejected vertical pointer resize exactly", () => {
+    const setup = createPointerResizeRuntimeFixture();
+    const beforeLayout = setup.layout.snapshot(
+      outputId(setup.output.name),
+      desktopId(setup.desktop.id),
+    );
+    const passiveFrame = { ...setup.passive.window.frameGeometry };
+    const activeFrame = { ...setup.active.window.frameGeometry };
+    const publicationCount = setup.published.length;
+    const activationCount = setup.fixture.activationCount;
+    const attemptedFrames: KWinWindow["frameGeometry"][] = [];
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    beginPointerColumnResize(
+      setup,
+      pointerVerticalResizeAcceptedFrame(
+        activeFrame,
+        "top",
+        activeFrame.height + 40,
+      ),
+    );
+    setup.passive.setWriteBehavior((frame, commit) => {
+      attemptedFrames.push({ ...frame });
+
+      if (attemptedFrames.length === 1) {
+        throw new Error("vertical geometry rejected");
+      }
+
+      commit();
+    });
+
+    try {
+      finishPointerColumnResize(setup);
+    } finally {
+      setup.passive.setWriteBehavior(null);
+      warning.mockRestore();
+    }
+
+    expect(attemptedFrames).toHaveLength(2);
+    expect(attemptedFrames[1]).toEqual(passiveFrame);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(beforeLayout);
+    expect(setup.passive.window.frameGeometry).toEqual(passiveFrame);
+    expect(setup.active.window.frameGeometry).toEqual(activeFrame);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+    expect(setup.fixture.activationCount).toBe(activationCount);
+    expect(setup.published).toHaveLength(publicationCount);
+  });
+
   it("commits a stacked pointer resize after a delayed passive Wayland configure", () => {
     const setup = createPointerResizeRuntimeFixture();
     const passiveFrame = { ...setup.passive.window.frameGeometry };
@@ -29217,13 +29356,6 @@ describe("RuntimeController", () => {
     {
       name: "canceled",
       resize: (frame: KWinWindow["frameGeometry"]) => ({ ...frame }),
-    },
-    {
-      name: "vertical",
-      resize: (frame: KWinWindow["frameGeometry"]) => ({
-        ...frame,
-        height: frame.height - 40,
-      }),
     },
     {
       name: "corner",
@@ -40221,6 +40353,18 @@ function pointerResizeAcceptedFrame(
     ...before,
     width,
     x: edge === "left" ? before.x + before.width - width : before.x,
+  };
+}
+
+function pointerVerticalResizeAcceptedFrame(
+  before: KWinWindow["frameGeometry"],
+  edge: "bottom" | "top",
+  height: number,
+): KWinWindow["frameGeometry"] {
+  return {
+    ...before,
+    height,
+    y: edge === "top" ? before.y + before.height - height : before.y,
   };
 }
 

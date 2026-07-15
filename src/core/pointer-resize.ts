@@ -1,10 +1,16 @@
 import type { Rect } from "./geometry";
 
 export type PointerHorizontalResizeEdge = "left" | "right";
+export type PointerVerticalResizeEdge = "bottom" | "top";
 
 export interface PointerHorizontalResize {
   readonly edge: PointerHorizontalResizeEdge;
   readonly width: number;
+}
+
+export interface PointerVerticalResize {
+  readonly edge: PointerVerticalResizeEdge;
+  readonly height: number;
 }
 
 const GEOMETRY_EPSILON = 1e-6;
@@ -41,6 +47,41 @@ export function inferPointerHorizontalResize(
   return Object.freeze({
     edge: leftChanged ? "left" : "right",
     width: accepted.width,
+  });
+}
+
+export function inferPointerVerticalResize(
+  before: Rect,
+  accepted: Rect,
+): PointerVerticalResize | null {
+  if (!isUsableRect(before) || !isUsableRect(accepted)) {
+    return null;
+  }
+
+  const heightChanged = !nearlyEqual(before.height, accepted.height);
+  const leftUnchanged = nearlyEqual(before.x, accepted.x);
+  const rightUnchanged = nearlyEqual(
+    before.x + before.width,
+    accepted.x + accepted.width,
+  );
+
+  if (!heightChanged || !leftUnchanged || !rightUnchanged) {
+    return null;
+  }
+
+  const topChanged = !nearlyEqual(before.y, accepted.y);
+  const bottomChanged = !nearlyEqual(
+    before.y + before.height,
+    accepted.y + accepted.height,
+  );
+
+  if (topChanged === bottomChanged) {
+    return null;
+  }
+
+  return Object.freeze({
+    edge: topChanged ? "top" : "bottom",
+    height: accepted.height,
   });
 }
 

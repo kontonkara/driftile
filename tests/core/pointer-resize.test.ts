@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { Rect } from "../../src/core/geometry";
-import { inferPointerHorizontalResize } from "../../src/core/pointer-resize";
+import {
+  inferPointerHorizontalResize,
+  inferPointerVerticalResize,
+} from "../../src/core/pointer-resize";
 
 const before: Rect = { height: 400, width: 500, x: 100, y: 200 };
 
@@ -53,6 +56,40 @@ describe("inferPointerHorizontalResize", () => {
         acceptedRight(),
       ),
     ).toBeNull();
+  });
+});
+
+describe("inferPointerVerticalResize", () => {
+  it.each([
+    {
+      accepted: { ...before, height: 500 },
+      edge: "bottom",
+      height: 500,
+    },
+    {
+      accepted: { ...before, height: 500, y: 100 },
+      edge: "top",
+      height: 500,
+    },
+  ] as const)(
+    "accepts an exact $edge-edge resize",
+    ({ accepted, edge, height }) => {
+      const inferred = inferPointerVerticalResize(before, accepted);
+
+      expect(inferred).toEqual({ edge, height });
+      expect(Object.isFrozen(inferred)).toBe(true);
+    },
+  );
+
+  it.each([
+    ["cancelled", before],
+    ["horizontal", { ...before, width: 600 }],
+    ["top-left corner", { ...before, height: 500, width: 400, x: 200 }],
+    ["bottom-right corner", { ...before, height: 500, width: 600 }],
+    ["both vertical edges", { ...before, height: 600, y: 150 }],
+    ["translation", { ...before, y: 300 }],
+  ] as const)("rejects %s geometry", (_name, accepted) => {
+    expect(inferPointerVerticalResize(before, accepted)).toBeNull();
   });
 });
 
