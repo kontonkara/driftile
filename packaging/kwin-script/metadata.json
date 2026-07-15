@@ -12,7 +12,7 @@
     "Id": "io.github.kontonkara.driftile",
     "License": "GPL-3.0-or-later",
     "Name": "Driftile",
-    "Version": "1.27.0",
+    "Version": "1.28.0-dev.0",
     "Website": "https://github.com/kontonkara/driftile"
   },
   "X-KDE-ConfigModule": "kwin/effects/configs/kcm_kwin4_genericscripted",
