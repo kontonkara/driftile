@@ -270,7 +270,19 @@ in
             touchpadNavigation = lib.mkOption {
               type = lib.types.bool;
               default = false;
-              description = "Whether five-finger horizontal touchpad swipes navigate tiled columns.";
+              description = "Whether horizontal touchpad swipes navigate tiled columns.";
+            };
+
+            touchpadNavigationFingerCount = lib.mkOption {
+              type = lib.types.ints.between 3 5;
+              default = 5;
+              description = "Number of fingers required for touchpad navigation gestures.";
+            };
+
+            touchpadNaturalScroll = lib.mkOption {
+              type = lib.types.bool;
+              default = true;
+              description = "Whether touchpad navigation follows the natural scrolling direction.";
             };
 
             columnWidthPresets = lib.mkOption {
@@ -403,6 +415,8 @@ in
           Gap = cfg.settings.gap;
           ShowTabIndicator = cfg.settings.showTabIndicator;
           TouchpadNavigation = cfg.settings.touchpadNavigation;
+          TouchpadNavigationFingerCount = cfg.settings.touchpadNavigationFingerCount;
+          TouchpadNaturalScroll = cfg.settings.touchpadNaturalScroll;
           WindowHeightPresets = renderWindowHeightPresets cfg.settings.windowHeightPresets;
           WindowHeightStepPercent = cfg.settings.windowHeightStepPercent;
         };

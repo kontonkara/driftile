@@ -336,6 +336,8 @@ let
           gap = 7;
           showTabIndicator = false;
           touchpadNavigation = true;
+          touchpadNavigationFingerCount = 4;
+          touchpadNaturalScroll = false;
           windowHeightPresets = [
             30
             60
@@ -534,6 +536,10 @@ let
     { centerFocusedColumn = "true"; }
     { showTabIndicator = "true"; }
     { touchpadNavigation = "true"; }
+    { touchpadNavigationFingerCount = 2; }
+    { touchpadNavigationFingerCount = 6; }
+    { touchpadNavigationFingerCount = 4.5; }
+    { touchpadNaturalScroll = "true"; }
     { defaultColumnPresentation = "columns"; }
     { gap = -1; }
     { gap = 65; }
@@ -689,6 +695,8 @@ let
       Gap = 7;
       ShowTabIndicator = false;
       TouchpadNavigation = true;
+      TouchpadNavigationFingerCount = 4;
+      TouchpadNaturalScroll = false;
       WindowHeightPresets = "30,60,90";
       WindowHeightStepPercent = 17;
     };
@@ -710,6 +718,8 @@ let
       Gap = 16;
       ShowTabIndicator = true;
       TouchpadNavigation = false;
+      TouchpadNavigationFingerCount = 5;
+      TouchpadNaturalScroll = true;
       WindowHeightPresets = "";
       WindowHeightStepPercent = 10;
     };
@@ -754,11 +764,11 @@ assert homeManagerSettings.config.qt.kde.settings == expectedSettings;
 assert homeManagerDefaultSettings.config.qt.kde.settings == expectedDefaultSettings;
 assert
   builtins.length (builtins.attrNames expectedSettings.kwinrc."Script-io.github.kontonkara.driftile")
-  == 17;
+  == 19;
 assert
   builtins.length (
     builtins.attrNames expectedDefaultSettings.kwinrc."Script-io.github.kontonkara.driftile"
-  ) == 17;
+  ) == 19;
 assert
   builtins.length (
     lib.splitString "\n"
@@ -811,6 +821,8 @@ assert
       Gap = 8;
       ShowTabIndicator = true;
       TouchpadNavigation = false;
+      TouchpadNavigationFingerCount = 5;
+      TouchpadNaturalScroll = true;
       WindowHeightPresets = "";
       WindowHeightStepPercent = 10;
     };
