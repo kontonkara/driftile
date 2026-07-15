@@ -1125,6 +1125,7 @@ let
             && "$shortcuts" == *"driftile_switch_preset_window_height_back"* \
             && "$shortcuts" == *"driftile_reset_window_height"* \
             && "$shortcuts" == *"driftile_maximize_column"* \
+            && "$shortcuts" == *"driftile_toggle_column_tabbed_display"* \
             && "$shortcuts" == *"driftile_expand_column_to_available_width"* \
             && "$shortcuts" == *"driftile_center_column"* \
             && "$shortcuts" == *"driftile_center_visible_columns"* \
@@ -9222,8 +9223,16 @@ let
         local singleton_second_frame
         local singleton_third_frame
         local stack_first_frame
+        local stack_first_width
+        local stack_first_x
+        local stack_first_y
         local stack_second_frame
+        local stack_second_height
+        local stack_second_width
+        local stack_second_x
+        local stack_second_y
         local stack_third_frame
+        local tabbed_frame
 
         activate_window "$title_b" \
           && wait_for_active "$title_b" \
@@ -9245,6 +9254,81 @@ let
         stack_second_frame=$stable_second_frame
         stack_third_frame=$stable_third_frame
         record_focus_state "window B stacked for physical height shortcuts"
+
+        IFS=, read -r \
+          stack_first_x \
+          stack_first_y \
+          stack_first_width \
+          _ \
+          <<< "$stack_first_frame"
+        IFS=, read -r \
+          stack_second_x \
+          stack_second_y \
+          stack_second_width \
+          stack_second_height \
+          <<< "$stack_second_frame"
+
+        if ((stack_first_x != stack_second_x \
+          || stack_first_width != stack_second_width)); then
+          record_focus_state "tabbed column source frames did not align"
+          return 1
+        fi
+
+        tabbed_frame="$stack_first_x,$stack_first_y,$stack_first_width,$((
+          stack_second_y + stack_second_height - stack_first_y
+        ))"
+
+        if ! request_physical_shortcut tabbed-enter \
+          || ! wait_for_frames \
+            "$tabbed_frame" \
+            "$tabbed_frame" \
+            "$stack_third_frame" \
+          || ! wait_for_active "$title_b"; then
+          record_focus_state "physical tabbed column entry failed"
+          return 1
+        fi
+        record_focus_state "physical tabbed column entry overlaid the stack"
+
+        if ! invoke_shortcut "driftile_focus_window_up" \
+          || ! wait_for_active "$title_a" \
+          || ! invoke_shortcut "driftile_focus_window_up" \
+          || ! wait_for_active "$title_a" \
+          || ! invoke_shortcut "driftile_focus_window_down" \
+          || ! wait_for_active "$title_b" \
+          || ! invoke_shortcut "driftile_focus_window_down" \
+          || ! wait_for_active "$title_b"; then
+          record_focus_state "tabbed column focus boundaries failed"
+          return 1
+        fi
+        record_focus_state "tabbed column focus preserved both boundaries"
+
+        if ! invoke_shortcut "driftile_move_window_up" \
+          || ! wait_for_active "$title_b" \
+          || ! invoke_shortcut "driftile_focus_window_down" \
+          || ! wait_for_active "$title_a" \
+          || ! invoke_shortcut "driftile_move_window_up" \
+          || ! wait_for_active "$title_a" \
+          || ! invoke_shortcut "driftile_focus_window_down" \
+          || ! wait_for_active "$title_b" \
+          || ! wait_for_frames \
+            "$tabbed_frame" \
+            "$tabbed_frame" \
+            "$stack_third_frame"; then
+          record_focus_state "tabbed column reorder round trip failed"
+          return 1
+        fi
+        record_focus_state "tabbed column reorder restored the stack order"
+
+        if ! request_physical_shortcut tabbed-exit \
+          || ! wait_for_frames \
+            "$stack_first_frame" \
+            "$stack_second_frame" \
+            "$stack_third_frame" \
+          || ! wait_for_active "$title_b"; then
+          record_focus_state "physical tabbed column exit failed"
+          return 1
+        fi
+        record_focus_state "physical tabbed column exit restored stack heights"
 
         if ! invoke_shortcut "driftile_decrease_window_height" \
           || ! wait_for_stacked_height_relation \

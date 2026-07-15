@@ -222,6 +222,8 @@ monitor_guest() {
     [stacked-m-exit]=false
     [stacked-shift-f-enter]=false
     [stacked-shift-f-exit]=false
+    [tabbed-enter]=false
+    [tabbed-exit]=false
   )
   local -A pointer_drags_sent=(
     [cross-column]=false
@@ -281,6 +283,8 @@ monitor_guest() {
       stacked-m-exit \
       stacked-shift-f-enter \
       stacked-shift-f-exit \
+      tabbed-enter \
+      tabbed-exit \
       shift-f-enter \
       shift-f-exit \
       m-enter \
@@ -1263,6 +1267,9 @@ send_physical_shortcut() {
       ;;
     preset-back-wrap)
       input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"shift"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"r"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"r"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"shift"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
+      ;;
+    tabbed-enter|tabbed-exit)
+      input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"w"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"w"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
       ;;
     floating-left)
       input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"h"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"h"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
