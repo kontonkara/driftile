@@ -115,6 +115,11 @@ bottom members. A local candidate is always attempted first. Rejected or
 blocked candidates stop the command instead of activating its fallback.
 Floating traversal remains geometric and layer-local.
 
+Nine unbound direct selectors address the first through ninth visible member of
+the active tiled column. Indexing is one-based, skips minimized members, and
+clamps to the last visible member. Tabbed selection commits only after KWin
+accepts focus; rejection restores the previous tab.
+
 The existing center-column action is contextual. With an active manually
 floating window, it centers each non-oversized dimension at the exact logical
 midpoint of the assigned output and desktop work area; an oversized dimension

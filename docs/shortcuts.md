@@ -125,6 +125,12 @@ Fallback happens only after reaching a visible boundary. A rejected or blocked
 target remains a no-op. Floating windows use their frame centers for vertical
 edges, stay in the floating layer, and never fall through to a tiled column.
 
+`driftile_focus_window_in_column_1` through
+`driftile_focus_window_in_column_9` are unbound direct selectors. Their
+one-based index counts non-minimized members of the active tiled column. An
+index past the end selects the last visible member. Floating focus, the already
+selected member, and blocked or rejected targets are no-ops.
+
 The four preset actions retain the IDs
 `driftile_switch_preset_column_width`,
 `driftile_switch_preset_column_width_back`,

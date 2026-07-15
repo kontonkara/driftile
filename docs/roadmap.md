@@ -1387,6 +1387,11 @@ traversal uses frame geometry and remains in its own layer. A blocked or
 rejected local target never activates the fallback, and existing default
 bindings remain unchanged.
 
+Nine unbound direct selectors focus a one-based visible member of the active
+tiled column. Minimized members do not consume an index, an oversized index
+clamps to the last visible member, and tabbed selection rolls back when KWin
+rejects focus. Floating and already-selected targets remain no-ops.
+
 ## Post-v1
 
 Add interaction and presentation features outside the frozen v1 scope without
