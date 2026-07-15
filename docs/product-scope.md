@@ -15,8 +15,9 @@ The ownership rule is strict:
 - One horizontal strip of columns per `(output, desktop)` context.
 - Deterministic window insertion, ordering, focus, movement, resizing, and scrolling.
 - Live same-context pointer-drop feedback with finish-only reinsertion, plus
-  adoption at one exact visible tiled target after KWin moves the active tiled
-  window to a selected desktop or another visible output.
+  exact-window-first adoption into a window or empty destination gutter after
+  KWin moves the active tiled window to a selected desktop or another visible
+  output.
 - Finish-only horizontal pointer-resize adoption for the active tiled column.
 - Vertical window stacks and tabbed presentation within columns.
 - One selected member per column; tabbed members share one frame while the
@@ -29,8 +30,8 @@ The ownership rule is strict:
   matching tiled, floating, dialog, transient, and utility windows under their
   existing decoration policy.
 - Live global tiled-window gap from 0 to 64 logical pixels without changing layout state.
-- Configurable 10%–100% default width for newly admitted columns, fresh
-  cross-context retiles, and contextual tiled or manual-floating reset.
+- Configurable 10%–100% default width for newly admitted columns, ordinary
+  fresh cross-context retiles, and contextual tiled or manual-floating reset.
 - Up to 128 application-specific 10%–100% initial singleton widths, matched by
   exact KWin `desktopFileName` with global-default fallback and live constraint
   clamping.
@@ -466,12 +467,19 @@ Driftile must integrate with, not duplicate:
   or global initial presentation. Passive source state is preserved and the
   viewport follows the existing active-column reveal rules. Invalid, ambiguous,
   or ineffective intent leaves the original layout unchanged.
-- Empty-gutter column targeting does not cross outputs or desktops. Existing
-  cross-context adoption remains limited to one exact visible tiled window
-  after KWin completes the move.
-- After KWin moves an active normal tiled window to another visible output, Driftile may adopt that move by inserting it before or after the tiled window under the cursor. The target midpoint selects the position, the destination column width is retained, and the moved window adopts automatic height. KWin remains the sole owner of physical output and desktop movement. An empty, invalidated, ambiguous, or raced target falls back to ordinary destination admission as a singleton instead of reversing KWin's move.
-- After KWin selects another visible desktop on the same output and moves the active normal tiled window there, Driftile may adopt it on release over exactly one tiled target in that selected desktop. The target midpoint selects before or after, the destination width is retained, and the moved window adopts automatic height. A pending destination receives bounded settlement probes; an unavailable, invalidated, ambiguous, stale, or raced target keeps KWin's move and uses singleton admission. The hidden source receives no geometry writes.
-- Cross-desktop pointer adoption adds no visual feedback, setting, shortcut action, binding, or persistence-schema field.
+- After KWin moves an active normal tiled window to another visible output or
+  another selected desktop, Driftile may adopt one exact tiled-window target or one
+  empty horizontal gutter. Exact-window targets have priority, use vertical
+  midpoint stack insertion, and retain the destination width. A gutter creates
+  a separate singleton at that boundary with source width, automatic height,
+  and the current application or global initial presentation.
+- Cross-context targeting remains finish-only without live feedback. KWin is
+  the sole owner of output, desktop selection, and membership changes. A
+  pending destination receives bounded probes; an empty, invalidated,
+  ambiguous, stale, or raced target keeps KWin's move and uses ordinary
+  singleton admission. The hidden source receives no geometry writes.
+- Cross-context pointer adoption adds no setting, shortcut action, binding,
+  persistence-schema field, KWin API, or private API.
 - Direct insertion appends the active window to the nearest existing stack in its direction, skips singleton columns as nonparticipants without wrapping, and preserves the target width.
 - Direct insertion may cross settled minimized passive peers in the participating source and target columns, including a fully minimized target stack. Those peers retain logical order, height state, minimized state, and externally changed frames without geometry writes. Fullscreen, maximized, native-tiled, restore- or toggle-settling, and other blockers in either participating column fail closed; a state round trip during reflow cancels and rolls back the edit.
 - With one active relation-free manually floating window, the same unbound
@@ -560,7 +568,7 @@ Driftile must integrate with, not duplicate:
   writes, and do not change focus, layout state, or layout persistence. Global
   disable and unload remain ownership-safe.
 - A live gap change reflows visible tiled contexts only. It preserves logical order, widths, height policies, focus, floating frames, excluded windows, and minimized frames; hidden contexts adopt it when shown.
-- A default-width change leaves existing column width policies unchanged. Newly admitted columns, fresh cross-context retiles, and explicit reset use the new proportion subject to live window constraints. Retrying a waiting admission may add a column and update the affected viewport and frames; otherwise the policy change performs no frame writes.
+- A default-width change leaves existing column width policies unchanged. Newly admitted columns, ordinary fresh cross-context retiles, and explicit reset use the new proportion subject to live window constraints. A cross-context pointer gutter extraction keeps its source width. Retrying a waiting admission may add a column and update the affected viewport and frames; otherwise the policy change performs no frame writes.
 - Application-width rules use one exact, case-sensitive `desktopFileName` entry
   per line and allow 10%–100%; more than 128 entries reject the complete
   setting. Only newly created or freshly admitted singleton columns consult the

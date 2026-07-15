@@ -194,20 +194,22 @@ immutable layout snapshot is not rewritten. KWin exposes one shared outline
 without an ownership token, so Driftile checks it before target changes and
 cleanup, then disables feedback for the drag if another outline conflicts. The
 coexistence check is necessarily best-effort. Empty-gutter drops across outputs
-or desktops are unsupported; existing cross-context adoption still requires an
-exact visible window and remains finish-only without a preview.
+or desktops remain finish-only without a preview.
 
 KWin owns desktop selection and window membership. After KWin moves the active
-window to a selected visible desktop on the same output, Driftile can adopt it
-before or after the exact tiled target under the release point. A pending
-destination settles through bounded probes. The hidden source receives no
-geometry writes. An unavailable, invalidated, ambiguous, stale, or raced target
-keeps KWin's move and uses ordinary singleton admission.
+window to a selected visible desktop on the same output, Driftile first checks
+for one exact tiled target under the release point, then an empty horizontal
+gutter. An exact target retains destination-column stack behavior and width. A
+gutter creates a separate singleton with the source width, automatic height,
+and current application or global initial presentation. A pending destination
+settles through bounded probes. The hidden source receives no geometry writes.
+An unavailable, invalidated, ambiguous, stale, or raced target keeps KWin's move
+and uses ordinary singleton admission.
 
-Cross-output behavior is unchanged: KWin owns physical output and any required
-desktop movement, and Driftile adopts only when the cursor still identifies one
-valid destination target. An empty, invalidated, ambiguous, or raced target
-uses ordinary destination admission rather than moving the window back.
+The same target priority and column semantics apply after KWin moves the window
+to another visible output. KWin remains the sole owner of physical output and
+any required desktop movement. A failed target uses ordinary destination
+admission rather than moving the window back.
 
 Finish-only horizontal resize adoption starts with the active normal tiled
 window in one settled visible context. KWin owns the interactive-resize lease,

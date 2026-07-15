@@ -139,6 +139,13 @@ export interface WindowTransferInsertionTarget extends WindowReinsertionTarget {
   readonly outputId: OutputId;
 }
 
+export interface WindowTransferColumnInsertionTarget extends ColumnReinsertionTarget {
+  readonly columnId: ColumnId;
+  readonly desktopId: DesktopId;
+  readonly outputId: OutputId;
+  readonly presentation?: ColumnPresentation;
+}
+
 export interface ColumnTransferTarget {
   readonly columnId: ColumnId;
   readonly desktopId: DesktopId;
@@ -1849,6 +1856,148 @@ export class LayoutEngine {
     );
   }
 
+  previewWindowTransferToColumnBoundary(
+    windowId: WindowId,
+    target: WindowTransferColumnInsertionTarget,
+  ): WindowTransferPreview | null {
+    if (!validWindowTransferColumnInsertionTarget(target)) {
+      return null;
+    }
+
+    const sourcePlacement = this.placements.get(windowId);
+    const targetKey = contextKey(target.outputId, target.desktopId);
+
+    if (!sourcePlacement || sourcePlacement.contextKey === targetKey) {
+      return null;
+    }
+
+    const source = this.contexts.get(sourcePlacement.contextKey);
+    const destination = this.contexts.get(targetKey);
+
+    if (
+      !source ||
+      !destination ||
+      source.activeColumnId !== sourcePlacement.columnId
+    ) {
+      return null;
+    }
+
+    const sourceBefore = immutableContextSnapshot(
+      this.snapshot(source.outputId, source.desktopId),
+    );
+    const targetBefore = immutableContextSnapshot(
+      this.snapshot(destination.outputId, destination.desktopId),
+    );
+    const sourceColumnIndex = sourceBefore.columns.findIndex(
+      (column) => column.id === sourcePlacement.columnId,
+    );
+    const sourceColumn = sourceBefore.columns[sourceColumnIndex];
+    const sourceMemberIndex = sourceColumn?.windowIds.indexOf(windowId) ?? -1;
+    const targetColumnIndex = targetBefore.columns.findIndex(
+      (column) => column.id === target.targetColumnId,
+    );
+
+    if (
+      sourceMemberIndex < 0 ||
+      targetColumnIndex < 0 ||
+      !sourceColumn ||
+      targetBefore.columns.some(
+        (column) =>
+          column.id === target.columnId || column.windowIds.includes(windowId),
+      ) ||
+      !validContextSnapshot(sourceBefore) ||
+      !validContextSnapshot(targetBefore) ||
+      !this.placementsMatchSnapshot(sourceBefore) ||
+      !this.placementsMatchSnapshot(targetBefore)
+    ) {
+      return null;
+    }
+
+    const sourceColumns: LayoutColumnSnapshot[] = [];
+
+    for (const [index, column] of sourceBefore.columns.entries()) {
+      if (index !== sourceColumnIndex) {
+        sourceColumns.push(column);
+        continue;
+      }
+
+      const windowIds = [...column.windowIds];
+      windowIds.splice(sourceMemberIndex, 1);
+
+      if (windowIds.length === 0) {
+        continue;
+      }
+
+      const windowHeights = withoutSnapshotWindowHeight(
+        column,
+        sourceMemberIndex,
+      );
+      sourceColumns.push({
+        id: column.id,
+        presentation: column.presentation,
+        selectedWindowId: selectedWindowAfterSnapshotRemoval(
+          column,
+          sourceMemberIndex,
+        ),
+        width: column.width,
+        ...(windowHeights ? { windowHeights } : {}),
+        windowIds,
+      });
+    }
+
+    const sourceColumnRemoved = sourceColumn.windowIds.length === 1;
+    const sourceAfter = immutableContextSnapshot({
+      activeColumnId: sourceColumnRemoved
+        ? (sourceBefore.columns[sourceColumnIndex + 1]?.id ??
+          sourceBefore.columns[sourceColumnIndex - 1]?.id ??
+          null)
+        : sourceBefore.activeColumnId,
+      columns: sourceColumns,
+      desktopId: sourceBefore.desktopId,
+      outputId: sourceBefore.outputId,
+      viewportOffset:
+        sourceColumns.length === 0 ? 0 : sourceBefore.viewportOffset,
+    });
+    const targetColumns = [...targetBefore.columns];
+    const targetInsertionIndex =
+      targetColumnIndex + (target.position === "after" ? 1 : 0);
+    targetColumns.splice(targetInsertionIndex, 0, {
+      id: target.columnId,
+      presentation: target.presentation ?? "stacked",
+      selectedWindowId: windowId,
+      width: sourceColumn.width,
+      windowIds: [windowId],
+    });
+    const targetAfter = immutableContextSnapshot({
+      activeColumnId: target.columnId,
+      columns: targetColumns,
+      desktopId: targetBefore.desktopId,
+      outputId: targetBefore.outputId,
+      viewportOffset: targetBefore.viewportOffset,
+    });
+
+    if (
+      !validTransferContextSnapshot(sourceAfter) ||
+      !validContextSnapshot(targetAfter) ||
+      !sameWindowSetAcrossContexts(
+        sourceBefore,
+        targetBefore,
+        sourceAfter,
+        targetAfter,
+      )
+    ) {
+      return null;
+    }
+
+    return this.createWindowTransferPreview(
+      windowId,
+      sourceBefore,
+      sourceAfter,
+      targetBefore,
+      targetAfter,
+    );
+  }
+
   commitWindowTransfer(preview: WindowTransferPreview): boolean {
     const state = this.windowTransferPreviews.get(preview);
 
@@ -3207,6 +3356,20 @@ function validWindowTransferInsertionTarget(
     validWindowReinsertionTarget(target) &&
     typeof target["desktopId"] === "string" &&
     typeof target["outputId"] === "string"
+  );
+}
+
+function validWindowTransferColumnInsertionTarget(
+  target: unknown,
+): target is WindowTransferColumnInsertionTarget {
+  return (
+    isRecord(target) &&
+    validColumnReinsertionTarget(target) &&
+    typeof target["columnId"] === "string" &&
+    typeof target["desktopId"] === "string" &&
+    typeof target["outputId"] === "string" &&
+    (target["presentation"] === undefined ||
+      validColumnPresentation(target["presentation"]))
   );
 }
 

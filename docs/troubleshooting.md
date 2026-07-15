@@ -84,9 +84,14 @@ tiling state.
 
 A drop over an exact window uses stack insertion or reorder behavior. To keep
 the dragged window separate, release it in an empty horizontal gutter before,
-between, or after visible columns in the same output and desktop. Empty-gutter
-drops do not cross outputs or desktops, and moving a singleton onto its current
-adjacent boundary is intentionally a no-op.
+between, or after visible columns. Within one output and desktop, moving a
+singleton onto its current adjacent boundary is intentionally a no-op.
+
+Across outputs or desktops, KWin must first complete the move into the selected
+visible destination. Gutter targeting is evaluated only on release, so no
+gutter outline is shown there. If the destination is still settling or the
+boundary becomes invalid, Driftile keeps KWin's move and admits the window as
+an ordinary singleton instead.
 
 ## A window keeps or loses KWin decorations unexpectedly
 

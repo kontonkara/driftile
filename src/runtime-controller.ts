@@ -101,9 +101,12 @@ import { diffWindowGeometries } from "./core/reconcile";
 import {
   planPointerColumnDrop,
   planPointerColumnDropPreview,
+  planPointerExternalColumnDrop,
   planPointerExternalWindowDrop,
   planPointerWindowDrop,
   planPointerWindowDropPreview,
+  type PointerExternalColumnDropTarget,
+  type PointerExternalWindowDropTarget,
   type PointerWindowDropTarget,
 } from "./core/pointer-reinsertion";
 import {
@@ -442,8 +445,18 @@ interface PointerExternalReadyInsertionIntent {
   readonly participants: readonly PointerMoveParticipant[];
   readonly runtimeContext: RuntimeContext;
   readonly state: "ready";
-  readonly target: PointerWindowDropTarget;
+  readonly target: PointerExternalInsertionTarget;
 }
+
+type PointerExternalInsertionTarget =
+  | {
+      readonly kind: "column";
+      readonly value: PointerExternalColumnDropTarget;
+    }
+  | {
+      readonly kind: "window";
+      readonly value: PointerExternalWindowDropTarget;
+    };
 
 interface PointerExternalSettledContext {
   readonly contextGeometry: ContextGeometry;
@@ -4397,7 +4410,7 @@ export class RuntimeController {
       return { state: "unavailable" };
     }
 
-    const target = planPointerExternalWindowDrop({
+    const target = this.planExternalPointerInsertionTarget({
       context: layout,
       cursor,
       draggedWindowId: intent.draggedWindowId,
@@ -4417,6 +4430,40 @@ export class RuntimeController {
       state: "ready",
       target,
     };
+  }
+
+  private planExternalPointerInsertionTarget(input: {
+    readonly context: LayoutContextSnapshot;
+    readonly cursor: Point;
+    readonly draggedWindowId: WindowId;
+    readonly visibleArea: Rect;
+    readonly windows: readonly WindowGeometry[];
+  }): PointerExternalInsertionTarget | null {
+    const windowTarget = planPointerExternalWindowDrop(input);
+
+    if (windowTarget) {
+      return { kind: "window", value: windowTarget };
+    }
+
+    const columnTarget = planPointerExternalColumnDrop(input);
+    return columnTarget ? { kind: "column", value: columnTarget } : null;
+  }
+
+  private pointerExternalInsertionTargetsEqual(
+    captured: PointerExternalInsertionTarget,
+    current: PointerExternalInsertionTarget,
+  ): boolean {
+    if (captured.kind !== current.kind) {
+      return false;
+    }
+
+    return captured.kind === "window" && current.kind === "window"
+      ? captured.value.position === current.value.position &&
+          captured.value.targetWindowId === current.value.targetWindowId
+      : captured.kind === "column" &&
+          current.kind === "column" &&
+          captured.value.position === current.value.position &&
+          captured.value.targetColumnId === current.value.targetColumnId;
   }
 
   private settledExternalPointerContext(
@@ -15644,7 +15691,7 @@ export class RuntimeController {
       return reject();
     }
 
-    const currentTarget = planPointerExternalWindowDrop({
+    const currentTarget = this.planExternalPointerInsertionTarget({
       context: insertion.layout,
       cursor: intent.finalCursor,
       draggedWindowId: id,
@@ -15654,8 +15701,10 @@ export class RuntimeController {
 
     if (
       !currentTarget ||
-      currentTarget.position !== insertion.target.position ||
-      currentTarget.targetWindowId !== insertion.target.targetWindowId
+      !this.pointerExternalInsertionTargetsEqual(
+        insertion.target,
+        currentTarget,
+      )
     ) {
       return reject();
     }
@@ -15668,11 +15717,20 @@ export class RuntimeController {
       return reject();
     }
 
-    const previewValue = this.layout.previewWindowTransferToWindow(id, {
-      desktopId: external.context.desktopId,
-      outputId: external.context.outputId,
-      ...insertion.target,
-    });
+    const previewValue =
+      insertion.target.kind === "window"
+        ? this.layout.previewWindowTransferToWindow(id, {
+            desktopId: external.context.desktopId,
+            outputId: external.context.outputId,
+            ...insertion.target.value,
+          })
+        : this.layout.previewWindowTransferToColumnBoundary(id, {
+            columnId: this.freshTransferColumnId(id, insertion.layout),
+            desktopId: external.context.desktopId,
+            outputId: external.context.outputId,
+            presentation: this.initialColumnPresentation(source),
+            ...insertion.target.value,
+          });
 
     if (!previewValue) {
       return reject();

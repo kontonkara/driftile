@@ -159,6 +159,10 @@ fresh cross-context retiles, and the contextual **Reset column width** action.
 Structural splits and extractions inherit their source width. The default is
 `50%`; the range is `10%`–`100%`.
 
+A cross-context pointer drop into an empty column gutter is a structural
+extraction and keeps the source width. Ordinary destination fallback is a fresh
+singleton admission and reads the current application or global width policy.
+
 Changing it does not alter existing width policies or floating frames. The next
 explicit reset applies it to the active tiled column or one relation-free
 manually floating window; application-specific initial widths do not override

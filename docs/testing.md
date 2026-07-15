@@ -312,6 +312,13 @@ SHA passes the existing mixed Konsole, Firefox, KCalc, and XWayland pool plus
 the physical pointer and shortcut baseline. It did not physically exercise the
 new gutter target, and no visible VM was run.
 
+The 1.31.0 development slice adds destination-only gutter planning for
+before, between, and after boundaries; one atomic cross-context stack-member
+transfer into a fresh singleton; and focused runtime cases for cross-output,
+cross-desktop, and invalidated-boundary fallback. Exact-window priority and the
+existing signal-order matrix remain covered by their prior cases. The slice
+adds no backend, application, integration, or VM scenario.
+
 Cross-desktop unit cases cover the 2x2 matrix of output-local or global desktop
 resolution and membership-before-finish or finish-before-membership event
 order. They verify bounded pending-destination settlement, fallback when the

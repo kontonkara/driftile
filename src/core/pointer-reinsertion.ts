@@ -31,6 +31,16 @@ export interface PointerExternalWindowDropInput {
 
 export type PointerExternalWindowDropTarget = WindowReinsertionTarget;
 
+export interface PointerExternalColumnDropInput {
+  readonly context: LayoutContextSnapshot;
+  readonly cursor: Point;
+  readonly draggedWindowId: WindowId;
+  readonly visibleArea: Rect;
+  readonly windows: readonly WindowGeometry[];
+}
+
+export type PointerExternalColumnDropTarget = ColumnReinsertionTarget;
+
 export interface PointerColumnDropInput {
   readonly context: LayoutContextSnapshot;
   readonly cursor: Point;
@@ -73,6 +83,12 @@ interface ColumnGeometrySnapshot {
   readonly bottom: number;
   readonly sourceColumnIndex: number;
   readonly sourceIsSingleton: boolean;
+  readonly spans: readonly ColumnGeometrySpan[];
+  readonly top: number;
+}
+
+interface ColumnSpanGeometrySnapshot {
+  readonly bottom: number;
   readonly spans: readonly ColumnGeometrySpan[];
   readonly top: number;
 }
@@ -198,6 +214,42 @@ export function planPointerColumnDrop(
   return planPointerColumnDropMatch(input)?.target ?? null;
 }
 
+export function planPointerExternalColumnDrop(
+  input: PointerExternalColumnDropInput,
+): PointerExternalColumnDropTarget | null {
+  if (
+    !isRecord(input) ||
+    typeof input.draggedWindowId !== "string" ||
+    !isFinitePoint(input.cursor) ||
+    !isUsableRect(input.visibleArea) ||
+    !Array.isArray(input.windows) ||
+    !containsPoint(input.visibleArea, input.cursor)
+  ) {
+    return null;
+  }
+
+  const placements = contextWindowPlacements(input.context);
+
+  if (!placements || placements.has(input.draggedWindowId)) {
+    return null;
+  }
+
+  const geometry = snapshotColumnSpanGeometry(
+    input.context,
+    placements,
+    input.windows,
+  );
+
+  if (!geometry) {
+    return null;
+  }
+
+  return (
+    pointerColumnGapMatch(geometry.spans, input.cursor.x, input.visibleArea)
+      ?.target ?? null
+  );
+}
+
 export function planPointerColumnDropPreview(
   input: PointerColumnDropInput,
 ): PointerColumnDropPreview | null {
@@ -280,6 +332,34 @@ function snapshotColumnGeometry(
   placements: ReadonlyMap<WindowId, ContextWindowPlacement>,
   windows: readonly WindowGeometry[],
 ): ColumnGeometrySnapshot | null {
+  const geometry = snapshotColumnSpanGeometry(context, placements, windows);
+  const sourcePlacement = placements.get(draggedWindowId);
+
+  if (!geometry || !sourcePlacement) {
+    return null;
+  }
+
+  const sourceColumnIndex = geometry.spans.findIndex(
+    (span) => span.columnId === sourcePlacement.columnId,
+  );
+  const sourceColumn = context.columns[sourceColumnIndex];
+
+  if (sourceColumnIndex < 0 || !sourceColumn) {
+    return null;
+  }
+
+  return {
+    ...geometry,
+    sourceColumnIndex,
+    sourceIsSingleton: sourceColumn.windowIds.length === 1,
+  };
+}
+
+function snapshotColumnSpanGeometry(
+  context: LayoutContextSnapshot,
+  placements: ReadonlyMap<WindowId, ContextWindowPlacement>,
+  windows: readonly WindowGeometry[],
+): ColumnSpanGeometrySnapshot | null {
   const geometries = new Map<WindowId, WindowGeometrySnapshot>();
   let top = Number.POSITIVE_INFINITY;
   let bottom = Number.NEGATIVE_INFINITY;
@@ -308,10 +388,8 @@ function snapshotColumnGeometry(
 
   const spans: ColumnGeometrySpan[] = [];
   let previousRight = Number.NEGATIVE_INFINITY;
-  let sourceColumnIndex = -1;
-  let sourceIsSingleton = false;
 
-  for (const [columnIndex, column] of context.columns.entries()) {
+  for (const column of context.columns) {
     const firstWindowId = column.windowIds[0];
     const firstGeometry =
       firstWindowId === undefined ? undefined : geometries.get(firstWindowId);
@@ -341,26 +419,14 @@ function snapshotColumnGeometry(
 
     spans.push({ columnId: column.id, left, right });
     previousRight = right;
-
-    if (column.windowIds.includes(draggedWindowId)) {
-      sourceColumnIndex = columnIndex;
-      sourceIsSingleton = column.windowIds.length === 1;
-    }
   }
 
-  if (
-    sourceColumnIndex < 0 ||
-    !Number.isFinite(top) ||
-    !Number.isFinite(bottom) ||
-    !(bottom > top)
-  ) {
+  if (!Number.isFinite(top) || !Number.isFinite(bottom) || !(bottom > top)) {
     return null;
   }
 
   return {
     bottom,
-    sourceColumnIndex,
-    sourceIsSingleton,
     spans,
     top,
   };

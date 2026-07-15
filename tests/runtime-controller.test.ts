@@ -27900,6 +27900,43 @@ describe("RuntimeController", () => {
     },
   );
 
+  it("adopts a cross-output pointer drop into the destination gutter", () => {
+    const setup = createExternalPointerDropRuntimeFixture({
+      defaultColumnPresentation: "tabbed",
+    });
+    const publicationCount = setup.published.length;
+
+    beginExternalPointerGutterDrop(setup);
+    finishExternalPointerDrop(setup, "output-before-finish");
+
+    expect(
+      testLayoutColumns(setup.controller, setup.sourceOutput, setup.desktop),
+    ).toEqual([]);
+    const targetSnapshot = runtimeLayout(setup.controller).snapshot(
+      outputId(setup.targetOutput.name),
+      desktopId(setup.desktop.id),
+    );
+    const insertedColumn = targetSnapshot.columns.find((column) =>
+      column.windowIds.includes(windowId("dragged")),
+    );
+
+    expect(targetSnapshot.columns.map((column) => column.windowIds)).toEqual([
+      [windowId("target")],
+      [windowId("dragged")],
+    ]);
+    expect(targetSnapshot.activeColumnId).toBe(insertedColumn?.id);
+    expect(insertedColumn?.width).toEqual({ kind: "proportion", value: 0.5 });
+    expect(insertedColumn?.presentation).toBe("tabbed");
+    expect(insertedColumn && columnWindowHeights(insertedColumn)).toEqual([
+      { kind: "auto", weight: 1 },
+    ]);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.dragged.window);
+    expect(setup.fixture.outputTransferCount).toBe(0);
+    expect(setup.dragged.desktopWriteCount).toBe(0);
+    expect(setup.fixture.desktopSwitchCount).toBe(0);
+    expect(setup.published).toHaveLength(publicationCount + 1);
+  });
+
   it.each([
     {
       eventOrder: "membership-before-finish" as const,
@@ -28030,6 +28067,92 @@ describe("RuntimeController", () => {
       );
     },
   );
+
+  it("adopts a cross-desktop pointer drop into the destination gutter", () => {
+    const setup = createExternalPointerDropRuntimeFixture({
+      defaultColumnPresentation: "tabbed",
+      sameOutputCrossDesktop: true,
+    });
+    const isolatedWindows = requiredExternalPointerIsolationWindows(setup);
+    const isolationBaseline = captureTrackedWindowState(isolatedWindows);
+    const publicationCount = setup.published.length;
+
+    beginExternalPointerGutterDrop(setup);
+    finishCrossDesktopPointerDrop(setup, "membership-before-finish");
+
+    const sourceSnapshot = runtimeLayout(setup.controller).snapshot(
+      outputId(setup.sourceOutput.name),
+      desktopId(setup.sourceDesktop.id),
+    );
+    const targetSnapshot = runtimeLayout(setup.controller).snapshot(
+      outputId(setup.targetOutput.name),
+      desktopId(setup.targetDesktop.id),
+    );
+    const insertedColumn = targetSnapshot.columns.find((column) =>
+      column.windowIds.includes(windowId("dragged")),
+    );
+
+    expect(sourceSnapshot.columns.map((column) => column.windowIds)).toEqual([
+      [windowId("source")],
+    ]);
+    expect(targetSnapshot.columns.map((column) => column.windowIds)).toEqual([
+      [windowId("target")],
+      [windowId("dragged")],
+    ]);
+    expect(targetSnapshot.activeColumnId).toBe(insertedColumn?.id);
+    expect(insertedColumn?.width).toEqual({ kind: "proportion", value: 0.5 });
+    expect(insertedColumn?.presentation).toBe("tabbed");
+    expect(insertedColumn && columnWindowHeights(insertedColumn)).toEqual([
+      { kind: "auto", weight: 1 },
+    ]);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.dragged.window);
+    expect(setup.published).toHaveLength(publicationCount + 1);
+    expectExternalPointerMechanismsUntouched(
+      setup,
+      isolatedWindows,
+      isolationBaseline,
+    );
+  });
+
+  it("falls back when a captured external gutter boundary becomes stale", () => {
+    const setup = createExternalPointerDropRuntimeFixture({
+      sameOutputCrossDesktop: true,
+    });
+    const isolatedWindows = requiredExternalPointerIsolationWindows(setup);
+    const isolationBaseline = captureTrackedWindowState(isolatedWindows);
+
+    beginExternalPointerGutterDrop(setup);
+    showExternalPointerTargetDesktop(setup);
+    finishExternalPointerMovement(setup);
+    expect(
+      runtimeLayout(setup.controller).setActiveColumnWidth(windowId("target"), {
+        kind: "fixed",
+        value: 420,
+      }),
+    ).toEqual({ kind: "fixed", value: 360 });
+    const publicationCount = setup.published.length;
+
+    moveExternalPointerWindowToTargetDesktop(setup);
+    flushManualScheduler(setup.scheduler);
+
+    expectExternalPointerSingletonFallback(setup);
+    expect(
+      runtimeLayout(setup.controller)
+        .snapshot(
+          outputId(setup.targetOutput.name),
+          desktopId(setup.targetDesktop.id),
+        )
+        .columns.find((column) => column.id === columnId("column:target"))
+        ?.width,
+    ).toEqual({ kind: "fixed", value: 420 });
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.dragged.window);
+    expect(setup.published).toHaveLength(publicationCount + 1);
+    expectExternalPointerMechanismsUntouched(
+      setup,
+      isolatedWindows,
+      isolationBaseline,
+    );
+  });
 
   it("falls back to singleton admission when a cross-desktop destination is invalidated", () => {
     const setup = createExternalPointerDropRuntimeFixture({
@@ -38922,6 +39045,7 @@ interface ExternalPointerDropRuntimeFixture {
 
 function createExternalPointerDropRuntimeFixture(
   options: {
+    readonly defaultColumnPresentation?: "stacked" | "tabbed";
     readonly differentDesktop?: boolean;
     readonly perOutputDesktops?: boolean;
     readonly resumeSchedulingFails?: boolean;
@@ -38982,6 +39106,9 @@ function createExternalPointerDropRuntimeFixture(
   const published: string[] = [];
   const controller = new RuntimeController(fixture.workspace, {
     clientAreaOption: 2,
+    ...(options.defaultColumnPresentation
+      ? { defaultColumnPresentation: options.defaultColumnPresentation }
+      : {}),
     gap: 10,
     onLayoutStateChanged: (document) => published.push(document),
     schedule: scheduler.schedule,
@@ -39167,6 +39294,28 @@ function beginExternalPointerDrop(
     y:
       targetFrame.y +
       targetFrame.height * (position === "before" ? 0.25 : 0.75),
+  };
+  setup.dragged.setFrameGeometry({
+    ...setup.dragged.window.frameGeometry,
+    x: cursor.x - setup.dragged.window.frameGeometry.width / 2,
+    y: cursor.y - setup.dragged.window.frameGeometry.height / 2,
+  });
+  setup.fixture.setCursorPosition(cursor.x, cursor.y);
+}
+
+function beginExternalPointerGutterDrop(
+  setup: ExternalPointerDropRuntimeFixture,
+): void {
+  Object.defineProperty(setup.dragged.window, "move", {
+    configurable: true,
+    value: true,
+  });
+  setup.dragged.moveResizedChanged.emit();
+  setup.dragged.interactiveMoveResizeStarted.emit();
+  const targetFrame = setup.target.window.frameGeometry;
+  const cursor = {
+    x: targetFrame.x + targetFrame.width + 5,
+    y: targetFrame.y + targetFrame.height / 2,
   };
   setup.dragged.setFrameGeometry({
     ...setup.dragged.window.frameGeometry,

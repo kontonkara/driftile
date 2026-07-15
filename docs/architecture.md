@@ -121,13 +121,18 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   and plans the committed drop from the final cursor position only after
   geometry authority stabilizes. An exact-window target keeps stack insertion;
   an empty horizontal gutter before, between, or after visible columns selects
-  a column boundary. Gutter targeting never crosses a context. A completed
-  KWin-owned move to another visible output may still be adopted into one exact
-  tiled window; stale or absent targets use ordinary destination admission.
+  a column boundary.
+- After a completed KWin-owned move to another visible output, resolves the
+  final destination without live feedback: one exact tiled window has priority,
+  then one empty horizontal gutter. An exact target retains destination width;
+  a gutter creates a source-width singleton with automatic height and current
+  initial presentation. Stale or absent targets use ordinary destination
+  admission.
 - Reuses that finish-only transaction after KWin selects another desktop on the
-  same output and changes the window membership. It probes only a pending
-  visible destination, leaves the hidden source geometry untouched, and falls
-  back to singleton admission when the target is unavailable or invalidated.
+  same output and changes the window membership, with the same exact-first
+  window-or-gutter resolution. It probes only a pending visible destination,
+  leaves the hidden source geometry untouched, and falls back to singleton
+  admission when the target is unavailable or invalidated.
 - Adds no visual layer, setting, shortcut action, binding, or persistence field
   for cross-desktop adoption.
 - Observes a KWin-owned interactive resize under a zero-write lease, captures
@@ -198,8 +203,9 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   before enabling the global policy.
 - Defers live gap changes across structural transactions, then reflows dirty visible contexts and retries capacity admissions under one settled value.
 - Applies default-width changes before admission without changing existing
-  column policies or floating frames; newly admitted columns, fresh
+  column policies or floating frames; newly admitted columns, ordinary fresh
   cross-context retiles, and later contextual resets read the current policy.
+  A pointer gutter extraction instead preserves its source width.
 - Parses at most 128 application-width entries into an exact
   `desktopFileName` lookup. A newly created or freshly admitted singleton reads
   that map in constant time, falls back to the global default, and remains
@@ -485,21 +491,23 @@ inspected safely within the codec bound.
   Compensate a failed transition only for frames that retain captured write
   ownership; otherwise leave replacement state untouched and schedule
   dirty-context recovery.
-- After KWin completes physical output and desktop movement, adopt one active
-  normal tiled window into the exact visible target under the cursor. Use the
-  target midpoint for before-or-after insertion, retain the destination width,
-  reset the moved height to automatic, and commit both contexts together. If
-  the target is empty, stale, ambiguous, or changes during the transaction,
-  leave KWin's move intact and use ordinary destination singleton admission.
+- After KWin completes physical output and desktop movement, resolve one exact
+  visible window first and otherwise one empty horizontal gutter. Exact targets
+  retain midpoint insertion and destination width. A gutter inserts a fresh
+  singleton at the captured boundary with source width, automatic height, and
+  current application or global initial presentation. Commit both contexts
+  through the same immutable transfer preview. If the target is unavailable,
+  stale, ambiguous, or changes during the transaction, leave KWin's move intact
+  and use ordinary destination singleton admission.
 - After KWin selects a different visible desktop on the same output and moves
-  the active window there, use the same midpoint, destination-width, automatic-
-  height, and singleton-fallback semantics. Probe a pending destination only a
-  bounded number of times, apply no hidden-source geometry, and isolate every
-  unrelated context. If destination writes partially apply, compensate them
-  exactly before singleton admission.
+  the active window there, use the same exact-window-first target resolution.
+  Probe a pending destination only a bounded number of times, apply no
+  hidden-source geometry, and isolate every unrelated context. If destination
+  writes partially apply, compensate them exactly before singleton admission.
 - Keep empty-gutter targeting on the public KWin scripting boundary: reuse the
   existing interactive-move lifecycle, cursor and frame data, and public
-  outline feedback. Add no input grab, compositor hook, or private API.
+  outline feedback in the source context. Cross-context targeting begins only
+  at finish and adds no preview, input grab, compositor hook, or private API.
 - For finish-only horizontal resize adoption, compare the initial and accepted
   final frames only after KWin finishes. Accept exactly one changed horizontal
   edge with unchanged vertical edges, and require the same settled visible
@@ -657,15 +665,20 @@ inspected safely within the codec bound.
   height, retained focus, ownership transfer, related-window rejection,
   state-round-trip compensation, and no-target rejection without tiled
   fallback.
-- Verify cross-output pointer adoption before and after a visible target,
-  destination width and automatic height, both signal orders, exact
-  compensation, and ordinary singleton fallback for empty, stale, ambiguous,
-  or raced targets without output or desktop mechanism writes.
+- Verify destination-only gutter planning before, between, and after columns,
+  strict geometry rejection, and atomic cross-context insertion of one active
+  stack member into a fresh source-width, automatic-height singleton.
+- Verify cross-output pointer adoption before and after a visible target or at
+  an empty gutter, destination or source width as appropriate, configured
+  presentation, automatic height, both signal orders, exact compensation, and
+  ordinary singleton fallback for unavailable, stale, ambiguous, or raced
+  targets without output or desktop mechanism writes.
 - Verify same-output cross-desktop adoption across the output-local and global
   desktop resolvers and both membership-before-finish and
-  finish-before-membership event orders. Cover bounded pending settlement,
-  initially unavailable or invalidated singleton fallback, exact compensation
-  before fallback, zero hidden-source writes, and unrelated-context isolation.
+  finish-before-membership event orders. Cover exact-window and empty-gutter
+  success, bounded pending settlement, initially unavailable or invalidated
+  singleton fallback, exact compensation before fallback, zero hidden-source
+  writes, and unrelated-context isolation.
 - Focused observer cases cover direct and fallback start/finish delivery,
   duplicate suppression, and cloned frame capture. Pure planner and runtime
   cases cover exact horizontal-edge classification, the zero-write interactive

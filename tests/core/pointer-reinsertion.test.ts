@@ -5,10 +5,12 @@ import type { LayoutContextSnapshot } from "../../src/core/layout-engine";
 import {
   planPointerColumnDrop,
   planPointerColumnDropPreview,
+  planPointerExternalColumnDrop,
   planPointerExternalWindowDrop,
   planPointerWindowDrop,
   planPointerWindowDropPreview,
   type PointerColumnDropInput,
+  type PointerExternalColumnDropInput,
   type PointerExternalWindowDropInput,
   type PointerWindowDropInput,
 } from "../../src/core/pointer-reinsertion";
@@ -618,6 +620,79 @@ describe("planPointerExternalWindowDrop", () => {
   });
 });
 
+describe("planPointerExternalColumnDrop", () => {
+  it.each([
+    ["before", 25, { position: "before", targetColumnId: "left-column" }],
+    ["between", 175, { position: "after", targetColumnId: "left-column" }],
+    ["after", 475, { position: "after", targetColumnId: "right-column" }],
+  ] as const)("selects the %s destination gutter", (_name, x, expected) => {
+    const target = planPointerExternalColumnDrop({
+      ...externalColumnDropFixture(),
+      cursor: { x, y: 100 },
+    });
+
+    expect(target).toEqual(expected);
+    expect(Object.isFrozen(target)).toBe(true);
+  });
+
+  it.each([
+    [
+      "invalid geometry",
+      (input: PointerExternalColumnDropInput) => ({
+        ...input,
+        windows: input.windows.map((candidate, index) =>
+          index === 0
+            ? { ...candidate, frame: { ...candidate.frame, width: 0 } }
+            : candidate,
+        ),
+      }),
+    ],
+    [
+      "incomplete geometry",
+      (input: PointerExternalColumnDropInput) => ({
+        ...input,
+        windows: input.windows.slice(1),
+      }),
+    ],
+    [
+      "duplicate geometry",
+      (input: PointerExternalColumnDropInput) => ({
+        ...input,
+        windows: [...input.windows, ...input.windows],
+      }),
+    ],
+    [
+      "overlapping columns",
+      (input: PointerExternalColumnDropInput) => ({
+        ...input,
+        windows: input.windows.map((candidate) =>
+          candidate.columnId === "middle-column"
+            ? { ...candidate, frame: { ...candidate.frame, x: 100 } }
+            : candidate,
+        ),
+      }),
+    ],
+    [
+      "window hit",
+      (input: PointerExternalColumnDropInput) => ({
+        ...input,
+        cursor: { x: 75, y: 100 },
+      }),
+    ],
+    [
+      "dragged destination member",
+      (input: PointerExternalColumnDropInput) => ({
+        ...input,
+        draggedWindowId: windowId("left-window"),
+      }),
+    ],
+  ] as const)("fails closed for %s", (_name, mutate) => {
+    expect(
+      planPointerExternalColumnDrop(mutate(externalColumnDropFixture())),
+    ).toBeNull();
+  });
+});
+
 function fixture(
   options: {
     readonly targetAFrame?: Rect;
@@ -692,6 +767,13 @@ function externalFixture(): PointerExternalWindowDropInput {
     draggedWindowId: input.draggedWindowId,
     visibleArea: input.visibleArea,
     windows: input.windows.slice(1),
+  };
+}
+
+function externalColumnDropFixture(): PointerExternalColumnDropInput {
+  return {
+    ...columnDropFixture({ sourceIndex: 0 }),
+    draggedWindowId: windowId("external"),
   };
 }
 

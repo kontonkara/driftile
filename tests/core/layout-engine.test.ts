@@ -5327,4 +5327,223 @@ describe("LayoutEngine", () => {
     expect(engine.snapshot(output, desktop)).toEqual(sourceBefore);
     expect(engine.snapshot(targetOutput, desktop)).toEqual(targetChanged);
   });
+
+  function createColumnBoundaryTransferFixture(): {
+    readonly engine: LayoutEngine;
+    readonly targetOutput: ReturnType<typeof outputId>;
+  } {
+    const engine = new LayoutEngine();
+    const targetOutput = outputId("HDMI-A-1");
+
+    const sourceRestored = engine.restoreColumns({
+      activeColumnId: columnId("source-stack"),
+      columns: [
+        {
+          column: {
+            id: columnId("source-passive"),
+            presentation: "stacked",
+            selectedWindowId: windowId("source-passive-window"),
+            width: { kind: "proportion", value: 0.25 },
+            windowIds: [windowId("source-passive-window")],
+          },
+          index: 0,
+        },
+        {
+          column: {
+            id: columnId("source-stack"),
+            presentation: "tabbed",
+            selectedWindowId: windowId("moved"),
+            width: { kind: "fixed", value: 315 },
+            windowHeights: [
+              { kind: "auto", weight: 2 },
+              { clientHeight: 330, kind: "fixed" },
+              { kind: "auto", weight: 4 },
+            ],
+            windowIds: [
+              windowId("source-a"),
+              windowId("moved"),
+              windowId("source-c"),
+            ],
+          },
+          index: 1,
+        },
+      ],
+      desktopId: desktop,
+      outputId: output,
+      viewportOffset: 64,
+    });
+    const targetRestored = engine.restoreColumns({
+      activeColumnId: columnId("target-anchor"),
+      columns: [
+        {
+          column: {
+            id: columnId("target-left"),
+            presentation: "tabbed",
+            selectedWindowId: windowId("target-left-window"),
+            width: { kind: "fixed", value: 260 },
+            windowIds: [windowId("target-left-window")],
+          },
+          index: 0,
+        },
+        {
+          column: {
+            id: columnId("target-anchor"),
+            presentation: "stacked",
+            selectedWindowId: windowId("target-anchor-window"),
+            width: { kind: "proportion", value: 0.45 },
+            windowIds: [windowId("target-anchor-window")],
+          },
+          index: 1,
+        },
+      ],
+      desktopId: desktop,
+      outputId: targetOutput,
+      viewportOffset: -90,
+    });
+
+    if (!sourceRestored || !targetRestored) {
+      throw new Error("failed to create a column-boundary transfer fixture");
+    }
+
+    return { engine, targetOutput };
+  }
+
+  it("transfers an active stack member into an interior destination boundary", () => {
+    const { engine, targetOutput } = createColumnBoundaryTransferFixture();
+    const sourceBefore = engine.snapshot(output, desktop);
+    const targetBefore = engine.snapshot(targetOutput, desktop);
+    const preview = engine.previewWindowTransferToColumnBoundary(
+      windowId("moved"),
+      {
+        columnId: columnId("target-inserted"),
+        desktopId: desktop,
+        outputId: targetOutput,
+        position: "before",
+        presentation: "tabbed",
+        targetColumnId: columnId("target-anchor"),
+      },
+    );
+
+    if (!preview) {
+      throw new Error("expected a column-boundary transfer preview");
+    }
+
+    expect(engine.snapshot(output, desktop)).toEqual(sourceBefore);
+    expect(engine.snapshot(targetOutput, desktop)).toEqual(targetBefore);
+    expect(preview.sourceLayout.columns).toEqual([
+      sourceBefore.columns[0],
+      {
+        id: "source-stack",
+        presentation: "tabbed",
+        selectedWindowId: "source-c",
+        width: { kind: "fixed", value: 315 },
+        windowHeights: [
+          { kind: "auto", weight: 2 },
+          { kind: "auto", weight: 4 },
+        ],
+        windowIds: ["source-a", "source-c"],
+      },
+    ]);
+    expect(preview.sourceLayout.activeColumnId).toBe("source-stack");
+    expect(preview.sourceLayout.viewportOffset).toBe(64);
+    expect(preview.targetLayout.columns).toEqual([
+      targetBefore.columns[0],
+      {
+        id: "target-inserted",
+        presentation: "tabbed",
+        selectedWindowId: "moved",
+        width: { kind: "fixed", value: 315 },
+        windowIds: ["moved"],
+      },
+      targetBefore.columns[1],
+    ]);
+    expect(preview.targetLayout.activeColumnId).toBe("target-inserted");
+    expect(preview.targetLayout.viewportOffset).toBe(-90);
+    expect(preview.targetLayout.columns[1]).not.toHaveProperty("windowHeights");
+    expect(Object.isFrozen(preview)).toBe(true);
+    expect(
+      Object.isFrozen(preview.sourceLayout.columns[1]?.windowHeights),
+    ).toBe(true);
+    expect(Object.isFrozen(preview.targetLayout.columns[1]?.width)).toBe(true);
+    expect(engine.commitWindowTransfer(preview)).toBe(true);
+    expect(engine.snapshot(output, desktop)).toEqual(preview.sourceLayout);
+    expect(engine.snapshot(targetOutput, desktop)).toEqual(
+      preview.targetLayout,
+    );
+    expect(engine.commitWindowTransfer(preview)).toBe(false);
+  });
+
+  it("rejects invalid or stale column-boundary transfers atomically", () => {
+    const { engine, targetOutput } = createColumnBoundaryTransferFixture();
+    const request = {
+      columnId: columnId("target-inserted"),
+      desktopId: desktop,
+      outputId: targetOutput,
+      position: "after" as const,
+      targetColumnId: columnId("target-left"),
+    };
+    const sourceBefore = engine.snapshot(output, desktop);
+    const targetBefore = engine.snapshot(targetOutput, desktop);
+    const invalid = [
+      { id: windowId("unknown"), target: request },
+      { id: windowId("source-passive-window"), target: request },
+      {
+        id: windowId("moved"),
+        target: {
+          ...request,
+          columnId: columnId("source-new"),
+          outputId: output,
+          targetColumnId: columnId("source-passive"),
+        },
+      },
+      {
+        id: windowId("moved"),
+        target: { ...request, targetColumnId: columnId("missing") },
+      },
+      {
+        id: windowId("moved"),
+        target: { ...request, columnId: columnId("target-left") },
+      },
+      {
+        id: windowId("moved"),
+        target: { ...request, position: "middle" },
+      },
+    ];
+
+    for (const candidate of invalid) {
+      expect(
+        engine.previewWindowTransferToColumnBoundary(
+          candidate.id,
+          candidate.target as Parameters<
+            LayoutEngine["previewWindowTransferToColumnBoundary"]
+          >[1],
+        ),
+      ).toBeNull();
+    }
+
+    expect(engine.snapshot(output, desktop)).toEqual(sourceBefore);
+    expect(engine.snapshot(targetOutput, desktop)).toEqual(targetBefore);
+
+    const preview = engine.previewWindowTransferToColumnBoundary(
+      windowId("moved"),
+      request,
+    );
+
+    if (!preview) {
+      throw new Error("expected a valid column-boundary transfer preview");
+    }
+
+    expect(
+      preview.targetLayout.columns.find(
+        (column) => column.id === "target-inserted",
+      )?.presentation,
+    ).toBe("stacked");
+    expect(engine.setViewportOffset(targetOutput, desktop, 70)).toBe(true);
+    const sourceUnchanged = engine.snapshot(output, desktop);
+    const targetChanged = engine.snapshot(targetOutput, desktop);
+    expect(engine.commitWindowTransfer(preview)).toBe(false);
+    expect(engine.commitWindowTransfer(preview)).toBe(false);
+    expect(engine.snapshot(output, desktop)).toEqual(sourceUnchanged);
+    expect(engine.snapshot(targetOutput, desktop)).toEqual(targetChanged);
+  });
 });

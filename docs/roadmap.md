@@ -121,10 +121,12 @@ The current runtime already:
 - Leaves dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows outside layout ownership, separate from manual floating.
 - Translates client minimum and maximum sizes to decorated frame bounds for layout validation and column resizing.
 - Reinserts an active tiled window before or after a visible same-context target
-  on mouse release, and adopts a completed KWin-owned cross-output move into an
-  exact visible tiled target. The cross-output path retains destination width,
-  resets moved height to automatic, and falls back to ordinary singleton
-  admission when the target is unavailable.
+  or empty horizontal gutter on mouse release. After a completed KWin-owned
+  output or desktop move, resolves one exact destination window first and then
+  one empty gutter. The exact path retains destination width; the gutter path
+  creates a source-width singleton with automatic height and current initial
+  presentation. An unavailable target falls back to ordinary singleton
+  admission.
 - Gates startup scale, ownership classification, lifecycle settlement, multi-context batching, and automatic-height allocation with deterministic operation-count budgets.
 
 The automatic-floating base and the script-visible hard-constraint policy are
@@ -1261,6 +1263,34 @@ Release criteria (met):
   overview, KWin API, or private API change.
 
 No other feature belongs to 1.30.0.
+
+## 1.31.0 (in development)
+
+The current slice extends empty horizontal gutter targets to a move that KWin
+has already completed between visible outputs or selected desktops. An exact
+window under the release point keeps priority and the existing destination
+stack behavior. Otherwise, a valid gutter creates a separate singleton at that
+boundary with source width, automatic height, and current application or global
+initial presentation.
+
+Cross-context targeting remains finish-only without live feedback. Driftile
+does not request output, desktop-selection, or membership changes. It reuses
+the existing immutable two-context preview, guarded geometry transaction,
+owned compensation, and ordinary singleton fallback. The hidden source desktop
+receives no geometry writes. The slice adds no setting, action, binding,
+persistence field, overview change, KWin API, or private API.
+
+Development criteria:
+
+- Destination-only planning covers before, between, and after gutters and
+  rejects incomplete, duplicate, or overlapping geometry.
+- Atomic layout transfer preserves passive source state and inserts one fresh
+  automatic-height singleton without mutating either context before commit.
+- Runtime coverage includes one cross-output success, one cross-desktop
+  success, and one invalidated-boundary fallback while retaining exact-window
+  priority and the existing transfer isolation guarantees.
+- Focused grouped checks, exact-SHA CI, and a warranted hidden VM checkpoint
+  must pass before release.
 
 ## Post-v1
 
