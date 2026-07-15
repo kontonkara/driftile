@@ -43,6 +43,17 @@ existing stack, one-way tiled/floating layer focus, contextual width reset, and
 reverse width and height preset cycling are registered without default keys.
 Assign them in **System Settings > Keyboard > Shortcuts** if needed.
 
+**Focus last-used desktop** (`driftile_focus_last_used_desktop`) is also
+unbound. It toggles between the current desktop and the most recently selected
+distinct desktop on the active output. Histories stay isolated per output when
+KWin exposes per-output desktops; the global-desktop fallback updates every
+output together. Removed or stale targets and stopped or blocked operations are
+no-ops. The history is session-only and is not persisted.
+
+You may assign `Meta+Tab` manually in System Settings, or add the action with a
+supported chord to a custom JSON v1 profile. The bundled defaults remain
+unchanged.
+
 Four alternative vertical-boundary actions are also unbound by default:
 
 - **Focus up or previous desktop** and **Focus down or next desktop** navigate

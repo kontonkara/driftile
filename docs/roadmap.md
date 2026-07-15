@@ -1332,6 +1332,15 @@ the true first or last slot. Manual floating focus and movement stay local.
 Blocked, stale, or otherwise failed operations never fall through to a desktop
 change.
 
+The unbound **Focus last-used desktop** action toggles between the current and
+most recently selected distinct desktop on the active output. Selection history
+stays isolated per output where KWin exposes per-output desktops; the global
+fallback updates every output together. Removed or stale targets and stopped or
+blocked operations are no-ops. History is session-only and is not persisted.
+Users may assign `Meta+Tab` manually or add
+`driftile_focus_last_used_desktop` to a custom JSON v1 profile without changing
+the bundled defaults.
+
 ## Post-v1
 
 Add interaction and presentation features outside the frozen v1 scope without
