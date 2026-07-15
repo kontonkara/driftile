@@ -16,16 +16,16 @@ let
   );
   currentVersion = pluginMetadata.KPlugin.Version;
   currentOverviewVersion = overviewPluginMetadata.KPlugin.Version;
-  publishedVersion = "1.19.0";
+  publishedVersion = "1.20.0";
   publishedArchive = pkgs.fetchurl {
     name = "driftile-${publishedVersion}.kwinscript";
     url = "https://github.com/kontonkara/driftile/releases/download/v${publishedVersion}/driftile-${publishedVersion}.kwinscript";
-    hash = "sha256-IfUkofqq+HDhV9HQXfkxaGl39WOC+bpMvuRuFCzqxxw=";
+    hash = "sha256-KmnK8A0oA9YmEkMT2OHJUw3VKfT2CeAfVfnepxSWddg=";
   };
   publishedOverviewArchive = pkgs.fetchurl {
     name = "driftile-overview-${publishedVersion}.kwineffect";
     url = "https://github.com/kontonkara/driftile/releases/download/v${publishedVersion}/driftile-overview-${publishedVersion}.kwineffect";
-    hash = "sha256-kw5L6qzsglBmaGU6DKNbJWCvqJkYQuaYKginwMZkAgA=";
+    hash = "sha256-JglI+3OS91hN3nvtOfjTQivKr0mVC4TBvA+NyluIXIY=";
   };
   currentArchive =
     pkgs.runCommand "driftile-${currentVersion}.kwinscript"
@@ -130,6 +130,7 @@ let
       readonly overview_plugin_id=${overviewPluginId}
       readonly overview_shortcut=${overviewShortcut}
       readonly overview_shortcut_text="${overviewShortcutText}"
+      readonly overview_default_keys='[[268435535,0,0,0]]'
       readonly close_shortcut=driftile_close_window
       readonly published_archive=${publishedArchive}
       readonly published_overview_archive=${publishedOverviewArchive}
@@ -1018,7 +1019,23 @@ let
         || fail_test "the disabled published overview registered its action"
       set_enabled true
       load_installed_script
-      progress "published $published_version packages installed with the overview disabled and unbound"
+      load_overview_effect
+      wait_for_shortcut_registration_state "$overview_shortcut" true \
+        || fail_test "the published overview did not register its action"
+      overview_keys=$(shortcut_keys "$overview_shortcut" "$overview_shortcut_text") \
+        || fail_test "KGlobalAccel did not expose the published overview assignment"
+      [[ "$overview_keys" == "$overview_default_keys" ]] \
+        || fail_test "the published overview did not assign Meta+O to its fresh action: $overview_keys"
+      unload_overview_effect
+      wait_for_shortcut_registration_state "$overview_shortcut" true \
+        || fail_test "unloading the published overview removed its action"
+      overview_keys=$(shortcut_keys "$overview_shortcut" "$overview_shortcut_text") \
+        || fail_test "KGlobalAccel did not retain the published overview assignment"
+      [[ "$overview_keys" == "$overview_default_keys" ]] \
+        || fail_test "unloading the published overview changed its Meta+O assignment: $overview_keys"
+      wait_for_script_state true \
+        || fail_test "the published overview lifecycle unloaded the published runtime"
+      progress "published $published_version packages retained the fresh Meta+O overview assignment"
 
       set_enabled false
       unload_installed_script
@@ -1063,11 +1080,15 @@ let
         || fail_test "KWin did not rediscover the upgraded overview"
       wait_for_effect_loaded_state "$overview_plugin_id" false \
         || fail_test "the overview was loaded by the upgrade"
-      wait_for_shortcut_registration_state "$overview_shortcut" false \
-        || fail_test "the disabled upgraded overview registered its action"
+      wait_for_shortcut_registration_state "$overview_shortcut" true \
+        || fail_test "the upgrade removed the published overview action"
+      overview_keys=$(shortcut_keys "$overview_shortcut" "$overview_shortcut_text") \
+        || fail_test "KGlobalAccel did not expose the upgraded overview assignment"
+      [[ "$overview_keys" == "$overview_default_keys" ]] \
+        || fail_test "the upgrade changed the published Meta+O assignment: $overview_keys"
       wait_for_script_state false \
         || fail_test "the main script was loaded by the upgrade"
-      progress "both packages upgraded to $current_version and retained disabled defaults"
+      progress "both packages upgraded to $current_version and retained the overview assignment"
 
       set_enabled true
       load_installed_script
@@ -1086,17 +1107,17 @@ let
         || fail_test "the loaded overview did not register its action"
       overview_keys=$(shortcut_keys "$overview_shortcut" "$overview_shortcut_text") \
         || fail_test "KGlobalAccel did not expose the overview assignment"
-      [[ "$overview_keys" == "[]" ]] \
-        || fail_test "the upgrade changed the preserved unbound overview assignment: $overview_keys"
+      [[ "$overview_keys" == "$overview_default_keys" ]] \
+        || fail_test "loading the current overview changed the preserved Meta+O assignment: $overview_keys"
       wait_for_script_state true \
         || fail_test "loading the overview unloaded the current runtime"
-      progress "current overview preserved the published unbound assignment"
+      progress "current overview preserved the published Meta+O assignment"
 
       unload_overview_effect
       overview_keys=$(shortcut_keys "$overview_shortcut" "$overview_shortcut_text") \
         || fail_test "KGlobalAccel did not retain the unloaded overview action"
-      [[ "$overview_keys" == "[]" ]] \
-        || fail_test "unloading changed the preserved unbound overview assignment: $overview_keys"
+      [[ "$overview_keys" == "$overview_default_keys" ]] \
+        || fail_test "unloading changed the preserved Meta+O assignment: $overview_keys"
       wait_for_script_state true \
         || fail_test "unloading the overview unloaded the current runtime"
       run_checked \

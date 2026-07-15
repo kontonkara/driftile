@@ -121,17 +121,15 @@ built-in Overview must remain unchanged. Native X11 retains static fallback and
 toggle-only lifecycle coverage without claiming end-to-end selection or
 cross-desktop activation.
 
-The 1.19.0 test slice is proportional to its behavior. Core cases cover
-stacked/tabbed toggling, identical tabbed frames with normal outer gaps,
-selected-member focus and reorder, dormant height-policy restoration,
-target-wins insertion and merge, stacked singleton creation, whole-column
-transfer, and successor-then-predecessor selection. Persistence cases cover v1
-migration to canonical v3 state while the catalog remains v2. Overview cases
-require one selected thumbnail per tabbed column. Existing shortcut ownership
-coverage adds the single `Meta+W` claim and reversible Overview restoration.
-Small and large column fixtures enforce the operation bounds. No new
-application, backend, VM scenario, persistent indicator, pointer path,
-animation, settings surface, or private API belongs to this slice.
+The 1.20.0 test slice is proportional to its behavior. Core and settings cases
+cover the global initial `stacked` or `tabbed` presentation, exact application
+overrides, unchanged existing and restored columns, and durable tabbed
+singletons across structural operations. Overview cases cover ordered tab
+selection and visible, disabled minimized members. Indicator coverage requires
+confirmed tab changes, bounded text, and suppression while either overview is
+active. Shortcut coverage assigns `Meta+O` only to a fresh overview action and
+preserves every existing assignment. Existing backend and VM scenarios cover
+the packaged behavior without adding a new test pool or private API.
 
 In the following unit list, zero writes to floating windows means ambient
 layout work; explicit manual-floating movement, centering, or contextual size
@@ -260,16 +258,18 @@ tools/vm/run.sh lifecycle
 
 The lifecycle mode opens one non-fullscreen `1366x768` Wayland VM with no
 preinstalled Driftile package. It installs the pinned published stable script
-and overview archives, keeps that overview disabled and unbound, then unloads
-the script and upgrades both packages to the current build. It verifies package
-identities, runtime digests, the default-off touchpad setting, effect discovery,
-the stable unbound overview load cycle, and preservation of that unbound
-assignment after the upgrade. The upgraded script must also register the
-current close-window action after reloading the stable fixed bootstrap. Its
-nonce-scoped selector resolves the new content-addressed runtime inside the
-shared KWin QML engine. The full VM independently loads the same bootstrap in a
-fresh session. Finally, the lifecycle VM exercises Konsole and KDE Calculator,
-removes both packages, and confirms that KWin remains operational.
+and overview archives, keeps the overview disabled, then loads it once to
+confirm that a fresh action receives `Meta+O` and retains that assignment after
+unload. It unloads the script and upgrades both packages to the current build.
+The checkpoint verifies package identities, runtime digests, the default-off
+touchpad setting, effect discovery, and preservation of the published overview
+assignment through upgrade, current load, and current unload. The upgraded
+script must also register the current close-window action after reloading the
+stable fixed bootstrap. Its nonce-scoped selector resolves the new
+content-addressed runtime inside the shared KWin QML engine. The full VM
+independently loads the same bootstrap in a fresh session. Finally, the
+lifecycle VM exercises Konsole and KDE Calculator, removes both packages, and
+confirms that KWin remains operational.
 
 The script builds `nixosConfigurations.driftile-vm` through `nixos-rebuild build-vm` and asks host KWin for a centered `1440x900` QEMU window with a `1680x1050` guest display. The guest receives 8 virtual CPUs and 8 GiB of memory. Plasma starts a Wayland session, enables Driftile, claims its shortcut profile, and runs the acceptance pool. Separate Konsole processes provide a stable baseline, while the primary structural workflow uses offline Firefox for direct insertion and as a passive peer during stacked maximize, XWayland xterm for minimized-edge navigation, KDE Calculator as a numbered-desktop destination, and fixed-size XWayland `xmessage` for automatic-floating constraints. A final lifecycle pool repeats Firefox, KDE Calculator, and xterm checks after all physical shortcut scenarios. The VM requires borderless state for tiled, fixed-size, manually floating, and application windows. It focuses, minimizes, restores, resizes, and closes real applications while checking their slots, neighboring frames, and exact layout reflow. The desktop workflow also transfers a visible active Konsole while a settled minimized source-column peer retains its slot, state, and frame without writes. `kdotool` reads the active KWin window during these checks.
 
