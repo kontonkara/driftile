@@ -6,6 +6,7 @@
 
 let
   pluginId = "io.github.kontonkara.driftile";
+  activityMembershipProbe = ../tools/vm/activity-membership-probe.js;
   twoHeadGpu = builtins.toJSON {
     driver = "virtio-gpu-pci";
     id = "video0";
@@ -105,6 +106,7 @@ let
       pkgs.xprop
     ];
     text = ''
+      activity_membership_probe_id="io.github.kontonkara.driftile.vm-activity-membership"
       floating_navigation_probe_id="io.github.kontonkara.driftile.vm-floating-navigation"
       interactive_resize_probe_id="io.github.kontonkara.driftile.vm-interactive-resize"
       overview_plugin_id="io.github.kontonkara.driftile.overview"
@@ -203,8 +205,9 @@ let
         return 1
       }
 
-      arrange_floating_navigation_windows() {
+      run_kwin_probe() {
         local load_result
+        local probe_id=$2
         local script_id
         local unload_result
 
@@ -213,7 +216,7 @@ let
           /Scripting \
           org.kde.kwin.Scripting \
           unloadScript \
-          s "$floating_navigation_probe_id" \
+          s "$probe_id" \
           >/dev/null 2>&1 || true
 
         load_result=$(busctl --user call \
@@ -221,7 +224,7 @@ let
           /Scripting \
           org.kde.kwin.Scripting \
           loadScript \
-          ss ${floatingNavigationProbe} "$floating_navigation_probe_id" \
+          ss "$1" "$probe_id" \
           2>/dev/null) || return 1
 
         if [[ ! "$load_result" =~ ^i\ ([0-9]+)$ ]]; then
@@ -229,22 +232,35 @@ let
         fi
 
         script_id=''${BASH_REMATCH[1]}
-        busctl --user call \
+        if ! busctl --user call \
           org.kde.KWin \
           "/Scripting/Script$script_id" \
           org.kde.kwin.Script \
           run \
-          >/dev/null || return 1
+          >/dev/null; then
+          busctl --user call \
+            org.kde.KWin \
+            /Scripting \
+            org.kde.kwin.Scripting \
+            unloadScript \
+            s "$probe_id" \
+            >/dev/null 2>&1 || true
+          return 1
+        fi
 
         unload_result=$(busctl --user call \
           org.kde.KWin \
           /Scripting \
           org.kde.kwin.Scripting \
           unloadScript \
-          s "$floating_navigation_probe_id" \
+          s "$probe_id" \
           2>/dev/null) || return 1
 
         [[ "$unload_result" == "b true" ]]
+      }
+
+      arrange_floating_navigation_windows() {
+        run_kwin_probe ${floatingNavigationProbe} "$floating_navigation_probe_id"
       }
 
       capture_interactive_resize_state() {
@@ -447,12 +463,25 @@ let
         local id
 
         id=$(window_id_contains "$1") || return 1
+        window_info_by_id "$id"
+      }
+
+      window_info_by_id() {
         busctl --user --json=short call \
           org.kde.KWin \
           /KWin \
           org.kde.KWin \
           getWindowInfo \
-          s "$id" 2>/dev/null
+          s "$1" 2>/dev/null
+      }
+
+      window_has_exact_activity() {
+        local activity=$2
+
+        window_info_by_id "$1" \
+          | jq --exit-status --arg activity "$activity" \
+            '.data[0].activities.data == [$activity]' \
+          >/dev/null
       }
 
       window_caption_contains() {
@@ -881,6 +910,101 @@ let
         set_current_desktop "$primary_desktop_id"
       }
 
+      activity_manager_call() {
+        busctl --user call \
+          org.kde.ActivityManager \
+          /ActivityManager/Activities \
+          org.kde.ActivityManager.Activities \
+          "$@"
+      }
+
+      activity_manager_json_call() {
+        busctl --user --json=short call \
+          org.kde.ActivityManager \
+          /ActivityManager/Activities \
+          org.kde.ActivityManager.Activities \
+          "$@"
+      }
+
+      activity_ids() {
+        activity_manager_json_call ListActivities 2>/dev/null \
+          | jq --exit-status --raw-output '.data[0][]'
+      }
+
+      current_activity_id() {
+        activity_manager_json_call CurrentActivity 2>/dev/null \
+          | jq --exit-status --raw-output \
+            '.data[0] | select(type == "string" and length > 0)'
+      }
+
+      activity_exists() {
+        local activities
+
+        activities=$(activity_ids) || return 2
+        grep -Fxq -- "$1" <<< "$activities"
+      }
+
+      create_activity() {
+        local activity
+
+        activity=$(activity_manager_json_call AddActivity s "$1" 2>/dev/null \
+          | jq --exit-status --raw-output \
+            '.data[0] | select(type == "string" and length > 0)') \
+          || return 1
+
+        printf '%s' "$activity"
+      }
+
+      wait_for_current_activity() {
+        local attempt
+        local expected=$1
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          if [[ "$(current_activity_id 2>/dev/null || true)" == "$expected" ]]; then
+            return 0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      set_current_activity() {
+        local result
+
+        result=$(activity_manager_call SetCurrentActivity s "$1" 2>/dev/null) \
+          || return 1
+
+        [[ "$result" == "b true" ]] && wait_for_current_activity "$1"
+      }
+
+      remove_activity() {
+        local activity=$1
+        local attempt
+        local status
+
+        activity_manager_call RemoveActivity s "$activity" >/dev/null \
+          || return 1
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          if activity_exists "$activity"; then
+            status=0
+          else
+            status=$?
+          fi
+
+          ((status == 1)) && return 0
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      assign_activity_fixture_windows() {
+        run_kwin_probe ${activityMembershipProbe} "$activity_membership_probe_id"
+      }
+
       window_is_on_desktop() {
         local expected=$2
         local id
@@ -1153,6 +1277,35 @@ let
           s "$id" 2>/dev/null \
           | jq --exit-status --raw-output \
             '.data[0].x.data | select(type == "number") | round | tostring'
+      }
+
+      wait_for_horizontal_order() {
+        local attempt
+        local first_x
+        local relation=$2
+        local second_x
+        local stable_samples=0
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          first_x=$(window_frame_x "$1" 2>/dev/null || true)
+          second_x=$(window_frame_x "$3" 2>/dev/null || true)
+
+          if [[ "$first_x" =~ ^-?[0-9]+$ && "$second_x" =~ ^-?[0-9]+$ ]] \
+            && { [[ "$relation" == left && "$first_x" -lt "$second_x" ]] \
+              || [[ "$relation" == right && "$first_x" -gt "$second_x" ]]; }; then
+            stable_samples=$((stable_samples + 1))
+
+            if ((stable_samples >= 2)); then
+              return 0
+            fi
+          else
+            stable_samples=0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
       }
 
       frames_match_leftward_reveal() {
@@ -5486,11 +5639,68 @@ let
         desktop_window=""
       }
 
+      cleanup_activity_fixture() {
+        local cleanup_verified=true
+        local firefox_pid="''${activity_firefox_pid:-}"
+        local firefox_profile="''${activity_firefox_profile:-}"
+        local primary_activity="''${activity_primary_id:-}"
+        local secondary_activity="''${activity_secondary_id:-}"
+        local xterm_pid="''${activity_xterm_pid:-}"
+
+        busctl --user call \
+          org.kde.KWin \
+          /Scripting \
+          org.kde.kwin.Scripting \
+          unloadScript \
+          s "$activity_membership_probe_id" \
+          >/dev/null 2>&1 || true
+
+        if [[ -n "$primary_activity" ]]; then
+          if activity_exists "$primary_activity"; then
+            set_current_activity "$primary_activity" || cleanup_verified=false
+          elif [[ $? -ne 1 ]]; then
+            cleanup_verified=false
+          fi
+        fi
+
+        if [[ -n "$xterm_pid" ]]; then
+          terminate_process "$xterm_pid"
+        fi
+        activity_xterm_id=""
+        activity_xterm_pid=""
+        activity_xterm_title=""
+
+        if [[ -n "$firefox_pid" ]]; then
+          terminate_process "$firefox_pid"
+        fi
+        activity_firefox_id=""
+        activity_firefox_pid=""
+        activity_firefox_title=""
+
+        if [[ -n "$firefox_profile" ]]; then
+          rm -rf -- "$firefox_profile" || cleanup_verified=false
+        fi
+        activity_firefox_profile=""
+
+        if [[ -n "$secondary_activity" ]]; then
+          if activity_exists "$secondary_activity"; then
+            remove_activity "$secondary_activity" || cleanup_verified=false
+          elif [[ $? -ne 1 ]]; then
+            cleanup_verified=false
+          fi
+        fi
+
+        activity_primary_id=""
+        activity_secondary_id=""
+        [[ "$cleanup_verified" == true ]]
+      }
+
       cleanup_temporary_windows() {
         unload_overview_effect >/dev/null 2>&1 || true
         set_application_column_widths "" >/dev/null 2>&1 || true
         set_application_tiling_exclusions "" >/dev/null 2>&1 || true
         restore_layout_configuration >/dev/null 2>&1 || true
+        cleanup_activity_fixture || true
         cleanup_fourth_window || true
         cleanup_fifth_window
         cleanup_desktop_window
@@ -11639,6 +11849,175 @@ let
         return 1
       }
 
+      fail_activity_layout_verification() {
+        record_focus_state "$1"
+        cleanup_activity_fixture || true
+      }
+
+      verify_activity_layout_ownership() {
+        local activity_count
+        local attempt
+        local firefox_frame
+        local firefox_initial_frame
+        local firefox_initial_width
+        local firefox_x
+        local move_relation
+        local move_shortcut
+        local primary_first_frame
+        local primary_first_id
+        local primary_second_frame
+        local primary_third_frame
+        local xterm_frame
+        local xterm_x
+
+        activity_count=$(activity_ids 2>/dev/null | wc -l) || activity_count=0
+        if [[ "$activity_count" != 1 ]] \
+          || ! activity_primary_id=$(current_activity_id) \
+          || ! start_firefox_window \
+            activity_firefox_pid \
+            activity_firefox_title \
+            activity_firefox_profile \
+            "Driftile VM Firefox" \
+          || ! start_xterm_window \
+            activity_xterm_pid \
+            activity_xterm_title \
+            "Driftile VM Activity XWayland Terminal" \
+          || ! activity_firefox_id=$(window_id_contains "Driftile VM Firefox") \
+          || ! activity_xterm_id=$(window_id_contains \
+            "Driftile VM Activity XWayland Terminal") \
+          || ! primary_first_id=$(window_id "$title_a") \
+          || ! activity_secondary_id=$(create_activity \
+            "Driftile VM Secondary Activity"); then
+          fail_activity_layout_verification "the activity fixture setup failed"
+          return 1
+        fi
+
+        for ((attempt = 0; attempt < 50; attempt += 1)); do
+          assign_activity_fixture_windows >/dev/null 2>&1 || true
+
+          if window_has_exact_activity "$activity_firefox_id" "$activity_secondary_id" \
+            && window_has_exact_activity "$activity_xterm_id" "$activity_secondary_id" \
+            && window_has_exact_activity "$primary_first_id" "$activity_primary_id"; then
+            break
+          fi
+
+          sleep 0.1
+        done
+
+        if ! window_has_exact_activity "$activity_firefox_id" "$activity_secondary_id" \
+          || ! window_has_exact_activity "$activity_xterm_id" "$activity_secondary_id" \
+          || ! window_has_exact_activity "$primary_first_id" "$activity_primary_id" \
+          || ! activate_window "$title_c" \
+          || ! wait_for_active "$title_c" \
+          || ! capture_stable_frames 4; then
+          fail_activity_layout_verification \
+            "exact activity membership did not stabilize"
+          return 1
+        fi
+
+        primary_first_frame=$stable_first_frame
+        primary_second_frame=$stable_second_frame
+        primary_third_frame=$stable_third_frame
+
+        if ! set_current_activity "$activity_secondary_id" \
+          || ! wait_for_window "$activity_firefox_title" \
+          || ! wait_for_window "$activity_xterm_title" \
+          || ! activate_window "$activity_firefox_title" \
+          || ! wait_for_active "$activity_firefox_title" \
+          || ! firefox_initial_frame=$(capture_stable_window_frame \
+            "$activity_firefox_title") \
+          || ! xterm_frame=$(capture_stable_window_frame \
+            "$activity_xterm_title"); then
+          fail_activity_layout_verification "the secondary activity layout failed"
+          return 1
+        fi
+        IFS=, read -r firefox_x _ firefox_initial_width _ \
+          <<< "$firefox_initial_frame"
+        IFS=, read -r xterm_x _ _ _ <<< "$xterm_frame"
+
+        if ((firefox_x == xterm_x)) \
+          || ! invoke_shortcut "driftile_decrease_column_width" \
+          || ! wait_for_real_window_width \
+            "$activity_firefox_title" less "$firefox_initial_width"; then
+          fail_activity_layout_verification \
+            "the secondary activity width change failed"
+          return 1
+        fi
+
+        if ! firefox_frame=$(capture_stable_window_frame \
+            "$activity_firefox_title") \
+          || ! xterm_frame=$(capture_stable_window_frame \
+            "$activity_xterm_title"); then
+          fail_activity_layout_verification \
+            "the resized secondary activity layout did not stabilize"
+          return 1
+        fi
+        IFS=, read -r firefox_x _ _ _ <<< "$firefox_frame"
+        IFS=, read -r xterm_x _ _ _ <<< "$xterm_frame"
+
+        if ((firefox_x < xterm_x)); then
+          move_shortcut=driftile_move_column_right
+          move_relation=right
+        else
+          move_shortcut=driftile_move_column_left
+          move_relation=left
+        fi
+
+        if ! invoke_shortcut "$move_shortcut" \
+          || ! wait_for_horizontal_order \
+            "$activity_firefox_title" "$move_relation" "$activity_xterm_title"; then
+          fail_activity_layout_verification \
+            "the secondary activity column reorder failed"
+          return 1
+        fi
+
+        if ! firefox_frame=$(capture_stable_window_frame \
+            "$activity_firefox_title") \
+          || ! xterm_frame=$(capture_stable_window_frame \
+            "$activity_xterm_title"); then
+          fail_activity_layout_verification \
+            "the reordered secondary activity layout did not stabilize"
+          return 1
+        fi
+
+        if ! set_current_activity "$activity_primary_id" \
+          || ! wait_for_window "$title_c" \
+          || ! activate_window "$title_c" \
+          || ! wait_for_active "$title_c" \
+          || ! wait_for_frames \
+            "$primary_first_frame" \
+            "$primary_second_frame" \
+            "$primary_third_frame"; then
+          fail_activity_layout_verification "the primary layout was not isolated"
+          return 1
+        fi
+
+        if ! set_current_activity "$activity_secondary_id" \
+          || ! wait_for_window "$activity_firefox_title" \
+          || ! activate_window "$activity_firefox_title" \
+          || ! wait_for_active "$activity_firefox_title" \
+          || ! wait_for_named_frames \
+            "$activity_firefox_title" "$firefox_frame" \
+            "$activity_xterm_title" "$xterm_frame"; then
+          fail_activity_layout_verification "the secondary layout was not restored"
+          return 1
+        fi
+
+        if ! cleanup_activity_fixture \
+          || ! activate_window "$title_c" \
+          || ! wait_for_active "$title_c" \
+          || ! wait_for_frames \
+            "$primary_first_frame" \
+            "$primary_second_frame" \
+            "$primary_third_frame"; then
+          record_focus_state "the activity fixture cleanup failed"
+          return 1
+        fi
+
+        record_focus_state \
+          "activity-local width and order restored across switches"
+      }
+
       verify_real_applications() {
         local baseline_first
         local baseline_second
@@ -12428,6 +12807,15 @@ let
       fifth_window=""
       fourth_window=""
       fourth_window_profile=""
+      activity_firefox_id=""
+      activity_firefox_pid=""
+      activity_firefox_profile=""
+      activity_firefox_title=""
+      activity_primary_id=""
+      activity_secondary_id=""
+      activity_xterm_id=""
+      activity_xterm_pid=""
+      activity_xterm_title=""
       trap cleanup_temporary_windows EXIT
       : > /tmp/shared/driftile-focus-diagnostics
 
@@ -12461,6 +12849,7 @@ let
         && verify_physical_fullscreen_shortcut \
         && verify_physical_maximize_shortcut \
         && verify_real_applications \
+        && verify_activity_layout_ownership \
         && verify_application_borderless_exclusions \
         && verify_application_column_width_override \
         && verify_application_tiling_exclusion \
