@@ -52,6 +52,16 @@ invalid, or fully clipped items are skipped. A partially clipped target uses
 its visible intersection for spatial navigation. The interaction changes no
 layout or persistent state, setting, shortcut, schema, or pointer path.
 
+In 1.22.0, a plain left drag from a desktop card's number gutter previews one
+vertical insertion point without moving the cards. The shared trailing empty
+desktop cannot be dragged, targeted, or crossed. Release revalidates the exact
+effect, model, output, selected desktop, scene geometry, and complete desktop
+object and ID order before one public KWin reorder request. A click keeps the
+existing selection path; cancellation, no-op, stale, and unsupported paths are
+write-free and leave the effect open. The interaction changes no window state
+or Driftile layout, settings, shortcuts, or persistence; only KWin's global
+desktop order changes after a valid release.
+
 ## Delivery contract
 
 | Area                 | Required behavior                                                                                 | Target    |
@@ -70,7 +80,7 @@ layout or persistent state, setting, shortcut, schema, or pointer path.
 | Floating layer       | Toggle state, switch layers, navigate geometrically, nudge, center, and resize contextually       | Available |
 | Pointer drop         | Preview and reinsert one active tiled window at one exact visible target                          | Available |
 | Pointer resize       | Adopt one completed horizontal resize as the active column's fixed width                          | Available |
-| Overview companion   | Activate exact thumbnails or tabs by pointer or keyboard; select a non-current number gutter      | Available |
+| Overview companion   | Activate exact targets; select number gutters; reorder desktop cards with guarded gutter drags    | Available |
 | Tabbed columns       | Toggle presentation; select or reorder members with the existing vertical grammar                 | 1.19.0    |
 | Pointer navigation   | Provide wheel navigation through the shared layout model                                          | Future    |
 

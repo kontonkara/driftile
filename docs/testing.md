@@ -105,12 +105,13 @@ effect, model, screen, projected output, desktop, window, and activity guards;
 allows off-desktop hidden state only before selection; confirms the public
 selection path; then revalidates visible state and confirms exact focus. It also
 covers pre-selection no-ops and post-selection late failures that close the
-stale effect without desktop rollback. The only permitted KWin writes are
-`KWin.Workspace.activeWindow`, `KWin.SceneView.currentDesktop`, and the guarded
-`KWin.Workspace.currentDesktop` fallback. Settings, shortcut-assignment, and
-screen-edge writes remain forbidden; actions, bindings, schema, private APIs,
-timers, moves, geometry writes, and membership writes remain absent. Window,
-stacking-order, and layout scans remain forbidden.
+stale effect without desktop rollback. The only permitted KWin writes or
+requests are `KWin.Workspace.activeWindow`, `KWin.SceneView.currentDesktop`, the
+guarded `KWin.Workspace.currentDesktop` fallback, and one guarded public
+`KWin.Workspace.moveDesktop` call for a validated card reorder. Settings,
+shortcut-assignment, screen-edge, window-move, geometry, and membership writes
+remain forbidden; actions, bindings, schema, private APIs, and timers remain
+absent. Window, stacking-order, and layout scans remain forbidden.
 
 The two-output Wayland scenario routes a physical left click through the
 compositor for native Wayland and XWayland passes. It verifies both exact
@@ -140,6 +141,18 @@ activation keys, and `Escape`.
 Build, package, and exact-SHA CI cover the stable artifacts. One hidden full
 Wayland VM checkpoint routes physical keyboard input through the packaged
 effect; no new application or backend matrix is added.
+
+The 1.22.0 release slice remains effect-only. A focused pure matrix covers
+every insertion slot, protected-tail boundary, no-op, and invalid numeric
+input. QML checks require a plain left number-gutter drag, fixed cards with one
+insertion marker, exact grab and release revalidation, one public reorder call,
+constant-time pointer updates, and write-free cancellation or stale state.
+
+The existing hidden full Wayland VM checkpoint adds one physical gutter drag
+with Konsole, Firefox, XWayland xterm, and Calculator. It verifies the exact
+desktop order, IDs, protected tail, selection, focus, memberships, frames,
+layout state, cleanup, and overview reopen without adding an application or
+backend matrix.
 
 In the following unit list, zero writes to floating windows means ambient
 layout work; explicit manual-floating movement, centering, or contextual size
@@ -330,7 +343,7 @@ closes without changing the active application. The checkpoint rejects
 component errors and preserves frames, desktops, persisted layout bytes, and
 Plasma's built-in Overview. After unloading the effect, the retained action is
 invoked once more to prove it is inert while the main extension remains
-loaded. The stable 1.21.0 release runs this single full checkpoint hidden.
+loaded. The stable 1.22.0 release runs this expanded full checkpoint hidden.
 
 The host injects real keyboard shortcuts and absolute `Meta+left` drags through QEMU QMP, so Plasma routing and pointer behavior cannot hide behind direct invocation. The pointer checkpoint moves native Wayland Firefox into an XWayland xterm column, verifies destination width and order, then reorders the resulting stack. A second physical drag moves native Wayland Firefox through a KWin-owned same-output desktop switch, releases it over a fresh XWayland target, and verifies destination order and width, active focus, unchanged hidden primary-desktop frames, and exact cleanup. The VM also verifies both desktop-reorder directions and aliases against real applications while preserving desktop IDs, selection, window memberships, focus, frames, and the shared tail. It applies and restores a live gap while a real Konsole window is floating. For default width and both resize steps, it co-delivers each policy with a temporary gap barrier, restores the gap, then proves exact existing frames before the explicit action. The remaining checks cover dynamic desktops, minimized-slot navigation, column reorder, horizontal extraction, explicit consume and expel past minimized peers, tiled and floating transfers, transfer boundaries, layer navigation, stack editing, fullscreen and maximize, sizing, and viewport scrolling with native Wayland and XWayland clients. The real xterm path also verifies advertised character-cell resize increments and exact off-lattice tiled geometry. See [Shortcuts](shortcuts.md).
 

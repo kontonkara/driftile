@@ -1,14 +1,12 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.21.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.22.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.21.0 adds spatial keyboard navigation to the optional overview without
-changing layout ownership, settings, persistence, or pointer paths.
-
-Version 1.22.0 is in development with guarded number-gutter desktop-card
-reordering through public KWin APIs.
+Stable 1.22.0 adds guarded number-gutter desktop-card reordering to the optional
+overview through public KWin APIs without changing layout ownership, settings,
+or persistence.
 
 ## Foundation (delivered)
 
@@ -951,7 +949,7 @@ Release criteria (met):
 
 No other feature belongs to 1.21.0.
 
-## 1.22.0 (in development)
+## 1.22.0 (released)
 
 Version `1.22.0` adds vertical desktop-card reordering to the optional overview.
 A plain left drag begins only in a card's number gutter. Cards stay fixed while
@@ -964,7 +962,7 @@ complete ordered desktop object/ID snapshot captured at grab. A valid request
 uses public `KWin.Workspace.moveDesktop` once; cancellation, no-op, stale, or
 unsupported paths are write-free. The main script remains the layout owner.
 
-Release criteria:
+Release criteria (met):
 
 - A focused pure matrix covers every insertion slot, protected-tail case, no-op,
   and invalid numeric input.
