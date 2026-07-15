@@ -48,6 +48,24 @@ Assign them in **System Settings > Keyboard > Shortcuts** if needed.
 numbered desktop and are also unbound by default. They do not change the
 helper-owned default profile.
 
+`driftile_insert_window_into_stack_left` and
+`driftile_insert_window_into_stack_right` remain unbound. With one active
+relation-free manually floating window, direction compares its frame center
+with solved column centers in the current output and desktop. Off-screen
+columns participate, singleton columns are skipped, and selection does not
+wrap. The nearest structural multi-window stack is the only candidate; an
+unsafe candidate makes the command a no-op instead of routing farther.
+
+A successful contextual insertion appends and selects the active window. The
+target width and stacked or tabbed presentation win, the inserted height is
+automatic, and focus is retained. Floating ownership and the tiled layout stay
+unchanged while guarded geometry writes are staged. Failure compensates frames
+that still have valid write ownership and otherwise schedules dirty-context
+recovery. Automatic, related, minimized, native-state, pending, stale, or
+otherwise unsafe targets fail closed without tiled fallback. This adds no
+action, default binding, setting, schema, persistence field, helper, overview,
+or KWin API.
+
 On a fresh shortcut record, the separately installed overview effect offers
 `Meta+O` when enabled. KGlobalAccel preserves the current assignment across
 effect unloads and upgrades; the retained action is inert while unloaded. Its

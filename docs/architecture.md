@@ -164,6 +164,9 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   window-height decrease/increase actions to an eligible manually floating frame
   through a dedicated per-window transaction without reading or mutating a
   tiled context.
+- Routes the existing unbound direct-insertion actions to one guarded attach
+  preview for an eligible manually floating frame without adding a KWin or
+  private API.
 - Transfers one active relation-free floating window between desktops through a dedicated KWin transaction without changing tiled state or frame geometry.
 - Remembers the last non-minimized tiled and floating focus per context, switches layers, and resolves floating navigation from live frame geometry without changing frames during floating navigation.
 - Skips minimized tiled slots, fully minimized columns, and minimized floating candidates during focus resolution without taking ownership of KWin's minimize mechanism.
@@ -453,6 +456,19 @@ inspected safely within the codec bound.
 - Resolve direct stack insertion inside the active context, skipping singleton columns without wrapping and preserving every intermediate column. Skipped columns are nonparticipants.
 - Permit a visible active member to insert past settled minimized passive peers in the participating source and target columns, including a fully minimized target stack. Preserve passive logical order, height state, minimized state, and externally changed hidden frames without geometry writes.
 - Reject direct insertion when either participating column contains a fullscreen, maximized, native-tiled, restore- or toggle-settling, or other non-minimize blocker. Cancel and roll back if a participant completes a state round trip during reflow.
+- Resolve contextual floating direct insertion from the active frame's
+  horizontal center against solved centers for every column in its current
+  output and desktop strip. Include off-screen columns, skip singleton columns,
+  do not wrap, and inspect only the nearest structural multi-window stack. An
+  unsafe nearest target or context fails closed without routing farther or
+  reaching tiled insertion.
+- Keep the floating owner, reinsertion state, and original tiled layout
+  unchanged while guarded geometry writes stage the attach preview. On commit,
+  append and select the active window with automatic height while the target
+  width and stacked or tabbed presentation win and focus remains active.
+  Compensate a failed transition only for frames that retain captured write
+  ownership; otherwise leave replacement state untouched and schedule
+  dirty-context recovery.
 - After KWin completes physical output and desktop movement, adopt one active
   normal tiled window into the exact visible target under the cursor. Use the
   target midpoint for before-or-after insertion, retain the destination width,
@@ -607,6 +623,11 @@ inspected safely within the codec bound.
   automatic targets, one forward write, and zero tiled mutation.
 - Verify vertical focus, member reorder, contextual merge and extraction, suspended members, and structural rollback.
 - Verify direct insertion past settled minimized source and target peers, fully minimized target stacks, skipped-singleton nonparticipation, zero hidden-frame writes, authoritative external frame changes, state-round-trip cancellation, exact rollback, and fail-closed blockers.
+- Verify contextual floating direct insertion in both directions with
+  singleton skipping, target width and presentation adoption, automatic
+  height, retained focus, ownership transfer, related-window rejection,
+  state-round-trip compensation, and no-target rejection without tiled
+  fallback.
 - Verify cross-output pointer adoption before and after a visible target,
   destination width and automatic height, both signal orders, exact
   compensation, and ordinary singleton fallback for empty, stale, ambiguous,

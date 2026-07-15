@@ -138,6 +138,24 @@ stack resizing. Tiled semantics are otherwise unchanged, while window-height
 reset and preset actions remain tiled-only. This adds no action, binding,
 setting, or schema.
 
+The existing unbound insert-left and insert-right actions are also contextual
+for one active relation-free manually floating window. Direction compares the
+floating frame's horizontal center with every solved column center in the
+current output and desktop scrollable strip. Off-screen columns participate,
+singleton columns are skipped, and selection does not wrap. Only the nearest
+structural multi-window stack is considered; if it or the context is unsafe,
+the command fails closed instead of routing to a farther stack or the tiled
+path.
+
+Insertion appends and selects the active window while retaining focus. The
+target column's width and stacked or tabbed presentation win, and the inserted
+height becomes automatic. Floating ownership and the tiled layout stay
+unchanged while guarded geometry writes are staged. Failure compensates frames
+that still have valid write ownership and otherwise schedules dirty-context
+recovery. Automatic, related, minimized, native-state, pending, or stale active
+targets are no-ops. The path adds no action, default binding, setting, schema,
+persistence field, helper, overview, KWin API, or private API.
+
 A tiled drag commits on release over exactly one visible tiled target in the
 same context. The target midpoint selects insertion before or after it. Moving
 within a stack retains the window-height policy; moving into another column

@@ -7,6 +7,9 @@ record. Later direction is not a committed release schedule.
 Stable 1.27.0 makes existing width-preset and reset actions contextual for one
 relation-free manually floating window.
 
+The frozen 1.28.0 development slice makes existing unbound direct-insertion
+actions contextual for one relation-free manually floating window.
+
 ## Foundation (delivered)
 
 - Build and package a declarative KWin script with a TypeScript runtime.
@@ -1106,6 +1109,39 @@ Release criteria (met):
   behavior, helper or overview behavior, or KWin API.
 
 No other feature belongs to 1.27.0.
+
+## 1.28.0 (in development)
+
+Existing unbound insert-left and insert-right actions contextually retile one
+active relation-free manually floating window. Direction compares its frame's
+horizontal center with solved column centers in the current output and desktop
+strip. Off-screen columns participate, singleton columns are skipped, and
+selection does not wrap. The nearest structural multi-window stack is the only
+candidate; an unsafe nearest stack fails closed instead of routing farther.
+
+Success appends and selects the active window, retains focus, adopts the target
+width and stacked or tabbed presentation, and uses automatic height. Floating
+ownership and the tiled layout remain unchanged while guarded geometry writes
+are staged. Failed transitions compensate frames that retain captured write
+ownership and otherwise enter dirty-context recovery. Automatic, related,
+minimized, native-state, pending, stale, unsafe-target, and unsafe-context cases
+fail closed without tiled fallback.
+
+Release criteria:
+
+- Focused runtime coverage verifies both directions, singleton skipping, target
+  width and presentation adoption, automatic height, retained focus, ownership
+  transfer, related-window rejection, state-round-trip compensation, and
+  no-target rejection without tiled fallback.
+- Formatting, type, lint, focused unit, package, Nix evaluation, and Nix build
+  gates pass before exact-SHA CI.
+- Existing shortcut registration and tiled direct-insertion coverage is reused
+  without a new integration, application, backend, or VM matrix. The slice
+  makes no VM validation claim.
+- The slice adds no action, default binding, setting, schema, persistence field,
+  helper or overview behavior, KWin API, or private API.
+
+No other feature belongs to 1.28.0.
 
 ## Post-v1
 

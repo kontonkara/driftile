@@ -204,6 +204,15 @@ Existing packaged width settlement and tiled preset/reset coverage is reused
 without a new backend, integration, application, or VM matrix. This release
 makes no VM validation claim.
 
+The frozen 1.28.0 development slice uses focused runtime coverage for
+contextual manual-floating direct insertion. It covers both directions,
+singleton skipping, target width and presentation adoption, automatic height,
+retained focus, ownership transfer, related-window rejection,
+state-round-trip compensation, and no-target rejection without tiled fallback.
+Existing shortcut registration and tiled direct-insertion coverage is reused
+without a new integration, application, backend, or VM matrix. The slice makes
+no VM validation claim.
+
 In the following unit list, zero writes to floating windows means ambient
 layout work; explicit manual-floating movement, centering, or contextual size
 resizing owns its guarded frame request.

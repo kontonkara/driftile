@@ -362,6 +362,10 @@ type WindowTransferPreview = NonNullable<
   ReturnType<LayoutEngine["previewWindowTransfer"]>
 >;
 
+type WindowAttachPreview = NonNullable<
+  ReturnType<LayoutEngine["previewWindowAttach"]>
+>;
+
 type ColumnTransferPreview = NonNullable<
   ReturnType<LayoutEngine["previewColumnTransfer"]>
 >;
@@ -375,6 +379,10 @@ interface ToggleGeometryTransition {
   readonly expectedFrame: Rect;
   settlementArmed: boolean;
 }
+
+type WindowOwnershipTransitionAcceptance = (
+  ownedTransitions: ReadonlyMap<WindowId, ToggleGeometryTransition>,
+) => boolean;
 
 interface ToggleTransitionProbe {
   completedAttempts: number;
@@ -1937,10 +1945,24 @@ export class RuntimeController {
   }
 
   insertWindowIntoStackLeft(): boolean {
+    const floatingResult =
+      this.insertActiveManualFloatingWindowIntoStack("left");
+
+    if (floatingResult !== null) {
+      return floatingResult;
+    }
+
     return this.insertActiveWindowIntoStack("left");
   }
 
   insertWindowIntoStackRight(): boolean {
+    const floatingResult =
+      this.insertActiveManualFloatingWindowIntoStack("right");
+
+    if (floatingResult !== null) {
+      return floatingResult;
+    }
+
     return this.insertActiveWindowIntoStack("right");
   }
 
@@ -7000,8 +7022,12 @@ export class RuntimeController {
   private manualFloatingFrameChangeIsCurrent(
     command: ManualFloatingFrameCommand,
     allowedPendingSizeChange?: PendingManualFloatingSizeChange,
+    allowedToggleTransition?: ToggleGeometryTransition,
   ): boolean {
     const pendingSizeChange = this.pendingManualFloatingSizeChanges.get(
+      command.activeId,
+    );
+    const toggleTransition = this.toggleGeometryTransitions.get(
       command.activeId,
     );
 
@@ -7044,7 +7070,8 @@ export class RuntimeController {
       this.transientResumeProbes.has(command.activeId) ||
       this.capacityLeaseByWindow.has(command.activeId) ||
       this.capacitySupersededParkWindows.has(command.activeId) ||
-      this.toggleGeometryTransitions.has(command.activeId) ||
+      (toggleTransition !== undefined &&
+        toggleTransition !== allowedToggleTransition) ||
       this.borderSynchronizationIds.has(command.activeId) ||
       this.borderlessSettlementTokens.has(command.activeId) ||
       this.topologyRevision !== command.topologyRevision ||
@@ -7423,6 +7450,256 @@ export class RuntimeController {
     ) {
       this.pendingAdmissionContexts.add(command.context.key);
       this.scheduleWork();
+    }
+
+    return true;
+  }
+
+  private insertActiveManualFloatingWindowIntoStack(
+    direction: HorizontalDirection,
+  ): boolean | null {
+    const activeWindow = this.workspace.activeWindow;
+
+    if (!activeWindow) {
+      return null;
+    }
+
+    const activeId = windowId(String(activeWindow.internalId));
+    const floating = this.floatingWindows.get(activeId);
+
+    if (!floating) {
+      return null;
+    }
+
+    this.lastWrites = 0;
+
+    if (!this.synchronizePendingWindows()) {
+      return false;
+    }
+
+    const command = this.prepareManualFloatingFrameChange(
+      activeId,
+      activeWindow,
+      floating,
+    );
+
+    if (!command || this.floatingWindowHasRelations(activeWindow)) {
+      return false;
+    }
+
+    const context = this.contexts.get(command.contextKey);
+
+    if (
+      !context ||
+      context.geometryFingerprint !== command.contextGeometry.fingerprint ||
+      this.hasStructuralCapacityState(command.contextKey) ||
+      this.pendingAdmissionContexts.has(command.contextKey) ||
+      Boolean(this.waitingWindowIds.get(command.contextKey)?.size) ||
+      this.dirtyContexts.has(command.contextKey)
+    ) {
+      return false;
+    }
+
+    for (const transition of this.toggleGeometryTransitions.values()) {
+      if (transition.contextKey === command.contextKey) {
+        return false;
+      }
+    }
+
+    const before = this.layout.snapshot(
+      command.context.outputId,
+      command.context.desktopId,
+    );
+    let solved: ReturnType<typeof solveStripGeometry>;
+
+    try {
+      solved = this.solveContextGeometry(before, command.contextGeometry);
+    } catch {
+      return false;
+    }
+
+    const columnCenters = new Map<ColumnId, number>();
+
+    for (const window of solved.windows) {
+      if (!columnCenters.has(window.columnId)) {
+        const center = window.frame.x + window.frame.width / 2;
+
+        if (!Number.isFinite(center)) {
+          return false;
+        }
+
+        columnCenters.set(window.columnId, center);
+      }
+    }
+
+    if (columnCenters.size !== before.columns.length) {
+      return false;
+    }
+
+    const activeCenter =
+      command.originalFrame.x + command.originalFrame.width / 2;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    let target: LayoutColumnSnapshot | null = null;
+    let targetIndex = -1;
+
+    for (const [index, column] of before.columns.entries()) {
+      if (column.windowIds.length < 2) {
+        continue;
+      }
+
+      const center = columnCenters.get(column.id);
+
+      if (center === undefined) {
+        return false;
+      }
+
+      const distance =
+        direction === "left" ? activeCenter - center : center - activeCenter;
+
+      if (distance > 0 && distance < bestDistance) {
+        bestDistance = distance;
+        target = column;
+        targetIndex = index;
+      }
+    }
+
+    if (
+      !target ||
+      targetIndex < 0 ||
+      !this.columnMembersAreStackTransferEligible(
+        target,
+        context,
+        command.activeId,
+      )
+    ) {
+      return false;
+    }
+
+    const participants: StackTransferParticipant[] = [];
+
+    for (const id of target.windowIds) {
+      const window = this.observer.source(id);
+
+      if (!window || this.pendingWindowSyncs.has(id)) {
+        return false;
+      }
+
+      participants.push({
+        id,
+        minimized: window.minimized,
+        stateRevision: this.windowStateRevisions.get(id) ?? 0,
+        window,
+      });
+    }
+
+    const previousWindowId = target.windowIds[target.windowIds.length - 1];
+
+    if (!previousWindowId) {
+      return false;
+    }
+
+    const placement: DetachedWindowPlacement = {
+      columnId: target.id,
+      columnIndex: targetIndex,
+      columnPresentation: target.presentation,
+      columnWidth: { ...target.width },
+      desktopId: command.context.desktopId,
+      memberIndex: target.windowIds.length,
+      nextColumnId: null,
+      nextWindowId: null,
+      outputId: command.context.outputId,
+      previousColumnId: null,
+      previousWindowId,
+      windowId: command.activeId,
+    };
+    const preview = this.layout.previewWindowAttach(placement);
+
+    if (!preview) {
+      return false;
+    }
+
+    return this.attachFloatingWindow(
+      command,
+      floating,
+      before,
+      preview,
+      "floating stack insertion",
+      (ownedTransitions) =>
+        this.floatingStackInsertionIsCurrent(
+          command,
+          context,
+          before,
+          target,
+          participants,
+          ownedTransitions,
+        ),
+    );
+  }
+
+  private floatingStackInsertionIsCurrent(
+    command: ManualFloatingFrameCommand,
+    context: RuntimeContext,
+    before: LayoutContextSnapshot,
+    target: LayoutColumnSnapshot,
+    participants: readonly StackTransferParticipant[],
+    ownedTransitions: ReadonlyMap<WindowId, ToggleGeometryTransition>,
+  ): boolean {
+    const activeTransition = ownedTransitions.get(command.activeId);
+    let activeFrame: Rect;
+
+    try {
+      activeFrame = snapshotRect(command.activeWindow.frameGeometry);
+    } catch {
+      return false;
+    }
+
+    if (
+      !this.manualFloatingFrameChangeIsCurrent(
+        command,
+        undefined,
+        activeTransition,
+      ) ||
+      (!rectsEqual(activeFrame, command.originalFrame) &&
+        (!activeTransition ||
+          !rectsEqual(activeFrame, activeTransition.expectedFrame))) ||
+      this.floatingWindowHasRelations(command.activeWindow) ||
+      this.contexts.get(command.contextKey) !== context ||
+      context.geometryFingerprint !== command.contextGeometry.fingerprint ||
+      this.hasStructuralCapacityState(command.contextKey) ||
+      this.pendingAdmissionContexts.has(command.contextKey) ||
+      Boolean(this.waitingWindowIds.get(command.contextKey)?.size) ||
+      this.dirtyContexts.has(command.contextKey) ||
+      !sameLayoutContextSnapshot(
+        before,
+        this.layout.snapshot(
+          command.context.outputId,
+          command.context.desktopId,
+        ),
+      ) ||
+      participants.length !== target.windowIds.length ||
+      !this.columnMembersBelongToContext(target, context)
+    ) {
+      return false;
+    }
+
+    for (const [index, participant] of participants.entries()) {
+      if (
+        target.windowIds[index] !== participant.id ||
+        this.observer.source(participant.id) !== participant.window ||
+        participant.window.minimized !== participant.minimized ||
+        (this.windowStateRevisions.get(participant.id) ?? 0) !==
+          participant.stateRevision ||
+        this.pendingWindowSyncs.has(participant.id) ||
+        !this.stackTransferMemberIsEligible(
+          participant.id,
+          participant.window,
+          context,
+          true,
+          ownedTransitions.get(participant.id),
+        )
+      ) {
+        return false;
+      }
     }
 
     return true;
@@ -11896,6 +12173,23 @@ export class RuntimeController {
       return false;
     }
 
+    return this.attachFloatingWindow(
+      command,
+      floating,
+      before,
+      preview,
+      "tiling toggle",
+    );
+  }
+
+  private attachFloatingWindow(
+    command: ActiveWindowCommand,
+    floating: FloatingWindow,
+    before: LayoutContextSnapshot,
+    preview: WindowAttachPreview,
+    label: string,
+    accept?: WindowOwnershipTransitionAcceptance,
+  ): boolean {
     const preservedFloatingBaseline =
       floating.restoreBaseline.fingerprint ===
         command.contextGeometry.fingerprint &&
@@ -11958,7 +12252,8 @@ export class RuntimeController {
         this.capacityParkBackoffs.delete(command.contextKey);
         this.forgetWaitingWindow(command.activeId);
       },
-      "tiling toggle",
+      label,
+      accept,
     );
 
     return transitioned;
@@ -13019,7 +13314,10 @@ export class RuntimeController {
     source: KWinWindow,
     context: RuntimeContext,
     allowSettledMinimized: boolean,
+    allowedToggleTransition?: ToggleGeometryTransition,
   ): boolean {
+    const toggleTransition = this.toggleGeometryTransitions.get(id);
+
     if (
       !context.windowIds.has(id) ||
       this.floatingWindows.has(id) ||
@@ -13027,7 +13325,8 @@ export class RuntimeController {
       this.requestedSuspensions.has(id) ||
       this.automaticFloatingWindows.has(id) ||
       this.automaticallyFloats(source) ||
-      !this.toggleGeometrySettled(id)
+      (toggleTransition !== allowedToggleTransition &&
+        !this.toggleGeometrySettled(id))
     ) {
       return false;
     }
@@ -17252,6 +17551,7 @@ export class RuntimeController {
     commit: (viewportOffset: number) => boolean,
     afterCommit: () => void,
     label: string,
+    accept?: WindowOwnershipTransitionAcceptance,
   ): boolean {
     let nextLayout: ReturnType<typeof solveStripGeometry>;
 
@@ -17342,13 +17642,43 @@ export class RuntimeController {
     const trackedTransitions = desired.filter((window) =>
       changedIds.has(window.windowId),
     );
+    const ownedTransitions = new Map<WindowId, ToggleGeometryTransition>();
+
+    if (
+      !this.windowOwnershipTransitionIsAccepted(
+        command.contextKey,
+        ownedTransitions,
+        accept,
+        false,
+      )
+    ) {
+      return false;
+    }
 
     for (const window of trackedTransitions) {
-      this.toggleGeometryTransitions.set(window.windowId, {
+      const transition: ToggleGeometryTransition = {
         contextKey: command.contextKey,
         expectedFrame: { ...window.frame },
         settlementArmed: true,
-      });
+      };
+      ownedTransitions.set(window.windowId, transition);
+      this.toggleGeometryTransitions.set(window.windowId, transition);
+    }
+
+    if (
+      !this.windowOwnershipTransitionIsAccepted(
+        command.contextKey,
+        ownedTransitions,
+        accept,
+      )
+    ) {
+      for (const [id, transition] of ownedTransitions) {
+        if (this.toggleGeometryTransitions.get(id) === transition) {
+          this.toggleGeometryTransitions.delete(id);
+        }
+      }
+
+      return false;
     }
 
     const wasDirty = this.dirtyContexts.has(command.contextKey);
@@ -17362,6 +17692,10 @@ export class RuntimeController {
         command.context,
         (change) =>
           !this.hasTopologyBarrier() &&
+          this.windowOwnershipTransitionWriteIsAccepted(
+            change.windowId,
+            ownedTransitions,
+          ) &&
           this.windowOwnershipClassificationIsCurrent(change.windowId),
       );
     } catch (error) {
@@ -17379,7 +17713,12 @@ export class RuntimeController {
       !ownershipChanged &&
       desiredOwnershipCurrent &&
       !this.hasTopologyBarrier() &&
-      !this.dirtyContexts.has(command.contextKey);
+      !this.dirtyContexts.has(command.contextKey) &&
+      this.windowOwnershipTransitionIsAccepted(
+        command.contextKey,
+        ownedTransitions,
+        accept,
+      );
 
     if (forwardComplete && commit(nextLayout.viewportOffset)) {
       this.lastWrites = forwardWrites;
@@ -17397,8 +17736,10 @@ export class RuntimeController {
       return true;
     }
 
-    for (const window of trackedTransitions) {
-      this.toggleGeometryTransitions.delete(window.windowId);
+    for (const [id, transition] of ownedTransitions) {
+      if (this.toggleGeometryTransitions.get(id) === transition) {
+        this.toggleGeometryTransitions.delete(id);
+      }
     }
 
     let compensationWrites = 0;
@@ -17407,20 +17748,33 @@ export class RuntimeController {
     const floatingRollbackTargets = rollbackTargets.filter(
       (window) =>
         this.floatingWindows.has(window.windowId) &&
+        !this.toggleGeometryTransitions.has(window.windowId) &&
         this.windowOwnershipClassificationIsCurrent(window.windowId),
     );
     const compensationTargets = (
       this.hasTopologyBarrier() ? floatingRollbackTargets : rollbackTargets
-    ).filter((window) =>
-      this.windowOwnershipClassificationIsCurrent(window.windowId),
+    ).filter(
+      (window) =>
+        !this.toggleGeometryTransitions.has(window.windowId) &&
+        this.windowOwnershipClassificationIsCurrent(window.windowId),
     );
+    const compensationTransitions = new Map<
+      WindowId,
+      ToggleGeometryTransition
+    >();
 
     for (const window of compensationTargets) {
-      this.toggleGeometryTransitions.set(window.windowId, {
+      if (this.toggleGeometryTransitions.has(window.windowId)) {
+        continue;
+      }
+
+      const transition: ToggleGeometryTransition = {
         contextKey: command.contextKey,
         expectedFrame: { ...window.frame },
         settlementArmed: false,
-      });
+      };
+      this.toggleGeometryTransitions.set(window.windowId, transition);
+      compensationTransitions.set(window.windowId, transition);
     }
 
     if (!this.hasTopologyBarrier()) {
@@ -17430,6 +17784,8 @@ export class RuntimeController {
         command.context,
         (change) =>
           !this.hasTopologyBarrier() &&
+          this.toggleGeometryTransitions.get(change.windowId) ===
+            compensationTransitions.get(change.windowId) &&
           this.windowOwnershipClassificationIsCurrent(change.windowId),
       );
     } else if (floatingRollbackTargets.length > 0) {
@@ -17437,6 +17793,8 @@ export class RuntimeController {
         floatingRollbackTargets,
         command.context,
         (change) =>
+          this.toggleGeometryTransitions.get(change.windowId) ===
+            compensationTransitions.get(change.windowId) &&
           this.windowOwnershipClassificationIsCurrent(change.windowId),
       );
     }
@@ -17446,7 +17804,7 @@ export class RuntimeController {
       dirtyBeforeCompensation && !desiredOwnershipCurrent;
 
     if (
-      compensationTargets.length > 0 &&
+      compensationTransitions.size > 0 &&
       this.toggleTransitionPending(command.contextKey)
     ) {
       this.scheduleToggleTransitionProbe(command.contextKey);
@@ -17474,6 +17832,49 @@ export class RuntimeController {
     }
 
     return false;
+  }
+
+  private windowOwnershipTransitionIsAccepted(
+    contextKeyValue: string,
+    ownedTransitions: ReadonlyMap<WindowId, ToggleGeometryTransition>,
+    accept?: WindowOwnershipTransitionAcceptance,
+    invokeAcceptance = true,
+  ): boolean {
+    if (!accept) {
+      return true;
+    }
+
+    for (const [id, transition] of this.toggleGeometryTransitions) {
+      if (
+        transition.contextKey === contextKeyValue &&
+        ownedTransitions.get(id) !== transition
+      ) {
+        return false;
+      }
+    }
+
+    for (const [id, transition] of ownedTransitions) {
+      if (this.toggleGeometryTransitions.get(id) !== transition) {
+        return false;
+      }
+    }
+
+    try {
+      return !invokeAcceptance || accept(ownedTransitions);
+    } catch {
+      return false;
+    }
+  }
+
+  private windowOwnershipTransitionWriteIsAccepted(
+    id: WindowId,
+    ownedTransitions: ReadonlyMap<WindowId, ToggleGeometryTransition>,
+  ): boolean {
+    const transition = ownedTransitions.get(id);
+    return (
+      transition !== undefined &&
+      this.toggleGeometryTransitions.get(id) === transition
+    );
   }
 
   private hasPendingCapacityState(key: string): boolean {
@@ -24568,6 +24969,78 @@ function frameSizeConstraintBoundsEqual(
 
 function nearlyEqual(left: number, right: number): boolean {
   return Math.abs(left - right) <= 1e-6;
+}
+
+function sameLayoutContextSnapshot(
+  left: LayoutContextSnapshot,
+  right: LayoutContextSnapshot,
+): boolean {
+  return (
+    left.activeColumnId === right.activeColumnId &&
+    left.outputId === right.outputId &&
+    left.desktopId === right.desktopId &&
+    left.viewportOffset === right.viewportOffset &&
+    left.columns.length === right.columns.length &&
+    left.columns.every((column, index) => {
+      const candidate = right.columns[index];
+      return (
+        candidate !== undefined && sameLayoutColumnSnapshot(column, candidate)
+      );
+    })
+  );
+}
+
+function sameLayoutColumnSnapshot(
+  left: LayoutColumnSnapshot,
+  right: LayoutColumnSnapshot,
+): boolean {
+  if (
+    left.id !== right.id ||
+    left.presentation !== right.presentation ||
+    left.selectedWindowId !== right.selectedWindowId ||
+    left.width.kind !== right.width.kind ||
+    left.width.value !== right.width.value ||
+    left.windowIds.length !== right.windowIds.length
+  ) {
+    return false;
+  }
+
+  for (let index = 0; index < left.windowIds.length; index += 1) {
+    if (
+      left.windowIds[index] !== right.windowIds[index] ||
+      !sameOptionalWindowHeight(
+        left.windowHeights?.[index],
+        right.windowHeights?.[index],
+      )
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function sameOptionalWindowHeight(
+  left: WindowHeight | undefined,
+  right: WindowHeight | undefined,
+): boolean {
+  if (!left || !right) {
+    const explicit = left ?? right;
+    return !explicit || (explicit.kind === "auto" && explicit.weight === 1);
+  }
+
+  if (left.kind !== right.kind) {
+    return false;
+  }
+
+  switch (left.kind) {
+    case "auto":
+      return right.kind === "auto" && left.weight === right.weight;
+    case "fixed":
+      return right.kind === "fixed" && left.clientHeight === right.clientHeight;
+    case "preset":
+      return right.kind === "preset" && left.index === right.index;
+  }
 }
 
 function sameColumnWidth(left: ColumnWidth, right: ColumnWidth): boolean {

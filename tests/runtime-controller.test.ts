@@ -11312,6 +11312,310 @@ describe("RuntimeController", () => {
     expect(fixture.activationCount).toBe(activationCount);
   });
 
+  it.each([
+    {
+      activeFrame: { height: 180, width: 100, x: 600, y: 70 },
+      direction: "left" as const,
+      minimizeTargetPassive: false,
+      targetColumnId: "column:target",
+      targetHeights: [
+        { clientHeight: 200, kind: "fixed" as const },
+        { kind: "auto" as const, weight: 3 },
+        { kind: "auto" as const, weight: 1 },
+      ],
+      targetPresentation: "tabbed" as const,
+      targetWidth: 380,
+      targetWindowIds: ["target-passive", "target-visible", "active"],
+    },
+    {
+      activeFrame: { height: 180, width: 100, x: 300, y: 70 },
+      direction: "right" as const,
+      minimizeTargetPassive: true,
+      targetColumnId: "column:source",
+      targetHeights: [
+        { kind: "auto" as const, weight: 2 },
+        { kind: "auto" as const, weight: 4 },
+        { kind: "auto" as const, weight: 1 },
+      ],
+      targetPresentation: "stacked" as const,
+      targetWidth: 420,
+      targetWindowIds: ["source-passive", "source-visible", "active"],
+    },
+  ])(
+    "inserts a manual-floating window into the nearest $direction stack",
+    ({
+      activeFrame,
+      direction,
+      minimizeTargetPassive,
+      targetColumnId,
+      targetHeights,
+      targetPresentation,
+      targetWidth,
+      targetWindowIds,
+    }) => {
+      const setup = createDirectInsertionFixture({
+        activeFrame,
+        includeUnrelated: true,
+        ...(direction === "left"
+          ? { targetPresentation }
+          : { sourcePresentation: targetPresentation }),
+      });
+
+      expect(setup.controller.toggleFloating()).toBe(true);
+      flushManualScheduler(setup.scheduler);
+      expect(setup.active.window.frameGeometry).toEqual(activeFrame);
+      const targetPeer =
+        direction === "left" ? setup.targetPassive : setup.sourcePassive;
+
+      if (minimizeTargetPassive) {
+        setWindowState("minimized", targetPeer, true);
+        flushManualScheduler(setup.scheduler);
+      }
+
+      const targetPeerFrame = { ...targetPeer.window.frameGeometry };
+      const targetPeerWrites = targetPeer.writeCount;
+      const activeId = windowId("active");
+      const floatingWindows = runtimeFloatingWindows(setup.controller);
+      const before = setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      );
+      const unchangedColumns = before.columns.filter(
+        (column) => column.id !== columnId(targetColumnId),
+      );
+      const unrelatedLayout = setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.otherDesktop.id),
+      );
+      const unrelated = setup.unrelated;
+
+      if (!floatingWindows.has(activeId) || !unrelated) {
+        throw new Error("missing contextual insertion fixture state");
+      }
+
+      const unrelatedState = captureTrackedWindowState([unrelated]);
+      const managedCount = setup.controller.managedCount;
+      const activationCount = setup.fixture.activationCount;
+
+      expect(
+        direction === "left"
+          ? setup.controller.insertWindowIntoStackLeft()
+          : setup.controller.insertWindowIntoStackRight(),
+      ).toBe(true);
+      const after = setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      );
+      const target = after.columns.find(
+        (column) => column.id === columnId(targetColumnId),
+      );
+
+      if (!target) {
+        throw new Error("missing contextual insertion target");
+      }
+
+      expect(target).toMatchObject({
+        presentation: targetPresentation,
+        selectedWindowId: activeId,
+        width: { kind: "fixed", value: targetWidth },
+        windowIds: targetWindowIds.map(windowId),
+      });
+      expect(columnWindowHeights(target)).toEqual(targetHeights);
+      expect(
+        after.columns.filter(
+          (column) => column.id !== columnId(targetColumnId),
+        ),
+      ).toEqual(unchangedColumns);
+      expect(setup.active.window.frameGeometry).toMatchObject({
+        width: targetWidth,
+        x: targetPeer.window.frameGeometry.x,
+      });
+
+      if (minimizeTargetPassive) {
+        expect(targetPeer.window.frameGeometry).toEqual(targetPeerFrame);
+        expect(targetPeer.writeCount).toBe(targetPeerWrites);
+      }
+
+      expect(setup.controller.floatingCount).toBe(0);
+      expect(setup.controller.managedCount).toBe(managedCount + 1);
+      expect(floatingWindows.has(activeId)).toBe(false);
+      expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+      expect(setup.fixture.activationCount).toBe(activationCount);
+      expect(
+        setup.layout.snapshot(
+          outputId(setup.output.name),
+          desktopId(setup.otherDesktop.id),
+        ),
+      ).toEqual(unrelatedLayout);
+      expectTrackedWindowState([unrelated], unrelatedState);
+    },
+  );
+
+  it("fails closed after synchronizing pending floating-insertion context state", () => {
+    const setup = createDirectInsertionFixture({
+      activeFrame: { height: 180, width: 100, x: 600, y: 70 },
+    });
+
+    expect(setup.controller.toggleFloating()).toBe(true);
+    flushManualScheduler(setup.scheduler);
+    const activeId = windowId("active");
+    const floatingWindows = runtimeFloatingWindows(setup.controller);
+    const beforeLayout = setup.layout.snapshot(
+      outputId(setup.output.name),
+      desktopId(setup.desktop.id),
+    );
+    const beforeWindows = captureTrackedWindowState(setup.windows);
+    const floating = floatingWindows.get(activeId);
+    const state = setup.controller as unknown as {
+      readonly pendingWindowSyncs: Set<WindowId>;
+    };
+
+    state.pendingWindowSyncs.add(windowId("skipped"));
+
+    expect(setup.controller.insertWindowIntoStackLeft()).toBe(false);
+    expect(setup.controller.lastWriteCount).toBe(0);
+    expect(state.pendingWindowSyncs.has(windowId("skipped"))).toBe(false);
+    expect(
+      setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+    ).toEqual(beforeLayout);
+    expectTrackedWindowState(setup.windows, beforeWindows);
+    expect(floatingWindows.get(activeId)).toBe(floating);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+  });
+
+  it("fails closed and rolls back manual-floating stack insertion", () => {
+    const setup = createDirectInsertionFixture({
+      activeFrame: { height: 180, width: 100, x: 600, y: 70 },
+      targetPresentation: "tabbed",
+    });
+
+    expect(setup.controller.toggleFloating()).toBe(true);
+    flushManualScheduler(setup.scheduler);
+    const activeId = windowId("active");
+    const floatingWindows = runtimeFloatingWindows(setup.controller);
+    const capture = () => ({
+      activationCount: setup.fixture.activationCount,
+      floating: floatingWindows.get(activeId),
+      floatingCount: setup.controller.floatingCount,
+      layout: setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+      ),
+      managedCount: setup.controller.managedCount,
+      windows: captureTrackedWindowState(setup.windows),
+    });
+    const expectStable = (
+      before: ReturnType<typeof capture>,
+      preserveWriteCounts = true,
+    ): void => {
+      expect(
+        setup.layout.snapshot(
+          outputId(setup.output.name),
+          desktopId(setup.desktop.id),
+        ),
+      ).toEqual(before.layout);
+      expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
+        before.windows.frames,
+      );
+      expect(setup.windows.map(({ window }) => window.output)).toEqual(
+        before.windows.outputs,
+      );
+
+      if (preserveWriteCounts) {
+        expect(setup.windows.map(({ writeCount }) => writeCount)).toEqual(
+          before.windows.geometryWrites,
+        );
+      }
+
+      expect(floatingWindows.get(activeId)).toBe(before.floating);
+      expect(setup.controller.floatingCount).toBe(before.floatingCount);
+      expect(setup.controller.managedCount).toBe(before.managedCount);
+      expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+      expect(setup.fixture.activationCount).toBe(before.activationCount);
+    };
+
+    Object.defineProperty(setup.active.window, "transient", {
+      configurable: true,
+      value: true,
+    });
+    const relationBefore = capture();
+    expect(setup.controller.insertWindowIntoStackLeft()).toBe(false);
+    expect(setup.controller.lastWriteCount).toBe(0);
+    expectStable(relationBefore);
+    Object.defineProperty(setup.active.window, "transient", {
+      configurable: true,
+      value: false,
+    });
+
+    const rollbackBefore = capture();
+    let stateRoundTrip = false;
+    setup.active.setWriteBehavior((_frame, commit) => {
+      commit();
+
+      if (!stateRoundTrip) {
+        stateRoundTrip = true;
+        setWindowState("minimized", setup.targetPassive, true);
+        setWindowState("minimized", setup.targetPassive, false);
+      }
+    });
+
+    try {
+      expect(setup.controller.insertWindowIntoStackLeft()).toBe(false);
+    } finally {
+      setup.active.setWriteBehavior(null);
+    }
+
+    expect(stateRoundTrip).toBe(true);
+    expect(setup.targetPassive.window.minimized).toBe(false);
+    expectStable(rollbackBefore, false);
+    const writeDeltas = setup.windows.map(
+      ({ writeCount }, index) =>
+        writeCount - (rollbackBefore.windows.geometryWrites[index] ?? 0),
+    );
+
+    expect(writeDeltas.every((writes) => writes === 0 || writes === 2)).toBe(
+      true,
+    );
+    expect(writeDeltas[setup.windows.indexOf(setup.active)]).toBe(2);
+    expect(setup.controller.lastWriteCount).toBe(
+      writeDeltas.reduce((total, writes) => total + writes, 0),
+    );
+
+    flushManualScheduler(setup.scheduler);
+    const singletonColumns = setup.layout
+      .snapshot(outputId(setup.output.name), desktopId(setup.desktop.id))
+      .columns.flatMap((column) =>
+        column.windowIds.map((id, index) => ({
+          id: `${String(column.id)}:${String(index)}`,
+          width: { ...column.width },
+          windowIds: [String(id)],
+        })),
+      );
+    const firstSingleton = singletonColumns[0];
+
+    if (!firstSingleton) {
+      throw new Error("missing no-target singleton layout");
+    }
+
+    installTestLayout(
+      setup.controller,
+      setup.output,
+      setup.desktop,
+      firstSingleton.id,
+      singletonColumns,
+    );
+    flushManualScheduler(setup.scheduler);
+    const noTargetBefore = capture();
+
+    expect(setup.controller.insertWindowIntoStackLeft()).toBe(false);
+    expect(setup.controller.insertWindowIntoStackRight()).toBe(false);
+    expect(setup.controller.lastWriteCount).toBe(0);
+    expectStable(noTargetBefore);
+  });
+
   it("inserts past settled minimized peers in both affected columns", () => {
     const setup = createDirectInsertionFixture();
     const minimized = [setup.targetPassive, setup.sourcePassive];
@@ -39366,6 +39670,7 @@ interface DirectInsertionFixture {
   readonly sourceVisible: TrackedWindow;
   readonly targetPassive: TrackedWindow;
   readonly targetVisible: TrackedWindow;
+  readonly unrelated: TrackedWindow | null;
   readonly windows: readonly TrackedWindow[];
 }
 
@@ -39404,7 +39709,14 @@ interface MinimizedExpelFixture {
   readonly windows: readonly TrackedWindow[];
 }
 
-function createDirectInsertionFixture(): DirectInsertionFixture {
+function createDirectInsertionFixture(
+  options: {
+    readonly activeFrame?: KWinWindow["frameGeometry"];
+    readonly includeUnrelated?: boolean;
+    readonly sourcePresentation?: "stacked" | "tabbed";
+    readonly targetPresentation?: "stacked" | "tabbed";
+  } = {},
+): DirectInsertionFixture {
   const output = createOutput("DP-1", 0);
   const desktop = { id: "desktop-1" };
   const otherDesktop = { id: "desktop-2" };
@@ -39412,9 +39724,19 @@ function createDirectInsertionFixture(): DirectInsertionFixture {
   const targetVisible = createTrackedWindow("target-visible", output, desktop);
   const skipped = createTrackedWindow("skipped", output, desktop);
   const sourcePassive = createTrackedWindow("source-passive", output, desktop);
-  const active = createTrackedWindow("active", output, desktop);
+  const active = createTrackedWindow(
+    "active",
+    output,
+    desktop,
+    options.activeFrame ? { frameGeometry: options.activeFrame } : {},
+  );
   const sourceVisible = createTrackedWindow("source-visible", output, desktop);
   const trailing = createTrackedWindow("trailing", output, desktop);
+  const unrelated = options.includeUnrelated
+    ? createTrackedWindow("unrelated", output, otherDesktop, {
+        frameGeometry: { height: 240, width: 320, x: 80, y: 45 },
+      })
+    : null;
   const windows = [
     targetPassive,
     targetVisible,
@@ -39422,6 +39744,7 @@ function createDirectInsertionFixture(): DirectInsertionFixture {
     sourcePassive,
     active,
     sourceVisible,
+    ...(unrelated ? [unrelated] : []),
     trailing,
   ];
   const fixture = createWorkspace(
@@ -39451,7 +39774,7 @@ function createDirectInsertionFixture(): DirectInsertionFixture {
     [
       {
         id: "column:target",
-        presentation: "stacked",
+        presentation: options.targetPresentation ?? "stacked",
         selectedWindowId: "target-passive",
         width: { kind: "fixed", value: 380 },
         windowHeights: [
@@ -39469,8 +39792,9 @@ function createDirectInsertionFixture(): DirectInsertionFixture {
       },
       {
         id: "column:source",
-        presentation: "stacked",
-        selectedWindowId: "source-visible",
+        presentation: options.sourcePresentation ?? "stacked",
+        selectedWindowId:
+          options.sourcePresentation === "tabbed" ? "active" : "source-visible",
         width: { kind: "fixed", value: 420 },
         windowHeights: [
           { kind: "auto", weight: 2 },
@@ -39512,6 +39836,7 @@ function createDirectInsertionFixture(): DirectInsertionFixture {
     sourceVisible,
     targetPassive,
     targetVisible,
+    unrelated,
     windows,
   };
 }

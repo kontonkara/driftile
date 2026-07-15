@@ -332,6 +332,27 @@ The ownership rule is strict:
   behavior, helper or overview behavior, KWin API, backend, integration,
   application, or VM matrix.
 
+## 1.28 contextual floating direct-insertion slice
+
+- Existing unbound insert-left and insert-right actions retile one active
+  relation-free manually floating window when that layer is active.
+- Direction compares the floating frame's horizontal center with solved column
+  centers in the current output and desktop strip. Off-screen columns
+  participate, singleton columns are skipped, selection does not wrap, and the
+  nearest structural multi-window stack is the only candidate. An unsafe
+  nearest candidate fails closed instead of routing farther.
+- Success appends and selects the active window, retains focus, adopts the
+  target width and stacked or tabbed presentation, and assigns automatic
+  height.
+- Floating ownership and the tiled layout remain unchanged while guarded
+  geometry writes are staged. Failure compensates frames that retain valid
+  write ownership and otherwise schedules dirty-context recovery. Automatic,
+  related, minimized, native-state, pending, stale, or unsafe target and
+  context states fail closed without tiled fallback.
+- The frozen slice adds no action, default binding, setting, schema,
+  persistence field, helper or overview behavior, KWin API, private API,
+  backend, integration, application, or VM matrix.
+
 ## Beyond v1
 
 - Optional visual transitions.
@@ -404,6 +425,17 @@ Driftile must integrate with, not duplicate:
 - Cross-desktop pointer adoption adds no visual feedback, setting, shortcut action, binding, or persistence-schema field.
 - Direct insertion appends the active window to the nearest existing stack in its direction, skips singleton columns as nonparticipants without wrapping, and preserves the target width.
 - Direct insertion may cross settled minimized passive peers in the participating source and target columns, including a fully minimized target stack. Those peers retain logical order, height state, minimized state, and externally changed frames without geometry writes. Fullscreen, maximized, native-tiled, restore- or toggle-settling, and other blockers in either participating column fail closed; a state round trip during reflow cancels and rolls back the edit.
+- With one active relation-free manually floating window, the same unbound
+  insert-left and insert-right actions resolve the nearest structural
+  multi-window stack by comparing its frame center with solved column centers
+  in the current output and desktop strip. Off-screen columns participate;
+  singleton columns are skipped, selection does not wrap, and an unsafe nearest
+  stack fails closed without routing farther or entering the tiled path.
+- Contextual floating insertion appends and selects the active window, retains
+  focus, adopts the target width and stacked or tabbed presentation, and resets
+  its height to automatic. Floating ownership and the tiled layout stay
+  unchanged while geometry writes are staged; failed writes are compensated
+  only while their captured write ownership remains valid.
 - Explicit consume appends the immediate right column's visible top member to the active column; explicit expel moves the active column's visible bottom member into a new right column. Focus remains in the active column.
 - Horizontal focus skips fully minimized columns; vertical focus skips minimized slots. Both stop at layout boundaries without wrapping.
 - Focus traversal does not route around suspension reasons other than minimization; those blockers remain fail-closed.
