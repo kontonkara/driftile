@@ -335,6 +335,11 @@ QtObject {
         text: "Driftile: Focus window 9 in column"
         onActivated: Runtime.DriftileRuntime.focusWindowInColumn(9)
     }
+    readonly property ShortcutHandler focusWindowPreviousShortcut: ShortcutHandler {
+        name: "driftile_focus_window_previous"
+        text: "Driftile: Focus previous window"
+        onActivated: Runtime.DriftileRuntime.focusWindowPrevious()
+    }
     readonly property ShortcutHandler moveColumnLeftShortcut: ShortcutHandler {
         name: "driftile_move_column_left"
         text: "Driftile: Move column left"
@@ -437,6 +442,16 @@ QtObject {
         text: "Driftile: Consume or expel window right"
         sequence: "Meta+]"
         onActivated: Runtime.DriftileRuntime.moveWindowRight()
+    }
+    readonly property ShortcutHandler swapWindowLeftShortcut: ShortcutHandler {
+        name: "driftile_swap_window_left"
+        text: "Driftile: Swap window left"
+        onActivated: Runtime.DriftileRuntime.swapWindowLeft()
+    }
+    readonly property ShortcutHandler swapWindowRightShortcut: ShortcutHandler {
+        name: "driftile_swap_window_right"
+        text: "Driftile: Swap window right"
+        onActivated: Runtime.DriftileRuntime.swapWindowRight()
     }
     readonly property ShortcutHandler consumeWindowIntoColumnShortcut: ShortcutHandler {
         name: "driftile_consume_window_into_column"
@@ -947,6 +962,16 @@ QtObject {
         text: "Driftile: Toggle tabbed column"
         sequence: "Meta+W"
         onActivated: Runtime.DriftileRuntime.toggleColumnTabbedDisplay()
+    }
+    readonly property ShortcutHandler setColumnStackedDisplayShortcut: ShortcutHandler {
+        name: "driftile_set_column_stacked_display"
+        text: "Driftile: Set stacked column display"
+        onActivated: Runtime.DriftileRuntime.setColumnStackedDisplay()
+    }
+    readonly property ShortcutHandler setColumnTabbedDisplayShortcut: ShortcutHandler {
+        name: "driftile_set_column_tabbed_display"
+        text: "Driftile: Set tabbed column display"
+        onActivated: Runtime.DriftileRuntime.setColumnTabbedDisplay()
     }
     readonly property ShortcutHandler expandColumnToAvailableWidthShortcut: ShortcutHandler {
         name: "driftile_expand_column_to_available_width"

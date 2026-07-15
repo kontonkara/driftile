@@ -969,6 +969,7 @@ export class RuntimeController {
   private initializing = false;
   private readonly lastFloatingFocus = new Map<string, WindowId>();
   private readonly lastTiledFocus = new Map<string, WindowId>();
+  private readonly windowFocusHistory = new Set<WindowId>();
   private focusRequestDepth = 0;
   private ownershipFollowUpRequired = false;
   private ownershipRefreshInProgress = false;
@@ -2297,6 +2298,83 @@ export class RuntimeController {
     });
   }
 
+  focusWindowPrevious(): boolean {
+    const activeWindow = this.workspace.activeWindow;
+
+    if (
+      !this.started ||
+      this.stackEditOperation ||
+      this.windowTransferOperation ||
+      this.startupStabilizationToken !== null ||
+      this.hasTopologyBarrier() ||
+      !activeWindow
+    ) {
+      return false;
+    }
+
+    const activeId = windowId(String(activeWindow.internalId));
+
+    if (!this.windowIsFocusHistoryEligible(activeId, activeWindow)) {
+      return false;
+    }
+
+    let targetId: WindowId | null = null;
+    let targetWindow: KWinWindow | null = null;
+
+    for (const candidateId of this.windowFocusHistory) {
+      if (candidateId === activeId) {
+        continue;
+      }
+
+      const candidate = this.observer.source(candidateId);
+
+      if (
+        candidate &&
+        this.windowIsFocusHistoryEligible(candidateId, candidate)
+      ) {
+        targetId = candidateId;
+        targetWindow = candidate;
+      }
+    }
+
+    if (!targetId || !targetWindow) {
+      return false;
+    }
+
+    this.recordWindowFocus(activeId, activeWindow);
+    let focusRequestFailed = false;
+    this.focusRequestDepth += 1;
+
+    try {
+      this.workspace.activeWindow = targetWindow;
+    } catch {
+      focusRequestFailed = true;
+    } finally {
+      this.focusRequestDepth -= 1;
+    }
+
+    if (
+      !focusRequestFailed &&
+      this.focusHistoryRequestIsAccepted(targetId, targetWindow)
+    ) {
+      return true;
+    }
+
+    if (
+      this.workspace.activeWindow !== activeWindow &&
+      this.observer.source(activeId) === activeWindow &&
+      this.windowIsFocusHistoryEligible(activeId, activeWindow)
+    ) {
+      try {
+        this.workspace.activeWindow = activeWindow;
+      } catch {
+        // KWin focus recovery is best effort after a rejected history focus.
+      }
+    }
+
+    return false;
+  }
+
   moveDesktopDown(): boolean {
     return this.moveSelectedDesktop(1);
   }
@@ -2379,6 +2457,14 @@ export class RuntimeController {
 
   moveWindowRight(): boolean {
     return this.moveActiveWindowHorizontally("right");
+  }
+
+  swapWindowLeft(): boolean {
+    return this.swapActiveWindow("left");
+  }
+
+  swapWindowRight(): boolean {
+    return this.swapActiveWindow("right");
   }
 
   moveWindowUp(): boolean {
@@ -2759,31 +2845,27 @@ export class RuntimeController {
   toggleColumnTabbedDisplay(): boolean {
     const command = this.prepareActiveColumnCommand();
 
-    if (!command || this.hasCapacityMutationInFlight(command.context.key)) {
+    if (!command) {
       return false;
     }
 
     const target: ColumnPresentation =
       command.activeColumn.presentation === "stacked" ? "tabbed" : "stacked";
-    let previous: ColumnPresentation | null = null;
+    return this.setActiveColumnPresentation(command, target);
+  }
 
-    const toggled = this.applyActiveColumnMutation(
-      command,
-      "column presentation toggle",
-      () => {
-        previous = this.layout.setColumnPresentation(command.activeId, target);
-        return previous !== null;
-      },
-      () =>
-        previous !== null &&
-        this.layout.setColumnPresentation(command.activeId, previous) !== null,
-    );
+  setColumnStackedDisplay(): boolean {
+    const command = this.prepareActiveColumnCommand();
+    return command
+      ? this.setActiveColumnPresentation(command, "stacked")
+      : false;
+  }
 
-    if (toggled && target === "tabbed") {
-      this.announceTabSelection(command.activeId);
-    }
-
-    return toggled;
+  setColumnTabbedDisplay(): boolean {
+    const command = this.prepareActiveColumnCommand();
+    return command
+      ? this.setActiveColumnPresentation(command, "tabbed")
+      : false;
   }
 
   moveWindowToPreviousDesktop(): boolean {
@@ -3531,6 +3613,7 @@ export class RuntimeController {
       this.initialFloatingPolicyByWindow.clear();
       this.lastFloatingFocus.clear();
       this.lastTiledFocus.clear();
+      this.windowFocusHistory.clear();
       this.managedWindows.clear();
       this.pendingAdmissionContexts.clear();
       this.pendingDefaultColumnWidth = null;
@@ -5982,6 +6065,7 @@ export class RuntimeController {
 
   private readonly handleWindowRemoved = (id: string): void => {
     const managedId = windowId(id);
+    this.windowFocusHistory.delete(managedId);
     const endedInteractiveResize =
       String(this.interactiveResizeSource?.internalId) === id;
 
@@ -6237,6 +6321,7 @@ export class RuntimeController {
     }
 
     const id = windowId(String(window.internalId));
+    this.recordWindowFocus(id, window);
 
     if (this.stackEditOperation) {
       return;
@@ -6878,6 +6963,61 @@ export class RuntimeController {
     }
 
     return "tiling";
+  }
+
+  private windowIsFocusHistoryEligible(
+    id: WindowId,
+    source: KWinWindow,
+  ): boolean {
+    if (
+      this.observer.source(id) !== source ||
+      source.deleted ||
+      source.minimized ||
+      this.automaticFloatingWindows.has(id) ||
+      this.automaticallyFloats(source)
+    ) {
+      return false;
+    }
+
+    const context = this.resolveLayerFocusContext(source);
+
+    if (!context) {
+      return false;
+    }
+
+    const key = contextKey(context);
+    const layer = this.windowLayer(id, source, key);
+
+    return (
+      layer === "tiling" ||
+      (layer === "floating" &&
+        this.floatingWindows.get(id)?.currentContextKey === key)
+    );
+  }
+
+  private focusHistoryRequestIsAccepted(
+    id: WindowId,
+    source: KWinWindow,
+  ): boolean {
+    return (
+      this.started &&
+      !this.stackEditOperation &&
+      !this.windowTransferOperation &&
+      this.startupStabilizationToken === null &&
+      !this.hasTopologyBarrier() &&
+      this.workspace.activeWindow === source &&
+      this.observer.source(id) === source &&
+      this.windowIsFocusHistoryEligible(id, source)
+    );
+  }
+
+  private recordWindowFocus(id: WindowId, source: KWinWindow): void {
+    if (!this.windowIsFocusHistoryEligible(id, source)) {
+      return;
+    }
+
+    this.windowFocusHistory.delete(id);
+    this.windowFocusHistory.add(id);
   }
 
   private rememberLayerFocus(
@@ -9120,6 +9260,37 @@ export class RuntimeController {
     return compensationWrites;
   }
 
+  private setActiveColumnPresentation(
+    command: ActiveColumnCommand,
+    target: ColumnPresentation,
+  ): boolean {
+    if (
+      command.activeColumn.presentation === target ||
+      this.hasCapacityMutationInFlight(command.context.key)
+    ) {
+      return false;
+    }
+
+    let previous: ColumnPresentation | null = null;
+    const changed = this.applyActiveColumnMutation(
+      command,
+      `column ${target} presentation`,
+      () => {
+        previous = this.layout.setColumnPresentation(command.activeId, target);
+        return previous !== null;
+      },
+      () =>
+        previous !== null &&
+        this.layout.setColumnPresentation(command.activeId, previous) !== null,
+    );
+
+    if (changed && target === "tabbed") {
+      this.announceTabSelection(command.activeId);
+    }
+
+    return changed;
+  }
+
   private moveActiveColumn(
     direction: HorizontalDirection,
     boundaryOutputDirection?: OutputDirection,
@@ -9216,6 +9387,64 @@ export class RuntimeController {
     }
 
     this.layout.discardStackEditRollback(edit.rollback);
+    return true;
+  }
+
+  private swapActiveWindow(direction: HorizontalDirection): boolean {
+    const command = this.prepareActiveColumnCommand();
+
+    if (!command || this.hasStructuralCapacityState(command.context.key)) {
+      return false;
+    }
+
+    const sourceIndex = command.before.columns.findIndex(
+      (column) => column.id === command.activeColumn.id,
+    );
+    const targetIndex =
+      direction === "left" ? sourceIndex - 1 : sourceIndex + 1;
+    const targetColumn = command.before.columns[targetIndex];
+    const targetId = targetColumn?.selectedWindowId;
+
+    if (sourceIndex < 0 || !targetColumn || !targetId) {
+      return false;
+    }
+
+    const acceptance = this.prepareStackTransferAcceptance(
+      [command.activeColumn, targetColumn],
+      command.context,
+      command.activeId,
+      command.activeId,
+      targetId,
+    );
+
+    if (!acceptance) {
+      return false;
+    }
+
+    const editState: { value: StackEditResult | null } = { value: null };
+    const swapped = this.applyActiveColumnMutation(
+      command,
+      "window swap",
+      () => {
+        editState.value = this.layout.swapActiveWindow(
+          command.activeId,
+          direction,
+        );
+        return editState.value !== null;
+      },
+      () =>
+        editState.value !== null &&
+        this.layout.rollbackStackEdit(editState.value.rollback),
+      () => acceptance.accept(acceptance.activeWindow),
+    );
+    const edit = editState.value;
+
+    if (!swapped || !edit) {
+      return false;
+    }
+
+    this.layout.discardStackEditRollback(edit.rollback);
+    this.announceTabSelection(command.activeId);
     return true;
   }
 

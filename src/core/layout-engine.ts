@@ -1012,6 +1012,129 @@ export class LayoutEngine {
     );
   }
 
+  swapActiveWindow(
+    windowId: WindowId,
+    direction: HorizontalDirection,
+  ): StackEditResult | null {
+    const placement = this.placements.get(windowId);
+
+    if (!placement) {
+      return null;
+    }
+
+    const context = this.contexts.get(placement.contextKey);
+
+    if (!context || context.activeColumnId !== placement.columnId) {
+      return null;
+    }
+
+    const sourceColumnIndex = liveColumnIndex(context, placement.columnId);
+    const targetColumnIndex =
+      direction === "left" ? sourceColumnIndex - 1 : sourceColumnIndex + 1;
+    const source = context.columns[sourceColumnIndex];
+    const target = context.columns[targetColumnIndex];
+    const targetWindowId = target?.selectedWindowId;
+    const targetPlacement = targetWindowId
+      ? this.placements.get(targetWindowId)
+      : undefined;
+
+    if (
+      !source ||
+      !target ||
+      source.windowIds[placement.memberIndex] !== windowId ||
+      !targetWindowId ||
+      !targetPlacement ||
+      targetPlacement.contextKey !== placement.contextKey ||
+      targetPlacement.columnId !== target.id ||
+      target.windowIds[targetPlacement.memberIndex] !== targetWindowId
+    ) {
+      return null;
+    }
+
+    const before = this.snapshot(
+      context.outputId,
+      context.desktopId,
+      context.activityId,
+    );
+
+    if (
+      !validContextSnapshot(before) ||
+      !this.placementsMatchSnapshot(before)
+    ) {
+      return null;
+    }
+
+    const columns = before.columns.map(cloneColumnSnapshot);
+    const nextSource = columns[sourceColumnIndex];
+    const nextTarget = columns[targetColumnIndex];
+
+    if (!nextSource || !nextTarget) {
+      return null;
+    }
+
+    if (
+      nextSource.windowIds.length === 1 &&
+      nextTarget.windowIds.length === 1
+    ) {
+      columns[sourceColumnIndex] = nextTarget;
+      columns[targetColumnIndex] = nextSource;
+    } else {
+      const sourceWindowHeights = swappedSnapshotWindowHeight(
+        nextSource,
+        placement.memberIndex,
+        nextTarget,
+        targetPlacement.memberIndex,
+      );
+      const targetWindowHeights = swappedSnapshotWindowHeight(
+        nextTarget,
+        targetPlacement.memberIndex,
+        nextSource,
+        placement.memberIndex,
+      );
+
+      if (sourceWindowHeights === null || targetWindowHeights === null) {
+        return null;
+      }
+
+      const sourceWindowIds = [...nextSource.windowIds];
+      const targetWindowIds = [...nextTarget.windowIds];
+      sourceWindowIds[placement.memberIndex] = targetWindowId;
+      targetWindowIds[targetPlacement.memberIndex] = windowId;
+      columns[sourceColumnIndex] = {
+        id: nextSource.id,
+        presentation: nextSource.presentation,
+        selectedWindowId: targetWindowId,
+        width: nextSource.width,
+        ...(sourceWindowHeights ? { windowHeights: sourceWindowHeights } : {}),
+        windowIds: sourceWindowIds,
+      };
+      columns[targetColumnIndex] = {
+        id: nextTarget.id,
+        presentation: nextTarget.presentation,
+        selectedWindowId: windowId,
+        width: nextTarget.width,
+        ...(targetWindowHeights ? { windowHeights: targetWindowHeights } : {}),
+        windowIds: targetWindowIds,
+      };
+    }
+
+    const after = immutableContextSnapshot({
+      ...before,
+      activeColumnId:
+        nextSource.windowIds.length === 1 && nextTarget.windowIds.length === 1
+          ? nextSource.id
+          : nextTarget.id,
+      columns,
+    });
+
+    if (!validContextSnapshot(after) || !sameWindowSet(before, after)) {
+      return null;
+    }
+
+    this.replaceContext(after);
+    return this.createStackEditResult("reorder", before, after);
+  }
+
   reinsertWindow(
     windowId: WindowId,
     target: WindowReinsertionTarget,
@@ -3604,6 +3727,28 @@ function appendedDefaultSnapshotWindowHeight(
     ...column.windowHeights.map(cloneWindowHeight),
     automaticWindowHeight(),
   ]);
+}
+
+function swappedSnapshotWindowHeight(
+  destination: LayoutColumnSnapshot,
+  destinationIndex: number,
+  source: LayoutColumnSnapshot,
+  sourceIndex: number,
+): WindowHeight[] | null | undefined {
+  const sourceHeight = columnWindowHeights(source)[sourceIndex];
+
+  if (!sourceHeight) {
+    return null;
+  }
+
+  const heights = columnWindowHeights(destination).map(cloneWindowHeight);
+  heights[destinationIndex] = cloneWindowHeight(sourceHeight);
+
+  try {
+    return compactWindowHeights(heights);
+  } catch {
+    return null;
+  }
 }
 
 function immutableContextSnapshot(

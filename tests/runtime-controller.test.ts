@@ -11023,6 +11023,50 @@ describe("RuntimeController", () => {
     expect(fixture.activationCount).toBe(2);
   });
 
+  it("toggles previous focus across tiled and manual-floating windows while skipping ineligible history", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const floating = createTrackedWindow("floating", output, desktop);
+    const minimized = createTrackedWindow("minimized", output, desktop);
+    const active = createTrackedWindow("active", output, desktop);
+    const popup = createTrackedWindow("popup", output, desktop, {
+      dialog: true,
+      normalWindow: false,
+      transient: true,
+      transientFor: active.window,
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [floating.window, minimized.window, popup.window, active.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+    });
+
+    controller.start();
+    fixture.workspace.activeWindow = floating.window;
+    expect(controller.toggleFloating()).toBe(true);
+    fixture.workspace.activeWindow = minimized.window;
+    fixture.workspace.activeWindow = popup.window;
+    fixture.workspace.activeWindow = active.window;
+    setWindowState("minimized", minimized, true);
+
+    expect(controller.focusWindowPrevious()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(floating.window);
+    expect(controller.focusWindowPrevious()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+
+    fixture.setActivationBehavior(() => undefined);
+    expect(controller.focusWindowPrevious()).toBe(false);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+    fixture.setActivationBehavior(null);
+  });
+
   it("focuses the first and last columns without wrapping", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
@@ -17075,6 +17119,113 @@ describe("RuntimeController", () => {
     ).toBe(0);
   });
 
+  it("swaps the active window across columns and rolls back rejected geometry", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const windows = Array.from({ length: 4 }, (_value, index) =>
+      createTrackedWindow(`window-${String(index + 1)}`, output, desktop),
+    );
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map(({ window }) => window),
+    );
+    const showTabIndicator = vi.fn();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      showTabIndicator,
+    });
+
+    controller.start();
+    const layout = installTestLayout(
+      controller,
+      output,
+      desktop,
+      "column:source",
+      [
+        {
+          id: "column:source",
+          selectedWindowId: "window-2",
+          width: { kind: "fixed", value: 300 },
+          windowIds: ["window-1", "window-2"],
+        },
+        {
+          id: "column:target",
+          presentation: "tabbed",
+          selectedWindowId: "window-3",
+          width: { kind: "fixed", value: 300 },
+          windowIds: ["window-3", "window-4"],
+        },
+      ],
+    );
+    const active = windows[1];
+
+    if (!active) {
+      throw new Error("missing active swap fixture");
+    }
+
+    fixture.workspace.activeWindow = active.window;
+    showTabIndicator.mockClear();
+    expect(controller.swapWindowLeft()).toBe(false);
+    expect(controller.swapWindowRight()).toBe(true);
+    let snapshot = layout.snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
+    );
+    expect(snapshot.activeColumnId).toBe(columnId("column:target"));
+    expect(
+      snapshot.columns.map(({ selectedWindowId, windowIds }) => ({
+        selectedWindowId,
+        windowIds,
+      })),
+    ).toEqual([
+      {
+        selectedWindowId: windowId("window-3"),
+        windowIds: [windowId("window-1"), windowId("window-3")],
+      },
+      {
+        selectedWindowId: windowId("window-2"),
+        windowIds: [windowId("window-2"), windowId("window-4")],
+      },
+    ]);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+    expect(showTabIndicator).toHaveBeenLastCalledWith(0, 2, "");
+
+    const beforeRejected = snapshot;
+    const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
+    let rejectNextWrite = true;
+    active.setWriteBehavior((_frame, commit) => {
+      if (rejectNextWrite) {
+        rejectNextWrite = false;
+        throw new Error("geometry rejected");
+      }
+
+      commit();
+    });
+    const warning = console.warn;
+    console.warn = () => undefined;
+
+    try {
+      expect(controller.swapWindowLeft()).toBe(false);
+    } finally {
+      console.warn = warning;
+      active.setWriteBehavior(null);
+    }
+
+    snapshot = layout.snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
+    );
+    expect(snapshot).toEqual(beforeRejected);
+    expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+  });
+
   it("focuses and reorders members of the active column vertically", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
@@ -17283,6 +17434,68 @@ describe("RuntimeController", () => {
     expect(
       new Set(windows.map(({ window }) => window.frameGeometry.y)).size,
     ).toBe(3);
+  });
+
+  it("sets a column presentation explicitly and treats the current mode as a no-op", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const active = createTrackedWindow("window-2", output, desktop);
+    const windows = [first, active];
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map(({ window }) => window),
+    );
+    const showTabIndicator = vi.fn();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      showTabIndicator,
+    });
+
+    controller.start();
+    const layout = installTestLayout(
+      controller,
+      output,
+      desktop,
+      "column:stack",
+      [
+        {
+          id: "column:stack",
+          selectedWindowId: "window-2",
+          width: { kind: "fixed", value: 300 },
+          windowIds: ["window-1", "window-2"],
+        },
+      ],
+    );
+    fixture.workspace.activeWindow = active.window;
+    const initial = captureTrackedWindowState(windows);
+
+    expect(controller.setColumnStackedDisplay()).toBe(false);
+    expectTrackedWindowState(windows, initial);
+    expect(controller.setColumnTabbedDisplay()).toBe(true);
+    expect(showTabIndicator).toHaveBeenLastCalledWith(1, 2, "");
+    const tabbed = captureTrackedWindowState(windows);
+    const tabbedSnapshot = layout.snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
+    );
+
+    expect(controller.setColumnTabbedDisplay()).toBe(false);
+    expectTrackedWindowState(windows, tabbed);
+    expect(
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
+    ).toEqual(tabbedSnapshot);
+    expect(controller.setColumnStackedDisplay()).toBe(true);
+    expect(controller.setColumnStackedDisplay()).toBe(false);
   });
 
   it("rejects incompatible tabbed geometry and normalizes later constraints", () => {

@@ -282,6 +282,9 @@ const expectedHandlers: Readonly<
   driftile_focus_window_in_column_9: {
     activated: "Runtime.DriftileRuntime.focusWindowInColumn(9)",
   },
+  driftile_focus_window_previous: {
+    activated: "Runtime.DriftileRuntime.focusWindowPrevious()",
+  },
   driftile_focus_window_bottom: {
     activated: "Runtime.DriftileRuntime.focusWindowBottom()",
   },
@@ -336,6 +339,12 @@ const expectedHandlers: Readonly<
   driftile_toggle_column_tabbed_display: {
     activated: "Runtime.DriftileRuntime.toggleColumnTabbedDisplay()",
     sequence: "Meta+W",
+  },
+  driftile_set_column_stacked_display: {
+    activated: "Runtime.DriftileRuntime.setColumnStackedDisplay()",
+  },
+  driftile_set_column_tabbed_display: {
+    activated: "Runtime.DriftileRuntime.setColumnTabbedDisplay()",
   },
   driftile_maximize_window_to_edges: {
     activated: "Runtime.DriftileRuntime.maximizeWindowToEdges()",
@@ -635,6 +644,12 @@ const expectedHandlers: Readonly<
     activated: "Runtime.DriftileRuntime.toggleFullscreen()",
     sequence: "Meta+Shift+F",
   },
+  driftile_swap_window_left: {
+    activated: "Runtime.DriftileRuntime.swapWindowLeft()",
+  },
+  driftile_swap_window_right: {
+    activated: "Runtime.DriftileRuntime.swapWindowRight()",
+  },
 };
 
 describe("KWin shortcut handlers", () => {
@@ -669,7 +684,7 @@ describe("KWin shortcut handlers", () => {
   });
 
   it("keeps the canonical action catalog synchronized with QML", () => {
-    expect(shortcutActions).toHaveLength(165);
+    expect(shortcutActions).toHaveLength(170);
     expect(shortcutActions).toEqual(
       handlers.map(({ name, sequence, text }) => ({
         name,
@@ -682,7 +697,7 @@ describe("KWin shortcut handlers", () => {
     ).toHaveLength(88);
     expect(
       shortcutActions.filter((action) => action.defaultSequence === undefined),
-    ).toHaveLength(77);
+    ).toHaveLength(82);
   });
 
   it("uses unique lowercase action identifiers and key sequences", () => {
@@ -769,6 +784,7 @@ describe("KWin shortcut handlers", () => {
       "driftile_focus_window_in_column_7",
       "driftile_focus_window_in_column_8",
       "driftile_focus_window_in_column_9",
+      "driftile_focus_window_previous",
       "driftile_focus_window_top",
       "driftile_focus_window_up_or_bottom",
       "driftile_focus_window_up_or_column_left",
@@ -814,6 +830,10 @@ describe("KWin shortcut handlers", () => {
       "driftile_move_window_up_or_to_output_up",
       "driftile_move_window_up_or_to_previous_desktop",
       "driftile_reset_column_width",
+      "driftile_set_column_stacked_display",
+      "driftile_set_column_tabbed_display",
+      "driftile_swap_window_left",
+      "driftile_swap_window_right",
       "driftile_switch_preset_window_height_back",
     ]);
   });

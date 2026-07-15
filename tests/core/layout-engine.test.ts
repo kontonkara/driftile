@@ -2209,7 +2209,7 @@ describe("LayoutEngine", () => {
     expect(engine.snapshot(output, desktop, activity)).toEqual(before);
   });
 
-  it("navigates and reorders members inside the active stack", () => {
+  it("navigates, reorders, and swaps members from the active stack", () => {
     const engine = new LayoutEngine();
 
     engine.restoreColumns({
@@ -2219,8 +2219,13 @@ describe("LayoutEngine", () => {
           column: {
             id: columnId("column-1"),
             presentation: "stacked",
-            selectedWindowId: windowId("window-1"),
+            selectedWindowId: windowId("window-2"),
             width: { kind: "fixed", value: 300 },
+            windowHeights: [
+              { kind: "auto", weight: 2 },
+              { clientHeight: 320, kind: "fixed" },
+              { kind: "auto", weight: 3 },
+            ],
             windowIds: [
               windowId("window-1"),
               windowId("window-2"),
@@ -2228,6 +2233,20 @@ describe("LayoutEngine", () => {
             ],
           },
           index: 0,
+        },
+        {
+          column: {
+            id: columnId("column-2"),
+            presentation: "tabbed",
+            selectedWindowId: windowId("window-4"),
+            width: { kind: "proportion", value: 0.4 },
+            windowHeights: [
+              { index: 2, kind: "preset" },
+              { kind: "auto", weight: 4 },
+            ],
+            windowIds: [windowId("window-4"), windowId("window-5")],
+          },
+          index: 1,
         },
       ],
       activityId: activity,
@@ -2252,6 +2271,104 @@ describe("LayoutEngine", () => {
     ).toEqual(["window-2", "window-1", "window-3"]);
     expect(edit && engine.rollbackStackEdit(edit.rollback)).toBe(true);
     expect(engine.snapshot(output, desktop, activity)).toEqual(before);
+
+    expect(engine.swapActiveWindow(windowId("window-2"), "left")).toBeNull();
+    expect(engine.snapshot(output, desktop, activity)).toEqual(before);
+    const swap = engine.swapActiveWindow(windowId("window-2"), "right");
+    expect(swap?.kind).toBe("reorder");
+    expect(engine.snapshot(output, desktop, activity)).toEqual({
+      ...before,
+      activeColumnId: "column-2",
+      columns: [
+        {
+          ...before.columns[0],
+          selectedWindowId: "window-4",
+          windowHeights: [
+            { kind: "auto", weight: 2 },
+            { index: 2, kind: "preset" },
+            { kind: "auto", weight: 3 },
+          ],
+          windowIds: ["window-1", "window-4", "window-3"],
+        },
+        {
+          ...before.columns[1],
+          selectedWindowId: "window-2",
+          windowHeights: [
+            { clientHeight: 320, kind: "fixed" },
+            { kind: "auto", weight: 4 },
+          ],
+          windowIds: ["window-2", "window-5"],
+        },
+      ],
+    });
+    expect(swap && engine.rollbackStackEdit(swap.rollback)).toBe(true);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(before);
+    expect(engine.swapActiveWindow(windowId("window-4"), "left")).toBeNull();
+    const conflictHeightEdit = engine.setActiveColumnWindowHeights(
+      windowId("window-2"),
+      [
+        { clientHeight: 280, kind: "fixed" },
+        { kind: "auto", weight: 1 },
+        { kind: "auto", weight: 1 },
+      ],
+    );
+    expect(
+      conflictHeightEdit &&
+        engine.discardWindowHeightEditRollback(conflictHeightEdit.rollback),
+    ).toBe(true);
+    const conflictBefore = engine.snapshot(output, desktop, activity);
+    expect(engine.swapActiveWindow(windowId("window-2"), "right")).toBeNull();
+    expect(engine.snapshot(output, desktop, activity)).toEqual(conflictBefore);
+
+    const singletonEngine = new LayoutEngine();
+    singletonEngine.restoreColumns({
+      activeColumnId: columnId("source"),
+      columns: [
+        {
+          column: {
+            id: columnId("source"),
+            presentation: "tabbed",
+            selectedWindowId: windowId("source-window"),
+            width: { kind: "proportion", value: 0.43 },
+            windowHeights: [{ index: 1, kind: "preset" }],
+            windowIds: [windowId("source-window")],
+          },
+          index: 0,
+        },
+        {
+          column: {
+            id: columnId("target"),
+            presentation: "stacked",
+            selectedWindowId: windowId("target-window"),
+            width: { kind: "fixed", value: 640 },
+            windowHeights: [{ clientHeight: 280, kind: "fixed" }],
+            windowIds: [windowId("target-window")],
+          },
+          index: 1,
+        },
+      ],
+      activityId: activity,
+      desktopId: desktop,
+      outputId: output,
+      viewportOffset: 75,
+    });
+    const singletonBefore = singletonEngine.snapshot(output, desktop, activity);
+    const singletonSwap = singletonEngine.swapActiveWindow(
+      windowId("source-window"),
+      "right",
+    );
+    expect(singletonSwap?.kind).toBe("reorder");
+    expect(singletonEngine.snapshot(output, desktop, activity)).toEqual({
+      ...singletonBefore,
+      columns: [singletonBefore.columns[1], singletonBefore.columns[0]],
+    });
+    expect(
+      singletonSwap &&
+        singletonEngine.rollbackStackEdit(singletonSwap.rollback),
+    ).toBe(true);
+    expect(singletonEngine.snapshot(output, desktop, activity)).toEqual(
+      singletonBefore,
+    );
   });
 
   it("discards an unused stack rollback without reverting the edit", () => {

@@ -192,6 +192,10 @@ const shortcutActionCatalog = [
     text: "Driftile: Focus window 9 in column",
   },
   {
+    name: "driftile_focus_window_previous",
+    text: "Driftile: Focus previous window",
+  },
+  {
     name: "driftile_move_column_left",
     text: "Driftile: Move column left",
     defaultSequence: "Meta+Ctrl+H",
@@ -274,6 +278,14 @@ const shortcutActionCatalog = [
     name: "driftile_move_window_right",
     text: "Driftile: Consume or expel window right",
     defaultSequence: "Meta+]",
+  },
+  {
+    name: "driftile_swap_window_left",
+    text: "Driftile: Swap window left",
+  },
+  {
+    name: "driftile_swap_window_right",
+    text: "Driftile: Swap window right",
   },
   {
     name: "driftile_consume_window_into_column",
@@ -694,6 +706,14 @@ const shortcutActionCatalog = [
     name: "driftile_toggle_column_tabbed_display",
     text: "Driftile: Toggle tabbed column",
     defaultSequence: "Meta+W",
+  },
+  {
+    name: "driftile_set_column_stacked_display",
+    text: "Driftile: Set stacked column display",
+  },
+  {
+    name: "driftile_set_column_tabbed_display",
+    text: "Driftile: Set tabbed column display",
   },
   {
     name: "driftile_expand_column_to_available_width",
