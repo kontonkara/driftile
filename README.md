@@ -1,101 +1,99 @@
 # Driftile
 
-A KWin extension for KDE Plasma that provides scrollable tiling and dynamic
-workspaces.
+[![CI](https://github.com/kontonkara/driftile/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/kontonkara/driftile/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/kontonkara/driftile?display_name=tag)](https://github.com/kontonkara/driftile/releases/latest)
 
-Driftile keeps independent layouts for each output and virtual desktop while
-leaving window, output, and desktop mechanisms to KWin.
+Driftile is a KWin extension that adds scrollable tiling and dynamic workspaces
+to KDE Plasma. KWin remains responsible for compositing, windows, outputs, and
+virtual desktops; Driftile provides the layout and interaction policy.
 
-## Features
+## Highlights
 
-- Horizontal scrollable columns with stacked or tabbed window presentation.
-- Keyboard-driven focus, movement, reordering, resizing, centering, and
-  transfers between desktops and outputs, including direct numbered
-  single-window desktop targets and contextual transfers for the active
-  floating layer.
-- Live same-context drop-target feedback for exact windows and empty horizontal
-  column gutters; finish-only exact-window-first reinsertion into a window or
-  gutter after a KWin-owned output or desktop move; and finish-only horizontal
-  resize adoption.
-- One shared trailing empty virtual desktop with conservative creation and
-  cleanup.
-- Manual floating with directional nudging, work-area centering, contextual
-  width adjustment, preset cycling, reset, height resizing, and direct stack
-  insertion, automatic layout exclusions, minimized-slot retention, and native
-  fullscreen and maximize integration.
-- Settled recovery for output, scale, work-area, and window-constraint changes.
-- Configurable gaps, application initial floating, tiling and borderless
-  exclusions, global and application-specific initial column widths,
-  global and application-specific initial stacked or tabbed presentation,
-  column-width and window-height presets, resize steps, global and
-  application-specific horizontal focus centering, and optional borderless
-  presentation.
-- Optional passive Plasma OSD feedback when a multi-window tabbed member is
-  activated or its column enters tabbed presentation.
-- Optional five-finger horizontal touchpad navigation on native Wayland.
-- Exact extension-reload restoration, conservative cross-session restoration,
-  and fail-closed restoration when a known output returns.
-- An optional overview companion that presents the authoritative layout; the
-  tab strip provides guarded pointer selection for every live member of a
-  tabbed column, keeps minimized members visible but disabled, and supports
-  non-wrapping spatial keyboard navigation between actionable targets. A
-  guarded number-gutter drag reorders desktop cards while protecting the
-  shared trailing empty desktop, and a passive badge reports each card's
-  active-column presentation and logical width. A rejected current activation
-  attempt requests one best-effort generic Plasma OSD.
-- An optional reversible shortcut helper with custom JSON profiles.
-
-## Status
-
-The latest stable release is [1.30.0](docs/release-notes-1.30.0.md).
-The feature list tracks the current `main` branch; release state is recorded in
-the [roadmap](docs/roadmap.md).
-Version 1.30.0 adds same-context empty horizontal gutter targets to tiled-window
-dragging. A singleton moves as one complete column; a stack member is extracted
-with the source width, automatic height, and its current application or global
-initial presentation. Exact-window drops retain precedence and their existing
-stack behavior. The viewport follows active-column reveal rules.
-
-Version 1.31.0 is in development. It extends gutter drops across visible
-contexts, keeps a right full-width successor visible beside a normal active
-column, restores focus after the active window closes, and defaults new columns
-to 33% unless the user configured another value. Completed pointer gestures can
-also adopt vertical stack heights or tile a manually floating window into an
-exact window half or an empty same-context gutter.
-
-Driftile requires KDE Plasma with KWin 6.7 or newer. It targets native Wayland
-and XWayland windows, plus single-output native X11 sessions.
-
-Known limits:
-
-- Cross-session restoration waits up to five seconds for every strongly and
-  uniquely identifiable persisted window. Ambiguous or incomplete snapshots
-  are skipped without partial ownership.
-- A returned output is restored only when its complete topology and tiled
-  window set match safely; otherwise normal topology recovery is used.
-- Physical connector hot-plugging has not been verified.
-- Native X11 multi-output layouts remain unverified.
-
-See [Product scope](docs/product-scope.md) for the complete behavior boundary.
+- Horizontal scrollable columns with stacked and tabbed window layouts.
+- Independent layouts for each output and virtual desktop, with one shared
+  trailing empty desktop.
+- Keyboard and pointer control for focus, movement, reordering, resizing,
+  drag-and-drop, centering, and transfers between outputs or desktops.
+- Full-width columns, manual floating, native fullscreen and maximize support,
+  and stable minimized-window slots.
+- Configurable gaps, width and height presets, application rules, focus
+  centering, and optional borderless windows.
+- Layout restoration plus optional overview and reversible shortcut companions.
 
 ## Installation
 
-Install the versioned `.kwinscript`, enable Driftile in **System Settings >
-Window Management > KWin Scripts**, then assign shortcuts manually or with the
-optional reversible helper. See [Installation](docs/installation.md) for
-artifact verification, custom shortcut profiles, NixOS and Home Manager
-modules, upgrades, and safe removal. See [Migration](docs/migration.md) before
-changing release generations.
+Driftile requires KDE Plasma with KWin 6.7 or newer.
 
-The release artifacts also provide the separate overview effect. It is
-disabled by default and offers `Meta+O` for a fresh shortcut record when
-enabled. Existing KGlobalAccel assignments are preserved; see [Overview
-companion](docs/overview.md).
+### Any compatible Linux distribution
+
+Download the `.kwinscript` archive and `SHA256SUMS` from the
+[latest release](https://github.com/kontonkara/driftile/releases/latest), verify
+the download, and install it as your desktop user:
+
+```bash
+sha256sum --check --ignore-missing SHA256SUMS
+kpackagetool6 --type=KWin/Script --install ./driftile-*.kwinscript
+```
+
+Enable **Driftile** in **System Settings > Window Management > KWin Scripts**.
+The [installation guide](docs/installation.md) covers upgrades, removal, the
+optional overview, and the shortcut helper.
+
+### NixOS
+
+Pin a release tag as a flake input, import `driftile.nixosModules.default`, and
+set `programs.driftile.enable = true`. See the
+[NixOS instructions](docs/installation.md#nixos-and-home-manager) for the
+complete module example.
+
+### Home Manager
+
+Import `driftile.homeManagerModules.default` and set
+`programs.driftile.enable = true`. The same module can manage settings and a
+shortcut profile without installing a second copy of the package. See the
+[Home Manager instructions](docs/installation.md#nixos-and-home-manager).
+
+## Configuration
+
+Open Driftile's entry under **System Settings > Window Management > KWin
+Scripts** for layout and application settings. Manage key bindings under
+**System Settings > Keyboard > Shortcuts** by searching for **Driftile**.
+
+Nix users can declare the same settings through
+`programs.driftile.settings`. See [Configuration](docs/configuration.md) and
+[Shortcuts](docs/shortcuts.md).
+
+## Compatibility
+
+- Native Wayland is the primary target; Wayland and XWayland windows share the
+  same layout model.
+- Native X11 is supported on a single output. Multi-output native X11 remains
+  unverified.
+- Touchpad navigation is available only on native Wayland.
+- Release archives are standard KWin KPackages and are not tied to NixOS.
+
+See [Compatibility](docs/compatibility.md) for current platform and hardware
+limits.
+
+## Project status
+
+Driftile is under active development. Use the
+[latest stable release](https://github.com/kontonkara/driftile/releases/latest)
+for regular installation; `main` may include unreleased behavior.
+
+## Documentation
+
+- [Installation](docs/installation.md)
+- [Configuration](docs/configuration.md)
+- [Shortcuts](docs/shortcuts.md)
+- [Troubleshooting](docs/troubleshooting.md)
+- [Optional overview](docs/overview.md)
+- [Documentation index](docs/README.md)
 
 ## Development
 
-Requirements: Node.js 22 or newer, npm, `zip`, `unzip`, ShellCheck, REUSE,
-`busctl`, `flock`, `kwriteconfig6`, and KDE Frameworks 6 KPackage tools.
+Development requires Node.js 22 or newer and the tools listed in
+[Testing](docs/testing.md).
 
 ```bash
 npm ci
@@ -103,93 +101,8 @@ npm run check
 npm run package:check
 ```
 
-Use the lifecycle commands from a running Plasma session:
-
-```bash
-npm run install:dev
-npm run upgrade:dev
-npm run uninstall:dev
-```
-
-They release an owned shortcut profile and unload Driftile before changing the
-installed package. Install and upgrade leave the extension disabled; follow
-their printed steps to enable Driftile and optionally claim the default profile.
-Upgrade requests a Plasma session restart only when the installed and next
-fixed bootstraps differ.
-
 `nix develop` provides the source toolchain, and `nix build` builds the KWin
-package. See [Testing](docs/testing.md) for unit, integration, and VM checks.
-
-## Documentation
-
-- [Installation](docs/installation.md)
-- [Migration](docs/migration.md)
-- [Compatibility](docs/compatibility.md)
-- [Troubleshooting](docs/troubleshooting.md)
-- [Configuration](docs/configuration.md)
-- [Overview companion](docs/overview.md)
-- [Shortcuts](docs/shortcuts.md)
-- [Interaction model](docs/interaction-model.md)
-- [Product scope](docs/product-scope.md)
-- [Architecture](docs/architecture.md)
-- [Testing](docs/testing.md)
-- [Performance](docs/performance.md)
-- [Roadmap](docs/roadmap.md)
-- [1.30.0 release notes](docs/release-notes-1.30.0.md)
-- [1.29.0 release notes](docs/release-notes-1.29.0.md)
-- [1.28.0 release notes](docs/release-notes-1.28.0.md)
-- [1.27.0 release notes](docs/release-notes-1.27.0.md)
-- [1.26.0 release notes](docs/release-notes-1.26.0.md)
-- [1.25.0 release notes](docs/release-notes-1.25.0.md)
-- [1.24.0 release notes](docs/release-notes-1.24.0.md)
-- [1.23.0 release notes](docs/release-notes-1.23.0.md)
-- [1.22.0 release notes](docs/release-notes-1.22.0.md)
-- [1.21.0 release notes](docs/release-notes-1.21.0.md)
-- [1.20.0 release notes](docs/release-notes-1.20.0.md)
-- [1.19.0 release notes](docs/release-notes-1.19.0.md)
-- [1.19.0-rc.1 release notes](docs/release-notes-1.19.0-rc.1.md)
-- [1.18.0 release notes](docs/release-notes-1.18.0.md)
-- [1.18.0-rc.1 release notes](docs/release-notes-1.18.0-rc.1.md)
-- [1.17.0 release notes](docs/release-notes-1.17.0.md)
-- [1.17.0-rc.1 release notes](docs/release-notes-1.17.0-rc.1.md)
-- [1.16.0 release notes](docs/release-notes-1.16.0.md)
-- [1.16.0-rc.1 release notes](docs/release-notes-1.16.0-rc.1.md)
-- [1.15.1 release notes](docs/release-notes-1.15.1.md)
-- [1.15.0 release notes](docs/release-notes-1.15.0.md)
-- [1.15.0-rc.1 release notes](docs/release-notes-1.15.0-rc.1.md)
-- [1.14.0 release notes](docs/release-notes-1.14.0.md)
-- [1.14.0-rc.1 release notes](docs/release-notes-1.14.0-rc.1.md)
-- [1.13.0 release notes](docs/release-notes-1.13.0.md)
-- [1.13.0-rc.1 release notes](docs/release-notes-1.13.0-rc.1.md)
-- [1.12.0 release notes](docs/release-notes-1.12.0.md)
-- [1.12.0-rc.1 release notes](docs/release-notes-1.12.0-rc.1.md)
-- [1.11.0 release notes](docs/release-notes-1.11.0.md)
-- [1.11.0-rc.1 release notes](docs/release-notes-1.11.0-rc.1.md)
-- [1.10.0 release notes](docs/release-notes-1.10.0.md)
-- [1.10.0-rc.1 release notes](docs/release-notes-1.10.0-rc.1.md)
-- [1.9.1 release notes](docs/release-notes-1.9.1.md)
-- [1.9.1-rc.1 release notes](docs/release-notes-1.9.1-rc.1.md)
-- [1.9.0 release notes](docs/release-notes-1.9.0.md)
-- [1.9.0-rc.1 release notes](docs/release-notes-1.9.0-rc.1.md)
-- [1.8.0 release notes](docs/release-notes-1.8.0.md)
-- [1.8.0-rc.1 release notes](docs/release-notes-1.8.0-rc.1.md)
-- [1.7.0 release notes](docs/release-notes-1.7.0.md)
-- [1.7.0-rc.1 release notes](docs/release-notes-1.7.0-rc.1.md)
-- [1.6.0 release notes](docs/release-notes-1.6.0.md)
-- [1.6.0-rc.1 release notes](docs/release-notes-1.6.0-rc.1.md)
-- [1.5.0 release notes](docs/release-notes-1.5.0.md)
-- [1.5.0-rc.1 release notes](docs/release-notes-1.5.0-rc.1.md)
-- [1.4.0 release notes](docs/release-notes-1.4.0.md)
-- [1.4.0-rc.1 release notes](docs/release-notes-1.4.0-rc.1.md)
-- [1.3.0 release notes](docs/release-notes-1.3.0.md)
-- [1.3.0-rc.1 release notes](docs/release-notes-1.3.0-rc.1.md)
-- [1.2.0 release notes](docs/release-notes-1.2.0.md)
-- [1.2.0-rc.1 release notes](docs/release-notes-1.2.0-rc.1.md)
-- [1.1.0 release notes](docs/release-notes-1.1.0.md)
-- [1.1.0-rc.1 release notes](docs/release-notes-1.1.0-rc.1.md)
-- [1.0.0 release notes](docs/release-notes-1.0.0.md)
-- [1.0.0-rc.1 release notes](docs/release-notes-1.0.0-rc.1.md)
-- [0.1.0 release notes](docs/release-notes-0.1.0.md)
+package. See [Architecture](docs/architecture.md) for the extension boundary.
 
 ## License
 
@@ -197,4 +110,5 @@ Driftile is licensed under GPL-3.0-or-later. See [LICENSE](LICENSE).
 
 ## Acknowledgements
 
-The window-management model was inspired by the [niri compositor](https://github.com/YaLTeR/niri).
+The window-management model was inspired by the
+[niri compositor](https://github.com/YaLTeR/niri).

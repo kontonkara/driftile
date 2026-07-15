@@ -6,6 +6,15 @@ single-output native X11 session.
 Touchpad navigation is available only on native Wayland. Run all commands as
 the desktop user, not with `sudo`.
 
+## Choose an installation path
+
+- **Any compatible Linux distribution:** install the standard KWin package from
+  [Install a release](#install-a-release).
+- **NixOS:** use the system module under
+  [NixOS and Home Manager](#nixos-and-home-manager).
+- **Home Manager:** use the per-user module in the same
+  [NixOS and Home Manager](#nixos-and-home-manager) section.
+
 ## Install a release
 
 Download these files from the
@@ -308,5 +317,5 @@ Source builds use `nix build`; the development shell is available through
 
 See [Compatibility](compatibility.md) for current platform, geometry, toolkit,
 and hardware limits. Read [Migration](migration.md) before changing release or
-installation generations. Release details are in the
-[1.30.0 release notes](release-notes-1.30.0.md).
+installation generations. Published artifacts and version-specific notes are
+available on [GitHub Releases](https://github.com/kontonkara/driftile/releases).
