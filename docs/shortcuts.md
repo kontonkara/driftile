@@ -131,6 +131,11 @@ one-based index counts non-minimized members of the active tiled column. An
 index past the end selects the last visible member. Floating focus, the already
 selected member, and blocked or rejected targets are no-ops.
 
+`driftile_focus_column_1` through `driftile_focus_column_9` are also unbound.
+Their one-based index counts columns with a visible member and clamps past the
+end. A floating source switches directly to the selected tiled column; a
+rejected target leaves the previous focus layer unchanged.
+
 The four preset actions retain the IDs
 `driftile_switch_preset_column_width`,
 `driftile_switch_preset_column_width_back`,

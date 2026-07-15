@@ -1392,6 +1392,11 @@ tiled column. Minimized members do not consume an index, an oversized index
 clamps to the last visible member, and tabbed selection rolls back when KWin
 rejects focus. Floating and already-selected targets remain no-ops.
 
+Nine unbound direct column selectors use the same one-based, clamped model.
+Columns without a visible focus target do not consume an index. Selection can
+enter the tiled layer from a floating source without exposing intermediate
+focus, while rejection restores the previous layer and tab selection.
+
 ## Post-v1
 
 Add interaction and presentation features outside the frozen v1 scope without

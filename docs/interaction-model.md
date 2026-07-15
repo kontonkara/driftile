@@ -120,6 +120,11 @@ the active tiled column. Indexing is one-based, skips minimized members, and
 clamps to the last visible member. Tabbed selection commits only after KWin
 accepts focus; rejection restores the previous tab.
 
+Nine matching column selectors count only columns with a visible member and
+clamp an oversized one-based index to the last such column. They enter the
+tiled layer directly from floating focus. Focus rejection restores the prior
+layer and tab selection.
+
 The existing center-column action is contextual. With an active manually
 floating window, it centers each non-oversized dimension at the exact logical
 midpoint of the assigned output and desktop work area; an oversized dimension
