@@ -692,6 +692,12 @@ QtObject {
         text: "Driftile: Reset column width"
         onActivated: Runtime.DriftileRuntime.resetColumnWidth()
     }
+    readonly property ShortcutHandler closeWindowShortcut: ShortcutHandler {
+        name: "driftile_close_window"
+        text: "Driftile: Close window"
+        sequence: "Meta+Q"
+        onActivated: Workspace.slotWindowClose()
+    }
 
     function readSettings() {
         return {

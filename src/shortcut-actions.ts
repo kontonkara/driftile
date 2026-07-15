@@ -512,6 +512,11 @@ const shortcutActionCatalog = [
     name: "driftile_reset_column_width",
     text: "Driftile: Reset column width",
   },
+  {
+    name: "driftile_close_window",
+    text: "Driftile: Close window",
+    defaultSequence: "Meta+Q",
+  },
 ] as const satisfies readonly ShortcutAction[];
 
 export type ShortcutActionName = (typeof shortcutActionCatalog)[number]["name"];

@@ -45,6 +45,10 @@ const packageMetadata = JSON.parse(
 const expectedHandlers: Readonly<
   Record<string, Pick<ShortcutHandler, "activated" | "sequence">>
 > = {
+  driftile_close_window: {
+    activated: "Workspace.slotWindowClose()",
+    sequence: "Meta+Q",
+  },
   driftile_center_column: {
     activated: "Runtime.DriftileRuntime.centerColumn()",
     sequence: "Meta+C",
@@ -467,7 +471,7 @@ describe("KWin shortcut handlers", () => {
   });
 
   it("keeps the canonical action catalog synchronized with QML", () => {
-    expect(shortcutActions).toHaveLength(105);
+    expect(shortcutActions).toHaveLength(106);
     expect(shortcutActions).toEqual(
       handlers.map(({ name, sequence, text }) => ({
         name,
@@ -477,7 +481,7 @@ describe("KWin shortcut handlers", () => {
     );
     expect(
       shortcutActions.filter((action) => action.defaultSequence !== undefined),
-    ).toHaveLength(87);
+    ).toHaveLength(88);
     expect(
       shortcutActions.filter((action) => action.defaultSequence === undefined),
     ).toHaveLength(18);
@@ -508,7 +512,7 @@ describe("KWin shortcut handlers", () => {
       shortcutBindings.map(({ name, sequence }) => ({ name, sequence })),
     );
 
-    expect(shortcutBindings).toHaveLength(87);
+    expect(shortcutBindings).toHaveLength(88);
     expect(shortcutBindings).toEqual(
       shortcutActions.flatMap((action) =>
         action.defaultSequence === undefined
@@ -523,10 +527,10 @@ describe("KWin shortcut handlers", () => {
             ],
       ),
     );
-    expect(shortcutProfileId).toHaveLength(3652);
+    expect(shortcutProfileId).toHaveLength(3684);
     expect(
       createHash("sha256").update(shortcutProfileId, "utf8").digest("hex"),
-    ).toBe("879bbf116246e4de93dc13d9223452c24a88d00dd3c69c02d0f228b612d971eb");
+    ).toBe("5b6ad4e1b9cb9ba8bc57b931f6d20d72fec7c86bd38320ea460aec49ad2cdf59");
   });
 
   it("leaves operations without an equivalent default unbound", () => {
