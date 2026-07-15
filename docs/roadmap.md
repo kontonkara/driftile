@@ -1,10 +1,13 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.29.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.28.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.29.0 makes existing forward and reverse
+Stable 1.28.0 makes existing unbound direct-insertion actions contextual for one
+relation-free manually floating window.
+
+The frozen 1.29.0 development slice makes existing forward and reverse
 window-height preset actions contextual for one eligible manually floating
 window. Window-height reset remains tiled-only.
 
@@ -1070,8 +1073,7 @@ Release criteria (met):
 - Existing shortcut and QML contracts cover all nine action IDs while the
   helper-owned 88-action default profile remains unchanged.
 - Formatting, type, lint, focused unit, package, Nix evaluation, and Nix build
-  gates pass. Exact feature SHA `b858c00` passes CI quality in 2:45, native X11
-  in 3:13, and Wayland in 7:06.
+  gates pass.
 - A hidden lifecycle VM upgrades public 1.25.0 packages to matching 1.26.0
   packages, exercises real applications, and verifies clean removal.
 - Exact feature SHA `aa17fe3` passes CI quality, native X11, and Wayland jobs.
@@ -1143,7 +1145,7 @@ Release criteria (met):
 
 No other feature belongs to 1.28.0.
 
-## 1.29.0 (released)
+## 1.29.0 (in development)
 
 Existing forward and reverse window-height preset actions are contextual for
 one active relation-free manually floating window. The fixed `1/3`, `1/2`, and
@@ -1164,18 +1166,18 @@ reachability clamp. Automatic, related, minimized, native-state, interactive,
 pending, stale, or otherwise blocked active floating targets fail closed
 without reaching the tiled path.
 
-Release criteria (met):
+Release criteria:
 
-- New focused runtime coverage verifies forward and reverse wrapping, all
+- New focused runtime coverage must verify forward and reverse wrapping, all
   three proportional targets, gap-adjusted start/end pixel snapping, preserved
   width, focus, context, reinsertion anchor, unchanged tiled layouts, one
-  immediate frame request, and related-window rejection.
-- Existing shared manual-floating size coverage continues to verify
+  immediate frame request, and related or pending fail-closed targets.
+- Existing shared manual-floating size coverage must continue to verify
   decorated constraints, partial reachability, delayed exact acknowledgement,
   repeated-command serialization, cleanup, exact metadata commits, and stale
-  result and pending-target rejection.
+  result rejection.
 - Formatting, type, lint, focused unit, package, Nix evaluation, and Nix build
-  gates pass.
+  gates must pass before exact-SHA CI.
 - Existing shortcut registration and tiled height-preset coverage is reused
   without a new integration, application, backend, or VM matrix. The slice
   makes no VM validation claim.

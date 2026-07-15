@@ -50,15 +50,6 @@ Settings before removing
 [Installation](installation.md#configure-shortcuts) for helper commands and
 custom profiles.
 
-## A floating height preset does nothing
-
-The forward window-height preset action defaults to `Meta+Ctrl+Shift+R`; the
-reverse action is unbound. A preset targets a manually floating window only
-when that active window is relation-free and resizable. KWin-owned native state,
-interactive or pending work, and live size constraints can make the request a
-fail-closed no-op. Window-height reset remains tiled-only. See
-[Shortcuts](shortcuts.md) for the exact behavior.
-
 ## The overview does not open
 
 When the current activation attempt is rejected, Driftile requests one

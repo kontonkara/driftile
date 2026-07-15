@@ -1,34 +1,7 @@
 # Migration
 
-The latest stable release is 1.29.0. Use the steps below when changing release
+The latest stable release is 1.28.0. Use the steps below when changing release
 generations, and never combine files from different releases.
-
-## Upgrade from 1.28.0 to 1.29.0
-
-1. Release helper-owned shortcuts with the 1.28.0 helper while it remains
-   available.
-2. Disable Driftile and the optional overview in System Settings.
-3. Upgrade the main package, optional overview, and helper to their matching
-   1.29.0 artifacts, or pin the Nix input to `v1.29.0` and rebuild.
-4. Re-enable Driftile and, if installed, the optional overview.
-
-The existing forward and reverse window-height preset actions now operate
-contextually on one active relation-free manually floating window. Their fixed
-`1/3`, `1/2`, and `2/3` cycle remains independent of the configured height step;
-window-height reset remains tiled-only. The helper profile, overview, settings
-schema, layouts, and existing assignments remain compatible. No data conversion,
-Plasma session restart, KConfig edit, new action, default binding, setting, or
-persistence migration is required.
-
-## Roll back from 1.29.0 to 1.28.0
-
-Release shortcuts with the 1.29.0 helper, disable Driftile and the optional
-overview, then restore their matching verified 1.28.0 packages and helper. For
-NixOS or Home Manager, restore the input to `v1.28.0` and rebuild each owning
-generation. Re-enable the installed packages and restore the 1.28.0 shortcut
-profile. Existing settings and layout state remain compatible. The same actions
-remain registered but return to tiled-only height-preset behavior; no conversion
-is required.
 
 ## Upgrade from 1.27.0 to 1.28.0
 

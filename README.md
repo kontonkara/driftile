@@ -45,9 +45,12 @@ leaving window, output, and desktop mechanisms to KWin.
 
 ## Status
 
-The latest stable release is [1.29.0](docs/release-notes-1.29.0.md).
+The latest stable release is [1.28.0](docs/release-notes-1.28.0.md).
 The feature list tracks the current `main` branch; release state is recorded in
 the [roadmap](docs/roadmap.md).
+Development for 1.29.0 is frozen to contextual forward and reverse
+window-height preset cycling for one eligible manually floating window.
+Window-height reset remains tiled-only.
 
 Driftile requires KDE Plasma with KWin 6.7 or newer. It targets native Wayland
 and XWayland windows, plus single-output native X11 sessions.
@@ -121,7 +124,6 @@ package. See [Testing](docs/testing.md) for unit, integration, and VM checks.
 - [Testing](docs/testing.md)
 - [Performance](docs/performance.md)
 - [Roadmap](docs/roadmap.md)
-- [1.29.0 release notes](docs/release-notes-1.29.0.md)
 - [1.28.0 release notes](docs/release-notes-1.28.0.md)
 - [1.27.0 release notes](docs/release-notes-1.27.0.md)
 - [1.26.0 release notes](docs/release-notes-1.26.0.md)
