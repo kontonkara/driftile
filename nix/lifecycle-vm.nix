@@ -16,16 +16,16 @@ let
   );
   currentVersion = pluginMetadata.KPlugin.Version;
   currentOverviewVersion = overviewPluginMetadata.KPlugin.Version;
-  publishedVersion = "1.18.0";
+  publishedVersion = "1.19.0";
   publishedArchive = pkgs.fetchurl {
     name = "driftile-${publishedVersion}.kwinscript";
     url = "https://github.com/kontonkara/driftile/releases/download/v${publishedVersion}/driftile-${publishedVersion}.kwinscript";
-    hash = "sha256-sLLORLRzQZa7vUy0y79hEo3QdK6N39/miU+2XR6ZnOY=";
+    hash = "sha256-IfUkofqq+HDhV9HQXfkxaGl39WOC+bpMvuRuFCzqxxw=";
   };
   publishedOverviewArchive = pkgs.fetchurl {
     name = "driftile-overview-${publishedVersion}.kwineffect";
     url = "https://github.com/kontonkara/driftile/releases/download/v${publishedVersion}/driftile-overview-${publishedVersion}.kwineffect";
-    hash = "sha256-hpURIgO2nVTuUmhOVW6ofd3kr6uMAitUJCMyUGZLGjs=";
+    hash = "sha256-kw5L6qzsglBmaGU6DKNbJWCvqJkYQuaYKginwMZkAgA=";
   };
   currentArchive =
     pkgs.runCommand "driftile-${currentVersion}.kwinscript"
@@ -262,10 +262,7 @@ let
         local hashed_main
 
         case "$(installed_version)" in
-          "$published_version")
-            printf '%s/contents/code/main.js' "$installed_package"
-            ;;
-          "$current_version")
+          "$published_version" | "$current_version")
             hashed_main=$(installed_hashed_main_path) || return 1
             runtime_path_for_hashed_main "$hashed_main"
             ;;
@@ -283,10 +280,11 @@ let
         [[ -f "$(installed_main_path)" && -f "$runtime_path" ]]
       }
 
-      installed_package_has_current_layout() {
+      installed_package_has_content_addressed_layout() {
+        local expected_version=$1
         local hashed_main
 
-        [[ "$(installed_version)" == "$current_version" ]] || return 1
+        [[ "$(installed_version)" == "$expected_version" ]] || return 1
         installed_package_has_runtime || return 1
         hashed_main=$(installed_hashed_main_path) || return 1
         [[ -f "$hashed_main" && -f "$installed_package/contents/runtime/selector.qml" ]]
@@ -304,10 +302,7 @@ let
         local hashed_main
 
         case "$(overview_installed_version)" in
-          "$published_version")
-            printf '%s/contents/code/main.js' "$installed_overview_package"
-            ;;
-          "$current_overview_version")
+          "$published_version" | "$current_overview_version")
             hashed_main=$(installed_overview_hashed_main_path) || return 1
             runtime_path_for_hashed_main "$hashed_main"
             ;;
@@ -325,10 +320,11 @@ let
         [[ -f "$(installed_overview_main_path)" && -f "$runtime_path" ]]
       }
 
-      installed_overview_has_current_layout() {
+      installed_overview_has_content_addressed_layout() {
+        local expected_version=$1
         local hashed_main
 
-        [[ "$(overview_installed_version)" == "$current_overview_version" ]] || return 1
+        [[ "$(overview_installed_version)" == "$expected_version" ]] || return 1
         installed_overview_has_runtime || return 1
         hashed_main=$(installed_overview_hashed_main_path) || return 1
         [[ -f "$hashed_main" && -f "$installed_overview_package/contents/runtime/selector.qml" ]]
@@ -363,14 +359,6 @@ let
 
       load_installed_script() {
         load_script_path "$(installed_main_path)"
-      }
-
-      load_installed_hashed_script() {
-        local hashed_main
-
-        hashed_main=$(installed_hashed_main_path) \
-          || fail_test "the upgraded hashed script entry point is invalid"
-        load_script_path "$hashed_main"
       }
 
       unload_installed_script() {
@@ -437,10 +425,7 @@ let
 
       archive_runtime_path() {
         case "$(archive_version "$1")" in
-          "$published_version")
-            printf '%s' contents/code/main.js
-            ;;
-          "$current_version")
+          "$published_version" | "$current_version")
             archive_hashed_runtime_path "$1"
             ;;
           *)
@@ -467,10 +452,11 @@ let
         archive_contains_entry "$1" "$runtime_path"
       }
 
-      archive_has_current_layout() {
+      archive_has_content_addressed_layout() {
+        local expected_version=$2
         local hashed_main
 
-        [[ "$(archive_version "$1")" == "$current_version" ]] || return 1
+        [[ "$(archive_version "$1")" == "$expected_version" ]] || return 1
         archive_contains_main "$1" || return 1
         archive_contains_entry "$1" contents/runtime/selector.qml || return 1
         hashed_main=$(archive_hashed_main_path "$1") || return 1
@@ -936,21 +922,25 @@ let
         || fail_test "the published archive entry point is missing or invalid"
       archive_contains_runtime "$published_archive" \
         || fail_test "the published archive runtime is missing or invalid"
+      archive_has_content_addressed_layout "$published_archive" "$published_version" \
+        || fail_test "the published archive bootstrap, selector, or hashed runtime is invalid"
       archive_contains_main "$published_overview_archive" \
         || fail_test "the published overview entry point is missing or invalid"
       archive_contains_runtime "$published_overview_archive" \
         || fail_test "the published overview runtime is missing or invalid"
+      archive_has_content_addressed_layout "$published_overview_archive" "$published_version" \
+        || fail_test "the published overview bootstrap, selector, or hashed runtime is invalid"
       archive_contains_main "$current_archive" \
         || fail_test "the current archive entry point is missing or invalid"
       archive_contains_runtime "$current_archive" \
         || fail_test "the current archive runtime is missing or invalid"
-      archive_has_current_layout "$current_archive" \
+      archive_has_content_addressed_layout "$current_archive" "$current_version" \
         || fail_test "the current archive bootstrap, selector, or hashed runtime is invalid"
       archive_contains_main "$current_overview_archive" \
         || fail_test "the current overview entry point is missing or invalid"
       archive_contains_runtime "$current_overview_archive" \
         || fail_test "the current overview runtime is missing or invalid"
-      archive_has_current_layout "$current_overview_archive" \
+      archive_has_content_addressed_layout "$current_overview_archive" "$current_overview_version" \
         || fail_test "the current overview bootstrap, selector, or hashed runtime is invalid"
       published_archive_runtime_digest=$(archive_runtime_digest "$published_archive") \
         || fail_test "the published archive runtime could not be hashed"
@@ -999,6 +989,8 @@ let
         || fail_test "the installed published package ID is unexpected"
       installed_package_has_runtime \
         || fail_test "the installed published entry point or runtime is missing"
+      installed_package_has_content_addressed_layout "$published_version" \
+        || fail_test "the installed published bootstrap, selector, or hashed runtime is missing"
       published_runtime_digest=$(runtime_digest) \
         || fail_test "the published runtime could not be hashed"
       [[ "$published_runtime_digest" == "$published_archive_runtime_digest" ]] \
@@ -1011,6 +1003,8 @@ let
         || fail_test "the installed published overview was enabled by default"
       installed_overview_has_runtime \
         || fail_test "the installed published overview entry point or runtime is missing"
+      installed_overview_has_content_addressed_layout "$published_version" \
+        || fail_test "the installed published overview bootstrap, selector, or hashed runtime is missing"
       published_overview_runtime_digest=$(overview_runtime_digest) \
         || fail_test "the published overview runtime could not be hashed"
       [[ "$published_overview_runtime_digest" == "$published_overview_archive_runtime_digest" ]] \
@@ -1043,7 +1037,7 @@ let
         || fail_test "the upgraded metadata did not change"
       [[ "$(installed_plugin_id)" == "$plugin_id" ]] \
         || fail_test "the upgraded package ID changed"
-      installed_package_has_current_layout \
+      installed_package_has_content_addressed_layout "$current_version" \
         || fail_test "the upgraded bootstrap, selector, or hashed runtime is missing"
       current_runtime_digest=$(runtime_digest) \
         || fail_test "the current runtime could not be hashed"
@@ -1059,7 +1053,7 @@ let
         || fail_test "the upgraded overview package ID changed"
       [[ "$(overview_installed_enabled_by_default)" == false ]] \
         || fail_test "the upgraded overview was enabled by default"
-      installed_overview_has_current_layout \
+      installed_overview_has_content_addressed_layout "$current_overview_version" \
         || fail_test "the upgraded overview bootstrap, selector, or hashed runtime is missing"
       current_overview_runtime_digest=$(overview_runtime_digest) \
         || fail_test "the upgraded overview runtime could not be hashed"
@@ -1076,10 +1070,10 @@ let
       progress "both packages upgraded to $current_version and retained disabled defaults"
 
       set_enabled true
-      load_installed_hashed_script
+      load_installed_script
       wait_for_shortcut_registration_state "$close_shortcut" true \
         || fail_test "the current runtime did not register the close-window action"
-      progress "upgraded runtime migrated to its content-addressed entry point"
+      progress "upgraded runtime loaded through the stable bootstrap"
       app_konsole_title="Driftile lifecycle Konsole application"
       app_kcalc_title="Driftile lifecycle Calculator application"
       start_test_konsole "$app_konsole_title" \
