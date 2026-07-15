@@ -226,6 +226,7 @@
             gh
             kdePackages.kconfig
             kdePackages.kpackage
+            kdePackages.kwin
             kdePackages.qtdeclarative
             nodejs_24
             reuse
@@ -244,7 +245,6 @@
               kdePackages.kglobalacceld
               kdePackages.layer-shell-qt
               kdePackages.libkscreen
-              kdePackages.kwin
               kdePackages.kwin-x11
               kdePackages.qtwayland
               jq
