@@ -1409,6 +1409,12 @@ whole. Previous-window history is session-only, includes tiled and manually
 floating windows across contexts, and skips minimized windows and automatic
 popups.
 
+Six unbound output-cycle actions add previous/next focus plus single-window and
+whole-column transfers. The cycle orders outputs top-to-bottom and then
+left-to-right, wraps at both ends, and rejects missing or invalid targets.
+Transfers reuse the atomic tiled and floating paths; bundled bindings remain
+unchanged.
+
 ## Post-v1
 
 Add interaction and presentation features outside the frozen v1 scope without

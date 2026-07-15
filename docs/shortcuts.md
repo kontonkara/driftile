@@ -108,6 +108,18 @@ The action IDs are:
 - `driftile_move_window_up_or_to_output_up`
 - `driftile_move_window_down_or_to_output_down`
 
+Six output-cycle actions are also unbound. Focus delegates to Plasma's public
+previous/next output actions. Window and whole-column movement use the same
+top-to-bottom, then left-to-right output order and wrap at either end while
+retaining Driftile's transactional transfer behavior:
+
+- `driftile_focus_output_previous`
+- `driftile_focus_output_next`
+- `driftile_move_window_to_output_previous`
+- `driftile_move_window_to_output_next`
+- `driftile_move_column_to_output_previous`
+- `driftile_move_column_to_output_next`
+
 Ten additional focus-traversal actions are unbound. They provide:
 
 - column wrapping through `driftile_focus_column_right_or_first` and

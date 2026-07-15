@@ -103,6 +103,11 @@ desktop. It accepts only one relation-free manual or automatic floating window.
 KWin owns the resulting frame; Driftile changes no tiled layout or frame
 geometry. Blocked targets fail closed instead of entering the tiled path.
 
+Previous/next output actions traverse the public output cycle and wrap at both
+ends. Direct focus remains owned by Plasma. Tiled, whole-column, and eligible
+floating transfers resolve the same target before entering the existing atomic
+transfer path, so rejected targets leave ownership, focus, and layout intact.
+
 Unbound boundary alternatives combine local navigation with output movement.
 They focus or reorder locally first, then cross an available output only at the
 corresponding visible or structural boundary. Manual floating behavior remains
