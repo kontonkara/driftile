@@ -10,8 +10,11 @@ Rectangle {
     required property string desktopId
     required property var floatingWindows
     required property var screen
+    property string keyboardSelectionId: ""
+    property var navigationScene: null
 
     signal desktopTapped(var candidate, string expectedDesktopId, var expectedScreen)
+    signal navigationTargetsChanged()
     signal windowTapped(var candidate, string expectedWindowId, var expectedDesktop, string expectedDesktopId,
                         var expectedScreen)
 
@@ -112,6 +115,8 @@ Rectangle {
         }
 
         Repeater {
+            id: windowRepeater
+
             model: KWin.WindowFilterModel {
                 activity: KWin.Workspace.currentActivity
                 desktop: card.desktop
@@ -122,21 +127,59 @@ Rectangle {
                             ~KWin.WindowFilterModel.Notification & ~KWin.WindowFilterModel.CriticalNotification
             }
 
+            onItemAdded: card.navigationTargetsChanged()
+            onItemRemoved: card.navigationTargetsChanged()
+
             Item {
                 id: windowPresentation
 
+                readonly property var candidate: model.window
                 readonly property string windowId: model.window ? String(model.window.internalId) : ""
                 readonly property var tiledPresentation: card.tiledPresentations[windowId]
                 readonly property var frame: card.frameForWindow(model.window, windowId)
                 readonly property bool selectedThumbnail: !tiledPresentation || tiledPresentation.selected
                 readonly property bool minimizedWindow: model.window ? model.window.minimized : false
+                readonly property var thumbnailTarget: thumbnailShell
+                readonly property var tabTarget: tabShell
 
                 width: viewport.width
                 height: viewport.height
                 z: frame && frame.floating ? 1000 + index : 100 + index
 
+                onCandidateChanged: card.navigationTargetsChanged()
+
+                Connections {
+                    target: windowPresentation.candidate
+                    ignoreUnknownSignals: true
+
+                    function onDeletedChanged() {
+                        card.navigationTargetsChanged();
+                    }
+
+                    function onFrameGeometryChanged() {
+                        card.navigationTargetsChanged();
+                    }
+
+                    function onMinimizedChanged() {
+                        card.navigationTargetsChanged();
+                    }
+
+                    function onOutputChanged() {
+                        card.navigationTargetsChanged();
+                    }
+
+                    function onWantsInputChanged() {
+                        card.navigationTargetsChanged();
+                    }
+                }
+
                 Item {
                     id: thumbnailShell
+
+                    readonly property bool keyboardTarget: !windowPresentation.tiledPresentation
+                        || windowPresentation.tiledPresentation.selected
+                    readonly property bool keyboardSelected: keyboardTarget && card.isSelectedNavigationTarget(
+                                                                         windowPresentation, thumbnailShell)
 
                     x: windowPresentation.frame ? windowPresentation.frame.x : 0
                     y: windowPresentation.frame ? windowPresentation.frame.y : 0
@@ -164,6 +207,14 @@ Rectangle {
                         border.color: KWin.Workspace.activeWindow === model.window ? "#f4f8ff" : "#71839e"
                     }
 
+                    Rectangle {
+                        anchors.fill: parent
+                        color: "transparent"
+                        border.width: thumbnailShell.keyboardSelected ? 3 : 0
+                        border.color: "#ffd166"
+                        z: 1
+                    }
+
                     TapHandler {
                         acceptedButtons: Qt.LeftButton
                         acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
@@ -178,6 +229,10 @@ Rectangle {
 
                     readonly property var frame: windowPresentation.tiledPresentation
                         ? windowPresentation.tiledPresentation.tabFrame : null
+                    readonly property bool keyboardTarget: windowPresentation.tiledPresentation
+                        && !windowPresentation.tiledPresentation.selected
+                    readonly property bool keyboardSelected: keyboardTarget && card.isSelectedNavigationTarget(
+                                                                         windowPresentation, tabShell)
 
                     x: frame ? frame.x : 0
                     y: frame ? frame.y : 0
@@ -212,6 +267,15 @@ Rectangle {
                         elide: Text.ElideRight
                     }
 
+                    Rectangle {
+                        anchors.fill: parent
+                        color: "transparent"
+                        border.width: tabShell.keyboardSelected ? 3 : 0
+                        border.color: "#ffd166"
+                        radius: tabShell.radius
+                        z: 1
+                    }
+
                     TapHandler {
                         acceptedButtons: Qt.LeftButton
                         acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
@@ -224,6 +288,112 @@ Rectangle {
                 }
             }
         }
+    }
+
+    function collectNavigationTargets(sceneItem) {
+        const targets = [];
+        if (!sceneItem || !desktop || !screen) {
+            return targets;
+        }
+
+        for (let index = 0; index < windowRepeater.count; index += 1) {
+            const presentation = windowRepeater.itemAt(index);
+            if (!presentation || !windowIsActionable(presentation.candidate)) {
+                continue;
+            }
+
+            const visual = presentation.tiledPresentation && !presentation.tiledPresentation.selected
+                ? presentation.tabTarget
+                : presentation.thumbnailTarget;
+            const rect = clippedNavigationRect(visual, sceneItem);
+            if (!rect) {
+                continue;
+            }
+
+            targets.push({
+                candidate: presentation.candidate,
+                desktop,
+                desktopId,
+                id: navigationTargetId(presentation.windowId),
+                rect,
+                screen,
+                window: presentation.candidate,
+                windowId: presentation.windowId
+            });
+        }
+
+        return targets;
+    }
+
+    function isSelectedNavigationTarget(presentation, visual) {
+        if (!navigationScene || !presentation || !visual || !visual.keyboardTarget
+                || keyboardSelectionId !== navigationTargetId(presentation.windowId)
+                || !windowIsActionable(presentation.candidate)) {
+            return false;
+        }
+
+        return clippedNavigationRect(visual, navigationScene) !== null;
+    }
+
+    function navigationTargetId(windowId) {
+        return JSON.stringify([desktopId, windowId]);
+    }
+
+    function windowIsActionable(candidate) {
+        return candidate && !candidate.deleted && !candidate.minimized && candidate.wantsInput === true
+                && candidate.output === screen && candidate.internalId !== undefined && candidate.internalId !== null
+                && String(candidate.internalId).length > 0;
+    }
+
+    function clippedNavigationRect(visual, sceneItem) {
+        if (!visual || !visual.visible || visual.width <= 0 || visual.height <= 0 || !viewport.visible || !card.visible) {
+            return null;
+        }
+
+        try {
+            let rect = plainRect(visual.mapToItem(sceneItem, 0, 0, visual.width, visual.height));
+            rect = intersectRects(rect, plainRect(viewport.mapToItem(sceneItem, 0, 0, viewport.width, viewport.height)));
+            rect = intersectRects(rect, plainRect(card.mapToItem(sceneItem, 0, 0, card.width, card.height)));
+            rect = intersectRects(rect, {
+                height: sceneItem.height,
+                width: sceneItem.width,
+                x: 0,
+                y: 0
+            });
+            return rect && rect.width > 0 && rect.height > 0 ? rect : null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function intersectRects(first, second) {
+        if (!first || !second) {
+            return null;
+        }
+
+        const left = Math.max(first.x, second.x);
+        const top = Math.max(first.y, second.y);
+        const right = Math.min(first.x + first.width, second.x + second.width);
+        const bottom = Math.min(first.y + first.height, second.y + second.height);
+        if (right <= left || bottom <= top) {
+            return null;
+        }
+
+        return {
+            height: bottom - top,
+            width: right - left,
+            x: left,
+            y: top
+        };
+    }
+
+    function plainRect(rect) {
+        return {
+            height: Number(rect.height),
+            width: Number(rect.width),
+            x: Number(rect.x),
+            y: Number(rect.y)
+        };
     }
 
     function indexOfDesktop(id) {

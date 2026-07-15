@@ -2,7 +2,8 @@
 
 Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.20.0 are
 released. The delivered milestones and release criteria below are a historical
-record. Later direction is not a committed release schedule.
+record. Version 1.21.0 is in development; later direction is not a committed
+release schedule.
 
 Stable 1.20.0 completes configurable initial tab presentation, overview tab
 selection, passive tab feedback, and a fresh `Meta+O` overview default without
@@ -922,6 +923,31 @@ Release criteria (met):
   release gates pass without adding an application matrix.
 
 No other feature belongs to 1.20.0.
+
+## 1.21.0 (in development)
+
+Version `1.21.0` adds keyboard navigation to the optional overview. Opening the
+effect selects the active actionable window when available, otherwise the
+first actionable target on the current desktop, then the first actionable
+target in visual order. Arrow keys move spatially without wrapping.
+
+`Enter`, `Return`, and `Space` use the selected target's existing guarded
+activation path. `Escape` closes the effect. A selected tabbed member appears
+once as its large thumbnail; other actionable members appear as tab targets.
+Minimized, invalid, and clipped items are excluded.
+
+The slice adds no layout behavior, setting, persistence field, private API,
+global shortcut, drag, or rearrangement.
+
+Release criteria:
+
+- Focused core and QML tests cover initial selection, directional movement,
+  tab target identity, exclusions, activation, and closing.
+- Build, package, and exact-SHA CI pass, followed by one hidden checkpoint VM
+  before release.
+- No unrelated application or test matrix is added.
+
+No other feature belongs to 1.21.0.
 
 ## Post-v1
 

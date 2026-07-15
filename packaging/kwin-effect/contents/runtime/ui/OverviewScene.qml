@@ -1,5 +1,6 @@
 import QtQuick
 import org.kde.kwin as KWin
+import "../code/main.js" as OverviewRuntime
 
 Rectangle {
     id: root
@@ -20,14 +21,40 @@ Rectangle {
     readonly property real cardHeight: desktopIds.length > 0 ? Math.max(1, (height - outerMargin * 2 - cardGap
                                                                             * Math.max(0, desktopIds.length - 1))
                                                                         / desktopIds.length) : 0
+    property string keyboardSelectionId: ""
 
-    Keys.onEscapePressed: {
-        if (sceneEffect) {
-            sceneEffect.deactivate();
+    Keys.onPressed: event => {
+        if ((event.modifiers & ~Qt.KeypadModifier) !== Qt.NoModifier) {
+            event.accepted = false;
+            return;
         }
+
+        let handled = true;
+        if (event.key === Qt.Key_Left) {
+            root.navigateKeyboardSelection("left");
+        } else if (event.key === Qt.Key_Right) {
+            root.navigateKeyboardSelection("right");
+        } else if (event.key === Qt.Key_Up) {
+            root.navigateKeyboardSelection("up");
+        } else if (event.key === Qt.Key_Down) {
+            root.navigateKeyboardSelection("down");
+        } else if (event.key === Qt.Key_Enter || event.key === Qt.Key_Return || event.key === Qt.Key_Space) {
+            root.activateKeyboardSelection();
+        } else if (event.key === Qt.Key_Escape) {
+            if (sceneEffect) {
+                sceneEffect.deactivate();
+            }
+        } else {
+            handled = false;
+        }
+
+        event.accepted = handled;
     }
 
-    Component.onCompleted: forceActiveFocus()
+    Component.onCompleted: {
+        forceActiveFocus();
+        Qt.callLater(root.repairKeyboardSelection);
+    }
 
     Connections {
         target: KWin.Workspace
@@ -51,7 +78,12 @@ Rectangle {
     }
 
     Repeater {
+        id: desktopRepeater
+
         model: root.desktopIds
+
+        onItemAdded: Qt.callLater(root.repairKeyboardSelection)
+        onItemRemoved: Qt.callLater(root.repairKeyboardSelection)
 
         DesktopCard {
             required property string modelData
@@ -66,13 +98,137 @@ Rectangle {
             desktop: root.desktopForId(modelData)
             desktopId: modelData
             floatingWindows: root.floatingFor(modelData)
+            keyboardSelectionId: root.keyboardSelectionId
+            navigationScene: root
             screen: root.targetScreen
+            onNavigationTargetsChanged: Qt.callLater(root.repairKeyboardSelection)
             onDesktopTapped: (candidate, expectedDesktopId, expectedScreen) => root.selectDesktop(
                                  candidate, expectedDesktopId, expectedScreen)
             onWindowTapped: (candidate, expectedWindowId, expectedDesktop, expectedDesktopId, expectedScreen) =>
                                 root.focusWindow(candidate, expectedWindowId, expectedDesktop, expectedDesktopId,
                                                  expectedScreen)
         }
+    }
+
+    function collectNavigationTargets() {
+        const targets = [];
+        for (let cardIndex = 0; cardIndex < desktopRepeater.count; cardIndex += 1) {
+            const desktopCard = desktopRepeater.itemAt(cardIndex);
+            if (!desktopCard) {
+                continue;
+            }
+
+            const cardTargets = desktopCard.collectNavigationTargets(root);
+            for (const target of cardTargets) {
+                targets.push(target);
+            }
+        }
+
+        return targets;
+    }
+
+    function navigateKeyboardSelection(direction) {
+        const targets = collectNavigationTargets();
+        repairKeyboardSelectionFrom(targets);
+        if (keyboardSelectionId.length === 0) {
+            return;
+        }
+
+        const runtime = OverviewRuntime.DriftileOverview;
+        if (!runtime || typeof runtime.findOverviewNavigationTarget !== "function") {
+            return;
+        }
+
+        try {
+            const targetId = runtime.findOverviewNavigationTarget(keyboardSelectionId, targets, direction);
+            if (typeof targetId === "string" && navigationTargetForId(targets, targetId)) {
+                keyboardSelectionId = targetId;
+            }
+        } catch (error) {
+            return;
+        }
+    }
+
+    function activateKeyboardSelection() {
+        const targets = collectNavigationTargets();
+        const target = navigationTargetForId(targets, keyboardSelectionId);
+        if (!target) {
+            repairKeyboardSelectionFrom(targets);
+            return;
+        }
+
+        focusWindow(target.candidate, target.windowId, target.desktop, target.desktopId, target.screen);
+    }
+
+    function repairKeyboardSelection() {
+        repairKeyboardSelectionFrom(collectNavigationTargets());
+    }
+
+    function repairKeyboardSelectionFrom(targets) {
+        if (navigationTargetForId(targets, keyboardSelectionId)) {
+            return;
+        }
+
+        const preferred = preferredInitialNavigationTarget(targets);
+        keyboardSelectionId = preferred ? preferred.id : "";
+    }
+
+    function preferredInitialNavigationTarget(targets) {
+        const activeWindow = KWin.Workspace.activeWindow;
+        const activeDesktopId = currentDesktop ? String(currentDesktop.id) : "";
+        let firstActive = null;
+        let firstCurrentDesktop = null;
+        let firstVisual = null;
+
+        for (const target of targets) {
+            if (target.candidate === activeWindow) {
+                if (target.desktopId === activeDesktopId) {
+                    return target;
+                }
+                if (!firstActive || navigationTargetPrecedes(target, firstActive)) {
+                    firstActive = target;
+                }
+            }
+            if (target.desktopId === activeDesktopId
+                    && (!firstCurrentDesktop || navigationTargetPrecedes(target, firstCurrentDesktop))) {
+                firstCurrentDesktop = target;
+            }
+            if (!firstVisual || navigationTargetPrecedes(target, firstVisual)) {
+                firstVisual = target;
+            }
+        }
+
+        return firstActive || firstCurrentDesktop || firstVisual;
+    }
+
+    function navigationTargetPrecedes(candidate, current) {
+        if (candidate.rect.y !== current.rect.y) {
+            return candidate.rect.y < current.rect.y;
+        }
+        if (candidate.rect.x !== current.rect.x) {
+            return candidate.rect.x < current.rect.x;
+        }
+
+        return candidate.id < current.id;
+    }
+
+    function navigationTargetForId(targets, targetId) {
+        if (typeof targetId !== "string" || targetId.length === 0) {
+            return null;
+        }
+
+        let match = null;
+        for (const target of targets) {
+            if (target.id !== targetId) {
+                continue;
+            }
+            if (match) {
+                return null;
+            }
+            match = target;
+        }
+
+        return match;
     }
 
     function selectDesktop(candidate, expectedDesktopId, expectedScreen) {

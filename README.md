@@ -32,12 +32,14 @@ leaving window, output, and desktop mechanisms to KWin.
   and fail-closed restoration when a known output returns.
 - An optional overview companion that presents the authoritative layout; the
   tab strip provides guarded pointer selection for every live member of a
-  tabbed column and keeps minimized members visible but disabled.
+  tabbed column, keeps minimized members visible but disabled, and supports
+  non-wrapping spatial keyboard navigation between actionable targets.
 - An optional reversible shortcut helper with custom JSON profiles.
 
 ## Status
 
 The latest stable release is [1.20.0](docs/release-notes-1.20.0.md).
+Keyboard navigation in the optional overview is in development for 1.21.0.
 The feature list tracks the current `main` branch; release state is recorded in
 the [roadmap](docs/roadmap.md).
 

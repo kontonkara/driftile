@@ -339,6 +339,133 @@ describe("overview effect package", () => {
     );
   });
 
+  it("navigates only live visible window targets with unmodified keys", () => {
+    const keyHandler = scene.slice(
+      scene.indexOf("Keys.onPressed:"),
+      scene.indexOf("Component.onCompleted:"),
+    );
+    const navigation = scene.slice(
+      scene.indexOf("function collectNavigationTargets("),
+      scene.indexOf("function selectDesktop("),
+    );
+    const cardTargets = desktopCard.slice(
+      desktopCard.indexOf("function collectNavigationTargets("),
+      desktopCard.indexOf("function indexOfDesktop("),
+    );
+    const thumbnail = desktopCard.slice(
+      desktopCard.indexOf("id: thumbnailShell"),
+      desktopCard.indexOf("id: tabShell"),
+    );
+    const tab = desktopCard.slice(
+      desktopCard.indexOf("id: tabShell"),
+      desktopCard.indexOf("function collectNavigationTargets("),
+    );
+
+    expect(scene).toContain('import "../code/main.js" as OverviewRuntime');
+    expect(scene).toContain('property string keyboardSelectionId: ""');
+    expect(keyHandler).toContain(
+      "(event.modifiers & ~Qt.KeypadModifier) !== Qt.NoModifier",
+    );
+    expect(keyHandler).toMatch(
+      /\(event\.modifiers & ~Qt\.KeypadModifier\) !== Qt\.NoModifier\) \{\s*event\.accepted = false;\s*return;/u,
+    );
+    for (const [key, direction] of [
+      ["Left", "left"],
+      ["Right", "right"],
+      ["Up", "up"],
+      ["Down", "down"],
+    ] as const) {
+      expect(keyHandler).toContain(`event.key === Qt.Key_${key}`);
+      expect(keyHandler).toContain(
+        `root.navigateKeyboardSelection("${direction}")`,
+      );
+    }
+    expect(keyHandler).toContain("event.key === Qt.Key_Enter");
+    expect(keyHandler).toContain("event.key === Qt.Key_Return");
+    expect(keyHandler).toContain("event.key === Qt.Key_Space");
+    expect(keyHandler).toContain("root.activateKeyboardSelection()");
+    expect(keyHandler).toContain("event.key === Qt.Key_Escape");
+    expect(keyHandler).toContain("sceneEffect.deactivate()");
+    expect(keyHandler).toContain("event.accepted = handled");
+
+    expect(scene).toContain("id: desktopRepeater");
+    expect(navigation).toContain("desktopRepeater.itemAt(cardIndex)");
+    expect(navigation).toContain("desktopCard.collectNavigationTargets(root)");
+    expect(navigation).toContain("OverviewRuntime.DriftileOverview");
+    expect(navigation).toContain(
+      'typeof runtime.findOverviewNavigationTarget !== "function"',
+    );
+    expect(navigation).toContain(
+      "runtime.findOverviewNavigationTarget(keyboardSelectionId, targets, direction)",
+    );
+    expect(navigation).toContain(
+      "focusWindow(target.candidate, target.windowId, target.desktop, target.desktopId, target.screen)",
+    );
+    expect(navigation).toContain(
+      "navigationTargetForId(targets, keyboardSelectionId)",
+    );
+    expect(navigation).toContain("target.candidate === activeWindow");
+    expect(navigation).toContain("target.desktopId === activeDesktopId");
+    expect(navigation).toContain(
+      "return firstActive || firstCurrentDesktop || firstVisual",
+    );
+    expect(navigation).toContain(
+      "navigationTargetPrecedes(target, firstVisual)",
+    );
+
+    expect(desktopCard).toContain("id: windowRepeater");
+    expect(cardTargets).toContain("windowRepeater.itemAt(index)");
+    expect(cardTargets).toContain(
+      "presentation.tiledPresentation && !presentation.tiledPresentation.selected",
+    );
+    expect(cardTargets).toContain("presentation.tabTarget");
+    expect(cardTargets).toContain("presentation.thumbnailTarget");
+    expect(cardTargets).toContain(
+      "id: navigationTargetId(presentation.windowId)",
+    );
+    for (const field of [
+      "candidate",
+      "desktop",
+      "desktopId",
+      "rect",
+      "screen",
+      "window",
+      "windowId",
+    ]) {
+      expect(cardTargets).toMatch(new RegExp(`\\b${field}(?::|,)`, "u"));
+    }
+    expect(cardTargets).toContain(
+      "return JSON.stringify([desktopId, windowId])",
+    );
+    expect(cardTargets).toContain("!candidate.deleted");
+    expect(cardTargets).toContain("!candidate.minimized");
+    expect(cardTargets).toContain("candidate.wantsInput === true");
+    expect(cardTargets).toContain("candidate.output === screen");
+    expect(cardTargets).toContain("visual.mapToItem(sceneItem");
+    expect(cardTargets).toContain("viewport.mapToItem(sceneItem");
+    expect(cardTargets).toContain("card.mapToItem(sceneItem");
+    expect(cardTargets).toContain("height: sceneItem.height");
+    expect(cardTargets).toContain("width: sceneItem.width");
+    expect(cardTargets).toContain("right <= left || bottom <= top");
+
+    expect(thumbnail).toContain("!windowPresentation.tiledPresentation");
+    expect(thumbnail).toContain(
+      "windowPresentation.tiledPresentation.selected",
+    );
+    expect(tab).toContain("!windowPresentation.tiledPresentation.selected");
+    expect(desktopCard.match(/border\.color: "#ffd166"/gu)).toHaveLength(2);
+    expect(desktopCard.match(/keyboardSelected \? 3 : 0/gu)).toHaveLength(2);
+    expect(
+      desktopCard.slice(
+        desktopCard.indexOf("id: numberGutter"),
+        desktopCard.indexOf("id: viewport"),
+      ),
+    ).not.toContain("keyboardSelectionId");
+    expect(`${scene}\n${desktopCard}`).not.toMatch(
+      /\bTimer\s*\{|KWin\.Workspace\.(?:stackingOrder|windows)\b|\.setValue\s*\(/u,
+    );
+  });
+
   it("selects only an exact live non-current desktop from its number gutter", () => {
     const numberGutter = desktopCard.slice(
       desktopCard.indexOf("id: numberGutter"),

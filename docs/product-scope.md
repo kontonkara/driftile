@@ -231,6 +231,20 @@ The ownership rule is strict:
   enabled, preserves existing assignments, and remains separately installable
   and disabled by default.
 
+## 1.21 optional overview slice
+
+- On opening, keyboard selection prefers the active actionable window, then an
+  actionable target on the current desktop, then the first actionable target
+  in visual order.
+- Arrow keys move spatially without wrapping. `Enter`, `Return`, and `Space`
+  use the selected target's existing guarded activation path; `Escape` closes
+  the effect.
+- A selected tabbed member contributes its thumbnail as one target. Other live
+  members contribute their tabs, while minimized, invalid, and clipped items
+  are excluded. Desktop gutters remain pointer-only.
+- The slice adds no layout behavior, setting, persistence field, private API,
+  global shortcut, drag, or rearrangement.
+
 ## Beyond v1
 
 - Optional visual transitions, layout indicators, and concise diagnostics.
@@ -284,6 +298,9 @@ Driftile must integrate with, not duplicate:
 - An overview gutter click may select only an exact live non-current desktop for
   its screen. Only confirmed selection closes the effect; a current, invalid,
   stale, raced, or rejected request leaves it open.
+- Overview keyboard navigation selects only actionable, unclipped targets and
+  never wraps. Keyboard activation uses the same guarded path as pointer
+  activation.
 - Reordering moves one whole active column left, right, first, or last inside its context without changing focus or widths.
 - Column-width resizing changes one whole active column, translates client limits to decorated frame bounds, respects every member's width constraints, and preserves focus and grouping.
 - A newly admitted or explicitly resized width that reaches a hard minimum or maximum is stored at that fixed logical-pixel boundary, so work-area changes cannot scale it past the same constraint.

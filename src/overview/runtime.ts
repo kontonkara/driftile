@@ -4,6 +4,8 @@ import {
   type OverviewLiveLayout,
 } from "./layout-view";
 
+export { findOverviewNavigationTarget } from "./navigation";
+
 export type OverviewModelLoadResult =
   | OverviewLayoutProjectionResult
   | {

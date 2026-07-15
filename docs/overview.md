@@ -17,12 +17,32 @@ a compact ordered strip for its live members. A left click on a different
 valid tab uses the same guarded focus path. The main script remains the sole
 owner of layout state and records the resulting selection.
 
+Version 1.21.0 is in development and adds keyboard selection without changing
+the pointer paths or layout ownership.
+
 The companion is disabled by default. When enabled with a fresh shortcut
 record, `Meta+O` toggles it. KGlobalAccel preserves an existing assignment
 across upgrades, including an explicitly unbound action, so review it in
 **System Settings > Keyboard > Shortcuts** after upgrading. The effect has no
 screen edge and requires the main Driftile KWin script because that script
 publishes the authoritative layout snapshot.
+
+## Keyboard navigation
+
+On opening, the overview selects the active actionable window when available.
+Otherwise it selects the first actionable target on the current desktop, then
+the first actionable target in visual order. Arrow keys move spatially in the
+requested direction without wrapping.
+
+`Enter`, `Return`, and `Space` run the selected target's existing guarded
+window-focus or desktop-selection path. `Escape` closes the effect without an
+action. In a tabbed column, the selected member is represented only by its
+large thumbnail; each other actionable member is represented by its tab.
+Minimized, invalid, and clipped items are excluded from keyboard selection.
+Desktop gutters remain pointer-only and are not keyboard targets.
+
+This 1.21.0 work adds no layout, setting, persistence field, private API, or
+global shortcut. Pointer behavior remains unchanged.
 
 ## Install a release
 
@@ -90,7 +110,9 @@ An invalid, stale, or rejected request leaves the effect open.
 
 Tab selection uses that same live-window path. Only the selected non-minimized
 member has a large thumbnail. Every live member keeps one non-overlapping tab;
-minimized members remain visible but disabled, and the selected tab is inert.
+minimized members remain visible but disabled, and the selected tab remains
+inert for pointer input. Keyboard navigation represents that member with its
+thumbnail instead of a duplicate tab target.
 Deleted, minimized, explicitly hidden, stale, or non-input targets are rejected
 without a layout or settings write.
 
@@ -117,8 +139,9 @@ Ordinary KWin activation may raise the window, and Driftile's existing focus
 handling may reveal its tiled column. Beyond a confirmed desktop request, the
 effect does not switch activities, move windows, write memberships, outputs,
 geometry, or settings, register a screen edge, assign a shortcut, or provide
-drag, rearrangement, or keyboard navigation. The interaction adds no action,
-binding, setting, schema, private API, second window model, or timer and
+drag or rearrangement. Keyboard activation reuses the guarded paths above. The
+interaction adds no action, binding, setting, schema, private API, second
+window model, or timer and
 performs no window, stacking-order, or layout scan. It does not infer columns
 from window geometry or add animation or settings UI.
 Disabling or uninstalling it leaves the main extension and Plasma's built-in
