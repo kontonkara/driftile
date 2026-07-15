@@ -19,8 +19,9 @@ leaving window, output, and desktop mechanisms to KWin.
 - One shared trailing empty virtual desktop with conservative creation and
   cleanup.
 - Manual floating with directional nudging, work-area centering, contextual
-  width and height resizing, automatic layout exclusions, minimized-slot
-  retention, and native fullscreen and maximize integration.
+  width adjustment, preset cycling, reset, and height resizing, automatic
+  layout exclusions, minimized-slot retention, and native fullscreen and
+  maximize integration.
 - Settled recovery for output, scale, work-area, and window-constraint changes.
 - Configurable gaps, application initial floating, tiling and borderless
   exclusions, global and application-specific initial column widths,

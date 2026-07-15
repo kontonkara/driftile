@@ -151,9 +151,16 @@ column still adopts that target column's presentation.
 
 ## Default column width
 
-**Default column width** sets the proportional width for newly admitted columns, fresh cross-context retiles, and the **Reset column width** action. Structural splits and extractions inherit their source width. The default is `50%`; the range is `10%`–`100%`.
+**Default column width** sets the proportional width for newly admitted columns,
+fresh cross-context retiles, and the contextual **Reset column width** action.
+Structural splits and extractions inherit their source width. The default is
+`50%`; the range is `10%`–`100%`.
 
-Changing it does not alter existing managed width policies, focus, floating anchors, transfers, or stacks. Existing widths remain authoritative until reset. A waiting window may be admitted under the new policy and move the affected viewport and frames. Newly admitted and reset widths are clamped to the live window constraints and physical-pixel grid.
+Changing it does not alter existing width policies or floating frames. The next
+explicit reset applies it to the active tiled column or one relation-free
+manually floating window; application-specific initial widths do not override
+that reset. Newly admitted and reset widths use the gap-adjusted singleton
+resolution, live constraints, and assigned-output physical-pixel grid.
 
 ## Application column widths
 
@@ -229,13 +236,14 @@ The value is a percentage-point step of the gap-adjusted work-area span, not a p
 
 ## Column width presets
 
-**Column width presets** controls the forward and backward preset actions.
-Enter up to 16 comma-separated, strictly increasing integer percentages from
-`10` to `100`. A blank value keeps the built-in exact thirds.
+**Column width presets** controls the contextual forward and backward preset
+actions for the active tiled column or one relation-free manually floating
+window. Enter up to 16 comma-separated, strictly increasing integer percentages
+from `10` to `100`. A blank value keeps the built-in exact thirds.
 
-Changing the list performs no layout work and preserves existing column widths,
-focus, and viewport state. The next preset action reads the new list and still
-applies the shared window constraints.
+Changing the list performs no layout work and preserves existing column widths
+and floating frames. The next preset action reads the new list and applies the
+shared singleton resolution, live constraints, and physical-pixel grid.
 
 ## Window height step
 

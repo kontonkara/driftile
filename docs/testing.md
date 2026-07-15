@@ -195,6 +195,13 @@ passes CI quality, native X11, and Wayland jobs. A hidden lifecycle VM upgrades
 public 1.25.0 packages to matching 1.26.0 packages, exercises Konsole and KDE
 Calculator, removes both packages, and confirms that KWin remains usable.
 
+The frozen 1.27.0 development slice uses focused runtime coverage for contextual
+manual-floating preset cycling and reset, including configured percentages,
+singleton pixel resolution, constraints, reachability, exact acknowledgement,
+and fail-closed automatic, related, blocked, and pending targets. Existing
+packaged width settlement and tiled preset/reset coverage is reused without a
+new backend, integration, application, or VM matrix.
+
 In the following unit list, zero writes to floating windows means ambient
 layout work; explicit manual-floating movement, centering, or contextual size
 resizing owns its guarded frame request.
@@ -202,13 +209,13 @@ resizing owns its guarded frame request.
 The unit suite also covers shortcut manifests, live gap bounds, coalescing, exact reflow, hidden-context deferral, and zero writes to minimized or floating windows, default-width bounds, existing-layout preservation, deferred application, constrained waiting admission, newly admitted columns, and reset, resize-step bounds, no-write live changes, exact percentage-point actions, stack redistribution, decorated constraints, physical-pixel clamps, and rollback, unusable singleton, grouped, delayed-startup, and managed-context recovery with healthy-context isolation, a 128-cycle window lifecycle with synchronous geometry acknowledgements and bounded scheduler settlement, one-step desktop-reorder permutations, boundaries, rejection paths, and pinned-tail preservation, numbered desktop validation and tail clamping, immutable whole-column previews, floating transfer isolation and relationship guards, whole-column minimized-passive desktop and output transfer, secondary transfer with retained same-column minimized peers, zero mechanism and geometry writes, cancellation and rollback races, fail-closed minimized windows outside the source column or in the target context for default whole-column and secondary single-window transfers, batch transfer commits and rollback, trailing-desktop ownership, stack mutations and rollback, weighted window heights, deterministic output routing, floating ownership, guarded directional movement, partial-visibility bounds, exact work-area centering, layer focus memory and geometric navigation, minimized tiled-slot and manual-floating-frame retention, minimized focus skipping, vertical reorder, horizontal extraction, direct insertion across minimized source and target peers, fully minimized targets, skipped-singleton nonparticipation, authoritative hidden-frame changes, state-round-trip rollback, fail-closed state blockers, explicit consume, and explicit expel across minimized passive slots, no-wrap boundaries, transactional tiled-layer reveal, synchronous and deferred focus confirmation, reentrant focus rejection and rollback, fail-closed non-minimize suspension blockers, all-member transaction guards, projected stack rollback across authoritative removals, stacked fullscreen and maximize extraction past settled minimized peers, exact compensation, optional borderless ownership, reclassification, decorated frame constraints, topology-stable resize and reset clamps, cached silent hard-bound changes, test-only advisory increment and aspect metadata, available-width expansion, exact signed-offset centering, column and window sizing rollback, rotation bursts, rapid same-name output replacement, topology barriers, capacity recovery, and stale callback cancellation.
 
 Manual-floating size coverage verifies configured gap-free work-area width and
-height steps, decorated live minimum and maximum bounds, positive client
-extents, device-pixel-ratio snapping, preservation of the other dimension,
-partial visibility, and exactly one forward request. It covers immediate and
-delayed exact acknowledgement, repeated-command serialization with movement
-and centering, bounded expiry of an unchanged request, shutdown cleanup, exact
-metadata commits, nonexact and stale rejection without compensation, and zero
-tiled mutation. Reset and preset-height cases remain on the tiled path.
+height steps, width presets and global-default reset through exact singleton
+resolution, decorated live bounds, positive client extents, pixel-grid snapping,
+preservation of the other dimension, partial visibility, and one forward
+request. It covers immediate and delayed exact acknowledgement, repeated-command
+serialization, cleanup, exact metadata commits, nonexact and stale rejection,
+fail-closed ineligible targets, and zero tiled mutation. Window-height reset and
+preset cases remain on the tiled path.
 
 Application-width coverage verifies the bounded one-entry-per-line decoder,
 10%–100% values, the 128-entry limit, duplicate and malformed rejection, exact

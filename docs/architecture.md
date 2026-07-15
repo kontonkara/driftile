@@ -160,9 +160,10 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Accepts a desktop reorder only when KWin produces the exact expected same-ID permutation. The operation leaves selections and window memberships unchanged, and the shared empty tail remains pinned.
 - Releases explicitly floating windows from continuous geometry ownership and restores their anchored layout slots on return.
 - Translates or work-area-centers one active manually floating frame through a shared guarded command without a window or layout scan, preserving its reinsertion anchor and every tiled context.
-- Routes the existing width and window-height decrease and increase actions to
-  an active manually floating frame through a dedicated per-window transaction
-  without reading or mutating a tiled context.
+- Routes existing width decrease/increase, width-preset, width-reset, and
+  window-height decrease/increase actions to an eligible manually floating frame
+  through a dedicated per-window transaction without reading or mutating a
+  tiled context.
 - Transfers one active relation-free floating window between desktops through a dedicated KWin transaction without changing tiled state or frame geometry.
 - Remembers the last non-minimized tiled and floating focus per context, switches layers, and resolves floating navigation from live frame geometry without changing frames during floating navigation.
 - Skips minimized tiled slots, fully minimized columns, and minimized floating candidates during focus resolution without taking ownership of KWin's minimize mechanism.
@@ -185,7 +186,9 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   global policy before replacing exclusions, or install the new exclusions
   before enabling the global policy.
 - Defers live gap changes across structural transactions, then reflows dirty visible contexts and retries capacity admissions under one settled value.
-- Applies default-width changes before admission without changing existing column width policies; newly admitted columns, fresh cross-context retiles, and explicit reset read the current policy.
+- Applies default-width changes before admission without changing existing
+  column policies or floating frames; newly admitted columns, fresh
+  cross-context retiles, and later contextual resets read the current policy.
 - Parses at most 128 application-width entries into an exact
   `desktopFileName` lookup. A newly created or freshly admitted singleton reads
   that map in constant time, falls back to the global default, and remains
@@ -208,8 +211,8 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   settings snapshot. Valid entries are held in canonical sorted order with
   constant-time membership lookup.
 - Replaces at most 16 column-width presets atomically without layout work;
-  existing columns retain their concrete widths and later preset actions read
-  the new cycle.
+  existing columns and floating frames retain their widths, and later
+  contextual preset actions read the new cycle.
 - Optionally centers the destination of successful horizontal tiled focus
   navigation inside the existing focus transaction. Other focus paths retain
   minimal reveal and a failed center preview falls back without rejecting focus.
@@ -348,14 +351,17 @@ original-frame compensation request; stale ownership, context, or topology stops
 further writes.
 
 Contextual manual-floating size changes use a separate bounded per-window
-transaction. Width starts at
-`originalWidth + direction * columnWidthStep * workArea.width`; height starts
-at `originalHeight + direction * windowHeightStep * workArea.height`. Neither
-calculation includes the gap. The requested dimension snaps to the
-physical-pixel grid using the assigned output's device-pixel ratio and clamps
-to its live decorated minimum and maximum plus a positive client extent. The
-other dimension and top-left remain unchanged unless the partial-visibility
-bounds require a minimal origin clamp.
+transaction. Width steps start at
+`originalWidth + direction * columnWidthStep * workArea.width`; height steps
+start at `originalHeight + direction * windowHeightStep * workArea.height`.
+Width presets and reset resolve their configured percentage as
+`percentage / 100 * (workArea.width - gap) - gap`, matching singleton layout
+resolution. Preset and reset targets additionally require a relation-free
+manual-floating window. The requested dimension snaps to the physical-pixel
+grid using the assigned output's device-pixel ratio and clamps to its live
+decorated minimum and maximum plus a positive client extent. The other
+dimension and top-left remain unchanged unless the partial-visibility bounds
+require a minimal origin clamp.
 
 The per-window `frameGeometryChanged` handler is connected before exactly one
 forward frame request. An exact synchronous X11 or XWayland result settles
@@ -592,12 +598,13 @@ inspected safely within the codec bound.
 - Verify context-local tiled/floating focus memory for manual and automatic floating windows without geometry writes.
 - Verify directional and edge floating focus, stacking tie-breaks, no-wrap boundaries, and exact frame immutability.
 - Verify contextual manual-floating width and height decrease and increase,
-  their configured gap-free work-area steps, decorated live constraints,
-  positive client extents, physical-pixel snapping, preservation of the other
-  dimension, partial visibility, synchronous and delayed exact settlement,
-  bounded unchanged-request expiry, pending-command serialization and cleanup,
-  exact metadata commits, nonexact and stale rejection without compensation,
-  one forward write, and zero tiled mutation.
+  width-preset cycling and reset, configured gap-free steps, exact singleton
+  percentage resolution, decorated live constraints, positive client extents,
+  physical-pixel snapping, preservation of the other dimension, partial
+  visibility, synchronous and delayed exact settlement, bounded unchanged-request
+  expiry, pending-command serialization and cleanup, exact metadata commits,
+  nonexact and stale rejection without compensation, fail-closed related and
+  automatic targets, one forward write, and zero tiled mutation.
 - Verify vertical focus, member reorder, contextual merge and extraction, suspended members, and structural rollback.
 - Verify direct insertion past settled minimized source and target peers, fully minimized target stacks, skipped-singleton nonparticipation, zero hidden-frame writes, authoritative external frame changes, state-round-trip cancellation, exact rollback, and fail-closed blockers.
 - Verify cross-output pointer adoption before and after a visible target,

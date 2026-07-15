@@ -7,6 +7,9 @@ record. Later direction is not a committed release schedule.
 Stable 1.26.0 adds nine unbound numbered single-window desktop actions by
 reusing the existing indexed transfer transaction.
 
+The frozen 1.27.0 development slice makes existing width-preset and reset
+actions contextual for one relation-free manually floating window.
+
 ## Foundation (delivered)
 
 - Build and package a declarative KWin script with a TypeScript runtime.
@@ -55,9 +58,9 @@ The current runtime already:
 - Parks deterministic whole columns when a new multi-output capacity limit no longer fits, preferring non-active columns, then retries waiting windows.
 - Focuses adjacent and edge columns, and reorders the active whole column left, right, first, or last with context-local shortcuts and transactional geometry rollback.
 - Decreases, increases, or resets the active whole column width with grouped constraints and transactional rollback.
-- Reuses width decrease and increase to resize an active manually floating
-  frame by the configured work-area step, with exact acknowledgement and zero
-  tiled mutation.
+- Reuses width decrease/increase, preset forward/back, and reset to resize an
+  eligible manually floating frame through the shared exact-acknowledgement
+  transaction with zero tiled mutation.
 - Cycles preset widths in both directions, adjusts width by 10%, toggles full width, expands into available space within shared constraints, and centers either the active column or all fully visible columns.
 - Adjusts one tiled window's height by 10%, resets it to weighted automatic sizing, and cycles `1/3`, `1/2`, and `2/3` presets with transactional stack reflow. The same decrease and increase actions resize an active manually floating frame by the configured work-area height step.
 - Focuses and reorders vertical stack members, contextually merges or extracts the active window, consumes or expels edge members, and inserts directly into the nearest stack across nonparticipating singleton columns.
@@ -81,14 +84,16 @@ The current runtime already:
   `desktopFileName` exclusions keep matching applications under KWin's existing
   decoration policy.
 - Applies a global 0–64 logical-pixel tiled-window gap live without mutating layout order, sizing policies, focus, floating frames, or minimized frames.
-- Configures a 10%–100% default width for newly admitted columns, fresh cross-context retiles, and explicit reset without changing existing column width policies.
+- Configures a 10%–100% default width for newly admitted columns, fresh
+  cross-context retiles, and contextual reset without changing existing widths.
 - Configures up to 128 exact `desktopFileName` initial singleton widths, with a
   constant-time admission lookup, global-default fallback, and normal
   constraint clamping. Existing columns remain unchanged.
 - Excludes up to 128 exact, case-sensitive `desktopFileName` values from layout
   ownership, with live release and fresh readmission when the policy changes.
-- Configures up to 16 strictly increasing column-width presets without changing
-  existing widths; a blank configuration retains the built-in exact thirds.
+- Configures up to 16 strictly increasing column-width presets for later tiled
+  or manual-floating actions without changing existing widths; a blank
+  configuration retains the built-in exact thirds.
 - Optionally centers successful horizontal tiled focus navigation without
   changing vertical, floating, layer, or direct application focus.
 - Configures a 1–50 percentage-point explicit column-width step without reflowing existing layouts.
@@ -1075,6 +1080,32 @@ Release criteria (met):
   integration, application, backend, or feature-VM matrix.
 
 No other feature belongs to 1.26.0.
+
+## 1.27.0 (in development)
+
+Existing width-preset forward/back actions and the unbound width-reset action
+become contextual for one relation-free manually floating window. Presets read
+the configured cycle; reset reads the global default. Targets use the exact
+gap-adjusted singleton resolution, assigned-output pixel grid, live decorated
+constraints, and established partial-reachability bounds.
+
+The shared manual-floating size transaction issues at most one frame request
+and commits only after exact acknowledgement. Automatic, related, pending, or
+otherwise blocked floating targets fail closed without reaching the tiled path.
+
+Release criteria:
+
+- Focused runtime coverage verifies forward/back cycling, reset, configured
+  percentages, singleton resolution, constraints, reachability, exact
+  acknowledgement, unchanged tiled state, and fail-closed targets.
+- Formatting, type, lint, focused unit, package, Nix evaluation, and Nix build
+  gates pass before exact-SHA CI.
+- Existing packaged width settlement and tiled preset/reset coverage is reused
+  without a new backend, integration, application, or VM matrix.
+- The slice adds no action, default binding, setting, schema, persistence
+  behavior, helper or overview behavior, or KWin API.
+
+No other feature belongs to 1.27.0.
 
 ## Post-v1
 

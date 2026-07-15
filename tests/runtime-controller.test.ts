@@ -16637,6 +16637,9 @@ describe("RuntimeController", () => {
     expect(controller.centerColumn()).toBe(false);
     expect(controller.increaseColumnWidth()).toBe(false);
     expect(controller.decreaseColumnWidth()).toBe(false);
+    expect(controller.resetColumnWidth()).toBe(false);
+    expect(controller.switchPresetColumnWidth()).toBe(false);
+    expect(controller.switchPresetColumnWidthBack()).toBe(false);
     expect(controller.increaseWindowHeight()).toBe(false);
     expect(controller.decreaseWindowHeight()).toBe(false);
     expectTrackedWindowState([tiled, active], state);
@@ -16839,6 +16842,179 @@ describe("RuntimeController", () => {
       },
     );
     expectNoResize(controller.decreaseColumnWidth.bind(controller));
+  });
+
+  it("cycles and resets width presets for a manual-floating window", () => {
+    const output = {
+      ...createOutput("DP-1", 1000.13),
+      devicePixelRatio: 1.25,
+      geometry: { height: 800, width: 1000, x: 1000.13, y: 50.17 },
+    } satisfies KWinOutput;
+    const workArea = {
+      height: 760,
+      width: 973.6,
+      x: 1003.45,
+      y: 63.31,
+    };
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("window-1", output, desktop);
+    const originalFrame = {
+      height: 240.4,
+      width: 300,
+      x: 1080.21,
+      y: 120.37,
+    };
+    const active = createTrackedWindow("window-2", output, desktop, {
+      frameGeometry: originalFrame,
+    });
+    const third = createTrackedWindow("window-3", output, desktop);
+    const windows = [first, active, third];
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map(({ window }) => window),
+    );
+    fixture.workspace.clientArea = () => workArea;
+    const resumeScheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 200 },
+      gap: 17,
+      scheduleResume: resumeScheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    fixture.workspace.activeWindow = active.window;
+    expect(controller.toggleFloating()).toBe(true);
+    expect(controller.setDefaultColumnWidthPercent(40)).toBe(true);
+    expect(controller.setColumnWidthPresets([20, 60, 90])).toBe(true);
+    expect(active.window.frameGeometry).toEqual(originalFrame);
+
+    const activeId = windowId("window-2");
+    const floatingWindows = runtimeFloatingWindows(controller);
+    const floatingBefore = floatingWindows.get(activeId);
+
+    if (!floatingBefore) {
+      throw new Error("missing manual-floating preset width state");
+    }
+
+    const tiledLayout = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const tiledState = captureTrackedWindowState([first, third]);
+    const activationCount = fixture.activationCount;
+    const activeOutput = active.window.output;
+    const activeDesktops = active.window.desktops;
+    const desktopWrites = active.desktopWriteCount;
+    const presetFrames = {
+      default: { ...originalFrame, width: 365.6 },
+      large: { ...originalFrame, width: 844 },
+      medium: { ...originalFrame, width: 557.6 },
+      small: { ...originalFrame, width: 174.4 },
+    } as const;
+    const expectInvariantState = (
+      expectedFrame: KWinWindow["frameGeometry"],
+    ): void => {
+      const floating = floatingWindows.get(activeId);
+
+      expect(active.window.frameGeometry).toEqual(expectedFrame);
+      expect(active.window.frameGeometry.height).toBe(originalFrame.height);
+      expect(fixture.workspace.activeWindow).toBe(active.window);
+      expect(fixture.activationCount).toBe(activationCount);
+      expect(active.window.output).toBe(activeOutput);
+      expect(active.window.desktops).toBe(activeDesktops);
+      expect(active.desktopWriteCount).toBe(desktopWrites);
+      expect(controller.floatingCount).toBe(1);
+      expect(controller.managedCount).toBe(2);
+      expectTrackedWindowState([first, third], tiledState);
+      expect(
+        runtimeLayout(controller).snapshot(
+          outputId(output.name),
+          desktopId(desktop.id),
+        ),
+      ).toEqual(tiledLayout);
+      expect(floating?.currentContextKey).toBe(
+        floatingBefore.currentContextKey,
+      );
+      expect(floating?.sourceContextKey).toBe(floatingBefore.sourceContextKey);
+      expect(floating?.placement).toBe(floatingBefore.placement);
+      expect(floating).toEqual({
+        currentContextKey: floatingBefore.currentContextKey,
+        expectedFrame,
+        placement: floatingBefore.placement,
+        restoreBaseline: {
+          clientFrame: expectedFrame,
+          fingerprint: floatingBefore.restoreBaseline.fingerprint,
+          frame: expectedFrame,
+          kind: "client",
+          noBorder: floatingBefore.restoreBaseline.noBorder,
+        },
+        sourceContextKey: floatingBefore.sourceContextKey,
+      });
+    };
+    const expectImmediateResize = (
+      resize: () => boolean,
+      expectedFrame: KWinWindow["frameGeometry"],
+    ): void => {
+      const writes = active.writeCount;
+
+      expect(resize()).toBe(true);
+      expect(active.writeCount).toBe(writes + 1);
+      expect(controller.lastWriteCount).toBe(1);
+      expect(resumeScheduler.pendingCount).toBe(0);
+      expectInvariantState(expectedFrame);
+    };
+    let delayedWrite:
+      | {
+          readonly commit: () => void;
+          readonly frame: KWinWindow["frameGeometry"];
+        }
+      | undefined;
+    active.setWriteBehavior((frame, commit) => {
+      delayedWrite = { commit, frame: { ...frame } };
+    });
+    const writes = active.writeCount;
+
+    expect(controller.switchPresetColumnWidth()).toBe(true);
+    active.setWriteBehavior(null);
+    expect(delayedWrite?.frame).toEqual(presetFrames.medium);
+    expect(active.window.frameGeometry).toEqual(originalFrame);
+    expect(active.writeCount).toBe(writes + 1);
+    expect(controller.lastWriteCount).toBe(1);
+    expect(floatingWindows.get(activeId)).toBe(floatingBefore);
+    expect(resumeScheduler.pendingCount).toBe(1);
+
+    delayedWrite?.commit();
+    active.frameGeometryChanged.emit(originalFrame);
+    resumeScheduler.flush();
+
+    expect(resumeScheduler.pendingCount).toBe(0);
+    expectInvariantState(presetFrames.medium);
+    expectImmediateResize(
+      controller.switchPresetColumnWidthBack.bind(controller),
+      presetFrames.small,
+    );
+    expectImmediateResize(
+      controller.switchPresetColumnWidthBack.bind(controller),
+      presetFrames.large,
+    );
+    expectImmediateResize(
+      controller.switchPresetColumnWidth.bind(controller),
+      presetFrames.small,
+    );
+    expectImmediateResize(
+      controller.resetColumnWidth.bind(controller),
+      presetFrames.default,
+    );
+
+    const resetWrites = active.writeCount;
+    expect(controller.resetColumnWidth()).toBe(false);
+    expect(active.writeCount).toBe(resetWrites);
+    expect(controller.lastWriteCount).toBe(0);
+    expectInvariantState(presetFrames.default);
   });
 
   it("resizes a decorated manual-floating height by the configured work-area step", () => {
@@ -37463,6 +37639,9 @@ describe("RuntimeController output transfers", () => {
     const activationCount = fixture.activationCount;
 
     expect(controller.moveColumnToOutputRight()).toBe(false);
+    expect(controller.switchPresetColumnWidth()).toBe(false);
+    expect(controller.switchPresetColumnWidthBack()).toBe(false);
+    expect(controller.resetColumnWidth()).toBe(false);
     expect(fixture.outputTransferCount).toBe(0);
     expect(fixture.desktopSwitchCount).toBe(0);
     expect(windows.map(({ desktopWriteCount }) => desktopWriteCount)).toEqual(

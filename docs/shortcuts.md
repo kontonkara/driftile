@@ -28,7 +28,7 @@ arrow keys are interchangeable unless noted otherwise.
 | Toggle native fullscreen                         | `Meta+Shift+F`                                       |
 | Toggle native maximize to work-area edges        | `Meta+M`                                             |
 | Close active window                              | `Meta+Q`                                             |
-| Cycle preset column width forward or back        | `Meta+R` or `Meta+Shift+R`                           |
+| Cycle preset column or floating width            | `Meta+R` or `Meta+Shift+R`                           |
 | Toggle full-width column                         | `Meta+F`                                             |
 | Expand active column into available width        | `Meta+Ctrl+F`                                        |
 | Center column or active manually floating window | `Meta+C`                                             |
@@ -39,8 +39,8 @@ arrow keys are interchangeable unless noted otherwise.
 | Reset active window height to automatic          | `Meta+Ctrl+R`                                        |
 
 Single-window desktop/output transfer, direct insertion into the nearest
-existing stack, one-way tiled/floating layer focus, resetting a column width,
-and reverse window-height preset cycling are registered without default keys.
+existing stack, one-way tiled/floating layer focus, contextual width reset, and
+reverse window-height preset cycling are registered without default keys.
 Assign them in **System Settings > Keyboard > Shortcuts** if needed.
 
 `driftile_move_window_to_desktop_1` through
@@ -91,8 +91,18 @@ and every tiled layout; centering also preserves size. An already centered,
 automatically excluded, or stale center target is a no-op. Width state commits
 only after an exact synchronous or asynchronous acknowledgement. Pending,
 blocked, or native-state width targets are no-ops and never fall through to
-tiled behavior. Existing tiled behavior is unchanged; no action, binding,
-setting, or schema is added.
+tiled behavior. Existing tiled behavior is unchanged.
+
+`Meta+R`, `Meta+Shift+R`, and the unbound **Reset column width** action are also
+contextual. A relation-free manually floating target reads the configured
+column-width presets or global default. Each percentage uses the same
+gap-adjusted singleton resolution, live decorated constraints, assigned-output
+pixel grid, and partial-visibility bounds as tiled width resolution. Height,
+focus, context, reinsertion placement, and every tiled layout stay unchanged.
+Only exact acknowledgement commits the frame. Automatic, related, pending, or
+otherwise blocked floating targets are no-ops without tiled fallback. No
+action, default binding, setting, schema, persistence behavior, or helper
+behavior is added.
 
 `Meta+Shift+-` and `Meta+Shift+=` are also contextual. On an active manually
 floating window, they change the decorated frame height by

@@ -29,7 +29,8 @@ The ownership rule is strict:
   matching tiled, floating, dialog, transient, and utility windows under their
   existing decoration policy.
 - Live global tiled-window gap from 0 to 64 logical pixels without changing layout state.
-- Configurable 10%–100% default width for newly admitted columns, fresh cross-context retiles, and explicit reset.
+- Configurable 10%–100% default width for newly admitted columns, fresh
+  cross-context retiles, and contextual tiled or manual-floating reset.
 - Up to 128 application-specific 10%–100% initial singleton widths, matched by
   exact KWin `desktopFileName` with global-default fallback and live constraint
   clamping.
@@ -40,8 +41,9 @@ The ownership rule is strict:
 - Up to 128 exact KWin `desktopFileName` exclusions that keep matching
   application windows outside tiling and apply live without taking geometry
   ownership.
-- Up to 16 configurable, strictly increasing 10%–100% column-width presets;
-  an empty configuration retains the built-in exact thirds.
+- Up to 16 configurable, strictly increasing 10%–100% column-width presets for
+  contextual tiled or manual-floating actions; an empty configuration retains
+  the built-in exact thirds.
 - Optional best-effort centering for successful left, right, first, and last
   tiled focus navigation, globally or for up to 128 exact, case-sensitive KWin
   `desktopFileName` targets, without changing other focus paths.
@@ -313,6 +315,22 @@ The ownership rule is strict:
   relation-free contextual transfer.
 - The slice adds no default binding, setting, persistence field, schema,
   compositor mechanism, or private API.
+
+## 1.27 contextual floating width slice
+
+- Existing width-preset forward/back actions and the unbound width-reset action
+  target one relation-free manually floating window when that layer is active.
+- Presets read the configured cycle; reset reads the global default. Each target
+  uses the exact gap-adjusted singleton width resolution and assigned-output
+  physical-pixel grid.
+- The shared manual-floating size transaction enforces live decorated
+  constraints, partial reachability, one frame request, and exact
+  acknowledgement without touching tiled state.
+- Automatic, related, pending, or otherwise blocked floating targets fail
+  closed without reaching the tiled path.
+- The frozen slice adds no action, default binding, setting, schema, persistence
+  behavior, helper or overview behavior, KWin API, backend, integration,
+  application, or VM matrix.
 
 ## Beyond v1
 

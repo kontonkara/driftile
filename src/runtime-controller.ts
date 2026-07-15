@@ -569,6 +569,7 @@ interface PendingManualFloatingSizeChange {
     oldGeometry: KWinWindow["frameGeometry"],
   ) => void;
   readonly signal: NonNullable<KWinWindow["frameGeometryChanged"]>;
+  readonly requiresRelationFree: boolean;
   settlementAttempts: number;
   status: "accepted" | "pending" | "rejected";
   readonly targetFrame: Rect;
@@ -2324,7 +2325,7 @@ export class RuntimeController {
   decreaseColumnWidth(): boolean {
     const floatingResult = this.resizeActiveManualFloatingWindowSize(
       "width",
-      -1,
+      "decrease",
     );
 
     if (floatingResult !== null) {
@@ -2337,7 +2338,7 @@ export class RuntimeController {
   increaseColumnWidth(): boolean {
     const floatingResult = this.resizeActiveManualFloatingWindowSize(
       "width",
-      1,
+      "increase",
     );
 
     if (floatingResult !== null) {
@@ -2348,21 +2349,48 @@ export class RuntimeController {
   }
 
   resetColumnWidth(): boolean {
+    const floatingResult = this.resizeActiveManualFloatingWindowSize(
+      "width",
+      "reset",
+    );
+
+    if (floatingResult !== null) {
+      return floatingResult;
+    }
+
     return this.resizeActiveColumn("reset");
   }
 
   switchPresetColumnWidth(): boolean {
+    const floatingResult = this.resizeActiveManualFloatingWindowSize(
+      "width",
+      "preset-next",
+    );
+
+    if (floatingResult !== null) {
+      return floatingResult;
+    }
+
     return this.resizeActiveColumn("preset-next");
   }
 
   switchPresetColumnWidthBack(): boolean {
+    const floatingResult = this.resizeActiveManualFloatingWindowSize(
+      "width",
+      "preset-previous",
+    );
+
+    if (floatingResult !== null) {
+      return floatingResult;
+    }
+
     return this.resizeActiveColumn("preset-previous");
   }
 
   decreaseWindowHeight(): boolean {
     const floatingResult = this.resizeActiveManualFloatingWindowSize(
       "height",
-      -1,
+      "decrease",
     );
 
     if (floatingResult !== null) {
@@ -2375,7 +2403,7 @@ export class RuntimeController {
   increaseWindowHeight(): boolean {
     const floatingResult = this.resizeActiveManualFloatingWindowSize(
       "height",
-      1,
+      "increase",
     );
 
     if (floatingResult !== null) {
@@ -6155,8 +6183,16 @@ export class RuntimeController {
   }
 
   private resizeActiveManualFloatingWindowSize(
+    axis: "height",
+    action: "decrease" | "increase",
+  ): boolean | null;
+  private resizeActiveManualFloatingWindowSize(
+    axis: "width",
+    action: ColumnResizeAction,
+  ): boolean | null;
+  private resizeActiveManualFloatingWindowSize(
     axis: ManualFloatingResizeAxis,
-    direction: -1 | 1,
+    action: ColumnResizeAction,
   ): boolean | null {
     const activeWindow = this.workspace.activeWindow;
 
@@ -6178,8 +6214,15 @@ export class RuntimeController {
       activeWindow,
       floating,
     );
+    const requiresRelationFree =
+      action === "preset-next" ||
+      action === "preset-previous" ||
+      action === "reset";
 
-    if (!command) {
+    if (
+      !command ||
+      (requiresRelationFree && this.floatingWindowHasRelations(activeWindow))
+    ) {
       return false;
     }
 
@@ -6206,7 +6249,7 @@ export class RuntimeController {
       command,
       constraintBounds,
       decorationExtent,
-      direction,
+      action,
     );
 
     if (
@@ -6231,6 +6274,7 @@ export class RuntimeController {
       constraintBounds,
       decorationExtent,
       handleFrameGeometryChanged,
+      requiresRelationFree,
       signal,
       settlementAttempts: 0,
       status: "pending",
@@ -6314,7 +6358,7 @@ export class RuntimeController {
     command: ManualFloatingFrameCommand,
     constraintBounds: FrameSizeConstraintBounds,
     decorationExtent: number,
-    direction: -1 | 1,
+    action: ColumnResizeAction,
   ): Rect | null {
     const devicePixelRatio = command.contextGeometry.devicePixelRatio;
     const workArea = command.contextGeometry.workArea;
@@ -6354,25 +6398,77 @@ export class RuntimeController {
     }
 
     const originalExtent = command.originalFrame[axis];
-    const step =
-      axis === "width" ? this.columnWidthStep : this.windowHeightStep;
-    const requestedExtent = originalExtent + direction * step * workAreaExtent;
+    let extent: number | null;
 
-    if (!Number.isFinite(requestedExtent)) {
+    switch (action) {
+      case "decrease":
+      case "increase": {
+        const direction = action === "increase" ? 1 : -1;
+        const step =
+          axis === "width" ? this.columnWidthStep : this.windowHeightStep;
+        const requestedExtent =
+          originalExtent + direction * step * workAreaExtent;
+
+        if (!Number.isFinite(requestedExtent)) {
+          return null;
+        }
+
+        extent = clamp(
+          roundToPhysicalPixel(requestedExtent, devicePixelRatio),
+          minimumExtent,
+          maximumExtent,
+        );
+        const progressTolerance = floatingPointTolerance(
+          extent,
+          originalExtent,
+        );
+
+        if (
+          (direction > 0 && extent <= originalExtent + progressTolerance) ||
+          (direction < 0 && extent >= originalExtent - progressTolerance)
+        ) {
+          return null;
+        }
+
+        break;
+      }
+      case "preset-next":
+      case "preset-previous":
+        if (axis !== "width") {
+          return null;
+        }
+
+        extent = this.manualFloatingPresetWidth(
+          command,
+          minimumExtent,
+          maximumExtent,
+          action === "preset-next" ? 1 : -1,
+        );
+        break;
+      case "reset": {
+        if (axis !== "width") {
+          return null;
+        }
+
+        const requestedExtent = this.manualFloatingSingletonColumnWidth(
+          this.defaultColumnWidth,
+          command.contextGeometry,
+        );
+        extent =
+          requestedExtent === null
+            ? null
+            : clamp(requestedExtent, minimumExtent, maximumExtent);
+        break;
+      }
+    }
+
+    if (extent === null) {
       return null;
     }
 
-    const extent = clamp(
-      roundToPhysicalPixel(requestedExtent, devicePixelRatio),
-      minimumExtent,
-      maximumExtent,
-    );
     const progressTolerance = floatingPointTolerance(extent, originalExtent);
 
-    if (
-      (direction > 0 && extent <= originalExtent + progressTolerance) ||
-      (direction < 0 && extent >= originalExtent - progressTolerance)
-    ) {
+    if (Math.abs(extent - originalExtent) <= progressTolerance) {
       return null;
     }
 
@@ -6382,6 +6478,97 @@ export class RuntimeController {
         : { ...command.originalFrame, height: extent };
 
     return moveFloatingFrame(resizedFrame, workArea, 0, 0);
+  }
+
+  private manualFloatingPresetWidth(
+    command: ManualFloatingFrameCommand,
+    minimumExtent: number,
+    maximumExtent: number,
+    direction: -1 | 1,
+  ): number | null {
+    const resolved = this.columnWidthPresets.map((preset) => {
+      const width = this.manualFloatingSingletonColumnWidth(
+        preset,
+        command.contextGeometry,
+      );
+      return width === null ? null : clamp(width, minimumExtent, maximumExtent);
+    });
+    const candidates = resolved.filter(
+      (width): width is number => width !== null,
+    );
+
+    if (candidates.length === 0) {
+      return null;
+    }
+
+    const current = command.originalFrame.width;
+    const tolerance = floatingPointTolerance(current, ...candidates);
+
+    if (direction > 0) {
+      return (
+        resolved.find(
+          (width) => width !== null && width > current + tolerance,
+        ) ??
+        candidates[0] ??
+        null
+      );
+    }
+
+    for (let index = resolved.length - 1; index >= 0; index -= 1) {
+      const width = resolved[index];
+
+      if (
+        width !== undefined &&
+        width !== null &&
+        width < current - tolerance
+      ) {
+        return width;
+      }
+    }
+
+    return candidates[candidates.length - 1] ?? null;
+  }
+
+  private manualFloatingSingletonColumnWidth(
+    width: ColumnWidth,
+    contextGeometry: ContextGeometry,
+  ): number | null {
+    const devicePixelRatio = contextGeometry.devicePixelRatio;
+    const workArea = contextGeometry.workArea;
+    const denominator = workArea.width - this.gap;
+
+    if (
+      !Number.isFinite(devicePixelRatio) ||
+      devicePixelRatio <= 0 ||
+      !Number.isFinite(denominator) ||
+      denominator <= 0
+    ) {
+      return null;
+    }
+
+    const unresolved =
+      width.kind === "fixed"
+        ? width.value
+        : width.value * denominator - this.gap;
+    const relativeStart =
+      workArea.x + this.gap - contextGeometry.pixelGridOrigin.x;
+
+    if (
+      !Number.isFinite(unresolved) ||
+      unresolved <= 0 ||
+      !Number.isFinite(relativeStart)
+    ) {
+      return null;
+    }
+
+    const snappedStart = roundToPhysicalPixel(relativeStart, devicePixelRatio);
+    const snappedEnd = roundToPhysicalPixel(
+      relativeStart + unresolved,
+      devicePixelRatio,
+    );
+    const resolved = snappedEnd - snappedStart;
+
+    return Number.isFinite(resolved) && resolved > 0 ? resolved : null;
   }
 
   private handlePendingManualFloatingSizeChange(
@@ -6549,6 +6736,8 @@ export class RuntimeController {
 
     return (
       constraintBounds !== null &&
+      (!operation.requiresRelationFree ||
+        !this.floatingWindowHasRelations(command.activeWindow)) &&
       frameSizeConstraintBoundsEqual(
         constraintBounds,
         operation.constraintBounds,
@@ -9754,7 +9943,7 @@ export class RuntimeController {
           this.automaticallyFloats(activeWindow))) ||
       this.windowLayer(activeId, activeWindow, sourceContextKey) !==
         "floating" ||
-      this.floatingOutputTransferHasRelations(activeWindow) ||
+      this.floatingWindowHasRelations(activeWindow) ||
       this.pendingWindowSyncs.has(activeId) ||
       this.waitingWindowContexts.has(activeId) ||
       this.suspendedWindows.has(activeId) ||
@@ -10322,7 +10511,7 @@ export class RuntimeController {
       (command.classification.kind === "automatic" ||
         !this.pendingWindowSyncs.has(command.activeId)) &&
       this.floatingTransferClassificationIsCurrent(command) &&
-      !this.floatingOutputTransferHasRelations(command.activeWindow) &&
+      !this.floatingWindowHasRelations(command.activeWindow) &&
       this.floatingOutputFingerprintsMatch(command) &&
       this.floatingTransferLayoutsAreCurrent(command)
     );
@@ -10380,18 +10569,20 @@ export class RuntimeController {
     }
   }
 
-  private floatingOutputTransferHasRelations(active: KWinWindow): boolean {
+  private floatingWindowHasRelations(active: KWinWindow): boolean {
     try {
       if (active.modal || active.transient || active.transientFor) {
         return true;
       }
+
+      const visited = new Set<KWinWindow>();
 
       for (const candidate of this.workspace.stackingOrder) {
         if (candidate === active) {
           continue;
         }
 
-        const visited = new Set<KWinWindow>();
+        visited.clear();
         let ancestor = candidate.transientFor;
 
         while (ancestor && !visited.has(ancestor)) {

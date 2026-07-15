@@ -115,8 +115,16 @@ the configured step percentage of its assigned work-area width; the gap is
 excluded. Height and top-left stay unchanged unless the partial-visibility
 bounds require a minimal origin clamp that keeps 10–75 logical pixels visible.
 Only an exact synchronous or asynchronous acknowledgement commits state.
-Pending, blocked, or native-state targets fail closed without falling through
-to tiled width changes. This adds no action, binding, setting, or schema.
+
+The existing preset forward/back and reset-width actions use that contextual
+path for one relation-free manually floating window. Presets read
+`ColumnWidthPresets`; reset reads `DefaultColumnWidthPercent`. Each percentage
+resolves as `percentage / 100 * (workArea.width - gap) - gap`, then uses the
+assigned output's pixel grid, live decorated constraints, and established
+partial-visibility clamp. Automatic, related, pending, native-state, or
+otherwise blocked floating targets fail closed without reaching tiled width
+changes. Tiled behavior is unchanged. This adds no action, default binding,
+setting, schema, persistence behavior, helper behavior, or KWin API.
 
 The existing decrease/increase window-height actions are contextual in the
 same way. With an active manually floating window, they change the decorated
@@ -126,9 +134,9 @@ partial-visibility bounds require a minimal origin clamp. The target respects
 live decorated constraints and snaps with the assigned output's device-pixel
 ratio. It uses the same exact-acknowledgement and fail-closed ownership path as
 contextual width, so a blocked or pending floating target never reaches tiled
-stack resizing. Tiled semantics are otherwise unchanged, while reset and
-preset-height actions remain tiled-only. This adds no action, binding, setting,
-or schema.
+stack resizing. Tiled semantics are otherwise unchanged, while window-height
+reset and preset actions remain tiled-only. This adds no action, binding,
+setting, or schema.
 
 A tiled drag commits on release over exactly one visible tiled target in the
 same context. The target midpoint selects insertion before or after it. Moving
