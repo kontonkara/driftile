@@ -1,12 +1,11 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.18.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.19.0 are
 released. The delivered milestones and release criteria below are a historical
-record. Version 1.19.0 has a frozen scope; later direction is not a committed
-release schedule.
+record. Later direction is not a committed release schedule.
 
-Version `1.19.0-rc.1` is the current release candidate. Its scope is frozen to
-the tabbed column presentation in the 1.19.0 section below.
+The `1.19.0-rc.1` candidate froze the exact 1.19.0 scope; stable 1.19.0 adds no
+behavior or data change.
 
 ## Foundation (delivered)
 
@@ -838,9 +837,9 @@ Release criteria (met):
 
 No other feature belongs to 1.18.0.
 
-## 1.19.0 (release candidate)
+## 1.19.0 (released)
 
-Version `1.19.0-rc.1` freezes one column presentation mode. `Meta+W` is the only
+Version `1.19.0` delivers one column presentation mode. `Meta+W` is the only
 new default binding and toggles the active tiled column between stacked and
 tabbed presentation. Every non-minimized tabbed member receives the same frame
 with the existing width and normal outer gaps. The selected member owns focus
@@ -862,7 +861,10 @@ member's thumbnail.
 The release adds no persistent tab strip or indicator, pointer tab navigation,
 animation, setting, settings UI, private API, or compositor-owned surface.
 
-Candidate tagging gates:
+The 1.19.0-rc.1 candidate froze this exact scope; stable 1.19.0 adds no further
+behavior or data change.
+
+Release criteria (met):
 
 - Focused model and geometry tests cover toggling, selection, reorder, normal
   outer gaps, dormant heights, target-wins merges, stacked splits, transfers,
@@ -874,9 +876,10 @@ Candidate tagging gates:
 - Small and large column fixtures enforce constant-time selection and
   column-local structural work. No unrelated application or VM pool is added.
 - Standard quality, package, Nix, backend integration, hidden full and
-  lifecycle VMs, version, and exact-SHA CI pass on the unchanged candidate
+  lifecycle VMs, version, and exact-SHA CI pass on the unchanged release
   commit.
-- The tag release workflow must pass before publishing the candidate assets.
+- The release workflow publishes assets only after all prerequisite jobs and
+  release gates pass.
 
 No other feature belongs to 1.19.0.
 

@@ -43,7 +43,7 @@
         pkgs:
         pkgs.buildNpmPackage {
           pname = "driftile";
-          version = "1.19.0-rc.1";
+          version = "1.19.0";
           outputs = [
             "out"
             "overview"
@@ -51,7 +51,7 @@
           src = self;
 
           nodejs = pkgs.nodejs_24;
-          npmDepsHash = "sha256-6EKtjWKPHIJoh4qBhkh3VCSWn722FWOnasdk9SFA4nU=";
+          npmDepsHash = "sha256-b8fZjz8qfg2XMubO038pj9djBkr1ZmydjPtubVoLd7g=";
           npmBuildScript = "build";
           nativeBuildInputs = [ pkgs.makeWrapper ];
 
