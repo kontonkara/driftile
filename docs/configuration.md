@@ -10,7 +10,7 @@ The settings page groups the existing controls into two tabs:
 - **Applications**: initial column widths and presentation, focus centering,
   initial floating rules, tiling exclusions, and decoration exclusions.
 
-Driftile validates all seventeen settings as one snapshot. Applying an invalid
+Driftile validates all nineteen settings as one snapshot. Applying an invalid
 value through an external configuration tool rejects the entire update and
 preserves the active settings; valid changes apply without reloading the
 extension.
@@ -31,7 +31,7 @@ and other active fullscreen effects.
 
 `programs.driftile.settings` is `null` by default, so Home Manager writes no
 Driftile setting. A non-null value is one complete typed profile: omitted fields
-take the defaults documented below, and Home Manager writes all seventeen
+take the defaults documented below, and Home Manager writes all nineteen
 values.
 This profile works with `programs.driftile.enable = false` when the package is
 installed system-wide.
@@ -43,6 +43,7 @@ The activation writes only `ApplicationBorderlessExclusions`,
 `BorderlessWindows`, `CenterFocusedColumn`, `Gap`,
 `DefaultColumnPresentation`, `DefaultColumnWidthPercent`, `ColumnWidthPresets`,
 `ColumnWidthStepPercent`, `ShowTabIndicator`, `TouchpadNavigation`,
+`TouchpadNavigationFingerCount`, `TouchpadNaturalScroll`,
 `WindowHeightPresets`, and `WindowHeightStepPercent` in Driftile's `kwinrc`
 group. It does not replace the file or manage shortcuts. A running KWin session
 is asked to reconfigure on a best-effort basis; otherwise the values apply on
@@ -83,6 +84,8 @@ programs.driftile.settings.columnWidthPresets = [ 20 50 80 ];
 programs.driftile.settings.defaultColumnPresentation = "stacked";
 programs.driftile.settings.showTabIndicator = true;
 programs.driftile.settings.touchpadNavigation = true;
+programs.driftile.settings.touchpadNavigationFingerCount = 4;
+programs.driftile.settings.touchpadNaturalScroll = true;
 programs.driftile.settings.windowHeightPresets = [ 25 50 75 ];
 ```
 
@@ -137,15 +140,21 @@ right, first, or last tiled-focus action.
 
 ## Touchpad navigation
 
-**Enable five-finger horizontal touchpad navigation** is disabled by default.
-On native Wayland, a completed left swipe focuses the next tiled column to the
-right, while a completed right swipe focuses the previous column to the left.
+**Enable horizontal touchpad navigation** is disabled by default and works only
+on native Wayland. `TouchpadNavigationFingerCount`
+(`touchpadNavigationFingerCount` in Home Manager) accepts `3`–`5` fingers and
+defaults to `5`.
+
+`TouchpadNaturalScroll` (`touchpadNaturalScroll` in Home Manager) defaults to
+enabled, preserving the content-following mapping: a completed left swipe
+focuses the next tiled column to the right, while a completed right swipe
+focuses the previous column to the left. Disabling it reverses both directions.
 The normal horizontal focus reveal and optional centering policies still apply.
 
-Partial and cancelled gestures do nothing. Enabling or disabling the option
-updates gesture registration without restarting KWin. Native X11 treats the
-enabled option as a safe no-op, and the option adds no shortcut action or
-default key binding.
+Partial and cancelled gestures do nothing. Changing any touchpad-navigation
+setting updates gesture registration without restarting KWin. Native X11
+treats the enabled option as a safe no-op, and the option adds no shortcut
+action or default key binding.
 
 ## Window gap
 
@@ -317,7 +326,7 @@ The KConfig decoder accepts at most 65,664 characters in the complete document,
 512 characters in each raw line, 128 nonblank unique IDs, and 255 UTF-8 bytes
 in each trimmed ID. It trims surrounding whitespace and ignores blank lines.
 Control characters, invalid UTF-16, an oversized value, or a duplicate after
-trimming rejects the complete seventeen-setting snapshot. Accepted IDs have a
+trimming rejects the complete nineteen-setting snapshot. Accepted IDs have a
 canonical sorted internal form. Home Manager exposes the same policy as
 `programs.driftile.settings.applicationBorderlessExclusions`, a list rendered
 as a sorted newline-delimited KConfig value.

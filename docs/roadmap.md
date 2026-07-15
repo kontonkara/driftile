@@ -118,7 +118,7 @@ The current runtime already:
   while existing action IDs and KGlobalAccel assignments remain unchanged.
 - Provides a reversible shortcut helper for the bundled defaults and explicit
   JSON v1 profiles; a UI without a Node.js dependency remains future work.
-- Lets Home Manager write the seventeen typed settings or generate a portable
+- Lets Home Manager write the nineteen typed settings or generate a portable
   shortcut profile without installing a second KWin package; shortcut claiming
   remains explicit.
 - Leaves dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows outside layout ownership, separate from manual floating.
@@ -1340,6 +1340,12 @@ blocked operations are no-ops. History is session-only and is not persisted.
 Users may assign `Meta+Tab` manually or add
 `driftile_focus_last_used_desktop` to a custom JSON v1 profile without changing
 the bundled defaults.
+
+Touchpad navigation remains disabled by default and native-Wayland-only. When
+enabled, its live configuration accepts `3`–`5` fingers and defaults to `5`.
+Natural direction is enabled by default, preserving the content-following
+left-swipe-to-right-column mapping; disabling it reverses both directions. The
+two added typed settings do not change layout persistence.
 
 ## Post-v1
 
