@@ -209,6 +209,11 @@ type FloatingFocusDestination =
 type StackedNativeState = "fullscreen" | "maximize";
 type WindowLayer = "floating" | "tiling";
 
+interface WindowRemovalFocus {
+  readonly contextKey: string;
+  readonly layer: WindowLayer;
+}
+
 interface ManagedContext {
   readonly desktopId: DesktopId;
   readonly outputId: OutputId;
@@ -5169,6 +5174,10 @@ export class RuntimeController {
     const affectedContextKeys = new Set<string>();
     const floating = this.floatingWindows.get(managedId);
     const transition = this.toggleGeometryTransitions.get(managedId);
+    const removalFocus = this.windowRemovalFocus(managedId, floating);
+    const recoverFocus =
+      removalFocus !== null &&
+      this.shouldRecoverWindowRemovalFocus(managedId, removalFocus);
 
     if (floating) {
       affectedContextKeys.add(floating.sourceContextKey);
@@ -5217,6 +5226,10 @@ export class RuntimeController {
       this.finishCanceledToggleTransition(key);
     }
 
+    if (removalFocus && recoverFocus) {
+      this.scheduleWindowRemovalFocusRecovery(managedId, removalFocus);
+    }
+
     if (endedInteractiveResize && this.borderlessReconciliationPending) {
       this.applyBorderlessWindowSetting(false);
     }
@@ -5228,6 +5241,145 @@ export class RuntimeController {
     this.requestLayoutStatePublication();
     this.flushLayoutStatePublication();
   };
+
+  private windowRemovalFocus(
+    id: WindowId,
+    floating: FloatingWindow | undefined,
+  ): WindowRemovalFocus | null {
+    if (floating) {
+      return {
+        contextKey: floating.currentContextKey,
+        layer: "floating",
+      };
+    }
+
+    const owner = this.managedWindows.get(id);
+
+    if (owner) {
+      return { contextKey: owner.contextKey, layer: "tiling" };
+    }
+
+    for (const [contextKey, rememberedId] of this.lastFloatingFocus) {
+      if (rememberedId === id) {
+        return { contextKey, layer: "floating" };
+      }
+    }
+
+    for (const [contextKey, rememberedId] of this.lastTiledFocus) {
+      if (rememberedId === id) {
+        return { contextKey, layer: "tiling" };
+      }
+    }
+
+    return null;
+  }
+
+  private shouldRecoverWindowRemovalFocus(
+    id: WindowId,
+    focus: WindowRemovalFocus,
+  ): boolean {
+    const active = this.workspace.activeWindow;
+
+    if (active) {
+      return String(active.internalId) === String(id);
+    }
+
+    const remembered =
+      focus.layer === "floating"
+        ? this.lastFloatingFocus.get(focus.contextKey)
+        : this.lastTiledFocus.get(focus.contextKey);
+    return remembered === id;
+  }
+
+  private scheduleWindowRemovalFocusRecovery(
+    id: WindowId,
+    focus: WindowRemovalFocus,
+  ): void {
+    const runGeneration = this.runGeneration;
+
+    try {
+      this.schedule(() => {
+        if (!this.started || this.runGeneration !== runGeneration) {
+          return;
+        }
+
+        this.recoverWindowRemovalFocus(id, focus);
+      });
+    } catch {
+      this.recoverWindowRemovalFocus(id, focus);
+    }
+  }
+
+  private recoverWindowRemovalFocus(
+    removedId: WindowId,
+    focus: WindowRemovalFocus,
+  ): void {
+    const active = this.workspace.activeWindow;
+
+    if (
+      this.stackEditOperation ||
+      this.windowTransferOperation ||
+      this.startupStabilizationToken !== null ||
+      this.hasTopologyBarrier() ||
+      (active && String(active.internalId) !== String(removedId))
+    ) {
+      return;
+    }
+
+    const target = this.windowRemovalFocusTarget(focus);
+
+    if (!target) {
+      return;
+    }
+
+    const targetId = windowId(String(target.internalId));
+    const layer = this.focusAvailableWindowLayer(
+      targetId,
+      target,
+      focus.contextKey,
+    );
+
+    if (
+      layer &&
+      this.requestWindowFocus(targetId, target, focus.contextKey, layer)
+    ) {
+      this.rememberLayerFocus(targetId, target);
+    }
+  }
+
+  private windowRemovalFocusTarget(
+    focus: WindowRemovalFocus,
+  ): KWinWindow | null {
+    if (focus.layer === "floating") {
+      return (
+        this.floatingFocusTarget(focus.contextKey) ??
+        this.selectedTiledFocusTarget(focus.contextKey)
+      );
+    }
+
+    return (
+      this.selectedTiledFocusTarget(focus.contextKey) ??
+      this.floatingFocusTarget(focus.contextKey)
+    );
+  }
+
+  private selectedTiledFocusTarget(key: string): KWinWindow | null {
+    const context = this.contexts.get(key);
+
+    if (!context) {
+      return null;
+    }
+
+    const snapshot = this.layout.snapshot(context.outputId, context.desktopId);
+    const activeColumn = snapshot.columns.find(
+      (column) => column.id === snapshot.activeColumnId,
+    );
+    const selected = activeColumn
+      ? this.tiledLayerCandidate(activeColumn.selectedWindowId, key)
+      : null;
+
+    return selected ?? this.tiledFocusTarget(context, key);
+  }
 
   private readonly handleWindowActivated = (
     window: KWinWindow | null,

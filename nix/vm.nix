@@ -5600,7 +5600,7 @@ let
 
         terminate_process "$pid"
 
-        if ! activate_window "$title_c" || ! wait_for_active "$title_c"; then
+        if ! wait_for_active "$title_c"; then
           record_focus_state \
             "physical close layout focus restoration failed"
           return 1

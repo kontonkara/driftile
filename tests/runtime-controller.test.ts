@@ -1621,6 +1621,96 @@ describe("RuntimeController", () => {
     controller.stop();
   });
 
+  it.each(["active", "cleared"] as const)(
+    "focuses the right adjacent column after removing the %s active window",
+    (focusState) => {
+      const output = createOutput("DP-1", 0);
+      const desktop = { id: "desktop-1" };
+      const left = createTrackedWindow("left", output, desktop);
+      const removed = createTrackedWindow("removed", output, desktop);
+      const right = createTrackedWindow("right", output, desktop);
+      const fixture = createWorkspace(
+        output,
+        desktop,
+        [output],
+        [desktop],
+        [left.window, removed.window, right.window],
+      );
+      const scheduler = new ManualScheduler();
+      const controller = new RuntimeController(fixture.workspace, {
+        clientAreaOption: 2,
+        schedule: scheduler.schedule,
+      });
+
+      expect(controller.start()).toBe(true);
+      fixture.workspace.activeWindow = removed.window;
+      flushManualScheduler(scheduler);
+
+      if (focusState === "cleared") {
+        fixture.workspace.activeWindow = null;
+      }
+
+      const activationCount = fixture.activationCount;
+      fixture.windowRemoved.emit(removed.window);
+      flushManualScheduler(scheduler);
+
+      expect(fixture.workspace.activeWindow).toBe(right.window);
+      expect(fixture.activationCount).toBe(activationCount + 1);
+      const snapshot = runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+      );
+      const activeColumn = snapshot.columns.find(
+        (column) => column.id === snapshot.activeColumnId,
+      );
+      expect(activeColumn?.selectedWindowId).toBe(windowId("right"));
+      controller.stop();
+    },
+  );
+
+  it("focuses the next stack member after removing the selected window", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const left = createTrackedWindow("left", output, desktop);
+    const removed = createTrackedWindow("removed", output, desktop);
+    const successor = createTrackedWindow("successor", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [left.window, removed.window, successor.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      schedule: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(controller.moveWindowLeft()).toBe(true);
+    fixture.workspace.activeWindow = removed.window;
+    flushManualScheduler(scheduler);
+    fixture.workspace.activeWindow = null;
+    const activationCount = fixture.activationCount;
+
+    fixture.windowRemoved.emit(removed.window);
+    flushManualScheduler(scheduler);
+
+    expect(fixture.workspace.activeWindow).toBe(successor.window);
+    expect(fixture.activationCount).toBe(activationCount + 1);
+    const snapshot = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+    const activeColumn = snapshot.columns.find(
+      (column) => column.id === snapshot.activeColumnId,
+    );
+    expect(activeColumn?.windowIds).toEqual([windowId("successor")]);
+    expect(activeColumn?.selectedWindowId).toBe(windowId("successor"));
+    controller.stop();
+  });
+
   it("finalizes queued activation work before the last publication", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
