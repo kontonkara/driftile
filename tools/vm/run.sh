@@ -166,6 +166,9 @@ monitor_guest() {
   local pointer_resize_sent=false
   local pointer_resize_sent_file
   local pointer_sent_file
+  local overview_desktop_drag_ready_file="$temporary_directory/xchg/driftile-overview-desktop-drag-ready"
+  local overview_desktop_drag_sent=false
+  local overview_desktop_drag_sent_file="$temporary_directory/xchg/driftile-overview-desktop-drag-sent"
   local -A keys_sent=(
     [bracket-right]=false
     [close-window]=false
@@ -336,6 +339,19 @@ monitor_guest() {
         pointer_drags_sent[$pointer_drag_name]=true
       fi
     done
+
+    if [[ "$overview_desktop_drag_sent" == false \
+      && -f "$overview_desktop_drag_ready_file" ]]; then
+      if ! send_plain_pointer_drag "$overview_desktop_drag_ready_file"; then
+        printf 'Could not send the physical overview desktop drag.\n' >&2
+        finish_full_vm_monitor || true
+        return 1
+      fi
+
+      printf 'The VM received the physical overview desktop drag.\n'
+      : > "$overview_desktop_drag_sent_file"
+      overview_desktop_drag_sent=true
+    fi
 
     pointer_resize_ready_file="$temporary_directory/xchg/driftile-pointer-resize-horizontal-ready"
     pointer_resize_sent_file="$temporary_directory/xchg/driftile-pointer-resize-horizontal-sent"
@@ -942,6 +958,27 @@ set_physical_pointer_drag_state() {
   send_qmp_commands "$capabilities" "$input"
 }
 
+set_physical_left_button_state() {
+  local down=$1
+  local capabilities='{"execute":"qmp_capabilities"}'
+  local input
+
+  [[ "$down" == true || "$down" == false ]] || return 1
+  input="{\"execute\":\"input-send-event\",\"arguments\":{\"events\":[{\"type\":\"btn\",\"data\":{\"down\":$down,\"button\":\"left\"}}]}}"
+  send_qmp_commands "$capabilities" "$input"
+}
+
+set_pointer_drag_button_state() {
+  local down=$1
+  local plain=$2
+
+  if [[ "$plain" == true ]]; then
+    set_physical_left_button_state "$down"
+  else
+    set_physical_pointer_drag_state "$down"
+  fi
+}
+
 set_physical_meta_key_state() {
   local down=$1
   local capabilities='{"execute":"qmp_capabilities"}'
@@ -970,6 +1007,7 @@ set_physical_right_button_state() {
 
 send_physical_pointer_drag() {
   local coordinate_file=$1
+  local plain=${2:-false}
   local destination_x
   local destination_y
   local end_absolute_x
@@ -1017,14 +1055,14 @@ send_physical_pointer_drag() {
     "$intermediate_y" "$output_y" "$output_height") || return 1
 
   absolute_pointer_available || return 1
-  set_physical_pointer_drag_state false || return 1
+  set_pointer_drag_button_state false "$plain" || return 1
 
   if ! send_absolute_pointer_position "$start_absolute_x" "$start_absolute_y"; then
     result=1
   fi
   sleep 0.1
 
-  if ((result == 0)) && ! set_physical_pointer_drag_state true; then
+  if ((result == 0)) && ! set_pointer_drag_button_state true "$plain"; then
     result=1
   fi
   sleep 0.1
@@ -1042,8 +1080,13 @@ send_physical_pointer_drag() {
   fi
   sleep 0.1
 
-  set_physical_pointer_drag_state false || result=1
+  set_pointer_drag_button_state false "$plain" || result=1
   return "$result"
+}
+
+send_plain_pointer_drag() {
+  set_physical_meta_key_state false || return 1
+  send_physical_pointer_drag "$1" true
 }
 
 send_physical_pointer_resize() {

@@ -5,6 +5,7 @@ import {
 } from "./layout-view";
 
 export { findOverviewNavigationTarget } from "./navigation";
+export { planOverviewDesktopDrop } from "./desktop-drop";
 
 export type OverviewModelLoadResult =
   | OverviewLayoutProjectionResult

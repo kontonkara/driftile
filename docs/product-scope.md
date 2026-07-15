@@ -246,10 +246,23 @@ The ownership rule is strict:
 - The slice adds no layout behavior, setting, persistence field, private API,
   global shortcut, drag, or rearrangement.
 
+## 1.22 optional overview slice
+
+- A plain left drag from a desktop card's number gutter previews one vertical
+  insertion point without moving the rendered cards. An ordinary click keeps
+  the existing desktop-selection path.
+- The final shared empty desktop cannot be a source, target, or crossed boundary.
+  Release revalidates the complete live object/ID order, effect, model, output,
+  selected desktop, and scene geometry before one public KWin reorder call.
+- Cancellation, no-op targets, stale order, missing API, and invalid geometry
+  perform no write. Pointer updates are `O(1)`; grab and release validation are
+  bounded by the desktop and output lists.
+- The slice adds no setting, shortcut, persistence field, window move, private
+  API, timer, or workspace window scan.
+
 ## Beyond v1
 
 - Optional visual transitions, layout indicators, and concise diagnostics.
-- Overview pointer rearrangement.
 - Activity-aware layouts.
 
 ## Compatibility

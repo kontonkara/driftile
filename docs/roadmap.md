@@ -7,6 +7,9 @@ record. Later direction is not a committed release schedule.
 Stable 1.21.0 adds spatial keyboard navigation to the optional overview without
 changing layout ownership, settings, persistence, or pointer paths.
 
+Version 1.22.0 is in development with guarded number-gutter desktop-card
+reordering through public KWin APIs.
+
 ## Foundation (delivered)
 
 - Build and package a declarative KWin script with a TypeScript runtime.
@@ -948,6 +951,32 @@ Release criteria (met):
 
 No other feature belongs to 1.21.0.
 
+## 1.22.0 (in development)
+
+Version `1.22.0` adds vertical desktop-card reordering to the optional overview.
+A plain left drag begins only in a card's number gutter. Cards stay fixed while
+the source tint and one insertion line provide feedback. A normal click keeps
+the existing selection behavior.
+
+The last shared empty desktop is never a source or crossed target. Release
+requires the exact effect, model, output, selected desktop, scene geometry, and
+complete ordered desktop object/ID snapshot captured at grab. A valid request
+uses public `KWin.Workspace.moveDesktop` once; cancellation, no-op, stale, or
+unsupported paths are write-free. The main script remains the layout owner.
+
+Release criteria:
+
+- A focused pure matrix covers every insertion slot, protected-tail case, no-op,
+  and invalid numeric input.
+- QML contract checks cover normal release versus cancellation, exact stale-state
+  guards, one public reorder call, constant-time pointer updates, and no window
+  or stacking-order scan.
+- One hidden Wayland checkpoint uses the existing application pool and physical
+  pointer transport; package, exact-SHA CI, and release gates pass without a new
+  backend or application matrix.
+
+No other feature belongs to 1.22.0.
+
 ## Post-v1
 
 Add interaction and presentation features outside the frozen v1 scope without
@@ -955,8 +984,6 @@ taking over compositor mechanisms.
 
 - Add optional visual transitions, layout indicators, and concise diagnostics.
 - Keep Plasma's built-in Overview as the compatible baseline.
-- Add pointer-driven overview rearrangement only through public KWin and Plasma
-  extension APIs; it remains deferred beyond 1.14.0.
 - Add activity-aware layout ownership as a separate persisted-context milestone.
 
 The optional overview must remain removable, preserve the authoritative layout state, and fall back cleanly to Plasma's Overview.

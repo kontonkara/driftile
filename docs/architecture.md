@@ -4,7 +4,7 @@
 
 ```text
 QML bridge -> TypeScript runtime -> core -> reconcile -> KWin
-stable layout snapshot -> overview projector -> guarded KWin effect -> KWin focus or desktop selection
+stable layout snapshot -> overview projector -> guarded KWin effect -> KWin focus, selection, or desktop reorder
 confirmed tab selection -> guarded callback -> passive Plasma OSD
 ```
 
@@ -77,6 +77,14 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   this stage.
 - Accepts a non-current number-gutter click only after revalidating the active
   effect, exact live screen, projected output, and direct desktop object and ID.
+- Starts a number-gutter drag only from an exact live desktop object. Pointer
+  updates compute one insertion slot in constant time while cards stay fixed.
+  The last shared desktop is never a source or crossed target.
+- On release, revalidates the effect, model, screen, output, selected desktop,
+  scene geometry, and complete ordered desktop object/ID snapshot. A valid
+  change calls public `KWin.Workspace.moveDesktop` once; its synchronous
+  `desktopsChanged` signal closes every scene. Cancellation and stale state are
+  write-free.
 - Selects a non-current card through public `KWin.SceneView.currentDesktop`, or
   the guarded single-output `KWin.Workspace.currentDesktop` fallback, and
   requires an exact confirmation. Thumbnail activation then revalidates the
@@ -84,12 +92,13 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   `KWin.Workspace.activeWindow`, and confirms focus.
 - Writes only `KWin.Workspace.activeWindow`, public
   `KWin.SceneView.currentDesktop`, or the guarded single-output
-  `KWin.Workspace.currentDesktop` fallback. Pre-selection rejection leaves the
+  `KWin.Workspace.currentDesktop` fallback, and invokes public
+  `KWin.Workspace.moveDesktop` for one validated reorder. Rejection leaves the
   effect open. After confirmed selection, late invalidation or focus rejection
   keeps the selected desktop, closes the stale effect, and performs no rollback.
 - Offers `Meta+O` for a fresh KGlobalAccel record through KWin's public
   shortcut handler and preserves existing assignments. It adds no schema,
-  private API, move, geometry write, membership write, or screen-edge
+  private API, window move, geometry write, membership write, or screen-edge
   mechanism. It performs no window,
   stacking-order, or layout scan. KWin owns desktop switching and focus.
 

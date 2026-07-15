@@ -335,7 +335,62 @@ describe("overview effect package", () => {
 
     expect(scene).not.toContain("KWin.Workspace.stackingOrder");
     expect(`${scene}\n${desktopCard}`).not.toMatch(
-      /MouseArea|DragHandler|ShortcutHandler|\.setValue\s*\(/u,
+      /MouseArea|ShortcutHandler|\.setValue\s*\(/u,
+    );
+  });
+
+  it("reorders live desktop cards only through one guarded gutter drag", () => {
+    const numberGutter = desktopCard.slice(
+      desktopCard.indexOf("id: numberGutter"),
+      desktopCard.indexOf("id: viewport"),
+    );
+    const reorderDelegate = scene.slice(
+      scene.indexOf("DesktopCard {"),
+      scene.indexOf("Rectangle {", scene.indexOf("DesktopCard {")),
+    );
+    const reorder = scene.slice(
+      scene.indexOf("function beginDesktopReorder("),
+      scene.indexOf("function collectNavigationTargets("),
+    );
+    const staleClose = scene.slice(
+      scene.indexOf("function closeStaleOverview("),
+      scene.indexOf("function outputIdForScreen("),
+    );
+
+    expect(desktopCard.match(/\bDragHandler\s*\{/gu)).toHaveLength(1);
+    expect(numberGutter).toContain("target: null");
+    expect(numberGutter).toContain("acceptedButtons: Qt.LeftButton");
+    expect(numberGutter).toContain(
+      "acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad",
+    );
+    expect(numberGutter).toContain("acceptedModifiers: Qt.NoModifier");
+    expect(numberGutter).toContain("onGrabChanged:");
+    expect(numberGutter).toContain("PointerDevice.GrabExclusive");
+    expect(numberGutter).toContain("PointerDevice.UngrabExclusive");
+    expect(numberGutter).toContain("PointerDevice.CancelGrabExclusive");
+    expect(numberGutter).toContain("point.state === EventPoint.Released");
+    expect(numberGutter).toContain("point.scenePosition.x");
+    expect(numberGutter).toContain("point.scenePosition.y");
+    expect(numberGutter).toContain("card.desktopReorderReleased(");
+    expect(numberGutter).toContain("card.desktopReorderCanceled(");
+
+    expect(reorderDelegate).toContain("root.desktopIds.length > 2");
+    expect(reorderDelegate).toContain("index < root.desktopIds.length - 1");
+    expect(scene).toContain(
+      "visible: root.desktopReorderActive && root.desktopReorderInsertionSlot >= 0",
+    );
+    expect(reorder).toContain("runtime.planOverviewDesktopDrop(");
+    expect(reorder).toContain("root.mapFromItem(null, sceneX, sceneY)");
+    expect(reorder).toContain(
+      'typeof KWin.Workspace.moveDesktop === "function"',
+    );
+    expect(reorder.match(/KWin\.Workspace\.moveDesktop\(/gu)).toHaveLength(1);
+    expect(reorder).not.toContain("deactivate()");
+    expect(staleClose).toMatch(
+      /resetDesktopReorder\(\);\s*if \(sceneEffect\) \{\s*sceneEffect\.deactivate\(\);/u,
+    );
+    expect(`${scene}\n${desktopCard}`).not.toMatch(
+      /\b(?:DropArea|MouseArea|Timer)\s*\{|KWin\.Workspace\.(?:stackingOrder|windows)\b|\.setValue\s*\(/u,
     );
   });
 
@@ -629,7 +684,7 @@ describe("overview effect package", () => {
     );
 
     expect(`${scene}\n${desktopCard}`).not.toMatch(
-      /\b(?:Action|DragHandler|MouseArea|Settings|ShortcutHandler|Timer)\s*\{|\.setValue\s*\(|\bsequence\s*:/u,
+      /\b(?:Action|MouseArea|Settings|ShortcutHandler|Timer)\s*\{|\.setValue\s*\(|\bsequence\s*:/u,
     );
     expect(`${selector}\n${desktopRequest}\n${outputProjection}`).not.toMatch(
       /KWin\.Workspace\.(?:stackingOrder|windows)\b|KWin\.WindowModel|layoutStateReader|model\.(?:contexts|desktopIds|floatingWindows)/u,

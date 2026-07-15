@@ -20,6 +20,9 @@ owner of layout state and records the resulting selection.
 Version 1.21.0 adds keyboard selection without changing the pointer paths or
 layout ownership.
 
+Current 1.22 development adds guarded desktop-card reordering from the number
+gutter without changing layout ownership.
+
 The companion is disabled by default. When enabled with a fresh shortcut
 record, `Meta+O` toggles it. KGlobalAccel preserves an existing assignment
 across upgrades, including an explicitly unbound action, so review it in
@@ -44,6 +47,23 @@ intersection. Desktop gutters remain pointer-only and are not keyboard targets.
 
 The interaction adds no layout or persistent state, KConfig value, shortcut,
 schema, or private API. Pointer behavior remains unchanged.
+
+## Desktop reordering
+
+Drag a desktop card vertically by its number gutter. Cards stay fixed while the
+source is tinted and one line shows the valid insertion point. A click without a
+drag keeps the existing desktop-selection behavior.
+
+The final shared empty desktop is protected: it cannot be dragged, targeted, or
+crossed. A no-op, out-of-bounds, canceled, stale, or concurrently invalidated
+drag performs no write and leaves the effect open. A valid release rechecks the
+complete desktop object and ID order, scene geometry, output, model, and current
+desktop before calling KWin's public reorder method once. KWin's confirmed
+desktop-change signal then closes the effect on every output.
+
+The interaction adds no setting, shortcut, persistence field, private API,
+window move, timer, or workspace window scan. Pointer updates are constant time;
+validation scans only the bounded desktop and output lists at grab and release.
 
 ## Install a release
 
@@ -146,8 +166,9 @@ closes the stale effect, and performs no rollback.
 Ordinary KWin activation may raise the window, and Driftile's existing focus
 handling may reveal its tiled column. Beyond a confirmed desktop request, the
 effect does not switch activities, move windows, write memberships, outputs,
-geometry, or settings, register a screen edge, assign a shortcut, or provide
-drag or rearrangement. Keyboard activation reuses the guarded paths above. The
+geometry, or settings, register a screen edge, or assign another shortcut.
+Desktop-card drag may change only the global desktop order through the guarded
+public path above. Keyboard activation reuses the existing guarded paths. The
 interaction adds no action, binding, setting, schema, private API, second
 window model, or timer and
 performs no window, stacking-order, or layout scan. It does not infer columns

@@ -4583,12 +4583,21 @@ let
       verify_overview_effect_checkpoint() {
         local after_checkpoint
         local baseline_checkpoint
+        local checkpoint_separator=$'\037'
+        local desktop_count
+        local expected_reordered_checkpoint
         local firefox_checkpoint
         local firefox_title=$4
+        local fixture_checkpoint
+        local fixture_sequence
         local journal_cursor
+        local output_frame
         local overview_keys
         local plasma_active
         local plasma_loaded
+        local reordered_checkpoint
+        local reordered_sequence
+        local trailing_desktop_id=""
         local xterm_title=$5
 
         if ! effect_is_available "$overview_plugin_id" \
@@ -4644,6 +4653,61 @@ let
           return 1
         fi
 
+        if ! set_current_desktop "$secondary_desktop_id" \
+          || ! start_kcalc_window \
+            desktop_window \
+            title_desktop_destination \
+            "$base_title_desktop_destination" \
+          || ! wait_for_window_desktop \
+            "$title_desktop_destination" \
+            "$secondary_desktop_id" \
+          || ! wait_for_appended_desktop \
+            trailing_desktop_id \
+            "$primary_desktop_id" \
+            "$secondary_desktop_id" \
+          || [[ "$trailing_desktop_id" == "$primary_desktop_id" ]] \
+          || [[ "$trailing_desktop_id" == "$secondary_desktop_id" ]] \
+          || ! set_current_desktop "$primary_desktop_id" \
+          || ! activate_window "$xterm_title" \
+          || ! wait_for_active "$xterm_title"; then
+          overview_checkpoint_failure \
+            "the existing applications could not prepare the three-desktop reorder fixture"
+          return 1
+        fi
+
+        desktop_count=$(virtual_desktop_count 2>/dev/null || true)
+        output_frame=$(single_enabled_output_frame 2>/dev/null || true)
+        fixture_checkpoint=$(capture_overview_checkpoint \
+          "$@" \
+          "$title_desktop_destination") || {
+          overview_checkpoint_failure \
+            "the overview desktop-reorder fixture checkpoint did not stabilize"
+          return 1
+        }
+        fixture_sequence="$primary_desktop_id $secondary_desktop_id $trailing_desktop_id"
+        reordered_sequence="$secondary_desktop_id $primary_desktop_id $trailing_desktop_id"
+        expected_reordered_checkpoint="''${fixture_checkpoint/''${checkpoint_separator}''${fixture_sequence}''${checkpoint_separator}/''${checkpoint_separator}''${reordered_sequence}''${checkpoint_separator}}"
+        if [[ "$desktop_count" != 3 ]] \
+          || ! frame_is_valid "$output_frame" \
+          || ! wait_for_desktop_sequence \
+            "$primary_desktop_id" \
+            "$secondary_desktop_id" \
+            "$trailing_desktop_id" \
+          || ! wait_for_current_desktop "$primary_desktop_id" \
+          || ! wait_for_window_desktop \
+            "$title_desktop_destination" \
+            "$secondary_desktop_id" \
+          || ! wait_for_window_desktop "$1" "$primary_desktop_id" \
+          || ! wait_for_window_desktop "$2" "$primary_desktop_id" \
+          || ! wait_for_window_desktop "$3" "$primary_desktop_id" \
+          || ! wait_for_window_desktop "$firefox_title" "$primary_desktop_id" \
+          || ! wait_for_window_desktop "$xterm_title" "$primary_desktop_id" \
+          || ! wait_for_active "$xterm_title"; then
+          overview_checkpoint_failure \
+            "the overview desktop-reorder fixture did not preserve exact desktop membership"
+          return 1
+        fi
+
         if ! request_physical_shortcut overview-open \
           || ! wait_for_effect_active_state "$overview_plugin_id" true; then
           overview_checkpoint_failure "physical Meta+O did not open the overview"
@@ -4658,6 +4722,87 @@ let
             "the visible overview did not remain active and component-error-free"
           return 1
         fi
+
+        if ! request_physical_overview_desktop_drag \
+            "$output_frame" \
+            "$desktop_count" \
+          || ! wait_for_effect_active_state "$overview_plugin_id" false; then
+          overview_checkpoint_failure \
+            "the plain physical gutter drag did not close the overview after reordering"
+          return 1
+        fi
+
+        reordered_checkpoint=$(capture_overview_checkpoint \
+          "$@" \
+          "$title_desktop_destination") || {
+          overview_checkpoint_failure \
+            "the reordered overview checkpoint did not stabilize"
+          return 1
+        }
+        if [[ "$(virtual_desktop_count 2>/dev/null || true)" != 3 ]] \
+          || ! wait_for_desktop_sequence \
+            "$secondary_desktop_id" \
+            "$primary_desktop_id" \
+            "$trailing_desktop_id" \
+          || ! wait_for_current_desktop "$primary_desktop_id" \
+          || ! wait_for_active "$xterm_title" \
+          || ! wait_for_window_desktop \
+            "$title_desktop_destination" \
+            "$secondary_desktop_id" \
+          || ! wait_for_window_desktop "$1" "$primary_desktop_id" \
+          || ! wait_for_window_desktop "$2" "$primary_desktop_id" \
+          || ! wait_for_window_desktop "$3" "$primary_desktop_id" \
+          || ! wait_for_window_desktop "$firefox_title" "$primary_desktop_id" \
+          || ! wait_for_window_desktop "$xterm_title" "$primary_desktop_id" \
+          || [[ "$expected_reordered_checkpoint" == "$fixture_checkpoint" ]] \
+          || [[ "$reordered_checkpoint" != "$expected_reordered_checkpoint" ]] \
+          || ! overview_component_errors_after "$journal_cursor"; then
+          overview_checkpoint_failure \
+            "the desktop reorder changed IDs, the protected tail, focus, applications, or layout state"
+          return 1
+        fi
+
+        if ! invoke_shortcut "driftile_move_desktop_up" \
+          || ! wait_for_desktop_sequence \
+            "$primary_desktop_id" \
+            "$secondary_desktop_id" \
+            "$trailing_desktop_id" \
+          || ! wait_for_current_desktop "$primary_desktop_id" \
+          || ! wait_for_active "$xterm_title" \
+          || ! cleanup_desktop_window \
+          || ! wait_for_window_gone "$title_desktop_destination" \
+          || ! set_current_desktop "$primary_desktop_id" \
+          || ! activate_window "$xterm_title" \
+          || ! wait_for_active "$xterm_title" \
+          || ! wait_for_desktop_sequence \
+            "$primary_desktop_id" \
+            "$secondary_desktop_id"; then
+          overview_checkpoint_failure \
+            "the existing desktop shortcut and calculator cleanup did not restore the reorder fixture"
+          return 1
+        fi
+
+        after_checkpoint=$(capture_overview_checkpoint "$@") || {
+          overview_checkpoint_failure \
+            "the restored overview checkpoint did not stabilize"
+          return 1
+        }
+        if [[ "$after_checkpoint" != "$baseline_checkpoint" ]] \
+          || [[ "$(effect_loaded_state "$overview_plugin_id")" != true ]] \
+          || [[ "$(effect_active_state "$overview_plugin_id")" != false ]] \
+          || ! overview_component_errors_after "$journal_cursor"; then
+          overview_checkpoint_failure \
+            "reorder cleanup did not restore exact desktops, applications, focus, frames, or state"
+          return 1
+        fi
+
+        if ! invoke_shortcut "$overview_shortcut" \
+          || ! wait_for_effect_active_state "$overview_plugin_id" true; then
+          overview_checkpoint_failure \
+            "the overview could not reopen after the desktop reorder checkpoint"
+          return 1
+        fi
+        sleep 0.3
 
         if ! request_physical_shortcut overview-enter-initial \
           || ! wait_for_effect_active_state "$overview_plugin_id" false \
@@ -8267,6 +8412,84 @@ let
           output_width \
           output_height \
           <<< "$output_frame"
+        rm -f "$ready_file" "$sent_file" "$temporary_file"
+        printf '%s %s %s %s %s %s %s %s\n' \
+          "$source_x" \
+          "$source_y" \
+          "$destination_x" \
+          "$destination_y" \
+          "$output_x" \
+          "$output_y" \
+          "$output_width" \
+          "$output_height" \
+          > "$temporary_file"
+        mv "$temporary_file" "$ready_file"
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          [[ -f "$sent_file" ]] && return 0
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      request_physical_overview_desktop_drag() {
+        local attempt
+        local card_height_milli
+        local desktop_count=$2
+        local destination_x
+        local destination_y
+        local gap_milli
+        local margin_milli
+        local minimum_side
+        local output_frame=$1
+        local output_height
+        local output_width
+        local output_x
+        local output_y
+        local ready_file=/tmp/shared/driftile-overview-desktop-drag-ready
+        local sent_file=/tmp/shared/driftile-overview-desktop-drag-sent
+        local source_x
+        local source_y
+        local stride_milli
+        local temporary_file="$ready_file.tmp"
+
+        frame_is_valid "$output_frame" || return 1
+        [[ "$desktop_count" =~ ^[0-9]+$ ]] || return 1
+        ((desktop_count >= 3)) || return 1
+        IFS=, read -r \
+          output_x \
+          output_y \
+          output_width \
+          output_height \
+          <<< "$output_frame"
+
+        minimum_side=$((output_width < output_height ? output_width : output_height))
+        margin_milli=$((minimum_side * 35))
+        ((margin_milli >= 20000)) || margin_milli=20000
+        gap_milli=$((output_height * 12))
+        ((gap_milli >= 2000)) || gap_milli=2000
+        ((gap_milli <= 10000)) || gap_milli=10000
+        card_height_milli=$((
+          (output_height * 1000 - 2 * margin_milli \
+            - (desktop_count - 1) * gap_milli) / desktop_count
+        ))
+        ((card_height_milli > 0)) || return 1
+        stride_milli=$((card_height_milli + gap_milli))
+
+        source_x=$((output_x + (margin_milli + 21000) / 1000))
+        destination_x=$source_x
+        source_y=$((output_y + (margin_milli + card_height_milli / 2) / 1000))
+        destination_y=$((output_y \
+          + (margin_milli + stride_milli + 3 * card_height_milli / 4) / 1000))
+        ((source_x >= output_x \
+          && source_x < output_x + output_width \
+          && source_y >= output_y \
+          && source_y < output_y + output_height \
+          && destination_y >= output_y \
+          && destination_y < output_y + output_height)) \
+          || return 1
+
         rm -f "$ready_file" "$sent_file" "$temporary_file"
         printf '%s %s %s %s %s %s %s %s\n' \
           "$source_x" \

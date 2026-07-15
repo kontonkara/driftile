@@ -7,12 +7,19 @@ Rectangle {
     required property var context
     required property bool current
     required property var desktop
+    required property bool desktopReorderEnabled
+    required property bool desktopReorderSource
     required property string desktopId
     required property var floatingWindows
     required property var screen
     property string keyboardSelectionId: ""
 
     signal desktopTapped(var candidate, string expectedDesktopId, var expectedScreen)
+    signal desktopReorderCanceled(string expectedDesktopId)
+    signal desktopReorderGrabbed(var candidate, string expectedDesktopId, var expectedScreen, real sceneX,
+                                 real sceneY)
+    signal desktopReorderMoved(string expectedDesktopId, real sceneX, real sceneY)
+    signal desktopReorderReleased(string expectedDesktopId, real sceneX, real sceneY)
     signal navigationTargetsChanged()
     signal windowTapped(var candidate, string expectedWindowId, var expectedDesktop, string expectedDesktopId,
                         var expectedScreen)
@@ -29,7 +36,7 @@ Rectangle {
     readonly property var tiledPresentations: buildTiledPresentations()
     readonly property var floatingWindowIds: buildFloatingWindowIds()
 
-    color: current ? "#f02b3548" : "#dc171e2a"
+    color: desktopReorderSource ? "#f050607a" : current ? "#f02b3548" : "#dc171e2a"
     border.width: current ? 2 : 1
     border.color: current ? "#a8c7ff" : "#526179"
     radius: 8
@@ -58,6 +65,37 @@ Rectangle {
             acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
             enabled: !card.current && card.desktop && card.screen
             onTapped: card.desktopTapped(card.desktop, card.desktopId, card.screen)
+        }
+
+        DragHandler {
+            id: desktopReorderHandler
+
+            target: null
+            acceptedButtons: Qt.LeftButton
+            acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+            acceptedModifiers: Qt.NoModifier
+            enabled: card.desktopReorderEnabled && card.desktop && card.screen
+
+            onCentroidChanged: {
+                if (active) {
+                    card.desktopReorderMoved(card.desktopId, centroid.scenePosition.x, centroid.scenePosition.y);
+                }
+            }
+            onGrabChanged: (transition, point) => {
+                if (transition === PointerDevice.GrabExclusive) {
+                    card.desktopReorderGrabbed(card.desktop, card.desktopId, card.screen, point.scenePosition.x,
+                                               point.scenePosition.y);
+                } else if (transition === PointerDevice.UngrabExclusive) {
+                    if (point.state === EventPoint.Released) {
+                        card.desktopReorderReleased(card.desktopId, point.scenePosition.x, point.scenePosition.y);
+                    } else {
+                        card.desktopReorderCanceled(card.desktopId);
+                    }
+                } else if (transition === PointerDevice.CancelGrabExclusive
+                           || transition === PointerDevice.CancelGrabPassive) {
+                    card.desktopReorderCanceled(card.desktopId);
+                }
+            }
         }
     }
 
