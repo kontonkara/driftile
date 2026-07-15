@@ -15,6 +15,18 @@ value through an external configuration tool rejects the entire update and
 preserves the active settings; valid changes apply without reloading the
 extension.
 
+## Optional transitions
+
+The separately installed **Driftile Transitions** effect is disabled by
+default. Enable and configure it under **System Settings > Window Management >
+Desktop Effects**. Its base duration ranges from `0` to `1000` milliseconds,
+defaults to `180`, and follows Plasma's global animation-speed setting. A value
+of `0` disables animation.
+
+The effect animates automatic position and size changes without writing window
+geometry. It stays inactive during manual move or resize, fullscreen, overview,
+and other active fullscreen effects.
+
 ## Home Manager
 
 `programs.driftile.settings` is `null` by default, so Home Manager writes no

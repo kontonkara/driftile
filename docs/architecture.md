@@ -4,6 +4,7 @@
 
 ```text
 QML bridge -> TypeScript runtime -> core -> reconcile -> KWin
+KWin frame signal -> optional transition effect -> visual interpolation
 stable layout snapshot -> overview projector -> guarded KWin effect -> KWin focus, selection, or desktop reorder
 confirmed tab selection -> guarded callback -> passive Plasma OSD
 ```
@@ -48,11 +49,11 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 
 ### Nix integration
 
-- Exposes disjoint main and overview outputs from one build. The default output
-  remains the main KWin script and shortcut helper.
+- Exposes disjoint main, overview, and transition outputs from one build. The
+  default output remains the main KWin script and shortcut helper.
 - Keeps metadata, configuration, and required KPackage entrypoints at stable
   paths while generated selectors choose content-addressed runtime paths.
-- Installs either package through NixOS or Home Manager and rejects duplicate
+- Installs each package through NixOS or Home Manager and rejects duplicate
   ownership of the same package ID while allowing independent scopes.
 - Maps an optional complete Home Manager settings profile to KDE's native
   KConfig module. Settings and shortcut-profile generation remain available
@@ -108,6 +109,18 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   private API, window move, geometry write, membership write, or screen-edge
   mechanism. It performs no window,
   stacking-order, or layout scan. KWin owns desktop switching and focus.
+
+### Transition companion
+
+- Ships as a separate, disabled-by-default JavaScript `KWin/Effect` package.
+- Observes public frame-geometry signals and animates only presentation through
+  `Effect.Size` and `Effect.Translation`; it never writes window geometry.
+- Skips manual move or resize, hidden, minimized, fullscreen, special, and
+  non-normal windows and yields while another fullscreen effect is active.
+- Cancels superseded per-window animations in constant time, follows Plasma's
+  global animation-speed factor, and exposes one bounded duration setting.
+- Scans the stacking order only once when loaded and tracks later windows by
+  signal. It has no timer, persistence, shortcut, layout state, or private API.
 
 ### TypeScript runtime
 

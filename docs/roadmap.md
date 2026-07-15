@@ -1294,6 +1294,12 @@ changing the bounded v2 topology catalog. Missing activity identities fail
 closed. The optional overview projects only the current activity and closes
 when the current activity or available activity set changes.
 
+An independently installable scripted effect adds optional smooth position and
+size transitions for automatic geometry changes. It is disabled by default,
+uses only public effect APIs, follows Plasma's animation-speed setting, and
+never writes layout geometry. Manual move or resize, fullscreen, and active
+fullscreen effects remain compositor-owned.
+
 Development criteria:
 
 - Exact-window and gutter planning rejects incomplete, duplicate, overlapping,
@@ -1309,6 +1315,9 @@ Development criteria:
 - Persistence coverage migrates v1 and v3 input to v4 and rejects removed
   activities; overview coverage remains current-activity-only across topology
   changes.
+- The optional transition effect loads on supported KWin backends, preserves
+  exact final frames and focus, and can be installed independently through a
+  release archive, NixOS, or Home Manager.
 - Focused grouped checks, exact-SHA CI, and a warranted hidden VM checkpoint
   must pass before release.
 
@@ -1317,7 +1326,6 @@ Development criteria:
 Add interaction and presentation features outside the frozen v1 scope without
 taking over compositor mechanisms.
 
-- Add optional visual transitions.
 - Keep Plasma's built-in Overview as the compatible baseline.
 
 The optional overview must remain removable, preserve the authoritative layout state, and fall back cleanly to Plasma's Overview.

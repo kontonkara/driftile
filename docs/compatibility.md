@@ -14,17 +14,22 @@
 - The optional overview supports the same Wayland, XWayland, and single-output
   native X11 baseline. Desktop selection and cross-desktop thumbnail
   activation remain unverified on native X11.
+- The optional transition effect uses KWin's public scripted-effect animation
+  API on Wayland and X11. It is installed and enabled independently from the
+  layout script and requires a compositor backend on which KWin reports
+  scripted effects as supported.
 
 ## Installation portability
 
-The main archive and optional overview companion are standard KWin KPackages
-and are not tied to a specific Linux distribution. Install them with
-`kpackagetool6` on a compatible Plasma desktop. The optional shortcut helper
-requires Node.js 22 or newer, `busctl`, and `flock`.
+The main archive and optional overview and transition companions are standard
+KWin KPackages and are not tied to a specific Linux distribution. Install them
+with `kpackagetool6` on a compatible Plasma desktop. The optional shortcut
+helper requires Node.js 22 or newer, `busctl`, and `flock`.
 
-The Nix flake provides separate main and overview packages plus NixOS and Home
-Manager modules for `x86_64-linux` and `aarch64-linux`. Other distributions use
-the same KPackage archives and portable installation procedure.
+The Nix flake provides separate main, overview, and transition packages plus
+NixOS and Home Manager modules for `x86_64-linux` and `aarch64-linux`. Other
+distributions use the same KPackage archives and portable installation
+procedure.
 
 ## Window and geometry limits
 

@@ -18,7 +18,8 @@ virtual desktops; Driftile provides the layout and interaction policy.
   and stable minimized-window slots.
 - Configurable gaps, width and height presets, application rules, focus
   centering, and optional borderless windows.
-- Layout restoration plus optional overview and reversible shortcut companions.
+- Layout restoration plus optional overview, smooth transitions, and
+  reversible shortcut companions.
 
 ## Installation
 
@@ -37,7 +38,7 @@ kpackagetool6 --type=KWin/Script --install ./driftile-*.kwinscript
 
 Enable **Driftile** in **System Settings > Window Management > KWin Scripts**.
 The [installation guide](docs/installation.md) covers upgrades, removal, the
-optional overview, and the shortcut helper.
+optional overview and transition effects, and the shortcut helper.
 
 ### NixOS
 

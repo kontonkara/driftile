@@ -44,6 +44,22 @@ Open **System Settings > Window Management > KWin Scripts**, enable
 the layout and presentation settings described in
 [Configuration](configuration.md).
 
+### Optional transitions
+
+Releases starting with 1.31.0 also publish
+`driftile-transitions-<version>.kwineffect`. Install it separately:
+
+```bash
+kpackagetool6 --type=KWin/Effect \
+  --install ./driftile-transitions-<version>.kwineffect
+```
+
+Enable **Driftile Transitions** under **System Settings > Window Management >
+Desktop Effects**. Its configure button sets a `0`–`1000` millisecond base
+duration; `0` disables animation. Plasma's global animation-speed setting still
+scales the selected duration. The effect changes only presentation and remains
+disabled by default.
+
 ## Configure shortcuts
 
 Driftile works without the companion helper. The 1.30.0 helper claims the
@@ -98,8 +114,8 @@ restore displaced assignments automatically.
    installed version. Stop on a preserved manual-edit conflict and resolve it
    in System Settings; do not use `--force`. If an old helper was already
    replaced, the new helper can still release its saved v1 transaction.
-2. Disable Driftile in **KWin Scripts** and the optional overview in **Desktop
-   Effects**, then select **Apply**.
+2. Disable Driftile in **KWin Scripts** and the optional overview and
+   transition effects in **Desktop Effects**, then select **Apply**.
 3. Download and verify the matching main package, optional overview, checksum
    manifest, and helper.
 4. Upgrade the package:
@@ -114,7 +130,7 @@ restore displaced assignments automatically.
 6. Enable Driftile and review its configuration.
 7. If using the helper, claim the new profile and run `check` with the same
    optional custom profile.
-8. Re-enable the optional overview.
+8. Re-enable the optional overview and transition effects.
 
 Manually assigned KGlobalAccel shortcuts remain unchanged across an upgrade.
 Edit them in System Settings only when the fresh release defaults are wanted.
@@ -134,6 +150,13 @@ After releasing shortcuts and disabling the extension, uninstall it with:
 ```bash
 kpackagetool6 --type=KWin/Script \
   --remove io.github.kontonkara.driftile
+```
+
+Remove the optional transition effect independently:
+
+```bash
+kpackagetool6 --type=KWin/Effect \
+  --remove io.github.kontonkara.driftile.transitions
 ```
 
 If `release` reports assignments changed after the claim, it has preserved
@@ -210,12 +233,22 @@ remains disabled unless requested:
 programs.driftile.overview.enable = true;
 ```
 
-Main-script and overview ownership are independent. NixOS may install one while
-Home Manager installs the other, but the modules reject installing the same
-package ID in both scopes for one user. The module does not enable the effect
-in KWin. On a fresh shortcut record, the enabled effect offers `Meta+O`;
-upgrades preserve the current KGlobalAccel assignment. See [Overview
-companion](overview.md).
+Starting with 1.31.0, the modules also expose the optional transition effect as
+an independent package:
+
+```nix
+programs.driftile.transitions.enable = true;
+```
+
+Installation does not enable the effect in KWin. Enable **Driftile
+Transitions** in **Desktop Effects** after rebuilding.
+
+Main-script, overview, and transition ownership are independent. NixOS may
+install one while Home Manager installs another, but the modules reject
+installing the same package ID in both scopes for one user. The overview module
+does not enable its effect in KWin. On a fresh shortcut record, the enabled
+overview offers `Meta+O`; upgrades preserve the current KGlobalAccel
+assignment. See [Overview companion](overview.md).
 
 The current Home Manager module exposes the complete seventeen-setting profile:
 
