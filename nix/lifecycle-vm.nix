@@ -46,11 +46,20 @@ let
 
         test "$(jq -er '.KPlugin.Id' package/metadata.json)" = ${pluginId}
         test "$(jq -er '.KPlugin.Version' package/metadata.json)" = ${currentVersion}
-        main_script=$(jq -er '."X-Plasma-MainScript"' package/metadata.json)
-        [[ "$main_script" =~ ^runtime/[0-9a-f]{64}/ui/main\.qml$ ]]
-        runtime_script="''${main_script%/ui/main.qml}/code/main.js"
-        test -f "package/contents/$main_script"
-        test -f "package/contents/$runtime_script"
+        test "$(jq -er '."X-Plasma-MainScript"' package/metadata.json)" = ui/main.qml
+        test -f package/contents/ui/main.qml
+        test -f package/contents/runtime/selector.qml
+        runtime_main=$(find \
+          package/contents/runtime \
+          -mindepth 3 \
+          -maxdepth 3 \
+          -type f \
+          -path '*/ui/main.qml' \
+          -printf '%P\n' \
+          | LC_ALL=C sort)
+        [[ "$runtime_main" =~ ^[0-9a-f]{64}/ui/main\.qml$ ]]
+        runtime_root="''${runtime_main%/ui/main.qml}"
+        test -f "package/contents/runtime/$runtime_root/code/main.js"
         test -z "$(find package -type l -print -quit)"
 
         find package -exec touch -h -d @315532800 {} +
@@ -78,11 +87,20 @@ let
         test "$(jq -er '.KPlugin.Id' package/metadata.json)" = ${overviewPluginId}
         test "$(jq -er '.KPlugin.Version' package/metadata.json)" = ${currentOverviewVersion}
         test "$(jq -er '.KPlugin.EnabledByDefault' package/metadata.json)" = false
-        main_script=$(jq -er '."X-Plasma-MainScript"' package/metadata.json)
-        [[ "$main_script" =~ ^runtime/[0-9a-f]{64}/ui/main\.qml$ ]]
-        runtime_script="''${main_script%/ui/main.qml}/code/main.js"
-        test -f "package/contents/$main_script"
-        test -f "package/contents/$runtime_script"
+        test "$(jq -er '."X-Plasma-MainScript"' package/metadata.json)" = ui/main.qml
+        test -f package/contents/ui/main.qml
+        test -f package/contents/runtime/selector.qml
+        runtime_main=$(find \
+          package/contents/runtime \
+          -mindepth 3 \
+          -maxdepth 3 \
+          -type f \
+          -path '*/ui/main.qml' \
+          -printf '%P\n' \
+          | LC_ALL=C sort)
+        [[ "$runtime_main" =~ ^[0-9a-f]{64}/ui/main\.qml$ ]]
+        runtime_root="''${runtime_main%/ui/main.qml}"
+        test -f "package/contents/runtime/$runtime_root/code/main.js"
         test -z "$(find package -type l -print -quit)"
 
         find package -exec touch -h -d @315532800 {} +
@@ -93,6 +111,7 @@ let
     name = "driftile-lifecycle-check";
     runtimeInputs = [
       pkgs.coreutils
+      pkgs.findutils
       pkgs.gnugrep
       pkgs.jq
       pkgs.kdePackages.kcalc
@@ -203,18 +222,52 @@ let
           "$1"
       }
 
-      runtime_script_from_main() {
-        local main_script=$1
+      metadata_uses_fixed_main() {
+        [[ "$(jq --exit-status --raw-output '."X-Plasma-MainScript"' "$1")" == ui/main.qml ]]
+      }
+
+      unique_hashed_main_path() {
+        local package_root=$1
+        local relative_path
+
+        relative_path=$(find \
+          "$package_root/contents/runtime" \
+          -mindepth 3 \
+          -maxdepth 3 \
+          -type f \
+          -path '*/ui/main.qml' \
+          -printf '%P\n' \
+          | LC_ALL=C sort) || return 1
+        [[ "$relative_path" =~ ^[0-9a-f]{64}/ui/main\.qml$ ]] || return 1
+        printf '%s/contents/runtime/%s' "$package_root" "$relative_path"
+      }
+
+      runtime_path_for_hashed_main() {
+        local hashed_main=$1
         local runtime_root
 
-        case "$main_script" in
-          ui/main.qml)
-            printf '%s' code/main.js
+        runtime_root="''${hashed_main%/ui/main.qml}"
+        printf '%s/code/main.js' "$runtime_root"
+      }
+
+      installed_main_path() {
+        printf '%s/contents/ui/main.qml' "$installed_package"
+      }
+
+      installed_hashed_main_path() {
+        unique_hashed_main_path "$installed_package"
+      }
+
+      installed_runtime_path() {
+        local hashed_main
+
+        case "$(installed_version)" in
+          "$published_version")
+            printf '%s/contents/code/main.js' "$installed_package"
             ;;
-          runtime/*/ui/main.qml)
-            runtime_root="''${main_script%/ui/main.qml}"
-            [[ "$runtime_root" =~ ^runtime/[0-9a-f]{64}$ ]] || return 1
-            printf '%s/code/main.js' "$runtime_root"
+          "$current_version")
+            hashed_main=$(installed_hashed_main_path) || return 1
+            runtime_path_for_hashed_main "$hashed_main"
             ;;
           *)
             return 1
@@ -222,77 +275,77 @@ let
         esac
       }
 
-      metadata_main_script() {
-        jq --exit-status --raw-output '."X-Plasma-MainScript"' "$1"
-      }
-
-      metadata_runtime_script() {
-        local main_script
-
-        main_script=$(metadata_main_script "$1") || return 1
-        runtime_script_from_main "$main_script"
-      }
-
-      installed_main_path() {
-        local main_script
-
-        main_script=$(metadata_main_script "$installed_metadata") || return 1
-        printf '%s/contents/%s' "$installed_package" "$main_script"
-      }
-
-      installed_runtime_path() {
-        local runtime_script
-
-        runtime_script=$(metadata_runtime_script "$installed_metadata") || return 1
-        printf '%s/contents/%s' "$installed_package" "$runtime_script"
-      }
-
       installed_package_has_runtime() {
-        local main_path
         local runtime_path
 
-        main_path=$(installed_main_path) || return 1
+        metadata_uses_fixed_main "$installed_metadata" || return 1
         runtime_path=$(installed_runtime_path) || return 1
-        [[ -f "$main_path" && -f "$runtime_path" ]]
+        [[ -f "$(installed_main_path)" && -f "$runtime_path" ]]
+      }
+
+      installed_package_has_current_layout() {
+        local hashed_main
+
+        [[ "$(installed_version)" == "$current_version" ]] || return 1
+        installed_package_has_runtime || return 1
+        hashed_main=$(installed_hashed_main_path) || return 1
+        [[ -f "$hashed_main" && -f "$installed_package/contents/runtime/selector.qml" ]]
       }
 
       installed_overview_main_path() {
-        local main_script
+        printf '%s/contents/ui/main.qml' "$installed_overview_package"
+      }
 
-        main_script=$(metadata_main_script "$installed_overview_metadata") || return 1
-        printf '%s/contents/%s' "$installed_overview_package" "$main_script"
+      installed_overview_hashed_main_path() {
+        unique_hashed_main_path "$installed_overview_package"
       }
 
       installed_overview_runtime_path() {
-        local runtime_script
+        local hashed_main
 
-        runtime_script=$(metadata_runtime_script "$installed_overview_metadata") || return 1
-        printf '%s/contents/%s' "$installed_overview_package" "$runtime_script"
+        case "$(overview_installed_version)" in
+          "$published_version")
+            printf '%s/contents/code/main.js' "$installed_overview_package"
+            ;;
+          "$current_overview_version")
+            hashed_main=$(installed_overview_hashed_main_path) || return 1
+            runtime_path_for_hashed_main "$hashed_main"
+            ;;
+          *)
+            return 1
+            ;;
+        esac
       }
 
       installed_overview_has_runtime() {
-        local main_path
         local runtime_path
 
-        main_path=$(installed_overview_main_path) || return 1
+        metadata_uses_fixed_main "$installed_overview_metadata" || return 1
         runtime_path=$(installed_overview_runtime_path) || return 1
-        [[ -f "$main_path" && -f "$runtime_path" ]]
+        [[ -f "$(installed_overview_main_path)" && -f "$runtime_path" ]]
       }
 
-      load_installed_script() {
-        local installed_main
+      installed_overview_has_current_layout() {
+        local hashed_main
+
+        [[ "$(overview_installed_version)" == "$current_overview_version" ]] || return 1
+        installed_overview_has_runtime || return 1
+        hashed_main=$(installed_overview_hashed_main_path) || return 1
+        [[ -f "$hashed_main" && -f "$installed_overview_package/contents/runtime/selector.qml" ]]
+      }
+
+      load_script_path() {
+        local script_path=$1
         local load_result
 
-        installed_main=$(installed_main_path) \
-          || fail_test "the installed entry point metadata is invalid"
-        [[ -f "$installed_main" ]] \
-          || fail_test "the installed entry point is missing"
+        [[ -f "$script_path" ]] \
+          || fail_test "the requested script entry point is missing"
         load_result=$(busctl --user call \
           org.kde.KWin \
           /Scripting \
           org.kde.kwin.Scripting \
           loadDeclarativeScript \
-          ss "$installed_main" "$plugin_id" \
+          ss "$script_path" "$plugin_id" \
           2>> "$command_log") \
           || fail_test "KWin rejected the script load request"
         [[ "$load_result" =~ ^i\ [0-9]+$ ]] \
@@ -306,6 +359,18 @@ let
           start
         wait_for_script_state true \
           || fail_test "the script did not reach the loaded state"
+      }
+
+      load_installed_script() {
+        load_script_path "$(installed_main_path)"
+      }
+
+      load_installed_hashed_script() {
+        local hashed_main
+
+        hashed_main=$(installed_hashed_main_path) \
+          || fail_test "the upgraded hashed script entry point is invalid"
+        load_script_path "$hashed_main"
       }
 
       unload_installed_script() {
@@ -346,32 +411,71 @@ let
         main_script=$(unzip -p "$1" metadata.json \
           | jq --exit-status --raw-output '."X-Plasma-MainScript"') \
           || return 1
-        printf 'contents/%s' "$main_script"
+        [[ "$main_script" == ui/main.qml ]] || return 1
+        printf '%s' contents/ui/main.qml
+      }
+
+      archive_hashed_main_path() {
+        local hashed_main
+
+        hashed_main=$(unzip \
+          -Z1 \
+          "$1" \
+          'contents/runtime/*/ui/main.qml' \
+          2>/dev/null) || return 1
+        [[ "$hashed_main" =~ ^contents/runtime/[0-9a-f]{64}/ui/main\.qml$ ]] \
+          || return 1
+        printf '%s' "$hashed_main"
+      }
+
+      archive_hashed_runtime_path() {
+        local hashed_main
+
+        hashed_main=$(archive_hashed_main_path "$1") || return 1
+        runtime_path_for_hashed_main "$hashed_main"
       }
 
       archive_runtime_path() {
-        local main_script
-        local runtime_script
+        case "$(archive_version "$1")" in
+          "$published_version")
+            printf '%s' contents/code/main.js
+            ;;
+          "$current_version")
+            archive_hashed_runtime_path "$1"
+            ;;
+          *)
+            return 1
+            ;;
+        esac
+      }
 
-        main_script=$(unzip -p "$1" metadata.json \
-          | jq --exit-status --raw-output '."X-Plasma-MainScript"') \
-          || return 1
-        runtime_script=$(runtime_script_from_main "$main_script") || return 1
-        printf 'contents/%s' "$runtime_script"
+      archive_contains_entry() {
+        [[ "$(unzip -Z1 "$1" "$2")" == "$2" ]]
       }
 
       archive_contains_main() {
         local main_path
 
         main_path=$(archive_main_path "$1") || return 1
-        [[ "$(unzip -Z1 "$1" "$main_path")" == "$main_path" ]]
+        archive_contains_entry "$1" "$main_path"
       }
 
       archive_contains_runtime() {
         local runtime_path
 
         runtime_path=$(archive_runtime_path "$1") || return 1
-        [[ "$(unzip -Z1 "$1" "$runtime_path")" == "$runtime_path" ]]
+        archive_contains_entry "$1" "$runtime_path"
+      }
+
+      archive_has_current_layout() {
+        local hashed_main
+
+        [[ "$(archive_version "$1")" == "$current_version" ]] || return 1
+        archive_contains_main "$1" || return 1
+        archive_contains_entry "$1" contents/runtime/selector.qml || return 1
+        hashed_main=$(archive_hashed_main_path "$1") || return 1
+        archive_contains_entry "$1" "$hashed_main" || return 1
+        archive_contains_runtime "$1"
       }
 
       config_default() {
@@ -840,10 +944,14 @@ let
         || fail_test "the current archive entry point is missing or invalid"
       archive_contains_runtime "$current_archive" \
         || fail_test "the current archive runtime is missing or invalid"
+      archive_has_current_layout "$current_archive" \
+        || fail_test "the current archive bootstrap, selector, or hashed runtime is invalid"
       archive_contains_main "$current_overview_archive" \
         || fail_test "the current overview entry point is missing or invalid"
       archive_contains_runtime "$current_overview_archive" \
         || fail_test "the current overview runtime is missing or invalid"
+      archive_has_current_layout "$current_overview_archive" \
+        || fail_test "the current overview bootstrap, selector, or hashed runtime is invalid"
       published_archive_runtime_digest=$(archive_runtime_digest "$published_archive") \
         || fail_test "the published archive runtime could not be hashed"
       published_overview_archive_runtime_digest=$(archive_runtime_digest "$published_overview_archive") \
@@ -935,8 +1043,8 @@ let
         || fail_test "the upgraded metadata did not change"
       [[ "$(installed_plugin_id)" == "$plugin_id" ]] \
         || fail_test "the upgraded package ID changed"
-      installed_package_has_runtime \
-        || fail_test "the upgraded entry point or runtime is missing"
+      installed_package_has_current_layout \
+        || fail_test "the upgraded bootstrap, selector, or hashed runtime is missing"
       current_runtime_digest=$(runtime_digest) \
         || fail_test "the current runtime could not be hashed"
       [[ "$current_runtime_digest" == "$current_archive_runtime_digest" ]] \
@@ -951,8 +1059,8 @@ let
         || fail_test "the upgraded overview package ID changed"
       [[ "$(overview_installed_enabled_by_default)" == false ]] \
         || fail_test "the upgraded overview was enabled by default"
-      installed_overview_has_runtime \
-        || fail_test "the upgraded overview entry point or runtime is missing"
+      installed_overview_has_current_layout \
+        || fail_test "the upgraded overview bootstrap, selector, or hashed runtime is missing"
       current_overview_runtime_digest=$(overview_runtime_digest) \
         || fail_test "the upgraded overview runtime could not be hashed"
       [[ "$current_overview_runtime_digest" == "$current_overview_archive_runtime_digest" ]] \
@@ -968,9 +1076,10 @@ let
       progress "both packages upgraded to $current_version and retained disabled defaults"
 
       set_enabled true
-      load_installed_script
+      load_installed_hashed_script
       wait_for_shortcut_registration_state "$close_shortcut" true \
         || fail_test "the current runtime did not register the close-window action"
+      progress "upgraded runtime migrated to its content-addressed entry point"
       app_konsole_title="Driftile lifecycle Konsole application"
       app_kcalc_title="Driftile lifecycle Calculator application"
       start_test_konsole "$app_konsole_title" \
