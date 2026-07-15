@@ -214,17 +214,19 @@ SHA `9a5d0ab` passes CI quality in 2:41, native X11 in 3:02, and Wayland in
 reused without a new integration, application, backend, or VM matrix. This
 release makes no VM validation claim.
 
-The frozen 1.29.0 development slice adds focused preset-specific runtime
+The 1.29.0 release slice adds focused preset-specific runtime
 coverage for forward and reverse wrapping, the three fixed proportional
 targets, gap-adjusted assigned-output pixel-grid resolution, preserved width,
 focus, context, reinsertion anchor, and tiled layouts, one immediate frame
-request, and related or pending fail-closed targets. Existing shared
+request, and related-window rejection. Existing shared
 manual-floating size coverage supplies decorated constraints, partial
 reachability, delayed exact acknowledgement, repeated-command serialization,
-cleanup, exact metadata commits, and stale-result rejection. Shortcut
+cleanup, exact metadata commits, and stale-result or pending-target rejection.
+Shortcut
 registration and tiled height-preset coverage is also reused without a new
-integration, application, backend, or VM matrix. The slice makes no VM
-validation claim.
+integration, application, backend, or VM matrix. This release makes no VM
+validation claim. Exact feature SHA `b858c00` passes CI quality in 2:45, native
+X11 in 3:13, and Wayland in 7:06.
 
 In the following unit list, zero writes to floating windows means ambient
 layout work; explicit manual-floating movement, centering, or contextual size
@@ -239,7 +241,7 @@ preservation of the other dimension, partial visibility, and one forward
 request. It covers immediate and delayed exact acknowledgement, repeated-command
 serialization, cleanup, exact metadata commits, nonexact and stale rejection,
 fail-closed ineligible targets, and zero tiled mutation. Window-height reset
-remains on the tiled path. The frozen 1.29.0 criteria add only the contextual
+remains on the tiled path. The 1.29.0 release adds only the contextual
 manual-floating forward and reverse preset cases described above.
 
 Application-width coverage verifies the bounded one-entry-per-line decoder,
