@@ -11,6 +11,7 @@ export type WindowSuspensionRequest =
   | "native-tile-settling";
 
 export interface ObservedWindow {
+  readonly activityIds: readonly string[];
   readonly desktopIds: readonly string[];
   readonly id: string;
   readonly kind: ObservedWindowKind;
@@ -49,6 +50,7 @@ export interface WindowObserverEvents {
 }
 
 interface WindowEntry {
+  readonly handleActivitiesChanged: () => void;
   readonly handleClassificationChanged: () => void;
   readonly handleClientGeometryChanged: (oldGeometry: KWinRect) => void;
   readonly handleConstraintChanged: () => void;
@@ -309,6 +311,7 @@ export class WindowObserver {
     let maximizeRequested = window.maximizeMode !== 0;
     let tileRequested = window.tile !== null;
     const entry: WindowEntry = {
+      handleActivitiesChanged: refreshContext,
       handleClassificationChanged: refreshClassification,
       handleClientGeometryChanged: refreshClientGeometry,
       handleConstraintChanged: refreshConstraint,
@@ -419,6 +422,7 @@ export class WindowObserver {
     };
 
     this.windows.set(id, entry);
+    window.activitiesChanged?.connect(entry.handleActivitiesChanged);
     window.clientGeometryChanged?.connect(entry.handleClientGeometryChanged);
     window.desktopFileNameChanged?.connect(entry.handleClassificationChanged);
     window.desktopsChanged?.connect(entry.handleDesktopsChanged);
@@ -562,6 +566,7 @@ export function normalizeWindow(window: KWinWindow): ObservedWindow | null {
   }
 
   return {
+    activityIds: window.activities ? [...window.activities] : [],
     desktopIds: window.desktops.map((desktop) => desktop.id),
     id: windowId(window),
     kind: window.dialog ? "dialog" : window.normalWindow ? "normal" : "other",
@@ -586,6 +591,7 @@ function windowId(window: KWinWindow): string {
 }
 
 function disconnectWindowSignals(entry: WindowEntry): void {
+  entry.source.activitiesChanged?.disconnect(entry.handleActivitiesChanged);
   entry.source.decorationChanged?.disconnect(
     entry.handleDecorationPolicyChanged,
   );
@@ -739,6 +745,7 @@ function sameObservedWindow(
     left.id === right.id &&
     left.kind === right.kind &&
     left.outputId === right.outputId &&
+    sameStrings(left.activityIds, right.activityIds) &&
     sameStrings(left.desktopIds, right.desktopIds)
   );
 }

@@ -1,10 +1,16 @@
 import { describe, expect, it } from "vitest";
 
 import type { Rect } from "../../../src/core/geometry";
-import { desktopId, outputId, windowId } from "../../../src/core/ids";
+import {
+  activityId,
+  desktopId,
+  outputId,
+  windowId,
+} from "../../../src/core/ids";
 import type { KWinWindow, KWinWorkspace } from "../../../src/platform/kwin/api";
 import {
   frameSizeConstraintBounds,
+  isWindowInContext,
   KWinGeometryAdapter,
   respectsSizeConstraints,
 } from "../../../src/platform/kwin/geometry-adapter";
@@ -245,6 +251,38 @@ describe("frameSizeConstraintBounds", () => {
     expect(frameSizeConstraintBounds(window)).toBeNull();
     expect(
       respectsSizeConstraints({ height: 300, width: 400, x: 0, y: 0 }, window),
+    ).toBe(false);
+  });
+});
+
+describe("isWindowInContext", () => {
+  it("requires an exact single activity when activity ownership is known", () => {
+    const context = {
+      activityId: activityId("work"),
+      desktopId: desktopId("desktop-1"),
+      outputId: outputId("output-1"),
+    };
+
+    expect(
+      isWindowInContext(createWindow({ activities: ["work"] }), context),
+    ).toBe(true);
+    expect(
+      isWindowInContext(createWindow({ activities: ["personal"] }), context),
+    ).toBe(false);
+    expect(
+      isWindowInContext(
+        createWindow({ activities: ["work", "personal"] }),
+        context,
+      ),
+    ).toBe(false);
+    expect(
+      isWindowInContext(createWindow({ activities: [] }), context, ["work"]),
+    ).toBe(true);
+    expect(
+      isWindowInContext(createWindow({ activities: [] }), context, [
+        "work",
+        "personal",
+      ]),
     ).toBe(false);
   });
 });

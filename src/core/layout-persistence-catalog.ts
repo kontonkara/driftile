@@ -6,9 +6,10 @@ import {
   canonicalizePersistedOutput,
   decodeLayoutPersistence,
   decodeLayoutPersistenceValue,
+  LAYOUT_PERSISTENCE_LEGACY_CURRENT_ACTIVITY_ID,
   type LayoutPersistenceDecodeError,
-  type LayoutPersistenceV3,
-  type PersistedContextV3,
+  type LayoutPersistenceV4,
+  type PersistedContextV4,
   type PersistedOutputV1,
 } from "./layout-persistence";
 
@@ -23,7 +24,7 @@ export interface LayoutPersistenceTopologyV2 {
 }
 
 export interface LayoutPersistenceCatalogSnapshot {
-  readonly state: LayoutPersistenceV3;
+  readonly state: LayoutPersistenceV4;
   readonly topology: LayoutPersistenceTopologyV2 | null;
 }
 
@@ -57,6 +58,9 @@ export type LayoutPersistenceCatalogMergeResult =
 class InvalidPersistenceCatalog extends Error {}
 class UnsupportedPersistenceState extends Error {}
 
+const LAYOUT_PERSISTENCE_V3_VERSION = 3;
+const LEGACY_ACTIVITY_VALIDATION_ID = "driftile-legacy-activity-validation";
+
 export function decodeLayoutPersistenceCatalog(
   document: string,
 ): LayoutPersistenceCatalogDecodeResult {
@@ -78,7 +82,11 @@ export function decodeLayoutPersistenceCatalog(
 
   const version = value["version"];
 
-  if (version === 1 || version === LAYOUT_PERSISTENCE_VERSION) {
+  if (
+    version === 1 ||
+    version === LAYOUT_PERSISTENCE_V3_VERSION ||
+    version === LAYOUT_PERSISTENCE_VERSION
+  ) {
     const decoded = decodeLayoutPersistence(document);
 
     return decoded.ok
@@ -121,7 +129,7 @@ export function encodeLayoutPersistenceCatalog(
 export function mergeLayoutPersistenceCatalog(
   previous: LayoutPersistenceCatalogV2 | null,
   current: {
-    readonly state: LayoutPersistenceV3;
+    readonly state: LayoutPersistenceV4;
     readonly topology: LayoutPersistenceTopologyV2;
   },
 ): LayoutPersistenceCatalogMergeResult {
@@ -147,6 +155,7 @@ export function mergeLayoutPersistenceCatalog(
 
       if (
         topology === null ||
+        hasMigratedActivityMarker(snapshot.state) ||
         snapshots.some(
           (candidate) =>
             candidate.topology !== null &&
@@ -203,7 +212,7 @@ export function selectLayoutPersistenceSnapshot(
 
 export function activeLayoutPersistenceState(
   catalogValue: LayoutPersistenceCatalogV2,
-): LayoutPersistenceV3 {
+): LayoutPersistenceV4 {
   const normalized = parseCatalog(catalogValue, true);
   const active = normalized.snapshots[0];
 
@@ -217,6 +226,7 @@ export function activeLayoutPersistenceState(
 function parseCatalog(
   value: unknown,
   allowLegacyTopology: boolean,
+  allowMigratedActivity = allowLegacyTopology,
 ): LayoutPersistenceCatalogV2 {
   const candidate = exactRecord(value, ["format", "snapshots", "version"]);
 
@@ -229,7 +239,11 @@ function parseCatalog(
 
   const values = boundedSnapshots(candidate["snapshots"]);
   const snapshots = values.map((snapshot, index) => {
-    const parsed = parseSnapshot(snapshot, allowLegacyTopology);
+    const parsed = parseSnapshot(
+      snapshot,
+      allowLegacyTopology,
+      allowMigratedActivity,
+    );
 
     if (index > 0 && hasRestoreBaselines(parsed.state)) {
       invalid();
@@ -275,9 +289,10 @@ function parseCatalog(
 function parseSnapshot(
   value: unknown,
   allowLegacyTopology: boolean,
+  allowMigratedActivity = false,
 ): LayoutPersistenceCatalogSnapshot {
   const snapshot = exactRecord(value, ["state", "topology"]);
-  const state = canonicalState(snapshot["state"]);
+  const state = canonicalState(snapshot["state"], allowMigratedActivity);
   const topologyValue = snapshot["topology"];
 
   if (topologyValue === null) {
@@ -318,22 +333,110 @@ function parseTopology(value: unknown): LayoutPersistenceTopologyV2 {
   return { outputs };
 }
 
-function canonicalState(value: unknown): LayoutPersistenceV3 {
+function canonicalState(
+  value: unknown,
+  allowMigratedActivity = false,
+): LayoutPersistenceV4 {
   const decoded = decodeLayoutPersistenceValue(value);
 
-  if (!decoded.ok) {
-    if (decoded.error === "unsupported-version") {
-      throw new UnsupportedPersistenceState();
-    }
+  if (decoded.ok) {
+    return decoded.value;
+  }
 
+  if (decoded.error === "unsupported-version") {
+    throw new UnsupportedPersistenceState();
+  }
+
+  return allowMigratedActivity
+    ? canonicalMigratedActivityState(value)
+    : invalid();
+}
+
+function canonicalMigratedActivityState(value: unknown): LayoutPersistenceV4 {
+  const state = exactRecord(value, [
+    "contexts",
+    "floatingWindows",
+    "format",
+    "outputs",
+    "version",
+    "windows",
+  ]);
+
+  if (
+    state["format"] !== LAYOUT_PERSISTENCE_FORMAT ||
+    state["version"] !== LAYOUT_PERSISTENCE_VERSION ||
+    !Array.isArray(state["contexts"]) ||
+    !Array.isArray(state["floatingWindows"])
+  ) {
     return invalid();
   }
 
-  return decoded.value;
+  const contexts = state["contexts"].map((value) =>
+    replaceLegacyActivity(value, "context"),
+  );
+  const floatingWindows = state["floatingWindows"].map((value) =>
+    replaceLegacyActivity(value, "floating window"),
+  );
+  const validated = decodeLayoutPersistenceValue({
+    ...state,
+    contexts,
+    floatingWindows,
+  });
+
+  if (!validated.ok) {
+    return invalid();
+  }
+
+  return {
+    ...validated.value,
+    contexts: validated.value.contexts.map((context) => ({
+      ...context,
+      activityId: LAYOUT_PERSISTENCE_LEGACY_CURRENT_ACTIVITY_ID,
+    })),
+    floatingWindows: validated.value.floatingWindows.map((floating) => ({
+      ...floating,
+      activityId: LAYOUT_PERSISTENCE_LEGACY_CURRENT_ACTIVITY_ID,
+    })),
+  };
+}
+
+function replaceLegacyActivity(
+  value: unknown,
+  owner: "context" | "floating window",
+): Record<string, unknown> {
+  if (!isRecord(value)) {
+    return invalid();
+  }
+
+  const candidate = value;
+
+  if (
+    !Object.prototype.hasOwnProperty.call(candidate, "activityId") ||
+    candidate["activityId"] !== LAYOUT_PERSISTENCE_LEGACY_CURRENT_ACTIVITY_ID
+  ) {
+    throw new InvalidPersistenceCatalog(
+      `migrated ${owner} has an invalid activity marker`,
+    );
+  }
+
+  return { ...candidate, activityId: LEGACY_ACTIVITY_VALIDATION_ID };
+}
+
+function hasMigratedActivityMarker(state: LayoutPersistenceV4): boolean {
+  return (
+    state.contexts.some(
+      (context) =>
+        context.activityId === LAYOUT_PERSISTENCE_LEGACY_CURRENT_ACTIVITY_ID,
+    ) ||
+    state.floatingWindows.some(
+      (floating) =>
+        floating.activityId === LAYOUT_PERSISTENCE_LEGACY_CURRENT_ACTIVITY_ID,
+    )
+  );
 }
 
 function validateStateTopology(
-  state: LayoutPersistenceV3,
+  state: LayoutPersistenceV4,
   topology: LayoutPersistenceTopologyV2,
 ): void {
   const topologyByKey = new Map(
@@ -439,10 +542,11 @@ function stripRestoreBaselines(
 }
 
 function stripContextRestoreBaselines(
-  context: PersistedContextV3,
-): PersistedContextV3 {
+  context: PersistedContextV4,
+): PersistedContextV4 {
   return {
     activeColumnIndex: context.activeColumnIndex,
+    activityId: context.activityId,
     columns: context.columns.map((column) => ({
       ...(column.fullWidthRestore === undefined
         ? {}
@@ -467,7 +571,7 @@ function stripContextRestoreBaselines(
   };
 }
 
-function hasRestoreBaselines(state: LayoutPersistenceV3): boolean {
+function hasRestoreBaselines(state: LayoutPersistenceV4): boolean {
   return state.contexts.some(
     (context) =>
       context.restoreFingerprint !== undefined ||
@@ -477,7 +581,7 @@ function hasRestoreBaselines(state: LayoutPersistenceV3): boolean {
   );
 }
 
-function legacyCatalog(state: LayoutPersistenceV3): LayoutPersistenceCatalogV2 {
+function legacyCatalog(state: LayoutPersistenceV4): LayoutPersistenceCatalogV2 {
   return catalog([{ state, topology: null }]);
 }
 

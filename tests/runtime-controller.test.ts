@@ -6,6 +6,7 @@ import { decodeApplicationColumnWidthOverrides } from "../src/application-overri
 import { decodeApplicationFocusCentering } from "../src/application-focus-centering";
 import { decodeApplicationTilingExclusions } from "../src/application-tiling-exclusions";
 import {
+  activityId,
   columnId,
   desktopId,
   outputId,
@@ -29,6 +30,7 @@ import type {
   KWinWindow,
   KWinWorkspace,
 } from "../src/platform/kwin/api";
+import { FALLBACK_ACTIVITY_ID } from "../src/platform/kwin/activity-adapter";
 import { RuntimeController } from "../src/runtime-controller";
 
 const PERFORMANCE_REFERENCE = Object.freeze({
@@ -94,6 +96,7 @@ class ManualScheduler {
 }
 
 interface TrackedWindow {
+  readonly activitiesChanged: Signal<[]>;
   readonly decorationPolicyChanged: Signal<[]>;
   readonly desktopFileNameChanged: Signal<[]>;
   readonly desktopWriteCount: number;
@@ -113,6 +116,7 @@ interface TrackedWindow {
   readonly moveResizedChanged: Signal<[]>;
   readonly outputChanged: Signal<[oldOutput?: KWinOutput | null]>;
   readonly requestedTileChanged: Signal<[]>;
+  setExternalActivities(activities: readonly string[]): void;
   setExternalDesktops(desktops: readonly KWinVirtualDesktop[]): void;
   setFrameGeometry(frame: KWinWindow["frameGeometry"]): void;
   setOutput(output: KWinOutput): void;
@@ -189,6 +193,7 @@ function createTrackedWindow(
   desktop: KWinVirtualDesktop,
   overrides: Partial<KWinWindow> = {},
 ): TrackedWindow {
+  const activitiesChanged = new Signal<[]>();
   const decorationPolicyChanged = new Signal<[]>();
   const desktopFileNameChanged = new Signal<[]>();
   const desktopsChanged = new Signal<[]>();
@@ -227,6 +232,8 @@ function createTrackedWindow(
     ((frame: KWinWindow["frameGeometry"], commit: () => void) => void) | null =
     null;
   const window: KWinWindow = {
+    activities: [],
+    activitiesChanged,
     clientGeometry: initialClientGeometry,
     decorationPolicyChanged,
     deleted: false,
@@ -280,7 +287,13 @@ function createTrackedWindow(
     frameGeometry.width - initialClientGeometry.width;
   const verticalDecoration =
     frameGeometry.height - initialClientGeometry.height;
+  let windowActivities = window.activities ?? [];
   let windowDesktops = window.desktops;
+  Object.defineProperty(window, "activities", {
+    configurable: true,
+    enumerable: true,
+    get: () => windowActivities,
+  });
   Object.defineProperty(window, "clientGeometry", {
     configurable: true,
     enumerable: true,
@@ -341,6 +354,7 @@ function createTrackedWindow(
   }
 
   return {
+    activitiesChanged,
     decorationPolicyChanged,
     desktopFileNameChanged,
     get desktopWriteCount() {
@@ -363,6 +377,10 @@ function createTrackedWindow(
     moveResizedChanged,
     outputChanged,
     requestedTileChanged,
+    setExternalActivities: (activities) => {
+      windowActivities = activities;
+      activitiesChanged.emit();
+    },
     setDesktopWriteBehavior: (behavior) => {
       desktopWriteBehavior = behavior;
     },
@@ -393,7 +411,9 @@ function createTrackedWindow(
 
 interface WorkspaceFixture {
   readonly activationCount: number;
+  readonly activitiesChanged: Signal<[activityId: string]>;
   readonly cursorPosChanged: Signal<[]>;
+  readonly currentActivityChanged: Signal<[activityId: string]>;
   readonly currentDesktopChanged: Signal<
     [
       previous: KWinVirtualDesktop | null,
@@ -407,6 +427,11 @@ interface WorkspaceFixture {
   setActivationBehavior(
     behavior: ((window: KWinWindow | null, commit: () => void) => void) | null,
   ): void;
+  setActivities(
+    activities: readonly string[],
+    changedActivityId?: string,
+  ): void;
+  setCurrentActivity(activityId: string): void;
   setCurrentDesktop(output: KWinOutput, desktop: KWinVirtualDesktop): void;
   setDesktopSwitchBehavior(
     behavior:
@@ -431,6 +456,11 @@ interface WorkspaceFixture {
   readonly workspace: KWinWorkspace;
 }
 
+interface WorkspaceActivityOptions {
+  readonly activities: readonly string[];
+  readonly currentActivity: string;
+}
+
 function createWorkspace(
   activeOutput: KWinOutput,
   activeDesktop: KWinVirtualDesktop,
@@ -438,8 +468,11 @@ function createWorkspace(
   desktops: readonly KWinVirtualDesktop[],
   windows: readonly KWinWindow[],
   perOutputDesktops = true,
+  activityOptions?: WorkspaceActivityOptions,
 ): WorkspaceFixture {
+  const activitiesChanged = new Signal<[activityId: string]>();
   const cursorPosChanged = new Signal<[]>();
+  const currentActivityChanged = new Signal<[activityId: string]>();
   const currentDesktopChanged = new Signal<
     [
       previous: KWinVirtualDesktop | null,
@@ -468,6 +501,8 @@ function createWorkspace(
     | ((window: KWinWindow, output: KWinOutput, commit: () => void) => void)
     | null = null;
   let activeWindow = windows[windows.length - 1] ?? null;
+  let currentActivities = [...(activityOptions?.activities ?? [])];
+  let currentActivity = activityOptions?.currentActivity ?? "";
   let currentDesktop = activeDesktop;
   let currentOutputs = [...outputs];
   let cursorPosition = { x: 0, y: 0 };
@@ -574,6 +609,14 @@ function createWorkspace(
     windowAdded,
     windowRemoved,
     virtualScreenGeometryChanged,
+    ...(activityOptions
+      ? {
+          activities: currentActivities,
+          activitiesChanged,
+          currentActivity,
+          currentActivityChanged,
+        }
+      : {}),
     ...desktopResolver,
   };
   Object.defineProperty(workspace, "activeWindow", {
@@ -604,6 +647,24 @@ function createWorkspace(
       }
     },
   });
+  if (activityOptions) {
+    Object.defineProperties(workspace, {
+      activities: {
+        configurable: true,
+        enumerable: true,
+        get: () => currentActivities,
+      },
+      currentActivity: {
+        configurable: true,
+        enumerable: true,
+        get: () => currentActivity,
+        set: (activityId: string) => {
+          currentActivity = activityId;
+          currentActivityChanged.emit(activityId);
+        },
+      },
+    });
+  }
   Object.defineProperty(workspace, "cursorPos", {
     configurable: true,
     enumerable: true,
@@ -619,7 +680,9 @@ function createWorkspace(
     get activationCount() {
       return activationCount;
     },
+    activitiesChanged,
     cursorPosChanged,
+    currentActivityChanged,
     currentDesktopChanged,
     get desktopSwitchCount() {
       return desktopSwitchCount;
@@ -628,6 +691,14 @@ function createWorkspace(
       return outputTransferCount;
     },
     screensChanged,
+    setActivities: (activities, changedActivityId) => {
+      if (!activityOptions) {
+        throw new Error("activity API is unavailable in this workspace");
+      }
+
+      currentActivities = [...activities];
+      activitiesChanged.emit(changedActivityId ?? currentActivity);
+    },
     setCursorPosition: (x, y) => {
       cursorPosition = { x, y };
       cursorPosChanged.emit();
@@ -637,6 +708,14 @@ function createWorkspace(
     },
     setCurrentDesktop: (output, desktop) => {
       commitDesktop(output, desktop, perOutputDesktops);
+    },
+    setCurrentActivity: (activityId) => {
+      if (!activityOptions) {
+        throw new Error("activity API is unavailable in this workspace");
+      }
+
+      currentActivity = activityId;
+      currentActivityChanged.emit(activityId);
     },
     setDesktopSwitchBehavior: (behavior) => {
       desktopSwitchBehavior = behavior;
@@ -909,7 +988,7 @@ function blockWindowFocus(
   }
 
   state.toggleGeometryTransitions.set(id, {
-    contextKey: `${tracked.window.output?.name ?? ""}\u0000${tracked.window.desktops[0]?.id ?? ""}`,
+    contextKey: `${tracked.window.output?.name ?? ""}\u0000${tracked.window.desktops[0]?.id ?? ""}\u0000${FALLBACK_ACTIVITY_ID}`,
     expectedFrame: { ...tracked.window.frameGeometry },
     settlementArmed: false,
   });
@@ -1212,6 +1291,7 @@ function createKnownOutputHistorySnapshot(
       contexts: [
         {
           activeColumnIndex: 1,
+          activityId: FALLBACK_ACTIVITY_ID,
           columns: [
             {
               members: [
@@ -1241,6 +1321,7 @@ function createKnownOutputHistorySnapshot(
         },
         {
           activeColumnIndex: 1,
+          activityId: FALLBACK_ACTIVITY_ID,
           columns: [
             {
               members: [
@@ -1270,6 +1351,7 @@ function createKnownOutputHistorySnapshot(
         },
         {
           activeColumnIndex: 0,
+          activityId: FALLBACK_ACTIVITY_ID,
           columns: [
             {
               fullWidthRestore: { kind: "fixed", value: 420 },
@@ -1288,7 +1370,7 @@ function createKnownOutputHistorySnapshot(
       floatingWindows: [],
       format: "driftile-layout",
       outputs: [historicalLeftOutput, historicalRightOutput],
-      version: 3,
+      version: 4,
       windows: [
         "left-stack-1",
         "left-stack-2",
@@ -1437,6 +1519,7 @@ function createKnownOutputReturnFixture(
     leftLayout: runtimeLayout(controller).snapshot(
       outputId(leftOutput.name),
       desktopId(primaryDesktop.id),
+      FALLBACK_ACTIVITY_ID,
     ),
     leftOutput,
     leftWindowState: captureTrackedWindowState(leftWindows),
@@ -1453,6 +1536,398 @@ function createKnownOutputReturnFixture(
 }
 
 describe("RuntimeController", () => {
+  describe("activity layout ownership", () => {
+    it("tiles each single-activity layout only while that activity is current", () => {
+      const output = createOutput("DP-1", 0);
+      const desktop = { id: "desktop-1" };
+      const work = createTrackedWindow("work-window", output, desktop, {
+        activities: ["work"],
+        frameGeometry: { height: 240, width: 320, x: 120, y: 80 },
+      });
+      const personal = createTrackedWindow("personal-window", output, desktop, {
+        activities: ["personal"],
+        frameGeometry: { height: 260, width: 340, x: 520, y: 100 },
+      });
+      const fixture = createWorkspace(
+        output,
+        desktop,
+        [output],
+        [desktop],
+        [work.window, personal.window],
+        true,
+        {
+          activities: ["work", "personal"],
+          currentActivity: "work",
+        },
+      );
+      fixture.workspace.activeWindow = work.window;
+      const controller = new RuntimeController(fixture.workspace, {
+        clientAreaOption: 2,
+        gap: 10,
+      });
+
+      expect(controller.start()).toBe(true);
+      expect(
+        activityLayoutWindowIds(controller, output, desktop, "work"),
+      ).toEqual(["work-window"]);
+      expect(
+        activityLayoutWindowIds(controller, output, desktop, "personal"),
+      ).toEqual(["personal-window"]);
+      expect(work.writeCount).toBeGreaterThan(0);
+      expect(personal.writeCount).toBe(0);
+      const workLayout = runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        activityId("work"),
+      );
+      const workFrame = { ...work.window.frameGeometry };
+
+      fixture.setCurrentActivity("personal");
+
+      expect(personal.writeCount).toBeGreaterThan(0);
+      expect(work.window.frameGeometry).toEqual(workFrame);
+      expect(
+        activityLayoutWindowIds(controller, output, desktop, "personal"),
+      ).toEqual(["personal-window"]);
+
+      fixture.setCurrentActivity("work");
+
+      expect(
+        runtimeLayout(controller).snapshot(
+          outputId(output.name),
+          desktopId(desktop.id),
+          activityId("work"),
+        ),
+      ).toEqual(workLayout);
+      controller.stop();
+    });
+
+    it("rejects ambiguous memberships only when activities are distinct", () => {
+      const output = createOutput("DP-1", 0);
+      const desktop = { id: "desktop-1" };
+      const allActivities = createTrackedWindow(
+        "all-activities",
+        output,
+        desktop,
+        { activities: [] },
+      );
+      const shared = createTrackedWindow("shared", output, desktop, {
+        activities: ["work", "personal"],
+      });
+      const work = createTrackedWindow("work-window", output, desktop, {
+        activities: ["work"],
+      });
+      const fixture = createWorkspace(
+        output,
+        desktop,
+        [output],
+        [desktop],
+        [allActivities.window, shared.window, work.window],
+        true,
+        {
+          activities: ["work", "personal"],
+          currentActivity: "work",
+        },
+      );
+      fixture.workspace.activeWindow = work.window;
+      const controller = new RuntimeController(fixture.workspace, {
+        clientAreaOption: 2,
+        gap: 10,
+      });
+
+      expect(controller.start()).toBe(true);
+      expect(controller.managedCount).toBe(1);
+      expect(
+        activityLayoutWindowIds(controller, output, desktop, "work"),
+      ).toEqual(["work-window"]);
+      expect(allActivities.writeCount).toBe(0);
+      expect(shared.writeCount).toBe(0);
+      controller.stop();
+
+      const compatible = createTrackedWindow(
+        "one-activity-compatible",
+        output,
+        desktop,
+        { activities: [] },
+      );
+      const oneActivityFixture = createWorkspace(
+        output,
+        desktop,
+        [output],
+        [desktop],
+        [compatible.window],
+        true,
+        { activities: ["work"], currentActivity: "work" },
+      );
+      const oneActivityController = new RuntimeController(
+        oneActivityFixture.workspace,
+        { clientAreaOption: 2, gap: 10 },
+      );
+
+      expect(oneActivityController.start()).toBe(true);
+      expect(oneActivityController.managedCount).toBe(1);
+      expect(
+        activityLayoutWindowIds(oneActivityController, output, desktop, "work"),
+      ).toEqual(["one-activity-compatible"]);
+      oneActivityController.stop();
+    });
+
+    it("rehomes a changed sole membership without touching another activity", () => {
+      const output = createOutput("DP-1", 0);
+      const desktop = { id: "desktop-1" };
+      const moved = createTrackedWindow("moved", output, desktop, {
+        activities: ["work"],
+      });
+      const personal = createTrackedWindow("personal", output, desktop, {
+        activities: ["personal"],
+      });
+      const unrelated = createTrackedWindow("unrelated", output, desktop, {
+        activities: ["archive"],
+      });
+      const fixture = createWorkspace(
+        output,
+        desktop,
+        [output],
+        [desktop],
+        [moved.window, personal.window, unrelated.window],
+        true,
+        {
+          activities: ["work", "personal", "archive"],
+          currentActivity: "work",
+        },
+      );
+      fixture.workspace.activeWindow = moved.window;
+      const controller = new RuntimeController(fixture.workspace, {
+        clientAreaOption: 2,
+        gap: 10,
+      });
+
+      expect(controller.start()).toBe(true);
+      const unrelatedBefore = runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        activityId("archive"),
+      );
+
+      moved.setExternalActivities(["personal"]);
+
+      expect(
+        activityLayoutWindowIds(controller, output, desktop, "work"),
+      ).toEqual([]);
+      expect(
+        new Set(
+          activityLayoutWindowIds(controller, output, desktop, "personal"),
+        ),
+      ).toEqual(new Set(["moved", "personal"]));
+      expect(
+        runtimeLayout(controller).snapshot(
+          outputId(output.name),
+          desktopId(desktop.id),
+          activityId("archive"),
+        ),
+      ).toEqual(unrelatedBefore);
+      expect(controller.managedCount).toBe(3);
+      controller.stop();
+    });
+
+    it("rehomes a floating output race after its activity changes", () => {
+      const scheduler = new ManualScheduler();
+      const transfer = createOutputTransferFixture({ scheduler });
+      const destination = transfer.destinations[0];
+
+      if (!destination) {
+        throw new Error("missing activity-race destination window");
+      }
+
+      flushManualScheduler(scheduler);
+      expect(transfer.controller.toggleFloating()).toBe(true);
+      flushManualScheduler(scheduler);
+      const movedFrame = { ...transfer.moved.window.frameGeometry };
+      const movedWrites = transfer.moved.writeCount;
+      const tiled = [transfer.source, destination];
+      const tiledState = captureTrackedWindowState(tiled);
+      const sourceLayout = runtimeLayout(transfer.controller).snapshot(
+        outputId(transfer.sourceOutput.name),
+        desktopId(transfer.sourceDesktop.id),
+        FALLBACK_ACTIVITY_ID,
+      );
+      const targetLayout = runtimeLayout(transfer.controller).snapshot(
+        outputId(transfer.targetOutput.name),
+        desktopId(transfer.targetDesktop.id),
+        FALLBACK_ACTIVITY_ID,
+      );
+      const floatingBefore = runtimeFloatingWindows(transfer.controller).get(
+        windowId("moved"),
+      );
+
+      if (!floatingBefore) {
+        throw new Error("missing activity-race floating state");
+      }
+
+      transfer.fixture.setOutputTransferBehavior((_window, _output, commit) => {
+        commit();
+        transfer.moved.setExternalActivities(["personal"]);
+      });
+      const warning = vi
+        .spyOn(console, "warn")
+        .mockImplementation(() => undefined);
+      const transferred = transfer.controller.moveColumnToOutputRight();
+      warning.mockRestore();
+
+      expect(transferred).toBe(false);
+      expect(transfer.fixture.outputTransferCount).toBe(1);
+      expect(transfer.moved.window.frameGeometry).toEqual(movedFrame);
+      expect(transfer.moved.writeCount).toBe(movedWrites);
+      expectTrackedWindowState(tiled, tiledState);
+      expect(
+        runtimeLayout(transfer.controller).snapshot(
+          outputId(transfer.sourceOutput.name),
+          desktopId(transfer.sourceDesktop.id),
+          FALLBACK_ACTIVITY_ID,
+        ),
+      ).toEqual(sourceLayout);
+      expect(
+        runtimeLayout(transfer.controller).snapshot(
+          outputId(transfer.targetOutput.name),
+          desktopId(transfer.targetDesktop.id),
+          FALLBACK_ACTIVITY_ID,
+        ),
+      ).toEqual(targetLayout);
+      expect(scheduler.pendingCount).toBeGreaterThan(0);
+
+      flushManualScheduler(scheduler);
+
+      const floatingAfter = runtimeFloatingWindows(transfer.controller).get(
+        windowId("moved"),
+      );
+      expect(floatingAfter).toBeDefined();
+      expect(floatingAfter?.currentContextKey).toBe(
+        `${transfer.targetOutput.name}\0${transfer.targetDesktop.id}\0personal`,
+      );
+      expect(floatingAfter?.sourceContextKey).toBe(
+        floatingBefore.sourceContextKey,
+      );
+      expect(floatingAfter?.expectedFrame).toEqual(movedFrame);
+      expect(transfer.controller.floatingCount).toBe(1);
+      expect(transfer.controller.managedCount).toBe(2);
+      expectTrackedWindowState(tiled, tiledState);
+      transfer.controller.stop();
+    });
+
+    it("stops pointer resize settlement after the current activity changes", () => {
+      const setup = createPointerResizeRuntimeFixture(false, true);
+      const beforeLayout = setup.layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+        activityId("work"),
+      );
+      const activeFrame = { ...setup.active.window.frameGeometry };
+      const delayedCommit: { value: (() => void) | null } = { value: null };
+
+      beginPointerColumnResize(
+        setup,
+        pointerResizeAcceptedFrame(activeFrame, "right", 550),
+      );
+      setup.passive.setWriteBehavior((_frame, commit) => {
+        delayedCommit.value = commit;
+      });
+      Object.defineProperty(setup.active.window, "resize", {
+        configurable: true,
+        value: false,
+      });
+      setup.active.moveResizedChanged.emit();
+      setup.active.interactiveMoveResizeFinished.emit();
+      flushUntil(
+        setup.scheduler,
+        () => delayedCommit.value !== null,
+        "pointer resize settlement did not start",
+      );
+
+      const state = setup.controller as unknown as {
+        readonly pointerResizeSettlement: unknown;
+      };
+      expect(state.pointerResizeSettlement).not.toBeNull();
+      setup.passive.setWriteBehavior(null);
+      const writesBeforeSwitch = [
+        setup.passive.writeCount,
+        setup.active.writeCount,
+        setup.unrelated.writeCount,
+      ];
+      const publicationCount = setup.published.length;
+
+      setup.fixture.setCurrentActivity("personal");
+      invokeCapturedCallback(delayedCommit.value, "late resize configure");
+      flushManualScheduler(setup.scheduler);
+
+      expect([
+        setup.passive.writeCount,
+        setup.active.writeCount,
+        setup.unrelated.writeCount,
+      ]).toEqual(writesBeforeSwitch);
+      expect(
+        setup.layout.snapshot(
+          outputId(setup.output.name),
+          desktopId(setup.desktop.id),
+          activityId("work"),
+        ),
+      ).toEqual(beforeLayout);
+      expect(state.pointerResizeSettlement).toBeNull();
+      expect(setup.published).toHaveLength(publicationCount);
+      setup.controller.stop();
+    });
+
+    it("stops pointer column-drop settlement after the current activity changes", () => {
+      const setup = createPointerColumnDropRuntimeFixture(false, true);
+      const beforeLayout = runtimeLayout(setup.controller).snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+        activityId("work"),
+      );
+      const delayedWrites = new ManualScheduler();
+
+      for (const tracked of setup.windows) {
+        tracked.setWriteBehavior((_frame, commit) => {
+          delayedWrites.schedule(commit);
+        });
+      }
+
+      beginPointerColumnBoundaryDrop(setup);
+      flushUntil(
+        setup.scheduler,
+        () => pointerColumnDropSettlementActive(setup.controller),
+        "pointer column-drop settlement did not start",
+      );
+      expect(delayedWrites.pendingCount).toBeGreaterThan(0);
+
+      for (const tracked of setup.windows) {
+        tracked.setWriteBehavior(null);
+      }
+
+      const writesBeforeSwitch = setup.windows.map(
+        ({ writeCount }) => writeCount,
+      );
+      const publicationCount = setup.published.length;
+
+      setup.fixture.setCurrentActivity("personal");
+      flushManualScheduler(delayedWrites);
+      flushManualScheduler(setup.scheduler);
+
+      expect(setup.windows.map(({ writeCount }) => writeCount)).toEqual(
+        writesBeforeSwitch,
+      );
+      expect(
+        runtimeLayout(setup.controller).snapshot(
+          outputId(setup.output.name),
+          desktopId(setup.desktop.id),
+          activityId("work"),
+        ),
+      ).toEqual(beforeLayout);
+      expect(pointerColumnDropSettlementActive(setup.controller)).toBe(false);
+      expect(setup.published).toHaveLength(publicationCount);
+      setup.controller.stop();
+    });
+  });
+
   it("publishes only changed canonical layout state", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
@@ -1659,6 +2134,7 @@ describe("RuntimeController", () => {
       const snapshot = runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const activeColumn = snapshot.columns.find(
         (column) => column.id === snapshot.activeColumnId,
@@ -1702,6 +2178,7 @@ describe("RuntimeController", () => {
     const snapshot = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const activeColumn = snapshot.columns.find(
       (column) => column.id === snapshot.activeColumnId,
@@ -1890,6 +2367,7 @@ describe("RuntimeController", () => {
       runtimeLayout(restored).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toMatchObject({
       columns: [
@@ -2061,6 +2539,7 @@ describe("RuntimeController", () => {
         runtimeLayout(restored).snapshot(
           outputId(output.name),
           desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toMatchObject({
         columns: [
@@ -2664,6 +3143,7 @@ describe("RuntimeController", () => {
         runtimeLayout(restored).snapshot(
           outputId(output.name),
           desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toMatchObject({
         columns: [
@@ -3158,6 +3638,7 @@ describe("RuntimeController", () => {
       runtimeLayout(toggled).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ).columns[0]?.width,
     ).toEqual({ kind: "fixed", value: 400 });
     const id = windowId("window-1");
@@ -3426,10 +3907,21 @@ describe("RuntimeController", () => {
     const outputKey = outputId(output.name);
     const desktopKey = desktopId(desktop.id);
 
-    expect(layout.setViewportOffset(outputKey, desktopKey, 485)).toBe(true);
+    expect(
+      layout.setViewportOffset(
+        outputKey,
+        desktopKey,
+        FALLBACK_ACTIVITY_ID,
+        485,
+      ),
+    ).toBe(true);
     source.reconcile();
     fixture.workspace.activeWindow = active.window;
-    const priorLayout = layout.snapshot(outputKey, desktopKey);
+    const priorLayout = layout.snapshot(
+      outputKey,
+      desktopKey,
+      FALLBACK_ACTIVITY_ID,
+    );
     const priorFrames = windows.map(({ window }) => ({
       ...window.frameGeometry,
     }));
@@ -3445,12 +3937,22 @@ describe("RuntimeController", () => {
     expect(restored.start(document)).toBe(true);
     fixture.workspace.activeWindow = active.window;
     expect(
-      runtimeLayout(restored).snapshot(outputKey, desktopKey),
+      runtimeLayout(restored).snapshot(
+        outputKey,
+        desktopKey,
+        FALLBACK_ACTIVITY_ID,
+      ),
     ).toMatchObject({
       viewportOffset: 495,
     });
     expect(restored.maximizeColumn()).toBe(true);
-    expect(runtimeLayout(restored).snapshot(outputKey, desktopKey)).toEqual({
+    expect(
+      runtimeLayout(restored).snapshot(
+        outputKey,
+        desktopKey,
+        FALLBACK_ACTIVITY_ID,
+      ),
+    ).toEqual({
       ...priorLayout,
       viewportOffset: 495,
     });
@@ -4083,10 +4585,16 @@ describe("RuntimeController", () => {
 
     expect(controller.start()).toBe(true);
     const layout = runtimeLayout(controller);
-    layout.setViewportOffset(outputId(output.name), desktopId(desktop.id), 125);
+    layout.setViewportOffset(
+      outputId(output.name),
+      desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
+      125,
+    );
     const before = layout.snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
     const frameWrites = windows.map(({ writeCount }) => writeCount);
@@ -4102,7 +4610,11 @@ describe("RuntimeController", () => {
       ).suspendedWindows.has(windowId("window-3")),
     ).toBe(true);
     expect(
-      layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
     ).toEqual(before);
     expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
     expect(windows.map(({ writeCount }) => writeCount)).toEqual(frameWrites);
@@ -4113,7 +4625,11 @@ describe("RuntimeController", () => {
     expect(fullscreen.fullScreen).toBe(false);
     expect(fullscreen.writeCount).toBe(2);
     expect(
-      layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
     ).toEqual(before);
     expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
     expect(windows.map(({ writeCount }) => writeCount)).toEqual(frameWrites);
@@ -4142,6 +4658,7 @@ describe("RuntimeController", () => {
     const before = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frame = { ...active.window.frameGeometry };
     const frameWrites = active.writeCount;
@@ -4153,6 +4670,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(active.window.frameGeometry).toEqual(frame);
@@ -4237,6 +4755,7 @@ describe("RuntimeController", () => {
       const before = runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const frame = { ...active.window.frameGeometry };
       const frameWrites = active.writeCount;
@@ -4248,6 +4767,7 @@ describe("RuntimeController", () => {
         runtimeLayout(controller).snapshot(
           outputId(output.name),
           desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(before);
       expect(active.window.frameGeometry).toEqual(frame);
@@ -4284,6 +4804,7 @@ describe("RuntimeController", () => {
     const layout = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
 
     expect(controller.toggleFullscreen()).toBe(true);
@@ -4298,6 +4819,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(layout);
     expect(fixture.workspace.activeWindow).toBe(active.window);
@@ -4339,6 +4861,7 @@ describe("RuntimeController", () => {
     const layout = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
 
     expect(floatingState).toBeDefined();
@@ -4363,6 +4886,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(layout);
     expect(state.pendingFullscreenTargets.get(activeId)).toBe(true);
@@ -4394,6 +4918,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(layout);
     expect(state.pendingFullscreenTargets.has(activeId)).toBe(false);
@@ -4446,6 +4971,7 @@ describe("RuntimeController", () => {
       const fullscreen = setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       expect(fullscreen.columns.map((column) => String(column.id))).toEqual([
         "column:stack",
@@ -4505,6 +5031,7 @@ describe("RuntimeController", () => {
     const fullscreen = setup.layout.snapshot(
       outputId(setup.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     expect(fullscreen.columns[0]).toMatchObject({
       id: "column:stack",
@@ -4548,6 +5075,7 @@ describe("RuntimeController", () => {
     const beforeLayout = setup.layout.snapshot(
       outputId(setup.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const beforeFrames = setup.windows.map(({ window }) => ({
       ...window.frameGeometry,
@@ -4561,6 +5089,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(beforeLayout);
     expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
@@ -4587,6 +5116,7 @@ describe("RuntimeController", () => {
     const beforeLayout = setup.layout.snapshot(
       outputId(setup.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const beforeFrames = setup.windows.map(({ window }) => ({
       ...window.frameGeometry,
@@ -4620,6 +5150,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(beforeLayout);
     expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
@@ -4641,6 +5172,7 @@ describe("RuntimeController", () => {
     const beforeLayout = setup.layout.snapshot(
       outputId(setup.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const beforeFrames = setup.windows.map(({ window }) => ({
       ...window.frameGeometry,
@@ -4672,6 +5204,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(beforeLayout);
 
@@ -4951,6 +5484,7 @@ describe("RuntimeController", () => {
     const layout = setup.layout.snapshot(
       outputId(setup.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = setup.windows.map((window) => ({
       ...window.window.frameGeometry,
@@ -4974,6 +5508,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(layout);
     expect(setup.windows.map((window) => window.window.frameGeometry)).toEqual(
@@ -5007,6 +5542,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(layout);
     expect(setup.windows.map((window) => window.window.frameGeometry)).toEqual(
@@ -5137,6 +5673,7 @@ describe("RuntimeController", () => {
     const layout = setup.layout.snapshot(
       outputId(setup.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = setup.windows.map((window) => ({
       ...window.window.frameGeometry,
@@ -5158,6 +5695,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(layout);
     expect(setup.windows.map((window) => window.window.frameGeometry)).toEqual(
@@ -5192,6 +5730,7 @@ describe("RuntimeController", () => {
     const beforeLayout = layout.snapshot(
       outputId(setup.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const beforeFrames = setup.windows.map((window) => ({
       ...window.window.frameGeometry,
@@ -5204,7 +5743,11 @@ describe("RuntimeController", () => {
     expect(setup.controller.moveWindowUp()).toBe(true);
 
     expect(
-      layout.snapshot(outputId(setup.output.name), desktopId(setup.desktop.id)),
+      layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
     ).toEqual(beforeLayout);
     expect(setup.windows.map((window) => window.window.frameGeometry)).toEqual(
       beforeFrames,
@@ -5224,6 +5767,7 @@ describe("RuntimeController", () => {
       const beforeLayout = setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const beforeFrames = setup.windows.map((window) => ({
         ...window.window.frameGeometry,
@@ -5244,6 +5788,7 @@ describe("RuntimeController", () => {
         setup.layout.snapshot(
           outputId(setup.output.name),
           desktopId(setup.desktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(beforeLayout);
       expect(
@@ -5523,6 +6068,7 @@ describe("RuntimeController", () => {
     const beforeLayout = setup.layout.snapshot(
       outputId(setup.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const beforeFrames = setup.windows.map((window) => ({
       ...window.window.frameGeometry,
@@ -5552,6 +6098,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(beforeLayout);
     expect(setup.windows.map((window) => window.window.frameGeometry)).toEqual(
@@ -5656,10 +6203,16 @@ describe("RuntimeController", () => {
 
     expect(controller.start()).toBe(true);
     const layout = runtimeLayout(controller);
-    layout.setViewportOffset(outputId(output.name), desktopId(desktop.id), 125);
+    layout.setViewportOffset(
+      outputId(output.name),
+      desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
+      125,
+    );
     const before = layout.snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
     const frameWrites = windows.map(({ writeCount }) => writeCount);
@@ -5675,7 +6228,11 @@ describe("RuntimeController", () => {
       ).suspendedWindows.has(windowId("window-3")),
     ).toBe(true);
     expect(
-      layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
     ).toEqual(before);
     expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
     expect(windows.map(({ writeCount }) => writeCount)).toEqual(frameWrites);
@@ -5689,7 +6246,11 @@ describe("RuntimeController", () => {
       [false, false],
     ]);
     expect(
-      layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
     ).toEqual(before);
     expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
     expect(windows.map(({ writeCount }) => writeCount)).toEqual(frameWrites);
@@ -5739,6 +6300,7 @@ describe("RuntimeController", () => {
       const maximized = setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       expect(maximized.columns.map((column) => String(column.id))).toEqual([
         "column:stack",
@@ -5798,6 +6360,7 @@ describe("RuntimeController", () => {
     const maximized = setup.layout.snapshot(
       outputId(setup.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     expect(maximized.columns[0]).toMatchObject({
       id: "column:stack",
@@ -5885,6 +6448,7 @@ describe("RuntimeController", () => {
     const beforeLayout = layout.snapshot(
       outputId(setup.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const beforeFrames = setup.windows.map((window) => ({
       ...window.window.frameGeometry,
@@ -5897,7 +6461,11 @@ describe("RuntimeController", () => {
     expect(setup.controller.moveWindowUp()).toBe(true);
 
     expect(
-      layout.snapshot(outputId(setup.output.name), desktopId(setup.desktop.id)),
+      layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
     ).toEqual(beforeLayout);
     expect(setup.windows.map((window) => window.window.frameGeometry)).toEqual(
       beforeFrames,
@@ -5923,6 +6491,7 @@ describe("RuntimeController", () => {
       const beforeLayout = setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const beforeFrames = setup.windows.map((window) => ({
         ...window.window.frameGeometry,
@@ -5943,6 +6512,7 @@ describe("RuntimeController", () => {
         setup.layout.snapshot(
           outputId(setup.output.name),
           desktopId(setup.desktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(beforeLayout);
       expect(
@@ -5968,6 +6538,7 @@ describe("RuntimeController", () => {
       const beforeLayout = setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const beforeFrames = setup.windows.map((window) => ({
         ...window.window.frameGeometry,
@@ -5992,6 +6563,7 @@ describe("RuntimeController", () => {
         setup.layout.snapshot(
           outputId(setup.output.name),
           desktopId(setup.desktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(beforeLayout);
       expect(
@@ -6096,6 +6668,7 @@ describe("RuntimeController", () => {
     const beforeLayout = setup.layout.snapshot(
       outputId(setup.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const beforeFrames = setup.windows.map((window) => ({
       ...window.window.frameGeometry,
@@ -6125,6 +6698,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(beforeLayout);
     expect(setup.windows.map((window) => window.window.frameGeometry)).toEqual(
@@ -6260,6 +6834,7 @@ describe("RuntimeController", () => {
     const before = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frame = { ...active.window.frameGeometry };
     const frameWrites = active.writeCount;
@@ -6271,6 +6846,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(active.window.frameGeometry).toEqual(frame);
@@ -6306,6 +6882,7 @@ describe("RuntimeController", () => {
     const layout = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
 
     expect(controller.maximizeWindowToEdges()).toBe(true);
@@ -6324,6 +6901,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(layout);
     expect(fixture.workspace.activeWindow).toBe(active.window);
@@ -6683,6 +7261,7 @@ describe("RuntimeController", () => {
       const beforeLayout = runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const beforePublished = published.length;
       const beforeActive = fixture.workspace.activeWindow;
@@ -6693,6 +7272,7 @@ describe("RuntimeController", () => {
           runtimeLayout(controller).snapshot(
             outputId(output.name),
             desktopId(desktop.id),
+            FALLBACK_ACTIVITY_ID,
           ),
         ).toEqual(beforeLayout);
         expect(published).toHaveLength(beforePublished);
@@ -6757,6 +7337,7 @@ describe("RuntimeController", () => {
       const beforeLayout = runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const beforePublished = published.length;
       const beforeActive = fixture.workspace.activeWindow;
@@ -6773,6 +7354,7 @@ describe("RuntimeController", () => {
         runtimeLayout(controller).snapshot(
           outputId(output.name),
           desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(beforeLayout);
       expect(published).toHaveLength(beforePublished);
@@ -6878,6 +7460,7 @@ describe("RuntimeController", () => {
       const beforeLayout = runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const beforeActive = fixture.workspace.activeWindow;
       const beforePublished = published.length;
@@ -6894,6 +7477,7 @@ describe("RuntimeController", () => {
         runtimeLayout(controller).snapshot(
           outputId(output.name),
           desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(beforeLayout);
       expect(fixture.workspace.activeWindow).toBe(beforeActive);
@@ -6915,6 +7499,7 @@ describe("RuntimeController", () => {
     const beforeGlobalLayout = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const beforeGlobalPublished = published.length;
     const beforeGlobalActive = fixture.workspace.activeWindow;
@@ -6927,6 +7512,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(beforeGlobalLayout);
     expect(published).toHaveLength(beforeGlobalPublished);
@@ -7404,6 +7990,7 @@ describe("RuntimeController", () => {
     const initial = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     expect(
       initial.columns.map((column) => [column.windowIds[0], column.width]),
@@ -7447,6 +8034,7 @@ describe("RuntimeController", () => {
     const updated = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     expect(
       updated.columns.find((column) =>
@@ -7473,7 +8061,11 @@ describe("RuntimeController", () => {
 
     expect(
       runtimeLayout(controller)
-        .snapshot(outputId(output.name), desktopId(desktop.id))
+        .snapshot(
+          outputId(output.name),
+          desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
+        )
         .columns.find((column) =>
           column.windowIds.includes(windowId("browser-constrained")),
         )?.width,
@@ -7515,7 +8107,11 @@ describe("RuntimeController", () => {
     expect(controller.start()).toBe(true);
     expect(
       runtimeLayout(controller)
-        .snapshot(outputId(output.name), desktopId(desktop.id))
+        .snapshot(
+          outputId(output.name),
+          desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
+        )
         .columns.map((column) => [column.presentation, column.windowIds]),
     ).toEqual([
       ["tabbed", [windowId("target")]],
@@ -7528,6 +8124,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ).columns,
     ).toMatchObject([
       {
@@ -7539,7 +8136,11 @@ describe("RuntimeController", () => {
     expect(controller.moveWindowRight()).toBe(true);
     expect(
       runtimeLayout(controller)
-        .snapshot(outputId(output.name), desktopId(desktop.id))
+        .snapshot(
+          outputId(output.name),
+          desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
+        )
         .columns.map((column) => [column.presentation, column.windowIds]),
     ).toEqual([
       ["tabbed", [windowId("target")]],
@@ -7576,7 +8177,11 @@ describe("RuntimeController", () => {
 
     expect(
       runtimeLayout(controller)
-        .snapshot(outputId(output.name), desktopId(desktop.id))
+        .snapshot(
+          outputId(output.name),
+          desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
+        )
         .columns.map((column) => [column.presentation, column.windowIds]),
     ).toEqual([
       ["stacked", [windowId("existing")]],
@@ -7629,7 +8234,11 @@ describe("RuntimeController", () => {
     expect(added.writeCount).toBe(0);
     expect(
       runtimeLayout(controller)
-        .snapshot(outputId(output.name), desktopId(desktop.id))
+        .snapshot(
+          outputId(output.name),
+          desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
+        )
         .columns.flatMap((column) => column.windowIds),
     ).toEqual([windowId("existing")]);
 
@@ -7642,7 +8251,11 @@ describe("RuntimeController", () => {
     expect(controller.floatingCount).toBe(0);
     expect(
       runtimeLayout(controller)
-        .snapshot(outputId(output.name), desktopId(desktop.id))
+        .snapshot(
+          outputId(output.name),
+          desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
+        )
         .columns.flatMap((column) => column.windowIds),
     ).toEqual([windowId("existing"), windowId("added")]);
   });
@@ -7682,6 +8295,7 @@ describe("RuntimeController", () => {
     const before = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
     const writes = windows.map(({ writeCount }) => writeCount);
@@ -7717,6 +8331,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
@@ -7761,6 +8376,7 @@ describe("RuntimeController", () => {
     const before = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
     const writes = windows.map(({ writeCount }) => writeCount);
@@ -7798,6 +8414,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
@@ -7846,10 +8463,12 @@ describe("RuntimeController", () => {
     const visibleBefore = layout.snapshot(
       outputId(output.name),
       desktopId(visibleDesktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const hiddenBefore = layout.snapshot(
       outputId(output.name),
       desktopId(hiddenDesktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
     const writes = windows.map(({ writeCount }) => writeCount);
@@ -7862,10 +8481,18 @@ describe("RuntimeController", () => {
     expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
     expect(windows.map(({ writeCount }) => writeCount)).toEqual(writes);
     expect(
-      layout.snapshot(outputId(output.name), desktopId(visibleDesktop.id)),
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(visibleDesktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
     ).toEqual(visibleBefore);
     expect(
-      layout.snapshot(outputId(output.name), desktopId(hiddenDesktop.id)),
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(hiddenDesktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
     ).toEqual(hiddenBefore);
     expect(controller.managedCount).toBe(2);
     expect(controller.floatingCount).toBe(1);
@@ -7915,6 +8542,7 @@ describe("RuntimeController", () => {
     const before = layout.snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = [first, active].map(({ window }) => ({
       ...window.frameGeometry,
@@ -7939,7 +8567,11 @@ describe("RuntimeController", () => {
     }
 
     expect(
-      layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
     ).toEqual(before);
     expect([first, active].map(({ window }) => window.frameGeometry)).toEqual(
       frames,
@@ -7990,6 +8622,7 @@ describe("RuntimeController", () => {
     const snapshot = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     expect(snapshot.columns.map((column) => column.width)).toEqual([
       { kind: "proportion", value: 0.5 },
@@ -8056,6 +8689,7 @@ describe("RuntimeController", () => {
     const snapshot = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     expect(controller.managedCount).toBe(2);
     expect(state.waitingWindowContexts.has(waitingId)).toBe(false);
@@ -8115,6 +8749,7 @@ describe("RuntimeController", () => {
     const before = runtimeLayout(controller).snapshot(
       outputId(output.output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const settledFrame = { ...window.window.frameGeometry };
     const writes = window.writeCount;
@@ -8148,6 +8783,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(fixture.workspace.activeWindow).toBe(window.window);
@@ -8264,6 +8900,7 @@ describe("RuntimeController", () => {
     const before = layout.snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const activationCount = fixture.activationCount;
     const initialWrites = windows.map(({ writeCount }) => writeCount);
@@ -8284,7 +8921,11 @@ describe("RuntimeController", () => {
       initialWrites.map((writeCount) => writeCount + 1),
     );
     expect(
-      layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
     ).toEqual(before);
     expect(fixture.workspace.activeWindow).toBe(active.window);
     expect(fixture.activationCount).toBe(activationCount);
@@ -8307,7 +8948,11 @@ describe("RuntimeController", () => {
     expect(controller.reconcile()).toBe(0);
     expect(windows.map(({ writeCount }) => writeCount)).toEqual(stableWrites);
     expect(
-      layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
     ).toEqual(before);
     expect(fixture.workspace.activeWindow).toBe(active.window);
 
@@ -8319,7 +8964,11 @@ describe("RuntimeController", () => {
       { height: 800, width: 500, x: 500, y: 0 },
     ]);
     expect(
-      layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
     ).toEqual(before);
 
     expect(controller.setGap(64)).toBe(true);
@@ -8330,7 +8979,11 @@ describe("RuntimeController", () => {
       { height: 672, width: 404, x: 532, y: 64 },
     ]);
     expect(
-      layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
     ).toEqual(before);
     expect(fixture.workspace.activeWindow).toBe(active.window);
     expect(fixture.activationCount).toBe(activationCount);
@@ -8398,7 +9051,12 @@ describe("RuntimeController", () => {
     flushManualScheduler(scheduler);
     fixture.workspace.activeWindow = active.window;
     expect(
-      layout.setViewportOffset(outputId(output.name), desktopId(desktop.id), 0),
+      layout.setViewportOffset(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+        0,
+      ),
     ).toBe(true);
     controller.reconcile();
     setWindowState("minimized", minimized, true);
@@ -8430,6 +9088,7 @@ describe("RuntimeController", () => {
     const before = layout.snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const minimizedWrites = minimized.writeCount;
     const floatingWrites = floating.writeCount;
@@ -8469,7 +9128,11 @@ describe("RuntimeController", () => {
     expect(active.writeCount).toBe(activeWrites + 1);
     expect(controller.floatingCount).toBe(1);
     expect(
-      layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
     ).toEqual(before);
     expect(fixture.workspace.activeWindow).toBe(active.window);
     expect(fixture.activationCount).toBe(activationCount);
@@ -8506,10 +9169,12 @@ describe("RuntimeController", () => {
     const sourceBefore = layout.snapshot(
       outputId(transfer.sourceOutput.name),
       desktopId(transfer.sourceDesktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const targetBefore = layout.snapshot(
       outputId(transfer.targetOutput.name),
       desktopId(transfer.targetDesktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const windows = [
       transfer.source,
@@ -8534,12 +9199,14 @@ describe("RuntimeController", () => {
       layout.snapshot(
         outputId(transfer.sourceOutput.name),
         desktopId(transfer.sourceDesktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(sourceBefore);
     expect(
       layout.snapshot(
         outputId(transfer.targetOutput.name),
         desktopId(transfer.targetDesktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(targetBefore);
     expect(transfer.source.window.output).toBe(transfer.sourceOutput);
@@ -8577,6 +9244,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(directInsertionLayout());
     expect(setup.active.window.frameGeometry).toEqual({
@@ -8592,6 +9260,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(directInsertionLayout());
     expect(setup.active.window.frameGeometry).toEqual({
@@ -8682,6 +9351,7 @@ describe("RuntimeController", () => {
     const layout = new LayoutEngine();
     expect(
       layout.restoreColumns({
+        activityId: FALLBACK_ACTIVITY_ID,
         activeColumnId: columnId("column:second"),
         columns: [
           {
@@ -8711,6 +9381,7 @@ describe("RuntimeController", () => {
     ).toBe(true);
     expect(
       layout.restoreColumns({
+        activityId: FALLBACK_ACTIVITY_ID,
         activeColumnId: columnId("column:other"),
         columns: [
           {
@@ -8796,6 +9467,7 @@ describe("RuntimeController", () => {
         .snapshot(
           outputId(setup.output.output.name),
           desktopId(setup.desktop.id),
+          FALLBACK_ACTIVITY_ID,
         )
         .columns.map((column) => column.windowIds.map(String)),
     ).toEqual([["window-1"], ["window-2"]]);
@@ -8902,6 +9574,7 @@ describe("RuntimeController", () => {
     const hiddenLayout = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(hiddenDesktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
 
     expect(hiddenWrites).toEqual([0, 0]);
@@ -8923,6 +9596,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(hiddenDesktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(hiddenLayout);
 
@@ -8942,6 +9616,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(hiddenDesktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(hiddenLayout);
   });
@@ -9150,6 +9825,7 @@ describe("RuntimeController", () => {
     const layout = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const tiledFrame = { ...tiled.window.frameGeometry };
     const tiledWrites = tiled.writeCount;
@@ -9162,6 +9838,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(layout);
 
@@ -9390,6 +10067,7 @@ describe("RuntimeController", () => {
     const layout = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frame = { ...active.window.frameGeometry };
     const writes = active.writeCount;
@@ -9410,6 +10088,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(layout);
 
@@ -9469,7 +10148,11 @@ describe("RuntimeController", () => {
     expect(excluded.writeCount).toBe(excludedWrites);
     expect(
       runtimeLayout(controller)
-        .snapshot(outputId(output.name), desktopId(desktop.id))
+        .snapshot(
+          outputId(output.name),
+          desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
+        )
         .columns.flatMap((column) => column.windowIds),
     ).toEqual([windowId("window-1")]);
     expectAutomaticOwnershipBookkeepingClear(controller, windowId("window-2"));
@@ -9513,7 +10196,12 @@ describe("RuntimeController", () => {
     expect(becomingTransient.window.noBorder).toBe(true);
     const layout = runtimeLayout(controller);
     fixture.workspace.activeWindow = becomingTransient.window;
-    layout.setViewportOffset(outputId(output.name), desktopId(desktop.id), 100);
+    layout.setViewportOffset(
+      outputId(output.name),
+      desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
+      100,
+    );
     scheduler.flush();
     const tiledFrame = { ...becomingTransient.window.frameGeometry };
     const tiledWrites = becomingTransient.writeCount;
@@ -9531,7 +10219,11 @@ describe("RuntimeController", () => {
     expect(becomingTransient.writeCount).toBe(tiledWrites);
     expect(
       layout
-        .snapshot(outputId(output.name), desktopId(desktop.id))
+        .snapshot(
+          outputId(output.name),
+          desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
+        )
         .columns.map((column) => [column.width, column.windowIds]),
     ).toEqual([
       [{ kind: "fixed", value: 400 }, [windowId("window-1")]],
@@ -9539,21 +10231,29 @@ describe("RuntimeController", () => {
       [{ kind: "fixed", value: 400 }, [windowId("window-4")]],
     ]);
     expect(
-      layout.snapshot(outputId(output.name), desktopId(desktop.id))
-        .viewportOffset,
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ).viewportOffset,
     ).toBe(100);
 
     fixture.workspace.activeWindow = becomingTransient.window;
     const layoutBeforeCommands = layout.snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     expect(controller.focusLeft()).toBe(false);
     expect(controller.moveWindowRight()).toBe(false);
     expect(controller.toggleFloating()).toBe(false);
     expect(controller.increaseColumnWidth()).toBe(false);
     expect(
-      layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
     ).toEqual(layoutBeforeCommands);
     expect(becomingTransient.writeCount).toBe(tiledWrites);
 
@@ -9868,6 +10568,7 @@ describe("RuntimeController", () => {
     const model = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const tiledFrame = { ...active.window.frameGeometry };
     const tiledWrites = active.writeCount;
@@ -9884,6 +10585,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(model);
     expect(active.window.frameGeometry).toEqual({ ...tiledFrame, width: 700 });
@@ -9904,6 +10606,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(model);
   });
@@ -10043,6 +10746,7 @@ describe("RuntimeController", () => {
     const before = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const minimizedFrame = { ...minimized.window.frameGeometry };
     const minimizedWrites = minimized.writeCount;
@@ -10067,6 +10771,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(minimized.window.frameGeometry).toEqual(minimizedFrame);
@@ -10432,8 +11137,11 @@ describe("RuntimeController", () => {
       ],
     );
     const viewportOffset = (): number =>
-      layout.snapshot(outputId(output.name), desktopId(desktop.id))
-        .viewportOffset;
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ).viewportOffset;
     const centerX = (tracked: TrackedWindow): number =>
       tracked.window.frameGeometry.x + tracked.window.frameGeometry.width / 2;
 
@@ -10489,6 +11197,7 @@ describe("RuntimeController", () => {
     const before = layout.snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
     const writes = windows.map(({ writeCount }) => writeCount);
@@ -10522,7 +11231,11 @@ describe("RuntimeController", () => {
     expect(controller.setCenterFocusedColumn(false)).toBe(false);
 
     expect(
-      layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
     ).toEqual(before);
     expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
     expect(windows.map(({ writeCount }) => writeCount)).toEqual(writes);
@@ -10591,6 +11304,7 @@ describe("RuntimeController", () => {
       layout.setViewportOffset(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
         137,
       ),
     ).toBe(true);
@@ -10599,6 +11313,7 @@ describe("RuntimeController", () => {
     const before = layout.snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
     const writes = windows.map(({ writeCount }) => writeCount);
@@ -10649,7 +11364,11 @@ describe("RuntimeController", () => {
       ),
     };
     expect(
-      layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
     ).toEqual(afterFocus);
     expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
     expect(windows.map(({ writeCount }) => writeCount)).toEqual(writes);
@@ -10660,13 +11379,18 @@ describe("RuntimeController", () => {
 
     flushManualScheduler(scheduler);
     expect(
-      layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
     ).toEqual(afterFocus);
     expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
     expect(windows.map(({ writeCount }) => writeCount)).toEqual(writes);
     const restoredStack = layout.snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     ).columns[0];
     expect(restoredStack && columnWindowHeights(restoredStack)).toEqual(
       before.columns[0]?.windowHeights,
@@ -10767,6 +11491,7 @@ describe("RuntimeController", () => {
     const beforeColumns = layout.snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     ).columns;
     const minimizedWindows = minimizedIndices.map((index) => {
       const candidate = windows[index];
@@ -10796,7 +11521,11 @@ describe("RuntimeController", () => {
     expect(controller.focusLastColumn()).toBe(false);
     expect(minimizedWindows.every(({ window }) => window.minimized)).toBe(true);
     expect(
-      layout.snapshot(outputId(output.name), desktopId(desktop.id)).columns,
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ).columns,
     ).toEqual(
       beforeColumns.map((column) =>
         column.id === columnId("column:right")
@@ -10888,6 +11617,7 @@ describe("RuntimeController", () => {
       const before = layout.snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
       const writes = windows.map(({ writeCount }) => writeCount);
@@ -10898,7 +11628,11 @@ describe("RuntimeController", () => {
       expect(fixture.workspace.activeWindow).toBe(windows[0]?.window);
       expect(fixture.activationCount).toBe(activationCount);
       expect(
-        layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+        layout.snapshot(
+          outputId(output.name),
+          desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
+        ),
       ).toEqual(before);
       expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
       expect(windows.map(({ writeCount }) => writeCount)).toEqual(writes);
@@ -10934,6 +11668,7 @@ describe("RuntimeController", () => {
     const beforeLayout = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const beforeFrames = windows.map((window) => ({
       ...window.window.frameGeometry,
@@ -10954,6 +11689,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(beforeLayout);
     expect(windows.map((window) => window.window.frameGeometry)).toEqual(
@@ -10997,6 +11733,7 @@ describe("RuntimeController", () => {
     const otherSnapshot = runtimeLayout(controller).snapshot(
       outputId(otherOutput.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const otherFrame = { ...other.window.frameGeometry };
     const otherWrites = other.writeCount;
@@ -11038,6 +11775,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(otherOutput.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(otherSnapshot);
     expect(other.window.frameGeometry).toEqual(otherFrame);
@@ -11100,6 +11838,7 @@ describe("RuntimeController", () => {
         setup.layout.snapshot(
           outputId(setup.output.name),
           desktopId(setup.desktop.id),
+          FALLBACK_ACTIVITY_ID,
         ).activeColumnId,
       ).toBe(columnId("column:active"));
       expect(setup.minimized.map(({ window }) => window.frameGeometry)).toEqual(
@@ -11164,6 +11903,7 @@ describe("RuntimeController", () => {
       const before = setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const frames = setup.windows.map(({ window }) => ({
         ...window.frameGeometry,
@@ -11175,6 +11915,7 @@ describe("RuntimeController", () => {
         setup.layout.snapshot(
           outputId(setup.output.name),
           desktopId(setup.desktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(before);
       expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
@@ -11198,6 +11939,7 @@ describe("RuntimeController", () => {
     const before = setup.layout.snapshot(
       outputId(setup.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = setup.windows.map(({ window }) => ({
       ...window.frameGeometry,
@@ -11229,6 +11971,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
@@ -11244,6 +11987,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
@@ -11307,6 +12051,7 @@ describe("RuntimeController", () => {
     const unrelatedSnapshot = runtimeLayout(controller).snapshot(
       outputId(otherOutput.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const unrelatedFrame = { ...unrelated.window.frameGeometry };
     const unrelatedWrites = unrelated.writeCount;
@@ -11322,6 +12067,7 @@ describe("RuntimeController", () => {
     const snapshot = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     expect(snapshot.activeColumnId).toBe(columnId("column:target"));
     expect(snapshot.columns[0]?.width).toEqual({ kind: "fixed", value: 280 });
@@ -11332,6 +12078,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(otherOutput.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(unrelatedSnapshot);
     expect(unrelated.window.frameGeometry).toEqual(unrelatedFrame);
@@ -11391,6 +12138,7 @@ describe("RuntimeController", () => {
     const snapshot = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     expect(snapshot.activeColumnId).toBe(columnId("column:target"));
     expect(snapshot.columns.map((column) => column.width)).toEqual([
@@ -11469,6 +12217,7 @@ describe("RuntimeController", () => {
       const before = setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const unchangedColumns = before.columns.filter(
         (column) => column.id !== columnId(targetColumnId),
@@ -11476,6 +12225,7 @@ describe("RuntimeController", () => {
       const unrelatedLayout = setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.otherDesktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const unrelated = setup.unrelated;
 
@@ -11495,6 +12245,7 @@ describe("RuntimeController", () => {
       const after = setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const target = after.columns.find(
         (column) => column.id === columnId(targetColumnId),
@@ -11535,6 +12286,7 @@ describe("RuntimeController", () => {
         setup.layout.snapshot(
           outputId(setup.output.name),
           desktopId(setup.otherDesktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(unrelatedLayout);
       expectTrackedWindowState([unrelated], unrelatedState);
@@ -11553,6 +12305,7 @@ describe("RuntimeController", () => {
     const beforeLayout = setup.layout.snapshot(
       outputId(setup.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const beforeWindows = captureTrackedWindowState(setup.windows);
     const floating = floatingWindows.get(activeId);
@@ -11569,6 +12322,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(beforeLayout);
     expectTrackedWindowState(setup.windows, beforeWindows);
@@ -11593,6 +12347,7 @@ describe("RuntimeController", () => {
       layout: setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
       managedCount: setup.controller.managedCount,
       windows: captureTrackedWindowState(setup.windows),
@@ -11605,6 +12360,7 @@ describe("RuntimeController", () => {
         setup.layout.snapshot(
           outputId(setup.output.name),
           desktopId(setup.desktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(before.layout);
       expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
@@ -11676,7 +12432,11 @@ describe("RuntimeController", () => {
 
     flushManualScheduler(setup.scheduler);
     const singletonColumns = setup.layout
-      .snapshot(outputId(setup.output.name), desktopId(setup.desktop.id))
+      .snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      )
       .columns.flatMap((column) =>
         column.windowIds.map((id, index) => ({
           id: `${String(column.id)}:${String(index)}`,
@@ -11725,6 +12485,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(directInsertionLayout());
     expect(minimized.map(({ window }) => window.frameGeometry)).toEqual(
@@ -11744,6 +12505,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(directInsertionLayout());
     expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
@@ -11772,6 +12534,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(directInsertionLayout());
     expect(minimized.map(({ window }) => window.frameGeometry)).toEqual(
@@ -11820,6 +12583,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(directInsertionLayout());
     expect(setup.targetPassive.window.frameGeometry).toEqual(externalFrame);
@@ -11856,6 +12620,7 @@ describe("RuntimeController", () => {
       const before = setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const frames = setup.windows.map(({ window }) => ({
         ...window.frameGeometry,
@@ -11867,6 +12632,7 @@ describe("RuntimeController", () => {
         setup.layout.snapshot(
           outputId(setup.output.name),
           desktopId(setup.desktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(before);
       expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
@@ -11891,6 +12657,7 @@ describe("RuntimeController", () => {
       const before = setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const frames = setup.windows.map(({ window }) => ({
         ...window.frameGeometry,
@@ -11926,6 +12693,7 @@ describe("RuntimeController", () => {
         setup.layout.snapshot(
           outputId(setup.output.name),
           desktopId(setup.desktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(before);
       expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
@@ -11945,6 +12713,7 @@ describe("RuntimeController", () => {
         setup.layout.snapshot(
           outputId(setup.output.name),
           desktopId(setup.desktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(before);
       expect(setup.sourcePassive.window.frameGeometry).toEqual(frames[3]);
@@ -11989,6 +12758,7 @@ describe("RuntimeController", () => {
     const beforeBoundary = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const boundaryFrames = windows.map((window) => ({
       ...window.window.frameGeometry,
@@ -11999,6 +12769,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(beforeBoundary);
     expect(windows.map((window) => window.window.frameGeometry)).toEqual(
@@ -12025,6 +12796,7 @@ describe("RuntimeController", () => {
     const beforeNoTarget = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
 
     expect(controller.insertWindowIntoStackLeft()).toBe(false);
@@ -12033,6 +12805,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(beforeNoTarget);
     expect(fixture.workspace.activeWindow).toBe(windows[0]?.window);
@@ -12079,6 +12852,7 @@ describe("RuntimeController", () => {
     const before = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const writes = [first, stale, active].map((window) => window.writeCount);
 
@@ -12087,6 +12861,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect([first, stale, active].map((window) => window.writeCount)).toEqual(
@@ -12192,7 +12967,7 @@ describe("RuntimeController", () => {
       },
     ]);
     fixture.workspace.activeWindow = active.window;
-    const key = `${output.name}\u0000${desktop.id}`;
+    const key = `${output.name}\u0000${desktop.id}\u0000${FALLBACK_ACTIVITY_ID}`;
     const state = controller as unknown as {
       capacityCanceledParks: Map<string, unknown>;
       capacityLeasesByContext: Map<string, Set<unknown>>;
@@ -12209,6 +12984,7 @@ describe("RuntimeController", () => {
     const before = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
 
     state.topologyStabilizing = true;
@@ -12235,6 +13011,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(controller.insertWindowIntoStackLeft()).toBe(true);
@@ -12289,6 +13066,7 @@ describe("RuntimeController", () => {
     const before = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = windows.map((window) => ({
       ...window.window.frameGeometry,
@@ -12327,6 +13105,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(windows.map((window) => window.window.frameGeometry)).toEqual(
@@ -12479,6 +13258,7 @@ describe("RuntimeController", () => {
       layout.setViewportOffset(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
         -35,
       ),
     ).toBe(true);
@@ -12488,15 +13268,21 @@ describe("RuntimeController", () => {
     const unrelatedSnapshot = layout.snapshot(
       outputId(otherOutput.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const unrelatedFrame = { ...unrelated.window.frameGeometry };
     const unrelatedWrites = unrelated.writeCount;
 
     expect(controller.consumeWindowIntoColumn()).toBe(true);
     expect(
-      layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
     ).toEqual({
       activeColumnId: "column:active",
+      activityId: FALLBACK_ACTIVITY_ID,
       columns: [
         {
           id: "column:active",
@@ -12543,7 +13329,11 @@ describe("RuntimeController", () => {
     expect(fixture.workspace.activeWindow).toBe(windows[1]?.window);
     expect(fixture.activationCount).toBe(activationCount);
     expect(
-      layout.snapshot(outputId(otherOutput.name), desktopId(desktop.id)),
+      layout.snapshot(
+        outputId(otherOutput.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
     ).toEqual(unrelatedSnapshot);
     expect(unrelated.window.frameGeometry).toEqual(unrelatedFrame);
     expect(unrelated.writeCount).toBe(unrelatedWrites);
@@ -12576,6 +13366,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(minimizedConsumeLayout());
     expect(setup.moved.window.frameGeometry).toMatchObject({
@@ -12603,6 +13394,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(minimizedConsumeLayout());
     expect(
@@ -12644,6 +13436,7 @@ describe("RuntimeController", () => {
     const before = setup.layout.snapshot(
       outputId(setup.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = setup.windows.map(({ window }) => ({
       ...window.frameGeometry,
@@ -12656,6 +13449,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
@@ -12671,6 +13465,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(setup.moved.window.frameGeometry.width).toBe(
@@ -12707,6 +13502,7 @@ describe("RuntimeController", () => {
       const before = setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const frames = setup.windows.map(({ window }) => ({
         ...window.frameGeometry,
@@ -12719,6 +13515,7 @@ describe("RuntimeController", () => {
         setup.layout.snapshot(
           outputId(setup.output.name),
           desktopId(setup.desktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(before);
       expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
@@ -12739,6 +13536,7 @@ describe("RuntimeController", () => {
     const before = setup.layout.snapshot(
       outputId(setup.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = setup.windows.map(({ window }) => ({
       ...window.frameGeometry,
@@ -12771,6 +13569,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
@@ -12787,6 +13586,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(setup.target.window.frameGeometry).toEqual(frames[0]);
@@ -12800,6 +13600,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(setup.source.window.frameGeometry).toEqual(frames[3]);
@@ -12817,6 +13618,7 @@ describe("RuntimeController", () => {
     const before = setup.layout.snapshot(
       outputId(setup.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = setup.windows.map(({ window }) => ({
       ...window.frameGeometry,
@@ -12851,6 +13653,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(expectedLayout);
     expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
@@ -12867,6 +13670,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(expectedLayout);
     expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
@@ -12884,6 +13688,7 @@ describe("RuntimeController", () => {
     const before = setup.layout.snapshot(
       outputId(setup.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = setup.windows.map(({ window }) => ({
       ...window.frameGeometry,
@@ -12920,6 +13725,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(
@@ -12939,6 +13745,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(minimizedConsumeLayoutAfterMovedRemoval());
     expect(
@@ -13010,6 +13817,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(minimizedConsumeLayoutAfterMovedRemoval());
     expect(setup.moved.window.frameGeometry).toEqual(frames[2]);
@@ -13029,6 +13837,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(minimizedConsumeLayoutAfterMovedReplacement());
     expect(observer.source("moved-top")).toBe(replacement.window);
@@ -13049,6 +13858,7 @@ describe("RuntimeController", () => {
       const before = setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const frames = setup.windows.map(({ window }) => ({
         ...window.frameGeometry,
@@ -13096,6 +13906,7 @@ describe("RuntimeController", () => {
           setup.layout.snapshot(
             outputId(setup.output.name),
             desktopId(setup.desktop.id),
+            FALLBACK_ACTIVITY_ID,
           ),
         ).toEqual(before);
         expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
@@ -13109,6 +13920,7 @@ describe("RuntimeController", () => {
           setup.layout.snapshot(
             outputId(setup.output.name),
             desktopId(setup.desktop.id),
+            FALLBACK_ACTIVITY_ID,
           ),
         ).toEqual(minimizedConsumeLayoutAfterMovedRemoval());
         expect(setup.controller.managedCount).toBe(4);
@@ -13122,6 +13934,7 @@ describe("RuntimeController", () => {
         setup.layout.snapshot(
           outputId(setup.output.name),
           desktopId(setup.desktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(
         behavior === "minimize"
@@ -13197,6 +14010,7 @@ describe("RuntimeController", () => {
         layout.setViewportOffset(
           outputId(output.name),
           desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
           -27,
         ),
       ).toBe(true);
@@ -13208,10 +14022,12 @@ describe("RuntimeController", () => {
       const snapshot = layout.snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
 
       expect(snapshot).toEqual({
         activeColumnId: "column:source",
+        activityId: FALLBACK_ACTIVITY_ID,
         columns: [
           {
             id: "column:source",
@@ -13296,6 +14112,7 @@ describe("RuntimeController", () => {
         setup.layout.snapshot(
           outputId(setup.output.name),
           desktopId(setup.desktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(minimizedExpelLayout());
       expect(setup.moved.window.frameGeometry).not.toEqual(movedFrame);
@@ -13333,6 +14150,7 @@ describe("RuntimeController", () => {
         setup.layout.snapshot(
           outputId(setup.output.name),
           desktopId(setup.desktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(minimizedExpelLayout());
       expect(
@@ -13382,6 +14200,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(minimizedExpelLayout());
     expect(setup.fixture.workspace.activeWindow).toBe(setup.predecessor.window);
@@ -13403,6 +14222,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(minimizedExpelLayout());
     expect(setup.fixture.workspace.activeWindow).toBe(setup.predecessor.window);
@@ -13425,6 +14245,7 @@ describe("RuntimeController", () => {
     const before = setup.layout.snapshot(
       outputId(setup.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = setup.windows.map(({ window }) => ({
       ...window.frameGeometry,
@@ -13437,6 +14258,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
@@ -13455,6 +14277,7 @@ describe("RuntimeController", () => {
     const before = setup.layout.snapshot(
       outputId(setup.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = setup.windows.map(({ window }) => ({
       ...window.frameGeometry,
@@ -13467,6 +14290,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
@@ -13492,6 +14316,7 @@ describe("RuntimeController", () => {
     const before = setup.layout.snapshot(
       outputId(setup.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = setup.windows.map(({ window }) => ({
       ...window.frameGeometry,
@@ -13504,6 +14329,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
@@ -13526,6 +14352,7 @@ describe("RuntimeController", () => {
     const before = setup.layout.snapshot(
       outputId(setup.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = setup.windows.map(({ window }) => ({
       ...window.frameGeometry,
@@ -13559,6 +14386,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
@@ -13575,6 +14403,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(setup.passive.window.frameGeometry).toEqual(frames[2]);
@@ -13598,6 +14427,7 @@ describe("RuntimeController", () => {
       const before = setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const frames = setup.windows.map(({ window }) => ({
         ...window.frameGeometry,
@@ -13649,6 +14479,7 @@ describe("RuntimeController", () => {
           setup.layout.snapshot(
             outputId(setup.output.name),
             desktopId(setup.desktop.id),
+            FALLBACK_ACTIVITY_ID,
           ),
         ).toEqual(before);
         expect(setup.moved.window.minimized).toBe(true);
@@ -13663,6 +14494,7 @@ describe("RuntimeController", () => {
           setup.layout.snapshot(
             outputId(setup.output.name),
             desktopId(setup.desktop.id),
+            FALLBACK_ACTIVITY_ID,
           ),
         ).toEqual(before);
         expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
@@ -13673,6 +14505,7 @@ describe("RuntimeController", () => {
           setup.layout.snapshot(
             outputId(setup.output.name),
             desktopId(setup.desktop.id),
+            FALLBACK_ACTIVITY_ID,
           ),
         ).toEqual(minimizedExpelLayoutAfterMovedRemoval());
         expect(setup.controller.managedCount).toBe(5);
@@ -13694,6 +14527,7 @@ describe("RuntimeController", () => {
     const before = setup.layout.snapshot(
       outputId(setup.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = setup.windows.map(({ window }) => ({
       ...window.frameGeometry,
@@ -13730,6 +14564,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(setup.earlier.window.frameGeometry).toEqual(frames[0]);
@@ -13746,6 +14581,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(minimizedExpelLayoutAfterMovedRemoval());
     expect(
@@ -13814,6 +14650,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(minimizedExpelLayoutAfterMovedRemoval());
     expect(setup.moved.window.frameGeometry).toEqual(movedForwardFrame);
@@ -13835,6 +14672,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(minimizedExpelReplacementLayout());
     expect(observer.source("moved-bottom")).toBe(replacement.window);
@@ -13856,6 +14694,7 @@ describe("RuntimeController", () => {
     const before = setup.layout.snapshot(
       outputId(setup.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const expectedLayout = {
       ...before,
@@ -13890,6 +14729,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(expectedLayout);
     expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
@@ -13906,6 +14746,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(expectedLayout);
     expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
@@ -13946,6 +14787,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(minimizedExpelLayout());
     expect(setup.fixture.workspace.activeWindow).toBe(setup.predecessor.window);
@@ -13974,6 +14816,7 @@ describe("RuntimeController", () => {
     const before = setup.layout.snapshot(
       outputId(setup.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = setup.windows.map(({ window }) => ({
       ...window.frameGeometry,
@@ -14004,6 +14847,7 @@ describe("RuntimeController", () => {
         setup.layout.snapshot(
           outputId(setup.output.name),
           desktopId(setup.desktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(before);
       expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
@@ -14023,6 +14867,7 @@ describe("RuntimeController", () => {
         setup.layout.snapshot(
           outputId(setup.output.name),
           desktopId(setup.desktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(before);
       expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
@@ -14041,6 +14886,7 @@ describe("RuntimeController", () => {
         setup.layout.snapshot(
           outputId(setup.output.name),
           desktopId(setup.desktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(minimizedExpelLayout());
       expect(setup.fixture.workspace.activeWindow).toBe(
@@ -14064,6 +14910,7 @@ describe("RuntimeController", () => {
     const before = setup.layout.snapshot(
       outputId(setup.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = setup.windows.map(({ window }) => ({
       ...window.frameGeometry,
@@ -14092,6 +14939,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
@@ -14110,6 +14958,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
@@ -14127,6 +14976,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(minimizedExpelLayout());
     expect(setup.fixture.workspace.activeWindow).toBe(setup.predecessor.window);
@@ -14144,6 +14994,7 @@ describe("RuntimeController", () => {
       const before = setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const frames = setup.windows.map(({ window }) => ({
         ...window.frameGeometry,
@@ -14194,6 +15045,7 @@ describe("RuntimeController", () => {
         setup.layout.snapshot(
           outputId(setup.output.name),
           desktopId(setup.desktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(before);
       expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
@@ -14227,6 +15079,7 @@ describe("RuntimeController", () => {
       const after = setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       expect(
         after.columns
@@ -14289,6 +15142,7 @@ describe("RuntimeController", () => {
     const before = setup.layout.snapshot(
       outputId(setup.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = setup.windows.map(({ window }) => ({
       ...window.frameGeometry,
@@ -14324,6 +15178,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
@@ -14341,6 +15196,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(minimizedExpelLayout());
     expect(setup.fixture.workspace.activeWindow).toBe(setup.predecessor.window);
@@ -14369,6 +15225,7 @@ describe("RuntimeController", () => {
     const before = setup.layout.snapshot(
       outputId(setup.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = setup.windows.map(({ window }) => ({
       ...window.frameGeometry,
@@ -14406,6 +15263,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
@@ -14425,6 +15283,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(minimizedExpelLayout());
     expect(setup.fixture.workspace.activeWindow).toBe(setup.predecessor.window);
@@ -14444,6 +15303,7 @@ describe("RuntimeController", () => {
     const before = setup.layout.snapshot(
       outputId(setup.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const expectedLayout = {
       ...before,
@@ -14494,6 +15354,7 @@ describe("RuntimeController", () => {
         setup.layout.snapshot(
           outputId(setup.output.name),
           desktopId(setup.desktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(expectedLayout);
       expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
@@ -14524,6 +15385,7 @@ describe("RuntimeController", () => {
       const before = setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const frames = setup.windows.map(({ window }) => ({
         ...window.frameGeometry,
@@ -14553,6 +15415,7 @@ describe("RuntimeController", () => {
         setup.layout.snapshot(
           outputId(setup.output.name),
           desktopId(setup.desktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(before);
       expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
@@ -14591,6 +15454,7 @@ describe("RuntimeController", () => {
         expectedAfterInterruption = setup.layout.snapshot(
           outputId(setup.output.name),
           desktopId(setup.desktop.id),
+          FALLBACK_ACTIVITY_ID,
         );
       }
 
@@ -14598,6 +15462,7 @@ describe("RuntimeController", () => {
         setup.layout.snapshot(
           outputId(setup.output.name),
           desktopId(setup.desktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(expectedAfterInterruption);
       expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
@@ -14627,6 +15492,7 @@ describe("RuntimeController", () => {
         setup.layout.snapshot(
           outputId(setup.output.name),
           desktopId(setup.desktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(expectedAfterInterruption);
       expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
@@ -14652,6 +15518,7 @@ describe("RuntimeController", () => {
           setup.layout.snapshot(
             outputId(setup.output.name),
             desktopId(setup.desktop.id),
+            FALLBACK_ACTIVITY_ID,
           ),
         ).toEqual(before);
       } else if (behavior === "remove") {
@@ -14660,6 +15527,7 @@ describe("RuntimeController", () => {
           setup.layout.snapshot(
             outputId(setup.output.name),
             desktopId(setup.desktop.id),
+            FALLBACK_ACTIVITY_ID,
           ),
         ).toEqual(minimizedExpelLayoutAfterPredecessorRemoval());
       } else if (behavior === "same-id replacement") {
@@ -14672,6 +15540,7 @@ describe("RuntimeController", () => {
           setup.layout.snapshot(
             outputId(setup.output.name),
             desktopId(setup.desktop.id),
+            FALLBACK_ACTIVITY_ID,
           ),
         ).toEqual(minimizedExpelPredecessorReplacementLayout());
 
@@ -14686,6 +15555,7 @@ describe("RuntimeController", () => {
           setup.layout.snapshot(
             outputId(setup.output.name),
             desktopId(setup.desktop.id),
+            FALLBACK_ACTIVITY_ID,
           ),
         ).toEqual(expectedAfterInterruption);
         expect(setup.windows.map(({ writeCount }) => writeCount)).toEqual(
@@ -14705,6 +15575,7 @@ describe("RuntimeController", () => {
     const before = setup.layout.snapshot(
       outputId(setup.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = setup.windows.map(({ window }) => ({
       ...window.frameGeometry,
@@ -14727,6 +15598,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
@@ -14767,6 +15639,7 @@ describe("RuntimeController", () => {
       const before = setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const frames = setup.windows.map(({ window }) => ({
         ...window.frameGeometry,
@@ -14825,6 +15698,7 @@ describe("RuntimeController", () => {
         setup.layout.snapshot(
           outputId(setup.output.name),
           desktopId(setup.desktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(expectedLayout);
       expect(setup.fixture.workspace.activeWindow).toBe(expectedFocus);
@@ -14848,6 +15722,7 @@ describe("RuntimeController", () => {
         setup.layout.snapshot(
           outputId(setup.output.name),
           desktopId(setup.desktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(expectedLayout);
       expect(setup.fixture.workspace.activeWindow).toBe(expectedFocus);
@@ -14886,12 +15761,14 @@ describe("RuntimeController", () => {
       layout.setViewportOffset(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
         -31,
       ),
     ).toBe(true);
     const before = layout.snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frame = { ...only.window.frameGeometry };
     const writes = only.writeCount;
@@ -14900,7 +15777,11 @@ describe("RuntimeController", () => {
     expect(controller.consumeWindowIntoColumn()).toBe(false);
     expect(controller.expelWindowFromColumn()).toBe(false);
     expect(
-      layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
     ).toEqual(before);
     expect(only.window.frameGeometry).toEqual(frame);
     expect(only.writeCount).toBe(writes);
@@ -14952,6 +15833,7 @@ describe("RuntimeController", () => {
     const suspended = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = [active, source, sourceBottom].map((window) => ({
       ...window.window.frameGeometry,
@@ -14965,6 +15847,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(suspended);
     expect(
@@ -14986,6 +15869,7 @@ describe("RuntimeController", () => {
     const floating = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const floatingFrame = { ...active.window.frameGeometry };
     const floatingWrites = active.writeCount;
@@ -14995,6 +15879,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(floating);
     expect(active.window.frameGeometry).toEqual(floatingFrame);
@@ -15026,6 +15911,7 @@ describe("RuntimeController", () => {
     const before = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = [tiled, automatic].map((window) => ({
       ...window.window.frameGeometry,
@@ -15038,6 +15924,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(
@@ -15083,7 +15970,7 @@ describe("RuntimeController", () => {
       },
     ]);
     fixture.workspace.activeWindow = first.window;
-    const key = `${output.name}\u0000${desktop.id}`;
+    const key = `${output.name}\u0000${desktop.id}\u0000${FALLBACK_ACTIVITY_ID}`;
     const state = controller as unknown as {
       capacityCanceledParks: Map<string, unknown>;
       capacityLeasesByContext: Map<string, Set<unknown>>;
@@ -15100,6 +15987,7 @@ describe("RuntimeController", () => {
     const before = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = [first, second, source].map((window) => ({
       ...window.window.frameGeometry,
@@ -15134,6 +16022,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(
@@ -15183,6 +16072,7 @@ describe("RuntimeController", () => {
     const before = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = [first, second, source].map((window) => ({
       ...window.window.frameGeometry,
@@ -15207,6 +16097,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(
@@ -15278,12 +16169,14 @@ describe("RuntimeController", () => {
         layout.setViewportOffset(
           outputId(output.name),
           desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
           -23,
         ),
       ).toBe(true);
       const before = layout.snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const frames = windows.map((window) => ({
         ...window.window.frameGeometry,
@@ -15328,7 +16221,11 @@ describe("RuntimeController", () => {
       }
 
       expect(
-        layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+        layout.snapshot(
+          outputId(output.name),
+          desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
+        ),
       ).toEqual(before);
       expect(windows.map((window) => window.window.frameGeometry)).toEqual(
         frames,
@@ -15546,6 +16443,7 @@ describe("RuntimeController", () => {
     let snapshot = layout.snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     expect(snapshot.columns[0]?.presentation).toBe("tabbed");
     expect(snapshot.columns[0]?.selectedWindowId).toBe(windowId("window-2"));
@@ -15601,7 +16499,11 @@ describe("RuntimeController", () => {
     );
 
     expect(controller.moveWindowDown()).toBe(true);
-    snapshot = layout.snapshot(outputId(output.name), desktopId(desktop.id));
+    snapshot = layout.snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
+    );
     expect(snapshot.columns[0]?.windowIds).toEqual([
       windowId("window-1"),
       windowId("window-3"),
@@ -15616,7 +16518,11 @@ describe("RuntimeController", () => {
     showTabIndicator.mockClear();
     expect(controller.toggleColumnTabbedDisplay()).toBe(true);
     expect(showTabIndicator).not.toHaveBeenCalled();
-    snapshot = layout.snapshot(outputId(output.name), desktopId(desktop.id));
+    snapshot = layout.snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
+    );
     expect(snapshot.columns[0]?.presentation).toBe("stacked");
     expect(activeColumnWindowHeights(controller, output, desktop)).toEqual(
       stackedHeights,
@@ -15672,12 +16578,17 @@ describe("RuntimeController", () => {
     const before = layout.snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const beforeFrames = captureTrackedWindowState(windows);
 
     expect(controller.toggleColumnTabbedDisplay()).toBe(false);
     expect(
-      layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
     ).toEqual(before);
     expectTrackedWindowState(windows, beforeFrames);
 
@@ -15686,16 +16597,22 @@ describe("RuntimeController", () => {
     flushManualScheduler(scheduler);
     expect(controller.toggleColumnTabbedDisplay()).toBe(true);
     expect(
-      layout.snapshot(outputId(output.name), desktopId(desktop.id)).columns[0]
-        ?.presentation,
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ).columns[0]?.presentation,
     ).toBe("tabbed");
 
     constraints.maxSize = { height: 650, width: 10_000 };
     first.maximizeableChanged.emit(false);
     flushManualScheduler(scheduler);
     expect(
-      layout.snapshot(outputId(output.name), desktopId(desktop.id)).columns[0]
-        ?.presentation,
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ).columns[0]?.presentation,
     ).toBe("stacked");
     expect(windows.map(({ window }) => window.frameGeometry.height)).toEqual([
       385, 385,
@@ -15755,6 +16672,7 @@ describe("RuntimeController", () => {
     const snapshot = layout.snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     expect(snapshot.activeColumnId).toBe(columnId("column:active"));
     expect(snapshot.columns[0]?.selectedWindowId).toBe(windowId("window-3"));
@@ -15850,6 +16768,7 @@ describe("RuntimeController", () => {
       const before = setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const frames = setup.windows.map(({ window }) => ({
         ...window.frameGeometry,
@@ -15861,6 +16780,7 @@ describe("RuntimeController", () => {
         setup.layout.snapshot(
           outputId(setup.output.name),
           desktopId(setup.desktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(before);
       expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
@@ -15884,6 +16804,7 @@ describe("RuntimeController", () => {
     const before = setup.layout.snapshot(
       outputId(setup.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = setup.windows.map(({ window }) => ({
       ...window.frameGeometry,
@@ -15914,6 +16835,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
@@ -15927,6 +16849,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
@@ -16059,6 +16982,7 @@ describe("RuntimeController", () => {
       const before = runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const frames = [first, active, third].map((window) => ({
         ...window.window.frameGeometry,
@@ -16080,6 +17004,7 @@ describe("RuntimeController", () => {
           runtimeLayout(controller).snapshot(
             outputId(output.name),
             desktopId(desktop.id),
+            FALLBACK_ACTIVITY_ID,
           ),
         ).toEqual(before);
         expect(
@@ -16127,6 +17052,7 @@ describe("RuntimeController", () => {
     const before = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = windows.map((window) => ({
       ...window.window.frameGeometry,
@@ -16165,6 +17091,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(windows.map((window) => window.window.frameGeometry)).toEqual(
@@ -16210,6 +17137,7 @@ describe("RuntimeController", () => {
     const before = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = windows.map((window) => ({
       ...window.window.frameGeometry,
@@ -16232,6 +17160,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(windows[0]?.window.frameGeometry).not.toEqual(frames[0]);
@@ -16252,6 +17181,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(windows.map((window) => window.window.frameGeometry)).toEqual(
@@ -16301,6 +17231,7 @@ describe("RuntimeController", () => {
     const inFlight = runtimeLayout(setup.controller).snapshot(
       outputId(setup.output.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     expect(setup.controller.moveWindowDown()).toBe(false);
     expect(setup.controller.moveWindowRight()).toBe(false);
@@ -16308,6 +17239,7 @@ describe("RuntimeController", () => {
       runtimeLayout(setup.controller).snapshot(
         outputId(setup.output.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(inFlight);
 
@@ -16357,10 +17289,14 @@ describe("RuntimeController", () => {
         capacityCanceledParks: Map<string, unknown>;
       }
     ).capacityCanceledParks;
-    canceledParks.set(`${output.name}\u0000${desktop.id}`, {});
+    canceledParks.set(
+      `${output.name}\u0000${desktop.id}\u0000${FALLBACK_ACTIVITY_ID}`,
+      {},
+    );
     const before = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
 
     expect(controller.moveWindowUp()).toBe(false);
@@ -16369,6 +17305,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
 
@@ -16462,6 +17399,7 @@ describe("RuntimeController", () => {
     const unrelatedSnapshot = runtimeLayout(controller).snapshot(
       outputId(otherOutput.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const unrelatedFrame = { ...unrelated.window.frameGeometry };
     const unrelatedWrites = unrelated.writeCount;
@@ -16491,6 +17429,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(otherOutput.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(unrelatedSnapshot);
     expect(unrelated.window.frameGeometry).toEqual(unrelatedFrame);
@@ -16544,6 +17483,7 @@ describe("RuntimeController", () => {
     const tiledLayout = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const tiledFrames = [first, third].map(({ window }) => ({
       ...window.frameGeometry,
@@ -16572,6 +17512,7 @@ describe("RuntimeController", () => {
         runtimeLayout(controller).snapshot(
           outputId(output.name),
           desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(tiledLayout);
       expect([first, third].map(({ window }) => window.frameGeometry)).toEqual(
@@ -16594,6 +17535,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(tiledLayout);
 
@@ -16608,6 +17550,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(tiledLayout);
 
@@ -16639,6 +17582,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(tiledLayout);
 
@@ -16673,6 +17617,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(tiledLayout);
 
@@ -16839,6 +17784,7 @@ describe("RuntimeController", () => {
       const tiledLayout = runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const tiledFrames = [first, third].map(({ window }) => ({
         ...window.frameGeometry,
@@ -16868,6 +17814,7 @@ describe("RuntimeController", () => {
         runtimeLayout(controller).snapshot(
           outputId(output.name),
           desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(tiledLayout);
       expect([first, third].map(({ window }) => window.frameGeometry)).toEqual(
@@ -16898,6 +17845,7 @@ describe("RuntimeController", () => {
         runtimeLayout(controller).snapshot(
           outputId(output.name),
           desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(tiledLayout);
     },
@@ -16941,6 +17889,7 @@ describe("RuntimeController", () => {
     const tiledLayout = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const tiledState = captureTrackedWindowState([first, third]);
     const writes = active.writeCount;
@@ -16978,6 +17927,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(tiledLayout);
     expectTrackedWindowState([first, third], tiledState);
@@ -16993,6 +17943,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(tiledLayout);
   });
@@ -17024,6 +17975,7 @@ describe("RuntimeController", () => {
     const layout = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const state = captureTrackedWindowState([tiled, active]);
     const activationCount = fixture.activationCount;
@@ -17041,6 +17993,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(layout);
     expect(controller.lastWriteCount).toBe(0);
@@ -17102,6 +18055,7 @@ describe("RuntimeController", () => {
     const tiledLayout = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const tiledFrames = [first, third].map(({ window }) => ({
       ...window.frameGeometry,
@@ -17136,6 +18090,7 @@ describe("RuntimeController", () => {
         runtimeLayout(controller).snapshot(
           outputId(output.name),
           desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(tiledLayout);
       expect([first, third].map(({ window }) => window.frameGeometry)).toEqual(
@@ -17167,6 +18122,7 @@ describe("RuntimeController", () => {
         runtimeLayout(controller).snapshot(
           outputId(output.name),
           desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(tiledLayout);
       expect(fixture.workspace.activeWindow).toBe(active.window);
@@ -17297,6 +18253,7 @@ describe("RuntimeController", () => {
     const tiledLayout = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const tiledState = captureTrackedWindowState([first, third]);
     const activationCount = fixture.activationCount;
@@ -17328,6 +18285,7 @@ describe("RuntimeController", () => {
         runtimeLayout(controller).snapshot(
           outputId(output.name),
           desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(tiledLayout);
       expect(floating?.currentContextKey).toBe(
@@ -17467,6 +18425,7 @@ describe("RuntimeController", () => {
     const tiledLayout = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const tiledState = captureTrackedWindowState([first, third]);
     const managedCount = controller.managedCount;
@@ -17492,6 +18451,7 @@ describe("RuntimeController", () => {
         runtimeLayout(controller).snapshot(
           outputId(output.name),
           desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(tiledLayout);
       expect(floatingWindows.get(activeId)).toEqual({
@@ -17520,6 +18480,7 @@ describe("RuntimeController", () => {
         runtimeLayout(controller).snapshot(
           outputId(output.name),
           desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(tiledLayout);
     };
@@ -17646,6 +18607,7 @@ describe("RuntimeController", () => {
     const tiledLayout = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const tiledState = captureTrackedWindowState([tiled]);
     const handlers = active.frameGeometryChanged.size;
@@ -17684,6 +18646,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(tiledLayout);
 
@@ -17715,6 +18678,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(tiledLayout);
   });
@@ -17770,6 +18734,7 @@ describe("RuntimeController", () => {
     const tiledLayout = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const tiledState = captureTrackedWindowState([first, third]);
     const activationCount = fixture.activationCount;
@@ -17840,6 +18805,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(tiledLayout);
     expect(fixture.workspace.activeWindow).toBe(active.window);
@@ -18212,12 +19178,18 @@ describe("RuntimeController", () => {
     fixture.workspace.activeWindow = tiledTopmost.window;
     fixture.workspace.activeWindow = tiledRemembered.window;
     const layout = runtimeLayout(controller);
-    layout.setViewportOffset(outputId(output.name), desktopId(desktop.id), -73);
+    layout.setViewportOffset(
+      outputId(output.name),
+      desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
+      -73,
+    );
     controller.reconcile();
 
     const before = layout.snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
     const writes = windows.map(({ writeCount }) => writeCount);
@@ -18237,7 +19209,11 @@ describe("RuntimeController", () => {
 
     expect(fixture.activationCount).toBe(activationCount + 4);
     expect(
-      layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
     ).toEqual(before);
     expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
     expect(windows.map(({ writeCount }) => writeCount)).toEqual(writes);
@@ -18284,6 +19260,7 @@ describe("RuntimeController", () => {
       const before = layout.snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
       const writes = windows.map(({ writeCount }) => writeCount);
@@ -18318,7 +19295,11 @@ describe("RuntimeController", () => {
       expect(fixture.workspace.activeWindow).toBe(originalActive);
       expect(fixture.activationCount).toBe(activationCount + 2);
       expect(
-        layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+        layout.snapshot(
+          outputId(output.name),
+          desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
+        ),
       ).toEqual(before);
       expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
       expect(windows.map(({ writeCount }) => writeCount)).toEqual(writes);
@@ -18387,6 +19368,7 @@ describe("RuntimeController", () => {
       const before = layout.snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
       const target = mode === "horizontal" ? horizontal : vertical;
@@ -18431,7 +19413,11 @@ describe("RuntimeController", () => {
       );
       if (behavior !== "remove") {
         expect(
-          layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+          layout.snapshot(
+            outputId(output.name),
+            desktopId(desktop.id),
+            FALLBACK_ACTIVITY_ID,
+          ),
         ).toEqual(before);
       }
 
@@ -18503,7 +19489,7 @@ describe("RuntimeController", () => {
     expect(controller.start()).toBe(true);
     expect(controller.toggleFloating()).toBe(true);
     fixture.workspace.activeWindow = tiled.window;
-    const key = `${output.name}\u0000${desktop.id}`;
+    const key = `${output.name}\u0000${desktop.id}\u0000${FALLBACK_ACTIVITY_ID}`;
     const state = controller as unknown as {
       readonly lastFloatingFocus: ReadonlyMap<string, WindowId>;
       readonly lastTiledFocus: ReadonlyMap<string, WindowId>;
@@ -18583,11 +19569,17 @@ describe("RuntimeController", () => {
     fixture.workspace.activeWindow = stackFirst.window;
     fixture.workspace.activeWindow = stackRemembered.window;
     fixture.workspace.activeWindow = floating.window;
-    layout.setViewportOffset(outputId(output.name), desktopId(desktop.id), -44);
+    layout.setViewportOffset(
+      outputId(output.name),
+      desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
+      -44,
+    );
     controller.reconcile();
     const before = layout.snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
     const writes = windows.map(({ writeCount }) => writeCount);
@@ -18598,7 +19590,11 @@ describe("RuntimeController", () => {
     expect(controller.switchFocusBetweenFloatingAndTiling()).toBe(true);
     expect(fixture.workspace.activeWindow).toBe(floating.window);
     expect(
-      layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
     ).toEqual(before);
     expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
     expect(windows.map(({ writeCount }) => writeCount)).toEqual(writes);
@@ -18659,6 +19655,7 @@ describe("RuntimeController", () => {
       const before = layout.snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
       const writes = windows.map(({ writeCount }) => writeCount);
@@ -18675,7 +19672,11 @@ describe("RuntimeController", () => {
 
       expect(fixture.activationCount).toBe(activationCount + 3);
       expect(
-        layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+        layout.snapshot(
+          outputId(output.name),
+          desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
+        ),
       ).toEqual(before);
       expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
       expect(windows.map(({ writeCount }) => writeCount)).toEqual(writes);
@@ -18701,6 +19702,7 @@ describe("RuntimeController", () => {
     const tiledLayout = runtimeLayout(tiledController).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const tiledWrites = tiled.writeCount;
     const tiledActivationCount = tiledFixture.activationCount;
@@ -18714,6 +19716,7 @@ describe("RuntimeController", () => {
       runtimeLayout(tiledController).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(tiledLayout);
 
@@ -18741,6 +19744,7 @@ describe("RuntimeController", () => {
     const floatingLayout = runtimeLayout(floatingController).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const floatingWrites = automatic.writeCount;
     const floatingActivationCount = floatingFixture.activationCount;
@@ -18756,6 +19760,7 @@ describe("RuntimeController", () => {
       runtimeLayout(floatingController).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(floatingLayout);
   });
@@ -18808,6 +19813,7 @@ describe("RuntimeController", () => {
     const layoutAfterTiledRemoval = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const writesAfterTiledRemoval = windows.map(({ writeCount }) => writeCount);
 
@@ -18817,6 +19823,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(layoutAfterTiledRemoval);
     expect(windows.map(({ writeCount }) => writeCount)).toEqual(
@@ -18830,6 +19837,7 @@ describe("RuntimeController", () => {
     const layoutAfterFloatingRemoval = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const writesAfterFloatingRemoval = windows.map(
       ({ writeCount }) => writeCount,
@@ -18841,6 +19849,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(layoutAfterFloatingRemoval);
     expect(windows.map(({ writeCount }) => writeCount)).toEqual(
@@ -18913,6 +19922,7 @@ describe("RuntimeController", () => {
     const before = layout.snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
     const writes = windows.map(({ writeCount }) => writeCount);
@@ -18936,7 +19946,11 @@ describe("RuntimeController", () => {
     expect(minimizedBottom.window.minimized).toBe(true);
     expect(controller.floatingCount).toBe(1);
     expect(floating.window.frameGeometry).toEqual(floatingFrame);
-    const after = layout.snapshot(outputId(output.name), desktopId(desktop.id));
+    const after = layout.snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
+    );
     expect(after.columns).toEqual(before.columns);
     expect(after.activeColumnId).toBe(columnId("column:right"));
     expect(after.viewportOffset).toBeGreaterThan(before.viewportOffset);
@@ -18960,6 +19974,7 @@ describe("RuntimeController", () => {
       const before = setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const frames = setup.windows.map(({ window }) => ({
         ...window.frameGeometry,
@@ -18973,6 +19988,7 @@ describe("RuntimeController", () => {
           activationSnapshot = setup.layout.snapshot(
             outputId(setup.output.name),
             desktopId(setup.desktop.id),
+            FALLBACK_ACTIVITY_ID,
           );
           activationFrame = { ...setup.target.window.frameGeometry };
           activationWrites = setup.windows.map(({ writeCount }) => writeCount);
@@ -18983,6 +19999,7 @@ describe("RuntimeController", () => {
       const after = setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       expect(setup.fixture.workspace.activeWindow).toBe(setup.target.window);
       expect(after.activeColumnId).toBe(columnId("column:target"));
@@ -19017,6 +20034,7 @@ describe("RuntimeController", () => {
       const before = setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const frames = setup.windows.map(({ window }) => ({
         ...window.frameGeometry,
@@ -19026,7 +20044,7 @@ describe("RuntimeController", () => {
         readonly lastFloatingFocus: ReadonlyMap<string, WindowId>;
         readonly lastTiledFocus: ReadonlyMap<string, WindowId>;
       };
-      const key = `${setup.output.name}\u0000${setup.desktop.id}`;
+      const key = `${setup.output.name}\u0000${setup.desktop.id}\u0000${FALLBACK_ACTIVITY_ID}`;
       const rememberedFloating = state.lastFloatingFocus.get(key);
       let targetRequest = true;
       setup.fixture.setActivationBehavior((window, commit) => {
@@ -19054,6 +20072,7 @@ describe("RuntimeController", () => {
         setup.layout.snapshot(
           outputId(setup.output.name),
           desktopId(setup.desktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(before);
       expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
@@ -19104,7 +20123,7 @@ describe("RuntimeController", () => {
       ]);
       fixture.workspace.activeWindow = target.window;
       fixture.workspace.activeWindow = floating.window;
-      const key = `${output.name}\u0000${desktop.id}`;
+      const key = `${output.name}\u0000${desktop.id}\u0000${FALLBACK_ACTIVITY_ID}`;
       const state = controller as unknown as {
         readonly lastFloatingFocus: ReadonlyMap<string, WindowId>;
         readonly lastTiledFocus: ReadonlyMap<string, WindowId>;
@@ -19153,7 +20172,7 @@ describe("RuntimeController", () => {
       const setup = createTiledLayerRevealFixture("right");
       setup.fixture.workspace.activeWindow = setup.target.window;
       setup.fixture.workspace.activeWindow = setup.floating.window;
-      const key = `${setup.output.name}\u0000${setup.desktop.id}`;
+      const key = `${setup.output.name}\u0000${setup.desktop.id}\u0000${FALLBACK_ACTIVITY_ID}`;
       const state = setup.controller as unknown as {
         readonly dirtyContexts: ReadonlySet<string>;
         readonly lastFloatingFocus: ReadonlyMap<string, WindowId>;
@@ -19209,6 +20228,7 @@ describe("RuntimeController", () => {
     const before = setup.layout.snapshot(
       outputId(setup.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = setup.windows.map(({ window }) => ({
       ...window.frameGeometry,
@@ -19234,6 +20254,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(setup.windows.map(({ window }) => window.frameGeometry)).toEqual(
@@ -19258,11 +20279,12 @@ describe("RuntimeController", () => {
     const before = setup.layout.snapshot(
       outputId(setup.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const targetFrame = { ...setup.target.window.frameGeometry };
     const targetWrites = setup.target.writeCount;
     const activationCount = setup.fixture.activationCount;
-    const key = `${setup.output.name}\u0000${setup.desktop.id}`;
+    const key = `${setup.output.name}\u0000${setup.desktop.id}\u0000${FALLBACK_ACTIVITY_ID}`;
     const state = setup.controller as unknown as {
       readonly dirtyContexts: ReadonlySet<string>;
     };
@@ -19291,6 +20313,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(setup.target.window.frameGeometry).not.toEqual(targetFrame);
@@ -19305,6 +20328,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(setup.target.window.frameGeometry).toMatchObject({
@@ -19403,6 +20427,7 @@ describe("RuntimeController", () => {
       const before = layout.snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
       const activationCount = fixture.activationCount;
@@ -19411,7 +20436,11 @@ describe("RuntimeController", () => {
       expect(fixture.workspace.activeWindow).toBe(floating.window);
       expect(fixture.activationCount).toBe(activationCount);
       expect(
-        layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+        layout.snapshot(
+          outputId(output.name),
+          desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
+        ),
       ).toEqual(before);
       expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
       expect(activeMinimized.window.minimized).toBe(true);
@@ -19461,6 +20490,7 @@ describe("RuntimeController", () => {
       const before = layout.snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
       const writes = windows.map(({ writeCount }) => writeCount);
@@ -19471,7 +20501,11 @@ describe("RuntimeController", () => {
       expect(fixture.workspace.activeWindow).toBe(tiled.window);
       expect(fixture.activationCount).toBe(activationCount);
       expect(
-        layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+        layout.snapshot(
+          outputId(output.name),
+          desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
+        ),
       ).toEqual(before);
       expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
       expect(windows.map(({ writeCount }) => writeCount)).toEqual(writes);
@@ -19542,10 +20576,12 @@ describe("RuntimeController", () => {
     const firstLayout = runtimeLayout(controller).snapshot(
       outputId(firstOutput.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const secondLayout = runtimeLayout(controller).snapshot(
       outputId(secondOutput.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
     const writes = windows.map(({ writeCount }) => writeCount);
@@ -19565,12 +20601,14 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(firstOutput.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(firstLayout);
     expect(
       runtimeLayout(controller).snapshot(
         outputId(secondOutput.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(secondLayout);
     expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
@@ -19715,12 +20753,14 @@ describe("RuntimeController", () => {
       layout.setViewportOffset(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
         -37,
       );
       controller.reconcile();
       const before = layout.snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
       const writes = windows.map(({ writeCount }) => writeCount);
@@ -19738,7 +20778,11 @@ describe("RuntimeController", () => {
       expect(fixture.workspace.activeWindow).toBe(expected.window);
       expect(fixture.activationCount).toBe(activationCount + 1);
       expect(
-        layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+        layout.snapshot(
+          outputId(output.name),
+          desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
+        ),
       ).toEqual(before);
       expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
       expect(windows.map(({ writeCount }) => writeCount)).toEqual(writes);
@@ -19785,6 +20829,7 @@ describe("RuntimeController", () => {
     const before = layout.snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
     const writes = windows.map(({ writeCount }) => writeCount);
@@ -19801,7 +20846,11 @@ describe("RuntimeController", () => {
 
     expect(fixture.activationCount).toBe(activationCount + 4);
     expect(
-      layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
     ).toEqual(before);
     expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
     expect(windows.map(({ writeCount }) => writeCount)).toEqual(writes);
@@ -19914,6 +20963,7 @@ describe("RuntimeController", () => {
     const before = layout.snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
     const writes = windows.map(({ writeCount }) => writeCount);
@@ -19923,7 +20973,11 @@ describe("RuntimeController", () => {
     expect(controller.focusLastColumn()).toBe(true);
     expect(fixture.workspace.activeWindow).toBe(rightBottom.window);
     expect(
-      layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
     ).toEqual(before);
     expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
     expect(windows.map(({ writeCount }) => writeCount)).toEqual(writes);
@@ -20045,6 +21099,7 @@ describe("RuntimeController", () => {
     const before = layout.snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
     const writes = windows.map(({ writeCount }) => writeCount);
@@ -20055,7 +21110,11 @@ describe("RuntimeController", () => {
     expect(minimized.window.minimized).toBe(true);
     expect(controller.floatingCount).toBe(3);
     expect(
-      layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
     ).toEqual(before);
     expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
     expect(windows.map(({ writeCount }) => writeCount)).toEqual(writes);
@@ -20065,7 +21124,11 @@ describe("RuntimeController", () => {
     expect(controller.floatingCount).toBe(3);
     expect(minimized.window.frameGeometry).toEqual(frames[2]);
     expect(
-      layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
     ).toEqual(before);
   });
 
@@ -20155,6 +21218,7 @@ describe("RuntimeController", () => {
       const before = layout.snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
       const writes = windows.map(({ writeCount }) => writeCount);
@@ -20176,7 +21240,11 @@ describe("RuntimeController", () => {
       expect(fixture.workspace.activeWindow).toBe(active.window);
       expect(fixture.activationCount).toBe(activationCount);
       expect(
-        layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+        layout.snapshot(
+          outputId(output.name),
+          desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
+        ),
       ).toEqual(before);
       expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
       expect(windows.map(({ writeCount }) => writeCount)).toEqual(writes);
@@ -20225,6 +21293,7 @@ describe("RuntimeController", () => {
       const before = layout.snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const frames = windows.map(({ window }) => ({ ...window.frameGeometry }));
       const writes = windows.map(({ writeCount }) => writeCount);
@@ -20242,7 +21311,11 @@ describe("RuntimeController", () => {
       expect(fixture.workspace.activeWindow).toBe(active.window);
       expect(fixture.activationCount).toBe(activationCount);
       expect(
-        layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+        layout.snapshot(
+          outputId(output.name),
+          desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
+        ),
       ).toEqual(before);
       expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
       expect(windows.map(({ writeCount }) => writeCount)).toEqual(writes);
@@ -20453,8 +21526,8 @@ describe("RuntimeController", () => {
     }
 
     expect(controller.toggleFloating()).toBe(true);
-    const sourceContextKey = `${output.name}\u0000${desktop.id}`;
-    const targetContextKey = `${otherOutput.name}\u0000${otherDesktop.id}`;
+    const sourceContextKey = `${output.name}\u0000${desktop.id}\u0000${FALLBACK_ACTIVITY_ID}`;
+    const targetContextKey = `${otherOutput.name}\u0000${otherDesktop.id}\u0000${FALLBACK_ACTIVITY_ID}`;
     const activeId = windowId("window-2");
     const focusState = controller as unknown as {
       floatingFocusTarget(key: string): KWinWindow | null;
@@ -20632,6 +21705,7 @@ describe("RuntimeController", () => {
       const before = layout.snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const frames = windows.map((window) => ({
         ...window.window.frameGeometry,
@@ -20651,15 +21725,22 @@ describe("RuntimeController", () => {
           { id: "column:third", windowIds: ["window-3"] },
         ]);
         expect(
-          layout.snapshot(outputId(output.name), desktopId(desktop.id))
-            .viewportOffset,
+          layout.snapshot(
+            outputId(output.name),
+            desktopId(desktop.id),
+            FALLBACK_ACTIVITY_ID,
+          ).viewportOffset,
         ).toBeGreaterThan(0);
         expect(active.window.frameGeometry.x).toBeGreaterThanOrEqual(10);
         expect(active.window.frameGeometry.x).toBeLessThan(1000);
       } else {
         expect(controller.floatingCount).toBe(1);
         expect(
-          layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+          layout.snapshot(
+            outputId(output.name),
+            desktopId(desktop.id),
+            FALLBACK_ACTIVITY_ID,
+          ),
         ).toEqual(before);
         expect(windows.map((window) => window.window.frameGeometry)).toEqual(
           frames,
@@ -20788,11 +21869,12 @@ describe("RuntimeController", () => {
 
     controller.start();
     fixture.workspace.activeWindow = active.window;
-    const key = `${output.name}\u0000${desktop.id}`;
+    const key = `${output.name}\u0000${desktop.id}\u0000${FALLBACK_ACTIVITY_ID}`;
     block(controller, key);
     const before = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = [first, active].map((window) => ({
       ...window.window.frameGeometry,
@@ -20804,6 +21886,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(
@@ -20818,6 +21901,7 @@ describe("RuntimeController", () => {
     const floatingLayout = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const floatingFrame = { ...active.window.frameGeometry };
 
@@ -20827,6 +21911,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(floatingLayout);
     expect(active.window.frameGeometry).toEqual(floatingFrame);
@@ -20937,6 +22022,7 @@ describe("RuntimeController", () => {
     const before = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = windows.map((window) => ({
       ...window.window.frameGeometry,
@@ -20977,6 +22063,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(windows.map((window) => window.window.frameGeometry)).toEqual(
@@ -21026,6 +22113,7 @@ describe("RuntimeController", () => {
     const before = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = [first, active, sibling].map((window) => ({
       ...window.window.frameGeometry,
@@ -21092,6 +22180,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).not.toEqual(before);
   });
@@ -21134,6 +22223,7 @@ describe("RuntimeController", () => {
     const before = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = windows.map((window) => ({
       ...window.window.frameGeometry,
@@ -21158,6 +22248,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(windows[0]?.window.frameGeometry).toEqual(frames[0]);
@@ -21179,6 +22270,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(windows.map((window) => window.window.frameGeometry)).toEqual(
@@ -21236,6 +22328,7 @@ describe("RuntimeController", () => {
     const floatingLayout = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const floatingFrame = { ...active.window.frameGeometry };
     const siblingFrames = [first, other].map((window) => ({
@@ -21265,6 +22358,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(floatingLayout);
     expect(testLayoutColumns(controller, output, desktop)).toEqual([
@@ -22057,6 +23151,7 @@ describe("RuntimeController", () => {
     const before = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frame = { ...active.window.frameGeometry };
     const writes = active.writeCount;
@@ -22074,6 +23169,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(active.window.frameGeometry).toEqual(frame);
@@ -22196,6 +23292,7 @@ describe("RuntimeController", () => {
     const before = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frame = { ...active.window.frameGeometry };
     const writes = active.writeCount;
@@ -22208,6 +23305,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(active.window.frameGeometry).toEqual(frame);
@@ -22496,6 +23594,7 @@ describe("RuntimeController", () => {
     const before = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frame = { ...active.window.frameGeometry };
     const writes = active.writeCount;
@@ -22513,6 +23612,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(active.window.frameGeometry).toEqual(frame);
@@ -23057,6 +24157,7 @@ describe("RuntimeController", () => {
     const before = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frame = { ...active.window.frameGeometry };
     const writes = active.writeCount;
@@ -23067,6 +24168,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(active.window.frameGeometry).toEqual(frame);
@@ -23079,6 +24181,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(active.window.frameGeometry).toEqual(frame);
@@ -23214,6 +24317,7 @@ describe("RuntimeController", () => {
     const beforeLayout = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const beforeFrames = [first, active].map((window) => ({
       ...window.window.frameGeometry,
@@ -23246,6 +24350,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(beforeLayout);
     expect(activeColumnWindowHeights(controller, output, desktop)).toEqual(
@@ -23384,7 +24489,14 @@ describe("RuntimeController", () => {
     const outputKey = outputId(output.name);
     const desktopKey = desktopId(desktop.id);
 
-    expect(layout.setViewportOffset(outputKey, desktopKey, 485)).toBe(true);
+    expect(
+      layout.setViewportOffset(
+        outputKey,
+        desktopKey,
+        FALLBACK_ACTIVITY_ID,
+        485,
+      ),
+    ).toBe(true);
     controller.reconcile();
     fixture.workspace.activeWindow = middle.window;
     expect(windows.map(({ window }) => window.frameGeometry)).toEqual([
@@ -23394,14 +24506,21 @@ describe("RuntimeController", () => {
     ]);
 
     expect(controller.maximizeColumn()).toBe(true);
-    expect(layout.snapshot(outputKey, desktopKey).viewportOffset).toBe(495);
+    expect(
+      layout.snapshot(outputKey, desktopKey, FALLBACK_ACTIVITY_ID)
+        .viewportOffset,
+    ).toBe(495);
     expect(windows.map(({ window }) => window.frameGeometry)).toEqual([
       { height: 780, width: 485, x: -495, y: 10 },
       { height: 780, width: 980, x: 10, y: 10 },
       { height: 780, width: 485, x: 1010, y: 10 },
     ]);
 
-    const maximizedLayout = layout.snapshot(outputKey, desktopKey);
+    const maximizedLayout = layout.snapshot(
+      outputKey,
+      desktopKey,
+      FALLBACK_ACTIVITY_ID,
+    );
     const maximizedFrames = windows.map(({ window }) => ({
       ...window.frameGeometry,
     }));
@@ -23430,13 +24549,18 @@ describe("RuntimeController", () => {
       rejecting.setWriteBehavior(null);
     }
 
-    expect(layout.snapshot(outputKey, desktopKey)).toEqual(maximizedLayout);
+    expect(
+      layout.snapshot(outputKey, desktopKey, FALLBACK_ACTIVITY_ID),
+    ).toEqual(maximizedLayout);
     expect(windows.map(({ window }) => window.frameGeometry)).toEqual(
       maximizedFrames,
     );
 
     expect(controller.maximizeColumn()).toBe(true);
-    expect(layout.snapshot(outputKey, desktopKey).viewportOffset).toBe(495);
+    expect(
+      layout.snapshot(outputKey, desktopKey, FALLBACK_ACTIVITY_ID)
+        .viewportOffset,
+    ).toBe(495);
     expect(windows.map(({ window }) => window.frameGeometry)).toEqual([
       { height: 780, width: 485, x: -485, y: 10 },
       { height: 780, width: 485, x: 10, y: 10 },
@@ -23539,12 +24663,14 @@ describe("RuntimeController", () => {
     const before = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
 
     expect(controller.centerColumn()).toBe(true);
     const after = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     expect(after.viewportOffset).toBe(270);
     expect(middle.window.frameGeometry.x).toBe(250);
@@ -23585,6 +24711,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ).viewportOffset,
     ).toBe(248);
     expect(middle.window.frameGeometry).toMatchObject({
@@ -23618,6 +24745,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ).viewportOffset,
     ).toBe(-340);
     expect(active.window.frameGeometry).toMatchObject({ width: 300, x: 350 });
@@ -23662,6 +24790,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ).viewportOffset,
     ).toBe(-340);
     expect(first.window.frameGeometry.x).toBe(350);
@@ -23672,6 +24801,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ).viewportOffset,
     ).toBe(280);
     expect(last.window.frameGeometry.x).toBe(350);
@@ -23710,6 +24840,7 @@ describe("RuntimeController", () => {
     const before = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const activationCount = fixture.activationCount;
 
@@ -23717,6 +24848,7 @@ describe("RuntimeController", () => {
     const after = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     expect(after.viewportOffset).toBe(0);
     expect(after.columns.map((column) => column.id)).toEqual(
@@ -23802,6 +24934,7 @@ describe("RuntimeController", () => {
     const beforeLayout = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const beforeFrames = windows.map((window) => ({
       ...window.window.frameGeometry,
@@ -23812,6 +24945,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(beforeLayout);
     expect(windows.map((window) => window.window.frameGeometry)).toEqual(
@@ -23840,6 +24974,7 @@ describe("RuntimeController", () => {
     const beforeLayout = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const beforeFrame = { ...active.window.frameGeometry };
 
@@ -23849,6 +24984,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(beforeLayout);
     expect(active.window.frameGeometry).toEqual(beforeFrame);
@@ -23890,6 +25026,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).setViewportOffset(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
         100,
       ),
     ).toBe(true);
@@ -23897,6 +25034,7 @@ describe("RuntimeController", () => {
     const before = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const activationCount = fixture.activationCount;
 
@@ -23904,6 +25042,7 @@ describe("RuntimeController", () => {
     const after = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     expect(after.viewportOffset).toBe(310);
     expect(after.columns).toEqual(before.columns);
@@ -23946,6 +25085,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).setViewportOffset(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
         100,
       ),
     ).toBe(true);
@@ -23953,6 +25093,7 @@ describe("RuntimeController", () => {
     const beforeLayout = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const beforeFrames = windows.map((window) => ({
       ...window.window.frameGeometry,
@@ -23980,6 +25121,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(beforeLayout);
     expect(windows.map((window) => window.window.frameGeometry)).toEqual(
@@ -23997,6 +25139,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ).viewportOffset,
     ).toBe(260);
   });
@@ -24022,12 +25165,14 @@ describe("RuntimeController", () => {
     const before = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
 
     expect(controller.centerVisibleColumns()).toBe(true);
     const after = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     expect(after.viewportOffset).toBe(-340);
     expect(after.columns).toEqual(before.columns);
@@ -24067,6 +25212,7 @@ describe("RuntimeController", () => {
     const before = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const activationCount = fixture.activationCount;
 
@@ -24074,6 +25220,7 @@ describe("RuntimeController", () => {
     const after = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     expect(after.viewportOffset).toBe(-105);
     expect(after.columns).toEqual(before.columns);
@@ -24121,6 +25268,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).setViewportOffset(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
         300,
       ),
     ).toBe(true);
@@ -24128,6 +25276,7 @@ describe("RuntimeController", () => {
     const before = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const activationCount = fixture.activationCount;
 
@@ -24135,6 +25284,7 @@ describe("RuntimeController", () => {
     const after = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     expect(after.viewportOffset).toBe(280);
     expect(after.columns).toEqual(before.columns);
@@ -24186,6 +25336,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).setViewportOffset(
         outputId(trackedOutput.output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
         60,
       ),
     ).toBe(true);
@@ -24198,6 +25349,7 @@ describe("RuntimeController", () => {
     const after = runtimeLayout(controller).snapshot(
       outputId(trackedOutput.output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const left = windows[1]?.window.frameGeometry.x ?? 0;
     const right =
@@ -24333,6 +25485,7 @@ describe("RuntimeController", () => {
     const beforeModel = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const beforeFrame = { ...active.window.frameGeometry };
     const beforeWrites = active.writeCount;
@@ -24353,6 +25506,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(beforeModel);
     expect(active.window.frameGeometry).toEqual(beforeFrame);
@@ -24415,6 +25569,7 @@ describe("RuntimeController", () => {
     const beforeModel = layout.snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const beforeFrames = [first, active].map(({ window }) => ({
       ...window.frameGeometry,
@@ -24440,7 +25595,11 @@ describe("RuntimeController", () => {
     expect(controller.automaticFloatingCount).toBe(0);
     expect(controller.floatingCount).toBe(0);
     expect(
-      layout.snapshot(outputId(output.name), desktopId(desktop.id)),
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
     ).toEqual(beforeModel);
     expect([first, active].map(({ window }) => window.frameGeometry)).toEqual(
       beforeFrames,
@@ -24501,7 +25660,11 @@ describe("RuntimeController", () => {
     expect(controller.floatingCount).toBe(0);
     expect(
       runtimeLayout(controller)
-        .snapshot(outputId(output.name), desktopId(desktop.id))
+        .snapshot(
+          outputId(output.name),
+          desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
+        )
         .columns.flatMap((column) => column.windowIds),
     ).toEqual([windowId("window-1")]);
     expectAutomaticOwnershipBookkeepingClear(controller, windowId("window-2"));
@@ -24530,6 +25693,7 @@ describe("RuntimeController", () => {
     controller.start();
     const layout = new LayoutEngine();
     layout.restoreColumns({
+      activityId: FALLBACK_ACTIVITY_ID,
       activeColumnId: columnId("column:stack"),
       columns: [
         {
@@ -24575,7 +25739,11 @@ describe("RuntimeController", () => {
     expect(controller.floatingCount).toBe(0);
     expect(
       layout
-        .snapshot(outputId(output.name), desktopId(desktop.id))
+        .snapshot(
+          outputId(output.name),
+          desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
+        )
         .columns.flatMap((column) => column.windowIds),
     ).toEqual([windowId("window-1")]);
     expectAutomaticOwnershipBookkeepingClear(controller, windowId("window-2"));
@@ -24632,7 +25800,11 @@ describe("RuntimeController", () => {
     expect(controller.automaticFloatingCount).toBe(1);
     expect(
       runtimeLayout(controller)
-        .snapshot(outputId(output.name), desktopId(desktop.id))
+        .snapshot(
+          outputId(output.name),
+          desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
+        )
         .columns.flatMap((column) => column.windowIds),
     ).toEqual([windowId("window-1"), windowId("window-3")]);
   });
@@ -24662,6 +25834,7 @@ describe("RuntimeController", () => {
     controller.start();
     const layout = new LayoutEngine();
     layout.restoreColumns({
+      activityId: FALLBACK_ACTIVITY_ID,
       activeColumnId: columnId("column:stack"),
       columns: [
         {
@@ -24728,7 +25901,11 @@ describe("RuntimeController", () => {
     expect(controller.floatingCount).toBe(0);
     expect(
       layout
-        .snapshot(outputId(output.name), desktopId(desktop.id))
+        .snapshot(
+          outputId(output.name),
+          desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
+        )
         .columns.flatMap((column) => column.windowIds),
     ).toEqual([
       windowId("window-1"),
@@ -25013,6 +26190,7 @@ describe("RuntimeController", () => {
     controller.start();
     const layout = new LayoutEngine();
     layout.restoreColumns({
+      activityId: FALLBACK_ACTIVITY_ID,
       activeColumnId: columnId("column:group"),
       columns: [
         {
@@ -25112,6 +26290,7 @@ describe("RuntimeController", () => {
     const beforeLayout = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const beforeFrames = windows.map((window) => ({
       ...window.window.frameGeometry,
@@ -25123,6 +26302,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(beforeLayout);
     expect(windows.map((window) => window.window.frameGeometry)).toEqual(
@@ -25161,6 +26341,7 @@ describe("RuntimeController", () => {
     const beforeLayout = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const beforeFrames = windows.map((window) => ({
       ...window.window.frameGeometry,
@@ -25187,6 +26368,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(beforeLayout);
     expect(windows.map((window) => window.window.frameGeometry)).toEqual(
@@ -25231,6 +26413,7 @@ describe("RuntimeController", () => {
     const beforeLayout = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const beforeFrames = windows.map((window) => ({
       ...window.window.frameGeometry,
@@ -25269,6 +26452,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(beforeLayout);
     expect(windows.map((window) => window.window.frameGeometry)).toEqual(
@@ -25308,10 +26492,13 @@ describe("RuntimeController", () => {
       controller as unknown as {
         capacityParkBackoffs: Set<string>;
       }
-    ).capacityParkBackoffs.add(`${output.name}\u0000${desktop.id}`);
+    ).capacityParkBackoffs.add(
+      `${output.name}\u0000${desktop.id}\u0000${FALLBACK_ACTIVITY_ID}`,
+    );
     const beforeLayout = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const beforeFrames = windows.map((window) => ({
       ...window.window.frameGeometry,
@@ -25338,6 +26525,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(beforeLayout);
     expect(windows.map((window) => window.window.frameGeometry)).toEqual(
@@ -25409,6 +26597,7 @@ describe("RuntimeController", () => {
     const beforeLayout = runtimeLayout(setup.controller).snapshot(
       outputId(setup.output.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const beforeFrames = setup.windows.map((window) => ({
       ...window.window.frameGeometry,
@@ -25419,6 +26608,7 @@ describe("RuntimeController", () => {
       runtimeLayout(setup.controller).snapshot(
         outputId(setup.output.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(beforeLayout);
     expect(setup.windows.map((window) => window.window.frameGeometry)).toEqual(
@@ -25487,6 +26677,7 @@ describe("RuntimeController", () => {
     controller.start();
     const layout = new LayoutEngine();
     layout.restoreColumns({
+      activityId: FALLBACK_ACTIVITY_ID,
       activeColumnId: columnId("column:group"),
       columns: [
         {
@@ -25528,7 +26719,11 @@ describe("RuntimeController", () => {
     expect(controller.moveColumnLeft()).toBe(true);
     expect(
       layout
-        .snapshot(outputId(output.name), desktopId(desktop.id))
+        .snapshot(
+          outputId(output.name),
+          desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
+        )
         .columns.map((column) => column.id),
     ).toEqual(["column:group", "column:other"]);
     expect(sibling.window.frameGeometry).toEqual(suspendedFrame);
@@ -25650,6 +26845,7 @@ describe("RuntimeController", () => {
     const startupLayout = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     expect(startupLayout.columns).toHaveLength(
       PERFORMANCE_REFERENCE.startupWindows,
@@ -25730,6 +26926,7 @@ describe("RuntimeController", () => {
         runtimeLayout(controller).snapshot(
           outputId(output.name),
           desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
         ).columns,
       ).toEqual([]);
       expect(fixture.workspace.activeWindow).toBe(active.window);
@@ -25772,6 +26969,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ).activeColumnId,
     ).toBe("column:window-2");
     expect(windows.map(({ window }) => window.frameGeometry)).toEqual([
@@ -25850,6 +27048,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ).columns[0]?.presentation,
     ).toBe("tabbed");
     expect(active.window.frameGeometry).toEqual({
@@ -25955,7 +27154,7 @@ describe("RuntimeController", () => {
       schedule: workScheduler.schedule,
       scheduleResume: resumeScheduler.schedule,
     });
-    const key = `${output.name}\u0000${desktop.id}`;
+    const key = `${output.name}\u0000${desktop.id}\u0000${FALLBACK_ACTIVITY_ID}`;
     const state = controller as unknown as {
       readonly dirtyContexts: ReadonlySet<string>;
     };
@@ -25965,6 +27164,7 @@ describe("RuntimeController", () => {
     const originalLayout = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const originalWrites = active.writeCount;
     const warning = console.warn;
@@ -25983,6 +27183,7 @@ describe("RuntimeController", () => {
         runtimeLayout(controller).snapshot(
           outputId(output.name),
           desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(originalLayout);
       expect(state.dirtyContexts.has(key)).toBe(true);
@@ -26061,7 +27262,7 @@ describe("RuntimeController", () => {
       schedule: workScheduler.schedule,
       scheduleResume: resumeScheduler.schedule,
     });
-    const blockedKey = `${blockedOutput.output.name}\u0000${desktop.id}`;
+    const blockedKey = `${blockedOutput.output.name}\u0000${desktop.id}\u0000${FALLBACK_ACTIVITY_ID}`;
     const state = controller as unknown as {
       readonly dirtyContexts: ReadonlySet<string>;
     };
@@ -26306,8 +27507,11 @@ describe("RuntimeController", () => {
       }
     ).layout;
     expect(
-      layout.snapshot(outputId(rightOutput.output.name), desktopId(desktop.id))
-        .activeColumnId,
+      layout.snapshot(
+        outputId(rightOutput.output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ).activeColumnId,
     ).toBe("column:left-active");
     expect(fixture.workspace.activeWindow).toBe(active.window);
     expect(active.writeCount).toBe(0);
@@ -27541,6 +28745,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ).viewportOffset,
     ).toBe(495);
     expect(second.window.frameGeometry.x).toBe(-485);
@@ -27588,6 +28793,7 @@ describe("RuntimeController", () => {
       const baselineLayout = runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const baselineFrames = [first, second].map(({ window }) => ({
         ...window.frameGeometry,
@@ -27648,6 +28854,7 @@ describe("RuntimeController", () => {
           runtimeLayout(controller).snapshot(
             outputId(output.name),
             desktopId(desktop.id),
+            FALLBACK_ACTIVITY_ID,
           ),
         ).toEqual(baselineLayout);
         expect(
@@ -27655,7 +28862,11 @@ describe("RuntimeController", () => {
         ).toEqual(baselineFrames);
         expect(
           runtimeLayout(controller)
-            .snapshot(outputId(output.name), desktopId(desktop.id))
+            .snapshot(
+              outputId(output.name),
+              desktopId(desktop.id),
+              FALLBACK_ACTIVITY_ID,
+            )
             .columns.map(({ width }) => ({ ...width })),
         ).toEqual(baselineWidths);
 
@@ -27966,6 +29177,7 @@ describe("RuntimeController", () => {
       const targetSnapshot = runtimeLayout(setup.controller).snapshot(
         outputId(setup.targetOutput.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const targetColumn = targetSnapshot.columns[0];
 
@@ -28005,6 +29217,7 @@ describe("RuntimeController", () => {
     const targetSnapshot = runtimeLayout(setup.controller).snapshot(
       outputId(setup.targetOutput.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const insertedColumn = targetSnapshot.columns.find((column) =>
       column.windowIds.includes(windowId("dragged")),
@@ -28099,9 +29312,11 @@ describe("RuntimeController", () => {
         runtimeLayout(setup.controller).snapshot(
           outputId(setup.sourceOutput.name),
           desktopId(setup.sourceDesktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual({
         activeColumnId: columnId("column:source"),
+        activityId: FALLBACK_ACTIVITY_ID,
         columns: [
           {
             id: columnId("column:source"),
@@ -28119,9 +29334,11 @@ describe("RuntimeController", () => {
         runtimeLayout(setup.controller).snapshot(
           outputId(setup.targetOutput.name),
           desktopId(setup.targetDesktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual({
         activeColumnId: columnId("column:target"),
+        activityId: FALLBACK_ACTIVITY_ID,
         columns: [
           {
             id: columnId("column:target"),
@@ -28173,10 +29390,12 @@ describe("RuntimeController", () => {
     const sourceSnapshot = runtimeLayout(setup.controller).snapshot(
       outputId(setup.sourceOutput.name),
       desktopId(setup.sourceDesktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const targetSnapshot = runtimeLayout(setup.controller).snapshot(
       outputId(setup.targetOutput.name),
       desktopId(setup.targetDesktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const insertedColumn = targetSnapshot.columns.find((column) =>
       column.windowIds.includes(windowId("dragged")),
@@ -28231,6 +29450,7 @@ describe("RuntimeController", () => {
         .snapshot(
           outputId(setup.targetOutput.name),
           desktopId(setup.targetDesktop.id),
+          FALLBACK_ACTIVITY_ID,
         )
         .columns.find((column) => column.id === columnId("column:target"))
         ?.width,
@@ -28296,10 +29516,12 @@ describe("RuntimeController", () => {
     const sourceLayoutBefore = runtimeLayout(setup.controller).snapshot(
       outputId(setup.sourceOutput.name),
       desktopId(setup.sourceDesktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const targetLayoutBefore = runtimeLayout(setup.controller).snapshot(
       outputId(setup.targetOutput.name),
       desktopId(setup.targetDesktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const attemptedTargetFrames: KWinWindow["frameGeometry"][] = [];
     let sourceLayoutDuringCompensation: ReturnType<
@@ -28322,12 +29544,14 @@ describe("RuntimeController", () => {
         ).snapshot(
           outputId(setup.sourceOutput.name),
           desktopId(setup.sourceDesktop.id),
+          FALLBACK_ACTIVITY_ID,
         );
         targetLayoutDuringCompensation = runtimeLayout(
           setup.controller,
         ).snapshot(
           outputId(setup.targetOutput.name),
           desktopId(setup.targetDesktop.id),
+          FALLBACK_ACTIVITY_ID,
         );
       }
 
@@ -28582,10 +29806,12 @@ describe("RuntimeController", () => {
       const beforeLayout = setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const unrelatedLayout = setup.layout.snapshot(
         outputId(setup.unrelatedOutput.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const unrelatedState = captureTrackedWindowState([setup.unrelated]);
       const beforeFrame = { ...setup.active.window.frameGeometry };
@@ -28614,6 +29840,7 @@ describe("RuntimeController", () => {
       const afterLayout = setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       expect(afterLayout).toEqual({
         ...beforeLayout,
@@ -28640,6 +29867,7 @@ describe("RuntimeController", () => {
         setup.layout.snapshot(
           outputId(setup.unrelatedOutput.name),
           desktopId(setup.desktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(unrelatedLayout);
       expectTrackedWindowState([setup.unrelated], unrelatedState);
@@ -28654,10 +29882,12 @@ describe("RuntimeController", () => {
       const beforeLayout = setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const unrelatedLayout = setup.layout.snapshot(
         outputId(setup.unrelatedOutput.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const unrelatedState = captureTrackedWindowState([setup.unrelated]);
       const passiveFrame = { ...setup.passive.window.frameGeometry };
@@ -28679,6 +29909,7 @@ describe("RuntimeController", () => {
         setup.layout.snapshot(
           outputId(setup.output.name),
           desktopId(setup.desktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(beforeLayout);
       expect(setup.published).toHaveLength(publicationCount);
@@ -28688,6 +29919,7 @@ describe("RuntimeController", () => {
       const afterLayout = setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       expect(afterLayout).toEqual({
         ...beforeLayout,
@@ -28726,6 +29958,7 @@ describe("RuntimeController", () => {
         setup.layout.snapshot(
           outputId(setup.unrelatedOutput.name),
           desktopId(setup.desktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(unrelatedLayout);
       expectTrackedWindowState([setup.unrelated], unrelatedState);
@@ -28738,6 +29971,7 @@ describe("RuntimeController", () => {
     const beforeLayout = setup.layout.snapshot(
       outputId(setup.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const passiveFrame = { ...setup.passive.window.frameGeometry };
     const activeFrame = { ...setup.active.window.frameGeometry };
@@ -28777,6 +30011,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(beforeLayout);
     expect(setup.passive.window.frameGeometry).toEqual(passiveFrame);
@@ -28843,6 +30078,7 @@ describe("RuntimeController", () => {
     const beforeLayout = setup.layout.snapshot(
       outputId(setup.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const activeFrame = { ...setup.active.window.frameGeometry };
     const adjacentFrame = { ...adjacent.window.frameGeometry };
@@ -28891,6 +30127,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(beforeLayout);
     expect(setup.published).toHaveLength(publicationCount);
@@ -29026,6 +30263,7 @@ describe("RuntimeController", () => {
     const layout = setup.layout.snapshot(
       outputId(setup.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     expect(layout.activeColumnId).toBe(columnId("column:adjacent"));
     expect(
@@ -29043,6 +30281,7 @@ describe("RuntimeController", () => {
     const beforeLayout = setup.layout.snapshot(
       outputId(setup.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const passiveFrame = { ...setup.passive.window.frameGeometry };
     const activeFrame = { ...setup.active.window.frameGeometry };
@@ -29110,6 +30349,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(beforeLayout);
     expect(setup.passive.window.frameGeometry).toEqual(passiveFrame);
@@ -29132,6 +30372,7 @@ describe("RuntimeController", () => {
     const beforeLayout = setup.layout.snapshot(
       outputId(setup.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const activeFrame = { ...setup.active.window.frameGeometry };
     const passiveAttempts: KWinWindow["frameGeometry"][] = [];
@@ -29179,6 +30420,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(beforeLayout);
     expect(setup.published).toHaveLength(publicationCount);
@@ -29189,6 +30431,7 @@ describe("RuntimeController", () => {
     const beforeLayout = setup.layout.snapshot(
       outputId(setup.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const passiveFrame = { ...setup.passive.window.frameGeometry };
     const activeFrame = { ...setup.active.window.frameGeometry };
@@ -29253,6 +30496,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(beforeLayout);
     expect(setup.published).toHaveLength(publicationCount);
@@ -29276,6 +30520,7 @@ describe("RuntimeController", () => {
     const beforeLayout = setup.layout.snapshot(
       outputId(setup.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const passiveFrame = { ...setup.passive.window.frameGeometry };
     const activeFrame = { ...setup.active.window.frameGeometry };
@@ -29323,6 +30568,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(beforeLayout);
     expect(setup.passive.window.frameGeometry).toEqual(passiveFrame);
@@ -29370,6 +30616,7 @@ describe("RuntimeController", () => {
     const beforeLayout = setup.layout.snapshot(
       outputId(setup.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const passiveFrame = { ...setup.passive.window.frameGeometry };
     const activeFrame = { ...setup.active.window.frameGeometry };
@@ -29383,6 +30630,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(beforeLayout);
     expect([
@@ -29466,6 +30714,7 @@ describe("RuntimeController", () => {
     const beforeLayout = setup.layout.snapshot(
       outputId(setup.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const beforeFrame = { ...setup.active.window.frameGeometry };
     const added = createTrackedWindow("added", setup.output, setup.desktop);
@@ -29491,6 +30740,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(beforeLayout);
 
@@ -29567,6 +30817,7 @@ describe("RuntimeController", () => {
     const beforeLayout = setup.layout.snapshot(
       outputId(setup.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const beforeFrame = { ...setup.active.window.frameGeometry };
     const publicationCount = setup.published.length;
@@ -29586,6 +30837,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(beforeLayout);
     expect(setup.active.window.frameGeometry).toEqual(beforeFrame);
@@ -29597,6 +30849,7 @@ describe("RuntimeController", () => {
     const beforeLayout = setup.layout.snapshot(
       outputId(setup.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const beforeFrame = { ...setup.active.window.frameGeometry };
     const publicationCount = setup.published.length;
@@ -29613,6 +30866,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual({
       ...beforeLayout,
@@ -29632,6 +30886,7 @@ describe("RuntimeController", () => {
     const beforeLayout = setup.layout.snapshot(
       outputId(setup.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const beforeFrame = { ...setup.active.window.frameGeometry };
     const publicationCount = setup.published.length;
@@ -29650,6 +30905,7 @@ describe("RuntimeController", () => {
       setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(beforeLayout);
     expect(setup.active.window.frameGeometry).toEqual(beforeFrame);
@@ -29663,6 +30919,7 @@ describe("RuntimeController", () => {
       const beforeLayout = setup.layout.snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const passiveFrame = { ...setup.passive.window.frameGeometry };
       const activeFrame = { ...setup.active.window.frameGeometry };
@@ -29716,6 +30973,7 @@ describe("RuntimeController", () => {
         setup.layout.snapshot(
           outputId(setup.output.name),
           desktopId(setup.desktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(beforeLayout);
       expect([
@@ -29907,6 +31165,7 @@ describe("RuntimeController", () => {
       const snapshot = runtimeLayout(setup.controller).snapshot(
         outputId(setup.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
 
       expect(setup.controller.floatingCount).toBe(0);
@@ -29997,7 +31256,11 @@ describe("RuntimeController", () => {
     ]);
     expect(
       runtimeLayout(setup.controller)
-        .snapshot(outputId(setup.output.name), desktopId(setup.desktop.id))
+        .snapshot(
+          outputId(setup.output.name),
+          desktopId(setup.desktop.id),
+          FALLBACK_ACTIVITY_ID,
+        )
         .columns.find((column) => column.id === "column:dragged")?.presentation,
     ).toBe("tabbed");
 
@@ -30874,9 +32137,11 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(returnedOutput.name),
         desktopId(primaryDesktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual({
       activeColumnId: columnId("column:right-active"),
+      activityId: FALLBACK_ACTIVITY_ID,
       columns: [
         {
           id: columnId("column:right-stack-1"),
@@ -30905,9 +32170,11 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(returnedOutput.name),
         desktopId(secondaryDesktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual({
       activeColumnId: columnId("column:right-full-width"),
+      activityId: FALLBACK_ACTIVITY_ID,
       columns: [
         {
           id: columnId("column:right-full-width"),
@@ -30936,12 +32203,16 @@ describe("RuntimeController", () => {
     };
     expect(
       restoredState.columnFullWidthRestore
-        .get(`${returnedOutput.name}\u0000${secondaryDesktop.id}`)
+        .get(
+          `${returnedOutput.name}\u0000${secondaryDesktop.id}\u0000${FALLBACK_ACTIVITY_ID}`,
+        )
         ?.get(columnId("column:right-full-width")),
     ).toEqual({ kind: "fixed", value: 420 });
     expect(
       restoredState.columnFullWidthViewportRestore
-        .get(`${returnedOutput.name}\u0000${secondaryDesktop.id}`)
+        .get(
+          `${returnedOutput.name}\u0000${secondaryDesktop.id}\u0000${FALLBACK_ACTIVITY_ID}`,
+        )
         ?.get(columnId("column:right-full-width")),
     ).toBe(37);
     expect(controller.managedCount).toBe(
@@ -30954,6 +32225,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(leftOutput.name),
         desktopId(primaryDesktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(leftLayout);
     expectTrackedWindowState(leftWindows, leftWindowState);
@@ -30992,10 +32264,12 @@ describe("RuntimeController", () => {
     const primaryRightLayout = runtimeLayout(controller).snapshot(
       outputId(returnedOutput.name),
       desktopId(primaryDesktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const secondaryRightLayout = runtimeLayout(controller).snapshot(
       outputId(returnedOutput.name),
       desktopId(secondaryDesktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
 
     expect(primaryRightLayout.viewportOffset).toBe(0);
@@ -31034,7 +32308,7 @@ describe("RuntimeController", () => {
     };
     expect(
       fallbackState.columnFullWidthRestore.has(
-        `${returnedOutput.name}\u0000${secondaryDesktop.id}`,
+        `${returnedOutput.name}\u0000${secondaryDesktop.id}\u0000${FALLBACK_ACTIVITY_ID}`,
       ),
     ).toBe(false);
     expect(
@@ -31052,6 +32326,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(leftOutput.name),
         desktopId(primaryDesktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(leftLayout);
     expectTrackedWindowState(leftWindows, leftWindowState);
@@ -31100,12 +32375,14 @@ describe("RuntimeController", () => {
       runtimeLayout(setup.controller).snapshot(
         outputId(setup.returnedOutput.name),
         desktopId(setup.primaryDesktop.id),
+        FALLBACK_ACTIVITY_ID,
       ).columns,
     ).toEqual([]);
     expect(
       runtimeLayout(setup.controller).snapshot(
         outputId(setup.leftOutput.name),
         desktopId(setup.primaryDesktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(setup.leftLayout);
     expectTrackedWindowState(setup.leftWindows, setup.leftWindowState);
@@ -31123,12 +32400,14 @@ describe("RuntimeController", () => {
       runtimeLayout(setup.controller).snapshot(
         outputId(setup.returnedOutput.name),
         desktopId(setup.primaryDesktop.id),
+        FALLBACK_ACTIVITY_ID,
       ).columns,
     ).toHaveLength(2);
     expect(
       runtimeLayout(setup.controller).snapshot(
         outputId(setup.leftOutput.name),
         desktopId(setup.primaryDesktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(setup.leftLayout);
     expectTrackedWindowState(setup.leftWindows, setup.leftWindowState);
@@ -31157,10 +32436,12 @@ describe("RuntimeController", () => {
         runtimeLayout(setup.controller).snapshot(
           outputId(setup.returnedOutput.name),
           desktopId(setup.primaryDesktop.id),
+          FALLBACK_ACTIVITY_ID,
         ).columns.length +
         runtimeLayout(setup.controller).snapshot(
           outputId(setup.returnedOutput.name),
           desktopId(setup.secondaryDesktop.id),
+          FALLBACK_ACTIVITY_ID,
         ).columns.length;
 
       if (restoredColumns > 0) {
@@ -31179,10 +32460,12 @@ describe("RuntimeController", () => {
     const primaryLayout = runtimeLayout(setup.controller).snapshot(
       outputId(setup.returnedOutput.name),
       desktopId(setup.primaryDesktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const secondaryLayout = runtimeLayout(setup.controller).snapshot(
       outputId(setup.returnedOutput.name),
       desktopId(setup.secondaryDesktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const targetIds = [...primaryLayout.columns, ...secondaryLayout.columns]
       .flatMap((column) => column.windowIds.map(String))
@@ -31215,7 +32498,7 @@ describe("RuntimeController", () => {
     expect(new Set(targetIds).size).toBe(setup.rightWindows.length);
     expect(
       state.columnFullWidthRestore.has(
-        `${setup.returnedOutput.name}\u0000${setup.secondaryDesktop.id}`,
+        `${setup.returnedOutput.name}\u0000${setup.secondaryDesktop.id}\u0000${FALLBACK_ACTIVITY_ID}`,
       ),
     ).toBe(false);
     expect(
@@ -31227,6 +32510,7 @@ describe("RuntimeController", () => {
       runtimeLayout(setup.controller).snapshot(
         outputId(setup.leftOutput.name),
         desktopId(setup.primaryDesktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(setup.leftLayout);
     expectTrackedWindowState(setup.leftWindows, setup.leftWindowState);
@@ -31275,7 +32559,7 @@ describe("RuntimeController", () => {
     ).toBe(false);
     expect(
       state.columnFullWidthRestore.has(
-        `${setup.returnedOutput.name}\u0000${setup.secondaryDesktop.id}`,
+        `${setup.returnedOutput.name}\u0000${setup.secondaryDesktop.id}\u0000${FALLBACK_ACTIVITY_ID}`,
       ),
     ).toBe(false);
     expect(setup.controller.managedCount).toBe(setup.leftWindows.length);
@@ -31321,6 +32605,7 @@ describe("RuntimeController", () => {
         contexts: [
           {
             activeColumnIndex: 0,
+            activityId: FALLBACK_ACTIVITY_ID,
             columns: [
               {
                 members: [{ windowKey: "returned-window" }],
@@ -31337,7 +32622,7 @@ describe("RuntimeController", () => {
         floatingWindows: [],
         format: "driftile-layout",
         outputs: [historicalReturnedOutput],
-        version: 3,
+        version: 4,
         windows: [{ key: "returned-window", liveId: "returned-window" }],
       },
       topology: {
@@ -31362,6 +32647,7 @@ describe("RuntimeController", () => {
     const layout = new LayoutEngine();
     expect(
       layout.restoreColumns({
+        activityId: FALLBACK_ACTIVITY_ID,
         activeColumnId: columnId("column:active-3"),
         columns: [
           {
@@ -31409,7 +32695,7 @@ describe("RuntimeController", () => {
       };
       readonly windows: readonly { readonly windowId: WindowId }[];
     };
-    const key = `${activeOutput.output.name}\u0000${desktop.id}`;
+    const key = `${activeOutput.output.name}\u0000${desktop.id}\u0000${FALLBACK_ACTIVITY_ID}`;
     const state = controller as unknown as {
       readonly capacityLeaseByWindow: ReadonlyMap<WindowId, TestCapacityLease>;
       readonly capacityLeasesByContext: ReadonlyMap<
@@ -31453,6 +32739,7 @@ describe("RuntimeController", () => {
     const residentLayout = layout.snapshot(
       outputId(activeOutput.output.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const activeWindowState = captureTrackedWindowState(activeWindows);
     const parkedFrame = { ...activeWindows[0].window.frameGeometry };
@@ -31480,6 +32767,7 @@ describe("RuntimeController", () => {
       layout.snapshot(
         outputId(activeOutput.output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(residentLayout);
     expect(
@@ -31487,7 +32775,11 @@ describe("RuntimeController", () => {
     ).toEqual({ kind: "fixed", value: 300 });
     expect(controller.managedCount).toBe(3);
     expect(
-      layout.snapshot(outputId(returnedOutput.name), desktopId(desktop.id)),
+      layout.snapshot(
+        outputId(returnedOutput.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
     ).toMatchObject({
       columns: [
         {
@@ -31579,6 +32871,7 @@ describe("RuntimeController", () => {
       runtimeLayout(controller).snapshot(
         outputId(settledOutput.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toMatchObject({
       columns: [
@@ -32911,7 +34204,9 @@ describe("RuntimeController", () => {
 
     try {
       expect(() => {
-        restored = state.restoreCapacityLeases("DP-1\u0000desktop-1");
+        restored = state.restoreCapacityLeases(
+          `DP-1\u0000desktop-1\u0000${FALLBACK_ACTIVITY_ID}`,
+        );
       }).not.toThrow();
     } finally {
       console.warn = warning;
@@ -32994,6 +34289,7 @@ describe("RuntimeController", () => {
     const before = layout.snapshot(
       outputId(setup.output.output.name),
       desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const writes = setup.windows.map((window) => window.writeCount);
 
@@ -33002,6 +34298,7 @@ describe("RuntimeController", () => {
       layout.snapshot(
         outputId(setup.output.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(setup.windows.map((window) => window.writeCount)).toEqual(writes);
@@ -33208,7 +34505,7 @@ describe("RuntimeController", () => {
         capacityCanceledParks: Map<string, unknown>;
       }
     ).capacityCanceledParks;
-    canceledParks.set("DP-1\u0000desktop-1", {
+    canceledParks.set(`DP-1\u0000desktop-1\u0000${FALLBACK_ACTIVITY_ID}`, {
       windows: [
         {
           columnId: columnId("column:window-1"),
@@ -33314,6 +34611,7 @@ describe("RuntimeController", () => {
 
     setup.controller.start();
     groupedLayout.restoreColumns({
+      activityId: FALLBACK_ACTIVITY_ID,
       activeColumnId: columnId("column:active"),
       columns: [
         {
@@ -33398,6 +34696,7 @@ describe("RuntimeController", () => {
       layout.snapshot(
         outputId(setup.output.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ).columns,
     ).toEqual([
       {
@@ -33477,6 +34776,7 @@ describe("RuntimeController", () => {
       layout.snapshot(
         outputId(replacement.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ).columns,
     ).toEqual([
       {
@@ -33548,6 +34848,7 @@ describe("RuntimeController", () => {
       layout.snapshot(
         outputId(replacement.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ).columns,
     ).toContainEqual({
       id: "column:group",
@@ -33640,6 +34941,7 @@ describe("RuntimeController", () => {
       layout.snapshot(
         outputId(replacement.output.name),
         desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ).columns,
     ).toEqual([]);
   });
@@ -34487,7 +35789,11 @@ describe("RuntimeController", () => {
 
     expect(
       layout
-        .snapshot(outputId(rightOutput.output.name), desktopId(desktop.id))
+        .snapshot(
+          outputId(rightOutput.output.name),
+          desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
+        )
         .columns.map((column) => column.windowIds[0]),
     ).toEqual(["left-a", "left-b", "right-a", "right-b"]);
     expect(batchReleaseCount).toBe(2);
@@ -34687,6 +35993,7 @@ describe("RuntimeController", () => {
       runtimeLayout(setup.controller).snapshot(
         outputId(output.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     );
     const frames = setup.windows.map((window) => ({
@@ -34725,6 +36032,7 @@ describe("RuntimeController", () => {
           runtimeLayout(setup.controller).snapshot(
             outputId(output.name),
             desktopId(desktop.id),
+            FALLBACK_ACTIVITY_ID,
           ),
         ),
       ).toEqual(layoutSnapshots);
@@ -35116,12 +36424,14 @@ describe("RuntimeController desktop transfers", () => {
       runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.output.name),
         desktopId(transfer.desktops[0].id),
+        FALLBACK_ACTIVITY_ID,
       ).columns[0]?.width,
     ).toEqual({ kind: "proportion", value: 0.5 });
     expect(
       runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.output.name),
         desktopId(transfer.desktops[1].id),
+        FALLBACK_ACTIVITY_ID,
       ).columns[1]?.width,
     ).toEqual({ kind: "proportion", value: 0.5 });
 
@@ -35170,6 +36480,7 @@ describe("RuntimeController desktop transfers", () => {
     const sourceColumn = layout.snapshot(
       outputId(transfer.output.name),
       desktopId(transfer.desktops[0].id),
+      FALLBACK_ACTIVITY_ID,
     ).columns[0];
 
     if (!sourceColumn) {
@@ -35204,6 +36515,7 @@ describe("RuntimeController desktop transfers", () => {
     const retainedColumn = layout.snapshot(
       outputId(transfer.output.name),
       desktopId(transfer.desktops[0].id),
+      FALLBACK_ACTIVITY_ID,
     ).columns[0];
 
     expect(retainedColumn).toEqual({
@@ -35246,6 +36558,7 @@ describe("RuntimeController desktop transfers", () => {
       layout.snapshot(
         outputId(transfer.output.name),
         desktopId(transfer.desktops[0].id),
+        FALLBACK_ACTIVITY_ID,
       ).columns[0],
     ).toEqual(retainedColumn);
   });
@@ -35257,10 +36570,12 @@ describe("RuntimeController desktop transfers", () => {
     const sourceLayout = runtimeLayout(transfer.controller).snapshot(
       outputId(transfer.output.name),
       desktopId(transfer.desktops[0].id),
+      FALLBACK_ACTIVITY_ID,
     );
     const targetLayout = runtimeLayout(transfer.controller).snapshot(
       outputId(transfer.output.name),
       desktopId(transfer.desktops[1].id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = [
       { ...transfer.source.window.frameGeometry },
@@ -35308,12 +36623,14 @@ describe("RuntimeController desktop transfers", () => {
       runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.output.name),
         desktopId(transfer.desktops[0].id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(sourceLayout);
     expect(
       runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.output.name),
         desktopId(transfer.desktops[1].id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(targetLayout);
   });
@@ -35325,10 +36642,12 @@ describe("RuntimeController desktop transfers", () => {
     const sourceLayout = runtimeLayout(transfer.controller).snapshot(
       outputId(transfer.output.name),
       desktopId(transfer.desktops[0].id),
+      FALLBACK_ACTIVITY_ID,
     );
     const targetLayout = runtimeLayout(transfer.controller).snapshot(
       outputId(transfer.output.name),
       desktopId(transfer.desktops[1].id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = [
       { ...transfer.source.window.frameGeometry },
@@ -35373,12 +36692,14 @@ describe("RuntimeController desktop transfers", () => {
       runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.output.name),
         desktopId(transfer.desktops[0].id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(sourceLayout);
     expect(
       runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.output.name),
         desktopId(transfer.desktops[1].id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(targetLayout);
   });
@@ -35390,10 +36711,12 @@ describe("RuntimeController desktop transfers", () => {
     const sourceLayout = runtimeLayout(transfer.controller).snapshot(
       outputId(transfer.output.name),
       desktopId(transfer.desktops[0].id),
+      FALLBACK_ACTIVITY_ID,
     );
     const targetLayout = runtimeLayout(transfer.controller).snapshot(
       outputId(transfer.output.name),
       desktopId(transfer.desktops[1].id),
+      FALLBACK_ACTIVITY_ID,
     );
     const movedFrame = { ...transfer.moved.window.frameGeometry };
     const destinationFrame = { ...transfer.destination.window.frameGeometry };
@@ -35429,12 +36752,14 @@ describe("RuntimeController desktop transfers", () => {
       runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.output.name),
         desktopId(transfer.desktops[0].id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(sourceLayout);
     expect(
       runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.output.name),
         desktopId(transfer.desktops[1].id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(targetLayout);
   });
@@ -35446,6 +36771,7 @@ describe("RuntimeController desktop transfers", () => {
     const targetLayout = runtimeLayout(transfer.controller).snapshot(
       outputId(transfer.output.name),
       desktopId(transfer.desktops[1].id),
+      FALLBACK_ACTIVITY_ID,
     );
     const movedFrame = { ...transfer.moved.window.frameGeometry };
     const destinationFrame = { ...transfer.destination.window.frameGeometry };
@@ -35487,6 +36813,7 @@ describe("RuntimeController desktop transfers", () => {
       runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.output.name),
         desktopId(transfer.desktops[1].id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(targetLayout);
   });
@@ -35506,10 +36833,12 @@ describe("RuntimeController desktop transfers", () => {
       const sourceLayout = runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.output.name),
         desktopId(transfer.desktops[0].id),
+        FALLBACK_ACTIVITY_ID,
       );
       const targetLayout = runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.output.name),
         desktopId(transfer.desktops[1].id),
+        FALLBACK_ACTIVITY_ID,
       );
       const frames = [
         { ...transfer.source.window.frameGeometry },
@@ -35530,12 +36859,14 @@ describe("RuntimeController desktop transfers", () => {
         runtimeLayout(transfer.controller).snapshot(
           outputId(transfer.output.name),
           desktopId(transfer.desktops[0].id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(sourceLayout);
       expect(
         runtimeLayout(transfer.controller).snapshot(
           outputId(transfer.output.name),
           desktopId(transfer.desktops[1].id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(targetLayout);
     },
@@ -35576,10 +36907,12 @@ describe("RuntimeController desktop transfers", () => {
       const sourceBefore = layout.snapshot(
         outputId(transfer.output.name),
         desktopId(transfer.desktops[0].id),
+        FALLBACK_ACTIVITY_ID,
       );
       const targetBefore = layout.snapshot(
         outputId(transfer.output.name),
         desktopId(transfer.desktops[1].id),
+        FALLBACK_ACTIVITY_ID,
       );
       const windows = [transfer.source, transfer.moved, transfer.destination];
       const windowState = captureTrackedWindowState(windows);
@@ -35591,12 +36924,14 @@ describe("RuntimeController desktop transfers", () => {
         layout.snapshot(
           outputId(transfer.output.name),
           desktopId(transfer.desktops[0].id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(sourceBefore);
       expect(
         layout.snapshot(
           outputId(transfer.output.name),
           desktopId(transfer.desktops[1].id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(targetBefore);
       expectTrackedWindowState(windows, windowState);
@@ -35657,6 +36992,7 @@ describe("RuntimeController desktop transfers", () => {
     const sourceWidth = layout.snapshot(
       outputId(output.name),
       desktopId(desktops[0].id),
+      FALLBACK_ACTIVITY_ID,
     ).columns[0]?.width;
 
     if (!sourceWidth) {
@@ -35680,22 +37016,30 @@ describe("RuntimeController desktop transfers", () => {
       { id: "column:moved", windowIds: ["moved"] },
     ]);
     expect(
-      layout.snapshot(outputId(output.name), desktopId(desktops[0].id))
-        .columns[0]?.width,
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(desktops[0].id),
+        FALLBACK_ACTIVITY_ID,
+      ).columns[0]?.width,
     ).toEqual(sourceWidth);
     expect(
-      layout.snapshot(outputId(output.name), desktopId(desktops[1].id))
-        .columns[1]?.width,
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(desktops[1].id),
+        FALLBACK_ACTIVITY_ID,
+      ).columns[1]?.width,
     ).toEqual(sourceWidth);
 
     const windows = [source, moved, destination];
     const sourceAfter = layout.snapshot(
       outputId(output.name),
       desktopId(desktops[0].id),
+      FALLBACK_ACTIVITY_ID,
     );
     const targetAfter = layout.snapshot(
       outputId(output.name),
       desktopId(desktops[1].id),
+      FALLBACK_ACTIVITY_ID,
     );
     const windowState = captureTrackedWindowState(windows);
     const desktopMemberships = windows.map(({ window }) => window.desktops);
@@ -35708,10 +37052,18 @@ describe("RuntimeController desktop transfers", () => {
 
     expect(controller.moveWindowToDesktop(2)).toBe(false);
     expect(
-      layout.snapshot(outputId(output.name), desktopId(desktops[0].id)),
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(desktops[0].id),
+        FALLBACK_ACTIVITY_ID,
+      ),
     ).toEqual(sourceAfter);
     expect(
-      layout.snapshot(outputId(output.name), desktopId(desktops[1].id)),
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(desktops[1].id),
+        FALLBACK_ACTIVITY_ID,
+      ),
     ).toEqual(targetAfter);
     expectTrackedWindowState(windows, windowState);
     expect(windows.map(({ window }) => window.desktops)).toEqual(
@@ -35742,6 +37094,7 @@ describe("RuntimeController desktop transfers", () => {
     const sourceColumn = layout.snapshot(
       outputId(transfer.output.name),
       desktopId(transfer.desktops[0].id),
+      FALLBACK_ACTIVITY_ID,
     ).columns[0];
 
     if (!sourceColumn) {
@@ -35784,6 +37137,7 @@ describe("RuntimeController desktop transfers", () => {
     const transferredColumn = layout.snapshot(
       outputId(transfer.output.name),
       desktopId(transfer.desktops[1].id),
+      FALLBACK_ACTIVITY_ID,
     ).columns[1];
 
     expect(transferredColumn?.width).toEqual(sourceColumn.width);
@@ -35831,10 +37185,12 @@ describe("RuntimeController desktop transfers", () => {
       const sourceLayout = runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.output.name),
         desktopId(transfer.desktops[0].id),
+        FALLBACK_ACTIVITY_ID,
       );
       const targetLayout = runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.output.name),
         desktopId(transfer.desktops[1].id),
+        FALLBACK_ACTIVITY_ID,
       );
 
       blockWindowFocus(transfer.controller, transfer.source, blocker);
@@ -35847,12 +37203,14 @@ describe("RuntimeController desktop transfers", () => {
         runtimeLayout(transfer.controller).snapshot(
           outputId(transfer.output.name),
           desktopId(transfer.desktops[0].id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(sourceLayout);
       expect(
         runtimeLayout(transfer.controller).snapshot(
           outputId(transfer.output.name),
           desktopId(transfer.desktops[1].id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(targetLayout);
     },
@@ -35901,6 +37259,7 @@ describe("RuntimeController desktop transfers", () => {
     const layout = new LayoutEngine();
 
     layout.restoreColumns({
+      activityId: FALLBACK_ACTIVITY_ID,
       activeColumnId: columnId("column:stack"),
       columns: [
         {
@@ -35928,6 +37287,7 @@ describe("RuntimeController desktop transfers", () => {
       outputId: outputId(output.name),
     });
     layout.restoreColumns({
+      activityId: FALLBACK_ACTIVITY_ID,
       activeColumnId: columnId("column:destination"),
       columns: [
         {
@@ -35961,7 +37321,11 @@ describe("RuntimeController desktop transfers", () => {
     ]);
     expect(
       runtimeLayout(controller)
-        .snapshot(outputId(output.name), desktopId(desktops[1].id))
+        .snapshot(
+          outputId(output.name),
+          desktopId(desktops[1].id),
+          FALLBACK_ACTIVITY_ID,
+        )
         .columns.map((column) => [column.width, column.windowIds]),
     ).toEqual([
       [{ kind: "fixed", value: 280 }, [destination.window.internalId]],
@@ -35992,7 +37356,11 @@ describe("RuntimeController desktop transfers", () => {
     expect(controller.moveWindowToNextDesktop()).toBe(true);
     expect(
       runtimeLayout(controller)
-        .snapshot(outputId(output.name), desktopId(desktops[1].id))
+        .snapshot(
+          outputId(output.name),
+          desktopId(desktops[1].id),
+          FALLBACK_ACTIVITY_ID,
+        )
         .columns.map((column) => [column.width, column.windowIds]),
     ).toEqual([
       [{ kind: "fixed", value: 280 }, [destination.window.internalId]],
@@ -36016,10 +37384,12 @@ describe("RuntimeController desktop transfers", () => {
     const sourceLayout = runtimeLayout(transfer.controller).snapshot(
       outputId(transfer.output.name),
       desktopId(transfer.desktops[0].id),
+      FALLBACK_ACTIVITY_ID,
     );
     const targetLayout = runtimeLayout(transfer.controller).snapshot(
       outputId(transfer.output.name),
       desktopId(transfer.desktops[1].id),
+      FALLBACK_ACTIVITY_ID,
     );
     transfer.source.setDesktopWriteBehavior((next, commit) => {
       commit();
@@ -36060,12 +37430,14 @@ describe("RuntimeController desktop transfers", () => {
       runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.output.name),
         desktopId(transfer.desktops[0].id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(sourceLayout);
     expect(
       runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.output.name),
         desktopId(transfer.desktops[1].id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(targetLayout);
   });
@@ -36077,10 +37449,12 @@ describe("RuntimeController desktop transfers", () => {
     const sourceLayout = runtimeLayout(transfer.controller).snapshot(
       outputId(transfer.output.name),
       desktopId(transfer.desktops[0].id),
+      FALLBACK_ACTIVITY_ID,
     );
     const targetLayout = runtimeLayout(transfer.controller).snapshot(
       outputId(transfer.output.name),
       desktopId(transfer.desktops[1].id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = [
       { ...transfer.source.window.frameGeometry },
@@ -36133,12 +37507,14 @@ describe("RuntimeController desktop transfers", () => {
       runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.output.name),
         desktopId(transfer.desktops[0].id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(sourceLayout);
     expect(
       runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.output.name),
         desktopId(transfer.desktops[1].id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(targetLayout);
     expect(
@@ -36157,10 +37533,12 @@ describe("RuntimeController desktop transfers", () => {
     const sourceLayout = runtimeLayout(transfer.controller).snapshot(
       outputId(transfer.output.name),
       desktopId(transfer.desktops[0].id),
+      FALLBACK_ACTIVITY_ID,
     );
     const targetLayout = runtimeLayout(transfer.controller).snapshot(
       outputId(transfer.output.name),
       desktopId(transfer.desktops[1].id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = [
       { ...transfer.source.window.frameGeometry },
@@ -36212,12 +37590,14 @@ describe("RuntimeController desktop transfers", () => {
       runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.output.name),
         desktopId(transfer.desktops[0].id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(sourceLayout);
     expect(
       runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.output.name),
         desktopId(transfer.desktops[1].id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(targetLayout);
   });
@@ -36260,6 +37640,7 @@ describe("RuntimeController desktop transfers", () => {
     const target = layout.snapshot(
       outputId(transfer.output.name),
       desktopId(transfer.desktops[1].id),
+      FALLBACK_ACTIVITY_ID,
     );
     expect(target.viewportOffset).toBeGreaterThan(0);
     expect(target.columns.map((column) => column.windowIds[0])).toEqual([
@@ -36365,10 +37746,12 @@ describe("RuntimeController desktop transfers", () => {
     const sourceBefore = runtimeLayout(transfer.controller).snapshot(
       outputId(transfer.output.name),
       desktopId(transfer.desktops[0].id),
+      FALLBACK_ACTIVITY_ID,
     );
     const targetBefore = runtimeLayout(transfer.controller).snapshot(
       outputId(transfer.output.name),
       desktopId(transfer.desktops[1].id),
+      FALLBACK_ACTIVITY_ID,
     );
     const tiledFrames = [
       { ...transfer.source.window.frameGeometry },
@@ -36391,12 +37774,14 @@ describe("RuntimeController desktop transfers", () => {
       runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.output.name),
         desktopId(transfer.desktops[0].id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(sourceBefore);
     expect(
       runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.output.name),
         desktopId(transfer.desktops[1].id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(targetBefore);
     expect([
@@ -36445,6 +37830,7 @@ describe("RuntimeController desktop transfers", () => {
         .snapshot(
           outputId(transfer.output.name),
           desktopId(transfer.desktops[1].id),
+          FALLBACK_ACTIVITY_ID,
         )
         .columns.map((column) => column.width),
     ).toEqual([
@@ -36499,10 +37885,12 @@ describe("RuntimeController desktop transfers", () => {
       const sourceBefore = runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktops[0].id),
+        FALLBACK_ACTIVITY_ID,
       );
       const targetBefore = runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktops[1].id),
+        FALLBACK_ACTIVITY_ID,
       );
       const automaticFrame = { ...automatic.window.frameGeometry };
       const automaticWrites = automatic.writeCount;
@@ -36525,12 +37913,14 @@ describe("RuntimeController desktop transfers", () => {
         runtimeLayout(controller).snapshot(
           outputId(output.name),
           desktopId(desktops[0].id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(sourceBefore);
       expect(
         runtimeLayout(controller).snapshot(
           outputId(output.name),
           desktopId(desktops[1].id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(targetBefore);
       expect([
@@ -36644,10 +38034,12 @@ describe("RuntimeController desktop transfers", () => {
     const sourceBefore = runtimeLayout(transfer.controller).snapshot(
       outputId(transfer.output.name),
       desktopId(transfer.desktops[0].id),
+      FALLBACK_ACTIVITY_ID,
     );
     const targetBefore = runtimeLayout(transfer.controller).snapshot(
       outputId(transfer.output.name),
       desktopId(transfer.desktops[1].id),
+      FALLBACK_ACTIVITY_ID,
     );
     const persistedBefore = requiredLayoutDocument(transfer.controller);
 
@@ -36682,12 +38074,14 @@ describe("RuntimeController desktop transfers", () => {
       runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.output.name),
         desktopId(transfer.desktops[0].id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(sourceBefore);
     expect(
       runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.output.name),
         desktopId(transfer.desktops[1].id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(targetBefore);
     expect(requiredLayoutDocument(transfer.controller)).toBe(persistedBefore);
@@ -36707,7 +38101,7 @@ describe("RuntimeController desktop transfers", () => {
     expect(topology.controller.moveWindowToNextDesktop()).toBe(false);
 
     const capacity = createDesktopTransferFixture();
-    const targetKey = `${capacity.output.name}\u0000${capacity.desktops[1].id}`;
+    const targetKey = `${capacity.output.name}\u0000${capacity.desktops[1].id}\u0000${FALLBACK_ACTIVITY_ID}`;
     (
       capacity.controller as unknown as {
         capacityParkBackoffs: Set<string>;
@@ -36731,6 +38125,7 @@ describe("RuntimeController desktop transfers", () => {
     const before = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktops[0].id),
+      FALLBACK_ACTIVITY_ID,
     );
 
     expect(controller.moveWindowToNextDesktop()).toBe(false);
@@ -36743,6 +38138,7 @@ describe("RuntimeController desktop transfers", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktops[0].id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(before);
     expect(moved.desktopWriteCount).toBe(2);
@@ -36832,10 +38228,12 @@ describe("RuntimeController desktop transfers", () => {
     const sourceSnapshot = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktops[0].id),
+      FALLBACK_ACTIVITY_ID,
     );
     const targetSnapshot = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktops[1].id),
+      FALLBACK_ACTIVITY_ID,
     );
 
     expect(controller.moveWindowToNextDesktop()).toBe(false);
@@ -36847,12 +38245,14 @@ describe("RuntimeController desktop transfers", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktops[0].id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(sourceSnapshot);
     expect(
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktops[1].id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(targetSnapshot);
   });
@@ -36934,10 +38334,12 @@ describe("RuntimeController desktop transfers", () => {
     const sourceSnapshot = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktops[0].id),
+      FALLBACK_ACTIVITY_ID,
     );
     const targetSnapshot = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktops[1].id),
+      FALLBACK_ACTIVITY_ID,
     );
 
     expect(controller.moveWindowToNextDesktop()).toBe(false);
@@ -36946,12 +38348,14 @@ describe("RuntimeController desktop transfers", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktops[0].id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(sourceSnapshot);
     expect(
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktops[1].id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(targetSnapshot);
   });
@@ -36963,10 +38367,12 @@ describe("RuntimeController desktop transfers", () => {
     const sourceSnapshot = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktops[0].id),
+      FALLBACK_ACTIVITY_ID,
     );
     const targetSnapshot = runtimeLayout(controller).snapshot(
       outputId(output.name),
       desktopId(desktops[1].id),
+      FALLBACK_ACTIVITY_ID,
     );
     let rejected = false;
     moved.setDesktopWriteBehavior((next, commit) => {
@@ -36992,12 +38398,14 @@ describe("RuntimeController desktop transfers", () => {
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktops[0].id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(sourceSnapshot);
     expect(
       runtimeLayout(controller).snapshot(
         outputId(output.name),
         desktopId(desktops[1].id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(targetSnapshot);
   });
@@ -37184,6 +38592,7 @@ describe("RuntimeController output transfers", () => {
       const sourceColumn = layout.snapshot(
         outputId(transfer.sourceOutput.name),
         desktopId(transfer.sourceDesktop.id),
+        FALLBACK_ACTIVITY_ID,
       ).columns[0];
 
       if (!sourceColumn) {
@@ -37229,6 +38638,7 @@ describe("RuntimeController output transfers", () => {
       const transferredColumn = layout.snapshot(
         outputId(transfer.targetOutput.name),
         desktopId(transfer.targetDesktop.id),
+        FALLBACK_ACTIVITY_ID,
       ).columns[1];
 
       expect(transferredColumn?.width).toEqual(sourceColumn.width);
@@ -37286,10 +38696,12 @@ describe("RuntimeController output transfers", () => {
       const sourceLayout = runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.sourceOutput.name),
         desktopId(transfer.sourceDesktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const targetLayout = runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.targetOutput.name),
         desktopId(transfer.targetDesktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const frames = [
         { ...transfer.source.window.frameGeometry },
@@ -37325,12 +38737,14 @@ describe("RuntimeController output transfers", () => {
         runtimeLayout(transfer.controller).snapshot(
           outputId(transfer.sourceOutput.name),
           desktopId(transfer.sourceDesktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(sourceLayout);
       expect(
         runtimeLayout(transfer.controller).snapshot(
           outputId(transfer.targetOutput.name),
           desktopId(transfer.targetDesktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(targetLayout);
     },
@@ -37381,12 +38795,14 @@ describe("RuntimeController output transfers", () => {
       runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.sourceOutput.name),
         desktopId(transfer.sourceDesktop.id),
+        FALLBACK_ACTIVITY_ID,
       ).columns[0]?.width,
     ).toEqual({ kind: "proportion", value: 0.5 });
     expect(
       runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.targetOutput.name),
         desktopId(transfer.targetDesktop.id),
+        FALLBACK_ACTIVITY_ID,
       ).columns[1]?.width,
     ).toEqual({ kind: "proportion", value: 0.5 });
 
@@ -37489,10 +38905,12 @@ describe("RuntimeController output transfers", () => {
       const sourceBefore = layout.snapshot(
         outputId(transfer.sourceOutput.name),
         desktopId(transfer.sourceDesktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const targetBefore = layout.snapshot(
         outputId(transfer.targetOutput.name),
         desktopId(transfer.targetDesktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const windows = [transfer.source, transfer.moved, destination];
       const windowState = captureTrackedWindowState(windows);
@@ -37504,12 +38922,14 @@ describe("RuntimeController output transfers", () => {
         layout.snapshot(
           outputId(transfer.sourceOutput.name),
           desktopId(transfer.sourceDesktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(sourceBefore);
       expect(
         layout.snapshot(
           outputId(transfer.targetOutput.name),
           desktopId(transfer.targetDesktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(targetBefore);
       expectTrackedWindowState(windows, windowState);
@@ -37536,10 +38956,12 @@ describe("RuntimeController output transfers", () => {
     const sourceLayout = runtimeLayout(transfer.controller).snapshot(
       outputId(transfer.sourceOutput.name),
       desktopId(transfer.sourceDesktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const targetLayout = runtimeLayout(transfer.controller).snapshot(
       outputId(transfer.targetOutput.name),
       desktopId(transfer.targetDesktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = [
       { ...transfer.source.window.frameGeometry },
@@ -37584,12 +39006,14 @@ describe("RuntimeController output transfers", () => {
       runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.sourceOutput.name),
         desktopId(transfer.sourceDesktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(sourceLayout);
     expect(
       runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.targetOutput.name),
         desktopId(transfer.targetDesktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(targetLayout);
   });
@@ -37609,10 +39033,12 @@ describe("RuntimeController output transfers", () => {
     const sourceLayout = runtimeLayout(transfer.controller).snapshot(
       outputId(transfer.sourceOutput.name),
       desktopId(transfer.sourceDesktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const targetLayout = runtimeLayout(transfer.controller).snapshot(
       outputId(transfer.targetOutput.name),
       desktopId(transfer.targetDesktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const frames = [
       { ...transfer.source.window.frameGeometry },
@@ -37660,12 +39086,14 @@ describe("RuntimeController output transfers", () => {
       runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.sourceOutput.name),
         desktopId(transfer.sourceDesktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(sourceLayout);
     expect(
       runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.targetOutput.name),
         desktopId(transfer.targetDesktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(targetLayout);
   });
@@ -37682,10 +39110,12 @@ describe("RuntimeController output transfers", () => {
     const sourceLayout = runtimeLayout(transfer.controller).snapshot(
       outputId(transfer.sourceOutput.name),
       desktopId(transfer.sourceDesktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const targetLayout = runtimeLayout(transfer.controller).snapshot(
       outputId(transfer.targetOutput.name),
       desktopId(transfer.targetDesktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const movedFrame = { ...transfer.moved.window.frameGeometry };
     const destinationFrame = { ...destination.window.frameGeometry };
@@ -37723,12 +39153,14 @@ describe("RuntimeController output transfers", () => {
       runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.sourceOutput.name),
         desktopId(transfer.sourceDesktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(sourceLayout);
     expect(
       runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.targetOutput.name),
         desktopId(transfer.targetDesktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(targetLayout);
   });
@@ -37740,10 +39172,12 @@ describe("RuntimeController output transfers", () => {
     const sourceLayout = runtimeLayout(transfer.controller).snapshot(
       outputId(transfer.sourceOutput.name),
       desktopId(transfer.sourceDesktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const targetLayout = runtimeLayout(transfer.controller).snapshot(
       outputId(transfer.targetOutput.name),
       desktopId(transfer.targetDesktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     transfer.fixture.setOutputTransferBehavior((window, output, commit) => {
       commit();
@@ -37782,12 +39216,14 @@ describe("RuntimeController output transfers", () => {
       runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.sourceOutput.name),
         desktopId(transfer.sourceDesktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(sourceLayout);
     expect(
       runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.targetOutput.name),
         desktopId(transfer.targetDesktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(targetLayout);
   });
@@ -37822,10 +39258,12 @@ describe("RuntimeController output transfers", () => {
       const sourceLayout = runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.sourceOutput.name),
         desktopId(transfer.sourceDesktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const targetLayout = runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.targetOutput.name),
         desktopId(transfer.targetDesktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const frames = [
         { ...transfer.source.window.frameGeometry },
@@ -37880,12 +39318,14 @@ describe("RuntimeController output transfers", () => {
         runtimeLayout(transfer.controller).snapshot(
           outputId(transfer.sourceOutput.name),
           desktopId(transfer.sourceDesktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(sourceLayout);
       expect(
         runtimeLayout(transfer.controller).snapshot(
           outputId(transfer.targetOutput.name),
           desktopId(transfer.targetDesktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(targetLayout);
       expect(
@@ -37928,10 +39368,12 @@ describe("RuntimeController output transfers", () => {
       const sourceLayout = runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.sourceOutput.name),
         desktopId(transfer.sourceDesktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const targetLayout = runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.targetOutput.name),
         desktopId(transfer.targetDesktop.id),
+        FALLBACK_ACTIVITY_ID,
       );
       const frames = [
         { ...transfer.source.window.frameGeometry },
@@ -37985,12 +39427,14 @@ describe("RuntimeController output transfers", () => {
         runtimeLayout(transfer.controller).snapshot(
           outputId(transfer.sourceOutput.name),
           desktopId(transfer.sourceDesktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(sourceLayout);
       expect(
         runtimeLayout(transfer.controller).snapshot(
           outputId(transfer.targetOutput.name),
           desktopId(transfer.targetDesktop.id),
+          FALLBACK_ACTIVITY_ID,
         ),
       ).toEqual(targetLayout);
     },
@@ -38011,10 +39455,12 @@ describe("RuntimeController output transfers", () => {
     const sourceLayout = runtimeLayout(transfer.controller).snapshot(
       outputId(transfer.sourceOutput.name),
       desktopId(transfer.sourceDesktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const targetLayout = runtimeLayout(transfer.controller).snapshot(
       outputId(transfer.targetOutput.name),
       desktopId(transfer.targetDesktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const movedFrame = { ...transfer.moved.window.frameGeometry };
     const destinationFrame = { ...destination.window.frameGeometry };
@@ -38069,12 +39515,14 @@ describe("RuntimeController output transfers", () => {
       runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.sourceOutput.name),
         desktopId(transfer.sourceDesktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(sourceLayout);
     expect(
       runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.targetOutput.name),
         desktopId(transfer.targetDesktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(targetLayout);
   });
@@ -38182,6 +39630,7 @@ describe("RuntimeController output transfers", () => {
     const target = runtimeLayout(transfer.controller).snapshot(
       outputId(transfer.targetOutput.name),
       desktopId(transfer.targetDesktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     expect(target.columns.map((column) => String(column.id))).toEqual([
       "column:destination",
@@ -38274,10 +39723,12 @@ describe("RuntimeController output transfers", () => {
     const sourceLayout = runtimeLayout(floating.controller).snapshot(
       outputId(floating.sourceOutput.name),
       desktopId(floating.sourceDesktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const targetLayout = runtimeLayout(floating.controller).snapshot(
       outputId(floating.targetOutput.name),
       desktopId(floating.targetDesktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const state = captureTrackedWindowState([
       floating.source,
@@ -38299,12 +39750,14 @@ describe("RuntimeController output transfers", () => {
       runtimeLayout(floating.controller).snapshot(
         outputId(floating.sourceOutput.name),
         desktopId(floating.sourceDesktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(sourceLayout);
     expect(
       runtimeLayout(floating.controller).snapshot(
         outputId(floating.targetOutput.name),
         desktopId(floating.targetDesktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(targetLayout);
   });
@@ -38435,10 +39888,12 @@ describe("RuntimeController output transfers", () => {
     const sourceLayout = runtimeLayout(transfer.controller).snapshot(
       outputId(transfer.sourceOutput.name),
       desktopId(transfer.sourceDesktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const targetLayout = runtimeLayout(transfer.controller).snapshot(
       outputId(transfer.targetOutput.name),
       desktopId(transfer.targetDesktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const tiled = [transfer.source, destination];
     const tiledState = captureTrackedWindowState(tiled);
@@ -38481,12 +39936,14 @@ describe("RuntimeController output transfers", () => {
       runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.sourceOutput.name),
         desktopId(transfer.sourceDesktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(sourceLayout);
     expect(
       runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.targetOutput.name),
         desktopId(transfer.targetDesktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(targetLayout);
 
@@ -38496,7 +39953,7 @@ describe("RuntimeController output transfers", () => {
 
     expect(floatingAfter).toBeDefined();
     expect(floatingAfter?.currentContextKey).toBe(
-      `${transfer.targetOutput.name}\0${transfer.targetDesktop.id}`,
+      `${transfer.targetOutput.name}\0${transfer.targetDesktop.id}\0${FALLBACK_ACTIVITY_ID}`,
     );
     expect(floatingAfter?.expectedFrame).toEqual(targetFrame);
     expect(floatingAfter?.restoreBaseline.frame).toEqual(targetFrame);
@@ -38542,10 +39999,12 @@ describe("RuntimeController output transfers", () => {
     const sourceLayout = runtimeLayout(controller).snapshot(
       outputId(sourceOutput.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const targetLayout = runtimeLayout(controller).snapshot(
       outputId(targetOutput.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const tiledState = captureTrackedWindowState([source, destination]);
     const automaticFrame = { ...automatic.window.frameGeometry };
@@ -38571,12 +40030,14 @@ describe("RuntimeController output transfers", () => {
       runtimeLayout(controller).snapshot(
         outputId(sourceOutput.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(sourceLayout);
     expect(
       runtimeLayout(controller).snapshot(
         outputId(targetOutput.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(targetLayout);
   });
@@ -38616,10 +40077,12 @@ describe("RuntimeController output transfers", () => {
     const sourceLayout = runtimeLayout(controller).snapshot(
       outputId(sourceOutput.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const targetLayout = runtimeLayout(controller).snapshot(
       outputId(targetOutput.name),
       desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const state = captureTrackedWindowState(windows);
     const desktopWrites = windows.map(
@@ -38645,12 +40108,14 @@ describe("RuntimeController output transfers", () => {
       runtimeLayout(controller).snapshot(
         outputId(sourceOutput.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(sourceLayout);
     expect(
       runtimeLayout(controller).snapshot(
         outputId(targetOutput.name),
         desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(targetLayout);
   });
@@ -38681,10 +40146,12 @@ describe("RuntimeController output transfers", () => {
     const sourceLayout = runtimeLayout(transfer.controller).snapshot(
       outputId(transfer.sourceOutput.name),
       desktopId(transfer.sourceDesktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const targetLayout = runtimeLayout(transfer.controller).snapshot(
       outputId(transfer.targetOutput.name),
       desktopId(transfer.targetDesktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const tiled = [transfer.source, destination];
     const tiledState = captureTrackedWindowState(tiled);
@@ -38736,12 +40203,14 @@ describe("RuntimeController output transfers", () => {
       runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.sourceOutput.name),
         desktopId(transfer.sourceDesktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(sourceLayout);
     expect(
       runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.targetOutput.name),
         desktopId(transfer.targetDesktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(targetLayout);
 
@@ -38751,7 +40220,7 @@ describe("RuntimeController output transfers", () => {
 
     expect(floatingAfter).toBeDefined();
     expect(floatingAfter?.currentContextKey).toBe(
-      `${transfer.sourceOutput.name}\0${transfer.sourceDesktop.id}`,
+      `${transfer.sourceOutput.name}\0${transfer.sourceDesktop.id}\0${FALLBACK_ACTIVITY_ID}`,
     );
     expect(floatingAfter?.expectedFrame).toEqual(sourceMechanismFrame);
     expect(floatingAfter?.restoreBaseline.frame).toEqual(sourceMechanismFrame);
@@ -38778,10 +40247,12 @@ describe("RuntimeController output transfers", () => {
     const sourceSnapshot = runtimeLayout(transfer.controller).snapshot(
       outputId(transfer.sourceOutput.name),
       desktopId(transfer.sourceDesktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     const targetSnapshot = runtimeLayout(transfer.controller).snapshot(
       outputId(transfer.targetOutput.name),
       desktopId(transfer.targetDesktop.id),
+      FALLBACK_ACTIVITY_ID,
     );
     transfer.fixture.setOutputTransferBehavior(() => undefined);
 
@@ -38794,12 +40265,14 @@ describe("RuntimeController output transfers", () => {
       runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.sourceOutput.name),
         desktopId(transfer.sourceDesktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(sourceSnapshot);
     expect(
       runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.targetOutput.name),
         desktopId(transfer.targetDesktop.id),
+        FALLBACK_ACTIVITY_ID,
       ),
     ).toEqual(targetSnapshot);
   });
@@ -39046,6 +40519,7 @@ describe("RuntimeController output transfers", () => {
       runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.sourceOutput.name),
         desktopId(transfer.sourceDesktop.id),
+        FALLBACK_ACTIVITY_ID,
       ).activeColumnId,
     ).toBe(columnId("column:source"));
   });
@@ -39069,6 +40543,7 @@ describe("RuntimeController output transfers", () => {
       runtimeLayout(transfer.controller).setViewportOffset(
         outputId(transfer.sourceOutput.name),
         desktopId(transfer.sourceDesktop.id),
+        FALLBACK_ACTIVITY_ID,
         1,
       );
     });
@@ -39079,6 +40554,7 @@ describe("RuntimeController output transfers", () => {
       runtimeLayout(transfer.controller).snapshot(
         outputId(transfer.sourceOutput.name),
         desktopId(transfer.sourceDesktop.id),
+        FALLBACK_ACTIVITY_ID,
       ).viewportOffset,
     ).toBe(1);
   });
@@ -39236,6 +40712,7 @@ function createOutputTransferFixture(
   controller.start();
   const layout = new LayoutEngine();
   layout.restoreColumns({
+    activityId: FALLBACK_ACTIVITY_ID,
     activeColumnId: columnId(
       options.sourceStack && !options.sourceOnly
         ? "column:source"
@@ -39302,6 +40779,7 @@ function createOutputTransferFixture(
     outputId: outputId(sourceOutput.name),
   });
   layout.restoreColumns({
+    activityId: FALLBACK_ACTIVITY_ID,
     activeColumnId:
       destinations.length === 0
         ? null
@@ -39447,6 +40925,7 @@ function createExternalPointerDropRuntimeFixture(
 
   const layout = new LayoutEngine();
   const sourceRestored = layout.restoreColumns({
+    activityId: FALLBACK_ACTIVITY_ID,
     activeColumnId: columnId(
       sameOutputCrossDesktop ? "column:source" : "column:dragged",
     ),
@@ -39470,6 +40949,7 @@ function createExternalPointerDropRuntimeFixture(
     outputId: outputId(sourceOutput.name),
   });
   const targetRestored = layout.restoreColumns({
+    activityId: FALLBACK_ACTIVITY_ID,
     activeColumnId: columnId("column:target"),
     columns: [
       {
@@ -39491,6 +40971,7 @@ function createExternalPointerDropRuntimeFixture(
     !unrelated ||
     !unrelatedDesktop ||
     layout.restoreColumns({
+      activityId: FALLBACK_ACTIVITY_ID,
       activeColumnId: columnId("column:unrelated"),
       columns: [
         {
@@ -39708,7 +41189,7 @@ function finishCrossDesktopPointerDrop(
         dirtyContexts: Set<string>;
       }
     ).dirtyContexts.has(
-      `${setup.targetOutput.name}\u0000${setup.targetDesktop.id}`,
+      `${setup.targetOutput.name}\u0000${setup.targetDesktop.id}\u0000${FALLBACK_ACTIVITY_ID}`,
     );
   flushManualScheduler(setup.scheduler);
 
@@ -39838,6 +41319,7 @@ function createDesktopTransferFixture(
   controller.start();
   const layout = new LayoutEngine();
   layout.restoreColumns({
+    activityId: FALLBACK_ACTIVITY_ID,
     activeColumnId: columnId(
       options.sourceStack ? "column:source" : "column:moved",
     ),
@@ -39885,6 +41367,7 @@ function createDesktopTransferFixture(
     outputId: outputId(output.name),
   });
   layout.restoreColumns({
+    activityId: FALLBACK_ACTIVITY_ID,
     activeColumnId: columnId(options.targetColumnId ?? "column:destination"),
     columns: destinations.map((window, index) => ({
       column: {
@@ -40033,6 +41516,21 @@ function runtimeLayout(controller: RuntimeController): LayoutEngine {
   ).layout;
 }
 
+function activityLayoutWindowIds(
+  controller: RuntimeController,
+  output: KWinOutput,
+  desktop: KWinVirtualDesktop,
+  activity: string,
+): readonly string[] {
+  return runtimeLayout(controller)
+    .snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+      activityId(activity),
+    )
+    .columns.flatMap((column) => column.windowIds.map(String));
+}
+
 interface TestFloatingWindowState {
   readonly currentContextKey: string;
   readonly expectedFrame: KWinWindow["frameGeometry"];
@@ -40065,6 +41563,7 @@ function activeColumnWidth(
   const snapshot = runtimeLayout(controller).snapshot(
     outputId(output.name),
     desktopId(desktop.id),
+    FALLBACK_ACTIVITY_ID,
   );
   const active = snapshot.columns.find(
     (column) => column.id === snapshot.activeColumnId,
@@ -40081,6 +41580,7 @@ function activeColumnWindowHeights(
   const snapshot = runtimeLayout(controller).snapshot(
     outputId(output.name),
     desktopId(desktop.id),
+    FALLBACK_ACTIVITY_ID,
   );
   const active = snapshot.columns.find(
     (column) => column.id === snapshot.activeColumnId,
@@ -40107,9 +41607,11 @@ function installTestLayout(
   desktop: KWinVirtualDesktop,
   activeColumnId: string,
   columns: readonly TestLayoutColumn[],
+  activity: ReturnType<typeof activityId> = FALLBACK_ACTIVITY_ID,
 ): LayoutEngine {
   const layout = new LayoutEngine();
   const restored = layout.restoreColumns({
+    activityId: activity,
     activeColumnId: columnId(activeColumnId),
     columns: columns.map((column, index) => {
       const selectedWindowId = column.selectedWindowId ?? column.windowIds[0];
@@ -40159,7 +41661,11 @@ function testLayoutColumns(
   desktop: KWinVirtualDesktop,
 ): readonly { readonly id: string; readonly windowIds: readonly string[] }[] {
   return runtimeLayout(controller)
-    .snapshot(outputId(output.name), desktopId(desktop.id))
+    .snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
+    )
     .columns.map((column) => ({
       id: String(column.id),
       windowIds: column.windowIds.map(String),
@@ -40273,15 +41779,21 @@ interface PointerColumnDropRuntimeFixture {
 
 function createPointerColumnDropRuntimeFixture(
   stackedSource = false,
+  activityAware = false,
 ): PointerColumnDropRuntimeFixture {
   const output = createOutput("DP-1", 0);
   const desktop = { id: "desktop-1" };
-  const first = createTrackedWindow("first", output, desktop);
-  const second = createTrackedWindow("second", output, desktop);
+  const activities = activityAware ? ["work"] : [];
+  const first = createTrackedWindow("first", output, desktop, { activities });
+  const second = createTrackedWindow("second", output, desktop, {
+    activities,
+  });
   const peer = stackedSource
-    ? createTrackedWindow("peer", output, desktop)
+    ? createTrackedWindow("peer", output, desktop, { activities })
     : null;
-  const dragged = createTrackedWindow("dragged", output, desktop);
+  const dragged = createTrackedWindow("dragged", output, desktop, {
+    activities,
+  });
   const windows = [first, second, ...(peer ? [peer] : []), dragged];
   const fixture = createWorkspace(
     output,
@@ -40289,6 +41801,10 @@ function createPointerColumnDropRuntimeFixture(
     [output],
     [desktop],
     windows.map((tracked) => tracked.window),
+    true,
+    activityAware
+      ? { activities: ["work", "personal"], currentActivity: "work" }
+      : undefined,
   );
   const scheduler = new ManualScheduler();
   const published: string[] = [];
@@ -40305,24 +41821,31 @@ function createPointerColumnDropRuntimeFixture(
   }
 
   const sourceColumnId = stackedSource ? "column:source" : "column:dragged";
-  installTestLayout(controller, output, desktop, sourceColumnId, [
-    {
-      id: "column:first",
-      width: { kind: "fixed", value: 240 },
-      windowIds: ["first"],
-    },
-    {
-      id: "column:second",
-      width: { kind: "fixed", value: 240 },
-      windowIds: ["second"],
-    },
-    {
-      id: sourceColumnId,
-      selectedWindowId: "dragged",
-      width: { kind: "fixed", value: 240 },
-      windowIds: stackedSource ? ["peer", "dragged"] : ["dragged"],
-    },
-  ]);
+  installTestLayout(
+    controller,
+    output,
+    desktop,
+    sourceColumnId,
+    [
+      {
+        id: "column:first",
+        width: { kind: "fixed", value: 240 },
+        windowIds: ["first"],
+      },
+      {
+        id: "column:second",
+        width: { kind: "fixed", value: 240 },
+        windowIds: ["second"],
+      },
+      {
+        id: sourceColumnId,
+        selectedWindowId: "dragged",
+        width: { kind: "fixed", value: 240 },
+        windowIds: stackedSource ? ["peer", "dragged"] : ["dragged"],
+      },
+    ],
+    activityAware ? activityId("work") : FALLBACK_ACTIVITY_ID,
+  );
   controller.requestLayoutStatePublication();
   controller.flushLayoutStatePublication();
 
@@ -40411,17 +41934,24 @@ interface PointerResizeRuntimeFixture {
 
 function createPointerResizeRuntimeFixture(
   includeAdjacent = false,
+  activityAware = false,
 ): PointerResizeRuntimeFixture {
   const output = createOutput("DP-1", 0);
   const unrelatedOutput = createOutput("HDMI-A-1", 1000);
   const desktop = { id: "desktop-1" };
+  const activities = activityAware ? ["work"] : [];
   const unrelated = createTrackedWindow("unrelated", unrelatedOutput, desktop, {
+    activities,
     frameGeometry: { height: 240, width: 320, x: 1120, y: 40 },
   });
-  const passive = createTrackedWindow("passive", output, desktop);
-  const active = createTrackedWindow("active", output, desktop);
+  const passive = createTrackedWindow("passive", output, desktop, {
+    activities,
+  });
+  const active = createTrackedWindow("active", output, desktop, {
+    activities,
+  });
   const adjacent = includeAdjacent
-    ? createTrackedWindow("adjacent", output, desktop)
+    ? createTrackedWindow("adjacent", output, desktop, { activities })
     : null;
   const fixture = createWorkspace(
     output,
@@ -40434,6 +41964,10 @@ function createPointerResizeRuntimeFixture(
       active.window,
       ...(adjacent ? [adjacent.window] : []),
     ],
+    true,
+    activityAware
+      ? { activities: ["work", "personal"], currentActivity: "work" }
+      : undefined,
   );
   const scheduler = new ManualScheduler();
   const published: string[] = [];
@@ -40453,7 +41987,11 @@ function createPointerResizeRuntimeFixture(
   }
 
   const layout = new LayoutEngine();
+  const contextActivity = activityAware
+    ? activityId("work")
+    : FALLBACK_ACTIVITY_ID;
   const activeRestored = layout.restoreColumns({
+    activityId: contextActivity,
     activeColumnId: columnId("column:stack"),
     columns: [
       {
@@ -40489,6 +42027,7 @@ function createPointerResizeRuntimeFixture(
     outputId: outputId(output.name),
   });
   const unrelatedRestored = layout.restoreColumns({
+    activityId: contextActivity,
     activeColumnId: columnId("column:unrelated"),
     columns: [
       {
@@ -40767,7 +42306,12 @@ function createDirectInsertionFixture(
   );
 
   if (
-    !layout.setViewportOffset(outputId(output.name), desktopId(desktop.id), -31)
+    !layout.setViewportOffset(
+      outputId(output.name),
+      desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
+      -31,
+    )
   ) {
     throw new Error("could not set direct insertion viewport");
   }
@@ -40797,6 +42341,7 @@ function createDirectInsertionFixture(
 function directInsertionLayout(): unknown {
   return {
     activeColumnId: "column:target",
+    activityId: FALLBACK_ACTIVITY_ID,
     columns: [
       {
         id: "column:target",
@@ -40916,7 +42461,12 @@ function createMinimizedExpelFixture(
   );
 
   if (
-    !layout.setViewportOffset(outputId(output.name), desktopId(desktop.id), -29)
+    !layout.setViewportOffset(
+      outputId(output.name),
+      desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
+      -29,
+    )
   ) {
     throw new Error("could not set minimized expel viewport");
   }
@@ -40949,6 +42499,7 @@ function createMinimizedExpelFixture(
 function minimizedExpelLayout(activeColumnId = "column:source"): unknown {
   return {
     activeColumnId,
+    activityId: FALLBACK_ACTIVITY_ID,
     columns: [
       {
         id: "column:source",
@@ -40987,6 +42538,7 @@ function minimizedExpelLayout(activeColumnId = "column:source"): unknown {
 function minimizedExpelLayoutAfterMovedRemoval(): unknown {
   return {
     activeColumnId: "column:source",
+    activityId: FALLBACK_ACTIVITY_ID,
     columns: [
       {
         id: "column:source",
@@ -41018,6 +42570,7 @@ function minimizedExpelLayoutAfterMovedRemoval(): unknown {
 function minimizedExpelReplacementLayout(): unknown {
   return {
     activeColumnId: "column:source",
+    activityId: FALLBACK_ACTIVITY_ID,
     columns: [
       {
         id: "column:source",
@@ -41056,6 +42609,7 @@ function minimizedExpelReplacementLayout(): unknown {
 function minimizedExpelLayoutAfterPredecessorRemoval(): unknown {
   return {
     activeColumnId: "column:source",
+    activityId: FALLBACK_ACTIVITY_ID,
     columns: [
       {
         id: "column:source",
@@ -41087,6 +42641,7 @@ function minimizedExpelLayoutAfterPredecessorRemoval(): unknown {
 function minimizedExpelPredecessorReplacementLayout(): unknown {
   return {
     activeColumnId: "column:source",
+    activityId: FALLBACK_ACTIVITY_ID,
     columns: [
       {
         id: "column:source",
@@ -41190,7 +42745,12 @@ function createMinimizedConsumeFixture(): MinimizedConsumeFixture {
   );
 
   if (
-    !layout.setViewportOffset(outputId(output.name), desktopId(desktop.id), -37)
+    !layout.setViewportOffset(
+      outputId(output.name),
+      desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
+      -37,
+    )
   ) {
     throw new Error("could not set minimized consume viewport");
   }
@@ -41219,6 +42779,7 @@ function createMinimizedConsumeFixture(): MinimizedConsumeFixture {
 function minimizedConsumeLayout(): unknown {
   return {
     activeColumnId: "column:active",
+    activityId: FALLBACK_ACTIVITY_ID,
     columns: [
       {
         id: "column:active",
@@ -41256,6 +42817,7 @@ function minimizedConsumeLayout(): unknown {
 function minimizedConsumeLayoutAfterMovedRemoval(): unknown {
   return {
     activeColumnId: "column:active",
+    activityId: FALLBACK_ACTIVITY_ID,
     columns: [
       {
         id: "column:active",
@@ -41292,6 +42854,7 @@ function minimizedConsumeLayoutAfterMovedRemoval(): unknown {
 function minimizedConsumeLayoutAfterMovedReplacement(): unknown {
   return {
     activeColumnId: "column:active",
+    activityId: FALLBACK_ACTIVITY_ID,
     columns: [
       {
         id: "column:active",
@@ -42073,6 +43636,7 @@ function installGroupedCapacityLayout(
   const layout = new LayoutEngine();
 
   layout.restoreColumns({
+    activityId: FALLBACK_ACTIVITY_ID,
     activeColumnId: columnId("column:active"),
     columns: [
       {

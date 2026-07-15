@@ -36,6 +36,8 @@ export interface KWinOutput {
 }
 
 export interface KWinWindow {
+  readonly activities?: readonly string[];
+  readonly activitiesChanged?: KWinSignal<[]>;
   readonly caption?: string;
   readonly clientGeometry: KWinRect;
   readonly clientGeometryChanged?: KWinSignal<[oldGeometry: KWinRect]>;
@@ -99,8 +101,12 @@ export interface KWinWindow {
 export interface KWinWorkspace {
   activeWindow: KWinWindow | null;
   readonly activeScreen: KWinOutput | null;
+  readonly activities?: readonly string[];
+  readonly activitiesChanged?: KWinSignal<[activityId: string]>;
   readonly cursorPos?: KWinPoint;
   readonly cursorPosChanged?: KWinSignal<[]>;
+  currentActivity?: string;
+  readonly currentActivityChanged?: KWinSignal<[activityId: string]>;
   currentDesktop: KWinVirtualDesktop | null;
   readonly desktops: readonly KWinVirtualDesktop[];
   readonly screens: readonly KWinOutput[];

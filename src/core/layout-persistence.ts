@@ -5,7 +5,11 @@ import type {
 } from "./layout-engine";
 
 export const LAYOUT_PERSISTENCE_FORMAT = "driftile-layout";
-export const LAYOUT_PERSISTENCE_VERSION = 3;
+export const LAYOUT_PERSISTENCE_VERSION = 4;
+export const LAYOUT_PERSISTENCE_LEGACY_CURRENT_ACTIVITY_ID =
+  "__driftile_legacy_current_activity__";
+
+const LAYOUT_PERSISTENCE_V3_VERSION = 3;
 
 export const LAYOUT_PERSISTENCE_LIMITS = Object.freeze({
   columnsPerContext: 512,
@@ -63,7 +67,7 @@ export interface PersistedColumnMemberV1 {
   readonly windowKey: string;
 }
 
-export interface PersistedColumnV3 {
+export interface PersistedColumnV4 {
   readonly fullWidthRestore?: ColumnWidth;
   readonly fullWidthRestoreViewportOffset?: number;
   readonly members: readonly PersistedColumnMemberV1[];
@@ -72,16 +76,17 @@ export interface PersistedColumnV3 {
   readonly width: ColumnWidth;
 }
 
-export interface PersistedContextV3 {
+export interface PersistedContextV4 {
   readonly activeColumnIndex: number | null;
-  readonly columns: readonly PersistedColumnV3[];
+  readonly activityId: string;
+  readonly columns: readonly PersistedColumnV4[];
   readonly desktopId: string;
   readonly outputKey: string;
   readonly restoreFingerprint?: string;
   readonly viewportOffset: number;
 }
 
-export interface PersistedFloatingAnchorV3 {
+export interface PersistedFloatingAnchorV4 {
   readonly columnIndex: number;
   readonly columnPresentation: ColumnPresentation;
   readonly columnWidth: ColumnWidth;
@@ -91,16 +96,17 @@ export interface PersistedFloatingAnchorV3 {
   readonly windowHeight?: WindowHeight;
 }
 
-export interface PersistedFloatingWindowV3 {
-  readonly anchor: PersistedFloatingAnchorV3;
+export interface PersistedFloatingWindowV4 {
+  readonly activityId: string;
+  readonly anchor: PersistedFloatingAnchorV4;
   readonly desktopId: string;
   readonly outputKey: string;
   readonly windowKey: string;
 }
 
-export interface LayoutPersistenceV3 {
-  readonly contexts: readonly PersistedContextV3[];
-  readonly floatingWindows: readonly PersistedFloatingWindowV3[];
+export interface LayoutPersistenceV4 {
+  readonly contexts: readonly PersistedContextV4[];
+  readonly floatingWindows: readonly PersistedFloatingWindowV4[];
   readonly format: typeof LAYOUT_PERSISTENCE_FORMAT;
   readonly outputs: readonly PersistedOutputV1[];
   readonly version: typeof LAYOUT_PERSISTENCE_VERSION;
@@ -120,13 +126,13 @@ export type LayoutPersistenceDecodeResult =
     }
   | {
       readonly ok: true;
-      readonly value: LayoutPersistenceV3;
+      readonly value: LayoutPersistenceV4;
     };
 
 class InvalidPersistenceState extends Error {}
 
-export function encodeLayoutPersistence(state: LayoutPersistenceV3): string {
-  const document = `${JSON.stringify(parseV3(state))}\n`;
+export function encodeLayoutPersistence(state: LayoutPersistenceV4): string {
+  const document = `${JSON.stringify(parseV4(state))}\n`;
 
   if (document.length > LAYOUT_PERSISTENCE_LIMITS.documentCharacters) {
     invalid();
@@ -162,6 +168,7 @@ export function decodeLayoutPersistenceValue(
     typeof value["version"] === "number" &&
     Number.isInteger(value["version"]) &&
     value["version"] !== 1 &&
+    value["version"] !== LAYOUT_PERSISTENCE_V3_VERSION &&
     value["version"] !== LAYOUT_PERSISTENCE_VERSION
   ) {
     return { error: "unsupported-version", ok: false };
@@ -170,10 +177,7 @@ export function decodeLayoutPersistenceValue(
   try {
     return {
       ok: true,
-      value:
-        isRecord(value) && value["version"] === 1
-          ? parseLegacyV1(value)
-          : parseV3(value),
+      value: parseSupportedState(value),
     };
   } catch {
     return { error: "invalid-state", ok: false };
@@ -184,15 +188,36 @@ export function canonicalizePersistedOutput(value: unknown): PersistedOutputV1 {
   return parseOutput(value);
 }
 
-function parseV3(value: unknown): LayoutPersistenceV3 {
-  return parseState(value, false);
+function parseSupportedState(value: unknown): LayoutPersistenceV4 {
+  if (!isRecord(value)) {
+    return invalid();
+  }
+
+  switch (value["version"]) {
+    case 1:
+      return parseLegacyV1(value);
+    case LAYOUT_PERSISTENCE_V3_VERSION:
+      return parseLegacyV3(value);
+    case LAYOUT_PERSISTENCE_VERSION:
+      return parseV4(value);
+    default:
+      return invalid();
+  }
 }
 
-function parseLegacyV1(value: unknown): LayoutPersistenceV3 {
-  return parseState(value, true);
+function parseV4(value: unknown): LayoutPersistenceV4 {
+  return parseState(value, LAYOUT_PERSISTENCE_VERSION);
 }
 
-function parseState(value: unknown, legacy: boolean): LayoutPersistenceV3 {
+function parseLegacyV1(value: unknown): LayoutPersistenceV4 {
+  return parseState(value, 1);
+}
+
+function parseLegacyV3(value: unknown): LayoutPersistenceV4 {
+  return parseState(value, LAYOUT_PERSISTENCE_V3_VERSION);
+}
+
+function parseState(value: unknown, version: 1 | 3 | 4): LayoutPersistenceV4 {
   const state = recordWithKeys(
     value,
     ["contexts", "floatingWindows", "format", "outputs", "version", "windows"],
@@ -201,7 +226,7 @@ function parseState(value: unknown, legacy: boolean): LayoutPersistenceV3 {
 
   if (
     state["format"] !== LAYOUT_PERSISTENCE_FORMAT ||
-    state["version"] !== (legacy ? 1 : LAYOUT_PERSISTENCE_VERSION)
+    state["version"] !== version
   ) {
     invalid();
   }
@@ -217,11 +242,11 @@ function parseState(value: unknown, legacy: boolean): LayoutPersistenceV3 {
   const contexts = boundedArray(
     state["contexts"],
     LAYOUT_PERSISTENCE_LIMITS.contexts,
-  ).map((context) => parseContext(context, legacy));
+  ).map((context) => parseContext(context, version));
   const floatingWindows = boundedArray(
     state["floatingWindows"],
     LAYOUT_PERSISTENCE_LIMITS.floatingWindows,
-  ).map((floating) => parseFloatingWindow(floating, legacy));
+  ).map((floating) => parseFloatingWindow(floating, version));
 
   validateReferences(outputs, windows, contexts, floatingWindows);
 
@@ -301,23 +326,33 @@ function parseWindowMatch(value: unknown): PersistedWindowMatchV1 {
   };
 }
 
-function parseContext(value: unknown, legacy: boolean): PersistedContextV3 {
+function parseContext(value: unknown, version: 1 | 3 | 4): PersistedContextV4 {
+  const hasActivityIdentity = version === LAYOUT_PERSISTENCE_VERSION;
   const context = recordWithKeys(
     value,
-    [
-      "activeColumnIndex",
-      "columns",
-      "desktopId",
-      "outputKey",
-      "viewportOffset",
-    ],
+    hasActivityIdentity
+      ? [
+          "activeColumnIndex",
+          "activityId",
+          "columns",
+          "desktopId",
+          "outputKey",
+          "viewportOffset",
+        ]
+      : [
+          "activeColumnIndex",
+          "columns",
+          "desktopId",
+          "outputKey",
+          "viewportOffset",
+        ],
     ["restoreFingerprint"],
   );
   const columns = boundedArray(
     context["columns"],
     LAYOUT_PERSISTENCE_LIMITS.columnsPerContext,
     false,
-  ).map((column) => parseColumn(column, legacy));
+  ).map((column) => parseColumn(column, version === 1));
   const activeColumnIndex = nullableIndex(
     context["activeColumnIndex"],
     columns.length,
@@ -336,6 +371,9 @@ function parseContext(value: unknown, legacy: boolean): PersistedContextV3 {
 
   return {
     activeColumnIndex,
+    activityId: hasActivityIdentity
+      ? activityIdentifier(context["activityId"])
+      : LAYOUT_PERSISTENCE_LEGACY_CURRENT_ACTIVITY_ID,
     columns,
     desktopId: identifier(context["desktopId"]),
     outputKey: identifier(context["outputKey"]),
@@ -344,7 +382,7 @@ function parseContext(value: unknown, legacy: boolean): PersistedContextV3 {
   };
 }
 
-function parseColumn(value: unknown, legacy: boolean): PersistedColumnV3 {
+function parseColumn(value: unknown, legacy: boolean): PersistedColumnV4 {
   const column = recordWithKeys(
     value,
     legacy
@@ -463,16 +501,22 @@ function parseRect(value: unknown): PersistedRectV1 {
 
 function parseFloatingWindow(
   value: unknown,
-  legacy: boolean,
-): PersistedFloatingWindowV3 {
+  version: 1 | 3 | 4,
+): PersistedFloatingWindowV4 {
+  const hasActivityIdentity = version === LAYOUT_PERSISTENCE_VERSION;
   const floating = recordWithKeys(
     value,
-    ["anchor", "desktopId", "outputKey", "windowKey"],
+    hasActivityIdentity
+      ? ["activityId", "anchor", "desktopId", "outputKey", "windowKey"]
+      : ["anchor", "desktopId", "outputKey", "windowKey"],
     [],
   );
 
   return {
-    anchor: parseFloatingAnchor(floating["anchor"], legacy),
+    activityId: hasActivityIdentity
+      ? activityIdentifier(floating["activityId"])
+      : LAYOUT_PERSISTENCE_LEGACY_CURRENT_ACTIVITY_ID,
+    anchor: parseFloatingAnchor(floating["anchor"], version === 1),
     desktopId: identifier(floating["desktopId"]),
     outputKey: identifier(floating["outputKey"]),
     windowKey: identifier(floating["windowKey"]),
@@ -482,7 +526,7 @@ function parseFloatingWindow(
 function parseFloatingAnchor(
   value: unknown,
   legacy: boolean,
-): PersistedFloatingAnchorV3 {
+): PersistedFloatingAnchorV4 {
   const anchor = recordWithKeys(
     value,
     legacy
@@ -584,8 +628,8 @@ function isDefaultWindowHeight(height: WindowHeight | undefined): boolean {
 function validateReferences(
   outputs: readonly PersistedOutputV1[],
   windows: readonly PersistedWindowV1[],
-  contexts: readonly PersistedContextV3[],
-  floatingWindows: readonly PersistedFloatingWindowV3[],
+  contexts: readonly PersistedContextV4[],
+  floatingWindows: readonly PersistedFloatingWindowV4[],
 ): void {
   const outputKeys = uniqueValues(outputs.map((output) => output.key));
   const windowKeys = uniqueValues(windows.map((window) => window.key));
@@ -603,7 +647,11 @@ function validateReferences(
       invalid();
     }
 
-    const key = `${context.outputKey}\u0000${context.desktopId}`;
+    const key = contextIdentity(
+      context.outputKey,
+      context.desktopId,
+      context.activityId,
+    );
 
     if (contextKeys.has(key)) {
       invalid();
@@ -633,7 +681,11 @@ function validateReferences(
     referencedOutputs.add(floating.outputKey);
     referenceWindow(floating.windowKey, windowKeys, referencedWindows);
     const tiledWindows = tiledWindowsByContext.get(
-      `${floating.outputKey}\u0000${floating.desktopId}`,
+      contextIdentity(
+        floating.outputKey,
+        floating.desktopId,
+        floating.activityId,
+      ),
     );
 
     const previous = floating.anchor.previousWindowKey;
@@ -686,13 +738,22 @@ function uniqueValues(values: readonly string[]): ReadonlySet<string> {
 }
 
 function compareContexts(
-  left: PersistedContextV3,
-  right: PersistedContextV3,
+  left: PersistedContextV4,
+  right: PersistedContextV4,
 ): number {
   return (
     compareStrings(left.outputKey, right.outputKey) ||
-    compareStrings(left.desktopId, right.desktopId)
+    compareStrings(left.desktopId, right.desktopId) ||
+    compareStrings(left.activityId, right.activityId)
   );
+}
+
+function contextIdentity(
+  outputKey: string,
+  desktopId: string,
+  activityId: string,
+): string {
+  return `${outputKey}\u0000${desktopId}\u0000${activityId}`;
 }
 
 function compareStrings(left: string, right: string): number {
@@ -843,6 +904,16 @@ function identifier(value: unknown): string {
   }
 
   return value;
+}
+
+function activityIdentifier(value: unknown): string {
+  const activity = identifier(value);
+
+  if (activity === LAYOUT_PERSISTENCE_LEGACY_CURRENT_ACTIVITY_ID) {
+    invalid();
+  }
+
+  return activity;
 }
 
 function containsControlCharacter(value: string): boolean {

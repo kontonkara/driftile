@@ -13,7 +13,7 @@ import { matchPersistedOutputs } from "./layout-persistence-match";
 import {
   LAYOUT_PERSISTENCE_LIMITS,
   decodeLayoutPersistenceValue,
-  type LayoutPersistenceV3,
+  type LayoutPersistenceV4,
   type PersistedOutputV1,
 } from "./layout-persistence";
 
@@ -177,7 +177,7 @@ export function planKnownOutputLayoutHydration(
     return failed("unresolved-live-window");
   }
 
-  const subset: LayoutPersistenceV3 = {
+  const subset: LayoutPersistenceV4 = {
     contexts,
     floatingWindows: [],
     format: historicalState.format,
@@ -248,13 +248,13 @@ export function planKnownOutputLayoutHydration(
 }
 
 function canonicalState(
-  state: LayoutPersistenceV3,
-): LayoutPersistenceV3 | null {
+  state: LayoutPersistenceV4,
+): LayoutPersistenceV4 | null {
   const decoded = decodeLayoutPersistenceValue(state);
   return decoded.ok ? decoded.value : null;
 }
 
-function hasRestoreBaseline(state: LayoutPersistenceV3): boolean {
+function hasRestoreBaseline(state: LayoutPersistenceV4): boolean {
   return state.contexts.some(
     (context) =>
       context.restoreFingerprint !== undefined ||
@@ -302,7 +302,7 @@ function validTopology(topology: LayoutPersistenceTopologyV2): boolean {
 }
 
 function stateMatchesTopology(
-  state: LayoutPersistenceV3,
+  state: LayoutPersistenceV4,
   topology: LayoutPersistenceTopologyV2,
 ): boolean {
   const topologyOutputs = new Map(

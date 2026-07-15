@@ -23,6 +23,8 @@ describe("loadOverviewModel", () => {
   it("projects a valid plain live snapshot", () => {
     expect(
       loadOverviewModel(emptyCatalog, {
+        activityIds: ["work"],
+        currentActivityId: "work",
         desktopIds: [],
         outputs: [],
         windowIds: [],
@@ -31,6 +33,7 @@ describe("loadOverviewModel", () => {
       ok: true,
       value: {
         contexts: [],
+        currentActivityId: "work",
         desktopIds: [],
         floatingWindows: [],
         outputs: [],

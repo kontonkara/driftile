@@ -4,7 +4,13 @@ import {
   DEFAULT_WINDOW_HEIGHT_PRESETS,
   solveStripGeometry,
 } from "../../src/core/geometry";
-import { columnId, desktopId, outputId, windowId } from "../../src/core/ids";
+import {
+  activityId,
+  columnId,
+  desktopId,
+  outputId,
+  windowId,
+} from "../../src/core/ids";
 import type {
   ColumnWidth,
   LayoutColumnSnapshot,
@@ -14,6 +20,7 @@ import type {
 
 const output = outputId("DP-1");
 const desktop = desktopId("desktop-1");
+const FALLBACK_ACTIVITY_ID = activityId("activity-1");
 const floatingPointTolerance = 1e-9;
 
 describe("solveStripGeometry", () => {
@@ -1388,6 +1395,7 @@ function createContext(widths: readonly ColumnWidth[]): LayoutContextSnapshot {
   return {
     activeColumnId:
       widths.length === 0 ? null : columnId(`column-${String(widths.length)}`),
+    activityId: FALLBACK_ACTIVITY_ID,
     columns: widths.map((width, index) => ({
       id: columnId(`column-${String(index + 1)}`),
       presentation: "stacked",

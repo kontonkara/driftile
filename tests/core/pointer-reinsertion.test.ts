@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { Rect, WindowGeometry } from "../../src/core/geometry";
-import { columnId, desktopId, outputId, windowId } from "../../src/core/ids";
+import {
+  activityId,
+  columnId,
+  desktopId,
+  outputId,
+  windowId,
+} from "../../src/core/ids";
 import type { LayoutContextSnapshot } from "../../src/core/layout-engine";
 import {
   planPointerColumnDrop,
@@ -18,6 +24,7 @@ import {
 } from "../../src/core/pointer-reinsertion";
 
 const visibleArea: Rect = { height: 300, width: 500, x: 0, y: 0 };
+const FALLBACK_ACTIVITY_ID = activityId("activity-1");
 
 describe("planPointerWindowDrop", () => {
   it("selects before and after relative to the target vertical midpoint", () => {
@@ -835,6 +842,7 @@ function fixture(
 ): PointerWindowDropInput {
   const context: LayoutContextSnapshot = {
     activeColumnId: columnId("dragged-column"),
+    activityId: FALLBACK_ACTIVITY_ID,
     columns: [
       {
         id: columnId("dragged-column"),
@@ -941,6 +949,7 @@ function columnDropFixture(options: {
   return {
     context: {
       activeColumnId: columnId(source.column),
+      activityId: FALLBACK_ACTIVITY_ID,
       columns: logicalColumns.map((candidate) => ({
         id: columnId(candidate.column),
         presentation: "stacked" as const,
@@ -965,6 +974,7 @@ function stackedSourceColumnDropFixture(): PointerColumnDropInput {
   return {
     context: {
       activeColumnId: columnId("source-column"),
+      activityId: FALLBACK_ACTIVITY_ID,
       columns: [
         {
           id: columnId("source-column"),

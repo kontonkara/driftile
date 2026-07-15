@@ -13,15 +13,17 @@ import {
 } from "../../src/core/layout-persistence-catalog";
 import {
   LAYOUT_PERSISTENCE_FORMAT,
+  LAYOUT_PERSISTENCE_LEGACY_CURRENT_ACTIVITY_ID,
   LAYOUT_PERSISTENCE_LIMITS,
   LAYOUT_PERSISTENCE_VERSION,
   encodeLayoutPersistence,
-  type LayoutPersistenceV3,
+  type LayoutPersistenceV4,
   type PersistedOutputV1,
 } from "../../src/core/layout-persistence";
 
 const CONTEXT_FINGERPRINT =
   "1\u00000\u00000\u00001000\u0000800\u00000\u00000\u00001000\u0000800";
+const ACTIVITY_ID = "activity-1";
 
 function output(name: string, serialNumber?: string): PersistedOutputV1 {
   return {
@@ -45,11 +47,12 @@ function state(
   persistedOutput: PersistedOutputV1,
   windowKey: string,
   withBaseline = false,
-): LayoutPersistenceV3 {
+): LayoutPersistenceV4 {
   return {
     contexts: [
       {
         activeColumnIndex: 0,
+        activityId: ACTIVITY_ID,
         columns: [
           {
             members: [
@@ -105,6 +108,29 @@ function legacyStateV1(persistedOutput: PersistedOutputV1, windowKey: string) {
     version: 1,
     windows: [{ key: windowKey, liveId: `live-${windowKey}` }],
   };
+}
+
+function legacyStateV3(persistedOutput: PersistedOutputV1, windowKey: string) {
+  const current = state(persistedOutput, windowKey);
+
+  return {
+    ...current,
+    contexts: current.contexts.map(withoutActivityId),
+    floatingWindows: current.floatingWindows.map(withoutActivityId),
+    version: 3,
+  };
+}
+
+function withoutActivityId<T extends { readonly activityId: string }>(
+  value: T,
+): Omit<T, "activityId"> {
+  const { activityId, ...legacy } = value;
+
+  if (activityId.length === 0) {
+    throw new Error("test fixture activity is missing");
+  }
+
+  return legacy;
 }
 
 function restoreBaseline() {
@@ -176,10 +202,17 @@ function required<T>(value: T | undefined): T {
 }
 
 describe("layout persistence catalog codec", () => {
-  it("migrates a bare v1 document into one incomplete v3 snapshot", () => {
+  it("migrates a bare v1 document into one incomplete v4 snapshot", () => {
     const activeOutput = output("DP-1");
     const legacyState = legacyStateV1(activeOutput, "legacy");
-    const migratedState = state(activeOutput, "legacy");
+    const currentState = state(activeOutput, "legacy");
+    const migratedState: LayoutPersistenceV4 = {
+      ...currentState,
+      contexts: currentState.contexts.map((context) => ({
+        ...context,
+        activityId: LAYOUT_PERSISTENCE_LEGACY_CURRENT_ACTIVITY_ID,
+      })),
+    };
     const decoded = decodeLayoutPersistenceCatalog(JSON.stringify(legacyState));
 
     expect(decoded).toEqual({
@@ -437,7 +470,7 @@ describe("layout persistence catalog codec", () => {
       ok: false,
     });
     expect(
-      decodeLayoutPersistenceCatalog(JSON.stringify({ ...value, version: 4 })),
+      decodeLayoutPersistenceCatalog(JSON.stringify({ ...value, version: 5 })),
     ).toEqual({ error: "unsupported-version", ok: false });
     expect(
       decodeLayoutPersistenceCatalog(
@@ -482,7 +515,7 @@ describe("layout persistence catalog codec", () => {
                   ],
                 },
               ],
-              version: 3,
+              version: 4,
             },
           },
         ],
@@ -495,7 +528,7 @@ describe("layout persistence catalog codec", () => {
       snapshots: [
         {
           ...required(legacy.snapshots[0]),
-          state: { ...required(legacy.snapshots[0]).state, version: 4 },
+          state: { ...required(legacy.snapshots[0]).state, version: 5 },
         },
       ],
     };
@@ -508,6 +541,61 @@ describe("layout persistence catalog codec", () => {
 });
 
 describe("layout persistence catalog merge", () => {
+  it("drops migrated activity-less history on the first v4 merge", () => {
+    const legacyOutput = output("DP-1", "legacy");
+    const legacyTopology = topology(legacyOutput);
+    const nestedLegacy = {
+      format: LAYOUT_PERSISTENCE_FORMAT,
+      snapshots: [
+        {
+          state: legacyStateV3(legacyOutput, "nested-legacy"),
+          topology: legacyTopology,
+        },
+      ],
+      version: LAYOUT_PERSISTENCE_CATALOG_VERSION,
+    };
+    const documents = [
+      JSON.stringify(legacyStateV1(legacyOutput, "v1-legacy")),
+      JSON.stringify(legacyStateV3(legacyOutput, "v3-legacy")),
+      JSON.stringify(nestedLegacy),
+    ];
+    const current = snapshot(
+      topology(output("DP-2", "current")),
+      "current",
+      true,
+    );
+
+    for (const document of documents) {
+      const decoded = decodeLayoutPersistenceCatalog(document);
+
+      if (!decoded.ok) {
+        throw new Error("legacy document did not decode");
+      }
+
+      expect(
+        activeLayoutPersistenceState(decoded.value).contexts[0],
+      ).toMatchObject({
+        activityId: LAYOUT_PERSISTENCE_LEGACY_CURRENT_ACTIVITY_ID,
+      });
+
+      const merged = mergeLayoutPersistenceCatalog(decoded.value, {
+        state: current.state,
+        topology: required(current.topology ?? undefined),
+      });
+
+      expect(merged).toMatchObject({ ok: true });
+
+      if (!merged.ok) {
+        throw new Error("migrated catalog merge failed");
+      }
+
+      expect(merged.value.snapshots).toEqual([current]);
+      expect(merged.document).not.toContain(
+        LAYOUT_PERSISTENCE_LEGACY_CURRENT_ACTIVITY_ID,
+      );
+    }
+  });
+
   it("rejects an incomplete current topology", () => {
     const activeState = state(output("DP-1"), "current", true);
 
@@ -701,7 +789,7 @@ describe("layout persistence catalog merge", () => {
         activeOutput,
         "current",
         4_096,
-        256,
+        248,
         26,
       );
       const outputs = [
@@ -771,7 +859,7 @@ function largeFloatingState(
   count: number,
   identifierLength: number,
   tagLength?: number,
-): LayoutPersistenceV3 {
+): LayoutPersistenceV4 {
   const windows = Array.from({ length: count }, (_unused, index) => {
     const key = longIdentifier(`${prefix}-window`, index, identifierLength);
     const liveId = longIdentifier(`${prefix}-live`, index, identifierLength);
@@ -790,6 +878,7 @@ function largeFloatingState(
   return {
     contexts: [],
     floatingWindows: windows.map((window) => ({
+      activityId: ACTIVITY_ID,
       anchor: {
         columnIndex: 0,
         columnPresentation: "stacked",

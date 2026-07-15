@@ -1,4 +1,10 @@
-import type { ColumnId, DesktopId, OutputId, WindowId } from "./ids";
+import type {
+  ActivityId,
+  ColumnId,
+  DesktopId,
+  OutputId,
+  WindowId,
+} from "./ids";
 
 export interface ColumnWidth {
   readonly kind: "fixed" | "proportion";
@@ -32,6 +38,7 @@ export interface LayoutColumnSnapshot {
 
 export interface LayoutContextSnapshot {
   readonly activeColumnId: ColumnId | null;
+  readonly activityId: ActivityId;
   readonly columns: readonly LayoutColumnSnapshot[];
   readonly desktopId: DesktopId;
   readonly outputId: OutputId;
@@ -49,12 +56,14 @@ export interface TabIndicatorState {
 }
 
 export interface RemoveColumnsCommand {
+  readonly activityId: ActivityId;
   readonly columnIds: readonly ColumnId[];
   readonly desktopId: DesktopId;
   readonly outputId: OutputId;
 }
 
 export interface UnmanageWindowsCommand {
+  readonly activityId: ActivityId;
   readonly desktopId: DesktopId;
   readonly outputId: OutputId;
   readonly windowIds: readonly WindowId[];
@@ -69,6 +78,7 @@ export interface UnmanageWindowsResult {
 
 export interface RestoreColumnsCommand {
   readonly activeColumnId?: ColumnId | null;
+  readonly activityId: ActivityId;
   readonly columns: readonly LayoutColumnPlacement[];
   readonly desktopId: DesktopId;
   readonly outputId: OutputId;
@@ -76,6 +86,7 @@ export interface RestoreColumnsCommand {
 }
 
 export interface ManageWindowCommand {
+  readonly activityId: ActivityId;
   readonly columnId: ColumnId;
   readonly desktopId: DesktopId;
   readonly outputId: OutputId;
@@ -85,6 +96,7 @@ export interface ManageWindowCommand {
 }
 
 export interface DetachedWindowPlacement {
+  readonly activityId: ActivityId;
   readonly columnId: ColumnId;
   readonly columnIndex: number;
   readonly columnPresentation: ColumnPresentation;
@@ -116,6 +128,7 @@ export interface WindowAttachPreview {
 }
 
 export interface WindowTransferTarget {
+  readonly activityId: ActivityId;
   readonly columnId: ColumnId;
   readonly desktopId: DesktopId;
   readonly outputId: OutputId;
@@ -135,11 +148,13 @@ export interface ColumnReinsertionTarget {
 }
 
 export interface WindowAttachInsertionTarget extends WindowReinsertionTarget {
+  readonly activityId: ActivityId;
   readonly desktopId: DesktopId;
   readonly outputId: OutputId;
 }
 
 export interface WindowAttachColumnInsertionTarget extends ColumnReinsertionTarget {
+  readonly activityId: ActivityId;
   readonly columnId: ColumnId;
   readonly desktopId: DesktopId;
   readonly outputId: OutputId;
@@ -148,11 +163,13 @@ export interface WindowAttachColumnInsertionTarget extends ColumnReinsertionTarg
 }
 
 export interface WindowTransferInsertionTarget extends WindowReinsertionTarget {
+  readonly activityId: ActivityId;
   readonly desktopId: DesktopId;
   readonly outputId: OutputId;
 }
 
 export interface WindowTransferColumnInsertionTarget extends ColumnReinsertionTarget {
+  readonly activityId: ActivityId;
   readonly columnId: ColumnId;
   readonly desktopId: DesktopId;
   readonly outputId: OutputId;
@@ -160,6 +177,7 @@ export interface WindowTransferColumnInsertionTarget extends ColumnReinsertionTa
 }
 
 export interface ColumnTransferTarget {
+  readonly activityId: ActivityId;
   readonly columnId: ColumnId;
   readonly desktopId: DesktopId;
   readonly outputId: OutputId;
@@ -227,6 +245,7 @@ interface LayoutColumn {
 
 interface LayoutContext {
   activeColumnId: ColumnId | null;
+  readonly activityId: ActivityId;
   readonly columnById: Map<ColumnId, LayoutColumn>;
   readonly columnIds: Set<ColumnId>;
   readonly columnIndexById: Map<ColumnId, number>;
@@ -334,11 +353,16 @@ export class LayoutEngine {
       return false;
     }
 
-    const key = contextKey(command.outputId, command.desktopId);
+    const key = contextKey(
+      command.outputId,
+      command.desktopId,
+      command.activityId,
+    );
     const context = this.getOrCreateContext(
       key,
       command.outputId,
       command.desktopId,
+      command.activityId,
     );
 
     if (context.columnIds.has(command.columnId)) {
@@ -601,7 +625,11 @@ export class LayoutEngine {
       return null;
     }
 
-    const before = this.snapshot(context.outputId, context.desktopId);
+    const before = this.snapshot(
+      context.outputId,
+      context.desktopId,
+      context.activityId,
+    );
     let kind: StackEditResult["kind"];
 
     if (source.windowIds.length === 1) {
@@ -660,7 +688,7 @@ export class LayoutEngine {
     return this.createStackEditResult(
       kind,
       before,
-      this.snapshot(context.outputId, context.desktopId),
+      this.snapshot(context.outputId, context.desktopId, context.activityId),
     );
   }
 
@@ -705,7 +733,11 @@ export class LayoutEngine {
       return null;
     }
 
-    const before = this.snapshot(context.outputId, context.desktopId);
+    const before = this.snapshot(
+      context.outputId,
+      context.desktopId,
+      context.activityId,
+    );
     const sourceDisappears = source.windowIds.length === 1;
     removeMutableColumnWindow(source, windowIndex);
     this.reindexColumnPlacements(placement.contextKey, source, windowIndex);
@@ -730,7 +762,7 @@ export class LayoutEngine {
     return this.createStackEditResult(
       sourceDisappears ? "merge" : "insert",
       before,
-      this.snapshot(context.outputId, context.desktopId),
+      this.snapshot(context.outputId, context.desktopId, context.activityId),
     );
   }
 
@@ -765,7 +797,7 @@ export class LayoutEngine {
     }
 
     const before = immutableContextSnapshot(
-      this.snapshot(context.outputId, context.desktopId),
+      this.snapshot(context.outputId, context.desktopId, context.activityId),
     );
     const columns = before.columns.map(cloneColumnSnapshot);
     const nextTarget = columns[targetIndex];
@@ -843,7 +875,7 @@ export class LayoutEngine {
     }
 
     const before = immutableContextSnapshot(
-      this.snapshot(context.outputId, context.desktopId),
+      this.snapshot(context.outputId, context.desktopId, context.activityId),
     );
     const columns = before.columns.map(cloneColumnSnapshot);
     const nextSource = columns[sourceIndex];
@@ -896,7 +928,11 @@ export class LayoutEngine {
 
     if (
       !sameContextSnapshot(
-        this.snapshot(state.before.outputId, state.before.desktopId),
+        this.snapshot(
+          state.before.outputId,
+          state.before.desktopId,
+          state.before.activityId,
+        ),
         state.before,
       ) ||
       !sameWindowSet(state.before, state.after) ||
@@ -955,7 +991,11 @@ export class LayoutEngine {
       return null;
     }
 
-    const before = this.snapshot(context.outputId, context.desktopId);
+    const before = this.snapshot(
+      context.outputId,
+      context.desktopId,
+      context.activityId,
+    );
     swapMutableColumnWindowHeights(column, windowIndex, targetIndex);
     column.windowIds[windowIndex] = target;
     column.windowIds[targetIndex] = windowId;
@@ -968,7 +1008,7 @@ export class LayoutEngine {
     return this.createStackEditResult(
       "reorder",
       before,
-      this.snapshot(context.outputId, context.desktopId),
+      this.snapshot(context.outputId, context.desktopId, context.activityId),
     );
   }
 
@@ -1000,7 +1040,11 @@ export class LayoutEngine {
       return null;
     }
 
-    const before = this.snapshot(context.outputId, context.desktopId);
+    const before = this.snapshot(
+      context.outputId,
+      context.desktopId,
+      context.activityId,
+    );
 
     if (
       !validContextSnapshot(before) ||
@@ -1050,7 +1094,11 @@ export class LayoutEngine {
       return null;
     }
 
-    const before = this.snapshot(context.outputId, context.desktopId);
+    const before = this.snapshot(
+      context.outputId,
+      context.desktopId,
+      context.activityId,
+    );
 
     if (
       !validContextSnapshot(before) ||
@@ -1108,7 +1156,11 @@ export class LayoutEngine {
 
     this.stackEditRollbacks.delete(rollback);
     const { after, before } = snapshots;
-    const current = this.snapshot(after.outputId, after.desktopId);
+    const current = this.snapshot(
+      after.outputId,
+      after.desktopId,
+      after.activityId,
+    );
     const removedWindowIds = contextRemovedWindowIds(after, current);
 
     if (removedWindowIds === null || !sameWindowSet(before, after)) {
@@ -1127,6 +1179,7 @@ export class LayoutEngine {
     if (
       before.outputId !== after.outputId ||
       before.desktopId !== after.desktopId ||
+      before.activityId !== after.activityId ||
       !sameRollbackContextColumns(current, rollbackAfter) ||
       !sameWindowSet(rollbackBefore, rollbackAfter)
     ) {
@@ -1134,7 +1187,7 @@ export class LayoutEngine {
     }
 
     const context = this.contexts.get(
-      contextKey(before.outputId, before.desktopId),
+      contextKey(before.outputId, before.desktopId, before.activityId),
     );
 
     if (!context || !validContextSnapshot(rollbackBefore)) {
@@ -1151,7 +1204,11 @@ export class LayoutEngine {
     const afterColumns = new Map(
       rollbackAfter.columns.map((column) => [column.id, column] as const),
     );
-    const key = contextKey(context.outputId, context.desktopId);
+    const key = contextKey(
+      context.outputId,
+      context.desktopId,
+      context.activityId,
+    );
 
     for (const snapshot of rollbackBefore.columns) {
       const currentColumn = currentColumns.get(snapshot.id);
@@ -1266,7 +1323,11 @@ export class LayoutEngine {
       return null;
     }
 
-    const before = this.snapshot(context.outputId, context.desktopId);
+    const before = this.snapshot(
+      context.outputId,
+      context.desktopId,
+      context.activityId,
+    );
     const [column] = context.columns.splice(columnIndex, 1);
 
     if (!column) {
@@ -1278,7 +1339,7 @@ export class LayoutEngine {
     return this.createStackEditResult(
       "reorder",
       before,
-      this.snapshot(context.outputId, context.desktopId),
+      this.snapshot(context.outputId, context.desktopId, context.activityId),
     );
   }
 
@@ -1357,11 +1418,11 @@ export class LayoutEngine {
     }
 
     const before = immutableContextSnapshot(
-      this.snapshot(context.outputId, context.desktopId),
+      this.snapshot(context.outputId, context.desktopId, context.activityId),
     );
     setMutableColumnWindowHeights(column, heights);
     const after = immutableContextSnapshot(
-      this.snapshot(context.outputId, context.desktopId),
+      this.snapshot(context.outputId, context.desktopId, context.activityId),
     );
     const rollback = {} as WindowHeightEditRollback;
     this.windowHeightEditRollbacks.set(rollback, { after, before });
@@ -1380,7 +1441,7 @@ export class LayoutEngine {
 
     if (
       !sameContextSnapshot(
-        this.snapshot(after.outputId, after.desktopId),
+        this.snapshot(after.outputId, after.desktopId, after.activityId),
         after,
       ) ||
       !sameWindowSet(before, after) ||
@@ -1412,7 +1473,11 @@ export class LayoutEngine {
     }
 
     const source = this.contexts.get(managedPlacement.contextKey);
-    const targetKey = contextKey(target.outputId, target.desktopId);
+    const targetKey = contextKey(
+      target.outputId,
+      target.desktopId,
+      target.activityId,
+    );
 
     if (
       !source ||
@@ -1433,11 +1498,11 @@ export class LayoutEngine {
     }
 
     const sourceBefore = immutableContextSnapshot(
-      this.snapshot(source.outputId, source.desktopId),
+      this.snapshot(source.outputId, source.desktopId, source.activityId),
     );
     const transferredColumn = sourceBefore.columns[sourceColumnIndex];
     const targetBefore = immutableContextSnapshot(
-      this.snapshot(target.outputId, target.desktopId),
+      this.snapshot(target.outputId, target.desktopId, target.activityId),
     );
 
     if (!transferredColumn) {
@@ -1473,6 +1538,7 @@ export class LayoutEngine {
         sourceBefore.columns[sourceColumnIndex - 1]?.id ??
         null,
       columns: sourceColumns,
+      activityId: sourceBefore.activityId,
       desktopId: sourceBefore.desktopId,
       outputId: sourceBefore.outputId,
       viewportOffset:
@@ -1497,6 +1563,7 @@ export class LayoutEngine {
     const targetAfter = immutableContextSnapshot({
       activeColumnId: target.columnId,
       columns: targetColumns,
+      activityId: targetBefore.activityId,
       desktopId: targetBefore.desktopId,
       outputId: targetBefore.outputId,
       viewportOffset: targetBefore.viewportOffset,
@@ -1526,10 +1593,12 @@ export class LayoutEngine {
     const sourceKey = contextKey(
       state.sourceBefore.outputId,
       state.sourceBefore.desktopId,
+      state.sourceBefore.activityId,
     );
     const targetKey = contextKey(
       state.targetBefore.outputId,
       state.targetBefore.desktopId,
+      state.targetBefore.activityId,
     );
 
     if (
@@ -1539,6 +1608,7 @@ export class LayoutEngine {
         this.snapshot(
           state.sourceBefore.outputId,
           state.sourceBefore.desktopId,
+          state.sourceBefore.activityId,
         ),
         state.sourceBefore,
       ) ||
@@ -1546,6 +1616,7 @@ export class LayoutEngine {
         this.snapshot(
           state.targetBefore.outputId,
           state.targetBefore.desktopId,
+          state.targetBefore.activityId,
         ),
         state.targetBefore,
       ) ||
@@ -1587,7 +1658,11 @@ export class LayoutEngine {
     }
 
     const source = this.contexts.get(managedPlacement.contextKey);
-    const targetKey = contextKey(target.outputId, target.desktopId);
+    const targetKey = contextKey(
+      target.outputId,
+      target.desktopId,
+      target.activityId,
+    );
 
     if (
       !source ||
@@ -1609,10 +1684,10 @@ export class LayoutEngine {
     }
 
     const sourceBefore = immutableContextSnapshot(
-      this.snapshot(source.outputId, source.desktopId),
+      this.snapshot(source.outputId, source.desktopId, source.activityId),
     );
     const targetBefore = immutableContextSnapshot(
-      this.snapshot(target.outputId, target.desktopId),
+      this.snapshot(target.outputId, target.desktopId, target.activityId),
     );
     let targetActiveIndex = -1;
 
@@ -1670,6 +1745,7 @@ export class LayoutEngine {
           null)
         : sourceBefore.activeColumnId,
       columns: sourceColumns,
+      activityId: sourceBefore.activityId,
       desktopId: sourceBefore.desktopId,
       outputId: sourceBefore.outputId,
       viewportOffset:
@@ -1688,6 +1764,7 @@ export class LayoutEngine {
     const targetAfter = immutableContextSnapshot({
       activeColumnId: target.columnId,
       columns: targetColumns,
+      activityId: targetBefore.activityId,
       desktopId: targetBefore.desktopId,
       outputId: targetBefore.outputId,
       viewportOffset: targetBefore.viewportOffset,
@@ -1714,7 +1791,11 @@ export class LayoutEngine {
 
     const sourcePlacement = this.placements.get(windowId);
     const targetPlacement = this.placements.get(target.targetWindowId);
-    const targetKey = contextKey(target.outputId, target.desktopId);
+    const targetKey = contextKey(
+      target.outputId,
+      target.desktopId,
+      target.activityId,
+    );
 
     if (
       !sourcePlacement ||
@@ -1737,10 +1818,14 @@ export class LayoutEngine {
     }
 
     const sourceBefore = immutableContextSnapshot(
-      this.snapshot(source.outputId, source.desktopId),
+      this.snapshot(source.outputId, source.desktopId, source.activityId),
     );
     const targetBefore = immutableContextSnapshot(
-      this.snapshot(destination.outputId, destination.desktopId),
+      this.snapshot(
+        destination.outputId,
+        destination.desktopId,
+        destination.activityId,
+      ),
     );
     const sourceColumnIndex = sourceBefore.columns.findIndex(
       (column) => column.id === sourcePlacement.columnId,
@@ -1807,6 +1892,7 @@ export class LayoutEngine {
           null)
         : sourceBefore.activeColumnId,
       columns: sourceColumns,
+      activityId: sourceBefore.activityId,
       desktopId: sourceBefore.desktopId,
       outputId: sourceBefore.outputId,
       viewportOffset:
@@ -1842,6 +1928,7 @@ export class LayoutEngine {
     const targetAfter = immutableContextSnapshot({
       activeColumnId: targetColumn.id,
       columns: targetColumns,
+      activityId: targetBefore.activityId,
       desktopId: targetBefore.desktopId,
       outputId: targetBefore.outputId,
       viewportOffset: targetBefore.viewportOffset,
@@ -1878,7 +1965,11 @@ export class LayoutEngine {
     }
 
     const sourcePlacement = this.placements.get(windowId);
-    const targetKey = contextKey(target.outputId, target.desktopId);
+    const targetKey = contextKey(
+      target.outputId,
+      target.desktopId,
+      target.activityId,
+    );
 
     if (!sourcePlacement || sourcePlacement.contextKey === targetKey) {
       return null;
@@ -1896,10 +1987,14 @@ export class LayoutEngine {
     }
 
     const sourceBefore = immutableContextSnapshot(
-      this.snapshot(source.outputId, source.desktopId),
+      this.snapshot(source.outputId, source.desktopId, source.activityId),
     );
     const targetBefore = immutableContextSnapshot(
-      this.snapshot(destination.outputId, destination.desktopId),
+      this.snapshot(
+        destination.outputId,
+        destination.desktopId,
+        destination.activityId,
+      ),
     );
     const sourceColumnIndex = sourceBefore.columns.findIndex(
       (column) => column.id === sourcePlacement.columnId,
@@ -1966,6 +2061,7 @@ export class LayoutEngine {
           null)
         : sourceBefore.activeColumnId,
       columns: sourceColumns,
+      activityId: sourceBefore.activityId,
       desktopId: sourceBefore.desktopId,
       outputId: sourceBefore.outputId,
       viewportOffset:
@@ -1984,6 +2080,7 @@ export class LayoutEngine {
     const targetAfter = immutableContextSnapshot({
       activeColumnId: target.columnId,
       columns: targetColumns,
+      activityId: targetBefore.activityId,
       desktopId: targetBefore.desktopId,
       outputId: targetBefore.outputId,
       viewportOffset: targetBefore.viewportOffset,
@@ -2022,10 +2119,12 @@ export class LayoutEngine {
     const sourceKey = contextKey(
       state.sourceBefore.outputId,
       state.sourceBefore.desktopId,
+      state.sourceBefore.activityId,
     );
     const targetKey = contextKey(
       state.targetBefore.outputId,
       state.targetBefore.desktopId,
+      state.targetBefore.activityId,
     );
 
     if (
@@ -2035,6 +2134,7 @@ export class LayoutEngine {
         this.snapshot(
           state.sourceBefore.outputId,
           state.sourceBefore.desktopId,
+          state.sourceBefore.activityId,
         ),
         state.sourceBefore,
       ) ||
@@ -2042,6 +2142,7 @@ export class LayoutEngine {
         this.snapshot(
           state.targetBefore.outputId,
           state.targetBefore.desktopId,
+          state.targetBefore.activityId,
         ),
         state.targetBefore,
       ) ||
@@ -2090,7 +2191,7 @@ export class LayoutEngine {
     }
 
     const before = immutableContextSnapshot(
-      this.snapshot(context.outputId, context.desktopId),
+      this.snapshot(context.outputId, context.desktopId, context.activityId),
     );
     const detachedHeight = column.windowHeights?.[memberIndex];
     const placement = immutableDetachedWindowPlacement({
@@ -2098,6 +2199,7 @@ export class LayoutEngine {
       columnIndex,
       columnPresentation: column.presentation,
       columnWidth: column.width,
+      activityId: context.activityId,
       desktopId: context.desktopId,
       memberIndex,
       nextColumnId: context.columns[columnIndex + 1]?.id ?? null,
@@ -2152,6 +2254,7 @@ export class LayoutEngine {
     const after = immutableContextSnapshot({
       activeColumnId,
       columns,
+      activityId: before.activityId,
       desktopId: before.desktopId,
       outputId: before.outputId,
       viewportOffset: columns.length === 0 ? 0 : before.viewportOffset,
@@ -2172,12 +2275,20 @@ export class LayoutEngine {
     }
 
     this.windowDetachPreviews.delete(preview);
-    const key = contextKey(state.before.outputId, state.before.desktopId);
+    const key = contextKey(
+      state.before.outputId,
+      state.before.desktopId,
+      state.before.activityId,
+    );
 
     if (
       this.placements.get(state.windowId)?.contextKey !== key ||
       !sameContextSnapshot(
-        this.snapshot(state.before.outputId, state.before.desktopId),
+        this.snapshot(
+          state.before.outputId,
+          state.before.desktopId,
+          state.before.activityId,
+        ),
         state.before,
       )
     ) {
@@ -2201,7 +2312,7 @@ export class LayoutEngine {
 
     const saved = immutableDetachedWindowPlacement(placement);
     const before = immutableContextSnapshot(
-      this.snapshot(saved.outputId, saved.desktopId),
+      this.snapshot(saved.outputId, saved.desktopId, saved.activityId),
     );
     const after = previewWindowAttachment(before, saved);
 
@@ -2224,7 +2335,11 @@ export class LayoutEngine {
       return null;
     }
 
-    const key = contextKey(target.outputId, target.desktopId);
+    const key = contextKey(
+      target.outputId,
+      target.desktopId,
+      target.activityId,
+    );
     const targetPlacement = this.placements.get(target.targetWindowId);
     const context = this.contexts.get(key);
 
@@ -2233,7 +2348,7 @@ export class LayoutEngine {
     }
 
     const before = immutableContextSnapshot(
-      this.snapshot(target.outputId, target.desktopId),
+      this.snapshot(target.outputId, target.desktopId, target.activityId),
     );
     const targetColumnIndex = before.columns.findIndex(
       (column) => column.id === targetPlacement.columnId,
@@ -2273,6 +2388,7 @@ export class LayoutEngine {
     const after = immutableContextSnapshot({
       activeColumnId: targetColumn.id,
       columns,
+      activityId: before.activityId,
       desktopId: before.desktopId,
       outputId: before.outputId,
       viewportOffset: before.viewportOffset,
@@ -2297,7 +2413,11 @@ export class LayoutEngine {
       return null;
     }
 
-    const key = contextKey(target.outputId, target.desktopId);
+    const key = contextKey(
+      target.outputId,
+      target.desktopId,
+      target.activityId,
+    );
     const context = this.contexts.get(key);
 
     if (!context) {
@@ -2305,7 +2425,7 @@ export class LayoutEngine {
     }
 
     const before = immutableContextSnapshot(
-      this.snapshot(target.outputId, target.desktopId),
+      this.snapshot(target.outputId, target.desktopId, target.activityId),
     );
     const targetColumnIndex = before.columns.findIndex(
       (column) => column.id === target.targetColumnId,
@@ -2336,6 +2456,7 @@ export class LayoutEngine {
     const after = immutableContextSnapshot({
       activeColumnId: target.columnId,
       columns,
+      activityId: before.activityId,
       desktopId: before.desktopId,
       outputId: before.outputId,
       viewportOffset: before.viewportOffset,
@@ -2360,7 +2481,11 @@ export class LayoutEngine {
     if (
       this.placements.has(state.windowId) ||
       !sameContextSnapshot(
-        this.snapshot(state.before.outputId, state.before.desktopId),
+        this.snapshot(
+          state.before.outputId,
+          state.before.desktopId,
+          state.before.activityId,
+        ),
         state.before,
       )
     ) {
@@ -2438,7 +2563,11 @@ export class LayoutEngine {
       return null;
     }
 
-    const key = contextKey(command.outputId, command.desktopId);
+    const key = contextKey(
+      command.outputId,
+      command.desktopId,
+      command.activityId,
+    );
     const context = this.contexts.get(key);
     const removedWindowIds = new Set(command.windowIds);
 
@@ -2582,7 +2711,11 @@ export class LayoutEngine {
       return false;
     }
 
-    const key = contextKey(command.outputId, command.desktopId);
+    const key = contextKey(
+      command.outputId,
+      command.desktopId,
+      command.activityId,
+    );
     const context = this.contexts.get(key);
 
     if (!context) {
@@ -2655,9 +2788,17 @@ export class LayoutEngine {
       assertValidWidth(placement.column.width);
     }
 
-    const key = contextKey(command.outputId, command.desktopId);
+    const key = contextKey(
+      command.outputId,
+      command.desktopId,
+      command.activityId,
+    );
     const existing = this.contexts.get(key);
-    const current = this.snapshot(command.outputId, command.desktopId);
+    const current = this.snapshot(
+      command.outputId,
+      command.desktopId,
+      command.activityId,
+    );
     const restored = previewColumnRestoration(current, command.columns, {
       activeColumnId:
         command.activeColumnId === undefined
@@ -2684,7 +2825,12 @@ export class LayoutEngine {
 
     const context =
       existing ??
-      this.getOrCreateContext(key, command.outputId, command.desktopId);
+      this.getOrCreateContext(
+        key,
+        command.outputId,
+        command.desktopId,
+        command.activityId,
+      );
     context.columns.length = 0;
     context.columnById.clear();
     context.columnIds.clear();
@@ -2721,12 +2867,19 @@ export class LayoutEngine {
     return true;
   }
 
-  snapshot(outputId: OutputId, desktopId: DesktopId): LayoutContextSnapshot {
-    const context = this.contexts.get(contextKey(outputId, desktopId));
+  snapshot(
+    outputId: OutputId,
+    desktopId: DesktopId,
+    activityId: ActivityId,
+  ): LayoutContextSnapshot {
+    const context = this.contexts.get(
+      contextKey(outputId, desktopId, activityId),
+    );
 
     if (!context) {
       return {
         activeColumnId: null,
+        activityId,
         columns: [],
         desktopId,
         outputId,
@@ -2746,6 +2899,7 @@ export class LayoutEngine {
           : {}),
         windowIds: [...column.windowIds],
       })),
+      activityId: context.activityId,
       desktopId: context.desktopId,
       outputId: context.outputId,
       viewportOffset: context.viewportOffset,
@@ -2755,11 +2909,14 @@ export class LayoutEngine {
   setViewportOffset(
     outputId: OutputId,
     desktopId: DesktopId,
+    activityId: ActivityId,
     viewportOffset: number,
   ): boolean {
     assertValidViewportOffset(viewportOffset);
 
-    const context = this.contexts.get(contextKey(outputId, desktopId));
+    const context = this.contexts.get(
+      contextKey(outputId, desktopId, activityId),
+    );
 
     if (!context) {
       return false;
@@ -2832,6 +2989,7 @@ export class LayoutEngine {
     key: string,
     outputId: OutputId,
     desktopId: DesktopId,
+    activityId: ActivityId,
   ): LayoutContext {
     const existing = this.contexts.get(key);
 
@@ -2841,6 +2999,7 @@ export class LayoutEngine {
 
     const context: LayoutContext = {
       activeColumnId: null,
+      activityId,
       columnById: new Map<ColumnId, LayoutColumn>(),
       columnIds: new Set<ColumnId>(),
       columnIndexById: new Map<ColumnId, number>(),
@@ -2854,7 +3013,11 @@ export class LayoutEngine {
   }
 
   private placementsMatchSnapshot(snapshot: LayoutContextSnapshot): boolean {
-    const key = contextKey(snapshot.outputId, snapshot.desktopId);
+    const key = contextKey(
+      snapshot.outputId,
+      snapshot.desktopId,
+      snapshot.activityId,
+    );
 
     for (const column of snapshot.columns) {
       for (const [memberIndex, id] of column.windowIds.entries()) {
@@ -2874,7 +3037,11 @@ export class LayoutEngine {
   }
 
   private replaceContext(snapshot: LayoutContextSnapshot): void {
-    const key = contextKey(snapshot.outputId, snapshot.desktopId);
+    const key = contextKey(
+      snapshot.outputId,
+      snapshot.desktopId,
+      snapshot.activityId,
+    );
 
     if (snapshot.columns.length === 0) {
       this.contexts.delete(key);
@@ -2885,6 +3052,7 @@ export class LayoutEngine {
       key,
       snapshot.outputId,
       snapshot.desktopId,
+      snapshot.activityId,
     );
     context.columns.length = 0;
     context.columnById.clear();
@@ -3304,6 +3472,7 @@ function previewWindowAttachment(
   return immutableContextSnapshot({
     activeColumnId: placement.columnId,
     columns,
+    activityId: context.activityId,
     desktopId: context.desktopId,
     outputId: context.outputId,
     viewportOffset: context.viewportOffset,
@@ -3339,6 +3508,7 @@ function immutableDetachedWindowPlacement(
   placement: DetachedWindowPlacement,
 ): DetachedWindowPlacement {
   return Object.freeze({
+    activityId: placement.activityId,
     columnId: placement.columnId,
     columnIndex: placement.columnIndex,
     columnPresentation: placement.columnPresentation,
@@ -3414,6 +3584,7 @@ function immutableContextSnapshot(
   return Object.freeze({
     activeColumnId: snapshot.activeColumnId,
     columns: Object.freeze(columns),
+    activityId: snapshot.activityId,
     desktopId: snapshot.desktopId,
     outputId: snapshot.outputId,
     viewportOffset: snapshot.viewportOffset,
@@ -3437,6 +3608,7 @@ function validDetachedWindowPlacement(
 
   return (
     typeof columnId === "string" &&
+    typeof placement["activityId"] === "string" &&
     typeof placement["desktopId"] === "string" &&
     typeof placement["outputId"] === "string" &&
     typeof windowId === "string" &&
@@ -3473,6 +3645,7 @@ function validWindowTransferTarget(
 ): target is WindowTransferTarget {
   return (
     isRecord(target) &&
+    typeof target["activityId"] === "string" &&
     typeof target["columnId"] === "string" &&
     typeof target["desktopId"] === "string" &&
     typeof target["outputId"] === "string" &&
@@ -3507,6 +3680,7 @@ function validWindowTransferInsertionTarget(
   return (
     isRecord(target) &&
     validWindowReinsertionTarget(target) &&
+    typeof target["activityId"] === "string" &&
     typeof target["desktopId"] === "string" &&
     typeof target["outputId"] === "string"
   );
@@ -3524,6 +3698,7 @@ function validWindowAttachColumnInsertionTarget(
   return (
     isRecord(target) &&
     validColumnReinsertionTarget(target) &&
+    typeof target["activityId"] === "string" &&
     typeof target["columnId"] === "string" &&
     typeof target["desktopId"] === "string" &&
     typeof target["outputId"] === "string" &&
@@ -3538,6 +3713,7 @@ function validWindowTransferColumnInsertionTarget(
   return (
     isRecord(target) &&
     validColumnReinsertionTarget(target) &&
+    typeof target["activityId"] === "string" &&
     typeof target["columnId"] === "string" &&
     typeof target["desktopId"] === "string" &&
     typeof target["outputId"] === "string" &&
@@ -3670,14 +3846,19 @@ export function previewColumnRestoration(
   return {
     activeColumnId,
     columns,
+    activityId: context.activityId,
     desktopId: context.desktopId,
     outputId: context.outputId,
     viewportOffset,
   };
 }
 
-function contextKey(outputId: OutputId, desktopId: DesktopId): string {
-  return `${outputId}\u0000${desktopId}`;
+function contextKey(
+  outputId: OutputId,
+  desktopId: DesktopId,
+  activityId: ActivityId,
+): string {
+  return `${outputId}\u0000${desktopId}\u0000${activityId}`;
 }
 
 function liveColumnIndex(context: LayoutContext, columnId: ColumnId): number {
@@ -3701,6 +3882,7 @@ function sameContextColumns(
   return (
     left.outputId === right.outputId &&
     left.desktopId === right.desktopId &&
+    left.activityId === right.activityId &&
     left.columns.length === right.columns.length &&
     left.columns.every((column, index) => {
       const candidate = right.columns[index];
@@ -3728,6 +3910,7 @@ function sameRollbackContextColumns(
   return (
     left.outputId === right.outputId &&
     left.desktopId === right.desktopId &&
+    left.activityId === right.activityId &&
     left.columns.length === right.columns.length &&
     left.columns.every((column, index) => {
       const candidate = right.columns[index];
@@ -3869,6 +4052,7 @@ function contextWithoutWindows(
   return {
     activeColumnId,
     columns,
+    activityId: snapshot.activityId,
     desktopId: snapshot.desktopId,
     outputId: snapshot.outputId,
     viewportOffset: columns.length === 0 ? 0 : snapshot.viewportOffset,
@@ -3911,6 +4095,9 @@ function validTransferContextSnapshot(
   snapshot: LayoutContextSnapshot,
 ): boolean {
   if (
+    typeof snapshot.activityId !== "string" ||
+    typeof snapshot.desktopId !== "string" ||
+    typeof snapshot.outputId !== "string" ||
     !Number.isFinite(snapshot.viewportOffset) ||
     (snapshot.columns.length === 0 &&
       (snapshot.activeColumnId !== null || snapshot.viewportOffset !== 0))
@@ -3927,6 +4114,9 @@ function validTransferContextSnapshot(
 
 function validContextSnapshot(snapshot: LayoutContextSnapshot): boolean {
   if (
+    typeof snapshot.activityId !== "string" ||
+    typeof snapshot.desktopId !== "string" ||
+    typeof snapshot.outputId !== "string" ||
     snapshot.columns.length === 0 ||
     !Number.isFinite(snapshot.viewportOffset)
   ) {

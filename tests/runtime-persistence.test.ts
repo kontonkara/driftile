@@ -13,7 +13,7 @@ import {
   LAYOUT_PERSISTENCE_VERSION,
   decodeLayoutPersistence,
   encodeLayoutPersistence,
-  type LayoutPersistenceV3,
+  type LayoutPersistenceV4,
   type PersistedOutputV1,
 } from "../src/core/layout-persistence";
 import type { KWinOutput } from "../src/platform/kwin/api";
@@ -53,7 +53,7 @@ function topology(
   return { outputs };
 }
 
-function state(...outputs: readonly PersistedOutputV1[]): LayoutPersistenceV3 {
+function state(...outputs: readonly PersistedOutputV1[]): LayoutPersistenceV4 {
   const windows = outputs.map((persistedOutput, index) => ({
     key: `window-${String(index)}`,
     liveId: `live-window-${String(index)}`,
@@ -62,6 +62,7 @@ function state(...outputs: readonly PersistedOutputV1[]): LayoutPersistenceV3 {
   return {
     contexts: [],
     floatingWindows: outputs.map((persistedOutput, index) => ({
+      activityId: "work",
       anchor: {
         columnIndex: 0,
         columnPresentation: "stacked",
@@ -85,12 +86,14 @@ function legacyStateV1(...outputs: readonly PersistedOutputV1[]) {
   return {
     ...current,
     floatingWindows: current.floatingWindows.map((floating) => ({
-      ...floating,
       anchor: {
         columnIndex: floating.anchor.columnIndex,
         columnWidth: floating.anchor.columnWidth,
         memberIndex: floating.anchor.memberIndex,
       },
+      desktopId: floating.desktopId,
+      outputKey: floating.outputKey,
+      windowKey: floating.windowKey,
     })),
     version: 1,
   };
@@ -98,7 +101,7 @@ function legacyStateV1(...outputs: readonly PersistedOutputV1[]) {
 
 function snapshot(
   persistedTopology: LayoutPersistenceTopologyV2,
-  persistedState: LayoutPersistenceV3,
+  persistedState: LayoutPersistenceV4,
 ): LayoutPersistenceCatalogSnapshot {
   return { state: persistedState, topology: persistedTopology };
 }
@@ -170,20 +173,41 @@ describe("runtime layout persistence bridge", () => {
 
   it("selects and canonicalizes a valid bare v1 document", () => {
     const active = output("DP-1", "serial-active");
-    const migrated = state(persistedOutput(active));
     const legacy = legacyStateV1(persistedOutput(active));
     const document = JSON.stringify(legacy);
+    const decoded = decodeLayoutPersistence(document);
+
+    if (!decoded.ok) {
+      throw new Error(`legacy state did not migrate: ${decoded.error}`);
+    }
+
     const persistence = createRuntimeLayoutPersistence(
       mutableWorkspace([active]),
       document,
       undefined,
     );
 
-    expect(persistence.initialState).toBe(encodeLayoutPersistence(migrated));
-    expect(persistence.stateForCurrentTopology()).toBe(
-      encodeLayoutPersistence(migrated),
-    );
+    expect(persistence.initialState).toBe(document);
+    expect(persistence.stateForCurrentTopology()).toBe(document);
     expect(persistence.onStateChanged).toBeUndefined();
+
+    const nestedDocument = JSON.stringify({
+      format: LAYOUT_PERSISTENCE_FORMAT,
+      snapshots: [
+        {
+          state: legacy,
+          topology: topology(persistedOutput(active)),
+        },
+      ],
+      version: LAYOUT_PERSISTENCE_CATALOG_VERSION,
+    });
+    const nested = createRuntimeLayoutPersistence(
+      mutableWorkspace([active]),
+      nestedDocument,
+      undefined,
+    );
+
+    expect(nested.initialState).toBe(`${JSON.stringify(legacy)}\n`);
   });
 
   it("selects a complete v2 snapshot by the full live output topology", () => {

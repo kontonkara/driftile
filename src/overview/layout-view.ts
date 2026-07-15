@@ -4,16 +4,17 @@ import type {
   LayoutPersistenceTopologyV2,
 } from "../core/layout-persistence-catalog";
 import {
+  LAYOUT_PERSISTENCE_LEGACY_CURRENT_ACTIVITY_ID,
   LAYOUT_PERSISTENCE_LIMITS,
   type LayoutPersistenceDecodeError,
   type PersistedColumnMemberV1,
-  type PersistedColumnV3,
-  type PersistedFloatingAnchorV3,
+  type PersistedColumnV4,
+  type PersistedFloatingAnchorV4,
   type PersistedOutputV1,
 } from "../core/layout-persistence";
 
-export type OverviewColumnPresentation = PersistedColumnV3["presentation"];
-export type OverviewColumnWidth = PersistedColumnV3["width"];
+export type OverviewColumnPresentation = PersistedColumnV4["presentation"];
+export type OverviewColumnWidth = PersistedColumnV4["width"];
 export type OverviewWindowHeight = NonNullable<
   PersistedColumnMemberV1["height"]
 >;
@@ -26,6 +27,8 @@ export interface OverviewLiveOutput {
 }
 
 export interface OverviewLiveLayout {
+  readonly activityIds: readonly string[];
+  readonly currentActivityId: string;
   readonly desktopIds: readonly string[];
   readonly outputs: readonly OverviewLiveOutput[];
   readonly windowIds: readonly string[];
@@ -54,6 +57,7 @@ export interface OverviewLayoutColumn {
 
 export interface OverviewLayoutContext {
   readonly activeColumnIndex: number | null;
+  readonly activityId: string;
   readonly columns: readonly OverviewLayoutColumn[];
   readonly desktopId: string;
   readonly outputId: string;
@@ -70,6 +74,7 @@ export interface OverviewFloatingAnchor {
 }
 
 export interface OverviewFloatingWindow {
+  readonly activityId: string;
   readonly anchor: OverviewFloatingAnchor;
   readonly desktopId: string;
   readonly outputId: string;
@@ -78,6 +83,7 @@ export interface OverviewFloatingWindow {
 
 export interface OverviewLayoutModel {
   readonly contexts: readonly OverviewLayoutContext[];
+  readonly currentActivityId: string;
   readonly desktopIds: readonly string[];
   readonly floatingWindows: readonly OverviewFloatingWindow[];
   readonly outputs: readonly OverviewLayoutOutput[];
@@ -90,6 +96,7 @@ export type OverviewLayoutProjectionError =
   | "legacy-topology"
   | "invalid-live-output"
   | "topology-mismatch"
+  | "invalid-live-activity"
   | "invalid-live-desktop"
   | "desktop-mismatch"
   | "invalid-live-window"
@@ -145,6 +152,10 @@ export function projectOverviewLayout(
     return failure("legacy-topology");
   }
 
+  if (!validCurrentActivity(live.activityIds, live.currentActivityId)) {
+    return failure("invalid-live-activity");
+  }
+
   const outputResult = indexOutputs(snapshot.topology, live.outputs, metrics);
 
   if (!outputResult.ok) {
@@ -176,12 +187,18 @@ export function projectOverviewLayout(
     return failure("window-mismatch");
   }
 
+  const currentContexts = snapshot.state.contexts.filter(
+    (context) =>
+      resolvedActivityId(context.activityId, live.currentActivityId) ===
+      live.currentActivityId,
+  );
   recordOperations(metrics, snapshot.state.contexts.length);
-  const contexts = snapshot.state.contexts.map((context) => {
+  const contexts = currentContexts.map((context) => {
     recordOperations(metrics, context.columns.length);
 
     return Object.freeze({
       activeColumnIndex: context.activeColumnIndex,
+      activityId: live.currentActivityId,
       columns: Object.freeze(
         context.columns.map((column) => {
           recordOperations(metrics, column.members.length);
@@ -214,19 +231,27 @@ export function projectOverviewLayout(
     });
   });
   recordOperations(metrics, snapshot.state.floatingWindows.length);
-  const floatingWindows = snapshot.state.floatingWindows.map((floating) =>
-    Object.freeze({
-      anchor: projectFloatingAnchor(floating.anchor, indexes.windowIdByKey),
-      desktopId: floating.desktopId,
-      outputId: required(indexes.outputIdByKey, floating.outputKey),
-      windowId: required(indexes.windowIdByKey, floating.windowKey),
-    }),
-  );
+  const floatingWindows = snapshot.state.floatingWindows
+    .filter(
+      (floating) =>
+        resolvedActivityId(floating.activityId, live.currentActivityId) ===
+        live.currentActivityId,
+    )
+    .map((floating) =>
+      Object.freeze({
+        activityId: live.currentActivityId,
+        anchor: projectFloatingAnchor(floating.anchor, indexes.windowIdByKey),
+        desktopId: floating.desktopId,
+        outputId: required(indexes.outputIdByKey, floating.outputKey),
+        windowId: required(indexes.windowIdByKey, floating.windowKey),
+      }),
+    );
 
   return {
     ok: true,
     value: Object.freeze({
       contexts: Object.freeze(contexts),
+      currentActivityId: live.currentActivityId,
       desktopIds: indexes.desktopIds,
       floatingWindows: Object.freeze(floatingWindows),
       outputs: indexes.outputs,
@@ -440,7 +465,7 @@ function referencesAreCurrent(
 }
 
 function projectFloatingAnchor(
-  anchor: PersistedFloatingAnchorV3,
+  anchor: PersistedFloatingAnchorV4,
   windowIdByKey: ReadonlyMap<string, string>,
 ): OverviewFloatingAnchor {
   return Object.freeze({
@@ -461,6 +486,44 @@ function projectFloatingAnchor(
       ? {}
       : { windowHeight: freezeHeight(anchor.windowHeight) }),
   });
+}
+
+function resolvedActivityId(
+  persistedActivityId: string,
+  currentActivityId: string,
+): string {
+  return persistedActivityId === LAYOUT_PERSISTENCE_LEGACY_CURRENT_ACTIVITY_ID
+    ? currentActivityId
+    : persistedActivityId;
+}
+
+function validCurrentActivity(
+  activityIds: readonly string[],
+  currentActivityId: string,
+): boolean {
+  if (
+    !Array.isArray(activityIds) ||
+    activityIds.length === 0 ||
+    !validIdentifier(currentActivityId)
+  ) {
+    return false;
+  }
+
+  const unique = new Set<string>();
+
+  for (const activityId of activityIds) {
+    if (
+      !validIdentifier(activityId) ||
+      activityId === LAYOUT_PERSISTENCE_LEGACY_CURRENT_ACTIVITY_ID ||
+      unique.has(activityId)
+    ) {
+      return false;
+    }
+
+    unique.add(activityId);
+  }
+
+  return unique.has(currentActivityId);
 }
 
 function freezeWidth(width: OverviewColumnWidth): OverviewColumnWidth {

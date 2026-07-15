@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { columnId, desktopId, outputId, windowId } from "../../src/core/ids";
+import {
+  activityId as toActivityId,
+  columnId,
+  desktopId,
+  outputId,
+  windowId,
+} from "../../src/core/ids";
 import {
   captureLayoutPersistence,
   type LayoutPersistenceCaptureContext,
@@ -11,12 +17,16 @@ import type {
   DetachedWindowPlacement,
   LayoutColumnSnapshot,
 } from "../../src/core/layout-engine";
-import { decodeLayoutPersistence } from "../../src/core/layout-persistence";
+import {
+  LAYOUT_PERSISTENCE_LEGACY_CURRENT_ACTIVITY_ID,
+  decodeLayoutPersistence,
+} from "../../src/core/layout-persistence";
 
 const firstOutput = outputId("DP-1");
 const secondOutput = outputId("HDMI-A-1");
 const firstDesktop = desktopId("desktop-1");
 const secondDesktop = desktopId("desktop-2");
+const activityId = toActivityId("activity-1");
 const contextFingerprint =
   "1\u00000\u00000\u00001000\u0000800\u00000\u00000\u00001000\u0000800";
 
@@ -32,6 +42,7 @@ describe("layout persistence capture", () => {
         contexts: [
           {
             activeColumnIndex: 1,
+            activityId,
             columns: [
               {
                 members: [
@@ -63,6 +74,7 @@ describe("layout persistence capture", () => {
           },
           {
             activeColumnIndex: null,
+            activityId,
             columns: [
               {
                 members: [{ windowKey: "window-4" }],
@@ -78,6 +90,7 @@ describe("layout persistence capture", () => {
         ],
         floatingWindows: [
           {
+            activityId,
             anchor: {
               columnIndex: 0,
               columnPresentation: "tabbed",
@@ -97,7 +110,7 @@ describe("layout persistence capture", () => {
           { key: "DP-1", name: "DP-1" },
           { key: "HDMI-A-1", name: "HDMI-A-1" },
         ],
-        version: 3,
+        version: 4,
         windows: [
           { key: "floating-1", liveId: "floating-1" },
           { key: "window-1", liveId: "window-1" },
@@ -126,6 +139,45 @@ describe("layout persistence capture", () => {
     expect(captureLayoutPersistence(reordered)).toBe(
       captureLayoutPersistence(input),
     );
+  });
+
+  it("captures independent contexts for the same output and desktop", () => {
+    const secondActivity = toActivityId("activity-2");
+    const context = (
+      key: string,
+      ownerActivityId: typeof activityId,
+      window: string,
+    ): LayoutPersistenceCaptureContext => ({
+      activityId: ownerActivityId,
+      key,
+      layout: {
+        activeColumnId: columnId(`column:${window}`),
+        activityId: ownerActivityId,
+        columns: [column(`column:${window}`, [window])],
+        desktopId: firstDesktop,
+        outputId: firstOutput,
+        viewportOffset: 0,
+      },
+    });
+    const decoded = decodeLayoutPersistence(
+      captureLayoutPersistence({
+        contexts: [
+          context("context-2", secondActivity, "window-2"),
+          context("context-1", activityId, "window-1"),
+        ],
+        floatingWindows: [],
+        fullWidthRestores: [],
+        liveOutputs: [{ name: String(firstOutput) }],
+        liveWindows: [{ liveId: "window-2" }, { liveId: "window-1" }],
+      }),
+    );
+
+    expect(decoded).toMatchObject({
+      ok: true,
+      value: {
+        contexts: [{ activityId: "activity-1" }, { activityId: "activity-2" }],
+      },
+    });
   });
 
   it("captures stable output and window session descriptors", () => {
@@ -323,7 +375,7 @@ describe("layout persistence capture", () => {
         floatingWindows: [],
         format: "driftile-layout",
         outputs: [],
-        version: 3,
+        version: 4,
         windows: [],
       },
     });
@@ -508,6 +560,39 @@ describe("layout persistence capture", () => {
       }),
     ],
     [
+      "a mismatched context activity",
+      (input: LayoutPersistenceCaptureInput) => ({
+        ...input,
+        contexts: input.contexts.map((context, index) =>
+          index === 0 ? { ...context, activityId: "activity-2" } : context,
+        ),
+      }),
+    ],
+    [
+      "a mismatched floating activity",
+      (input: LayoutPersistenceCaptureInput) => ({
+        ...input,
+        floatingWindows: input.floatingWindows.map((floating) => ({
+          ...floating,
+          activityId: "activity-2",
+        })),
+      }),
+    ],
+    [
+      "the reserved migration activity",
+      (input: LayoutPersistenceCaptureInput) => ({
+        ...input,
+        contexts: input.contexts.map((context, index) =>
+          index === 0
+            ? {
+                ...context,
+                activityId: LAYOUT_PERSISTENCE_LEGACY_CURRENT_ACTIVITY_ID,
+              }
+            : context,
+        ),
+      }),
+    ],
+    [
       "a mismatched floating registry key",
       (input: LayoutPersistenceCaptureInput) => ({
         ...input,
@@ -527,9 +612,11 @@ describe("layout persistence capture", () => {
 
 function representativeInput(): LayoutPersistenceCaptureInput {
   const firstContext: LayoutPersistenceCaptureContext = {
+    activityId,
     key: "context-1",
     layout: {
       activeColumnId: columnId("column-2"),
+      activityId,
       columns: [
         {
           id: columnId("column-1"),
@@ -553,9 +640,11 @@ function representativeInput(): LayoutPersistenceCaptureInput {
     },
   };
   const secondContext: LayoutPersistenceCaptureContext = {
+    activityId,
     key: "context-2",
     layout: {
       activeColumnId: null,
+      activityId,
       columns: [
         column("column-3", ["window-4"], {
           kind: "proportion",
@@ -615,9 +704,11 @@ function captureAnchor(
   additionalFloatingWindows: readonly LayoutPersistenceCaptureFloatingWindow[] = [],
 ): Record<string, unknown> {
   const context: LayoutPersistenceCaptureContext = {
+    activityId,
     key: "context",
     layout: {
       activeColumnId: columns[0]?.id ?? null,
+      activityId,
       columns,
       desktopId: firstDesktop,
       outputId: firstOutput,
@@ -685,6 +776,7 @@ function placement(
   overrides: Partial<DetachedWindowPlacement> = {},
 ): DetachedWindowPlacement {
   return {
+    activityId,
     columnId: columnId(`column:${id}`),
     columnIndex: 0,
     columnWidth: { kind: "fixed", value: 400 },
@@ -705,6 +797,7 @@ function capturedFloating(
   floatingPlacement: DetachedWindowPlacement,
 ): LayoutPersistenceCaptureFloatingWindow {
   return {
+    activityId,
     liveId: String(floatingPlacement.windowId),
     placement: floatingPlacement,
   };

@@ -44,10 +44,12 @@ import {
   type WindowGeometry,
 } from "./core/geometry";
 import {
+  activityId,
   columnId,
   desktopId,
   outputId,
   windowId,
+  type ActivityId,
   type ColumnId,
   type DesktopId,
   type OutputId,
@@ -91,7 +93,7 @@ import {
 } from "./core/layout-persistence-capture";
 import {
   decodeLayoutPersistence,
-  type LayoutPersistenceV3,
+  type LayoutPersistenceV4,
 } from "./core/layout-persistence";
 import {
   findAdjacentOutput,
@@ -125,6 +127,7 @@ import type {
   KWinWindow,
   KWinWorkspace,
 } from "./platform/kwin/api";
+import { KWinActivityAdapter } from "./platform/kwin/activity-adapter";
 import {
   DesktopLifecycle,
   type DesktopReorderDirection,
@@ -222,6 +225,7 @@ interface WindowRemovalFocus {
 }
 
 interface ManagedContext {
+  readonly activityId: ActivityId;
   readonly desktopId: DesktopId;
   readonly outputId: OutputId;
 }
@@ -729,6 +733,7 @@ interface TopologyAdmissionGroup {
 
 interface CapacityRecoveryPlan {
   readonly activeColumnId: ColumnId | null;
+  readonly activityId: ActivityId;
   readonly columns: readonly CapacityParkColumn[];
   readonly contextFingerprint: string;
   readonly desktopId: DesktopId;
@@ -762,6 +767,7 @@ interface CapacityParkOperation extends CapacityRecoveryPlan {
 
 interface CapacityParkingLease {
   readonly activeColumnId: ColumnId | null;
+  readonly activityId: ActivityId;
   readonly column: CapacityParkColumn;
   readonly contextFingerprint: string;
   readonly contextKey: string;
@@ -916,7 +922,7 @@ export class RuntimeController {
     WindowId,
     ApplicationInitialFloating
   >();
-  private initialLayoutDecodedState: LayoutPersistenceV3 | null = null;
+  private initialLayoutDecodedState: LayoutPersistenceV4 | null = null;
   private initialLayoutHydrationCandidateFingerprint: string | null = null;
   private readonly initialLayoutHydrationQuietSamples: number;
   private initialLayoutHydrationRetryRemaining = 0;
@@ -1050,6 +1056,7 @@ export class RuntimeController {
   private readonly windowDesktopFileNames = new Map<WindowId, string | null>();
   private readonly windowStateRevisions = new Map<WindowId, number>();
   private workScheduled = false;
+  private readonly activities: KWinActivityAdapter;
   private readonly workspace: KWinWorkspace;
 
   constructor(workspace: KWinWorkspace, options: RuntimeControllerOptions) {
@@ -1112,6 +1119,7 @@ export class RuntimeController {
       options.createRect ??
       ((x, y, width, height) => ({ height, width, x, y }));
     this.workspace = workspace;
+    this.activities = new KWinActivityAdapter(workspace);
     this.desktopLifecycle = new DesktopLifecycle(workspace, {
       changed: () => {
         this.scheduleWork();
@@ -1169,8 +1177,13 @@ export class RuntimeController {
 
     try {
       const contexts = [...this.contexts.values()].map((context) => ({
+        activityId: String(context.activityId),
         key: context.key,
-        layout: this.layout.snapshot(context.outputId, context.desktopId),
+        layout: this.layout.snapshot(
+          context.outputId,
+          context.desktopId,
+          context.activityId,
+        ),
       }));
       const fullWidthRestores: Array<{
         readonly columnId: ColumnId;
@@ -1222,10 +1235,18 @@ export class RuntimeController {
       }
 
       const floatingWindows = [...this.floatingWindows].map(
-        ([liveId, floating]) => ({
-          liveId: String(liveId),
-          placement: this.captureFloatingWindowPlacement(liveId, floating),
-        }),
+        ([liveId, floating]) => {
+          const placement = this.captureFloatingWindowPlacement(
+            liveId,
+            floating,
+          );
+
+          return {
+            activityId: String(placement.activityId),
+            liveId: String(liveId),
+            placement,
+          };
+        },
       );
 
       this.validateCapturedOwnership(contexts, floatingWindows);
@@ -1259,6 +1280,7 @@ export class RuntimeController {
     floating: FloatingWindow,
   ): DetachedWindowPlacement {
     const anchorContextKey = contextKey({
+      activityId: floating.placement.activityId,
       desktopId: floating.placement.desktopId,
       outputId: floating.placement.outputId,
     });
@@ -1271,7 +1293,7 @@ export class RuntimeController {
 
     const source = this.observer.source(id);
     const observed = source ? normalizeWindow(source) : null;
-    const liveContext = observed ? managedContext(observed) : null;
+    const liveContext = observed ? this.resolveManagedContext(observed) : null;
     const liveContextKey = liveContext ? contextKey(liveContext) : null;
 
     if (
@@ -1310,7 +1332,11 @@ export class RuntimeController {
       source,
       liveContext,
       contextGeometry,
-      this.layout.snapshot(liveContext.outputId, liveContext.desktopId),
+      this.layout.snapshot(
+        liveContext.outputId,
+        liveContext.desktopId,
+        liveContext.activityId,
+      ),
     );
 
     if (!placement) {
@@ -1526,10 +1552,12 @@ export class RuntimeController {
 
   private validateCapturedOwnership(
     contexts: readonly {
+      readonly activityId: string;
       readonly key: string;
       readonly layout: LayoutContextSnapshot;
     }[],
     floatingWindows: readonly {
+      readonly activityId: string;
       readonly liveId: string;
       readonly placement: DetachedWindowPlacement;
     }[],
@@ -1547,7 +1575,9 @@ export class RuntimeController {
       }
 
       if (
+        captured.activityId !== String(captured.layout.activityId) ||
         contextKey({
+          activityId: captured.layout.activityId,
           desktopId: captured.layout.desktopId,
           outputId: captured.layout.outputId,
         }) !== captured.key
@@ -1568,7 +1598,9 @@ export class RuntimeController {
           const owner = this.managedWindows.get(id);
           const source = this.observer.source(id);
           const observed = source ? normalizeWindow(source) : null;
-          const liveContext = observed ? managedContext(observed) : null;
+          const liveContext = observed
+            ? this.resolveManagedContext(observed)
+            : null;
 
           if (
             owner?.contextKey !== captured.key ||
@@ -1612,8 +1644,11 @@ export class RuntimeController {
       const id = windowId(floating.liveId);
       const source = this.observer.source(id);
       const observed = source ? normalizeWindow(source) : null;
-      const liveContext = observed ? managedContext(observed) : null;
+      const liveContext = observed
+        ? this.resolveManagedContext(observed)
+        : null;
       const expectedContextKey = contextKey({
+        activityId: floating.placement.activityId,
         desktopId: floating.placement.desktopId,
         outputId: floating.placement.outputId,
       });
@@ -1621,6 +1656,7 @@ export class RuntimeController {
         ?.caption;
 
       if (
+        floating.activityId !== String(floating.placement.activityId) ||
         String(floating.placement.windowId) !== floating.liveId ||
         this.managedWindows.has(id) ||
         !liveContext ||
@@ -2271,7 +2307,7 @@ export class RuntimeController {
         const context = this.contexts.get(owner.contextKey);
         const activeColumn = context
           ? this.layout
-              .snapshot(context.outputId, context.desktopId)
+              .snapshot(context.outputId, context.desktopId, context.activityId)
               .columns.find((column) => column.windowIds.includes(activeId))
           : undefined;
 
@@ -2316,7 +2352,7 @@ export class RuntimeController {
         const context = this.contexts.get(owner.contextKey);
         const activeColumn = context
           ? this.layout
-              .snapshot(context.outputId, context.desktopId)
+              .snapshot(context.outputId, context.desktopId, context.activityId)
               .columns.find((column) => column.windowIds.includes(activeId))
           : undefined;
 
@@ -2657,12 +2693,14 @@ export class RuntimeController {
         this.layout.setViewportOffset(
           command.context.outputId,
           command.context.desktopId,
+          command.context.activityId,
           desiredOffset,
         ),
       () =>
         this.layout.setViewportOffset(
           command.context.outputId,
           command.context.desktopId,
+          command.context.activityId,
           command.before.viewportOffset,
         ),
     );
@@ -2766,6 +2804,7 @@ export class RuntimeController {
           !this.layout.setViewportOffset(
             command.context.outputId,
             command.context.desktopId,
+            command.context.activityId,
             preview.viewportOffset,
           )
         ) {
@@ -2795,6 +2834,7 @@ export class RuntimeController {
             this.layout.setViewportOffset(
               command.context.outputId,
               command.context.desktopId,
+              command.context.activityId,
               command.before.viewportOffset,
             ) && restored;
         }
@@ -2861,12 +2901,14 @@ export class RuntimeController {
         this.layout.setViewportOffset(
           command.context.outputId,
           command.context.desktopId,
+          command.context.activityId,
           preview.viewportOffset,
         ),
       () =>
         this.layout.setViewportOffset(
           command.context.outputId,
           command.context.desktopId,
+          command.context.activityId,
           command.before.viewportOffset,
         ),
     );
@@ -2959,6 +3001,12 @@ export class RuntimeController {
       this.knownOutputInstances.clear();
       this.workspace.currentDesktopChanged.connect(
         this.handleCurrentDesktopChanged,
+      );
+      this.workspace.currentActivityChanged?.connect(
+        this.handleCurrentActivityChanged,
+      );
+      this.workspace.activitiesChanged?.connect(
+        this.handleCurrentActivityChanged,
       );
       this.workspace.windowActivated.connect(this.handleWindowActivated);
       this.initializing = true;
@@ -3059,6 +3107,12 @@ export class RuntimeController {
     } finally {
       this.workspace.currentDesktopChanged.disconnect(
         this.handleCurrentDesktopChanged,
+      );
+      this.workspace.currentActivityChanged?.disconnect(
+        this.handleCurrentActivityChanged,
+      );
+      this.workspace.activitiesChanged?.disconnect(
+        this.handleCurrentActivityChanged,
       );
       this.workspace.windowActivated.disconnect(this.handleWindowActivated);
       this.desktopLifecycle.stop();
@@ -3243,6 +3297,7 @@ export class RuntimeController {
       const snapshot = this.layout.snapshot(
         context.outputId,
         context.desktopId,
+        context.activityId,
       );
       const column = snapshot.columns.find((candidate) =>
         candidate.windowIds.includes(id),
@@ -3409,7 +3464,14 @@ export class RuntimeController {
           : [];
 
       for (const name of outputNames) {
+        const currentActivity = this.activities.current();
+
+        if (!currentActivity) {
+          continue;
+        }
+
         const key = contextKey({
+          activityId: currentActivity,
           desktopId: desktopId(liveCurrent.id),
           outputId: outputId(name),
         });
@@ -3432,6 +3494,33 @@ export class RuntimeController {
     }
   };
 
+  private readonly handleCurrentActivityChanged = (): void => {
+    if (!this.started) {
+      return;
+    }
+
+    this.clearPointerMoveIntent();
+    this.pointerResizeIntent = null;
+
+    if (this.windowTransferOperation) {
+      this.windowTransferOperation.memberStateInvalidated = true;
+    }
+
+    for (const observed of this.observer.snapshot()) {
+      this.pendingWindowSyncs.add(windowId(observed.id));
+    }
+
+    for (const context of this.contexts.values()) {
+      this.markContextDirty(context);
+    }
+
+    for (const key of this.waitingWindowIds.keys()) {
+      this.pendingAdmissionContexts.add(key);
+    }
+
+    this.scheduleWork();
+  };
+
   private readonly handleWindowAdded = (window: ObservedWindow): void => {
     const addedId = windowId(window.id);
 
@@ -3441,7 +3530,7 @@ export class RuntimeController {
     }
 
     const source = this.observer.source(window.id);
-    const addedContext = managedContext(window);
+    const addedContext = this.resolveManagedContext(window);
 
     if (addedContext) {
       const addedContextKey = contextKey(addedContext);
@@ -3568,7 +3657,7 @@ export class RuntimeController {
     const owner = this.managedWindows.get(resizedWindowId);
     const context = owner ? this.contexts.get(owner.contextKey) : undefined;
     const observed = normalizeWindow(source);
-    const liveContext = observed ? managedContext(observed) : null;
+    const liveContext = observed ? this.resolveManagedContext(observed) : null;
     const sourceOutput = context
       ? this.workspace.screens.find(
           (candidate) => candidate.name === String(context.outputId),
@@ -3601,7 +3690,11 @@ export class RuntimeController {
       return;
     }
 
-    const before = this.layout.snapshot(context.outputId, context.desktopId);
+    const before = this.layout.snapshot(
+      context.outputId,
+      context.desktopId,
+      context.activityId,
+    );
     const activeColumn = before.columns.find((column) =>
       column.windowIds.includes(resizedWindowId),
     );
@@ -3715,7 +3808,7 @@ export class RuntimeController {
 
     const source = this.observer.source(id);
     const observed = source ? normalizeWindow(source) : null;
-    const liveContext = observed ? managedContext(observed) : null;
+    const liveContext = observed ? this.resolveManagedContext(observed) : null;
     const inferred =
       inferPointerHorizontalResize(intent.beforeFrame, acceptedFrame) ??
       inferPointerVerticalResize(intent.beforeFrame, acceptedFrame);
@@ -3787,7 +3880,7 @@ export class RuntimeController {
     const owner = this.managedWindows.get(draggedWindowId);
     const context = owner ? this.contexts.get(owner.contextKey) : undefined;
     const observed = normalizeWindow(source);
-    const liveContext = observed ? managedContext(observed) : null;
+    const liveContext = observed ? this.resolveManagedContext(observed) : null;
     const sourceOutput = context
       ? this.workspace.screens.find(
           (candidate) => candidate.name === String(context.outputId),
@@ -3825,7 +3918,11 @@ export class RuntimeController {
       return;
     }
 
-    const before = this.layout.snapshot(context.outputId, context.desktopId);
+    const before = this.layout.snapshot(
+      context.outputId,
+      context.desktopId,
+      context.activityId,
+    );
     const activeColumn = before.columns.find((column) =>
       column.windowIds.includes(draggedWindowId),
     );
@@ -3926,7 +4023,7 @@ export class RuntimeController {
     floating: FloatingWindow,
   ): void {
     const observed = normalizeWindow(source);
-    const liveContext = observed ? managedContext(observed) : null;
+    const liveContext = observed ? this.resolveManagedContext(observed) : null;
     const key = liveContext ? contextKey(liveContext) : null;
     const context = key ? this.contexts.get(key) : undefined;
     const sourceOutput = liveContext
@@ -3970,7 +4067,11 @@ export class RuntimeController {
       return;
     }
 
-    const before = this.layout.snapshot(context.outputId, context.desktopId);
+    const before = this.layout.snapshot(
+      context.outputId,
+      context.desktopId,
+      context.activityId,
+    );
 
     if (before.columns.length === 0) {
       return;
@@ -4077,7 +4178,7 @@ export class RuntimeController {
     const source = this.observer.source(id);
     const cursor = this.workspace.cursorPos;
     const observed = source ? normalizeWindow(source) : null;
-    const liveContext = observed ? managedContext(observed) : null;
+    const liveContext = observed ? this.resolveManagedContext(observed) : null;
     const finalCursor =
       cursor && Number.isFinite(cursor.x) && Number.isFinite(cursor.y)
         ? { x: cursor.x, y: cursor.y }
@@ -4126,7 +4227,7 @@ export class RuntimeController {
     const source = this.observer.source(id);
     const cursor = this.workspace.cursorPos;
     const observed = source ? normalizeWindow(source) : null;
-    const liveContext = observed ? managedContext(observed) : null;
+    const liveContext = observed ? this.resolveManagedContext(observed) : null;
     const context = this.contexts.get(intent.contextKey);
     const finalCursor =
       cursor && Number.isFinite(cursor.x) && Number.isFinite(cursor.y)
@@ -4328,6 +4429,7 @@ export class RuntimeController {
       );
 
       return this.contexts.get(intent.contextKey) === context &&
+        this.isContextVisible(context) &&
         context.geometryFingerprint === intent.contextFingerprint &&
         geometry?.fingerprint === intent.contextFingerprint
         ? geometry
@@ -4348,7 +4450,11 @@ export class RuntimeController {
       this.stackEditOperation ||
       this.pointerMoveIntent !== intent ||
       !layoutContextSnapshotsEqual(
-        this.layout.snapshot(context.outputId, context.desktopId),
+        this.layout.snapshot(
+          context.outputId,
+          context.desktopId,
+          context.activityId,
+        ),
         intent.before,
       )
     ) {
@@ -4375,7 +4481,11 @@ export class RuntimeController {
     let plan: PointerColumnDropPlan | null = null;
 
     try {
-      const edited = this.layout.snapshot(context.outputId, context.desktopId);
+      const edited = this.layout.snapshot(
+        context.outputId,
+        context.desktopId,
+        context.activityId,
+      );
       const solved = this.solveContextGeometry(edited, contextGeometry);
 
       if (
@@ -4419,7 +4529,11 @@ export class RuntimeController {
     if (
       !restored ||
       !layoutContextSnapshotsEqual(
-        this.layout.snapshot(context.outputId, context.desktopId),
+        this.layout.snapshot(
+          context.outputId,
+          context.desktopId,
+          context.activityId,
+        ),
         intent.before,
       )
     ) {
@@ -4591,8 +4705,9 @@ export class RuntimeController {
     }
 
     const desktop = currentDesktopForOutput(this.workspace, output);
+    const currentActivity = this.activities.current();
 
-    if (!desktop) {
+    if (!desktop || currentActivity !== intent.before.activityId) {
       return null;
     }
 
@@ -4611,6 +4726,7 @@ export class RuntimeController {
     }
 
     const context: ManagedContext = {
+      activityId: currentActivity,
       desktopId: desktopId(desktop.id),
       outputId: outputId(output.name),
     };
@@ -4649,7 +4765,11 @@ export class RuntimeController {
     const { contextGeometry, runtimeContext } = settled;
     const { context, contextKey: key } = external;
 
-    const layout = this.layout.snapshot(context.outputId, context.desktopId);
+    const layout = this.layout.snapshot(
+      context.outputId,
+      context.desktopId,
+      context.activityId,
+    );
     const participants: PointerMoveParticipant[] = [];
 
     for (const column of layout.columns) {
@@ -4657,7 +4777,9 @@ export class RuntimeController {
         const window = this.observer.source(id);
         const owner = this.managedWindows.get(id);
         const observed = window ? normalizeWindow(window) : null;
-        const liveContext = observed ? managedContext(observed) : null;
+        const liveContext = observed
+          ? this.resolveManagedContext(observed)
+          : null;
 
         if (
           !window ||
@@ -4875,7 +4997,9 @@ export class RuntimeController {
       (nextContext.outputId === intent.before.outputId ||
         nextContext.outputId === external.context.outputId) &&
       (nextContext.desktopId === intent.before.desktopId ||
-        nextContext.desktopId === external.context.desktopId),
+        nextContext.desktopId === external.context.desktopId) &&
+      (nextContext.activityId === intent.before.activityId ||
+        nextContext.activityId === external.context.activityId),
     );
 
     if (nextKey !== null && !intermediateContext) {
@@ -5176,15 +5300,24 @@ export class RuntimeController {
     this.cancelInvalidPendingExpelFocusHandoff();
 
     if (this.windowTransferOperation) {
+      const movingContextActivityInvalidated =
+        cause === "context" &&
+        this.windowTransferOperation.movingIds.has(changedId) &&
+        (!source ||
+          !this.transferWindowActivityIsCurrent(
+            source,
+            this.windowTransferOperation,
+          ));
       const retainedGuardChanged =
         this.windowTransferOperation.stateGuardIds.has(changedId) &&
         !this.windowTransferOperation.movingIds.has(changedId);
 
-      if (retainedGuardChanged) {
+      if (retainedGuardChanged || movingContextActivityInvalidated) {
         this.windowTransferOperation.memberStateInvalidated = true;
       }
 
       if (
+        movingContextActivityInvalidated ||
         !this.windowTransferOperation.movingIds.has(changedId) ||
         (source &&
           (this.automaticFloatingWindows.has(changedId) ||
@@ -5204,7 +5337,9 @@ export class RuntimeController {
 
     if (transition) {
       const observed = source ? normalizeWindow(source) : null;
-      const liveContext = observed ? managedContext(observed) : null;
+      const liveContext = observed
+        ? this.resolveManagedContext(observed)
+        : null;
 
       if (!liveContext || contextKey(liveContext) !== transition.contextKey) {
         this.toggleGeometryTransitions.delete(changedId);
@@ -5652,11 +5787,15 @@ export class RuntimeController {
   private selectedTiledFocusTarget(key: string): KWinWindow | null {
     const context = this.contexts.get(key);
 
-    if (!context) {
+    if (!context || !this.isContextVisible(context)) {
       return null;
     }
 
-    const snapshot = this.layout.snapshot(context.outputId, context.desktopId);
+    const snapshot = this.layout.snapshot(
+      context.outputId,
+      context.desktopId,
+      context.activityId,
+    );
     const activeColumn = snapshot.columns.find(
       (column) => column.id === snapshot.activeColumnId,
     );
@@ -5736,7 +5875,7 @@ export class RuntimeController {
 
     const owner = this.managedWindows.get(id);
     const observed = normalizeWindow(window);
-    const liveContext = observed ? managedContext(observed) : null;
+    const liveContext = observed ? this.resolveManagedContext(observed) : null;
 
     if (
       !owner ||
@@ -5807,7 +5946,7 @@ export class RuntimeController {
     }
 
     const activeId = windowId(String(active.internalId));
-    const context = layerFocusContext(active);
+    const context = this.resolveLayerFocusContext(active);
 
     if (!context) {
       return false;
@@ -5884,7 +6023,11 @@ export class RuntimeController {
     rememberedTiledFocus: WindowId | undefined,
   ): boolean {
     const rememberedFloatingFocus = this.lastFloatingFocus.get(key);
-    const snapshot = this.layout.snapshot(context.outputId, context.desktopId);
+    const snapshot = this.layout.snapshot(
+      context.outputId,
+      context.desktopId,
+      context.activityId,
+    );
     const targetColumn = snapshot.columns.find((column) =>
       column.windowIds.includes(targetId),
     );
@@ -6000,13 +6143,18 @@ export class RuntimeController {
       !runtimeContext ||
       runtimeContext.outputId !== context.outputId ||
       runtimeContext.desktopId !== context.desktopId ||
+      runtimeContext.activityId !== context.activityId ||
       this.refreshContextAutomaticFloatingOwnership(runtimeContext) ||
       this.toggleTransitionPending(key)
     ) {
       return null;
     }
 
-    const before = this.layout.snapshot(context.outputId, context.desktopId);
+    const before = this.layout.snapshot(
+      context.outputId,
+      context.desktopId,
+      context.activityId,
+    );
     const activeColumn = before.columns.find(
       (column) => column.id === before.activeColumnId,
     );
@@ -6083,7 +6231,11 @@ export class RuntimeController {
       return null;
     }
 
-    const snapshot = this.layout.snapshot(context.outputId, context.desktopId);
+    const snapshot = this.layout.snapshot(
+      context.outputId,
+      context.desktopId,
+      context.activityId,
+    );
     const activeColumnIndex = snapshot.columns.findIndex(
       (column) => column.id === snapshot.activeColumnId,
     );
@@ -6295,7 +6447,7 @@ export class RuntimeController {
     source: KWinWindow,
     key: string,
   ): WindowLayer | null {
-    const context = layerFocusContext(source);
+    const context = this.resolveLayerFocusContext(source);
 
     if (!context || contextKey(context) !== key || source.minimized) {
       return null;
@@ -6334,7 +6486,7 @@ export class RuntimeController {
     id: WindowId,
     source: KWinWindow,
   ): WindowLayer | null {
-    const context = layerFocusContext(source);
+    const context = this.resolveLayerFocusContext(source);
 
     if (!context) {
       return null;
@@ -6482,7 +6634,7 @@ export class RuntimeController {
     }
 
     const activeId = windowId(String(active.internalId));
-    const context = layerFocusContext(active);
+    const context = this.resolveLayerFocusContext(active);
 
     if (!context || this.observer.source(activeId) !== active) {
       return null;
@@ -6669,6 +6821,7 @@ export class RuntimeController {
           this.layout.setViewportOffset(
             command.context.outputId,
             command.context.desktopId,
+            command.context.activityId,
             desiredViewportOffset,
           )
         ) {
@@ -7753,7 +7906,7 @@ export class RuntimeController {
       return null;
     }
 
-    const context = layerFocusContext(activeWindow);
+    const context = this.resolveLayerFocusContext(activeWindow);
 
     if (!context) {
       return null;
@@ -7895,7 +8048,7 @@ export class RuntimeController {
       return false;
     }
 
-    const liveContext = layerFocusContext(command.activeWindow);
+    const liveContext = this.resolveLayerFocusContext(command.activeWindow);
 
     if (!liveContext || contextKey(liveContext) !== command.contextKey) {
       return false;
@@ -8107,7 +8260,11 @@ export class RuntimeController {
     this.reconcileColumnFullWidthRestore(
       command.context.key,
       command.before,
-      this.layout.snapshot(command.context.outputId, command.context.desktopId),
+      this.layout.snapshot(
+        command.context.outputId,
+        command.context.desktopId,
+        command.context.activityId,
+      ),
     );
     this.capacityParkBackoffs.delete(command.context.key);
 
@@ -8244,7 +8401,11 @@ export class RuntimeController {
     this.reconcileColumnFullWidthRestore(
       command.context.key,
       command.before,
-      this.layout.snapshot(command.context.outputId, command.context.desktopId),
+      this.layout.snapshot(
+        command.context.outputId,
+        command.context.desktopId,
+        command.context.activityId,
+      ),
     );
     this.capacityParkBackoffs.delete(command.context.key);
 
@@ -8313,6 +8474,7 @@ export class RuntimeController {
     const before = this.layout.snapshot(
       command.context.outputId,
       command.context.desktopId,
+      command.context.activityId,
     );
     let solved: ReturnType<typeof solveStripGeometry>;
 
@@ -8403,6 +8565,7 @@ export class RuntimeController {
     }
 
     const placement: DetachedWindowPlacement = {
+      activityId: command.context.activityId,
       columnId: target.id,
       columnIndex: targetIndex,
       columnPresentation: target.presentation,
@@ -8478,6 +8641,7 @@ export class RuntimeController {
         this.layout.snapshot(
           command.context.outputId,
           command.context.desktopId,
+          command.context.activityId,
         ),
       ) ||
       participants.length !== target.windowIds.length ||
@@ -8789,6 +8953,7 @@ export class RuntimeController {
     const snapshot = this.layout.snapshot(
       command.context.outputId,
       command.context.desktopId,
+      command.context.activityId,
     );
     const sourceColumn = snapshot.columns.find(
       (column) => column.id === command.activeColumn.id,
@@ -8931,7 +9096,9 @@ export class RuntimeController {
     const focusWindow = this.observer.source(focusWindowId);
     const focusOwner = this.managedWindows.get(focusWindowId);
     const observedFocus = focusWindow ? normalizeWindow(focusWindow) : null;
-    const focusContext = observedFocus ? managedContext(observedFocus) : null;
+    const focusContext = observedFocus
+      ? this.resolveManagedContext(observedFocus)
+      : null;
 
     if (
       (this.stackEditOperation !== null &&
@@ -9107,7 +9274,11 @@ export class RuntimeController {
 
     const activeId = windowId(String(active.internalId));
     const owner = this.managedWindows.get(activeId);
-    const snapshot = this.layout.snapshot(context.outputId, context.desktopId);
+    const snapshot = this.layout.snapshot(
+      context.outputId,
+      context.desktopId,
+      context.activityId,
+    );
 
     if (
       owner?.contextKey !== context.key ||
@@ -9133,7 +9304,7 @@ export class RuntimeController {
     }
 
     const activeId = windowId(String(activeWindow.internalId));
-    const sourceContext = layerFocusContext(activeWindow);
+    const sourceContext = this.resolveLayerFocusContext(activeWindow);
     const sourceContextKey = sourceContext ? contextKey(sourceContext) : null;
     const manualFloating = this.floatingWindows.get(activeId);
     const automaticFloating =
@@ -9147,6 +9318,7 @@ export class RuntimeController {
     if (
       !sourceContext ||
       !sourceContextKey ||
+      !this.isContextVisible(sourceContext) ||
       !this.started ||
       this.windowTransferOperation ||
       this.startupStabilizationToken !== null ||
@@ -9196,6 +9368,7 @@ export class RuntimeController {
     }
 
     const targetContext: ManagedContext = {
+      activityId: sourceContext.activityId,
       desktopId: desktopId(targetDesktop.id),
       outputId: sourceContext.outputId,
     };
@@ -9226,6 +9399,7 @@ export class RuntimeController {
       sourceLayout: this.layout.snapshot(
         sourceContext.outputId,
         sourceContext.desktopId,
+        sourceContext.activityId,
       ),
       targetContext,
       targetContextKey,
@@ -9233,6 +9407,7 @@ export class RuntimeController {
       targetLayout: this.layout.snapshot(
         targetContext.outputId,
         targetContext.desktopId,
+        targetContext.activityId,
       ),
     };
     const movingIds = new Set([activeId]);
@@ -9240,6 +9415,7 @@ export class RuntimeController {
       activeId,
       desktopChangeSuppressed: false,
       kind: "floating-desktop",
+      memberStateInvalidated: false,
       movingIds,
       sourceContextKey,
       stateGuardIds: movingIds,
@@ -9529,11 +9705,12 @@ export class RuntimeController {
     windowDesktop: KWinVirtualDesktop,
     selectedDesktop: KWinVirtualDesktop,
   ): boolean {
-    const liveContext = layerFocusContext(command.activeWindow);
+    const liveContext = this.resolveLayerFocusContext(command.activeWindow);
 
     return (
       this.windowTransferOperation === operation &&
       operation.kind === "floating-desktop" &&
+      operation.memberStateInvalidated !== true &&
       operation.movingIds.size === 1 &&
       operation.movingIds.has(command.activeId) &&
       this.topologyRevision === topologyRevision &&
@@ -9553,6 +9730,7 @@ export class RuntimeController {
       liveContext !== null &&
       contextKey(liveContext) ===
         contextKey({
+          activityId: command.sourceContext.activityId,
           desktopId: desktopId(windowDesktop.id),
           outputId: command.sourceContext.outputId,
         }) &&
@@ -9562,6 +9740,7 @@ export class RuntimeController {
         command.activeWindow,
         command.frame,
         {
+          activityId: command.sourceContext.activityId,
           desktopId: desktopId(windowDesktop.id),
           outputId: command.sourceContext.outputId,
         },
@@ -9600,6 +9779,7 @@ export class RuntimeController {
         this.layout.snapshot(
           command.sourceContext.outputId,
           command.sourceContext.desktopId,
+          command.sourceContext.activityId,
         ),
         command.sourceLayout,
       ) &&
@@ -9607,6 +9787,7 @@ export class RuntimeController {
         this.layout.snapshot(
           command.targetContext.outputId,
           command.targetContext.desktopId,
+          command.targetContext.activityId,
         ),
         command.targetLayout,
       )
@@ -9653,6 +9834,7 @@ export class RuntimeController {
       (window.normalWindow || window.dialog) &&
       !window.specialWindow &&
       !window.onAllDesktops &&
+      this.windowActivity(window) === context.activityId &&
       window.output?.name === context.outputId &&
       window.desktops.length === 1 &&
       window.desktops[0]?.id === context.desktopId &&
@@ -9766,6 +9948,7 @@ export class RuntimeController {
     }
 
     const targetContext: ManagedContext = {
+      activityId: active.context.activityId,
       desktopId: desktopId(targetDesktop.id),
       outputId: active.context.outputId,
     };
@@ -9814,10 +9997,12 @@ export class RuntimeController {
     const sourceBefore = this.layout.snapshot(
       active.context.outputId,
       active.context.desktopId,
+      active.context.activityId,
     );
     const targetBefore = this.layout.snapshot(
       targetContext.outputId,
       targetContext.desktopId,
+      targetContext.activityId,
     );
     const selection = this.prepareTransferSelection(
       active,
@@ -9837,11 +10022,13 @@ export class RuntimeController {
     );
     const previewValue = wholeColumn
       ? this.layout.previewColumnTransfer(active.activeId, {
+          activityId: targetContext.activityId,
           columnId: targetColumnId,
           desktopId: targetContext.desktopId,
           outputId: targetContext.outputId,
         })
       : this.layout.previewWindowTransfer(active.activeId, {
+          activityId: targetContext.activityId,
           columnId: targetColumnId,
           desktopId: targetContext.desktopId,
           outputId: targetContext.outputId,
@@ -10056,7 +10243,9 @@ export class RuntimeController {
       const source = this.observer.source(window.windowId);
       const owner = this.managedWindows.get(window.windowId);
       const observed = source ? normalizeWindow(source) : null;
-      const liveContext = observed ? managedContext(observed) : null;
+      const liveContext = observed
+        ? this.resolveManagedContext(observed)
+        : null;
       const moving = movingIds.has(window.windowId);
       const expectedOwner = moving ? movingOwnerContextKey : ownerContextKey;
       const expectedLiveContext = moving
@@ -10197,7 +10386,7 @@ export class RuntimeController {
     command: DesktopTransferCommand | OutputTransferCommand,
   ): boolean {
     const observed = normalizeWindow(member.window);
-    const liveContext = observed ? managedContext(observed) : null;
+    const liveContext = observed ? this.resolveManagedContext(observed) : null;
 
     return (
       this.observer.source(member.id) === member.window &&
@@ -10510,6 +10699,7 @@ export class RuntimeController {
       this.layout.setViewportOffset(
         command.targetContext.outputId,
         command.targetContext.desktopId,
+        command.targetContext.activityId,
         targetLayout.viewportOffset,
       );
       this.commitDesktopTransferRuntime(command, destinationBaselines);
@@ -10761,7 +10951,9 @@ export class RuntimeController {
         rollbackFrame,
       ].some((frame) => frame && rectsEqual(sourceLiveFrame, frame));
       const observed = normalizeWindow(member.window);
-      const liveContext = observed ? managedContext(observed) : null;
+      const liveContext = observed
+        ? this.resolveManagedContext(observed)
+        : null;
       const memberStateCurrent = this.transferMemberStateIsCurrent(member);
 
       if (
@@ -10995,12 +11187,13 @@ export class RuntimeController {
       return false;
     }
 
-    const sourceContext = layerFocusContext(activeWindow);
+    const sourceContext = this.resolveLayerFocusContext(activeWindow);
     const sourceContextKey = sourceContext ? contextKey(sourceContext) : null;
 
     if (
       !sourceContext ||
       !sourceContextKey ||
+      !this.isContextVisible(sourceContext) ||
       !this.started ||
       !this.startupCompleted ||
       this.initializing ||
@@ -11077,6 +11270,7 @@ export class RuntimeController {
     }
 
     const targetContext: ManagedContext = {
+      activityId: sourceContext.activityId,
       desktopId: desktopId(targetDesktop.id),
       outputId: outputId(targetOutput.name),
     };
@@ -11145,6 +11339,7 @@ export class RuntimeController {
       sourceLayout: this.layout.snapshot(
         sourceContext.outputId,
         sourceContext.desktopId,
+        sourceContext.activityId,
       ),
       sourceOutput,
       targetContext,
@@ -11154,6 +11349,7 @@ export class RuntimeController {
       targetLayout: this.layout.snapshot(
         targetContext.outputId,
         targetContext.desktopId,
+        targetContext.activityId,
       ),
       targetOutput,
     };
@@ -11750,6 +11946,7 @@ export class RuntimeController {
     }
 
     const targetContext: ManagedContext = {
+      activityId: active.context.activityId,
       desktopId: desktopId(targetDesktop.id),
       outputId: outputId(targetOutput.name),
     };
@@ -11798,10 +11995,12 @@ export class RuntimeController {
     const sourceBefore = this.layout.snapshot(
       active.context.outputId,
       active.context.desktopId,
+      active.context.activityId,
     );
     const targetBefore = this.layout.snapshot(
       targetContext.outputId,
       targetContext.desktopId,
+      targetContext.activityId,
     );
     const selection = this.prepareTransferSelection(
       active,
@@ -11821,11 +12020,13 @@ export class RuntimeController {
     );
     const previewValue = wholeColumn
       ? this.layout.previewColumnTransfer(active.activeId, {
+          activityId: targetContext.activityId,
           columnId: targetColumnId,
           desktopId: targetContext.desktopId,
           outputId: targetContext.outputId,
         })
       : this.layout.previewWindowTransfer(active.activeId, {
+          activityId: targetContext.activityId,
           columnId: targetColumnId,
           desktopId: targetContext.desktopId,
           outputId: targetContext.outputId,
@@ -12269,11 +12470,13 @@ export class RuntimeController {
       this.layout.setViewportOffset(
         command.context.outputId,
         command.context.desktopId,
+        command.context.activityId,
         sourceLayout.viewportOffset,
       );
       this.layout.setViewportOffset(
         command.targetContext.outputId,
         command.targetContext.desktopId,
+        command.targetContext.activityId,
         targetLayout.viewportOffset,
       );
       this.commitOutputTransferRuntime(command, destinationBaselines);
@@ -12654,7 +12857,9 @@ export class RuntimeController {
       }
 
       const observed = normalizeWindow(member.window);
-      const liveContext = observed ? managedContext(observed) : null;
+      const liveContext = observed
+        ? this.resolveManagedContext(observed)
+        : null;
 
       if (!liveContext || contextKey(liveContext) !== command.contextKey) {
         this.pendingWindowSyncs.add(member.id);
@@ -12848,6 +13053,7 @@ export class RuntimeController {
     const before = this.layout.snapshot(
       command.context.outputId,
       command.context.desktopId,
+      command.context.activityId,
     );
     const preview = this.layout.previewWindowDetach(command.activeId);
 
@@ -12955,6 +13161,7 @@ export class RuntimeController {
     const before = this.layout.snapshot(
       command.context.outputId,
       command.context.desktopId,
+      command.context.activityId,
     );
     const placement =
       floating.sourceContextKey === command.contextKey
@@ -13029,6 +13236,7 @@ export class RuntimeController {
         this.layout.setViewportOffset(
           command.context.outputId,
           command.context.desktopId,
+          command.context.activityId,
           viewportOffset,
         );
         return true;
@@ -13834,6 +14042,7 @@ export class RuntimeController {
         for (const column of this.layout.snapshot(
           parsed.outputId,
           parsed.desktopId,
+          parsed.activityId,
         ).columns) {
           liveColumnIds.add(column.id);
         }
@@ -14001,6 +14210,7 @@ export class RuntimeController {
     }
 
     return {
+      activityId: managedContext.activityId,
       columnId: detachedColumnId,
       columnIndex,
       columnPresentation: this.initialColumnPresentation(activeWindow),
@@ -14024,7 +14234,9 @@ export class RuntimeController {
       const owner = this.managedWindows.get(id);
       const source = this.observer.source(id);
       const observed = source ? normalizeWindow(source) : null;
-      const memberContext = observed ? managedContext(observed) : null;
+      const memberContext = observed
+        ? this.resolveManagedContext(observed)
+        : null;
       return (
         owner?.contextKey === context.key &&
         source !== undefined &&
@@ -14239,7 +14451,9 @@ export class RuntimeController {
       const owner = this.managedWindows.get(id);
       const source = this.observer.source(id);
       const observed = source ? normalizeWindow(source) : null;
-      const liveContext = observed ? managedContext(observed) : null;
+      const liveContext = observed
+        ? this.resolveManagedContext(observed)
+        : null;
 
       if (
         !source ||
@@ -14283,7 +14497,9 @@ export class RuntimeController {
         const owner = this.managedWindows.get(id);
         const source = this.observer.source(id);
         const observed = source ? normalizeWindow(source) : null;
-        const liveContext = observed ? managedContext(observed) : null;
+        const liveContext = observed
+          ? this.resolveManagedContext(observed)
+          : null;
 
         if (
           !source ||
@@ -14354,9 +14570,9 @@ export class RuntimeController {
     }
 
     const observed = normalizeWindow(activeWindow);
-    const context = observed ? managedContext(observed) : null;
+    const context = observed ? this.resolveManagedContext(observed) : null;
 
-    if (!context) {
+    if (!context || !this.isContextVisible(context)) {
       return null;
     }
 
@@ -14826,7 +15042,7 @@ export class RuntimeController {
     const context = owner ? this.contexts.get(owner.contextKey) : undefined;
     const observedActive = normalizeWindow(activeWindow);
     const activeContext = observedActive
-      ? managedContext(observedActive)
+      ? this.resolveManagedContext(observedActive)
       : null;
 
     if (
@@ -14840,7 +15056,11 @@ export class RuntimeController {
       return null;
     }
 
-    const before = this.layout.snapshot(context.outputId, context.desktopId);
+    const before = this.layout.snapshot(
+      context.outputId,
+      context.desktopId,
+      context.activityId,
+    );
     const activeColumn = before.columns.find((column) =>
       column.windowIds.includes(activeId),
     );
@@ -15206,7 +15426,7 @@ export class RuntimeController {
     }
 
     const observed = normalizeWindow(source);
-    const liveContext = observed ? managedContext(observed) : null;
+    const liveContext = observed ? this.resolveManagedContext(observed) : null;
 
     if (!liveContext || contextKey(liveContext) !== owner.contextKey) {
       return Boolean(
@@ -15218,7 +15438,7 @@ export class RuntimeController {
     }
 
     const column = this.layout
-      .snapshot(context.outputId, context.desktopId)
+      .snapshot(context.outputId, context.desktopId, context.activityId)
       .columns.find((candidate) => candidate.windowIds.includes(id));
 
     if (column) {
@@ -15330,7 +15550,7 @@ export class RuntimeController {
     const owner = this.managedWindows.get(id);
     const context = owner ? this.contexts.get(owner.contextKey) : undefined;
     const observed = normalizeWindow(source);
-    const liveContext = observed ? managedContext(observed) : null;
+    const liveContext = observed ? this.resolveManagedContext(observed) : null;
 
     if (
       !owner ||
@@ -15343,7 +15563,7 @@ export class RuntimeController {
     }
 
     const column = this.layout
-      .snapshot(context.outputId, context.desktopId)
+      .snapshot(context.outputId, context.desktopId, context.activityId)
       .columns.find((candidate) => candidate.windowIds.includes(id));
     return Boolean(column && column.windowIds.length > 1);
   }
@@ -15355,7 +15575,7 @@ export class RuntimeController {
     const owner = this.managedWindows.get(id);
     const context = owner ? this.contexts.get(owner.contextKey) : undefined;
     const observed = normalizeWindow(source);
-    const liveContext = observed ? managedContext(observed) : null;
+    const liveContext = observed ? this.resolveManagedContext(observed) : null;
 
     if (
       !owner ||
@@ -15455,7 +15675,7 @@ export class RuntimeController {
     const context = owner ? this.contexts.get(owner.contextKey) : undefined;
     const observedActive = normalizeWindow(activeWindow);
     const activeContext = observedActive
-      ? managedContext(observedActive)
+      ? this.resolveManagedContext(observedActive)
       : null;
 
     if (
@@ -15472,7 +15692,11 @@ export class RuntimeController {
       return null;
     }
 
-    const before = this.layout.snapshot(context.outputId, context.desktopId);
+    const before = this.layout.snapshot(
+      context.outputId,
+      context.desktopId,
+      context.activityId,
+    );
     const activeColumn = before.columns.find((column) =>
       column.windowIds.includes(activeId),
     );
@@ -15750,6 +15974,7 @@ export class RuntimeController {
             after: this.layout.snapshot(
               preparation.command.context.outputId,
               preparation.command.context.desktopId,
+              preparation.command.context.activityId,
             ),
             edit,
           };
@@ -15786,10 +16011,11 @@ export class RuntimeController {
     const owner = this.managedWindows.get(operation.activeId);
     const source = this.observer.source(operation.activeId);
     const observed = source ? normalizeWindow(source) : null;
-    const liveContext = observed ? managedContext(observed) : null;
+    const liveContext = observed ? this.resolveManagedContext(observed) : null;
     const snapshot = this.layout.snapshot(
       operation.command.context.outputId,
       operation.command.context.desktopId,
+      operation.command.context.activityId,
     );
     const sourceColumn = snapshot.columns.find(
       (column) => column.id === operation.sourceColumnId,
@@ -15819,6 +16045,7 @@ export class RuntimeController {
     return (
       this.started &&
       this.windowTransferOperation === operation.transfer &&
+      operation.transfer.memberStateInvalidated !== true &&
       this.stackedNativeStateOperation === operation &&
       this.topologyRevision === operation.topologyRevision &&
       !this.hasTopologyBarrier() &&
@@ -15863,10 +16090,13 @@ export class RuntimeController {
       const owner = this.managedWindows.get(operation.activeId);
       const source = this.observer.source(operation.activeId);
       const observed = source ? normalizeWindow(source) : null;
-      const liveContext = observed ? managedContext(observed) : null;
+      const liveContext = observed
+        ? this.resolveManagedContext(observed)
+        : null;
       const after = this.layout.snapshot(
         operation.command.context.outputId,
         operation.command.context.desktopId,
+        operation.command.context.activityId,
       );
       const extracted = after.columns.find(
         (column) => column.id === operation.newColumnId,
@@ -15876,6 +16106,7 @@ export class RuntimeController {
         !this.started ||
         this.stackedNativeStateOperation !== operation ||
         this.windowTransferOperation !== operation.transfer ||
+        operation.transfer.memberStateInvalidated === true ||
         this.topologyRevision !== operation.topologyRevision ||
         this.hasTopologyBarrier() ||
         source !== operation.activeWindow ||
@@ -16137,6 +16368,7 @@ export class RuntimeController {
         this.layout.snapshot(
           sourceRuntimeContext.outputId,
           sourceRuntimeContext.desktopId,
+          sourceRuntimeContext.activityId,
         ),
         intent.before,
       ) ||
@@ -16144,6 +16376,7 @@ export class RuntimeController {
         this.layout.snapshot(
           targetRuntimeContext.outputId,
           targetRuntimeContext.desktopId,
+          targetRuntimeContext.activityId,
         ),
         insertion.layout,
       )
@@ -16191,11 +16424,13 @@ export class RuntimeController {
     const previewValue =
       insertion.target.kind === "window"
         ? this.layout.previewWindowTransferToWindow(id, {
+            activityId: external.context.activityId,
             desktopId: external.context.desktopId,
             outputId: external.context.outputId,
             ...insertion.target.value,
           })
         : this.layout.previewWindowTransferToColumnBoundary(id, {
+            activityId: external.context.activityId,
             columnId: this.freshTransferColumnId(id, insertion.layout),
             desktopId: external.context.desktopId,
             outputId: external.context.outputId,
@@ -16233,6 +16468,7 @@ export class RuntimeController {
       activeId: id,
       activeWindow: source,
       context: {
+        activityId: sourceRuntimeContext.activityId,
         desktopId: sourceRuntimeContext.desktopId,
         outputId: sourceRuntimeContext.outputId,
       },
@@ -16558,11 +16794,13 @@ export class RuntimeController {
       this.layout.setViewportOffset(
         command.context.outputId,
         command.context.desktopId,
+        command.context.activityId,
         sourceLayout.viewportOffset,
       );
       this.layout.setViewportOffset(
         command.targetContext.outputId,
         command.targetContext.desktopId,
+        command.targetContext.activityId,
         targetLayout.viewportOffset,
       );
 
@@ -16736,7 +16974,7 @@ export class RuntimeController {
     const targetRuntimeContext = command.targetRuntimeContext;
     const owner = this.managedWindows.get(id);
     const observed = normalizeWindow(window);
-    const liveContext = observed ? managedContext(observed) : null;
+    const liveContext = observed ? this.resolveManagedContext(observed) : null;
     const ownerIsCurrent =
       id === command.activeId
         ? owner?.contextKey === command.contextKey &&
@@ -16869,7 +17107,9 @@ export class RuntimeController {
         const window = this.observer.source(participant.id);
         const owner = this.managedWindows.get(participant.id);
         const observed = window ? normalizeWindow(window) : null;
-        const liveContext = observed ? managedContext(observed) : null;
+        const liveContext = observed
+          ? this.resolveManagedContext(observed)
+          : null;
 
         return Boolean(
           window === participant.window &&
@@ -16924,7 +17164,9 @@ export class RuntimeController {
       const waitingContextKey = this.waitingWindowContexts.get(id);
       const window = this.observer.source(id);
       const observed = window ? normalizeWindow(window) : null;
-      const liveContext = observed ? managedContext(observed) : null;
+      const liveContext = observed
+        ? this.resolveManagedContext(observed)
+        : null;
       const liveContextKey = liveContext ? contextKey(liveContext) : null;
 
       if (
@@ -17132,7 +17374,9 @@ export class RuntimeController {
       const source = this.observer.source(participant.id);
       const owner = this.managedWindows.get(participant.id);
       const observed = source ? normalizeWindow(source) : null;
-      const liveContext = observed ? managedContext(observed) : null;
+      const liveContext = observed
+        ? this.resolveManagedContext(observed)
+        : null;
       const constraints = source ? frameSizeConstraintBounds(source) : null;
       const expectedId = activeColumn.windowIds[index];
       const expectedFrame =
@@ -17260,7 +17504,9 @@ export class RuntimeController {
       const constraints = source ? frameSizeConstraintBounds(source) : null;
       const owner = this.managedWindows.get(target.windowId);
       const observed = source ? normalizeWindow(source) : null;
-      const liveContext = observed ? managedContext(observed) : null;
+      const liveContext = observed
+        ? this.resolveManagedContext(observed)
+        : null;
 
       if (
         !source ||
@@ -17807,6 +18053,7 @@ export class RuntimeController {
       intent.gap !== this.gap ||
       intent.contextFingerprint !== context.geometryFingerprint ||
       this.contexts.get(context.key) !== context ||
+      !this.isContextVisible(context) ||
       this.workspace.activeWindow !== intent.source ||
       !this.settledPointerResizeSourceIsEligible(intent.source) ||
       intent.source.output !== intent.sourceOutput ||
@@ -17818,7 +18065,11 @@ export class RuntimeController {
       this.dirtyContexts.has(context.key) ||
       this.toggleTransitionPending(context.key) ||
       !layoutContextSnapshotsEqual(
-        this.layout.snapshot(context.outputId, context.desktopId),
+        this.layout.snapshot(
+          context.outputId,
+          context.desktopId,
+          context.activityId,
+        ),
         expectedLayout,
       ) ||
       this.pointerResizeSettlementHasUnexpectedPendingSync(operation)
@@ -17848,7 +18099,9 @@ export class RuntimeController {
       const source = this.observer.source(window.id);
       const owner = this.managedWindows.get(window.id);
       const observed = source ? normalizeWindow(source) : null;
-      const liveContext = observed ? managedContext(observed) : null;
+      const liveContext = observed
+        ? this.resolveManagedContext(observed)
+        : null;
 
       return Boolean(
         source === window.source &&
@@ -17896,6 +18149,7 @@ export class RuntimeController {
       intent.gap !== this.gap ||
       intent.contextFingerprint !== context.geometryFingerprint ||
       this.contexts.get(context.key) !== context ||
+      !this.isContextVisible(context) ||
       this.hasTopologyBarrier()
     ) {
       return false;
@@ -17918,7 +18172,7 @@ export class RuntimeController {
     const context = operation.command.context;
     const source = this.observer.source(window.id);
     const observed = source ? normalizeWindow(source) : null;
-    const liveContext = observed ? managedContext(observed) : null;
+    const liveContext = observed ? this.resolveManagedContext(observed) : null;
 
     return Boolean(
       source === window.source &&
@@ -17974,7 +18228,9 @@ export class RuntimeController {
 
       const source = this.observer.source(id);
       const observed = source ? normalizeWindow(source) : null;
-      const liveContext = observed ? managedContext(observed) : null;
+      const liveContext = observed
+        ? this.resolveManagedContext(observed)
+        : null;
 
       if (
         this.managedWindows.get(id)?.contextKey === contextKeyValue ||
@@ -17993,7 +18249,11 @@ export class RuntimeController {
     operation: PointerResizeSettlement,
   ): boolean {
     const context = operation.command.context;
-    const current = this.layout.snapshot(context.outputId, context.desktopId);
+    const current = this.layout.snapshot(
+      context.outputId,
+      context.desktopId,
+      context.activityId,
+    );
 
     if (layoutContextSnapshotsEqual(current, operation.command.before)) {
       return true;
@@ -18026,10 +18286,15 @@ export class RuntimeController {
     this.layout.setViewportOffset(
       context.outputId,
       context.desktopId,
+      context.activityId,
       operation.command.before.viewportOffset,
     );
     return layoutContextSnapshotsEqual(
-      this.layout.snapshot(context.outputId, context.desktopId),
+      this.layout.snapshot(
+        context.outputId,
+        context.desktopId,
+        context.activityId,
+      ),
       operation.command.before,
     );
   }
@@ -18083,7 +18348,11 @@ export class RuntimeController {
       this.toggleTransitionPending(context.key) ||
       !this.floatingPointerMoveParticipantsAreCurrent(intent, context) ||
       !layoutContextSnapshotsEqual(
-        this.layout.snapshot(context.outputId, context.desktopId),
+        this.layout.snapshot(
+          context.outputId,
+          context.desktopId,
+          context.activityId,
+        ),
         intent.before,
       )
     ) {
@@ -18123,11 +18392,13 @@ export class RuntimeController {
     const preview =
       target.kind === "window"
         ? this.layout.previewWindowAttachToWindow(id, {
+            activityId: context.activityId,
             desktopId: context.desktopId,
             outputId: context.outputId,
             ...target.value,
           })
         : this.layout.previewWindowAttachToColumnBoundary(id, {
+            activityId: context.activityId,
             columnId: this.availableColumnId(intent.before, id, "pointer"),
             desktopId: context.desktopId,
             outputId: context.outputId,
@@ -18284,7 +18555,11 @@ export class RuntimeController {
     this.reconcileColumnFullWidthRestore(
       context.key,
       command.before,
-      this.layout.snapshot(context.outputId, context.desktopId),
+      this.layout.snapshot(
+        context.outputId,
+        context.desktopId,
+        context.activityId,
+      ),
     );
     this.capacityParkBackoffs.delete(context.key);
 
@@ -18573,6 +18848,7 @@ export class RuntimeController {
       this.layout.setViewportOffset(
         context.outputId,
         context.desktopId,
+        context.activityId,
         operation.targetLayout.viewportOffset,
       );
     }
@@ -18581,7 +18857,11 @@ export class RuntimeController {
       !edit ||
       edit.kind !== operation.editKind ||
       !layoutContextSnapshotsEqual(
-        this.layout.snapshot(context.outputId, context.desktopId),
+        this.layout.snapshot(
+          context.outputId,
+          context.desktopId,
+          context.activityId,
+        ),
         operation.targetLayout,
       ) ||
       !this.pointerColumnDropWindowsAreCurrent(operation) ||
@@ -18592,6 +18872,7 @@ export class RuntimeController {
         this.layout.setViewportOffset(
           context.outputId,
           context.desktopId,
+          context.activityId,
           operation.command.before.viewportOffset,
         );
       }
@@ -18749,7 +19030,7 @@ export class RuntimeController {
     const source = this.observer.source(id);
     const owner = this.managedWindows.get(id);
     const observed = source ? normalizeWindow(source) : null;
-    const liveContext = observed ? managedContext(observed) : null;
+    const liveContext = observed ? this.resolveManagedContext(observed) : null;
     const constraints = source ? frameSizeConstraintBounds(source) : null;
 
     return Boolean(
@@ -18807,7 +19088,11 @@ export class RuntimeController {
       this.contexts.get(context.key) === context &&
       this.pointerMoveContextGeometry(intent, context) &&
       layoutContextSnapshotsEqual(
-        this.layout.snapshot(context.outputId, context.desktopId),
+        this.layout.snapshot(
+          context.outputId,
+          context.desktopId,
+          context.activityId,
+        ),
         operation.command.before,
       ),
     );
@@ -18848,7 +19133,9 @@ export class RuntimeController {
       const source = this.observer.source(participant.id);
       const owner = this.managedWindows.get(participant.id);
       const observed = source ? normalizeWindow(source) : null;
-      const liveContext = observed ? managedContext(observed) : null;
+      const liveContext = observed
+        ? this.resolveManagedContext(observed)
+        : null;
 
       return Boolean(
         source === participant.window &&
@@ -18877,7 +19164,7 @@ export class RuntimeController {
     const floating = intent.floating;
     const source = this.observer.source(intent.draggedWindowId);
     const observed = source ? normalizeWindow(source) : null;
-    const liveContext = observed ? managedContext(observed) : null;
+    const liveContext = observed ? this.resolveManagedContext(observed) : null;
 
     if (
       !floating ||
@@ -18890,7 +19177,11 @@ export class RuntimeController {
       intent.participants.length !== context.windowIds.size ||
       this.floatingPointerContextHasPendingSync(intent, context) ||
       !layoutContextSnapshotsEqual(
-        this.layout.snapshot(context.outputId, context.desktopId),
+        this.layout.snapshot(
+          context.outputId,
+          context.desktopId,
+          context.activityId,
+        ),
         intent.before,
       )
     ) {
@@ -18904,7 +19195,7 @@ export class RuntimeController {
         ? normalizeWindow(participantSource)
         : null;
       const participantContext = participantObserved
-        ? managedContext(participantObserved)
+        ? this.resolveManagedContext(participantObserved)
         : null;
 
       return Boolean(
@@ -18953,7 +19244,9 @@ export class RuntimeController {
 
       const source = this.observer.source(id);
       const observed = source ? normalizeWindow(source) : null;
-      const liveContext = observed ? managedContext(observed) : null;
+      const liveContext = observed
+        ? this.resolveManagedContext(observed)
+        : null;
 
       if (liveContext && contextKey(liveContext) === context.key) {
         return true;
@@ -18987,7 +19280,9 @@ export class RuntimeController {
 
       const source = this.observer.source(id);
       const observed = source ? normalizeWindow(source) : null;
-      const liveContext = observed ? managedContext(observed) : null;
+      const liveContext = observed
+        ? this.resolveManagedContext(observed)
+        : null;
 
       if (liveContext && contextKey(liveContext) === context.key) {
         return true;
@@ -19021,6 +19316,7 @@ export class RuntimeController {
       this.layout.setViewportOffset(
         context.outputId,
         context.desktopId,
+        context.activityId,
         before.viewportOffset,
       );
       return true;
@@ -19029,7 +19325,11 @@ export class RuntimeController {
 
     try {
       nextLayout = this.solveContextGeometry(
-        this.layout.snapshot(context.outputId, context.desktopId),
+        this.layout.snapshot(
+          context.outputId,
+          context.desktopId,
+          context.activityId,
+        ),
         contextGeometry,
       );
     } catch (error) {
@@ -19897,12 +20197,20 @@ export class RuntimeController {
   }
 
   private liveLayoutHydrationInput(): LayoutPersistenceHydrationInput {
+    const currentActivity = this.activities.current();
+    const liveActivityIds =
+      this.workspace.activities && this.workspace.activities.length > 0
+        ? this.workspace.activities
+        : currentActivity
+          ? [String(currentActivity)]
+          : [];
     const windows = this.observer.snapshot().map((observed) => {
       const source = this.observer.source(observed.id);
-      const liveContext = managedContext(observed);
+      const liveContext = this.resolveManagedContext(observed);
       const identity = layoutPersistenceWindowDescriptor(observed.id, source);
 
       return {
+        activityIds: observed.activityIds,
         desktopId: String(liveContext?.desktopId ?? ""),
         eligible: Boolean(
           source &&
@@ -19917,6 +20225,8 @@ export class RuntimeController {
     });
 
     return {
+      activities: liveActivityIds.map((id) => ({ id })),
+      currentActivityId: String(currentActivity ?? ""),
       desktops: this.workspace.desktops.map((desktop) => ({ id: desktop.id })),
       outputs: this.workspace.screens.map(layoutPersistenceOutputDescriptor),
       windows,
@@ -20172,6 +20482,18 @@ export class RuntimeController {
     const topologyFingerprint = this.layoutHydrationTopologyFingerprint();
 
     for (const planned of plan.contexts) {
+      if (
+        planned.activityId !== String(planned.layout.activityId) ||
+        planned.key !==
+          contextKey({
+            activityId: planned.layout.activityId,
+            desktopId: planned.layout.desktopId,
+            outputId: planned.layout.outputId,
+          })
+      ) {
+        return null;
+      }
+
       const contextGeometry = this.geometry.contextGeometry(
         planned.layout.outputId,
         planned.layout.desktopId,
@@ -20183,6 +20505,7 @@ export class RuntimeController {
 
       const restored = candidateLayout.restoreColumns({
         activeColumnId: planned.layout.activeColumnId,
+        activityId: planned.layout.activityId,
         columns: planned.layout.columns.map((column, index) => ({
           column,
           index,
@@ -20207,6 +20530,7 @@ export class RuntimeController {
       );
       const windowIds = new Set<WindowId>();
       const runtimeContext: RuntimeContext = {
+        activityId: planned.layout.activityId,
         desktopId: planned.layout.desktopId,
         geometryFingerprint: contextGeometry.fingerprint,
         key: planned.key,
@@ -20327,6 +20651,13 @@ export class RuntimeController {
       const source = this.observer.source(id);
 
       if (
+        planned.activityId !== String(planned.placement.activityId) ||
+        planned.contextKey !==
+          contextKey({
+            activityId: planned.placement.activityId,
+            desktopId: planned.placement.desktopId,
+            outputId: planned.placement.outputId,
+          }) ||
         !source ||
         candidateHydratedWindowIds.has(id) ||
         !this.layoutHydrationSourceBelongsToContext(
@@ -20491,7 +20822,7 @@ export class RuntimeController {
     key: string,
   ): boolean {
     const observed = normalizeWindow(source);
-    const context = observed ? managedContext(observed) : null;
+    const context = observed ? this.resolveManagedContext(observed) : null;
 
     return Boolean(
       context &&
@@ -20503,6 +20834,8 @@ export class RuntimeController {
 
   private layoutHydrationTopologyFingerprint(): string {
     return JSON.stringify({
+      activities: this.workspace.activities ?? null,
+      currentActivity: this.activities.current(),
       desktops: this.workspace.desktops.map((desktop) => desktop.id),
       outputs: this.workspace.screens.map((output) => ({
         devicePixelRatio: output.devicePixelRatio,
@@ -20718,7 +21051,11 @@ export class RuntimeController {
         continue;
       }
 
-      const snapshot = this.layout.snapshot(parsed.outputId, parsed.desktopId);
+      const snapshot = this.layout.snapshot(
+        parsed.outputId,
+        parsed.desktopId,
+        parsed.activityId,
+      );
       const leases = [...(this.capacityLeasesByContext.get(key) ?? [])];
       const logical =
         leases.length === 0
@@ -21570,7 +21907,7 @@ export class RuntimeController {
     }
 
     const observed = normalizeWindow(source);
-    const nextContext = observed ? managedContext(observed) : null;
+    const nextContext = observed ? this.resolveManagedContext(observed) : null;
     const nextKey = nextContext ? contextKey(nextContext) : null;
 
     if (nextContext && replacedOutputs?.has(nextContext.outputId) === true) {
@@ -21992,7 +22329,9 @@ export class RuntimeController {
     for (const id of pendingIds) {
       const source = this.observer.source(id);
       const observed = source ? normalizeWindow(source) : null;
-      const nextContext = observed ? managedContext(observed) : null;
+      const nextContext = observed
+        ? this.resolveManagedContext(observed)
+        : null;
       const owner = this.managedWindows.get(id);
       let capacityLease = this.capacityLeaseByWindow.get(id);
 
@@ -22226,7 +22565,7 @@ export class RuntimeController {
       for (const window of lease.windows) {
         const source = this.observer.source(window.windowId);
         const observed = source ? normalizeWindow(source) : null;
-        const context = observed ? managedContext(observed) : null;
+        const context = observed ? this.resolveManagedContext(observed) : null;
 
         if (context && contextKey(context) === lease.contextKey) {
           preservedRestoreBaselines.set(
@@ -22254,7 +22593,9 @@ export class RuntimeController {
       const owner = this.managedWindows.get(id);
       const source = this.observer.source(id);
       const observed = source ? normalizeWindow(source) : null;
-      const nextContext = observed ? managedContext(observed) : null;
+      const nextContext = observed
+        ? this.resolveManagedContext(observed)
+        : null;
 
       if (!owner || !source || !nextContext) {
         continue;
@@ -22287,6 +22628,7 @@ export class RuntimeController {
 
     for (const [key, release] of releases) {
       const removed = this.layout.unmanageWindows({
+        activityId: release.context.activityId,
         desktopId: release.context.desktopId,
         outputId: release.context.outputId,
         windowIds: release.ids,
@@ -22377,7 +22719,7 @@ export class RuntimeController {
       for (const source of tiledSources) {
         const id = windowId(String(source.internalId));
         const observed = normalizeWindow(source);
-        const context = observed ? managedContext(observed) : null;
+        const context = observed ? this.resolveManagedContext(observed) : null;
 
         if (
           !observed ||
@@ -22427,7 +22769,7 @@ export class RuntimeController {
     for (const source of sources) {
       const id = windowId(String(source.internalId));
       const observed = normalizeWindow(source);
-      const context = observed ? managedContext(observed) : null;
+      const context = observed ? this.resolveManagedContext(observed) : null;
 
       if (
         !context ||
@@ -22536,6 +22878,7 @@ export class RuntimeController {
         planned.layout.outputId !== restoration.outputId ||
         planned.key !==
           contextKey({
+            activityId: planned.layout.activityId,
             desktopId: planned.layout.desktopId,
             outputId: planned.layout.outputId,
           })
@@ -22580,7 +22923,9 @@ export class RuntimeController {
       for (const source of group.sources) {
         const id = windowId(String(source.internalId));
         const observed = normalizeWindow(source);
-        const liveContext = observed ? managedContext(observed) : null;
+        const liveContext = observed
+          ? this.resolveManagedContext(observed)
+          : null;
 
         if (
           candidateWindowIds.has(id) ||
@@ -22630,6 +22975,7 @@ export class RuntimeController {
       const before = this.layout.snapshot(
         group.context.outputId,
         group.context.desktopId,
+        group.context.activityId,
       );
 
       if (
@@ -22779,6 +23125,7 @@ export class RuntimeController {
       try {
         restored = this.layout.restoreColumns({
           activeColumnId: context.planned.layout.activeColumnId,
+          activityId: context.context.activityId,
           columns: context.planned.layout.columns.map((column, index) => ({
             column,
             index,
@@ -22917,7 +23264,7 @@ export class RuntimeController {
 
     return prepared.candidates.every((candidate) => {
       const observed = normalizeWindow(candidate.source);
-      const context = observed ? managedContext(observed) : null;
+      const context = observed ? this.resolveManagedContext(observed) : null;
       const targetFrame = prepared.targetFrames.get(candidate.id);
 
       return (
@@ -22951,6 +23298,7 @@ export class RuntimeController {
   ): void {
     for (const context of [...contexts].reverse()) {
       const removed = this.layout.removeColumns({
+        activityId: context.context.activityId,
         columnIds: context.planned.layout.columns.map((column) => column.id),
         desktopId: context.context.desktopId,
         outputId: context.context.outputId,
@@ -23046,7 +23394,11 @@ export class RuntimeController {
       return 0;
     }
 
-    const before = this.layout.snapshot(context.outputId, context.desktopId);
+    const before = this.layout.snapshot(
+      context.outputId,
+      context.desktopId,
+      context.activityId,
+    );
     const usedColumnIds = new Set(before.columns.map((column) => column.id));
     const plannedByKey = new Map<
       string,
@@ -23234,6 +23586,7 @@ export class RuntimeController {
     if (
       !plannedPreview ||
       !this.layout.restoreColumns({
+        activityId: context.activityId,
         columns: plannedPreview.placements,
         desktopId: context.desktopId,
         outputId: context.outputId,
@@ -23391,6 +23744,7 @@ export class RuntimeController {
       }
 
       const added = this.layout.manageWindow({
+        activityId: context.activityId,
         columnId: columnId(`column:${String(candidate.id)}`),
         desktopId: context.desktopId,
         outputId: context.outputId,
@@ -23411,11 +23765,16 @@ export class RuntimeController {
 
       try {
         layout = this.solveContextGeometry(
-          this.layout.snapshot(context.outputId, context.desktopId),
+          this.layout.snapshot(
+            context.outputId,
+            context.desktopId,
+            context.activityId,
+          ),
           contextGeometry,
         );
       } catch (error) {
         const rolledBack = this.layout.unmanageWindows({
+          activityId: context.activityId,
           desktopId: context.desktopId,
           outputId: context.outputId,
           windowIds: admittedCandidates.map((candidate) => candidate.id),
@@ -23458,6 +23817,7 @@ export class RuntimeController {
 
       const rejectedWindowIds = rejected.map((candidate) => candidate.id);
       const removed = this.layout.unmanageWindows({
+        activityId: context.activityId,
         desktopId: context.desktopId,
         outputId: context.outputId,
         windowIds: rejectedWindowIds,
@@ -23553,7 +23913,7 @@ export class RuntimeController {
       return false;
     }
 
-    const context = managedContext(observed);
+    const context = this.resolveManagedContext(observed);
 
     if (!context) {
       if (capacityLease) {
@@ -23638,6 +23998,7 @@ export class RuntimeController {
     }
 
     const added = this.layout.manageWindow({
+      activityId: context.activityId,
       columnId: columnId(`column:${observed.id}`),
       desktopId: context.desktopId,
       outputId: context.outputId,
@@ -23755,7 +24116,11 @@ export class RuntimeController {
         source,
         context,
         contextGeometry,
-        this.layout.snapshot(context.outputId, context.desktopId),
+        this.layout.snapshot(
+          context.outputId,
+          context.desktopId,
+          context.activityId,
+        ),
       );
     } catch (error) {
       this.deferWindow(id, key, contextGeometry.fingerprint);
@@ -24354,7 +24719,11 @@ export class RuntimeController {
 
     const ownedContext = this.contexts.get(owner.contextKey);
     const before = ownedContext
-      ? this.layout.snapshot(ownedContext.outputId, ownedContext.desktopId)
+      ? this.layout.snapshot(
+          ownedContext.outputId,
+          ownedContext.desktopId,
+          ownedContext.activityId,
+        )
       : null;
     const removedColumn = before?.columns.find((column) =>
       column.windowIds.includes(id),
@@ -24369,7 +24738,11 @@ export class RuntimeController {
     this.layout.unmanageWindow(id);
     const after =
       ownedContext && removedColumn
-        ? this.layout.snapshot(ownedContext.outputId, ownedContext.desktopId)
+        ? this.layout.snapshot(
+            ownedContext.outputId,
+            ownedContext.desktopId,
+            ownedContext.activityId,
+          )
         : null;
 
     if (
@@ -25091,7 +25464,9 @@ export class RuntimeController {
         const owner = this.managedWindows.get(window.windowId);
         const source = this.observer.source(window.windowId);
         const observed = source ? normalizeWindow(source) : null;
-        const liveContext = observed ? managedContext(observed) : null;
+        const liveContext = observed
+          ? this.resolveManagedContext(observed)
+          : null;
 
         if (
           owner?.contextKey !== context.key ||
@@ -25171,7 +25546,11 @@ export class RuntimeController {
     }
 
     const layout = this.solveContextGeometry(
-      this.layout.snapshot(context.outputId, context.desktopId),
+      this.layout.snapshot(
+        context.outputId,
+        context.desktopId,
+        context.activityId,
+      ),
       contextGeometry,
     );
     let writeCount = 0;
@@ -25213,6 +25592,7 @@ export class RuntimeController {
     this.layout.setViewportOffset(
       context.outputId,
       context.desktopId,
+      context.activityId,
       layout.viewportOffset,
     );
     const windowIds = writableLayout.map((window) => window.windowId);
@@ -25257,7 +25637,11 @@ export class RuntimeController {
     context: RuntimeContext,
     contextGeometry: ContextGeometry,
   ): CapacityRecoveryPlan | null {
-    const snapshot = this.layout.snapshot(context.outputId, context.desktopId);
+    const snapshot = this.layout.snapshot(
+      context.outputId,
+      context.desktopId,
+      context.activityId,
+    );
     const logicalColumnIndices = this.capacityLogicalColumnIndices(
       context.key,
       snapshot,
@@ -25389,6 +25773,7 @@ export class RuntimeController {
 
     return {
       activeColumnId: snapshot.activeColumnId,
+      activityId: context.activityId,
       columns: selected.map((candidate) => ({
         column: candidate.column,
         index: candidate.index,
@@ -25592,7 +25977,9 @@ export class RuntimeController {
       const owner = this.managedWindows.get(window.windowId);
       const source = this.observer.source(window.windowId);
       const observed = source ? normalizeWindow(source) : null;
-      const liveContext = observed ? managedContext(observed) : null;
+      const liveContext = observed
+        ? this.resolveManagedContext(observed)
+        : null;
 
       if (
         !owner ||
@@ -25641,6 +26028,7 @@ export class RuntimeController {
 
     const leases = operation.columns.map((column) => ({
       activeColumnId: operation.activeColumnId,
+      activityId: context.activityId,
       column,
       contextFingerprint: operation.contextFingerprint,
       contextKey: operation.contextKey,
@@ -25651,6 +26039,7 @@ export class RuntimeController {
       windows: windowsByColumn.get(column.column.id) ?? [],
     }));
     const removed = this.layout.removeColumns({
+      activityId: context.activityId,
       columnIds: operation.columns.map((column) => column.column.id),
       desktopId: context.desktopId,
       outputId: context.outputId,
@@ -25743,6 +26132,7 @@ export class RuntimeController {
     operation: CapacityParkOperation,
   ): void {
     const context: ManagedContext = {
+      activityId: operation.activityId,
       desktopId: operation.desktopId,
       outputId: operation.outputId,
     };
@@ -25776,7 +26166,9 @@ export class RuntimeController {
       const owner = this.managedWindows.get(window.windowId);
       const source = this.observer.source(window.windowId);
       const observed = source ? normalizeWindow(source) : null;
-      const liveContext = observed ? managedContext(observed) : null;
+      const liveContext = observed
+        ? this.resolveManagedContext(observed)
+        : null;
 
       if (
         owner?.contextKey !== operation.contextKey ||
@@ -25972,6 +26364,7 @@ export class RuntimeController {
       if (
         lease.outputId !== firstLease.outputId ||
         lease.desktopId !== firstLease.desktopId ||
+        lease.activityId !== firstLease.activityId ||
         lease.outputInstanceId !== outputInstanceId
       ) {
         this.invalidateCapacityLease(lease);
@@ -25988,7 +26381,9 @@ export class RuntimeController {
       for (const window of lease.windows) {
         const source = this.observer.source(window.windowId);
         const observed = source ? normalizeWindow(source) : null;
-        const liveContext = observed ? managedContext(observed) : null;
+        const liveContext = observed
+          ? this.resolveManagedContext(observed)
+          : null;
 
         if (
           this.waitingWindowContexts.get(window.windowId) !== key ||
@@ -26007,6 +26402,7 @@ export class RuntimeController {
     const snapshot = this.layout.snapshot(
       firstLease.outputId,
       firstLease.desktopId,
+      firstLease.activityId,
     );
     const activeWindowId = this.workspace.activeWindow
       ? windowId(String(this.workspace.activeWindow.internalId))
@@ -26068,6 +26464,7 @@ export class RuntimeController {
     if (
       !this.layout.restoreColumns({
         activeColumnId,
+        activityId: firstLease.activityId,
         columns: placements,
         desktopId: firstLease.desktopId,
         outputId: firstLease.outputId,
@@ -26081,6 +26478,7 @@ export class RuntimeController {
 
     if (!runtimeContext) {
       runtimeContext = {
+        activityId: firstLease.activityId,
         desktopId: firstLease.desktopId,
         geometryFingerprint: contextGeometry.fingerprint,
         key,
@@ -26164,7 +26562,9 @@ export class RuntimeController {
       const owner = this.managedWindows.get(window.windowId);
       const source = this.observer.source(window.windowId);
       const observed = source ? normalizeWindow(source) : null;
-      const liveContext = observed ? managedContext(observed) : null;
+      const liveContext = observed
+        ? this.resolveManagedContext(observed)
+        : null;
 
       if (
         !owner ||
@@ -26229,7 +26629,9 @@ export class RuntimeController {
       .filter((window) => {
         const source = this.observer.source(window.windowId);
         const observed = source ? normalizeWindow(source) : null;
-        const liveContext = observed ? managedContext(observed) : null;
+        const liveContext = observed
+          ? this.resolveManagedContext(observed)
+          : null;
         return Boolean(
           source &&
           liveContext &&
@@ -26261,7 +26663,11 @@ export class RuntimeController {
     contextGeometry: ContextGeometry,
   ): AdmissionDecision {
     const layout = this.solveContextGeometry(
-      this.layout.snapshot(context.outputId, context.desktopId),
+      this.layout.snapshot(
+        context.outputId,
+        context.desktopId,
+        context.activityId,
+      ),
       contextGeometry,
     );
     const candidate = layout.windows.find(
@@ -26376,6 +26782,39 @@ export class RuntimeController {
       : { kind: "proportion", value: percent / 100 };
   }
 
+  private resolveManagedContext(window: ObservedWindow): ManagedContext | null {
+    return managedContextForActivities(window, this.activities);
+  }
+
+  private resolveLayerFocusContext(window: KWinWindow): ManagedContext | null {
+    return layerFocusContextForActivities(window, this.activities);
+  }
+
+  private transferWindowActivityIsCurrent(
+    window: KWinWindow,
+    operation: WindowTransferOperation,
+  ): boolean {
+    const activity = this.windowActivity(window);
+    const sourceContext = managedContextFromKey(operation.sourceContextKey);
+    const targetContext = managedContextFromKey(operation.targetContextKey);
+
+    return Boolean(
+      activity &&
+      sourceContext &&
+      targetContext &&
+      activity === sourceContext.activityId &&
+      activity === targetContext.activityId,
+    );
+  }
+
+  private windowActivity(window: KWinWindow): ActivityId | null {
+    try {
+      return this.activities.forWindow(window.activities ?? []);
+    } catch {
+      return null;
+    }
+  }
+
   private initialColumnPresentation(
     source: KWinWindow | undefined,
   ): ColumnPresentation {
@@ -26397,6 +26836,10 @@ export class RuntimeController {
   }
 
   private isContextVisible(context: ManagedContext): boolean {
+    if (this.activities.current() !== context.activityId) {
+      return false;
+    }
+
     const output = this.workspace.screens.find(
       (candidate) => candidate.name === context.outputId,
     );
@@ -26490,6 +26933,7 @@ export class RuntimeController {
 
 function layoutHydrationWindowFingerprint(source: KWinWindow): string {
   return JSON.stringify({
+    activities: source.activities ?? null,
     clientGeometry: {
       height: source.clientGeometry.height,
       width: source.clientGeometry.width,
@@ -26607,43 +27051,65 @@ function replaceSet<T>(target: Set<T>, values: ReadonlySet<T>): void {
   }
 }
 
-function managedContext(window: ObservedWindow): ManagedContext | null {
+function managedContextForActivities(
+  window: ObservedWindow,
+  activities: KWinActivityAdapter,
+): ManagedContext | null {
   const desktop = window.desktopIds[0];
+  const activity = activities.forWindow(window.activityIds);
 
-  if (window.kind !== "normal" || window.desktopIds.length !== 1 || !desktop) {
+  if (
+    window.kind !== "normal" ||
+    window.desktopIds.length !== 1 ||
+    !desktop ||
+    !activity
+  ) {
     return null;
   }
 
   return {
+    activityId: activity,
     desktopId: desktopId(desktop),
     outputId: outputId(window.outputId),
   };
 }
 
-function layerFocusContext(window: KWinWindow): ManagedContext | null {
+function layerFocusContextForActivities(
+  window: KWinWindow,
+  activities: KWinActivityAdapter,
+): ManagedContext | null {
   const observed = normalizeWindow(window);
   const desktop = observed?.desktopIds[0];
+  const activity = observed ? activities.forWindow(observed.activityIds) : null;
 
-  if (!observed || observed.desktopIds.length !== 1 || !desktop) {
+  if (!observed || observed.desktopIds.length !== 1 || !desktop || !activity) {
     return null;
   }
 
   return {
+    activityId: activity,
     desktopId: desktopId(desktop),
     outputId: outputId(observed.outputId),
   };
 }
 
 function managedContextFromKey(key: string): ManagedContext | null {
-  const separator = key.indexOf("\u0000");
+  const outputSeparator = key.indexOf("\u0000");
+  const desktopSeparator = key.indexOf("\u0000", outputSeparator + 1);
 
-  if (separator <= 0 || separator >= key.length - 1) {
+  if (
+    outputSeparator <= 0 ||
+    desktopSeparator <= outputSeparator + 1 ||
+    desktopSeparator >= key.length - 1 ||
+    key.indexOf("\u0000", desktopSeparator + 1) >= 0
+  ) {
     return null;
   }
 
   return {
-    desktopId: desktopId(key.slice(separator + 1)),
-    outputId: outputId(key.slice(0, separator)),
+    activityId: activityId(key.slice(desktopSeparator + 1)),
+    desktopId: desktopId(key.slice(outputSeparator + 1, desktopSeparator)),
+    outputId: outputId(key.slice(0, outputSeparator)),
   };
 }
 
@@ -26725,6 +27191,7 @@ function sameLayoutContextSnapshot(
 ): boolean {
   return (
     left.activeColumnId === right.activeColumnId &&
+    left.activityId === right.activityId &&
     left.outputId === right.outputId &&
     left.desktopId === right.desktopId &&
     left.viewportOffset === right.viewportOffset &&
@@ -26927,7 +27394,7 @@ function validDecorationExtent(
 }
 
 function contextKey(context: ManagedContext): string {
-  return `${context.outputId}\u0000${context.desktopId}`;
+  return `${context.outputId}\u0000${context.desktopId}\u0000${context.activityId}`;
 }
 
 function restoreRememberedFocus(
@@ -26996,6 +27463,7 @@ function layoutContextSnapshotsEqual(
 ): boolean {
   if (
     left.activeColumnId !== right.activeColumnId ||
+    left.activityId !== right.activityId ||
     left.desktopId !== right.desktopId ||
     left.outputId !== right.outputId ||
     left.viewportOffset !== right.viewportOffset ||

@@ -41,6 +41,8 @@ function isOverviewLiveLayout(value: unknown): value is OverviewLiveLayout {
   const candidate = value as Record<string, unknown>;
 
   return (
+    Array.isArray(candidate["activityIds"]) &&
+    typeof candidate["currentActivityId"] === "string" &&
     Array.isArray(candidate["desktopIds"]) &&
     Array.isArray(candidate["outputs"]) &&
     Array.isArray(candidate["windowIds"])

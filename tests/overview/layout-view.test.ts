@@ -11,7 +11,7 @@ import {
   LAYOUT_PERSISTENCE_LIMITS,
   LAYOUT_PERSISTENCE_VERSION,
   encodeLayoutPersistence,
-  type LayoutPersistenceV3,
+  type LayoutPersistenceV4,
   type PersistedOutputV1,
 } from "../../src/core/layout-persistence";
 import {
@@ -22,6 +22,8 @@ import {
 const RESTORE_FINGERPRINT =
   "1\u00000\u00000\u00001000\u0000800\u00000\u00000\u00001000\u0000800";
 const MAXIMUM_OPERATIONS_PER_WINDOW = 7;
+const WORK_ACTIVITY = "work";
+const PERSONAL_ACTIVITY = "personal";
 
 const internalOutput = Object.freeze({
   key: "stored-internal",
@@ -39,11 +41,12 @@ const externalOutput = Object.freeze({
   serialNumber: "external-1",
 } satisfies PersistedOutputV1);
 
-function representativeState(): LayoutPersistenceV3 {
+function representativeState(): LayoutPersistenceV4 {
   return {
     contexts: [
       {
         activeColumnIndex: 1,
+        activityId: WORK_ACTIVITY,
         columns: [
           {
             fullWidthRestore: { kind: "fixed", value: 800 },
@@ -83,6 +86,7 @@ function representativeState(): LayoutPersistenceV3 {
       },
       {
         activeColumnIndex: 0,
+        activityId: WORK_ACTIVITY,
         columns: [
           {
             members: [
@@ -103,6 +107,7 @@ function representativeState(): LayoutPersistenceV3 {
     ],
     floatingWindows: [
       {
+        activityId: WORK_ACTIVITY,
         anchor: {
           columnIndex: 0,
           columnPresentation: "tabbed",
@@ -137,7 +142,7 @@ function topology(
 }
 
 function snapshot(
-  state: LayoutPersistenceV3,
+  state: LayoutPersistenceV4,
   persistedTopology: LayoutPersistenceTopologyV2,
 ): LayoutPersistenceCatalogSnapshot {
   return { state, topology: persistedTopology };
@@ -166,6 +171,8 @@ function liveLayout(
   overrides: Partial<OverviewLiveLayout> = {},
 ): OverviewLiveLayout {
   return {
+    activityIds: [WORK_ACTIVITY, PERSONAL_ACTIVITY],
+    currentActivityId: WORK_ACTIVITY,
     desktopIds: ["desktop-1", "desktop-2"],
     outputs: [
       {
@@ -219,11 +226,12 @@ function expectDeepFrozen(value: unknown): void {
 function oneWindowState(
   persistedOutput: PersistedOutputV1,
   suffix: string,
-): LayoutPersistenceV3 {
+): LayoutPersistenceV4 {
   return {
     contexts: [
       {
         activeColumnIndex: 0,
+        activityId: WORK_ACTIVITY,
         columns: [
           {
             members: [{ windowKey: `stored-${suffix}` }],
@@ -253,6 +261,7 @@ describe("projectOverviewLayout", () => {
       contexts: [
         {
           activeColumnIndex: 1,
+          activityId: WORK_ACTIVITY,
           columns: [
             {
               fullWidthRestore: { kind: "fixed", value: 800 },
@@ -285,6 +294,7 @@ describe("projectOverviewLayout", () => {
         },
         {
           activeColumnIndex: 0,
+          activityId: WORK_ACTIVITY,
           columns: [
             {
               members: [
@@ -303,9 +313,11 @@ describe("projectOverviewLayout", () => {
           viewportOffset: 40,
         },
       ],
+      currentActivityId: WORK_ACTIVITY,
       desktopIds: ["desktop-1", "desktop-2"],
       floatingWindows: [
         {
+          activityId: WORK_ACTIVITY,
           anchor: {
             columnIndex: 0,
             columnWidth: { kind: "proportion", value: 1 },
@@ -342,6 +354,50 @@ describe("projectOverviewLayout", () => {
     expect(JSON.stringify(projected)).not.toContain("stored-");
   });
 
+  it("projects only the current activity", () => {
+    const base = representativeState();
+    const state: LayoutPersistenceV4 = {
+      ...base,
+      contexts: [
+        ...base.contexts,
+        {
+          activeColumnIndex: 0,
+          activityId: PERSONAL_ACTIVITY,
+          columns: [
+            {
+              members: [{ windowKey: "stored-personal" }],
+              presentation: "stacked",
+              selectedMemberIndex: 0,
+              width: { kind: "proportion", value: 1 / 3 },
+            },
+          ],
+          desktopId: "desktop-1",
+          outputKey: internalOutput.key,
+          viewportOffset: 0,
+        },
+      ],
+      windows: [
+        ...base.windows,
+        { key: "stored-personal", liveId: "live-personal" },
+      ],
+    };
+    const projected = success(
+      documentFor(state),
+      liveLayout({
+        currentActivityId: PERSONAL_ACTIVITY,
+        windowIds: [...liveLayout().windowIds, "live-personal"],
+      }),
+    );
+
+    expect(projected.currentActivityId).toBe(PERSONAL_ACTIVITY);
+    expect(projected.contexts).toHaveLength(1);
+    expect(projected.contexts[0]?.activityId).toBe(PERSONAL_ACTIVITY);
+    expect(projected.contexts[0]?.columns[0]?.members).toEqual([
+      { windowId: "live-personal" },
+    ]);
+    expect(projected.floatingWindows).toEqual([]);
+  });
+
   it("uses snapshot zero instead of selecting a historical topology", () => {
     const historicalOutput = {
       key: "historical",
@@ -364,6 +420,8 @@ describe("projectOverviewLayout", () => {
 
     expect(
       projectOverviewLayout(document, {
+        activityIds: [WORK_ACTIVITY, PERSONAL_ACTIVITY],
+        currentActivityId: WORK_ACTIVITY,
         desktopIds: ["desktop-1"],
         outputs: [
           {
@@ -395,7 +453,7 @@ describe("projectOverviewLayout", () => {
       JSON.stringify({
         format: LAYOUT_PERSISTENCE_FORMAT,
         snapshots: [],
-        version: LAYOUT_PERSISTENCE_CATALOG_VERSION + 2,
+        version: LAYOUT_PERSISTENCE_CATALOG_VERSION + 10,
       }),
       "unsupported-version",
     ],
@@ -584,7 +642,7 @@ describe("projectOverviewLayout", () => {
       key: `stored-${String(index)}`,
       liveId: `live-${String(index)}`,
     }));
-    const state: LayoutPersistenceV3 = {
+    const state: LayoutPersistenceV4 = {
       contexts: Array.from({ length: contextCount }, (_value, contextIndex) => {
         const contextWindows = windows.slice(
           contextIndex * windowsPerContext,
@@ -593,6 +651,7 @@ describe("projectOverviewLayout", () => {
 
         return {
           activeColumnIndex: 0,
+          activityId: WORK_ACTIVITY,
           columns: contextWindows.map((window) => ({
             members: [{ windowKey: window.key }],
             presentation: "stacked" as const,
@@ -614,6 +673,8 @@ describe("projectOverviewLayout", () => {
     const projected = projectOverviewLayout(
       documentFor(state, topology(internalOutput)),
       {
+        activityIds: [WORK_ACTIVITY],
+        currentActivityId: WORK_ACTIVITY,
         desktopIds: Array.from(
           { length: contextCount },
           (_value, index) => `desktop-${String(index)}`,

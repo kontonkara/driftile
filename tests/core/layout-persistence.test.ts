@@ -2,15 +2,17 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
   LAYOUT_PERSISTENCE_FORMAT,
+  LAYOUT_PERSISTENCE_LEGACY_CURRENT_ACTIVITY_ID,
   LAYOUT_PERSISTENCE_LIMITS,
   LAYOUT_PERSISTENCE_VERSION,
   decodeLayoutPersistence,
   encodeLayoutPersistence,
-  type LayoutPersistenceV3,
+  type LayoutPersistenceV4,
 } from "../../src/core/layout-persistence";
 
 const CONTEXT_FINGERPRINT =
   "1\u00000\u00000\u00001000\u0000800\u00000\u00000\u00001000\u0000800";
+const ACTIVITY_ID = "activity-1";
 
 function required<T>(value: T | undefined): T {
   if (value === undefined) {
@@ -20,11 +22,24 @@ function required<T>(value: T | undefined): T {
   return value;
 }
 
-function persistedState(): LayoutPersistenceV3 {
+function withoutActivityId<T extends { readonly activityId: string }>(
+  value: T,
+): Omit<T, "activityId"> {
+  const { activityId, ...owner } = value;
+
+  if (activityId.length === 0) {
+    throw new Error("test fixture activity is missing");
+  }
+
+  return owner;
+}
+
+function persistedState(): LayoutPersistenceV4 {
   return {
     contexts: [
       {
         activeColumnIndex: 1,
+        activityId: ACTIVITY_ID,
         columns: [
           {
             members: [
@@ -63,6 +78,7 @@ function persistedState(): LayoutPersistenceV3 {
     ],
     floatingWindows: [
       {
+        activityId: ACTIVITY_ID,
         anchor: {
           columnIndex: 2,
           columnPresentation: "tabbed",
@@ -127,7 +143,7 @@ function restoreBaseline() {
 }
 
 describe("layout persistence codec", () => {
-  it("round trips every durable v3 policy without runtime state", () => {
+  it("round trips every durable v4 policy without runtime state", () => {
     const state = persistedState();
     const document = encodeLayoutPersistence(state);
 
@@ -137,7 +153,7 @@ describe("layout persistence codec", () => {
     });
   });
 
-  it("migrates legacy v1 state to canonical v3 defaults", () => {
+  it("migrates legacy v1 state to canonical v4 defaults", () => {
     const legacy = {
       contexts: [
         {
@@ -165,6 +181,7 @@ describe("layout persistence codec", () => {
       value: {
         contexts: [
           {
+            activityId: LAYOUT_PERSISTENCE_LEGACY_CURRENT_ACTIVITY_ID,
             columns: [
               {
                 presentation: "stacked",
@@ -173,7 +190,30 @@ describe("layout persistence codec", () => {
             ],
           },
         ],
-        version: 3,
+        version: 4,
+      },
+    });
+  });
+
+  it("migrates v3 activity-less state to the current-activity sentinel", () => {
+    const state = persistedState();
+    const legacy = {
+      ...state,
+      contexts: state.contexts.map(withoutActivityId),
+      floatingWindows: state.floatingWindows.map(withoutActivityId),
+      version: 3,
+    };
+
+    expect(decodeLayoutPersistence(JSON.stringify(legacy))).toMatchObject({
+      ok: true,
+      value: {
+        contexts: [
+          { activityId: LAYOUT_PERSISTENCE_LEGACY_CURRENT_ACTIVITY_ID },
+        ],
+        floatingWindows: [
+          { activityId: LAYOUT_PERSISTENCE_LEGACY_CURRENT_ACTIVITY_ID },
+        ],
+        version: 4,
       },
     });
   });
@@ -182,7 +222,7 @@ describe("layout persistence codec", () => {
     const state = persistedState();
     const context = required(state.contexts[0]);
     const fullWidthColumn = required(context.columns[1]);
-    const legacy: LayoutPersistenceV3 = {
+    const legacy: LayoutPersistenceV4 = {
       ...state,
       contexts: [
         {
@@ -212,11 +252,12 @@ describe("layout persistence codec", () => {
     const context = required(state.contexts[0]);
     const column = required(context.columns[0]);
     const member = required(column.members[0]);
-    const legacy: LayoutPersistenceV3 = {
+    const legacy: LayoutPersistenceV4 = {
       ...state,
       contexts: [
         {
           activeColumnIndex: context.activeColumnIndex,
+          activityId: context.activityId,
           columns: [
             {
               ...column,
@@ -247,11 +288,12 @@ describe("layout persistence codec", () => {
       key: "window-5",
       liveId: "00000000-0000-0000-0000-000000000005",
     };
-    const reordered: LayoutPersistenceV3 = {
+    const reordered: LayoutPersistenceV4 = {
       ...state,
       contexts: [
         {
           activeColumnIndex: 0,
+          activityId: ACTIVITY_ID,
           columns: [
             {
               members: [{ windowKey: secondWindow.key }],
@@ -269,7 +311,7 @@ describe("layout persistence codec", () => {
       outputs: [secondOutput, ...state.outputs],
       windows: [secondWindow, ...state.windows],
     };
-    const canonical: LayoutPersistenceV3 = {
+    const canonical: LayoutPersistenceV4 = {
       ...reordered,
       contexts: [required(state.contexts[0]), required(reordered.contexts[0])],
       outputs: [...reordered.outputs].reverse(),
@@ -279,6 +321,85 @@ describe("layout persistence codec", () => {
     expect(encodeLayoutPersistence(reordered)).toBe(
       encodeLayoutPersistence(canonical),
     );
+  });
+
+  it("canonicalizes contexts independently by activity", () => {
+    const context = (activityId: string, windowKey: string) => ({
+      activeColumnIndex: 0,
+      activityId,
+      columns: [
+        {
+          members: [{ windowKey }],
+          presentation: "stacked" as const,
+          selectedMemberIndex: 0,
+          width: { kind: "fixed" as const, value: 500 },
+        },
+      ],
+      desktopId: "desktop-1",
+      outputKey: "output-1",
+      viewportOffset: 0,
+    });
+    const state: LayoutPersistenceV4 = {
+      contexts: [
+        context("activity-b", "window-b"),
+        context("activity-a", "window-a"),
+      ],
+      floatingWindows: [],
+      format: LAYOUT_PERSISTENCE_FORMAT,
+      outputs: [{ key: "output-1", name: "DP-1" }],
+      version: LAYOUT_PERSISTENCE_VERSION,
+      windows: [
+        { key: "window-b", liveId: "live-b" },
+        { key: "window-a", liveId: "live-a" },
+      ],
+    };
+    const decoded = decodeLayoutPersistence(encodeLayoutPersistence(state));
+
+    expect(decoded).toMatchObject({
+      ok: true,
+      value: {
+        contexts: [{ activityId: "activity-a" }, { activityId: "activity-b" }],
+      },
+    });
+  });
+
+  it("requires an explicit non-empty activity on every v4 owner", () => {
+    const state = persistedState();
+    const context = required(state.contexts[0]);
+    const floating = required(state.floatingWindows[0]);
+    const contextWithoutActivity = withoutActivityId(context);
+    const floatingWithoutActivity = withoutActivityId(floating);
+    const invalidStates = [
+      { ...state, contexts: [contextWithoutActivity] },
+      { ...state, contexts: [{ ...context, activityId: "" }] },
+      {
+        ...state,
+        contexts: [
+          {
+            ...context,
+            activityId: LAYOUT_PERSISTENCE_LEGACY_CURRENT_ACTIVITY_ID,
+          },
+        ],
+      },
+      { ...state, floatingWindows: [floatingWithoutActivity] },
+      { ...state, floatingWindows: [{ ...floating, activityId: "" }] },
+      {
+        ...state,
+        floatingWindows: [
+          {
+            ...floating,
+            activityId: LAYOUT_PERSISTENCE_LEGACY_CURRENT_ACTIVITY_ID,
+          },
+        ],
+      },
+    ];
+
+    for (const invalidState of invalidStates) {
+      expect(decodeLayoutPersistence(JSON.stringify(invalidState))).toEqual({
+        error: "invalid-state",
+        ok: false,
+      });
+    }
   });
 
   it("normalizes negative zero and omitted optional values", () => {
@@ -313,7 +434,7 @@ describe("layout persistence codec", () => {
           manufacturer: undefined,
         },
       ],
-    } as unknown as LayoutPersistenceV3;
+    } as unknown as LayoutPersistenceV4;
     const decoded = decodeLayoutPersistence(encodeLayoutPersistence(input));
 
     expect(decoded).toMatchObject({
@@ -347,7 +468,7 @@ describe("layout persistence codec", () => {
     ],
     [
       "future version",
-      JSON.stringify({ ...persistedState(), version: 4 }),
+      JSON.stringify({ ...persistedState(), version: 5 }),
       "unsupported-version",
     ],
     [
@@ -393,10 +514,11 @@ describe("layout persistence codec", () => {
       kind: "client" as const,
       noBorder: false,
     };
-    const state: LayoutPersistenceV3 = {
+    const state: LayoutPersistenceV4 = {
       contexts: [
         {
           activeColumnIndex: 0,
+          activityId: ACTIVITY_ID,
           columns: Array.from(
             { length: windowCount / membersPerColumn },
             (_column, columnIndex) => ({
@@ -445,7 +567,7 @@ describe("layout persistence codec", () => {
 
   it("rejects duplicate, missing, and multiply owned window references", () => {
     const state = persistedState();
-    const duplicateLiveId: LayoutPersistenceV3 = {
+    const duplicateLiveId: LayoutPersistenceV4 = {
       ...state,
       windows: [
         ...state.windows.slice(0, -1),
@@ -455,7 +577,7 @@ describe("layout persistence codec", () => {
         },
       ],
     };
-    const missingWindow: LayoutPersistenceV3 = {
+    const missingWindow: LayoutPersistenceV4 = {
       ...state,
       contexts: [
         {
@@ -471,7 +593,7 @@ describe("layout persistence codec", () => {
         },
       ],
     };
-    const multiplyOwned: LayoutPersistenceV3 = {
+    const multiplyOwned: LayoutPersistenceV4 = {
       ...state,
       floatingWindows: [
         {
@@ -488,7 +610,7 @@ describe("layout persistence codec", () => {
 
   it("rejects invalid layout policies and floating anchors", () => {
     const state = persistedState();
-    const twoFixedHeights: LayoutPersistenceV3 = {
+    const twoFixedHeights: LayoutPersistenceV4 = {
       ...state,
       contexts: [
         {
@@ -519,7 +641,7 @@ describe("layout persistence codec", () => {
         },
       ],
     };
-    const selfAnchor: LayoutPersistenceV3 = {
+    const selfAnchor: LayoutPersistenceV4 = {
       ...state,
       floatingWindows: [
         {
@@ -531,7 +653,7 @@ describe("layout persistence codec", () => {
         },
       ],
     };
-    const splitAnchor: LayoutPersistenceV3 = {
+    const splitAnchor: LayoutPersistenceV4 = {
       ...state,
       floatingWindows: [
         {
@@ -544,7 +666,7 @@ describe("layout persistence codec", () => {
         },
       ],
     };
-    const staleFullWidthRestore: LayoutPersistenceV3 = {
+    const staleFullWidthRestore: LayoutPersistenceV4 = {
       ...state,
       contexts: [
         {
@@ -559,7 +681,7 @@ describe("layout persistence codec", () => {
         },
       ],
     };
-    const orphanedFullWidthViewportRestore: LayoutPersistenceV3 = {
+    const orphanedFullWidthViewportRestore: LayoutPersistenceV4 = {
       ...state,
       contexts: [
         {
@@ -574,7 +696,7 @@ describe("layout persistence codec", () => {
         },
       ],
     };
-    const invalidFullWidthViewportRestore: LayoutPersistenceV3 = {
+    const invalidFullWidthViewportRestore: LayoutPersistenceV4 = {
       ...state,
       contexts: [
         {
@@ -608,12 +730,13 @@ describe("layout persistence codec", () => {
       key: "window-5",
       liveId: "00000000-0000-0000-0000-000000000005",
     };
-    const otherContext: LayoutPersistenceV3 = {
+    const otherContext: LayoutPersistenceV4 = {
       ...state,
       contexts: [
         ...state.contexts,
         {
           activeColumnIndex: 0,
+          activityId: ACTIVITY_ID,
           columns: [
             {
               members: [{ windowKey: otherWindow.key }],
@@ -639,7 +762,7 @@ describe("layout persistence codec", () => {
       outputs: [...state.outputs, { key: "output-2", name: "HDMI-A-1" }],
       windows: [...state.windows, otherWindow],
     };
-    const floatingAnchor: LayoutPersistenceV3 = {
+    const floatingAnchor: LayoutPersistenceV4 = {
       ...state,
       floatingWindows: [
         {
@@ -650,6 +773,7 @@ describe("layout persistence codec", () => {
           },
         },
         {
+          activityId: ACTIVITY_ID,
           anchor: {
             columnIndex: 0,
             columnPresentation: "stacked",
@@ -674,12 +798,12 @@ describe("layout persistence codec", () => {
     const longOutputKey = "x".repeat(
       LAYOUT_PERSISTENCE_LIMITS.identifierCharacters + 1,
     );
-    const longIdentifier: LayoutPersistenceV3 = {
+    const longIdentifier: LayoutPersistenceV4 = {
       ...state,
       contexts: [{ ...required(state.contexts[0]), outputKey: longOutputKey }],
       outputs: [{ key: longOutputKey, name: "DP-1" }],
     };
-    const hugeViewport: LayoutPersistenceV3 = {
+    const hugeViewport: LayoutPersistenceV4 = {
       ...state,
       contexts: [
         {
@@ -781,6 +905,7 @@ describe("layout persistence codec", () => {
       contexts: [
         {
           activeColumnIndex: context.activeColumnIndex,
+          activityId: context.activityId,
           columns: context.columns,
           desktopId: context.desktopId,
           outputKey: context.outputKey,

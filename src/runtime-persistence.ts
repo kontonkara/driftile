@@ -10,6 +10,7 @@ import {
 } from "./core/layout-persistence-catalog";
 import {
   LAYOUT_PERSISTENCE_FORMAT,
+  LAYOUT_PERSISTENCE_LEGACY_CURRENT_ACTIVITY_ID,
   LAYOUT_PERSISTENCE_VERSION,
   decodeLayoutPersistence,
   encodeLayoutPersistence,
@@ -42,12 +43,14 @@ export function createRuntimeLayoutPersistence(
 ): RuntimeLayoutPersistence {
   const loaded = decodeLoadedDocument(loadedDocument);
   let catalog = loaded.catalog;
+  let migrationSourceDocument = loaded.migrationSourceDocument;
 
   const stateForCurrentTopology = (): string =>
     controllerStateForCurrentTopology(
       workspace,
       catalog,
       loaded.policyDocument,
+      migrationSourceDocument,
     );
 
   return {
@@ -75,6 +78,7 @@ export function createRuntimeLayoutPersistence(
 
             sink(merged.document);
             catalog = merged.value;
+            migrationSourceDocument = "";
           },
         }),
     stateForCurrentTopology,
@@ -84,10 +88,15 @@ export function createRuntimeLayoutPersistence(
 
 function decodeLoadedDocument(document: string): {
   readonly catalog: LayoutPersistenceCatalogV2 | null;
+  readonly migrationSourceDocument: string;
   readonly policyDocument: string;
 } {
   if (document.length === 0) {
-    return { catalog: null, policyDocument: "" };
+    return {
+      catalog: null,
+      migrationSourceDocument: "",
+      policyDocument: "",
+    };
   }
 
   const decoded = decodeLayoutPersistenceCatalog(document);
@@ -95,19 +104,25 @@ function decodeLoadedDocument(document: string): {
   if (!decoded.ok) {
     return {
       catalog: null,
+      migrationSourceDocument: "",
       policyDocument: malformedCurrentCatalog(document, decoded.error)
         ? INVALID_CURRENT_CATALOG_POLICY_DOCUMENT
         : document,
     };
   }
 
-  return { catalog: decoded.value, policyDocument: "" };
+  return {
+    catalog: decoded.value,
+    migrationSourceDocument: document,
+    policyDocument: "",
+  };
 }
 
 function controllerStateForCurrentTopology(
   workspace: RuntimeLayoutPersistenceWorkspace,
   catalog: LayoutPersistenceCatalogV2 | null,
   policyDocument: string,
+  migrationSourceDocument: string,
 ): string {
   if (catalog === null) {
     return policyDocument;
@@ -116,7 +131,10 @@ function controllerStateForCurrentTopology(
   const active = catalog.snapshots[0];
 
   if (active?.topology === null) {
-    return encodeLayoutPersistence(activeLayoutPersistenceState(catalog));
+    const state = activeLayoutPersistenceState(catalog);
+    return hasMigratedActivityMarker(state)
+      ? migratedSnapshotDocument(migrationSourceDocument, 0)
+      : encodeLayoutPersistence(state);
   }
 
   let selected;
@@ -130,7 +148,73 @@ function controllerStateForCurrentTopology(
     selected = null;
   }
 
-  return selected === null ? "" : encodeLayoutPersistence(selected.state);
+  if (selected === null) {
+    return "";
+  }
+
+  if (!hasMigratedActivityMarker(selected.state)) {
+    return encodeLayoutPersistence(selected.state);
+  }
+
+  const selectedTopology = JSON.stringify(selected.topology);
+  const selectedIndex = catalog.snapshots.findIndex(
+    (snapshot) => JSON.stringify(snapshot.topology) === selectedTopology,
+  );
+
+  return selectedIndex < 0
+    ? ""
+    : migratedSnapshotDocument(migrationSourceDocument, selectedIndex);
+}
+
+function migratedSnapshotDocument(document: string, index: number): string {
+  if (document.length === 0) {
+    return "";
+  }
+
+  try {
+    const value = JSON.parse(document) as unknown;
+
+    if (!isRecord(value)) {
+      return "";
+    }
+
+    if (value["version"] === 1 || value["version"] === 3) {
+      return index === 0 ? document : "";
+    }
+
+    const snapshots = value["snapshots"];
+
+    if (
+      value["version"] !== LAYOUT_PERSISTENCE_CATALOG_VERSION ||
+      !Array.isArray(snapshots)
+    ) {
+      return "";
+    }
+
+    const snapshotValues: readonly unknown[] = snapshots;
+    const snapshot = snapshotValues[index];
+
+    return isRecord(snapshot) && snapshot["state"] !== undefined
+      ? `${JSON.stringify(snapshot["state"])}\n`
+      : "";
+  } catch {
+    return "";
+  }
+}
+
+function hasMigratedActivityMarker(
+  state: ReturnType<typeof activeLayoutPersistenceState>,
+): boolean {
+  return (
+    state.contexts.some(
+      (context) =>
+        context.activityId === LAYOUT_PERSISTENCE_LEGACY_CURRENT_ACTIVITY_ID,
+    ) ||
+    state.floatingWindows.some(
+      (floating) =>
+        floating.activityId === LAYOUT_PERSISTENCE_LEGACY_CURRENT_ACTIVITY_ID,
+    )
+  );
 }
 
 function malformedCurrentCatalog(

@@ -1,4 +1,5 @@
 import {
+  activityId as brandedActivityId,
   columnId,
   desktopId,
   outputId,
@@ -14,8 +15,9 @@ import type {
   WindowHeight,
 } from "./layout-engine";
 import {
+  LAYOUT_PERSISTENCE_LEGACY_CURRENT_ACTIVITY_ID,
   LAYOUT_PERSISTENCE_LIMITS,
-  type LayoutPersistenceV3,
+  type LayoutPersistenceV4,
   type PersistedRectV1,
   type PersistedRestoreBaselineV1,
   type PersistedWindowMatchV1,
@@ -31,6 +33,10 @@ export interface LiveLayoutHydrationDesktop {
   readonly id: string;
 }
 
+export interface LiveLayoutHydrationActivity {
+  readonly id: string;
+}
+
 export interface LiveLayoutHydrationOutput {
   readonly manufacturer?: string;
   readonly model?: string;
@@ -39,6 +45,7 @@ export interface LiveLayoutHydrationOutput {
 }
 
 export interface LiveLayoutHydrationWindow {
+  readonly activityIds: readonly string[];
   readonly desktopFileName?: string;
   readonly desktopId: string;
   readonly eligible: boolean;
@@ -51,12 +58,15 @@ export interface LiveLayoutHydrationWindow {
 }
 
 export interface LayoutPersistenceHydrationInput {
+  readonly activities: readonly LiveLayoutHydrationActivity[];
+  readonly currentActivityId: string;
   readonly desktops: readonly LiveLayoutHydrationDesktop[];
   readonly outputs: readonly LiveLayoutHydrationOutput[];
   readonly windows: readonly LiveLayoutHydrationWindow[];
 }
 
 export interface LayoutPersistenceHydrationContext {
+  readonly activityId: string;
   readonly key: string;
   readonly layout: LayoutContextSnapshot;
 }
@@ -69,6 +79,7 @@ export interface LayoutPersistenceHydrationFullWidthRestore {
 }
 
 export interface LayoutPersistenceHydrationFloatingWindow {
+  readonly activityId: string;
   readonly contextKey: string;
   readonly placement: DetachedWindowPlacement;
 }
@@ -95,6 +106,8 @@ export interface LayoutPersistenceHydrationPlan {
 }
 
 export type LayoutPersistenceHydrationFailure =
+  | "ambiguous-live-window-activity"
+  | "duplicate-live-activity-id"
   | "duplicate-live-desktop-id"
   | "duplicate-live-output-name"
   | "duplicate-live-window-id"
@@ -102,6 +115,8 @@ export type LayoutPersistenceHydrationFailure =
   | "invalid-live-descriptor"
   | "invalid-persisted-state"
   | "live-window-context-mismatch"
+  | "missing-current-activity"
+  | "missing-live-activity"
   | "missing-live-desktop"
   | "missing-live-output"
   | "missing-live-window"
@@ -152,11 +167,11 @@ type RemappedPersistenceResult =
     }
   | {
       readonly ok: true;
-      readonly value: LayoutPersistenceV3;
+      readonly value: LayoutPersistenceV4;
     };
 
 export function planLayoutHydration(
-  state: LayoutPersistenceV3,
+  state: LayoutPersistenceV4,
   input: LayoutPersistenceHydrationInput,
 ): LayoutPersistenceHydrationResult {
   const structuralFailure = remappableStructureFailure(state);
@@ -182,7 +197,7 @@ export function planLayoutHydration(
 }
 
 function remappableStructureFailure(
-  state: LayoutPersistenceV3,
+  state: LayoutPersistenceV4,
 ): LayoutPersistenceHydrationFailure | null {
   if (
     hasDuplicateBy(state.outputs, (output) => output.key) ||
@@ -197,6 +212,10 @@ function remappableStructureFailure(
   }
 
   for (const context of state.contexts) {
+    if (!validPersistedActivityId(context.activityId)) {
+      return "invalid-persisted-state";
+    }
+
     const hasRestoreBaseline = context.columns.some((column) =>
       column.members.some((member) => member.restoreBaseline !== undefined),
     );
@@ -218,7 +237,10 @@ function remappableStructureFailure(
   }
 
   for (const floating of state.floatingWindows) {
-    if (!validColumnPresentation(floating.anchor.columnPresentation)) {
+    if (
+      !validPersistedActivityId(floating.activityId) ||
+      !validColumnPresentation(floating.anchor.columnPresentation)
+    ) {
       return "invalid-persisted-state";
     }
   }
@@ -227,9 +249,37 @@ function remappableStructureFailure(
 }
 
 export function planExactLayoutHydration(
-  state: LayoutPersistenceV3,
+  state: LayoutPersistenceV4,
   input: LayoutPersistenceHydrationInput,
 ): LayoutPersistenceHydrationResult {
+  const liveActivityIds = new Set<string>();
+
+  for (const activity of input.activities) {
+    if (
+      !validActivityIdentifier(activity.id) ||
+      activity.id === LAYOUT_PERSISTENCE_LEGACY_CURRENT_ACTIVITY_ID
+    ) {
+      return failure("invalid-live-descriptor");
+    }
+
+    if (liveActivityIds.has(activity.id)) {
+      return failure("duplicate-live-activity-id");
+    }
+
+    liveActivityIds.add(activity.id);
+  }
+
+  if (
+    !validActivityIdentifier(input.currentActivityId) ||
+    input.currentActivityId === LAYOUT_PERSISTENCE_LEGACY_CURRENT_ACTIVITY_ID
+  ) {
+    return failure("invalid-live-descriptor");
+  }
+
+  if (!liveActivityIds.has(input.currentActivityId)) {
+    return failure("missing-current-activity");
+  }
+
   const liveDesktopIds = new Map<string, LiveLayoutHydrationDesktop>();
 
   for (const desktop of input.desktops) {
@@ -259,9 +309,13 @@ export function planExactLayoutHydration(
   }
 
   const liveWindows = new Map<string, LiveLayoutHydrationWindow>();
+  const liveWindowActivities = new Map<string, string>();
 
   for (const window of input.windows) {
-    if (!validIdentifier(window.liveId)) {
+    if (
+      !validIdentifier(window.liveId) ||
+      !validActivityIdList(window.activityIds)
+    ) {
       return failure("invalid-live-descriptor");
     }
 
@@ -270,6 +324,19 @@ export function planExactLayoutHydration(
     }
 
     liveWindows.set(window.liveId, window);
+
+    if (window.eligible) {
+      const resolvedActivity = resolveLiveWindowActivity(
+        window.activityIds,
+        liveActivityIds,
+      );
+
+      if (!resolvedActivity.ok) {
+        return failure(resolvedActivity.reason);
+      }
+
+      liveWindowActivities.set(window.liveId, resolvedActivity.activityId);
+    }
   }
 
   const outputNamesByKey = new Map<string, string>();
@@ -330,7 +397,16 @@ export function planExactLayoutHydration(
       return failure("missing-live-desktop");
     }
 
-    const key = contextKey(outputName, persisted.desktopId);
+    const activityId = resolvePersistedActivityId(
+      persisted.activityId,
+      input.currentActivityId,
+    );
+
+    if (!liveActivityIds.has(activityId)) {
+      return failure("missing-live-activity");
+    }
+
+    const key = contextKey(outputName, persisted.desktopId, activityId);
     const hasRestoreBaseline = persisted.columns.some((column) =>
       column.members.some((member) => member.restoreBaseline !== undefined),
     );
@@ -386,6 +462,8 @@ export function planExactLayoutHydration(
           live,
           outputName,
           persisted.desktopId,
+          activityId,
+          liveWindowActivities,
         );
 
         if (ownershipFailure) {
@@ -475,12 +553,13 @@ export function planExactLayoutHydration(
 
     const layout = Object.freeze({
       activeColumnId,
+      activityId: brandedActivityId(activityId),
       columns: immutableArray(columns),
       desktopId: desktopId(persisted.desktopId),
       outputId: outputId(outputName),
       viewportOffset: persisted.viewportOffset,
     });
-    const context = Object.freeze({ key, layout });
+    const context = Object.freeze({ activityId, key, layout });
     contexts.push(context);
     contextIndices.set(key, { context, positions });
   }
@@ -503,17 +582,28 @@ export function planExactLayoutHydration(
       return failure("missing-live-desktop");
     }
 
+    const activityId = resolvePersistedActivityId(
+      persisted.activityId,
+      input.currentActivityId,
+    );
+
+    if (!liveActivityIds.has(activityId)) {
+      return failure("missing-live-activity");
+    }
+
     const ownershipFailure = validateWindowOwnership(
       live,
       outputName,
       persisted.desktopId,
+      activityId,
+      liveWindowActivities,
     );
 
     if (ownershipFailure) {
       return failure(ownershipFailure);
     }
 
-    const key = contextKey(outputName, persisted.desktopId);
+    const key = contextKey(outputName, persisted.desktopId, activityId);
     const indexedContext = contextIndices.get(key);
     const previous = persisted.anchor.previousWindowKey;
     const next = persisted.anchor.nextWindowKey;
@@ -548,6 +638,7 @@ export function planExactLayoutHydration(
       ? (columns[neighborIndex + 1]?.id ?? null)
       : (columns[neighborIndex]?.id ?? null);
     const placement = immutablePlacement({
+      activityId: brandedActivityId(activityId),
       columnId: plannedColumnId,
       columnIndex: persisted.anchor.columnIndex,
       columnPresentation: persisted.anchor.columnPresentation,
@@ -566,7 +657,9 @@ export function planExactLayoutHydration(
     });
 
     ownedWindowKeys.add(persisted.windowKey);
-    floatingWindows.push(Object.freeze({ contextKey: key, placement }));
+    floatingWindows.push(
+      Object.freeze({ activityId, contextKey: key, placement }),
+    );
   }
 
   if (ownedWindowKeys.size !== state.windows.length) {
@@ -595,6 +688,7 @@ export function resolveLayoutPersistenceWindowIdentities(
     live.some(
       (window) =>
         !validIdentifier(window.liveId) ||
+        !validActivityIdList(window.activityIds) ||
         !validOptionalIdentifier(window.desktopFileName) ||
         !validOptionalIdentifier(window.resourceClass) ||
         !validOptionalIdentifier(window.resourceName) ||
@@ -728,7 +822,7 @@ export function resolveLayoutPersistenceWindowIdentities(
 }
 
 function remapPersistenceIdentities(
-  state: LayoutPersistenceV3,
+  state: LayoutPersistenceV4,
   input: LayoutPersistenceHydrationInput,
 ): RemappedPersistenceResult {
   if (!validLiveIdentityDescriptors(input)) {
@@ -794,7 +888,7 @@ function remapPersistenceIdentities(
 
 function unmatchedWindowsCanArrive(
   persistedKeys: readonly string[],
-  persistedWindows: ReadonlyMap<string, LayoutPersistenceV3["windows"][number]>,
+  persistedWindows: ReadonlyMap<string, LayoutPersistenceV4["windows"][number]>,
   persistedCounts: ReadonlyMap<string, number>,
   liveCounts: ReadonlyMap<string, number>,
 ): boolean {
@@ -826,9 +920,9 @@ function unmatchedWindowsCanArrive(
 }
 
 function contextWithoutStaleRestoreBaselines(
-  context: LayoutPersistenceV3["contexts"][number],
+  context: LayoutPersistenceV4["contexts"][number],
   sessionMatchedWindowKeys: ReadonlySet<string>,
-): LayoutPersistenceV3["contexts"][number] {
+): LayoutPersistenceV4["contexts"][number] {
   const removesBaseline = context.columns.some((column) =>
     column.members.some(
       (member) =>
@@ -863,6 +957,7 @@ function contextWithoutStaleRestoreBaselines(
 
   return {
     activeColumnIndex: context.activeColumnIndex,
+    activityId: context.activityId,
     columns,
     desktopId: context.desktopId,
     outputKey: context.outputKey,
@@ -982,6 +1077,7 @@ function validLiveIdentityDescriptors(
     ) &&
     input.windows.every(
       (window) =>
+        validActivityIdList(window.activityIds) &&
         validOptionalIdentifier(window.desktopFileName) &&
         validOptionalIdentifier(window.resourceClass) &&
         validOptionalIdentifier(window.resourceName) &&
@@ -1045,24 +1141,120 @@ function validateWindowOwnership(
   window: LiveLayoutHydrationWindow,
   outputName: string,
   desktop: string,
+  activityId: string,
+  activitiesByWindow: ReadonlyMap<string, string>,
 ): LayoutPersistenceHydrationFailure | null {
   if (!window.eligible) {
     return "ineligible-live-window";
   }
 
-  if (window.outputName !== outputName || window.desktopId !== desktop) {
+  if (
+    window.outputName !== outputName ||
+    window.desktopId !== desktop ||
+    activitiesByWindow.get(window.liveId) !== activityId
+  ) {
     return "live-window-context-mismatch";
   }
 
   return null;
 }
 
-function contextKey(outputName: string, desktop: string): string {
-  return `${outputName}\u0000${desktop}`;
+function contextKey(
+  outputName: string,
+  desktop: string,
+  activityId: string,
+): string {
+  return `${outputName}\u0000${desktop}\u0000${activityId}`;
 }
 
-function validIdentifier(value: string): boolean {
-  return value.length > 0;
+function resolvePersistedActivityId(
+  persistedActivityId: string,
+  currentActivityId: string,
+): string {
+  return persistedActivityId === LAYOUT_PERSISTENCE_LEGACY_CURRENT_ACTIVITY_ID
+    ? currentActivityId
+    : persistedActivityId;
+}
+
+function resolveLiveWindowActivity(
+  activityIds: readonly string[],
+  liveActivityIds: ReadonlySet<string>,
+):
+  | { readonly activityId: string; readonly ok: true }
+  | { readonly ok: false; readonly reason: LayoutPersistenceHydrationFailure } {
+  if (!validActivityIdList(activityIds)) {
+    return { ok: false, reason: "invalid-live-descriptor" };
+  }
+
+  if (activityIds.length === 0) {
+    const onlyActivity =
+      liveActivityIds.size === 1 ? liveActivityIds.values().next().value : null;
+
+    return typeof onlyActivity === "string"
+      ? { activityId: onlyActivity, ok: true }
+      : { ok: false, reason: "ambiguous-live-window-activity" };
+  }
+
+  if (activityIds.length !== 1) {
+    return { ok: false, reason: "ambiguous-live-window-activity" };
+  }
+
+  const activityId = activityIds[0];
+
+  if (activityId === undefined || !liveActivityIds.has(activityId)) {
+    return { ok: false, reason: "missing-live-activity" };
+  }
+
+  return { activityId, ok: true };
+}
+
+function validActivityIdList(
+  activityIds: unknown,
+): activityIds is readonly string[] {
+  if (!Array.isArray(activityIds)) {
+    return false;
+  }
+
+  const values: readonly unknown[] = activityIds;
+  const unique = new Set(values);
+
+  return (
+    unique.size === values.length &&
+    values.every(
+      (value): value is string =>
+        typeof value === "string" &&
+        validActivityIdentifier(value) &&
+        value !== LAYOUT_PERSISTENCE_LEGACY_CURRENT_ACTIVITY_ID,
+    )
+  );
+}
+
+function validPersistedActivityId(activityId: unknown): activityId is string {
+  return validActivityIdentifier(activityId);
+}
+
+function validActivityIdentifier(value: unknown): value is string {
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    value.length > LAYOUT_PERSISTENCE_LIMITS.identifierCharacters
+  ) {
+    return false;
+  }
+
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+
+    if (code <= 31 || code === 127) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function validIdentifier(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0;
 }
 
 function validColumnPresentation(

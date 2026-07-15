@@ -1,6 +1,12 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { columnId, desktopId, outputId, windowId } from "../../src/core/ids";
+import {
+  activityId,
+  columnId,
+  desktopId,
+  outputId,
+  windowId,
+} from "../../src/core/ids";
 import {
   LayoutEngine,
   type ColumnStackEditPreview,
@@ -13,14 +19,90 @@ import {
 } from "../../src/core/layout-engine";
 
 const output = outputId("DP-1");
+const activity = activityId("activity-1");
 const desktop = desktopId("desktop-1");
 
 describe("LayoutEngine", () => {
+  it("isolates identical output and desktop contexts by activity", () => {
+    const engine = new LayoutEngine();
+    const otherActivity = activityId("activity-2");
+
+    engine.manageWindow({
+      activityId: activity,
+      columnId: columnId("column-1"),
+      desktopId: desktop,
+      outputId: output,
+      width: { kind: "proportion", value: 0.5 },
+      windowId: windowId("window-1"),
+    });
+    engine.manageWindow({
+      activityId: otherActivity,
+      columnId: columnId("column-2"),
+      desktopId: desktop,
+      outputId: output,
+      width: { kind: "fixed", value: 480 },
+      windowId: windowId("window-2"),
+    });
+
+    expect(engine.snapshot(output, desktop, activity)).toMatchObject({
+      activityId: "activity-1",
+      columns: [{ id: "column-1", windowIds: ["window-1"] }],
+    });
+    expect(engine.snapshot(output, desktop, otherActivity)).toMatchObject({
+      activityId: "activity-2",
+      columns: [{ id: "column-2", windowIds: ["window-2"] }],
+    });
+  });
+
+  it("transfers between activities without aliasing the shared desktop", () => {
+    const engine = new LayoutEngine();
+    const otherActivity = activityId("activity-2");
+
+    engine.manageWindow({
+      activityId: activity,
+      columnId: columnId("column-1"),
+      desktopId: desktop,
+      outputId: output,
+      width: { kind: "proportion", value: 0.5 },
+      windowId: windowId("window-1"),
+    });
+    engine.activateWindow(windowId("window-1"));
+
+    expect(
+      engine.previewWindowTransfer(windowId("window-1"), {
+        activityId: activity,
+        columnId: columnId("column-2"),
+        desktopId: desktop,
+        outputId: output,
+      }),
+    ).toBeNull();
+
+    const preview = engine.previewWindowTransfer(windowId("window-1"), {
+      activityId: otherActivity,
+      columnId: columnId("column-2"),
+      desktopId: desktop,
+      outputId: output,
+    });
+
+    expect(preview).not.toBeNull();
+    expect(preview?.sourceLayout.activityId).toBe("activity-1");
+    expect(preview?.targetLayout.activityId).toBe("activity-2");
+    expect(preview && engine.commitWindowTransfer(preview)).toBe(true);
+    expect(engine.snapshot(output, desktop, activity).columns).toEqual([]);
+    expect(engine.snapshot(output, desktop, otherActivity).columns).toEqual([
+      expect.objectContaining({
+        id: "column-2",
+        windowIds: ["window-1"],
+      }),
+    ]);
+  });
+
   it("inserts a new column after the active column without activating it", () => {
     const engine = new LayoutEngine();
 
     engine.manageWindow({
       columnId: columnId("column-1"),
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       width: { kind: "proportion", value: 0.5 },
@@ -29,13 +111,14 @@ describe("LayoutEngine", () => {
     engine.activateWindow(windowId("window-1"));
     engine.manageWindow({
       columnId: columnId("column-2"),
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       width: { kind: "proportion", value: 0.33 },
       windowId: windowId("window-2"),
     });
 
-    expect(engine.snapshot(output, desktop)).toMatchObject({
+    expect(engine.snapshot(output, desktop, activity)).toMatchObject({
       activeColumnId: "column-1",
       columns: [
         { id: "column-1", windowIds: ["window-1"] },
@@ -50,6 +133,7 @@ describe("LayoutEngine", () => {
     for (const index of [1, 2]) {
       engine.manageWindow({
         columnId: columnId(`column-${String(index)}`),
+        activityId: activity,
         desktopId: desktop,
         outputId: output,
         width: { kind: "proportion", value: 0.5 },
@@ -60,7 +144,7 @@ describe("LayoutEngine", () => {
 
     engine.unmanageWindow(windowId("window-2"));
 
-    expect(engine.snapshot(output, desktop)).toMatchObject({
+    expect(engine.snapshot(output, desktop, activity)).toMatchObject({
       activeColumnId: "column-1",
       columns: [{ id: "column-1" }],
     });
@@ -103,12 +187,14 @@ describe("LayoutEngine", () => {
           index: 2,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
     });
 
     expect(
       engine.unmanageWindows({
+        activityId: activity,
         desktopId: desktop,
         outputId: output,
         windowIds: [
@@ -120,7 +206,7 @@ describe("LayoutEngine", () => {
     ).toEqual({
       removedColumns: [{ id: "column-2", index: 1 }],
     });
-    expect(engine.snapshot(output, desktop)).toEqual({
+    expect(engine.snapshot(output, desktop, activity)).toEqual({
       activeColumnId: "column-3",
       columns: [
         {
@@ -138,6 +224,7 @@ describe("LayoutEngine", () => {
           windowIds: ["window-4"],
         },
       ],
+      activityId: activity,
       desktopId: "desktop-1",
       outputId: "DP-1",
       viewportOffset: 0,
@@ -150,6 +237,7 @@ describe("LayoutEngine", () => {
 
     engine.manageWindow({
       columnId: columnId("column-1"),
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       width: { kind: "fixed", value: 300 },
@@ -157,15 +245,17 @@ describe("LayoutEngine", () => {
     });
     engine.manageWindow({
       columnId: columnId("column-2"),
+      activityId: activity,
       desktopId: desktop,
       outputId: otherOutput,
       width: { kind: "fixed", value: 300 },
       windowId: windowId("window-2"),
     });
-    const before = engine.snapshot(output, desktop);
+    const before = engine.snapshot(output, desktop, activity);
 
     expect(
       engine.unmanageWindows({
+        activityId: activity,
         desktopId: desktop,
         outputId: output,
         windowIds: [windowId("window-1"), windowId("window-2")],
@@ -173,12 +263,13 @@ describe("LayoutEngine", () => {
     ).toBeNull();
     expect(
       engine.unmanageWindows({
+        activityId: activity,
         desktopId: desktop,
         outputId: output,
         windowIds: [windowId("window-1"), windowId("window-1")],
       }),
     ).toBeNull();
-    expect(engine.snapshot(output, desktop)).toEqual(before);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(before);
   });
 
   it("tracks activation for deterministic insertion", () => {
@@ -187,6 +278,7 @@ describe("LayoutEngine", () => {
     for (const index of [1, 2, 3]) {
       engine.manageWindow({
         columnId: columnId(`column-${String(index)}`),
+        activityId: activity,
         desktopId: desktop,
         outputId: output,
         width: { kind: "proportion", value: 0.25 },
@@ -199,6 +291,7 @@ describe("LayoutEngine", () => {
     expect(engine.activateWindow(windowId("unknown"))).toBe(false);
     engine.manageWindow({
       columnId: columnId("column-4"),
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       width: { kind: "proportion", value: 0.25 },
@@ -206,7 +299,9 @@ describe("LayoutEngine", () => {
     });
 
     expect(
-      engine.snapshot(output, desktop).columns.map((column) => column.id),
+      engine
+        .snapshot(output, desktop, activity)
+        .columns.map((column) => column.id),
     ).toEqual(["column-1", "column-4", "column-2", "column-3"]);
   });
 
@@ -248,21 +343,23 @@ describe("LayoutEngine", () => {
           index: 2,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       viewportOffset: 120,
     });
     engine.manageWindow({
       columnId: columnId("other-column"),
+      activityId: activity,
       desktopId: desktop,
       outputId: otherOutput,
       width: { kind: "fixed", value: 300 },
       windowId: windowId("other-window"),
     });
-    const otherBefore = engine.snapshot(otherOutput, desktop);
+    const otherBefore = engine.snapshot(otherOutput, desktop, activity);
 
     expect(engine.moveActiveColumn(windowId("window-3"), "left")).toBe(true);
-    expect(engine.snapshot(output, desktop)).toEqual({
+    expect(engine.snapshot(output, desktop, activity)).toEqual({
       activeColumnId: "column-2",
       columns: [
         {
@@ -287,15 +384,20 @@ describe("LayoutEngine", () => {
           windowIds: ["window-4"],
         },
       ],
+      activityId: activity,
       desktopId: "desktop-1",
       outputId: "DP-1",
       viewportOffset: 120,
     });
-    expect(engine.snapshot(otherOutput, desktop)).toEqual(otherBefore);
+    expect(engine.snapshot(otherOutput, desktop, activity)).toEqual(
+      otherBefore,
+    );
 
     expect(engine.moveActiveColumn(windowId("window-2"), "right")).toBe(true);
     expect(
-      engine.snapshot(output, desktop).columns.map((column) => column.id),
+      engine
+        .snapshot(output, desktop, activity)
+        .columns.map((column) => column.id),
     ).toEqual(["column-1", "column-2", "column-3"]);
   });
 
@@ -305,6 +407,7 @@ describe("LayoutEngine", () => {
     for (const index of [1, 2]) {
       engine.manageWindow({
         columnId: columnId(`column-${String(index)}`),
+        activityId: activity,
         desktopId: desktop,
         outputId: output,
         width: { kind: "fixed", value: 300 },
@@ -313,12 +416,12 @@ describe("LayoutEngine", () => {
     }
     engine.activateWindow(windowId("window-1"));
 
-    const before = engine.snapshot(output, desktop);
+    const before = engine.snapshot(output, desktop, activity);
     expect(engine.moveActiveColumn(windowId("window-1"), "left")).toBe(false);
     expect(engine.moveActiveColumn(windowId("window-2"), "left")).toBe(false);
     expect(engine.moveActiveColumn(windowId("window-2"), "right")).toBe(false);
     expect(engine.moveActiveColumn(windowId("missing"), "left")).toBe(false);
-    expect(engine.snapshot(output, desktop)).toEqual(before);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(before);
   });
 
   it("resolves edge columns and reorders the active column with exact rollback", () => {
@@ -358,11 +461,12 @@ describe("LayoutEngine", () => {
           index: 2,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       viewportOffset: 120,
     });
-    const before = engine.snapshot(output, desktop);
+    const before = engine.snapshot(output, desktop, activity);
 
     expect(engine.edgeWindow(windowId("window-3"), "first")).toBe("window-1");
     expect(engine.edgeWindow(windowId("window-3"), "last")).toBe("window-4");
@@ -372,14 +476,16 @@ describe("LayoutEngine", () => {
     const first = engine.moveActiveColumnToEdge(windowId("window-3"), "first");
     expect(first?.kind).toBe("reorder");
     expect(
-      engine.snapshot(output, desktop).columns.map((column) => column.id),
+      engine
+        .snapshot(output, desktop, activity)
+        .columns.map((column) => column.id),
     ).toEqual(["column-2", "column-1", "column-3"]);
     expect(first && engine.rollbackStackEdit(first.rollback)).toBe(true);
-    expect(engine.snapshot(output, desktop)).toEqual(before);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(before);
 
     const last = engine.moveActiveColumnToEdge(windowId("window-2"), "last");
     expect(last?.kind).toBe("reorder");
-    expect(engine.snapshot(output, desktop)).toEqual({
+    expect(engine.snapshot(output, desktop, activity)).toEqual({
       ...before,
       columns: [before.columns[0], before.columns[2], before.columns[1]],
     });
@@ -424,6 +530,7 @@ describe("LayoutEngine", () => {
           index: 1,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       viewportOffset: 80,
@@ -436,7 +543,7 @@ describe("LayoutEngine", () => {
 
     expect(previousWidth).toEqual({ kind: "proportion", value: 0.5 });
     nextWidth.value = 900;
-    expect(engine.snapshot(output, desktop)).toMatchObject({
+    expect(engine.snapshot(output, desktop, activity)).toMatchObject({
       activeColumnId: "column-2",
       columns: [
         { id: "column-1", width: { kind: "fixed", value: 300 } },
@@ -448,7 +555,9 @@ describe("LayoutEngine", () => {
       previousWidth &&
         engine.setActiveColumnWidth(windowId("window-2"), previousWidth),
     ).toEqual({ kind: "fixed", value: 420 });
-    expect(engine.snapshot(output, desktop).columns[1]?.width).toEqual({
+    expect(
+      engine.snapshot(output, desktop, activity).columns[1]?.width,
+    ).toEqual({
       kind: "proportion",
       value: 0.5,
     });
@@ -470,7 +579,9 @@ describe("LayoutEngine", () => {
         value: 0,
       }),
     ).toThrow("column width must be finite and greater than zero");
-    expect(engine.snapshot(output, desktop).columns[1]?.width).toEqual({
+    expect(
+      engine.snapshot(output, desktop, activity).columns[1]?.width,
+    ).toEqual({
       kind: "proportion",
       value: 0.5,
     });
@@ -493,18 +604,19 @@ describe("LayoutEngine", () => {
           index: 0,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       viewportOffset: 70,
     });
-    const before = engine.snapshot(output, desktop);
+    const before = engine.snapshot(output, desktop, activity);
     const edit = engine.setActiveColumnWindowHeights(windowId("window-2"), [
       { kind: "auto", weight: 1.5 },
       { clientHeight: 360, kind: "fixed" },
     ]);
 
     expect(edit).not.toBeNull();
-    expect(engine.snapshot(output, desktop)).toEqual({
+    expect(engine.snapshot(output, desktop, activity)).toEqual({
       ...before,
       columns: [
         {
@@ -517,7 +629,7 @@ describe("LayoutEngine", () => {
       ],
     });
     expect(edit && engine.rollbackWindowHeightEdit(edit.rollback)).toBe(true);
-    expect(engine.snapshot(output, desktop)).toEqual(before);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(before);
     expect(edit && engine.rollbackWindowHeightEdit(edit.rollback)).toBe(false);
 
     const stale = engine.setActiveColumnWindowHeights(windowId("window-1"), [
@@ -531,11 +643,11 @@ describe("LayoutEngine", () => {
         value: 500,
       }),
     ).toEqual({ kind: "fixed", value: 420 });
-    const changed = engine.snapshot(output, desktop);
+    const changed = engine.snapshot(output, desktop, activity);
     expect(stale && engine.rollbackWindowHeightEdit(stale.rollback)).toBe(
       false,
     );
-    expect(engine.snapshot(output, desktop)).toEqual(changed);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(changed);
   });
 
   it("validates and compacts serialized window-height state", () => {
@@ -555,6 +667,7 @@ describe("LayoutEngine", () => {
           index: 0,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
     });
@@ -587,9 +700,9 @@ describe("LayoutEngine", () => {
       { kind: "auto", weight: 1 },
     ]);
     expect(reset).not.toBeNull();
-    expect(engine.snapshot(output, desktop).columns[0]).not.toHaveProperty(
-      "windowHeights",
-    );
+    expect(
+      engine.snapshot(output, desktop, activity).columns[0],
+    ).not.toHaveProperty("windowHeights");
   });
 
   it("tracks tabbed selection and accepts an initial singleton presentation", () => {
@@ -613,21 +726,24 @@ describe("LayoutEngine", () => {
           index: 0,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
     });
     const dormantHeights = JSON.stringify(
-      engine.snapshot(output, desktop).columns[0]?.windowHeights,
+      engine.snapshot(output, desktop, activity).columns[0]?.windowHeights,
     );
 
     expect(engine.activateWindow(windowId("window-b"))).toBe(true);
     expect(engine.setColumnPresentation(windowId("window-a"), "tabbed")).toBe(
       "stacked",
     );
-    expect(engine.snapshot(output, desktop).columns[0]).toMatchObject({
-      presentation: "tabbed",
-      selectedWindowId: "window-b",
-    });
+    expect(engine.snapshot(output, desktop, activity).columns[0]).toMatchObject(
+      {
+        presentation: "tabbed",
+        selectedWindowId: "window-b",
+      },
+    );
     expect(engine.tabIndicator(windowId("window-b"))).toEqual({
       selectedIndex: 1,
       tabCount: 2,
@@ -647,23 +763,26 @@ describe("LayoutEngine", () => {
     );
     expect(
       JSON.stringify(
-        engine.snapshot(output, desktop).columns[0]?.windowHeights,
+        engine.snapshot(output, desktop, activity).columns[0]?.windowHeights,
       ),
     ).toBe(dormantHeights);
 
     engine.manageWindow({
       columnId: columnId("single"),
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       presentation: "tabbed",
       width: { kind: "fixed", value: 320 },
       windowId: windowId("single-window"),
     });
-    expect(engine.snapshot(output, desktop).columns[1]).toMatchObject({
-      presentation: "tabbed",
-      selectedWindowId: "single-window",
-      windowIds: ["single-window"],
-    });
+    expect(engine.snapshot(output, desktop, activity).columns[1]).toMatchObject(
+      {
+        presentation: "tabbed",
+        selectedWindowId: "single-window",
+        windowIds: ["single-window"],
+      },
+    );
     expect(engine.tabIndicator(windowId("single-window"))).toBeNull();
   });
 
@@ -698,6 +817,7 @@ describe("LayoutEngine", () => {
           index: 1,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
     });
@@ -708,7 +828,7 @@ describe("LayoutEngine", () => {
         columnId("target"),
       )?.kind,
     ).toBe("insert");
-    expect(engine.snapshot(output, desktop).columns).toMatchObject([
+    expect(engine.snapshot(output, desktop, activity).columns).toMatchObject([
       {
         presentation: "tabbed",
         selectedWindowId: "source-c",
@@ -728,7 +848,7 @@ describe("LayoutEngine", () => {
         columnId("target"),
       )?.kind,
     ).toBe("insert");
-    expect(engine.snapshot(output, desktop).columns).toMatchObject([
+    expect(engine.snapshot(output, desktop, activity).columns).toMatchObject([
       {
         presentation: "tabbed",
         selectedWindowId: "source-a",
@@ -760,6 +880,7 @@ describe("LayoutEngine", () => {
           index: 0,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
     });
@@ -806,11 +927,14 @@ describe("LayoutEngine", () => {
             index: 0,
           },
         ],
+        activityId: activity,
         desktopId: desktop,
         outputId: output,
       }),
     ).toBe(true);
-    expect(recreation.snapshot(output, desktop).columns[0]).toMatchObject({
+    expect(
+      recreation.snapshot(output, desktop, activity).columns[0],
+    ).toMatchObject({
       presentation: "tabbed",
       selectedWindowId: "only-window",
       windowIds: ["only-window"],
@@ -839,6 +963,7 @@ describe("LayoutEngine", () => {
           index: 0,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
     });
@@ -850,10 +975,12 @@ describe("LayoutEngine", () => {
     expect(edit?.kind).toBe("reorder");
     expect(engine.activateWindow(windowId("window-c"))).toBe(true);
     expect(edit && engine.rollbackStackEdit(edit.rollback)).toBe(true);
-    expect(engine.snapshot(output, desktop).columns[0]).toMatchObject({
-      selectedWindowId: "window-c",
-      windowIds: ["window-a", "window-b", "window-c"],
-    });
+    expect(engine.snapshot(output, desktop, activity).columns[0]).toMatchObject(
+      {
+        selectedWindowId: "window-c",
+        windowIds: ["window-a", "window-b", "window-c"],
+      },
+    );
   });
 
   it("keeps height state through reorder, floating, and whole-column transfer", () => {
@@ -874,6 +1001,7 @@ describe("LayoutEngine", () => {
           index: 0,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
     });
@@ -885,18 +1013,20 @@ describe("LayoutEngine", () => {
     expect(edit && engine.discardWindowHeightEditRollback(edit.rollback)).toBe(
       true,
     );
-    const before = engine.snapshot(output, desktop);
+    const before = engine.snapshot(output, desktop, activity);
     const reorder = engine.moveActiveWindowInColumn(windowId("window-2"), "up");
 
-    expect(engine.snapshot(output, desktop).columns[0]).toMatchObject({
-      windowHeights: [
-        { clientHeight: 320, kind: "fixed" },
-        { kind: "auto", weight: 2 },
-      ],
-      windowIds: ["window-2", "window-1"],
-    });
+    expect(engine.snapshot(output, desktop, activity).columns[0]).toMatchObject(
+      {
+        windowHeights: [
+          { clientHeight: 320, kind: "fixed" },
+          { kind: "auto", weight: 2 },
+        ],
+        windowIds: ["window-2", "window-1"],
+      },
+    );
     expect(reorder && engine.rollbackStackEdit(reorder.rollback)).toBe(true);
-    expect(engine.snapshot(output, desktop)).toEqual(before);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(before);
 
     const detach = engine.previewWindowDetach(windowId("window-2"));
     expect(detach?.placement.windowHeight).toEqual({
@@ -919,7 +1049,7 @@ describe("LayoutEngine", () => {
     });
     expect(attach && engine.commitWindowAttach(attach)).toBe(true);
 
-    const parkedColumn = engine.snapshot(output, desktop).columns[0];
+    const parkedColumn = engine.snapshot(output, desktop, activity).columns[0];
 
     if (!parkedColumn) {
       throw new Error("expected a parked column fixture");
@@ -928,6 +1058,7 @@ describe("LayoutEngine", () => {
     expect(
       engine.removeColumns({
         columnIds: [parkedColumn.id],
+        activityId: activity,
         desktopId: desktop,
         outputId: output,
       }),
@@ -936,11 +1067,12 @@ describe("LayoutEngine", () => {
       engine.restoreColumns({
         activeColumnId: parkedColumn.id,
         columns: [{ column: parkedColumn, index: 0 }],
+        activityId: activity,
         desktopId: desktop,
         outputId: output,
       }),
     ).toBe(true);
-    expect(engine.snapshot(output, desktop)).toEqual({
+    expect(engine.snapshot(output, desktop, activity)).toEqual({
       ...before,
       columns: before.columns.map((column) => ({
         ...column,
@@ -950,6 +1082,7 @@ describe("LayoutEngine", () => {
 
     const transfer = engine.previewColumnTransfer(windowId("window-2"), {
       columnId: columnId("column-moved"),
+      activityId: activity,
       desktopId: desktop,
       outputId: targetOutput,
     });
@@ -962,7 +1095,7 @@ describe("LayoutEngine", () => {
       windowIds: ["window-1", "window-2"],
     });
     expect(transfer && engine.commitColumnTransfer(transfer)).toBe(true);
-    expect(engine.snapshot(targetOutput, desktop).columns[0]).toEqual(
+    expect(engine.snapshot(targetOutput, desktop, activity).columns[0]).toEqual(
       transfer?.targetLayout.columns[0],
     );
   });
@@ -985,6 +1118,7 @@ describe("LayoutEngine", () => {
           index: 0,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
     });
@@ -1002,16 +1136,16 @@ describe("LayoutEngine", () => {
       columnId("column-extracted"),
     );
     expect(extracted?.kind).toBe("extract");
-    expect(engine.snapshot(output, desktop).columns).toMatchObject([
+    expect(engine.snapshot(output, desktop, activity).columns).toMatchObject([
       { windowIds: ["window-1"] },
       { windowIds: ["window-2"] },
     ]);
-    expect(engine.snapshot(output, desktop).columns[0]).not.toHaveProperty(
-      "windowHeights",
-    );
-    expect(engine.snapshot(output, desktop).columns[1]).not.toHaveProperty(
-      "windowHeights",
-    );
+    expect(
+      engine.snapshot(output, desktop, activity).columns[0],
+    ).not.toHaveProperty("windowHeights");
+    expect(
+      engine.snapshot(output, desktop, activity).columns[1],
+    ).not.toHaveProperty("windowHeights");
 
     const fixedSingleton = engine.setActiveColumnWindowHeights(
       windowId("window-2"),
@@ -1027,17 +1161,20 @@ describe("LayoutEngine", () => {
       columnId("unused"),
     );
     expect(consumed?.kind).toBe("merge");
-    expect(engine.snapshot(output, desktop).columns[0]).not.toHaveProperty(
-      "windowHeights",
-    );
+    expect(
+      engine.snapshot(output, desktop, activity).columns[0],
+    ).not.toHaveProperty("windowHeights");
     expect(consumed && engine.rollbackStackEdit(consumed.rollback)).toBe(true);
-    expect(engine.snapshot(output, desktop).columns[1]).toMatchObject({
-      windowHeights: [{ clientHeight: 410, kind: "fixed" }],
-      windowIds: ["window-2"],
-    });
+    expect(engine.snapshot(output, desktop, activity).columns[1]).toMatchObject(
+      {
+        windowHeights: [{ clientHeight: 410, kind: "fixed" }],
+        windowIds: ["window-2"],
+      },
+    );
 
     const singleTransfer = engine.previewWindowTransfer(windowId("window-2"), {
       columnId: columnId("column-transferred"),
+      activityId: activity,
       desktopId: desktop,
       outputId: targetOutput,
     });
@@ -1083,11 +1220,12 @@ describe("LayoutEngine", () => {
           index: 2,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       viewportOffset: 120,
     });
-    const before = engine.snapshot(output, desktop);
+    const before = engine.snapshot(output, desktop, activity);
     const edit = engine.moveActiveWindow(
       windowId("window-2"),
       "left",
@@ -1095,7 +1233,7 @@ describe("LayoutEngine", () => {
     );
 
     expect(edit?.kind).toBe("merge");
-    expect(engine.snapshot(output, desktop)).toEqual({
+    expect(engine.snapshot(output, desktop, activity)).toEqual({
       activeColumnId: "column-1",
       columns: [
         {
@@ -1113,12 +1251,13 @@ describe("LayoutEngine", () => {
           windowIds: ["window-3"],
         },
       ],
+      activityId: activity,
       desktopId: "desktop-1",
       outputId: "DP-1",
       viewportOffset: 120,
     });
     expect(edit && engine.rollbackStackEdit(edit.rollback)).toBe(true);
-    expect(engine.snapshot(output, desktop)).toEqual(before);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(before);
     expect(edit && engine.rollbackStackEdit(edit.rollback)).toBe(false);
   });
 
@@ -1153,11 +1292,12 @@ describe("LayoutEngine", () => {
           index: 1,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       viewportOffset: 40,
     });
-    const before = engine.snapshot(output, desktop);
+    const before = engine.snapshot(output, desktop, activity);
     const edit = engine.moveActiveWindow(
       windowId("window-2"),
       "right",
@@ -1166,7 +1306,7 @@ describe("LayoutEngine", () => {
     );
 
     expect(edit?.kind).toBe("extract");
-    expect(engine.snapshot(output, desktop)).toEqual({
+    expect(engine.snapshot(output, desktop, activity)).toEqual({
       activeColumnId: "column:split:window-2",
       columns: [
         {
@@ -1191,13 +1331,14 @@ describe("LayoutEngine", () => {
           windowIds: ["window-4"],
         },
       ],
+      activityId: activity,
       desktopId: "desktop-1",
       outputId: "DP-1",
       viewportOffset: 40,
     });
     expect(engine.tabIndicator(windowId("window-2"))).toBeNull();
     expect(edit && engine.rollbackStackEdit(edit.rollback)).toBe(true);
-    expect(engine.snapshot(output, desktop)).toEqual(before);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(before);
   });
 
   it("inserts a singleton active window into a far-right stack and rolls back once", () => {
@@ -1240,18 +1381,19 @@ describe("LayoutEngine", () => {
           index: 2,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       viewportOffset: 145,
     });
-    const before = engine.snapshot(output, desktop);
+    const before = engine.snapshot(output, desktop, activity);
     const edit = engine.insertActiveWindowIntoColumn(
       windowId("window-source"),
       columnId("column-target"),
     );
 
     expect(edit?.kind).toBe("merge");
-    expect(engine.snapshot(output, desktop)).toEqual({
+    expect(engine.snapshot(output, desktop, activity)).toEqual({
       activeColumnId: "column-target",
       columns: [
         {
@@ -1269,12 +1411,13 @@ describe("LayoutEngine", () => {
           windowIds: ["window-target-1", "window-target-2", "window-source"],
         },
       ],
+      activityId: activity,
       desktopId: "desktop-1",
       outputId: "DP-1",
       viewportOffset: 145,
     });
     expect(edit && engine.rollbackStackEdit(edit.rollback)).toBe(true);
-    expect(engine.snapshot(output, desktop)).toEqual(before);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(before);
     expect(edit && engine.rollbackStackEdit(edit.rollback)).toBe(false);
   });
 
@@ -1322,6 +1465,7 @@ describe("LayoutEngine", () => {
           index: 2,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       viewportOffset: 75,
@@ -1332,7 +1476,7 @@ describe("LayoutEngine", () => {
     );
 
     expect(edit?.kind).toBe("insert");
-    expect(engine.snapshot(output, desktop)).toEqual({
+    expect(engine.snapshot(output, desktop, activity)).toEqual({
       activeColumnId: "column-target",
       columns: [
         {
@@ -1357,6 +1501,7 @@ describe("LayoutEngine", () => {
           windowIds: ["window-source-1", "window-source-3"],
         },
       ],
+      activityId: activity,
       desktopId: "desktop-1",
       outputId: "DP-1",
       viewportOffset: 75,
@@ -1407,6 +1552,7 @@ describe("LayoutEngine", () => {
           index: 2,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       viewportOffset: 55,
@@ -1428,11 +1574,12 @@ describe("LayoutEngine", () => {
           index: 0,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: otherOutput,
     });
-    const before = engine.snapshot(output, desktop);
-    const foreignBefore = engine.snapshot(otherOutput, desktop);
+    const before = engine.snapshot(output, desktop, activity);
+    const foreignBefore = engine.snapshot(otherOutput, desktop, activity);
 
     expect(
       engine.insertActiveWindowIntoColumn(
@@ -1470,8 +1617,10 @@ describe("LayoutEngine", () => {
         columnId("column-target"),
       ),
     ).toBeNull();
-    expect(engine.snapshot(output, desktop)).toEqual(before);
-    expect(engine.snapshot(otherOutput, desktop)).toEqual(foreignBefore);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(before);
+    expect(engine.snapshot(otherOutput, desktop, activity)).toEqual(
+      foreignBefore,
+    );
   });
 
   it("previews consuming the top right member at the active column bottom", () => {
@@ -1519,11 +1668,12 @@ describe("LayoutEngine", () => {
           index: 2,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       viewportOffset: -135,
     });
-    const before = engine.snapshot(output, desktop);
+    const before = engine.snapshot(output, desktop, activity);
     const preview = engine.previewConsumeWindowIntoColumn(
       windowId("active-bottom"),
     );
@@ -1562,13 +1712,14 @@ describe("LayoutEngine", () => {
           windowIds: ["trailing"],
         },
       ],
+      activityId: activity,
       desktopId: "desktop-1",
       outputId: "DP-1",
       viewportOffset: -135,
     });
-    expect(engine.snapshot(output, desktop)).toEqual(before);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(before);
     expect(preview && engine.commitColumnStackEdit(preview)).toBe(true);
-    expect(engine.snapshot(output, desktop)).toEqual(preview?.layout);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(preview?.layout);
     expect(preview && engine.commitColumnStackEdit(preview)).toBe(false);
   });
 
@@ -1610,6 +1761,7 @@ describe("LayoutEngine", () => {
           index: 2,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       viewportOffset: 91,
@@ -1634,6 +1786,7 @@ describe("LayoutEngine", () => {
           windowIds: ["trailing"],
         },
       ],
+      activityId: activity,
       desktopId: "desktop-1",
       outputId: "DP-1",
       viewportOffset: 91,
@@ -1677,18 +1830,19 @@ describe("LayoutEngine", () => {
           index: 2,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       viewportOffset: -40,
     });
-    const before = engine.snapshot(output, desktop);
+    const before = engine.snapshot(output, desktop, activity);
     const preview = engine.previewConsumeWindowIntoColumn(windowId("active"));
     const edit = preview ? engine.applyColumnStackEdit(preview) : null;
 
     expect(edit?.kind).toBe("consume");
     expect(engine.activateWindow(windowId("trailing"))).toBe(true);
     expect(edit && engine.rollbackStackEdit(edit.rollback)).toBe(true);
-    expect(engine.snapshot(output, desktop)).toEqual({
+    expect(engine.snapshot(output, desktop, activity)).toEqual({
       ...before,
       activeColumnId: "column-trailing",
     });
@@ -1730,6 +1884,7 @@ describe("LayoutEngine", () => {
           index: 1,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       viewportOffset: -40,
@@ -1743,7 +1898,7 @@ describe("LayoutEngine", () => {
     expect(edit?.kind).toBe("expel");
     expect(engine.unmanageWindow(windowId("removed"))).toBe(true);
     expect(edit && engine.rollbackStackEdit(edit.rollback)).toBe(true);
-    expect(engine.snapshot(output, desktop)).toEqual({
+    expect(engine.snapshot(output, desktop, activity)).toEqual({
       activeColumnId: "column-source",
       columns: [
         {
@@ -1765,6 +1920,7 @@ describe("LayoutEngine", () => {
           windowIds: ["trailing"],
         },
       ],
+      activityId: activity,
       desktopId: "desktop-1",
       outputId: "DP-1",
       viewportOffset: -40,
@@ -1802,6 +1958,7 @@ describe("LayoutEngine", () => {
           index: 1,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
     });
@@ -1821,9 +1978,9 @@ describe("LayoutEngine", () => {
     expect(nested && engine.discardStackEditRollback(nested.rollback)).toBe(
       true,
     );
-    const recolumned = engine.snapshot(output, desktop);
+    const recolumned = engine.snapshot(output, desktop, activity);
     expect(outer && engine.rollbackStackEdit(outer.rollback)).toBe(false);
-    expect(engine.snapshot(output, desktop)).toEqual(recolumned);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(recolumned);
   });
 
   it("previews expelling the bottom member with the requested presentation", () => {
@@ -1867,11 +2024,12 @@ describe("LayoutEngine", () => {
           index: 2,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       viewportOffset: 147,
     });
-    const before = engine.snapshot(output, desktop);
+    const before = engine.snapshot(output, desktop, activity);
     const preview = engine.previewExpelWindowFromColumn(
       windowId("source-top"),
       columnId("column-expelled"),
@@ -1914,13 +2072,14 @@ describe("LayoutEngine", () => {
           windowIds: ["existing-right"],
         },
       ],
+      activityId: activity,
       desktopId: "desktop-1",
       outputId: "DP-1",
       viewportOffset: 147,
     });
-    expect(engine.snapshot(output, desktop)).toEqual(before);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(before);
     expect(preview && engine.commitColumnStackEdit(preview)).toBe(true);
-    expect(engine.snapshot(output, desktop)).toEqual(preview?.layout);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(preview?.layout);
   });
 
   it("rejects invalid, discarded, foreign, and stale column stack edits", () => {
@@ -1951,11 +2110,12 @@ describe("LayoutEngine", () => {
           index: 1,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       viewportOffset: 45,
     });
-    const before = engine.snapshot(output, desktop);
+    const before = engine.snapshot(output, desktop, activity);
 
     expect(
       engine.previewConsumeWindowIntoColumn(windowId("missing")),
@@ -1989,7 +2149,7 @@ describe("LayoutEngine", () => {
     expect(engine.discardColumnStackEdit(discarded)).toBe(true);
     expect(engine.discardColumnStackEdit(discarded)).toBe(false);
     expect(engine.commitColumnStackEdit(discarded)).toBe(false);
-    expect(engine.snapshot(output, desktop)).toEqual(before);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(before);
 
     const stale = engine.previewExpelWindowFromColumn(
       windowId("active-2"),
@@ -2000,10 +2160,10 @@ describe("LayoutEngine", () => {
       throw new Error("expected a stale column stack edit preview");
     }
 
-    expect(engine.setViewportOffset(output, desktop, 84)).toBe(true);
-    const changed = engine.snapshot(output, desktop);
+    expect(engine.setViewportOffset(output, desktop, activity, 84)).toBe(true);
+    const changed = engine.snapshot(output, desktop, activity);
     expect(engine.commitColumnStackEdit(stale)).toBe(false);
-    expect(engine.snapshot(output, desktop)).toEqual(changed);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(changed);
     expect(engine.commitColumnStackEdit(stale)).toBe(false);
   });
 
@@ -2012,14 +2172,15 @@ describe("LayoutEngine", () => {
 
     engine.manageWindow({
       columnId: columnId("column-only"),
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       width: { kind: "fixed", value: 300 },
       windowId: windowId("only"),
     });
     engine.activateWindow(windowId("only"));
-    engine.setViewportOffset(output, desktop, -42);
-    const before = engine.snapshot(output, desktop);
+    engine.setViewportOffset(output, desktop, activity, -42);
+    const before = engine.snapshot(output, desktop, activity);
 
     expect(engine.previewConsumeWindowIntoColumn(windowId("only"))).toBeNull();
     expect(
@@ -2028,7 +2189,7 @@ describe("LayoutEngine", () => {
         columnId("column-new"),
       ),
     ).toBeNull();
-    expect(engine.snapshot(output, desktop)).toEqual(before);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(before);
   });
 
   it("navigates and reorders members inside the active stack", () => {
@@ -2052,10 +2213,11 @@ describe("LayoutEngine", () => {
           index: 0,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
     });
-    const before = engine.snapshot(output, desktop);
+    const before = engine.snapshot(output, desktop, activity);
 
     expect(engine.adjacentWindowInColumn(windowId("window-2"), "up")).toBe(
       "window-1",
@@ -2068,13 +2230,11 @@ describe("LayoutEngine", () => {
     ).toBeNull();
     const edit = engine.moveActiveWindowInColumn(windowId("window-2"), "up");
     expect(edit?.kind).toBe("reorder");
-    expect(engine.snapshot(output, desktop).columns[0]?.windowIds).toEqual([
-      "window-2",
-      "window-1",
-      "window-3",
-    ]);
+    expect(
+      engine.snapshot(output, desktop, activity).columns[0]?.windowIds,
+    ).toEqual(["window-2", "window-1", "window-3"]);
     expect(edit && engine.rollbackStackEdit(edit.rollback)).toBe(true);
-    expect(engine.snapshot(output, desktop)).toEqual(before);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(before);
   });
 
   it("discards an unused stack rollback without reverting the edit", () => {
@@ -2094,6 +2254,7 @@ describe("LayoutEngine", () => {
           index: 0,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
     });
@@ -2103,11 +2264,11 @@ describe("LayoutEngine", () => {
       throw new Error("expected a stack edit");
     }
 
-    const after = engine.snapshot(output, desktop);
+    const after = engine.snapshot(output, desktop, activity);
     expect(engine.discardStackEditRollback(edit.rollback)).toBe(true);
     expect(engine.discardStackEditRollback(edit.rollback)).toBe(false);
     expect(engine.rollbackStackEdit(edit.rollback)).toBe(false);
-    expect(engine.snapshot(output, desktop)).toEqual(after);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(after);
   });
 
   it("rejects invalid and stale stack edits without mutation", () => {
@@ -2137,10 +2298,11 @@ describe("LayoutEngine", () => {
           index: 1,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
     });
-    const before = engine.snapshot(output, desktop);
+    const before = engine.snapshot(output, desktop, activity);
 
     expect(
       engine.moveActiveWindow(
@@ -2156,28 +2318,29 @@ describe("LayoutEngine", () => {
       engine.moveActiveWindowInColumn(windowId("window-1"), "up"),
     ).toBeNull();
     expect(engine.rollbackStackEdit({} as StackEditRollback)).toBe(false);
-    expect(engine.snapshot(output, desktop)).toEqual(before);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(before);
 
     expect(engine.activateWindow(windowId("window-3"))).toBe(true);
-    const boundary = engine.snapshot(output, desktop);
+    const boundary = engine.snapshot(output, desktop, activity);
     expect(
       engine.moveActiveWindow(windowId("window-3"), "right", columnId("new")),
     ).toBeNull();
-    expect(engine.snapshot(output, desktop)).toEqual(boundary);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(boundary);
     expect(engine.activateWindow(windowId("window-1"))).toBe(true);
 
     const edit = engine.moveActiveWindowInColumn(windowId("window-1"), "down");
     expect(edit).not.toBeNull();
     engine.manageWindow({
       columnId: columnId("column-3"),
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       width: { kind: "fixed", value: 300 },
       windowId: windowId("window-4"),
     });
-    const stale = engine.snapshot(output, desktop);
+    const stale = engine.snapshot(output, desktop, activity);
     expect(edit && engine.rollbackStackEdit(edit.rollback)).toBe(false);
-    expect(engine.snapshot(output, desktop)).toEqual(stale);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(stale);
   });
 
   it("previews and commits a singleton window detachment without early mutation", () => {
@@ -2217,11 +2380,12 @@ describe("LayoutEngine", () => {
           index: 2,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       viewportOffset: 120,
     });
-    const before = engine.snapshot(output, desktop);
+    const before = engine.snapshot(output, desktop, activity);
     const preview = engine.previewWindowDetach(windowId("window-2"));
 
     if (!preview) {
@@ -2233,6 +2397,7 @@ describe("LayoutEngine", () => {
       columnIndex: 1,
       columnPresentation: "stacked",
       columnWidth: { kind: "proportion", value: 0.4 },
+      activityId: activity,
       desktopId: "desktop-1",
       memberIndex: 0,
       nextColumnId: "column-3",
@@ -2265,13 +2430,14 @@ describe("LayoutEngine", () => {
           windowIds: ["window-3"],
         },
       ],
+      activityId: activity,
       desktopId: "desktop-1",
       outputId: "DP-1",
       viewportOffset: 120,
     });
-    expect(engine.snapshot(output, desktop)).toEqual(before);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(before);
     expect(engine.commitWindowDetach(preview)).toBe(true);
-    expect(engine.snapshot(output, desktop)).toEqual(preview.layout);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(preview.layout);
     expect(engine.activateWindow(windowId("window-2"))).toBe(false);
     expect(engine.commitWindowDetach(preview)).toBe(false);
   });
@@ -2317,11 +2483,12 @@ describe("LayoutEngine", () => {
           index: 2,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       viewportOffset: 70,
     });
-    const before = engine.snapshot(output, desktop);
+    const before = engine.snapshot(output, desktop, activity);
     const preview = engine.previewWindowDetach(windowId("window-2"));
 
     if (!preview) {
@@ -2346,9 +2513,9 @@ describe("LayoutEngine", () => {
       ],
       viewportOffset: 70,
     });
-    expect(engine.snapshot(output, desktop)).toEqual(before);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(before);
     expect(engine.commitWindowDetach(preview)).toBe(true);
-    expect(engine.snapshot(output, desktop)).toEqual(preview.layout);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(preview.layout);
   });
 
   it("reattaches into a surviving column by anchors and keeps live changes", () => {
@@ -2392,6 +2559,7 @@ describe("LayoutEngine", () => {
           index: 2,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       viewportOffset: 40,
@@ -2411,6 +2579,7 @@ describe("LayoutEngine", () => {
     expect(
       engine.manageWindow({
         columnId: columnId("column-new"),
+        activityId: activity,
         desktopId: desktop,
         outputId: output,
         width: { kind: "fixed", value: 180 },
@@ -2433,15 +2602,15 @@ describe("LayoutEngine", () => {
         value: 440,
       }),
     ).toEqual({ kind: "fixed", value: 300 });
-    expect(engine.setViewportOffset(output, desktop, 170)).toBe(true);
-    const live = engine.snapshot(output, desktop);
+    expect(engine.setViewportOffset(output, desktop, activity, 170)).toBe(true);
+    const live = engine.snapshot(output, desktop, activity);
     const attached = engine.previewWindowAttach(detached.placement);
 
     if (!attached) {
       throw new Error("expected a window attachment preview");
     }
 
-    expect(engine.snapshot(output, desktop)).toEqual(live);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(live);
     expect(attached.layout).toEqual({
       activeColumnId: "column-stack",
       columns: [
@@ -2467,12 +2636,13 @@ describe("LayoutEngine", () => {
           windowIds: ["window-a", "window-b", "window-x", "window-c"],
         },
       ],
+      activityId: activity,
       desktopId: "desktop-1",
       outputId: "DP-1",
       viewportOffset: 170,
     });
     expect(engine.commitWindowAttach(attached)).toBe(true);
-    expect(engine.snapshot(output, desktop)).toEqual(attached.layout);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(attached.layout);
     expect(engine.commitWindowAttach(attached)).toBe(false);
   });
 
@@ -2514,15 +2684,17 @@ describe("LayoutEngine", () => {
               index: 0,
             },
           ],
+          activityId: activity,
           desktopId: desktop,
           outputId: output,
           viewportOffset: 87,
         }),
       ).toBe(true);
-      const before = engine.snapshot(output, desktop);
+      const before = engine.snapshot(output, desktop, activity);
       const attached = engine.previewWindowAttachToWindow(
         windowId("window-floating"),
         {
+          activityId: activity,
           desktopId: desktop,
           outputId: output,
           position,
@@ -2534,7 +2706,7 @@ describe("LayoutEngine", () => {
         throw new Error("expected an exact-target attachment preview");
       }
 
-      expect(engine.snapshot(output, desktop)).toEqual(before);
+      expect(engine.snapshot(output, desktop, activity)).toEqual(before);
       expect(attached.layout).toMatchObject({
         activeColumnId: "column-target",
         columns: [
@@ -2550,7 +2722,9 @@ describe("LayoutEngine", () => {
         viewportOffset: 87,
       });
       expect(engine.commitWindowAttach(attached)).toBe(true);
-      expect(engine.snapshot(output, desktop)).toEqual(attached.layout);
+      expect(engine.snapshot(output, desktop, activity)).toEqual(
+        attached.layout,
+      );
       expect(engine.commitWindowAttach(attached)).toBe(false);
     },
   );
@@ -2572,18 +2746,22 @@ describe("LayoutEngine", () => {
       expect(
         engine.manageWindow({
           columnId: columnId("column-right"),
+          activityId: activity,
           desktopId: desktop,
           outputId: output,
           width: { kind: "fixed", value: 300 },
           windowId: windowId("window-right"),
         }),
       ).toBe(true);
-      expect(engine.setViewportOffset(output, desktop, 53)).toBe(true);
-      const before = engine.snapshot(output, desktop);
+      expect(engine.setViewportOffset(output, desktop, activity, 53)).toBe(
+        true,
+      );
+      const before = engine.snapshot(output, desktop, activity);
       const attached = engine.previewWindowAttachToColumnBoundary(
         windowId("window-floating"),
         {
           columnId: columnId("column-floating"),
+          activityId: activity,
           desktopId: desktop,
           outputId: output,
           position,
@@ -2597,7 +2775,7 @@ describe("LayoutEngine", () => {
         throw new Error("expected a column-boundary attachment preview");
       }
 
-      expect(engine.snapshot(output, desktop)).toEqual(before);
+      expect(engine.snapshot(output, desktop, activity)).toEqual(before);
       expect(attached.layout.columns.map((column) => column.id)).toEqual(
         expectedColumnIds,
       );
@@ -2617,7 +2795,9 @@ describe("LayoutEngine", () => {
         windowIds: ["window-floating"],
       });
       expect(engine.commitWindowAttach(attached)).toBe(true);
-      expect(engine.snapshot(output, desktop)).toEqual(attached.layout);
+      expect(engine.snapshot(output, desktop, activity)).toEqual(
+        attached.layout,
+      );
     },
   );
 
@@ -2626,16 +2806,18 @@ describe("LayoutEngine", () => {
 
     engine.manageWindow({
       columnId: columnId("column-2"),
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       width: { kind: "fixed", value: 300 },
       windowId: windowId("window-2"),
     });
-    engine.setViewportOffset(output, desktop, 70);
-    const before = engine.snapshot(output, desktop);
+    engine.setViewportOffset(output, desktop, activity, 70);
+    const before = engine.snapshot(output, desktop, activity);
 
     expect(
       engine.previewWindowAttachToWindow(windowId("window-2"), {
+        activityId: activity,
         desktopId: desktop,
         outputId: output,
         position: "after",
@@ -2645,6 +2827,7 @@ describe("LayoutEngine", () => {
     expect(
       engine.previewWindowAttachToColumnBoundary(windowId("window-floating"), {
         columnId: columnId("column-2"),
+        activityId: activity,
         desktopId: desktop,
         outputId: output,
         position: "after",
@@ -2653,7 +2836,7 @@ describe("LayoutEngine", () => {
         width: { kind: "fixed", value: 420 },
       }),
     ).toBeNull();
-    expect(engine.snapshot(output, desktop)).toEqual(before);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(before);
   });
 
   it("rejects a stale pointer attachment commit", () => {
@@ -2661,6 +2844,7 @@ describe("LayoutEngine", () => {
 
     engine.manageWindow({
       columnId: columnId("column-target"),
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       width: { kind: "fixed", value: 300 },
@@ -2669,6 +2853,7 @@ describe("LayoutEngine", () => {
     const stale = engine.previewWindowAttachToWindow(
       windowId("window-floating"),
       {
+        activityId: activity,
         desktopId: desktop,
         outputId: output,
         position: "after",
@@ -2680,10 +2865,10 @@ describe("LayoutEngine", () => {
       throw new Error("expected a stale attachment preview fixture");
     }
 
-    expect(engine.setViewportOffset(output, desktop, 1)).toBe(true);
-    const changed = engine.snapshot(output, desktop);
+    expect(engine.setViewportOffset(output, desktop, activity, 1)).toBe(true);
+    const changed = engine.snapshot(output, desktop, activity);
     expect(engine.commitWindowAttach(stale)).toBe(false);
-    expect(engine.snapshot(output, desktop)).toEqual(changed);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(changed);
     expect(engine.commitWindowAttach(stale)).toBe(false);
   });
 
@@ -2734,6 +2919,7 @@ describe("LayoutEngine", () => {
           index: 3,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
     });
@@ -2752,15 +2938,15 @@ describe("LayoutEngine", () => {
     ).toEqual({ kind: "fixed", value: 240 });
     expect(engine.activateWindow(windowId("window-d"))).toBe(true);
     expect(engine.moveActiveColumn(windowId("window-d"), "left")).toBe(true);
-    expect(engine.setViewportOffset(output, desktop, 90)).toBe(true);
-    const live = engine.snapshot(output, desktop);
+    expect(engine.setViewportOffset(output, desktop, activity, 90)).toBe(true);
+    const live = engine.snapshot(output, desktop, activity);
     const attached = engine.previewWindowAttach(detached.placement);
 
     if (!attached) {
       throw new Error("expected the singleton attachment preview");
     }
 
-    expect(engine.snapshot(output, desktop)).toEqual(live);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(live);
     expect(attached.layout).toEqual({
       activeColumnId: "column-b",
       columns: [
@@ -2793,6 +2979,7 @@ describe("LayoutEngine", () => {
           windowIds: ["window-c"],
         },
       ],
+      activityId: activity,
       desktopId: "desktop-1",
       outputId: "DP-1",
       viewportOffset: 90,
@@ -2847,6 +3034,7 @@ describe("LayoutEngine", () => {
           index: 3,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
     });
@@ -2859,6 +3047,7 @@ describe("LayoutEngine", () => {
     expect(
       singletonEngine.removeColumns({
         columnIds: [columnId("column-a"), columnId("column-c")],
+        activityId: activity,
         desktopId: desktop,
         outputId: output,
       }),
@@ -2916,6 +3105,7 @@ describe("LayoutEngine", () => {
           index: 2,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
     });
@@ -2941,6 +3131,7 @@ describe("LayoutEngine", () => {
             index: 1,
           },
         ],
+        activityId: activity,
         desktopId: desktop,
         outputId: output,
       }),
@@ -2966,13 +3157,14 @@ describe("LayoutEngine", () => {
 
     engine.manageWindow({
       columnId: columnId("column-only"),
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       width: { kind: "proportion", value: 0.6 },
       windowId: windowId("window-only"),
     });
     engine.activateWindow(windowId("window-only"));
-    engine.setViewportOffset(output, desktop, 250);
+    engine.setViewportOffset(output, desktop, activity, 250);
     const detached = engine.previewWindowDetach(windowId("window-only"));
 
     if (!detached) {
@@ -2982,12 +3174,13 @@ describe("LayoutEngine", () => {
     expect(detached.layout).toEqual({
       activeColumnId: null,
       columns: [],
+      activityId: activity,
       desktopId: "desktop-1",
       outputId: "DP-1",
       viewportOffset: 0,
     });
     expect(engine.commitWindowDetach(detached)).toBe(true);
-    expect(engine.snapshot(output, desktop)).toEqual(detached.layout);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(detached.layout);
     const attached = engine.previewWindowAttach(detached.placement);
 
     if (!attached) {
@@ -3005,12 +3198,13 @@ describe("LayoutEngine", () => {
           windowIds: ["window-only"],
         },
       ],
+      activityId: activity,
       desktopId: "desktop-1",
       outputId: "DP-1",
       viewportOffset: 0,
     });
     expect(engine.commitWindowAttach(attached)).toBe(true);
-    expect(engine.snapshot(output, desktop)).toEqual(attached.layout);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(attached.layout);
   });
 
   it("rejects stale and foreign detach and attach previews", () => {
@@ -3020,6 +3214,7 @@ describe("LayoutEngine", () => {
     for (const index of [1, 2]) {
       engine.manageWindow({
         columnId: columnId(`column-${String(index)}`),
+        activityId: activity,
         desktopId: desktop,
         outputId: output,
         width: { kind: "fixed", value: 300 },
@@ -3034,10 +3229,10 @@ describe("LayoutEngine", () => {
     }
 
     expect(foreign.commitWindowDetach(staleDetach)).toBe(false);
-    expect(engine.setViewportOffset(output, desktop, 20)).toBe(true);
-    const changed = engine.snapshot(output, desktop);
+    expect(engine.setViewportOffset(output, desktop, activity, 20)).toBe(true);
+    const changed = engine.snapshot(output, desktop, activity);
     expect(engine.commitWindowDetach(staleDetach)).toBe(false);
-    expect(engine.snapshot(output, desktop)).toEqual(changed);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(changed);
     expect(engine.commitWindowDetach(staleDetach)).toBe(false);
 
     const detached = engine.previewWindowDetach(windowId("window-1"));
@@ -3053,10 +3248,10 @@ describe("LayoutEngine", () => {
     }
 
     expect(foreign.commitWindowAttach(staleAttach)).toBe(false);
-    expect(engine.setViewportOffset(output, desktop, 40)).toBe(true);
-    const detachedLayout = engine.snapshot(output, desktop);
+    expect(engine.setViewportOffset(output, desktop, activity, 40)).toBe(true);
+    const detachedLayout = engine.snapshot(output, desktop, activity);
     expect(engine.commitWindowAttach(staleAttach)).toBe(false);
-    expect(engine.snapshot(output, desktop)).toEqual(detachedLayout);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(detachedLayout);
     expect(engine.commitWindowAttach(staleAttach)).toBe(false);
     expect(engine.commitWindowDetach({} as WindowDetachPreview)).toBe(false);
     expect(engine.commitWindowAttach({} as WindowAttachPreview)).toBe(false);
@@ -3068,6 +3263,7 @@ describe("LayoutEngine", () => {
 
     engine.manageWindow({
       columnId: columnId("column-1"),
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       width: { kind: "fixed", value: 300 },
@@ -3082,6 +3278,7 @@ describe("LayoutEngine", () => {
     expect(
       engine.manageWindow({
         columnId: columnId("column-foreign"),
+        activityId: activity,
         desktopId: desktop,
         outputId: otherOutput,
         width: { kind: "fixed", value: 200 },
@@ -3126,13 +3323,13 @@ describe("LayoutEngine", () => {
         nextWindowId: detached.placement.windowId,
       },
     ];
-    const before = engine.snapshot(output, desktop);
+    const before = engine.snapshot(output, desktop, activity);
 
     for (const placement of invalidPlacements) {
       expect(engine.previewWindowAttach(placement)).toBeNull();
     }
 
-    expect(engine.snapshot(output, desktop)).toEqual(before);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(before);
   });
 
   it("accepts a deterministic fresh placement for a different live context", () => {
@@ -3142,6 +3339,7 @@ describe("LayoutEngine", () => {
 
     engine.manageWindow({
       columnId: columnId("column-saved"),
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       width: { kind: "fixed", value: 300 },
@@ -3156,18 +3354,20 @@ describe("LayoutEngine", () => {
     for (const index of [1, 2]) {
       engine.manageWindow({
         columnId: columnId(`column-live-${String(index)}`),
+        activityId: activity,
         desktopId: liveDesktop,
         outputId: liveOutput,
         width: { kind: "fixed", value: 250 },
         windowId: windowId(`window-live-${String(index)}`),
       });
     }
-    engine.setViewportOffset(liveOutput, liveDesktop, 60);
+    engine.setViewportOffset(liveOutput, liveDesktop, activity, 60);
     const freshPlacement: DetachedWindowPlacement = {
       ...detached.placement,
       columnId: columnId("column-fresh"),
       columnIndex: 1,
       columnWidth: { kind: "fixed", value: 480 },
+      activityId: activity,
       desktopId: liveDesktop,
       memberIndex: 0,
       nextColumnId: columnId("column-live-2"),
@@ -3207,13 +3407,16 @@ describe("LayoutEngine", () => {
           windowIds: ["window-live-2"],
         },
       ],
+      activityId: activity,
       desktopId: "desktop-2",
       outputId: "HDMI-A-1",
       viewportOffset: 60,
     });
     expect(engine.commitWindowAttach(attached)).toBe(true);
-    expect(engine.snapshot(output, desktop).columns).toEqual([]);
-    expect(engine.snapshot(liveOutput, liveDesktop)).toEqual(attached.layout);
+    expect(engine.snapshot(output, desktop, activity).columns).toEqual([]);
+    expect(engine.snapshot(liveOutput, liveDesktop, activity)).toEqual(
+      attached.layout,
+    );
   });
 
   it("stores viewport offsets independently for each context", () => {
@@ -3223,6 +3426,7 @@ describe("LayoutEngine", () => {
     for (const [index, contextOutput] of [output, secondOutput].entries()) {
       engine.manageWindow({
         columnId: columnId(`column-${String(index + 1)}`),
+        activityId: activity,
         desktopId: desktop,
         outputId: contextOutput,
         width: { kind: "proportion", value: 0.5 },
@@ -3230,15 +3434,21 @@ describe("LayoutEngine", () => {
       });
     }
 
-    expect(engine.setViewportOffset(output, desktop, 936)).toBe(true);
+    expect(engine.setViewportOffset(output, desktop, activity, 936)).toBe(true);
 
-    expect(engine.snapshot(output, desktop).viewportOffset).toBe(936);
-    expect(engine.snapshot(secondOutput, desktop).viewportOffset).toBe(0);
-    expect(engine.setViewportOffset(output, desktop, -250)).toBe(true);
-    expect(engine.snapshot(output, desktop).viewportOffset).toBe(-250);
-    expect(engine.setViewportOffset(outputId("unknown"), desktop, 10)).toBe(
-      false,
+    expect(engine.snapshot(output, desktop, activity).viewportOffset).toBe(936);
+    expect(
+      engine.snapshot(secondOutput, desktop, activity).viewportOffset,
+    ).toBe(0);
+    expect(engine.setViewportOffset(output, desktop, activity, -250)).toBe(
+      true,
     );
+    expect(engine.snapshot(output, desktop, activity).viewportOffset).toBe(
+      -250,
+    );
+    expect(
+      engine.setViewportOffset(outputId("unknown"), desktop, activity, 10),
+    ).toBe(false);
   });
 
   it.each([Number.NEGATIVE_INFINITY, Number.NaN, Number.POSITIVE_INFINITY])(
@@ -3248,6 +3458,7 @@ describe("LayoutEngine", () => {
 
       engine.manageWindow({
         columnId: columnId("column-1"),
+        activityId: activity,
         desktopId: desktop,
         outputId: output,
         width: { kind: "proportion", value: 0.5 },
@@ -3255,9 +3466,9 @@ describe("LayoutEngine", () => {
       });
 
       expect(() =>
-        engine.setViewportOffset(output, desktop, viewportOffset),
+        engine.setViewportOffset(output, desktop, activity, viewportOffset),
       ).toThrow(RangeError);
-      expect(engine.snapshot(output, desktop).viewportOffset).toBe(0);
+      expect(engine.snapshot(output, desktop, activity).viewportOffset).toBe(0);
     },
   );
 
@@ -3267,6 +3478,7 @@ describe("LayoutEngine", () => {
     for (const index of [1, 2, 3]) {
       engine.manageWindow({
         columnId: columnId(`column-${String(index)}`),
+        activityId: activity,
         desktopId: desktop,
         outputId: output,
         width: { kind: "proportion", value: 0.33 },
@@ -3289,6 +3501,7 @@ describe("LayoutEngine", () => {
     const engine = new LayoutEngine();
     const baseCommand = {
       columnId: columnId("column-1"),
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       width: { kind: "proportion" as const, value: 0.5 },
@@ -3303,7 +3516,7 @@ describe("LayoutEngine", () => {
         windowId: windowId("window-2"),
       }),
     ).toBe(false);
-    expect(engine.snapshot(output, desktop).columns).toHaveLength(1);
+    expect(engine.snapshot(output, desktop, activity).columns).toHaveLength(1);
 
     expect(engine.unmanageWindow(baseCommand.windowId)).toBe(true);
     expect(
@@ -3322,13 +3535,16 @@ describe("LayoutEngine", () => {
       expect(() =>
         engine.manageWindow({
           columnId: columnId("column-1"),
+          activityId: activity,
           desktopId: desktop,
           outputId: output,
           width: { kind: "fixed", value },
           windowId: windowId("window-1"),
         }),
       ).toThrow(RangeError);
-      expect(engine.snapshot(output, desktop).columns).toHaveLength(0);
+      expect(engine.snapshot(output, desktop, activity).columns).toHaveLength(
+        0,
+      );
     },
   );
 
@@ -3338,6 +3554,7 @@ describe("LayoutEngine", () => {
 
     engine.manageWindow({
       columnId: columnId("column-1"),
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       width,
@@ -3345,11 +3562,13 @@ describe("LayoutEngine", () => {
     });
     width.value = 600;
 
-    const snapshot = engine.snapshot(output, desktop);
+    const snapshot = engine.snapshot(output, desktop, activity);
     const snapshotWidth = snapshot.columns[0]?.width as { value: number };
     snapshotWidth.value = 400;
 
-    expect(engine.snapshot(output, desktop).columns[0]?.width.value).toBe(800);
+    expect(
+      engine.snapshot(output, desktop, activity).columns[0]?.width.value,
+    ).toBe(800);
   });
 
   it("never changes existing widths when adding columns", () => {
@@ -3368,6 +3587,7 @@ describe("LayoutEngine", () => {
             expectedWidths.push(width);
             engine.manageWindow({
               columnId: columnId(`column-${String(index)}`),
+              activityId: activity,
               desktopId: desktop,
               outputId: output,
               width: { kind: "proportion", value: width },
@@ -3376,7 +3596,7 @@ describe("LayoutEngine", () => {
 
             expect(
               engine
-                .snapshot(output, desktop)
+                .snapshot(output, desktop, activity)
                 .columns.map((column) => column.width.value),
             ).toEqual(expectedWidths);
           }
@@ -3423,6 +3643,7 @@ describe("LayoutEngine", () => {
             index: 2,
           },
         ],
+        activityId: activity,
         desktopId: desktop,
         outputId: output,
         viewportOffset: 120,
@@ -3432,11 +3653,12 @@ describe("LayoutEngine", () => {
     expect(
       engine.removeColumns({
         columnIds: [columnId("column-1"), columnId("column-3")],
+        activityId: activity,
         desktopId: desktop,
         outputId: output,
       }),
     ).toBe(true);
-    expect(engine.snapshot(output, desktop)).toMatchObject({
+    expect(engine.snapshot(output, desktop, activity)).toMatchObject({
       activeColumnId: "column-2",
       columns: [{ id: "column-2", windowIds: ["window-3"] }],
     });
@@ -3466,12 +3688,13 @@ describe("LayoutEngine", () => {
             index: 2,
           },
         ],
+        activityId: activity,
         desktopId: desktop,
         outputId: output,
         viewportOffset: 120,
       }),
     ).toBe(true);
-    expect(engine.snapshot(output, desktop)).toEqual({
+    expect(engine.snapshot(output, desktop, activity)).toEqual({
       activeColumnId: "column-3",
       columns: [
         {
@@ -3496,6 +3719,7 @@ describe("LayoutEngine", () => {
           windowIds: ["window-4"],
         },
       ],
+      activityId: activity,
       desktopId: "desktop-1",
       outputId: "DP-1",
       viewportOffset: 120,
@@ -3507,12 +3731,13 @@ describe("LayoutEngine", () => {
 
     engine.manageWindow({
       columnId: columnId("column-2"),
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       width: { kind: "proportion", value: 0.5 },
       windowId: windowId("window-2"),
     });
-    const before = engine.snapshot(output, desktop);
+    const before = engine.snapshot(output, desktop, activity);
 
     expect(
       engine.restoreColumns({
@@ -3538,11 +3763,12 @@ describe("LayoutEngine", () => {
             index: 0,
           },
         ],
+        activityId: activity,
         desktopId: desktop,
         outputId: output,
       }),
     ).toBe(false);
-    expect(engine.snapshot(output, desktop)).toEqual(before);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(before);
   });
 
   it("previews and atomically transfers the whole active column", () => {
@@ -3587,6 +3813,7 @@ describe("LayoutEngine", () => {
           index: 2,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       viewportOffset: -120,
@@ -3615,14 +3842,16 @@ describe("LayoutEngine", () => {
           index: 1,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: targetOutput,
       viewportOffset: -75,
     });
-    const sourceBefore = engine.snapshot(output, desktop);
-    const targetBefore = engine.snapshot(targetOutput, desktop);
+    const sourceBefore = engine.snapshot(output, desktop, activity);
+    const targetBefore = engine.snapshot(targetOutput, desktop, activity);
     const preview = engine.previewColumnTransfer(windowId("window-b2"), {
       columnId: columnId("transferred"),
+      activityId: activity,
       desktopId: desktop,
       outputId: targetOutput,
     });
@@ -3631,8 +3860,10 @@ describe("LayoutEngine", () => {
       throw new Error("expected a column transfer preview");
     }
 
-    expect(engine.snapshot(output, desktop)).toEqual(sourceBefore);
-    expect(engine.snapshot(targetOutput, desktop)).toEqual(targetBefore);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(sourceBefore);
+    expect(engine.snapshot(targetOutput, desktop, activity)).toEqual(
+      targetBefore,
+    );
     expect(preview.sourceLayout).toEqual({
       activeColumnId: "source-c",
       columns: [
@@ -3651,6 +3882,7 @@ describe("LayoutEngine", () => {
           windowIds: ["window-c"],
         },
       ],
+      activityId: activity,
       desktopId: "desktop-1",
       outputId: "DP-1",
       viewportOffset: -120,
@@ -3680,6 +3912,7 @@ describe("LayoutEngine", () => {
           windowIds: ["window-target-b"],
         },
       ],
+      activityId: activity,
       desktopId: "desktop-1",
       outputId: "HDMI-A-1",
       viewportOffset: -75,
@@ -3695,8 +3928,10 @@ describe("LayoutEngine", () => {
       true,
     );
     expect(engine.commitColumnTransfer(preview)).toBe(true);
-    expect(engine.snapshot(output, desktop)).toEqual(preview.sourceLayout);
-    expect(engine.snapshot(targetOutput, desktop)).toEqual(
+    expect(engine.snapshot(output, desktop, activity)).toEqual(
+      preview.sourceLayout,
+    );
+    expect(engine.snapshot(targetOutput, desktop, activity)).toEqual(
       preview.targetLayout,
     );
     expect(engine.commitColumnTransfer(preview)).toBe(false);
@@ -3720,12 +3955,14 @@ describe("LayoutEngine", () => {
           index: 0,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       viewportOffset: 44,
     });
     const preview = engine.previewColumnTransfer(windowId("window-b"), {
       columnId: columnId("target-only"),
+      activityId: activity,
       desktopId: targetDesktop,
       outputId: output,
     });
@@ -3737,6 +3974,7 @@ describe("LayoutEngine", () => {
     expect(preview.sourceLayout).toEqual({
       activeColumnId: null,
       columns: [],
+      activityId: activity,
       desktopId: "desktop-1",
       outputId: "DP-1",
       viewportOffset: 0,
@@ -3752,13 +3990,16 @@ describe("LayoutEngine", () => {
           windowIds: ["window-a", "window-b"],
         },
       ],
+      activityId: activity,
       desktopId: "desktop-2",
       outputId: "DP-1",
       viewportOffset: 0,
     });
     expect(engine.commitColumnTransfer(preview)).toBe(true);
-    expect(engine.snapshot(output, desktop)).toEqual(preview.sourceLayout);
-    expect(engine.snapshot(output, targetDesktop)).toEqual(
+    expect(engine.snapshot(output, desktop, activity)).toEqual(
+      preview.sourceLayout,
+    );
+    expect(engine.snapshot(output, targetDesktop, activity)).toEqual(
       preview.targetLayout,
     );
   });
@@ -3794,6 +4035,7 @@ describe("LayoutEngine", () => {
           index: 1,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
     });
@@ -3811,15 +4053,17 @@ describe("LayoutEngine", () => {
           index: 0,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: targetOutput,
     });
-    const sourceBefore = engine.snapshot(output, desktop);
-    const targetBefore = engine.snapshot(targetOutput, desktop);
+    const sourceBefore = engine.snapshot(output, desktop, activity);
+    const targetBefore = engine.snapshot(targetOutput, desktop, activity);
 
     expect(
       engine.previewColumnTransfer(windowId("unknown"), {
         columnId: columnId("fresh"),
+        activityId: activity,
         desktopId: desktop,
         outputId: targetOutput,
       }),
@@ -3827,6 +4071,7 @@ describe("LayoutEngine", () => {
     expect(
       engine.previewColumnTransfer(windowId("window-inactive"), {
         columnId: columnId("fresh"),
+        activityId: activity,
         desktopId: desktop,
         outputId: targetOutput,
       }),
@@ -3834,6 +4079,7 @@ describe("LayoutEngine", () => {
     expect(
       engine.previewColumnTransfer(windowId("window-active-a"), {
         columnId: columnId("fresh"),
+        activityId: activity,
         desktopId: desktop,
         outputId: output,
       }),
@@ -3841,6 +4087,7 @@ describe("LayoutEngine", () => {
     expect(
       engine.previewColumnTransfer(windowId("window-active-b"), {
         columnId: columnId("target-collision"),
+        activityId: activity,
         desktopId: desktop,
         outputId: targetOutput,
       }),
@@ -3851,8 +4098,10 @@ describe("LayoutEngine", () => {
         null as unknown as Parameters<LayoutEngine["previewColumnTransfer"]>[1],
       ),
     ).toBeNull();
-    expect(engine.snapshot(output, desktop)).toEqual(sourceBefore);
-    expect(engine.snapshot(targetOutput, desktop)).toEqual(targetBefore);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(sourceBefore);
+    expect(engine.snapshot(targetOutput, desktop, activity)).toEqual(
+      targetBefore,
+    );
   });
 
   it("rejects forged, foreign, discarded, and reused column transfer previews", () => {
@@ -3862,6 +4111,7 @@ describe("LayoutEngine", () => {
 
     engine.manageWindow({
       columnId: columnId("source"),
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       width: { kind: "fixed", value: 300 },
@@ -3870,6 +4120,7 @@ describe("LayoutEngine", () => {
     engine.activateWindow(windowId("window-1"));
     const discarded = engine.previewColumnTransfer(windowId("window-1"), {
       columnId: columnId("target"),
+      activityId: activity,
       desktopId: desktop,
       outputId: targetOutput,
     });
@@ -3888,6 +4139,7 @@ describe("LayoutEngine", () => {
 
     const committed = engine.previewColumnTransfer(windowId("window-1"), {
       columnId: columnId("target"),
+      activityId: activity,
       desktopId: desktop,
       outputId: targetOutput,
     });
@@ -3906,6 +4158,7 @@ describe("LayoutEngine", () => {
 
     engine.manageWindow({
       columnId: columnId("source"),
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       width: { kind: "fixed", value: 300 },
@@ -3914,6 +4167,7 @@ describe("LayoutEngine", () => {
     engine.activateWindow(windowId("window-source"));
     engine.manageWindow({
       columnId: columnId("target-existing"),
+      activityId: activity,
       desktopId: desktop,
       outputId: targetOutput,
       width: { kind: "fixed", value: 450 },
@@ -3924,6 +4178,7 @@ describe("LayoutEngine", () => {
       windowId("window-source"),
       {
         columnId: columnId("target-new"),
+        activityId: activity,
         desktopId: desktop,
         outputId: targetOutput,
       },
@@ -3933,18 +4188,23 @@ describe("LayoutEngine", () => {
       throw new Error("expected a target-staleness preview");
     }
 
-    expect(engine.setViewportOffset(targetOutput, desktop, 65)).toBe(true);
-    const sourceBefore = engine.snapshot(output, desktop);
-    const targetChanged = engine.snapshot(targetOutput, desktop);
+    expect(engine.setViewportOffset(targetOutput, desktop, activity, 65)).toBe(
+      true,
+    );
+    const sourceBefore = engine.snapshot(output, desktop, activity);
+    const targetChanged = engine.snapshot(targetOutput, desktop, activity);
     expect(engine.commitColumnTransfer(targetStale)).toBe(false);
     expect(engine.commitColumnTransfer(targetStale)).toBe(false);
-    expect(engine.snapshot(output, desktop)).toEqual(sourceBefore);
-    expect(engine.snapshot(targetOutput, desktop)).toEqual(targetChanged);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(sourceBefore);
+    expect(engine.snapshot(targetOutput, desktop, activity)).toEqual(
+      targetChanged,
+    );
 
     const sourceStale = engine.previewColumnTransfer(
       windowId("window-source"),
       {
         columnId: columnId("target-new"),
+        activityId: activity,
         desktopId: desktop,
         outputId: targetOutput,
       },
@@ -3954,12 +4214,14 @@ describe("LayoutEngine", () => {
       throw new Error("expected a source-staleness preview");
     }
 
-    expect(engine.setViewportOffset(output, desktop, 35)).toBe(true);
-    const sourceChanged = engine.snapshot(output, desktop);
+    expect(engine.setViewportOffset(output, desktop, activity, 35)).toBe(true);
+    const sourceChanged = engine.snapshot(output, desktop, activity);
     expect(engine.commitColumnTransfer(sourceStale)).toBe(false);
     expect(engine.commitColumnTransfer(sourceStale)).toBe(false);
-    expect(engine.snapshot(output, desktop)).toEqual(sourceChanged);
-    expect(engine.snapshot(targetOutput, desktop)).toEqual(targetChanged);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(sourceChanged);
+    expect(engine.snapshot(targetOutput, desktop, activity)).toEqual(
+      targetChanged,
+    );
   });
 
   it("transfers an active singleton with the requested presentation", () => {
@@ -4000,6 +4262,7 @@ describe("LayoutEngine", () => {
           index: 2,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       viewportOffset: 120,
@@ -4028,14 +4291,16 @@ describe("LayoutEngine", () => {
           index: 1,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: targetOutput,
       viewportOffset: 75,
     });
-    const sourceBefore = engine.snapshot(output, desktop);
-    const targetBefore = engine.snapshot(targetOutput, desktop);
+    const sourceBefore = engine.snapshot(output, desktop, activity);
+    const targetBefore = engine.snapshot(targetOutput, desktop, activity);
     const preview = engine.previewWindowTransfer(windowId("window-b"), {
       columnId: columnId("transferred"),
+      activityId: activity,
       desktopId: desktop,
       outputId: targetOutput,
       presentation: "tabbed",
@@ -4045,8 +4310,10 @@ describe("LayoutEngine", () => {
       throw new Error("expected a window transfer preview");
     }
 
-    expect(engine.snapshot(output, desktop)).toEqual(sourceBefore);
-    expect(engine.snapshot(targetOutput, desktop)).toEqual(targetBefore);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(sourceBefore);
+    expect(engine.snapshot(targetOutput, desktop, activity)).toEqual(
+      targetBefore,
+    );
     expect(preview.sourceLayout).toEqual({
       activeColumnId: "source-c",
       columns: [
@@ -4065,6 +4332,7 @@ describe("LayoutEngine", () => {
           windowIds: ["window-c"],
         },
       ],
+      activityId: activity,
       desktopId: "desktop-1",
       outputId: "DP-1",
       viewportOffset: 120,
@@ -4094,6 +4362,7 @@ describe("LayoutEngine", () => {
           windowIds: ["window-target-b"],
         },
       ],
+      activityId: activity,
       desktopId: "desktop-1",
       outputId: "HDMI-A-1",
       viewportOffset: 75,
@@ -4114,8 +4383,10 @@ describe("LayoutEngine", () => {
       true,
     );
     expect(engine.commitWindowTransfer(preview)).toBe(true);
-    expect(engine.snapshot(output, desktop)).toEqual(preview.sourceLayout);
-    expect(engine.snapshot(targetOutput, desktop)).toEqual(
+    expect(engine.snapshot(output, desktop, activity)).toEqual(
+      preview.sourceLayout,
+    );
+    expect(engine.snapshot(targetOutput, desktop, activity)).toEqual(
       preview.targetLayout,
     );
     expect(engine.commitWindowTransfer(preview)).toBe(false);
@@ -4143,12 +4414,14 @@ describe("LayoutEngine", () => {
           index: 0,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       viewportOffset: 44,
     });
     const preview = engine.previewWindowTransfer(windowId("window-b"), {
       columnId: columnId("target-only"),
+      activityId: activity,
       desktopId: targetDesktop,
       outputId: output,
     });
@@ -4168,6 +4441,7 @@ describe("LayoutEngine", () => {
           windowIds: ["window-a", "window-c"],
         },
       ],
+      activityId: activity,
       desktopId: "desktop-1",
       outputId: "DP-1",
       viewportOffset: 44,
@@ -4183,13 +4457,16 @@ describe("LayoutEngine", () => {
           windowIds: ["window-b"],
         },
       ],
+      activityId: activity,
       desktopId: "desktop-2",
       outputId: "DP-1",
       viewportOffset: 0,
     });
     expect(engine.commitWindowTransfer(preview)).toBe(true);
-    expect(engine.snapshot(output, desktop)).toEqual(preview.sourceLayout);
-    expect(engine.snapshot(output, targetDesktop)).toEqual(
+    expect(engine.snapshot(output, desktop, activity)).toEqual(
+      preview.sourceLayout,
+    );
+    expect(engine.snapshot(output, targetDesktop, activity)).toEqual(
       preview.targetLayout,
     );
     expect(engine.activateWindow(windowId("window-b"))).toBe(false);
@@ -4202,15 +4479,17 @@ describe("LayoutEngine", () => {
 
     engine.manageWindow({
       columnId: columnId("source-only"),
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       width: { kind: "fixed", value: 390 },
       windowId: windowId("window-only"),
     });
     engine.activateWindow(windowId("window-only"));
-    engine.setViewportOffset(output, desktop, 210);
+    engine.setViewportOffset(output, desktop, activity, 210);
     engine.manageWindow({
       columnId: columnId("target-a"),
+      activityId: activity,
       desktopId: desktop,
       outputId: targetOutput,
       width: { kind: "fixed", value: 250 },
@@ -4218,6 +4497,7 @@ describe("LayoutEngine", () => {
     });
     engine.manageWindow({
       columnId: columnId("target-b"),
+      activityId: activity,
       desktopId: desktop,
       outputId: targetOutput,
       width: { kind: "fixed", value: 350 },
@@ -4225,6 +4505,7 @@ describe("LayoutEngine", () => {
     });
     const preview = engine.previewWindowTransfer(windowId("window-only"), {
       columnId: columnId("target-only"),
+      activityId: activity,
       desktopId: desktop,
       outputId: targetOutput,
     });
@@ -4236,6 +4517,7 @@ describe("LayoutEngine", () => {
     expect(preview.sourceLayout).toEqual({
       activeColumnId: null,
       columns: [],
+      activityId: activity,
       desktopId: "desktop-1",
       outputId: "DP-1",
       viewportOffset: 0,
@@ -4247,8 +4529,10 @@ describe("LayoutEngine", () => {
     ]);
     expect(preview.targetLayout.activeColumnId).toBe("target-only");
     expect(engine.commitWindowTransfer(preview)).toBe(true);
-    expect(engine.snapshot(output, desktop)).toEqual(preview.sourceLayout);
-    expect(engine.snapshot(targetOutput, desktop)).toEqual(
+    expect(engine.snapshot(output, desktop, activity)).toEqual(
+      preview.sourceLayout,
+    );
+    expect(engine.snapshot(targetOutput, desktop, activity)).toEqual(
       preview.targetLayout,
     );
   });
@@ -4259,6 +4543,7 @@ describe("LayoutEngine", () => {
 
     engine.manageWindow({
       columnId: columnId("source-active"),
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       width: { kind: "fixed", value: 300 },
@@ -4266,6 +4551,7 @@ describe("LayoutEngine", () => {
     });
     engine.manageWindow({
       columnId: columnId("source-inactive"),
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       width: { kind: "fixed", value: 320 },
@@ -4274,17 +4560,19 @@ describe("LayoutEngine", () => {
     engine.activateWindow(windowId("window-active"));
     engine.manageWindow({
       columnId: columnId("target-collision"),
+      activityId: activity,
       desktopId: desktop,
       outputId: targetOutput,
       width: { kind: "fixed", value: 340 },
       windowId: windowId("window-target"),
     });
-    const sourceBefore = engine.snapshot(output, desktop);
-    const targetBefore = engine.snapshot(targetOutput, desktop);
+    const sourceBefore = engine.snapshot(output, desktop, activity);
+    const targetBefore = engine.snapshot(targetOutput, desktop, activity);
 
     expect(
       engine.previewWindowTransfer(windowId("unknown"), {
         columnId: columnId("fresh"),
+        activityId: activity,
         desktopId: desktop,
         outputId: targetOutput,
       }),
@@ -4292,6 +4580,7 @@ describe("LayoutEngine", () => {
     expect(
       engine.previewWindowTransfer(windowId("window-inactive"), {
         columnId: columnId("fresh"),
+        activityId: activity,
         desktopId: desktop,
         outputId: targetOutput,
       }),
@@ -4299,6 +4588,7 @@ describe("LayoutEngine", () => {
     expect(
       engine.previewWindowTransfer(windowId("window-active"), {
         columnId: columnId("fresh"),
+        activityId: activity,
         desktopId: desktop,
         outputId: output,
       }),
@@ -4306,6 +4596,7 @@ describe("LayoutEngine", () => {
     expect(
       engine.previewWindowTransfer(windowId("window-active"), {
         columnId: columnId("target-collision"),
+        activityId: activity,
         desktopId: desktop,
         outputId: targetOutput,
       }),
@@ -4316,8 +4607,10 @@ describe("LayoutEngine", () => {
         null as unknown as Parameters<LayoutEngine["previewWindowTransfer"]>[1],
       ),
     ).toBeNull();
-    expect(engine.snapshot(output, desktop)).toEqual(sourceBefore);
-    expect(engine.snapshot(targetOutput, desktop)).toEqual(targetBefore);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(sourceBefore);
+    expect(engine.snapshot(targetOutput, desktop, activity)).toEqual(
+      targetBefore,
+    );
   });
 
   it("rejects forged and foreign transfer previews while preserving engine ownership", () => {
@@ -4327,6 +4620,7 @@ describe("LayoutEngine", () => {
 
     engine.manageWindow({
       columnId: columnId("source"),
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       width: { kind: "fixed", value: 300 },
@@ -4335,6 +4629,7 @@ describe("LayoutEngine", () => {
     engine.activateWindow(windowId("window-1"));
     const preview = engine.previewWindowTransfer(windowId("window-1"), {
       columnId: columnId("target"),
+      activityId: activity,
       desktopId: desktop,
       outputId: targetOutput,
     });
@@ -4357,16 +4652,18 @@ describe("LayoutEngine", () => {
 
     engine.manageWindow({
       columnId: columnId("source"),
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       width: { kind: "fixed", value: 300 },
       windowId: windowId("window-1"),
     });
     engine.activateWindow(windowId("window-1"));
-    const sourceBefore = engine.snapshot(output, desktop);
-    const targetBefore = engine.snapshot(targetOutput, desktop);
+    const sourceBefore = engine.snapshot(output, desktop, activity);
+    const targetBefore = engine.snapshot(targetOutput, desktop, activity);
     const preview = engine.previewWindowTransfer(windowId("window-1"), {
       columnId: columnId("target"),
+      activityId: activity,
       desktopId: desktop,
       outputId: targetOutput,
     });
@@ -4378,8 +4675,10 @@ describe("LayoutEngine", () => {
     expect(engine.discardWindowTransfer(preview)).toBe(true);
     expect(engine.discardWindowTransfer(preview)).toBe(false);
     expect(engine.commitWindowTransfer(preview)).toBe(false);
-    expect(engine.snapshot(output, desktop)).toEqual(sourceBefore);
-    expect(engine.snapshot(targetOutput, desktop)).toEqual(targetBefore);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(sourceBefore);
+    expect(engine.snapshot(targetOutput, desktop, activity)).toEqual(
+      targetBefore,
+    );
   });
 
   it("consumes a transfer preview when the source context becomes stale", () => {
@@ -4388,6 +4687,7 @@ describe("LayoutEngine", () => {
 
     engine.manageWindow({
       columnId: columnId("source"),
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       width: { kind: "fixed", value: 300 },
@@ -4396,6 +4696,7 @@ describe("LayoutEngine", () => {
     engine.activateWindow(windowId("window-1"));
     const preview = engine.previewWindowTransfer(windowId("window-1"), {
       columnId: columnId("target"),
+      activityId: activity,
       desktopId: desktop,
       outputId: targetOutput,
     });
@@ -4404,12 +4705,14 @@ describe("LayoutEngine", () => {
       throw new Error("expected a transfer preview");
     }
 
-    expect(engine.setViewportOffset(output, desktop, 35)).toBe(true);
-    const sourceChanged = engine.snapshot(output, desktop);
-    const targetBefore = engine.snapshot(targetOutput, desktop);
+    expect(engine.setViewportOffset(output, desktop, activity, 35)).toBe(true);
+    const sourceChanged = engine.snapshot(output, desktop, activity);
+    const targetBefore = engine.snapshot(targetOutput, desktop, activity);
     expect(engine.commitWindowTransfer(preview)).toBe(false);
-    expect(engine.snapshot(output, desktop)).toEqual(sourceChanged);
-    expect(engine.snapshot(targetOutput, desktop)).toEqual(targetBefore);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(sourceChanged);
+    expect(engine.snapshot(targetOutput, desktop, activity)).toEqual(
+      targetBefore,
+    );
     expect(engine.commitWindowTransfer(preview)).toBe(false);
   });
 
@@ -4419,6 +4722,7 @@ describe("LayoutEngine", () => {
 
     engine.manageWindow({
       columnId: columnId("source"),
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       width: { kind: "fixed", value: 300 },
@@ -4427,6 +4731,7 @@ describe("LayoutEngine", () => {
     engine.activateWindow(windowId("window-source"));
     engine.manageWindow({
       columnId: columnId("target-existing"),
+      activityId: activity,
       desktopId: desktop,
       outputId: targetOutput,
       width: { kind: "fixed", value: 450 },
@@ -4434,6 +4739,7 @@ describe("LayoutEngine", () => {
     });
     const preview = engine.previewWindowTransfer(windowId("window-source"), {
       columnId: columnId("target-new"),
+      activityId: activity,
       desktopId: desktop,
       outputId: targetOutput,
     });
@@ -4442,12 +4748,16 @@ describe("LayoutEngine", () => {
       throw new Error("expected a transfer preview");
     }
 
-    expect(engine.setViewportOffset(targetOutput, desktop, 65)).toBe(true);
-    const sourceBefore = engine.snapshot(output, desktop);
-    const targetChanged = engine.snapshot(targetOutput, desktop);
+    expect(engine.setViewportOffset(targetOutput, desktop, activity, 65)).toBe(
+      true,
+    );
+    const sourceBefore = engine.snapshot(output, desktop, activity);
+    const targetChanged = engine.snapshot(targetOutput, desktop, activity);
     expect(engine.commitWindowTransfer(preview)).toBe(false);
-    expect(engine.snapshot(output, desktop)).toEqual(sourceBefore);
-    expect(engine.snapshot(targetOutput, desktop)).toEqual(targetChanged);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(sourceBefore);
+    expect(engine.snapshot(targetOutput, desktop, activity)).toEqual(
+      targetChanged,
+    );
     expect(engine.commitWindowTransfer(preview)).toBe(false);
   });
 
@@ -4477,18 +4787,19 @@ describe("LayoutEngine", () => {
           index: 0,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       viewportOffset: 73,
     });
-    const before = engine.snapshot(output, desktop);
+    const before = engine.snapshot(output, desktop, activity);
     const edit = engine.reinsertWindow(windowId("window-b"), {
       position: "after",
       targetWindowId: windowId("window-c"),
     });
 
     expect(edit?.kind).toBe("reorder");
-    expect(engine.snapshot(output, desktop)).toEqual({
+    expect(engine.snapshot(output, desktop, activity)).toEqual({
       ...before,
       columns: [
         {
@@ -4504,7 +4815,7 @@ describe("LayoutEngine", () => {
       ],
     });
     expect(edit && engine.rollbackStackEdit(edit.rollback)).toBe(true);
-    expect(engine.snapshot(output, desktop)).toEqual(before);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(before);
   });
 
   it("reinserts a member at a cross-column anchor with automatic height", () => {
@@ -4542,18 +4853,19 @@ describe("LayoutEngine", () => {
           index: 1,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       viewportOffset: 115,
     });
-    const before = engine.snapshot(output, desktop);
+    const before = engine.snapshot(output, desktop, activity);
     const edit = engine.reinsertWindow(windowId("moved"), {
       position: "before",
       targetWindowId: windowId("target-b"),
     });
 
     expect(edit?.kind).toBe("insert");
-    expect(engine.snapshot(output, desktop)).toEqual({
+    expect(engine.snapshot(output, desktop, activity)).toEqual({
       activeColumnId: "destination",
       columns: [
         {
@@ -4576,12 +4888,13 @@ describe("LayoutEngine", () => {
           windowIds: ["target-a", "moved", "target-b"],
         },
       ],
+      activityId: activity,
       desktopId: "desktop-1",
       outputId: "DP-1",
       viewportOffset: 115,
     });
     expect(edit && engine.rollbackStackEdit(edit.rollback)).toBe(true);
-    expect(engine.snapshot(output, desktop)).toEqual(before);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(before);
   });
 
   it("removes an emptied source column during pointer reinsertion", () => {
@@ -4612,18 +4925,19 @@ describe("LayoutEngine", () => {
           index: 1,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       viewportOffset: -52,
     });
-    const before = engine.snapshot(output, desktop);
+    const before = engine.snapshot(output, desktop, activity);
     const edit = engine.reinsertWindow(windowId("moved"), {
       position: "after",
       targetWindowId: windowId("target"),
     });
 
     expect(edit?.kind).toBe("merge");
-    expect(engine.snapshot(output, desktop)).toEqual({
+    expect(engine.snapshot(output, desktop, activity)).toEqual({
       activeColumnId: "destination",
       columns: [
         {
@@ -4634,12 +4948,13 @@ describe("LayoutEngine", () => {
           windowIds: ["target", "moved"],
         },
       ],
+      activityId: activity,
       desktopId: "desktop-1",
       outputId: "DP-1",
       viewportOffset: -52,
     });
     expect(edit && engine.rollbackStackEdit(edit.rollback)).toBe(true);
-    expect(engine.snapshot(output, desktop)).toEqual(before);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(before);
   });
 
   it("rejects invalid and ineffective window reinsertions without mutation", () => {
@@ -4660,18 +4975,20 @@ describe("LayoutEngine", () => {
           index: 0,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
     });
     engine.manageWindow({
       columnId: columnId("other"),
+      activityId: activity,
       desktopId: otherDesktop,
       outputId: output,
       width: { kind: "fixed", value: 300 },
       windowId: windowId("other-window"),
     });
-    const before = engine.snapshot(output, desktop);
-    const otherBefore = engine.snapshot(output, otherDesktop);
+    const before = engine.snapshot(output, desktop, activity);
+    const otherBefore = engine.snapshot(output, otherDesktop, activity);
 
     expect(
       engine.reinsertWindow(windowId("window-a"), {
@@ -4709,8 +5026,10 @@ describe("LayoutEngine", () => {
         null as unknown as Parameters<LayoutEngine["reinsertWindow"]>[1],
       ),
     ).toBeNull();
-    expect(engine.snapshot(output, desktop)).toEqual(before);
-    expect(engine.snapshot(output, otherDesktop)).toEqual(otherBefore);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(before);
+    expect(engine.snapshot(output, otherDesktop, activity)).toEqual(
+      otherBefore,
+    );
   });
 
   it("rejects reinsertion from an inactive column", () => {
@@ -4740,10 +5059,11 @@ describe("LayoutEngine", () => {
           index: 1,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
     });
-    const before = engine.snapshot(output, desktop);
+    const before = engine.snapshot(output, desktop, activity);
 
     expect(
       engine.reinsertWindow(windowId("moved"), {
@@ -4751,7 +5071,7 @@ describe("LayoutEngine", () => {
         targetWindowId: windowId("source-peer"),
       }),
     ).toBeNull();
-    expect(engine.snapshot(output, desktop)).toEqual(before);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(before);
   });
 
   it("handles every same-stack source, target, and edge combination", () => {
@@ -4780,10 +5100,11 @@ describe("LayoutEngine", () => {
                 index: 0,
               },
             ],
+            activityId: activity,
             desktopId: desktop,
             outputId: output,
           });
-          const before = engine.snapshot(output, desktop);
+          const before = engine.snapshot(output, desktop, activity);
           const expected = [...ids];
           expected.splice(sourceIndex, 1);
           const targetIndexAfterRemoval = expected.indexOf(target);
@@ -4797,14 +5118,14 @@ describe("LayoutEngine", () => {
 
           if (expected.every((id, index) => id === ids[index])) {
             expect(edit).toBeNull();
-            expect(engine.snapshot(output, desktop)).toEqual(before);
+            expect(engine.snapshot(output, desktop, activity)).toEqual(before);
           } else {
             expect(edit?.kind).toBe("reorder");
             expect(
-              engine.snapshot(output, desktop).columns[0]?.windowIds,
+              engine.snapshot(output, desktop, activity).columns[0]?.windowIds,
             ).toEqual(expected);
             expect(edit && engine.rollbackStackEdit(edit.rollback)).toBe(true);
-            expect(engine.snapshot(output, desktop)).toEqual(before);
+            expect(engine.snapshot(output, desktop, activity)).toEqual(before);
           }
         }
       }
@@ -4838,6 +5159,7 @@ describe("LayoutEngine", () => {
           index: 1,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
     });
@@ -4847,7 +5169,7 @@ describe("LayoutEngine", () => {
     });
 
     expect(edit?.kind).toBe("insert");
-    expect(engine.snapshot(output, desktop)).toMatchObject({
+    expect(engine.snapshot(output, desktop, activity)).toMatchObject({
       activeColumnId: "destination",
       columns: [
         {
@@ -4916,11 +5238,12 @@ describe("LayoutEngine", () => {
           index: 3,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       viewportOffset: -91,
     });
-    const before = engine.snapshot(output, desktop);
+    const before = engine.snapshot(output, desktop, activity);
     const edit = engine.reinsertWindowAtColumnBoundary(
       windowId("moved"),
       { position: "after", targetColumnId: columnId("target") },
@@ -4929,7 +5252,7 @@ describe("LayoutEngine", () => {
     );
 
     expect(edit?.kind).toBe("reorder");
-    expect(engine.snapshot(output, desktop)).toEqual({
+    expect(engine.snapshot(output, desktop, activity)).toEqual({
       ...before,
       columns: [
         before.columns[0],
@@ -4939,7 +5262,7 @@ describe("LayoutEngine", () => {
       ],
     });
     expect(edit && engine.rollbackStackEdit(edit.rollback)).toBe(true);
-    expect(engine.snapshot(output, desktop)).toEqual(before);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(before);
   });
 
   it.each([
@@ -5016,18 +5339,19 @@ describe("LayoutEngine", () => {
             index: 2,
           },
         ],
+        activityId: activity,
         desktopId: desktop,
         outputId: output,
         viewportOffset: 117,
       });
-      const before = engine.snapshot(output, desktop);
+      const before = engine.snapshot(output, desktop, activity);
       const edit = engine.reinsertWindowAtColumnBoundary(
         windowId("moved"),
         { position, targetColumnId: columnId(targetColumn) },
         columnId("new"),
         "tabbed",
       );
-      const after = engine.snapshot(output, desktop);
+      const after = engine.snapshot(output, desktop, activity);
 
       expect(edit?.kind).toBe("extract");
       expect(after.activeColumnId).toBe("new");
@@ -5057,7 +5381,7 @@ describe("LayoutEngine", () => {
         before.columns[2],
       );
       expect(edit && engine.rollbackStackEdit(edit.rollback)).toBe(true);
-      expect(engine.snapshot(output, desktop)).toEqual(before);
+      expect(engine.snapshot(output, desktop, activity)).toEqual(before);
     },
   );
 
@@ -5088,10 +5412,11 @@ describe("LayoutEngine", () => {
           index: 1,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
     });
-    const activeBefore = engine.snapshot(output, desktop);
+    const activeBefore = engine.snapshot(output, desktop, activity);
 
     expect(
       engine.reinsertWindowAtColumnBoundary(
@@ -5107,10 +5432,10 @@ describe("LayoutEngine", () => {
         columnId("target"),
       ),
     ).toBeNull();
-    expect(engine.snapshot(output, desktop)).toEqual(activeBefore);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(activeBefore);
 
     expect(engine.activateWindow(windowId("target-window"))).toBe(true);
-    const inactiveBefore = engine.snapshot(output, desktop);
+    const inactiveBefore = engine.snapshot(output, desktop, activity);
     expect(
       engine.reinsertWindowAtColumnBoundary(
         windowId("moved"),
@@ -5118,7 +5443,7 @@ describe("LayoutEngine", () => {
         columnId("new"),
       ),
     ).toBeNull();
-    expect(engine.snapshot(output, desktop)).toEqual(inactiveBefore);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(inactiveBefore);
 
     const singleton = new LayoutEngine();
     singleton.restoreColumns({
@@ -5145,10 +5470,11 @@ describe("LayoutEngine", () => {
           index: 1,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
     });
-    const singletonBefore = singleton.snapshot(output, desktop);
+    const singletonBefore = singleton.snapshot(output, desktop, activity);
 
     expect(
       singleton.reinsertWindowAtColumnBoundary(
@@ -5164,7 +5490,9 @@ describe("LayoutEngine", () => {
         columnId("unused"),
       ),
     ).toBeNull();
-    expect(singleton.snapshot(output, desktop)).toEqual(singletonBefore);
+    expect(singleton.snapshot(output, desktop, activity)).toEqual(
+      singletonBefore,
+    );
   });
 
   it("commits a singleton transfer before a window in another context", () => {
@@ -5206,6 +5534,7 @@ describe("LayoutEngine", () => {
           index: 2,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       viewportOffset: 80,
@@ -5224,13 +5553,15 @@ describe("LayoutEngine", () => {
           index: 0,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: targetOutput,
       viewportOffset: -45,
     });
-    const sourceBefore = engine.snapshot(output, desktop);
-    const targetBefore = engine.snapshot(targetOutput, desktop);
+    const sourceBefore = engine.snapshot(output, desktop, activity);
+    const targetBefore = engine.snapshot(targetOutput, desktop, activity);
     const preview = engine.previewWindowTransferToWindow(windowId("moved"), {
+      activityId: activity,
       desktopId: desktop,
       outputId: targetOutput,
       position: "before",
@@ -5241,8 +5572,10 @@ describe("LayoutEngine", () => {
       throw new Error("expected a target-window transfer preview");
     }
 
-    expect(engine.snapshot(output, desktop)).toEqual(sourceBefore);
-    expect(engine.snapshot(targetOutput, desktop)).toEqual(targetBefore);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(sourceBefore);
+    expect(engine.snapshot(targetOutput, desktop, activity)).toEqual(
+      targetBefore,
+    );
     expect(preview.sourceLayout).toEqual({
       activeColumnId: "source-right",
       columns: [
@@ -5261,6 +5594,7 @@ describe("LayoutEngine", () => {
           windowIds: ["source-right-window"],
         },
       ],
+      activityId: activity,
       desktopId: "desktop-1",
       outputId: "DP-1",
       viewportOffset: 80,
@@ -5276,6 +5610,7 @@ describe("LayoutEngine", () => {
           windowIds: ["moved", "target-window"],
         },
       ],
+      activityId: activity,
       desktopId: "desktop-1",
       outputId: "HDMI-A-1",
       viewportOffset: -45,
@@ -5286,8 +5621,10 @@ describe("LayoutEngine", () => {
       true,
     );
     expect(engine.commitWindowTransfer(preview)).toBe(true);
-    expect(engine.snapshot(output, desktop)).toEqual(preview.sourceLayout);
-    expect(engine.snapshot(targetOutput, desktop)).toEqual(
+    expect(engine.snapshot(output, desktop, activity)).toEqual(
+      preview.sourceLayout,
+    );
+    expect(engine.snapshot(targetOutput, desktop, activity)).toEqual(
       preview.targetLayout,
     );
   });
@@ -5319,6 +5656,7 @@ describe("LayoutEngine", () => {
           index: 0,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       viewportOffset: 35,
@@ -5356,13 +5694,15 @@ describe("LayoutEngine", () => {
           index: 1,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: targetOutput,
       viewportOffset: -20,
     });
-    const sourceBefore = engine.snapshot(output, desktop);
-    const targetBefore = engine.snapshot(targetOutput, desktop);
+    const sourceBefore = engine.snapshot(output, desktop, activity);
+    const targetBefore = engine.snapshot(targetOutput, desktop, activity);
     const preview = engine.previewWindowTransferToWindow(windowId("moved"), {
+      activityId: activity,
       desktopId: desktop,
       outputId: targetOutput,
       position: "after",
@@ -5410,8 +5750,10 @@ describe("LayoutEngine", () => {
       ],
     });
     expect(engine.commitWindowTransfer(preview)).toBe(true);
-    expect(engine.snapshot(output, desktop)).toEqual(preview.sourceLayout);
-    expect(engine.snapshot(targetOutput, desktop)).toEqual(
+    expect(engine.snapshot(output, desktop, activity)).toEqual(
+      preview.sourceLayout,
+    );
+    expect(engine.snapshot(targetOutput, desktop, activity)).toEqual(
       preview.targetLayout,
     );
   });
@@ -5444,19 +5786,22 @@ describe("LayoutEngine", () => {
           index: 1,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
     });
     engine.manageWindow({
       columnId: columnId("target"),
+      activityId: activity,
       desktopId: desktop,
       outputId: targetOutput,
       width: { kind: "fixed", value: 450 },
       windowId: windowId("target-window"),
     });
-    const sourceBefore = engine.snapshot(output, desktop);
-    const targetBefore = engine.snapshot(targetOutput, desktop);
+    const sourceBefore = engine.snapshot(output, desktop, activity);
+    const targetBefore = engine.snapshot(targetOutput, desktop, activity);
     const request = {
+      activityId: activity,
       desktopId: desktop,
       outputId: targetOutput,
       position: "before" as const,
@@ -5496,8 +5841,10 @@ describe("LayoutEngine", () => {
         >[1],
       ),
     ).toBeNull();
-    expect(engine.snapshot(output, desktop)).toEqual(sourceBefore);
-    expect(engine.snapshot(targetOutput, desktop)).toEqual(targetBefore);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(sourceBefore);
+    expect(engine.snapshot(targetOutput, desktop, activity)).toEqual(
+      targetBefore,
+    );
   });
 
   it("consumes a target-window preview when either context is stale", () => {
@@ -5506,6 +5853,7 @@ describe("LayoutEngine", () => {
 
     engine.manageWindow({
       columnId: columnId("source"),
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       width: { kind: "fixed", value: 300 },
@@ -5514,12 +5862,14 @@ describe("LayoutEngine", () => {
     engine.activateWindow(windowId("moved"));
     engine.manageWindow({
       columnId: columnId("target"),
+      activityId: activity,
       desktopId: desktop,
       outputId: targetOutput,
       width: { kind: "fixed", value: 420 },
       windowId: windowId("target-window"),
     });
     const preview = engine.previewWindowTransferToWindow(windowId("moved"), {
+      activityId: activity,
       desktopId: desktop,
       outputId: targetOutput,
       position: "after",
@@ -5530,13 +5880,17 @@ describe("LayoutEngine", () => {
       throw new Error("expected a target-window transfer preview");
     }
 
-    expect(engine.setViewportOffset(targetOutput, desktop, 70)).toBe(true);
-    const sourceBefore = engine.snapshot(output, desktop);
-    const targetChanged = engine.snapshot(targetOutput, desktop);
+    expect(engine.setViewportOffset(targetOutput, desktop, activity, 70)).toBe(
+      true,
+    );
+    const sourceBefore = engine.snapshot(output, desktop, activity);
+    const targetChanged = engine.snapshot(targetOutput, desktop, activity);
     expect(engine.commitWindowTransfer(preview)).toBe(false);
     expect(engine.commitWindowTransfer(preview)).toBe(false);
-    expect(engine.snapshot(output, desktop)).toEqual(sourceBefore);
-    expect(engine.snapshot(targetOutput, desktop)).toEqual(targetChanged);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(sourceBefore);
+    expect(engine.snapshot(targetOutput, desktop, activity)).toEqual(
+      targetChanged,
+    );
   });
 
   function createColumnBoundaryTransferFixture(): {
@@ -5579,6 +5933,7 @@ describe("LayoutEngine", () => {
           index: 1,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: output,
       viewportOffset: 64,
@@ -5607,6 +5962,7 @@ describe("LayoutEngine", () => {
           index: 1,
         },
       ],
+      activityId: activity,
       desktopId: desktop,
       outputId: targetOutput,
       viewportOffset: -90,
@@ -5621,12 +5977,13 @@ describe("LayoutEngine", () => {
 
   it("transfers an active stack member into an interior destination boundary", () => {
     const { engine, targetOutput } = createColumnBoundaryTransferFixture();
-    const sourceBefore = engine.snapshot(output, desktop);
-    const targetBefore = engine.snapshot(targetOutput, desktop);
+    const sourceBefore = engine.snapshot(output, desktop, activity);
+    const targetBefore = engine.snapshot(targetOutput, desktop, activity);
     const preview = engine.previewWindowTransferToColumnBoundary(
       windowId("moved"),
       {
         columnId: columnId("target-inserted"),
+        activityId: activity,
         desktopId: desktop,
         outputId: targetOutput,
         position: "before",
@@ -5639,8 +5996,10 @@ describe("LayoutEngine", () => {
       throw new Error("expected a column-boundary transfer preview");
     }
 
-    expect(engine.snapshot(output, desktop)).toEqual(sourceBefore);
-    expect(engine.snapshot(targetOutput, desktop)).toEqual(targetBefore);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(sourceBefore);
+    expect(engine.snapshot(targetOutput, desktop, activity)).toEqual(
+      targetBefore,
+    );
     expect(preview.sourceLayout.columns).toEqual([
       sourceBefore.columns[0],
       {
@@ -5677,8 +6036,10 @@ describe("LayoutEngine", () => {
     ).toBe(true);
     expect(Object.isFrozen(preview.targetLayout.columns[1]?.width)).toBe(true);
     expect(engine.commitWindowTransfer(preview)).toBe(true);
-    expect(engine.snapshot(output, desktop)).toEqual(preview.sourceLayout);
-    expect(engine.snapshot(targetOutput, desktop)).toEqual(
+    expect(engine.snapshot(output, desktop, activity)).toEqual(
+      preview.sourceLayout,
+    );
+    expect(engine.snapshot(targetOutput, desktop, activity)).toEqual(
       preview.targetLayout,
     );
     expect(engine.commitWindowTransfer(preview)).toBe(false);
@@ -5688,13 +6049,14 @@ describe("LayoutEngine", () => {
     const { engine, targetOutput } = createColumnBoundaryTransferFixture();
     const request = {
       columnId: columnId("target-inserted"),
+      activityId: activity,
       desktopId: desktop,
       outputId: targetOutput,
       position: "after" as const,
       targetColumnId: columnId("target-left"),
     };
-    const sourceBefore = engine.snapshot(output, desktop);
-    const targetBefore = engine.snapshot(targetOutput, desktop);
+    const sourceBefore = engine.snapshot(output, desktop, activity);
+    const targetBefore = engine.snapshot(targetOutput, desktop, activity);
     const invalid = [
       { id: windowId("unknown"), target: request },
       { id: windowId("source-passive-window"), target: request },
@@ -5732,8 +6094,10 @@ describe("LayoutEngine", () => {
       ).toBeNull();
     }
 
-    expect(engine.snapshot(output, desktop)).toEqual(sourceBefore);
-    expect(engine.snapshot(targetOutput, desktop)).toEqual(targetBefore);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(sourceBefore);
+    expect(engine.snapshot(targetOutput, desktop, activity)).toEqual(
+      targetBefore,
+    );
 
     const preview = engine.previewWindowTransferToColumnBoundary(
       windowId("moved"),
@@ -5749,12 +6113,16 @@ describe("LayoutEngine", () => {
         (column) => column.id === "target-inserted",
       )?.presentation,
     ).toBe("stacked");
-    expect(engine.setViewportOffset(targetOutput, desktop, 70)).toBe(true);
-    const sourceUnchanged = engine.snapshot(output, desktop);
-    const targetChanged = engine.snapshot(targetOutput, desktop);
+    expect(engine.setViewportOffset(targetOutput, desktop, activity, 70)).toBe(
+      true,
+    );
+    const sourceUnchanged = engine.snapshot(output, desktop, activity);
+    const targetChanged = engine.snapshot(targetOutput, desktop, activity);
     expect(engine.commitWindowTransfer(preview)).toBe(false);
     expect(engine.commitWindowTransfer(preview)).toBe(false);
-    expect(engine.snapshot(output, desktop)).toEqual(sourceUnchanged);
-    expect(engine.snapshot(targetOutput, desktop)).toEqual(targetChanged);
+    expect(engine.snapshot(output, desktop, activity)).toEqual(sourceUnchanged);
+    expect(engine.snapshot(targetOutput, desktop, activity)).toEqual(
+      targetChanged,
+    );
   });
 });

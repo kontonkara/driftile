@@ -8,12 +8,13 @@ import type {
 import {
   encodeLayoutPersistence,
   LAYOUT_PERSISTENCE_FORMAT,
+  LAYOUT_PERSISTENCE_LEGACY_CURRENT_ACTIVITY_ID,
   LAYOUT_PERSISTENCE_LIMITS,
   LAYOUT_PERSISTENCE_VERSION,
-  type LayoutPersistenceV3,
+  type LayoutPersistenceV4,
   type PersistedColumnMemberV1,
-  type PersistedContextV3,
-  type PersistedFloatingWindowV3,
+  type PersistedContextV4,
+  type PersistedFloatingWindowV4,
   type PersistedOutputV1,
   type PersistedRectV1,
   type PersistedRestoreBaselineV1,
@@ -22,11 +23,13 @@ import {
 } from "./layout-persistence";
 
 export interface LayoutPersistenceCaptureContext {
+  readonly activityId: string;
   readonly key: string;
   readonly layout: LayoutContextSnapshot;
 }
 
 export interface LayoutPersistenceCaptureFloatingWindow {
+  readonly activityId: string;
   readonly liveId: string;
   readonly placement: DetachedWindowPlacement;
 }
@@ -101,13 +104,22 @@ export function captureLayoutPersistence(
       invalid("layout context keys must be non-empty and unique");
     }
 
+    requireLiveActivityId(context.activityId);
+
+    if (String(context.layout.activityId) !== context.activityId) {
+      invalid("a captured context activity must match its layout snapshot");
+    }
+
     const identity = contextIdentity(
       String(context.layout.outputId),
       String(context.layout.desktopId),
+      context.activityId,
     );
 
     if (tiledPositionsByContext.has(identity)) {
-      invalid("an output and desktop can contain only one layout context");
+      invalid(
+        "an output, desktop, and activity can contain only one layout context",
+      );
     }
 
     const columnIds = new Set<ColumnId>();
@@ -151,7 +163,7 @@ export function captureLayoutPersistence(
   const outputs = new Map<string, PersistedOutputV1>();
   const windows = new Map<string, PersistedWindowV1>();
   const ownedWindowIds = new Set<string>();
-  const contexts: PersistedContextV3[] = [];
+  const contexts: PersistedContextV4[] = [];
 
   for (const context of input.contexts) {
     const outputName = String(context.layout.outputId);
@@ -164,6 +176,7 @@ export function captureLayoutPersistence(
 
     contexts.push({
       activeColumnIndex,
+      activityId: context.activityId,
       columns: context.layout.columns.map((column) => {
         const heights = column.windowHeights;
         const selectedMemberIndex = column.windowIds.indexOf(
@@ -219,11 +232,17 @@ export function captureLayoutPersistence(
     });
   }
 
-  const floatingWindows: PersistedFloatingWindowV3[] = [];
+  const floatingWindows: PersistedFloatingWindowV4[] = [];
 
   for (const floating of input.floatingWindows) {
     const placement = floating.placement;
     const liveId = floating.liveId;
+
+    requireLiveActivityId(floating.activityId);
+
+    if (String(placement.activityId) !== floating.activityId) {
+      invalid("a floating activity must match its detached placement");
+    }
 
     if (String(placement.windowId) !== liveId) {
       invalid("a floating registry key must match its placement window ID");
@@ -233,11 +252,16 @@ export function captureLayoutPersistence(
     registerOutput(outputName, liveOutputs, outputs);
     registerWindow(liveId, liveWindows, ownedWindowIds, windows);
     const positions = tiledPositionsByContext.get(
-      contextIdentity(outputName, String(placement.desktopId)),
+      contextIdentity(
+        outputName,
+        String(placement.desktopId),
+        floating.activityId,
+      ),
     );
     const anchors = survivingWindowAnchors(placement, positions);
 
     floatingWindows.push({
+      activityId: floating.activityId,
       anchor: {
         columnIndex: placement.columnIndex,
         columnPresentation: placement.columnPresentation,
@@ -254,7 +278,7 @@ export function captureLayoutPersistence(
     });
   }
 
-  const state: LayoutPersistenceV3 = {
+  const state: LayoutPersistenceV4 = {
     contexts,
     floatingWindows,
     format: LAYOUT_PERSISTENCE_FORMAT,
@@ -581,8 +605,35 @@ function nullableString(value: string | null): string | undefined {
   return value === null ? undefined : value;
 }
 
-function contextIdentity(outputId: string, desktopId: string): string {
-  return `${String(outputId.length)}:${outputId}${desktopId}`;
+function contextIdentity(
+  outputId: string,
+  desktopId: string,
+  activityId: string,
+): string {
+  return `${String(outputId.length)}:${outputId}${String(desktopId.length)}:${desktopId}${activityId}`;
+}
+
+function requireLiveActivityId(activityId: string): void {
+  if (
+    activityId.length === 0 ||
+    activityId.length > LAYOUT_PERSISTENCE_LIMITS.identifierCharacters ||
+    containsControlCharacter(activityId) ||
+    activityId === LAYOUT_PERSISTENCE_LEGACY_CURRENT_ACTIVITY_ID
+  ) {
+    invalid("captured activity IDs must identify a live activity");
+  }
+}
+
+function containsControlCharacter(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+
+    if (code <= 31 || code === 127) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function invalid(message: string): never {

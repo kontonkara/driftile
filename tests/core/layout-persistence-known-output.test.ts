@@ -11,7 +11,7 @@ import type { LayoutPersistenceHydrationInput } from "../../src/core/layout-pers
 import {
   LAYOUT_PERSISTENCE_FORMAT,
   LAYOUT_PERSISTENCE_VERSION,
-  type LayoutPersistenceV3,
+  type LayoutPersistenceV4,
   type PersistedOutputV1,
 } from "../../src/core/layout-persistence";
 
@@ -19,6 +19,7 @@ const historicalReturned = output("historical-returned", "DP-1", "panel-a");
 const historicalOther = output("historical-other", "HDMI-A-1", "panel-b");
 const currentReturned = output("current-returned", "DP-3", "panel-a");
 const currentOther = output("current-other", "HDMI-A-1", "panel-b");
+const activityId = "activity-1";
 
 describe("known-output layout persistence hydration", () => {
   it("restores only the returned output across a connector rename", () => {
@@ -41,9 +42,11 @@ describe("known-output layout persistence hydration", () => {
       value: {
         contexts: [
           {
-            key: "DP-3\u0000desktop-1",
+            activityId,
+            key: "DP-3\u0000desktop-1\u0000activity-1",
             layout: {
               activeColumnId: "column:live-terminal",
+              activityId,
               columns: [
                 {
                   id: "column:live-editor",
@@ -74,7 +77,7 @@ describe("known-output layout persistence hydration", () => {
         fullWidthRestores: [
           {
             columnId: "column:live-terminal",
-            contextKey: "DP-3\u0000desktop-1",
+            contextKey: "DP-3\u0000desktop-1\u0000activity-1",
             viewportOffset: -270,
             width: { kind: "fixed", value: 840 },
           },
@@ -113,7 +116,7 @@ describe("known-output layout persistence hydration", () => {
 
   it("reports a safe no-op when the returned output has no historical contexts", () => {
     const historical = representativeSnapshot();
-    const state: LayoutPersistenceV3 = {
+    const state: LayoutPersistenceV4 = {
       ...historical.state,
       contexts: historical.state.contexts.filter(
         (context) => context.outputKey === historicalOther.key,
@@ -197,7 +200,7 @@ describe("known-output layout persistence hydration", () => {
 
   it("rejects weak and ambiguous cross-session window identities", () => {
     const historical = representativeSnapshot();
-    const weak: LayoutPersistenceV3 = {
+    const weak: LayoutPersistenceV4 = {
       ...historical.state,
       windows: historical.state.windows.map((window) =>
         window.key === "editor"
@@ -214,7 +217,7 @@ describe("known-output layout persistence hydration", () => {
       "unresolved-live-window",
     );
 
-    const ambiguousState: LayoutPersistenceV3 = {
+    const ambiguousState: LayoutPersistenceV4 = {
       ...historical.state,
       windows: historical.state.windows.map((window) =>
         window.key === "editor" || window.key === "chat"
@@ -271,7 +274,7 @@ describe("known-output layout persistence hydration", () => {
 
   it("keeps persisted identity ambiguity global across outputs", () => {
     const historical = representativeSnapshot();
-    const state: LayoutPersistenceV3 = {
+    const state: LayoutPersistenceV4 = {
       ...historical.state,
       windows: historical.state.windows.map((window) =>
         window.key === "other-window"
@@ -295,7 +298,7 @@ describe("known-output layout persistence hydration", () => {
 
   it("keeps strong persisted projections global across outputs", () => {
     const historical = representativeSnapshot();
-    const state: LayoutPersistenceV3 = {
+    const state: LayoutPersistenceV4 = {
       ...historical.state,
       windows: historical.state.windows.map((window) => {
         if (window.key === "editor") {
@@ -340,7 +343,7 @@ describe("known-output layout persistence hydration", () => {
 
   it("reserves exact identities globally before planning the returned subset", () => {
     const historical = representativeSnapshot();
-    const state: LayoutPersistenceV3 = {
+    const state: LayoutPersistenceV4 = {
       ...historical.state,
       windows: historical.state.windows.map((window) =>
         window.key === "other-window"
@@ -380,7 +383,7 @@ describe("known-output layout persistence hydration", () => {
 
   it("rejects restore baselines anywhere in a historical snapshot", () => {
     const historical = representativeSnapshot();
-    const state: LayoutPersistenceV3 = {
+    const state: LayoutPersistenceV4 = {
       ...historical.state,
       contexts: historical.state.contexts.map((context) => {
         if (context.outputKey !== historicalOther.key) {
@@ -416,10 +419,11 @@ describe("known-output layout persistence hydration", () => {
 
   it("rejects floating ownership on the returned historical output", () => {
     const historical = representativeSnapshot();
-    const state: LayoutPersistenceV3 = {
+    const state: LayoutPersistenceV4 = {
       ...historical.state,
       floatingWindows: [
         {
+          activityId,
           anchor: {
             columnIndex: 1,
             columnPresentation: "stacked",
@@ -545,6 +549,7 @@ function representativeSnapshot(): LayoutPersistenceCatalogSnapshot {
       contexts: [
         {
           activeColumnIndex: 1,
+          activityId,
           columns: [
             {
               members: [
@@ -576,6 +581,7 @@ function representativeSnapshot(): LayoutPersistenceCatalogSnapshot {
         },
         {
           activeColumnIndex: 0,
+          activityId,
           columns: [
             {
               members: [{ windowKey: "other-window" }],
@@ -618,6 +624,8 @@ function representativeSnapshot(): LayoutPersistenceCatalogSnapshot {
 
 function representativeInput(): LayoutPersistenceHydrationInput {
   return {
+    activities: [{ id: activityId }],
+    currentActivityId: activityId,
     desktops: [{ id: "desktop-1" }, { id: "desktop-2" }],
     outputs: [liveOutput(currentReturned), liveOutput(currentOther)],
     windows: [
@@ -687,7 +695,7 @@ function persistedWindow(
   key: string,
   liveId: string,
   sessionMatch: NonNullable<
-    LayoutPersistenceV3["windows"][number]["sessionMatch"]
+    LayoutPersistenceV4["windows"][number]["sessionMatch"]
   >,
 ) {
   return { key, liveId, sessionMatch };
@@ -705,7 +713,14 @@ function liveWindow(
   },
   eligible = true,
 ) {
-  return { desktopId, eligible, liveId, outputName, ...identity };
+  return {
+    activityIds: [activityId],
+    desktopId,
+    eligible,
+    liveId,
+    outputName,
+    ...identity,
+  };
 }
 
 function expectFailure(

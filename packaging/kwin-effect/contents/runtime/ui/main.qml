@@ -102,9 +102,34 @@ QtObject {
     }
 
     function liveSnapshot() {
+        const fallbackActivityId = "driftile-default-activity";
+        const activityIds = [];
         const outputs = [];
         const desktopIds = [];
         const windowIds = [];
+        const workspaceActivityIds = KWin.Workspace.activities;
+        let currentActivityId = fallbackActivityId;
+
+        if (workspaceActivityIds) {
+            for (const activity of workspaceActivityIds) {
+                const candidate = String(activity);
+                if (candidate.length > 0) {
+                    activityIds.push(candidate);
+                }
+            }
+        }
+
+        if (KWin.Workspace.currentActivity !== undefined
+                && KWin.Workspace.currentActivity !== null
+                && String(KWin.Workspace.currentActivity).length > 0) {
+            currentActivityId = String(KWin.Workspace.currentActivity);
+        } else if (activityIds.length === 1) {
+            currentActivityId = activityIds[0];
+        }
+
+        if (activityIds.length === 0) {
+            activityIds.push(currentActivityId);
+        }
 
         for (const screen of KWin.Workspace.screens) {
             const output = {
@@ -125,6 +150,8 @@ QtObject {
         }
 
         return {
+            activityIds,
+            currentActivityId,
             desktopIds,
             outputs,
             windowIds

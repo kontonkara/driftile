@@ -43,6 +43,8 @@ function createWindow(overrides: Partial<KWinWindow> = {}): KWinWindow {
   const desktop: KWinVirtualDesktop = { id: "desktop-1" };
 
   return {
+    activities: [],
+    activitiesChanged: new Signal<[]>(),
     clientGeometry: { height: 600, width: 800, x: 0, y: 0 },
     clientGeometryChanged: new Signal<[oldGeometry: KWinRect]>(),
     decorationChanged: new Signal<[]>(),
@@ -131,11 +133,35 @@ function createWorkspace(
 describe("normalizeWindow", () => {
   it("normalizes a regular window", () => {
     expect(normalizeWindow(createWindow())).toEqual({
+      activityIds: [],
       desktopIds: ["desktop-1"],
       id: "window-1",
       kind: "normal",
       outputId: "DP-1",
     });
+  });
+
+  it("normalizes explicit activity memberships", () => {
+    expect(
+      normalizeWindow(
+        createWindow({ activities: ["activity-1", "activity-2"] }),
+      )?.activityIds,
+    ).toEqual(["activity-1", "activity-2"]);
+  });
+
+  it("supports hosts without window activity APIs", () => {
+    const source = createWindow();
+    Object.defineProperties(source, {
+      activities: { configurable: true, value: undefined },
+      activitiesChanged: { configurable: true, value: undefined },
+    });
+
+    expect(normalizeWindow(source)?.activityIds).toEqual([]);
+    expect(() => {
+      const observer = new WindowObserver(createWorkspace([source]));
+      observer.start();
+      observer.stop();
+    }).not.toThrow();
   });
 
   it("keeps dialogs observable", () => {
@@ -268,6 +294,7 @@ describe("WindowObserver", () => {
 
     expect(observer.snapshot()).toEqual([
       {
+        activityIds: [],
         desktopIds: ["desktop-1"],
         id: "window-1",
         kind: "normal",
@@ -283,6 +310,34 @@ describe("WindowObserver", () => {
 
     expect(observer.snapshot()[0]?.desktopIds).toEqual(["desktop-2"]);
     expect(changed).toEqual(["window-1:context", "window-1:context"]);
+  });
+
+  it("publishes activity membership changes as context changes", () => {
+    const source = createWindow({ activities: ["activity-1"] });
+    const activitiesChanged = source.activitiesChanged as Signal<[]>;
+    const changed: string[] = [];
+    const observer = new WindowObserver(createWorkspace([source]), {
+      changed: (windowId, cause) => changed.push(`${windowId}:${cause}`),
+    });
+
+    observer.start();
+    expect(activitiesChanged.size).toBe(1);
+
+    Object.defineProperty(source, "activities", {
+      configurable: true,
+      value: ["activity-2", "activity-3"],
+    });
+    activitiesChanged.emit();
+    activitiesChanged.emit();
+
+    expect(observer.snapshot()[0]?.activityIds).toEqual([
+      "activity-2",
+      "activity-3",
+    ]);
+    expect(changed).toEqual(["window-1:context"]);
+
+    observer.stop();
+    expect(activitiesChanged.size).toBe(0);
   });
 
   it("retains a temporarily all-desktop source until it returns", () => {

@@ -85,6 +85,14 @@ Rectangle {
             root.closeStaleOverview();
         }
 
+        function onCurrentActivityChanged() {
+            root.closeStaleOverview();
+        }
+
+        function onActivitiesChanged() {
+            root.closeStaleOverview();
+        }
+
         function onScreensChanged() {
             root.closeStaleOverview();
         }

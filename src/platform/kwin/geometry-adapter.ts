@@ -1,5 +1,5 @@
 import type { Point, Rect } from "../../core/geometry";
-import type { DesktopId, OutputId, WindowId } from "../../core/ids";
+import type { ActivityId, DesktopId, OutputId, WindowId } from "../../core/ids";
 import type { GeometryChange } from "../../core/reconcile";
 import type { KWinVirtualDesktop, KWinWindow, KWinWorkspace } from "./api";
 
@@ -11,6 +11,7 @@ export interface ContextGeometry {
 }
 
 export interface WindowContext {
+  readonly activityId?: ActivityId;
   readonly desktopId: DesktopId;
   readonly outputId: OutputId;
 }
@@ -106,7 +107,7 @@ export class KWinGeometryAdapter {
       if (
         window &&
         this.hasWriteAuthority(windowId, window) &&
-        isWindowInContext(window, context) &&
+        isWindowInContext(window, context, this.workspace.activities) &&
         isGeometryWritable(window)
       ) {
         frames.set(windowId, toRect(window.frameGeometry));
@@ -125,7 +126,7 @@ export class KWinGeometryAdapter {
     return Boolean(
       window &&
       this.hasWriteAuthority(windowId, window) &&
-      canApplyToWindow(window, frame, context),
+      canApplyToWindow(window, frame, context, this.workspace.activities),
     );
   }
 
@@ -146,7 +147,12 @@ export class KWinGeometryAdapter {
       if (
         !window ||
         !this.hasWriteAuthority(change.windowId, window) ||
-        !canApplyToWindow(window, change.frame, context)
+        !canApplyToWindow(
+          window,
+          change.frame,
+          context,
+          this.workspace.activities,
+        )
       ) {
         continue;
       }
@@ -200,6 +206,7 @@ export function hasGeometryAuthorityBlocker(window: KWinWindow): boolean {
 export function isWindowInContext(
   window: KWinWindow,
   context: WindowContext,
+  activities?: readonly string[],
 ): boolean {
   return (
     window.normalWindow &&
@@ -208,8 +215,25 @@ export function isWindowInContext(
     !window.onAllDesktops &&
     window.output?.name === context.outputId &&
     window.desktops.length === 1 &&
-    window.desktops[0]?.id === context.desktopId
+    window.desktops[0]?.id === context.desktopId &&
+    windowMatchesActivity(window, context.activityId, activities)
   );
+}
+
+function windowMatchesActivity(
+  window: KWinWindow,
+  activity: ActivityId | undefined,
+  activities: readonly string[] | undefined,
+): boolean {
+  if (activity === undefined || window.activities === undefined) {
+    return true;
+  }
+
+  if (window.activities.length === 1) {
+    return window.activities[0] === activity;
+  }
+
+  return window.activities.length === 0 && (activities?.length ?? 0) <= 1;
 }
 
 export function respectsSizeConstraints(
@@ -313,9 +337,10 @@ function canApplyToWindow(
   window: KWinWindow,
   frame: Rect,
   context: WindowContext,
+  activities: readonly string[] | undefined,
 ): boolean {
   return (
-    isWindowInContext(window, context) &&
+    isWindowInContext(window, context, activities) &&
     isGeometryWritable(window) &&
     respectsSizeConstraints(frame, window)
   );

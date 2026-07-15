@@ -187,6 +187,8 @@ describe("overview effect package", () => {
     expect(scene).toContain("KWin.SceneView.screen");
     expect(scene).toContain("KWin.SceneView.currentDesktop");
     expect(scene).toContain("for (const desktop of KWin.Workspace.desktops)");
+    expect(scene).toContain("function onCurrentActivityChanged()");
+    expect(scene).toContain("function onActivitiesChanged()");
     expect(scene).toContain("function onWindowAdded()");
     expect(scene).toContain("function onWindowRemoved()");
     expect(desktopCard).toContain("KWin.WindowModel");
@@ -859,6 +861,10 @@ describe("overview effect package", () => {
     expect(controller).toContain(
       "runtime.loadOverviewModel(document, liveSnapshot())",
     );
+    expect(controller).toContain("activityIds,");
+    expect(controller).toContain("currentActivityId,");
+    expect(controller).toContain("KWin.Workspace.activities");
+    expect(controller).toContain("KWin.Workspace.currentActivity");
     expect(controller).toContain("result.ok !== true");
     expect(controller).toContain("overviewModel = null");
   });
