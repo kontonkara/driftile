@@ -136,6 +136,11 @@ Their one-based index counts columns with a visible member and clamps past the
 end. A floating source switches directly to the selected tiled column; a
 rejected target leaves the previous focus layer unchanged.
 
+`driftile_move_column_to_index_1` through
+`driftile_move_column_to_index_9` move the active tiled column to a one-based
+structural position. An oversized position clamps to the last column. The
+current position, floating focus, and rejected geometry remain no-ops.
+
 The four preset actions retain the IDs
 `driftile_switch_preset_column_width`,
 `driftile_switch_preset_column_width_back`,

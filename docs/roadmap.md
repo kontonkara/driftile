@@ -1397,6 +1397,11 @@ Columns without a visible focus target do not consume an index. Selection can
 enter the tiled layer from a floating source without exposing intermediate
 focus, while rejection restores the previous layer and tab selection.
 
+Nine unbound direct move actions reorder the active tiled column to a one-based
+structural position, clamping past the final column. Members, width,
+presentation, and focus move together. Floating focus and rejected geometry
+leave the layout unchanged.
+
 ## Post-v1
 
 Add interaction and presentation features outside the frozen v1 scope without

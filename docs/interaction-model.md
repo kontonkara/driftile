@@ -125,6 +125,11 @@ clamp an oversized one-based index to the last such column. They enter the
 tiled layer directly from floating focus. Focus rejection restores the prior
 layer and tab selection.
 
+Nine unbound move actions place the active tiled column at a one-based
+structural index, clamped to the last column. The transaction retains the
+column's members, presentation, width, and focus; rejected geometry restores
+the previous order.
+
 The existing center-column action is contextual. With an active manually
 floating window, it centers each non-oversized dimension at the exact logical
 midpoint of the assigned output and desktop work area; an oversized dimension
