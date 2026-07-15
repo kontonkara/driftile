@@ -11,8 +11,20 @@ const metadata = JSON.parse(
   readonly [key: string]: unknown;
 };
 const main = readFileSync(new URL("contents/ui/main.qml", effectRoot), "utf8");
+const configuration = readFileSync(
+  new URL("contents/config/main.xml", effectRoot),
+  "utf8",
+);
+const configurationUi = readFileSync(
+  new URL("contents/ui/config.ui", effectRoot),
+  "utf8",
+);
 const controller = readFileSync(
   new URL("contents/runtime/ui/main.qml", effectRoot),
+  "utf8",
+);
+const touchpadGesture = readFileSync(
+  new URL("contents/runtime/ui/OverviewTouchpadGesture.qml", effectRoot),
   "utf8",
 );
 const reader = readFileSync(
@@ -27,10 +39,17 @@ const desktopCard = readFileSync(
   new URL("contents/runtime/ui/DesktopCard.qml", effectRoot),
   "utf8",
 );
-const qmlSources = [main, controller, reader, scene, desktopCard];
+const qmlSources = [
+  main,
+  controller,
+  touchpadGesture,
+  reader,
+  scene,
+  desktopCard,
+];
 
 describe("overview effect package", () => {
-  it("declares a disabled standalone KWin effect without configuration", () => {
+  it("declares a disabled standalone configurable KWin effect", () => {
     expect(metadata.KPackageStructure).toBe("KWin/Effect");
     expect(metadata.KPlugin).toMatchObject({
       Category: "Window Management",
@@ -40,8 +59,21 @@ describe("overview effect package", () => {
     });
     expect(metadata["X-Plasma-API"]).toBe("declarativescript");
     expect(metadata["X-Plasma-MainScript"]).toBe("ui/main.qml");
-    expect(metadata).not.toHaveProperty("X-KDE-ConfigModule");
+    expect(metadata["X-KDE-ConfigModule"]).toBe("kcm_kwin4_genericscripted");
     expect(metadata).not.toHaveProperty("X-KWin-Border-Activate");
+
+    const enabledEntry = configuration.match(
+      /<entry name="TouchpadGesture"[\s\S]*?<\/entry>/u,
+    )?.[0];
+    const fingerCountEntry = configuration.match(
+      /<entry name="TouchpadGestureFingerCount"[\s\S]*?<\/entry>/u,
+    )?.[0];
+    expect(enabledEntry).toContain("<default>true</default>");
+    expect(fingerCountEntry).toContain("<default>4</default>");
+    expect(fingerCountEntry).toContain("<min>3</min>");
+    expect(fingerCountEntry).toContain("<max>5</max>");
+    expect(configurationUi).toContain('name="kcfg_TouchpadGesture"');
+    expect(configurationUi).toContain('name="kcfg_TouchpadGestureFingerCount"');
   });
 
   it("registers one Meta+O toggle action and no screen edge", () => {
@@ -52,9 +84,116 @@ describe("overview effect package", () => {
     expect(main).not.toContain("ShortcutHandler");
   });
 
+  it("recreates one configured vertical touchpad gesture pair", () => {
+    const applySettings = controller.slice(
+      controller.indexOf("function applyTouchpadGestureSettings("),
+      controller.indexOf("function rebuildTouchpadGesture("),
+    );
+    const rebuild = controller.slice(
+      controller.indexOf("function rebuildTouchpadGesture("),
+      controller.indexOf("function openFromTouchpadGesture("),
+    );
+    const open = controller.slice(
+      controller.indexOf("function openFromTouchpadGesture("),
+      controller.indexOf("function closeFromTouchpadGesture("),
+    );
+    const close = controller.slice(
+      controller.indexOf("function closeFromTouchpadGesture("),
+      controller.indexOf("function activate("),
+    );
+
+    expect(main).toContain(
+      "readonly property bool configuredTouchpadGesture: touchpadGestureEnabledFromConfig()",
+    );
+    expect(main).toContain(
+      "readonly property int configuredTouchpadGestureFingerCount: touchpadGestureFingerCountFromConfig()",
+    );
+    expect(main).toContain("configuration.TouchpadGesture");
+    expect(main).toContain("configuration.TouchpadGestureFingerCount");
+    expect(main).toContain(
+      "controller.applyTouchpadGestureSettings(configuredTouchpadGesture,",
+    );
+    expect(main).toContain("configuredTouchpadGestureFingerCount);");
+    expect(main).toContain(
+      "onConfiguredTouchpadGestureChanged: syncTouchpadGestureSettings()",
+    );
+    expect(main).toContain(
+      "onConfiguredTouchpadGestureFingerCountChanged: syncTouchpadGestureSettings()",
+    );
+
+    expect(controller).toContain("property bool touchpadGestureEnabled: false");
+    expect(controller).toContain("property int touchpadGestureFingerCount: 4");
+    expect(controller).toMatch(
+      /readonly property Loader touchpadGestureLoader: Loader \{\s*active: false\s*\}/u,
+    );
+    expect(controller).toContain("target: touchpadGestureLoader.item");
+    expect(controller).toContain("controller.openFromTouchpadGesture()");
+    expect(controller).toContain("controller.closeFromTouchpadGesture()");
+
+    expect(applySettings).toContain("const nextEnabled = enabled === true;");
+    expect(applySettings).toContain("Number(fingerCount)");
+    expect(applySettings).toContain("numericFingerCount >= 3");
+    expect(applySettings).toContain("numericFingerCount <= 5");
+    expect(applySettings).toMatch(/\? numericFingerCount\s*: 4;/u);
+    expect(applySettings.match(/rebuildTouchpadGesture\(\)/gu)).toHaveLength(1);
+
+    expect(rebuild).toMatch(
+      /touchpadGestureLoader\.active = false;\s*touchpadGestureLoader\.source = "";/u,
+    );
+    expect(rebuild).toMatch(
+      /if \(!touchpadGestureEnabled\) \{\s*return;\s*\}/u,
+    );
+    expect(rebuild).toContain(
+      'touchpadGestureLoader.setSource("OverviewTouchpadGesture.qml", {',
+    );
+    expect(rebuild).toContain("fingerCount: touchpadGestureFingerCount");
+    expect(rebuild.indexOf("setSource(")).toBeGreaterThan(
+      rebuild.indexOf("if (!touchpadGestureEnabled)"),
+    );
+    expect(
+      rebuild.indexOf("touchpadGestureLoader.active = true"),
+    ).toBeGreaterThan(rebuild.indexOf("setSource("));
+
+    expect(open).toMatch(
+      /if \(active \|\| loading\) \{\s*return;\s*\}\s*activate\(\);/u,
+    );
+    expect(close).toMatch(
+      /if \(!active && !loading\) \{\s*return;\s*\}\s*deactivate\(\);/u,
+    );
+
+    expect(
+      touchpadGesture.match(/KWin\.SwipeGestureHandler \{/gu),
+    ).toHaveLength(2);
+    expect(touchpadGesture).toContain("required property int fingerCount");
+    expect(
+      touchpadGesture.match(
+        /deviceType: KWin\.SwipeGestureHandler\.Device\.Touchpad/gu,
+      ),
+    ).toHaveLength(2);
+    expect(
+      touchpadGesture.match(/fingerCount: root\.fingerCount/gu),
+    ).toHaveLength(2);
+    expect(touchpadGesture).toMatch(
+      /direction: KWin\.SwipeGestureHandler\.Direction\.Up[\s\S]*onActivated: root\.openRequested\(\)/u,
+    );
+    expect(touchpadGesture).toMatch(
+      /direction: KWin\.SwipeGestureHandler\.Direction\.Down[\s\S]*onActivated: root\.closeRequested\(\)/u,
+    );
+    expect(touchpadGesture).toContain(
+      'Component.onCompleted: console.info("[driftile-overview] touchpad-gesture lifecycle=created")',
+    );
+    expect(touchpadGesture).toContain(
+      'Component.onDestruction: console.info("[driftile-overview] touchpad-gesture lifecycle=destroyed")',
+    );
+    expect(touchpadGesture.match(/console\.info\(/gu)).toHaveLength(2);
+    expect(touchpadGesture).not.toMatch(
+      /onCancelled|onProgressChanged|\bprogress\s*:|ShortcutHandler|sequence\s*:|Timer/iu,
+    );
+  });
+
   it("keeps a fixed scene-effect proxy over the cache-busted controller", () => {
     expect(createHash("sha256").update(main, "utf8").digest("hex")).toBe(
-      "a56cf4d37cef8491473837985971d08114966be72160158317ad8f76cc9cb356",
+      "de09a17513c2d9ad036c5e6bcbe272bf66bff870809978847d62f515fb5ec2be",
     );
     expect(main).toContain("KWin.SceneEffect {");
     expect(main).toContain("Date.now().toString(36)");

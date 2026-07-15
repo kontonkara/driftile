@@ -11,6 +11,8 @@ KWin.SceneEffect {
     readonly property var controller: selectorLoader.item && selectorLoader.item.item
         ? selectorLoader.item.item
         : null
+    readonly property bool configuredTouchpadGesture: touchpadGestureEnabledFromConfig()
+    readonly property int configuredTouchpadGestureFingerCount: touchpadGestureFingerCountFromConfig()
 
     readonly property bool active: controller ? controller.active : false
     readonly property bool loading: controller ? controller.loading : false
@@ -18,6 +20,12 @@ KWin.SceneEffect {
 
     visible: controller ? controller.active : false
     delegate: controller ? controller.overviewDelegate : null
+
+    onControllerChanged: syncTouchpadGestureSettings()
+    onConfiguredTouchpadGestureChanged: syncTouchpadGestureSettings()
+    onConfiguredTouchpadGestureFingerCountChanged: syncTouchpadGestureSettings()
+
+    Component.onCompleted: syncTouchpadGestureSettings()
 
     function toggle() {
         if (controller) {
@@ -35,5 +43,22 @@ KWin.SceneEffect {
         if (controller) {
             controller.deactivate();
         }
+    }
+
+    function syncTouchpadGestureSettings() {
+        if (controller && typeof controller.applyTouchpadGestureSettings === "function") {
+            controller.applyTouchpadGestureSettings(configuredTouchpadGesture,
+                                                     configuredTouchpadGestureFingerCount);
+        }
+    }
+
+    function touchpadGestureEnabledFromConfig() {
+        const value = configuration ? configuration.TouchpadGesture : undefined;
+        return typeof value === "boolean" ? value : true;
+    }
+
+    function touchpadGestureFingerCountFromConfig() {
+        const value = configuration ? Number(configuration.TouchpadGestureFingerCount) : 4;
+        return Number.isFinite(value) && Math.floor(value) === value && value >= 3 && value <= 5 ? value : 4;
     }
 }

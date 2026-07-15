@@ -11,6 +11,8 @@ QtObject {
     property var overviewModel: null
     property int lastActivationAttemptId: 0
     property int pendingActivationAttemptId: 0
+    property bool touchpadGestureEnabled: false
+    property int touchpadGestureFingerCount: 4
     readonly property var overviewDelegate: Qt.createComponent("OverviewScene.qml")
 
     readonly property KWin.DBusCall rejectionOsdCall: KWin.DBusCall {
@@ -32,12 +34,79 @@ QtObject {
         onActivated: controller.toggle()
     }
 
+    readonly property Loader touchpadGestureLoader: Loader {
+        active: false
+    }
+
+    readonly property Connections touchpadGestureConnection: Connections {
+        ignoreUnknownSignals: true
+        target: touchpadGestureLoader.item
+
+        function onOpenRequested() {
+            controller.openFromTouchpadGesture()
+        }
+
+        function onCloseRequested() {
+            controller.closeFromTouchpadGesture()
+        }
+    }
+
     function toggle() {
         if (active || loading) {
             deactivate();
         } else {
             activate();
         }
+    }
+
+    function applyTouchpadGestureSettings(enabled, fingerCount) {
+        const nextEnabled = enabled === true;
+        const numericFingerCount = Number(fingerCount);
+        const nextFingerCount = Number.isFinite(numericFingerCount)
+                && Math.floor(numericFingerCount) === numericFingerCount
+                && numericFingerCount >= 3
+                && numericFingerCount <= 5
+            ? numericFingerCount
+            : 4;
+
+        if (nextEnabled === touchpadGestureEnabled
+                && nextFingerCount === touchpadGestureFingerCount) {
+            return;
+        }
+
+        touchpadGestureEnabled = nextEnabled;
+        touchpadGestureFingerCount = nextFingerCount;
+        rebuildTouchpadGesture();
+    }
+
+    function rebuildTouchpadGesture() {
+        touchpadGestureLoader.active = false;
+        touchpadGestureLoader.source = "";
+
+        if (!touchpadGestureEnabled) {
+            return;
+        }
+
+        touchpadGestureLoader.setSource("OverviewTouchpadGesture.qml", {
+            fingerCount: touchpadGestureFingerCount
+        });
+        touchpadGestureLoader.active = true;
+    }
+
+    function openFromTouchpadGesture() {
+        if (active || loading) {
+            return;
+        }
+
+        activate();
+    }
+
+    function closeFromTouchpadGesture() {
+        if (!active && !loading) {
+            return;
+        }
+
+        deactivate();
     }
 
     function activate() {

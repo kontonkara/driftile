@@ -32,7 +32,9 @@ const expectedRuntimeEntries = [
   "ui/main.qml",
 ];
 const expectedOverviewPackageEntries = [
+  "contents/config/main.xml",
   "contents/runtime/selector.qml",
+  "contents/ui/config.ui",
   "contents/ui/main.qml",
   "metadata.json",
 ];
@@ -41,6 +43,7 @@ const expectedOverviewRuntimeEntries = [
   "ui/DesktopCard.qml",
   "ui/LayoutStateReader.qml",
   "ui/OverviewScene.qml",
+  "ui/OverviewTouchpadGesture.qml",
   "ui/main.qml",
 ];
 const expectedTransitionPackageEntries = [
@@ -119,7 +122,7 @@ await verifyPackageMetadata(
   overviewPackageArtifact,
   resolve(rootDirectory, "packaging/kwin-effect/metadata.json"),
   {
-    forbidConfigModule: true,
+    configModule: "kcm_kwin4_genericscripted",
     packageStructure: "KWin/Effect",
     pluginId: overviewPluginId,
   },
@@ -145,6 +148,16 @@ await Promise.all([
     overviewPackageArtifact,
     "contents/ui/main.qml",
     resolve(rootDirectory, "packaging/kwin-effect/contents/ui/main.qml"),
+  ),
+  verifyArchivedSourceFile(
+    overviewPackageArtifact,
+    "contents/config/main.xml",
+    resolve(rootDirectory, "packaging/kwin-effect/contents/config/main.xml"),
+  ),
+  verifyArchivedSourceFile(
+    overviewPackageArtifact,
+    "contents/ui/config.ui",
+    resolve(rootDirectory, "packaging/kwin-effect/contents/ui/config.ui"),
   ),
   verifyArchivedSourceFile(
     transitionPackageArtifact,
@@ -237,7 +250,12 @@ await verifyKPackageInstalls([
     packageType: "KWin/Effect",
     pluginId: overviewPluginId,
     relativeInstallPath: `kwin/effects/${overviewPluginId}`,
-    requiredEntries: ["contents/ui/main.qml", "contents/runtime/selector.qml"],
+    requiredEntries: [
+      "contents/config/main.xml",
+      "contents/runtime/selector.qml",
+      "contents/ui/config.ui",
+      "contents/ui/main.qml",
+    ],
   },
   {
     artifact: transitionPackageArtifact,
@@ -303,7 +321,6 @@ async function verifyPackageMetadata(
   sourceMetadataPath,
   {
     configModule,
-    forbidConfigModule = false,
     mainScript = "ui/main.qml",
     packageStructure,
     plasmaApi = "declarativescript",
@@ -351,10 +368,6 @@ async function verifyPackageMetadata(
 
   if (metadata["X-Plasma-API"] !== plasmaApi) {
     throw new Error("KWin package metadata has an unexpected Plasma API");
-  }
-
-  if (forbidConfigModule && "X-KDE-ConfigModule" in metadata) {
-    throw new Error("overview effect metadata must not expose a config module");
   }
 
   if (
