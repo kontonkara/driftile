@@ -4583,16 +4583,25 @@ let
       verify_overview_effect_checkpoint() {
         local after_checkpoint
         local baseline_checkpoint
+        local firefox_checkpoint
+        local firefox_title=$4
         local journal_cursor
         local overview_keys
         local plasma_active
         local plasma_loaded
+        local xterm_title=$5
 
         if ! effect_is_available "$overview_plugin_id" \
           || ! wait_for_effect_loaded_state "$overview_plugin_id" false \
           || ! wait_for_shortcut_registration_state "$overview_shortcut" false; then
           overview_checkpoint_failure \
             "the installed overview was not available and disabled before loading"
+          return 1
+        fi
+
+        if ! wait_for_active "$xterm_title"; then
+          overview_checkpoint_failure \
+            "the ordered XWayland window was not active before the keyboard checkpoint"
           return 1
         fi
 
@@ -4635,9 +4644,9 @@ let
           return 1
         fi
 
-        if ! invoke_shortcut "$overview_shortcut" \
+        if ! request_physical_shortcut overview-open \
           || ! wait_for_effect_active_state "$overview_plugin_id" true; then
-          overview_checkpoint_failure "the KGlobalAccel action did not open the overview"
+          overview_checkpoint_failure "physical Meta+O did not open the overview"
           return 1
         fi
 
@@ -4650,23 +4659,124 @@ let
           return 1
         fi
 
-        if ! invoke_shortcut "$overview_shortcut" \
-          || ! wait_for_effect_active_state "$overview_plugin_id" false; then
-          overview_checkpoint_failure "the KGlobalAccel action did not close the overview"
+        if ! request_physical_shortcut overview-enter-initial \
+          || ! wait_for_effect_active_state "$overview_plugin_id" false \
+          || ! wait_for_active "$xterm_title"; then
+          overview_checkpoint_failure \
+            "physical Enter did not activate the initial XWayland selection"
           return 1
         fi
 
         after_checkpoint=$(capture_overview_checkpoint "$@") || {
           overview_checkpoint_failure \
-            "the layout did not stabilize after closing the overview"
+            "the layout did not stabilize after activating the initial selection"
           return 1
         }
         if [[ "$after_checkpoint" != "$baseline_checkpoint" ]] \
+          || [[ "$(effect_loaded_state "$overview_plugin_id")" != true ]] \
           || [[ "$(effect_loaded_state "$plasma_overview_effect_id")" != "$plasma_loaded" ]] \
           || [[ "$(effect_active_state "$plasma_overview_effect_id")" != "$plasma_active" ]] \
           || ! overview_component_errors_after "$journal_cursor"; then
           overview_checkpoint_failure \
-            "the overview changed the captured layout or the built-in Overview"
+            "the initial keyboard selection changed the XWayland checkpoint or the built-in Overview"
+          return 1
+        fi
+
+        if ! activate_window "$firefox_title" \
+          || ! wait_for_active "$firefox_title"; then
+          overview_checkpoint_failure \
+            "the expected Firefox keyboard checkpoint could not be prepared"
+          return 1
+        fi
+        firefox_checkpoint=$(capture_overview_checkpoint "$@") || {
+          overview_checkpoint_failure \
+            "the expected Firefox keyboard checkpoint did not stabilize"
+          return 1
+        }
+        if ! activate_window "$xterm_title" \
+          || ! wait_for_active "$xterm_title"; then
+          overview_checkpoint_failure \
+            "the initial XWayland keyboard checkpoint could not be restored"
+          return 1
+        fi
+        after_checkpoint=$(capture_overview_checkpoint "$@") || {
+          overview_checkpoint_failure \
+            "the restored XWayland keyboard checkpoint did not stabilize"
+          return 1
+        }
+        if [[ "$after_checkpoint" != "$baseline_checkpoint" ]]; then
+          overview_checkpoint_failure \
+            "preparing the expected Firefox checkpoint changed the XWayland checkpoint"
+          return 1
+        fi
+
+        if ! invoke_shortcut "$overview_shortcut" \
+          || ! wait_for_effect_active_state "$overview_plugin_id" true; then
+          overview_checkpoint_failure \
+            "the overview could not reopen for directional keyboard navigation"
+          return 1
+        fi
+        sleep 0.3
+        if ! request_physical_shortcut overview-up; then
+          overview_checkpoint_failure \
+            "physical Up was not delivered to the directional keyboard checkpoint"
+          return 1
+        fi
+        sleep 0.2
+        if [[ "$(effect_active_state "$overview_plugin_id" 2>/dev/null || true)" != true ]] \
+          || ! overview_component_errors_after "$journal_cursor"; then
+          overview_checkpoint_failure \
+            "physical Up did not keep the directional keyboard checkpoint active"
+          return 1
+        fi
+        if ! request_physical_shortcut overview-enter-target \
+          || ! wait_for_effect_active_state "$overview_plugin_id" false \
+          || ! wait_for_active "$firefox_title"; then
+          overview_checkpoint_failure \
+            "physical Up and Enter did not activate the Firefox selection"
+          return 1
+        fi
+        after_checkpoint=$(capture_overview_checkpoint "$@") || {
+          overview_checkpoint_failure \
+            "the Firefox keyboard checkpoint did not stabilize"
+          return 1
+        }
+        if [[ "$after_checkpoint" != "$firefox_checkpoint" ]] \
+          || [[ "$(effect_loaded_state "$overview_plugin_id")" != true ]] \
+          || [[ "$(effect_loaded_state "$plasma_overview_effect_id")" != "$plasma_loaded" ]] \
+          || [[ "$(effect_active_state "$plasma_overview_effect_id")" != "$plasma_active" ]] \
+          || ! overview_component_errors_after "$journal_cursor"; then
+          overview_checkpoint_failure \
+            "directional keyboard activation did not produce the expected Firefox checkpoint"
+          return 1
+        fi
+
+        if ! invoke_shortcut "$overview_shortcut" \
+          || ! wait_for_effect_active_state "$overview_plugin_id" true; then
+          overview_checkpoint_failure \
+            "the overview could not reopen for the physical Escape checkpoint"
+          return 1
+        fi
+        sleep 0.3
+        if ! request_physical_shortcut overview-escape \
+          || ! wait_for_effect_active_state "$overview_plugin_id" false \
+          || ! wait_for_active "$firefox_title"; then
+          overview_checkpoint_failure \
+            "physical Escape did not close the reopened Firefox checkpoint"
+          return 1
+        fi
+        after_checkpoint=$(capture_overview_checkpoint "$@") || {
+          overview_checkpoint_failure \
+            "the Firefox checkpoint did not stabilize after physical Escape"
+          return 1
+        }
+        if [[ "$after_checkpoint" != "$firefox_checkpoint" ]] \
+          || [[ "$(effect_loaded_state "$overview_plugin_id")" != true ]] \
+          || [[ "$(effect_loaded_state "$plasma_overview_effect_id")" != "$plasma_loaded" ]] \
+          || [[ "$(effect_active_state "$plasma_overview_effect_id")" != "$plasma_active" ]] \
+          || ! overview_component_errors_after "$journal_cursor"; then
+          overview_checkpoint_failure \
+            "physical Escape changed the Firefox checkpoint or the built-in Overview"
           return 1
         fi
 
@@ -4703,7 +4813,7 @@ let
         }
         if [[ "$(effect_loaded_state "$overview_plugin_id")" != false ]] \
           || [[ "$(effect_active_state "$overview_plugin_id")" != false ]] \
-          || [[ "$after_checkpoint" != "$baseline_checkpoint" ]] \
+          || [[ "$after_checkpoint" != "$firefox_checkpoint" ]] \
           || [[ "$(effect_loaded_state "$plasma_overview_effect_id")" != "$plasma_loaded" ]] \
           || [[ "$(effect_active_state "$plasma_overview_effect_id")" != "$plasma_active" ]] \
           || [[ "$(busctl --user call \
@@ -4720,7 +4830,7 @@ let
         fi
 
         record_focus_state \
-          "visible overview lifecycle preserved real applications and core state"
+          "physical overview keyboard navigation selected real applications and preserved core state"
       }
 
       wait_for_shortcut_focus() {
