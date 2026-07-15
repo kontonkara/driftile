@@ -10,8 +10,8 @@ virtual desktops; Driftile provides the layout and interaction policy.
 ## Highlights
 
 - Horizontal scrollable columns with stacked and tabbed window layouts.
-- Independent layouts for each output and virtual desktop, with one shared
-  trailing empty desktop.
+- Independent retained layouts for each output, virtual desktop, and activity,
+  with one shared trailing empty desktop.
 - Keyboard and pointer control for focus, movement, reordering, resizing,
   drag-and-drop, centering, and transfers between outputs or desktops.
 - Full-width columns, manual floating, native fullscreen and maximize support,
@@ -70,6 +70,8 @@ Nix users can declare the same settings through
 - Native X11 is supported on a single output. Multi-output native X11 remains
   unverified.
 - Touchpad navigation is available only on native Wayland.
+- With multiple activities, Driftile manages windows assigned to exactly one
+  activity. Windows shared across activities remain under KWin ownership.
 - Release archives are standard KWin KPackages and are not tied to NixOS.
 
 See [Compatibility](docs/compatibility.md) for current platform and hardware

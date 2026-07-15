@@ -66,8 +66,8 @@ normalization, fail-closed decoding of corrupt or future state, exact live-ID
 precedence, globally unique session descriptors, ambiguous-match rejection,
 output serial and connector policies, deterministic ordering, and the maximum
 persisted window count without pairwise scanning. Catalog coverage verifies
-bare and nested v1 migration to canonical v3 logical state inside strict v2
-catalogs, complete topologies with empty outputs, serial-aware MRU
+bare and nested v1 and v3 migration to canonical v4 logical state inside strict
+v2 catalogs, complete topologies with empty outputs, serial-aware MRU
 deduplication, active-only restore baselines, callback
 failure rollback, four-entry and 4 MiB eviction, and full-topology startup
 selection. Known-output planning covers global identity uniqueness, connector
@@ -324,6 +324,18 @@ focus recovery after active-window removal, the 33% missing-setting default,
 top and bottom stacked-window resize adoption, and exact-window or empty-gutter
 tiling of a manually floating window. These paths reuse the existing grouped
 integration and VM baselines instead of adding another matrix.
+
+Activity-focused cases isolate identical output and desktop IDs across two
+activities, retain each layout across switching, rehome a window after an exact
+membership change, and reject all-activity, multi-activity, stale, or malformed
+ownership when multiple activities exist. Persistence cases cover v1 and v3
+migration to v4, removed-activity rejection, and activity-qualified floating
+placements. Overview cases project only the current activity and close on
+current-activity or activity-set changes.
+The existing full Wayland VM adds one bounded activity scenario with native
+Firefox and XWayland xterm. It assigns exact memberships, changes width and
+column order only in the secondary activity, verifies primary isolation and
+secondary restoration, then removes the temporary activity.
 
 Cross-desktop unit cases cover the 2x2 matrix of output-local or global desktop
 resolution and membership-before-finish or finish-before-membership event

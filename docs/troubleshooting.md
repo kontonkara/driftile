@@ -69,6 +69,11 @@ insertion attaches to the selected target stack. KWin retains geometry authority
 while a window is fullscreen, maximized, minimized, interactively moved or
 resized, or natively tiled.
 
+When the workspace has multiple activities, a managed window must belong to
+exactly one activity. Windows assigned to all or multiple activities remain
+under KWin ownership. Systems without the activity API and workspaces with one
+activity keep the compatible single-activity behavior.
+
 Also check **Applications excluded from tiling** in Driftile's settings. The
 entries match KWin's exact, case-sensitive `desktopFileName`; clearing a match
 allows fresh admission after KWin releases any native-state blocker.
@@ -120,6 +125,10 @@ or geometry writes. Driftile then uses normal admission when safe. Future or
 oversized formats remain write-locked for that run. See the
 [persistence boundary](architecture.md#persistence-boundary) for the matching
 rules.
+
+The development v4 format migrates valid v1 and v3 state, but rejects contexts
+for activities that no longer exist. Switching back to a runtime without v4
+support requires moving the state file aside while Driftile is disabled.
 
 To intentionally discard the stored layout, disable Driftile in **KWin
 Scripts** and select **Apply**. When `busctl` is available, confirm that

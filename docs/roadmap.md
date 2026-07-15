@@ -51,7 +51,8 @@ The current runtime already:
 - Keeps managed contexts unchanged and dirty when settled work-area geometry cannot produce valid frames, while healthy contexts continue reconciling.
 - Observes output-list, geometry, scale, and dock invalidations.
 - Checks visible client areas and non-minimized tracked-window hard constraints every two seconds to cover missing complete KWin signals.
-- Maintains independent layout state for every `(output, desktop)` context.
+- Maintains independent layout state for every `(output, desktop, activity)`
+  context.
 - Preserves a deterministic layout order across structural output changes.
 - Invalidates stale restore baselines without reviving them when old geometry returns.
 - Parks deterministic whole columns when a new multi-output capacity limit no longer fits, preferring non-active columns, then retries waiting windows.
@@ -1266,8 +1267,9 @@ No other feature belongs to 1.30.0.
 
 ## 1.31.0 (in development)
 
-The current package completes five related interaction changes. Cross-context
-gutter drops create a separate automatic-height singleton after KWin moves a
+The current package combines related interaction and activity-ownership
+changes. Cross-context gutter drops create a separate automatic-height
+singleton after KWin moves a
 tiled window to another visible output or selected desktop. A manually floating
 window can be dragged onto an exact tiled window half or an empty gutter in its
 current context; the exact window wins and live feedback shows the target.
@@ -1277,9 +1279,20 @@ the existing left or right path retains column-width adoption.
 Normal active columns keep a right full-width successor at its natural strip
 position, closing the active window selects a suitable surviving window, and a
 missing default-width setting now creates 33% columns. Explicit user settings
-and existing columns remain unchanged. All pointer paths stay finish-only and
-use public KWin APIs; the package adds no binding, persistence field, overview
-change, compositor fork, or private API.
+and existing columns remain unchanged. These interaction paths stay finish-only
+and use public KWin APIs; they add no binding, compositor fork, or private API.
+
+Layout context identity now includes output, virtual desktop, and activity.
+Windows assigned to exactly one activity retain independent layouts across
+switches, while only the current activity receives geometry and focus writes.
+When multiple activities exist, all-activity and multi-activity windows remain
+under KWin ownership; absent or single-activity APIs retain compatible fallback
+behavior.
+
+Logical persistence advances to v4 and migrates valid v1 and v3 state without
+changing the bounded v2 topology catalog. Missing activity identities fail
+closed. The optional overview projects only the current activity and closes
+when the current activity or available activity set changes.
 
 Development criteria:
 
@@ -1290,6 +1303,12 @@ Development criteria:
 - Runtime coverage includes cross-output and cross-desktop gutter adoption,
   both manual-floating targets, vertical resize adoption, close-focus recovery,
   and full-width successor visibility.
+- Core and runtime coverage isolates equal output and desktop IDs between
+  activities, preserves inactive logical state without frame writes, and
+  rejects ambiguous activity ownership.
+- Persistence coverage migrates v1 and v3 input to v4 and rejects removed
+  activities; overview coverage remains current-activity-only across topology
+  changes.
 - Focused grouped checks, exact-SHA CI, and a warranted hidden VM checkpoint
   must pass before release.
 
@@ -1300,6 +1319,5 @@ taking over compositor mechanisms.
 
 - Add optional visual transitions.
 - Keep Plasma's built-in Overview as the compatible baseline.
-- Add activity-aware layout ownership as a separate persisted-context milestone.
 
 The optional overview must remain removable, preserve the authoritative layout state, and fall back cleanly to Plasma's Overview.

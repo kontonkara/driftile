@@ -1,10 +1,10 @@
 # Overview Companion
 
 The optional overview companion is a separate KWin effect. It presents
-Driftile's current output, desktop, column, stack, viewport, and floating-window
-model. In 1.7.0, a left click on a valid thumbnail in the current desktop card
-focuses that live window through KWin and closes the effect. Plasma's built-in
-Overview remains installed and unchanged.
+Driftile's current activity, output, desktop, column, stack, viewport, and
+floating-window model. In 1.7.0, a left click on a valid thumbnail in the
+current desktop card focuses that live window through KWin and closes the
+effect. Plasma's built-in Overview remains installed and unchanged.
 
 In 1.8.0, a left click on a non-current desktop card's number gutter selects
 that desktop. The current desktop's gutter remains inert.
@@ -42,6 +42,10 @@ Version 1.28.0 leaves overview behavior unchanged.
 Version 1.29.0 leaves overview behavior unchanged.
 
 Version 1.30.0 leaves overview behavior unchanged.
+
+The 1.31.0 development package projects only the current activity. Changing the
+current activity or available activity set closes an open companion before it
+can act on stale delegates.
 
 The companion is disabled by default. When enabled with a fresh shortcut
 record, `Meta+O` toggles it. KGlobalAccel preserves an existing assignment
@@ -168,12 +172,16 @@ QML lint, and package checks remain unchanged. No new overview, backend,
 integration, application, or VM matrix was added, and no separate
 overview-specific VM validation claim is made.
 
+The 1.31.0 development checks cover current-activity projection and closure on
+activity topology changes.
+
 ## Safety boundary
 
 On activation, the effect accepts only two identical reads of a valid current
-v2 catalog with canonical logical state whose outputs, desktops, and referenced
-windows match KWin. A missing, changing, legacy, corrupt, future, oversized, or
-stale snapshot keeps the effect closed.
+v2 catalog with canonical v4 logical state whose activity, outputs, desktops,
+and referenced windows match KWin. It projects only the current activity. A
+missing, changing, legacy, corrupt, future, oversized, or stale snapshot keeps
+the effect closed.
 
 Current-card thumbnail focus is unchanged: the effect revalidates the direct
 live window object, exact internal ID, output, desktop and activity memberships,

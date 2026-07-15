@@ -63,12 +63,15 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Ships as a separate, disabled-by-default `KWin/Effect` package.
 - Reads the opaque layout snapshot twice on activation and accepts only one
   unchanged, current v2 catalog.
-- Projects snapshot zero into a baseline-free, immutable view model after exact
-  live output, desktop, and window validation.
+- Projects snapshot zero for the current activity into a baseline-free,
+  immutable view model after exact live output, desktop, activity, and window
+  validation.
 - Projects every tabbed member as an ordered entry, exposes only non-minimized
   members as targets, and uses only the selected non-minimized member as the
   large thumbnail.
 - Uses only public KWin QML types to enrich live thumbnails and screen context.
+- Closes without an action when the current activity or available activity set
+  changes, so delegates never outlive their projected activity topology.
 - Keeps each rendered thumbnail's direct live window object in its QML delegate;
   the object does not enter projected or persisted state.
 - Keeps current-card thumbnail focus direct. A non-current thumbnail first
@@ -108,7 +111,11 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 
 ### TypeScript runtime
 
-- Models eligible windows from every existing output and desktop context.
+- Models eligible windows in `(output, desktop, activity)` contexts and applies
+  geometry only for the current activity.
+- Retains inactive single-activity contexts without writing their geometry.
+  With multiple activities, all-activity and multi-activity windows fail closed
+  to KWin ownership; absent or single-activity APIs use the compatible fallback.
 - Resolves exact application presentation rules through one constant-time
   lookup whenever a fresh column is formed, then falls back to the configured
   global presentation.
@@ -302,8 +309,9 @@ RuntimeState
 `LayoutContext` owns columns, each column's stacked or tabbed presentation and
 selected window ID, per-window automatic weights or fixed/preset heights,
 viewport offset, and the last applied geometry fingerprint. A managed window
-owns an optional decoration-independent client restore baseline plus the exact
-frame observed at capture time. A manually floating window remains observed
+belongs to one output, desktop, and activity context and owns an optional
+decoration-independent client restore baseline plus the exact frame observed at
+capture time. A manually floating window remains observed
 but has no layout or geometry owner; its detached placement records stable
 anchors for reinsertion. An automatically floating window has no layout slot,
 floating anchor, waiting entry, suspension, or retry state. Role-based and
@@ -319,20 +327,22 @@ enter core state.
 The persistence foundation is a bounded, versioned JSON codec in core. The v2
 catalog keeps at most four most-recent output-topology snapshots under one
 4 MiB limit. Each snapshot records the complete output descriptor set,
-including outputs without owned windows, plus a validated canonical v3 logical
+including outputs without owned windows, plus a validated canonical v4 logical
 state. The current snapshot may keep context-guarded restore baselines; every
-historical snapshot is baseline-free. Bare and catalog-nested v1 logical state
-remain valid startup input and migrate to v3 on the next successful
-publication. The catalog version stays v2. Runtimes without v3 state support
+historical snapshot is baseline-free. Bare and catalog-nested v1 and v3 logical
+state remain valid startup input and migrate to v4 on the next successful
+publication. The catalog version stays v2. Runtimes without v4 state support
 reject that nested state and keep the store write-locked.
 
-Logical state stores output and window descriptors, column and stack order,
-column presentation, the selected member by bounded index, width and height
-policies, viewport offsets, full-width restore widths and viewport positions,
-manual-floating reinsertion anchors, and context-guarded tiled restore
-baselines. The catalog and nested state codecs reject unknown fields, invalid
-references, ambiguous output identities, impossible layout policies, oversized
-input, and unsupported versions without mutating live state.
+Logical state stores activity-qualified contexts and floating placements,
+output and window descriptors, column and stack order, column presentation, the
+selected member by bounded index, width and height policies, viewport offsets,
+full-width restore widths and viewport positions, manual-floating reinsertion
+anchors, and context-guarded tiled restore baselines. Restore rejects missing
+or removed activity identities. The catalog and nested state codecs reject
+unknown fields, invalid references, ambiguous output identities, impossible
+layout policies, oversized input, and unsupported versions without mutating
+live state.
 
 After topology settlement, an additive output return may select a matching
 historical snapshot. Restoration is output-atomic and tiled-only: every eligible
@@ -450,7 +460,8 @@ inspected safely within the codec bound.
 ## Reconciliation rules
 
 - Read usable geometry from KWin work areas; never infer panel bounds.
-- Apply a context only when its desktop is visible on its output.
+- Apply a context only when its desktop is visible on its output and its
+  activity is current.
 - Keep focus commands inside the active window's context, select one live target, skip minimized slots and fully minimized columns without wrapping, and reveal its column with the smallest required scroll.
 - Treat minimization as the only skippable focus suspension; commands that encounter another suspension blocker remain no-ops.
 - Commit tiled focus and viewport changes only after KWin accepts the same live target; rejection or a synchronous authority change restores the prior focus, model, and frames.

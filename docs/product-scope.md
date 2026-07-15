@@ -2,7 +2,9 @@
 
 ## Purpose
 
-Driftile is a KWin extension for KDE Plasma. It provides scrollable tiling with independent layout state for every output and virtual desktop, plus a safe dynamic-workspace policy.
+Driftile is a KWin extension for KDE Plasma. It provides scrollable tiling with
+independent layout state for every output, virtual desktop, and activity, plus
+a safe dynamic-workspace policy.
 
 The ownership rule is strict:
 
@@ -12,7 +14,13 @@ The ownership rule is strict:
 
 ## Core
 
-- One horizontal strip of columns per `(output, desktop)` context.
+- One horizontal strip of columns per `(output, desktop, activity)` context.
+- A window assigned to exactly one activity retains an independent layout in
+  that activity. Switching activities does not rewrite another activity's
+  layout.
+- When multiple activities exist, windows assigned to all or multiple
+  activities remain under KWin ownership. Missing or single-activity APIs keep
+  the compatible single-activity behavior.
 - Deterministic window insertion, ordering, focus, movement, resizing, and scrolling.
 - Live same-context pointer-drop feedback with finish-only reinsertion, plus
   exact-window-first adoption into a window or empty destination gutter after
@@ -396,10 +404,23 @@ The ownership rule is strict:
   backend, or application matrix. The existing VM contract changes without a
   current VM validation claim.
 
+## 1.31.0 (in development)
+
+- Context identity includes output, virtual desktop, and activity.
+- Exact single-activity windows keep independent tiled or floating ownership
+  across activity switches. Only the current activity receives geometry and
+  focus writes.
+- In a workspace with multiple activities, all-activity and multi-activity
+  windows remain under KWin ownership. Missing or single-activity APIs retain
+  the compatible fallback behavior.
+- Logical persistence moves to v4 and migrates valid v1 or v3 input. The bounded
+  topology catalog remains v2.
+- The optional companion projects the current activity only and closes when the
+  activity selection or activity set changes.
+
 ## Beyond v1
 
 - Optional visual transitions.
-- Activity-aware layouts.
 
 ## Compatibility
 
@@ -429,8 +450,11 @@ Driftile must integrate with, not duplicate:
 
 ## Invariants
 
-- A managed window has exactly one layout context and one geometry owner.
+- A managed window has exactly one `(output, desktop, activity)` layout context
+  and one geometry owner.
 - A command cannot mutate an unrelated context.
+- Only the current activity receives layout geometry or focus writes. Inactive
+  activity contexts retain logical ownership until selected again.
 - Entering fullscreen for a member of a regular stack extracts it into an immediate right singleton before calling KWin; leaving fullscreen keeps it separate.
 - Maximizing a member of a regular stack extracts it into an immediate right singleton before calling KWin; unmaximizing leaves it separate.
 - No layout write occurs while a topology snapshot is unsettled.
@@ -525,7 +549,7 @@ Driftile must integrate with, not duplicate:
 - Toggle-back restores a surviving anchored slot when possible. Guarded direct
   insertion attaches to the selected target stack. Both capture the latest
   floating frame as the next safe restore baseline.
-- Layer focus remains inside the active `(output, desktop)` context and restores the last non-minimized tiled or floating window. Minimized slots are skipped, while any other blocker on the selected remembered or ordered target fails closed without fallback. Selecting a tiled target in another column reveals it with the normal minimal scroll; ownership never changes.
+- Layer focus remains inside the active `(output, desktop, activity)` context and restores the last non-minimized tiled or floating window. Minimized slots are skipped, while any other blocker on the selected remembered or ordered target fails closed without fallback. Selecting a tiled target in another column reveals it with the normal minimal scroll; ownership never changes.
 - Directional floating focus chooses the nearest positive center distance on the requested axis; first and last choose frame-x extremes. Minimized windows are excluded, and no action wraps or writes geometry.
 - Directional floating movement requests a 50-logical-pixel translation and keeps only the minimum visible strip required by the frame size. It preserves size, focus, context, reinsertion placement, and every tiled layout.
 - Contextual centering places each manually floating frame dimension at the exact logical midpoint of its assigned work area, or at the work-area origin when that dimension is oversized. It performs no window, column, or layout enumeration and preserves the same ownership and state boundaries as directional movement.

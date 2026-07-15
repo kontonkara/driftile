@@ -3,6 +3,21 @@
 The latest stable release is 1.30.0. Use the steps below when changing release
 generations, and never combine files from different releases.
 
+## Development-state compatibility
+
+The 1.31.0 development package writes logical layout state v4. Valid v1 and v3
+state migrates to v4 after a successful restore; the surrounding topology
+catalog remains v2. Activity-qualified contexts whose activity no longer
+exists are rejected instead of being reassigned.
+The first successful v4 publication replaces activity-less historical
+snapshots because their original activity cannot be recovered safely.
+
+A 1.30.0 runtime does not understand v4 state and keeps that store write-locked.
+Before returning from a development build to 1.30.0, disable Driftile and move
+the state file aside as described in
+[Troubleshooting](troubleshooting.md#a-layout-does-not-restore). Configuration
+and shortcut profiles do not require conversion.
+
 ## Upgrade from 1.29.0 to 1.30.0
 
 1. If the 1.29.0 helper owns the shortcut profile, run its `release` command
