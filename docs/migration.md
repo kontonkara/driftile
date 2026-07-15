@@ -13,10 +13,12 @@ generations, and never combine files from different releases.
    1.19.0.
 4. Upgrade the main package, optional overview, and helper to their matching
    1.19.0 archives, or pin the Nix input to `v1.19.0` and rebuild.
-5. Enable Driftile and restore the shortcut profile. The release adds
+5. Restart the Plasma session once so KWin loads the new stable package
+   bootstraps instead of an entrypoint cached from 1.18.0.
+6. Enable Driftile and restore the shortcut profile. The release adds
    `Meta+W` for toggling the active tiled column's presentation and `Meta+Q`
    for closing the active window.
-6. If installed, re-enable the matching overview package and review its
+7. If installed, re-enable the matching overview package and review its
    manually assigned shortcut.
 
 The release accepts existing bare and catalog-nested logical v1 state, then
@@ -41,7 +43,8 @@ action.
 Release shortcuts with the RC helper, disable Driftile and the optional
 overview, then upgrade the main package, overview, and helper to their matching
 1.19.0 artifacts. For Nix, update the input from `v1.19.0-rc.1` to `v1.19.0`
-and rebuild. Re-enable the installed packages and restore the shortcut profile.
+and rebuild. Restart the Plasma session once, then re-enable the installed
+packages and restore the shortcut profile.
 
 Stable 1.19.0 adds one action and default binding after RC.1: `Meta+Q` delegates
 closing the active window to KWin. Restore the stable helper profile to claim
@@ -55,6 +58,9 @@ Release shortcuts with the 1.19.0 helper, disable Driftile and the optional
 overview, then restore their matching verified 1.18.0 packages and helper. For
 NixOS or Home Manager, restore the `v1.18.0` input and rebuild the generation
 that owns each package.
+
+Restart the Plasma session once after restoring the packages so KWin does not
+reuse the 1.19.0 bootstrap or runtime from memory.
 
 The 1.18.0 runtime cannot read logical v3 state. Restore the layout-state backup
 made before 1.19.0 was first enabled. If no backup is available, remove

@@ -68,7 +68,7 @@ export async function runInstallLifecycle(action, dependencies = {}) {
   run("kpackagetool6", ["--type=KWin/Script", actions[action], target]);
 
   if (action !== "remove") {
-    log(enableInstructions());
+    log(enableInstructions(action));
   }
 }
 
@@ -127,15 +127,26 @@ export function parseScriptLoadedReply(output) {
   return reply.data[0];
 }
 
-function enableInstructions() {
-  return [
-    "Driftile is installed and disabled.",
-    "Enable it and claim its shortcut profile with:",
+function enableInstructions(action) {
+  const lines = ["Driftile is installed and disabled."];
+
+  if (action === "upgrade") {
+    lines.push(
+      "Restart the Plasma session once before enabling this 1.19.0 upgrade.",
+    );
+  }
+
+  lines.push(
+    action === "upgrade"
+      ? "Then enable it and claim its shortcut profile with:"
+      : "Enable it and claim its shortcut profile with:",
     `  kwriteconfig6 --file kwinrc --group Plugins --key ${pluginKey} --type bool true`,
     "  busctl --user call org.kde.KWin /KWin org.kde.KWin reconfigure",
     "  busctl --user call org.kde.KWin /Scripting org.kde.kwin.Scripting start",
     "  npm run shortcuts:claim",
-  ].join("\n");
+  );
+
+  return lines.join("\n");
 }
 
 function runCommand(command, arguments_, options = {}) {

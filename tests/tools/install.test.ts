@@ -52,7 +52,7 @@ describe("development package lifecycle", () => {
       ]),
       {
         type: "log",
-        value: expectedInstructions(),
+        value: expectedInstructions("upgrade"),
       },
     ]);
   });
@@ -71,7 +71,7 @@ describe("development package lifecycle", () => {
     );
     expect(harness.events[harness.events.length - 1]).toEqual({
       type: "log",
-      value: expectedInstructions(),
+      value: expectedInstructions("install"),
     });
   });
 
@@ -258,13 +258,24 @@ function stateCommand(): CommandEvent {
   );
 }
 
-function expectedInstructions(): string {
-  return [
-    "Driftile is installed and disabled.",
-    "Enable it and claim its shortcut profile with:",
+function expectedInstructions(action: "install" | "upgrade"): string {
+  const lines = ["Driftile is installed and disabled."];
+
+  if (action === "upgrade") {
+    lines.push(
+      "Restart the Plasma session once before enabling this 1.19.0 upgrade.",
+    );
+  }
+
+  lines.push(
+    action === "upgrade"
+      ? "Then enable it and claim its shortcut profile with:"
+      : "Enable it and claim its shortcut profile with:",
     `  kwriteconfig6 --file kwinrc --group Plugins --key ${pluginId}Enabled --type bool true`,
     "  busctl --user call org.kde.KWin /KWin org.kde.KWin reconfigure",
     "  busctl --user call org.kde.KWin /Scripting org.kde.kwin.Scripting start",
     "  npm run shortcuts:claim",
-  ].join("\n");
+  );
+
+  return lines.join("\n");
 }

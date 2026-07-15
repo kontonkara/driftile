@@ -40,15 +40,17 @@ verify them with `SHA256SUMS`:
 - Anchors an immediate normal-width successor after an inactive full-width
   predecessor to the work area's left configured gap, independent of display
   resolution.
-- Content-addresses the complete main-script and overview QML and JavaScript
-  runtimes so an in-place upgrade cannot reuse an older compiled KWin
-  component. Source activation still refreshes KWin discovery.
+- Adds stable KPackage entrypoint shells that select the complete main-script
+  and overview QML and JavaScript runtimes by content hash. The first upgrade
+  from 1.18.0 or 1.19.0-rc.1 requires one Plasma session restart; later runtime
+  changes no longer reuse an older in-memory component.
 - Adds `Meta+Q` as the default close-active-window binding, delegated to KWin.
   `Meta+C` remains the contextual centering action.
 
-Compared with 1.19.0-rc.1, stable 1.19.0 adds only the close-window action and
-its `Meta+Q` default. It changes no layout behavior, configuration,
-persistence, package ID, or overview behavior.
+Compared with 1.19.0-rc.1, stable 1.19.0 adds the close-window action and its
+`Meta+Q` default, plus cache-isolated runtime loading. It changes no layout
+behavior, configuration, persistence, package ID, or overview feature
+behavior.
 
 ## Migration
 

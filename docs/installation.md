@@ -95,11 +95,14 @@ restore displaced assignments automatically.
      --upgrade ./driftile-<new-version>.kwinscript
    ```
 
-5. Enable Driftile, review its configuration, then claim or assign shortcuts
+5. When upgrading to 1.19.0 from 1.18.0 or 1.19.0-rc.1, restart the Plasma
+   session once. Fresh installations do not require this step.
+6. Enable Driftile, review its configuration, then claim or assign shortcuts
    for the new version.
 
-Release packages use content-addressed runtime entrypoints, so enabling the
-upgraded package loads changed QML and JavaScript without a manual cache reset.
+Release packages keep KWin's required entrypoints stable and select the
+complete QML and JavaScript runtime by content hash. After the one-time 1.19.0
+transition, changed runtimes no longer reuse an older in-memory component.
 
 ## Disable or uninstall
 
