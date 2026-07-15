@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
@@ -10,19 +11,23 @@ const metadata = JSON.parse(
   readonly [key: string]: unknown;
 };
 const main = readFileSync(new URL("contents/ui/main.qml", effectRoot), "utf8");
+const controller = readFileSync(
+  new URL("contents/runtime/ui/main.qml", effectRoot),
+  "utf8",
+);
 const reader = readFileSync(
-  new URL("contents/ui/LayoutStateReader.qml", effectRoot),
+  new URL("contents/runtime/ui/LayoutStateReader.qml", effectRoot),
   "utf8",
 );
 const scene = readFileSync(
-  new URL("contents/ui/OverviewScene.qml", effectRoot),
+  new URL("contents/runtime/ui/OverviewScene.qml", effectRoot),
   "utf8",
 );
 const desktopCard = readFileSync(
-  new URL("contents/ui/DesktopCard.qml", effectRoot),
+  new URL("contents/runtime/ui/DesktopCard.qml", effectRoot),
   "utf8",
 );
-const qmlSources = [main, reader, scene, desktopCard];
+const qmlSources = [main, controller, reader, scene, desktopCard];
 
 describe("overview effect package", () => {
   it("declares a disabled standalone KWin effect without configuration", () => {
@@ -40,10 +45,44 @@ describe("overview effect package", () => {
   });
 
   it("registers one unbound toggle action and no screen edge", () => {
-    expect(main.match(/KWin\.ShortcutHandler\s*\{/gu)).toHaveLength(1);
-    expect(main).toContain('name: "driftile_toggle_overview"');
-    expect(main).not.toMatch(/\bsequence\s*:/u);
-    expect(main).not.toMatch(/ScreenEdge|registerScreenEdge/u);
+    expect(controller.match(/KWin\.ShortcutHandler\s*\{/gu)).toHaveLength(1);
+    expect(controller).toContain('name: "driftile_toggle_overview"');
+    expect(controller).not.toMatch(/\bsequence\s*:/u);
+    expect(controller).not.toMatch(/ScreenEdge|registerScreenEdge/u);
+    expect(main).not.toContain("ShortcutHandler");
+  });
+
+  it("keeps a fixed scene-effect proxy over the cache-busted controller", () => {
+    expect(createHash("sha256").update(main, "utf8").digest("hex")).toBe(
+      "a56cf4d37cef8491473837985971d08114966be72160158317ad8f76cc9cb356",
+    );
+    expect(main).toContain("KWin.SceneEffect {");
+    expect(main).toContain("Date.now().toString(36)");
+    expect(main).toContain("Math.random().toString(36).slice(2)");
+    expect(main).toContain('Qt.resolvedUrl("../runtime/selector.qml")');
+    expect(main).toContain("selectorLoader.item && selectorLoader.item.item");
+    expect(main).toContain(
+      "readonly property bool active: controller ? controller.active : false",
+    );
+    expect(main).toContain(
+      "readonly property bool loading: controller ? controller.loading : false",
+    );
+    expect(main).toContain(
+      "readonly property var overviewModel: controller ? controller.overviewModel : null",
+    );
+    expect(main).toContain("visible: controller ? controller.active : false");
+    expect(main).toContain(
+      "delegate: controller ? controller.overviewDelegate : null",
+    );
+    for (const method of ["toggle", "activate", "deactivate"]) {
+      expect(main).toContain(`function ${method}()`);
+      expect(main).toContain(`controller.${method}();`);
+    }
+
+    expect(controller).toContain("QtObject {");
+    expect(controller).not.toContain("KWin.SceneEffect {");
+    expect(controller).not.toMatch(/\bvisible\s*=|\bvisible\s*:/u);
+    expect(controller).not.toMatch(/^\s*delegate\s*:/mu);
   });
 
   it("samples the persisted layout exactly twice without writing", () => {
@@ -440,12 +479,12 @@ describe("overview effect package", () => {
   });
 
   it("loads the runtime through the fail-closed adapter boundary", () => {
-    expect(main).toContain('import "../code/main.js" as OverviewRuntime');
-    expect(main).toContain("OverviewRuntime.DriftileOverview");
-    expect(main).toContain(
+    expect(controller).toContain('import "../code/main.js" as OverviewRuntime');
+    expect(controller).toContain("OverviewRuntime.DriftileOverview");
+    expect(controller).toContain(
       "runtime.loadOverviewModel(document, liveSnapshot())",
     );
-    expect(main).toContain("result.ok !== true");
-    expect(main).toContain("overviewModel = null");
+    expect(controller).toContain("result.ok !== true");
+    expect(controller).toContain("overviewModel = null");
   });
 });

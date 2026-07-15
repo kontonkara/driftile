@@ -1,6 +1,6 @@
 import QtCore
 import QtQuick
-import "../../packaging/kwin-script/contents/ui" as Driftile
+import "../../packaging/kwin-script/contents/runtime/ui" as Driftile
 
 QtObject {
     id: root

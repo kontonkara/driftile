@@ -15,12 +15,12 @@ import { build } from "esbuild";
 const rootDirectory = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const packageSource = resolve(rootDirectory, "packaging/kwin-script");
 const packageOutput = resolve(rootDirectory, "dist/kwin-script");
-const runtimeOutput = resolve(packageOutput, "contents/code/main.js");
+const runtimeOutput = resolve(packageOutput, "contents/runtime/code/main.js");
 const overviewPackageSource = resolve(rootDirectory, "packaging/kwin-effect");
 const overviewPackageOutput = resolve(rootDirectory, "dist/kwin-effect");
 const overviewRuntimeOutput = resolve(
   overviewPackageOutput,
-  "contents/code/main.js",
+  "contents/runtime/code/main.js",
 );
 const shortcutToolOutput = resolve(
   rootDirectory,
@@ -106,10 +106,8 @@ export function runtimeContentHash(files) {
 
 async function relocateRuntime(packageDirectory) {
   const contentsDirectory = resolve(packageDirectory, "contents");
-  const runtimeFiles = [
-    ...(await findRuntimeFiles(contentsDirectory, "code", ".js")),
-    ...(await findRuntimeFiles(contentsDirectory, "ui", ".qml")),
-  ];
+  const stagingDirectory = resolve(contentsDirectory, "runtime");
+  const runtimeFiles = await findRuntimeFiles(stagingDirectory);
   const logicalPaths = new Set(
     runtimeFiles.map((runtimeFile) => runtimeFile.logicalPath),
   );
@@ -121,57 +119,50 @@ async function relocateRuntime(packageDirectory) {
   }
 
   const runtimeHash = runtimeContentHash(runtimeFiles);
-  const runtimeDirectory = resolve(contentsDirectory, "runtime", runtimeHash);
+  const temporaryDirectory = resolve(packageDirectory, ".runtime-staging");
 
-  await Promise.all(
-    runtimeFiles.map(async (runtimeFile) => {
-      const destination = resolve(runtimeDirectory, runtimeFile.logicalPath);
-
-      await mkdir(dirname(destination), { recursive: true });
-      await rename(runtimeFile.path, destination);
-    }),
-  );
-  await rm(resolve(contentsDirectory, "code"), {
-    force: true,
-    recursive: true,
-  });
-
-  const metadataPath = resolve(packageDirectory, "metadata.json");
-  const metadata = JSON.parse(await readFile(metadataPath, "utf8"));
-
-  metadata["X-Plasma-MainScript"] = `runtime/${runtimeHash}/ui/main.qml`;
+  await rename(stagingDirectory, temporaryDirectory);
+  await mkdir(stagingDirectory, { recursive: true });
+  await rename(temporaryDirectory, resolve(stagingDirectory, runtimeHash));
   await writeFile(
-    metadataPath,
-    `${JSON.stringify(metadata, null, 2)}\n`,
+    resolve(stagingDirectory, "selector.qml"),
+    runtimeSelectorSource(runtimeHash),
     "utf8",
   );
 }
 
-async function findRuntimeFiles(contentsDirectory, directory, extension) {
-  const root = resolve(contentsDirectory, directory);
+async function findRuntimeFiles(runtimeDirectory) {
   const files = [];
 
-  await visitRuntimeDirectory(root, extension, files);
+  await visitRuntimeDirectory(runtimeDirectory, files);
 
   return Promise.all(
     files.map(async (path) => ({
       content: await readFile(path),
-      logicalPath: relative(contentsDirectory, path).replaceAll("\\", "/"),
-      path,
+      logicalPath: relative(runtimeDirectory, path).replaceAll("\\", "/"),
     })),
   );
 }
 
-async function visitRuntimeDirectory(directory, extension, files) {
+async function visitRuntimeDirectory(directory, files) {
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const path = resolve(directory, entry.name);
 
     if (entry.isDirectory()) {
-      await visitRuntimeDirectory(path, extension, files);
-    } else if (entry.isFile() && entry.name.endsWith(extension)) {
+      await visitRuntimeDirectory(path, files);
+    } else if (
+      entry.isFile() &&
+      (entry.name.endsWith(".js") || entry.name.endsWith(".qml"))
+    ) {
       files.push(path);
+    } else {
+      throw new Error(`unsupported runtime entry: ${path}`);
     }
   }
+}
+
+function runtimeSelectorSource(runtimeHash) {
+  return `import QtQuick\n\nLoader {\n    source: Qt.resolvedUrl("${runtimeHash}/ui/main.qml")\n}\n`;
 }
 
 function assertCanonicalRuntimePath(logicalPath) {

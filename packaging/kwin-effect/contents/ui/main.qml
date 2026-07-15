@@ -1,121 +1,39 @@
-import QtCore
 import QtQuick
 import org.kde.kwin as KWin
-import "../code/main.js" as OverviewRuntime
 
 KWin.SceneEffect {
     id: effect
 
-    property bool active: false
-    property bool loading: false
-    property var overviewModel: null
-    readonly property var overviewDelegate: Qt.createComponent("OverviewScene.qml")
-
-    visible: false
-    delegate: overviewDelegate
-
-    readonly property LayoutStateReader layoutStateReader: LayoutStateReader {
-        onReady: document => effect.acceptLayoutState(document)
-        onRejected: effect.rejectLayoutState("unstable-state")
+    readonly property string runtimeNonce: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+    readonly property Loader selectorLoader: Loader {
+        source: `${Qt.resolvedUrl("../runtime/selector.qml")}?nonce=${effect.runtimeNonce}`
     }
+    readonly property var controller: selectorLoader.item && selectorLoader.item.item
+        ? selectorLoader.item.item
+        : null
 
-    KWin.ShortcutHandler {
-        name: "driftile_toggle_overview"
-        text: "Driftile: Toggle overview"
-        onActivated: effect.toggle()
-    }
+    readonly property bool active: controller ? controller.active : false
+    readonly property bool loading: controller ? controller.loading : false
+    readonly property var overviewModel: controller ? controller.overviewModel : null
+
+    visible: controller ? controller.active : false
+    delegate: controller ? controller.overviewDelegate : null
 
     function toggle() {
-        if (active || loading) {
-            deactivate();
-        } else {
-            activate();
+        if (controller) {
+            controller.toggle();
         }
     }
 
     function activate() {
-        if (active || loading) {
-            return;
+        if (controller) {
+            controller.activate();
         }
-
-        overviewModel = null;
-        loading = true;
-        layoutStateReader.sample();
     }
 
     function deactivate() {
-        layoutStateReader.cancel();
-        active = false;
-        loading = false;
-        visible = false;
-        overviewModel = null;
-    }
-
-    function acceptLayoutState(document) {
-        if (!loading) {
-            return;
-        }
-
-        try {
-            const runtime = OverviewRuntime.DriftileOverview;
-            if (!runtime || typeof runtime.loadOverviewModel !== "function") {
-                rejectLayoutState("runtime-unavailable");
-                return;
-            }
-
-            const result = runtime.loadOverviewModel(document, liveSnapshot());
-            if (!result || result.ok !== true || !result.value) {
-                rejectLayoutState(result && result.error ? String(result.error) : "invalid-model");
-                return;
-            }
-
-            overviewModel = result.value;
-            loading = false;
-            active = true;
-            visible = true;
-        } catch (error) {
-            rejectLayoutState("runtime-error");
-        }
-    }
-
-    function rejectLayoutState(reason) {
-        deactivate();
-        console.warn(`[driftile-overview] activation rejected reason=${reason}`);
-    }
-
-    function liveSnapshot() {
-        const outputs = [];
-        const desktopIds = [];
-        const windowIds = [];
-
-        for (const screen of KWin.Workspace.screens) {
-            const output = {
-                name: String(screen.name)
-            };
-            addOptionalIdentifier(output, "manufacturer", screen.manufacturer);
-            addOptionalIdentifier(output, "model", screen.model);
-            addOptionalIdentifier(output, "serialNumber", screen.serialNumber);
-            outputs.push(output);
-        }
-
-        for (const desktop of KWin.Workspace.desktops) {
-            desktopIds.push(String(desktop.id));
-        }
-
-        for (const window of KWin.Workspace.stackingOrder) {
-            windowIds.push(String(window.internalId));
-        }
-
-        return {
-            desktopIds,
-            outputs,
-            windowIds
-        };
-    }
-
-    function addOptionalIdentifier(target, key, value) {
-        if (value !== undefined && value !== null && String(value).length > 0) {
-            target[key] = String(value);
+        if (controller) {
+            controller.deactivate();
         }
     }
 }

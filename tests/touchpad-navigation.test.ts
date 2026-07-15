@@ -4,12 +4,15 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { KWinWorkspace } from "../src/platform/kwin/api";
 
 const mainQml = readFileSync(
-  new URL("../packaging/kwin-script/contents/ui/main.qml", import.meta.url),
+  new URL(
+    "../packaging/kwin-script/contents/runtime/ui/main.qml",
+    import.meta.url,
+  ),
   "utf8",
 );
 const touchpadQml = readFileSync(
   new URL(
-    "../packaging/kwin-script/contents/ui/TouchpadNavigation.qml",
+    "../packaging/kwin-script/contents/runtime/ui/TouchpadNavigation.qml",
     import.meta.url,
   ),
   "utf8",

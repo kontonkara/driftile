@@ -14,9 +14,10 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 ### QML bridge
 
 - Loads the compiled runtime in the KWin script environment.
-- Uses a content-addressed build path for the complete QML and JavaScript
-  runtime. A changed runtime therefore receives a new KWin entrypoint instead
-  of reusing an older compiled component after an in-place upgrade.
+- Keeps the KPackage-required `contents/ui/main.qml` bootstrap byte-stable.
+  Each instance loads a generated selector through a unique local-file query;
+  the selector loads the complete QML and JavaScript runtime from its
+  content-addressed directory.
 - Passes the KWin workspace object to the runtime.
 - Hosts QML-only shortcut handlers.
 - Keeps the optional touchpad gesture Loader inactive by default; only an
@@ -46,8 +47,8 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 
 - Exposes disjoint main and overview outputs from one build. The default output
   remains the main KWin script and shortcut helper.
-- Keeps configuration files at stable package paths while the generated main
-  script and overview metadata select their content-addressed runtime paths.
+- Keeps metadata, configuration, and required KPackage entrypoints at stable
+  paths while generated selectors choose content-addressed runtime paths.
 - Installs either package through NixOS or Home Manager and rejects duplicate
   ownership of the same package ID while allowing independent scopes.
 - Maps an optional complete Home Manager settings profile to KDE's native

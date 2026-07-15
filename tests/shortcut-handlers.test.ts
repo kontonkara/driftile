@@ -16,8 +16,15 @@ interface ShortcutHandler {
   readonly text: string;
 }
 
-const qml = readFileSync(
+const bootstrapQml = readFileSync(
   new URL("../packaging/kwin-script/contents/ui/main.qml", import.meta.url),
+  "utf8",
+);
+const qml = readFileSync(
+  new URL(
+    "../packaging/kwin-script/contents/runtime/ui/main.qml",
+    import.meta.url,
+  ),
   "utf8",
 );
 const configuration = readFileSync(
@@ -455,6 +462,20 @@ const expectedHandlers: Readonly<
 
 describe("KWin shortcut handlers", () => {
   const handlers = parseShortcutHandlers(qml);
+
+  it("keeps the fixed entry point as a cache-busting runtime bootstrap", () => {
+    expect(
+      createHash("sha256").update(bootstrapQml, "utf8").digest("hex"),
+    ).toBe("8f2a26ad1cff5b42177ac90406dab017f8aa7d5bd87ca72889c1405ed52af7f2");
+    expect(bootstrapQml).toContain("QtObject {");
+    expect(bootstrapQml).toContain("Date.now().toString(36)");
+    expect(bootstrapQml).toContain("Math.random().toString(36).slice(2)");
+    expect(bootstrapQml).toContain('Qt.resolvedUrl("../runtime/selector.qml")');
+    expect(bootstrapQml.match(/\bLoader\s*\{/gu)).toHaveLength(1);
+    expect(bootstrapQml).not.toMatch(
+      /ShortcutHandler|DriftileRuntime|Workspace|readConfig/u,
+    );
+  });
 
   it("registers the expected stable actions and bindings", () => {
     expect(

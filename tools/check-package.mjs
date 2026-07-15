@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { readFile, readdir } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
 import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,7 +18,9 @@ const pluginId = "io.github.kontonkara.driftile";
 const overviewPluginId = "io.github.kontonkara.driftile.overview";
 const expectedPackageEntries = [
   "contents/config/main.xml",
+  "contents/runtime/selector.qml",
   "contents/ui/config.ui",
+  "contents/ui/main.qml",
   "metadata.json",
 ];
 const expectedRuntimeEntries = [
@@ -26,7 +29,11 @@ const expectedRuntimeEntries = [
   "ui/TouchpadNavigation.qml",
   "ui/main.qml",
 ];
-const expectedOverviewPackageEntries = ["metadata.json"];
+const expectedOverviewPackageEntries = [
+  "contents/runtime/selector.qml",
+  "contents/ui/main.qml",
+  "metadata.json",
+];
 const expectedOverviewRuntimeEntries = [
   "code/main.js",
   "ui/DesktopCard.qml",
@@ -87,7 +94,7 @@ if (
   throw new Error("packaged LICENSE does not match the repository LICENSE");
 }
 
-const packageRuntimeHash = await verifyPackageMetadata(
+await verifyPackageMetadata(
   packageArtifact,
   resolve(rootDirectory, "packaging/kwin-script/metadata.json"),
   {
@@ -95,7 +102,7 @@ const packageRuntimeHash = await verifyPackageMetadata(
     pluginId,
   },
 );
-const overviewRuntimeHash = await verifyPackageMetadata(
+await verifyPackageMetadata(
   overviewPackageArtifact,
   resolve(rootDirectory, "packaging/kwin-effect/metadata.json"),
   {
@@ -104,6 +111,20 @@ const overviewRuntimeHash = await verifyPackageMetadata(
     pluginId: overviewPluginId,
   },
 );
+await Promise.all([
+  verifyArchivedSourceFile(
+    packageArtifact,
+    "contents/ui/main.qml",
+    resolve(rootDirectory, "packaging/kwin-script/contents/ui/main.qml"),
+  ),
+  verifyArchivedSourceFile(
+    overviewPackageArtifact,
+    "contents/ui/main.qml",
+    resolve(rootDirectory, "packaging/kwin-effect/contents/ui/main.qml"),
+  ),
+]);
+const packageRuntimeHash = packagedRuntimeHash(packageArtifact);
+const overviewRuntimeHash = packagedRuntimeHash(overviewPackageArtifact);
 verifyPackageEntries(
   packageArtifact,
   withRuntimeEntries(
@@ -128,6 +149,8 @@ verifyRuntimeHash(
   expectedOverviewRuntimeEntries,
   overviewRuntimeHash,
 );
+verifyRuntimeSelector(packageArtifact, packageRuntimeHash);
+verifyRuntimeSelector(overviewPackageArtifact, overviewRuntimeHash);
 
 const packagedReleaseArtifacts = (
   await readdir(outputDirectory, {
@@ -147,6 +170,21 @@ if (
 ) {
   throw new Error("dist contains unexpected release artifacts");
 }
+
+await verifyKPackageInstalls([
+  {
+    artifact: packageArtifact,
+    packageType: "KWin/Script",
+    pluginId,
+    relativeInstallPath: `kwin/scripts/${pluginId}`,
+  },
+  {
+    artifact: overviewPackageArtifact,
+    packageType: "KWin/Effect",
+    pluginId: overviewPluginId,
+    relativeInstallPath: `kwin/effects/${overviewPluginId}`,
+  },
+]);
 
 for (let index = 0; index < releaseArtifacts.length; index += 1) {
   console.log(`${basename(releaseArtifacts[index])} ${checksums[index]}`);
@@ -177,17 +215,21 @@ function withRuntimeEntries(entries, runtimeEntries, runtimeHash) {
 }
 
 function verifyPackageEntries(artifact, expectedEntries, packageName) {
-  const entries = runUnzip(["-Z1", artifact])
-    .trimEnd()
-    .split("\n")
-    .filter((entry) => entry !== "")
-    .sort();
+  const entries = packageEntries(artifact);
 
   if (JSON.stringify(entries) !== JSON.stringify(expectedEntries)) {
     throw new Error(
       `${packageName} entries differ from the release contract: ${entries.join(", ")}`,
     );
   }
+}
+
+function packageEntries(artifact) {
+  return runUnzip(["-Z1", artifact])
+    .trimEnd()
+    .split("\n")
+    .filter((entry) => entry !== "")
+    .sort();
 }
 
 async function verifyPackageMetadata(
@@ -197,41 +239,21 @@ async function verifyPackageMetadata(
 ) {
   const archivedMetadata = runUnzip(["-p", artifact, "metadata.json"]);
   let metadata;
-  let sourceMetadata;
 
   try {
     metadata = JSON.parse(archivedMetadata);
-    sourceMetadata = JSON.parse(await readFile(sourceMetadataPath, "utf8"));
   } catch (error) {
     throw new Error("KWin package metadata is not valid JSON", {
       cause: error,
     });
   }
 
-  const mainScript = metadata["X-Plasma-MainScript"];
-  const runtimeMatch =
-    typeof mainScript === "string"
-      ? /^runtime\/([0-9a-f]{64})\/ui\/main\.qml$/u.exec(mainScript)
-      : null;
-
-  if (runtimeMatch === null) {
-    throw new Error("KWin package metadata has an invalid runtime entrypoint");
+  if (archivedMetadata !== (await readFile(sourceMetadataPath, "utf8"))) {
+    throw new Error("packaged metadata differs from its repository source");
   }
 
-  if (sourceMetadata["X-Plasma-MainScript"] !== "ui/main.qml") {
-    throw new Error("source metadata must use the canonical main entrypoint");
-  }
-
-  const expectedMetadata = {
-    ...sourceMetadata,
-    "X-Plasma-MainScript": mainScript,
-  };
-  const expectedMetadataText = `${JSON.stringify(expectedMetadata, null, 2)}\n`;
-
-  if (archivedMetadata !== expectedMetadataText) {
-    throw new Error(
-      "packaged metadata differs from its source beyond the runtime entrypoint",
-    );
+  if (metadata["X-Plasma-MainScript"] !== "ui/main.qml") {
+    throw new Error("KWin package metadata must use the fixed main entrypoint");
   }
 
   if (metadata["KPackageStructure"] !== packageStructure) {
@@ -257,8 +279,48 @@ async function verifyPackageMetadata(
   if (forbidConfigModule && "X-KDE-ConfigModule" in metadata) {
     throw new Error("overview effect metadata must not expose a config module");
   }
+}
 
-  return runtimeMatch[1];
+async function verifyArchivedSourceFile(artifact, archivePath, sourcePath) {
+  const archivedFile = runUnzipBytes(["-p", artifact, archivePath]);
+  const sourceFile = await readFile(sourcePath);
+
+  if (!archivedFile.equals(sourceFile)) {
+    throw new Error(`${archivePath} differs from its repository source`);
+  }
+}
+
+function packagedRuntimeHash(artifact) {
+  const runtimeHashes = new Set();
+
+  for (const entry of packageEntries(artifact)) {
+    const match = /^contents\/runtime\/([0-9a-f]{64})\/(?:code|ui)\/.+$/u.exec(
+      entry,
+    );
+
+    if (match !== null) {
+      runtimeHashes.add(match[1]);
+    }
+  }
+
+  if (runtimeHashes.size !== 1) {
+    throw new Error(
+      `package must contain exactly one hashed runtime: ${[...runtimeHashes].join(", ")}`,
+    );
+  }
+
+  return [...runtimeHashes][0];
+}
+
+function verifyRuntimeSelector(artifact, runtimeHash) {
+  const selector = runUnzip(["-p", artifact, "contents/runtime/selector.qml"]);
+  const expectedSelector = `import QtQuick\n\nLoader {\n    source: Qt.resolvedUrl("${runtimeHash}/ui/main.qml")\n}\n`;
+
+  if (selector !== expectedSelector) {
+    throw new Error(
+      "runtime selector does not select the packaged content hash",
+    );
+  }
 }
 
 function verifyRuntimeHash(artifact, runtimeEntries, expectedHash) {
@@ -275,6 +337,81 @@ function verifyRuntimeHash(artifact, runtimeEntries, expectedHash) {
   if (actualHash !== expectedHash) {
     throw new Error(
       `packaged runtime content hash ${actualHash} does not match ${expectedHash}`,
+    );
+  }
+}
+
+async function verifyKPackageInstalls(packages) {
+  const temporaryHome = await mkdtemp(
+    resolve(tmpdir(), "driftile-package-check-"),
+  );
+  const dataHome = resolve(temporaryHome, "data");
+  const runtimeDirectory = resolve(temporaryHome, "runtime");
+  const environment = {
+    ...process.env,
+    HOME: temporaryHome,
+    XDG_CACHE_HOME: resolve(temporaryHome, "cache"),
+    XDG_CONFIG_HOME: resolve(temporaryHome, "config"),
+    XDG_DATA_HOME: dataHome,
+    XDG_RUNTIME_DIR: runtimeDirectory,
+    XDG_STATE_HOME: resolve(temporaryHome, "state"),
+  };
+
+  try {
+    await Promise.all([
+      mkdir(environment.XDG_CACHE_HOME, { recursive: true }),
+      mkdir(environment.XDG_CONFIG_HOME, { recursive: true }),
+      mkdir(dataHome, { recursive: true }),
+      mkdir(runtimeDirectory, { recursive: true }),
+      mkdir(environment.XDG_STATE_HOME, { recursive: true }),
+    ]);
+    await chmod(runtimeDirectory, 0o700);
+
+    for (const package_ of packages) {
+      runCommand(
+        "kpackagetool6",
+        [`--type=${package_.packageType}`, "--install", package_.artifact],
+        environment,
+      );
+
+      const installedDirectory = resolve(
+        dataHome,
+        package_.relativeInstallPath,
+      );
+      const installedMetadata = JSON.parse(
+        await readFile(resolve(installedDirectory, "metadata.json"), "utf8"),
+      );
+
+      if (installedMetadata["KPlugin"]?.["Id"] !== package_.pluginId) {
+        throw new Error(
+          `${package_.packageType} installed an unexpected plugin ID`,
+        );
+      }
+
+      await readFile(resolve(installedDirectory, "contents/ui/main.qml"));
+      await readFile(
+        resolve(installedDirectory, "contents/runtime/selector.qml"),
+      );
+    }
+  } finally {
+    await rm(temporaryHome, { force: true, recursive: true });
+  }
+}
+
+function runCommand(command, arguments_, environment) {
+  const result = spawnSync(command, arguments_, {
+    encoding: "utf8",
+    env: environment,
+    maxBuffer: 1024 * 1024,
+  });
+
+  if (result.error) {
+    throw result.error;
+  }
+
+  if (result.status !== 0) {
+    throw new Error(
+      `${command} exited with status ${String(result.status)}: ${result.stderr.trim()}`,
     );
   }
 }
