@@ -1,15 +1,11 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.22.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.23.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.22.0 adds guarded number-gutter desktop-card reordering to the optional
-overview through public KWin APIs without changing layout ownership, settings,
-or persistence.
-
-Version 1.23.0 is in development with one read-only active-column layout badge
-in each optional overview desktop card.
+Stable 1.23.0 adds one read-only active-column layout badge to each optional
+overview desktop card without adding input, layout, settings, or persistence.
 
 ## Foundation (delivered)
 
@@ -978,7 +974,7 @@ Release criteria (met):
 
 No other feature belongs to 1.22.0.
 
-## 1.23.0 (in development)
+## 1.23.0 (released)
 
 Version `1.23.0` adds one passive active-column badge to each desktop card in
 the optional overview. It reports `stacked` or `tabbed` and the logical width as
@@ -990,12 +986,13 @@ and its existing rendered delegate. It adds no input handler, animation,
 setting, shortcut, persistence field, layout mutation, window scan, or KWin
 write.
 
-Release criteria:
+Release criteria (met):
 
 - One focused QML contract check covers the label grammar, fail-closed
   visibility, bottom placement, and constant-time delegate lookup.
-- Formatting, the focused overview check, QML lint, packaging, and exact-SHA CI
-  pass without a new VM or application matrix.
+- Formatting, the focused overview check, QML lint, packaging, a hidden
+  lifecycle VM, and exact-SHA CI pass. The presentation-only slice adds no full
+  feature VM or application matrix.
 
 No other feature belongs to 1.23.0.
 

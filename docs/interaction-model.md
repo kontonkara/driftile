@@ -62,6 +62,12 @@ write-free and leave the effect open. The interaction changes no window state
 or Driftile layout, settings, shortcuts, or persistence; only KWin's global
 desktop order changes after a valid release.
 
+In 1.23.0, each overview desktop card passively reports its active column's
+validated `stacked` or `tabbed` presentation and logical width. The badge stays
+inside the visible column span and hides when the complete label cannot fit or
+its source state is invalid. It accepts no input and changes no window, layout,
+setting, shortcut, persistence, or KWin state.
+
 ## Delivery contract
 
 | Area                 | Required behavior                                                                                 | Target    |
@@ -80,7 +86,7 @@ desktop order changes after a valid release.
 | Floating layer       | Toggle state, switch layers, navigate geometrically, nudge, center, and resize contextually       | Available |
 | Pointer drop         | Preview and reinsert one active tiled window at one exact visible target                          | Available |
 | Pointer resize       | Adopt one completed horizontal resize as the active column's fixed width                          | Available |
-| Overview companion   | Activate exact targets; select number gutters; reorder desktop cards with guarded gutter drags    | Available |
+| Overview companion   | Activate targets; select and reorder desktop cards; show the passive active-column layout badge   | Available |
 | Tabbed columns       | Toggle presentation; select or reorder members with the existing vertical grammar                 | 1.19.0    |
 | Pointer navigation   | Provide wheel navigation through the shared layout model                                          | Future    |
 

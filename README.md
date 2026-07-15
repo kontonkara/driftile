@@ -35,12 +35,13 @@ leaving window, output, and desktop mechanisms to KWin.
   tabbed column, keeps minimized members visible but disabled, and supports
   non-wrapping spatial keyboard navigation between actionable targets. A
   guarded number-gutter drag reorders desktop cards while protecting the
-  shared trailing empty desktop.
+  shared trailing empty desktop, and a passive badge reports each card's
+  active-column presentation and logical width.
 - An optional reversible shortcut helper with custom JSON profiles.
 
 ## Status
 
-The latest stable release is [1.22.0](docs/release-notes-1.22.0.md).
+The latest stable release is [1.23.0](docs/release-notes-1.23.0.md).
 The feature list tracks the current `main` branch; release state is recorded in
 the [roadmap](docs/roadmap.md).
 
@@ -116,6 +117,7 @@ package. See [Testing](docs/testing.md) for unit, integration, and VM checks.
 - [Testing](docs/testing.md)
 - [Performance](docs/performance.md)
 - [Roadmap](docs/roadmap.md)
+- [1.23.0 release notes](docs/release-notes-1.23.0.md)
 - [1.22.0 release notes](docs/release-notes-1.22.0.md)
 - [1.21.0 release notes](docs/release-notes-1.21.0.md)
 - [1.20.0 release notes](docs/release-notes-1.20.0.md)

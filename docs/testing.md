@@ -154,6 +154,14 @@ desktop order, IDs, protected tail, selection, focus, memberships, frames,
 layout state, cleanup, and overview reopen without adding an application or
 backend matrix.
 
+The 1.23.0 release slice remains presentation-only. A focused overview contract
+check and QML lint cover badge label grammar, bottom placement, fail-closed
+visibility, visible-span clipping, pass-through input, and constant-time column
+and delegate lookup. The hidden lifecycle VM verifies installation of the
+published 1.22.0 packages and upgrade to matching 1.23.0 packages. Packaging and
+exact-SHA CI cover the stable artifacts; this slice adds no full feature VM,
+backend, or application matrix.
+
 In the following unit list, zero writes to floating windows means ambient
 layout work; explicit manual-floating movement, centering, or contextual size
 resizing owns its guarded frame request.
