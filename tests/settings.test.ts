@@ -93,6 +93,8 @@ const validSettings: DriftileSettings = {
   gap: 32,
   showTabIndicator: false,
   touchpadNavigation: true,
+  touchpadNavigationFingerCount: 4,
+  touchpadNaturalScroll: false,
   windowHeightPresets: validWindowHeightPresets,
   windowHeightStepPercent: 20,
 };
@@ -115,6 +117,8 @@ const validSettingsInput = {
   gap: validSettings.gap,
   showTabIndicator: validSettings.showTabIndicator,
   touchpadNavigation: validSettings.touchpadNavigation,
+  touchpadNavigationFingerCount: validSettings.touchpadNavigationFingerCount,
+  touchpadNaturalScroll: validSettings.touchpadNaturalScroll,
   windowHeightPresets: validSettings.windowHeightPresets.canonicalValue,
   windowHeightStepPercent: validSettings.windowHeightStepPercent,
 };
@@ -130,6 +134,8 @@ describe("Driftile settings", () => {
       gap: 16,
       showTabIndicator: true,
       touchpadNavigation: false,
+      touchpadNavigationFingerCount: 5,
+      touchpadNaturalScroll: true,
       windowHeightStepPercent: 10,
     });
     expect(
@@ -180,6 +186,9 @@ describe("Driftile settings", () => {
       gap: validSettings.gap,
       showTabIndicator: validSettings.showTabIndicator,
       touchpadNavigation: validSettings.touchpadNavigation,
+      touchpadNavigationFingerCount:
+        validSettings.touchpadNavigationFingerCount,
+      touchpadNaturalScroll: validSettings.touchpadNaturalScroll,
       windowHeightPresets: validSettings.windowHeightPresets,
       windowHeightStepPercent: validSettings.windowHeightStepPercent,
     });
@@ -245,6 +254,8 @@ describe("Driftile settings", () => {
       gap: 0,
       showTabIndicator: false,
       touchpadNavigation: false,
+      touchpadNavigationFingerCount: 3,
+      touchpadNaturalScroll: false,
       windowHeightPresets: "10",
       windowHeightStepPercent: 1,
     },
@@ -264,6 +275,8 @@ describe("Driftile settings", () => {
       gap: 64,
       showTabIndicator: true,
       touchpadNavigation: true,
+      touchpadNavigationFingerCount: 5,
+      touchpadNaturalScroll: true,
       windowHeightPresets: "100",
       windowHeightStepPercent: 50,
     },
@@ -304,6 +317,8 @@ describe("Driftile settings", () => {
       gap: settings.gap,
       showTabIndicator: settings.showTabIndicator,
       touchpadNavigation: settings.touchpadNavigation,
+      touchpadNavigationFingerCount: settings.touchpadNavigationFingerCount,
+      touchpadNaturalScroll: settings.touchpadNaturalScroll,
       windowHeightStepPercent: settings.windowHeightStepPercent,
     });
   });
@@ -313,6 +328,31 @@ describe("Driftile settings", () => {
     ["a non-boolean centering setting", { centerFocusedColumn: 1 }],
     ["a non-boolean tab-indicator setting", { showTabIndicator: 1 }],
     ["a non-boolean touchpad setting", { touchpadNavigation: 1 }],
+    [
+      "a non-numeric touchpad finger count",
+      { touchpadNavigationFingerCount: "5" },
+    ],
+    [
+      "a non-finite touchpad finger count",
+      { touchpadNavigationFingerCount: Number.NaN },
+    ],
+    [
+      "an infinite touchpad finger count",
+      { touchpadNavigationFingerCount: Number.POSITIVE_INFINITY },
+    ],
+    [
+      "a fractional touchpad finger count",
+      { touchpadNavigationFingerCount: 3.5 },
+    ],
+    [
+      "a touchpad finger count below its range",
+      { touchpadNavigationFingerCount: 2 },
+    ],
+    [
+      "a touchpad finger count above its range",
+      { touchpadNavigationFingerCount: 6 },
+    ],
+    ["a non-boolean natural-scroll setting", { touchpadNaturalScroll: 1 }],
     ["an invalid default presentation", { defaultColumnPresentation: "tiled" }],
     ["invalid column-width presets", { columnWidthPresets: "50,40" }],
     ["invalid window-height presets", { windowHeightPresets: "50,40" }],
@@ -387,9 +427,10 @@ describe("Driftile settings", () => {
     },
   );
 
-  it("rejects the previous sixteen-field snapshot", () => {
+  it("rejects the previous seventeen-field snapshot", () => {
     const incomplete: Record<string, unknown> = { ...validSettingsInput };
-    delete incomplete["windowHeightPresets"];
+    delete incomplete["touchpadNavigationFingerCount"];
+    delete incomplete["touchpadNaturalScroll"];
 
     expect(decodeDriftileSettings(incomplete)).toBeNull();
   });
@@ -481,6 +522,8 @@ describe("Driftile settings", () => {
       { gap: 33 },
       { showTabIndicator: true },
       { touchpadNavigation: false },
+      { touchpadNavigationFingerCount: 5 },
+      { touchpadNaturalScroll: true },
       { windowHeightPresets: changedWindowHeightPresets },
       { windowHeightStepPercent: 21 },
     ]) {

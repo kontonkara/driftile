@@ -673,6 +673,8 @@ describe("KWin shortcut handlers", () => {
       "kcfg_CenterFocusedColumn",
       "kcfg_ShowTabIndicator",
       "kcfg_TouchpadNavigation",
+      "kcfg_TouchpadNavigationFingerCount",
+      "kcfg_TouchpadNaturalScroll",
       "kcfg_Gap",
       "kcfg_DefaultColumnPresentation",
       "kcfg_DefaultColumnWidthPercent",

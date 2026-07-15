@@ -28,7 +28,9 @@ interface DeliveredSettings {
 
 type RuntimeSettingsInput = Record<keyof DeliveredSettings, unknown> & {
   readonly showTabIndicator: unknown;
+  readonly touchpadNaturalScroll: unknown;
   readonly touchpadNavigation: unknown;
+  readonly touchpadNavigationFingerCount: unknown;
 };
 
 interface RuntimeControllerOptions {
@@ -312,6 +314,8 @@ describe("runtime settings delivery", () => {
       defaultColumnWidthPercent: 65,
       gap: 7,
       touchpadNavigation: true,
+      touchpadNavigationFingerCount: 3,
+      touchpadNaturalScroll: false,
       windowHeightPresets: "25,50,75",
       windowHeightStepPercent: 17,
     });
@@ -335,6 +339,8 @@ describe("runtime settings delivery", () => {
 
     expect(runtime.applySettings(next)).toBe(true);
     expect(runtime.getTouchpadNavigation()).toBe(true);
+    expect(runtime.getTouchpadNavigationFingerCount()).toBe(3);
+    expect(runtime.getTouchpadNaturalScroll()).toBe(false);
     expect(controller.calls).toEqual([
       "borderlessWindows",
       "applicationBorderlessExclusions",
@@ -461,6 +467,8 @@ function settings(
     gap: 16,
     showTabIndicator: true,
     touchpadNavigation: false,
+    touchpadNavigationFingerCount: 5,
+    touchpadNaturalScroll: true,
     windowHeightPresets: "",
     windowHeightStepPercent: 10,
     ...overrides,

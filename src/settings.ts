@@ -54,7 +54,9 @@ const MIN_DEFAULT_COLUMN_WIDTH_PERCENT = 10;
 const MAX_DEFAULT_COLUMN_WIDTH_PERCENT = 100;
 const MIN_RESIZE_STEP_PERCENT = 1;
 const MAX_RESIZE_STEP_PERCENT = 50;
-const SETTINGS_FIELD_COUNT = 17;
+const MIN_TOUCHPAD_NAVIGATION_FINGER_COUNT = 3;
+const MAX_TOUCHPAD_NAVIGATION_FINGER_COUNT = 5;
+const SETTINGS_FIELD_COUNT = 19;
 
 export interface DriftileSettings {
   readonly applicationBorderlessExclusions: ApplicationBorderlessExclusions;
@@ -72,6 +74,8 @@ export interface DriftileSettings {
   readonly gap: number;
   readonly showTabIndicator: boolean;
   readonly touchpadNavigation: boolean;
+  readonly touchpadNavigationFingerCount: number;
+  readonly touchpadNaturalScroll: boolean;
   readonly windowHeightPresets: WindowHeightPresetPercentages;
   readonly windowHeightStepPercent: number;
 }
@@ -92,6 +96,8 @@ export const DEFAULT_DRIFTILE_SETTINGS: DriftileSettings = Object.freeze({
   gap: 16,
   showTabIndicator: true,
   touchpadNavigation: false,
+  touchpadNavigationFingerCount: 5,
+  touchpadNaturalScroll: true,
   windowHeightPresets: EMPTY_WINDOW_HEIGHT_PRESET_PERCENTAGES,
   windowHeightStepPercent: 10,
 });
@@ -122,6 +128,8 @@ export function decodeDriftileSettings(
     !owns(candidate, "gap") ||
     !owns(candidate, "showTabIndicator") ||
     !owns(candidate, "touchpadNavigation") ||
+    !owns(candidate, "touchpadNavigationFingerCount") ||
+    !owns(candidate, "touchpadNaturalScroll") ||
     !owns(candidate, "windowHeightPresets") ||
     !owns(candidate, "windowHeightStepPercent")
   ) {
@@ -157,6 +165,9 @@ export function decodeDriftileSettings(
   const gap = candidate["gap"];
   const showTabIndicator = candidate["showTabIndicator"];
   const touchpadNavigation = candidate["touchpadNavigation"];
+  const touchpadNavigationFingerCount =
+    candidate["touchpadNavigationFingerCount"];
+  const touchpadNaturalScroll = candidate["touchpadNaturalScroll"];
   const windowHeightPresets = decodeWindowHeightPresetPercentages(
     candidate["windowHeightPresets"],
   );
@@ -186,6 +197,12 @@ export function decodeDriftileSettings(
     !isBoundedInteger(gap, MIN_GAP, MAX_GAP) ||
     typeof showTabIndicator !== "boolean" ||
     typeof touchpadNavigation !== "boolean" ||
+    !isBoundedInteger(
+      touchpadNavigationFingerCount,
+      MIN_TOUCHPAD_NAVIGATION_FINGER_COUNT,
+      MAX_TOUCHPAD_NAVIGATION_FINGER_COUNT,
+    ) ||
+    typeof touchpadNaturalScroll !== "boolean" ||
     !windowHeightPresets ||
     !isBoundedInteger(
       windowHeightStepPercent,
@@ -212,6 +229,8 @@ export function decodeDriftileSettings(
     gap,
     showTabIndicator,
     touchpadNavigation,
+    touchpadNavigationFingerCount,
+    touchpadNaturalScroll,
     windowHeightPresets,
     windowHeightStepPercent,
   });
@@ -258,6 +277,9 @@ export function sameDriftileSettings(
     left.gap === right.gap &&
     left.showTabIndicator === right.showTabIndicator &&
     left.touchpadNavigation === right.touchpadNavigation &&
+    left.touchpadNavigationFingerCount ===
+      right.touchpadNavigationFingerCount &&
+    left.touchpadNaturalScroll === right.touchpadNaturalScroll &&
     sameWindowHeightPresetPercentages(
       left.windowHeightPresets,
       right.windowHeightPresets,

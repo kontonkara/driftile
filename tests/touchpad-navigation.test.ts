@@ -112,29 +112,47 @@ afterEach(() => {
 });
 
 describe("touchpad navigation", () => {
-  it("keeps the setting opt-in across KConfig and the KCM", () => {
+  it("keeps navigation opt-in while exposing bounded direction settings", () => {
     const entry = configuration.match(
       /<entry name="TouchpadNavigation" type="Bool">([\s\S]*?)<\/entry>/u,
     )?.[1];
+    const fingerCountEntry = configuration.match(
+      /<entry name="TouchpadNavigationFingerCount" type="Int">([\s\S]*?)<\/entry>/u,
+    )?.[1];
+    const naturalScrollEntry = configuration.match(
+      /<entry name="TouchpadNaturalScroll" type="Bool">([\s\S]*?)<\/entry>/u,
+    )?.[1];
 
     expect(entry).toContain("<default>false</default>");
+    expect(fingerCountEntry).toContain("<default>5</default>");
+    expect(fingerCountEntry).toContain("<min>3</min>");
+    expect(fingerCountEntry).toContain("<max>5</max>");
+    expect(naturalScrollEntry).toContain("<default>true</default>");
     expect(configurationUi).toContain('name="kcfg_TouchpadNavigation"');
+    expect(configurationUi).toContain(
+      'name="kcfg_TouchpadNavigationFingerCount"',
+    );
+    expect(configurationUi).toContain('name="kcfg_TouchpadNaturalScroll"');
   });
 
-  it("creates only two activation-only five-finger touchpad handlers with inverse focus mapping", () => {
+  it("creates only two activation-only variable-finger touchpad handlers", () => {
     expect(touchpadQml.match(/SwipeGestureHandler \{/gu)).toHaveLength(2);
     expect(
       touchpadQml.match(/deviceType: SwipeGestureHandler\.Device\.Touchpad/gu),
     ).toHaveLength(2);
-    expect(touchpadQml.match(/fingerCount: 5/gu)).toHaveLength(2);
-    expect(touchpadQml).toMatch(
-      /direction: SwipeGestureHandler\.Direction\.Left[\s\S]*onActivated: root\.focusRightRequested\(\)/u,
+    expect(touchpadQml).toContain("property int fingerCount: 5");
+    expect(touchpadQml).toContain("property bool naturalScroll: true");
+    expect(touchpadQml.match(/fingerCount: root\.fingerCount/gu)).toHaveLength(
+      2,
     );
     expect(touchpadQml).toMatch(
-      /direction: SwipeGestureHandler\.Direction\.Right[\s\S]*onActivated: root\.focusLeftRequested\(\)/u,
+      /direction: SwipeGestureHandler\.Direction\.Left[\s\S]*if \(root\.naturalScroll\) \{\s*root\.focusRightRequested\(\);\s*\} else \{\s*root\.focusLeftRequested\(\);/u,
+    );
+    expect(touchpadQml).toMatch(
+      /direction: SwipeGestureHandler\.Direction\.Right[\s\S]*if \(root\.naturalScroll\) \{\s*root\.focusLeftRequested\(\);\s*\} else \{\s*root\.focusRightRequested\(\);/u,
     );
     expect(touchpadQml).not.toMatch(
-      /onCancelled|onProgressChanged|\bprogress\s*:|ShortcutHandler|sequence\s*:|action/iu,
+      /onCancelled|onProgressChanged|\bprogress\s*:|ShortcutHandler|sequence\s*:|Timer|action/iu,
     );
     expect(touchpadQml).toContain(
       'Component.onCompleted: console.info("[driftile] touchpad-navigation lifecycle=created")',
@@ -146,19 +164,34 @@ describe("touchpad navigation", () => {
     expect(touchpadQml.match(/console\.info\(/gu)).toHaveLength(2);
   });
 
-  it("loads and destroys the handler pair only from the accepted applied setting", () => {
+  it("loads and updates the handler pair only from accepted applied settings", () => {
     expect(mainQml).toContain("property bool appliedTouchpadNavigation: false");
+    expect(mainQml).toContain(
+      "property int appliedTouchpadNavigationFingerCount: 5",
+    );
+    expect(mainQml).toContain(
+      "property bool appliedTouchpadNaturalScroll: true",
+    );
     expect(mainQml).toMatch(
-      /readonly property Loader touchpadNavigationLoader: Loader \{[\s\S]*active: root\.appliedTouchpadNavigation[\s\S]*source: "TouchpadNavigation\.qml"[\s\S]*\}/u,
+      /readonly property Loader touchpadNavigationLoader: Loader \{[\s\S]*active: root\.appliedTouchpadNavigation[\s\S]*source: "TouchpadNavigation\.qml"[\s\S]*onLoaded: root\.updateTouchpadNavigationHandler\(\)[\s\S]*\}/u,
     );
     expect(mainQml).toMatch(
       /function onConfigChanged\(\) \{\s*root\.applySettings\(root\.readSettings\(\)\)\s*\}/u,
     );
     expect(mainQml).toMatch(
-      /function applySettings\(settings\) \{\s*if \(!Runtime\.DriftileRuntime\.applySettings\(settings\)\) \{\s*return;\s*\}\s*root\.appliedTouchpadNavigation = Runtime\.DriftileRuntime\.getTouchpadNavigation\(\);\s*\}/u,
+      /function applySettings\(settings\) \{[\s\S]*root\.appliedTouchpadNavigation = Runtime\.DriftileRuntime\.getTouchpadNavigation\(\);[\s\S]*root\.appliedTouchpadNavigationFingerCount = Runtime\.DriftileRuntime\.getTouchpadNavigationFingerCount\(\);[\s\S]*root\.appliedTouchpadNaturalScroll = Runtime\.DriftileRuntime\.getTouchpadNaturalScroll\(\);[\s\S]*root\.updateTouchpadNavigationHandler\(\);\s*\}/u,
     );
     expect(mainQml).toContain(
       'touchpadNavigation: KWin.readConfig("TouchpadNavigation", false)',
+    );
+    expect(mainQml).toContain(
+      'touchpadNavigationFingerCount: KWin.readConfig("TouchpadNavigationFingerCount", 5)',
+    );
+    expect(mainQml).toContain(
+      'touchpadNaturalScroll: KWin.readConfig("TouchpadNaturalScroll", true)',
+    );
+    expect(mainQml).toMatch(
+      /function updateTouchpadNavigationHandler\(\) \{[\s\S]*handler\.fingerCount = root\.appliedTouchpadNavigationFingerCount;[\s\S]*handler\.naturalScroll = root\.appliedTouchpadNaturalScroll;[\s\S]*\}/u,
     );
     expect(mainQml).toContain(
       'applicationBorderlessExclusions: KWin.readConfig("ApplicationBorderlessExclusions", "")',
@@ -172,6 +205,16 @@ describe("touchpad navigation", () => {
     expect(
       mainQml.match(
         /root\.appliedTouchpadNavigation = Runtime\.DriftileRuntime\.getTouchpadNavigation\(\);/gu,
+      ),
+    ).toHaveLength(2);
+    expect(
+      mainQml.match(
+        /root\.appliedTouchpadNavigationFingerCount = Runtime\.DriftileRuntime\.getTouchpadNavigationFingerCount\(\);/gu,
+      ),
+    ).toHaveLength(2);
+    expect(
+      mainQml.match(
+        /root\.appliedTouchpadNaturalScroll = Runtime\.DriftileRuntime\.getTouchpadNaturalScroll\(\);/gu,
       ),
     ).toHaveLength(2);
     expect(mainQml).toMatch(
@@ -192,10 +235,20 @@ describe("touchpad navigation", () => {
     const runtime = await import("../src/runtime");
 
     expect(runtime.getTouchpadNavigation()).toBe(false);
-    expect(runtime.applySettings(settings({ touchpadNavigation: true }))).toBe(
-      false,
-    );
+    expect(runtime.getTouchpadNavigationFingerCount()).toBe(5);
+    expect(runtime.getTouchpadNaturalScroll()).toBe(true);
+    expect(
+      runtime.applySettings(
+        settings({
+          touchpadNaturalScroll: false,
+          touchpadNavigation: true,
+          touchpadNavigationFingerCount: 3,
+        }),
+      ),
+    ).toBe(false);
     expect(runtime.getTouchpadNavigation()).toBe(false);
+    expect(runtime.getTouchpadNavigationFingerCount()).toBe(5);
+    expect(runtime.getTouchpadNaturalScroll()).toBe(true);
 
     runtime.init(
       { screens: [] } as unknown as KWinWorkspace,
@@ -209,24 +262,44 @@ describe("touchpad navigation", () => {
     );
 
     expect(runtime.getTouchpadNavigation()).toBe(false);
+    expect(runtime.getTouchpadNavigationFingerCount()).toBe(5);
+    expect(runtime.getTouchpadNaturalScroll()).toBe(true);
     expect(
       runtime.applySettings(settings({ gap: 65, touchpadNavigation: true })),
     ).toBe(false);
     expect(runtime.getTouchpadNavigation()).toBe(false);
-    expect(runtime.applySettings(settings({ touchpadNavigation: true }))).toBe(
-      true,
-    );
+    expect(
+      runtime.applySettings(
+        settings({
+          touchpadNaturalScroll: false,
+          touchpadNavigation: true,
+          touchpadNavigationFingerCount: 3,
+        }),
+      ),
+    ).toBe(true);
     expect(runtime.getTouchpadNavigation()).toBe(true);
+    expect(runtime.getTouchpadNavigationFingerCount()).toBe(3);
+    expect(runtime.getTouchpadNaturalScroll()).toBe(false);
     expect(runtime.applySettings(settings())).toBe(true);
     expect(runtime.getTouchpadNavigation()).toBe(false);
+    expect(runtime.getTouchpadNavigationFingerCount()).toBe(5);
+    expect(runtime.getTouchpadNaturalScroll()).toBe(true);
 
     runtime.destroy();
     expect(runtime.getTouchpadNavigation()).toBe(false);
+    expect(runtime.getTouchpadNavigationFingerCount()).toBe(5);
+    expect(runtime.getTouchpadNaturalScroll()).toBe(true);
   });
 
   it("keeps the runtime getter and package file in their exact contracts", () => {
     expect(runtimeSource).toMatch(
       /export function getTouchpadNavigation\(\): boolean \{\s*return appliedSettings\?\.touchpadNavigation === true;\s*\}/u,
+    );
+    expect(runtimeSource).toMatch(
+      /export function getTouchpadNavigationFingerCount\(\): number \{\s*return appliedSettings\?\.touchpadNavigationFingerCount \?\? 5;\s*\}/u,
+    );
+    expect(runtimeSource).toMatch(
+      /export function getTouchpadNaturalScroll\(\): boolean \{\s*return appliedSettings\?\.touchpadNaturalScroll \?\? true;\s*\}/u,
     );
     expect(packageCheck).toContain('"ui/TouchpadNavigation.qml"');
   });
@@ -251,6 +324,8 @@ function settings(
     gap: 16,
     showTabIndicator: true,
     touchpadNavigation: false,
+    touchpadNavigationFingerCount: 5,
+    touchpadNaturalScroll: true,
     windowHeightPresets: "",
     windowHeightStepPercent: 10,
     ...overrides,

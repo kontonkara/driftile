@@ -10,6 +10,8 @@ QtObject {
     property var nextResumeCallbacks: []
     property var resumeCallbacks: []
     property bool appliedTouchpadNavigation: false
+    property int appliedTouchpadNavigationFingerCount: 5
+    property bool appliedTouchpadNaturalScroll: true
 
     readonly property LayoutStateStore layoutStateStore: LayoutStateStore {
         category: "Layout"
@@ -64,6 +66,7 @@ QtObject {
     readonly property Loader touchpadNavigationLoader: Loader {
         active: root.appliedTouchpadNavigation
         source: "TouchpadNavigation.qml"
+        onLoaded: root.updateTouchpadNavigationHandler()
     }
 
     readonly property Connections touchpadNavigationConnection: Connections {
@@ -792,6 +795,8 @@ QtObject {
             gap: KWin.readConfig("Gap", 16),
             showTabIndicator: KWin.readConfig("ShowTabIndicator", true),
             touchpadNavigation: KWin.readConfig("TouchpadNavigation", false),
+            touchpadNavigationFingerCount: KWin.readConfig("TouchpadNavigationFingerCount", 5),
+            touchpadNaturalScroll: KWin.readConfig("TouchpadNaturalScroll", true),
             windowHeightPresets: KWin.readConfig("WindowHeightPresets", ""),
             windowHeightStepPercent: KWin.readConfig("WindowHeightStepPercent", 10)
         };
@@ -803,6 +808,20 @@ QtObject {
         }
 
         root.appliedTouchpadNavigation = Runtime.DriftileRuntime.getTouchpadNavigation();
+        root.appliedTouchpadNavigationFingerCount = Runtime.DriftileRuntime.getTouchpadNavigationFingerCount();
+        root.appliedTouchpadNaturalScroll = Runtime.DriftileRuntime.getTouchpadNaturalScroll();
+        root.updateTouchpadNavigationHandler();
+    }
+
+    function updateTouchpadNavigationHandler() {
+        const handler = touchpadNavigationLoader.item;
+
+        if (handler === null) {
+            return;
+        }
+
+        handler.fingerCount = root.appliedTouchpadNavigationFingerCount;
+        handler.naturalScroll = root.appliedTouchpadNaturalScroll;
     }
 
     function createRect(x, y, width, height) {
@@ -861,6 +880,9 @@ QtObject {
                                     root.hideDropPreview,
                                     root.showTabIndicator);
         root.appliedTouchpadNavigation = Runtime.DriftileRuntime.getTouchpadNavigation();
+        root.appliedTouchpadNavigationFingerCount = Runtime.DriftileRuntime.getTouchpadNavigationFingerCount();
+        root.appliedTouchpadNaturalScroll = Runtime.DriftileRuntime.getTouchpadNaturalScroll();
+        root.updateTouchpadNavigationHandler();
     }
     Component.onDestruction: {
         try {

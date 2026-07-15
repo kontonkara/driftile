@@ -215,6 +215,14 @@ export function getTouchpadNavigation(): boolean {
   return appliedSettings?.touchpadNavigation === true;
 }
 
+export function getTouchpadNavigationFingerCount(): number {
+  return appliedSettings?.touchpadNavigationFingerCount ?? 5;
+}
+
+export function getTouchpadNaturalScroll(): boolean {
+  return appliedSettings?.touchpadNaturalScroll ?? true;
+}
+
 function decodeSettings(value: unknown): DriftileSettings | null {
   const settings = decodeDriftileSettings(value);
 
