@@ -138,4 +138,8 @@ export interface KWinWorkspace {
     desktop: KWinVirtualDesktop,
     output: KWinOutput,
   ): void;
+  slotSwitchToAboveScreen?(): void;
+  slotSwitchToBelowScreen?(): void;
+  slotSwitchToLeftScreen?(): void;
+  slotSwitchToRightScreen?(): void;
 }

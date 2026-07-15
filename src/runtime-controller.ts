@@ -1985,6 +1985,14 @@ export class RuntimeController {
     return this.focusHorizontal("right");
   }
 
+  focusColumnOrOutputLeft(): boolean {
+    return this.focusHorizontal("left", "left");
+  }
+
+  focusColumnOrOutputRight(): boolean {
+    return this.focusHorizontal("right", "right");
+  }
+
   focusFirstColumn(): boolean {
     return this.focusHorizontal("first");
   }
@@ -1999,6 +2007,14 @@ export class RuntimeController {
 
   focusDown(): boolean {
     return this.focusWithinActiveColumn("down");
+  }
+
+  focusWindowOrOutputUp(): boolean {
+    return this.focusWithinActiveColumn("up", undefined, "up");
+  }
+
+  focusWindowOrOutputDown(): boolean {
+    return this.focusWithinActiveColumn("down", undefined, "down");
   }
 
   focusUpOrPreviousDesktop(): boolean {
@@ -2097,6 +2113,32 @@ export class RuntimeController {
     return this.moveActiveColumn("right");
   }
 
+  moveColumnLeftOrToOutputLeft(): boolean {
+    const floatingResult = this.moveActiveManualFloatingWindow(
+      -FLOATING_WINDOW_MOVE_STEP,
+      0,
+    );
+
+    if (floatingResult !== null) {
+      return floatingResult;
+    }
+
+    return this.moveActiveColumn("left", "left");
+  }
+
+  moveColumnRightOrToOutputRight(): boolean {
+    const floatingResult = this.moveActiveManualFloatingWindow(
+      FLOATING_WINDOW_MOVE_STEP,
+      0,
+    );
+
+    if (floatingResult !== null) {
+      return floatingResult;
+    }
+
+    return this.moveActiveColumn("right", "right");
+  }
+
   moveColumnToFirst(): boolean {
     return this.moveActiveColumnToEdge("first");
   }
@@ -2163,6 +2205,32 @@ export class RuntimeController {
     }
 
     return this.moveActiveWindowVertically("down", 1);
+  }
+
+  moveWindowUpOrToOutputUp(): boolean {
+    const floatingResult = this.moveActiveManualFloatingWindow(
+      0,
+      -FLOATING_WINDOW_MOVE_STEP,
+    );
+
+    if (floatingResult !== null) {
+      return floatingResult;
+    }
+
+    return this.moveActiveWindowVertically("up", undefined, "up");
+  }
+
+  moveWindowDownOrToOutputDown(): boolean {
+    const floatingResult = this.moveActiveManualFloatingWindow(
+      0,
+      FLOATING_WINDOW_MOVE_STEP,
+    );
+
+    if (floatingResult !== null) {
+      return floatingResult;
+    }
+
+    return this.moveActiveWindowVertically("down", undefined, "down");
   }
 
   insertWindowIntoStackLeft(): boolean {
@@ -7037,6 +7105,7 @@ export class RuntimeController {
 
   private focusHorizontal(
     destination: HorizontalDirection | HorizontalEdge,
+    boundaryOutputDirection?: OutputDirection,
   ): boolean {
     const floatingResult = this.focusFloatingWindow(destination);
 
@@ -7053,6 +7122,17 @@ export class RuntimeController {
     const targetId = this.horizontalFocusTarget(command, destination);
 
     if (!targetId) {
+      if (
+        boundaryOutputDirection !== undefined &&
+        destination !== "first" &&
+        destination !== "last"
+      ) {
+        return this.focusAdjacentOutputAtBoundary(
+          command,
+          boundaryOutputDirection,
+        );
+      }
+
       return false;
     }
 
@@ -7209,6 +7289,7 @@ export class RuntimeController {
   private focusWithinActiveColumn(
     direction: VerticalDirection,
     boundaryDesktopDirection?: DesktopReorderDirection,
+    boundaryOutputDirection?: OutputDirection,
   ): boolean {
     const floatingResult = this.focusFloatingWindow(direction);
 
@@ -7247,6 +7328,13 @@ export class RuntimeController {
         return boundaryDesktopDirection === -1
           ? this.focusPreviousDesktop()
           : this.focusNextDesktop();
+      }
+
+      if (boundaryOutputDirection !== undefined && atVisibleBoundary) {
+        return this.focusAdjacentOutputAtBoundary(
+          command,
+          boundaryOutputDirection,
+        );
       }
 
       return false;
@@ -7294,6 +7382,209 @@ export class RuntimeController {
       rememberedTiledFocus,
     );
     return false;
+  }
+
+  private focusAdjacentOutputAtBoundary(
+    command: ActiveColumnCommand,
+    direction: OutputDirection,
+  ): boolean {
+    const target = this.focusOutputBoundaryTarget(command, direction);
+
+    if (!target) {
+      return false;
+    }
+
+    try {
+      if (direction === "left") {
+        if (typeof this.workspace.slotSwitchToLeftScreen !== "function") {
+          return false;
+        }
+
+        this.workspace.slotSwitchToLeftScreen();
+      } else if (direction === "right") {
+        if (typeof this.workspace.slotSwitchToRightScreen !== "function") {
+          return false;
+        }
+
+        this.workspace.slotSwitchToRightScreen();
+      } else if (direction === "up") {
+        if (typeof this.workspace.slotSwitchToAboveScreen !== "function") {
+          return false;
+        }
+
+        this.workspace.slotSwitchToAboveScreen();
+      } else {
+        if (typeof this.workspace.slotSwitchToBelowScreen !== "function") {
+          return false;
+        }
+
+        this.workspace.slotSwitchToBelowScreen();
+      }
+    } catch {
+      return false;
+    }
+
+    return this.workspace.activeScreen?.name === target.name;
+  }
+
+  private focusOutputBoundaryTarget(
+    command: ActiveColumnCommand,
+    direction: OutputDirection,
+  ): KWinOutput | null {
+    const sourceOutput = this.workspace.screens.find(
+      (candidate) => candidate.name === command.context.outputId,
+    );
+
+    if (!sourceOutput) {
+      return null;
+    }
+
+    const sourceGeometry = sourceOutput.geometry;
+    const sourceCenterX = sourceGeometry.x + sourceGeometry.width / 2;
+    const sourceCenterY = sourceGeometry.y + sourceGeometry.height / 2;
+    const horizontal = direction === "left" || direction === "right";
+    let targetAmbiguous = false;
+    let targetOutput: KWinOutput | null = null;
+    let targetPrimaryDistance = Number.POSITIVE_INFINITY;
+
+    for (const candidate of this.workspace.screens) {
+      if (candidate.name === sourceOutput.name) {
+        continue;
+      }
+
+      const geometry = candidate.geometry;
+      const centerX = geometry.x + geometry.width / 2;
+      const centerY = geometry.y + geometry.height / 2;
+      const overlapsPerpendicularAxis = horizontal
+        ? geometry.y < sourceGeometry.y + sourceGeometry.height &&
+          geometry.y + geometry.height > sourceGeometry.y
+        : geometry.x < sourceGeometry.x + sourceGeometry.width &&
+          geometry.x + geometry.width > sourceGeometry.x;
+      const primaryDistance =
+        direction === "left"
+          ? sourceCenterX - centerX
+          : direction === "right"
+            ? centerX - sourceCenterX
+            : direction === "up"
+              ? sourceCenterY - centerY
+              : centerY - sourceCenterY;
+
+      if (!overlapsPerpendicularAxis || primaryDistance <= 0) {
+        continue;
+      }
+
+      if (primaryDistance < targetPrimaryDistance) {
+        targetAmbiguous = false;
+        targetOutput = candidate;
+        targetPrimaryDistance = primaryDistance;
+      } else if (primaryDistance === targetPrimaryDistance) {
+        targetAmbiguous = true;
+      }
+    }
+
+    if (targetAmbiguous) {
+      return null;
+    }
+
+    return this.validateOutputBoundaryTarget(
+      command,
+      sourceOutput,
+      targetOutput,
+    );
+  }
+
+  private outputBoundaryTarget(
+    command: ActiveColumnCommand,
+    direction: OutputDirection,
+  ): KWinOutput | null {
+    const sourceOutput = this.workspace.screens.find(
+      (candidate) => candidate.name === command.context.outputId,
+    );
+    const targetOutputId = sourceOutput
+      ? findAdjacentOutput(
+          command.context.outputId,
+          this.workspace.screens.map((output) => ({
+            id: outputId(output.name),
+            rect: output.geometry,
+          })),
+          direction,
+        )
+      : null;
+    const targetOutput = targetOutputId
+      ? this.workspace.screens.find(
+          (candidate) => candidate.name === targetOutputId,
+        )
+      : undefined;
+
+    return this.validateOutputBoundaryTarget(
+      command,
+      sourceOutput,
+      targetOutput,
+    );
+  }
+
+  private validateOutputBoundaryTarget(
+    command: ActiveColumnCommand,
+    sourceOutput: KWinOutput | undefined,
+    targetOutput: KWinOutput | null | undefined,
+  ): KWinOutput | null {
+    const activeWindow = this.observer.source(command.activeId);
+    const sourceDesktop = sourceOutput
+      ? currentDesktopForOutput(this.workspace, sourceOutput)
+      : null;
+    const targetDesktop = targetOutput
+      ? currentDesktopForOutput(this.workspace, targetOutput)
+      : null;
+
+    if (
+      !activeWindow ||
+      this.workspace.activeWindow !== activeWindow ||
+      !sourceOutput ||
+      !sourceDesktop ||
+      !targetOutput ||
+      !targetDesktop ||
+      sourceOutput.name === targetOutput.name ||
+      activeWindow.output?.name !== sourceOutput.name ||
+      this.workspace.activeScreen?.name !== sourceOutput.name ||
+      sourceDesktop.id !== command.context.desktopId
+    ) {
+      return null;
+    }
+
+    const targetContextKey = contextKey({
+      activityId: command.context.activityId,
+      desktopId: desktopId(targetDesktop.id),
+      outputId: outputId(targetOutput.name),
+    });
+    const targetContext = this.contexts.get(targetContextKey);
+
+    if (
+      this.pendingDefaultColumnWidth !== null ||
+      this.pendingGap !== null ||
+      this.pointerMoveIntent !== null ||
+      this.pointerColumnDropSettlement !== null ||
+      this.pointerResizeIntent !== null ||
+      this.pointerResizeSettlement !== null ||
+      this.pendingExpelFocusHandoff !== null ||
+      this.stackedNativeStateOperation !== null ||
+      this.hasPendingCapacityState(command.context.key) ||
+      this.hasPendingCapacityState(targetContextKey) ||
+      this.pendingAdmissionContexts.has(command.context.key) ||
+      this.pendingAdmissionContexts.has(targetContextKey) ||
+      this.waitingWindowIds.has(command.context.key) ||
+      this.waitingWindowIds.has(targetContextKey) ||
+      this.toggleTransitionPending(command.context.key) ||
+      this.toggleTransitionPending(targetContextKey) ||
+      this.dirtyContexts.has(command.context.key) ||
+      this.dirtyContexts.has(targetContextKey) ||
+      (targetContext !== undefined &&
+        command.sampledGeometries.get(targetContextKey)?.fingerprint !==
+          targetContext.geometryFingerprint)
+    ) {
+      return null;
+    }
+
+    return targetOutput;
   }
 
   private horizontalFocusTarget(
@@ -8436,11 +8727,29 @@ export class RuntimeController {
     return compensationWrites;
   }
 
-  private moveActiveColumn(direction: HorizontalDirection): boolean {
+  private moveActiveColumn(
+    direction: HorizontalDirection,
+    boundaryOutputDirection?: OutputDirection,
+  ): boolean {
     const command = this.prepareActiveColumnCommand();
 
     if (!command || this.hasPendingCapacityState(command.context.key)) {
       return false;
+    }
+
+    const activeColumnIndex = command.before.columns.findIndex(
+      (column) => column.id === command.activeColumn.id,
+    );
+    const atBoundary =
+      activeColumnIndex >= 0 &&
+      (direction === "left"
+        ? activeColumnIndex === 0
+        : activeColumnIndex === command.before.columns.length - 1);
+
+    if (boundaryOutputDirection !== undefined && atBoundary) {
+      return this.outputBoundaryTarget(command, boundaryOutputDirection)
+        ? this.moveActiveWindowToOutput(boundaryOutputDirection, true)
+        : false;
     }
 
     const oppositeDirection: HorizontalDirection =
@@ -8579,6 +8888,7 @@ export class RuntimeController {
   private moveActiveWindowVertically(
     direction: VerticalDirection,
     boundaryDesktopDirection?: DesktopReorderDirection,
+    boundaryOutputDirection?: OutputDirection,
   ): boolean {
     const command = this.prepareActiveColumnCommand();
 
@@ -8609,6 +8919,12 @@ export class RuntimeController {
       return boundaryDesktopDirection === -1
         ? this.moveWindowToPreviousDesktop()
         : this.moveWindowToNextDesktop();
+    }
+
+    if (boundaryOutputDirection !== undefined && atBoundary) {
+      return this.outputBoundaryTarget(command, boundaryOutputDirection)
+        ? this.moveActiveWindowToOutput(boundaryOutputDirection)
+        : false;
     }
 
     const editState: { value: StackEditResult | null } = { value: null };

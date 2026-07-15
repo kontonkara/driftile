@@ -38812,6 +38812,315 @@ describe("RuntimeController desktop transfers", () => {
 describe("RuntimeController output transfers", () => {
   it.each([
     {
+      active: "source",
+      focus: (controller: RuntimeController) =>
+        controller.focusColumnOrOutputLeft(),
+      name: "column left",
+      sourceStack: false,
+      target: { x: -1000, y: 0 },
+    },
+    {
+      active: "moved",
+      focus: (controller: RuntimeController) =>
+        controller.focusColumnOrOutputRight(),
+      name: "column right",
+      sourceStack: false,
+      target: { x: 1000, y: 0 },
+    },
+    {
+      active: "source",
+      focus: (controller: RuntimeController) =>
+        controller.focusWindowOrOutputUp(),
+      name: "window up",
+      sourceStack: true,
+      target: { x: 0, y: -800 },
+    },
+    {
+      active: "moved",
+      focus: (controller: RuntimeController) =>
+        controller.focusWindowOrOutputDown(),
+      name: "window down",
+      sourceStack: true,
+      target: { x: 0, y: 800 },
+    },
+  ] as const)(
+    "focuses the adjacent output past the visible $name boundary",
+    ({ active, focus, sourceStack, target }) => {
+      const transfer = createOutputTransferFixture({ sourceStack, target });
+      const destination = transfer.destinations[0];
+
+      if (!destination) {
+        throw new Error("missing output focus destination");
+      }
+
+      const activeWindow =
+        active === "source" ? transfer.source : transfer.moved;
+      transfer.fixture.workspace.activeWindow = activeWindow.window;
+      transfer.controller.reconcile();
+      const outputFocus = installOutputFocusSlot(
+        transfer.fixture,
+        transfer.sourceOutput,
+        transfer.targetOutput,
+        destination.window,
+        target.x < 0
+          ? "left"
+          : target.x > 0
+            ? "right"
+            : target.y < 0
+              ? "up"
+              : "down",
+      );
+
+      expect(focus(transfer.controller)).toBe(true);
+      expect(outputFocus.switchCount).toBe(1);
+      expect(transfer.fixture.workspace.activeScreen).toBe(
+        transfer.targetOutput,
+      );
+      expect(transfer.fixture.workspace.activeWindow).toBe(destination.window);
+      expect(transfer.fixture.outputTransferCount).toBe(0);
+    },
+  );
+
+  it("keeps local focus failures from falling through to another output", () => {
+    const transfer = createOutputTransferFixture();
+    const destination = transfer.destinations[0];
+
+    if (!destination) {
+      throw new Error("missing output focus destination");
+    }
+
+    transfer.fixture.workspace.activeWindow = transfer.source.window;
+    transfer.controller.reconcile();
+    const outputFocus = installOutputFocusSlot(
+      transfer.fixture,
+      transfer.sourceOutput,
+      transfer.targetOutput,
+      destination.window,
+      "right",
+    );
+
+    expect(transfer.controller.focusColumnOrOutputRight()).toBe(true);
+    expect(transfer.fixture.workspace.activeWindow).toBe(transfer.moved.window);
+    expect(outputFocus.switchCount).toBe(0);
+
+    transfer.fixture.workspace.activeWindow = transfer.source.window;
+    transfer.fixture.setActivationBehavior(() => undefined);
+    expect(transfer.controller.focusColumnOrOutputRight()).toBe(false);
+    expect(transfer.fixture.workspace.activeWindow).toBe(
+      transfer.source.window,
+    );
+    expect(outputFocus.switchCount).toBe(0);
+    transfer.fixture.setActivationBehavior(null);
+  });
+
+  it("does not invoke a directional focus slot for a diagonal-only output", () => {
+    const transfer = createOutputTransferFixture({
+      target: { x: 1000, y: 800 },
+    });
+    const destination = transfer.destinations[0];
+
+    if (!destination) {
+      throw new Error("missing diagonal output destination");
+    }
+
+    const outputFocus = installOutputFocusSlot(
+      transfer.fixture,
+      transfer.sourceOutput,
+      transfer.targetOutput,
+      destination.window,
+      "right",
+    );
+
+    expect(transfer.controller.focusColumnOrOutputRight()).toBe(false);
+    expect(outputFocus.switchCount).toBe(0);
+    expect(transfer.fixture.workspace.activeScreen).toBe(transfer.sourceOutput);
+
+    expect(transfer.controller.moveColumnRightOrToOutputRight()).toBe(true);
+    expect(transfer.fixture.outputTransferCount).toBe(1);
+    expect(transfer.moved.window.output).toBe(transfer.targetOutput);
+  });
+
+  it("does not invoke a directional focus slot for equal nearest outputs", () => {
+    const transfer = createOutputTransferFixture();
+    const destination = transfer.destinations[0];
+
+    if (!destination) {
+      throw new Error("missing ambiguous output destination");
+    }
+
+    transfer.fixture.setScreens([
+      transfer.sourceOutput,
+      transfer.targetOutput,
+      createPositionedOutput("AMBIGUOUS", 1000, 400),
+    ]);
+    const outputFocus = installOutputFocusSlot(
+      transfer.fixture,
+      transfer.sourceOutput,
+      transfer.targetOutput,
+      destination.window,
+      "right",
+    );
+
+    expect(transfer.controller.focusColumnOrOutputRight()).toBe(false);
+    expect(outputFocus.switchCount).toBe(0);
+    expect(transfer.fixture.workspace.activeScreen).toBe(transfer.sourceOutput);
+  });
+
+  it.each([
+    {
+      active: "moved",
+      move: (controller: RuntimeController) =>
+        controller.moveColumnLeftOrToOutputLeft(),
+      name: "left",
+      target: { x: -1000, y: 0 },
+    },
+    {
+      active: "source",
+      move: (controller: RuntimeController) =>
+        controller.moveColumnRightOrToOutputRight(),
+      name: "right",
+      target: { x: 1000, y: 0 },
+    },
+  ] as const)(
+    "moves a column $name locally before crossing the structural boundary",
+    ({ active, move, target }) => {
+      const transfer = createOutputTransferFixture({ target });
+      const activeWindow =
+        active === "source" ? transfer.source : transfer.moved;
+      transfer.fixture.workspace.activeWindow = activeWindow.window;
+      transfer.controller.reconcile();
+
+      expect(move(transfer.controller)).toBe(true);
+      expect(transfer.fixture.outputTransferCount).toBe(0);
+      expect(activeWindow.window.output).toBe(transfer.sourceOutput);
+
+      expect(move(transfer.controller)).toBe(true);
+      expect(transfer.fixture.outputTransferCount).toBe(1);
+      expect(activeWindow.window.output).toBe(transfer.targetOutput);
+    },
+  );
+
+  it.each([
+    {
+      active: "moved",
+      move: (controller: RuntimeController) =>
+        controller.moveWindowUpOrToOutputUp(),
+      name: "up",
+      target: { x: 0, y: -800 },
+    },
+    {
+      active: "source",
+      move: (controller: RuntimeController) =>
+        controller.moveWindowDownOrToOutputDown(),
+      name: "down",
+      target: { x: 0, y: 800 },
+    },
+  ] as const)(
+    "reorders a window $name before transferring at the stack boundary",
+    ({ active, move, target }) => {
+      const transfer = createOutputTransferFixture({
+        sourceStack: true,
+        target,
+      });
+      const activeWindow =
+        active === "source" ? transfer.source : transfer.moved;
+      transfer.fixture.workspace.activeWindow = activeWindow.window;
+      transfer.controller.reconcile();
+
+      expect(move(transfer.controller)).toBe(true);
+      expect(transfer.fixture.outputTransferCount).toBe(0);
+      expect(activeWindow.window.output).toBe(transfer.sourceOutput);
+
+      expect(move(transfer.controller)).toBe(true);
+      expect(transfer.fixture.outputTransferCount).toBe(1);
+      expect(activeWindow.window.output).toBe(transfer.targetOutput);
+    },
+  );
+
+  it("does not cross an output after rejected local reorders", () => {
+    const columns = createOutputTransferFixture();
+    columns.fixture.workspace.activeWindow = columns.source.window;
+    columns.controller.reconcile();
+    const rejectedColumnMove = vi
+      .spyOn(runtimeLayout(columns.controller), "moveActiveColumn")
+      .mockReturnValueOnce(false);
+
+    expect(columns.controller.moveColumnRightOrToOutputRight()).toBe(false);
+    expect(columns.fixture.outputTransferCount).toBe(0);
+    rejectedColumnMove.mockRestore();
+
+    const stack = createOutputTransferFixture({
+      sourceStack: true,
+      target: { x: 0, y: 800 },
+    });
+    stack.fixture.workspace.activeWindow = stack.source.window;
+    stack.controller.reconcile();
+    const rejectedWindowMove = vi
+      .spyOn(runtimeLayout(stack.controller), "moveActiveWindowInColumn")
+      .mockReturnValueOnce(null);
+
+    expect(stack.controller.moveWindowDownOrToOutputDown()).toBe(false);
+    expect(stack.fixture.outputTransferCount).toBe(0);
+    rejectedWindowMove.mockRestore();
+  });
+
+  it("blocks boundary fallthrough while capacity state is pending", () => {
+    const transfer = createOutputTransferFixture();
+    const destination = transfer.destinations[0];
+
+    if (!destination) {
+      throw new Error("missing output focus destination");
+    }
+
+    const outputFocus = installOutputFocusSlot(
+      transfer.fixture,
+      transfer.sourceOutput,
+      transfer.targetOutput,
+      destination.window,
+      "right",
+    );
+    (
+      transfer.controller as unknown as {
+        capacityParkBackoffs: Set<string>;
+      }
+    ).capacityParkBackoffs.add(
+      `${transfer.sourceOutput.name}\u0000${transfer.sourceDesktop.id}\u0000${FALLBACK_ACTIVITY_ID}`,
+    );
+
+    expect(transfer.controller.focusColumnOrOutputRight()).toBe(false);
+    expect(transfer.controller.moveColumnRightOrToOutputRight()).toBe(false);
+    expect(outputFocus.switchCount).toBe(0);
+    expect(transfer.fixture.outputTransferCount).toBe(0);
+  });
+
+  it("keeps combined actions local for a manual floating window", () => {
+    const transfer = createOutputTransferFixture();
+    const destination = transfer.destinations[0];
+
+    if (!destination) {
+      throw new Error("missing output focus destination");
+    }
+
+    const outputFocus = installOutputFocusSlot(
+      transfer.fixture,
+      transfer.sourceOutput,
+      transfer.targetOutput,
+      destination.window,
+      "right",
+    );
+
+    expect(transfer.controller.toggleFloating()).toBe(true);
+    expect(transfer.controller.focusColumnOrOutputRight()).toBe(false);
+    expect(outputFocus.switchCount).toBe(0);
+    const before = { ...transfer.moved.window.frameGeometry };
+    expect(transfer.controller.moveColumnRightOrToOutputRight()).toBe(true);
+    expect(transfer.moved.window.frameGeometry.x).toBe(before.x + 50);
+    expect(transfer.moved.window.output).toBe(transfer.sourceOutput);
+    expect(transfer.fixture.outputTransferCount).toBe(0);
+  });
+
+  it.each([
+    {
       direction: "left",
       move: (controller: RuntimeController) =>
         controller.moveColumnToOutputLeft(),
@@ -41181,6 +41490,45 @@ function createOutputTransferFixture(
     sourceOutput,
     targetDesktop,
     targetOutput,
+  };
+}
+
+function installOutputFocusSlot(
+  fixture: WorkspaceFixture,
+  sourceOutput: KWinOutput,
+  targetOutput: KWinOutput,
+  targetWindow: KWinWindow,
+  direction: "down" | "left" | "right" | "up",
+): { readonly switchCount: number } {
+  let activeScreen = sourceOutput;
+  let switchCount = 0;
+  const slotName =
+    direction === "left"
+      ? "slotSwitchToLeftScreen"
+      : direction === "right"
+        ? "slotSwitchToRightScreen"
+        : direction === "up"
+          ? "slotSwitchToAboveScreen"
+          : "slotSwitchToBelowScreen";
+
+  Object.defineProperty(fixture.workspace, "activeScreen", {
+    configurable: true,
+    enumerable: true,
+    get: () => activeScreen,
+  });
+  Object.defineProperty(fixture.workspace, slotName, {
+    configurable: true,
+    value: () => {
+      switchCount += 1;
+      activeScreen = targetOutput;
+      fixture.workspace.activeWindow = targetWindow;
+    },
+  });
+
+  return {
+    get switchCount() {
+      return switchCount;
+    },
   };
 }
 

@@ -26,6 +26,14 @@ const shortcutActionCatalog = [
     defaultSequence: "Meta+Right",
   },
   {
+    name: "driftile_focus_column_or_output_left",
+    text: "Driftile: Focus column or output left",
+  },
+  {
+    name: "driftile_focus_column_or_output_right",
+    text: "Driftile: Focus column or output right",
+  },
+  {
     name: "driftile_focus_column_first",
     text: "Driftile: Focus first column",
     defaultSequence: "Meta+Home",
@@ -64,6 +72,14 @@ const shortcutActionCatalog = [
     text: "Driftile: Focus down or next desktop",
   },
   {
+    name: "driftile_focus_window_up_or_output_up",
+    text: "Driftile: Focus window or output up",
+  },
+  {
+    name: "driftile_focus_window_down_or_output_down",
+    text: "Driftile: Focus window or output down",
+  },
+  {
     name: "driftile_move_column_left",
     text: "Driftile: Move column left",
     defaultSequence: "Meta+Ctrl+H",
@@ -82,6 +98,14 @@ const shortcutActionCatalog = [
     name: "driftile_move_column_right_arrow",
     text: "Driftile: Move column right (arrow)",
     defaultSequence: "Meta+Ctrl+Right",
+  },
+  {
+    name: "driftile_move_column_left_or_to_output_left",
+    text: "Driftile: Move column left or to output left",
+  },
+  {
+    name: "driftile_move_column_right_or_to_output_right",
+    text: "Driftile: Move column right or to output right",
   },
   {
     name: "driftile_move_column_to_first",
@@ -140,6 +164,14 @@ const shortcutActionCatalog = [
   {
     name: "driftile_move_window_down_or_to_next_desktop",
     text: "Driftile: Move window down or to next desktop",
+  },
+  {
+    name: "driftile_move_window_up_or_to_output_up",
+    text: "Driftile: Move window up or to output up",
+  },
+  {
+    name: "driftile_move_window_down_or_to_output_down",
+    text: "Driftile: Move window down or to output down",
   },
   {
     name: "driftile_insert_window_into_stack_left",

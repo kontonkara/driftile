@@ -129,6 +129,16 @@ QtObject {
         sequence: "Meta+Right"
         onActivated: Runtime.DriftileRuntime.focusRight()
     }
+    readonly property ShortcutHandler focusColumnOrOutputLeftShortcut: ShortcutHandler {
+        name: "driftile_focus_column_or_output_left"
+        text: "Driftile: Focus column or output left"
+        onActivated: Runtime.DriftileRuntime.focusColumnOrOutputLeft()
+    }
+    readonly property ShortcutHandler focusColumnOrOutputRightShortcut: ShortcutHandler {
+        name: "driftile_focus_column_or_output_right"
+        text: "Driftile: Focus column or output right"
+        onActivated: Runtime.DriftileRuntime.focusColumnOrOutputRight()
+    }
     readonly property ShortcutHandler focusFirstColumnShortcut: ShortcutHandler {
         name: "driftile_focus_column_first"
         text: "Driftile: Focus first column"
@@ -175,6 +185,16 @@ QtObject {
         text: "Driftile: Focus down or next desktop"
         onActivated: Runtime.DriftileRuntime.focusDownOrNextDesktop()
     }
+    readonly property ShortcutHandler focusWindowOrOutputUpShortcut: ShortcutHandler {
+        name: "driftile_focus_window_up_or_output_up"
+        text: "Driftile: Focus window or output up"
+        onActivated: Runtime.DriftileRuntime.focusWindowOrOutputUp()
+    }
+    readonly property ShortcutHandler focusWindowOrOutputDownShortcut: ShortcutHandler {
+        name: "driftile_focus_window_down_or_output_down"
+        text: "Driftile: Focus window or output down"
+        onActivated: Runtime.DriftileRuntime.focusWindowOrOutputDown()
+    }
     readonly property ShortcutHandler moveColumnLeftShortcut: ShortcutHandler {
         name: "driftile_move_column_left"
         text: "Driftile: Move column left"
@@ -198,6 +218,16 @@ QtObject {
         text: "Driftile: Move column right (arrow)"
         sequence: "Meta+Ctrl+Right"
         onActivated: Runtime.DriftileRuntime.moveColumnRight()
+    }
+    readonly property ShortcutHandler moveColumnLeftOrToOutputLeftShortcut: ShortcutHandler {
+        name: "driftile_move_column_left_or_to_output_left"
+        text: "Driftile: Move column left or to output left"
+        onActivated: Runtime.DriftileRuntime.moveColumnLeftOrToOutputLeft()
+    }
+    readonly property ShortcutHandler moveColumnRightOrToOutputRightShortcut: ShortcutHandler {
+        name: "driftile_move_column_right_or_to_output_right"
+        text: "Driftile: Move column right or to output right"
+        onActivated: Runtime.DriftileRuntime.moveColumnRightOrToOutputRight()
     }
     readonly property ShortcutHandler moveColumnToFirstShortcut: ShortcutHandler {
         name: "driftile_move_column_to_first"
@@ -268,6 +298,16 @@ QtObject {
         name: "driftile_move_window_down_or_to_next_desktop"
         text: "Driftile: Move window down or to next desktop"
         onActivated: Runtime.DriftileRuntime.moveWindowDownOrToNextDesktop()
+    }
+    readonly property ShortcutHandler moveWindowUpOrToOutputUpShortcut: ShortcutHandler {
+        name: "driftile_move_window_up_or_to_output_up"
+        text: "Driftile: Move window up or to output up"
+        onActivated: Runtime.DriftileRuntime.moveWindowUpOrToOutputUp()
+    }
+    readonly property ShortcutHandler moveWindowDownOrToOutputDownShortcut: ShortcutHandler {
+        name: "driftile_move_window_down_or_to_output_down"
+        text: "Driftile: Move window down or to output down"
+        onActivated: Runtime.DriftileRuntime.moveWindowDownOrToOutputDown()
     }
     readonly property ShortcutHandler insertWindowIntoStackLeftShortcut: ShortcutHandler {
         name: "driftile_insert_window_into_stack_left"
