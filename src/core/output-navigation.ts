@@ -2,6 +2,7 @@ import type { Rect } from "./geometry";
 import type { OutputId } from "./ids";
 
 export type OutputDirection = "down" | "left" | "right" | "up";
+export type SequentialOutputDirection = "next" | "previous";
 
 export interface OutputGeometry {
   readonly id: OutputId;
@@ -44,6 +45,38 @@ export function findAdjacentOutput(
   }
 
   return best?.id ?? null;
+}
+
+export function findSequentialOutput(
+  sourceId: OutputId,
+  outputs: readonly OutputGeometry[],
+  direction: SequentialOutputDirection,
+): OutputId | null {
+  const source = outputs.find(
+    (output) => output.id === sourceId && isUsableRect(output.rect),
+  );
+
+  if (!source) {
+    return null;
+  }
+
+  const ordered = [
+    source,
+    ...outputs.filter(
+      (output) => output.id !== sourceId && isUsableRect(output.rect),
+    ),
+  ].sort(compareSequentialOutputs);
+
+  if (ordered.length < 2) {
+    return null;
+  }
+
+  const sourceIndex = ordered.indexOf(source);
+  const targetIndex =
+    direction === "next"
+      ? (sourceIndex + 1) % ordered.length
+      : (sourceIndex + ordered.length - 1) % ordered.length;
+  return ordered[targetIndex]?.id ?? null;
 }
 
 function scoreCandidate(
@@ -130,6 +163,28 @@ function compareScores(left: CandidateScore, right: CandidateScore): number {
     left.primaryEdgeGap - right.primaryEdgeGap ||
     left.perpendicularCenterDistance - right.perpendicularCenterDistance ||
     left.centerDistanceSquared - right.centerDistanceSquared ||
+    compareIds(left.id, right.id)
+  );
+}
+
+function compareSequentialOutputs(
+  left: OutputGeometry,
+  right: OutputGeometry,
+): number {
+  const leftBottom = left.rect.y + left.rect.height;
+  const rightBottom = right.rect.y + right.rect.height;
+
+  if (leftBottom <= right.rect.y) {
+    return -1;
+  }
+
+  if (rightBottom <= left.rect.y) {
+    return 1;
+  }
+
+  return (
+    left.rect.x - right.rect.x ||
+    left.rect.y - right.rect.y ||
     compareIds(left.id, right.id)
   );
 }

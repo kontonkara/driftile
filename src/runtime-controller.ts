@@ -97,7 +97,9 @@ import {
 } from "./core/layout-persistence";
 import {
   findAdjacentOutput,
+  findSequentialOutput,
   type OutputDirection,
+  type SequentialOutputDirection,
 } from "./core/output-navigation";
 import { diffWindowGeometries } from "./core/reconcile";
 import {
@@ -239,6 +241,7 @@ type VerticalFocusBoundary =
     };
 type StackedNativeState = "fullscreen" | "maximize";
 type WindowLayer = "floating" | "tiling";
+type OutputTransferTarget = OutputDirection | SequentialOutputDirection;
 type PointerResize = PointerHorizontalResize | PointerVerticalResize;
 
 interface WindowRemovalFocus {
@@ -2925,6 +2928,14 @@ export class RuntimeController {
     return this.moveActiveWindowToOutput("down");
   }
 
+  moveWindowToPreviousOutput(): boolean {
+    return this.moveActiveWindowToOutput("previous");
+  }
+
+  moveWindowToNextOutput(): boolean {
+    return this.moveActiveWindowToOutput("next");
+  }
+
   moveColumnToOutputLeft(): boolean {
     return this.moveActiveWindowToOutput("left", true);
   }
@@ -2939,6 +2950,14 @@ export class RuntimeController {
 
   moveColumnToOutputDown(): boolean {
     return this.moveActiveWindowToOutput("down", true);
+  }
+
+  moveColumnToPreviousOutput(): boolean {
+    return this.moveActiveWindowToOutput("previous", true);
+  }
+
+  moveColumnToNextOutput(): boolean {
+    return this.moveActiveWindowToOutput("next", true);
   }
 
   decreaseColumnWidth(): boolean {
@@ -8006,27 +8025,34 @@ export class RuntimeController {
     const sourceOutput = this.workspace.screens.find(
       (candidate) => candidate.name === command.context.outputId,
     );
-    const targetOutputId = sourceOutput
-      ? findAdjacentOutput(
-          command.context.outputId,
-          this.workspace.screens.map((output) => ({
-            id: outputId(output.name),
-            rect: output.geometry,
-          })),
-          direction,
-        )
+    const targetOutput = sourceOutput
+      ? this.resolveOutputTransferTarget(command.context.outputId, direction)
       : null;
-    const targetOutput = targetOutputId
-      ? this.workspace.screens.find(
-          (candidate) => candidate.name === targetOutputId,
-        )
-      : undefined;
 
     return this.validateOutputBoundaryTarget(
       command,
       sourceOutput,
       targetOutput,
     );
+  }
+
+  private resolveOutputTransferTarget(
+    sourceId: OutputId,
+    target: OutputTransferTarget,
+  ): KWinOutput | null {
+    const outputs = [...this.workspace.screens];
+    const geometries = outputs.map((output) => ({
+      id: outputId(output.name),
+      rect: output.geometry,
+    }));
+    const targetId =
+      target === "next" || target === "previous"
+        ? findSequentialOutput(sourceId, geometries, target)
+        : findAdjacentOutput(sourceId, geometries, target);
+
+    return targetId
+      ? (outputs.find((output) => output.name === targetId) ?? null)
+      : null;
   }
 
   private validateOutputBoundaryTarget(
@@ -12458,7 +12484,7 @@ export class RuntimeController {
   }
 
   private moveActiveFloatingWindowToOutput(
-    direction: OutputDirection,
+    target: OutputTransferTarget,
   ): boolean | null {
     const activeWindow = this.workspace.activeWindow;
 
@@ -12537,21 +12563,9 @@ export class RuntimeController {
     const sourceOutput = this.workspace.screens.find(
       (candidate) => candidate.name === sourceContext.outputId,
     );
-    const targetOutputId = sourceOutput
-      ? findAdjacentOutput(
-          sourceContext.outputId,
-          this.workspace.screens.map((output) => ({
-            id: outputId(output.name),
-            rect: output.geometry,
-          })),
-          direction,
-        )
+    const targetOutput = sourceOutput
+      ? this.resolveOutputTransferTarget(sourceContext.outputId, target)
       : null;
-    const targetOutput = targetOutputId
-      ? this.workspace.screens.find(
-          (candidate) => candidate.name === targetOutputId,
-        )
-      : undefined;
     const sourceDesktop = sourceOutput
       ? currentDesktopForOutput(this.workspace, sourceOutput)
       : null;
@@ -13181,10 +13195,10 @@ export class RuntimeController {
   }
 
   private moveActiveWindowToOutput(
-    direction: OutputDirection,
+    target: OutputTransferTarget,
     wholeColumn = false,
   ): boolean {
-    const floatingResult = this.moveActiveFloatingWindowToOutput(direction);
+    const floatingResult = this.moveActiveFloatingWindowToOutput(target);
 
     if (floatingResult !== null) {
       return floatingResult;
@@ -13214,21 +13228,9 @@ export class RuntimeController {
     const sourceOutput = this.workspace.screens.find(
       (candidate) => candidate.name === active.context.outputId,
     );
-    const targetOutputId = sourceOutput
-      ? findAdjacentOutput(
-          active.context.outputId,
-          this.workspace.screens.map((output) => ({
-            id: outputId(output.name),
-            rect: output.geometry,
-          })),
-          direction,
-        )
+    const targetOutput = sourceOutput
+      ? this.resolveOutputTransferTarget(active.context.outputId, target)
       : null;
-    const targetOutput = targetOutputId
-      ? this.workspace.screens.find(
-          (candidate) => candidate.name === targetOutputId,
-        )
-      : undefined;
     const sourceDesktop = sourceOutput
       ? currentDesktopForOutput(this.workspace, sourceOutput)
       : null;

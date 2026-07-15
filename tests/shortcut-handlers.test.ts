@@ -205,6 +205,12 @@ const expectedHandlers: Readonly<
     activated: "Workspace.slotSwitchToLeftScreen()",
     sequence: "Meta+Shift+Left",
   },
+  driftile_focus_output_next: {
+    activated: "Workspace.slotSwitchToNextScreen()",
+  },
+  driftile_focus_output_previous: {
+    activated: "Workspace.slotSwitchToPrevScreen()",
+  },
   driftile_focus_output_right: {
     activated: "Workspace.slotSwitchToRightScreen()",
     sequence: "Meta+Shift+L",
@@ -487,6 +493,12 @@ const expectedHandlers: Readonly<
     activated: "Runtime.DriftileRuntime.moveColumnToOutputLeft()",
     sequence: "Meta+Ctrl+Shift+Left",
   },
+  driftile_move_column_to_output_next: {
+    activated: "Runtime.DriftileRuntime.moveColumnToOutputNext()",
+  },
+  driftile_move_column_to_output_previous: {
+    activated: "Runtime.DriftileRuntime.moveColumnToOutputPrevious()",
+  },
   driftile_move_column_to_output_right: {
     activated: "Runtime.DriftileRuntime.moveColumnToOutputRight()",
     sequence: "Meta+Ctrl+Shift+L",
@@ -577,6 +589,12 @@ const expectedHandlers: Readonly<
   },
   driftile_move_window_to_output_left_arrow: {
     activated: "Runtime.DriftileRuntime.moveWindowToOutputLeft()",
+  },
+  driftile_move_window_to_output_next: {
+    activated: "Runtime.DriftileRuntime.moveWindowToOutputNext()",
+  },
+  driftile_move_window_to_output_previous: {
+    activated: "Runtime.DriftileRuntime.moveWindowToOutputPrevious()",
   },
   driftile_move_window_to_output_right: {
     activated: "Runtime.DriftileRuntime.moveWindowToOutputRight()",
@@ -684,7 +702,7 @@ describe("KWin shortcut handlers", () => {
   });
 
   it("keeps the canonical action catalog synchronized with QML", () => {
-    expect(shortcutActions).toHaveLength(170);
+    expect(shortcutActions).toHaveLength(176);
     expect(shortcutActions).toEqual(
       handlers.map(({ name, sequence, text }) => ({
         name,
@@ -697,7 +715,7 @@ describe("KWin shortcut handlers", () => {
     ).toHaveLength(88);
     expect(
       shortcutActions.filter((action) => action.defaultSequence === undefined),
-    ).toHaveLength(82);
+    ).toHaveLength(88);
   });
 
   it("uses unique lowercase action identifiers and key sequences", () => {
@@ -768,6 +786,8 @@ describe("KWin shortcut handlers", () => {
       "driftile_focus_column_right_or_first",
       "driftile_focus_floating",
       "driftile_focus_last_used_desktop",
+      "driftile_focus_output_next",
+      "driftile_focus_output_previous",
       "driftile_focus_tiling",
       "driftile_focus_window_bottom",
       "driftile_focus_window_down_or_column_left",
@@ -804,6 +824,8 @@ describe("KWin shortcut handlers", () => {
       "driftile_move_column_to_index_7",
       "driftile_move_column_to_index_8",
       "driftile_move_column_to_index_9",
+      "driftile_move_column_to_output_next",
+      "driftile_move_column_to_output_previous",
       "driftile_move_window_down_or_to_next_desktop",
       "driftile_move_window_down_or_to_output_down",
       "driftile_move_window_to_desktop_1",
@@ -821,6 +843,8 @@ describe("KWin shortcut handlers", () => {
       "driftile_move_window_to_output_down_arrow",
       "driftile_move_window_to_output_left",
       "driftile_move_window_to_output_left_arrow",
+      "driftile_move_window_to_output_next",
+      "driftile_move_window_to_output_previous",
       "driftile_move_window_to_output_right",
       "driftile_move_window_to_output_right_arrow",
       "driftile_move_window_to_output_up",

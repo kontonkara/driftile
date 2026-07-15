@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import { outputId } from "../../src/core/ids";
 import {
   findAdjacentOutput,
+  findSequentialOutput,
   type OutputDirection,
   type OutputGeometry,
+  type SequentialOutputDirection,
 } from "../../src/core/output-navigation";
 
 const sourceId = outputId("source");
@@ -175,6 +177,68 @@ describe("findAdjacentOutput", () => {
     const outputs = [output("source", 0, 0, -100), output("right", 100, 0)];
 
     expect(findAdjacentOutput(sourceId, outputs, "right")).toBeNull();
+  });
+});
+
+describe("findSequentialOutput", () => {
+  const mixed = [
+    output("top", 300, -200),
+    output("left", -180, 0, 200, 180),
+    output("source", 40, 40, 160, 100),
+    output("right", 240, 20, 120, 140),
+    output("bottom", -100, 260),
+  ];
+
+  it.each<{
+    readonly direction: SequentialOutputDirection;
+    readonly expected: string;
+    readonly source: string;
+  }>([
+    { direction: "next", expected: "right", source: "source" },
+    { direction: "previous", expected: "left", source: "source" },
+    { direction: "previous", expected: "bottom", source: "top" },
+    { direction: "next", expected: "top", source: "bottom" },
+  ])("selects $direction from $source with wrap", (testCase) => {
+    expect(
+      findSequentialOutput(
+        outputId(testCase.source),
+        mixed,
+        testCase.direction,
+      ),
+    ).toBe(testCase.expected);
+  });
+
+  it("ignores invalid candidates and fails closed without another output", () => {
+    const invalid = [
+      output("source", 0, 0),
+      output("zero-height", 100, 0, 100, 0),
+      output("not-finite", 200, Number.NaN),
+    ];
+
+    expect(findSequentialOutput(sourceId, invalid, "next")).toBeNull();
+    expect(
+      findSequentialOutput(
+        sourceId,
+        [output("source", 0, 0, -100), output("other", 100, 0)],
+        "next",
+      ),
+    ).toBeNull();
+    expect(
+      findSequentialOutput(sourceId, [output("other", 100, 0)], "next"),
+    ).toBeNull();
+  });
+
+  it("is stable for equivalent geometry and input order", () => {
+    const source = output("source", 0, 0);
+    const first = output("DP-1", 120, 0);
+    const second = output("DP-2", 120, 0);
+
+    expect(
+      findSequentialOutput(sourceId, [source, second, first], "next"),
+    ).toBe("DP-1");
+    expect(
+      findSequentialOutput(sourceId, [first, source, second], "next"),
+    ).toBe("DP-1");
   });
 });
 

@@ -40297,6 +40297,75 @@ describe("RuntimeController output transfers", () => {
     },
   );
 
+  it("wraps sequential window and whole-column output transfers", () => {
+    const windowTransfer = createOutputTransferFixture();
+
+    expect(windowTransfer.controller.moveWindowToPreviousOutput()).toBe(true);
+    expect(windowTransfer.moved.window.output).toBe(
+      windowTransfer.targetOutput,
+    );
+    expect(windowTransfer.controller.moveWindowToNextOutput()).toBe(true);
+    expect(windowTransfer.moved.window.output).toBe(
+      windowTransfer.sourceOutput,
+    );
+    expect(windowTransfer.fixture.outputTransferCount).toBe(2);
+    expect(windowTransfer.fixture.workspace.activeWindow).toBe(
+      windowTransfer.moved.window,
+    );
+
+    const columnTransfer = createOutputTransferFixture({ sourceStack: true });
+
+    expect(columnTransfer.controller.moveColumnToPreviousOutput()).toBe(true);
+    expect(columnTransfer.source.window.output).toBe(
+      columnTransfer.targetOutput,
+    );
+    expect(columnTransfer.moved.window.output).toBe(
+      columnTransfer.targetOutput,
+    );
+    expect(columnTransfer.controller.moveColumnToNextOutput()).toBe(true);
+    expect(columnTransfer.source.window.output).toBe(
+      columnTransfer.sourceOutput,
+    );
+    expect(columnTransfer.moved.window.output).toBe(
+      columnTransfer.sourceOutput,
+    );
+    expect(columnTransfer.fixture.outputTransferCount).toBe(4);
+    expect(columnTransfer.fixture.workspace.activeWindow).toBe(
+      columnTransfer.moved.window,
+    );
+  });
+
+  it("rejects a sequential output transfer without a distinct target", () => {
+    const transfer = createOutputTransferFixture();
+    const before = captureTrackedWindowState([
+      transfer.source,
+      transfer.moved,
+      ...transfer.destinations,
+    ]);
+    const sourceLayout = runtimeLayout(transfer.controller).snapshot(
+      outputId(transfer.sourceOutput.name),
+      desktopId(transfer.sourceDesktop.id),
+      FALLBACK_ACTIVITY_ID,
+    );
+
+    transfer.fixture.setScreens([transfer.sourceOutput]);
+
+    expect(transfer.controller.moveWindowToPreviousOutput()).toBe(false);
+    expect(transfer.controller.moveColumnToNextOutput()).toBe(false);
+    expect(transfer.fixture.outputTransferCount).toBe(0);
+    expectTrackedWindowState(
+      [transfer.source, transfer.moved, ...transfer.destinations],
+      before,
+    );
+    expect(
+      runtimeLayout(transfer.controller).snapshot(
+        outputId(transfer.sourceOutput.name),
+        desktopId(transfer.sourceDesktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
+    ).toEqual(sourceLayout);
+  });
+
   it("moves every stacked member through a default output transfer", () => {
     const transfer = createOutputTransferFixture({ sourceStack: true });
 

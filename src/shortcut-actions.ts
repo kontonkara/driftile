@@ -616,6 +616,14 @@ const shortcutActionCatalog = [
     defaultSequence: "Meta+Shift+Down",
   },
   {
+    name: "driftile_focus_output_previous",
+    text: "Driftile: Focus previous output",
+  },
+  {
+    name: "driftile_focus_output_next",
+    text: "Driftile: Focus next output",
+  },
+  {
     name: "driftile_move_column_to_output_left",
     text: "Driftile: Move column to output left",
     defaultSequence: "Meta+Ctrl+Shift+H",
@@ -656,6 +664,14 @@ const shortcutActionCatalog = [
     defaultSequence: "Meta+Ctrl+Shift+Down",
   },
   {
+    name: "driftile_move_column_to_output_previous",
+    text: "Driftile: Move column to previous output",
+  },
+  {
+    name: "driftile_move_column_to_output_next",
+    text: "Driftile: Move column to next output",
+  },
+  {
     name: "driftile_move_window_to_output_left",
     text: "Driftile: Move window to output left",
   },
@@ -686,6 +702,14 @@ const shortcutActionCatalog = [
   {
     name: "driftile_move_window_to_output_down_arrow",
     text: "Driftile: Move window to output down (arrow)",
+  },
+  {
+    name: "driftile_move_window_to_output_previous",
+    text: "Driftile: Move window to previous output",
+  },
+  {
+    name: "driftile_move_window_to_output_next",
+    text: "Driftile: Move window to next output",
   },
   {
     name: "driftile_switch_preset_column_width",

@@ -851,6 +851,16 @@ QtObject {
         sequence: "Meta+Shift+Down"
         onActivated: Workspace.slotSwitchToBelowScreen()
     }
+    readonly property ShortcutHandler focusOutputPreviousShortcut: ShortcutHandler {
+        name: "driftile_focus_output_previous"
+        text: "Driftile: Focus previous output"
+        onActivated: Workspace.slotSwitchToPrevScreen()
+    }
+    readonly property ShortcutHandler focusOutputNextShortcut: ShortcutHandler {
+        name: "driftile_focus_output_next"
+        text: "Driftile: Focus next output"
+        onActivated: Workspace.slotSwitchToNextScreen()
+    }
     readonly property ShortcutHandler moveColumnToOutputLeftShortcut: ShortcutHandler {
         name: "driftile_move_column_to_output_left"
         text: "Driftile: Move column to output left"
@@ -899,6 +909,16 @@ QtObject {
         sequence: "Meta+Ctrl+Shift+Down"
         onActivated: Runtime.DriftileRuntime.moveColumnToOutputDown()
     }
+    readonly property ShortcutHandler moveColumnToOutputPreviousShortcut: ShortcutHandler {
+        name: "driftile_move_column_to_output_previous"
+        text: "Driftile: Move column to previous output"
+        onActivated: Runtime.DriftileRuntime.moveColumnToOutputPrevious()
+    }
+    readonly property ShortcutHandler moveColumnToOutputNextShortcut: ShortcutHandler {
+        name: "driftile_move_column_to_output_next"
+        text: "Driftile: Move column to next output"
+        onActivated: Runtime.DriftileRuntime.moveColumnToOutputNext()
+    }
     readonly property ShortcutHandler moveWindowToOutputLeftShortcut: ShortcutHandler {
         name: "driftile_move_window_to_output_left"
         text: "Driftile: Move window to output left"
@@ -938,6 +958,16 @@ QtObject {
         name: "driftile_move_window_to_output_down_arrow"
         text: "Driftile: Move window to output down (arrow)"
         onActivated: Runtime.DriftileRuntime.moveWindowToOutputDown()
+    }
+    readonly property ShortcutHandler moveWindowToOutputPreviousShortcut: ShortcutHandler {
+        name: "driftile_move_window_to_output_previous"
+        text: "Driftile: Move window to previous output"
+        onActivated: Runtime.DriftileRuntime.moveWindowToOutputPrevious()
+    }
+    readonly property ShortcutHandler moveWindowToOutputNextShortcut: ShortcutHandler {
+        name: "driftile_move_window_to_output_next"
+        text: "Driftile: Move window to next output"
+        onActivated: Runtime.DriftileRuntime.moveWindowToOutputNext()
     }
     readonly property ShortcutHandler switchPresetColumnWidthShortcut: ShortcutHandler {
         name: "driftile_switch_preset_column_width"
