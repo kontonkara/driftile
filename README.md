@@ -10,8 +10,9 @@ leaving window, output, and desktop mechanisms to KWin.
 
 - Horizontal scrollable columns with stacked or tabbed window presentation.
 - Keyboard-driven focus, movement, reordering, resizing, centering, and
-  transfers between desktops and outputs, including contextual single-window
-  transfers for the active floating layer.
+  transfers between desktops and outputs, including direct numbered
+  single-window desktop targets and contextual transfers for the active
+  floating layer.
 - Live same-context drop-target feedback with finish-only pointer reinsertion
   and horizontal resize adoption, plus exact target adoption after a
   KWin-owned output or desktop move.

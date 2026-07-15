@@ -2259,6 +2259,14 @@ export class RuntimeController {
     return this.moveActiveWindowToDesktop({ direction: 1, kind: "adjacent" });
   }
 
+  moveWindowToDesktop(index: number): boolean {
+    if (!validDesktopIndex(index)) {
+      return false;
+    }
+
+    return this.moveActiveWindowToDesktop({ index, kind: "index" }, false);
+  }
+
   moveColumnToPreviousDesktop(): boolean {
     return this.moveActiveWindowToDesktop(
       { direction: -1, kind: "adjacent" },

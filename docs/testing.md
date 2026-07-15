@@ -184,6 +184,13 @@ public 1.24.0 packages to matching 1.25.0 packages, exercises real applications,
 and removes both packages. Exact feature SHA `918eeb0` passes CI quality,
 native X11, and Wayland jobs. The slice adds no application or backend matrix.
 
+The 1.26.0 development slice adds one focused runtime case for numbered
+single-window extraction, retained source state, source-width inheritance, tail
+clamping, and a same-target no-op. Existing shortcut and QML contracts cover all
+nine unbound action IDs while requiring the default 88-action helper profile to
+remain byte-identical. The established packaged desktop-transfer coverage is
+reused without a new integration, application, backend, or VM scenario.
+
 In the following unit list, zero writes to floating windows means ambient
 layout work; explicit manual-floating movement, centering, or contextual size
 resizing owns its guarded frame request.

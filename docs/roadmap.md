@@ -8,6 +8,9 @@ Stable 1.25.0 makes existing output-transfer actions contextual for one active
 relation-free floating window. KWin remains the sole owner of output movement
 and final frame placement.
 
+The frozen 1.26.0 development slice adds nine unbound numbered single-window
+desktop actions by reusing the existing indexed transfer transaction.
+
 ## Foundation (delivered)
 
 - Build and package a declarative KWin script with a TypeScript runtime.
@@ -1047,6 +1050,30 @@ Release criteria (met):
 - Exact feature SHA `918eeb0` passes CI quality, native X11, and Wayland jobs.
 
 No other feature belongs to 1.25.0.
+
+## 1.26.0 (in development)
+
+Nine new unbound actions move only the active window directly to desktop
+positions 1 through 9. A tiled member becomes a target singleton with the
+source column width while retained source members preserve order, height state,
+desktop membership, and frames. Floating targets reuse the existing
+relation-free contextual path.
+
+Numbered targets remain one-based, same-target commands are no-ops, and an
+out-of-range target clamps to the shared empty tail. The slice adds no default
+binding, setting, persistence field, schema, private API, or compositor
+mechanism.
+
+Release criteria:
+
+- One focused runtime case covers extraction, retained state, width inheritance,
+  tail clamping, focus, and same-target no-op behavior.
+- Existing shortcut and QML contracts cover all nine action IDs while the
+  helper-owned 88-action default profile remains unchanged.
+- Formatting, type, lint, focused unit, package, and exact-SHA CI gates pass
+  without a new integration, application, backend, or VM matrix.
+
+No other feature belongs to 1.26.0.
 
 ## Post-v1
 

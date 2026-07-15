@@ -301,6 +301,19 @@ The ownership rule is strict:
 - Compensation is limited to transaction-owned output, membership, and focus
   changes. External divergence stops compensation and enters normal recovery.
 
+## 1.26 numbered single-window transfer slice
+
+- Nine unbound actions move only the active window to desktop positions 1
+  through 9 through the existing indexed desktop-transfer transaction.
+- A tiled member is extracted into a target singleton with the source column
+  width. Retained source members preserve order, height state, desktop,
+  geometry, and focus handoff rules.
+- Targets are one-based, same-target commands are no-ops, and out-of-range
+  positions clamp to the shared empty tail. Floating targets reuse the existing
+  relation-free contextual transfer.
+- The slice adds no default binding, setting, persistence field, schema,
+  compositor mechanism, or private API.
+
 ## Beyond v1
 
 - Optional visual transitions.
@@ -385,7 +398,7 @@ Driftile must integrate with, not duplicate:
 - Whole-column desktop and output transfers may carry settled minimized passive members without layout geometry writes and must preserve their logical slots, height state, minimized state, and column width.
 - A secondary single-window desktop or output transfer may extract the visible active member while settled minimized passive members in the same source column remain untouched. Those retained members keep their logical slots, height state, minimized state, and frames, and receive no desktop, output, or geometry writes. Minimized windows elsewhere in the source or target context and other undocumented hidden-member edits remain fail-closed.
 - Default desktop transfer follows the active tiled column without wrapping, preserving its members, order, width, and active member. On the floating layer, it transfers only the active relation-free window. The secondary action transfers only one active window.
-- Numbered desktop actions are one-based and clamp to the shared trailing empty desktop when their target exceeds the current global desktop count.
+- Numbered whole-column and single-window desktop actions are one-based and clamp to the shared trailing empty desktop when their target exceeds the current global desktop count.
 - Default output transfer selects a deterministic adjacent output without wrapping, preserves the whole active tiled column, and adopts the destination output's visible desktop. On the floating layer, it transfers only the active relation-free window. The secondary action transfers only the active tiled window.
 - Output transfer never changes an output's current desktop; moving members adopt the destination output's visible desktop when needed.
 - A whole-column transfer commits only after every KWin mechanism and both context layouts succeed; partial work is compensated exactly.

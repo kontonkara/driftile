@@ -43,6 +43,11 @@ existing stack, one-way tiled/floating layer focus, resetting a column width,
 and reverse window-height preset cycling are registered without default keys.
 Assign them in **System Settings > Keyboard > Shortcuts** if needed.
 
+`driftile_move_window_to_desktop_1` through
+`driftile_move_window_to_desktop_9` directly transfer one active window to a
+numbered desktop and are also unbound by default. They do not change the
+helper-owned default profile.
+
 On a fresh shortcut record, the separately installed overview effect offers
 `Meta+O` when enabled. KGlobalAccel preserves the current assignment across
 effect unloads and upgrades; the retained action is inert while unloaded. Its
@@ -177,8 +182,8 @@ the destination frame; Driftile does not write geometry or either tiled layout.
 Blocked floating targets do not fall through to whole-column transfer.
 
 Numbered desktop actions use one-based positions. A number beyond the current
-desktop count selects the shared trailing empty desktop; moving a column there
-causes Driftile to append a new empty tail through KWin.
+desktop count selects the shared trailing empty desktop; moving a column or one
+window there causes Driftile to append a new empty tail through KWin.
 
 `Meta+,` appends the immediate right column's top window to the active column.
 `Meta+.` creates a new right column from the active column's bottom window.

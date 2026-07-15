@@ -389,6 +389,10 @@ export function moveWindowToNextDesktop(): void {
   runCommand((activeController) => activeController.moveWindowToNextDesktop());
 }
 
+export function moveWindowToDesktop(index: number): void {
+  runCommand((activeController) => activeController.moveWindowToDesktop(index));
+}
+
 export function moveColumnToPreviousDesktop(): void {
   runCommand((activeController) =>
     activeController.moveColumnToPreviousDesktop(),

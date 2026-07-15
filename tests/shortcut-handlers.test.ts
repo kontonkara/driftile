@@ -380,6 +380,33 @@ const expectedHandlers: Readonly<
     activated: "Runtime.DriftileRuntime.moveWindowRight()",
     sequence: "Meta+]",
   },
+  driftile_move_window_to_desktop_1: {
+    activated: "Runtime.DriftileRuntime.moveWindowToDesktop(1)",
+  },
+  driftile_move_window_to_desktop_2: {
+    activated: "Runtime.DriftileRuntime.moveWindowToDesktop(2)",
+  },
+  driftile_move_window_to_desktop_3: {
+    activated: "Runtime.DriftileRuntime.moveWindowToDesktop(3)",
+  },
+  driftile_move_window_to_desktop_4: {
+    activated: "Runtime.DriftileRuntime.moveWindowToDesktop(4)",
+  },
+  driftile_move_window_to_desktop_5: {
+    activated: "Runtime.DriftileRuntime.moveWindowToDesktop(5)",
+  },
+  driftile_move_window_to_desktop_6: {
+    activated: "Runtime.DriftileRuntime.moveWindowToDesktop(6)",
+  },
+  driftile_move_window_to_desktop_7: {
+    activated: "Runtime.DriftileRuntime.moveWindowToDesktop(7)",
+  },
+  driftile_move_window_to_desktop_8: {
+    activated: "Runtime.DriftileRuntime.moveWindowToDesktop(8)",
+  },
+  driftile_move_window_to_desktop_9: {
+    activated: "Runtime.DriftileRuntime.moveWindowToDesktop(9)",
+  },
   driftile_move_window_to_next_desktop: {
     activated: "Runtime.DriftileRuntime.moveWindowToNextDesktop()",
   },
@@ -492,7 +519,7 @@ describe("KWin shortcut handlers", () => {
   });
 
   it("keeps the canonical action catalog synchronized with QML", () => {
-    expect(shortcutActions).toHaveLength(106);
+    expect(shortcutActions).toHaveLength(115);
     expect(shortcutActions).toEqual(
       handlers.map(({ name, sequence, text }) => ({
         name,
@@ -505,7 +532,7 @@ describe("KWin shortcut handlers", () => {
     ).toHaveLength(88);
     expect(
       shortcutActions.filter((action) => action.defaultSequence === undefined),
-    ).toHaveLength(18);
+    ).toHaveLength(27);
   });
 
   it("uses unique lowercase action identifiers and key sequences", () => {
@@ -565,6 +592,15 @@ describe("KWin shortcut handlers", () => {
       "driftile_focus_tiling",
       "driftile_insert_window_into_stack_left",
       "driftile_insert_window_into_stack_right",
+      "driftile_move_window_to_desktop_1",
+      "driftile_move_window_to_desktop_2",
+      "driftile_move_window_to_desktop_3",
+      "driftile_move_window_to_desktop_4",
+      "driftile_move_window_to_desktop_5",
+      "driftile_move_window_to_desktop_6",
+      "driftile_move_window_to_desktop_7",
+      "driftile_move_window_to_desktop_8",
+      "driftile_move_window_to_desktop_9",
       "driftile_move_window_to_next_desktop",
       "driftile_move_window_to_next_desktop_page_down",
       "driftile_move_window_to_output_down",

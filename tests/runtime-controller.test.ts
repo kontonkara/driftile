@@ -34478,6 +34478,88 @@ describe("RuntimeController desktop transfers", () => {
     }
   });
 
+  it("moves one stacked window to a numbered desktop and clamps to the tail", () => {
+    const {
+      controller,
+      destination,
+      desktops,
+      fixture,
+      moved,
+      output,
+      source,
+    } = createDesktopTransferFixture({ sourceStack: true });
+    const layout = runtimeLayout(controller);
+    const sourceWidth = layout.snapshot(
+      outputId(output.name),
+      desktopId(desktops[0].id),
+    ).columns[0]?.width;
+
+    if (!sourceWidth) {
+      throw new Error("missing numbered single-window source width");
+    }
+
+    expect(controller.moveWindowToDesktop(9)).toBe(true);
+    expect(source.window.desktops).toEqual([desktops[0]]);
+    expect(moved.window.desktops).toEqual([desktops[1]]);
+    expect(source.desktopWriteCount).toBe(0);
+    expect(moved.desktopWriteCount).toBe(1);
+    expect(fixture.workspace.activeWindow).toBe(moved.window);
+    expect(fixture.workspace.currentDesktopForScreen?.(output)).toBe(
+      desktops[1],
+    );
+    expect(testLayoutColumns(controller, output, desktops[0])).toEqual([
+      { id: "column:source", windowIds: ["source"] },
+    ]);
+    expect(testLayoutColumns(controller, output, desktops[1])).toEqual([
+      { id: "column:destination", windowIds: ["destination"] },
+      { id: "column:moved", windowIds: ["moved"] },
+    ]);
+    expect(
+      layout.snapshot(outputId(output.name), desktopId(desktops[0].id))
+        .columns[0]?.width,
+    ).toEqual(sourceWidth);
+    expect(
+      layout.snapshot(outputId(output.name), desktopId(desktops[1].id))
+        .columns[1]?.width,
+    ).toEqual(sourceWidth);
+
+    const windows = [source, moved, destination];
+    const sourceAfter = layout.snapshot(
+      outputId(output.name),
+      desktopId(desktops[0].id),
+    );
+    const targetAfter = layout.snapshot(
+      outputId(output.name),
+      desktopId(desktops[1].id),
+    );
+    const windowState = captureTrackedWindowState(windows);
+    const desktopMemberships = windows.map(({ window }) => window.desktops);
+    const desktopWrites = windows.map(
+      ({ desktopWriteCount }) => desktopWriteCount,
+    );
+    const activeWindow = fixture.workspace.activeWindow;
+    const activationCount = fixture.activationCount;
+    const desktopSwitchCount = fixture.desktopSwitchCount;
+
+    expect(controller.moveWindowToDesktop(2)).toBe(false);
+    expect(
+      layout.snapshot(outputId(output.name), desktopId(desktops[0].id)),
+    ).toEqual(sourceAfter);
+    expect(
+      layout.snapshot(outputId(output.name), desktopId(desktops[1].id)),
+    ).toEqual(targetAfter);
+    expectTrackedWindowState(windows, windowState);
+    expect(windows.map(({ window }) => window.desktops)).toEqual(
+      desktopMemberships,
+    );
+    expect(windows.map(({ desktopWriteCount }) => desktopWriteCount)).toEqual(
+      desktopWrites,
+    );
+    expect(fixture.workspace.activeWindow).toBe(activeWindow);
+    expect(fixture.activationCount).toBe(activationCount);
+    expect(fixture.desktopSwitchCount).toBe(desktopSwitchCount);
+  });
+
   it("moves a whole stack past a settled minimized passive member", () => {
     const transfer = createDesktopTransferFixture({ sourceStack: true });
     const layout = runtimeLayout(transfer.controller);

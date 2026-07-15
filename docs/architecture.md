@@ -155,7 +155,7 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Resolves directional output neighbors from logical output geometry and transfers the active column atomically between contexts; secondary actions transfer one tiled window.
 - Applies desktop and output mechanisms member-by-member with the active member last, keeps it visible through cross-desktop output moves, commits both core contexts together, and compensates every owned field and frame on failure.
 - Maintains one shared trailing empty desktop and performs guarded one-step global reorder requests through a KWin lifecycle adapter.
-- Resolves numbered desktop targets against KWin's global list, clamps to the shared empty tail, and reuses the transactional whole-column transfer path.
+- Resolves numbered desktop targets against KWin's global list, clamps to the shared empty tail, and reuses either the transactional whole-column or single-window transfer path.
 - Focuses adjacent desktops on the active output, with a global fallback and no wrapping.
 - Accepts a desktop reorder only when KWin produces the exact expected same-ID permutation. The operation leaves selections and window memberships unchanged, and the shared empty tail remains pinned.
 - Releases explicitly floating windows from continuous geometry ownership and restores their anchored layout slots on return.
@@ -472,7 +472,7 @@ inspected safely within the codec bound.
   contexts, and publish once. On rejection, supersede attempted target requests
   with captured rollback frames, release after 20 exact rollback samples, and
   defer ordinary recovery when rollback is not confirmed within 40 probes.
-- Transfer either the active column or one secondary window between existing desktops through an immutable two-context preview, then commit only after KWin accepts every desktop mechanism, focus, and destination geometry.
+- Transfer either the active column or one secondary window between adjacent or numbered desktops through an immutable two-context preview, then commit only after KWin accepts every desktop mechanism, focus, and destination geometry.
 - Transfer either the active tiled column or one secondary tiled window between outputs through the same preview, then commit only after KWin accepts every output and desktop mechanism plus both visible layouts. Route an active floating layer through a separate single-window mechanism transaction that never mutates layout or frame geometry.
 - Preserve whole-column member order and width, apply the active member last, and restore all owned mechanisms and frames if any batch step fails.
 - Apply floating transitions from immutable previews, commit ownership only after every geometry request succeeds, and defer later context writes until asynchronous frames settle.
@@ -620,7 +620,7 @@ inspected safely within the codec bound.
 - Verify the settled topology barrier, output replacement and removal, dock and silent work-area invalidations, sticky restore invalidation, and deterministic capacity recovery.
 - Verify independent contexts with native Wayland and XWayland windows on two virtual outputs and native X11 windows on the X11 backend.
 - Verify whole-column and secondary directional transfers, retained minimized source peers with zero desktop, output, and geometry writes, fail-closed minimized windows outside that source column, no-wrap boundaries, per-output desktop selection, focus preservation, cancellation races, and exact two-context compensation.
-- Verify numbered desktop selection and whole-column transfer, tail clamping, same-target no-ops, and shared-tail renewal.
+- Verify numbered desktop selection plus whole-column and single-window transfer, retained source state, tail clamping, same-target no-ops, and shared-tail renewal.
 - Verify manual and automatic floating desktop transfer, exact frame preservation, related-window guards, tiled-state isolation, and compensation.
 - Verify manual and automatic floating output transfer, deterministic routing,
   destination-desktop adoption, KWin-owned frames, related-window guards,

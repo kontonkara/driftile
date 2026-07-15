@@ -474,6 +474,51 @@ QtObject {
         text: "Driftile: Move window to next desktop (Page Down)"
         onActivated: Runtime.DriftileRuntime.moveWindowToNextDesktop()
     }
+    readonly property ShortcutHandler moveWindowToDesktop1Shortcut: ShortcutHandler {
+        name: "driftile_move_window_to_desktop_1"
+        text: "Driftile: Move window to desktop 1"
+        onActivated: Runtime.DriftileRuntime.moveWindowToDesktop(1)
+    }
+    readonly property ShortcutHandler moveWindowToDesktop2Shortcut: ShortcutHandler {
+        name: "driftile_move_window_to_desktop_2"
+        text: "Driftile: Move window to desktop 2"
+        onActivated: Runtime.DriftileRuntime.moveWindowToDesktop(2)
+    }
+    readonly property ShortcutHandler moveWindowToDesktop3Shortcut: ShortcutHandler {
+        name: "driftile_move_window_to_desktop_3"
+        text: "Driftile: Move window to desktop 3"
+        onActivated: Runtime.DriftileRuntime.moveWindowToDesktop(3)
+    }
+    readonly property ShortcutHandler moveWindowToDesktop4Shortcut: ShortcutHandler {
+        name: "driftile_move_window_to_desktop_4"
+        text: "Driftile: Move window to desktop 4"
+        onActivated: Runtime.DriftileRuntime.moveWindowToDesktop(4)
+    }
+    readonly property ShortcutHandler moveWindowToDesktop5Shortcut: ShortcutHandler {
+        name: "driftile_move_window_to_desktop_5"
+        text: "Driftile: Move window to desktop 5"
+        onActivated: Runtime.DriftileRuntime.moveWindowToDesktop(5)
+    }
+    readonly property ShortcutHandler moveWindowToDesktop6Shortcut: ShortcutHandler {
+        name: "driftile_move_window_to_desktop_6"
+        text: "Driftile: Move window to desktop 6"
+        onActivated: Runtime.DriftileRuntime.moveWindowToDesktop(6)
+    }
+    readonly property ShortcutHandler moveWindowToDesktop7Shortcut: ShortcutHandler {
+        name: "driftile_move_window_to_desktop_7"
+        text: "Driftile: Move window to desktop 7"
+        onActivated: Runtime.DriftileRuntime.moveWindowToDesktop(7)
+    }
+    readonly property ShortcutHandler moveWindowToDesktop8Shortcut: ShortcutHandler {
+        name: "driftile_move_window_to_desktop_8"
+        text: "Driftile: Move window to desktop 8"
+        onActivated: Runtime.DriftileRuntime.moveWindowToDesktop(8)
+    }
+    readonly property ShortcutHandler moveWindowToDesktop9Shortcut: ShortcutHandler {
+        name: "driftile_move_window_to_desktop_9"
+        text: "Driftile: Move window to desktop 9"
+        onActivated: Runtime.DriftileRuntime.moveWindowToDesktop(9)
+    }
     readonly property ShortcutHandler focusOutputLeftShortcut: ShortcutHandler {
         name: "driftile_focus_output_left"
         text: "Driftile: Focus output left"

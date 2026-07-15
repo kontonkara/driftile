@@ -328,6 +328,42 @@ const shortcutActionCatalog = [
     text: "Driftile: Move window to next desktop (Page Down)",
   },
   {
+    name: "driftile_move_window_to_desktop_1",
+    text: "Driftile: Move window to desktop 1",
+  },
+  {
+    name: "driftile_move_window_to_desktop_2",
+    text: "Driftile: Move window to desktop 2",
+  },
+  {
+    name: "driftile_move_window_to_desktop_3",
+    text: "Driftile: Move window to desktop 3",
+  },
+  {
+    name: "driftile_move_window_to_desktop_4",
+    text: "Driftile: Move window to desktop 4",
+  },
+  {
+    name: "driftile_move_window_to_desktop_5",
+    text: "Driftile: Move window to desktop 5",
+  },
+  {
+    name: "driftile_move_window_to_desktop_6",
+    text: "Driftile: Move window to desktop 6",
+  },
+  {
+    name: "driftile_move_window_to_desktop_7",
+    text: "Driftile: Move window to desktop 7",
+  },
+  {
+    name: "driftile_move_window_to_desktop_8",
+    text: "Driftile: Move window to desktop 8",
+  },
+  {
+    name: "driftile_move_window_to_desktop_9",
+    text: "Driftile: Move window to desktop 9",
+  },
+  {
     name: "driftile_focus_output_left",
     text: "Driftile: Focus output left",
     defaultSequence: "Meta+Shift+H",

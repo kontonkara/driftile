@@ -90,9 +90,10 @@ setting, shortcut, persistence, or KWin state.
 | Tabbed columns       | Toggle presentation; select or reorder members with the existing vertical grammar                 | 1.19.0    |
 | Pointer navigation   | Provide wheel navigation through the shared layout model                                          | Future    |
 
-Single-window transfers will remain available as secondary, unbound actions.
-Default desktop and output transfer shortcuts must move the whole active column.
-An active floating layer changes either transfer to the active window only.
+Adjacent and numbered single-window transfers remain secondary, unbound
+actions. Default desktop and output transfer shortcuts must move the whole
+active column. An active floating layer changes either transfer to the active
+window only.
 
 Floating output transfer selects the same deterministic adjacent output as the
 tiled command and adopts that output's selected desktop without switching any
