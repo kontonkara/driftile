@@ -11,10 +11,12 @@ Driftile uses one keyboard grammar and does not wrap at layout boundaries:
 - `1..9` address a virtual desktop directly; adding `Ctrl` moves the active column there.
 - `W` toggles the active tiled column between stacked and tabbed presentation.
 
-Optional five-finger touchpad navigation reuses horizontal column focus: a
-completed left swipe focuses right, and a completed right swipe focuses left.
-It does not add shortcut actions, and partial or cancelled gestures perform no
-command.
+Optional `3`–`5`-finger touchpad navigation reuses horizontal column focus and
+adjacent-desktop selection. Horizontal and vertical gesture pairs can be
+enabled independently. With natural direction, completed left and up swipes
+focus right and select the next desktop; right and down select the previous
+column and desktop. The gestures add no shortcut actions, and partial or
+cancelled gestures perform no command.
 
 The optional overview's current-card path accepts left clicks only on valid
 thumbnails. It revalidates the direct live window against that output, desktop,

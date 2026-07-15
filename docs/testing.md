@@ -51,11 +51,11 @@ immediate and delayed backend settlement. Unit coverage separately proves
 reinsertion placement and exactly one forward frame request.
 
 Once per KWin session, the settled application layout also enables and disables
-touchpad navigation through KConfig without reloading the script. Both changes
+both touchpad navigation modes through KConfig without reloading the script. Both changes
 must preserve every frame, focus, desktop, persisted layout byte, and the full
 KGlobalAccel action list. Two enable cycles must create and destroy exactly two
-handler generations without QML diagnostics; native X11 exercises the same
-path as a safe no-op.
+horizontal and two vertical handler generations without QML diagnostics; native
+X11 exercises the same path as a safe no-op.
 Native Wayland and X11 single-output fixtures also reload the installed script twice, requiring byte-identical canonical state and stable minimized stack slots. X11 keeps transient minimized frame coordinates under KWin ownership while decorations are released and reclaimed, then requires exact layout geometry after restoration. Native two-output Wayland additionally preserves output-local manual floating ownership.
 
 Before layout scenarios start, every isolated backend imports the packaged state-store component through a declarative probe. Three load and unload generations require exact escaped Unicode JSON with its trailing newline, destruction-time flush before the long debounce timer, duplicate cancellation, unchanged committed state, and a separate timer-driven commit. The file lives only in that backend's temporary XDG configuration directory.
@@ -465,12 +465,13 @@ configuration cleanup. The hidden full Wayland checkpoint at exact SHA
 mixed application pool. No visible VM was run for this slice.
 
 At the settled Firefox, Konsole, and XWayland xterm pointer layout, the primary
-VM first verifies that touchpad navigation defaults to disabled, then applies
-`true`, `false`, `true`, and `false` live through KConfig. Every transition
+VM first verifies that both touchpad modes default to disabled, then applies
+`true`, `false`, `true`, and `false` to both live through KConfig. Every transition
 preserves exact frames, focus, desktop order and selection, persisted layout
 bytes, the full KGlobalAccel action list, the loaded core extension, and the
-built-in Overview state. The journal must report exactly two handler creations
-and destructions without component diagnostics, and cleanup restores `false`.
+built-in Overview state. The journal must report exactly two horizontal and two
+vertical handler creations and destructions without component diagnostics, and
+cleanup restores `false`.
 
 At the same settled pointer layout, the primary VM confirms that the separately
 installed overview effect is disabled and registers `Meta+O`. It loads the

@@ -183,7 +183,8 @@ for key in ApplicationBorderlessExclusions ApplicationColumnPresentations \
   ApplicationTilingExclusions BorderlessWindows CenterFocusedColumn \
   ColumnWidthPresets ColumnWidthStepPercent DefaultColumnPresentation \
   DefaultColumnWidthPercent Gap ShowTabIndicator TouchpadNavigation \
-  WindowHeightPresets WindowHeightStepPercent; do
+  TouchpadWorkspaceNavigation TouchpadNavigationFingerCount \
+  TouchpadNaturalScroll WindowHeightPresets WindowHeightStepPercent; do
   kwriteconfig6 --file kwinrc \
     --group Script-io.github.kontonkara.driftile \
     --key "$key" --delete ""
@@ -257,7 +258,7 @@ does not enable its effect in KWin. On a fresh shortcut record, the enabled
 overview offers `Meta+O`; upgrades preserve the current KGlobalAccel
 assignment. See [Overview companion](overview.md).
 
-The current Home Manager module exposes the complete nineteen-setting profile:
+The current Home Manager module exposes the complete twenty-setting profile:
 
 ```nix
 programs.driftile.settings = {
@@ -280,6 +281,9 @@ programs.driftile.settings = {
   defaultColumnWidthPercent = 33;
   columnWidthStepPercent = 10;
   touchpadNavigation = false;
+  touchpadWorkspaceNavigation = false;
+  touchpadNavigationFingerCount = 5;
+  touchpadNaturalScroll = true;
   windowHeightPresets = [ ];
   windowHeightStepPercent = 10;
 };

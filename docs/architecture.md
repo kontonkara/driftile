@@ -24,8 +24,9 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Hosts QML-only shortcut handlers.
 - Sends bounded tab-selection text to Plasma's asynchronous OSD service when
   enabled; it creates no KWin-managed surface and does not intercept input.
-- Keeps the optional touchpad gesture Loader inactive by default; only an
-  accepted complete settings snapshot may create or destroy its two handlers.
+- Keeps both optional touchpad gesture Loaders inactive by default. An accepted
+  complete settings snapshot creates only enabled horizontal or vertical pairs
+  and recreates them when their registered finger count or direction changes.
 - Provides event-loop and minimum-delay schedulers for batched work and transition stabilization.
 - Runs a two-second watchdog for visible-context geometry and non-minimized tracked-window hard constraints.
 - Contains no layout policy; its state store handles only opaque canonical strings.
