@@ -47,10 +47,16 @@ interface WindowStub {
   fullScreen: boolean;
   hiddenByShowDesktop: boolean;
   specialWindow: boolean;
+  popupWindow: boolean;
+  appletPopup: boolean;
+  modal: boolean;
   normalWindow: boolean;
   managed: boolean;
+  moveable: boolean;
   move: boolean;
   resize: boolean;
+  skipSwitcher: boolean;
+  transientFor(): WindowStub | null;
   readonly [key: string]: unknown;
 }
 
@@ -65,6 +71,12 @@ interface AnimationRequest {
   readonly window: WindowStub;
   readonly duration: number;
   readonly animations: readonly Animation[];
+}
+
+interface RetargetCall {
+  readonly animationId: number;
+  readonly target: unknown;
+  readonly duration: number;
 }
 
 function createSignal<Arguments extends unknown[]>(): Signal<Arguments> {
@@ -91,10 +103,16 @@ function createWindow(overrides: Partial<WindowStub> = {}): WindowStub {
     fullScreen: false,
     hiddenByShowDesktop: false,
     specialWindow: false,
+    popupWindow: false,
+    appletPopup: false,
+    modal: false,
     normalWindow: true,
     managed: true,
+    moveable: true,
     move: false,
     resize: false,
+    skipSwitcher: false,
+    transientFor: () => null,
     ...overrides,
   };
 }
@@ -112,6 +130,8 @@ function createHarness(
   const configChanged = createSignal<[]>();
   const animationRequests: AnimationRequest[] = [];
   const cancelledAnimations: unknown[] = [];
+  const retargetCalls: RetargetCall[] = [];
+  const failedRetargets = new Set<number>();
   const animationTimeCalls: number[] = [];
   let configuredDuration = options.configuredDuration ?? 180;
   let nextAnimationId = 1;
@@ -124,17 +144,15 @@ function createHarness(
 
   runInNewContext(script, {
     Effect: {
+      Position: "position",
       Size: "size",
-      Translation: "translation",
     },
     QEasingCurve: {
       OutCubic: "out-cubic",
     },
     animate(request: AnimationRequest) {
       animationRequests.push(request);
-      const ids = [nextAnimationId, nextAnimationId + 1];
-      nextAnimationId += 2;
-      return ids;
+      return request.animations.map(() => nextAnimationId++);
     },
     animationTime(duration: number) {
       animationTimeCalls.push(duration);
@@ -143,6 +161,10 @@ function createHarness(
     cancel(animation: unknown) {
       cancelledAnimations.push(animation);
       return true;
+    },
+    retarget(animationId: number, target: unknown, duration: number) {
+      retargetCalls.push({ animationId, target, duration });
+      return !failedRetargets.has(animationId);
     },
     effect: {
       configChanged,
@@ -159,6 +181,8 @@ function createHarness(
     cancelledAnimations,
     configChanged,
     effects,
+    failedRetargets,
+    retargetCalls,
     setConfiguredDuration(duration: number) {
       configuredDuration = duration;
     },
@@ -217,9 +241,9 @@ describe("transition effect package", () => {
           curve: "out-cubic",
         },
         {
-          type: "translation",
-          from: { value1: -140, value2: -90 },
-          to: { value1: 0, value2: 0 },
+          type: "position",
+          from: { value1: 170, value2: 130 },
+          to: { value1: 310, value2: 220 },
           curve: "out-cubic",
         },
       ],
@@ -236,24 +260,21 @@ describe("transition effect package", () => {
     });
     expect(positionHarness.animationRequests[0]?.animations).toMatchObject([
       {
-        type: "translation",
-        from: { value1: -60, value2: -60 },
+        type: "position",
+        from: { value1: 170, value2: 130 },
+        to: { value1: 230, value2: 190 },
       },
     ]);
 
     const sizeHarness = createHarness();
     changeGeometry(sizeHarness.window, {
-      x: 20,
-      y: 30,
+      x: -80,
+      y: -20,
       width: 500,
       height: 300,
     });
     expect(sizeHarness.animationRequests[0]?.animations).toMatchObject([
       { type: "size" },
-      {
-        type: "translation",
-        from: { value1: -100, value2: -50 },
-      },
     ]);
   });
 
@@ -279,8 +300,13 @@ describe("transition effect package", () => {
       { fullScreen: true },
       { hiddenByShowDesktop: true },
       { specialWindow: true },
+      { popupWindow: true },
+      { appletPopup: true },
+      { modal: true },
       { normalWindow: false },
       { managed: false },
+      { moveable: false },
+      { transientFor: () => createWindow() },
     ];
 
     for (const state of ineligibleStates) {
@@ -299,6 +325,18 @@ describe("transition effect package", () => {
       height: 250,
     });
     expect(fullscreenHarness.animationRequests).toHaveLength(0);
+
+    const skippedHarness = createHarness({
+      window: createWindow({ skipSwitcher: true }),
+    });
+    changeGeometry(skippedHarness.window, {
+      x: 50,
+      y: 60,
+      width: 400,
+      height: 250,
+    });
+    expect(skippedHarness.animationRequests).toHaveLength(1);
+    expect(script).not.toMatch(/resourceClass|resourceName|windowClass/u);
   });
 
   it("respects zero global duration and reloads bounded configuration", () => {
@@ -325,7 +363,7 @@ describe("transition effect package", () => {
     expect(configuredHarness.animationRequests[0]?.duration).toBe(1000);
   });
 
-  it("cancels and replaces per-window animation state", () => {
+  it("retargets consecutive position and size changes without cancellation", () => {
     const harness = createHarness();
     changeGeometry(harness.window, {
       x: 40,
@@ -340,8 +378,60 @@ describe("transition effect package", () => {
       height: 300,
     });
 
+    expect(harness.animationRequests).toHaveLength(1);
+    expect(harness.retargetCalls).toEqual([
+      {
+        animationId: 1,
+        target: { value1: 500, value2: 300 },
+        duration: 180,
+      },
+      {
+        animationId: 2,
+        target: { value1: 310, value2: 220 },
+        duration: 180,
+      },
+    ]);
+    expect(harness.cancelledAnimations).toHaveLength(0);
+  });
+
+  it("restarts only an attribute whose retarget request failed", () => {
+    const harness = createHarness();
+    changeGeometry(harness.window, {
+      x: 40,
+      y: 50,
+      width: 400,
+      height: 250,
+    });
+    harness.failedRetargets.add(2);
+    changeGeometry(harness.window, {
+      x: 60,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+
+    expect(harness.retargetCalls.map(({ animationId }) => animationId)).toEqual(
+      [1, 2],
+    );
     expect(harness.animationRequests).toHaveLength(2);
-    expect(harness.cancelledAnimations).toEqual([[1, 2]]);
+    expect(harness.animationRequests[1]?.animations).toMatchObject([
+      {
+        type: "position",
+        from: { value1: 240, value2: 175 },
+        to: { value1: 310, value2: 220 },
+      },
+    ]);
+    expect(harness.cancelledAnimations).toHaveLength(0);
+  });
+
+  it("cancels active state on ineligibility, config reload, and deletion", () => {
+    const harness = createHarness();
+    changeGeometry(harness.window, {
+      x: 40,
+      y: 50,
+      width: 400,
+      height: 250,
+    });
 
     harness.window.move = true;
     changeGeometry(harness.window, {
@@ -350,13 +440,27 @@ describe("transition effect package", () => {
       width: 500,
       height: 300,
     });
-    expect(harness.animationRequests).toHaveLength(2);
-    expect(harness.cancelledAnimations).toEqual([
-      [1, 2],
-      [3, 4],
-    ]);
+    expect(harness.animationRequests).toHaveLength(1);
+    expect(harness.cancelledAnimations).toEqual([1, 2]);
+
+    harness.window.move = false;
+    changeGeometry(harness.window, {
+      x: 100,
+      y: 110,
+      width: 600,
+      height: 350,
+    });
+    harness.configChanged.emit();
+    expect(harness.cancelledAnimations).toEqual([1, 2, 3, 4]);
+
+    changeGeometry(harness.window, {
+      x: 120,
+      y: 130,
+      width: 700,
+      height: 400,
+    });
 
     harness.windowDeleted.emit(harness.window);
-    expect(harness.cancelledAnimations).toHaveLength(2);
+    expect(harness.cancelledAnimations).toEqual([1, 2, 3, 4, 5, 6]);
   });
 });

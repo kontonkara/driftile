@@ -7,6 +7,8 @@ const DEFAULT_DURATION = 180;
 const MAXIMUM_DURATION = 1000;
 const MANAGED_PROPERTY = "driftileTransitionsManaged";
 const ANIMATION_PROPERTY = "driftileTransitionAnimation";
+const POSITION_ANIMATION = "position";
+const SIZE_ANIMATION = "size";
 
 class DriftileTransitionsEffect {
   constructor() {
@@ -32,10 +34,8 @@ class DriftileTransitionsEffect {
       : DEFAULT_DURATION;
 
     this.duration = animationTime(baseDuration);
-    if (this.duration <= 0) {
-      for (const window of this.managedWindows) {
-        this.cancelWindowAnimation(window);
-      }
+    for (const window of this.managedWindows) {
+      this.cancelWindowAnimation(window);
     }
   }
 
@@ -65,69 +65,89 @@ class DriftileTransitionsEffect {
   }
 
   onWindowFrameGeometryChanged(window, oldGeometry) {
-    this.cancelWindowAnimation(window);
     if (
       this.duration <= 0 ||
       !this.isEligible(window) ||
       !this.isValidGeometry(oldGeometry)
     ) {
+      this.cancelWindowAnimation(window);
       return;
     }
 
     const newGeometry = window.geometry;
     if (!this.isValidGeometry(newGeometry)) {
+      this.cancelWindowAnimation(window);
       return;
     }
 
     const sizeChanged =
       oldGeometry.width !== newGeometry.width ||
       oldGeometry.height !== newGeometry.height;
-    const translation = {
-      value1:
-        oldGeometry.x -
-        newGeometry.x -
-        (newGeometry.width / 2 - oldGeometry.width / 2),
-      value2:
-        oldGeometry.y -
-        newGeometry.y -
-        (newGeometry.height / 2 - oldGeometry.height / 2),
+    const oldPosition = {
+      value1: oldGeometry.x + oldGeometry.width / 2,
+      value2: oldGeometry.y + oldGeometry.height / 2,
+    };
+    const newPosition = {
+      value1: newGeometry.x + newGeometry.width / 2,
+      value2: newGeometry.y + newGeometry.height / 2,
     };
     const positionChanged =
-      translation.value1 !== 0 || translation.value2 !== 0;
+      oldPosition.value1 !== newPosition.value1 ||
+      oldPosition.value2 !== newPosition.value2;
 
     if (!sizeChanged && !positionChanged) {
       return;
     }
 
+    const state = this.windowAnimationState(window);
     const animations = [];
-    if (sizeChanged) {
+    const animationProperties = [];
+    const newSize = {
+      value1: newGeometry.width,
+      value2: newGeometry.height,
+    };
+
+    if (
+      sizeChanged &&
+      !this.retargetAnimation(state, SIZE_ANIMATION, newSize)
+    ) {
+      animationProperties.push(SIZE_ANIMATION);
       animations.push({
         type: Effect.Size,
         from: {
           value1: oldGeometry.width,
           value2: oldGeometry.height,
         },
-        to: {
-          value1: newGeometry.width,
-          value2: newGeometry.height,
-        },
+        to: newSize,
         curve: QEasingCurve.OutCubic,
       });
     }
-    if (positionChanged) {
+    if (
+      positionChanged &&
+      !this.retargetAnimation(state, POSITION_ANIMATION, newPosition)
+    ) {
+      animationProperties.push(POSITION_ANIMATION);
       animations.push({
-        type: Effect.Translation,
-        from: translation,
-        to: { value1: 0, value2: 0 },
+        type: Effect.Position,
+        from: oldPosition,
+        to: newPosition,
         curve: QEasingCurve.OutCubic,
       });
     }
 
-    window[ANIMATION_PROPERTY] = animate({
-      window,
-      duration: this.duration,
-      animations,
-    });
+    if (animations.length > 0) {
+      const animationIds = animate({
+        window,
+        duration: this.duration,
+        animations,
+      });
+
+      for (let index = 0; index < animationProperties.length; index += 1) {
+        state[animationProperties[index]] = animationIds[index];
+      }
+    }
+
+    window[ANIMATION_PROPERTY] = state;
   }
 
   isEligible(window) {
@@ -139,11 +159,42 @@ class DriftileTransitionsEffect {
       !window.fullScreen &&
       !window.hiddenByShowDesktop &&
       !window.specialWindow &&
+      !window.popupWindow &&
+      !window.appletPopup &&
+      !window.modal &&
+      window.transientFor() === null &&
       window.normalWindow &&
       window.managed &&
+      window.moveable &&
       !window.move &&
       !window.resize
     );
+  }
+
+  windowAnimationState(window) {
+    const state = window[ANIMATION_PROPERTY];
+    if (state && typeof state === "object" && !Array.isArray(state)) {
+      return state;
+    }
+
+    if (state !== undefined) {
+      cancel(state);
+    }
+    return {};
+  }
+
+  retargetAnimation(state, property, target) {
+    const animationId = state[property];
+    if (animationId === undefined) {
+      return false;
+    }
+
+    if (retarget(animationId, target, this.duration)) {
+      return true;
+    }
+
+    delete state[property];
+    return false;
   }
 
   isValidGeometry(geometry) {
@@ -163,7 +214,19 @@ class DriftileTransitionsEffect {
       return;
     }
 
-    cancel(window[ANIMATION_PROPERTY]);
+    const state = window[ANIMATION_PROPERTY];
+    if (!state || typeof state !== "object" || Array.isArray(state)) {
+      cancel(state);
+      delete window[ANIMATION_PROPERTY];
+      return;
+    }
+
+    if (state[SIZE_ANIMATION] !== undefined) {
+      cancel(state[SIZE_ANIMATION]);
+    }
+    if (state[POSITION_ANIMATION] !== undefined) {
+      cancel(state[POSITION_ANIMATION]);
+    }
     delete window[ANIMATION_PROPERTY];
   }
 }
