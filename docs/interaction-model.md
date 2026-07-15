@@ -109,6 +109,12 @@ corresponding visible or structural boundary. Manual floating behavior remains
 local. Pending, stale, blocked, or rejected local work never falls through to
 another output.
 
+Unbound traversal alternatives can wrap first/last columns, continue from a
+vertical edge into one adjacent column, or select and wrap the visible top and
+bottom members. A local candidate is always attempted first. Rejected or
+blocked candidates stop the command instead of activating its fallback.
+Floating traversal remains geometric and layer-local.
+
 The existing center-column action is contextual. With an active manually
 floating window, it centers each non-oversized dimension at the exact logical
 midpoint of the assigned output and desktop work area; an oversized dimension

@@ -108,6 +108,23 @@ The action IDs are:
 - `driftile_move_window_up_or_to_output_up`
 - `driftile_move_window_down_or_to_output_down`
 
+Ten additional focus-traversal actions are unbound. They provide:
+
+- column wrapping through `driftile_focus_column_right_or_first` and
+  `driftile_focus_column_left_or_last`;
+- vertical focus followed by the adjacent column through
+  `driftile_focus_window_down_or_column_left`,
+  `driftile_focus_window_down_or_column_right`,
+  `driftile_focus_window_up_or_column_left`, and
+  `driftile_focus_window_up_or_column_right`;
+- direct and wrapping vertical edges through `driftile_focus_window_top`,
+  `driftile_focus_window_bottom`, `driftile_focus_window_down_or_top`, and
+  `driftile_focus_window_up_or_bottom`.
+
+Fallback happens only after reaching a visible boundary. A rejected or blocked
+target remains a no-op. Floating windows use their frame centers for vertical
+edges, stay in the floating layer, and never fall through to a tiled column.
+
 The four preset actions retain the IDs
 `driftile_switch_preset_column_width`,
 `driftile_switch_preset_column_width_back`,

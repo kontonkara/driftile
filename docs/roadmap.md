@@ -1380,6 +1380,13 @@ The optional transition effect also excludes frameless keep-above or
 switcher-skipping shell overlays. Rapid geometry updates continue retargeting
 the active animation instead of restarting it.
 
+Ten unbound focus-traversal alternatives add first/last column wrapping,
+vertical-edge continuation into an adjacent column, and direct or wrapping
+top/bottom selection. Minimized peers are skipped during focus. Floating
+traversal uses frame geometry and remains in its own layer. A blocked or
+rejected local target never activates the fallback, and existing default
+bindings remain unchanged.
+
 ## Post-v1
 
 Add interaction and presentation features outside the frozen v1 scope without
