@@ -8,6 +8,7 @@ fi
 
 readonly plugin_id="io.github.kontonkara.driftile"
 readonly overview_plugin_id="io.github.kontonkara.driftile.overview"
+readonly transitions_plugin_id="io.github.kontonkara.driftile.transitions"
 readonly overview_shortcut="driftile_toggle_overview"
 readonly overview_shortcut_text="Driftile: Toggle overview"
 readonly overview_default_keys='[[268435535,0,0,0]]'
@@ -48,6 +49,7 @@ export QT_QUICK_BACKEND=software
 client_pids=()
 custom_shortcut_profile_owned=false
 overview_effect_checks_enabled=false
+transition_effect_checks_enabled=false
 primary_desktop_id=""
 qml_options=(--software)
 secondary_desktop_id=""
@@ -134,6 +136,13 @@ cleanup() {
   restore_layout_configuration >/dev/null 2>&1 || true
   stop_work_area_panel
   stop_x11_work_area_dock
+  busctl --user call \
+    org.kde.KWin \
+    /Effects \
+    org.kde.kwin.Effects \
+    unloadEffect \
+    s "$transitions_plugin_id" \
+    >/dev/null 2>&1 || true
   busctl --user call \
     org.kde.KWin \
     /Effects \
@@ -508,6 +517,23 @@ effect_is_available() {
       >/dev/null
 }
 
+effect_supported_state() {
+  local state
+
+  state=$(busctl --user call \
+    org.kde.KWin \
+    /Effects \
+    org.kde.kwin.Effects \
+    isEffectSupported \
+    s "$1" 2>/dev/null) || return 1
+
+  case "$state" in
+    "b true") printf '%s' true ;;
+    "b false") printf '%s' false ;;
+    *) return 1 ;;
+  esac
+}
+
 effect_loaded_state() {
   local state
 
@@ -593,6 +619,32 @@ unload_overview_effect() {
   wait_for_effect_loaded_state "$overview_plugin_id" false
 }
 
+load_transition_effect() {
+  local result
+
+  result=$(busctl --user call \
+    org.kde.KWin \
+    /Effects \
+    org.kde.kwin.Effects \
+    loadEffect \
+    s "$transitions_plugin_id") || return 1
+
+  [[ "$result" == "b true" ]] || return 1
+  wait_for_effect_loaded_state "$transitions_plugin_id" true
+}
+
+unload_transition_effect() {
+  busctl --user call \
+    org.kde.KWin \
+    /Effects \
+    org.kde.kwin.Effects \
+    unloadEffect \
+    s "$transitions_plugin_id" \
+    >/dev/null || return 1
+
+  wait_for_effect_loaded_state "$transitions_plugin_id" false
+}
+
 layout_file_digest() {
   sha256sum "$layout_state_file" 2>/dev/null | awk '{ print $1 }'
 }
@@ -672,6 +724,73 @@ capture_overview_checkpoint() {
     "$(capture_overview_settings)" \
     "$(effect_loaded_state "$plasma_overview_effect_id")" \
     "$(effect_active_state "$plasma_overview_effect_id")"
+}
+
+capture_transition_checkpoint() {
+  local active_window
+  local digest
+  local frame
+  local frames=""
+  local title
+
+  digest=$(capture_stable_layout_digest) || return 1
+  active_window=$(describe_active_windows "$@")
+
+  for title in "$@"; do
+    frame=$(capture_stable_geometry "$title") || return 1
+    frames+="${frames:+|}$title=$frame"
+  done
+
+  printf '%s\037%s\037%s' "$digest" "$active_window" "$frames"
+}
+
+verify_transition_effect_gap_change() {
+  local protocol=$1
+  local active_title=$2
+  local gap=$3
+  local after_checkpoint
+  local before_checkpoint
+  local -a geometry_pairs
+  local -a window_titles=()
+  local index
+
+  shift 3
+  geometry_pairs=("$@")
+
+  (($# > 0 && $# % 2 == 0)) || \
+    fail "the $protocol transition-effect geometry fixture was incomplete"
+
+  for ((index = 0; index < ${#geometry_pairs[@]}; index += 2)); do
+    window_titles+=("${geometry_pairs[index]}")
+  done
+
+  if [[ "$transition_effect_checks_enabled" == true ]]; then
+    wait_for_effect_loaded_state "$transitions_plugin_id" false || \
+      fail "Driftile transitions were already loaded before the $protocol geometry check"
+    load_transition_effect || \
+      fail "KWin could not load Driftile transitions for $protocol"
+  fi
+
+  set_gap "$gap" || fail "KWin could not apply the $protocol window gap"
+  wait_for_geometries "${geometry_pairs[@]}" || \
+    fail "Driftile did not retain exact $protocol geometry with transitions loaded: $(describe_layout "${window_titles[@]}")"
+  wait_for_active "$active_title" || \
+    fail "Driftile transitions changed $protocol focus during automatic layout"
+
+  if [[ "$transition_effect_checks_enabled" != true ]]; then
+    return
+  fi
+
+  wait_for_effect_loaded_state "$transitions_plugin_id" true || \
+    fail "Driftile transitions unloaded during the $protocol geometry change"
+  before_checkpoint=$(capture_transition_checkpoint "${window_titles[@]}") || \
+    fail "the loaded $protocol transition checkpoint did not stabilize"
+  unload_transition_effect || \
+    fail "KWin could not unload Driftile transitions after $protocol geometry changed"
+  after_checkpoint=$(capture_transition_checkpoint "${window_titles[@]}") || \
+    fail "the unloaded $protocol transition checkpoint did not stabilize"
+  [[ "$after_checkpoint" == "$before_checkpoint" ]] || \
+    fail "unloading Driftile transitions changed $protocol frames, focus, or layout state"
 }
 
 capture_overview_settings() {
@@ -8957,15 +9076,14 @@ run_scenario() {
   gap_minimized_frame=$(capture_stable_geometry "$second_title") || \
     fail "the minimized $protocol gap-test frame did not stabilize"
 
-  set_gap 24 || fail "KWin could not apply the $protocol window gap"
-  wait_for_state_and_geometries \
-    "$gap_minimized_id" minimized true \
+  verify_transition_effect_gap_change \
+    "$protocol" "$third_title" 24 \
     "$first_title" "-608,24,604,672" \
     "$second_title" "$gap_minimized_frame" \
     "$third_title" "648,24,604,672" || \
     fail "Driftile did not apply the live $protocol window gap without touching the minimized slot: $(describe_layout "$first_title" "$second_title" "$third_title")"
-  wait_for_active "$third_title" || \
-    fail "Driftile changed $protocol focus while applying the window gap"
+  wait_for_window_state "$gap_minimized_id" minimized true || \
+    fail "Driftile transitions changed the minimized $protocol gap-test state"
 
   set_external_window_minimized "$second_title" false || \
     fail "KWin could not restore the $protocol gap-test window"
@@ -10274,15 +10392,13 @@ run_multi_output_scenario() {
     "${titles[4]}" "1928,16,616,688" || \
     fail "Driftile did not create two isolated $protocol output contexts: $(describe_layout "${titles[0]}" "${titles[1]}" "${titles[3]}" "${titles[4]}")"
 
-  set_gap 24 || fail "KWin could not apply the multi-output $protocol window gap"
-  wait_for_geometries \
+  verify_transition_effect_gap_change \
+    "$protocol" "${titles[4]}" 24 \
     "${titles[0]}" "24,24,604,672" \
     "${titles[1]}" "652,24,604,672" \
     "${titles[3]}" "1304,24,604,672" \
     "${titles[4]}" "1932,24,604,672" || \
     fail "Driftile did not apply the live gap to both $protocol output contexts: $(describe_layout "${titles[0]}" "${titles[1]}" "${titles[3]}" "${titles[4]}")"
-  wait_for_active "${titles[4]}" || \
-    fail "Driftile changed $protocol focus while applying the multi-output gap"
 
   set_gap 16 || fail "KWin could not restore the multi-output $protocol window gap"
   wait_for_geometries \
@@ -10954,6 +11070,21 @@ if wait_for_effects_dbus; then
     fail "KWin did not discover the installed Driftile overview"
   wait_for_effect_loaded_state "$overview_plugin_id" false || \
     fail "the Driftile overview did not remain disabled by default"
+  effect_is_available "$transitions_plugin_id" || \
+    fail "KWin did not discover the installed Driftile transitions"
+  wait_for_effect_loaded_state "$transitions_plugin_id" false || \
+    fail "Driftile transitions did not remain disabled by default"
+  case "$(effect_supported_state "$transitions_plugin_id")" in
+    true) transition_effect_checks_enabled=true ;;
+    false)
+      [[ "${DRIFTILE_SMOKE_REQUIRE_TRANSITION_EFFECT:-0}" != "1" ]] || \
+        fail "the compositor backend does not support the required Driftile transition effect"
+      printf '%s\n' \
+        "Driftile integration: skipping transition animation because the compositor backend does not support scripted effects." \
+        >&2
+      ;;
+    *) fail "KWin could not report Driftile transition-effect support" ;;
+  esac
   wait_for_shortcut_absent "$overview_shortcut" || \
     fail "the disabled Driftile overview registered its shortcut"
   verify_overview_missing_state || \
@@ -10962,7 +11093,7 @@ elif [[ "$DRIFTILE_SMOKE_PROTOCOLS" != "x11" ]]; then
   fail "KWin did not expose the required /Effects D-Bus API"
 else
   printf '%s\n' \
-    "Driftile integration: skipping overview effect checks because KWin X11 did not expose /Effects." \
+    "Driftile integration: skipping optional effect checks because KWin X11 did not expose /Effects." \
     >&2
 fi
 verify_settings_persistence_transport || \

@@ -6,6 +6,7 @@ project_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 readonly project_root
 readonly plugin_id="io.github.kontonkara.driftile"
 readonly overview_plugin_id="io.github.kontonkara.driftile.overview"
+readonly transitions_plugin_id="io.github.kontonkara.driftile.transitions"
 readonly touchpad_navigation_created_marker="[driftile] touchpad-navigation lifecycle=created"
 readonly touchpad_navigation_destroyed_marker="[driftile] touchpad-navigation lifecycle=destroyed"
 readonly wait_attempts=200
@@ -107,6 +108,7 @@ run_backend() (
   local xvfb_pid=""
   local package_installed=0
   local overview_package_installed=0
+  local transitions_package_installed=0
   local output_count
   local protocols
   local scenario
@@ -118,6 +120,13 @@ run_backend() (
 
   # shellcheck disable=SC2329
   cleanup() {
+    if [[ "$transitions_package_installed" == "1" ]]; then
+      kpackagetool6 \
+        --type=KWin/Effect \
+        --remove "$transitions_plugin_id" \
+        >/dev/null 2>&1 || true
+    fi
+
     if [[ "$overview_package_installed" == "1" ]]; then
       kpackagetool6 \
         --type=KWin/Effect \
@@ -264,6 +273,14 @@ run_backend() (
   fi
   overview_package_installed=1
 
+  if ! kpackagetool6 \
+    --type=KWin/Effect \
+    --install "$transitions_package_archive" \
+    >/dev/null; then
+    fail "KPackage could not install Driftile transitions in the $backend sandbox."
+  fi
+  transitions_package_installed=1
+
   case "$backend" in
     wayland | wayland-multi-output)
       require_command kwin_wayland || exit 1
@@ -288,7 +305,7 @@ run_backend() (
       fi
 
       export DRIFTILE_SMOKE_PROTOCOLS="$protocols"
-      export KWIN_COMPOSE=Q
+      export KWIN_COMPOSE="${DRIFTILE_SMOKE_COMPOSE:-Q}"
       export XDG_SESSION_TYPE=wayland
 
       kwriteconfig6 \
@@ -450,6 +467,18 @@ run_backend() (
   fi
 
   if ! kpackagetool6 \
+    --type=KWin/Effect \
+    --remove "$transitions_plugin_id" \
+    >/dev/null; then
+    fail "KPackage could not remove Driftile transitions from the $backend sandbox."
+  fi
+  transitions_package_installed=0
+
+  if [[ -e "$XDG_DATA_HOME/kwin/effects/$transitions_plugin_id" ]]; then
+    fail "KPackage left Driftile transitions installed after the $backend test."
+  fi
+
+  if ! kpackagetool6 \
     --type=KWin/Script \
     --remove "$plugin_id" \
     >/dev/null; then
@@ -482,6 +511,8 @@ package_archive="$project_root/dist/driftile-$package_version.kwinscript"
 readonly package_archive
 overview_package_archive="$project_root/dist/driftile-overview-$package_version.kwineffect"
 readonly overview_package_archive
+transitions_package_archive="$project_root/dist/driftile-transitions-$package_version.kwineffect"
+readonly transitions_package_archive
 shortcut_archive="$project_root/dist/driftile-shortcuts-$package_version.mjs"
 readonly shortcut_archive
 layout_state_validator="$project_root/dist/bin/driftile-layout-state-validator.mjs"
@@ -491,6 +522,7 @@ npm --prefix "$project_root" run package >/dev/null
 if [[
   ! -f "$package_archive" ||
     ! -f "$overview_package_archive" ||
+    ! -f "$transitions_package_archive" ||
     ! -f "$shortcut_archive" ||
     ! -f "$layout_state_validator"
 ]]; then
