@@ -36354,6 +36354,129 @@ describe("RuntimeController desktop transfers", () => {
     expect(controller.managedCount).toBe(2);
   });
 
+  it("focuses within a stack before crossing a visible desktop boundary", () => {
+    const transfer = createDesktopTransferFixture({
+      sourcePeerCount: 2,
+      sourceStack: true,
+    });
+    const middle = transfer.sources[1];
+
+    if (!middle) {
+      throw new Error("missing middle stack member");
+    }
+
+    setWindowState("minimized", middle, true);
+    transfer.fixture.workspace.activeWindow = transfer.source.window;
+
+    expect(transfer.controller.focusDownOrNextDesktop()).toBe(true);
+    expect(transfer.fixture.workspace.activeWindow).toBe(transfer.moved.window);
+    expect(
+      transfer.fixture.workspace.currentDesktopForScreen?.(transfer.output),
+    ).toBe(transfer.desktops[0]);
+
+    transfer.fixture.workspace.activeWindow = transfer.source.window;
+    transfer.fixture.setActivationBehavior(() => undefined);
+    expect(transfer.controller.focusDownOrNextDesktop()).toBe(false);
+    expect(
+      transfer.fixture.workspace.currentDesktopForScreen?.(transfer.output),
+    ).toBe(transfer.desktops[0]);
+    transfer.fixture.setActivationBehavior(null);
+
+    setWindowState("minimized", transfer.moved, true);
+    Object.defineProperty(transfer.source.window, "moveable", {
+      configurable: true,
+      value: false,
+    });
+    expect(transfer.controller.focusDownOrNextDesktop()).toBe(false);
+    expect(
+      transfer.fixture.workspace.currentDesktopForScreen?.(transfer.output),
+    ).toBe(transfer.desktops[0]);
+    Object.defineProperty(transfer.source.window, "moveable", {
+      configurable: true,
+      value: true,
+    });
+    expect(transfer.controller.focusDownOrNextDesktop()).toBe(true);
+    expect(
+      transfer.fixture.workspace.currentDesktopForScreen?.(transfer.output),
+    ).toBe(transfer.desktops[1]);
+
+    transfer.fixture.workspace.activeWindow = transfer.destination.window;
+    transfer.controller.reconcile();
+    expect(transfer.controller.focusUpOrPreviousDesktop()).toBe(true);
+    expect(
+      transfer.fixture.workspace.currentDesktopForScreen?.(transfer.output),
+    ).toBe(transfer.desktops[0]);
+  });
+
+  it("reorders actual stack members before transferring at the edge", () => {
+    const transfer = createDesktopTransferFixture({
+      sourcePeerCount: 2,
+      sourceStack: true,
+    });
+    const middle = transfer.sources[1];
+
+    if (!middle) {
+      throw new Error("missing middle stack member");
+    }
+
+    const before = runtimeLayout(transfer.controller).snapshot(
+      outputId(transfer.output.name),
+      desktopId(transfer.desktops[0].id),
+      FALLBACK_ACTIVITY_ID,
+    );
+    const rejectedReorder = vi
+      .spyOn(runtimeLayout(transfer.controller), "moveActiveWindowInColumn")
+      .mockReturnValueOnce(null);
+    expect(transfer.controller.moveWindowUpOrToPreviousDesktop()).toBe(false);
+    rejectedReorder.mockRestore();
+    expect(
+      runtimeLayout(transfer.controller).snapshot(
+        outputId(transfer.output.name),
+        desktopId(transfer.desktops[0].id),
+        FALLBACK_ACTIVITY_ID,
+      ),
+    ).toEqual(before);
+    expect(transfer.fixture.desktopSwitchCount).toBe(0);
+
+    expect(transfer.controller.moveWindowUpOrToPreviousDesktop()).toBe(true);
+    expect(
+      testLayoutColumns(
+        transfer.controller,
+        transfer.output,
+        transfer.desktops[0],
+      )[0]?.windowIds,
+    ).toEqual(["source", "moved", "source-2"]);
+    expect(transfer.moved.window.desktops).toEqual([transfer.desktops[0]]);
+
+    setWindowState("minimized", middle, true);
+    expect(transfer.controller.moveWindowDownOrToNextDesktop()).toBe(true);
+    expect(
+      testLayoutColumns(
+        transfer.controller,
+        transfer.output,
+        transfer.desktops[0],
+      )[0]?.windowIds,
+    ).toEqual(["source", "source-2", "moved"]);
+    expect(transfer.moved.window.desktops).toEqual([transfer.desktops[0]]);
+    expect(transfer.fixture.desktopSwitchCount).toBe(0);
+
+    expect(transfer.controller.moveWindowDownOrToNextDesktop()).toBe(true);
+    expect(transfer.moved.window.desktops).toEqual([transfer.desktops[1]]);
+    expect(
+      transfer.fixture.workspace.currentDesktopForScreen?.(transfer.output),
+    ).toBe(transfer.desktops[1]);
+
+    const reverse = createDesktopTransferFixture({ sourceStack: true });
+    reverse.fixture.setCurrentDesktop(reverse.output, reverse.desktops[1]);
+    reverse.fixture.workspace.activeWindow = reverse.destination.window;
+    reverse.controller.reconcile();
+    expect(reverse.controller.moveWindowUpOrToPreviousDesktop()).toBe(true);
+    expect(reverse.destination.window.desktops).toEqual([reverse.desktops[0]]);
+    expect(
+      reverse.fixture.workspace.currentDesktopForScreen?.(reverse.output),
+    ).toBe(reverse.desktops[0]);
+  });
+
   it("moves in both directions without wrapping and follows the window", () => {
     const { controller, desktops, fixture, moved, output } =
       createDesktopTransferFixture();
@@ -37743,6 +37866,15 @@ describe("RuntimeController desktop transfers", () => {
       y: 90,
     };
     transfer.moved.setFrameGeometry(floatingFrame);
+    expect(transfer.controller.focusDownOrNextDesktop()).toBe(false);
+    expect(transfer.controller.moveWindowDownOrToNextDesktop()).toBe(true);
+    expect(transfer.moved.window.frameGeometry.y).toBe(140);
+    expect(transfer.controller.moveWindowUpOrToPreviousDesktop()).toBe(true);
+    expect(transfer.moved.window.frameGeometry).toEqual(floatingFrame);
+    expect(transfer.moved.window.desktops).toEqual([transfer.desktops[0]]);
+    expect(
+      transfer.fixture.workspace.currentDesktopForScreen?.(transfer.output),
+    ).toBe(transfer.desktops[0]);
     const sourceBefore = runtimeLayout(transfer.controller).snapshot(
       outputId(transfer.output.name),
       desktopId(transfer.desktops[0].id),

@@ -56,6 +56,14 @@ const shortcutActionCatalog = [
     defaultSequence: "Meta+Down",
   },
   {
+    name: "driftile_focus_window_up_or_previous_desktop",
+    text: "Driftile: Focus up or previous desktop",
+  },
+  {
+    name: "driftile_focus_window_down_or_next_desktop",
+    text: "Driftile: Focus down or next desktop",
+  },
+  {
     name: "driftile_move_column_left",
     text: "Driftile: Move column left",
     defaultSequence: "Meta+Ctrl+H",
@@ -124,6 +132,14 @@ const shortcutActionCatalog = [
     name: "driftile_move_window_down_arrow",
     text: "Driftile: Move window down (arrow)",
     defaultSequence: "Meta+Ctrl+Down",
+  },
+  {
+    name: "driftile_move_window_up_or_to_previous_desktop",
+    text: "Driftile: Move window up or to previous desktop",
+  },
+  {
+    name: "driftile_move_window_down_or_to_next_desktop",
+    text: "Driftile: Move window down or to next desktop",
   },
   {
     name: "driftile_insert_window_into_stack_left",

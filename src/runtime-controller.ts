@@ -1986,6 +1986,14 @@ export class RuntimeController {
     return this.focusWithinActiveColumn("down");
   }
 
+  focusUpOrPreviousDesktop(): boolean {
+    return this.focusWithinActiveColumn("up", -1);
+  }
+
+  focusDownOrNextDesktop(): boolean {
+    return this.focusWithinActiveColumn("down", 1);
+  }
+
   focusPreviousDesktop(): boolean {
     return this.focusDesktopTarget({ direction: -1, kind: "adjacent" });
   }
@@ -2065,6 +2073,19 @@ export class RuntimeController {
     return this.moveActiveWindowVertically("up");
   }
 
+  moveWindowUpOrToPreviousDesktop(): boolean {
+    const floatingResult = this.moveActiveManualFloatingWindow(
+      0,
+      -FLOATING_WINDOW_MOVE_STEP,
+    );
+
+    if (floatingResult !== null) {
+      return floatingResult;
+    }
+
+    return this.moveActiveWindowVertically("up", -1);
+  }
+
   moveWindowDown(): boolean {
     const floatingResult = this.moveActiveManualFloatingWindow(
       0,
@@ -2076,6 +2097,19 @@ export class RuntimeController {
     }
 
     return this.moveActiveWindowVertically("down");
+  }
+
+  moveWindowDownOrToNextDesktop(): boolean {
+    const floatingResult = this.moveActiveManualFloatingWindow(
+      0,
+      FLOATING_WINDOW_MOVE_STEP,
+    );
+
+    if (floatingResult !== null) {
+      return floatingResult;
+    }
+
+    return this.moveActiveWindowVertically("down", 1);
   }
 
   insertWindowIntoStackLeft(): boolean {
@@ -6928,7 +6962,10 @@ export class RuntimeController {
     );
   }
 
-  private focusWithinActiveColumn(direction: VerticalDirection): boolean {
+  private focusWithinActiveColumn(
+    direction: VerticalDirection,
+    boundaryDesktopDirection?: DesktopReorderDirection,
+  ): boolean {
     const floatingResult = this.focusFloatingWindow(direction);
 
     if (floatingResult !== null) {
@@ -6952,6 +6989,22 @@ export class RuntimeController {
     }
 
     if (!targetId) {
+      const selectedIndex = command.activeColumn.windowIds.indexOf(selectedId);
+      const atVisibleBoundary =
+        selectedIndex >= 0 &&
+        command.activeColumn.windowIds
+          .slice(
+            direction === "up" ? 0 : selectedIndex + 1,
+            direction === "up" ? selectedIndex : undefined,
+          )
+          .every((id) => this.observer.source(id)?.minimized === true);
+
+      if (boundaryDesktopDirection !== undefined && atVisibleBoundary) {
+        return boundaryDesktopDirection === -1
+          ? this.focusPreviousDesktop()
+          : this.focusNextDesktop();
+      }
+
       return false;
     }
 
@@ -8279,7 +8332,10 @@ export class RuntimeController {
     return true;
   }
 
-  private moveActiveWindowVertically(direction: VerticalDirection): boolean {
+  private moveActiveWindowVertically(
+    direction: VerticalDirection,
+    boundaryDesktopDirection?: DesktopReorderDirection,
+  ): boolean {
     const command = this.prepareActiveColumnCommand();
 
     if (
@@ -8294,6 +8350,21 @@ export class RuntimeController {
       )
     ) {
       return false;
+    }
+
+    const activeIndex = command.activeColumn.windowIds.indexOf(
+      command.activeId,
+    );
+    const atBoundary =
+      activeIndex >= 0 &&
+      (direction === "up"
+        ? activeIndex === 0
+        : activeIndex === command.activeColumn.windowIds.length - 1);
+
+    if (boundaryDesktopDirection !== undefined && atBoundary) {
+      return boundaryDesktopDirection === -1
+        ? this.moveWindowToPreviousDesktop()
+        : this.moveWindowToNextDesktop();
     }
 
     const editState: { value: StackEditResult | null } = { value: null };

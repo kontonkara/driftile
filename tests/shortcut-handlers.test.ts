@@ -198,6 +198,9 @@ const expectedHandlers: Readonly<
     activated: "Runtime.DriftileRuntime.focusDown()",
     sequence: "Meta+Down",
   },
+  driftile_focus_window_down_or_next_desktop: {
+    activated: "Runtime.DriftileRuntime.focusDownOrNextDesktop()",
+  },
   driftile_focus_window_up: {
     activated: "Runtime.DriftileRuntime.focusUp()",
     sequence: "Meta+K",
@@ -205,6 +208,9 @@ const expectedHandlers: Readonly<
   driftile_focus_window_up_arrow: {
     activated: "Runtime.DriftileRuntime.focusUp()",
     sequence: "Meta+Up",
+  },
+  driftile_focus_window_up_or_previous_desktop: {
+    activated: "Runtime.DriftileRuntime.focusUpOrPreviousDesktop()",
   },
   driftile_increase_column_width: {
     activated: "Runtime.DriftileRuntime.increaseColumnWidth()",
@@ -372,6 +378,9 @@ const expectedHandlers: Readonly<
     activated: "Runtime.DriftileRuntime.moveWindowDown()",
     sequence: "Meta+Ctrl+Down",
   },
+  driftile_move_window_down_or_to_next_desktop: {
+    activated: "Runtime.DriftileRuntime.moveWindowDownOrToNextDesktop()",
+  },
   driftile_move_window_left: {
     activated: "Runtime.DriftileRuntime.moveWindowLeft()",
     sequence: "Meta+[",
@@ -451,6 +460,9 @@ const expectedHandlers: Readonly<
     activated: "Runtime.DriftileRuntime.moveWindowUp()",
     sequence: "Meta+Ctrl+Up",
   },
+  driftile_move_window_up_or_to_previous_desktop: {
+    activated: "Runtime.DriftileRuntime.moveWindowUpOrToPreviousDesktop()",
+  },
   driftile_reset_column_width: {
     activated: "Runtime.DriftileRuntime.resetColumnWidth()",
   },
@@ -518,7 +530,7 @@ describe("KWin shortcut handlers", () => {
   });
 
   it("keeps the canonical action catalog synchronized with QML", () => {
-    expect(shortcutActions).toHaveLength(115);
+    expect(shortcutActions).toHaveLength(119);
     expect(shortcutActions).toEqual(
       handlers.map(({ name, sequence, text }) => ({
         name,
@@ -531,7 +543,7 @@ describe("KWin shortcut handlers", () => {
     ).toHaveLength(87);
     expect(
       shortcutActions.filter((action) => action.defaultSequence === undefined),
-    ).toHaveLength(28);
+    ).toHaveLength(32);
   });
 
   it("uses unique lowercase action identifiers and key sequences", () => {
@@ -589,8 +601,11 @@ describe("KWin shortcut handlers", () => {
     ).toEqual([
       "driftile_focus_floating",
       "driftile_focus_tiling",
+      "driftile_focus_window_down_or_next_desktop",
+      "driftile_focus_window_up_or_previous_desktop",
       "driftile_insert_window_into_stack_left",
       "driftile_insert_window_into_stack_right",
+      "driftile_move_window_down_or_to_next_desktop",
       "driftile_move_window_to_desktop_1",
       "driftile_move_window_to_desktop_2",
       "driftile_move_window_to_desktop_3",
@@ -612,6 +627,7 @@ describe("KWin shortcut handlers", () => {
       "driftile_move_window_to_output_up_arrow",
       "driftile_move_window_to_previous_desktop",
       "driftile_move_window_to_previous_desktop_page_up",
+      "driftile_move_window_up_or_to_previous_desktop",
       "driftile_reset_column_width",
       "driftile_switch_preset_column_width_back",
       "driftile_switch_preset_window_height_back",

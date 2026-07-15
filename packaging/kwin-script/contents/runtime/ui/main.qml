@@ -146,6 +146,16 @@ QtObject {
         sequence: "Meta+Down"
         onActivated: Runtime.DriftileRuntime.focusDown()
     }
+    readonly property ShortcutHandler focusUpOrPreviousDesktopShortcut: ShortcutHandler {
+        name: "driftile_focus_window_up_or_previous_desktop"
+        text: "Driftile: Focus up or previous desktop"
+        onActivated: Runtime.DriftileRuntime.focusUpOrPreviousDesktop()
+    }
+    readonly property ShortcutHandler focusDownOrNextDesktopShortcut: ShortcutHandler {
+        name: "driftile_focus_window_down_or_next_desktop"
+        text: "Driftile: Focus down or next desktop"
+        onActivated: Runtime.DriftileRuntime.focusDownOrNextDesktop()
+    }
     readonly property ShortcutHandler moveColumnLeftShortcut: ShortcutHandler {
         name: "driftile_move_column_left"
         text: "Driftile: Move column left"
@@ -229,6 +239,16 @@ QtObject {
         text: "Driftile: Move window down (arrow)"
         sequence: "Meta+Ctrl+Down"
         onActivated: Runtime.DriftileRuntime.moveWindowDown()
+    }
+    readonly property ShortcutHandler moveWindowUpOrToPreviousDesktopShortcut: ShortcutHandler {
+        name: "driftile_move_window_up_or_to_previous_desktop"
+        text: "Driftile: Move window up or to previous desktop"
+        onActivated: Runtime.DriftileRuntime.moveWindowUpOrToPreviousDesktop()
+    }
+    readonly property ShortcutHandler moveWindowDownOrToNextDesktopShortcut: ShortcutHandler {
+        name: "driftile_move_window_down_or_to_next_desktop"
+        text: "Driftile: Move window down or to next desktop"
+        onActivated: Runtime.DriftileRuntime.moveWindowDownOrToNextDesktop()
     }
     readonly property ShortcutHandler insertWindowIntoStackLeftShortcut: ShortcutHandler {
         name: "driftile_insert_window_into_stack_left"

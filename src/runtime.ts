@@ -279,6 +279,14 @@ export function focusDown(): void {
   runCommand((activeController) => activeController.focusDown());
 }
 
+export function focusUpOrPreviousDesktop(): void {
+  runCommand((activeController) => activeController.focusUpOrPreviousDesktop());
+}
+
+export function focusDownOrNextDesktop(): void {
+  runCommand((activeController) => activeController.focusDownOrNextDesktop());
+}
+
 export function focusPreviousDesktop(): void {
   runCommand((activeController) => activeController.focusPreviousDesktop());
 }
@@ -329,6 +337,18 @@ export function moveWindowUp(): void {
 
 export function moveWindowDown(): void {
   runCommand((activeController) => activeController.moveWindowDown());
+}
+
+export function moveWindowUpOrToPreviousDesktop(): void {
+  runCommand((activeController) =>
+    activeController.moveWindowUpOrToPreviousDesktop(),
+  );
+}
+
+export function moveWindowDownOrToNextDesktop(): void {
+  runCommand((activeController) =>
+    activeController.moveWindowDownOrToNextDesktop(),
+  );
 }
 
 export function insertWindowIntoStackLeft(): void {
