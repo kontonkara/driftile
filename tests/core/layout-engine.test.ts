@@ -2603,16 +2603,18 @@ describe("LayoutEngine", () => {
       );
       expect(attached.layout).toMatchObject({
         activeColumnId: "column-floating",
-        columns: expect.arrayContaining([
-          {
-            id: "column-floating",
-            presentation: "tabbed",
-            selectedWindowId: "window-floating",
-            width: { kind: "proportion", value: 0.4 },
-            windowIds: ["window-floating"],
-          },
-        ]),
         viewportOffset: 53,
+      });
+      expect(
+        attached.layout.columns.find(
+          (column) => column.id === columnId("column-floating"),
+        ),
+      ).toEqual({
+        id: "column-floating",
+        presentation: "tabbed",
+        selectedWindowId: "window-floating",
+        width: { kind: "proportion", value: 0.4 },
+        windowIds: ["window-floating"],
       });
       expect(engine.commitWindowAttach(attached)).toBe(true);
       expect(engine.snapshot(output, desktop)).toEqual(attached.layout);

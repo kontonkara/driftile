@@ -931,6 +931,7 @@ export class RuntimeController {
   private initializing = false;
   private readonly lastFloatingFocus = new Map<string, WindowId>();
   private readonly lastTiledFocus = new Map<string, WindowId>();
+  private focusRequestDepth = 0;
   private ownershipFollowUpRequired = false;
   private ownershipRefreshInProgress = false;
   private readonly knownOutputInstances = new Map<string, number>();
@@ -5469,6 +5470,7 @@ export class RuntimeController {
     const removalFocus = this.windowRemovalFocus(managedId, floating);
     const recoverFocus =
       removalFocus !== null &&
+      transition === undefined &&
       this.shouldRecoverWindowRemovalFocus(managedId, removalFocus);
 
     if (floating) {
@@ -5551,18 +5553,6 @@ export class RuntimeController {
       return { contextKey: owner.contextKey, layer: "tiling" };
     }
 
-    for (const [contextKey, rememberedId] of this.lastFloatingFocus) {
-      if (rememberedId === id) {
-        return { contextKey, layer: "floating" };
-      }
-    }
-
-    for (const [contextKey, rememberedId] of this.lastTiledFocus) {
-      if (rememberedId === id) {
-        return { contextKey, layer: "tiling" };
-      }
-    }
-
     return null;
   }
 
@@ -5570,6 +5560,10 @@ export class RuntimeController {
     id: WindowId,
     focus: WindowRemovalFocus,
   ): boolean {
+    if (this.focusRequestDepth > 0) {
+      return false;
+    }
+
     const active = this.workspace.activeWindow;
 
     if (active) {
@@ -6217,10 +6211,14 @@ export class RuntimeController {
   ): boolean {
     let focusRequestFailed = false;
 
+    this.focusRequestDepth += 1;
+
     try {
       this.workspace.activeWindow = target;
     } catch {
       focusRequestFailed = true;
+    } finally {
+      this.focusRequestDepth -= 1;
     }
 
     return (
