@@ -1,7 +1,48 @@
 # Migration
 
-The latest stable release is 1.28.0. Use the steps below when changing release
+The latest stable release is 1.29.0. Use the steps below when changing release
 generations, and never combine files from different releases.
+
+## Upgrade from 1.28.0 to 1.29.0
+
+1. If the 1.28.0 helper owns the shortcut profile, run its `release` command
+   before replacing it. If release reports assignments edited after the claim,
+   stop and resolve those edits in System Settings; do not use `--force`. If the
+   old helper was already replaced, the 1.29.0 helper can release its saved v1
+   transaction.
+2. Disable Driftile and the optional overview in System Settings.
+3. Install the matching 1.29.0 main package, optional overview, and helper, or
+   pin the Nix input to `v1.29.0` and rebuild.
+4. Re-enable the main Driftile script.
+5. If using the helper, claim the 1.29.0 profile and run `check` with the same
+   optional custom profile.
+6. Re-enable the optional overview.
+
+The shortcut action IDs remain compatible. Manually assigned KGlobalAccel
+shortcuts remain unchanged; edit them in System Settings only if the fresh
+1.29.0 defaults are wanted. The additive `WindowHeightPresets` setting uses the
+exact built-in `1/3`, `1/2`, and `2/3` cycle when missing or blank. Existing
+layout state needs no conversion, and archive users need no KConfig edit.
+
+## Roll back from 1.29.0 to 1.28.0
+
+1. If the 1.29.0 helper owns the shortcut profile, run its `release` command
+   before replacing it. Stop and resolve any preserved manual-edit conflict in
+   System Settings; do not use `--force`.
+2. Disable Driftile and the optional overview in System Settings.
+3. Restore the matching verified 1.28.0 main package, optional overview, and
+   helper. For NixOS or Home Manager, first remove
+   `programs.driftile.settings.windowHeightPresets` from the Home Manager
+   profile, then restore the input to `v1.28.0` and rebuild each owning
+   generation.
+4. Re-enable the main Driftile script.
+5. If using the helper, claim the 1.28.0 profile and run `check` with the same
+   optional custom profile.
+6. Re-enable the optional overview.
+
+The raw `WindowHeightPresets` KConfig key may remain because 1.28.0 ignores it.
+Existing layout state and manually assigned KGlobalAccel shortcuts remain
+compatible; no conversion or manual KConfig edit is required.
 
 ## Upgrade from 1.27.0 to 1.28.0
 

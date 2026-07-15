@@ -1,16 +1,13 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.28.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.29.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.28.0 makes existing unbound direct-insertion actions contextual for one
-relation-free manually floating window.
-
-The frozen 1.29.0 development slice makes the window-height preset cycle
-configurable for tiled windows and one eligible manually floating window,
-updates fresh default bindings, and preserves existing shortcut assignments.
-Window-height reset remains tiled-only.
+Stable 1.29.0 makes the window-height preset cycle configurable for tiled
+windows and one eligible manually floating window, updates fresh default
+bindings, and preserves existing shortcut assignments. Window-height reset
+remains tiled-only.
 
 ## Foundation (delivered)
 
@@ -1158,7 +1155,7 @@ Release criteria (met):
 
 No other feature belongs to 1.28.0.
 
-## 1.29.0 (in development)
+## 1.29.0 (released)
 
 Existing forward and reverse window-height preset actions are contextual for
 one active relation-free manually floating window. Blank
@@ -1174,9 +1171,9 @@ logical pixel below the current frame and wraps to the last. Window-height
 reset remains tiled-only.
 
 Changing the cycle performs no immediate geometry, layout, frame, viewport,
-focus, or persistence write. Existing tiled preset selection remains
-semantically stable; only a later explicit tiled or eligible manual-floating
-preset action reads the replacement cycle.
+focus, or persistence write. Stable semantic preset codes keep an existing
+tiled selection unchanged rather than reinterpreting it; only a later explicit
+tiled or eligible manual-floating preset action reads the replacement cycle.
 
 Fresh shortcut records assign forward width cycling to `Meta+R` and forward
 height cycling to `Meta+Shift+R`; both reverse actions are unbound. Action IDs
@@ -1192,29 +1189,34 @@ reachability clamp. Automatic, related, minimized, native-state, interactive,
 pending, stale, or otherwise blocked active floating targets fail closed
 without reaching the tiled path.
 
-Release criteria:
+Version `1.29.0` was promoted directly to stable after the complete feature
+batch passed its release gates; no release candidate was published.
 
-- Focused setting and runtime coverage must verify bounded canonical custom
+Release criteria (met):
+
+- Focused setting and runtime coverage verifies bounded canonical custom
   input, the blank exact-thirds fallback, live no-write replacement, stable
   existing tiled selection, later tiled selection from the replacement cycle,
   and forward or reverse wrapping for an eligible manual-floating target.
-- Manual-floating cases must retain gap-adjusted start/end pixel snapping,
+- Manual-floating cases retain gap-adjusted start/end pixel snapping,
   width, focus, context, reinsertion anchor, unchanged tiled layouts, one
   immediate frame request, and related or pending fail-closed targets.
-- Existing shared manual-floating size coverage must continue to verify
+- Existing shared manual-floating size coverage verifies
   decorated constraints, partial reachability, delayed exact acknowledgement,
   repeated-command serialization, cleanup, exact metadata commits, and stale
   result rejection.
-- Shortcut contracts must verify `Meta+R` for forward width, `Meta+Shift+R` for
+- Shortcut contracts verify `Meta+R` for forward width, `Meta+Shift+R` for
   forward height, unbound reverse actions, stable action IDs, preserved existing
-  assignments, and the changed helper default profile. Release migration must
-  cover the previous helper-owned profile.
-- Formatting, type, lint, focused unit, package, Nix evaluation, and Nix build
-  gates must pass before exact-SHA CI.
-- The existing full Wayland VM contract must retain its current application
-  pool, invoke reverse width cycling directly by action ID, and route physical
-  `Meta+Shift+R` through forward height cycling. No current VM validation claim
-  is made.
+  assignments, and the changed helper default profile. The migration guide
+  covers replacement of the previous helper-owned profile.
+- The combined feature batch at `b858c00` and `9093c12` passes the grouped local
+  formatting, type, lint, unit, package, Nix evaluation, and Nix build gates.
+  Exact SHA `9093c121a33b3ec72fce6602267cf29b88423192` passes CI run
+  `29419108286`.
+- One hidden full Wayland VM checkpoint at the same exact SHA retains the mixed
+  application pool, invokes reverse width cycling directly by action ID, and
+  routes physical `Meta+Shift+R` through forward height cycling. No visible VM
+  was run for this slice.
 - The slice adds no action ID, layout-persistence field, overview behavior,
   KWin API, private API, backend, or application matrix.
 

@@ -214,12 +214,13 @@ SHA `9a5d0ab` passes CI quality in 2:41, native X11 in 3:02, and Wayland in
 reused without a new integration, application, backend, or VM matrix. This
 release makes no VM validation claim.
 
-The frozen 1.29.0 development slice adds focused decoder, settings-transport,
-and runtime coverage for `WindowHeightPresets`. It verifies the blank exact
+The 1.29.0 release slice adds focused decoder, settings-transport, and runtime
+coverage for `WindowHeightPresets`. It verifies the blank exact
 `1/3`, `1/2`, and `2/3` fallback, 1–16 strictly increasing integer percentages
 from 10 through 100, live replacement without geometry, layout, frame,
-viewport, focus, or persistence writes, stable existing tiled preset selection,
-and later tiled use of the replacement cycle.
+viewport, focus, or persistence writes, stable semantic codes that prevent
+reinterpretation of existing tiled preset selection, and later tiled use of the
+replacement cycle.
 Manual-floating cases cover forward and reverse wrapping, gap-adjusted
 assigned-output pixel-grid resolution, preserved width, focus, context,
 reinsertion anchor, and tiled layouts, one immediate frame request, and related
@@ -231,11 +232,14 @@ commits, and stale-result rejection.
 Shortcut contracts verify `Meta+R` for forward width, `Meta+Shift+R` for
 forward height, unbound reverse actions, unchanged action IDs, and preservation
 of existing KGlobalAccel assignments. The helper's default profile changes with
-that mapping; release migration must account for the previous helper-owned
-profile. The existing full Wayland VM contract retains its application pool,
-invokes reverse width cycling directly by action ID, and routes physical
-`Meta+Shift+R` through forward height cycling. No current VM validation claim
-is made.
+that mapping; release migration accounts for the previous helper-owned profile.
+The combined feature batch at `b858c00` and `9093c12` passes the grouped local
+formatting, type, lint, unit, package, Nix evaluation, and Nix build gates. Exact
+SHA `9093c121a33b3ec72fce6602267cf29b88423192` passes CI run `29419108286`.
+One hidden full Wayland VM checkpoint at the same SHA retains the existing mixed
+application pool, invokes reverse width cycling directly by action ID, and
+routes physical `Meta+Shift+R` through forward height cycling. No visible VM was
+run for this slice.
 
 In the following unit list, zero writes to floating windows means ambient
 layout work; explicit manual-floating movement, centering, or contextual size
@@ -250,7 +254,7 @@ preservation of the other dimension, partial visibility, and one forward
 request. It covers immediate and delayed exact acknowledgement, repeated-command
 serialization, cleanup, exact metadata commits, nonexact and stale rejection,
 fail-closed ineligible targets, and zero tiled mutation. Window-height reset
-remains on the tiled path. The frozen 1.29.0 criteria add only the contextual
+remains on the tiled path. The 1.29.0 criteria add only the contextual
 manual-floating forward and reverse preset cases, configurable cycle coverage,
 and shortcut contracts described above.
 
@@ -415,8 +419,9 @@ The existing stacked Konsole scenario then applies the custom window-height
 preset list `25,75`. Physical `Meta+Shift+R` selects the 75% target through the
 forward height action. Physical `Meta+Ctrl+R` restores automatic heights before
 the temporary preset list is cleared, and the exact stack remains unchanged by
-configuration cleanup. These contract changes reuse the existing application
-pool and have no current VM validation claim.
+configuration cleanup. The hidden full Wayland checkpoint at exact SHA
+`9093c121a33b3ec72fce6602267cf29b88423192` passed this path with the existing
+mixed application pool. No visible VM was run for this slice.
 
 At the settled Firefox, Konsole, and XWayland xterm pointer layout, the primary
 VM first verifies that touchpad navigation defaults to disabled, then applies

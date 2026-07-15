@@ -1,6 +1,6 @@
 # Installation
 
-Driftile 1.28.0 is the latest stable release. It requires KDE Plasma with KWin
+Driftile 1.29.0 is the latest stable release. It requires KDE Plasma with KWin
 6.7 or newer and `kpackagetool6`, and targets Wayland, XWayland, and a
 single-output native X11 session.
 Touchpad navigation is available only on native Wayland. Run all commands as
@@ -9,13 +9,13 @@ the desktop user, not with `sudo`.
 ## Install a release
 
 Download these files from the
-[`v1.28.0` release](https://github.com/kontonkara/driftile/releases/tag/v1.28.0):
+[`v1.29.0` release](https://github.com/kontonkara/driftile/releases/tag/v1.29.0):
 
-- `driftile-1.28.0.kwinscript`
-- `driftile-overview-1.28.0.kwineffect` if using the optional overview
+- `driftile-1.29.0.kwinscript`
+- `driftile-overview-1.29.0.kwineffect` if using the optional overview
 - `SHA256SUMS`
 - `LICENSE`
-- `driftile-shortcuts-1.28.0.mjs` if using the optional shortcut helper
+- `driftile-shortcuts-1.29.0.mjs` if using the optional shortcut helper
 
 Verify every downloaded release asset before installing it:
 
@@ -27,7 +27,7 @@ Install the KWin package:
 
 ```bash
 kpackagetool6 --type=KWin/Script \
-  --install ./driftile-1.28.0.kwinscript
+  --install ./driftile-1.29.0.kwinscript
 ```
 
 Open **System Settings > Window Management > KWin Scripts**, enable
@@ -37,7 +37,7 @@ the layout and presentation settings described in
 
 ## Configure shortcuts
 
-Driftile works without the companion helper. The 1.28.0 helper claims the
+Driftile works without the companion helper. The 1.29.0 helper claims the
 bundled defaults and accepts custom profiles. Any action can instead be
 assigned manually.
 
@@ -48,8 +48,8 @@ Driftile before running it, and keep the helper until its saved claim has been
 released.
 
 ```bash
-node ./driftile-shortcuts-1.28.0.mjs claim
-node ./driftile-shortcuts-1.28.0.mjs check
+node ./driftile-shortcuts-1.29.0.mjs claim
+node ./driftile-shortcuts-1.29.0.mjs check
 ```
 
 `claim` transactionally saves and replaces active conflicting assignments.
@@ -57,20 +57,21 @@ node ./driftile-shortcuts-1.28.0.mjs check
 after the claim:
 
 ```bash
-node ./driftile-shortcuts-1.28.0.mjs release
+node ./driftile-shortcuts-1.29.0.mjs release
 ```
 
-Do not use `--force` unless replacing later manual edits is intentional. See
-[Shortcuts](shortcuts.md) for the complete default profile, custom JSON v1
-schema, and recovery details.
+If `release` reports assignments edited after the claim, stop and resolve them
+in System Settings before retrying. Do not use `--force` during an upgrade,
+rollback, or removal. See [Shortcuts](shortcuts.md) for the complete default
+profile, custom JSON v1 schema, and recovery details.
 
 Pass the same custom file to `claim` and `check`. `release` reads the saved
 transaction and rejects `--profile`:
 
 ```bash
-node ./driftile-shortcuts-1.28.0.mjs claim --profile ./shortcuts.json
-node ./driftile-shortcuts-1.28.0.mjs check --profile ./shortcuts.json
-node ./driftile-shortcuts-1.28.0.mjs release
+node ./driftile-shortcuts-1.29.0.mjs claim --profile ./shortcuts.json
+node ./driftile-shortcuts-1.29.0.mjs check --profile ./shortcuts.json
+node ./driftile-shortcuts-1.29.0.mjs release
 ```
 
 Release the current claim before claiming a changed profile.
@@ -85,9 +86,13 @@ restore displaced assignments automatically.
 ## Upgrade
 
 1. If the helper owns the profile, release it with the helper from the
-   installed version.
-2. Disable Driftile in **KWin Scripts** and select **Apply**.
-3. Download and verify the new package, checksum manifest, and optional helper.
+   installed version. Stop on a preserved manual-edit conflict and resolve it
+   in System Settings; do not use `--force`. If an old helper was already
+   replaced, the new helper can still release its saved v1 transaction.
+2. Disable Driftile in **KWin Scripts** and the optional overview in **Desktop
+   Effects**, then select **Apply**.
+3. Download and verify the matching main package, optional overview, checksum
+   manifest, and helper.
 4. Upgrade the package:
 
    ```bash
@@ -97,8 +102,13 @@ restore displaced assignments automatically.
 
 5. When upgrading to 1.19.0 from 1.18.0 or 1.19.0-rc.1, restart the Plasma
    session once. Fresh installations do not require this step.
-6. Enable Driftile, review its configuration, then claim or assign shortcuts
-   for the new version.
+6. Enable Driftile and review its configuration.
+7. If using the helper, claim the new profile and run `check` with the same
+   optional custom profile.
+8. Re-enable the optional overview.
+
+Manually assigned KGlobalAccel shortcuts remain unchanged across an upgrade.
+Edit them in System Settings only when the fresh release defaults are wanted.
 
 Release packages keep KWin's required entrypoints stable and select the
 complete QML and JavaScript runtime by content hash. After the one-time 1.19.0
@@ -158,7 +168,7 @@ The flake exposes packages and installation modules for `x86_64-linux` and
 `aarch64-linux`. Add Driftile as an input:
 
 ```nix
-inputs.driftile.url = "github:kontonkara/driftile/v1.28.0";
+inputs.driftile.url = "github:kontonkara/driftile/v1.29.0";
 ```
 
 For a system-wide NixOS installation, import the NixOS module:
@@ -184,7 +194,7 @@ modules = [
 ];
 ```
 
-The 1.28.0 module exposes the optional overview as a separate package. It
+The 1.29.0 module exposes the optional overview as a separate package. It
 remains disabled unless requested:
 
 ```nix
@@ -242,7 +252,7 @@ already installed by NixOS or another system module, keep
 Manager. See [Configuration](configuration.md#home-manager) for ownership and
 reload behavior.
 
-The 1.28.0 Home Manager module can also generate a custom shortcut profile:
+The 1.29.0 Home Manager module can also generate a custom shortcut profile:
 
 ```nix
 programs.driftile.shortcuts = {
@@ -299,4 +309,4 @@ Source builds use `nix build`; the development shell is available through
 See [Compatibility](compatibility.md) for current platform, geometry, toolkit,
 and hardware limits. Read [Migration](migration.md) before changing release or
 installation generations. Release details are in the
-[1.28.0 release notes](release-notes-1.28.0.md).
+[1.29.0 release notes](release-notes-1.29.0.md).
