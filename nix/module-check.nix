@@ -275,6 +275,54 @@ let
         programs.driftile.settings = null;
       }
       { };
+  homeManagerOverviewTouchpadGesture =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.overview.touchpadGesture = {
+          enable = false;
+          fingerCount = 5;
+        };
+      }
+      { };
+  homeManagerOverviewTouchpadGestureDefaults =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.overview.touchpadGesture = { };
+      }
+      { };
+  homeManagerOverviewTouchpadGestureUnmanaged =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.overview.touchpadGesture = null;
+      }
+      { };
+  homeManagerOverviewTouchpadGestureWithSystemInstall =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.overview.touchpadGesture = {
+          enable = true;
+          fingerCount = 3;
+        };
+      }
+      {
+        programs.driftile.overview.enable = true;
+      };
   homeManagerTransitionDurationMinimum =
     evaluate homeManagerModule
       [
@@ -710,6 +758,25 @@ let
       );
     in
     !evaluated.success;
+  invalidOverviewTouchpadGestureRejected =
+    gesture:
+    let
+      evaluated = builtins.tryEval (
+        builtins.deepSeq
+          (evaluate homeManagerModule
+            [
+              "home"
+              "packages"
+            ]
+            {
+              programs.driftile.overview.touchpadGesture = gesture;
+            }
+            { }
+          ).config.qt.kde.settings
+          true
+      );
+    in
+    !evaluated.success;
   invalidTransitionDurationRejected =
     duration:
     let
@@ -816,11 +883,44 @@ assert homeManagerProfileWithSystemInstall.config.xdg.configFile ? "driftile/sho
 assert homeManagerWithoutProfile.config.xdg.configFile == { };
 assert homeManagerWithoutSettings.config.qt.kde.settings == { };
 assert homeManagerOptionSurface.options.programs.driftile ? settings;
+assert homeManagerOptionSurface.options.programs.driftile.overview ? touchpadGesture;
 assert homeManagerOptionSurface.options.programs.driftile ? transitions;
 assert homeManagerOptionSurface.options.programs.driftile.transitions ? duration;
 assert nixosOptionSurface.options.programs.driftile ? transitions;
+assert !(nixosOptionSurface.options.programs.driftile.overview ? touchpadGesture);
 assert !(nixosOptionSurface.options.programs.driftile.transitions ? duration);
 assert !(nixosOptionSurface.options.programs.driftile ? settings);
+assert packagePaths [ "home" "packages" ] homeManagerOverviewTouchpadGesture == [ ];
+assert packagePaths [ "home" "packages" ] homeManagerOverviewTouchpadGestureDefaults == [ ];
+assert packagePaths [ "home" "packages" ] homeManagerOverviewTouchpadGestureWithSystemInstall == [ ];
+assert
+  homeManagerOverviewTouchpadGesture.config.qt.kde.settings == {
+    kwinrc."Effect-io.github.kontonkara.driftile.overview" = {
+      TouchpadGesture = false;
+      TouchpadGestureFingerCount = 5;
+    };
+  };
+assert
+  homeManagerOverviewTouchpadGestureDefaults.config.qt.kde.settings == {
+    kwinrc."Effect-io.github.kontonkara.driftile.overview" = {
+      TouchpadGesture = true;
+      TouchpadGestureFingerCount = 4;
+    };
+  };
+assert homeManagerOverviewTouchpadGestureUnmanaged.config.qt.kde.settings == { };
+assert
+  homeManagerOverviewTouchpadGestureWithSystemInstall.config.qt.kde.settings == {
+    kwinrc."Effect-io.github.kontonkara.driftile.overview" = {
+      TouchpadGesture = true;
+      TouchpadGestureFingerCount = 3;
+    };
+  };
+assert homeManagerOverviewTouchpadGestureWithSystemInstall.config.assertions == [ ];
+assert invalidOverviewTouchpadGestureRejected true;
+assert invalidOverviewTouchpadGestureRejected { enable = "true"; };
+assert invalidOverviewTouchpadGestureRejected { fingerCount = 2; };
+assert invalidOverviewTouchpadGestureRejected { fingerCount = 6; };
+assert invalidOverviewTouchpadGestureRejected { fingerCount = 4.5; };
 assert packagePaths [ "home" "packages" ] homeManagerTransitionDurationMinimum == [ ];
 assert packagePaths [ "home" "packages" ] homeManagerTransitionDurationMaximum == [ ];
 assert packagePaths [ "home" "packages" ] homeManagerTransitionDurationWithSystemInstall == [ ];

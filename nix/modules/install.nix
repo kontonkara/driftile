@@ -179,16 +179,40 @@ in
       description = "The Driftile package to install.";
     };
 
-    overview = {
-      enable = lib.mkEnableOption "installation of the Driftile overview effect";
+    overview =
+      {
+        enable = lib.mkEnableOption "installation of the Driftile overview effect";
 
-      package = lib.mkOption {
-        type = lib.types.package;
-        default = self.packages.${system}."driftile-overview";
-        defaultText = lib.literalExpression "inputs.driftile.packages.\${pkgs.stdenv.hostPlatform.system}.\"driftile-overview\"";
-        description = "The Driftile overview effect package to install.";
+        package = lib.mkOption {
+          type = lib.types.package;
+          default = self.packages.${system}."driftile-overview";
+          defaultText = lib.literalExpression "inputs.driftile.packages.\${pkgs.stdenv.hostPlatform.system}.\"driftile-overview\"";
+          description = "The Driftile overview effect package to install.";
+        };
+      }
+      // lib.optionalAttrs homeSettings {
+        touchpadGesture = lib.mkOption {
+          type = lib.types.nullOr (
+            lib.types.submodule {
+              options = {
+                enable = lib.mkOption {
+                  type = lib.types.bool;
+                  default = true;
+                  description = "Whether the overview touchpad gesture is enabled.";
+                };
+
+                fingerCount = lib.mkOption {
+                  type = lib.types.ints.between 3 5;
+                  default = 4;
+                  description = "Number of fingers required for the overview touchpad gesture.";
+                };
+              };
+            }
+          );
+          default = null;
+          description = "Complete overview touchpad gesture profile; null leaves its KConfig values unmanaged.";
+        };
       };
-    };
 
     transitions =
       {
@@ -434,6 +458,14 @@ in
           TouchpadWorkspaceNavigation = cfg.settings.touchpadWorkspaceNavigation;
           WindowHeightPresets = renderWindowHeightPresets cfg.settings.windowHeightPresets;
           WindowHeightStepPercent = cfg.settings.windowHeightStepPercent;
+        };
+      }
+    ))
+    (lib.optionalAttrs homeSettings (
+      lib.mkIf (cfg.overview.touchpadGesture != null) {
+        qt.kde.settings.kwinrc."Effect-${pluginId}.overview" = {
+          TouchpadGesture = cfg.overview.touchpadGesture.enable;
+          TouchpadGestureFingerCount = cfg.overview.touchpadGesture.fingerCount;
         };
       }
     ))

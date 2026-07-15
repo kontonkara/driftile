@@ -114,6 +114,36 @@ let
   overviewDisabled = evaluateHome {
     programs.driftile.overview.package = pkgs.hello;
   } { };
+  overviewTouchpadGesture = evaluateHome {
+    programs.driftile.overview.touchpadGesture = {
+      enable = false;
+      fingerCount = 5;
+    };
+  } { };
+  overviewTouchpadGestureDefaults = evaluateHome {
+    programs.driftile.overview.touchpadGesture = { };
+  } { };
+  overviewTouchpadGestureUnmanaged = evaluateHome {
+    programs.driftile.overview.touchpadGesture = null;
+  } { };
+  overviewTouchpadGestureWithSystemInstall = evaluateHome {
+    programs.driftile.overview.touchpadGesture = {
+      enable = true;
+      fingerCount = 3;
+    };
+  } systemOverviewConfiguration.config;
+  invalidOverviewTouchpadGestureRejected =
+    gesture:
+    let
+      evaluated = builtins.tryEval (
+        builtins.deepSeq
+          (evaluateHome {
+            programs.driftile.overview.touchpadGesture = gesture;
+          } { }).config.qt.kde.settings
+          true
+      );
+    in
+    !evaluated.success;
   transitionsOverride = evaluateHome {
     programs.driftile.transitions = {
       enable = true;
@@ -238,6 +268,37 @@ assert lib.elem (toString pkgs.hello) (homePackagePaths overviewOverride);
 assert packageCount overviewDisabled == 0;
 assert overviewPackageCount overviewDisabled == 0;
 assert !lib.elem (toString pkgs.hello) (homePackagePaths overviewDisabled);
+assert overviewPackageCount overviewTouchpadGesture == 0;
+assert overviewPackageCount overviewTouchpadGestureDefaults == 0;
+assert overviewPackageCount overviewTouchpadGestureWithSystemInstall == 0;
+assert
+  overviewTouchpadGesture.config.qt.kde.settings == {
+    kwinrc."Effect-io.github.kontonkara.driftile.overview" = {
+      TouchpadGesture = false;
+      TouchpadGestureFingerCount = 5;
+    };
+  };
+assert
+  overviewTouchpadGestureDefaults.config.qt.kde.settings == {
+    kwinrc."Effect-io.github.kontonkara.driftile.overview" = {
+      TouchpadGesture = true;
+      TouchpadGestureFingerCount = 4;
+    };
+  };
+assert overviewTouchpadGestureUnmanaged.config.qt.kde.settings == { };
+assert
+  overviewTouchpadGestureWithSystemInstall.config.qt.kde.settings == {
+    kwinrc."Effect-io.github.kontonkara.driftile.overview" = {
+      TouchpadGesture = true;
+      TouchpadGestureFingerCount = 3;
+    };
+  };
+assert lib.all (assertion: assertion.assertion) overviewTouchpadGestureWithSystemInstall.config.assertions;
+assert invalidOverviewTouchpadGestureRejected true;
+assert invalidOverviewTouchpadGestureRejected { enable = "true"; };
+assert invalidOverviewTouchpadGestureRejected { fingerCount = 2; };
+assert invalidOverviewTouchpadGestureRejected { fingerCount = 6; };
+assert invalidOverviewTouchpadGestureRejected { fingerCount = 4.5; };
 assert packageCount transitionsOverride == 0;
 assert overviewPackageCount transitionsOverride == 0;
 assert transitionsPackageCount transitionsOverride == 0;
