@@ -162,10 +162,10 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   Toggle-back restores a surviving anchored slot; guarded direct insertion
   attaches to the selected target stack.
 - Translates or work-area-centers one active manually floating frame through a shared guarded command without a window or layout scan, preserving its reinsertion anchor and every tiled context.
-- Routes existing width decrease/increase, width-preset, width-reset, and
-  window-height decrease/increase actions to an eligible manually floating frame
-  through a dedicated per-window transaction without reading or mutating a
-  tiled context.
+- Routes existing width decrease/increase, width-preset, width-reset,
+  window-height decrease/increase, and window-height preset forward/reverse
+  actions to an eligible manually floating frame through a dedicated per-window
+  transaction without reading or mutating a tiled context.
 - Routes the existing unbound direct-insertion actions to one guarded attach
   preview for an eligible manually floating frame without adding a KWin or
   private API.
@@ -510,8 +510,14 @@ inspected safely within the codec bound.
 - Resolve the existing window-height decrease and increase actions
   contextually: a manual-floating target uses the corresponding work-area
   height step and one constraint-clamped, physically aligned frame request; a
-  tiled target keeps the stack-reflow path. Reset and preset-height actions
-  remain tiled-only.
+  tiled target keeps the stack-reflow path.
+- Resolve the existing forward and reverse window-height preset actions
+  contextually: an eligible manual-floating target cycles the fixed `1/3`,
+  `1/2`, and `2/3` frame heights with wrapping. Resolve each proportion against
+  the gap-adjusted work-area height, snap the canonical start and end to the
+  assigned-output pixel grid, then reuse the guarded one-request exact-ack size
+  transaction with decorated constraints and partial reachability. Reset
+  remains tiled-only.
 - Leave dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows outside layout ownership. Commands that require layout ownership are no-ops when one is active; desktop or output transfer may move one relation-free floating window.
 - If a managed window gains an automatic-floating role, remove its slot without writing a stale restore frame or disturbing unrelated order, widths, or viewport state. Re-admit it through normal admission after the role clears.
 - Allow horizontal overflow and viewport scrolling when KWin reports one output.

@@ -257,8 +257,9 @@ width and top-left unless the partial-visibility bounds require a minimal
 origin clamp. It snaps with the assigned output's device-pixel ratio and
 respects live decorated size constraints.
 
-Changing the value performs no layout work. Reset and height-preset actions
-remain tiled-only.
+Changing the value performs no layout work. The fixed `1/3`, `1/2`, and `2/3`
+height-preset cycle is independent of this setting and applies contextually to
+an eligible manually floating window. Window-height reset remains tiled-only.
 
 ## Window decorations
 

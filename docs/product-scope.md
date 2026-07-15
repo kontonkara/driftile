@@ -353,6 +353,31 @@ The ownership rule is strict:
   persistence field, helper or overview behavior, KWin API, private API,
   backend, integration, application, or VM matrix.
 
+## 1.29 contextual floating height-preset slice
+
+- Existing forward and reverse window-height preset actions target one active
+  relation-free manually floating window when that layer is active. The fixed
+  `1/3`, `1/2`, and `2/3` cycle wraps in both directions; window-height reset
+  remains tiled-only.
+- Each raw proportional frame height is
+  `fraction * (workArea.height - gap) - gap`. The start at
+  `workArea.y + gap` and the end at `start + rawHeight` are snapped to the
+  assigned output's pixel grid before subtraction. Forward selects the first
+  resolved height more than one logical pixel above the current frame and
+  reverse the last resolved height more than one logical pixel below it,
+  wrapping to the first or last preset.
+- The shared manual-floating size transaction applies live decorated
+  constraints and partial reachability, issues at most one frame request, and
+  commits only after exact acknowledgement. Width, focus, context, reinsertion
+  anchor, and every tiled layout remain unchanged; top-left changes only for
+  the minimal reachability clamp.
+- Automatic, related, minimized, native-state, interactive, pending, stale, or
+  otherwise blocked active floating targets fail closed without reaching the
+  tiled path.
+- The frozen slice adds no action, binding, setting, schema, persistence
+  behavior, helper or overview behavior, KWin API, private API, backend,
+  integration, application, or VM matrix.
+
 ## Beyond v1
 
 - Optional visual transitions.
@@ -479,8 +504,12 @@ Driftile must integrate with, not duplicate:
   floating frame by the configured fraction of its assigned work-area height,
   excluding the gap. The result uses the assigned output's device-pixel ratio
   to align its constrained height, preserves width and top-left except for the
-  minimal partial-visibility clamp, and changes no tiled state. Reset and
-  preset-height actions remain tiled-only.
+  minimal partial-visibility clamp, and changes no tiled state.
+- Contextual height-preset forward and reverse actions cycle the fixed `1/3`,
+  `1/2`, and `2/3` frame heights for one eligible manually floating window.
+  They reuse exact acknowledgement, decorated constraints, assigned-output
+  pixel alignment, and partial reachability without changing focus, context,
+  reinsertion anchor, or tiled state. Reset remains tiled-only.
 - KWin alone owns minimization. Driftile registers no minimize action or default shortcut, keeps a minimized tiled window in its exact logical slot, and preserves a minimized manually floating window's exact detached frame for restoration.
 - An automatically layout-excluded window has no layout slot, manual-floating anchor, waiting entry, suspension, or retry state. Commands requiring layout ownership are no-ops; relation-free desktop transfer remains available.
 - A configured application exclusion uses the same automatic-exclusion state,

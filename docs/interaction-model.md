@@ -134,9 +134,26 @@ partial-visibility bounds require a minimal origin clamp. The target respects
 live decorated constraints and snaps with the assigned output's device-pixel
 ratio. It uses the same exact-acknowledgement and fail-closed ownership path as
 contextual width, so a blocked or pending floating target never reaches tiled
-stack resizing. Tiled semantics are otherwise unchanged, while window-height
-reset and preset actions remain tiled-only. This adds no action, binding,
-setting, or schema.
+stack resizing. Tiled semantics are otherwise unchanged.
+
+The existing forward and reverse window-height preset actions are contextual
+for one active relation-free manually floating window. The fixed `1/3`, `1/2`,
+and `2/3` cycle resolves a raw frame height as
+`fraction * (workArea.height - gap) - gap`. Driftile snaps the canonical
+start at `workArea.y + gap` and the end at `start + rawHeight` to the assigned
+output's pixel grid before subtracting them. Forward selects the first resolved
+height more than one logical pixel above the current frame and wraps to the
+first preset; reverse selects the last resolved height more than one logical
+pixel below the current frame and wraps to the last.
+
+The shared manual-floating size transaction applies live decorated constraints
+and the established partial-reachability clamp. It preserves width, focus,
+context, reinsertion anchor, and every tiled layout; top-left changes only for
+the minimal reachability clamp. One frame request commits only after exact
+acknowledgement. A blocked active floating target fails closed without reaching
+the tiled path. Window-height reset remains tiled-only. This adds no action,
+default binding, setting, schema, persistence, helper, overview, KWin API, or
+private API.
 
 The existing unbound insert-left and insert-right actions are also contextual
 for one active relation-free manually floating window. Direction compares the

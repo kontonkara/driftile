@@ -2440,10 +2440,28 @@ export class RuntimeController {
   }
 
   switchPresetWindowHeight(): boolean {
+    const floatingResult = this.resizeActiveManualFloatingWindowSize(
+      "height",
+      "preset-next",
+    );
+
+    if (floatingResult !== null) {
+      return floatingResult;
+    }
+
     return this.resizeActiveWindowHeight("preset-next");
   }
 
   switchPresetWindowHeightBack(): boolean {
+    const floatingResult = this.resizeActiveManualFloatingWindowSize(
+      "height",
+      "preset-previous",
+    );
+
+    if (floatingResult !== null) {
+      return floatingResult;
+    }
+
     return this.resizeActiveWindowHeight("preset-previous");
   }
 
@@ -6206,7 +6224,7 @@ export class RuntimeController {
 
   private resizeActiveManualFloatingWindowSize(
     axis: "height",
-    action: "decrease" | "increase",
+    action: Exclude<WindowHeightResizeAction, "reset">,
   ): boolean | null;
   private resizeActiveManualFloatingWindowSize(
     axis: "width",
@@ -6455,18 +6473,25 @@ export class RuntimeController {
         break;
       }
       case "preset-next":
-      case "preset-previous":
-        if (axis !== "width") {
-          return null;
-        }
-
-        extent = this.manualFloatingPresetWidth(
-          command,
-          minimumExtent,
-          maximumExtent,
-          action === "preset-next" ? 1 : -1,
-        );
+      case "preset-previous": {
+        const direction = action === "preset-next" ? 1 : -1;
+        extent =
+          axis === "width"
+            ? this.manualFloatingPresetWidth(
+                command,
+                minimumExtent,
+                maximumExtent,
+                direction,
+              )
+            : this.manualFloatingPresetHeight(
+                command,
+                minimumExtent,
+                maximumExtent,
+                decorationExtent,
+                direction,
+              );
         break;
+      }
       case "reset": {
         if (axis !== "width") {
           return null;
@@ -6549,6 +6574,75 @@ export class RuntimeController {
     }
 
     return candidates[candidates.length - 1] ?? null;
+  }
+
+  private manualFloatingPresetHeight(
+    command: ManualFloatingFrameCommand,
+    minimumExtent: number,
+    maximumExtent: number,
+    decorationExtent: number,
+    direction: -1 | 1,
+  ): number | null {
+    const contextGeometry = command.contextGeometry;
+    const devicePixelRatio = contextGeometry.devicePixelRatio;
+    const workArea = contextGeometry.workArea;
+    const denominator = workArea.height - this.gap;
+    const relativeStart =
+      workArea.y + this.gap - contextGeometry.pixelGridOrigin.y;
+
+    if (
+      !Number.isFinite(denominator) ||
+      denominator <= 0 ||
+      !Number.isFinite(relativeStart)
+    ) {
+      return null;
+    }
+
+    const snappedStart = roundToPhysicalPixel(relativeStart, devicePixelRatio);
+    const current = command.originalFrame.height;
+    const threshold =
+      current + direction * WINDOW_HEIGHT_PRESET_CYCLE_TOLERANCE;
+    let first: number | null = null;
+    let last: number | null = null;
+    let selected: number | null = null;
+
+    for (const preset of this.windowHeightPresets) {
+      const unresolved =
+        preset.kind === "fixed"
+          ? preset.value + decorationExtent
+          : preset.value * denominator - this.gap;
+
+      if (!Number.isFinite(unresolved) || unresolved <= 0) {
+        continue;
+      }
+
+      const snappedEnd = roundToPhysicalPixel(
+        relativeStart + unresolved,
+        devicePixelRatio,
+      );
+      const resolved = roundToPhysicalPixel(
+        snappedEnd - snappedStart,
+        devicePixelRatio,
+      );
+
+      if (!Number.isFinite(resolved) || resolved <= 0) {
+        continue;
+      }
+
+      const candidate = clamp(resolved, minimumExtent, maximumExtent);
+      first ??= candidate;
+      last = candidate;
+
+      if (direction > 0) {
+        if (selected === null && candidate > threshold) {
+          selected = candidate;
+        }
+      } else if (candidate < threshold) {
+        selected = candidate;
+      }
+    }
+
+    return selected ?? (direction > 0 ? first : last);
   }
 
   private manualFloatingSingletonColumnWidth(

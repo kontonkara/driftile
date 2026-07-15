@@ -7,6 +7,10 @@ record. Later direction is not a committed release schedule.
 Stable 1.28.0 makes existing unbound direct-insertion actions contextual for one
 relation-free manually floating window.
 
+The frozen 1.29.0 development slice makes existing forward and reverse
+window-height preset actions contextual for one eligible manually floating
+window. Window-height reset remains tiled-only.
+
 ## Foundation (delivered)
 
 - Build and package a declarative KWin script with a TypeScript runtime.
@@ -1140,6 +1144,48 @@ Release criteria (met):
   helper or overview behavior, KWin API, or private API.
 
 No other feature belongs to 1.28.0.
+
+## 1.29.0 (in development)
+
+Existing forward and reverse window-height preset actions are contextual for
+one active relation-free manually floating window. The fixed `1/3`, `1/2`, and
+`2/3` cycle wraps in both directions. Each raw proportional frame height is
+`fraction * (workArea.height - gap) - gap`; the start at
+`workArea.y + gap` and the end at `start + rawHeight` are snapped to the
+assigned output's pixel grid before subtraction. Forward selects the first
+resolved height more than one logical pixel above the current frame and wraps
+to the first preset. Reverse selects the last resolved height more than one
+logical pixel below the current frame and wraps to the last. Window-height
+reset remains tiled-only.
+
+The shared manual-floating size transaction applies live decorated constraints
+and partial reachability, issues at most one frame request, and commits only
+after exact acknowledgement. Width, focus, context, reinsertion anchor, and
+every tiled layout remain unchanged; top-left changes only for the minimal
+reachability clamp. Automatic, related, minimized, native-state, interactive,
+pending, stale, or otherwise blocked active floating targets fail closed
+without reaching the tiled path.
+
+Release criteria:
+
+- New focused runtime coverage must verify forward and reverse wrapping, all
+  three proportional targets, gap-adjusted start/end pixel snapping, preserved
+  width, focus, context, reinsertion anchor, unchanged tiled layouts, one
+  immediate frame request, and related or pending fail-closed targets.
+- Existing shared manual-floating size coverage must continue to verify
+  decorated constraints, partial reachability, delayed exact acknowledgement,
+  repeated-command serialization, cleanup, exact metadata commits, and stale
+  result rejection.
+- Formatting, type, lint, focused unit, package, Nix evaluation, and Nix build
+  gates must pass before exact-SHA CI.
+- Existing shortcut registration and tiled height-preset coverage is reused
+  without a new integration, application, backend, or VM matrix. The slice
+  makes no VM validation claim.
+- The slice adds no action, binding, setting, schema, persistence behavior,
+  helper or overview behavior, KWin API, private API, backend, integration,
+  application, or VM matrix.
+
+No other feature belongs to 1.29.0.
 
 ## Post-v1
 

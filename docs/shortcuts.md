@@ -130,8 +130,19 @@ the minimal origin clamp. The height snaps with the assigned output's
 device-pixel ratio and is clamped to live decorated constraints. Tiled stack
 behavior is unchanged; height state commits only after exact acknowledgement,
 and a blocked or pending floating target never falls through to stack resizing.
-Reset and height-preset actions remain tiled-only. No action, binding, setting,
-or schema is added.
+
+Forward and reverse window-height preset actions are also contextual for one
+active relation-free manually floating window. They cycle the fixed `1/3`,
+`1/2`, and `2/3` targets in either direction with wrapping. Each raw target is
+`fraction * (workArea.height - gap) - gap`; the start at
+`workArea.y + gap` and the end at `start + rawHeight` are snapped to the
+assigned output's pixel grid. The shared one-request transaction applies
+decorated constraints and partial reachability while preserving width, focus,
+context, reinsertion anchor, and every tiled layout; top-left changes only for
+the minimal reachability clamp. Only exact acknowledgement commits. A blocked
+active floating target fails closed without tiled fallback.
+Window-height reset remains tiled-only. No action, default binding, setting,
+schema, persistence, helper, overview, or KWin API is added.
 
 Driftile does not register a minimize action or default shortcut; KWin owns the
 mechanism. A minimized tiled window retains its exact logical slot, and a

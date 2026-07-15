@@ -17321,7 +17321,7 @@ describe("RuntimeController", () => {
     expectInvariantState(presetFrames.default);
   });
 
-  it("resizes a decorated manual-floating height by the configured work-area step", () => {
+  it("resizes and cycles presets for a decorated manual-floating height", () => {
     const output = {
       ...createOutput("DP-1", 0),
       devicePixelRatio: 1.25,
@@ -17439,8 +17439,6 @@ describe("RuntimeController", () => {
     );
     expectNoResize(controller.increaseWindowHeight.bind(controller));
     expectNoResize(controller.resetWindowHeight.bind(controller));
-    expectNoResize(controller.switchPresetWindowHeight.bind(controller));
-    expectNoResize(controller.switchPresetWindowHeightBack.bind(controller));
     expectResize(
       controller.decreaseWindowHeight.bind(controller),
       originalFrame,
@@ -17486,6 +17484,28 @@ describe("RuntimeController", () => {
       },
     );
     expectNoResize(controller.decreaseWindowHeight.bind(controller));
+
+    active.setFrameGeometry(originalFrame);
+    expectResize(
+      controller.switchPresetWindowHeight.bind(controller),
+      { height: 344.8, width: 280, x: 360, y: 240 },
+      { height: 310.8, width: 260, x: 368, y: 264 },
+    );
+    expectResize(
+      controller.switchPresetWindowHeightBack.bind(controller),
+      { height: 217.6, width: 280, x: 360, y: 240 },
+      { height: 183.6, width: 260, x: 368, y: 264 },
+    );
+    expectResize(
+      controller.switchPresetWindowHeightBack.bind(controller),
+      { height: 472, width: 280, x: 360, y: 240 },
+      { height: 438, width: 260, x: 368, y: 264 },
+    );
+    expectResize(
+      controller.switchPresetWindowHeight.bind(controller),
+      { height: 217.6, width: 280, x: 360, y: 240 },
+      { height: 183.6, width: 260, x: 368, y: 264 },
+    );
   });
 
   it("settles a delayed floating height resize without action fallback", () => {
@@ -17558,6 +17578,8 @@ describe("RuntimeController", () => {
 
     expect(controller.increaseWindowHeight()).toBe(false);
     expect(controller.decreaseWindowHeight()).toBe(false);
+    expect(controller.switchPresetWindowHeight()).toBe(false);
+    expect(controller.switchPresetWindowHeightBack()).toBe(false);
     expect(controller.increaseColumnWidth()).toBe(false);
     expect(controller.decreaseColumnWidth()).toBe(false);
     expect(controller.moveColumnLeft()).toBe(false);
@@ -37946,6 +37968,8 @@ describe("RuntimeController output transfers", () => {
     expect(controller.switchPresetColumnWidth()).toBe(false);
     expect(controller.switchPresetColumnWidthBack()).toBe(false);
     expect(controller.resetColumnWidth()).toBe(false);
+    expect(controller.switchPresetWindowHeight()).toBe(false);
+    expect(controller.switchPresetWindowHeightBack()).toBe(false);
     expect(fixture.outputTransferCount).toBe(0);
     expect(fixture.desktopSwitchCount).toBe(0);
     expect(windows.map(({ desktopWriteCount }) => desktopWriteCount)).toEqual(
