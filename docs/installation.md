@@ -1,6 +1,6 @@
 # Installation
 
-Driftile 1.30.0 is the latest stable release. It requires KDE Plasma with KWin
+Driftile 1.31.0 is the latest stable release. It requires KDE Plasma with KWin
 6.7 or newer and `kpackagetool6`, and targets Wayland, XWayland, and a
 single-output native X11 session.
 Touchpad navigation is available only on native Wayland. Run all commands as
@@ -18,13 +18,15 @@ the desktop user, not with `sudo`.
 ## Install a release
 
 Download these files from the
-[`v1.30.0` release](https://github.com/kontonkara/driftile/releases/tag/v1.30.0):
+[`v1.31.0` release](https://github.com/kontonkara/driftile/releases/tag/v1.31.0):
 
-- `driftile-1.30.0.kwinscript`
-- `driftile-overview-1.30.0.kwineffect` if using the optional overview
+- `driftile-1.31.0.kwinscript`
+- `driftile-overview-1.31.0.kwineffect` if using the optional overview
+- `driftile-transitions-1.31.0.kwineffect` if using optional geometry
+  transitions
 - `SHA256SUMS`
 - `LICENSE`
-- `driftile-shortcuts-1.30.0.mjs` if using the optional shortcut helper
+- `driftile-shortcuts-1.31.0.mjs` if using the optional shortcut helper
 
 Verify every downloaded release asset before installing it:
 
@@ -36,7 +38,7 @@ Install the KWin package:
 
 ```bash
 kpackagetool6 --type=KWin/Script \
-  --install ./driftile-1.30.0.kwinscript
+  --install ./driftile-1.31.0.kwinscript
 ```
 
 Open **System Settings > Window Management > KWin Scripts**, enable
@@ -46,12 +48,11 @@ the layout and presentation settings described in
 
 ### Optional transitions
 
-Releases starting with 1.31.0 also publish
-`driftile-transitions-<version>.kwineffect`. Install it separately:
+Install the optional transition effect separately:
 
 ```bash
 kpackagetool6 --type=KWin/Effect \
-  --install ./driftile-transitions-<version>.kwineffect
+  --install ./driftile-transitions-1.31.0.kwineffect
 ```
 
 Enable **Driftile Transitions** under **System Settings > Window Management >
@@ -62,7 +63,7 @@ disabled by default.
 
 ## Configure shortcuts
 
-Driftile works without the companion helper. The 1.30.0 helper claims the
+Driftile works without the companion helper. The 1.31.0 helper claims the
 bundled defaults and accepts custom profiles. Any action can instead be
 assigned manually.
 
@@ -73,8 +74,8 @@ Driftile before running it, and keep the helper until its saved claim has been
 released.
 
 ```bash
-node ./driftile-shortcuts-1.30.0.mjs claim
-node ./driftile-shortcuts-1.30.0.mjs check
+node ./driftile-shortcuts-1.31.0.mjs claim
+node ./driftile-shortcuts-1.31.0.mjs check
 ```
 
 `claim` transactionally saves and replaces active conflicting assignments.
@@ -82,7 +83,7 @@ node ./driftile-shortcuts-1.30.0.mjs check
 after the claim:
 
 ```bash
-node ./driftile-shortcuts-1.30.0.mjs release
+node ./driftile-shortcuts-1.31.0.mjs release
 ```
 
 If `release` reports assignments edited after the claim, stop and resolve them
@@ -94,9 +95,9 @@ Pass the same custom file to `claim` and `check`. `release` reads the saved
 transaction and rejects `--profile`:
 
 ```bash
-node ./driftile-shortcuts-1.30.0.mjs claim --profile ./shortcuts.json
-node ./driftile-shortcuts-1.30.0.mjs check --profile ./shortcuts.json
-node ./driftile-shortcuts-1.30.0.mjs release
+node ./driftile-shortcuts-1.31.0.mjs claim --profile ./shortcuts.json
+node ./driftile-shortcuts-1.31.0.mjs check --profile ./shortcuts.json
+node ./driftile-shortcuts-1.31.0.mjs release
 ```
 
 Release the current claim before claiming a changed profile.
@@ -116,8 +117,8 @@ restore displaced assignments automatically.
    replaced, the new helper can still release its saved v1 transaction.
 2. Disable Driftile in **KWin Scripts** and the optional overview and
    transition effects in **Desktop Effects**, then select **Apply**.
-3. Download and verify the matching main package, optional overview, checksum
-   manifest, and helper.
+3. Download and verify the matching main package, optional overview and
+   transition effects, checksum manifest, and helper.
 4. Upgrade the package:
 
    ```bash
@@ -200,7 +201,7 @@ The flake exposes packages and installation modules for `x86_64-linux` and
 `aarch64-linux`. Add Driftile as an input:
 
 ```nix
-inputs.driftile.url = "github:kontonkara/driftile/v1.30.0";
+inputs.driftile.url = "github:kontonkara/driftile/v1.31.0";
 ```
 
 For a system-wide NixOS installation, import the NixOS module:
@@ -226,15 +227,15 @@ modules = [
 ];
 ```
 
-The 1.30.0 module exposes the optional overview as a separate package. It
+The 1.31.0 module exposes the optional overview as a separate package. It
 remains disabled unless requested:
 
 ```nix
 programs.driftile.overview.enable = true;
 ```
 
-Starting with 1.31.0, the modules also expose the optional transition effect as
-an independent package:
+The modules also expose the optional transition effect as an independent
+package:
 
 ```nix
 programs.driftile.transitions.enable = true;
@@ -294,7 +295,7 @@ already installed by NixOS or another system module, keep
 Manager. See [Configuration](configuration.md#home-manager) for ownership and
 reload behavior.
 
-The 1.30.0 Home Manager module can also generate a custom shortcut profile:
+The 1.31.0 Home Manager module can also generate a custom shortcut profile:
 
 ```nix
 programs.driftile.shortcuts = {

@@ -43,9 +43,9 @@ Version 1.29.0 leaves overview behavior unchanged.
 
 Version 1.30.0 leaves overview behavior unchanged.
 
-The 1.31.0 development package projects only the current activity. Changing the
-current activity or available activity set closes an open companion before it
-can act on stale delegates.
+Version 1.31.0 projects only the current activity. Changing the current
+activity or available activity set closes an open companion before it can act
+on stale delegates.
 
 The companion is disabled by default. When enabled with a fresh shortcut
 record, `Meta+O` toggles it. KGlobalAccel preserves an existing assignment
@@ -116,8 +116,8 @@ activation, and normal close remain silent.
 
 ## Install a release
 
-Download `driftile-overview-1.30.0.kwineffect` and `SHA256SUMS` from the stable
-[1.30.0 release](release-notes-1.30.0.md), then verify the archive:
+Download `driftile-overview-1.31.0.kwineffect` and `SHA256SUMS` from the stable
+[1.31.0 release](release-notes-1.31.0.md), then verify the archive:
 
 ```console
 $ sha256sum --check --ignore-missing SHA256SUMS
@@ -127,7 +127,7 @@ Install the overview package as the desktop user:
 
 ```bash
 kpackagetool6 --type=KWin/Effect \
-  --install ./driftile-overview-1.30.0.kwineffect
+  --install ./driftile-overview-1.31.0.kwineffect
 ```
 
 To build the same versioned archive from source, run `npm ci` followed by
@@ -151,7 +151,7 @@ uninstalling the package.
 
 ## NixOS and Home Manager
 
-The 1.30.0 flake exposes the effect separately as
+The 1.31.0 flake exposes the effect separately as
 `packages.<system>.driftile-overview`. The NixOS and Home Manager modules keep
 it opt-in:
 
@@ -167,13 +167,8 @@ adjust its shortcut only if needed.
 
 ## Validation
 
-Version 1.30.0 does not change the companion. The focused overview contract,
-QML lint, and package checks remain unchanged. No new overview, backend,
-integration, application, or VM matrix was added, and no separate
-overview-specific VM validation claim is made.
-
-The 1.31.0 development checks cover current-activity projection and closure on
-activity topology changes.
+Version 1.31.0 validates current-activity projection and closes the companion
+when activity topology changes, preventing interaction with stale delegates.
 
 ## Safety boundary
 

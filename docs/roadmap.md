@@ -1,13 +1,15 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.30.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.31.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.30.0 adds same-context empty horizontal gutter targets to tiled-window
-dragging. Exact-window targets keep precedence and their existing stack
-behavior. Gutter targets keep the window in a separate column and never cross
-outputs or desktops.
+Stable 1.31.0 expands pointer interactions across contexts, adopts vertical
+resizes, restores focus after closing a window, and keeps a full-width successor
+visible beside a normal active column. Layout identity now includes activity,
+with logical persistence v4 and a current-activity-only overview. An optional,
+independently installed effect adds geometry transitions without taking layout
+ownership.
 
 ## Foundation (delivered)
 
@@ -1265,14 +1267,14 @@ Release criteria (met):
 
 No other feature belongs to 1.30.0.
 
-## 1.31.0 (in development)
+## 1.31.0 (released)
 
-The current package combines related interaction and activity-ownership
+The stable package combines related interaction and activity-ownership
 changes. Cross-context gutter drops create a separate automatic-height
-singleton after KWin moves a
-tiled window to another visible output or selected desktop. A manually floating
-window can be dragged onto an exact tiled window half or an empty gutter in its
-current context; the exact window wins and live feedback shows the target.
+singleton after KWin moves a tiled window to another visible output or selected
+desktop. A manually floating window can be dragged onto an exact tiled window
+half or an empty gutter in its current context; the exact window wins and live
+feedback shows the target.
 Completed top or bottom resizes adopt the active stacked window's height while
 the existing left or right path retains column-width adoption.
 
@@ -1300,26 +1302,20 @@ uses only public effect APIs, follows Plasma's animation-speed setting, and
 never writes layout geometry. Manual move or resize, fullscreen, and active
 fullscreen effects remain compositor-owned.
 
-Development criteria:
+Release criteria (met):
 
-- Exact-window and gutter planning rejects incomplete, duplicate, overlapping,
-  or stale geometry without mutating layout ownership.
-- Atomic attach and resize paths preserve passive state, focus, unrelated
-  contexts, saved floating placement, and explicit width configuration.
-- Runtime coverage includes cross-output and cross-desktop gutter adoption,
-  both manual-floating targets, vertical resize adoption, close-focus recovery,
-  and full-width successor visibility.
-- Core and runtime coverage isolates equal output and desktop IDs between
-  activities, preserves inactive logical state without frame writes, and
-  rejects ambiguous activity ownership.
-- Persistence coverage migrates v1 and v3 input to v4 and rejects removed
-  activities; overview coverage remains current-activity-only across topology
-  changes.
-- The optional transition effect loads on supported KWin backends, preserves
-  exact final frames and focus, and can be installed independently through a
-  release archive, NixOS, or Home Manager.
-- Focused grouped checks, exact-SHA CI, and a warranted hidden VM checkpoint
-  must pass before release.
+- Exact-window, gutter, attach, and resize paths reject stale geometry and
+  preserve passive state, unrelated contexts, saved placement, and explicit
+  width configuration.
+- Equal output and desktop IDs remain isolated between activities; inactive
+  layouts receive no geometry writes and ambiguous activity ownership fails
+  closed.
+- Valid v1 and v3 state migrates to v4, while the overview projects only the
+  current activity and closes across activity-topology changes.
+- The optional transition effect preserves final frames and focus and installs
+  independently through a release archive, NixOS, or Home Manager.
+
+No other feature belongs to 1.31.0.
 
 ## Post-v1
 

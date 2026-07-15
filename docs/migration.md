@@ -1,22 +1,50 @@
 # Migration
 
-The latest stable release is 1.30.0. Use the steps below when changing release
+The latest stable release is 1.31.0. Use the steps below when changing release
 generations, and never combine files from different releases.
 
-## Development-state compatibility
+## Upgrade from 1.30.0 to 1.31.0
 
-The 1.31.0 development package writes logical layout state v4. Valid v1 and v3
-state migrates to v4 after a successful restore; the surrounding topology
-catalog remains v2. Activity-qualified contexts whose activity no longer
-exists are rejected instead of being reassigned.
-The first successful v4 publication replaces activity-less historical
-snapshots because their original activity cannot be recovered safely.
+1. If the 1.30.0 helper owns the shortcut profile, run its `release` command
+   before replacing it. Stop on a preserved manual-edit conflict; do not use
+   `--force`.
+2. Disable Driftile and the optional overview in System Settings. Disable the
+   optional transition effect too if a development package installed it.
+3. Install matching 1.31.0 main, overview, transition, and helper artifacts as
+   needed, or pin the Nix input to `v1.31.0` and rebuild.
+4. Re-enable Driftile and the optional effects you use. The transition effect
+   remains disabled by default.
+5. If using the helper, claim the unchanged profile with the 1.31.0 helper and
+   run `check` with the same optional custom profile.
 
-A 1.30.0 runtime does not understand v4 state and keeps that store write-locked.
-Before returning from a development build to 1.30.0, disable Driftile and move
-the state file aside as described in
-[Troubleshooting](troubleshooting.md#a-layout-does-not-restore). Configuration
-and shortcut profiles do not require conversion.
+Logical layout state advances to v4 so each context includes its output,
+virtual desktop, and activity. Valid v1 and v3 state migrates after a successful
+restore; the bounded topology catalog remains v2. The first successful v4
+publication replaces activity-less historical snapshots because their original
+activity cannot be recovered safely. Removed or ambiguous activity ownership
+fails closed instead of reassigning a layout.
+
+This release also adds cross-context gutter drops, exact and gutter targets for
+manually floating windows, vertical pointer-resize adoption, right-side
+full-width successor visibility, focus recovery after closing the active
+window, and optional geometry transitions. Fresh columns use 33% when the
+default-width setting is absent; explicit settings and existing column widths
+remain unchanged. No shortcut profile conversion is required.
+
+## Roll back from 1.31.0 to 1.30.0
+
+Release a helper-owned profile with the 1.31.0 helper, then disable Driftile and
+both optional effects. A 1.30.0 runtime does not understand logical state v4
+and keeps that store write-locked. Before installing 1.30.0, move the v4 state
+file aside as described in
+[Troubleshooting](troubleshooting.md#a-layout-does-not-restore), or restore a
+saved v3 state file from before the upgrade.
+
+Restore matching verified 1.30.0 main, overview, and helper artifacts. For
+NixOS or Home Manager, restore the input to `v1.30.0` and rebuild each owning
+generation. Configuration and shortcut profiles remain compatible, but 1.30.0
+must start from v3 state or a fresh layout snapshot. The 1.31.0 transition
+effect is independent and should remain removed or disabled after rollback.
 
 ## Upgrade from 1.29.0 to 1.30.0
 
