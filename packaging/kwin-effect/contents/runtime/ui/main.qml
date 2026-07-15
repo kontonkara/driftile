@@ -9,11 +9,20 @@ QtObject {
     property bool active: false
     property bool loading: false
     property var overviewModel: null
+    property int lastActivationAttemptId: 0
+    property int pendingActivationAttemptId: 0
     readonly property var overviewDelegate: Qt.createComponent("OverviewScene.qml")
 
+    readonly property KWin.DBusCall rejectionOsdCall: KWin.DBusCall {
+        service: "org.kde.plasmashell"
+        path: "/org/kde/osdService"
+        dbusInterface: "org.kde.osdService"
+        method: "showText"
+    }
+
     readonly property LayoutStateReader layoutStateReader: LayoutStateReader {
-        onReady: document => controller.acceptLayoutState(document)
-        onRejected: controller.rejectLayoutState("unstable-state")
+        onReady: (attemptId, document) => controller.acceptLayoutState(attemptId, document)
+        onRejected: attemptId => controller.rejectLayoutState(attemptId, "unstable-state")
     }
 
     readonly property KWin.ShortcutHandler toggleShortcut: KWin.ShortcutHandler {
@@ -36,47 +45,60 @@ QtObject {
             return;
         }
 
+        const attemptId = lastActivationAttemptId >= 2147483647
+            ? 1
+            : lastActivationAttemptId + 1;
+        lastActivationAttemptId = attemptId;
+        pendingActivationAttemptId = attemptId;
         overviewModel = null;
         loading = true;
-        layoutStateReader.sample();
+        layoutStateReader.sample(attemptId);
     }
 
     function deactivate() {
+        pendingActivationAttemptId = 0;
         layoutStateReader.cancel();
         active = false;
         loading = false;
         overviewModel = null;
     }
 
-    function acceptLayoutState(document) {
-        if (!loading) {
+    function acceptLayoutState(attemptId, document) {
+        if (!loading || active || attemptId <= 0 || attemptId !== pendingActivationAttemptId) {
             return;
         }
 
         try {
             const runtime = OverviewRuntime.DriftileOverview;
             if (!runtime || typeof runtime.loadOverviewModel !== "function") {
-                rejectLayoutState("runtime-unavailable");
+                rejectLayoutState(attemptId, "runtime-unavailable");
                 return;
             }
 
             const result = runtime.loadOverviewModel(document, liveSnapshot());
             if (!result || result.ok !== true || !result.value) {
-                rejectLayoutState(result && result.error ? String(result.error) : "invalid-model");
+                rejectLayoutState(attemptId, result && result.error ? String(result.error) : "invalid-model");
                 return;
             }
 
+            pendingActivationAttemptId = 0;
             overviewModel = result.value;
             loading = false;
             active = true;
         } catch (error) {
-            rejectLayoutState("runtime-error");
+            rejectLayoutState(attemptId, "runtime-error");
         }
     }
 
-    function rejectLayoutState(reason) {
+    function rejectLayoutState(attemptId, reason) {
+        if (!loading || active || attemptId <= 0 || attemptId !== pendingActivationAttemptId) {
+            return;
+        }
+
         deactivate();
         console.warn(`[driftile-overview] activation rejected reason=${reason}`);
+        rejectionOsdCall.arguments = ["dialog-warning", "Could not open Driftile overview"];
+        rejectionOsdCall.call();
     }
 
     function liveSnapshot() {

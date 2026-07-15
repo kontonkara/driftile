@@ -50,6 +50,15 @@ Settings before removing
 [Installation](installation.md#configure-shortcuts) for helper commands and
 custom profiles.
 
+## The overview does not open
+
+Version 1.24.0 is in development. When the current activation attempt is
+rejected, it requests one best-effort Plasma OSD with a generic message. If the
+OSD service is unavailable, no message may appear. Reproduce the rejection once
+and inspect the recent KWin journal for the exact technical reason. Cancellation,
+a stale callback, successful activation, and normal close intentionally show no
+OSD.
+
 ## A window does not tile
 
 Driftile tiles normal, resizable application windows. It intentionally leaves

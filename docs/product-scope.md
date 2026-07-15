@@ -271,9 +271,21 @@ The ownership rule is strict:
 - The slice adds no input handler, animation, setting, shortcut, persistence
   field, layout mutation, window scan, or KWin write.
 
+## 1.24 optional overview slice (in development)
+
+- A rejected current activation attempt requests exactly one best-effort
+  passive Plasma OSD with a generic message. The exact technical reason remains
+  in the KWin journal.
+- Cancellation, a stale callback, successful activation, and normal close are
+  silent.
+- The added feedback handler is `O(1)` and adds no setting, shortcut, input
+  handler, KWin or layout write, persistence field, or scan beyond the existing
+  activation snapshot.
+- No other behavior belongs to the frozen 1.24.0 scope.
+
 ## Beyond v1
 
-- Optional visual transitions and concise diagnostics.
+- Optional visual transitions.
 - Activity-aware layouts.
 
 ## Compatibility

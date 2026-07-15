@@ -7,6 +7,9 @@ record. Later direction is not a committed release schedule.
 Stable 1.23.0 adds one read-only active-column layout badge to each optional
 overview desktop card without adding input, layout, settings, or persistence.
 
+Version 1.24.0 is in development. Its frozen scope adds rejection-only overview
+feedback; it is not released.
+
 ## Foundation (delivered)
 
 - Build and package a declarative KWin script with a TypeScript runtime.
@@ -996,12 +999,33 @@ Release criteria (met):
 
 No other feature belongs to 1.23.0.
 
+## 1.24.0 (in development)
+
+Version `1.24.0` requests one best-effort passive Plasma OSD only after the
+current overview activation attempt is rejected. The user-facing message is
+generic; the exact technical reason remains in the KWin journal. Cancellation,
+a stale callback, successful activation, and normal close remain silent.
+
+The added feedback handler is constant time and adds no setting, shortcut,
+input handler, KWin or layout write, persistence field, or scan beyond the
+existing activation snapshot.
+
+Release criteria:
+
+- One focused QML contract check covers current-attempt identity, rejection-only
+  ordering, one OSD request, and silent cancellation, stale, success, and normal
+  close paths.
+- Formatting, the focused overview check, QML lint, packaging, and exact-SHA CI
+  pass. This slice makes no VM coverage claim.
+
+No other feature belongs to 1.24.0.
+
 ## Post-v1
 
 Add interaction and presentation features outside the frozen v1 scope without
 taking over compositor mechanisms.
 
-- Add optional visual transitions and concise diagnostics.
+- Add optional visual transitions.
 - Keep Plasma's built-in Overview as the compatible baseline.
 - Add activity-aware layout ownership as a separate persisted-context milestone.
 

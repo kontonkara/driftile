@@ -92,9 +92,89 @@ describe("overview effect package", () => {
       2,
     );
     expect(reader).toContain("readonly property int sampleInterval: 325");
+    expect(reader).toContain("property int requestId: 0");
+    expect(reader).toContain("signal ready(int requestId, string document)");
+    expect(reader).toContain("signal rejected(int requestId)");
+    expect(reader).toContain("function sample(requestId)");
+    expect(reader).toContain("root.requestId = requestId");
+    expect(reader).toContain("root.requestId = 0");
+    expect(reader).toMatch(
+      /function cancel\(\) \{[\s\S]*requestId = 0;[\s\S]*\}/u,
+    );
     expect(reader).toContain("root.firstSample === secondSample");
     expect(reader).toContain("root.firstSample.length > 0");
     expect(reader).not.toMatch(/setValue|repeat:\s*true/u);
+  });
+
+  it("reports only the current rejected activation through one passive OSD", () => {
+    const toggle = controller.slice(
+      controller.indexOf("function toggle()"),
+      controller.indexOf("function activate()"),
+    );
+    const activate = controller.slice(
+      controller.indexOf("function activate()"),
+      controller.indexOf("function deactivate()"),
+    );
+    const deactivate = controller.slice(
+      controller.indexOf("function deactivate()"),
+      controller.indexOf("function acceptLayoutState("),
+    );
+    const accept = controller.slice(
+      controller.indexOf("function acceptLayoutState("),
+      controller.indexOf("function rejectLayoutState("),
+    );
+    const reject = controller.slice(
+      controller.indexOf("function rejectLayoutState("),
+      controller.indexOf("function liveSnapshot()"),
+    );
+
+    expect(controller.match(/KWin\.DBusCall\s*\{/gu)).toHaveLength(1);
+    expect(controller).toContain('service: "org.kde.plasmashell"');
+    expect(controller).toContain('path: "/org/kde/osdService"');
+    expect(controller).toContain('dbusInterface: "org.kde.osdService"');
+    expect(controller).toContain('method: "showText"');
+    expect(controller).toContain(
+      '["dialog-warning", "Could not open Driftile overview"]',
+    );
+    expect(controller.match(/rejectionOsdCall\.call\(\)/gu)).toHaveLength(1);
+
+    expect(controller).toContain("property int lastActivationAttemptId: 0");
+    expect(controller).toContain("property int pendingActivationAttemptId: 0");
+    expect(controller).toContain(
+      "onReady: (attemptId, document) => controller.acceptLayoutState(attemptId, document)",
+    );
+    expect(controller).toContain(
+      'onRejected: attemptId => controller.rejectLayoutState(attemptId, "unstable-state")',
+    );
+    expect(activate).toContain("pendingActivationAttemptId = attemptId");
+    expect(activate).toContain("layoutStateReader.sample(attemptId)");
+    expect(deactivate).toMatch(
+      /pendingActivationAttemptId = 0;[\s\S]*layoutStateReader\.cancel\(\)/u,
+    );
+    expect(accept).toContain("attemptId !== pendingActivationAttemptId");
+    expect(accept).toMatch(
+      /pendingActivationAttemptId = 0;[\s\S]*overviewModel = result\.value;[\s\S]*loading = false;[\s\S]*active = true;/u,
+    );
+    expect(reject).toContain("attemptId !== pendingActivationAttemptId");
+    expect(reject).toContain("activation rejected reason=${reason}");
+
+    const guard = reject.indexOf("if (!loading || active");
+    const reset = reject.indexOf("deactivate();");
+    const warning = reject.indexOf("console.warn(");
+    const argumentsWrite = reject.indexOf("rejectionOsdCall.arguments =");
+    const call = reject.indexOf("rejectionOsdCall.call();");
+    expect(guard).toBeGreaterThan(0);
+    expect(reset).toBeGreaterThan(guard);
+    expect(warning).toBeGreaterThan(reset);
+    expect(argumentsWrite).toBeGreaterThan(warning);
+    expect(call).toBeGreaterThan(argumentsWrite);
+
+    expect(`${toggle}\n${activate}\n${deactivate}\n${accept}`).not.toContain(
+      "rejectionOsdCall",
+    );
+    expect(reject).not.toMatch(
+      /\b(?:Timer|Settings|ShortcutHandler|MouseArea)\s*\{|\.setValue\s*\(|KWin\.Workspace\./u,
+    );
   });
 
   it("uses only public KWin QML writes for focus and desktop selection", () => {

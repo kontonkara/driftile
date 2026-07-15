@@ -45,6 +45,10 @@ The latest stable release is [1.23.0](docs/release-notes-1.23.0.md).
 The feature list tracks the current `main` branch; release state is recorded in
 the [roadmap](docs/roadmap.md).
 
+Version 1.24.0 is in development. Its frozen scope adds one best-effort Plasma
+OSD when the current overview activation attempt is rejected; every other exit
+path remains silent.
+
 Driftile requires KDE Plasma with KWin 6.7 or newer. It targets native Wayland
 and XWayland windows, plus single-output native X11 sessions.
 

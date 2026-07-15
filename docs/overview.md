@@ -26,6 +26,11 @@ without changing layout ownership.
 Version 1.23.0 adds one read-only active-column layout badge to each desktop
 card without adding input or layout behavior.
 
+Version 1.24.0 is in development. Its frozen scope adds one best-effort Plasma
+OSD after the current activation attempt is rejected. The user-facing message
+is generic; the exact technical reason remains in the KWin journal. A canceled
+attempt, stale callback, successful activation, or normal close is silent.
+
 The companion is disabled by default. When enabled with a fresh shortcut
 record, `Meta+O` toggles it. KGlobalAccel preserves an existing assignment
 across upgrades, including an explicitly unbound action, so review it in
@@ -80,6 +85,18 @@ active column, presentation, width, or visible area cannot be validated, or
 when the card is too small to show the complete label. Its lookup is constant
 time and adds no window scan, setting, persistence field, animation, or KWin
 write.
+
+## Rejected activation feedback
+
+The development version requests one passive Plasma OSD only after the current
+activation attempt is rejected. The request is best-effort: missing OSD
+services do not change effect behavior. The technical rejection reason is
+written only to the KWin journal.
+
+The added feedback handler is constant time. It adds no setting, shortcut,
+input handler, KWin or layout write, persistence field, or scan beyond the
+existing activation snapshot. Cancellation, a stale callback, successful
+activation, and normal close remain silent.
 
 ## Install a release
 
