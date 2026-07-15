@@ -172,6 +172,13 @@ lifecycle, not rejection feedback. Exact-SHA CI remains required before the
 release tag. This slice makes no feature-VM coverage claim and adds no backend
 or application matrix.
 
+The 1.25.0 development slice reuses the existing output-transfer fixtures and
+multi-output checkpoint. Focused runtime cases cover one manual and one
+automatic relation-free floating target, destination-desktop adoption,
+unchanged tiled contexts, zero frame writes, missing-API and relationship
+rejection, and bounded output, membership, and focus compensation. The slice
+adds no application or backend matrix.
+
 In the following unit list, zero writes to floating windows means ambient
 layout work; explicit manual-floating movement, centering, or contextual size
 resizing owns its guarded frame request.

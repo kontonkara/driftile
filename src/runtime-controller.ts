@@ -232,7 +232,11 @@ interface WindowTransferOperation {
   desktopChangeSuppressed: boolean;
   memberStateInvalidated?: boolean;
   readonly kind:
-    "desktop" | "floating-desktop" | "output" | "stack-native-state";
+    | "desktop"
+    | "floating-desktop"
+    | "floating-output"
+    | "output"
+    | "stack-native-state";
   readonly movingIds: ReadonlySet<WindowId>;
   readonly sourceContextKey: string;
   readonly stateGuardIds: ReadonlySet<WindowId>;
@@ -305,14 +309,15 @@ interface DesktopTransferCommand
   readonly targetRuntimeContext: RuntimeContext | undefined;
 }
 
-interface FloatingDesktopTransferCommand {
+type FloatingTransferClassification =
+  | { readonly floating: FloatingWindow; readonly kind: "manual" }
+  | { readonly kind: "automatic" };
+
+interface FloatingTransferCommand {
   readonly activeId: WindowId;
   readonly activeWindow: KWinWindow;
-  readonly classification:
-    | { readonly floating: FloatingWindow; readonly kind: "manual" }
-    | { readonly kind: "automatic" };
+  readonly classification: FloatingTransferClassification;
   readonly frame: Rect;
-  readonly output: KWinOutput;
   readonly sourceContext: ManagedContext;
   readonly sourceContextKey: string;
   readonly sourceDesktop: KWinVirtualDesktop;
@@ -321,6 +326,17 @@ interface FloatingDesktopTransferCommand {
   readonly targetContextKey: string;
   readonly targetDesktop: KWinVirtualDesktop;
   readonly targetLayout: LayoutContextSnapshot;
+}
+
+interface FloatingDesktopTransferCommand extends FloatingTransferCommand {
+  readonly output: KWinOutput;
+}
+
+interface FloatingOutputTransferCommand extends FloatingTransferCommand {
+  readonly sourceContextGeometry: ContextGeometry;
+  readonly sourceOutput: KWinOutput;
+  readonly targetContextGeometry: ContextGeometry;
+  readonly targetOutput: KWinOutput;
 }
 
 interface OutputTransferCommand extends ActiveWindowCommand, TransferSelection {
@@ -3187,7 +3203,10 @@ export class RuntimeController {
     this.pointerResizeIntent = null;
 
     if (this.windowTransferOperation) {
-      if (this.windowTransferOperation.kind === "output") {
+      if (
+        this.windowTransferOperation.kind === "output" ||
+        this.windowTransferOperation.kind === "floating-output"
+      ) {
         this.windowTransferOperation.desktopChangeSuppressed = true;
       }
 
@@ -4602,6 +4621,7 @@ export class RuntimeController {
     if (this.windowTransferOperation) {
       const guardedContextTransferMember =
         (this.windowTransferOperation.kind === "desktop" ||
+          this.windowTransferOperation.kind === "floating-output" ||
           this.windowTransferOperation.kind === "output") &&
         this.windowTransferOperation.stateGuardIds.has(changedId);
 
@@ -8128,9 +8148,9 @@ export class RuntimeController {
       this.workspace.desktops.some(
         (desktop) => desktop.id === command.targetDesktop.id,
       ) &&
-      this.floatingDesktopClassificationIsCurrent(command) &&
+      this.floatingTransferClassificationIsCurrent(command) &&
       !this.floatingDesktopTransferHasRelations(command.activeWindow) &&
-      this.floatingDesktopLayoutsAreCurrent(command);
+      this.floatingTransferLayoutsAreCurrent(command);
 
     if (compensationSafe) {
       let restoreMechanismFrame = { ...command.activeWindow.frameGeometry };
@@ -8214,7 +8234,7 @@ export class RuntimeController {
     if (
       !windowIsOnDesktop(command.activeWindow, command.sourceDesktop) ||
       !rectsEqual(command.activeWindow.frameGeometry, command.frame) ||
-      !this.floatingDesktopLayoutsAreCurrent(command)
+      !this.floatingTransferLayoutsAreCurrent(command)
     ) {
       this.pendingWindowSyncs.add(command.activeId);
     } else {
@@ -8258,7 +8278,7 @@ export class RuntimeController {
           desktopId: desktopId(windowDesktop.id),
           outputId: command.sourceContext.outputId,
         }) &&
-      this.floatingDesktopClassificationIsCurrent(command) &&
+      this.floatingTransferClassificationIsCurrent(command) &&
       !this.floatingDesktopTransferHasRelations(command.activeWindow) &&
       this.floatingDesktopFrameStateIsSafe(
         command.activeWindow,
@@ -8268,12 +8288,12 @@ export class RuntimeController {
           outputId: command.sourceContext.outputId,
         },
       ) &&
-      this.floatingDesktopLayoutsAreCurrent(command)
+      this.floatingTransferLayoutsAreCurrent(command)
     );
   }
 
-  private floatingDesktopClassificationIsCurrent(
-    command: FloatingDesktopTransferCommand,
+  private floatingTransferClassificationIsCurrent(
+    command: FloatingTransferCommand,
   ): boolean {
     if (command.classification.kind === "manual") {
       return (
@@ -8294,8 +8314,8 @@ export class RuntimeController {
     );
   }
 
-  private floatingDesktopLayoutsAreCurrent(
-    command: FloatingDesktopTransferCommand,
+  private floatingTransferLayoutsAreCurrent(
+    command: FloatingTransferCommand,
   ): boolean {
     return (
       layoutContextSnapshotsEqual(
@@ -9665,10 +9685,733 @@ export class RuntimeController {
     this.capacityParkBackoffs.delete(command.targetContextKey);
   }
 
+  private moveActiveFloatingWindowToOutput(
+    direction: OutputDirection,
+  ): boolean | null {
+    const activeWindow = this.workspace.activeWindow;
+
+    if (!activeWindow) {
+      return null;
+    }
+
+    const activeId = windowId(String(activeWindow.internalId));
+    const manualFloating = this.floatingWindows.get(activeId);
+    const automaticFloatingTracked =
+      this.automaticFloatingWindows.has(activeId);
+    const automaticFloatingApplies = this.automaticFloatingOwnershipApplies(
+      activeId,
+      activeWindow,
+    );
+    const automaticFloating =
+      automaticFloatingTracked && automaticFloatingApplies;
+
+    if (
+      !manualFloating &&
+      !automaticFloatingTracked &&
+      !automaticFloatingApplies
+    ) {
+      return null;
+    }
+
+    if (!manualFloating && !automaticFloating) {
+      return false;
+    }
+
+    const sourceContext = layerFocusContext(activeWindow);
+    const sourceContextKey = sourceContext ? contextKey(sourceContext) : null;
+
+    if (
+      !sourceContext ||
+      !sourceContextKey ||
+      !this.started ||
+      !this.startupCompleted ||
+      this.initializing ||
+      this.hydrationInProgress ||
+      this.stackEditOperation ||
+      this.windowTransferOperation ||
+      this.stackedNativeStateOperation ||
+      this.startupStabilizationToken !== null ||
+      this.hasTopologyBarrier() ||
+      this.pendingExpelFocusHandoff !== null ||
+      this.interactiveResizeSource !== null ||
+      this.pointerMoveIntent !== null ||
+      this.pointerResizeIntent !== null ||
+      this.pointerResizeSettlement !== null ||
+      this.pendingManualFloatingSizeChanges.has(activeId) ||
+      typeof this.workspace.sendClientToScreen !== "function" ||
+      this.observer.source(activeId) !== activeWindow ||
+      !activeWindow.moveable ||
+      (manualFloating !== undefined &&
+        (manualFloating.currentContextKey !== sourceContextKey ||
+          this.automaticallyFloats(activeWindow))) ||
+      this.windowLayer(activeId, activeWindow, sourceContextKey) !==
+        "floating" ||
+      this.floatingOutputTransferHasRelations(activeWindow) ||
+      this.pendingWindowSyncs.has(activeId) ||
+      this.waitingWindowContexts.has(activeId) ||
+      this.suspendedWindows.has(activeId) ||
+      this.requestedSuspensions.has(activeId) ||
+      !this.toggleGeometrySettled(activeId) ||
+      !this.floatingDesktopFrameStateIsSafe(
+        activeWindow,
+        activeWindow.frameGeometry,
+        sourceContext,
+      )
+    ) {
+      return false;
+    }
+
+    const sourceOutput = this.workspace.screens.find(
+      (candidate) => candidate.name === sourceContext.outputId,
+    );
+    const targetOutputId = sourceOutput
+      ? findAdjacentOutput(
+          sourceContext.outputId,
+          this.workspace.screens.map((output) => ({
+            id: outputId(output.name),
+            rect: output.geometry,
+          })),
+          direction,
+        )
+      : null;
+    const targetOutput = targetOutputId
+      ? this.workspace.screens.find(
+          (candidate) => candidate.name === targetOutputId,
+        )
+      : undefined;
+    const sourceDesktop = sourceOutput
+      ? currentDesktopForOutput(this.workspace, sourceOutput)
+      : null;
+    const targetDesktop = targetOutput
+      ? currentDesktopForOutput(this.workspace, targetOutput)
+      : null;
+
+    if (
+      !sourceOutput ||
+      !targetOutput ||
+      !sourceDesktop ||
+      !targetDesktop ||
+      sourceOutput.name === targetOutput.name ||
+      sourceDesktop.id !== sourceContext.desktopId ||
+      activeWindow.output?.name !== sourceOutput.name
+    ) {
+      return false;
+    }
+
+    const targetContext: ManagedContext = {
+      desktopId: desktopId(targetDesktop.id),
+      outputId: outputId(targetOutput.name),
+    };
+    const targetContextKey = contextKey(targetContext);
+
+    if (
+      targetContextKey === sourceContextKey ||
+      this.hasPendingCapacityState(sourceContextKey) ||
+      this.hasPendingCapacityState(targetContextKey) ||
+      this.waitingWindowIds.has(sourceContextKey) ||
+      this.waitingWindowIds.has(targetContextKey) ||
+      this.toggleTransitionPending(sourceContextKey) ||
+      this.toggleTransitionPending(targetContextKey)
+    ) {
+      return false;
+    }
+
+    let sourceContextGeometry: ContextGeometry | null;
+    let targetContextGeometry: ContextGeometry | null;
+    let frame: Rect;
+
+    try {
+      sourceContextGeometry = this.geometry.contextGeometry(
+        sourceContext.outputId,
+        sourceContext.desktopId,
+      );
+      targetContextGeometry = this.geometry.contextGeometry(
+        targetContext.outputId,
+        targetContext.desktopId,
+      );
+      frame = snapshotRect(activeWindow.frameGeometry);
+    } catch {
+      return false;
+    }
+
+    if (!sourceContextGeometry || !targetContextGeometry) {
+      return false;
+    }
+
+    const sourceRuntimeContext = this.contexts.get(sourceContextKey);
+    const targetRuntimeContext = this.contexts.get(targetContextKey);
+
+    if (
+      (sourceRuntimeContext &&
+        sourceRuntimeContext.geometryFingerprint !==
+          sourceContextGeometry.fingerprint) ||
+      (targetRuntimeContext &&
+        targetRuntimeContext.geometryFingerprint !==
+          targetContextGeometry.fingerprint)
+    ) {
+      this.handleTopologyChanged(String(targetContext.outputId));
+      return false;
+    }
+
+    const command: FloatingOutputTransferCommand = {
+      activeId,
+      activeWindow,
+      classification: manualFloating
+        ? { floating: manualFloating, kind: "manual" }
+        : { kind: "automatic" },
+      frame,
+      sourceContext,
+      sourceContextGeometry,
+      sourceContextKey,
+      sourceDesktop,
+      sourceLayout: this.layout.snapshot(
+        sourceContext.outputId,
+        sourceContext.desktopId,
+      ),
+      sourceOutput,
+      targetContext,
+      targetContextGeometry,
+      targetContextKey,
+      targetDesktop,
+      targetLayout: this.layout.snapshot(
+        targetContext.outputId,
+        targetContext.desktopId,
+      ),
+      targetOutput,
+    };
+    const movingIds = new Set([activeId]);
+    const operation: WindowTransferOperation = {
+      activeId,
+      desktopChangeSuppressed: false,
+      kind: "floating-output",
+      memberStateInvalidated: false,
+      movingIds,
+      sourceContextKey,
+      stateGuardIds: movingIds,
+      targetContextKey,
+    };
+    this.windowTransferOperation = operation;
+    let transferred = false;
+
+    try {
+      transferred = this.applyFloatingOutputTransfer(command, operation);
+      return transferred;
+    } finally {
+      if (this.windowTransferOperation === operation) {
+        this.windowTransferOperation = null;
+      }
+
+      if (operation.desktopChangeSuppressed) {
+        this.markVisibleDesktopContextsDirty();
+      }
+
+      this.handleWindowActivated(this.workspace.activeWindow);
+
+      if (transferred) {
+        this.requestLayoutStatePublication();
+      }
+
+      const deferredWork =
+        [...this.dirtyContexts].some((key) => {
+          const context = this.contexts.get(key);
+          return Boolean(context && this.isContextVisible(context));
+        }) ||
+        this.pendingWindowSyncs.size > 0 ||
+        this.pendingAdmissionContexts.size > 0 ||
+        this.pendingDefaultColumnWidth !== null ||
+        this.pendingGap !== null ||
+        this.desktopLifecycle.pendingWork;
+
+      if (deferredWork) {
+        this.scheduleWork();
+      } else {
+        this.flushLayoutStatePublication();
+      }
+    }
+  }
+
+  private applyFloatingOutputTransfer(
+    command: FloatingOutputTransferCommand,
+    operation: WindowTransferOperation,
+  ): boolean {
+    const topologyRevision = this.topologyRevision;
+    const originalActiveWindow = this.workspace.activeWindow;
+    const sourceRemembered = this.lastFloatingFocus.get(
+      command.sourceContextKey,
+    );
+    const targetRemembered = this.lastFloatingFocus.get(
+      command.targetContextKey,
+    );
+    const differentDesktop =
+      command.sourceDesktop.id !== command.targetDesktop.id;
+    let failure: string;
+
+    try {
+      if (
+        !this.floatingOutputTransferIdentityIsCurrent(
+          command,
+          operation,
+          topologyRevision,
+        ) ||
+        !this.floatingOutputTransferMechanismMatches(
+          command,
+          command.sourceOutput,
+          "source",
+        )
+      ) {
+        throw new Error("floating output transfer context changed");
+      }
+
+      if (differentDesktop) {
+        command.activeWindow.desktops = [
+          command.sourceDesktop,
+          command.targetDesktop,
+        ];
+
+        if (
+          !this.floatingOutputTransferIdentityIsCurrent(
+            command,
+            operation,
+            topologyRevision,
+          ) ||
+          !this.floatingOutputTransferMechanismMatches(
+            command,
+            command.sourceOutput,
+            "pair",
+          )
+        ) {
+          throw new Error("floating output desktop staging was rejected");
+        }
+      }
+
+      if (typeof this.workspace.sendClientToScreen !== "function") {
+        throw new Error("floating output transfer is unavailable");
+      }
+
+      this.workspace.sendClientToScreen(
+        command.activeWindow,
+        command.targetOutput,
+      );
+
+      if (
+        !this.floatingOutputTransferIdentityIsCurrent(
+          command,
+          operation,
+          topologyRevision,
+        ) ||
+        !this.floatingOutputTransferMechanismMatches(
+          command,
+          command.targetOutput,
+          differentDesktop ? "pair" : "target",
+        )
+      ) {
+        throw new Error("floating output assignment was rejected");
+      }
+
+      if (differentDesktop) {
+        command.activeWindow.desktops = [command.targetDesktop];
+      }
+
+      const targetFrame = snapshotRect(command.activeWindow.frameGeometry);
+
+      if (
+        !this.floatingOutputTransferIdentityIsCurrent(
+          command,
+          operation,
+          topologyRevision,
+        ) ||
+        !this.floatingOutputTransferMechanismMatches(
+          command,
+          command.targetOutput,
+          "target",
+        ) ||
+        !this.floatingDesktopFrameStateIsSafe(
+          command.activeWindow,
+          targetFrame,
+          command.targetContext,
+        )
+      ) {
+        throw new Error("floating output target state was rejected");
+      }
+
+      if (this.workspace.activeWindow === null) {
+        this.workspace.activeWindow = command.activeWindow;
+      } else if (this.workspace.activeWindow !== command.activeWindow) {
+        throw new Error("floating output focus changed externally");
+      }
+
+      let destinationBaseline: RestoreBaseline | null = null;
+
+      if (command.classification.kind === "manual") {
+        destinationBaseline = this.captureRestoreBaseline(
+          command.activeWindow,
+          command.targetContextGeometry.fingerprint,
+          "client",
+        );
+      }
+
+      if (
+        this.workspace.activeWindow !== command.activeWindow ||
+        !rectsEqual(command.activeWindow.frameGeometry, targetFrame) ||
+        !this.floatingOutputTransferIdentityIsCurrent(
+          command,
+          operation,
+          topologyRevision,
+        ) ||
+        !this.floatingOutputTransferMechanismMatches(
+          command,
+          command.targetOutput,
+          "target",
+        ) ||
+        (destinationBaseline !== null &&
+          !rectsEqual(destinationBaseline.frame, targetFrame))
+      ) {
+        throw new Error("floating output transfer was not accepted");
+      }
+
+      if (
+        this.lastFloatingFocus.get(command.sourceContextKey) ===
+        command.activeId
+      ) {
+        this.lastFloatingFocus.delete(command.sourceContextKey);
+      }
+
+      if (
+        command.classification.kind === "manual" &&
+        destinationBaseline !== null
+      ) {
+        this.floatingWindows.set(command.activeId, {
+          ...command.classification.floating,
+          currentContextKey: command.targetContextKey,
+          expectedFrame: targetFrame,
+          restoreBaseline: destinationBaseline,
+        });
+      }
+
+      this.lastFloatingFocus.set(command.targetContextKey, command.activeId);
+      this.lastWrites = 0;
+      return true;
+    } catch (error) {
+      failure = String(error);
+    }
+
+    this.rollbackFloatingOutputTransfer(
+      command,
+      operation,
+      topologyRevision,
+      originalActiveWindow,
+      sourceRemembered,
+      targetRemembered,
+    );
+    this.lastWrites = 0;
+    console.warn(
+      `[driftile] floating output transfer rolled back window=${String(command.activeId)} error=${failure}`,
+    );
+    return false;
+  }
+
+  private rollbackFloatingOutputTransfer(
+    command: FloatingOutputTransferCommand,
+    operation: WindowTransferOperation,
+    topologyRevision: number,
+    originalActiveWindow: KWinWindow | null,
+    sourceRemembered: WindowId | undefined,
+    targetRemembered: WindowId | undefined,
+  ): void {
+    const focusOwned =
+      this.workspace.activeWindow === command.activeWindow ||
+      this.workspace.activeWindow === null;
+    const outputOwned =
+      command.activeWindow.output?.name === command.sourceOutput.name ||
+      command.activeWindow.output?.name === command.targetOutput.name;
+    const membershipOwned =
+      this.floatingOutputMembershipMatches(command, "source") ||
+      this.floatingOutputMembershipMatches(command, "pair") ||
+      this.floatingOutputMembershipMatches(command, "target");
+    let compensationSafe =
+      focusOwned &&
+      outputOwned &&
+      membershipOwned &&
+      this.floatingOutputTransferIdentityIsCurrent(
+        command,
+        operation,
+        topologyRevision,
+      );
+
+    if (
+      compensationSafe &&
+      command.activeWindow.output?.name === command.targetOutput.name
+    ) {
+      if (typeof this.workspace.sendClientToScreen !== "function") {
+        compensationSafe = false;
+      } else {
+        try {
+          this.workspace.sendClientToScreen(
+            command.activeWindow,
+            command.sourceOutput,
+          );
+        } catch (error) {
+          console.warn(
+            `[driftile] floating output restore failed window=${String(command.activeId)} error=${String(error)}`,
+          );
+        }
+
+        compensationSafe =
+          command.activeWindow.output.name === command.sourceOutput.name &&
+          this.floatingOutputTransferIdentityIsCurrent(
+            command,
+            operation,
+            topologyRevision,
+          );
+      }
+    }
+
+    if (
+      compensationSafe &&
+      command.sourceDesktop.id !== command.targetDesktop.id &&
+      !this.floatingOutputMembershipMatches(command, "source")
+    ) {
+      if (
+        this.floatingOutputMembershipMatches(command, "pair") ||
+        this.floatingOutputMembershipMatches(command, "target")
+      ) {
+        try {
+          command.activeWindow.desktops = [command.sourceDesktop];
+        } catch (error) {
+          console.warn(
+            `[driftile] floating output desktop restore failed window=${String(command.activeId)} error=${String(error)}`,
+          );
+        }
+      } else {
+        compensationSafe = false;
+      }
+    }
+
+    const sourceRestored =
+      compensationSafe &&
+      command.activeWindow.output?.name === command.sourceOutput.name &&
+      this.floatingOutputMembershipMatches(command, "source") &&
+      this.floatingOutputTransferIdentityIsCurrent(
+        command,
+        operation,
+        topologyRevision,
+      );
+
+    if (
+      sourceRestored &&
+      (this.workspace.activeWindow === command.activeWindow ||
+        this.workspace.activeWindow === null)
+    ) {
+      try {
+        this.workspace.activeWindow = originalActiveWindow;
+      } catch (error) {
+        console.warn(
+          `[driftile] floating output focus restore failed window=${String(command.activeId)} error=${String(error)}`,
+        );
+      }
+    }
+
+    let runtimeRestored =
+      sourceRestored && this.workspace.activeWindow === originalActiveWindow;
+
+    if (sourceRestored && command.classification.kind === "manual") {
+      try {
+        const sourceFrame = snapshotRect(command.activeWindow.frameGeometry);
+
+        if (
+          this.floatingDesktopFrameStateIsSafe(
+            command.activeWindow,
+            sourceFrame,
+            command.sourceContext,
+          )
+        ) {
+          const sourceBaseline = this.captureRestoreBaseline(
+            command.activeWindow,
+            command.sourceContextGeometry.fingerprint,
+            "client",
+          );
+
+          if (
+            rectsEqual(sourceBaseline.frame, sourceFrame) &&
+            this.floatingWindows.get(command.activeId) ===
+              command.classification.floating
+          ) {
+            this.floatingWindows.set(command.activeId, {
+              ...command.classification.floating,
+              currentContextKey: command.sourceContextKey,
+              expectedFrame: sourceFrame,
+              restoreBaseline: sourceBaseline,
+            });
+            this.requestLayoutStatePublication();
+          } else {
+            runtimeRestored = false;
+          }
+        } else {
+          runtimeRestored = false;
+        }
+      } catch {
+        runtimeRestored = false;
+      }
+    }
+
+    if (runtimeRestored) {
+      restoreRememberedFocus(
+        this.lastFloatingFocus,
+        command.sourceContextKey,
+        sourceRemembered,
+      );
+      restoreRememberedFocus(
+        this.lastFloatingFocus,
+        command.targetContextKey,
+        targetRemembered,
+      );
+
+      if (command.classification.kind === "manual") {
+        this.pendingWindowSyncs.delete(command.activeId);
+      } else {
+        this.pendingWindowSyncs.add(command.activeId);
+      }
+    } else {
+      this.pendingWindowSyncs.add(command.activeId);
+    }
+  }
+
+  private floatingOutputTransferIdentityIsCurrent(
+    command: FloatingOutputTransferCommand,
+    operation: WindowTransferOperation,
+    topologyRevision: number,
+  ): boolean {
+    return (
+      this.windowTransferOperation === operation &&
+      operation.kind === "floating-output" &&
+      operation.memberStateInvalidated !== true &&
+      operation.movingIds.size === 1 &&
+      operation.movingIds.has(command.activeId) &&
+      this.topologyRevision === topologyRevision &&
+      !this.hasTopologyBarrier() &&
+      this.observer.source(command.activeId) === command.activeWindow &&
+      this.workspace.screens.includes(command.sourceOutput) &&
+      this.workspace.screens.includes(command.targetOutput) &&
+      this.workspace.desktops.some(
+        (desktop) => desktop.id === command.sourceDesktop.id,
+      ) &&
+      this.workspace.desktops.some(
+        (desktop) => desktop.id === command.targetDesktop.id,
+      ) &&
+      currentDesktopForOutput(this.workspace, command.sourceOutput)?.id ===
+        command.sourceDesktop.id &&
+      currentDesktopForOutput(this.workspace, command.targetOutput)?.id ===
+        command.targetDesktop.id &&
+      typeof this.workspace.sendClientToScreen === "function" &&
+      !this.hasPendingCapacityState(command.sourceContextKey) &&
+      !this.hasPendingCapacityState(command.targetContextKey) &&
+      !this.waitingWindowIds.has(command.sourceContextKey) &&
+      !this.waitingWindowIds.has(command.targetContextKey) &&
+      !this.waitingWindowContexts.has(command.activeId) &&
+      !this.suspendedWindows.has(command.activeId) &&
+      !this.requestedSuspensions.has(command.activeId) &&
+      !this.pendingManualFloatingSizeChanges.has(command.activeId) &&
+      (command.classification.kind === "automatic" ||
+        !this.pendingWindowSyncs.has(command.activeId)) &&
+      this.floatingTransferClassificationIsCurrent(command) &&
+      !this.floatingOutputTransferHasRelations(command.activeWindow) &&
+      this.floatingOutputFingerprintsMatch(command) &&
+      this.floatingTransferLayoutsAreCurrent(command)
+    );
+  }
+
+  private floatingOutputTransferMechanismMatches(
+    command: FloatingOutputTransferCommand,
+    output: KWinOutput,
+    membership: "pair" | "source" | "target",
+  ): boolean {
+    return (
+      this.observer.source(command.activeId) === command.activeWindow &&
+      command.activeWindow.output?.name === output.name &&
+      this.floatingOutputMembershipMatches(command, membership)
+    );
+  }
+
+  private floatingOutputMembershipMatches(
+    command: FloatingOutputTransferCommand,
+    membership: "pair" | "source" | "target",
+  ): boolean {
+    if (membership === "pair") {
+      return (
+        command.sourceDesktop.id !== command.targetDesktop.id &&
+        windowIsOnDesktopPair(
+          command.activeWindow,
+          command.sourceDesktop,
+          command.targetDesktop,
+        )
+      );
+    }
+
+    return windowIsOnDesktop(
+      command.activeWindow,
+      membership === "source" ? command.sourceDesktop : command.targetDesktop,
+    );
+  }
+
+  private floatingOutputFingerprintsMatch(
+    command: FloatingOutputTransferCommand,
+  ): boolean {
+    try {
+      return (
+        this.geometry.contextGeometry(
+          command.sourceContext.outputId,
+          command.sourceContext.desktopId,
+        )?.fingerprint === command.sourceContextGeometry.fingerprint &&
+        this.geometry.contextGeometry(
+          command.targetContext.outputId,
+          command.targetContext.desktopId,
+        )?.fingerprint === command.targetContextGeometry.fingerprint
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  private floatingOutputTransferHasRelations(active: KWinWindow): boolean {
+    try {
+      if (active.modal || active.transient || active.transientFor) {
+        return true;
+      }
+
+      for (const candidate of this.workspace.stackingOrder) {
+        if (candidate === active) {
+          continue;
+        }
+
+        const visited = new Set<KWinWindow>();
+        let ancestor = candidate.transientFor;
+
+        while (ancestor && !visited.has(ancestor)) {
+          if (ancestor === active) {
+            return true;
+          }
+
+          visited.add(ancestor);
+          ancestor = ancestor.transientFor;
+        }
+      }
+    } catch {
+      return true;
+    }
+
+    return false;
+  }
+
   private moveActiveWindowToOutput(
     direction: OutputDirection,
     wholeColumn = false,
   ): boolean {
+    const floatingResult = this.moveActiveFloatingWindowToOutput(direction);
+
+    if (floatingResult !== null) {
+      return floatingResult;
+    }
+
     const active = this.prepareActiveWindowCommand();
 
     if (!active || typeof this.workspace.sendClientToScreen !== "function") {

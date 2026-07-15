@@ -37011,16 +37011,55 @@ describe("RuntimeController output transfers", () => {
     expect(transfer.controller.reconcile()).toBe(0);
   });
 
-  it("fails closed when KWin does not expose output transfer", () => {
-    const transfer = createOutputTransferFixture();
-    Object.defineProperty(transfer.fixture.workspace, "sendClientToScreen", {
+  it("fails closed for a floating output transfer without KWin support", () => {
+    const tiled = createOutputTransferFixture();
+    Object.defineProperty(tiled.fixture.workspace, "sendClientToScreen", {
       configurable: true,
       value: undefined,
     });
 
-    expect(transfer.controller.moveWindowToOutputRight()).toBe(false);
-    expect(transfer.fixture.outputTransferCount).toBe(0);
-    expect(transfer.moved.window.output).toBe(transfer.sourceOutput);
+    expect(tiled.controller.moveWindowToOutputRight()).toBe(false);
+    expect(tiled.fixture.outputTransferCount).toBe(0);
+    expect(tiled.moved.window.output).toBe(tiled.sourceOutput);
+
+    const floating = createOutputTransferFixture();
+    expect(floating.controller.toggleFloating()).toBe(true);
+    const sourceLayout = runtimeLayout(floating.controller).snapshot(
+      outputId(floating.sourceOutput.name),
+      desktopId(floating.sourceDesktop.id),
+    );
+    const targetLayout = runtimeLayout(floating.controller).snapshot(
+      outputId(floating.targetOutput.name),
+      desktopId(floating.targetDesktop.id),
+    );
+    const state = captureTrackedWindowState([
+      floating.source,
+      floating.moved,
+      ...floating.destinations,
+    ]);
+    Object.defineProperty(floating.fixture.workspace, "sendClientToScreen", {
+      configurable: true,
+      value: undefined,
+    });
+
+    expect(floating.controller.moveColumnToOutputRight()).toBe(false);
+    expect(floating.fixture.outputTransferCount).toBe(0);
+    expectTrackedWindowState(
+      [floating.source, floating.moved, ...floating.destinations],
+      state,
+    );
+    expect(
+      runtimeLayout(floating.controller).snapshot(
+        outputId(floating.sourceOutput.name),
+        desktopId(floating.sourceDesktop.id),
+      ),
+    ).toEqual(sourceLayout);
+    expect(
+      runtimeLayout(floating.controller).snapshot(
+        outputId(floating.targetOutput.name),
+        desktopId(floating.targetDesktop.id),
+      ),
+    ).toEqual(targetLayout);
   });
 
   it("stops transfer writes when the mover becomes automatic mid-transaction", () => {
@@ -37134,15 +37173,350 @@ describe("RuntimeController output transfers", () => {
     expect(constrained.fixture.outputTransferCount).toBe(0);
   });
 
-  it("rejects floating and suspended windows before invoking KWin", () => {
-    const floating = createOutputTransferFixture();
-    expect(floating.controller.toggleFloating()).toBe(true);
-    expect(floating.controller.moveWindowToOutputRight()).toBe(false);
-    expect(floating.fixture.outputTransferCount).toBe(0);
+  it("moves a manual floating output target without touching tiled geometry", () => {
+    const transfer = createOutputTransferFixture({ differentDesktop: true });
+    const destination = transfer.destinations[0];
 
+    if (!destination) {
+      throw new Error("missing floating output destination window");
+    }
+
+    expect(transfer.controller.toggleFloating()).toBe(true);
+    const sourceFrame = { height: 260, width: 360, x: 120, y: 90 };
+    const targetFrame = { height: 280, width: 420, x: 1160, y: 110 };
+    transfer.moved.setFrameGeometry(sourceFrame);
+    const sourceLayout = runtimeLayout(transfer.controller).snapshot(
+      outputId(transfer.sourceOutput.name),
+      desktopId(transfer.sourceDesktop.id),
+    );
+    const targetLayout = runtimeLayout(transfer.controller).snapshot(
+      outputId(transfer.targetOutput.name),
+      desktopId(transfer.targetDesktop.id),
+    );
+    const tiled = [transfer.source, destination];
+    const tiledState = captureTrackedWindowState(tiled);
+    const movedWrites = transfer.moved.writeCount;
+    const desktopWrites = transfer.moved.desktopWriteCount;
+    const activationCount = transfer.fixture.activationCount;
+    const floatingBefore = runtimeFloatingWindows(transfer.controller).get(
+      windowId("moved"),
+    );
+
+    if (!floatingBefore) {
+      throw new Error("missing manual floating output state");
+    }
+
+    transfer.fixture.setOutputTransferBehavior((_window, output, commit) => {
+      commit();
+
+      if (output === transfer.targetOutput) {
+        transfer.moved.setFrameGeometry(targetFrame);
+      }
+    });
+
+    expect(transfer.controller.moveColumnToOutputRight()).toBe(true);
+    expect(transfer.fixture.outputTransferCount).toBe(1);
+    expect(transfer.fixture.desktopSwitchCount).toBe(0);
+    expect(transfer.moved.window.output).toBe(transfer.targetOutput);
+    expect(transfer.moved.window.desktops).toEqual([transfer.targetDesktop]);
+    expect(transfer.moved.window.frameGeometry).toEqual(targetFrame);
+    expect(transfer.moved.writeCount).toBe(movedWrites);
+    expect(transfer.moved.desktopWriteCount - desktopWrites).toBeGreaterThan(0);
+    expect(
+      transfer.moved.desktopWriteCount - desktopWrites,
+    ).toBeLessThanOrEqual(2);
+    expect(
+      transfer.fixture.activationCount - activationCount,
+    ).toBeLessThanOrEqual(1);
+    expect(transfer.fixture.workspace.activeWindow).toBe(transfer.moved.window);
+    expectTrackedWindowState(tiled, tiledState);
+    expect(
+      runtimeLayout(transfer.controller).snapshot(
+        outputId(transfer.sourceOutput.name),
+        desktopId(transfer.sourceDesktop.id),
+      ),
+    ).toEqual(sourceLayout);
+    expect(
+      runtimeLayout(transfer.controller).snapshot(
+        outputId(transfer.targetOutput.name),
+        desktopId(transfer.targetDesktop.id),
+      ),
+    ).toEqual(targetLayout);
+
+    const floatingAfter = runtimeFloatingWindows(transfer.controller).get(
+      windowId("moved"),
+    );
+
+    expect(floatingAfter).toBeDefined();
+    expect(floatingAfter?.currentContextKey).toBe(
+      `${transfer.targetOutput.name}\0${transfer.targetDesktop.id}`,
+    );
+    expect(floatingAfter?.expectedFrame).toEqual(targetFrame);
+    expect(floatingAfter?.restoreBaseline.frame).toEqual(targetFrame);
+    expect(floatingAfter?.restoreBaseline).not.toBe(
+      floatingBefore.restoreBaseline,
+    );
+    expect(floatingAfter?.placement).toBe(floatingBefore.placement);
+    expect(floatingAfter?.sourceContextKey).toBe(
+      floatingBefore.sourceContextKey,
+    );
+  });
+
+  it("moves a relation-free automatic floating output without ownership writes", () => {
+    const sourceOutput = createPositionedOutput("SOURCE", 0, 0);
+    const targetOutput = createPositionedOutput("TARGET", 1000, 0);
+    const desktop = { id: "desktop-1" };
+    const source = createTrackedWindow("source", sourceOutput, desktop);
+    const destination = createTrackedWindow(
+      "destination",
+      targetOutput,
+      desktop,
+    );
+    const automatic = createTrackedWindow("automatic", sourceOutput, desktop, {
+      dialog: true,
+      frameGeometry: { height: 240, width: 320, x: 130, y: 100 },
+      normalWindow: false,
+    });
+    const fixture = createWorkspace(
+      sourceOutput,
+      desktop,
+      [sourceOutput, targetOutput],
+      [desktop],
+      [source.window, destination.window, automatic.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    expect(controller.start()).toBe(true);
+    fixture.workspace.activeWindow = automatic.window;
+    expect(controller.automaticFloatingCount).toBe(1);
+    const sourceLayout = runtimeLayout(controller).snapshot(
+      outputId(sourceOutput.name),
+      desktopId(desktop.id),
+    );
+    const targetLayout = runtimeLayout(controller).snapshot(
+      outputId(targetOutput.name),
+      desktopId(desktop.id),
+    );
+    const tiledState = captureTrackedWindowState([source, destination]);
+    const automaticFrame = { ...automatic.window.frameGeometry };
+    const automaticWrites = automatic.writeCount;
+    const desktopWrites = automatic.desktopWriteCount;
+    const activationCount = fixture.activationCount;
+
+    expect(controller.moveColumnToOutputRight()).toBe(true);
+    expect(fixture.outputTransferCount).toBe(1);
+    expect(fixture.desktopSwitchCount).toBe(0);
+    expect(automatic.window.output).toBe(targetOutput);
+    expect(automatic.window.desktops).toEqual([desktop]);
+    expect(automatic.window.frameGeometry).toEqual(automaticFrame);
+    expect(automatic.writeCount).toBe(automaticWrites);
+    expect(automatic.desktopWriteCount).toBe(desktopWrites);
+    expect(fixture.activationCount - activationCount).toBeLessThanOrEqual(1);
+    expect(fixture.workspace.activeWindow).toBe(automatic.window);
+    expect(controller.automaticFloatingCount).toBe(1);
+    expect(controller.floatingCount).toBe(0);
+    expect(controller.managedCount).toBe(2);
+    expectTrackedWindowState([source, destination], tiledState);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(sourceOutput.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(sourceLayout);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(targetOutput.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(targetLayout);
+  });
+
+  it("keeps a blocked floating output transfer from falling through", () => {
+    const sourceOutput = createPositionedOutput("SOURCE", 0, 0);
+    const targetOutput = createPositionedOutput("TARGET", 1000, 0);
+    const desktop = { id: "desktop-1" };
+    const source = createTrackedWindow("source", sourceOutput, desktop);
+    const parent = createTrackedWindow("parent", sourceOutput, desktop);
+    const destination = createTrackedWindow(
+      "destination",
+      targetOutput,
+      desktop,
+    );
+    const child = createTrackedWindow("child", sourceOutput, desktop, {
+      normalWindow: false,
+      transient: true,
+      transientFor: parent.window,
+    });
+    const windows = [source, parent, destination, child];
+    const fixture = createWorkspace(
+      sourceOutput,
+      desktop,
+      [sourceOutput, targetOutput],
+      [desktop],
+      windows.map(({ window }) => window),
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    expect(controller.start()).toBe(true);
+    fixture.workspace.activeWindow = parent.window;
+    expect(controller.toggleFloating()).toBe(true);
+    const sourceLayout = runtimeLayout(controller).snapshot(
+      outputId(sourceOutput.name),
+      desktopId(desktop.id),
+    );
+    const targetLayout = runtimeLayout(controller).snapshot(
+      outputId(targetOutput.name),
+      desktopId(desktop.id),
+    );
+    const state = captureTrackedWindowState(windows);
+    const desktopWrites = windows.map(
+      ({ desktopWriteCount }) => desktopWriteCount,
+    );
+    const activationCount = fixture.activationCount;
+
+    expect(controller.moveColumnToOutputRight()).toBe(false);
+    expect(fixture.outputTransferCount).toBe(0);
+    expect(fixture.desktopSwitchCount).toBe(0);
+    expect(windows.map(({ desktopWriteCount }) => desktopWriteCount)).toEqual(
+      desktopWrites,
+    );
+    expect(fixture.activationCount).toBe(activationCount);
+    expect(fixture.workspace.activeWindow).toBe(parent.window);
+    expectTrackedWindowState(windows, state);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(sourceOutput.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(sourceLayout);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(targetOutput.name),
+        desktopId(desktop.id),
+      ),
+    ).toEqual(targetLayout);
+  });
+
+  it("rolls back a rejected floating output without frame compensation", () => {
+    const transfer = createOutputTransferFixture({ differentDesktop: true });
+    const destination = transfer.destinations[0];
+
+    if (!destination) {
+      throw new Error("missing floating output rollback destination window");
+    }
+
+    expect(transfer.controller.toggleFloating()).toBe(true);
+    const initialFrame = { height: 260, width: 360, x: 120, y: 90 };
+    const targetMechanismFrame = {
+      height: 280,
+      width: 420,
+      x: 1160,
+      y: 110,
+    };
+    const sourceMechanismFrame = {
+      height: 250,
+      width: 350,
+      x: 80,
+      y: 70,
+    };
+    transfer.moved.setFrameGeometry(initialFrame);
+    const sourceLayout = runtimeLayout(transfer.controller).snapshot(
+      outputId(transfer.sourceOutput.name),
+      desktopId(transfer.sourceDesktop.id),
+    );
+    const targetLayout = runtimeLayout(transfer.controller).snapshot(
+      outputId(transfer.targetOutput.name),
+      desktopId(transfer.targetDesktop.id),
+    );
+    const tiled = [transfer.source, destination];
+    const tiledState = captureTrackedWindowState(tiled);
+    const movedWrites = transfer.moved.writeCount;
+    const desktopWrites = transfer.moved.desktopWriteCount;
+    const activationCount = transfer.fixture.activationCount;
+    const floatingBefore = runtimeFloatingWindows(transfer.controller).get(
+      windowId("moved"),
+    );
+
+    if (!floatingBefore) {
+      throw new Error("missing manual floating output rollback state");
+    }
+
+    transfer.fixture.setOutputTransferBehavior((_window, output, commit) => {
+      commit();
+
+      if (output === transfer.targetOutput) {
+        transfer.moved.setFrameGeometry(targetMechanismFrame);
+        throw new Error("floating output assignment rejected");
+      }
+
+      transfer.moved.setFrameGeometry(sourceMechanismFrame);
+    });
+
+    const warning = vi
+      .spyOn(console, "warn")
+      .mockImplementation(() => undefined);
+    const moved = transfer.controller.moveColumnToOutputRight();
+    warning.mockRestore();
+
+    expect(moved).toBe(false);
+    expect(transfer.fixture.outputTransferCount).toBe(2);
+    expect(transfer.fixture.desktopSwitchCount).toBe(0);
+    expect(transfer.moved.window.output).toBe(transfer.sourceOutput);
+    expect(transfer.moved.window.desktops).toEqual([transfer.sourceDesktop]);
+    expect(transfer.moved.window.frameGeometry).toEqual(sourceMechanismFrame);
+    expect(transfer.moved.writeCount).toBe(movedWrites);
+    expect(transfer.moved.desktopWriteCount - desktopWrites).toBeGreaterThan(0);
+    expect(
+      transfer.moved.desktopWriteCount - desktopWrites,
+    ).toBeLessThanOrEqual(3);
+    expect(
+      transfer.fixture.activationCount - activationCount,
+    ).toBeLessThanOrEqual(1);
+    expect(transfer.fixture.workspace.activeWindow).toBe(transfer.moved.window);
+    expectTrackedWindowState(tiled, tiledState);
+    expect(
+      runtimeLayout(transfer.controller).snapshot(
+        outputId(transfer.sourceOutput.name),
+        desktopId(transfer.sourceDesktop.id),
+      ),
+    ).toEqual(sourceLayout);
+    expect(
+      runtimeLayout(transfer.controller).snapshot(
+        outputId(transfer.targetOutput.name),
+        desktopId(transfer.targetDesktop.id),
+      ),
+    ).toEqual(targetLayout);
+
+    const floatingAfter = runtimeFloatingWindows(transfer.controller).get(
+      windowId("moved"),
+    );
+
+    expect(floatingAfter).toBeDefined();
+    expect(floatingAfter?.currentContextKey).toBe(
+      `${transfer.sourceOutput.name}\0${transfer.sourceDesktop.id}`,
+    );
+    expect(floatingAfter?.expectedFrame).toEqual(sourceMechanismFrame);
+    expect(floatingAfter?.restoreBaseline.frame).toEqual(sourceMechanismFrame);
+    expect(floatingAfter?.restoreBaseline).not.toBe(
+      floatingBefore.restoreBaseline,
+    );
+    expect(floatingAfter?.placement).toBe(floatingBefore.placement);
+    expect(floatingAfter?.sourceContextKey).toBe(
+      floatingBefore.sourceContextKey,
+    );
+  });
+
+  it("rejects suspended windows before invoking KWin", () => {
     const suspended = createOutputTransferFixture({
       movedOverrides: { fullScreen: true },
     });
+
     expect(suspended.controller.moveWindowToOutputRight()).toBe(false);
     expect(suspended.fixture.outputTransferCount).toBe(0);
   });

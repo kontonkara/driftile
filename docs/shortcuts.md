@@ -21,7 +21,7 @@ arrow keys are interchangeable unless noted otherwise.
 | Expel the active column's bottom window          | `Meta+.`                                             |
 | Move active column to next or previous desktop   | `Meta+Ctrl+U/I` or `Meta+Ctrl+Page Down/Page Up`     |
 | Move active column to desktop 1 through 9        | `Meta+Ctrl+1..9`                                     |
-| Move active column to another output             | `Meta+Ctrl+Shift+H/J/K/L` or `Meta+Ctrl+Shift+Arrow` |
+| Move active column or floating window to output  | `Meta+Ctrl+Shift+H/J/K/L` or `Meta+Ctrl+Shift+Arrow` |
 | Toggle floating                                  | `Meta+V`                                             |
 | Switch focus between tiled and floating layers   | `Meta+Shift+V`                                       |
 | Toggle stacked or tabbed column presentation     | `Meta+W`                                             |
@@ -169,6 +169,12 @@ window state unchanged.
 When the floating layer is active, desktop transfer shortcuts move only the
 active floating window and preserve its frame. Modal and transient families
 are left in place because KWin moves those relationships as a group.
+
+Output transfer shortcuts are contextual in the same way. They move only one
+relation-free active floating window to the deterministic adjacent output and
+adopt that output's selected desktop without switching desktops. KWin chooses
+the destination frame; Driftile does not write geometry or either tiled layout.
+Blocked floating targets do not fall through to whole-column transfer.
 
 Numbered desktop actions use one-based positions. A number beyond the current
 desktop count selects the shared trailing empty desktop; moving a column there

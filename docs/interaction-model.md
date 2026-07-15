@@ -78,7 +78,7 @@ setting, shortcut, persistence, or KWin state.
 | Advanced column view | Fill available width and center all fully visible columns                                         | Available |
 | Window height        | Adjust one window by 10%; reset to automatic; cycle `1/3`, `1/2`, and `2/3` presets               | Available |
 | Virtual desktops     | Focus adjacent or numbered desktops; reorder when KWin supports it; transfer a column or window   | Available |
-| Outputs              | Focus an adjacent output and transfer the whole active column                                     | Available |
+| Outputs              | Focus an adjacent output and transfer the active column or floating window                        | Available |
 | Fullscreen           | Extract a regular stack member, then toggle native fullscreen through KWin                        | Available |
 | Native maximize      | Extract a regular stack member, then toggle it to work-area edges through KWin                    | Available |
 | Minimize focus       | Preserve tiled slots and floating frames; skip minimized windows without wrapping                 | Available |
@@ -92,7 +92,13 @@ setting, shortcut, persistence, or KWin state.
 
 Single-window transfers will remain available as secondary, unbound actions.
 Default desktop and output transfer shortcuts must move the whole active column.
-An active floating layer changes desktop transfer to the active window only.
+An active floating layer changes either transfer to the active window only.
+
+Floating output transfer selects the same deterministic adjacent output as the
+tiled command and adopts that output's selected desktop without switching any
+desktop. It accepts only one relation-free manual or automatic floating window.
+KWin owns the resulting frame; Driftile changes no tiled layout or frame
+geometry. Blocked targets fail closed instead of entering the tiled path.
 
 The existing center-column action is contextual. With an active manually
 floating window, it centers each non-oversized dimension at the exact logical

@@ -473,7 +473,7 @@ inspected safely within the codec bound.
   with captured rollback frames, release after 20 exact rollback samples, and
   defer ordinary recovery when rollback is not confirmed within 40 probes.
 - Transfer either the active column or one secondary window between existing desktops through an immutable two-context preview, then commit only after KWin accepts every desktop mechanism, focus, and destination geometry.
-- Transfer either the active column or one secondary window between outputs through the same preview, then commit only after KWin accepts every output and desktop mechanism plus both visible layouts.
+- Transfer either the active tiled column or one secondary tiled window between outputs through the same preview, then commit only after KWin accepts every output and desktop mechanism plus both visible layouts. Route an active floating layer through a separate single-window mechanism transaction that never mutates layout or frame geometry.
 - Preserve whole-column member order and width, apply the active member last, and restore all owned mechanisms and frames if any batch step fails.
 - Apply floating transitions from immutable previews, commit ownership only after every geometry request succeeds, and defer later context writes until asynchronous frames settle.
 - Switch focus between tiled and floating layers by resolving one deterministic target in each layer. Minimized slots are skipped, but a selected target with any other suspension or geometry-authority blocker fails closed instead of falling through. A tiled target in another column is revealed transactionally before KWin receives focus; ordinary rejection restores the exact model and geometry, while topology supersession uses normal deferred recovery.
@@ -488,7 +488,7 @@ inspected safely within the codec bound.
   height step and one constraint-clamped, physically aligned frame request; a
   tiled target keeps the stack-reflow path. Reset and preset-height actions
   remain tiled-only.
-- Leave dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows outside layout ownership. Commands that require layout ownership are no-ops when one is active; desktop transfer may move one relation-free floating window.
+- Leave dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows outside layout ownership. Commands that require layout ownership are no-ops when one is active; desktop or output transfer may move one relation-free floating window.
 - If a managed window gains an automatic-floating role, remove its slot without writing a stale restore frame or disturbing unrelated order, widths, or viewport state. Re-admit it through normal admission after the role clears.
 - Allow horizontal overflow and viewport scrolling when KWin reports one output.
 - Queue a candidate window unmanaged if it would introduce overflow with multiple outputs, then retry it when that context gains capacity.
@@ -622,6 +622,9 @@ inspected safely within the codec bound.
 - Verify whole-column and secondary directional transfers, retained minimized source peers with zero desktop, output, and geometry writes, fail-closed minimized windows outside that source column, no-wrap boundaries, per-output desktop selection, focus preservation, cancellation races, and exact two-context compensation.
 - Verify numbered desktop selection and whole-column transfer, tail clamping, same-target no-ops, and shared-tail renewal.
 - Verify manual and automatic floating desktop transfer, exact frame preservation, related-window guards, tiled-state isolation, and compensation.
+- Verify manual and automatic floating output transfer, deterministic routing,
+  destination-desktop adoption, KWin-owned frames, related-window guards,
+  bounded mechanism compensation, and zero tiled-layout or frame writes.
 - Verify bounded application-borderless exclusion decoding, canonical sorting,
   exact case-sensitive lookup without fallbacks, missing and empty identities,
   all eligible window roles, global-disable dominance, policy reassertion, live

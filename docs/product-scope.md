@@ -63,6 +63,8 @@ The ownership rule is strict:
 - One shared trailing empty virtual desktop, with output-local selection where supported and conservative creation and removal.
 - Guarded one-step reordering of the currently selected desktop when the KWin scripting backend exposes it.
 - Single-window floating desktop transfer with exact frame and tiled-layout preservation.
+- Single-window floating output transfer with KWin-owned placement and
+  tiled-layout preservation.
 - Event-driven, incremental reconciliation; only visible context geometry and non-minimized tracked-window hard constraints are checked periodically, while a settled structural output change permits one bounded workspace resynchronization.
 
 ## 1.6 core slice
@@ -283,6 +285,22 @@ The ownership rule is strict:
   activation snapshot.
 - No other behavior belongs to the frozen 1.24.0 scope.
 
+## 1.25 floating output slice
+
+- Existing directional output-transfer actions move only the active window
+  when the floating layer is active. No action, binding, setting, or schema is
+  added.
+- The target must be one relation-free manual or automatic floating window.
+  Modal, transient, native-state, minimized, interactive, settling, or stale
+  targets fail closed without entering the tiled transfer path.
+- The command chooses the existing deterministic adjacent output, adopts its
+  selected desktop, and never switches an output's desktop.
+- KWin owns final frame placement. Driftile writes no frame geometry or tiled
+  layout during success or compensation; manual ownership records the accepted
+  destination frame, while automatic ownership remains automatic.
+- Compensation is limited to transaction-owned output, membership, and focus
+  changes. External divergence stops compensation and enters normal recovery.
+
 ## Beyond v1
 
 - Optional visual transitions.
@@ -368,7 +386,7 @@ Driftile must integrate with, not duplicate:
 - A secondary single-window desktop or output transfer may extract the visible active member while settled minimized passive members in the same source column remain untouched. Those retained members keep their logical slots, height state, minimized state, and frames, and receive no desktop, output, or geometry writes. Minimized windows elsewhere in the source or target context and other undocumented hidden-member edits remain fail-closed.
 - Default desktop transfer follows the active tiled column without wrapping, preserving its members, order, width, and active member. On the floating layer, it transfers only the active relation-free window. The secondary action transfers only one active window.
 - Numbered desktop actions are one-based and clamp to the shared trailing empty desktop when their target exceeds the current global desktop count.
-- Default output transfer selects a deterministic adjacent output without wrapping, preserves the whole active column, and adopts the destination output's visible desktop. The secondary action transfers only the active tiled window.
+- Default output transfer selects a deterministic adjacent output without wrapping, preserves the whole active tiled column, and adopts the destination output's visible desktop. On the floating layer, it transfers only the active relation-free window. The secondary action transfers only the active tiled window.
 - Output transfer never changes an output's current desktop; moving members adopt the destination output's visible desktop when needed.
 - A whole-column transfer commits only after every KWin mechanism and both context layouts succeed; partial work is compensated exactly.
 - Desktop switching follows KWin's global or per-output virtual-desktop mode while layout ownership remains output-local.

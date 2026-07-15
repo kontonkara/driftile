@@ -5793,10 +5793,14 @@ verify_multi_output_output_transfer() {
   local right_first_title=$4
   local right_second_title=$5
   local destination_title="driftile-multi-output-${protocol}-right-output-destination"
+  local destination_tiled_frame
   local destination_pid
+  local left_tiled_frame
   local left_first_id
   local minimized_transfer_frame
   local retained_source_frame
+  local right_first_tiled_frame
+  local right_second_tiled_frame
 
   wait_for_shortcut "driftile_move_window_to_output_left" || \
     fail "KGlobalAccel did not register the multi-output move-to-output-left shortcut"
@@ -5850,6 +5854,64 @@ verify_multi_output_output_transfer() {
     fail "KWin could not focus the left $protocol stack member before output transfer"
   wait_for_active "$left_second_title" || \
     fail "KWin did not focus the left $protocol stack member before output transfer"
+
+  if [[ "$protocol" == wayland ]]; then
+    invoke_shortcut "driftile_toggle_floating" || \
+      fail "KGlobalAccel could not prepare the relation-free multi-output $protocol floating transfer"
+    capture_stable_geometry "$left_second_title" >/dev/null || \
+      fail "the relation-free multi-output $protocol floating window did not stabilize"
+    left_tiled_frame=$(capture_stable_geometry "$left_first_title") || \
+      fail "the retained left $protocol tiled frame did not stabilize"
+    destination_tiled_frame=$(capture_stable_geometry "$destination_title") || \
+      fail "the destination $protocol tiled frame did not stabilize"
+    right_first_tiled_frame=$(capture_stable_geometry "$right_first_title") || \
+      fail "the first hidden right $protocol tiled frame did not stabilize"
+    right_second_tiled_frame=$(capture_stable_geometry "$right_second_title") || \
+      fail "the second hidden right $protocol tiled frame did not stabilize"
+
+    invoke_shortcut "driftile_move_column_to_output_right" || \
+      fail "KGlobalAccel could not move the relation-free floating $protocol window to the right output"
+    capture_stable_geometry "$left_second_title" >/dev/null || \
+      fail "KWin did not settle the relation-free floating $protocol window on the right output"
+    window_is_on_output_side "$left_second_title" right || \
+      fail "KWin did not move the relation-free floating $protocol window to the right output"
+    wait_for_window_desktop "$left_second_title" "$secondary_desktop_id" || \
+      fail "Driftile did not adopt the selected right-output $protocol desktop for the floating window"
+    wait_for_active "$left_second_title" || \
+      fail "Driftile changed $protocol focus during the floating output transfer"
+    wait_for_geometries \
+      "$left_first_title" "$left_tiled_frame" \
+      "$destination_title" "$destination_tiled_frame" \
+      "$right_first_title" "$right_first_tiled_frame" \
+      "$right_second_title" "$right_second_tiled_frame" || \
+      fail "Driftile changed tiled $protocol geometry during the floating output transfer: $(describe_layout "$left_first_title" "$left_second_title" "$destination_title" "$right_first_title" "$right_second_title")"
+    invoke_shortcut "driftile_move_column_to_output_left" || \
+      fail "KGlobalAccel could not return the relation-free floating $protocol window to the left output"
+    capture_stable_geometry "$left_second_title" >/dev/null || \
+      fail "KWin did not settle the returning relation-free floating $protocol window"
+    window_is_on_output_side "$left_second_title" left || \
+      fail "KWin did not return the relation-free floating $protocol window to the left output"
+    wait_for_window_desktop "$left_second_title" "$primary_desktop_id" || \
+      fail "Driftile did not restore the selected left-output $protocol desktop for the floating window"
+    wait_for_active "$left_second_title" || \
+      fail "Driftile changed $protocol focus while returning the floating window"
+    wait_for_geometries \
+      "$left_first_title" "$left_tiled_frame" \
+      "$destination_title" "$destination_tiled_frame" \
+      "$right_first_title" "$right_first_tiled_frame" \
+      "$right_second_title" "$right_second_tiled_frame" || \
+      fail "Driftile changed tiled $protocol geometry while returning the floating window: $(describe_layout "$left_first_title" "$left_second_title" "$destination_title" "$right_first_title" "$right_second_title")"
+    invoke_shortcut "driftile_toggle_floating" || \
+      fail "KGlobalAccel could not retile the returned multi-output $protocol window"
+    wait_for_geometries \
+      "$left_first_title" "16,16,490,336" \
+      "$left_second_title" "16,368,490,336" \
+      "$destination_title" "1296,16,616,688" || \
+      fail "Driftile did not restore the multi-output $protocol fixture after the floating output round trip: $(describe_layout "$left_first_title" "$left_second_title" "$destination_title")"
+    wait_for_active "$left_second_title" || \
+      fail "Driftile changed $protocol focus while restoring the floating output fixture"
+  fi
+
   left_first_id=$(window_id "$left_first_title") || \
     fail "KWin did not expose the passive left $protocol stack member before output transfer"
   set_external_window_minimized "$left_first_title" true || \

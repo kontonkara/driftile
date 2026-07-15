@@ -8,6 +8,10 @@ Stable 1.24.0 adds one best-effort passive Plasma OSD after a current overview
 activation attempt is rejected, without adding input, layout, settings,
 shortcuts, or persistence.
 
+The frozen 1.25.0 development slice makes existing output-transfer actions
+contextual for one active relation-free floating window. KWin remains the sole
+owner of output movement and final frame placement.
+
 ## Foundation (delivered)
 
 - Build and package a declarative KWin script with a TypeScript runtime.
@@ -1020,6 +1024,28 @@ Release criteria (met):
   feature VM claim.
 
 No other feature belongs to 1.24.0.
+
+## 1.25.0 (in development)
+
+The existing directional output-transfer actions move one active manual or
+automatic floating window when the floating layer is active. The command uses
+the existing deterministic adjacent-output routing, adopts the destination
+output's selected desktop, and never switches a desktop.
+
+KWin owns the accepted destination frame. Driftile writes no floating frame or
+tiled layout during success or bounded compensation. Modal, transient,
+native-state, minimized, interactive, settling, stale, or otherwise unsafe
+targets fail closed without entering the tiled transfer path.
+
+Release criteria:
+
+- Focused runtime coverage confirms manual and automatic ownership, target
+  desktop adoption, unchanged tiled contexts, zero frame writes, relationship
+  guards, missing-API rejection, and bounded compensation.
+- Formatting, type, lint, focused unit, package, hidden multi-output checkpoint,
+  and exact-SHA CI pass without a new application or backend matrix.
+
+No other feature belongs to 1.25.0.
 
 ## Post-v1
 
