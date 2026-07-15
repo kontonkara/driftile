@@ -132,6 +132,7 @@ function enableInstructions() {
     "Driftile is installed and disabled.",
     "Enable it and claim its shortcut profile with:",
     `  kwriteconfig6 --file kwinrc --group Plugins --key ${pluginKey} --type bool true`,
+    "  busctl --user call org.kde.KWin /KWin org.kde.KWin reconfigure",
     "  busctl --user call org.kde.KWin /Scripting org.kde.kwin.Scripting start",
     "  npm run shortcuts:claim",
   ].join("\n");
