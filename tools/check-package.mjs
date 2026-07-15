@@ -4,6 +4,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { runtimeContentHash } from "./build.mjs";
 import { packageProject } from "./package.mjs";
 import { releaseVersion } from "./release-version.mjs";
 
@@ -15,21 +16,23 @@ const checksumManifestPath = resolve(outputDirectory, "SHA256SUMS");
 const pluginId = "io.github.kontonkara.driftile";
 const overviewPluginId = "io.github.kontonkara.driftile.overview";
 const expectedPackageEntries = [
-  "contents/code/main.js",
   "contents/config/main.xml",
-  "contents/ui/LayoutStateStore.qml",
-  "contents/ui/TouchpadNavigation.qml",
   "contents/ui/config.ui",
-  "contents/ui/main.qml",
   "metadata.json",
 ];
-const expectedOverviewPackageEntries = [
-  "contents/code/main.js",
-  "contents/ui/DesktopCard.qml",
-  "contents/ui/LayoutStateReader.qml",
-  "contents/ui/OverviewScene.qml",
-  "contents/ui/main.qml",
-  "metadata.json",
+const expectedRuntimeEntries = [
+  "code/main.js",
+  "ui/LayoutStateStore.qml",
+  "ui/TouchpadNavigation.qml",
+  "ui/main.qml",
+];
+const expectedOverviewPackageEntries = ["metadata.json"];
+const expectedOverviewRuntimeEntries = [
+  "code/main.js",
+  "ui/DesktopCard.qml",
+  "ui/LayoutStateReader.qml",
+  "ui/OverviewScene.qml",
+  "ui/main.qml",
 ];
 const packageArtifact = resolve(
   outputDirectory,
@@ -84,13 +87,7 @@ if (
   throw new Error("packaged LICENSE does not match the repository LICENSE");
 }
 
-verifyPackageEntries(packageArtifact, expectedPackageEntries, "KWin script");
-verifyPackageEntries(
-  overviewPackageArtifact,
-  expectedOverviewPackageEntries,
-  "overview effect",
-);
-await verifyPackageMetadata(
+const packageRuntimeHash = await verifyPackageMetadata(
   packageArtifact,
   resolve(rootDirectory, "packaging/kwin-script/metadata.json"),
   {
@@ -98,7 +95,7 @@ await verifyPackageMetadata(
     pluginId,
   },
 );
-await verifyPackageMetadata(
+const overviewRuntimeHash = await verifyPackageMetadata(
   overviewPackageArtifact,
   resolve(rootDirectory, "packaging/kwin-effect/metadata.json"),
   {
@@ -106,6 +103,30 @@ await verifyPackageMetadata(
     packageStructure: "KWin/Effect",
     pluginId: overviewPluginId,
   },
+);
+verifyPackageEntries(
+  packageArtifact,
+  withRuntimeEntries(
+    expectedPackageEntries,
+    expectedRuntimeEntries,
+    packageRuntimeHash,
+  ),
+  "KWin script",
+);
+verifyPackageEntries(
+  overviewPackageArtifact,
+  withRuntimeEntries(
+    expectedOverviewPackageEntries,
+    expectedOverviewRuntimeEntries,
+    overviewRuntimeHash,
+  ),
+  "overview effect",
+);
+verifyRuntimeHash(packageArtifact, expectedRuntimeEntries, packageRuntimeHash);
+verifyRuntimeHash(
+  overviewPackageArtifact,
+  expectedOverviewRuntimeEntries,
+  overviewRuntimeHash,
 );
 
 const packagedReleaseArtifacts = (
@@ -146,6 +167,15 @@ function compareFilenames(left, right) {
   return leftName > rightName ? 1 : 0;
 }
 
+function withRuntimeEntries(entries, runtimeEntries, runtimeHash) {
+  return [
+    ...entries,
+    ...runtimeEntries.map(
+      (entry) => `contents/runtime/${runtimeHash}/${entry}`,
+    ),
+  ].sort();
+}
+
 function verifyPackageEntries(artifact, expectedEntries, packageName) {
   const entries = runUnzip(["-Z1", artifact])
     .trimEnd()
@@ -166,19 +196,42 @@ async function verifyPackageMetadata(
   { forbidConfigModule = false, packageStructure, pluginId: expectedPluginId },
 ) {
   const archivedMetadata = runUnzip(["-p", artifact, "metadata.json"]);
-
-  if (archivedMetadata !== (await readFile(sourceMetadataPath, "utf8"))) {
-    throw new Error("packaged metadata does not match its repository source");
-  }
-
   let metadata;
+  let sourceMetadata;
 
   try {
     metadata = JSON.parse(archivedMetadata);
+    sourceMetadata = JSON.parse(await readFile(sourceMetadataPath, "utf8"));
   } catch (error) {
     throw new Error("KWin package metadata is not valid JSON", {
       cause: error,
     });
+  }
+
+  const mainScript = metadata["X-Plasma-MainScript"];
+  const runtimeMatch =
+    typeof mainScript === "string"
+      ? /^runtime\/([0-9a-f]{64})\/ui\/main\.qml$/u.exec(mainScript)
+      : null;
+
+  if (runtimeMatch === null) {
+    throw new Error("KWin package metadata has an invalid runtime entrypoint");
+  }
+
+  if (sourceMetadata["X-Plasma-MainScript"] !== "ui/main.qml") {
+    throw new Error("source metadata must use the canonical main entrypoint");
+  }
+
+  const expectedMetadata = {
+    ...sourceMetadata,
+    "X-Plasma-MainScript": mainScript,
+  };
+  const expectedMetadataText = `${JSON.stringify(expectedMetadata, null, 2)}\n`;
+
+  if (archivedMetadata !== expectedMetadataText) {
+    throw new Error(
+      "packaged metadata differs from its source beyond the runtime entrypoint",
+    );
   }
 
   if (metadata["KPackageStructure"] !== packageStructure) {
@@ -204,6 +257,26 @@ async function verifyPackageMetadata(
   if (forbidConfigModule && "X-KDE-ConfigModule" in metadata) {
     throw new Error("overview effect metadata must not expose a config module");
   }
+
+  return runtimeMatch[1];
+}
+
+function verifyRuntimeHash(artifact, runtimeEntries, expectedHash) {
+  const files = runtimeEntries.map((logicalPath) => ({
+    content: runUnzipBytes([
+      "-p",
+      artifact,
+      `contents/runtime/${expectedHash}/${logicalPath}`,
+    ]),
+    logicalPath,
+  }));
+  const actualHash = runtimeContentHash(files);
+
+  if (actualHash !== expectedHash) {
+    throw new Error(
+      `packaged runtime content hash ${actualHash} does not match ${expectedHash}`,
+    );
+  }
 }
 
 function runUnzip(arguments_) {
@@ -219,6 +292,24 @@ function runUnzip(arguments_) {
   if (result.status !== 0) {
     throw new Error(
       `unzip exited with status ${String(result.status)}: ${result.stderr.trim()}`,
+    );
+  }
+
+  return result.stdout;
+}
+
+function runUnzipBytes(arguments_) {
+  const result = spawnSync("unzip", arguments_, {
+    maxBuffer: 16 * 1024 * 1024,
+  });
+
+  if (result.error) {
+    throw result.error;
+  }
+
+  if (result.status !== 0) {
+    throw new Error(
+      `unzip exited with status ${String(result.status)}: ${result.stderr.toString("utf8").trim()}`,
     );
   }
 

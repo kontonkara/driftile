@@ -98,6 +98,9 @@ restore displaced assignments automatically.
 5. Enable Driftile, review its configuration, then claim or assign shortcuts
    for the new version.
 
+Release packages use content-addressed runtime entrypoints, so enabling the
+upgraded package loads changed QML and JavaScript without a manual cache reset.
+
 ## Disable or uninstall
 
 Before disabling Driftile, release a helper-managed shortcut profile. For a

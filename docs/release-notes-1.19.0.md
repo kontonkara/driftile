@@ -40,8 +40,9 @@ verify them with `SHA256SUMS`:
 - Anchors an immediate normal-width successor after an inactive full-width
   predecessor to the work area's left configured gap, independent of display
   resolution.
-- Refreshes KWin during source install and upgrade activation so an in-place
-  upgrade cannot reuse a cached QML bridge.
+- Content-addresses the complete main-script and overview QML and JavaScript
+  runtimes so an in-place upgrade cannot reuse an older compiled KWin
+  component. Source activation still refreshes KWin discovery.
 - Adds `Meta+Q` as the default close-active-window binding, delegated to KWin.
   `Meta+C` remains the contextual centering action.
 
