@@ -103,6 +103,12 @@ desktop. It accepts only one relation-free manual or automatic floating window.
 KWin owns the resulting frame; Driftile changes no tiled layout or frame
 geometry. Blocked targets fail closed instead of entering the tiled path.
 
+Unbound boundary alternatives combine local navigation with output movement.
+They focus or reorder locally first, then cross an available output only at the
+corresponding visible or structural boundary. Manual floating behavior remains
+local. Pending, stale, blocked, or rejected local work never falls through to
+another output.
+
 The existing center-column action is contextual. With an active manually
 floating window, it centers each non-oversized dimension at the exact logical
 midpoint of the assigned output and desktop work area; an oversized dimension

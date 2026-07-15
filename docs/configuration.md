@@ -47,10 +47,11 @@ The effect animates automatic position and size changes without writing window
 geometry. It stays inactive during manual move or resize, fullscreen, overview,
 and other active fullscreen effects.
 
-Launchers, popups, transient dialogs, and other non-movable windows are outside
-the effect. Consecutive KWin geometry updates retarget the active position and
-size transitions from their current visual state, so viewport movement does not
-restart an animation at an intermediate frame.
+Launchers, popups, transient dialogs, frameless shell overlays, and other
+non-movable windows are outside the effect. Consecutive KWin geometry updates
+retarget the active position and size transitions from their current visual
+state, so viewport movement does not restart an animation at an intermediate
+frame.
 
 Home Manager can own the same bounded duration independently of package
 installation. A null value leaves the existing KConfig value untouched:

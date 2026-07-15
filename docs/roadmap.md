@@ -1369,6 +1369,17 @@ to `Meta+Ctrl+Shift+R`; reverse height stays unbound. Action IDs and existing
 KGlobalAccel assignments remain unchanged, while the optional helper follows
 the new default profile.
 
+Eight unbound boundary alternatives combine local focus or movement with the
+adjacent output. Horizontal actions operate on columns and left/right outputs;
+vertical actions operate on windows and above/below outputs. Focus uses visible
+boundaries, movement uses structural boundaries, and manual floating behavior
+stays local. Failed or blocked local work never falls through to another
+output, and existing default bindings remain unchanged.
+
+The optional transition effect also excludes frameless keep-above or
+switcher-skipping shell overlays. Rapid geometry updates continue retargeting
+the active animation instead of restarting it.
+
 ## Post-v1
 
 Add interaction and presentation features outside the frozen v1 scope without

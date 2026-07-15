@@ -90,6 +90,24 @@ them before transferring at the true first or last slot. Manual floating focus
 and movement remain local, and blocked or stale operations never fall through
 to a desktop change.
 
+Eight matching output-boundary actions are unbound by default. Horizontal
+column focus and movement can continue onto the output to the left or right;
+vertical window focus and movement can continue onto the output above or
+below. Focus crosses only at a visible layout boundary, while movement crosses
+only at a structural boundary. Manual floating actions remain local, and an
+unavailable output or blocked operation is a no-op.
+
+The action IDs are:
+
+- `driftile_focus_column_or_output_left`
+- `driftile_focus_column_or_output_right`
+- `driftile_focus_window_up_or_output_up`
+- `driftile_focus_window_down_or_output_down`
+- `driftile_move_column_left_or_to_output_left`
+- `driftile_move_column_right_or_to_output_right`
+- `driftile_move_window_up_or_to_output_up`
+- `driftile_move_window_down_or_to_output_down`
+
 The four preset actions retain the IDs
 `driftile_switch_preset_column_width`,
 `driftile_switch_preset_column_width_back`,
