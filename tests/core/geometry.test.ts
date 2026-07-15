@@ -714,14 +714,20 @@ describe("solveStripGeometry", () => {
         selectedWindowId: windowId("missing"),
       }),
     ).toThrow("column presentation state is invalid");
-    expect(() =>
+    expect(
       solveColumn({
         ...tabbedColumn,
         selectedWindowId: windowId("window-1"),
         windowHeights: [{ kind: "auto", weight: 1 }],
         windowIds: [windowId("window-1")],
-      }),
-    ).toThrow("column presentation state is invalid");
+      }).windows,
+    ).toEqual([
+      {
+        columnId: "column-1",
+        frame: { height: 1048, width: 600, x: 116, y: 66 },
+        windowId: "window-1",
+      },
+    ]);
     expect(() =>
       solveColumn({
         ...tabbedColumn,

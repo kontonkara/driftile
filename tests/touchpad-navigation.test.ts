@@ -48,6 +48,10 @@ class RuntimeControllerDouble {
     return true;
   }
 
+  setApplicationColumnPresentations(): boolean {
+    return true;
+  }
+
   setApplicationColumnWidths(): boolean {
     return true;
   }
@@ -225,6 +229,7 @@ function settings(
 ): Readonly<Record<string, unknown>> {
   return {
     applicationBorderlessExclusions: "",
+    applicationColumnPresentations: "",
     applicationColumnWidths: "",
     applicationFocusCentering: "",
     applicationInitialFloating: "",
@@ -235,6 +240,7 @@ function settings(
     columnWidthStepPercent: 10,
     defaultColumnWidthPercent: 50,
     gap: 16,
+    showTabIndicator: true,
     touchpadNavigation: false,
     windowHeightStepPercent: 10,
     ...overrides,

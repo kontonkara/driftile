@@ -10,6 +10,7 @@ readonly plugin_id="io.github.kontonkara.driftile"
 readonly overview_plugin_id="io.github.kontonkara.driftile.overview"
 readonly overview_shortcut="driftile_toggle_overview"
 readonly overview_shortcut_text="Driftile: Toggle overview"
+readonly overview_default_keys='[[268435535,0,0,0]]'
 readonly plasma_overview_effect_id="overview"
 readonly automatic_floating_probe_plugin_id="io.github.kontonkara.driftile.integration-automatic-floating-probe"
 readonly automatic_floating_probe_arm_shortcut="Driftile Integration Automatic Floating Arm"
@@ -877,8 +878,8 @@ verify_overview_missing_state() {
     fail "KGlobalAccel did not register the early overview action"
   overview_keys=$(shortcut_keys "$overview_shortcut" "$overview_shortcut_text") || \
     fail "KGlobalAccel did not expose the early overview assignment"
-  [[ "$overview_keys" == "[]" ]] || \
-    fail "the early overview action was unexpectedly bound: $overview_keys"
+  [[ "$overview_keys" == "$overview_default_keys" ]] || \
+    fail "the early overview action did not expose Meta+O: $overview_keys"
   invoke_shortcut "$overview_shortcut" || \
     fail "KGlobalAccel could not invoke the missing-state overview action"
   sleep 0.5
@@ -892,8 +893,8 @@ verify_overview_missing_state() {
     fail "KWin could not unload the overview after its missing-state check"
   overview_keys=$(shortcut_keys "$overview_shortcut" "$overview_shortcut_text") || \
     fail "KGlobalAccel did not preserve the inert overview assignment"
-  [[ "$overview_keys" == "[]" ]] || \
-    fail "the unloaded early overview action gained an assignment: $overview_keys"
+  [[ "$overview_keys" == "$overview_default_keys" ]] || \
+    fail "the unloaded early overview action did not retain Meta+O: $overview_keys"
   invoke_shortcut "$overview_shortcut" || \
     fail "KGlobalAccel could not invoke the inert early overview action"
   sleep 0.2
@@ -950,8 +951,8 @@ verify_overview_effect_lifecycle() {
     fail "the Driftile overview was loaded before the $protocol lifecycle check"
   overview_keys=$(shortcut_keys "$overview_shortcut" "$overview_shortcut_text") || \
     fail "KGlobalAccel did not expose the inert $protocol overview assignment"
-  [[ "$overview_keys" == "[]" ]] || \
-    fail "the inert $protocol overview action was unexpectedly bound: $overview_keys"
+  [[ "$overview_keys" == "$overview_default_keys" ]] || \
+    fail "the inert $protocol overview action did not retain Meta+O: $overview_keys"
 
   baseline_checkpoint=$(capture_overview_checkpoint "$@") || \
     fail "the $protocol overview checkpoint did not stabilize"
@@ -969,8 +970,8 @@ verify_overview_effect_lifecycle() {
     fail "KGlobalAccel did not register the $protocol overview action"
   overview_keys=$(shortcut_keys "$overview_shortcut" "$overview_shortcut_text") || \
     fail "KGlobalAccel did not expose the $protocol overview shortcut assignment"
-  [[ "$overview_keys" == "[]" ]] || \
-    fail "the $protocol overview action was unexpectedly bound: $overview_keys"
+  [[ "$overview_keys" == "$overview_default_keys" ]] || \
+    fail "the $protocol overview action did not expose Meta+O: $overview_keys"
   after_checkpoint=$(capture_overview_checkpoint "$@") || \
     fail "the $protocol overview checkpoint did not survive the effect load"
   [[ "$after_checkpoint" == "$baseline_checkpoint" ]] || \
@@ -1024,8 +1025,8 @@ verify_overview_effect_lifecycle() {
     fail "unloading the $protocol overview removed Driftile actions"
   overview_keys=$(shortcut_keys "$overview_shortcut" "$overview_shortcut_text") || \
     fail "KGlobalAccel did not preserve the inert $protocol overview assignment"
-  [[ "$overview_keys" == "[]" ]] || \
-    fail "the unloaded $protocol overview action gained an assignment: $overview_keys"
+  [[ "$overview_keys" == "$overview_default_keys" ]] || \
+    fail "the unloaded $protocol overview action did not retain Meta+O: $overview_keys"
   invoke_shortcut "$overview_shortcut" || \
     fail "KGlobalAccel could not invoke the inert $protocol overview action"
   sleep 0.2
@@ -1156,8 +1157,8 @@ verify_overview_desktop_selection() {
     fail "KGlobalAccel did not register the $protocol overview desktop-selection action"
   overview_keys=$(shortcut_keys "$overview_shortcut" "$overview_shortcut_text") || \
     fail "KGlobalAccel did not expose the $protocol overview desktop-selection assignment"
-  [[ "$overview_keys" == "[]" ]] || \
-    fail "the $protocol overview desktop-selection action was unexpectedly bound: $overview_keys"
+  [[ "$overview_keys" == "$overview_default_keys" ]] || \
+    fail "the $protocol overview desktop-selection action did not expose Meta+O: $overview_keys"
   after_checkpoint=$(capture_overview_checkpoint "${selection_titles[@]}") || \
     fail "the $protocol overview desktop-selection checkpoint did not survive the effect load"
   [[ "$after_checkpoint" == "$baseline_checkpoint" ]] || \
@@ -1271,8 +1272,8 @@ verify_overview_desktop_selection() {
     fail "unloading the $protocol overview desktop selector unloaded Driftile"
   overview_keys=$(shortcut_keys "$overview_shortcut" "$overview_shortcut_text") || \
     fail "KGlobalAccel did not preserve the inert $protocol overview desktop-selection assignment"
-  [[ "$overview_keys" == "[]" ]] || \
-    fail "the unloaded $protocol overview desktop-selection action gained an assignment: $overview_keys"
+  [[ "$overview_keys" == "$overview_default_keys" ]] || \
+    fail "the unloaded $protocol overview desktop-selection action did not retain Meta+O: $overview_keys"
   invoke_shortcut "$overview_shortcut" || \
     fail "KGlobalAccel could not invoke the inert $protocol overview desktop-selection action"
   sleep 0.2

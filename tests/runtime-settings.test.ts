@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ApplicationBorderlessExclusions } from "../src/application-borderless-exclusions";
+import type { ApplicationColumnPresentations } from "../src/application-column-presentations";
 import type { ApplicationInitialFloating } from "../src/application-initial-floating";
 import type { ApplicationColumnWidthOverrides } from "../src/application-overrides";
 import type { ApplicationFocusCentering } from "../src/application-focus-centering";
@@ -9,6 +10,7 @@ import type { KWinWorkspace } from "../src/platform/kwin/api";
 
 interface DeliveredSettings {
   readonly applicationBorderlessExclusions: readonly string[];
+  readonly applicationColumnPresentations: readonly string[];
   readonly applicationColumnWidths: readonly string[];
   readonly applicationFocusCentering: readonly string[];
   readonly applicationInitialFloating: readonly string[];
@@ -23,11 +25,13 @@ interface DeliveredSettings {
 }
 
 type RuntimeSettingsInput = Record<keyof DeliveredSettings, unknown> & {
+  readonly showTabIndicator: unknown;
   readonly touchpadNavigation: unknown;
 };
 
 interface RuntimeControllerOptions {
   readonly applicationBorderlessExclusions: ApplicationBorderlessExclusions;
+  readonly applicationColumnPresentations: ApplicationColumnPresentations;
   readonly applicationColumnWidths: ApplicationColumnWidthOverrides;
   readonly applicationFocusCentering: ApplicationFocusCentering;
   readonly applicationInitialFloating: ApplicationInitialFloating;
@@ -56,6 +60,8 @@ class RuntimeControllerDouble {
     this.state = {
       applicationBorderlessExclusions:
         options.applicationBorderlessExclusions.canonicalEntries,
+      applicationColumnPresentations:
+        options.applicationColumnPresentations.canonicalEntries,
       applicationColumnWidths: options.applicationColumnWidths.canonicalEntries,
       applicationFocusCentering:
         options.applicationFocusCentering.canonicalEntries,
@@ -91,6 +97,17 @@ class RuntimeControllerDouble {
     this.state = {
       ...this.state,
       applicationColumnWidths: overrides.canonicalEntries,
+    };
+    return true;
+  }
+
+  setApplicationColumnPresentations(
+    presentations: ApplicationColumnPresentations,
+  ): boolean {
+    this.calls.push("applicationColumnPresentations");
+    this.state = {
+      ...this.state,
+      applicationColumnPresentations: presentations.canonicalEntries,
     };
     return true;
   }
@@ -261,6 +278,7 @@ describe("runtime settings delivery", () => {
 
     const next = settings({
       applicationBorderlessExclusions: "org.example.NewBorder",
+      applicationColumnPresentations: "org.example.Editor=tabbed",
       applicationColumnWidths: "org.example.Editor=75",
       applicationFocusCentering: "org.example.Browser",
       applicationInitialFloating: "org.example.NewFloat",
@@ -276,6 +294,7 @@ describe("runtime settings delivery", () => {
     });
     const expected: DeliveredSettings = {
       applicationBorderlessExclusions: ["org.example.NewBorder"],
+      applicationColumnPresentations: ["org.example.Editor=tabbed"],
       applicationColumnWidths: ["org.example.Editor=75"],
       applicationFocusCentering: ["org.example.Browser"],
       applicationInitialFloating: ["org.example.NewFloat"],
@@ -294,6 +313,7 @@ describe("runtime settings delivery", () => {
     expect(controller.calls).toEqual([
       "borderlessWindows",
       "applicationBorderlessExclusions",
+      "applicationColumnPresentations",
       "applicationColumnWidths",
       "applicationFocusCentering",
       "applicationInitialFloating",
@@ -366,6 +386,7 @@ describe("runtime settings delivery", () => {
     ).toBe(true);
     expect(controller.calls).toEqual([
       "applicationBorderlessExclusions",
+      "applicationColumnPresentations",
       "applicationColumnWidths",
       "applicationFocusCentering",
       "applicationInitialFloating",
@@ -397,6 +418,7 @@ function settings(
 ): RuntimeSettingsInput {
   return {
     applicationBorderlessExclusions: "",
+    applicationColumnPresentations: "",
     applicationColumnWidths: "",
     applicationFocusCentering: "",
     applicationInitialFloating: "",
@@ -407,6 +429,7 @@ function settings(
     columnWidthStepPercent: 10,
     defaultColumnWidthPercent: 50,
     gap: 16,
+    showTabIndicator: true,
     touchpadNavigation: false,
     windowHeightStepPercent: 10,
     ...overrides,
@@ -418,6 +441,9 @@ function snapshot(settingsValue: DeliveredSettings): DeliveredSettings {
     ...settingsValue,
     applicationBorderlessExclusions: [
       ...settingsValue.applicationBorderlessExclusions,
+    ],
+    applicationColumnPresentations: [
+      ...settingsValue.applicationColumnPresentations,
     ],
     applicationColumnWidths: [...settingsValue.applicationColumnWidths],
     applicationFocusCentering: [...settingsValue.applicationFocusCentering],
