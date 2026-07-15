@@ -184,12 +184,16 @@ public 1.24.0 packages to matching 1.25.0 packages, exercises real applications,
 and removes both packages. Exact feature SHA `918eeb0` passes CI quality,
 native X11, and Wayland jobs. The slice adds no application or backend matrix.
 
-The 1.26.0 development slice adds one focused runtime case for numbered
+The 1.26.0 release slice adds one focused runtime case for numbered
 single-window extraction, retained source state, source-width inheritance, tail
 clamping, and a same-target no-op. Existing shortcut and QML contracts cover all
 nine unbound action IDs while requiring the default 88-action helper profile to
 remain byte-identical. The established packaged desktop-transfer coverage is
-reused without a new integration, application, backend, or VM scenario.
+reused without a new integration, application, backend, or feature-VM scenario.
+Package, Nix evaluation, and Nix build gates pass. Exact feature SHA `aa17fe3`
+passes CI quality, native X11, and Wayland jobs. A hidden lifecycle VM upgrades
+public 1.25.0 packages to matching 1.26.0 packages, exercises Konsole and KDE
+Calculator, removes both packages, and confirms that KWin remains usable.
 
 In the following unit list, zero writes to floating windows means ambient
 layout work; explicit manual-floating movement, centering, or contextual size

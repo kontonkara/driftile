@@ -1,7 +1,32 @@
 # Migration
 
-The latest stable release is 1.25.0. Use the steps below when changing release
+The latest stable release is 1.26.0. Use the steps below when changing release
 generations, and never combine files from different releases.
+
+## Upgrade from 1.25.0 to 1.26.0
+
+1. Release helper-owned shortcuts with the 1.25.0 helper while it remains
+   available.
+2. Disable Driftile and the optional overview in System Settings.
+3. Upgrade the main package, optional overview, and helper to their matching
+   1.26.0 artifacts, or pin the Nix input to `v1.26.0` and rebuild.
+4. Re-enable Driftile and, if installed, the optional overview.
+
+The release adds nine optional numbered single-window desktop actions. They are
+unbound by default, and the helper-owned 88-action default profile remains
+unchanged. Overview behavior, settings, layouts, and existing assignments remain
+compatible. No data conversion, Plasma session restart, KConfig edit, setting,
+default binding, or persistence-schema migration is required.
+
+## Roll back from 1.26.0 to 1.25.0
+
+Release shortcuts with the 1.26.0 helper, disable Driftile and the optional
+overview, then restore their matching verified 1.25.0 packages and helper. For
+NixOS or Home Manager, restore the input to `v1.25.0` and rebuild each owning
+generation. Re-enable the installed packages and restore the 1.25.0 shortcut
+profile. Existing settings and layout state remain compatible. Remove any
+manually assigned 1.26-only action before rollback if its inert KGlobalAccel
+record is not wanted.
 
 ## Upgrade from 1.24.0 to 1.25.0
 

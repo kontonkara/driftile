@@ -1,15 +1,11 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.25.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.26.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.25.0 makes existing output-transfer actions contextual for one active
-relation-free floating window. KWin remains the sole owner of output movement
-and final frame placement.
-
-The frozen 1.26.0 development slice adds nine unbound numbered single-window
-desktop actions by reusing the existing indexed transfer transaction.
+Stable 1.26.0 adds nine unbound numbered single-window desktop actions by
+reusing the existing indexed transfer transaction.
 
 ## Foundation (delivered)
 
@@ -1051,7 +1047,7 @@ Release criteria (met):
 
 No other feature belongs to 1.25.0.
 
-## 1.26.0 (in development)
+## 1.26.0 (released)
 
 Nine new unbound actions move only the active window directly to desktop
 positions 1 through 9. A tiled member becomes a target singleton with the
@@ -1064,14 +1060,19 @@ out-of-range target clamps to the shared empty tail. The slice adds no default
 binding, setting, persistence field, schema, private API, or compositor
 mechanism.
 
-Release criteria:
+Release criteria (met):
 
 - One focused runtime case covers extraction, retained state, width inheritance,
   tail clamping, focus, and same-target no-op behavior.
 - Existing shortcut and QML contracts cover all nine action IDs while the
   helper-owned 88-action default profile remains unchanged.
-- Formatting, type, lint, focused unit, package, and exact-SHA CI gates pass
-  without a new integration, application, backend, or VM matrix.
+- Formatting, type, lint, focused unit, package, Nix evaluation, and Nix build
+  gates pass.
+- A hidden lifecycle VM upgrades public 1.25.0 packages to matching 1.26.0
+  packages, exercises real applications, and verifies clean removal.
+- Exact feature SHA `aa17fe3` passes CI quality, native X11, and Wayland jobs.
+- Existing packaged desktop-transfer coverage is reused without a new
+  integration, application, backend, or feature-VM matrix.
 
 No other feature belongs to 1.26.0.
 
