@@ -135,6 +135,12 @@ admission only when that context is already visible. It never selects a
 desktop or output, and a rejected request is not retried. Native maximize and
 fullscreen requests run afterward.
 
+The matching unfocused rule instead waits one event-loop for KWin's ordinary
+activation to settle. If the fresh window became active, Driftile restores the
+previous live visible window or clears focus when no such window remains. It
+does nothing when the fresh window stayed inactive, never reveals a hidden
+context, and takes priority over the positive rule.
+
 An exact fresh-window maximize rule requests KWin's native work-area-edge
 state after the tiled or floating underlay is admitted. Initial
 fullscreen runs afterward when both policies match. Unsupported and rejected

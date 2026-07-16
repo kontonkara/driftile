@@ -1695,6 +1695,9 @@ No other feature belongs to 1.39.0.
 
 - Add an exact fresh-window application rule that requests focus once after
   tiled or floating admission when the destination context is already visible.
+- Add the complementary exact rule that restores the previous live visible
+  window when a fresh match receives KWin's initial focus, with negative
+  precedence when both rules match.
 - Apply confirmed destination and underlay rules before focus, then request
   native maximize and fullscreen states afterward.
 - Keep startup-existing, restored, transferred, re-admitted, and already
@@ -1706,6 +1709,7 @@ No other feature belongs to 1.39.0.
 Release criteria:
 
 - Unlisted applications retain KWin's ordinary focus behavior.
+- A matching unfocused window that never becomes active causes no focus write.
 - Unavailable and rejected focus requests are consumed without retry.
 - Live settings affect only windows first tracked afterward.
 - The implementation remains within public Plasma 6.7+ APIs.

@@ -109,6 +109,7 @@ The activation writes only `ApplicationBorderlessExclusions`,
 `ApplicationFocusCentering`, `ApplicationFloatingPositions`,
 `ApplicationInitialDestinations`,
 `ApplicationInitialFocused`,
+`ApplicationInitialUnfocused`,
 `ApplicationInitialFloating`, `ApplicationInitialFullWidth`,
 `ApplicationInitialFullscreen`, `ApplicationInitialMaximized`,
 `ApplicationTilingExclusions`,
@@ -165,6 +166,10 @@ programs.driftile.settings.applicationInitialDestinations = {
 
 programs.driftile.settings.applicationInitialFocused = [
   "org.mozilla.firefox"
+];
+
+programs.driftile.settings.applicationInitialUnfocused = [
+  "org.example.BackgroundTool"
 ];
 
 programs.driftile.settings.applicationInitialFloating = [
@@ -560,6 +565,25 @@ Startup-existing, restored, transferred, re-admitted, and already tracked
 windows are unchanged. Initial destination and underlay admission settle
 first; native maximize and fullscreen requests follow. Live edits affect only
 windows first tracked afterward and add no shortcut or persistence field.
+
+## Applications initially unfocused
+
+**Applications initially unfocused** prevents a genuinely new matching normal
+window from keeping initial focus. Enter exact, case-sensitive KWin
+`desktopFileName` values, one per line, under the application-list limits.
+
+After admission in an already visible desktop and output context, Driftile lets
+KWin settle its ordinary activation once. If the new window became active, the
+previous live visible window is restored; when none remains, active focus is
+cleared once. A window that did not become active is left unchanged. Driftile
+never selects a desktop or output for this rule.
+
+The request is one-shot and is not retried when KWin rejects it. If the same
+application appears in both initial-focus lists, this unfocused rule wins.
+Startup-existing, restored, transferred, re-admitted, and already tracked
+windows are unchanged. Native maximize and fullscreen requests follow the
+focus decision. Live edits affect only windows first tracked afterward and add
+no shortcut or persistence field.
 
 ## Applications initially full-width
 
