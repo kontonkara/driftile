@@ -4,6 +4,7 @@ import { decodeApplicationColumnPresentations } from "../src/application-column-
 import { decodeApplicationInitialDestinations } from "../src/application-initial-destinations";
 import { decodeApplicationInitialFloating } from "../src/application-initial-floating";
 import { decodeApplicationInitialFocused } from "../src/application-initial-focused";
+import { decodeApplicationInitialUnfocused } from "../src/application-initial-unfocused";
 import { decodeApplicationInitialFullWidth } from "../src/application-initial-full-width";
 import { decodeApplicationInitialFullscreen } from "../src/application-initial-fullscreen";
 import { decodeApplicationInitialMaximized } from "../src/application-initial-maximized";
@@ -8757,6 +8758,83 @@ describe("RuntimeController", () => {
     controller.reconcile();
     flushManualScheduler(scheduler);
     expect(fixture.activationCount).toBe(activationsBeforeRejected + 1);
+  });
+
+  it("restores previous focus once for fresh exact unfocused matches", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const existing = createTrackedWindow("existing", output, desktop, {
+      desktopFileName: "org.example.Editor",
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [existing.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      applicationInitialFocused:
+        requiredApplicationInitialFocused("org.example.Dialog"),
+      applicationInitialMaximized:
+        requiredApplicationInitialMaximized("org.example.Dialog"),
+      applicationInitialUnfocused:
+        requiredApplicationInitialUnfocused("org.example.Dialog"),
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+
+    const passive = createTrackedWindow("passive", output, desktop, {
+      desktopFileName: "org.example.Dialog",
+    });
+    const activationsBeforePassive = fixture.activationCount;
+    fixture.windowAdded.emit(passive.window);
+    flushManualScheduler(scheduler);
+    expect(fixture.workspace.activeWindow).toBe(existing.window);
+    expect(fixture.activationCount).toBe(activationsBeforePassive);
+
+    const added = createTrackedWindow("added", output, desktop, {
+      desktopFileName: "org.example.Dialog",
+    });
+    const addedMaximize = controlMaximize(added);
+    (
+      controller as unknown as {
+        topologyWindowOrder: readonly WindowId[] | null;
+      }
+    ).topologyWindowOrder = [];
+    fixture.windowAdded.emit(added.window);
+    fixture.workspace.activeWindow = added.window;
+    const activationsBeforeRestore = fixture.activationCount;
+    expect(addedMaximize.calls).toEqual([]);
+    flushManualScheduler(scheduler);
+    expect(fixture.workspace.activeWindow).toBe(existing.window);
+    expect(fixture.activationCount).toBe(activationsBeforeRestore + 1);
+    expect(addedMaximize.calls).toEqual([[true, true]]);
+
+    const activationsAfterRestore = fixture.activationCount;
+    controller.reconcile();
+    flushManualScheduler(scheduler);
+    expect(fixture.activationCount).toBe(activationsAfterRestore);
+
+    const rejected = createTrackedWindow("rejected", output, desktop, {
+      desktopFileName: "org.example.Dialog",
+    });
+    fixture.windowAdded.emit(rejected.window);
+    fixture.workspace.activeWindow = rejected.window;
+    fixture.setActivationBehavior(() => undefined);
+    const activationsBeforeRejected = fixture.activationCount;
+    flushManualScheduler(scheduler);
+    expect(fixture.workspace.activeWindow).toBe(rejected.window);
+    expect(fixture.activationCount).toBe(activationsBeforeRejected + 1);
+
+    controller.reconcile();
+    flushManualScheduler(scheduler);
+    expect(fixture.activationCount).toBe(activationsBeforeRejected + 1);
+    fixture.setActivationBehavior(null);
   });
 
   it("requests native maximize once for fresh exact application matches", () => {
@@ -47388,6 +47466,16 @@ function requiredApplicationInitialFocused(value: string) {
 
   if (!applications) {
     throw new Error("application initial focused fixture is invalid");
+  }
+
+  return applications;
+}
+
+function requiredApplicationInitialUnfocused(value: string) {
+  const applications = decodeApplicationInitialUnfocused(value);
+
+  if (!applications) {
+    throw new Error("application initial unfocused fixture is invalid");
   }
 
   return applications;

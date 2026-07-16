@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { decodeApplicationBorderlessExclusions } from "../src/application-borderless-exclusions";
 import { decodeApplicationInitialFloating } from "../src/application-initial-floating";
 import { decodeApplicationInitialFocused } from "../src/application-initial-focused";
+import { decodeApplicationInitialUnfocused } from "../src/application-initial-unfocused";
 import { decodeApplicationInitialFullWidth } from "../src/application-initial-full-width";
 import { decodeApplicationInitialFullscreen } from "../src/application-initial-fullscreen";
 import { decodeApplicationInitialMaximized } from "../src/application-initial-maximized";
@@ -108,6 +109,14 @@ if (!validApplicationInitialFocused) {
   throw new Error("application initial-focused fixture is invalid");
 }
 
+const validApplicationInitialUnfocused = decodeApplicationInitialUnfocused(
+  "org.example.Background\norg.example.Notification",
+);
+
+if (!validApplicationInitialUnfocused) {
+  throw new Error("application initial-unfocused fixture is invalid");
+}
+
 const validApplicationInitialFullscreen = decodeApplicationInitialFullscreen(
   "org.example.Game\norg.example.Video",
 );
@@ -168,6 +177,7 @@ const validSettings: DriftileSettings = {
   applicationFloatingPositions: validApplicationFloatingPositions,
   applicationInitialDestinations: validApplicationInitialDestinations,
   applicationInitialFocused: validApplicationInitialFocused,
+  applicationInitialUnfocused: validApplicationInitialUnfocused,
   applicationInitialFloating: validApplicationInitialFloating,
   applicationInitialFullWidth: validApplicationInitialFullWidth,
   applicationInitialFullscreen: validApplicationInitialFullscreen,
@@ -208,6 +218,8 @@ const validSettingsInput = {
   applicationFloatingPositions: "org.example.Floating=bottom-right,24,16",
   applicationInitialDestinations: "org.example.Chat=desktop:2,output:DP-1",
   applicationInitialFocused: "org.example.Chat\norg.example.Dialog",
+  applicationInitialUnfocused:
+    "org.example.Background\norg.example.Notification",
   applicationInitialFloating: "org.example.Floating\norg.example.Floating=tool",
   applicationInitialFullWidth: "org.example.Browser\norg.example.Browser=tool",
   applicationInitialFullscreen: "org.example.Game\norg.example.Video",
@@ -288,6 +300,9 @@ describe("Driftile settings", () => {
     ).toEqual([]);
     expect(
       DEFAULT_DRIFTILE_SETTINGS.applicationInitialFocused.canonicalEntries,
+    ).toEqual([]);
+    expect(
+      DEFAULT_DRIFTILE_SETTINGS.applicationInitialUnfocused.canonicalEntries,
     ).toEqual([]);
     expect(
       DEFAULT_DRIFTILE_SETTINGS.applicationInitialFullWidth.canonicalEntries,
@@ -383,6 +398,9 @@ describe("Driftile settings", () => {
     expect(decoded?.applicationInitialFocused.canonicalEntries).toEqual(
       validApplicationInitialFocused.canonicalEntries,
     );
+    expect(decoded?.applicationInitialUnfocused.canonicalEntries).toEqual(
+      validApplicationInitialUnfocused.canonicalEntries,
+    );
     expect(
       decoded?.applicationInitialDestinations.initialDestinationFor(
         "org.example.Chat",
@@ -424,6 +442,12 @@ describe("Driftile settings", () => {
       decoded?.applicationInitialFocused.excludes("org.example.chat"),
     ).toBe(false);
     expect(
+      decoded?.applicationInitialUnfocused.excludes("org.example.Background"),
+    ).toBe(true);
+    expect(
+      decoded?.applicationInitialUnfocused.excludes("org.example.background"),
+    ).toBe(false);
+    expect(
       decoded?.applicationInitialFullWidth.excludes("org.example.Browser"),
     ).toBe(true);
     expect(
@@ -459,6 +483,7 @@ describe("Driftile settings", () => {
       applicationFloatingPositions: "",
       applicationInitialDestinations: "",
       applicationInitialFocused: "",
+      applicationInitialUnfocused: "",
       applicationInitialFloating: "",
       applicationInitialFullWidth: "",
       applicationInitialFullscreen: "",
@@ -496,6 +521,7 @@ describe("Driftile settings", () => {
       applicationFloatingPositions: "org.example.Floating=top-left,0,0",
       applicationInitialDestinations: "org.example.Chat=desktop:25,output:DP-1",
       applicationInitialFocused: "org.example.Chat",
+      applicationInitialUnfocused: "org.example.Background",
       applicationInitialFloating: "org.example.Floating",
       applicationInitialFullWidth: "org.example.Browser",
       applicationInitialFullscreen: "org.example.Game",
@@ -555,6 +581,9 @@ describe("Driftile settings", () => {
     expect(decoded?.applicationInitialFocused.canonicalEntries.join("\n")).toBe(
       settings.applicationInitialFocused,
     );
+    expect(
+      decoded?.applicationInitialUnfocused.canonicalEntries.join("\n"),
+    ).toBe(settings.applicationInitialUnfocused);
     expect(
       decoded?.applicationInitialFloating.canonicalEntries.join("\n"),
     ).toBe(settings.applicationInitialFloating);
@@ -698,6 +727,12 @@ describe("Driftile settings", () => {
       },
     ],
     [
+      "duplicate application initial-unfocused entries",
+      {
+        applicationInitialUnfocused: "org.example.Editor\n org.example.Editor ",
+      },
+    ],
+    [
       "duplicate application initial-full-width entries",
       {
         applicationInitialFullWidth: "org.example.Editor\n org.example.Editor ",
@@ -786,7 +821,7 @@ describe("Driftile settings", () => {
     },
   );
 
-  it("rejects an incomplete thirty-five-field snapshot", () => {
+  it("rejects an incomplete thirty-six-field snapshot", () => {
     const incomplete: Record<string, unknown> = { ...validSettingsInput };
     delete incomplete["defaultColumnWidthPixels"];
 
@@ -862,6 +897,13 @@ describe("Driftile settings", () => {
       throw new Error("application initial-focused fixture is invalid");
     }
 
+    const changedApplicationInitialUnfocused =
+      decodeApplicationInitialUnfocused("org.example.Other");
+
+    if (!changedApplicationInitialUnfocused) {
+      throw new Error("application initial-unfocused fixture is invalid");
+    }
+
     const changedApplicationInitialFullWidth =
       decodeApplicationInitialFullWidth("org.example.Other");
 
@@ -932,6 +974,7 @@ describe("Driftile settings", () => {
         applicationInitialDestinations: changedApplicationInitialDestinations,
       },
       { applicationInitialFocused: changedApplicationInitialFocused },
+      { applicationInitialUnfocused: changedApplicationInitialUnfocused },
       { applicationInitialFloating: changedApplicationInitialFloating },
       { applicationInitialFullWidth: changedApplicationInitialFullWidth },
       { applicationInitialFullscreen: changedApplicationInitialFullscreen },

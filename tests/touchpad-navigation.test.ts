@@ -83,6 +83,10 @@ class RuntimeControllerDouble {
     return true;
   }
 
+  setApplicationInitialUnfocused(): boolean {
+    return true;
+  }
+
   setApplicationInitialFloating(): boolean {
     return true;
   }
@@ -453,6 +457,7 @@ function settings(
     applicationFloatingPositions: "",
     applicationInitialDestinations: "",
     applicationInitialFocused: "",
+    applicationInitialUnfocused: "",
     applicationInitialFloating: "",
     applicationInitialFullWidth: "",
     applicationInitialFullscreen: "",
