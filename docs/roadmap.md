@@ -1,14 +1,13 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.32.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.33.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.32.0 expands unbound focus, movement, output, and desktop traversal;
-adds configurable native-Wayland gestures; and extends the optional overview
-with transfer, search, keyboard, wheel, and close interactions. The optional
-transition effect now retargets rapid changes and replays geometry changed
-during workspace effects. Logical persistence remains v4.
+Stable 1.33.0 restores optional transitions across negative coordinates,
+targets vertical touchpad navigation at the output under the pointer, and lets
+the optional overview transfer an exact window between output cards. Logical
+persistence remains v4.
 
 ## Foundation (delivered)
 
@@ -1478,7 +1477,7 @@ Release criteria (met):
 
 No other feature belongs to 1.32.0.
 
-## 1.33.0 (in development)
+## 1.33.0 (released)
 
 The current interaction slice restores optional geometry transitions for
 off-screen columns and outputs with negative global coordinates. Non-negative
@@ -1498,6 +1497,15 @@ its existing path.
 
 No setting, shortcut, persistence field, compositor fork, or private API is
 added by this slice.
+
+Release criteria (met):
+
+- Focused transition, gesture, and overview-transfer checks pass.
+- The grouped unit, package, Nix, Wayland, multi-output Wayland, and X11 gates
+  pass before promotion.
+- Exact feature SHA CI passes before the release commit is tagged.
+
+No other feature belongs to 1.33.0.
 
 ## Post-v1
 

@@ -1,7 +1,26 @@
 # Migration
 
-The latest stable release is 1.32.0. Use the steps below when changing release
+The latest stable release is 1.33.0. Use the steps below when changing release
 generations, and never combine files from different releases.
+
+## Upgrade from 1.32.0 to 1.33.0
+
+1. Release a helper-owned shortcut profile with the installed helper.
+2. Disable Driftile and both optional effects in System Settings.
+3. Install matching 1.33.0 artifacts, or pin the Nix input to `v1.33.0` and
+   rebuild.
+4. Re-enable Driftile and only the optional effects you use, then reclaim the
+   unchanged helper profile if needed.
+
+Configuration, shortcut assignments, and logical layout state remain
+compatible. No migration or new setting is required.
+
+## Roll back from 1.33.0 to 1.32.0
+
+Release a helper-owned profile, disable Driftile and both optional effects,
+then restore matching verified 1.32.0 artifacts. NixOS and Home Manager users
+should restore the input to `v1.32.0` and rebuild. No state conversion is
+required.
 
 ## Upgrade from 1.31.0 to 1.32.0
 
