@@ -1111,6 +1111,7 @@ QtObject {
             applicationInitialFloating: KWin.readConfig("ApplicationInitialFloating", ""),
             applicationFloatingPositions: KWin.readConfig("ApplicationFloatingPositions", ""),
             applicationInitialFullWidth: KWin.readConfig("ApplicationInitialFullWidth", ""),
+            applicationInitialMaximized: KWin.readConfig("ApplicationInitialMaximized", ""),
             applicationInitialFullscreen: KWin.readConfig("ApplicationInitialFullscreen", ""),
             applicationTilingExclusions: KWin.readConfig("ApplicationTilingExclusions", ""),
             alwaysCenterSingleColumn: KWin.readConfig("AlwaysCenterSingleColumn", false),

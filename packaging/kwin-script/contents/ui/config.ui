@@ -658,6 +658,32 @@
            <height>100</height>
           </size>
          </property>
+       </widget>
+      </item>
+      <item>
+        <widget class="QLabel" name="applicationInitialMaximizedLabel">
+         <property name="text">
+          <string>Applications initially maximized:</string>
+         </property>
+         <property name="buddy">
+          <cstring>kcfg_ApplicationInitialMaximized</cstring>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPlainTextEdit" name="kcfg_ApplicationInitialMaximized">
+         <property name="toolTip">
+          <string>Enter up to 128 exact, case-sensitive KWin desktopFileName values, one per line. Fresh normal matches request native maximize to the work-area edges after their underlying tiled or floating admission. Startup-existing, restored, and already tracked windows remain unchanged. Unsupported or rejected maximize requests use a safe one-shot fallback. Live edits affect future tracked windows only.</string>
+         </property>
+         <property name="whatsThis">
+          <string>Blank lines are ignored. Fresh normal exact matches request native maximize to the work-area edges after their underlying tiled or floating admission. Startup-existing, restored, and already tracked windows remain unchanged. Unsupported or rejected maximize requests fall back once without retrying. Live edits affect future tracked windows only.</string>
+         </property>
+         <property name="minimumSize">
+          <size>
+           <width>0</width>
+           <height>100</height>
+          </size>
+         </property>
         </widget>
        </item>
        <item>

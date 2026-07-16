@@ -945,6 +945,7 @@ describe("KWin shortcut handlers", () => {
       "kcfg_ApplicationInitialFloating",
       "kcfg_ApplicationFloatingPositions",
       "kcfg_ApplicationInitialFullWidth",
+      "kcfg_ApplicationInitialMaximized",
       "kcfg_ApplicationInitialFullscreen",
       "kcfg_ApplicationTilingExclusions",
       "kcfg_ApplicationBorderlessExclusions",
@@ -1534,6 +1535,15 @@ describe("KWin shortcut handlers", () => {
     const initialFullWidthWidget = configurationUi.match(
       /<widget class="QPlainTextEdit" name="kcfg_ApplicationInitialFullWidth">([\s\S]*?)<\/widget>/,
     )?.[1];
+    const initialMaximizedEntry = configuration.match(
+      /<entry name="ApplicationInitialMaximized" type="String">([\s\S]*?)<\/entry>/,
+    )?.[1];
+    const initialMaximizedLabel = configurationUi.match(
+      /<widget class="QLabel" name="applicationInitialMaximizedLabel">([\s\S]*?)<\/widget>/,
+    )?.[1];
+    const initialMaximizedWidget = configurationUi.match(
+      /<widget class="QPlainTextEdit" name="kcfg_ApplicationInitialMaximized">([\s\S]*?)<\/widget>/,
+    )?.[1];
     const initialFullscreenEntry = configuration.match(
       /<entry name="ApplicationInitialFullscreen" type="String">([\s\S]*?)<\/entry>/,
     )?.[1];
@@ -1661,6 +1671,34 @@ describe("KWin shortcut handlers", () => {
     );
     expect(qml).toContain(
       'applicationInitialFullWidth: KWin.readConfig("ApplicationInitialFullWidth", "")',
+    );
+    expect(initialMaximizedEntry).toContain(
+      "<label>Applications initially maximized by KWin desktopFileName</label>",
+    );
+    expect(initialMaximizedEntry).toContain("<default></default>");
+    expect(initialMaximizedLabel).toContain(
+      "<string>Applications initially maximized:</string>",
+    );
+    expect(initialMaximizedLabel).toContain(
+      "<cstring>kcfg_ApplicationInitialMaximized</cstring>",
+    );
+    expect(initialMaximizedWidget).toContain(
+      "Enter up to 128 exact, case-sensitive KWin desktopFileName values, one per line.",
+    );
+    expect(initialMaximizedWidget).toContain(
+      "Fresh normal matches request native maximize to the work-area edges after their underlying tiled or floating admission.",
+    );
+    expect(initialMaximizedWidget).toContain(
+      "Startup-existing, restored, and already tracked windows remain unchanged.",
+    );
+    expect(initialMaximizedWidget).toContain(
+      "Unsupported or rejected maximize requests use a safe one-shot fallback.",
+    );
+    expect(initialMaximizedWidget).toContain(
+      "Live edits affect future tracked windows only.",
+    );
+    expect(qml).toContain(
+      'applicationInitialMaximized: KWin.readConfig("ApplicationInitialMaximized", "")',
     );
     expect(initialFullscreenEntry).toContain(
       "<label>Applications initially fullscreen by KWin desktopFileName</label>",

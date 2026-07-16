@@ -140,6 +140,10 @@
       <label>Applications initially full-width by KWin desktopFileName</label>
       <default></default>
     </entry>
+    <entry name="ApplicationInitialMaximized" type="String">
+      <label>Applications initially maximized by KWin desktopFileName</label>
+      <default></default>
+    </entry>
     <entry name="ApplicationInitialFullscreen" type="String">
       <label>Applications initially fullscreen by KWin desktopFileName</label>
       <default></default>
