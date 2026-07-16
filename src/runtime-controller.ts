@@ -26681,15 +26681,51 @@ export class RuntimeController {
       return null;
     }
 
+    if (
+      destination.desktop !== undefined &&
+      destination.desktopName !== undefined
+    ) {
+      return null;
+    }
+
+    let sourceDesktopIsLive = false;
+    let namedTarget: KWinVirtualDesktop | undefined;
+
+    if (destination.desktopName !== undefined) {
+      if (destination.desktopName.length === 0) {
+        return null;
+      }
+
+      for (const desktop of this.workspace.desktops) {
+        sourceDesktopIsLive ||= desktop.id === sourceDesktop.id;
+
+        if (desktop.name !== destination.desktopName) {
+          continue;
+        }
+
+        if (namedTarget) {
+          return null;
+        }
+
+        namedTarget = desktop;
+      }
+    }
+
     const targetDesktop =
-      destination.desktop === undefined
-        ? targetOutput.name === liveSourceOutput.name
-          ? sourceDesktop
-          : currentDesktopForOutput(this.workspace, targetOutput)
-        : this.workspace.desktops[destination.desktop - 1];
+      destination.desktopName !== undefined
+        ? namedTarget
+        : destination.desktop === undefined
+          ? targetOutput.name === liveSourceOutput.name
+            ? sourceDesktop
+            : currentDesktopForOutput(this.workspace, targetOutput)
+          : this.workspace.desktops[destination.desktop - 1];
+
+    if (!targetDesktop) {
+      return null;
+    }
 
     if (
-      !targetDesktop ||
+      !sourceDesktopIsLive &&
       !this.workspace.desktops.some(
         (desktop) => desktop.id === sourceDesktop.id,
       )

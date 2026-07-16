@@ -8595,6 +8595,129 @@ describe("RuntimeController", () => {
     });
   });
 
+  it("routes fresh applications to a uniquely named desktop", () => {
+    const sourceOutput = createOutput("DP-1", 0);
+    const targetOutput = createOutput("DP-2", 1000);
+    const firstDesktop = { id: "desktop-1", name: "Primary" };
+    const secondDesktop = { id: "desktop-2", name: "Web" };
+    const existing = createTrackedWindow(
+      "existing",
+      sourceOutput,
+      firstDesktop,
+      { desktopFileName: "org.example.Target" },
+    );
+    const added = createTrackedWindow("added", sourceOutput, firstDesktop, {
+      desktopFileName: "org.example.Target",
+    });
+    const fixture = createWorkspace(
+      sourceOutput,
+      firstDesktop,
+      [sourceOutput, targetOutput],
+      [firstDesktop, secondDesktop],
+      [existing.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      applicationInitialDestinations: requiredApplicationInitialDestinations(
+        "org.example.Target=desktop-name:Web,output:DP-2",
+      ),
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    const activationCount = fixture.activationCount;
+    const desktopSwitchCount = fixture.desktopSwitchCount;
+    fixture.windowAdded.emit(added.window);
+    flushManualScheduler(scheduler);
+
+    expect(existing.window.output).toBe(sourceOutput);
+    expect(existing.window.desktops).toEqual([firstDesktop]);
+    expect(added.window.output).toBe(targetOutput);
+    expect(added.window.desktops).toEqual([secondDesktop]);
+    expect(added.desktopWriteCount).toBe(2);
+    expect(fixture.outputTransferCount).toBe(1);
+    expect(fixture.desktopSwitchCount).toBe(desktopSwitchCount);
+    expect(fixture.activationCount).toBe(activationCount);
+  });
+
+  it.each([
+    {
+      desktopNames: ["Primary", "Web"],
+      destinationName: "Missing",
+      reason: "missing",
+    },
+    {
+      desktopNames: ["Primary", "Web", "Web"],
+      destinationName: "Web",
+      reason: "duplicate",
+    },
+    {
+      desktopNames: ["Primary", "Web"],
+      destinationName: "web",
+      reason: "case-mismatched",
+    },
+  ])(
+    "rejects a $reason named desktop without retrying the destination",
+    ({ desktopNames, destinationName }) => {
+      const sourceOutput = createOutput("DP-1", 0);
+      const targetOutput = createOutput("DP-2", 1000);
+      const desktops = desktopNames.map((name, index) => ({
+        id: `desktop-${String(index + 1)}`,
+        name,
+      }));
+      const sourceDesktop = desktops[0];
+
+      if (!sourceDesktop) {
+        throw new Error("named desktop fixture needs a source desktop");
+      }
+
+      const existing = createTrackedWindow(
+        "existing",
+        sourceOutput,
+        sourceDesktop,
+      );
+      const added = createTrackedWindow("added", sourceOutput, sourceDesktop, {
+        desktopFileName: "org.example.Target",
+      });
+      const fixture = createWorkspace(
+        sourceOutput,
+        sourceDesktop,
+        [sourceOutput, targetOutput],
+        desktops,
+        [existing.window],
+      );
+      const scheduler = new ManualScheduler();
+      const controller = new RuntimeController(fixture.workspace, {
+        applicationInitialDestinations: requiredApplicationInitialDestinations(
+          `org.example.Target=desktop-name:${destinationName},output:DP-2`,
+        ),
+        clientAreaOption: 2,
+        gap: 10,
+        schedule: scheduler.schedule,
+      });
+
+      expect(controller.start()).toBe(true);
+      fixture.windowAdded.emit(added.window);
+      flushManualScheduler(scheduler);
+
+      expect(added.window.output).toBe(sourceOutput);
+      expect(added.window.desktops).toEqual([sourceDesktop]);
+      expect(added.desktopWriteCount).toBe(0);
+      expect(fixture.outputTransferCount).toBe(0);
+
+      added.desktopFileNameChanged.emit();
+      controller.reconcile();
+      flushManualScheduler(scheduler);
+
+      expect(added.window.output).toBe(sourceOutput);
+      expect(added.window.desktops).toEqual([sourceDesktop]);
+      expect(added.desktopWriteCount).toBe(0);
+      expect(fixture.outputTransferCount).toBe(0);
+    },
+  );
+
   it("uses the target output desktop for future output-only rules", () => {
     const sourceOutput = createOutput("DP-1", 0);
     const targetOutput = createOutput("DP-2", 1000);
