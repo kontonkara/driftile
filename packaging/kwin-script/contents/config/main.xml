@@ -72,6 +72,10 @@
       <label>Default initial tiled client height</label>
       <default>auto</default>
     </entry>
+    <entry name="DefaultInitialDestination" type="String">
+      <label>Default initial desktop and output destination</label>
+      <default></default>
+    </entry>
     <entry name="DefaultFloatingPosition" type="String">
       <label>Default initial floating position</label>
       <default></default>

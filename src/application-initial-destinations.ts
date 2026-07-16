@@ -128,7 +128,19 @@ function parseInitialDestination(
     return null;
   }
 
-  const fields = encodedDestination.split(",");
+  const destination = decodeInitialDestinationValue(encodedDestination);
+
+  return destination ? { desktopFileName, destination } : null;
+}
+
+export function decodeInitialDestinationValue(
+  value: string,
+): ApplicationInitialDestination | null {
+  if (value.includes("=")) {
+    return null;
+  }
+
+  const fields = value.split(",");
 
   if (fields.length < 1 || fields.length > 3) {
     return null;
@@ -215,17 +227,14 @@ function parseInitialDestination(
     return null;
   }
 
-  const destination = Object.freeze({
+  return Object.freeze({
     ...(desktop === undefined ? {} : { desktop }),
     ...(desktopName === undefined ? {} : { desktopName }),
     ...(output === undefined ? {} : { output }),
   });
-
-  return { desktopFileName, destination };
 }
 
-function encodeInitialDestination(
-  desktopFileName: string,
+export function encodeInitialDestinationValue(
   destination: ApplicationInitialDestination,
 ): string {
   const fields: string[] = [];
@@ -240,7 +249,14 @@ function encodeInitialDestination(
     fields.push(`output:${destination.output}`);
   }
 
-  return `${desktopFileName}=${fields.join(",")}`;
+  return fields.join(",");
+}
+
+function encodeInitialDestination(
+  desktopFileName: string,
+  destination: ApplicationInitialDestination,
+): string {
+  return `${desktopFileName}=${encodeInitialDestinationValue(destination)}`;
 }
 
 function utf8ByteLength(value: string): number | null {

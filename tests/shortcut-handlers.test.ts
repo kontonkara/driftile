@@ -937,6 +937,7 @@ describe("KWin shortcut handlers", () => {
       "kcfg_WindowHeightStepPercent",
       "kcfg_WindowHeightStepPixels",
       "kcfg_WindowHeightPresets",
+      "kcfg_DefaultInitialDestination",
       "kcfg_DefaultFloatingPosition",
     ];
     const applicationControls = [
@@ -1255,6 +1256,15 @@ describe("KWin shortcut handlers", () => {
     const floatingPositionEntry = configuration.match(
       /<entry name="DefaultFloatingPosition" type="String">([\s\S]*?)<\/entry>/,
     )?.[1];
+    const initialDestinationEntry = configuration.match(
+      /<entry name="DefaultInitialDestination" type="String">([\s\S]*?)<\/entry>/,
+    )?.[1];
+    const initialDestinationLabel = configurationUi.match(
+      /<widget class="QLabel" name="defaultInitialDestinationLabel">([\s\S]*?)<\/widget>/,
+    )?.[1];
+    const initialDestinationWidget = configurationUi.match(
+      /<widget class="QLineEdit" name="kcfg_DefaultInitialDestination">([\s\S]*?)<\/widget>/,
+    )?.[1];
     const floatingPositionLabel = configurationUi.match(
       /<widget class="QLabel" name="defaultFloatingPositionLabel">([\s\S]*?)<\/widget>/,
     )?.[1];
@@ -1356,6 +1366,32 @@ describe("KWin shortcut handlers", () => {
     );
     expect(runtime).toContain(
       "controller.setDefaultWindowHeight(settings.defaultWindowHeight)",
+    );
+    expect(initialDestinationEntry).toContain(
+      "<label>Default initial desktop and output destination</label>",
+    );
+    expect(initialDestinationEntry).toContain("<default></default>");
+    expect(initialDestinationLabel).toContain(
+      "<string>Default initial destination:</string>",
+    );
+    expect(initialDestinationLabel).toContain(
+      "<cstring>kcfg_DefaultInitialDestination</cstring>",
+    );
+    expect(initialDestinationWidget).toContain("desktop:2");
+    expect(initialDestinationWidget).toContain("desktop-name:Work");
+    expect(initialDestinationWidget).toContain("output:DP-1");
+    expect(initialDestinationWidget).toContain(
+      "An exact application destination rule takes precedence.",
+    );
+    expect(initialDestinationWidget).toContain("Blank disables the default.");
+    expect(qml).toContain(
+      'defaultInitialDestination: KWin.readConfig("DefaultInitialDestination", "")',
+    );
+    expect(runtime).toContain(
+      "defaultInitialDestination: settings.defaultInitialDestination",
+    );
+    expect(runtime).toContain(
+      "controller.setDefaultInitialDestination(settings.defaultInitialDestination)",
     );
     expect(floatingPositionEntry).toContain(
       "<label>Default initial floating position</label>",

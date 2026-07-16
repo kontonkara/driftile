@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { decodeApplicationBorderlessExclusions } from "../src/application-borderless-exclusions";
 import { decodeApplicationColumnPresentations } from "../src/application-column-presentations";
 import { decodeApplicationInitialDestinations } from "../src/application-initial-destinations";
+import { decodeDefaultInitialDestination } from "../src/default-initial-destination";
 import { decodeApplicationInitialFloating } from "../src/application-initial-floating";
 import { decodeApplicationInitialFocused } from "../src/application-initial-focused";
 import { decodeApplicationInitialUnfocused } from "../src/application-initial-unfocused";
@@ -8729,6 +8730,112 @@ describe("RuntimeController", () => {
     expect(fixture.outputTransferCount).toBe(1);
     expect(fixture.desktopSwitchCount).toBe(desktopSwitchCount);
     expect(fixture.activationCount).toBe(activationCount);
+  });
+
+  it("routes fresh windows through the global default destination", () => {
+    const sourceOutput = createOutput("DP-1", 0);
+    const targetOutput = createOutput("DP-2", 1000);
+    const firstDesktop = { id: "desktop-1" };
+    const secondDesktop = { id: "desktop-2" };
+    const existing = createTrackedWindow(
+      "existing",
+      sourceOutput,
+      firstDesktop,
+    );
+    const added = createTrackedWindow("added", sourceOutput, firstDesktop, {
+      desktopFileName: "org.example.Unlisted",
+    });
+    const fixture = createWorkspace(
+      sourceOutput,
+      firstDesktop,
+      [sourceOutput, targetOutput],
+      [firstDesktop, secondDesktop],
+      [existing.window],
+    );
+    const scheduler = new ManualScheduler();
+    const destination = requiredDefaultInitialDestination(
+      "desktop:2,output:DP-2",
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(controller.setDefaultInitialDestination(destination)).toBe(true);
+    expect(controller.setDefaultInitialDestination(destination)).toBe(false);
+    const activationCount = fixture.activationCount;
+    const desktopSwitchCount = fixture.desktopSwitchCount;
+    fixture.windowAdded.emit(added.window);
+    flushManualScheduler(scheduler);
+
+    expect(existing.window.output).toBe(sourceOutput);
+    expect(existing.window.desktops).toEqual([firstDesktop]);
+    expect(added.window.output).toBe(targetOutput);
+    expect(added.window.desktops).toEqual([secondDesktop]);
+    expect(fixture.desktopSwitchCount).toBe(desktopSwitchCount);
+    expect(fixture.activationCount).toBe(activationCount);
+  });
+
+  it("prefers an exact application destination over the global default", () => {
+    const sourceOutput = createOutput("DP-1", 0);
+    const targetOutput = createOutput("DP-2", 1000);
+    const desktops = [
+      { id: "desktop-1" },
+      { id: "desktop-2" },
+      { id: "desktop-3" },
+    ];
+    const firstDesktop = desktops[0];
+    const secondDesktop = desktops[1];
+    const thirdDesktop = desktops[2];
+
+    if (!firstDesktop || !secondDesktop || !thirdDesktop) {
+      throw new Error("default destination fixture is incomplete");
+    }
+
+    const existing = createTrackedWindow(
+      "existing",
+      sourceOutput,
+      firstDesktop,
+    );
+    const exact = createTrackedWindow("exact", sourceOutput, firstDesktop, {
+      desktopFileName: "org.example.Exact",
+    });
+    const fallback = createTrackedWindow(
+      "fallback",
+      sourceOutput,
+      firstDesktop,
+      { desktopFileName: "org.example.Fallback" },
+    );
+    const fixture = createWorkspace(
+      sourceOutput,
+      firstDesktop,
+      [sourceOutput, targetOutput],
+      desktops,
+      [existing.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      applicationInitialDestinations: requiredApplicationInitialDestinations(
+        "org.example.Exact=desktop:3,output:DP-2",
+      ),
+      clientAreaOption: 2,
+      defaultInitialDestination: requiredDefaultInitialDestination(
+        "desktop:2,output:DP-2",
+      ),
+      schedule: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    fixture.windowAdded.emit(exact.window);
+    fixture.windowAdded.emit(fallback.window);
+    flushManualScheduler(scheduler);
+
+    expect(exact.window.output).toBe(targetOutput);
+    expect(exact.window.desktops).toEqual([thirdDesktop]);
+    expect(fallback.window.output).toBe(targetOutput);
+    expect(fallback.window.desktops).toEqual([secondDesktop]);
   });
 
   it.each([
@@ -47879,6 +47986,16 @@ function requiredApplicationInitialDestinations(value: string) {
   }
 
   return destinations;
+}
+
+function requiredDefaultInitialDestination(value: string) {
+  const decoded = decodeDefaultInitialDestination(value);
+
+  if (!decoded?.initialDestination) {
+    throw new Error("default initial destination fixture is invalid");
+  }
+
+  return decoded.initialDestination;
 }
 
 function requiredApplicationInitialFullscreen(value: string) {

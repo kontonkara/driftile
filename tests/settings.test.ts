@@ -32,6 +32,10 @@ import {
   DISABLED_DEFAULT_FLOATING_POSITION,
   sameDefaultFloatingPositions,
 } from "../src/default-floating-position";
+import {
+  decodeDefaultInitialDestination,
+  DISABLED_DEFAULT_INITIAL_DESTINATION,
+} from "../src/default-initial-destination";
 import { decodeWindowHeightPresetPercentages } from "../src/window-height-presets";
 import {
   decodeDriftileSettings,
@@ -181,6 +185,14 @@ if (!validDefaultFloatingPosition?.floatingPosition) {
   throw new Error("default floating-position fixture is invalid");
 }
 
+const validDefaultInitialDestination = decodeDefaultInitialDestination(
+  "desktop-name:Work,output:DP-2",
+);
+
+if (!validDefaultInitialDestination?.initialDestination) {
+  throw new Error("default initial-destination fixture is invalid");
+}
+
 const validSettings: DriftileSettings = {
   applicationBorderlessExclusions: validApplicationBorderlessExclusions,
   applicationColumnPresentations: validApplicationColumnPresentations,
@@ -207,6 +219,7 @@ const validSettings: DriftileSettings = {
   defaultColumnWidthPercent: 75,
   defaultColumnWidthPixels: 960,
   defaultFloatingPosition: validDefaultFloatingPosition.floatingPosition,
+  defaultInitialDestination: validDefaultInitialDestination.initialDestination,
   defaultWindowHeight: validDefaultWindowHeight,
   emptyDesktopAboveFirst: true,
   gap: 32.5,
@@ -250,6 +263,7 @@ const validSettingsInput = {
   defaultColumnWidthPercent: validSettings.defaultColumnWidthPercent,
   defaultColumnWidthPixels: validSettings.defaultColumnWidthPixels,
   defaultFloatingPosition: validDefaultFloatingPosition.canonicalValue,
+  defaultInitialDestination: validDefaultInitialDestination.canonicalValue,
   defaultWindowHeight: validSettings.defaultWindowHeight.canonicalValue,
   emptyDesktopAboveFirst: validSettings.emptyDesktopAboveFirst,
   gap: validSettings.gap,
@@ -277,6 +291,7 @@ describe("Driftile settings", () => {
       defaultColumnWidthPercent: 33,
       defaultColumnWidthPixels: 0,
       defaultFloatingPosition: null,
+      defaultInitialDestination: null,
       emptyDesktopAboveFirst: false,
       gap: 16,
       showTabIndicator: true,
@@ -297,6 +312,11 @@ describe("Driftile settings", () => {
       floatingPosition: null,
     });
     expect(Object.isFrozen(DISABLED_DEFAULT_FLOATING_POSITION)).toBe(true);
+    expect(DISABLED_DEFAULT_INITIAL_DESTINATION).toEqual({
+      canonicalValue: "",
+      initialDestination: null,
+    });
+    expect(Object.isFrozen(DISABLED_DEFAULT_INITIAL_DESTINATION)).toBe(true);
     expect(
       DEFAULT_DRIFTILE_SETTINGS.applicationBorderlessExclusions
         .canonicalEntries,
@@ -372,6 +392,7 @@ describe("Driftile settings", () => {
       defaultColumnWidthPercent: validSettings.defaultColumnWidthPercent,
       defaultColumnWidthPixels: validSettings.defaultColumnWidthPixels,
       defaultFloatingPosition: validSettings.defaultFloatingPosition,
+      defaultInitialDestination: validSettings.defaultInitialDestination,
       defaultWindowHeight: validSettings.defaultWindowHeight,
       emptyDesktopAboveFirst: validSettings.emptyDesktopAboveFirst,
       gap: validSettings.gap,
@@ -522,6 +543,7 @@ describe("Driftile settings", () => {
       defaultColumnWidthPercent: 10,
       defaultColumnWidthPixels: 0,
       defaultFloatingPosition: "",
+      defaultInitialDestination: "",
       defaultWindowHeight: "auto",
       emptyDesktopAboveFirst: false,
       gap: 0,
@@ -561,6 +583,7 @@ describe("Driftile settings", () => {
       defaultColumnWidthPercent: 100,
       defaultColumnWidthPixels: 16_384,
       defaultFloatingPosition: "right,16384,-16384",
+      defaultInitialDestination: "desktop:25,output:DP-1",
       defaultWindowHeight: "16384px",
       emptyDesktopAboveFirst: true,
       gap: 64,
@@ -590,6 +613,10 @@ describe("Driftile settings", () => {
     expect(decoded?.defaultFloatingPosition).toEqual(
       decodeDefaultFloatingPosition(settings.defaultFloatingPosition)
         ?.floatingPosition,
+    );
+    expect(decoded?.defaultInitialDestination).toEqual(
+      decodeDefaultInitialDestination(settings.defaultInitialDestination)
+        ?.initialDestination,
     );
     expect(decoded?.applicationWindowHeights.canonicalEntries.join("\n")).toBe(
       settings.applicationWindowHeights,
@@ -711,6 +738,10 @@ describe("Driftile settings", () => {
     [
       "an invalid default floating position",
       { defaultFloatingPosition: "center,0,0" },
+    ],
+    [
+      "an invalid default initial destination",
+      { defaultInitialDestination: "desktop:0" },
     ],
     ["an invalid default window height", { defaultWindowHeight: "9" }],
     [
@@ -853,7 +884,7 @@ describe("Driftile settings", () => {
     },
   );
 
-  it("rejects an incomplete thirty-seven-field snapshot", () => {
+  it("rejects an incomplete thirty-eight-field snapshot", () => {
     const incomplete: Record<string, unknown> = { ...validSettingsInput };
     delete incomplete["defaultColumnWidthPixels"];
 
@@ -991,6 +1022,14 @@ describe("Driftile settings", () => {
       throw new Error("default floating-position fixture is invalid");
     }
 
+    const changedDefaultInitialDestination = decodeDefaultInitialDestination(
+      "desktop:3,output:HDMI-A-1",
+    )?.initialDestination;
+
+    if (!changedDefaultInitialDestination) {
+      throw new Error("default initial-destination fixture is invalid");
+    }
+
     const changedApplicationTilingExclusions =
       decodeApplicationTilingExclusions("org.example.Other");
 
@@ -1030,6 +1069,7 @@ describe("Driftile settings", () => {
       { defaultColumnWidthPercent: 76 },
       { defaultColumnWidthPixels: 961 },
       { defaultFloatingPosition: changedDefaultFloatingPosition },
+      { defaultInitialDestination: changedDefaultInitialDestination },
       { defaultWindowHeight: changedDefaultWindowHeight },
       { emptyDesktopAboveFirst: false },
       { gap: 33 },

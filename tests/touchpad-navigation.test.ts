@@ -151,6 +151,10 @@ class RuntimeControllerDouble {
     return true;
   }
 
+  setDefaultInitialDestination(): boolean {
+    return true;
+  }
+
   setDefaultWindowHeight(): boolean {
     return true;
   }
@@ -339,6 +343,9 @@ describe("touchpad navigation", () => {
     expect(mainQml).toContain(
       'defaultFloatingPosition: KWin.readConfig("DefaultFloatingPosition", "")',
     );
+    expect(mainQml).toContain(
+      'defaultInitialDestination: KWin.readConfig("DefaultInitialDestination", "")',
+    );
     expect(mainQml).toContain("root.refreshTouchpadNavigationHandlers(true)");
     expect(mainQml).toMatch(
       /function onFocusLeftRequested\(\) \{\s*Runtime\.DriftileRuntime\.focusLeft\(\)\s*\}/u,
@@ -481,6 +488,7 @@ function settings(
     defaultColumnWidthPercent: 50,
     defaultColumnWidthPixels: 0,
     defaultFloatingPosition: "",
+    defaultInitialDestination: "",
     defaultWindowHeight: "auto",
     emptyDesktopAboveFirst: false,
     gap: 16,

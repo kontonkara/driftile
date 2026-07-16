@@ -77,6 +77,7 @@ import {
   sameDefaultWindowHeights,
   type DefaultWindowHeight,
 } from "./default-window-height";
+import { sameDefaultInitialDestinations } from "./default-initial-destination";
 import {
   DEFAULT_WINDOW_HEIGHT_PRESET_CYCLE,
   WINDOW_HEIGHT_PRESET_LIMITS,
@@ -919,6 +920,11 @@ interface FreshInitialDestinationCommand {
   readonly targetOutput: KWinOutput;
 }
 
+interface FreshInitialDestinationPolicy {
+  readonly applications: ApplicationInitialDestinations;
+  readonly defaultDestination: ApplicationInitialDestination | null;
+}
+
 export interface RuntimeControllerOptions {
   readonly alwaysCenterSingleColumn?: boolean;
   readonly applicationBorderlessExclusions?: ApplicationBorderlessExclusions;
@@ -944,6 +950,7 @@ export interface RuntimeControllerOptions {
   readonly createRect?: KWinRectFactory;
   readonly defaultColumnPresentation?: ColumnPresentation;
   readonly defaultFloatingPosition?: ApplicationFloatingPosition | null;
+  readonly defaultInitialDestination?: ApplicationInitialDestination | null;
   readonly defaultWindowHeight?: DefaultWindowHeight;
   readonly emptyDesktopAboveFirst?: boolean;
   readonly gap?: number;
@@ -1055,7 +1062,7 @@ export class RuntimeController {
   private readonly initialDestinationOperations = new Set<WindowId>();
   private readonly initialDestinationPolicyByWindow = new Map<
     WindowId,
-    ApplicationInitialDestinations
+    FreshInitialDestinationPolicy
   >();
   private readonly initialFullWidthPolicyByWindow = new Map<
     WindowId,
@@ -1167,6 +1174,7 @@ export class RuntimeController {
   private defaultColumnPresentation: ColumnPresentation;
   private defaultColumnWidth: ColumnWidth;
   private defaultFloatingPosition: ApplicationFloatingPosition | null;
+  private defaultInitialDestination: ApplicationInitialDestination | null;
   private defaultWindowHeight: DefaultWindowHeight;
   private windowHeightStep = DEFAULT_WINDOW_HEIGHT_STEP_PERCENT / 100;
   private windowHeightStepPixels = 0;
@@ -1295,6 +1303,7 @@ export class RuntimeController {
     this.defaultColumnPresentation =
       options.defaultColumnPresentation ?? "stacked";
     this.defaultFloatingPosition = options.defaultFloatingPosition ?? null;
+    this.defaultInitialDestination = options.defaultInitialDestination ?? null;
     this.defaultWindowHeight =
       decodeDefaultWindowHeight(
         options.defaultWindowHeight?.canonicalValue ?? "auto",
@@ -2142,6 +2151,21 @@ export class RuntimeController {
     }
 
     this.applicationInitialDestinations = destinations;
+    return true;
+  }
+
+  setDefaultInitialDestination(
+    destination: ApplicationInitialDestination | null | undefined,
+  ): boolean {
+    const normalized = destination ?? null;
+
+    if (
+      sameDefaultInitialDestinations(this.defaultInitialDestination, normalized)
+    ) {
+      return false;
+    }
+
+    this.defaultInitialDestination = normalized;
     return true;
   }
 
@@ -4691,11 +4715,15 @@ export class RuntimeController {
     if (
       this.initialWindowDiscoveryComplete &&
       source?.normalWindow &&
-      this.applicationInitialDestinations.canonicalEntries.length > 0
+      (this.applicationInitialDestinations.canonicalEntries.length > 0 ||
+        this.defaultInitialDestination !== null)
     ) {
       this.initialDestinationPolicyByWindow.set(
         trackedId,
-        this.applicationInitialDestinations,
+        Object.freeze({
+          applications: this.applicationInitialDestinations,
+          defaultDestination: this.defaultInitialDestination,
+        }),
       );
     }
 
@@ -26680,9 +26708,10 @@ export class RuntimeController {
     }
 
     const applicationId = applicationRuleIdentity(source);
-    const destination = applicationId
-      ? policy.initialDestinationFor(applicationId)
-      : undefined;
+    const destination =
+      (applicationId
+        ? policy.applications.initialDestinationFor(applicationId)
+        : undefined) ?? policy.defaultDestination;
     const command = destination
       ? this.freshInitialDestinationCommand(id, source, destination)
       : null;

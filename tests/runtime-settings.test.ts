@@ -2,7 +2,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ApplicationBorderlessExclusions } from "../src/application-borderless-exclusions";
 import type { ApplicationColumnPresentations } from "../src/application-column-presentations";
-import type { ApplicationInitialDestinations } from "../src/application-initial-destinations";
+import type {
+  ApplicationInitialDestination,
+  ApplicationInitialDestinations,
+} from "../src/application-initial-destinations";
 import type { ApplicationInitialFocused } from "../src/application-initial-focused";
 import type { ApplicationInitialUnfocused } from "../src/application-initial-unfocused";
 import type { ApplicationInitialFloating } from "../src/application-initial-floating";
@@ -47,6 +50,7 @@ interface DeliveredSettings {
   readonly defaultColumnWidth: ColumnWidth;
   readonly defaultColumnPresentation: "stacked" | "tabbed";
   readonly defaultFloatingPosition: ApplicationFloatingPosition | null;
+  readonly defaultInitialDestination: ApplicationInitialDestination | null;
   readonly defaultWindowHeight: string;
   readonly emptyDesktopAboveFirst: boolean;
   readonly gap: number;
@@ -88,6 +92,7 @@ interface RuntimeControllerOptions {
   readonly columnWidth: ColumnWidth;
   readonly defaultColumnPresentation: "stacked" | "tabbed";
   readonly defaultFloatingPosition: ApplicationFloatingPosition | null;
+  readonly defaultInitialDestination: ApplicationInitialDestination | null;
   readonly defaultWindowHeight: DefaultWindowHeight;
   readonly emptyDesktopAboveFirst: boolean;
   readonly gap: number;
@@ -149,6 +154,7 @@ class RuntimeControllerDouble {
       defaultColumnWidth: { ...options.columnWidth },
       defaultColumnPresentation: options.defaultColumnPresentation,
       defaultFloatingPosition: options.defaultFloatingPosition,
+      defaultInitialDestination: options.defaultInitialDestination,
       defaultWindowHeight: options.defaultWindowHeight.canonicalValue,
       emptyDesktopAboveFirst: options.emptyDesktopAboveFirst,
       gap: options.gap,
@@ -406,6 +412,17 @@ class RuntimeControllerDouble {
     return true;
   }
 
+  setDefaultInitialDestination(
+    value: ApplicationInitialDestination | null,
+  ): boolean {
+    this.calls.push("defaultInitialDestination");
+    this.state = {
+      ...this.state,
+      defaultInitialDestination: value === null ? null : { ...value },
+    };
+    return true;
+  }
+
   setDefaultWindowHeight(value: DefaultWindowHeight): boolean {
     this.calls.push("defaultWindowHeight");
     this.state = {
@@ -493,6 +510,7 @@ describe("runtime settings delivery", () => {
       applicationTilingExclusions: "org.example.InitiallyExcluded",
       alwaysCenterSingleColumn: true,
       defaultFloatingPosition: "top-left,12,8",
+      defaultInitialDestination: "desktop:2,output:DP-1",
       emptyDesktopAboveFirst: true,
       windowHeightPresets: "30,640px,60,960px,90",
     });
@@ -552,6 +570,10 @@ describe("runtime settings delivery", () => {
       x: 12,
       y: 8,
     });
+    expect(controller.deliveredSettings.defaultInitialDestination).toEqual({
+      desktop: 2,
+      output: "DP-1",
+    });
     expect(controller.deliveredSettings.alwaysCenterSingleColumn).toBe(true);
     expect(controller.deliveredSettings.emptyDesktopAboveFirst).toBe(true);
     expect(runtime.getTouchpadWorkspaceNavigation()).toBe(false);
@@ -594,6 +616,7 @@ describe("runtime settings delivery", () => {
       defaultColumnWidthPercent: 65,
       defaultColumnWidthPixels: 720,
       defaultFloatingPosition: "bottom-right,24,16",
+      defaultInitialDestination: "desktop-name:Work,output:HDMI-A-1",
       defaultWindowHeight: "60%",
       emptyDesktopAboveFirst: false,
       gap: 7.5,
@@ -637,6 +660,10 @@ describe("runtime settings delivery", () => {
         x: 24,
         y: 16,
       },
+      defaultInitialDestination: {
+        desktopName: "Work",
+        output: "HDMI-A-1",
+      },
       defaultWindowHeight: "60",
       emptyDesktopAboveFirst: false,
       gap: 7.5,
@@ -673,6 +700,7 @@ describe("runtime settings delivery", () => {
       "defaultColumnPresentation",
       "defaultColumnWidth",
       "defaultFloatingPosition",
+      "defaultInitialDestination",
       "defaultWindowHeight",
       "emptyDesktopAboveFirst",
       "columnWidthPresets",
@@ -706,6 +734,7 @@ describe("runtime settings delivery", () => {
       runtime.applySettings({
         ...next,
         defaultFloatingPosition: " bottom-right,24,16 ",
+        defaultInitialDestination: " desktop-name:Work,output:HDMI-A-1 ",
       }),
     ).toBe(true);
     expect(controller.calls).toEqual([]);
@@ -773,6 +802,7 @@ describe("runtime settings delivery", () => {
       "defaultColumnPresentation",
       "defaultColumnWidth",
       "defaultFloatingPosition",
+      "defaultInitialDestination",
       "defaultWindowHeight",
       "emptyDesktopAboveFirst",
       "columnWidthPresets",
@@ -828,6 +858,7 @@ function settings(
     defaultColumnWidthPercent: 50,
     defaultColumnWidthPixels: 0,
     defaultFloatingPosition: "",
+    defaultInitialDestination: "",
     defaultWindowHeight: "auto",
     emptyDesktopAboveFirst: false,
     gap: 16,
@@ -879,6 +910,10 @@ function snapshot(settingsValue: DeliveredSettings): DeliveredSettings {
       settingsValue.defaultFloatingPosition === null
         ? null
         : { ...settingsValue.defaultFloatingPosition },
+    defaultInitialDestination:
+      settingsValue.defaultInitialDestination === null
+        ? null
+        : { ...settingsValue.defaultInitialDestination },
     windowHeightPresets: settingsValue.windowHeightPresets.map((value) => ({
       policy: { ...value.policy },
       stateIndex: value.stateIndex,
