@@ -195,6 +195,8 @@ let
   renderApplicationInitialFloating = renderApplicationTilingExclusions;
   applicationInitialFullscreenType = applicationTilingExclusionType;
   renderApplicationInitialFullscreen = renderApplicationTilingExclusions;
+  applicationInitialMaximizedType = applicationTilingExclusionType;
+  renderApplicationInitialMaximized = renderApplicationTilingExclusions;
   applicationInitialFullWidthType = applicationTilingExclusionType;
   renderApplicationInitialFullWidth = renderApplicationTilingExclusions;
   validOutputName =
@@ -508,6 +510,12 @@ in
               description = "Exact case-sensitive KWin desktopFileName strings whose newly admitted windows start fullscreen.";
             };
 
+            applicationInitialMaximized = lib.mkOption {
+              type = applicationInitialMaximizedType;
+              default = [ ];
+              description = "Exact case-sensitive KWin desktopFileName strings whose newly admitted windows start maximized within the work area.";
+            };
+
             applicationInitialFullWidth = lib.mkOption {
               type = applicationInitialFullWidthType;
               default = [ ];
@@ -747,6 +755,8 @@ in
             renderApplicationInitialFloating cfg.settings.applicationInitialFloating;
           ApplicationInitialFullscreen =
             renderApplicationInitialFullscreen cfg.settings.applicationInitialFullscreen;
+          ApplicationInitialMaximized =
+            renderApplicationInitialMaximized cfg.settings.applicationInitialMaximized;
           ApplicationInitialFullWidth =
             renderApplicationInitialFullWidth cfg.settings.applicationInitialFullWidth;
           ApplicationInitialDestinations =

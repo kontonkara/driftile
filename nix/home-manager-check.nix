@@ -63,6 +63,10 @@ let
           "org.example.Terminal"
           "org.example.Browser"
         ];
+        applicationInitialMaximized = [
+          "org.example.Terminal"
+          "org.example.Browser"
+        ];
         applicationInitialFullWidth = [
           "org.example.Terminal"
           "org.example.Browser"
@@ -688,6 +692,9 @@ assert
       ApplicationInitialFullscreen = ''
         org.example.Browser
         org.example.Terminal'';
+      ApplicationInitialMaximized = ''
+        org.example.Browser
+        org.example.Terminal'';
       ApplicationInitialFullWidth = ''
         org.example.Browser
         org.example.Terminal'';
@@ -725,7 +732,7 @@ assert
 assert
   builtins.length (
     builtins.attrNames standalone.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile"
-  ) == 33;
+  ) == 34;
 assert
   standalone.config.xdg.configFile."driftile/shortcuts.json".text == ''
     {"bindings":{"driftile_focus_column_left":["Meta+A"],"driftile_reset_column_width":[]},"version":1}
@@ -753,6 +760,7 @@ assert
       ApplicationFocusCentering = "";
       ApplicationInitialFloating = "";
       ApplicationInitialFullscreen = "";
+      ApplicationInitialMaximized = "";
       ApplicationInitialFullWidth = "";
       ApplicationInitialDestinations = "";
       ApplicationTilingExclusions = "";

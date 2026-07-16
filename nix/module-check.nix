@@ -474,6 +474,10 @@ let
             "org.example.Terminal"
             "org.example.Browser"
           ];
+          applicationInitialMaximized = [
+            "org.example.Terminal"
+            "org.example.Browser"
+          ];
           applicationInitialFullWidth = [
             "org.example.Terminal"
             "org.example.Browser"
@@ -775,6 +779,18 @@ let
         ) 128;
       }
       { };
+  homeManagerMaximumInitialMaximized =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.settings.applicationInitialMaximized = builtins.genList (
+          index: "org.example.App${toString index}"
+        ) 128;
+      }
+      { };
   homeManagerMaximumInitialDestinations =
     evaluate homeManagerModule
       [
@@ -1029,6 +1045,18 @@ let
     }
     {
       applicationInitialFullscreen = builtins.genList (
+        index: "org.example.App${toString index}"
+      ) 129;
+    }
+    { applicationInitialMaximized = "org.example.Editor"; }
+    {
+      applicationInitialMaximized = [
+        "org.example.Editor"
+        "org.example.Editor"
+      ];
+    }
+    {
+      applicationInitialMaximized = builtins.genList (
         index: "org.example.App${toString index}"
       ) 129;
     }
@@ -1415,6 +1443,9 @@ let
       ApplicationInitialFullscreen = ''
         org.example.Browser
         org.example.Terminal'';
+      ApplicationInitialMaximized = ''
+        org.example.Browser
+        org.example.Terminal'';
       ApplicationInitialFullWidth = ''
         org.example.Browser
         org.example.Terminal'';
@@ -1459,6 +1490,7 @@ let
       ApplicationFocusCentering = "";
       ApplicationInitialFloating = "";
       ApplicationInitialFullscreen = "";
+      ApplicationInitialMaximized = "";
       ApplicationInitialFullWidth = "";
       ApplicationInitialDestinations = "";
       ApplicationTilingExclusions = "";
@@ -1631,11 +1663,11 @@ assert homeManagerSettings.config.qt.kde.settings == expectedSettings;
 assert homeManagerDefaultSettings.config.qt.kde.settings == expectedDefaultSettings;
 assert
   builtins.length (builtins.attrNames expectedSettings.kwinrc."Script-io.github.kontonkara.driftile")
-  == 33;
+  == 34;
 assert
   builtins.length (
     builtins.attrNames expectedDefaultSettings.kwinrc."Script-io.github.kontonkara.driftile"
-  ) == 30;
+  ) == 31;
 assert
   homeManagerMaximumDefaultColumnWidthPixels.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".DefaultColumnWidthPixels
   == 16384;
@@ -1711,6 +1743,11 @@ assert
 assert
   builtins.length (
     lib.splitString "\n"
+      homeManagerMaximumInitialMaximized.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ApplicationInitialMaximized
+  ) == 128;
+assert
+  builtins.length (
+    lib.splitString "\n"
       homeManagerMaximumInitialDestinations.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ApplicationInitialDestinations
   ) == 128;
 assert
@@ -1780,6 +1817,7 @@ assert
       ApplicationFocusCentering = "";
       ApplicationInitialFloating = "";
       ApplicationInitialFullscreen = "";
+      ApplicationInitialMaximized = "";
       ApplicationInitialFullWidth = "";
       ApplicationInitialDestinations = "";
       ApplicationTilingExclusions = "";
