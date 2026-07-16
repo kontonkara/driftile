@@ -235,6 +235,26 @@
           </widget>
          </item>
          <item row="4" column="0">
+          <widget class="QLabel" name="defaultWindowHeightLabel">
+           <property name="text">
+            <string>Default initial tiled client height:</string>
+           </property>
+           <property name="buddy">
+            <cstring>kcfg_DefaultWindowHeight</cstring>
+           </property>
+          </widget>
+         </item>
+         <item row="4" column="1">
+          <widget class="QLineEdit" name="kcfg_DefaultWindowHeight">
+           <property name="toolTip">
+            <string>Use auto for automatic height, a bare 10 to 100 or explicit 10% to 100% percentage, or a fixed 1px to 16384px logical client height. Application rules override this value. Only fresh singleton admissions and fresh retiling after a change use it; existing, restored, and transferred geometry is unchanged. Solver constraints and output pixel-grid snapping remain authoritative.</string>
+           </property>
+           <property name="placeholderText">
+            <string>auto, 50%, or 720px</string>
+           </property>
+          </widget>
+         </item>
+         <item row="5" column="0">
           <widget class="QLabel" name="columnWidthStepLabel">
            <property name="text">
             <string>Column width step:</string>
@@ -244,7 +264,7 @@
            </property>
           </widget>
          </item>
-         <item row="4" column="1">
+         <item row="5" column="1">
           <widget class="QSpinBox" name="kcfg_ColumnWidthStepPercent">
            <property name="suffix">
             <string> %</string>
@@ -260,7 +280,7 @@
            </property>
           </widget>
          </item>
-         <item row="5" column="0">
+         <item row="6" column="0">
           <widget class="QLabel" name="columnWidthStepPixelsLabel">
            <property name="text">
             <string>Fixed column width step:</string>
@@ -270,7 +290,7 @@
            </property>
           </widget>
          </item>
-         <item row="5" column="1">
+         <item row="6" column="1">
           <widget class="QSpinBox" name="kcfg_ColumnWidthStepPixels">
            <property name="toolTip">
             <string>Zero uses the percentage step above. A positive value changes width by fixed logical pixels without rewriting existing geometry. Window constraints and output-pixel snapping remain authoritative.</string>
@@ -292,7 +312,7 @@
            </property>
           </widget>
          </item>
-         <item row="6" column="0">
+         <item row="7" column="0">
           <widget class="QLabel" name="columnWidthPresetsLabel">
            <property name="text">
             <string>Column width presets (% or px):</string>
@@ -302,7 +322,7 @@
            </property>
           </widget>
          </item>
-         <item row="6" column="1">
+         <item row="7" column="1">
           <widget class="QLineEdit" name="kcfg_ColumnWidthPresets">
            <property name="toolTip">
             <string>Up to 16 comma-separated presets. Percentages use bare 10 to 100 or explicit 10% to 100%; fixed sizes use 1px to 16384px. Values must increase within each unit. Blank uses the built-in thirds.</string>
@@ -312,7 +332,7 @@
            </property>
           </widget>
          </item>
-         <item row="7" column="0">
+         <item row="8" column="0">
           <widget class="QLabel" name="windowHeightStepLabel">
            <property name="text">
             <string>Window height step:</string>
@@ -322,7 +342,7 @@
            </property>
           </widget>
          </item>
-         <item row="7" column="1">
+         <item row="8" column="1">
           <widget class="QSpinBox" name="kcfg_WindowHeightStepPercent">
            <property name="suffix">
             <string> %</string>
@@ -338,7 +358,7 @@
            </property>
           </widget>
          </item>
-         <item row="8" column="0">
+         <item row="9" column="0">
           <widget class="QLabel" name="windowHeightStepPixelsLabel">
            <property name="text">
             <string>Fixed window height step:</string>
@@ -348,7 +368,7 @@
            </property>
           </widget>
          </item>
-         <item row="8" column="1">
+         <item row="9" column="1">
           <widget class="QSpinBox" name="kcfg_WindowHeightStepPixels">
            <property name="toolTip">
             <string>Zero uses the percentage step above. A positive value changes height by fixed logical pixels without rewriting existing geometry. Window constraints and output-pixel snapping remain authoritative.</string>
@@ -370,7 +390,7 @@
            </property>
           </widget>
          </item>
-         <item row="9" column="0">
+         <item row="10" column="0">
           <widget class="QLabel" name="windowHeightPresetsLabel">
            <property name="text">
             <string>Window height presets (% or px):</string>
@@ -380,7 +400,7 @@
            </property>
           </widget>
          </item>
-         <item row="9" column="1">
+         <item row="10" column="1">
           <widget class="QLineEdit" name="kcfg_WindowHeightPresets">
            <property name="toolTip">
             <string>Up to 16 comma-separated presets. Percentages use bare 10 to 100 or explicit 10% to 100%; fixed sizes use 1px to 16384px. Values must increase within each unit. Blank uses the built-in 1/3, 1/2, and 2/3 proportions.</string>

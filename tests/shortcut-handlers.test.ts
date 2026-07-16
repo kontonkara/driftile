@@ -927,6 +927,7 @@ describe("KWin shortcut handlers", () => {
       "kcfg_DefaultColumnPresentation",
       "kcfg_DefaultColumnWidthPercent",
       "kcfg_DefaultColumnWidthPixels",
+      "kcfg_DefaultWindowHeight",
       "kcfg_ColumnWidthStepPercent",
       "kcfg_ColumnWidthStepPixels",
       "kcfg_ColumnWidthPresets",
@@ -1174,7 +1175,7 @@ describe("KWin shortcut handlers", () => {
     );
   });
 
-  it("exposes proportional and opt-in fixed default column widths", () => {
+  it("exposes default column width and initial window height policies", () => {
     const widthEntry = configuration.match(
       /<entry name="DefaultColumnWidthPercent" type="Int">([\s\S]*?)<\/entry>/,
     )?.[1];
@@ -1192,6 +1193,15 @@ describe("KWin shortcut handlers", () => {
     )?.[1];
     const fixedWidthWidget = configurationUi.match(
       /<widget class="QSpinBox" name="kcfg_DefaultColumnWidthPixels">([\s\S]*?)<\/widget>/,
+    )?.[1];
+    const heightEntry = configuration.match(
+      /<entry name="DefaultWindowHeight" type="String">([\s\S]*?)<\/entry>/,
+    )?.[1];
+    const heightLabel = configurationUi.match(
+      /<widget class="QLabel" name="defaultWindowHeightLabel">([\s\S]*?)<\/widget>/,
+    )?.[1];
+    const heightWidget = configurationUi.match(
+      /<widget class="QLineEdit" name="kcfg_DefaultWindowHeight">([\s\S]*?)<\/widget>/,
     )?.[1];
 
     expect(widthEntry).toContain(
@@ -1252,6 +1262,42 @@ describe("KWin shortcut handlers", () => {
     );
     expect(qml).toContain(
       `defaultColumnWidthPixels: KWin.readConfig("DefaultColumnWidthPixels", ${String(DEFAULT_DRIFTILE_SETTINGS.defaultColumnWidthPixels)})`,
+    );
+    expect(heightEntry).toContain(
+      "<label>Default initial tiled client height</label>",
+    );
+    expect(heightEntry).toContain("<default>auto</default>");
+    expect(heightLabel).toContain(
+      "<string>Default initial tiled client height:</string>",
+    );
+    expect(heightLabel).toContain(
+      "<cstring>kcfg_DefaultWindowHeight</cstring>",
+    );
+    expect(heightWidget).toContain("auto for automatic height");
+    expect(heightWidget).toContain("bare 10 to 100");
+    expect(heightWidget).toContain("explicit 10% to 100% percentage");
+    expect(heightWidget).toContain(
+      "fixed 1px to 16384px logical client height",
+    );
+    expect(heightWidget).toContain("Application rules override this value.");
+    expect(heightWidget).toContain(
+      "fresh singleton admissions and fresh retiling after a change",
+    );
+    expect(heightWidget).toContain(
+      "existing, restored, and transferred geometry is unchanged",
+    );
+    expect(heightWidget).toContain(
+      "Solver constraints and output pixel-grid snapping remain authoritative.",
+    );
+    expect(heightWidget).toContain("<string>auto, 50%, or 720px</string>");
+    expect(qml).toContain(
+      'defaultWindowHeight: KWin.readConfig("DefaultWindowHeight", "auto")',
+    );
+    expect(runtime).toContain(
+      "defaultWindowHeight: settings.defaultWindowHeight",
+    );
+    expect(runtime).toContain(
+      "controller.setDefaultWindowHeight(settings.defaultWindowHeight)",
     );
   });
 
