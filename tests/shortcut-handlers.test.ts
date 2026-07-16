@@ -941,6 +941,7 @@ describe("KWin shortcut handlers", () => {
       "kcfg_ApplicationColumnWidths",
       "kcfg_ApplicationWindowHeights",
       "kcfg_ApplicationFocusCentering",
+      "kcfg_ApplicationInitialDestinations",
       "kcfg_ApplicationInitialFloating",
       "kcfg_ApplicationFloatingPositions",
       "kcfg_ApplicationInitialFullWidth",
@@ -1497,6 +1498,15 @@ describe("KWin shortcut handlers", () => {
   });
 
   it("exposes exact application admission rules as bounded lists", () => {
+    const initialDestinationsEntry = configuration.match(
+      /<entry name="ApplicationInitialDestinations" type="String">([\s\S]*?)<\/entry>/,
+    )?.[1];
+    const initialDestinationsLabel = configurationUi.match(
+      /<widget class="QLabel" name="applicationInitialDestinationsLabel">([\s\S]*?)<\/widget>/,
+    )?.[1];
+    const initialDestinationsWidget = configurationUi.match(
+      /<widget class="QPlainTextEdit" name="kcfg_ApplicationInitialDestinations">([\s\S]*?)<\/widget>/,
+    )?.[1];
     const initialFloatingEntry = configuration.match(
       /<entry name="ApplicationInitialFloating" type="String">([\s\S]*?)<\/entry>/,
     )?.[1];
@@ -1534,6 +1544,40 @@ describe("KWin shortcut handlers", () => {
       /<widget class="QPlainTextEdit" name="kcfg_ApplicationInitialFullscreen">([\s\S]*?)<\/widget>/,
     )?.[1];
 
+    expect(initialDestinationsEntry).toContain(
+      "<label>Initial application desktop and output destinations by KWin desktopFileName</label>",
+    );
+    expect(initialDestinationsEntry).toContain("<default></default>");
+    expect(initialDestinationsLabel).toContain(
+      "<string>Application initial destinations:</string>",
+    );
+    expect(initialDestinationsLabel).toContain(
+      "<cstring>kcfg_ApplicationInitialDestinations</cstring>",
+    );
+    expect(initialDestinationsWidget).toContain(
+      "Enter up to 128 exact, case-sensitive KWin desktopFileName=desktop:2,output:DP-1 rules, one per line.",
+    );
+    expect(initialDestinationsWidget).toContain(
+      "Include either or both comma-separated fields.",
+    );
+    expect(initialDestinationsWidget).toContain(
+      "Desktop numbers are 1 to 25; output names are exact, case-sensitive KWin output names.",
+    );
+    expect(initialDestinationsWidget).toContain(
+      "Rules apply once to genuinely new normal windows, before initial floating, full-width, and fullscreen rules.",
+    );
+    expect(initialDestinationsWidget).toContain(
+      "Admission writes only the new window's desktop and output assignment; it never moves an already tracked window, changes focus, or switches the current desktop.",
+    );
+    expect(initialDestinationsWidget).toContain(
+      "Missing or rejected destinations use a safe one-shot fallback.",
+    );
+    expect(initialDestinationsWidget).toContain(
+      "Live edits affect future windows only.",
+    );
+    expect(qml).toContain(
+      'applicationInitialDestinations: KWin.readConfig("ApplicationInitialDestinations", "")',
+    );
     expect(initialFloatingEntry).toContain(
       "<label>Applications initially floating by desktop-file ID</label>",
     );

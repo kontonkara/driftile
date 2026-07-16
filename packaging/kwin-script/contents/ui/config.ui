@@ -557,6 +557,32 @@
         </widget>
        </item>
        <item>
+        <widget class="QLabel" name="applicationInitialDestinationsLabel">
+         <property name="text">
+          <string>Application initial destinations:</string>
+         </property>
+         <property name="buddy">
+          <cstring>kcfg_ApplicationInitialDestinations</cstring>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPlainTextEdit" name="kcfg_ApplicationInitialDestinations">
+         <property name="toolTip">
+          <string>Enter up to 128 exact, case-sensitive KWin desktopFileName=desktop:2,output:DP-1 rules, one per line. Include either or both comma-separated fields. Desktop numbers are 1 to 25; output names are exact, case-sensitive KWin output names.</string>
+         </property>
+         <property name="whatsThis">
+          <string>Rules apply once to genuinely new normal windows, before initial floating, full-width, and fullscreen rules. Admission writes only the new window's desktop and output assignment; it never moves an already tracked window, changes focus, or switches the current desktop. Missing or rejected destinations use a safe one-shot fallback. Live edits affect future windows only.</string>
+         </property>
+         <property name="minimumSize">
+          <size>
+           <width>0</width>
+           <height>120</height>
+          </size>
+         </property>
+        </widget>
+       </item>
+       <item>
         <widget class="QLabel" name="applicationInitialFloatingLabel">
          <property name="text">
           <string>Applications initially floating:</string>

@@ -1107,6 +1107,7 @@ QtObject {
             applicationColumnWidths: KWin.readConfig("ApplicationColumnWidths", ""),
             applicationWindowHeights: KWin.readConfig("ApplicationWindowHeights", ""),
             applicationFocusCentering: KWin.readConfig("ApplicationFocusCentering", ""),
+            applicationInitialDestinations: KWin.readConfig("ApplicationInitialDestinations", ""),
             applicationInitialFloating: KWin.readConfig("ApplicationInitialFloating", ""),
             applicationFloatingPositions: KWin.readConfig("ApplicationFloatingPositions", ""),
             applicationInitialFullWidth: KWin.readConfig("ApplicationInitialFullWidth", ""),
