@@ -12,7 +12,10 @@ import type { ApplicationInitialMaximized } from "../src/application-initial-max
 import type { ApplicationColumnWidthOverrides } from "../src/application-overrides";
 import type { ApplicationWindowHeightOverrides } from "../src/application-window-heights";
 import type { ApplicationFocusCentering } from "../src/application-focus-centering";
-import type { ApplicationFloatingPositions } from "../src/application-floating-positions";
+import type {
+  ApplicationFloatingPosition,
+  ApplicationFloatingPositions,
+} from "../src/application-floating-positions";
 import type { ApplicationTilingExclusions } from "../src/application-tiling-exclusions";
 import type { ColumnWidth } from "../src/core/layout-engine";
 import type { DefaultWindowHeight } from "../src/default-window-height";
@@ -43,6 +46,7 @@ interface DeliveredSettings {
   readonly columnWidthStepPercent: number;
   readonly defaultColumnWidth: ColumnWidth;
   readonly defaultColumnPresentation: "stacked" | "tabbed";
+  readonly defaultFloatingPosition: ApplicationFloatingPosition | null;
   readonly defaultWindowHeight: string;
   readonly emptyDesktopAboveFirst: boolean;
   readonly gap: number;
@@ -83,6 +87,7 @@ interface RuntimeControllerOptions {
   readonly borderlessWindows: boolean;
   readonly columnWidth: ColumnWidth;
   readonly defaultColumnPresentation: "stacked" | "tabbed";
+  readonly defaultFloatingPosition: ApplicationFloatingPosition | null;
   readonly defaultWindowHeight: DefaultWindowHeight;
   readonly emptyDesktopAboveFirst: boolean;
   readonly gap: number;
@@ -143,6 +148,7 @@ class RuntimeControllerDouble {
       columnWidthStepPercent: 1,
       defaultColumnWidth: { ...options.columnWidth },
       defaultColumnPresentation: options.defaultColumnPresentation,
+      defaultFloatingPosition: options.defaultFloatingPosition,
       defaultWindowHeight: options.defaultWindowHeight.canonicalValue,
       emptyDesktopAboveFirst: options.emptyDesktopAboveFirst,
       gap: options.gap,
@@ -389,6 +395,17 @@ class RuntimeControllerDouble {
     return true;
   }
 
+  setDefaultFloatingPosition(
+    value: ApplicationFloatingPosition | null,
+  ): boolean {
+    this.calls.push("defaultFloatingPosition");
+    this.state = {
+      ...this.state,
+      defaultFloatingPosition: value === null ? null : { ...value },
+    };
+    return true;
+  }
+
   setDefaultWindowHeight(value: DefaultWindowHeight): boolean {
     this.calls.push("defaultWindowHeight");
     this.state = {
@@ -475,6 +492,7 @@ describe("runtime settings delivery", () => {
       applicationInitialMaximized: "org.example.InitialMail",
       applicationTilingExclusions: "org.example.InitiallyExcluded",
       alwaysCenterSingleColumn: true,
+      defaultFloatingPosition: "top-left,12,8",
       emptyDesktopAboveFirst: true,
       windowHeightPresets: "30,640px,60,960px,90",
     });
@@ -529,6 +547,11 @@ describe("runtime settings delivery", () => {
       kind: "proportion",
       value: 0.5,
     });
+    expect(controller.deliveredSettings.defaultFloatingPosition).toEqual({
+      anchor: "top-left",
+      x: 12,
+      y: 8,
+    });
     expect(controller.deliveredSettings.alwaysCenterSingleColumn).toBe(true);
     expect(controller.deliveredSettings.emptyDesktopAboveFirst).toBe(true);
     expect(runtime.getTouchpadWorkspaceNavigation()).toBe(false);
@@ -570,6 +593,7 @@ describe("runtime settings delivery", () => {
       defaultColumnPresentation: "tabbed",
       defaultColumnWidthPercent: 65,
       defaultColumnWidthPixels: 720,
+      defaultFloatingPosition: "bottom-right,24,16",
       defaultWindowHeight: "60%",
       emptyDesktopAboveFirst: false,
       gap: 7.5,
@@ -608,6 +632,11 @@ describe("runtime settings delivery", () => {
       columnWidthStepPercent: 13,
       defaultColumnWidth: { kind: "fixed", value: 720 },
       defaultColumnPresentation: "tabbed",
+      defaultFloatingPosition: {
+        anchor: "bottom-right",
+        x: 24,
+        y: 16,
+      },
       defaultWindowHeight: "60",
       emptyDesktopAboveFirst: false,
       gap: 7.5,
@@ -643,6 +672,7 @@ describe("runtime settings delivery", () => {
       "centerFocusedColumnOnOverflow",
       "defaultColumnPresentation",
       "defaultColumnWidth",
+      "defaultFloatingPosition",
       "defaultWindowHeight",
       "emptyDesktopAboveFirst",
       "columnWidthPresets",
@@ -670,6 +700,15 @@ describe("runtime settings delivery", () => {
 
     deferredWork[0]?.();
     expect(controller.deferredSnapshots).toEqual([expected]);
+
+    controller.calls.length = 0;
+    expect(
+      runtime.applySettings({
+        ...next,
+        defaultFloatingPosition: " bottom-right,24,16 ",
+      }),
+    ).toBe(true);
+    expect(controller.calls).toEqual([]);
 
     runtime.destroy();
   });
@@ -733,6 +772,7 @@ describe("runtime settings delivery", () => {
       "centerFocusedColumnOnOverflow",
       "defaultColumnPresentation",
       "defaultColumnWidth",
+      "defaultFloatingPosition",
       "defaultWindowHeight",
       "emptyDesktopAboveFirst",
       "columnWidthPresets",
@@ -787,6 +827,7 @@ function settings(
     defaultColumnPresentation: "stacked",
     defaultColumnWidthPercent: 50,
     defaultColumnWidthPixels: 0,
+    defaultFloatingPosition: "",
     defaultWindowHeight: "auto",
     emptyDesktopAboveFirst: false,
     gap: 16,
@@ -834,6 +875,10 @@ function snapshot(settingsValue: DeliveredSettings): DeliveredSettings {
       ...value,
     })),
     defaultColumnWidth: { ...settingsValue.defaultColumnWidth },
+    defaultFloatingPosition:
+      settingsValue.defaultFloatingPosition === null
+        ? null
+        : { ...settingsValue.defaultFloatingPosition },
     windowHeightPresets: settingsValue.windowHeightPresets.map((value) => ({
       policy: { ...value.policy },
       stateIndex: value.stateIndex,
