@@ -7,6 +7,7 @@ import { decodeApplicationWindowHeightOverrides } from "../src/application-windo
 import { decodeApplicationFocusCentering } from "../src/application-focus-centering";
 import { decodeApplicationTilingExclusions } from "../src/application-tiling-exclusions";
 import { decodeColumnWidthPresetPercentages } from "../src/column-width-presets";
+import { decodeDefaultWindowHeight } from "../src/default-window-height";
 import { decodeWindowHeightPresetPercentages } from "../src/window-height-presets";
 import {
   decodeDriftileSettings,
@@ -86,6 +87,12 @@ if (!validWindowHeightPresets) {
   throw new Error("window-height preset fixture is invalid");
 }
 
+const validDefaultWindowHeight = decodeDefaultWindowHeight("720px");
+
+if (!validDefaultWindowHeight) {
+  throw new Error("default window-height fixture is invalid");
+}
+
 const validSettings: DriftileSettings = {
   applicationBorderlessExclusions: validApplicationBorderlessExclusions,
   applicationColumnPresentations: validApplicationColumnPresentations,
@@ -104,6 +111,7 @@ const validSettings: DriftileSettings = {
   defaultColumnPresentation: "tabbed",
   defaultColumnWidthPercent: 75,
   defaultColumnWidthPixels: 960,
+  defaultWindowHeight: validDefaultWindowHeight,
   emptyDesktopAboveFirst: true,
   gap: 32.5,
   showTabIndicator: false,
@@ -136,6 +144,7 @@ const validSettingsInput = {
   defaultColumnPresentation: validSettings.defaultColumnPresentation,
   defaultColumnWidthPercent: validSettings.defaultColumnWidthPercent,
   defaultColumnWidthPixels: validSettings.defaultColumnWidthPixels,
+  defaultWindowHeight: validSettings.defaultWindowHeight.canonicalValue,
   emptyDesktopAboveFirst: validSettings.emptyDesktopAboveFirst,
   gap: validSettings.gap,
   showTabIndicator: validSettings.showTabIndicator,
@@ -169,6 +178,10 @@ describe("Driftile settings", () => {
       touchpadWorkspaceNavigation: false,
       windowHeightStepPixels: 0,
       windowHeightStepPercent: 10,
+    });
+    expect(DEFAULT_DRIFTILE_SETTINGS.defaultWindowHeight).toEqual({
+      canonicalValue: "auto",
+      windowHeight: null,
     });
     expect(
       DEFAULT_DRIFTILE_SETTINGS.applicationBorderlessExclusions
@@ -223,6 +236,7 @@ describe("Driftile settings", () => {
       defaultColumnPresentation: validSettings.defaultColumnPresentation,
       defaultColumnWidthPercent: validSettings.defaultColumnWidthPercent,
       defaultColumnWidthPixels: validSettings.defaultColumnWidthPixels,
+      defaultWindowHeight: validSettings.defaultWindowHeight,
       emptyDesktopAboveFirst: validSettings.emptyDesktopAboveFirst,
       gap: validSettings.gap,
       showTabIndicator: validSettings.showTabIndicator,
@@ -302,6 +316,7 @@ describe("Driftile settings", () => {
       defaultColumnPresentation: "stacked",
       defaultColumnWidthPercent: 10,
       defaultColumnWidthPixels: 0,
+      defaultWindowHeight: "auto",
       emptyDesktopAboveFirst: false,
       gap: 0,
       showTabIndicator: false,
@@ -331,6 +346,7 @@ describe("Driftile settings", () => {
       defaultColumnPresentation: "tabbed",
       defaultColumnWidthPercent: 100,
       defaultColumnWidthPixels: 16_384,
+      defaultWindowHeight: "16384px",
       emptyDesktopAboveFirst: true,
       gap: 64,
       showTabIndicator: true,
@@ -351,6 +367,9 @@ describe("Driftile settings", () => {
     ).toBe(settings.applicationBorderlessExclusions);
     expect(decoded?.applicationColumnWidths.canonicalEntries.join("\n")).toBe(
       settings.applicationColumnWidths,
+    );
+    expect(decoded?.defaultWindowHeight.canonicalValue).toBe(
+      settings.defaultWindowHeight,
     );
     expect(decoded?.applicationWindowHeights.canonicalEntries.join("\n")).toBe(
       settings.applicationWindowHeights,
@@ -444,6 +463,7 @@ describe("Driftile settings", () => {
     ["an invalid default presentation", { defaultColumnPresentation: "tiled" }],
     ["invalid column-width presets", { columnWidthPresets: "50,40" }],
     ["invalid window-height presets", { windowHeightPresets: "50,40" }],
+    ["an invalid default window height", { defaultWindowHeight: "9" }],
     [
       "invalid application overrides",
       { applicationColumnWidths: "org.example.Editor=9" },
@@ -539,7 +559,7 @@ describe("Driftile settings", () => {
     },
   );
 
-  it("rejects an incomplete twenty-seven-field snapshot", () => {
+  it("rejects an incomplete twenty-eight-field snapshot", () => {
     const incomplete: Record<string, unknown> = { ...validSettingsInput };
     delete incomplete["defaultColumnWidthPixels"];
 
@@ -613,6 +633,12 @@ describe("Driftile settings", () => {
       throw new Error("window-height preset fixture is invalid");
     }
 
+    const changedDefaultWindowHeight = decodeDefaultWindowHeight("60%");
+
+    if (!changedDefaultWindowHeight) {
+      throw new Error("default window-height fixture is invalid");
+    }
+
     const changedApplicationTilingExclusions =
       decodeApplicationTilingExclusions("org.example.Other");
 
@@ -642,6 +668,7 @@ describe("Driftile settings", () => {
       { defaultColumnPresentation: "stacked" as const },
       { defaultColumnWidthPercent: 76 },
       { defaultColumnWidthPixels: 961 },
+      { defaultWindowHeight: changedDefaultWindowHeight },
       { emptyDesktopAboveFirst: false },
       { gap: 33 },
       { showTabIndicator: true },

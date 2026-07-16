@@ -113,6 +113,7 @@ export function init(
     columnWidth: defaultColumnWidthForSettings(settings),
     createRect,
     defaultColumnPresentation: settings.defaultColumnPresentation,
+    defaultWindowHeight: settings.defaultWindowHeight,
     emptyDesktopAboveFirst: settings.emptyDesktopAboveFirst,
     gap: settings.gap,
     layoutHydrationQuietSamples: LAYOUT_HYDRATION_QUIET_SAMPLES,
@@ -207,6 +208,7 @@ export function applySettings(settingsSnapshot: unknown): boolean {
   );
   controller.setDefaultColumnPresentation(settings.defaultColumnPresentation);
   controller.setDefaultColumnWidth(defaultColumnWidthForSettings(settings));
+  controller.setDefaultWindowHeight(settings.defaultWindowHeight);
   controller.setEmptyDesktopAboveFirst(settings.emptyDesktopAboveFirst);
   controller.setColumnWidthPresets(settings.columnWidthPresets.presets);
   controller.setColumnWidthStepPercent(settings.columnWidthStepPercent);

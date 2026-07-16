@@ -119,6 +119,10 @@ class RuntimeControllerDouble {
     return true;
   }
 
+  setDefaultWindowHeight(): boolean {
+    return true;
+  }
+
   setEmptyDesktopAboveFirst(): boolean {
     return true;
   }
@@ -424,6 +428,7 @@ function settings(
     defaultColumnPresentation: "stacked",
     defaultColumnWidthPercent: 50,
     defaultColumnWidthPixels: 0,
+    defaultWindowHeight: "auto",
     emptyDesktopAboveFirst: false,
     gap: 16,
     showTabIndicator: true,

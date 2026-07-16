@@ -35,6 +35,12 @@ import {
 } from "./application-tiling-exclusions";
 import { COLUMN_WIDTH_PRESET_LIMITS } from "./column-width-presets";
 import {
+  AUTOMATIC_DEFAULT_WINDOW_HEIGHT,
+  decodeDefaultWindowHeight,
+  sameDefaultWindowHeights,
+  type DefaultWindowHeight,
+} from "./default-window-height";
+import {
   DEFAULT_WINDOW_HEIGHT_PRESET_CYCLE,
   WINDOW_HEIGHT_PRESET_LIMITS,
   resolveWindowHeightPresetPolicy,
@@ -884,6 +890,7 @@ export interface RuntimeControllerOptions {
   readonly columnWidthPresets?: readonly ColumnWidth[];
   readonly createRect?: KWinRectFactory;
   readonly defaultColumnPresentation?: ColumnPresentation;
+  readonly defaultWindowHeight?: DefaultWindowHeight;
   readonly emptyDesktopAboveFirst?: boolean;
   readonly gap?: number;
   readonly hidePointerDropPreview?: () => void;
@@ -1058,6 +1065,7 @@ export class RuntimeController {
   private startupCompleted = false;
   private defaultColumnPresentation: ColumnPresentation;
   private defaultColumnWidth: ColumnWidth;
+  private defaultWindowHeight: DefaultWindowHeight;
   private windowHeightStep = DEFAULT_WINDOW_HEIGHT_STEP_PERCENT / 100;
   private windowHeightStepPixels = 0;
   private windowHeightPresetCycle: readonly WindowHeightPresetCycleEntry[] =
@@ -1156,6 +1164,10 @@ export class RuntimeController {
         : false;
     this.defaultColumnPresentation =
       options.defaultColumnPresentation ?? "stacked";
+    this.defaultWindowHeight =
+      decodeDefaultWindowHeight(
+        options.defaultWindowHeight?.canonicalValue ?? "auto",
+      ) ?? AUTOMATIC_DEFAULT_WINDOW_HEIGHT;
     this.gap = normalizeGap(options.gap ?? DEFAULT_GAP) ?? DEFAULT_GAP;
     this.initialLayoutHydrationQuietSamples = normalizeProbeCount(
       options.layoutHydrationQuietSamples ?? 2,
@@ -1791,6 +1803,33 @@ export class RuntimeController {
 
     this.pendingDefaultColumnWidth = normalized;
     this.scheduleDeferredRuntimeWork();
+    return true;
+  }
+
+  setDefaultWindowHeight(value: DefaultWindowHeight): boolean {
+    const normalized = decodeDefaultWindowHeight(value.canonicalValue);
+
+    if (
+      !normalized ||
+      sameDefaultWindowHeights(this.defaultWindowHeight, normalized)
+    ) {
+      return false;
+    }
+
+    this.defaultWindowHeight = normalized;
+
+    if (!this.started) {
+      return true;
+    }
+
+    for (const key of this.waitingWindowIds.keys()) {
+      this.pendingAdmissionContexts.add(key);
+    }
+
+    if (this.pendingAdmissionContexts.size > 0) {
+      this.scheduleDeferredRuntimeWork();
+    }
+
     return true;
   }
 
@@ -28475,14 +28514,13 @@ export class RuntimeController {
   private initialWindowHeight(source: KWinWindow): WindowHeight | undefined {
     const desktopFileName = source.desktopFileName;
 
-    if (typeof desktopFileName !== "string") {
-      return undefined;
-    }
+    const applicationHeight =
+      typeof desktopFileName === "string"
+        ? this.applicationWindowHeights.windowHeightFor(desktopFileName)
+        : undefined;
+    const height = applicationHeight ?? this.defaultWindowHeight.windowHeight;
 
-    const height =
-      this.applicationWindowHeights.windowHeightFor(desktopFileName);
-
-    return height === undefined ? undefined : { ...height };
+    return height === null ? undefined : { ...height };
   }
 
   private resolveManagedContext(window: ObservedWindow): ManagedContext | null {

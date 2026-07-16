@@ -8,6 +8,7 @@ import type { ApplicationWindowHeightOverrides } from "../src/application-window
 import type { ApplicationFocusCentering } from "../src/application-focus-centering";
 import type { ApplicationTilingExclusions } from "../src/application-tiling-exclusions";
 import type { ColumnWidth } from "../src/core/layout-engine";
+import type { DefaultWindowHeight } from "../src/default-window-height";
 import type { KWinWorkspace } from "../src/platform/kwin/api";
 import type { WindowHeightPresetCycleEntry } from "../src/window-height-presets";
 
@@ -28,6 +29,7 @@ interface DeliveredSettings {
   readonly columnWidthStepPercent: number;
   readonly defaultColumnWidth: ColumnWidth;
   readonly defaultColumnPresentation: "stacked" | "tabbed";
+  readonly defaultWindowHeight: string;
   readonly emptyDesktopAboveFirst: boolean;
   readonly gap: number;
   readonly windowHeightPresets: readonly WindowHeightPresetCycleEntry[];
@@ -59,6 +61,7 @@ interface RuntimeControllerOptions {
   readonly borderlessWindows: boolean;
   readonly columnWidth: ColumnWidth;
   readonly defaultColumnPresentation: "stacked" | "tabbed";
+  readonly defaultWindowHeight: DefaultWindowHeight;
   readonly emptyDesktopAboveFirst: boolean;
   readonly gap: number;
   readonly schedule: (callback: () => void) => void;
@@ -103,6 +106,7 @@ class RuntimeControllerDouble {
       columnWidthStepPercent: 1,
       defaultColumnWidth: { ...options.columnWidth },
       defaultColumnPresentation: options.defaultColumnPresentation,
+      defaultWindowHeight: options.defaultWindowHeight.canonicalValue,
       emptyDesktopAboveFirst: options.emptyDesktopAboveFirst,
       gap: options.gap,
       windowHeightPresets: [],
@@ -270,6 +274,15 @@ class RuntimeControllerDouble {
     return true;
   }
 
+  setDefaultWindowHeight(value: DefaultWindowHeight): boolean {
+    this.calls.push("defaultWindowHeight");
+    this.state = {
+      ...this.state,
+      defaultWindowHeight: value.canonicalValue,
+    };
+    return true;
+  }
+
   setEmptyDesktopAboveFirst(value: boolean): boolean {
     this.calls.push("emptyDesktopAboveFirst");
     this.state = { ...this.state, emptyDesktopAboveFirst: value };
@@ -403,6 +416,7 @@ describe("runtime settings delivery", () => {
       defaultColumnPresentation: "tabbed",
       defaultColumnWidthPercent: 65,
       defaultColumnWidthPixels: 720,
+      defaultWindowHeight: "60%",
       emptyDesktopAboveFirst: false,
       gap: 7.5,
       touchpadNavigation: true,
@@ -430,6 +444,7 @@ describe("runtime settings delivery", () => {
       columnWidthStepPercent: 13,
       defaultColumnWidth: { kind: "fixed", value: 720 },
       defaultColumnPresentation: "tabbed",
+      defaultWindowHeight: "60",
       emptyDesktopAboveFirst: false,
       gap: 7.5,
       windowHeightPresets: heightPresetCycle([25, "480px", 50, "960px", 75]),
@@ -456,6 +471,7 @@ describe("runtime settings delivery", () => {
       "centerFocusedColumnOnOverflow",
       "defaultColumnPresentation",
       "defaultColumnWidth",
+      "defaultWindowHeight",
       "emptyDesktopAboveFirst",
       "columnWidthPresets",
       "columnWidthStepPercent",
@@ -537,6 +553,7 @@ describe("runtime settings delivery", () => {
       "centerFocusedColumnOnOverflow",
       "defaultColumnPresentation",
       "defaultColumnWidth",
+      "defaultWindowHeight",
       "emptyDesktopAboveFirst",
       "columnWidthPresets",
       "columnWidthStepPercent",
@@ -582,6 +599,7 @@ function settings(
     defaultColumnPresentation: "stacked",
     defaultColumnWidthPercent: 50,
     defaultColumnWidthPixels: 0,
+    defaultWindowHeight: "auto",
     emptyDesktopAboveFirst: false,
     gap: 16,
     showTabIndicator: true,

@@ -6,6 +6,7 @@ import { decodeApplicationColumnWidthOverrides } from "../src/application-overri
 import { decodeApplicationWindowHeightOverrides } from "../src/application-window-heights";
 import { decodeApplicationFocusCentering } from "../src/application-focus-centering";
 import { decodeApplicationTilingExclusions } from "../src/application-tiling-exclusions";
+import { decodeDefaultWindowHeight } from "../src/default-window-height";
 import {
   activityId,
   columnId,
@@ -8129,7 +8130,7 @@ describe("RuntimeController", () => {
     ).toEqual({ kind: "fixed", value: 249.6 });
   });
 
-  it("applies exact application heights only to fresh singleton admissions", () => {
+  it("applies initial height policies only to fresh singleton admissions", () => {
     const output = {
       ...createOutput("DP-1", 0),
       devicePixelRatio: 1.25,
@@ -8164,13 +8165,14 @@ describe("RuntimeController", () => {
     );
     const scheduler = new ManualScheduler();
     const initialHeights = decodeApplicationWindowHeightOverrides(
-      "org.example.Editor=50%\norg.example.Utility=240px",
+      "org.example.Editor=50%",
     );
+    const initialDefaultHeight = decodeDefaultWindowHeight("40%");
     const initialFloating = decodeApplicationInitialFloating(
       "org.example.Utility",
     );
 
-    if (!initialHeights || !initialFloating) {
+    if (!initialHeights || !initialDefaultHeight || !initialFloating) {
       throw new Error("application height fixture is invalid");
     }
 
@@ -8179,6 +8181,7 @@ describe("RuntimeController", () => {
       applicationWindowHeights: initialHeights,
       clientAreaOption: 2,
       columnWidth: { kind: "fixed", value: 200 },
+      defaultWindowHeight: initialDefaultHeight,
       gap: 10,
       schedule: scheduler.schedule,
     });
@@ -8197,8 +8200,8 @@ describe("RuntimeController", () => {
     expect(
       snapshot.columns.find((column) =>
         column.windowIds.includes(windowId("case-mismatch")),
-      ),
-    ).not.toHaveProperty("windowHeights");
+      )?.windowHeights,
+    ).toEqual([{ index: 140, kind: "preset" }]);
     expect(editor.window.frameGeometry.height).toBe(384.8);
     expect(Number.isInteger(editor.window.frameGeometry.height * 1.25)).toBe(
       true,
@@ -8230,7 +8233,7 @@ describe("RuntimeController", () => {
         .columns.find((column) =>
           column.windowIds.includes(windowId("utility")),
         )?.windowHeights,
-    ).toEqual([{ clientHeight: 240, kind: "fixed" }]);
+    ).toEqual([{ index: 140, kind: "preset" }]);
 
     const updatedHeights = decodeApplicationWindowHeightOverrides(
       "org.example.Editor=60\norg.example.Browser=321px",
@@ -8238,8 +8241,15 @@ describe("RuntimeController", () => {
     const equivalentHeights = decodeApplicationWindowHeightOverrides(
       "org.example.Browser=321px\norg.example.Editor=60%",
     );
+    const updatedDefaultHeight = decodeDefaultWindowHeight("60%");
+    const equivalentDefaultHeight = decodeDefaultWindowHeight("60");
 
-    if (!updatedHeights || !equivalentHeights) {
+    if (
+      !updatedHeights ||
+      !equivalentHeights ||
+      !updatedDefaultHeight ||
+      !equivalentDefaultHeight
+    ) {
       throw new Error("application height fixture is invalid");
     }
 
@@ -8249,9 +8259,27 @@ describe("RuntimeController", () => {
     expect(controller.setApplicationWindowHeights(equivalentHeights)).toBe(
       false,
     );
+    expect(controller.setDefaultWindowHeight(updatedDefaultHeight)).toBe(true);
+    expect(controller.setDefaultWindowHeight(equivalentDefaultHeight)).toBe(
+      false,
+    );
     expect(editor.window.frameGeometry).toEqual(editorFrame);
     expect(editor.writeCount).toBe(editorWrites);
     expect(scheduler.pendingCount).toBe(0);
+
+    const plain = createTrackedWindow("plain", targetOutput, desktop);
+    fixture.windowAdded.emit(plain.window);
+    flushManualScheduler(scheduler);
+    expect(
+      runtimeLayout(controller)
+        .snapshot(
+          outputId(targetOutput.name),
+          desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
+        )
+        .columns.find((column) => column.windowIds.includes(windowId("plain")))
+        ?.windowHeights,
+    ).toEqual([{ index: 160, kind: "preset" }]);
 
     const browser = createTrackedWindow("browser", output, desktop, {
       clientGeometry: { height: 200, width: 300, x: 0, y: 20 },
