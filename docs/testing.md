@@ -345,6 +345,12 @@ output and desktop writes, confirmation after each write, bounded compensation,
 and write-free rejection of malformed or ambiguous state. Existing same-output
 transfer and keyboard desktop-navigation cases remain unchanged.
 
+The 1.34 transition checks cover hidden-window deferred replay, repeated effect
+ownership signals, public shell-category rejection, independent movement and
+size switches, exact live `windowClass` exclusions, bounded UTF-8 decoding, and
+fail-closed malformed configuration. Home Manager evaluation covers nullable
+ownership, canonical list rendering, and the same count and byte limits.
+
 Cross-desktop unit cases cover the 2x2 matrix of output-local or global desktop
 resolution and membership-before-finish or finish-before-membership event
 order. They verify bounded pending-destination settlement, fallback when the

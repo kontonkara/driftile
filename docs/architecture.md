@@ -125,14 +125,16 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   window geometry. Absolute position retargeting is used only when both
   endpoints are non-negative; other moves use relative translation.
 - Skips manual move or resize, hidden, minimized, fullscreen, special, and
-  non-normal windows. Geometry changes received while another fullscreen or
-  workspace transition owns presentation are coalesced per window and replayed
-  once when ownership ends. Temporary desktop-transition visibility preserves
-  the first captured frame; true ineligibility, configuration reload, or
-  deletion discards pending work.
+  non-normal windows, plus public shell, OSD, outline, lock-screen, internal,
+  and switcher-hidden categories. Geometry changes received while another
+  fullscreen or workspace transition owns presentation are coalesced per window
+  and replayed once when ownership ends. Temporary invisibility retains the
+  first captured frame until a public signal permits replay; true ineligibility,
+  configuration reload, or deletion discards pending work.
 - Retargets eligible absolute position and size animations and replaces a
   superseded relative translation in constant time. It follows Plasma's global
-  animation-speed factor and exposes one bounded duration setting.
+  animation-speed factor and exposes independent movement and size switches,
+  one bounded duration, and a bounded exact `windowClass` exclusion set.
 - Scans the stacking order only once when loaded and tracks later windows by
   signal. It has no timer, persistence, shortcut, layout state, or private API.
 

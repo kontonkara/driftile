@@ -47,23 +47,37 @@ The effect animates automatic position and size changes without writing window
 geometry. Manual move or resize and fullscreen remain ineligible. Geometry
 changes received while another fullscreen or workspace transition owns
 presentation are coalesced per window and replayed once when that ownership
-ends. Temporary desktop-transition visibility does not discard the captured
-frame. Deletion, configuration reload, or true ineligibility discards the
-pending change. Replay uses no timer or private API and writes neither geometry
-nor persistence.
+ends. A temporarily hidden window keeps the first captured frame until a public
+visibility, desktop, activity, or later geometry signal makes replay safe.
+Deletion, configuration reload, or true ineligibility discards the pending
+change. Replay uses no timer or private API and writes neither geometry nor
+persistence.
 
-Launchers, popups, transient dialogs, frameless shell overlays, and other
+Launchers, switcher-hidden windows, OSDs, outlines, lock-screen and internal
+windows, popups, transient dialogs, frameless shell overlays, and other
 non-movable windows are outside the effect. Consecutive geometry updates at
 non-negative global positions retarget the active position and size
 transitions. Moves involving a negative global position use a relative
 translation, keeping off-screen columns and outputs with negative coordinates
-animated without writing geometry.
+animated without writing geometry. Movement and size animation can be disabled
+independently.
 
-Home Manager can own the same bounded duration independently of package
-installation. A null value leaves the existing KConfig value untouched:
+`WindowClassExclusions` accepts at most 128 exact, case-sensitive KWin
+`windowClass` values, one per line and at most 255 UTF-8 bytes each. Use KWin's
+debug console to copy the complete value; partial matching is not performed.
+Blank lines are ignored. A duplicate, malformed, or oversized document disables
+the effect until a valid value is loaded.
+
+Home Manager can own these values independently of package installation. Each
+nullable option leaves its existing KConfig value untouched when set to `null`:
 
 ```nix
-programs.driftile.transitions.duration = 180;
+programs.driftile.transitions = {
+  duration = 180;
+  animatePosition = true;
+  animateSize = true;
+  windowClassExclusions = [ "firefox firefox" ];
+};
 ```
 
 ## Home Manager

@@ -1507,6 +1507,22 @@ Release criteria (met):
 
 No other feature belongs to 1.33.0.
 
+## 1.34.0 (in development)
+
+The optional transition effect retains an earliest deferred frame while a
+workspace handoff still leaves the window temporarily hidden. Public window,
+desktop, activity, and later geometry signals provide bounded replay
+opportunities without a timer.
+
+Public shell categories now exclude switcher-hidden windows, OSDs, outlines,
+lock-screen surfaces, and internal windows before animation. Users may also
+disable movement or size interpolation independently and maintain a bounded,
+exact `windowClass` exclusion list through the effect settings or Home Manager.
+Malformed exclusion input fails closed until a valid reload.
+
+This slice adds no shortcut, layout or persistence field, geometry write,
+private API, or compositor mechanism.
+
 ## Post-v1
 
 Add interaction and presentation features outside the frozen v1 scope without

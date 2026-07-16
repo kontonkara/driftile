@@ -249,15 +249,18 @@ package:
 ```nix
 programs.driftile.transitions.enable = true;
 programs.driftile.transitions.duration = 180;
+programs.driftile.transitions.animatePosition = true;
+programs.driftile.transitions.animateSize = true;
+programs.driftile.transitions.windowClassExclusions = [ ];
 ```
 
 Installation does not enable the effect in KWin. Enable **Driftile
 Transitions** in **Desktop Effects** after rebuilding.
 
-`transitions.duration` is a Home Manager-only nullable integer from `0` to
-`1000` milliseconds. Its default is `null`, which leaves the existing KWin
-setting untouched. It can manage an effect installed in another scope without
-setting `transitions.enable`.
+The duration is a nullable integer from `0` to `1000`; both animation switches
+and the bounded exact `windowClass` list are nullable too. Each default is
+`null`, which leaves that KWin setting untouched. These options can manage an
+effect installed in another scope without setting `transitions.enable`.
 
 Main-script, overview, and transition ownership are independent. NixOS may
 install one while Home Manager installs another, but the modules reject
