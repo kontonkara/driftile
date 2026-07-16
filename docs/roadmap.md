@@ -1,13 +1,13 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.33.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.34.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.33.0 restores optional transitions across negative coordinates,
-targets vertical touchpad navigation at the output under the pointer, and lets
-the optional overview transfer an exact window between output cards. Logical
-persistence remains v4.
+Stable 1.34.0 makes optional transitions reliable across rapid off-output and
+workspace changes, adds precise presentation and window-class controls, and
+adds opt-in horizontal focus centering only when neighboring columns overflow.
+Logical persistence remains v4.
 
 ## Foundation (delivered)
 
@@ -1507,7 +1507,7 @@ Release criteria (met):
 
 No other feature belongs to 1.33.0.
 
-## 1.34.0 (in development)
+## 1.34.0 (released)
 
 The optional transition effect retains an earliest deferred frame while a
 workspace handoff still leaves the window temporarily hidden. Public window,
@@ -1533,6 +1533,15 @@ rules.
 
 This slice adds no shortcut, layout-persistence field, geometry write, private
 API, or compositor mechanism.
+
+Release criteria (met):
+
+- Focused transition, settings, and horizontal-focus checks pass.
+- The grouped unit, package, Nix, Wayland, multi-output Wayland, X11, and
+  hidden full-VM gates pass before promotion.
+- Exact release SHA CI passes before the release commit is tagged.
+
+No other feature belongs to 1.34.0.
 
 ## Post-v1
 

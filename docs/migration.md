@@ -1,7 +1,28 @@
 # Migration
 
-The latest stable release is 1.33.0. Use the steps below when changing release
+The latest stable release is 1.34.0. Use the steps below when changing release
 generations, and never combine files from different releases.
+
+## Upgrade from 1.33.0 to 1.34.0
+
+1. Release a helper-owned shortcut profile with the installed helper.
+2. Disable Driftile and both optional effects in System Settings.
+3. Install matching 1.34.0 artifacts, or pin the Nix input to `v1.34.0` and
+   rebuild.
+4. Re-enable Driftile and only the optional effects you use, then reclaim the
+   unchanged helper profile if needed.
+
+Logical layout state and shortcut action IDs remain compatible. The main
+script adds an opt-in overflow-centering setting. The transition effect adds
+safe-default movement, size, and exact window-class controls; existing users
+retain movement and size animation when the new keys are absent.
+
+## Roll back from 1.34.0 to 1.33.0
+
+Release a helper-owned profile, disable Driftile and both optional effects,
+then restore matching verified 1.33.0 artifacts. NixOS and Home Manager users
+should restore the input to `v1.33.0` and rebuild. The older packages ignore
+the additive KConfig keys; no layout-state conversion is required.
 
 ## Upgrade from 1.32.0 to 1.33.0
 
