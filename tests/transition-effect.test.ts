@@ -41,6 +41,8 @@ interface Signal<Arguments extends unknown[]> {
 interface WindowStub {
   geometry: Rect;
   readonly windowFrameGeometryChanged: Signal<[WindowStub, Rect]>;
+  readonly windowHiddenChanged: Signal<[WindowStub]>;
+  readonly windowDesktopsChanged: Signal<[WindowStub]>;
   visible: boolean;
   deleted: boolean;
   minimized: boolean;
@@ -49,6 +51,10 @@ interface WindowStub {
   specialWindow: boolean;
   popupWindow: boolean;
   appletPopup: boolean;
+  onScreenDisplay: boolean;
+  outline: boolean;
+  lockScreen: boolean;
+  internalWindow: object | null;
   modal: boolean;
   normalWindow: boolean;
   managed: boolean;
@@ -58,6 +64,7 @@ interface WindowStub {
   move: boolean;
   resize: boolean;
   skipSwitcher: boolean;
+  windowClass?: string;
   transientFor(): WindowStub | null;
   readonly [key: string]: unknown;
 }
@@ -99,6 +106,8 @@ function createWindow(overrides: Partial<WindowStub> = {}): WindowStub {
   return {
     geometry: { x: 20, y: 30, width: 300, height: 200 },
     windowFrameGeometryChanged: createSignal<[WindowStub, Rect]>(),
+    windowHiddenChanged: createSignal<[WindowStub]>(),
+    windowDesktopsChanged: createSignal<[WindowStub]>(),
     visible: true,
     deleted: false,
     minimized: false,
@@ -107,6 +116,10 @@ function createWindow(overrides: Partial<WindowStub> = {}): WindowStub {
     specialWindow: false,
     popupWindow: false,
     appletPopup: false,
+    onScreenDisplay: false,
+    outline: false,
+    lockScreen: false,
+    internalWindow: null,
     modal: false,
     normalWindow: true,
     managed: true,
@@ -116,6 +129,7 @@ function createWindow(overrides: Partial<WindowStub> = {}): WindowStub {
     move: false,
     resize: false,
     skipSwitcher: false,
+    windowClass: "konsole org.kde.konsole",
     transientFor: () => null,
     ...overrides,
   };
@@ -126,19 +140,32 @@ function createHarness(
     readonly window?: WindowStub;
     readonly configuredDuration?: number;
     readonly scaledDuration?: number;
+    readonly animatePosition?: unknown;
+    readonly animateSize?: unknown;
+    readonly windowClassExclusions?: unknown;
   } = {},
 ) {
   const window = options.window ?? createWindow();
   const windowAdded = createSignal<[WindowStub]>();
   const windowDeleted = createSignal<[WindowStub]>();
   const hasActiveFullScreenEffectChanged = createSignal<[]>();
+  const desktopChanged = createSignal<[unknown, unknown, unknown, unknown]>();
+  const currentActivityChanged = createSignal<[string]>();
   const configChanged = createSignal<[]>();
   const animationRequests: AnimationRequest[] = [];
   const cancelledAnimations: unknown[] = [];
   const retargetCalls: RetargetCall[] = [];
   const failedRetargets = new Set<number>();
   const animationTimeCalls: number[] = [];
-  let configuredDuration = options.configuredDuration ?? 180;
+  const configuredValues: Record<string, unknown> = {
+    AnimatePosition: options.animatePosition ?? true,
+    AnimateSize: options.animateSize ?? true,
+    Duration: options.configuredDuration ?? 180,
+    WindowClassExclusions:
+      options.windowClassExclusions === undefined
+        ? ""
+        : options.windowClassExclusions,
+  };
   let nextAnimationId = 1;
   const effects = {
     hasActiveFullScreenEffect: false,
@@ -146,6 +173,8 @@ function createHarness(
     windowAdded,
     windowDeleted,
     hasActiveFullScreenEffectChanged,
+    desktopChanged,
+    currentActivityChanged,
   };
 
   runInNewContext(script, {
@@ -175,8 +204,10 @@ function createHarness(
     },
     effect: {
       configChanged,
-      readConfig(name: string, fallback: number) {
-        return name === "Duration" ? configuredDuration : fallback;
+      readConfig(name: string, fallback: unknown) {
+        return configuredValues[name] === undefined
+          ? fallback
+          : configuredValues[name];
       },
     },
     effects,
@@ -191,7 +222,10 @@ function createHarness(
     failedRetargets,
     retargetCalls,
     setConfiguredDuration(duration: number) {
-      configuredDuration = duration;
+      configuredValues.Duration = duration;
+    },
+    setConfiguredValue(name: string, value: unknown) {
+      configuredValues[name] = value;
     },
     setFullScreenEffectActive(active: boolean) {
       effects.hasActiveFullScreenEffect = active;
@@ -222,7 +256,15 @@ describe("transition effect package", () => {
     expect(metadata["X-KDE-ConfigModule"]).toBe("kcm_kwin4_genericscripted");
     expect(config).toContain('<entry name="Duration" type="UInt">');
     expect(config).toContain("<default>180</default>");
+    expect(config).toContain('<entry name="AnimatePosition" type="Bool">');
+    expect(config).toContain('<entry name="AnimateSize" type="Bool">');
+    expect(config).toContain(
+      '<entry name="WindowClassExclusions" type="String">',
+    );
     expect(configUi).toContain('name="kcfg_Duration"');
+    expect(configUi).toContain('name="kcfg_AnimatePosition"');
+    expect(configUi).toContain('name="kcfg_AnimateSize"');
+    expect(configUi).toContain('name="kcfg_WindowClassExclusions"');
     expect(configUi).toContain("<number>1000</number>");
 
     expect(script).not.toMatch(
@@ -368,7 +410,7 @@ describe("transition effect package", () => {
     }
   });
 
-  it("suppresses ineligible windows and active fullscreen effects", () => {
+  it("suppresses ineligible and public shell windows", () => {
     const ineligibleStates: ReadonlyArray<Partial<WindowStub>> = [
       { visible: false },
       { deleted: true },
@@ -378,12 +420,16 @@ describe("transition effect package", () => {
       { specialWindow: true },
       { popupWindow: true },
       { appletPopup: true },
+      { onScreenDisplay: true },
+      { outline: true },
+      { lockScreen: true },
+      { internalWindow: {} },
+      { skipSwitcher: true },
       { modal: true },
       { normalWindow: false },
       { managed: false },
       { moveable: false },
       { hasDecoration: false, keepAbove: true },
-      { hasDecoration: false, skipSwitcher: true },
       { transientFor: () => createWindow() },
     ];
 
@@ -413,11 +459,11 @@ describe("transition effect package", () => {
       width: 400,
       height: 250,
     });
-    expect(skippedHarness.animationRequests).toHaveLength(1);
-    expect(script).not.toMatch(/resourceClass|resourceName|windowClass/u);
+    expect(skippedHarness.animationRequests).toHaveLength(0);
+    expect(script).not.toMatch(/window\.(?:resourceClass|resourceName)/u);
   });
 
-  it("replays collapsed geometry after a fullscreen effect ends", () => {
+  it("replays the earliest baseline once after fullscreen ownership ends", () => {
     const harness = createHarness();
     harness.setFullScreenEffectActive(true);
 
@@ -433,6 +479,7 @@ describe("transition effect package", () => {
       width: 500,
       height: 300,
     });
+    harness.setFullScreenEffectActive(true);
     changeGeometry(harness.window, {
       x: 80,
       y: 90,
@@ -443,6 +490,7 @@ describe("transition effect package", () => {
     expect(harness.animationRequests).toHaveLength(0);
     expect(harness.retargetCalls).toHaveLength(0);
 
+    harness.setFullScreenEffectActive(false);
     harness.setFullScreenEffectActive(false);
 
     expect(harness.animationRequests).toHaveLength(1);
@@ -526,6 +574,96 @@ describe("transition effect package", () => {
     });
   });
 
+  it("keeps deferred geometry until a hidden window becomes visible", () => {
+    const harness = createHarness();
+    harness.setFullScreenEffectActive(true);
+
+    changeGeometry(harness.window, {
+      x: 40,
+      y: 50,
+      width: 400,
+      height: 250,
+    });
+    harness.window.visible = false;
+    changeGeometry(harness.window, {
+      x: 60,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+
+    harness.setFullScreenEffectActive(false);
+    harness.window.windowHiddenChanged.emit(harness.window);
+    harness.effects.desktopChanged.emit(null, null, null, null);
+    harness.effects.currentActivityChanged.emit("other-activity");
+    changeGeometry(harness.window, {
+      x: 80,
+      y: 90,
+      width: 600,
+      height: 350,
+    });
+    expect(harness.animationRequests).toHaveLength(0);
+
+    harness.window.visible = true;
+    harness.window.windowDesktopsChanged.emit(harness.window);
+    expect(harness.animationRequests).toHaveLength(1);
+    expect(harness.animationRequests[0]).toMatchObject({
+      animations: [
+        {
+          type: "size",
+          from: { value1: 300, value2: 200 },
+          to: { value1: 600, value2: 350 },
+        },
+        {
+          type: "position",
+          from: { value1: 170, value2: 130 },
+          to: { value1: 380, value2: 265 },
+        },
+      ],
+    });
+
+    harness.window.windowHiddenChanged.emit(harness.window);
+    harness.effects.desktopChanged.emit(null, null, null, null);
+    expect(harness.animationRequests).toHaveLength(1);
+  });
+
+  it("replays deferred geometry on a later visible geometry opportunity", () => {
+    const harness = createHarness();
+    harness.setFullScreenEffectActive(true);
+    changeGeometry(harness.window, {
+      x: 40,
+      y: 50,
+      width: 400,
+      height: 250,
+    });
+    harness.window.visible = false;
+    harness.setFullScreenEffectActive(false);
+
+    harness.window.visible = true;
+    changeGeometry(harness.window, {
+      x: 60,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+
+    expect(harness.animationRequests).toHaveLength(1);
+    expect(harness.animationRequests[0]).toMatchObject({
+      animations: [
+        {
+          type: "size",
+          from: { value1: 300, value2: 200 },
+          to: { value1: 500, value2: 300 },
+        },
+        {
+          type: "position",
+          from: { value1: 170, value2: 130 },
+          to: { value1: 310, value2: 220 },
+        },
+      ],
+    });
+  });
+
   it("respects zero global duration and reloads bounded configuration", () => {
     const disabledHarness = createHarness({ scaledDuration: 0 });
     changeGeometry(disabledHarness.window, {
@@ -548,6 +686,195 @@ describe("transition effect package", () => {
       height: 250,
     });
     expect(configuredHarness.animationRequests[0]?.duration).toBe(1000);
+  });
+
+  it("configures position and size animation independently", () => {
+    const positionDisabled = createHarness({ animatePosition: false });
+    changeGeometry(positionDisabled.window, {
+      x: 60,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+    expect(positionDisabled.animationRequests[0]?.animations).toMatchObject([
+      {
+        type: "size",
+        from: { value1: 300, value2: 200 },
+        to: { value1: 500, value2: 300 },
+      },
+    ]);
+
+    const sizeDisabled = createHarness({ animateSize: false });
+    changeGeometry(sizeDisabled.window, {
+      x: 60,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+    expect(sizeDisabled.animationRequests[0]?.animations).toMatchObject([
+      {
+        type: "position",
+        from: { value1: 270, value2: 180 },
+        to: { value1: 310, value2: 220 },
+      },
+    ]);
+
+    const sizeOnlyDisabled = createHarness({ animateSize: false });
+    changeGeometry(sizeOnlyDisabled.window, {
+      x: 20,
+      y: 30,
+      width: 500,
+      height: 300,
+    });
+    expect(sizeOnlyDisabled.animationRequests).toHaveLength(0);
+
+    const bothDisabled = createHarness({
+      animatePosition: false,
+      animateSize: false,
+    });
+    changeGeometry(bothDisabled.window, {
+      x: 60,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+    expect(bothDisabled.animationRequests).toHaveLength(0);
+
+    bothDisabled.setConfiguredValue("AnimatePosition", true);
+    bothDisabled.configChanged.emit();
+    changeGeometry(bothDisabled.window, {
+      x: 80,
+      y: 90,
+      width: 600,
+      height: 350,
+    });
+    expect(bothDisabled.animationRequests[0]?.animations).toMatchObject([
+      { type: "position" },
+    ]);
+  });
+
+  it("matches bounded window class exclusions exactly and reloads them", () => {
+    const harness = createHarness({
+      windowClassExclusions:
+        "  konsole org.kde.konsole  \r\n\nfirefox firefox\n",
+    });
+    changeGeometry(harness.window, {
+      x: 40,
+      y: 50,
+      width: 400,
+      height: 250,
+    });
+    expect(harness.animationRequests).toHaveLength(0);
+
+    harness.window.windowClass = "Konsole org.kde.konsole";
+    changeGeometry(harness.window, {
+      x: 60,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+    expect(harness.animationRequests).toHaveLength(1);
+
+    harness.setConfiguredValue(
+      "WindowClassExclusions",
+      "firefox firefox\u0000",
+    );
+    harness.configChanged.emit();
+    harness.window.windowClass = "unlisted application";
+    changeGeometry(harness.window, {
+      x: 80,
+      y: 90,
+      width: 600,
+      height: 350,
+    });
+    expect(harness.animationRequests).toHaveLength(1);
+
+    harness.setConfiguredValue("WindowClassExclusions", "");
+    harness.configChanged.emit();
+    changeGeometry(harness.window, {
+      x: 100,
+      y: 110,
+      width: 700,
+      height: 400,
+    });
+    expect(harness.animationRequests).toHaveLength(2);
+    expect(script).toContain("this.windowClassExclusions.has(windowClass)");
+  });
+
+  it("rejects malformed or oversized exclusion input as a whole", () => {
+    const validEntries = Array.from(
+      { length: 128 },
+      (_, index) => `org.example.app${String(index)}`,
+    );
+    const validHarness = createHarness({
+      window: createWindow({ windowClass: validEntries[127] }),
+      windowClassExclusions: validEntries.join("\n"),
+    });
+    changeGeometry(validHarness.window, {
+      x: 40,
+      y: 50,
+      width: 400,
+      height: 250,
+    });
+    expect(validHarness.animationRequests).toHaveLength(0);
+
+    const maximumByteEntry = `${"é".repeat(127)}a`;
+    const maximumByteHarness = createHarness({
+      window: createWindow({ windowClass: maximumByteEntry }),
+      windowClassExclusions: maximumByteEntry,
+    });
+    changeGeometry(maximumByteHarness.window, {
+      x: 40,
+      y: 50,
+      width: 400,
+      height: 250,
+    });
+    expect(maximumByteHarness.animationRequests).toHaveLength(0);
+
+    const invalidInputs: readonly unknown[] = [
+      [...validEntries, "org.example.overflow"].join("\n"),
+      "org.example.app0\norg.example.app0",
+      "a".repeat(256),
+      "org.kde.konsole\u0000",
+      "org.kde.konsole\rorg.mozilla.firefox",
+      "\ud800",
+      "a".repeat(33025),
+      { application: "org.kde.konsole" },
+      null,
+    ];
+
+    for (const invalidInput of invalidInputs) {
+      const harness = createHarness({
+        windowClassExclusions: invalidInput,
+      });
+      changeGeometry(harness.window, {
+        x: 40,
+        y: 50,
+        width: 400,
+        height: 250,
+      });
+      expect(
+        harness.animationRequests,
+        String(invalidInput).slice(0, 80),
+      ).toHaveLength(0);
+    }
+  });
+
+  it("fails open when window class identity is unavailable", () => {
+    const window = createWindow();
+    delete window.windowClass;
+    const harness = createHarness({
+      window,
+      windowClassExclusions: "org.kde.konsole",
+    });
+
+    changeGeometry(window, {
+      x: 40,
+      y: 50,
+      width: 400,
+      height: 250,
+    });
+    expect(harness.animationRequests).toHaveLength(1);
   });
 
   it("retargets consecutive geometry changes without restarting active attributes", () => {
