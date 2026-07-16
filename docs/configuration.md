@@ -44,6 +44,13 @@ Desktop Effects**. Its base duration ranges from `0` to `1000` milliseconds,
 defaults to `180`, and follows Plasma's global animation-speed setting. A value
 of `0` disables animation.
 
+`EasingCurve` controls how movement and size interpolation progress. It accepts
+`linear`, `out-quad`, `out-cubic`, `out-quart`, `out-quint`, or `out-expo` and
+defaults to `out-cubic`. `ResizeAnimationThreshold` accepts `0`–`64` logical
+pixels and defaults to `10`. A resize whose maximum width or height delta is at
+or below that threshold snaps to its final size without size interpolation;
+window movement may still animate.
+
 The effect animates automatic position and size changes without writing window
 geometry. Manual move or resize and fullscreen remain ineligible. Geometry
 changes received while another fullscreen or workspace transition owns
@@ -75,8 +82,10 @@ nullable option leaves its existing KConfig value untouched when set to `null`:
 ```nix
 programs.driftile.transitions = {
   duration = 180;
+  easingCurve = "out-cubic";
   animatePosition = true;
   animateSize = true;
+  resizeAnimationThreshold = 10;
   windowClassExclusions = [ "firefox firefox" ];
 };
 ```

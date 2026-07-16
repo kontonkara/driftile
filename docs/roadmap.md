@@ -1598,6 +1598,10 @@ The next bounded sizing slice is intended to:
   is `0`; a positive value overrides only that action pair.
 - Apply live constraints and physical-pixel snapping without rewriting existing
   geometry when a setting changes.
+- Make the optional transition easing selectable from a small validated set,
+  retaining `out-cubic` as the default.
+- Skip size interpolation for resize deltas at or below a configurable
+  logical-pixel threshold while allowing simultaneous movement to animate.
 - Add no shortcut, binding, layout-persistence field, or private KWin API.
 
 The optional overview must remain removable, preserve the authoritative layout state, and fall back cleanly to Plasma's Overview.
