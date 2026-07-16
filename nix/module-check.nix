@@ -459,6 +459,7 @@ let
           columnWidthStepPercent = 13;
           defaultColumnPresentation = "tabbed";
           defaultColumnWidthPercent = 65;
+          defaultColumnWidthPixels = 960;
           emptyDesktopAboveFirst = true;
           gap = 7.5;
           showTabIndicator = false;
@@ -488,6 +489,16 @@ let
           enable = true;
           settings = { };
         };
+      }
+      { };
+  homeManagerMaximumDefaultColumnWidthPixels =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.settings.defaultColumnWidthPixels = 16384;
       }
       { };
   homeManagerMaximumOverrides =
@@ -717,6 +728,10 @@ let
     { gap = 65; }
     { defaultColumnWidthPercent = 9; }
     { defaultColumnWidthPercent = 101; }
+    { defaultColumnWidthPixels = -1; }
+    { defaultColumnWidthPixels = 16385; }
+    { defaultColumnWidthPixels = 1.5; }
+    { defaultColumnWidthPixels = "960"; }
     { columnWidthStepPercent = 0; }
     { columnWidthStepPercent = 51; }
     { columnWidthPresets = [ 9 ]; }
@@ -970,6 +985,7 @@ let
       ColumnWidthStepPercent = 13;
       DefaultColumnPresentation = "tabbed";
       DefaultColumnWidthPercent = 65;
+      DefaultColumnWidthPixels = 960;
       EmptyDesktopAboveFirst = true;
       Gap = 7.5;
       ShowTabIndicator = false;
@@ -995,6 +1011,7 @@ let
       ColumnWidthStepPercent = 10;
       DefaultColumnPresentation = "stacked";
       DefaultColumnWidthPercent = 33;
+      DefaultColumnWidthPixels = 0;
       Gap = 16;
       ShowTabIndicator = true;
       TouchpadNavigation = false;
@@ -1131,11 +1148,14 @@ assert homeManagerSettings.config.qt.kde.settings == expectedSettings;
 assert homeManagerDefaultSettings.config.qt.kde.settings == expectedDefaultSettings;
 assert
   builtins.length (builtins.attrNames expectedSettings.kwinrc."Script-io.github.kontonkara.driftile")
-  == 23;
+  == 24;
 assert
   builtins.length (
     builtins.attrNames expectedDefaultSettings.kwinrc."Script-io.github.kontonkara.driftile"
-  ) == 20;
+  ) == 21;
+assert
+  homeManagerMaximumDefaultColumnWidthPixels.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".DefaultColumnWidthPixels
+  == 16384;
 assert
   builtins.length (
     lib.splitString "\n"
@@ -1198,6 +1218,7 @@ assert
       ColumnWidthStepPercent = 10;
       DefaultColumnPresentation = "stacked";
       DefaultColumnWidthPercent = 33;
+      DefaultColumnWidthPixels = 0;
       Gap = 1.2;
       ShowTabIndicator = true;
       TouchpadNavigation = false;

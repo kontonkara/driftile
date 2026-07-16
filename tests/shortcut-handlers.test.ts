@@ -926,6 +926,7 @@ describe("KWin shortcut handlers", () => {
       "kcfg_Gap",
       "kcfg_DefaultColumnPresentation",
       "kcfg_DefaultColumnWidthPercent",
+      "kcfg_DefaultColumnWidthPixels",
       "kcfg_ColumnWidthStepPercent",
       "kcfg_ColumnWidthPresets",
       "kcfg_WindowHeightStepPercent",
@@ -1170,15 +1171,24 @@ describe("KWin shortcut handlers", () => {
     );
   });
 
-  it("exposes the default column width as a live bounded user setting", () => {
+  it("exposes proportional and opt-in fixed default column widths", () => {
     const widthEntry = configuration.match(
       /<entry name="DefaultColumnWidthPercent" type="Int">([\s\S]*?)<\/entry>/,
+    )?.[1];
+    const fixedWidthEntry = configuration.match(
+      /<entry name="DefaultColumnWidthPixels" type="Int">([\s\S]*?)<\/entry>/,
     )?.[1];
     const widthLabel = configurationUi.match(
       /<widget class="QLabel" name="defaultColumnWidthLabel">([\s\S]*?)<\/widget>/,
     )?.[1];
     const widthWidget = configurationUi.match(
       /<widget class="QSpinBox" name="kcfg_DefaultColumnWidthPercent">([\s\S]*?)<\/widget>/,
+    )?.[1];
+    const fixedWidthLabel = configurationUi.match(
+      /<widget class="QLabel" name="defaultColumnWidthPixelsLabel">([\s\S]*?)<\/widget>/,
+    )?.[1];
+    const fixedWidthWidget = configurationUi.match(
+      /<widget class="QSpinBox" name="kcfg_DefaultColumnWidthPixels">([\s\S]*?)<\/widget>/,
     )?.[1];
 
     expect(widthEntry).toContain(
@@ -1187,7 +1197,9 @@ describe("KWin shortcut handlers", () => {
     expect(widthEntry).toContain("<default>33</default>");
     expect(widthEntry).toContain("<min>10</min>");
     expect(widthEntry).toContain("<max>100</max>");
-    expect(widthLabel).toContain("<string>Default column width:</string>");
+    expect(widthLabel).toContain(
+      "<string>Default column width percentage:</string>",
+    );
     expect(widthLabel).toContain(
       "<cstring>kcfg_DefaultColumnWidthPercent</cstring>",
     );
@@ -1201,8 +1213,42 @@ describe("KWin shortcut handlers", () => {
     expect(widthWidget).toMatch(
       /<property name="value">\s*<number>33<\/number>/,
     );
+    expect(fixedWidthEntry).toContain(
+      "<label>Fixed default column width in logical pixels; zero uses percent</label>",
+    );
+    expect(fixedWidthEntry).toContain("<default>0</default>");
+    expect(fixedWidthEntry).toContain("<min>0</min>");
+    expect(fixedWidthEntry).toContain("<max>16384</max>");
+    expect(fixedWidthLabel).toContain(
+      "<string>Fixed default column width:</string>",
+    );
+    expect(fixedWidthLabel).toContain(
+      "<cstring>kcfg_DefaultColumnWidthPixels</cstring>",
+    );
+    expect(fixedWidthWidget).toContain("<string>Use percentage above</string>");
+    expect(fixedWidthWidget).toContain("Zero uses the percentage above.");
+    expect(fixedWidthWidget).toContain(
+      "positive value requests a fixed logical-pixel width",
+    );
+    expect(fixedWidthWidget).toContain("existing columns are unchanged");
+    expect(fixedWidthWidget).toContain(
+      "Solver constraints and output-pixel snapping remain authoritative.",
+    );
+    expect(fixedWidthWidget).toContain("<string> px</string>");
+    expect(fixedWidthWidget).toMatch(
+      /<property name="minimum">\s*<number>0<\/number>/,
+    );
+    expect(fixedWidthWidget).toMatch(
+      /<property name="maximum">\s*<number>16384<\/number>/,
+    );
+    expect(fixedWidthWidget).toMatch(
+      /<property name="value">\s*<number>0<\/number>/,
+    );
     expect(qml).toContain(
       `defaultColumnWidthPercent: KWin.readConfig("DefaultColumnWidthPercent", ${String(DEFAULT_DRIFTILE_SETTINGS.defaultColumnWidthPercent)})`,
+    );
+    expect(qml).toContain(
+      `defaultColumnWidthPixels: KWin.readConfig("DefaultColumnWidthPixels", ${String(DEFAULT_DRIFTILE_SETTINGS.defaultColumnWidthPixels)})`,
     );
   });
 

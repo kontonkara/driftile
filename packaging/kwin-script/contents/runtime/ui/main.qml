@@ -1116,6 +1116,7 @@ QtObject {
             columnWidthStepPercent: KWin.readConfig("ColumnWidthStepPercent", 10),
             defaultColumnPresentation: KWin.readConfig("DefaultColumnPresentation", "stacked"),
             defaultColumnWidthPercent: KWin.readConfig("DefaultColumnWidthPercent", 33),
+            defaultColumnWidthPixels: KWin.readConfig("DefaultColumnWidthPixels", 0),
             emptyDesktopAboveFirst: KWin.readConfig("EmptyDesktopAboveFirst", false),
             gap: KWin.readConfig("Gap", 16),
             showTabIndicator: KWin.readConfig("ShowTabIndicator", true),

@@ -58,6 +58,12 @@
       <min>10</min>
       <max>100</max>
     </entry>
+    <entry name="DefaultColumnWidthPixels" type="Int">
+      <label>Fixed default column width in logical pixels; zero uses percent</label>
+      <default>0</default>
+      <min>0</min>
+      <max>16384</max>
+    </entry>
     <entry name="DefaultColumnPresentation" type="String">
       <label>Default column presentation</label>
       <default>stacked</default>

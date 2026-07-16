@@ -452,6 +452,12 @@ in
               description = "Default column width as a percentage.";
             };
 
+            defaultColumnWidthPixels = lib.mkOption {
+              type = lib.types.ints.between 0 16384;
+              default = 0;
+              description = "Fixed default column width in logical pixels; zero uses defaultColumnWidthPercent.";
+            };
+
             defaultColumnPresentation = lib.mkOption {
               type = lib.types.enum [
                 "stacked"
@@ -561,6 +567,7 @@ in
           ColumnWidthStepPercent = cfg.settings.columnWidthStepPercent;
           DefaultColumnPresentation = cfg.settings.defaultColumnPresentation;
           DefaultColumnWidthPercent = cfg.settings.defaultColumnWidthPercent;
+          DefaultColumnWidthPixels = cfg.settings.defaultColumnWidthPixels;
           Gap = cfg.settings.gap;
           ShowTabIndicator = cfg.settings.showTabIndicator;
           TouchpadNavigation = cfg.settings.touchpadNavigation;
