@@ -1520,8 +1520,19 @@ disable movement or size interpolation independently and maintain a bounded,
 exact `windowClass` exclusion list through the effect settings or Home Manager.
 Malformed exclusion input fails closed until a valid reload.
 
-This slice adds no shortcut, layout or persistence field, geometry write,
-private API, or compositor mechanism.
+Rapid moves through negative global coordinates retain prior relative
+translations in a bounded additive chain, avoiding a visual restart while
+absolute non-negative position and size animations keep their existing
+retarget paths.
+
+Horizontal focus can optionally center a destination only when it and the
+nearest column toward the prior focus do not both fit the sampled work area.
+The policy uses solved frames for adjacent and direct-edge navigation, remains
+write-free when changed live, and yields to always-center and exact application
+rules.
+
+This slice adds no shortcut, layout-persistence field, geometry write, private
+API, or compositor mechanism.
 
 ## Post-v1
 

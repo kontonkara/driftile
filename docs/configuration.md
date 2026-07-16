@@ -134,6 +134,7 @@ programs.driftile.settings.applicationTilingExclusions = [
 ];
 
 programs.driftile.settings.centerFocusedColumn = false;
+programs.driftile.settings.centerFocusedColumnOnOverflow = true;
 programs.driftile.settings.columnWidthPresets = [ 20 50 80 ];
 programs.driftile.settings.defaultColumnPresentation = "stacked";
 programs.driftile.settings.showTabIndicator = true;
@@ -181,6 +182,13 @@ normal minimal reveal still completes the focus action.
 Changing the option does not move the current layout. Vertical, floating,
 layer, and direct application focus are unchanged, and the explicit **Center
 column** action remains available.
+
+**Center focused columns when the old and new columns do not both fit** is
+also disabled by default. It keeps the normal minimal reveal while the target
+and its nearest neighbor in the navigation direction fit together, and centers
+the target only when that pair overflows the sampled work area. The
+always-center option above and matching application rules take precedence.
+Changing this option is also write-free until a later horizontal focus action.
 
 **Applications centered during horizontal focus** is empty by default. Enter
 one exact, case-sensitive KWin `desktopFileName` per line to center only

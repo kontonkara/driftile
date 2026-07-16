@@ -59,16 +59,17 @@ The ownership rule is strict:
 - Up to 16 configurable, strictly increasing integer 10%–100% window-height
   presets for tiled or contextual manual-floating actions; an empty
   configuration retains the exact `1/3`, `1/2`, and `2/3` proportions.
-- Optional best-effort centering for successful left, right, first, and last
-  tiled focus navigation, globally or for up to 128 exact, case-sensitive KWin
-  `desktopFileName` targets, without changing other focus paths.
+- Optional best-effort centering for successful horizontal tiled focus,
+  globally, only when the destination and directional neighbor overflow, or
+  for up to 128 exact, case-sensitive KWin `desktopFileName` targets, without
+  changing other focus paths.
 - Configurable 1–50 percentage-point step for contextual width decrease and
   increase actions: the active whole column when tiled, or the active manually
   floating window when detached.
 - Configurable 1–50 percentage-point step for contextual height decrease and
   increase actions: the active stack member when tiled, or the active manually
   floating window when detached.
-- One settings page groups twenty controls into fourteen General and six
+- One settings page groups twenty-one controls into fifteen General and six
   Applications controls.
 - Output-local commands unless a transfer is explicit.
 - Work-area, size-constraint, fullscreen, minimized-window compatibility, dialog handling, and settled virtual-output recovery.
@@ -618,8 +619,10 @@ Driftile must integrate with, not duplicate:
 - Horizontal-focus centering runs inside the successful tiled focus transaction
   and uses the existing physical-pixel viewport calculation. The global flag
   and bounded exact application set are combined, and a stacked destination
-  consults only the selected member. A failed center preview or unmatched
-  target keeps the normal minimal reveal; changing either policy performs no
+  consults only the selected member. Optional overflow centering compares the
+  solved target with its nearest directional neighbor and centers only when
+  both frames do not fit the work area. A failed center preview or unmatched
+  target keeps the normal minimal reveal; changing any policy performs no
   layout or persistence write.
 - A width-step change performs no layout, frame, viewport, or focus write. It affects only later explicit decrease and increase actions; reset, presets, full width, and available-width expansion remain independent.
 - A height-step change performs no layout, frame, viewport, or focus write. It affects only later explicit decrease and increase actions; reset and height presets remain independent.

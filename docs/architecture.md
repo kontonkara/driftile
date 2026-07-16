@@ -132,7 +132,9 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   first captured frame until a public signal permits replay; true ineligibility,
   configuration reload, or deletion discards pending work.
 - Retargets eligible absolute position and size animations and replaces a
-  superseded relative translation in constant time. It follows Plasma's global
+  superseded relative translation with a bounded additive chain so rapid
+  off-output moves preserve their visual position. At most 32 translation IDs
+  are retained per window for cleanup. It follows Plasma's global
   animation-speed factor and exposes independent movement and size switches,
   one bounded duration, and a bounded exact `windowClass` exclusion set.
 - Scans the stacking order only once when loaded and tracks later windows by
@@ -271,8 +273,10 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   retains the exact `1/3`, `1/2`, and `2/3` proportions; later tiled or
   contextual floating preset actions read the current cycle.
 - Optionally centers the destination of successful horizontal tiled focus
-  navigation inside the existing focus transaction. Other focus paths retain
-  minimal reveal and a failed center preview falls back without rejecting focus.
+  navigation inside the existing focus transaction. A separate overflow mode
+  centers only when the destination and its nearest directional neighbor do not
+  both fit the solved work area. Other focus paths retain minimal reveal and a
+  failed center preview falls back without rejecting focus.
 - Applies width- and height-step changes in constant time without scheduling layout work; only later matching decrease and increase actions read each value.
 - Rolls back speculative startup admission as one batch when settled work-area geometry cannot produce valid frames, then keeps fingerprinted waiting ownership for a later topology recovery.
 - Isolates failed context solves at public and scheduled reconcile boundaries, keeps each blocked context dirty without immediate retry, and continues reconciling healthy contexts.
@@ -309,6 +313,7 @@ RuntimeState
   dirtyContexts: Set<ContextKey>
   gap: number
   centerFocusedColumn: boolean
+  centerFocusedColumnOnOverflow: boolean
   columnWidthStep: number
   windowHeightStep: number
   defaultColumnWidth: ColumnWidth
@@ -642,6 +647,10 @@ inspected safely within the codec bound.
 - Replace the bounded application focus-centering set atomically without
   moving the current layout. Horizontal focus checks the selected target in
   constant time; rejected focus restores the prior viewport.
+- Replace overflow-centering policy without immediate layout work. A later
+  horizontal focus reuses one solved minimal-reveal view, compares actual
+  target and directional-neighbor frames against the sampled work area, and
+  solves a centered view only when needed.
 - Treat resize-step changes as future command policy: preserve every current model value, frame, viewport, and focus target.
 - Never leave partial layout ownership after a failed startup solve, and never immediately reschedule an unchanged unusable work area.
 - Keep a managed context unchanged and dirty when its settled work area cannot produce valid frames; a failure in one context must not block another.

@@ -114,6 +114,12 @@ actions. Default desktop and output transfer shortcuts must move the whole
 active column. An active floating layer changes either transfer to the active
 window only.
 
+Horizontal focus normally reveals the destination with the smallest required
+viewport change. Optional overflow centering keeps that behavior while the
+destination and its nearest neighbor toward the previous focus both fit the
+work area; otherwise it centers the destination. Always-center and exact
+application policies retain priority.
+
 Floating output transfer selects the same deterministic adjacent output as the
 tiled command and adopts that output's selected desktop without switching any
 desktop. It accepts only one relation-free manual or automatic floating window.

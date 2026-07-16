@@ -350,6 +350,11 @@ ownership signals, public shell-category rejection, independent movement and
 size switches, exact live `windowClass` exclusions, bounded UTF-8 decoding, and
 fail-closed malformed configuration. Home Manager evaluation covers nullable
 ownership, canonical list rendering, and the same count and byte limits.
+Rapid off-output motion cases verify bounded additive translations, complete
+cleanup, and safe changes between relative and absolute position modes.
+Horizontal-focus cases verify live overflow policy, fitting and overflowing
+neighbors, non-adjacent edge jumps, stacked and minimized members, and the
+priority of always-center and exact application policies.
 
 Cross-desktop unit cases cover the 2x2 matrix of output-local or global desktop
 resolution and membership-before-finish or finish-before-membership event
