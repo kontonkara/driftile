@@ -1,12 +1,12 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.44.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.45.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.44.0 adds optional pointer-edge overview activation, a configurable
-alpha backdrop, empty-card desktop selection, and matching Home Manager
-settings. Logical persistence remains v4.
+Stable 1.45.0 adds exact named targets for numbered desktop actions, direct
+desktop reordering, and focused close and transition fixes. Logical persistence
+remains v4.
 
 ## Foundation (delivered)
 
@@ -1820,7 +1820,7 @@ Release criteria (met):
 
 No unrelated feature belongs to 1.44.0.
 
-### 1.45.0 (in development)
+### 1.45.0 (released)
 
 - Let existing numbered focus, whole-column transfer, and single-window
   transfer actions target exact virtual desktop names.
@@ -1837,7 +1837,7 @@ No unrelated feature belongs to 1.44.0.
 - Retain immediate focus motion after a workspace presentation handoff instead
   of dropping the first hidden geometry update.
 
-Release criteria:
+Release criteria (met):
 
 - Named focus and both transfer paths share one resolver, while numbered
   back-and-forth compares the resolved desktop identity.

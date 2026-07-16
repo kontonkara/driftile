@@ -1,7 +1,31 @@
 # Migration
 
-The latest stable release is 1.44.0. Use the steps below when changing release
+The latest stable release is 1.45.0. Use the steps below when changing release
 generations, and never combine files from different releases.
+
+## Upgrade from 1.44.0 to 1.45.0
+
+1. Release a helper-owned shortcut profile with the installed helper.
+2. Disable Driftile and both optional effects in System Settings.
+3. Install matching 1.45.0 artifacts, or pin the Nix input to `v1.45.0` and
+   rebuild.
+4. Re-enable Driftile and only the optional effects you use, then reclaim the
+   helper profile if needed.
+
+Logical layout state remains v4. Existing numbered actions keep positional
+targets unless configured otherwise. The new direct desktop-reorder actions are
+unbound, and the exact-name target map is empty by default. Upgrade the main
+script for close-focus recovery and direct desktop reordering, and upgrade the
+optional transition effect for the latest workspace-handoff behavior.
+
+## Roll back from 1.45.0 to 1.44.0
+
+Release a helper-owned profile, disable Driftile and both optional effects,
+then restore matching verified 1.44.0 artifacts. NixOS and Home Manager users
+should remove `settings.numberedDesktopTargets` before restoring the input to
+`v1.44.0` and rebuilding. Both versions use logical layout state v4; 1.44.0
+ignores the additive KConfig value and does not register the new reorder action
+IDs.
 
 ## Upgrade from 1.43.0 to 1.44.0
 
