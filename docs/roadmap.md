@@ -1,12 +1,12 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.37.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.38.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.37.0 adds a global initial tiled height, optional numbered desktop
-back-and-forth, and reliable active-window animation replay during desktop
-transition handoffs. Logical persistence remains v4.
+Stable 1.38.0 adds exact initial full-width, fullscreen, and floating-position
+application rules plus continuous rapid animation retargeting across desktop
+handoffs and negative global coordinates. Logical persistence remains v4.
 
 ## Foundation (delivered)
 
@@ -1638,7 +1638,7 @@ taking over compositor mechanisms.
 - The optional overview must remain removable, preserve the authoritative
   layout state, and fall back cleanly to Plasma's Overview.
 
-### 1.38.0 direction
+### 1.38.0 (released)
 
 - Add fresh-only exact application rules for initial full-width columns and
   native fullscreen requests.
@@ -1651,3 +1651,16 @@ taking over compositor mechanisms.
 - Keep startup, restored, transferred, re-admitted, and already tracked windows
   unchanged without a shortcut, persistence field, private API, or compositor
   mechanism.
+
+Release criteria (met):
+
+- Initial-state rules preserve their normal tiled or floating underlay and use
+  exact bounded application IDs.
+- Floating placement uses eight work-area anchors, signed logical-pixel
+  offsets, output-pixel snapping, and guarded first-manual ownership.
+- Rapid movement retargets one bounded position/translation pair without
+  restarting or accumulating transitions.
+- KConfig, NixOS, and Home Manager expose safe empty defaults without changing
+  logical persistence or shortcut assignments.
+
+No other feature belongs to 1.38.0.
