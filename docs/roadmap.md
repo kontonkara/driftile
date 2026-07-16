@@ -1637,3 +1637,13 @@ taking over compositor mechanisms.
 - Keep Plasma's built-in Overview as the compatible baseline.
 - The optional overview must remain removable, preserve the authoritative
   layout state, and fall back cleanly to Plasma's Overview.
+
+### 1.38.0 direction
+
+- Add fresh-only exact application rules for initial full-width columns and
+  native fullscreen requests.
+- Preserve the configured normal width beneath full width and the admitted
+  tiled or floating state beneath fullscreen.
+- Keep startup, restored, transferred, re-admitted, and already tracked windows
+  unchanged without a shortcut, persistence field, private API, or compositor
+  mechanism.

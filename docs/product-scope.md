@@ -51,6 +51,10 @@ The ownership rule is strict:
   admitted normal windows start under ordinary manual-floating ownership while
   retaining their KWin frames. Existing and hydrated ownership is not
   reclassified.
+- Up to 128 exact application IDs whose genuinely new tiled windows start as
+  full-width singleton columns while retaining their normal width for restore.
+- Up to 128 exact application IDs whose genuinely new fullscreen-capable
+  windows request native fullscreen after their underlying admission settles.
 - Up to 128 exact KWin `desktopFileName` exclusions that keep matching
   application windows outside tiling and apply live without taking geometry
   ownership.
@@ -627,6 +631,11 @@ Driftile must integrate with, not duplicate:
   automatic floating roles take priority. Toggling the resulting ordinary
   manual-floating window into tiling uses its application initial width and the
   existing persistence schema.
+- Initial-full-width and initial-fullscreen rules use captured bounded exact-ID
+  policies for genuinely new normal windows. The former retains the normal
+  width as its full-width restore value; the latter reuses guarded native
+  fullscreen handling and returns to the admitted tiled or floating state.
+  Neither rule rewrites existing geometry or adds persisted layout state.
 - A column-width preset change performs no layout, frame, viewport, focus, or
   persistence write. Existing columns keep their concrete width; later preset
   actions use the replacement cycle and retain normal constraint clamping.

@@ -420,6 +420,14 @@ returns the window to tiling through the normal reinsertion path, using its
 configured application initial column width. No separate persisted state is
 introduced.
 
+Two other fresh-only exact application policies can admit a normal tiled window
+as a full-width singleton or request native fullscreen after its underlying
+tiled or floating state is established. Full-width admission retains the
+application or global width as its toggle restore value. Leaving fullscreen
+returns to the admitted underlying state. Startup, restored, transferred, and
+re-admitted windows remain authoritative, and live policy changes affect only
+windows first tracked later.
+
 Plasma exposes one global virtual-desktop list, and KWin owns its reorder
 mechanism. Driftile can request a one-position move of the desktop currently
 selected on the active output. It never wraps; desktop IDs, per-output

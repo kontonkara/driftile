@@ -108,7 +108,8 @@ The activation writes only `ApplicationBorderlessExclusions`,
 `ApplicationColumnPresentations`, `ApplicationColumnWidths`,
 `ApplicationWindowHeights`,
 `ApplicationFocusCentering`,
-`ApplicationInitialFloating`, `ApplicationTilingExclusions`,
+`ApplicationInitialFloating`, `ApplicationInitialFullWidth`,
+`ApplicationInitialFullscreen`, `ApplicationTilingExclusions`,
 `BorderlessWindows`, `CenterFocusedColumn`, `Gap`,
 `DefaultColumnPresentation`, `DefaultColumnWidthPercent`,
 `DefaultColumnWidthPixels`, `DefaultWindowHeight`, `ColumnWidthPresets`,
@@ -154,6 +155,14 @@ programs.driftile.settings.applicationFocusCentering = [
 
 programs.driftile.settings.applicationInitialFloating = [
   "org.kde.kcalc"
+];
+
+programs.driftile.settings.applicationInitialFullWidth = [
+  "org.mozilla.firefox"
+];
+
+programs.driftile.settings.applicationInitialFullscreen = [
+  "org.example.Player"
 ];
 
 programs.driftile.settings.applicationTilingExclusions = [
@@ -448,6 +457,30 @@ floating. Its application-specific initial column width applies at that point.
 The policy uses existing floating and layout persistence and adds no persistence
 schema field.
 
+## Applications initially full-width
+
+**Applications initially full-width** opens a freshly admitted matching normal
+tiled window as a full-width singleton column. Enter exact, case-sensitive KWin
+`desktopFileName` values, one per line, under the application-list limits.
+
+The matching application width or global default is retained as the
+**Toggle full width** restore width. Startup, restored, transferred, joined,
+re-tiled, or already admitted windows are unchanged. An initially floating or
+automatically floating window does not use the rule. Live edits affect only
+windows first tracked afterward and perform no immediate geometry write.
+
+## Applications initially fullscreen
+
+**Applications initially fullscreen** requests native fullscreen for a freshly
+admitted exact normal-window match when KWin reports fullscreen support. The
+admitted tiled, full-width, or floating state remains underneath, so leaving
+fullscreen returns to that state.
+
+Startup, restored, transferred, re-admitted, and already tracked windows are
+unchanged. A rejected or unsupported request is not retried indefinitely. Live
+edits affect only windows first tracked afterward and perform no immediate
+state or geometry write.
+
 ## Application tiling exclusions
 
 **Applications excluded from tiling** keeps matching normal application
@@ -553,7 +586,7 @@ The KConfig decoder accepts at most 65,664 characters in the complete document,
 512 characters in each raw line, 128 nonblank unique IDs, and 255 UTF-8 bytes
 in each trimmed ID. It trims surrounding whitespace and ignores blank lines.
 Control characters, invalid UTF-16, an oversized value, or a duplicate after
-trimming rejects the complete 29-setting snapshot. Accepted IDs have a
+trimming rejects the complete 31-setting snapshot. Accepted IDs have a
 canonical sorted internal form. Home Manager exposes the same policy as
 `programs.driftile.settings.applicationBorderlessExclusions`, a list rendered
 as a sorted newline-delimited KConfig value.
