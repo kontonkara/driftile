@@ -629,3 +629,8 @@ Driftile must integrate with, not duplicate:
 - The optional overview keeps one toggle action and adds separate unbound open
   and close actions. Each one is idempotent across inactive, loading, and active
   states and changes no layout or persistence state.
+- A guarded overview drop may move one exact tiled or floating normal window to
+  another desktop card on the same output, including the shared empty tail.
+  Same-desktop, cross-output, all-desktop, related, stale, or ambiguous drops
+  perform no write. Successful KWin membership confirmation closes the effect;
+  the main script remains the layout owner.

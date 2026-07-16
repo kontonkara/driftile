@@ -5,7 +5,7 @@
 ```text
 QML bridge -> TypeScript runtime -> core -> reconcile -> KWin
 KWin frame signal -> optional transition effect -> visual interpolation
-stable layout snapshot -> overview projector -> guarded KWin effect -> KWin focus, selection, or desktop reorder
+stable layout snapshot -> overview projector -> guarded KWin effect -> KWin focus, selection, desktop reorder, or window membership
 confirmed tab selection -> guarded callback -> passive Plasma OSD
 ```
 
@@ -99,7 +99,8 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   requires an exact confirmation. Thumbnail activation then revalidates the
   same window including visible state, requests the exact
   `KWin.Workspace.activeWindow`, and confirms focus.
-- Writes only `KWin.Workspace.activeWindow`, public
+- Writes only `KWin.Workspace.activeWindow`, one exact window `desktops` list,
+  public
   `KWin.SceneView.currentDesktop`, or the guarded single-output
   `KWin.Workspace.currentDesktop` fallback, and invokes public
   `KWin.Workspace.moveDesktop` for one validated reorder. Rejection leaves the
@@ -107,9 +108,9 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   keeps the selected desktop, closes the stale effect, and performs no rollback.
 - Offers `Meta+O` for a fresh KGlobalAccel record through KWin's public
   shortcut handler and preserves existing assignments. It adds no schema,
-  private API, window move, geometry write, membership write, or screen-edge
-  mechanism. It performs no window,
-  stacking-order, or layout scan. KWin owns desktop switching and focus.
+  private API, geometry write, or screen-edge mechanism. It performs no window,
+  stacking-order, or layout scan. KWin owns desktop switching, window
+  membership, and focus.
 - Keeps its configurable vertical touchpad gesture pair in an inactive Loader
   when disabled and recreates it with initial finger-count properties after a
   live configuration change. Up opens; down closes without a layout write.

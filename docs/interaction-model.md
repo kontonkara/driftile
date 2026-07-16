@@ -88,7 +88,7 @@ setting, shortcut, persistence, or KWin state.
 | Floating layer       | Toggle state, switch layers, navigate geometrically, nudge, center, and resize contextually     | Available |
 | Pointer drop         | Reinsert a tiled window or tile a manual floating window at an exact window or empty gutter     | Available |
 | Pointer resize       | Adopt one completed horizontal column resize or vertical stacked-window resize                  | Available |
-| Overview companion   | Activate targets; select and reorder desktop cards; show the passive active-column layout badge | Available |
+| Overview companion   | Activate targets; select or reorder desktops; move one window between desktop cards             | Available |
 | Tabbed columns       | Toggle presentation; select or reorder members with the existing vertical grammar               | 1.19.0    |
 | Pointer navigation   | Provide wheel navigation through the shared layout model                                        | Future    |
 

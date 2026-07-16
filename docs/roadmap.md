@@ -1426,6 +1426,13 @@ reuses the existing guarded ownership transactions. Tiled window-width actions
 follow the one-width-per-column model, while the overview actions preserve the
 existing `Meta+O` toggle and optional package boundary.
 
+The optional overview accepts a pointer drag from a visible thumbnail or
+non-minimized tab to another desktop card on the same output. A bounded planner
+proves unique source ownership in the immutable model before one public KWin
+desktop-membership assignment. The empty tail is valid; same-card,
+cross-output, all-desktop, related, stale, rejected, or unconfirmed drops leave
+the effect open and perform no layout write.
+
 ## Post-v1
 
 Add interaction and presentation features outside the frozen v1 scope without
