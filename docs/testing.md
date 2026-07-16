@@ -266,10 +266,11 @@ and shortcut contracts described above.
 
 Application-width coverage verifies the bounded one-entry-per-line decoder,
 10%–100% values, the 128-entry limit, duplicate and malformed rejection, exact
-case-sensitive `desktopFileName` lookup, constant-time admission, global-default
-fallback, existing-column preservation, waiting admission, and live constraint
-clamping for new singleton columns. Nix module checks verify the canonical
-KConfig encoding from typed Home Manager profiles.
+case-sensitive resolved-ID lookup, desktop-file precedence, resource-class
+fallback, constant-time admission, global-default fallback, existing-column
+preservation, waiting admission, and live constraint clamping for new singleton
+columns. Nix module checks verify the canonical KConfig encoding from typed Home
+Manager profiles.
 
 Application-exclusion coverage verifies bounded exact-ID decoding, canonical
 Home Manager encoding, atomic settings updates, startup exclusion, live
@@ -286,11 +287,12 @@ without adding a duplicate VM scenario.
 document, 512-character raw-line, 128-entry, and 255-byte ID limits; blank-line
 handling; canonical sorting; and atomic rejection of duplicates, controls,
 invalid UTF-16, and oversized input. Runtime cases cover exact case-sensitive
-`desktopFileName` matching without fallbacks, missing and empty IDs, tiled,
-floating, dialog, transient, and utility windows, global-disable dominance,
-live policy and identity changes, pre-existing borderless state, and
-add or remove paths without geometry writes, focus changes, or layout-state or
-layout-persistence changes. Global-disable and unload cases verify
+resolved-ID matching, desktop-file precedence, resource-class fallback, missing
+and empty IDs, tiled, floating, dialog, transient, and utility windows,
+global-disable dominance, live policy and identity changes, pre-existing
+borderless state, and add or remove paths without geometry writes, focus
+changes, or layout-state or layout-persistence changes. Global-disable and
+unload cases verify
 ownership-safe restoration separately. Nix checks pin the seventeen-field option
 surface and sorted Home Manager KConfig encoding.
 

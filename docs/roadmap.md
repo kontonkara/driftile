@@ -84,7 +84,7 @@ The current runtime already:
 - Optionally removes application-window decorations independently of layout
   ownership while preserving pre-existing borderless state, reasserting owned
   policy, and restoring owned state on disable. Up to 128 exact
-  `desktopFileName` exclusions keep matching applications under KWin's existing
+  application-ID exclusions keep matching applications under KWin's existing
   decoration policy.
 - Applies a global fractional 0–64 logical-pixel tiled-window gap live without
   mutating layout order, sizing policies, focus, floating frames, or minimized
@@ -92,11 +92,11 @@ The current runtime already:
 - Configures a 10%–100% default-width fallback and an optional fixed
   `1px`–`16384px` logical width for newly admitted columns, fresh cross-context
   retiles, and contextual reset without changing existing widths.
-- Configures up to 128 exact `desktopFileName` proportional or fixed
+- Configures up to 128 exact application-ID proportional or fixed
   logical-pixel initial singleton widths, with a constant-time admission
   lookup, global-default fallback, live constraints, and output-pixel snapping.
   Existing columns remain unchanged.
-- Excludes up to 128 exact, case-sensitive `desktopFileName` values from layout
+- Excludes up to 128 exact, case-sensitive application IDs from layout
   ownership, with live release and fresh readmission when the policy changes.
 - Configures up to 16 mixed proportional or fixed logical-pixel column-width
   presets for later tiled or manual-floating actions without changing existing
@@ -1728,3 +1728,7 @@ No other feature belongs to 1.40.0.
   application rules, reusing the same anchor, clamp, and pixel-snap behavior.
 - Bound rapid transition retarget latency and skip unchanged synchronized
   targets without restarting active animations.
+- Restore the most recently focused eligible window after KWin briefly selects
+  an ineligible interim surface while closing the active window.
+- Resolve exact application rules from `desktopFileName`, falling back to
+  `resourceClass` only when the desktop-file ID is unavailable.

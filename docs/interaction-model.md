@@ -423,11 +423,12 @@ Driftile extracts it into a singleton column immediately to the right. Leaving
 the native state keeps that column separate. A singleton or floating window
 keeps its existing layout ownership.
 
-An application can also be excluded by exact `desktopFileName` in Driftile's
-settings. A match uses the same automatic-exclusion ownership as dialogs and
-other KWin-owned roles: tiling commands are no-ops and Driftile does not write
-its frame. Clearing the rule admits an otherwise eligible window as a fresh
-singleton after native-state and interactive-move blockers settle.
+An application can also be excluded by its exact KWin application ID in
+Driftile's settings. Driftile uses `desktopFileName` when available and
+otherwise `resourceClass`. A match uses the same automatic-exclusion ownership
+as dialogs and other KWin-owned roles: tiling commands are no-ops and Driftile
+does not write its frame. Clearing the rule admits an otherwise eligible window
+as a fresh singleton after native-state and interactive-move blockers settle.
 
 An exact application initial-width rule is read only for fresh singleton
 admission. Bare `10`–`100` and explicit `10%`–`100%` values are proportional;

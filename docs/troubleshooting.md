@@ -75,8 +75,9 @@ under KWin ownership. Systems without the activity API and workspaces with one
 activity keep the compatible single-activity behavior.
 
 Also check **Applications excluded from tiling** in Driftile's settings. The
-entries match KWin's exact, case-sensitive `desktopFileName`; clearing a match
-allows fresh admission after KWin releases any native-state blocker.
+entries match KWin's exact, case-sensitive application ID: `desktopFileName`
+when available, otherwise `resourceClass`. Clearing a match allows fresh
+admission after KWin releases any native-state blocker.
 
 On multiple outputs, an otherwise eligible window can wait when admitting it
 would exceed visible capacity. It is retried after space or topology recovers.
@@ -105,17 +106,16 @@ First check **Hide KWin borders and title bars on application windows**.
 from applying borderless policy.
 
 For one application, check **Applications keeping KWin borders and title
-bars**. Entries match only the exact, case-sensitive KWin `desktopFileName`;
-there is no fallback to another identity. A missing or empty ID is not
-excluded, and an empty list retains the global behavior. Duplicate, malformed,
-or oversized input rejects the complete settings update and leaves the prior
-snapshot active.
+bars**. Entries match the exact, case-sensitive KWin application ID:
+`desktopFileName` when available, otherwise `resourceClass`. An empty list
+retains the global behavior. Duplicate, malformed, or oversized input rejects
+the complete settings update and leaves the prior snapshot active.
 
 An exclusion preserves the window's existing KWin decoration state; it does not
 force a border onto a window already made borderless by KWin, a Window Rule, or
 the application. Client-side decorations and application toolbars are part of
 the application surface and are not controlled by this setting. List and
-`desktopFileName` changes apply live.
+resolved-identity changes apply live.
 
 ## A layout does not restore
 

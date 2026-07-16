@@ -230,11 +230,14 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Optionally claims borderless state for application windows independently of
   layout ownership, reasserts owned state after policy changes, and restores
   only decoration state that it owns.
-- Consults a separate exact, case-sensitive `desktopFileName` exclusion set
-  before each borderless claim. Missing and empty IDs remain eligible, and no
-  resource, role, or other identity fallback is used. The policy covers every
-  otherwise eligible tiled, floating, dialog, transient, and utility window.
-- Reconciles borderless exclusions and `desktopFileName` changes live without
+- Resolves one exact, case-sensitive application-rule ID: a nonempty
+  `desktopFileName` when available, otherwise a nonempty `resourceClass`. The
+  resolver never reads the fallback after a usable desktop-file ID and performs
+  no partial, role, caption, or resource-name matching.
+- Consults the separate exact application-ID exclusion set before each
+  borderless claim. The policy covers every otherwise eligible tiled, floating,
+  dialog, transient, and utility window.
+- Reconciles borderless exclusions and resolved application-ID changes live without
   geometry writes, focus changes, or logical-layout or layout-persistence
   changes. Global disable dominates the set, and disable or unload restores only
   owned decoration state.
@@ -257,19 +260,19 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   cross-context retiles, and later contextual resets read that current policy
   through the normal constraint and output-pixel snapping path. A pointer gutter
   extraction instead preserves its source width.
-- Parses at most 128 application-width entries into an exact
-  `desktopFileName` lookup. A newly created or freshly admitted singleton reads
-  that map in constant time, falls back to the global default, and remains
+- Parses at most 128 application-width entries into an exact application-ID
+  lookup. A newly created or freshly admitted singleton resolves the KWin ID,
+  reads that map in constant time, falls back to the global default, and remains
   subject to the normal window-constraint clamp. Existing columns do not read
   the map again.
 - Parses at most 128 initial-floating application IDs into an exact
-  case-sensitive `desktopFileName` set. A fresh eligible admission performs one
+  case-sensitive resolved-ID set. A fresh eligible admission performs one
   constant-time lookup and routes a match through existing manual-floating
   ownership while preserving its KWin frame. Existing or hydrated ownership is
   not reclassified; tiling exclusions and automatic floating roles take
   priority.
 - Parses at most 128 application tiling exclusions into an exact case-sensitive
-  `desktopFileName` set. Admission uses one constant-time lookup; a live policy
+  resolved-ID set. Admission uses one constant-time lookup; a live policy
   replacement scans the observed window set once and schedules only windows
   whose membership changed.
 - Reuses the same exact-ID decoder for application borderless exclusions: at
@@ -771,15 +774,16 @@ inspected safely within the codec bound.
   destination-desktop adoption, KWin-owned frames, related-window guards,
   bounded mechanism compensation, and zero tiled-layout or frame writes.
 - Verify bounded application-borderless exclusion decoding, canonical sorting,
-  exact case-sensitive lookup without fallbacks, missing and empty identities,
-  all eligible window roles, global-disable dominance, policy reassertion, live
-  settings and identity changes without geometry writes, focus changes, or
-  layout-state or layout-persistence changes, plus ownership-safe global-disable
-  and unload restoration.
+  exact case-sensitive resolved-ID lookup, desktop-file precedence,
+  resource-class fallback, missing and empty identities, all eligible window
+  roles, global-disable dominance, policy reassertion, live settings and
+  identity changes without geometry writes, focus changes, or layout-state or
+  layout-persistence changes, plus ownership-safe global-disable and unload
+  restoration.
 - Verify live gap reflow, bounds, no-op coalescing, hidden-context deferral, capacity retry, and zero writes to minimized, floating, or excluded windows.
 - Verify default-width bounds, coalescing, structural deferral, existing-layout preservation, constrained waiting admission, newly admitted-column policy, and transactional reset.
 - Verify bounded one-entry-per-line application-width decoding, exact
-  `desktopFileName` lookup, duplicate rejection, global-default fallback,
+  application-ID lookup, duplicate rejection, global-default fallback,
   constant-time admission lookup, existing-column preservation, and live
   constraint clamps for new singleton columns.
 - Verify bounded application-exclusion decoding, exact case-sensitive lookup,

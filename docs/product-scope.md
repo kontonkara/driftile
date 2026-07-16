@@ -35,9 +35,11 @@ The ownership rule is strict:
   selected member owns focus and stacking intent.
 - Per-window height adjustment, weighted automatic stack distribution, and height presets.
 - Managed, manually floating, automatically layout-excluded, and ignored window states.
+- Exact application rules use KWin `desktopFileName` when available and
+  otherwise `resourceClass`, without partial or case-folded matching.
 - Optional borderless presentation for application windows with exact
   decoration ownership.
-- Up to 128 exact, case-sensitive KWin `desktopFileName` exclusions that keep
+- Up to 128 exact, case-sensitive KWin application-ID exclusions that keep
   matching tiled, floating, dialog, transient, and utility windows under their
   existing decoration policy.
 - Live global tiled-window gap from 0 to 64 logical pixels without changing layout state.
@@ -45,7 +47,7 @@ The ownership rule is strict:
   `1px`–`16384px` logical width for newly admitted columns, ordinary fresh
   cross-context retiles, and contextual tiled or manual-floating reset.
 - Up to 128 application-specific proportional or fixed logical-pixel initial
-  singleton widths, matched by exact KWin `desktopFileName` with global-default
+  singleton widths, matched by exact KWin application ID with global-default
   fallback, live constraints, and output-pixel snapping.
 - Up to 128 exact fresh-window destination rules that assign a normal
   application to a one-based virtual desktop, named output, or both before
@@ -56,10 +58,9 @@ The ownership rule is strict:
 - Up to 128 exact application IDs whose genuinely new normal windows cannot
   retain initial focus in an already visible context; the previous live visible
   window is restored once, with this rule taking priority over initial focus.
-- Up to 128 exact, case-sensitive KWin `desktopFileName` values whose freshly
-  admitted normal windows start under ordinary manual-floating ownership while
-  retaining their KWin frames. Existing and hydrated ownership is not
-  reclassified.
+- Up to 128 exact, case-sensitive KWin application IDs whose freshly admitted
+  normal windows start under ordinary manual-floating ownership while retaining
+  their KWin frames. Existing and hydrated ownership is not reclassified.
 - Up to 128 exact application IDs whose genuinely new tiled windows start as
   full-width singleton columns while retaining their normal width for restore.
 - Up to 128 exact application IDs whose genuinely new normal windows request
@@ -67,9 +68,8 @@ The ownership rule is strict:
   admitted.
 - Up to 128 exact application IDs whose genuinely new fullscreen-capable
   windows request native fullscreen after their underlying admission settles.
-- Up to 128 exact KWin `desktopFileName` exclusions that keep matching
-  application windows outside tiling and apply live without taking geometry
-  ownership.
+- Up to 128 exact KWin application-ID exclusions that keep matching application
+  windows outside tiling and apply live without taking geometry ownership.
 - Up to 16 configurable mixed proportional or fixed logical-pixel column-width
   presets for contextual tiled or manual-floating actions; an empty
   configuration retains the built-in exact thirds.
@@ -78,7 +78,7 @@ The ownership rule is strict:
   configuration retains the exact `1/3`, `1/2`, and `2/3` proportions.
 - Optional best-effort centering for successful horizontal tiled focus,
   globally, only when the destination and directional neighbor overflow, or
-  for up to 128 exact, case-sensitive KWin `desktopFileName` targets, without
+  for up to 128 exact, case-sensitive KWin application-ID targets, without
   changing other focus paths.
 - Configurable 1–50 percentage-point step for contextual width decrease and
   increase actions: the active whole column when tiled, or the active manually
@@ -602,10 +602,11 @@ Driftile must integrate with, not duplicate:
 - KWin alone owns minimization. Driftile registers no minimize action or default shortcut, keeps a minimized tiled window in its exact logical slot, and preserves a minimized manually floating window's exact detached frame for restoration.
 - An automatically layout-excluded window has no layout slot, manual-floating anchor, waiting entry, suspension, or retry state. Commands requiring layout ownership are no-ops; relation-free desktop transfer remains available.
 - A configured application exclusion uses the same automatic-exclusion state,
-  matches the exact case-sensitive `desktopFileName`, takes priority over an
-  initial-width rule, and never writes the excluded window's frame. Removing
-  the rule performs fresh admission rather than restoring a former slot or
-  floating anchor.
+  matches the exact case-sensitive KWin application ID, takes priority over an
+  initial-width rule, and never writes the excluded window's frame. The ID is
+  `desktopFileName` when available and otherwise `resourceClass`. Removing the
+  rule performs fresh admission rather than restoring a former slot or floating
+  anchor.
 - A managed window that becomes modal or transient leaves its layout without a geometry write or stale baseline restore. It may be admitted again after the role clears.
 - Unrelated window order, widths, and viewport offsets remain stable.
 - A changed context never restores an original frame captured under stale output geometry.
@@ -615,9 +616,9 @@ Driftile must integrate with, not duplicate:
 - Borderless mode covers tiled, floating, dialog, transient, and utility
   windows, changes only decoration state claimed by Driftile, and restores it
   when disabled or unloaded.
-- A borderless exclusion matches only the exact, case-sensitive
-  `desktopFileName`. There is no identity fallback, and a missing or empty ID is
-  not excluded. A blank list therefore retains the prior global behavior.
+- A borderless exclusion matches the exact, case-sensitive KWin application ID
+  using the shared `desktopFileName` then `resourceClass` precedence. A blank
+  list retains the prior global behavior.
 - `BorderlessWindows=false` dominates every exclusion. Live list or identity
   changes acquire or restore only owned decoration state, issue no geometry
   writes, and do not change focus, layout state, or layout persistence. Global
@@ -631,7 +632,7 @@ Driftile must integrate with, not duplicate:
   source width. Retrying a waiting admission may add a column and update the
   affected viewport and frames; otherwise the policy change performs no frame
   writes.
-- Application-width rules use one exact, case-sensitive `desktopFileName` entry
+- Application-width rules use one exact, case-sensitive application-ID entry
   per line. Legacy bare `10`–`100` and explicit `10%`–`100%` values are
   proportional; `1px`–`16384px` values are fixed logical widths. More than 128
   entries reject the complete setting. Only fresh singleton admission consults

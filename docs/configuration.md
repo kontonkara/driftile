@@ -135,7 +135,7 @@ When non-null, `alwaysCenterSingleColumn` and
 and `CenterFocusedColumnOnOverflow` respectively.
 
 Declare application widths and heights as typed attribute sets and exclusions
-as lists. Home Manager sorts desktop-file IDs before writing newline-delimited
+as lists. Home Manager sorts application IDs before writing newline-delimited
 KConfig values.
 
 ```nix
@@ -261,6 +261,16 @@ never creates a managed window or captures input. The OSD remains silent while
 Plasma's or Driftile's overview is active. Disable the option without changing
 column state or shortcuts.
 
+## Application rule identity
+
+All exact application rules use one case-sensitive KWin application ID.
+Driftile uses a nonempty `desktopFileName` when available and otherwise falls
+back to a nonempty `resourceClass`. Once `desktopFileName` becomes available,
+it takes priority. There is no partial, case-folded, `resourceName`, role, or
+caption match. Use KWin's debug console to inspect both fields; XWayland
+applications without a desktop-file ID can be configured by their exact
+`resourceClass` without changing the settings format.
+
 ## Horizontal focus centering
 
 **Center tiled columns after horizontal focus navigation** is disabled by
@@ -281,9 +291,9 @@ always-center option above and matching application rules take precedence.
 Changing this option is also write-free until a later horizontal focus action.
 
 **Applications centered during horizontal focus** is empty by default. Enter
-one exact, case-sensitive KWin `desktopFileName` per line to center only
-matching destinations. Matching and the global option are combined: enabling
-the global option centers every horizontal tiled-focus destination.
+one exact application ID per line to center only matching destinations.
+Matching and the global option are combined: enabling the global option centers
+every horizontal tiled-focus destination.
 
 For a stacked destination, the rule checks the member actually selected by the
 focus action, not another member in the same column. A missing or unmatched ID
@@ -415,8 +425,8 @@ constraints and the assigned output's physical-pixel grid remain authoritative.
 ## Application column widths
 
 **Application column widths** override the initial width of new singleton
-columns by exact KWin `desktopFileName`. Enter one `desktop-file-id=width` rule
-per line. Bare `10`–`100` values retain the legacy percentage syntax, explicit
+columns by exact application ID. Enter one `application-id=width` rule per
+line. Bare `10`–`100` values retain the legacy percentage syntax, explicit
 `10%`–`100%` values are equivalent, and `1px`–`16384px` selects a fixed logical
 width. For example:
 
@@ -440,8 +450,8 @@ performs no immediate layout or frame write.
 ## Application window heights
 
 **Application initial tiled client heights** override the initial height of a
-new singleton tiled window by exact, case-sensitive KWin `desktopFileName`.
-Enter one `desktopFileName=height` rule per line. Bare `10`–`100` values and
+new singleton tiled window by exact application ID. Enter one
+`application-id=height` rule per line. Bare `10`–`100` values and
 explicit `10%`–`100%` values select a percentage of the available tiled height;
 `1px`–`16384px` selects a fixed logical client height. For example:
 
@@ -464,8 +474,8 @@ authoritative. Updating the rules performs no immediate layout or frame write.
 ## Application column presentation
 
 **Application column presentation** sets the initial display mode of a new
-column by exact KWin `desktopFileName`. Enter one
-`desktop-file-id=stacked|tabbed` rule per line. Matching is case-sensitive;
+column by exact application ID. Enter one
+`application-id=stacked|tabbed` rule per line. Matching is case-sensitive;
 blank lines are ignored, and malformed, duplicate, or over-limit rules reject
 the complete settings update. At most 128 rules are accepted, and IDs are
 limited to 255 UTF-8 bytes.
@@ -521,9 +531,9 @@ application IDs, virtual desktop names, and output names are each limited to
 
 **Applications initially floating** starts a matching normal application
 window as an ordinary manually floating window when Driftile first admits it.
-Matching uses the exact, case-sensitive KWin `desktopFileName`; enter one ID per
-line under the same limits as the other application list policies. Driftile
-preserves the frame accepted from KWin.
+Matching uses the exact application ID; enter one ID per line under the same
+limits as the other application list policies. Driftile preserves the frame
+accepted from KWin.
 
 The policy is fresh-only. It does not reclassify an already admitted window or
 override restored tiled or floating ownership when the setting changes. A
@@ -550,9 +560,9 @@ positioned window.
 
 ## Application floating positions
 
-**Application floating positions** places an exact, case-sensitive
-`desktopFileName` when a genuinely new normal window first enters ordinary
-manual floating. Enter one `desktopFileName=anchor,x,y` rule per line. Anchors
+**Application floating positions** places an exact application match when a
+genuinely new normal window first enters ordinary manual floating. Enter one
+`application-id=anchor,x,y` rule per line. Anchors
 are `top-left`, `top`, `top-right`, `right`, `bottom-right`, `bottom`,
 `bottom-left`, and `left`; `x` and `y` are signed logical-pixel offsets from
 `-16384` through `16384`. Positive offsets point inward on an anchored edge;
@@ -580,8 +590,7 @@ placements and add no persistence field.
 
 **Applications initially focused** requests focus once after Driftile admits a
 genuinely new matching normal window to its tiled or floating layer. Enter
-exact, case-sensitive KWin `desktopFileName` values, one per line, under the
-application-list limits.
+exact application IDs, one per line, under the application-list limits.
 
 The request is made only when the destination desktop and output are already
 visible. Driftile does not select a desktop or output to reveal the window.
@@ -597,8 +606,8 @@ windows first tracked afterward and add no shortcut or persistence field.
 ## Applications initially unfocused
 
 **Applications initially unfocused** prevents a genuinely new matching normal
-window from keeping initial focus. Enter exact, case-sensitive KWin
-`desktopFileName` values, one per line, under the application-list limits.
+window from keeping initial focus. Enter exact application IDs, one per line,
+under the application-list limits.
 
 After admission in an already visible desktop and output context, Driftile lets
 KWin settle its ordinary activation once. If the new window became active, the
@@ -616,8 +625,8 @@ no shortcut or persistence field.
 ## Applications initially full-width
 
 **Applications initially full-width** opens a freshly admitted matching normal
-tiled window as a full-width singleton column. Enter exact, case-sensitive KWin
-`desktopFileName` values, one per line, under the application-list limits.
+tiled window as a full-width singleton column. Enter exact application IDs, one
+per line, under the application-list limits.
 
 The matching application width or global default is retained as the
 **Toggle full width** restore width. Startup, restored, transferred, joined,
@@ -633,9 +642,9 @@ is distinct from a Driftile full-width column: KWin owns the maximized state,
 while the admitted tiled or floating state remains underneath for
 restore.
 
-Enter exact, case-sensitive KWin `desktopFileName` values, one per line, under
-the application-list limits. Destination, initial floating placement, tiled
-sizing, presentation, and full-width rules settle first. Native maximize is
+Enter exact application IDs, one per line, under the application-list limits.
+Destination, initial floating placement, tiled sizing, presentation, and
+full-width rules settle first. Native maximize is
 requested next, and an initial fullscreen request runs last.
 
 Startup, restored, transferred, re-admitted, and already tracked windows are
@@ -658,8 +667,8 @@ state or geometry write.
 ## Application tiling exclusions
 
 **Applications excluded from tiling** keeps matching normal application
-windows outside layout ownership by exact KWin `desktopFileName`. Enter one ID
-per line. Blank lines are ignored; matching is case-sensitive; duplicates,
+windows outside layout ownership by exact application ID. Enter one ID per
+line. Blank lines are ignored; matching is case-sensitive; duplicates,
 control characters, and more than 128 entries reject the complete settings
 update. Each ID is limited to 255 UTF-8 bytes.
 
@@ -745,12 +754,11 @@ Disabling the option restores decorations that Driftile removed. Unloading the e
 ## Application borderless exclusions
 
 `ApplicationBorderlessExclusions` is a KConfig `String` setting, shown as
-**Applications keeping KWin borders and title bars**. Enter one exact,
-case-sensitive KWin `desktopFileName` per line. A matching otherwise eligible
-window keeps its existing KWin decoration state whether it is tiled, floating,
-a dialog, transient, or utility window. Matching uses no resource-class,
-window-role, or other fallback. A missing or empty `desktopFileName` is not
-excluded.
+**Applications keeping KWin borders and title bars**. Enter one exact
+application ID per line. A matching otherwise eligible window keeps its
+existing KWin decoration state whether it is tiled, floating, a dialog,
+transient, or utility window. The shared application-ID precedence applies;
+there is no role, caption, or partial fallback.
 
 An empty document retains the global borderless behavior described above. When
 `BorderlessWindows=false`, that global setting dominates: Driftile applies no
@@ -767,7 +775,7 @@ as a sorted newline-delimited KConfig value.
 
 Adding an exclusion live restores only decoration state Driftile claimed;
 removing it lets the enabled global policy claim a decorated match. Changes to
-the list or a window's `desktopFileName` reconcile live without issuing
+the list or a window's resolved application ID reconcile live without issuing
 Driftile geometry writes or changing focus, layout state, or layout
 persistence. Global disable and extension unload restore owned state, while
 pre-existing borderless state remains untouched.
