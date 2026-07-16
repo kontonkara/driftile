@@ -1444,6 +1444,10 @@ desktop, including the shared empty tail. Enter reuses the guarded desktop
 selection path, while the current gutter remains inert and all gutter targets
 stay outside an active window search.
 
+The same target set supports bounded sequential keyboard traversal. Tab and
+Shift+Tab wrap in deterministic visual order, Home and End select its
+boundaries, and a selected desktop gutter receives an explicit focus outline.
+
 ## Post-v1
 
 Add interaction and presentation features outside the frozen v1 scope without
