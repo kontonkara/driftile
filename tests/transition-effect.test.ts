@@ -243,8 +243,10 @@ function createHarness(
     configChanged,
     effects,
     failedRetargets,
-    finishAnimation(window: WindowStub) {
-      animationEnded.emit(window, 0);
+    finishAnimations(window: WindowStub, animationCount = 2) {
+      for (let index = 0; index < animationCount; index += 1) {
+        animationEnded.emit(window, 0);
+      }
     },
     retargetCalls,
     setConfiguredDuration(duration: number) {
@@ -869,6 +871,72 @@ describe("transition effect package", () => {
     });
   });
 
+  it("touches only tracked animation windows when effect ownership changes", () => {
+    const harness = createHarness();
+    const secondWindow = createWindow({
+      geometry: { x: 340, y: 30, width: 300, height: 200 },
+    });
+    const idleWindow = createWindow({
+      geometry: { x: 660, y: 30, width: 300, height: 200 },
+    });
+    let idleAnimationReads = 0;
+    Object.defineProperty(idleWindow, "driftileTransitionAnimation", {
+      configurable: true,
+      get() {
+        idleAnimationReads += 1;
+        return undefined;
+      },
+    });
+    harness.effects.windowAdded.emit(secondWindow);
+    harness.effects.windowAdded.emit(idleWindow);
+
+    changeGeometry(harness.window, {
+      x: 40,
+      y: 50,
+      width: 400,
+      height: 250,
+    });
+    changeGeometry(secondWindow, {
+      x: 460,
+      y: 50,
+      width: 400,
+      height: 250,
+    });
+
+    harness.setFullScreenEffectActive(true);
+    harness.setFullScreenEffectActive(true);
+
+    expect(harness.cancelledAnimations).toEqual([1, 2, 3, 4]);
+    expect(idleAnimationReads).toBe(0);
+  });
+
+  it("drops a net-zero deferred transition without replay work", () => {
+    const harness = createHarness();
+    const originalGeometry = { ...harness.window.geometry };
+    harness.setFullScreenEffectActive(true);
+
+    changeGeometry(harness.window, {
+      x: 40,
+      y: 50,
+      width: 400,
+      height: 250,
+    });
+    changeGeometry(harness.window, originalGeometry);
+    harness.setFullScreenEffectActive(false);
+    harness.setFullScreenEffectActive(false);
+
+    expect(harness.animationRequests).toHaveLength(0);
+    expect(harness.retargetCalls).toHaveLength(0);
+
+    changeGeometry(harness.window, {
+      x: 60,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+    expect(harness.animationRequests).toHaveLength(1);
+  });
+
   it("replays every visible pending window after activation", () => {
     const harness = createHarness();
     const secondWindow = createWindow({
@@ -1202,7 +1270,7 @@ describe("transition effect package", () => {
     expect(harness.retargetCalls).toHaveLength(4);
     expect(harness.cancelledAnimations).toEqual([3, 4]);
 
-    harness.finishAnimation(harness.window);
+    harness.finishAnimations(harness.window);
     changeGeometry(harness.window, {
       x: 120,
       y: 130,
@@ -1225,7 +1293,7 @@ describe("transition effect package", () => {
       height: 300,
     });
     expect(afterReleaseHarness.animationRequests).toHaveLength(1);
-    afterReleaseHarness.finishAnimation(afterReleaseHarness.window);
+    afterReleaseHarness.finishAnimations(afterReleaseHarness.window);
     afterReleaseHarness.effects.activeWindow = null;
     changeGeometry(afterReleaseHarness.window, {
       x: 80,
@@ -1576,6 +1644,31 @@ describe("transition effect package", () => {
       },
     ]);
     expect(harness.cancelledAnimations).toHaveLength(0);
+  });
+
+  it("retires completed animation state before the next geometry change", () => {
+    const harness = createHarness();
+    changeGeometry(harness.window, {
+      x: 40,
+      y: 50,
+      width: 400,
+      height: 250,
+    });
+
+    harness.finishAnimations(harness.window);
+    harness.setFullScreenEffectActive(true);
+    expect(harness.cancelledAnimations).toHaveLength(0);
+    harness.setFullScreenEffectActive(false);
+
+    changeGeometry(harness.window, {
+      x: 60,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+
+    expect(harness.animationRequests).toHaveLength(2);
+    expect(harness.retargetCalls).toHaveLength(0);
   });
 
   it("restarts only an attribute whose retarget request failed", () => {

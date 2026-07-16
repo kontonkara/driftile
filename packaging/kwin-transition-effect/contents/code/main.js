@@ -14,6 +14,7 @@ const MAXIMUM_EXCLUSION_CONFIG_BYTES = 33024;
 const MANAGED_PROPERTY = "driftileTransitionsManaged";
 const ANIMATION_PROPERTY = "driftileTransitionAnimation";
 const DEFERRED_PROPERTY = "driftileDeferredTransition";
+const ACTIVE_ANIMATION_COUNT = "activeAnimationCount";
 const POSITION_ANIMATION = "position";
 const TRANSLATION_ANIMATION = "translation";
 const SIZE_ANIMATION = "size";
@@ -34,9 +35,11 @@ class DriftileTransitionsEffect {
     this.windowClassExclusionsValid = true;
     this.windowClassExclusions = new Set();
     this.managedWindows = [];
+    this.activeAnimationWindows = new Set();
     this.deferredWindows = new Set();
     this.visibilityLeasedWindows = new Set();
     this.continuityLeasedWindows = new Set();
+    this.fullScreenEffectActive = effects.hasActiveFullScreenEffect;
 
     effect.configChanged.connect(this.loadConfig.bind(this));
     if (effect.animationEnded) {
@@ -184,11 +187,17 @@ class DriftileTransitionsEffect {
   }
 
   onFullScreenEffectChanged() {
-    if (effects.hasActiveFullScreenEffect) {
+    const active = effects.hasActiveFullScreenEffect;
+    if (active === this.fullScreenEffectActive) {
+      return;
+    }
+    this.fullScreenEffectActive = active;
+
+    if (active) {
       this.visibilityLeasedWindows.clear();
       this.continuityLeasedWindows.clear();
       this.rememberVisibilityLease(effects.activeWindow);
-      for (const window of this.managedWindows) {
+      for (const window of this.activeAnimationWindows) {
         this.cancelWindowAnimation(window);
       }
       return;
@@ -204,7 +213,9 @@ class DriftileTransitionsEffect {
 
   onWindowActivated(window) {
     this.rememberVisibilityLease(window);
-    this.replayDeferredTransition(window);
+    if (this.deferredWindows.has(window)) {
+      this.replayDeferredTransition(window);
+    }
     this.replayDeferredTransitions(window);
   }
 
@@ -214,11 +225,20 @@ class DriftileTransitionsEffect {
       this.continuityLeasedWindows.delete(window);
     }
     this.rememberVisibilityLease(window);
-    this.replayDeferredTransition(window);
+    if (this.deferredWindows.has(window)) {
+      this.replayDeferredTransition(window);
+    }
   }
 
   deferWindowTransition(window, oldGeometry) {
-    if (window[DEFERRED_PROPERTY] !== undefined) {
+    const deferredGeometry = window[DEFERRED_PROPERTY];
+    if (deferredGeometry !== undefined) {
+      if (!this.geometryChanged(deferredGeometry, window.geometry)) {
+        delete window[DEFERRED_PROPERTY];
+        this.deferredWindows.delete(window);
+        this.visibilityLeasedWindows.delete(window);
+        return;
+      }
       this.deferredWindows.add(window);
       this.rememberVisibilityLease(window);
       return;
@@ -261,6 +281,13 @@ class DriftileTransitionsEffect {
       !this.isValidGeometry(newGeometry)
     ) {
       this.clearWindowTransitions(window);
+      return;
+    }
+
+    if (!this.geometryChanged(oldGeometry, newGeometry)) {
+      delete window[DEFERRED_PROPERTY];
+      this.deferredWindows.delete(window);
+      this.visibilityLeasedWindows.delete(window);
       return;
     }
 
@@ -344,7 +371,26 @@ class DriftileTransitionsEffect {
   }
 
   onAnimationEnded(window) {
-    this.continuityLeasedWindows.delete(window);
+    const state = window && window[ANIMATION_PROPERTY];
+    if (!this.activeAnimationWindows.has(window)) {
+      this.continuityLeasedWindows.delete(window);
+      return;
+    }
+    if (!state || typeof state !== "object" || Array.isArray(state)) {
+      delete window[ANIMATION_PROPERTY];
+      this.activeAnimationWindows.delete(window);
+      this.continuityLeasedWindows.delete(window);
+      return;
+    }
+
+    const remainingAnimations = this.activeAnimationCount(state) - 1;
+    if (remainingAnimations > 0) {
+      state[ACTIVE_ANIMATION_COUNT] = remainingAnimations;
+    } else {
+      delete window[ANIMATION_PROPERTY];
+      this.activeAnimationWindows.delete(window);
+      this.continuityLeasedWindows.delete(window);
+    }
   }
 
   animateWindowTransition(window, oldGeometry, newGeometry) {
@@ -471,6 +517,7 @@ class DriftileTransitionsEffect {
     }
 
     if (animations.length > 0) {
+      const previousAnimationCount = this.activeAnimationCount(state);
       const animationIds = animate({
         window,
         duration: this.duration,
@@ -485,9 +532,17 @@ class DriftileTransitionsEffect {
           animationTargets[index],
         );
       }
+      state[ACTIVE_ANIMATION_COUNT] =
+        previousAnimationCount + animationIds.length;
     }
 
-    window[ANIMATION_PROPERTY] = state;
+    if (this.hasActiveAnimationState(state)) {
+      window[ANIMATION_PROPERTY] = state;
+      this.activeAnimationWindows.add(window);
+    } else {
+      delete window[ANIMATION_PROPERTY];
+      this.activeAnimationWindows.delete(window);
+    }
   }
 
   isEligible(window) {
@@ -689,6 +744,7 @@ class DriftileTransitionsEffect {
   hasActiveWindowAnimation(window) {
     const state = window && window[ANIMATION_PROPERTY];
     return (
+      this.activeAnimationWindows.has(window) &&
       state &&
       typeof state === "object" &&
       !Array.isArray(state) &&
@@ -698,10 +754,30 @@ class DriftileTransitionsEffect {
 
   hasActiveAnimationState(state) {
     return (
-      state[SIZE_ANIMATION] !== undefined ||
-      state[POSITION_ANIMATION] !== undefined ||
-      state[TRANSLATION_ANIMATION] !== undefined
+      this.activeAnimationCount(state) > 0 &&
+      (state[SIZE_ANIMATION] !== undefined ||
+        state[POSITION_ANIMATION] !== undefined ||
+        state[TRANSLATION_ANIMATION] !== undefined)
     );
+  }
+
+  activeAnimationCount(state) {
+    const count = state[ACTIVE_ANIMATION_COUNT];
+    if (Number.isInteger(count) && count >= 0) {
+      return count;
+    }
+
+    let derivedCount = 0;
+    if (state[SIZE_ANIMATION] !== undefined) {
+      derivedCount += 1;
+    }
+    if (state[POSITION_ANIMATION] !== undefined) {
+      derivedCount += 1;
+    }
+    if (state[TRANSLATION_ANIMATION] !== undefined) {
+      derivedCount += 1;
+    }
+    return derivedCount;
   }
 
   retargetAnimation(state, property, target) {
@@ -747,7 +823,10 @@ class DriftileTransitionsEffect {
 
   cancelAnimation(state, property) {
     if (state[property] !== undefined) {
-      cancel(state[property]);
+      if (cancel(state[property])) {
+        const remainingAnimations = this.activeAnimationCount(state) - 1;
+        state[ACTIVE_ANIMATION_COUNT] = Math.max(0, remainingAnimations);
+      }
       delete state[property];
     }
     delete state[ANIMATION_TARGET_PROPERTIES[property]];
@@ -780,20 +859,26 @@ class DriftileTransitionsEffect {
   }
 
   cancelWindowAnimation(window) {
-    if (!window || window[ANIMATION_PROPERTY] === undefined) {
+    if (!window) {
       return;
     }
 
     const state = window[ANIMATION_PROPERTY];
+    if (state === undefined) {
+      this.activeAnimationWindows.delete(window);
+      return;
+    }
     if (!state || typeof state !== "object" || Array.isArray(state)) {
       cancel(state);
       delete window[ANIMATION_PROPERTY];
+      this.activeAnimationWindows.delete(window);
       return;
     }
 
     this.cancelSizeAnimation(state);
     this.cancelPositionAnimations(state);
     delete window[ANIMATION_PROPERTY];
+    this.activeAnimationWindows.delete(window);
   }
 
   cancelSizeAnimation(state) {
