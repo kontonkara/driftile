@@ -1179,6 +1179,80 @@ describe("transition effect package", () => {
     );
   });
 
+  it("captures a hidden focus target after desktop effect ownership ends", () => {
+    const harness = createHarness({
+      window: createWindow({ visible: false }),
+    });
+    const target = createWindow({
+      geometry: { x: 340, y: 30, width: 300, height: 200 },
+      visible: false,
+    });
+    const ineligible = createWindow({
+      geometry: { x: 660, y: 30, width: 300, height: 200 },
+      skipSwitcher: true,
+      visible: false,
+    });
+    harness.effects.windowAdded.emit(target);
+    harness.effects.windowAdded.emit(ineligible);
+    harness.effects.activeWindow = harness.window;
+    harness.setFullScreenEffectActive(true);
+    harness.setFullScreenEffectActive(false);
+
+    changeGeometry(ineligible, {
+      x: 760,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+    changeGeometry(target, {
+      x: 460,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+    expect(harness.animationRequests).toHaveLength(0);
+
+    harness.effects.activeWindow = target;
+    harness.effects.windowActivated.emit(target);
+
+    expect(harness.animationRequests).toHaveLength(1);
+    expect(harness.animationRequests[0]).toMatchObject({
+      window: target,
+      animations: [
+        {
+          type: "size",
+          from: { value1: 300, value2: 200 },
+          to: { value1: 500, value2: 300 },
+        },
+        {
+          type: "position",
+          from: { value1: 490, value2: 130 },
+          to: { value1: 710, value2: 220 },
+        },
+      ],
+    });
+
+    target.visible = true;
+    target.windowHiddenChanged.emit(target);
+
+    const unrelated = createWindow({
+      geometry: { x: 1000, y: 30, width: 300, height: 200 },
+      visible: false,
+    });
+    harness.effects.windowAdded.emit(unrelated);
+    changeGeometry(unrelated, {
+      x: 1120,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+    harness.effects.activeWindow = unrelated;
+    harness.effects.windowActivated.emit(unrelated);
+
+    expect(harness.animationRequests).toHaveLength(1);
+    expect(harness.cancelledAnimations).toHaveLength(0);
+  });
+
   it("replays a rapid focus handoff before desktop visibility settles", () => {
     const harness = createHarness({
       window: createWindow({ visible: false }),

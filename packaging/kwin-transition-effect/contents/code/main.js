@@ -41,6 +41,7 @@ class DriftileTransitionsEffect {
     this.visibilityLeasedWindows = new Set();
     this.continuityLeasedWindows = new Set();
     this.fullScreenEffectActive = effects.hasActiveFullScreenEffect;
+    this.visibilityHandoffPending = false;
 
     effect.configChanged.connect(this.loadConfig.bind(this));
     if (effect.animationEnded) {
@@ -74,6 +75,7 @@ class DriftileTransitionsEffect {
   }
 
   loadConfig() {
+    this.visibilityHandoffPending = false;
     const configuredDuration = Number(
       effect.readConfig("Duration", DEFAULT_DURATION),
     );
@@ -146,6 +148,7 @@ class DriftileTransitionsEffect {
     if (window && window.visible) {
       this.visibilityLeasedWindows.delete(window);
       this.continuityLeasedWindows.delete(window);
+      this.settleVisibilityHandoff(window);
     }
 
     if (
@@ -178,7 +181,11 @@ class DriftileTransitionsEffect {
     }
 
     if (!this.isEligible(window)) {
-      this.clearWindowTransitions(window);
+      if (this.shouldDeferVisibilityHandoff(window)) {
+        this.deferWindowTransition(window, oldGeometry);
+      } else {
+        this.clearWindowTransitions(window);
+      }
       return;
     }
 
@@ -195,6 +202,7 @@ class DriftileTransitionsEffect {
     this.fullScreenEffectActive = active;
 
     if (active) {
+      this.visibilityHandoffPending = false;
       this.visibilityLeasedWindows.clear();
       this.continuityLeasedWindows.clear();
       this.rememberVisibilityLease(effects.activeWindow);
@@ -204,12 +212,15 @@ class DriftileTransitionsEffect {
       return;
     }
 
+    this.visibilityHandoffPending = this.duration > 0;
     this.replayDeferredTransitions();
+    this.settleVisibilityHandoff(effects.activeWindow);
   }
 
   onVisibilityContextChanged() {
     this.pruneVisibilityLeases();
     this.replayDeferredTransitions();
+    this.settleVisibilityHandoff(effects.activeWindow);
   }
 
   onWindowActivated(window) {
@@ -218,6 +229,7 @@ class DriftileTransitionsEffect {
       this.replayDeferredTransition(window);
     }
     this.replayDeferredTransitions(window);
+    this.settleVisibilityHandoff(window);
   }
 
   onWindowVisibilityOpportunity(window) {
@@ -228,6 +240,27 @@ class DriftileTransitionsEffect {
     this.rememberVisibilityLease(window);
     if (this.deferredWindows.has(window)) {
       this.replayDeferredTransition(window);
+    }
+    this.settleVisibilityHandoff(window);
+  }
+
+  shouldDeferVisibilityHandoff(window) {
+    return (
+      this.visibilityHandoffPending &&
+      !window.visible &&
+      this.isWindowInCurrentVisibilityContext(window)
+    );
+  }
+
+  settleVisibilityHandoff(window) {
+    if (
+      this.visibilityHandoffPending &&
+      window &&
+      effects.activeWindow === window &&
+      window.visible &&
+      this.isWindowInCurrentVisibilityContext(window)
+    ) {
+      this.visibilityHandoffPending = false;
     }
   }
 
