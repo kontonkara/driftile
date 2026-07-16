@@ -32841,6 +32841,116 @@ describe("RuntimeController", () => {
     expect(waiting.writeCount).toBe(0);
   });
 
+  it("previews an exact cross-output target before release", () => {
+    const setup = createExternalPointerDropRuntimeFixture();
+    const sourceBefore = testLayoutColumns(
+      setup.controller,
+      setup.sourceOutput,
+      setup.sourceDesktop,
+    );
+    const targetBefore = testLayoutColumns(
+      setup.controller,
+      setup.targetOutput,
+      setup.targetDesktop,
+    );
+    const targetFrame = { ...setup.target.window.frameGeometry };
+
+    beginExternalPointerDrop(setup, "after");
+    flushManualScheduler(setup.scheduler);
+
+    expect(setup.previews).toHaveLength(1);
+    expect(setup.previews[0]).toMatchObject({
+      destinationKey: [
+        setup.targetOutput.name,
+        setup.targetDesktop.id,
+        String(FALLBACK_ACTIVITY_ID),
+      ].join("\u0000"),
+      frame: {
+        ...targetFrame,
+        height: targetFrame.height / 2,
+        y: targetFrame.y + targetFrame.height / 2,
+      },
+    });
+    expect(setup.previews[0]?.ownerToken).toMatch(/^\d+:\d+$/u);
+    expect(
+      testLayoutColumns(
+        setup.controller,
+        setup.sourceOutput,
+        setup.sourceDesktop,
+      ),
+    ).toEqual(sourceBefore);
+    expect(
+      testLayoutColumns(
+        setup.controller,
+        setup.targetOutput,
+        setup.targetDesktop,
+      ),
+    ).toEqual(targetBefore);
+
+    setup.fixture.setCursorPosition(
+      targetFrame.x + targetFrame.width / 2,
+      targetFrame.y + targetFrame.height * 0.9,
+    );
+    flushManualScheduler(setup.scheduler);
+    expect(setup.previews).toHaveLength(1);
+
+    const ownerToken = setup.previews[0]?.ownerToken;
+    finishExternalPointerDrop(setup, "output-before-finish");
+    expect(ownerToken).toBeTruthy();
+    expect(setup.hiddenPreviewOwners).toContain(ownerToken);
+  });
+
+  it("previews a cross-output destination gutter before release", () => {
+    const setup = createExternalPointerDropRuntimeFixture({
+      defaultColumnPresentation: "tabbed",
+    });
+    const targetFrame = { ...setup.target.window.frameGeometry };
+
+    beginExternalPointerGutterDrop(setup);
+    flushManualScheduler(setup.scheduler);
+
+    expect(setup.previews).toHaveLength(1);
+    expect(setup.previews[0]).toMatchObject({
+      destinationKey: [
+        setup.targetOutput.name,
+        setup.targetDesktop.id,
+        String(FALLBACK_ACTIVITY_ID),
+      ].join("\u0000"),
+      frame: {
+        height: targetFrame.height,
+        x: targetFrame.x + targetFrame.width,
+        y: targetFrame.y,
+      },
+    });
+    expect(setup.previews[0]?.frame.width).toBeGreaterThan(0);
+    expect(setup.previews[0]?.ownerToken).toMatch(/^\d+:\d+$/u);
+  });
+
+  it("retargets the live preview after a same-output desktop switch", () => {
+    const setup = createExternalPointerDropRuntimeFixture({
+      sameOutputCrossDesktop: true,
+    });
+    const targetFrame = { ...setup.target.window.frameGeometry };
+
+    beginExternalPointerDrop(setup, "before");
+    showExternalPointerTargetDesktop(setup);
+
+    const preview = setup.previews[setup.previews.length - 1];
+
+    expect(preview).toMatchObject({
+      destinationKey: [
+        setup.targetOutput.name,
+        setup.targetDesktop.id,
+        String(FALLBACK_ACTIVITY_ID),
+      ].join("\u0000"),
+      frame: {
+        ...targetFrame,
+        height: targetFrame.height / 2,
+      },
+    });
+    expect(preview?.ownerToken).toMatch(/^\d+:\d+$/u);
+  });
+
   it.each([
     { eventOrder: "output-before-finish" as const, position: "after" as const },
     {
@@ -33001,7 +33111,7 @@ describe("RuntimeController", () => {
           { id: "column:target", windowIds: ["target"] },
         ]);
         expect(settlement.callbacks).toBeGreaterThan(0);
-        expect(settlement.callbacks).toBeLessThanOrEqual(6);
+        expect(settlement.callbacks).toBeLessThanOrEqual(7);
       }
 
       expect(
@@ -46192,6 +46302,12 @@ interface ExternalPointerDropRuntimeFixture {
   readonly desktop: KWinVirtualDesktop;
   readonly dragged: TrackedWindow;
   readonly fixture: WorkspaceFixture;
+  readonly hiddenPreviewOwners: readonly string[];
+  readonly previews: readonly {
+    readonly destinationKey: string;
+    readonly frame: KWinWindow["frameGeometry"];
+    readonly ownerToken: string;
+  }[];
   readonly published: string[];
   readonly scheduler: ManualScheduler;
   readonly sourcePeer: TrackedWindow | null;
@@ -46265,12 +46381,21 @@ function createExternalPointerDropRuntimeFixture(
   }
   const scheduler = new ManualScheduler();
   const published: string[] = [];
+  const hiddenPreviewOwners: string[] = [];
+  const previews: Array<{
+    destinationKey: string;
+    frame: KWinWindow["frameGeometry"];
+    ownerToken: string;
+  }> = [];
   const controller = new RuntimeController(fixture.workspace, {
     clientAreaOption: 2,
     ...(options.defaultColumnPresentation
       ? { defaultColumnPresentation: options.defaultColumnPresentation }
       : {}),
     gap: 10,
+    hidePointerDropPreview: (ownerToken) => {
+      hiddenPreviewOwners.push(ownerToken ?? "");
+    },
     onLayoutStateChanged: (document) => published.push(document),
     schedule: scheduler.schedule,
     scheduleResume: options.resumeSchedulingFails
@@ -46278,6 +46403,13 @@ function createExternalPointerDropRuntimeFixture(
           throw new Error("resume scheduling rejected");
         }
       : scheduler.schedule,
+    showPointerDropPreview: (frame, destinationKey, ownerToken) => {
+      previews.push({
+        destinationKey: destinationKey ?? "",
+        frame: { ...frame },
+        ownerToken: ownerToken ?? "",
+      });
+    },
   });
 
   if (!controller.start()) {
@@ -46373,6 +46505,8 @@ function createExternalPointerDropRuntimeFixture(
     desktop: sourceDesktop,
     dragged,
     fixture,
+    hiddenPreviewOwners,
+    previews,
     published,
     scheduler,
     sourcePeer,
