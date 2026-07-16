@@ -6,8 +6,8 @@ The settings page groups the existing controls into two tabs:
 
 - **General**: window decorations, focus and single-column centering, touchpad
   navigation, window gap, tab feedback, default column presentation and width,
-  proportional or fixed column-width steps and presets, and proportional or
-  fixed window-height steps and presets.
+  default initial tiled client height, proportional or fixed column-width
+  steps and presets, and proportional or fixed window-height steps and presets.
 - **Applications**: initial column widths, tiled client heights, and
   presentation, focus centering, initial floating rules, tiling exclusions,
   and decoration exclusions.
@@ -108,8 +108,8 @@ The activation writes only `ApplicationBorderlessExclusions`,
 `ApplicationInitialFloating`, `ApplicationTilingExclusions`,
 `BorderlessWindows`, `CenterFocusedColumn`, `Gap`,
 `DefaultColumnPresentation`, `DefaultColumnWidthPercent`,
-`DefaultColumnWidthPixels`, `ColumnWidthPresets`, `ColumnWidthStepPercent`,
-`ColumnWidthStepPixels`,
+`DefaultColumnWidthPixels`, `DefaultWindowHeight`, `ColumnWidthPresets`,
+`ColumnWidthStepPercent`, `ColumnWidthStepPixels`,
 `ShowTabIndicator`, `TouchpadNavigation`,
 `TouchpadWorkspaceNavigation`, `TouchpadNavigationFingerCount`,
 `TouchpadNaturalScroll`,
@@ -164,6 +164,7 @@ programs.driftile.settings.columnWidthPresets = [ 20 50 80 ];
 programs.driftile.settings.columnWidthStepPixels = 0;
 programs.driftile.settings.defaultColumnPresentation = "stacked";
 programs.driftile.settings.defaultColumnWidthPixels = 0;
+programs.driftile.settings.defaultWindowHeight = "auto";
 programs.driftile.settings.gap = 7.5;
 programs.driftile.settings.showTabIndicator = true;
 programs.driftile.settings.touchpadNavigation = true;
@@ -181,6 +182,9 @@ sizes. A fixed application height means client height. Presentations are
 List policy IDs may contain `=`. Home Manager accepts at most 128 unique IDs
 per list policy, rejects blank, whitespace-padded, control-containing, or
 over-255-byte IDs, and writes each list in canonical sorted order.
+
+`defaultWindowHeight` accepts `"auto"` or the same percentage and fixed-pixel
+forms. Its fixed value also means logical client height.
 
 Changing `settings` back to `null` or removing the Home Manager module import
 stops future writes but leaves the last values in `kwinrc`. Change them through
@@ -326,6 +330,20 @@ relation-free manually floating window; application-specific initial widths do
 not override that reset. Newly admitted and reset widths remain subject to live
 constraints and the assigned output's physical-pixel grid.
 
+## Default window height
+
+**Default initial tiled client height** controls the initial height policy for
+new singleton tiled windows without an exact application rule. `auto` is the
+default and preserves automatic height selection. Bare `10`–`100` values and
+explicit `10%`–`100%` values select a percentage of the available tiled
+height; `1px`–`16384px` selects a fixed logical client height.
+
+The policy applies only to fresh singleton admission and fresh retiling after
+the setting is applied. Existing and restored geometry is not rewritten, and
+structural transfers keep their existing geometry. Exact application
+initial-height rules override this global value. The solver's live client
+constraints and the assigned output's physical-pixel grid remain authoritative.
+
 ## Application column widths
 
 **Application column widths** override the initial width of new singleton
@@ -366,14 +384,14 @@ org.mozilla.firefox=720px
 
 Blank lines are ignored. Duplicate IDs, malformed rules, more than 128 rules,
 or IDs longer than 255 UTF-8 bytes reject the complete settings update. A
-window without a matching usable ID keeps automatic height.
+window without a matching usable ID uses **Default initial tiled client
+height**.
 
-Only fresh singleton tiled admission consults the rule. Existing or restored
-geometry is not rewritten, and a window joining an existing column or moving
-between layout contexts keeps the geometry selected by that structural path.
-The solver's live client constraints and output-scale physical-pixel snapping
-remain authoritative. Updating the rules performs no immediate layout or frame
-write.
+Exact application rules override the global height policy for fresh singleton
+tiled admission and fresh retiling. Existing or restored geometry is not
+rewritten, and structural transfers keep their existing geometry. The solver's
+live client constraints and output-scale physical-pixel snapping remain
+authoritative. Updating the rules performs no immediate layout or frame write.
 
 ## Application column presentation
 
@@ -518,7 +536,7 @@ The KConfig decoder accepts at most 65,664 characters in the complete document,
 512 characters in each raw line, 128 nonblank unique IDs, and 255 UTF-8 bytes
 in each trimmed ID. It trims surrounding whitespace and ignores blank lines.
 Control characters, invalid UTF-16, an oversized value, or a duplicate after
-trimming rejects the complete 27-setting snapshot. Accepted IDs have a
+trimming rejects the complete 28-setting snapshot. Accepted IDs have a
 canonical sorted internal form. Home Manager exposes the same policy as
 `programs.driftile.settings.applicationBorderlessExclusions`, a list rendered
 as a sorted newline-delimited KConfig value.

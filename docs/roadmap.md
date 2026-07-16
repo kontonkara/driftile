@@ -1616,3 +1616,12 @@ taking over compositor mechanisms.
 - Keep Plasma's built-in Overview as the compatible baseline.
 - The optional overview must remain removable, preserve the authoritative
   layout state, and fall back cleanly to Plasma's Overview.
+
+### 1.37.0 direction
+
+- Add a global `auto`, proportional, or fixed logical-pixel initial tiled
+  client-height policy beneath exact application rules.
+- Apply it only to fresh singleton admission and fresh retiling, preserving
+  existing, restored, and transferred geometry.
+- Retain live solver constraints and physical-pixel snapping without adding a
+  shortcut, persistence field, or private KWin API.
