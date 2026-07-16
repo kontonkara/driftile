@@ -23,6 +23,7 @@ import type { ApplicationTilingExclusions } from "../src/application-tiling-excl
 import type { ColumnWidth } from "../src/core/layout-engine";
 import type { DefaultWindowHeight } from "../src/default-window-height";
 import type { DefaultInitialFocus } from "../src/default-initial-focus";
+import type { NumberedDesktopTargets } from "../src/numbered-desktop-targets";
 import type { KWinWorkspace } from "../src/platform/kwin/api";
 import type { WindowHeightPresetCycleEntry } from "../src/window-height-presets";
 
@@ -56,6 +57,7 @@ interface DeliveredSettings {
   readonly defaultWindowHeight: string;
   readonly emptyDesktopAboveFirst: boolean;
   readonly gap: number;
+  readonly numberedDesktopTargets: readonly string[];
   readonly windowHeightPresets: readonly WindowHeightPresetCycleEntry[];
   readonly windowHeightStepPixels: number;
   readonly windowHeightStepPercent: number;
@@ -99,6 +101,7 @@ interface RuntimeControllerOptions {
   readonly defaultWindowHeight: DefaultWindowHeight;
   readonly emptyDesktopAboveFirst: boolean;
   readonly gap: number;
+  readonly numberedDesktopTargets: NumberedDesktopTargets;
   readonly schedule: (callback: () => void) => void;
   readonly workspaceAutoBackAndForth: boolean;
 }
@@ -162,6 +165,7 @@ class RuntimeControllerDouble {
       defaultWindowHeight: options.defaultWindowHeight.canonicalValue,
       emptyDesktopAboveFirst: options.emptyDesktopAboveFirst,
       gap: options.gap,
+      numberedDesktopTargets: options.numberedDesktopTargets.canonicalEntries,
       windowHeightPresets: [],
       windowHeightStepPixels: 0,
       windowHeightStepPercent: 1,
@@ -454,6 +458,15 @@ class RuntimeControllerDouble {
     return true;
   }
 
+  setNumberedDesktopTargets(value: NumberedDesktopTargets): boolean {
+    this.calls.push("numberedDesktopTargets");
+    this.state = {
+      ...this.state,
+      numberedDesktopTargets: value.canonicalEntries,
+    };
+    return true;
+  }
+
   setWindowHeightStepPercent(value: number): boolean {
     this.calls.push("windowHeightStepPercent");
     this.state = { ...this.state, windowHeightStepPercent: value };
@@ -523,6 +536,7 @@ describe("runtime settings delivery", () => {
       defaultInitialDestination: "desktop:2,output:DP-1",
       defaultInitialFocus: "focused",
       emptyDesktopAboveFirst: true,
+      numberedDesktopTargets: "1=Web\n9=Archive",
       windowHeightPresets: "30,640px,60,960px,90",
     });
 
@@ -588,6 +602,10 @@ describe("runtime settings delivery", () => {
     expect(controller.deliveredSettings.defaultInitialFocus).toBe("focused");
     expect(controller.deliveredSettings.alwaysCenterSingleColumn).toBe(true);
     expect(controller.deliveredSettings.emptyDesktopAboveFirst).toBe(true);
+    expect(controller.deliveredSettings.numberedDesktopTargets).toEqual([
+      "1=Web",
+      "9=Archive",
+    ]);
     expect(runtime.getTouchpadWorkspaceNavigation()).toBe(false);
 
     expect(
@@ -633,6 +651,7 @@ describe("runtime settings delivery", () => {
       defaultWindowHeight: "60%",
       emptyDesktopAboveFirst: false,
       gap: 7.5,
+      numberedDesktopTargets: "2=Development\n7=Review",
       touchpadNavigation: true,
       touchpadNavigationFingerCount: 3,
       touchpadNaturalScroll: false,
@@ -681,6 +700,7 @@ describe("runtime settings delivery", () => {
       defaultWindowHeight: "60",
       emptyDesktopAboveFirst: false,
       gap: 7.5,
+      numberedDesktopTargets: ["2=Development", "7=Review"],
       windowHeightPresets: heightPresetCycle([25, "480px", 50, "960px", 75]),
       windowHeightStepPixels: 96,
       windowHeightStepPercent: 17,
@@ -718,6 +738,7 @@ describe("runtime settings delivery", () => {
       "defaultInitialFocus",
       "defaultWindowHeight",
       "emptyDesktopAboveFirst",
+      "numberedDesktopTargets",
       "columnWidthPresets",
       "columnWidthStepPercent",
       "columnWidthStepPixels",
@@ -750,6 +771,7 @@ describe("runtime settings delivery", () => {
         ...next,
         defaultFloatingPosition: " bottom-right,24,16 ",
         defaultInitialDestination: " desktop-name:Work,output:HDMI-A-1 ",
+        numberedDesktopTargets: " 7 = Review \n 2 = Development ",
       }),
     ).toBe(true);
     expect(controller.calls).toEqual([]);
@@ -821,6 +843,7 @@ describe("runtime settings delivery", () => {
       "defaultInitialFocus",
       "defaultWindowHeight",
       "emptyDesktopAboveFirst",
+      "numberedDesktopTargets",
       "columnWidthPresets",
       "columnWidthStepPercent",
       "columnWidthStepPixels",
@@ -879,6 +902,7 @@ function settings(
     defaultWindowHeight: "auto",
     emptyDesktopAboveFirst: false,
     gap: 16,
+    numberedDesktopTargets: "",
     showTabIndicator: true,
     touchpadNavigation: false,
     touchpadNavigationFingerCount: 5,
@@ -931,6 +955,7 @@ function snapshot(settingsValue: DeliveredSettings): DeliveredSettings {
       settingsValue.defaultInitialDestination === null
         ? null
         : { ...settingsValue.defaultInitialDestination },
+    numberedDesktopTargets: [...settingsValue.numberedDesktopTargets],
     windowHeightPresets: settingsValue.windowHeightPresets.map((value) => ({
       policy: { ...value.policy },
       stateIndex: value.stateIndex,

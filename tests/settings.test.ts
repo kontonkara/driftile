@@ -40,6 +40,7 @@ import {
   decodeDefaultInitialFocus,
   DEFAULT_INITIAL_FOCUS,
 } from "../src/default-initial-focus";
+import { decodeNumberedDesktopTargets } from "../src/numbered-desktop-targets";
 import { decodeWindowHeightPresetPercentages } from "../src/window-height-presets";
 import {
   decodeDriftileSettings,
@@ -197,6 +198,14 @@ if (!validDefaultInitialDestination?.initialDestination) {
   throw new Error("default initial-destination fixture is invalid");
 }
 
+const validNumberedDesktopTargets = decodeNumberedDesktopTargets(
+  "1=Web\n4=Development\n9=Archive",
+);
+
+if (!validNumberedDesktopTargets) {
+  throw new Error("numbered desktop target fixture is invalid");
+}
+
 const validSettings: DriftileSettings = {
   applicationBorderlessExclusions: validApplicationBorderlessExclusions,
   applicationColumnPresentations: validApplicationColumnPresentations,
@@ -228,6 +237,7 @@ const validSettings: DriftileSettings = {
   defaultWindowHeight: validDefaultWindowHeight,
   emptyDesktopAboveFirst: true,
   gap: 32.5,
+  numberedDesktopTargets: validNumberedDesktopTargets,
   showTabIndicator: false,
   touchpadNavigation: true,
   touchpadNavigationFingerCount: 4,
@@ -273,6 +283,8 @@ const validSettingsInput = {
   defaultWindowHeight: validSettings.defaultWindowHeight.canonicalValue,
   emptyDesktopAboveFirst: validSettings.emptyDesktopAboveFirst,
   gap: validSettings.gap,
+  numberedDesktopTargets:
+    validSettings.numberedDesktopTargets.canonicalEntries.join("\n"),
   showTabIndicator: validSettings.showTabIndicator,
   touchpadNavigation: validSettings.touchpadNavigation,
   touchpadNavigationFingerCount: validSettings.touchpadNavigationFingerCount,
@@ -379,6 +391,9 @@ describe("Driftile settings", () => {
     expect(DEFAULT_DRIFTILE_SETTINGS.windowHeightPresets.percentages).toEqual(
       [],
     );
+    expect(
+      DEFAULT_DRIFTILE_SETTINGS.numberedDesktopTargets.canonicalEntries,
+    ).toEqual([]);
     expect(Object.isFrozen(DEFAULT_DRIFTILE_SETTINGS)).toBe(true);
   });
 
@@ -436,6 +451,12 @@ describe("Driftile settings", () => {
     ).toBe("stacked");
     expect(decoded?.applicationBorderlessExclusions.canonicalEntries).toEqual(
       validApplicationBorderlessExclusions.canonicalEntries,
+    );
+    expect(decoded?.numberedDesktopTargets.canonicalEntries).toEqual(
+      validNumberedDesktopTargets.canonicalEntries,
+    );
+    expect(decoded?.numberedDesktopTargets.desktopNameFor(4)).toBe(
+      "Development",
     );
     expect(decoded?.applicationInitialFloating.canonicalEntries).toEqual(
       validApplicationInitialFloating.canonicalEntries,
@@ -556,6 +577,7 @@ describe("Driftile settings", () => {
       defaultWindowHeight: "auto",
       emptyDesktopAboveFirst: false,
       gap: 0,
+      numberedDesktopTargets: "",
       showTabIndicator: false,
       touchpadNavigation: false,
       touchpadNavigationFingerCount: 3,
@@ -597,6 +619,7 @@ describe("Driftile settings", () => {
       defaultWindowHeight: "16384px",
       emptyDesktopAboveFirst: true,
       gap: 64,
+      numberedDesktopTargets: "1=Work\n9=Archive",
       showTabIndicator: true,
       touchpadNavigation: true,
       touchpadNavigationFingerCount: 5,
@@ -673,6 +696,9 @@ describe("Driftile settings", () => {
     expect(decoded?.windowHeightPresets.canonicalValue).toBe(
       settings.windowHeightPresets,
     );
+    expect(decoded?.numberedDesktopTargets.canonicalEntries.join("\n")).toBe(
+      settings.numberedDesktopTargets,
+    );
     expect(decoded).toMatchObject({
       alwaysCenterSingleColumn: settings.alwaysCenterSingleColumn,
       borderlessWindows: settings.borderlessWindows,
@@ -748,6 +774,10 @@ describe("Driftile settings", () => {
     ["an invalid default presentation", { defaultColumnPresentation: "tiled" }],
     ["invalid column-width presets", { columnWidthPresets: "50,40" }],
     ["invalid window-height presets", { windowHeightPresets: "50,40" }],
+    [
+      "invalid numbered desktop targets",
+      { numberedDesktopTargets: "1=Work\n1=Review" },
+    ],
     [
       "an invalid default floating position",
       { defaultFloatingPosition: "center,0,0" },
@@ -898,7 +928,7 @@ describe("Driftile settings", () => {
     },
   );
 
-  it("rejects an incomplete thirty-nine-field snapshot", () => {
+  it("rejects an incomplete forty-field snapshot", () => {
     const incomplete: Record<string, unknown> = { ...validSettingsInput };
     delete incomplete["defaultColumnWidthPixels"];
 
@@ -1051,6 +1081,13 @@ describe("Driftile settings", () => {
       throw new Error("application tiling exclusion fixture is invalid");
     }
 
+    const changedNumberedDesktopTargets =
+      decodeNumberedDesktopTargets("1=Work\n9=Review");
+
+    if (!changedNumberedDesktopTargets) {
+      throw new Error("numbered desktop target fixture is invalid");
+    }
+
     for (const changed of [
       {
         applicationBorderlessExclusions: changedApplicationBorderlessExclusions,
@@ -1088,6 +1125,7 @@ describe("Driftile settings", () => {
       { defaultWindowHeight: changedDefaultWindowHeight },
       { emptyDesktopAboveFirst: false },
       { gap: 33 },
+      { numberedDesktopTargets: changedNumberedDesktopTargets },
       { showTabIndicator: true },
       { touchpadNavigation: false },
       { touchpadNavigationFingerCount: 5 },

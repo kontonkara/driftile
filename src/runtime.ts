@@ -126,6 +126,7 @@ export function init(
     defaultWindowHeight: settings.defaultWindowHeight,
     emptyDesktopAboveFirst: settings.emptyDesktopAboveFirst,
     gap: settings.gap,
+    numberedDesktopTargets: settings.numberedDesktopTargets,
     layoutHydrationQuietSamples: LAYOUT_HYDRATION_QUIET_SAMPLES,
     layoutHydrationRetryProbes: LAYOUT_HYDRATION_RETRY_PROBES,
     layoutStateForCurrentTopology: () =>
@@ -243,6 +244,7 @@ export function applySettings(settingsSnapshot: unknown): boolean {
   controller.setDefaultInitialFocus(settings.defaultInitialFocus);
   controller.setDefaultWindowHeight(settings.defaultWindowHeight);
   controller.setEmptyDesktopAboveFirst(settings.emptyDesktopAboveFirst);
+  controller.setNumberedDesktopTargets(settings.numberedDesktopTargets);
   controller.setColumnWidthPresets(settings.columnWidthPresets.presets);
   controller.setColumnWidthStepPercent(settings.columnWidthStepPercent);
   controller.setColumnWidthStepPixels(settings.columnWidthStepPixels);

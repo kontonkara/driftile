@@ -116,6 +116,12 @@ import {
   sameWindowHeightPresetPercentages,
   type WindowHeightPresetPercentages,
 } from "./window-height-presets";
+import {
+  decodeNumberedDesktopTargets,
+  EMPTY_NUMBERED_DESKTOP_TARGETS,
+  sameNumberedDesktopTargets,
+  type NumberedDesktopTargets,
+} from "./numbered-desktop-targets";
 
 const MIN_GAP = 0;
 const MAX_GAP = 64;
@@ -129,7 +135,7 @@ const MIN_RESIZE_STEP_PIXELS = 0;
 const MAX_RESIZE_STEP_PIXELS = 16_384;
 const MIN_TOUCHPAD_NAVIGATION_FINGER_COUNT = 3;
 const MAX_TOUCHPAD_NAVIGATION_FINGER_COUNT = 5;
-const SETTINGS_FIELD_COUNT = 39;
+const SETTINGS_FIELD_COUNT = 40;
 
 export interface DriftileSettings {
   readonly applicationBorderlessExclusions: ApplicationBorderlessExclusions;
@@ -162,6 +168,7 @@ export interface DriftileSettings {
   readonly defaultWindowHeight: DefaultWindowHeight;
   readonly emptyDesktopAboveFirst: boolean;
   readonly gap: number;
+  readonly numberedDesktopTargets: NumberedDesktopTargets;
   readonly showTabIndicator: boolean;
   readonly touchpadNavigation: boolean;
   readonly touchpadNavigationFingerCount: number;
@@ -204,6 +211,7 @@ export const DEFAULT_DRIFTILE_SETTINGS: DriftileSettings = Object.freeze({
   defaultWindowHeight: AUTOMATIC_DEFAULT_WINDOW_HEIGHT,
   emptyDesktopAboveFirst: false,
   gap: 16,
+  numberedDesktopTargets: EMPTY_NUMBERED_DESKTOP_TARGETS,
   showTabIndicator: true,
   touchpadNavigation: false,
   touchpadNavigationFingerCount: 5,
@@ -256,6 +264,7 @@ export function decodeDriftileSettings(
     !owns(candidate, "defaultWindowHeight") ||
     !owns(candidate, "emptyDesktopAboveFirst") ||
     !owns(candidate, "gap") ||
+    !owns(candidate, "numberedDesktopTargets") ||
     !owns(candidate, "showTabIndicator") ||
     !owns(candidate, "touchpadNavigation") ||
     !owns(candidate, "touchpadNavigationFingerCount") ||
@@ -338,6 +347,9 @@ export function decodeDriftileSettings(
   );
   const emptyDesktopAboveFirst = candidate["emptyDesktopAboveFirst"];
   const gap = candidate["gap"];
+  const numberedDesktopTargets = decodeNumberedDesktopTargets(
+    candidate["numberedDesktopTargets"],
+  );
   const showTabIndicator = candidate["showTabIndicator"];
   const touchpadNavigation = candidate["touchpadNavigation"];
   const touchpadNavigationFingerCount =
@@ -398,6 +410,7 @@ export function decodeDriftileSettings(
     !defaultWindowHeight ||
     typeof emptyDesktopAboveFirst !== "boolean" ||
     !isBoundedNumber(gap, MIN_GAP, MAX_GAP) ||
+    !numberedDesktopTargets ||
     typeof showTabIndicator !== "boolean" ||
     typeof touchpadNavigation !== "boolean" ||
     !isBoundedInteger(
@@ -455,6 +468,7 @@ export function decodeDriftileSettings(
     defaultWindowHeight,
     emptyDesktopAboveFirst,
     gap,
+    numberedDesktopTargets,
     showTabIndicator,
     touchpadNavigation,
     touchpadNavigationFingerCount,
@@ -557,6 +571,10 @@ export function sameDriftileSettings(
     ) &&
     left.emptyDesktopAboveFirst === right.emptyDesktopAboveFirst &&
     left.gap === right.gap &&
+    sameNumberedDesktopTargets(
+      left.numberedDesktopTargets,
+      right.numberedDesktopTargets,
+    ) &&
     left.showTabIndicator === right.showTabIndicator &&
     left.touchpadNavigation === right.touchpadNavigation &&
     left.touchpadNavigationFingerCount ===

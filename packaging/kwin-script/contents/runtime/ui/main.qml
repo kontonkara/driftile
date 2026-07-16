@@ -1132,6 +1132,7 @@ QtObject {
             defaultWindowHeight: KWin.readConfig("DefaultWindowHeight", "auto"),
             emptyDesktopAboveFirst: KWin.readConfig("EmptyDesktopAboveFirst", false),
             gap: KWin.readConfig("Gap", 16),
+            numberedDesktopTargets: KWin.readConfig("NumberedDesktopTargets", ""),
             showTabIndicator: KWin.readConfig("ShowTabIndicator", true),
             touchpadNavigation: KWin.readConfig("TouchpadNavigation", false),
             touchpadWorkspaceNavigation: KWin.readConfig("TouchpadWorkspaceNavigation", false),
