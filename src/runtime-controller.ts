@@ -79,6 +79,10 @@ import {
 } from "./default-window-height";
 import { sameDefaultInitialDestinations } from "./default-initial-destination";
 import {
+  DEFAULT_INITIAL_FOCUS,
+  type DefaultInitialFocus,
+} from "./default-initial-focus";
+import {
   DEFAULT_WINDOW_HEIGHT_PRESET_CYCLE,
   WINDOW_HEIGHT_PRESET_LIMITS,
   resolveWindowHeightPresetPolicy,
@@ -925,6 +929,12 @@ interface FreshInitialDestinationPolicy {
   readonly defaultDestination: ApplicationInitialDestination | null;
 }
 
+interface FreshInitialFocusPolicy {
+  readonly defaultFocus: DefaultInitialFocus;
+  readonly focused: ApplicationInitialFocused;
+  readonly unfocused: ApplicationInitialUnfocused;
+}
+
 export interface RuntimeControllerOptions {
   readonly alwaysCenterSingleColumn?: boolean;
   readonly applicationBorderlessExclusions?: ApplicationBorderlessExclusions;
@@ -951,6 +961,7 @@ export interface RuntimeControllerOptions {
   readonly defaultColumnPresentation?: ColumnPresentation;
   readonly defaultFloatingPosition?: ApplicationFloatingPosition | null;
   readonly defaultInitialDestination?: ApplicationInitialDestination | null;
+  readonly defaultInitialFocus?: DefaultInitialFocus;
   readonly defaultWindowHeight?: DefaultWindowHeight;
   readonly emptyDesktopAboveFirst?: boolean;
   readonly gap?: number;
@@ -1072,13 +1083,9 @@ export class RuntimeController {
     WindowId,
     ApplicationInitialFullscreen
   >();
-  private readonly initialFocusedPolicyByWindow = new Map<
+  private readonly initialFocusPolicyByWindow = new Map<
     WindowId,
-    ApplicationInitialFocused
-  >();
-  private readonly initialUnfocusedPolicyByWindow = new Map<
-    WindowId,
-    ApplicationInitialUnfocused
+    FreshInitialFocusPolicy
   >();
   private readonly pendingInitialAdmissionStates = new Map<
     WindowId,
@@ -1175,6 +1182,7 @@ export class RuntimeController {
   private defaultColumnWidth: ColumnWidth;
   private defaultFloatingPosition: ApplicationFloatingPosition | null;
   private defaultInitialDestination: ApplicationInitialDestination | null;
+  private defaultInitialFocus: DefaultInitialFocus;
   private defaultWindowHeight: DefaultWindowHeight;
   private windowHeightStep = DEFAULT_WINDOW_HEIGHT_STEP_PERCENT / 100;
   private windowHeightStepPixels = 0;
@@ -1304,6 +1312,8 @@ export class RuntimeController {
       options.defaultColumnPresentation ?? "stacked";
     this.defaultFloatingPosition = options.defaultFloatingPosition ?? null;
     this.defaultInitialDestination = options.defaultInitialDestination ?? null;
+    this.defaultInitialFocus =
+      options.defaultInitialFocus ?? DEFAULT_INITIAL_FOCUS;
     this.defaultWindowHeight =
       decodeDefaultWindowHeight(
         options.defaultWindowHeight?.canonicalValue ?? "auto",
@@ -2166,6 +2176,15 @@ export class RuntimeController {
     }
 
     this.defaultInitialDestination = normalized;
+    return true;
+  }
+
+  setDefaultInitialFocus(focus: DefaultInitialFocus): boolean {
+    if (this.defaultInitialFocus === focus) {
+      return false;
+    }
+
+    this.defaultInitialFocus = focus;
     return true;
   }
 
@@ -4234,8 +4253,7 @@ export class RuntimeController {
       this.initialFloatingPolicyByWindow.clear();
       this.initialFullWidthPolicyByWindow.clear();
       this.initialFullscreenPolicyByWindow.clear();
-      this.initialFocusedPolicyByWindow.clear();
-      this.initialUnfocusedPolicyByWindow.clear();
+      this.initialFocusPolicyByWindow.clear();
       this.pendingInitialAdmissionStates.clear();
       this.initialMaximizedPolicyByWindow.clear();
       this.lastFloatingFocus.clear();
@@ -4763,23 +4781,16 @@ export class RuntimeController {
     if (
       this.initialWindowDiscoveryComplete &&
       source?.normalWindow &&
-      this.applicationInitialFocused.canonicalEntries.length > 0
+      (this.applicationInitialFocused.canonicalEntries.length > 0 ||
+        this.applicationInitialUnfocused.canonicalEntries.length > 0 ||
+        this.defaultInitialFocus !== DEFAULT_INITIAL_FOCUS)
     ) {
-      this.initialFocusedPolicyByWindow.set(
-        trackedId,
-        this.applicationInitialFocused,
-      );
-    }
-
-    if (
-      this.initialWindowDiscoveryComplete &&
-      source?.normalWindow &&
-      this.applicationInitialUnfocused.canonicalEntries.length > 0
-    ) {
-      this.initialUnfocusedPolicyByWindow.set(
-        trackedId,
-        this.applicationInitialUnfocused,
-      );
+      const policy = Object.freeze({
+        defaultFocus: this.defaultInitialFocus,
+        focused: this.applicationInitialFocused,
+        unfocused: this.applicationInitialUnfocused,
+      });
+      this.initialFocusPolicyByWindow.set(trackedId, policy);
     }
 
     if (
@@ -6851,8 +6862,7 @@ export class RuntimeController {
     this.initialFloatingPolicyByWindow.delete(managedId);
     this.initialFullWidthPolicyByWindow.delete(managedId);
     this.initialFullscreenPolicyByWindow.delete(managedId);
-    this.initialFocusedPolicyByWindow.delete(managedId);
-    this.initialUnfocusedPolicyByWindow.delete(managedId);
+    this.initialFocusPolicyByWindow.delete(managedId);
     this.pendingInitialAdmissionStates.delete(managedId);
     this.initialMaximizedPolicyByWindow.delete(managedId);
     this.windowAdmissionHistory.delete(managedId);
@@ -23203,8 +23213,7 @@ export class RuntimeController {
         this.initialFloatingPolicyByWindow.delete(id);
         this.initialFullWidthPolicyByWindow.delete(id);
         this.initialFullscreenPolicyByWindow.delete(id);
-        this.initialFocusedPolicyByWindow.delete(id);
-        this.initialUnfocusedPolicyByWindow.delete(id);
+        this.initialFocusPolicyByWindow.delete(id);
         this.initialMaximizedPolicyByWindow.delete(id);
       }
 
@@ -25499,8 +25508,7 @@ export class RuntimeController {
         this.initialFloatingPolicyByWindow.delete(candidate.id);
         this.initialFullWidthPolicyByWindow.delete(candidate.id);
         this.initialFullscreenPolicyByWindow.delete(candidate.id);
-        this.initialFocusedPolicyByWindow.delete(candidate.id);
-        this.initialUnfocusedPolicyByWindow.delete(candidate.id);
+        this.initialFocusPolicyByWindow.delete(candidate.id);
         this.initialMaximizedPolicyByWindow.delete(candidate.id);
 
         runtimeContext.windowIds.add(candidate.id);
@@ -25748,14 +25756,12 @@ export class RuntimeController {
           metadata === undefined &&
           !preservedRestoreBaselines.has(candidate.id) &&
           this.freshInitialFullscreenApplies(candidate.id, candidate.source);
-        const initiallyFocused =
-          metadata === undefined &&
-          !preservedRestoreBaselines.has(candidate.id) &&
-          this.freshInitialFocusedApplies(candidate.id, candidate.source);
-        const initiallyUnfocused =
-          metadata === undefined &&
-          !preservedRestoreBaselines.has(candidate.id) &&
-          this.freshInitialUnfocusedApplies(candidate.id, candidate.source);
+        const initialFocus =
+          metadata === undefined && !preservedRestoreBaselines.has(candidate.id)
+            ? this.freshInitialFocus(candidate.id, candidate.source)
+            : DEFAULT_INITIAL_FOCUS;
+        const initiallyFocused = initialFocus === "focused";
+        const initiallyUnfocused = initialFocus === "unfocused";
         const initiallyMaximized =
           metadata === undefined &&
           !preservedRestoreBaselines.has(candidate.id) &&
@@ -25922,9 +25928,8 @@ export class RuntimeController {
           initialFullscreenCandidates.delete(candidate.id);
           this.initialFullscreenPolicyByWindow.delete(candidate.id);
           initialFocusedCandidates.delete(candidate.id);
-          this.initialFocusedPolicyByWindow.delete(candidate.id);
+          this.initialFocusPolicyByWindow.delete(candidate.id);
           initialUnfocusedCandidates.delete(candidate.id);
-          this.initialUnfocusedPolicyByWindow.delete(candidate.id);
           initialMaximizedCandidates.delete(candidate.id);
           this.initialMaximizedPolicyByWindow.delete(candidate.id);
           this.forgetWaitingWindow(candidate.id);
@@ -26150,11 +26155,16 @@ export class RuntimeController {
         initialFullscreenCandidates.add(candidate.id);
       }
 
-      if (this.freshInitialFocusedApplies(candidate.id, candidate.source)) {
+      const initialFocus = this.freshInitialFocus(
+        candidate.id,
+        candidate.source,
+      );
+
+      if (initialFocus === "focused") {
         initialFocusedCandidates.add(candidate.id);
       }
 
-      if (this.freshInitialUnfocusedApplies(candidate.id, candidate.source)) {
+      if (initialFocus === "unfocused") {
         initialUnfocusedCandidates.add(candidate.id);
       }
 
@@ -26178,9 +26188,8 @@ export class RuntimeController {
         initialFullscreenCandidates.delete(candidate.id);
         this.initialFullscreenPolicyByWindow.delete(candidate.id);
         initialFocusedCandidates.delete(candidate.id);
-        this.initialFocusedPolicyByWindow.delete(candidate.id);
+        this.initialFocusPolicyByWindow.delete(candidate.id);
         initialUnfocusedCandidates.delete(candidate.id);
-        this.initialUnfocusedPolicyByWindow.delete(candidate.id);
         initialMaximizedCandidates.delete(candidate.id);
         this.initialMaximizedPolicyByWindow.delete(candidate.id);
         this.forgetWaitingWindow(candidate.id);
@@ -26264,9 +26273,8 @@ export class RuntimeController {
         initialFullscreenCandidates.delete(candidate.id);
         this.initialFullscreenPolicyByWindow.delete(candidate.id);
         initialFocusedCandidates.delete(candidate.id);
-        this.initialFocusedPolicyByWindow.delete(candidate.id);
+        this.initialFocusPolicyByWindow.delete(candidate.id);
         initialUnfocusedCandidates.delete(candidate.id);
-        this.initialUnfocusedPolicyByWindow.delete(candidate.id);
         initialMaximizedCandidates.delete(candidate.id);
         this.initialMaximizedPolicyByWindow.delete(candidate.id);
         this.forgetWaitingWindow(candidate.id);
@@ -26456,8 +26464,9 @@ export class RuntimeController {
     );
     const initialWindowHeight = this.initialWindowHeight(source);
     const initiallyFullWidth = this.freshInitialFullWidthApplies(id, source);
-    const initiallyFocused = this.freshInitialFocusedApplies(id, source);
-    const initiallyUnfocused = this.freshInitialUnfocusedApplies(id, source);
+    const initialFocus = this.freshInitialFocus(id, source);
+    const initiallyFocused = initialFocus === "focused";
+    const initiallyUnfocused = initialFocus === "unfocused";
     const initiallyMaximized = this.freshInitialMaximizedApplies(id, source);
     const initiallyFullscreen = this.freshInitialFullscreenApplies(id, source);
 
@@ -26491,8 +26500,7 @@ export class RuntimeController {
 
     if (!added) {
       this.initialFullscreenPolicyByWindow.delete(id);
-      this.initialFocusedPolicyByWindow.delete(id);
-      this.initialUnfocusedPolicyByWindow.delete(id);
+      this.initialFocusPolicyByWindow.delete(id);
       this.initialMaximizedPolicyByWindow.delete(id);
       this.forgetWaitingWindow(id);
       return false;
@@ -26526,8 +26534,7 @@ export class RuntimeController {
         this.deferWindow(id, key, decision.fingerprint);
       } else {
         this.initialFullscreenPolicyByWindow.delete(id);
-        this.initialFocusedPolicyByWindow.delete(id);
-        this.initialUnfocusedPolicyByWindow.delete(id);
+        this.initialFocusPolicyByWindow.delete(id);
         this.initialMaximizedPolicyByWindow.delete(id);
         this.forgetWaitingWindow(id);
       }
@@ -26613,8 +26620,9 @@ export class RuntimeController {
       return null;
     }
 
-    const initiallyFocused = this.freshInitialFocusedApplies(id, source);
-    const initiallyUnfocused = this.freshInitialUnfocusedApplies(id, source);
+    const initialFocus = this.freshInitialFocus(id, source);
+    const initiallyFocused = initialFocus === "focused";
+    const initiallyUnfocused = initialFocus === "unfocused";
     const initiallyMaximized = this.freshInitialMaximizedApplies(id, source);
     const initiallyFullscreen = this.freshInitialFullscreenApplies(id, source);
     const key = contextKey(context);
@@ -27194,52 +27202,46 @@ export class RuntimeController {
     );
   }
 
-  private applicationInitialFocusedApplies(
+  private applicationInitialFocus(
     source: KWinWindow,
-    applications: ApplicationInitialFocused,
-  ): boolean {
-    if (!source.normalWindow || applications.canonicalEntries.length === 0) {
-      return false;
+    policy: FreshInitialFocusPolicy,
+  ): DefaultInitialFocus {
+    if (!source.normalWindow) {
+      return DEFAULT_INITIAL_FOCUS;
     }
 
     const applicationId = applicationRuleIdentity(source);
-    return applicationId !== null && applications.excludes(applicationId);
-  }
 
-  private freshInitialFocusedApplies(
-    id: WindowId,
-    source: KWinWindow,
-  ): boolean {
-    const policy = this.initialFocusedPolicyByWindow.get(id);
-    return Boolean(
-      policy &&
-      !this.windowAdmissionHistory.has(id) &&
-      this.applicationInitialFocusedApplies(source, policy),
-    );
-  }
-
-  private applicationInitialUnfocusedApplies(
-    source: KWinWindow,
-    applications: ApplicationInitialUnfocused,
-  ): boolean {
-    if (!source.normalWindow || applications.canonicalEntries.length === 0) {
-      return false;
+    if (
+      applicationId !== null &&
+      policy.unfocused.canonicalEntries.length > 0 &&
+      policy.unfocused.excludes(applicationId)
+    ) {
+      return "unfocused";
     }
 
-    const applicationId = applicationRuleIdentity(source);
-    return applicationId !== null && applications.excludes(applicationId);
+    if (
+      applicationId !== null &&
+      policy.focused.canonicalEntries.length > 0 &&
+      policy.focused.excludes(applicationId)
+    ) {
+      return "focused";
+    }
+
+    return policy.defaultFocus;
   }
 
-  private freshInitialUnfocusedApplies(
+  private freshInitialFocus(
     id: WindowId,
     source: KWinWindow,
-  ): boolean {
-    const policy = this.initialUnfocusedPolicyByWindow.get(id);
-    return Boolean(
-      policy &&
-      !this.windowAdmissionHistory.has(id) &&
-      this.applicationInitialUnfocusedApplies(source, policy),
-    );
+  ): DefaultInitialFocus {
+    const policy = this.initialFocusPolicyByWindow.get(id);
+
+    if (!policy || this.windowAdmissionHistory.has(id)) {
+      return DEFAULT_INITIAL_FOCUS;
+    }
+
+    return this.applicationInitialFocus(source, policy);
   }
 
   private finishInitialAdmissionStates(
@@ -27250,8 +27252,7 @@ export class RuntimeController {
     maximized: boolean,
     fullscreen: boolean,
   ): void {
-    this.initialFocusedPolicyByWindow.delete(id);
-    this.initialUnfocusedPolicyByWindow.delete(id);
+    this.initialFocusPolicyByWindow.delete(id);
     this.initialMaximizedPolicyByWindow.delete(id);
     this.initialFullscreenPolicyByWindow.delete(id);
     this.pendingInitialAdmissionStates.delete(id);
@@ -27988,8 +27989,9 @@ export class RuntimeController {
       return false;
     }
 
-    const initiallyFocused = this.freshInitialFocusedApplies(id, source);
-    const initiallyUnfocused = this.freshInitialUnfocusedApplies(id, source);
+    const initialFocus = this.freshInitialFocus(id, source);
+    const initiallyFocused = initialFocus === "focused";
+    const initiallyUnfocused = initialFocus === "unfocused";
     const initiallyMaximized = this.freshInitialMaximizedApplies(id, source);
     const initiallyFullscreen = this.freshInitialFullscreenApplies(id, source);
     this.automaticFloatingWindows.add(id);
@@ -28306,8 +28308,7 @@ export class RuntimeController {
     this.initialFloatingPolicyByWindow.delete(id);
     this.initialFullWidthPolicyByWindow.delete(id);
     this.initialFullscreenPolicyByWindow.delete(id);
-    this.initialFocusedPolicyByWindow.delete(id);
-    this.initialUnfocusedPolicyByWindow.delete(id);
+    this.initialFocusPolicyByWindow.delete(id);
     this.initialMaximizedPolicyByWindow.delete(id);
 
     if (borderRestore?.admissionBaselinePending) {

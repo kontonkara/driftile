@@ -36,6 +36,10 @@ import {
   decodeDefaultInitialDestination,
   DISABLED_DEFAULT_INITIAL_DESTINATION,
 } from "../src/default-initial-destination";
+import {
+  decodeDefaultInitialFocus,
+  DEFAULT_INITIAL_FOCUS,
+} from "../src/default-initial-focus";
 import { decodeWindowHeightPresetPercentages } from "../src/window-height-presets";
 import {
   decodeDriftileSettings,
@@ -220,6 +224,7 @@ const validSettings: DriftileSettings = {
   defaultColumnWidthPixels: 960,
   defaultFloatingPosition: validDefaultFloatingPosition.floatingPosition,
   defaultInitialDestination: validDefaultInitialDestination.initialDestination,
+  defaultInitialFocus: "focused",
   defaultWindowHeight: validDefaultWindowHeight,
   emptyDesktopAboveFirst: true,
   gap: 32.5,
@@ -264,6 +269,7 @@ const validSettingsInput = {
   defaultColumnWidthPixels: validSettings.defaultColumnWidthPixels,
   defaultFloatingPosition: validDefaultFloatingPosition.canonicalValue,
   defaultInitialDestination: validDefaultInitialDestination.canonicalValue,
+  defaultInitialFocus: validSettings.defaultInitialFocus,
   defaultWindowHeight: validSettings.defaultWindowHeight.canonicalValue,
   emptyDesktopAboveFirst: validSettings.emptyDesktopAboveFirst,
   gap: validSettings.gap,
@@ -292,6 +298,7 @@ describe("Driftile settings", () => {
       defaultColumnWidthPixels: 0,
       defaultFloatingPosition: null,
       defaultInitialDestination: null,
+      defaultInitialFocus: DEFAULT_INITIAL_FOCUS,
       emptyDesktopAboveFirst: false,
       gap: 16,
       showTabIndicator: true,
@@ -393,6 +400,7 @@ describe("Driftile settings", () => {
       defaultColumnWidthPixels: validSettings.defaultColumnWidthPixels,
       defaultFloatingPosition: validSettings.defaultFloatingPosition,
       defaultInitialDestination: validSettings.defaultInitialDestination,
+      defaultInitialFocus: validSettings.defaultInitialFocus,
       defaultWindowHeight: validSettings.defaultWindowHeight,
       emptyDesktopAboveFirst: validSettings.emptyDesktopAboveFirst,
       gap: validSettings.gap,
@@ -544,6 +552,7 @@ describe("Driftile settings", () => {
       defaultColumnWidthPixels: 0,
       defaultFloatingPosition: "",
       defaultInitialDestination: "",
+      defaultInitialFocus: "default",
       defaultWindowHeight: "auto",
       emptyDesktopAboveFirst: false,
       gap: 0,
@@ -584,6 +593,7 @@ describe("Driftile settings", () => {
       defaultColumnWidthPixels: 16_384,
       defaultFloatingPosition: "right,16384,-16384",
       defaultInitialDestination: "desktop:25,output:DP-1",
+      defaultInitialFocus: "unfocused",
       defaultWindowHeight: "16384px",
       emptyDesktopAboveFirst: true,
       gap: 64,
@@ -617,6 +627,9 @@ describe("Driftile settings", () => {
     expect(decoded?.defaultInitialDestination).toEqual(
       decodeDefaultInitialDestination(settings.defaultInitialDestination)
         ?.initialDestination,
+    );
+    expect(decoded?.defaultInitialFocus).toBe(
+      decodeDefaultInitialFocus(settings.defaultInitialFocus),
     );
     expect(decoded?.applicationWindowHeights.canonicalEntries.join("\n")).toBe(
       settings.applicationWindowHeights,
@@ -743,6 +756,7 @@ describe("Driftile settings", () => {
       "an invalid default initial destination",
       { defaultInitialDestination: "desktop:0" },
     ],
+    ["an invalid default initial focus", { defaultInitialFocus: "focus" }],
     ["an invalid default window height", { defaultWindowHeight: "9" }],
     [
       "invalid application overrides",
@@ -884,7 +898,7 @@ describe("Driftile settings", () => {
     },
   );
 
-  it("rejects an incomplete thirty-eight-field snapshot", () => {
+  it("rejects an incomplete thirty-nine-field snapshot", () => {
     const incomplete: Record<string, unknown> = { ...validSettingsInput };
     delete incomplete["defaultColumnWidthPixels"];
 
@@ -1070,6 +1084,7 @@ describe("Driftile settings", () => {
       { defaultColumnWidthPixels: 961 },
       { defaultFloatingPosition: changedDefaultFloatingPosition },
       { defaultInitialDestination: changedDefaultInitialDestination },
+      { defaultInitialFocus: "unfocused" as const },
       { defaultWindowHeight: changedDefaultWindowHeight },
       { emptyDesktopAboveFirst: false },
       { gap: 33 },

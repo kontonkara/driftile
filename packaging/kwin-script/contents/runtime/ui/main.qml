@@ -1128,6 +1128,7 @@ QtObject {
             defaultColumnWidthPixels: KWin.readConfig("DefaultColumnWidthPixels", 0),
             defaultFloatingPosition: KWin.readConfig("DefaultFloatingPosition", ""),
             defaultInitialDestination: KWin.readConfig("DefaultInitialDestination", ""),
+            defaultInitialFocus: KWin.readConfig("DefaultInitialFocus", "default"),
             defaultWindowHeight: KWin.readConfig("DefaultWindowHeight", "auto"),
             emptyDesktopAboveFirst: KWin.readConfig("EmptyDesktopAboveFirst", false),
             gap: KWin.readConfig("Gap", 16),

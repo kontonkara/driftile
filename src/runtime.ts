@@ -122,6 +122,7 @@ export function init(
     defaultColumnPresentation: settings.defaultColumnPresentation,
     defaultFloatingPosition: settings.defaultFloatingPosition,
     defaultInitialDestination: settings.defaultInitialDestination,
+    defaultInitialFocus: settings.defaultInitialFocus,
     defaultWindowHeight: settings.defaultWindowHeight,
     emptyDesktopAboveFirst: settings.emptyDesktopAboveFirst,
     gap: settings.gap,
@@ -239,6 +240,7 @@ export function applySettings(settingsSnapshot: unknown): boolean {
   controller.setDefaultColumnWidth(defaultColumnWidthForSettings(settings));
   controller.setDefaultFloatingPosition(settings.defaultFloatingPosition);
   controller.setDefaultInitialDestination(settings.defaultInitialDestination);
+  controller.setDefaultInitialFocus(settings.defaultInitialFocus);
   controller.setDefaultWindowHeight(settings.defaultWindowHeight);
   controller.setEmptyDesktopAboveFirst(settings.emptyDesktopAboveFirst);
   controller.setColumnWidthPresets(settings.columnWidthPresets.presets);

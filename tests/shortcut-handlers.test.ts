@@ -939,6 +939,7 @@ describe("KWin shortcut handlers", () => {
       "kcfg_WindowHeightPresets",
       "kcfg_DefaultInitialDestination",
       "kcfg_DefaultFloatingPosition",
+      "kcfg_DefaultInitialFocus",
     ];
     const applicationControls = [
       "kcfg_ApplicationColumnPresentations",
@@ -1265,6 +1266,15 @@ describe("KWin shortcut handlers", () => {
     const initialDestinationWidget = configurationUi.match(
       /<widget class="QLineEdit" name="kcfg_DefaultInitialDestination">([\s\S]*?)<\/widget>/,
     )?.[1];
+    const initialFocusEntry = configuration.match(
+      /<entry name="DefaultInitialFocus" type="String">([\s\S]*?)<\/entry>/,
+    )?.[1];
+    const initialFocusLabel = configurationUi.match(
+      /<widget class="QLabel" name="defaultInitialFocusLabel">([\s\S]*?)<\/widget>/,
+    )?.[1];
+    const initialFocusWidget = configurationUi.match(
+      /<widget class="QComboBox" name="kcfg_DefaultInitialFocus">([\s\S]*?)<\/widget>/,
+    )?.[1];
     const floatingPositionLabel = configurationUi.match(
       /<widget class="QLabel" name="defaultFloatingPositionLabel">([\s\S]*?)<\/widget>/,
     )?.[1];
@@ -1392,6 +1402,31 @@ describe("KWin shortcut handlers", () => {
     );
     expect(runtime).toContain(
       "controller.setDefaultInitialDestination(settings.defaultInitialDestination)",
+    );
+    expect(initialFocusEntry).toContain(
+      "<label>Default initial focus behavior</label>",
+    );
+    expect(initialFocusEntry).toContain("<default>default</default>");
+    expect(initialFocusLabel).toContain(
+      "<string>Default initial focus:</string>",
+    );
+    expect(initialFocusLabel).toContain(
+      "<cstring>kcfg_DefaultInitialFocus</cstring>",
+    );
+    expect(initialFocusWidget).toContain("<string>default</string>");
+    expect(initialFocusWidget).toContain("<string>focused</string>");
+    expect(initialFocusWidget).toContain("<string>unfocused</string>");
+    expect(initialFocusWidget).toContain(
+      "Exact initial-focused and initial-unfocused application rules override it",
+    );
+    expect(qml).toContain(
+      'defaultInitialFocus: KWin.readConfig("DefaultInitialFocus", "default")',
+    );
+    expect(runtime).toContain(
+      "defaultInitialFocus: settings.defaultInitialFocus",
+    );
+    expect(runtime).toContain(
+      "controller.setDefaultInitialFocus(settings.defaultInitialFocus)",
     );
     expect(floatingPositionEntry).toContain(
       "<label>Default initial floating position</label>",

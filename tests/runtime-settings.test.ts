@@ -22,6 +22,7 @@ import type {
 import type { ApplicationTilingExclusions } from "../src/application-tiling-exclusions";
 import type { ColumnWidth } from "../src/core/layout-engine";
 import type { DefaultWindowHeight } from "../src/default-window-height";
+import type { DefaultInitialFocus } from "../src/default-initial-focus";
 import type { KWinWorkspace } from "../src/platform/kwin/api";
 import type { WindowHeightPresetCycleEntry } from "../src/window-height-presets";
 
@@ -51,6 +52,7 @@ interface DeliveredSettings {
   readonly defaultColumnPresentation: "stacked" | "tabbed";
   readonly defaultFloatingPosition: ApplicationFloatingPosition | null;
   readonly defaultInitialDestination: ApplicationInitialDestination | null;
+  readonly defaultInitialFocus: DefaultInitialFocus;
   readonly defaultWindowHeight: string;
   readonly emptyDesktopAboveFirst: boolean;
   readonly gap: number;
@@ -93,6 +95,7 @@ interface RuntimeControllerOptions {
   readonly defaultColumnPresentation: "stacked" | "tabbed";
   readonly defaultFloatingPosition: ApplicationFloatingPosition | null;
   readonly defaultInitialDestination: ApplicationInitialDestination | null;
+  readonly defaultInitialFocus: DefaultInitialFocus;
   readonly defaultWindowHeight: DefaultWindowHeight;
   readonly emptyDesktopAboveFirst: boolean;
   readonly gap: number;
@@ -155,6 +158,7 @@ class RuntimeControllerDouble {
       defaultColumnPresentation: options.defaultColumnPresentation,
       defaultFloatingPosition: options.defaultFloatingPosition,
       defaultInitialDestination: options.defaultInitialDestination,
+      defaultInitialFocus: options.defaultInitialFocus,
       defaultWindowHeight: options.defaultWindowHeight.canonicalValue,
       emptyDesktopAboveFirst: options.emptyDesktopAboveFirst,
       gap: options.gap,
@@ -423,6 +427,12 @@ class RuntimeControllerDouble {
     return true;
   }
 
+  setDefaultInitialFocus(value: DefaultInitialFocus): boolean {
+    this.calls.push("defaultInitialFocus");
+    this.state = { ...this.state, defaultInitialFocus: value };
+    return true;
+  }
+
   setDefaultWindowHeight(value: DefaultWindowHeight): boolean {
     this.calls.push("defaultWindowHeight");
     this.state = {
@@ -511,6 +521,7 @@ describe("runtime settings delivery", () => {
       alwaysCenterSingleColumn: true,
       defaultFloatingPosition: "top-left,12,8",
       defaultInitialDestination: "desktop:2,output:DP-1",
+      defaultInitialFocus: "focused",
       emptyDesktopAboveFirst: true,
       windowHeightPresets: "30,640px,60,960px,90",
     });
@@ -574,6 +585,7 @@ describe("runtime settings delivery", () => {
       desktop: 2,
       output: "DP-1",
     });
+    expect(controller.deliveredSettings.defaultInitialFocus).toBe("focused");
     expect(controller.deliveredSettings.alwaysCenterSingleColumn).toBe(true);
     expect(controller.deliveredSettings.emptyDesktopAboveFirst).toBe(true);
     expect(runtime.getTouchpadWorkspaceNavigation()).toBe(false);
@@ -617,6 +629,7 @@ describe("runtime settings delivery", () => {
       defaultColumnWidthPixels: 720,
       defaultFloatingPosition: "bottom-right,24,16",
       defaultInitialDestination: "desktop-name:Work,output:HDMI-A-1",
+      defaultInitialFocus: "unfocused",
       defaultWindowHeight: "60%",
       emptyDesktopAboveFirst: false,
       gap: 7.5,
@@ -664,6 +677,7 @@ describe("runtime settings delivery", () => {
         desktopName: "Work",
         output: "HDMI-A-1",
       },
+      defaultInitialFocus: "unfocused",
       defaultWindowHeight: "60",
       emptyDesktopAboveFirst: false,
       gap: 7.5,
@@ -701,6 +715,7 @@ describe("runtime settings delivery", () => {
       "defaultColumnWidth",
       "defaultFloatingPosition",
       "defaultInitialDestination",
+      "defaultInitialFocus",
       "defaultWindowHeight",
       "emptyDesktopAboveFirst",
       "columnWidthPresets",
@@ -803,6 +818,7 @@ describe("runtime settings delivery", () => {
       "defaultColumnWidth",
       "defaultFloatingPosition",
       "defaultInitialDestination",
+      "defaultInitialFocus",
       "defaultWindowHeight",
       "emptyDesktopAboveFirst",
       "columnWidthPresets",
@@ -859,6 +875,7 @@ function settings(
     defaultColumnWidthPixels: 0,
     defaultFloatingPosition: "",
     defaultInitialDestination: "",
+    defaultInitialFocus: "default",
     defaultWindowHeight: "auto",
     emptyDesktopAboveFirst: false,
     gap: 16,

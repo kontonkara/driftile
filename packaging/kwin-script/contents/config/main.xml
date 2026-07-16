@@ -76,6 +76,10 @@
       <label>Default initial desktop and output destination</label>
       <default></default>
     </entry>
+    <entry name="DefaultInitialFocus" type="String">
+      <label>Default initial focus behavior</label>
+      <default>default</default>
+    </entry>
     <entry name="DefaultFloatingPosition" type="String">
       <label>Default initial floating position</label>
       <default></default>

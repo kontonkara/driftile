@@ -9169,6 +9169,89 @@ describe("RuntimeController", () => {
     expect(fixture.activationCount).toBe(activationsBeforeRejected + 1);
   });
 
+  it("uses the focused default beneath exact unfocused rules", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const existing = createTrackedWindow("existing", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [existing.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      applicationInitialUnfocused: requiredApplicationInitialUnfocused(
+        "org.example.Passive",
+      ),
+      clientAreaOption: 2,
+      schedule: scheduler.schedule,
+      scheduleResume: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(controller.setDefaultInitialFocus("focused")).toBe(true);
+    expect(controller.setDefaultInitialFocus("focused")).toBe(false);
+
+    const unlisted = createTrackedWindow("unlisted", output, desktop, {
+      desktopFileName: "org.example.Unlisted",
+    });
+    fixture.windowAdded.emit(unlisted.window);
+    flushManualScheduler(scheduler);
+    expect(fixture.workspace.activeWindow).toBe(unlisted.window);
+
+    fixture.workspace.activeWindow = existing.window;
+    const passive = createTrackedWindow("passive", output, desktop, {
+      desktopFileName: "org.example.Passive",
+    });
+    fixture.windowAdded.emit(passive.window);
+    fixture.workspace.activeWindow = passive.window;
+    flushManualScheduler(scheduler);
+    expect(fixture.workspace.activeWindow).toBe(existing.window);
+  });
+
+  it("uses the unfocused default beneath exact focused rules", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const existing = createTrackedWindow("existing", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [existing.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      applicationInitialFocused: requiredApplicationInitialFocused(
+        "org.example.Important",
+      ),
+      clientAreaOption: 2,
+      defaultInitialFocus: "unfocused",
+      schedule: scheduler.schedule,
+      scheduleResume: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+
+    const important = createTrackedWindow("important", output, desktop, {
+      desktopFileName: "org.example.Important",
+    });
+    fixture.windowAdded.emit(important.window);
+    flushManualScheduler(scheduler);
+    expect(fixture.workspace.activeWindow).toBe(important.window);
+
+    fixture.workspace.activeWindow = existing.window;
+    const unlisted = createTrackedWindow("unlisted", output, desktop, {
+      desktopFileName: "org.example.Unlisted",
+    });
+    fixture.windowAdded.emit(unlisted.window);
+    fixture.workspace.activeWindow = unlisted.window;
+    flushManualScheduler(scheduler);
+    expect(fixture.workspace.activeWindow).toBe(existing.window);
+  });
+
   it("restores previous focus once for fresh exact unfocused matches", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
