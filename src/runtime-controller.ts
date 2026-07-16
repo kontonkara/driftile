@@ -179,6 +179,7 @@ import type {
   KWinWorkspace,
 } from "./platform/kwin/api";
 import { KWinActivityAdapter } from "./platform/kwin/activity-adapter";
+import { applicationRuleIdentity } from "./platform/kwin/application-identity";
 import {
   DesktopLifecycle,
   type DesktopReorderDirection,
@@ -1223,7 +1224,10 @@ export class RuntimeController {
     WindowId,
     WindowBorderRestore
   >();
-  private readonly windowDesktopFileNames = new Map<WindowId, string | null>();
+  private readonly windowApplicationRuleIdentities = new Map<
+    WindowId,
+    string | null
+  >();
   private readonly windowStateRevisions = new Map<WindowId, number>();
   private workScheduled = false;
   private readonly activities: KWinActivityAdapter;
@@ -4257,7 +4261,7 @@ export class RuntimeController {
       this.waitingWindowIds.clear();
       this.windowAdmissionHistory.clear();
       this.windowBorderRestore.clear();
-      this.windowDesktopFileNames.clear();
+      this.windowApplicationRuleIdentities.clear();
       this.windowStateRevisions.clear();
       this.topologyAllowsOverflowAdmissions = false;
       this.topologyColumnByWindow.clear();
@@ -6403,23 +6407,23 @@ export class RuntimeController {
       this.pendingTabbedNormalizations.add(changedId);
     }
 
-    const desktopFileNameChange =
+    const applicationRuleIdentityChange =
       cause === "classification" && source
-        ? this.trackWindowDesktopFileNameChange(changedId, source)
+        ? this.trackWindowApplicationRuleIdentityChange(changedId, source)
         : null;
 
-    if (desktopFileNameChange) {
+    if (applicationRuleIdentityChange) {
       this.resetBorderlessClaimBackoff(changedId);
     }
 
     if (
       source &&
-      desktopFileNameChange &&
-      !this.desktopFileNameChangeRequiresLayout(
+      applicationRuleIdentityChange &&
+      !this.applicationRuleIdentityChangeRequiresLayout(
         changedId,
         source,
-        desktopFileNameChange.previous,
-        desktopFileNameChange.current,
+        applicationRuleIdentityChange.previous,
+        applicationRuleIdentityChange.current,
       )
     ) {
       this.synchronizeWindowBorder(changedId, source);
@@ -6825,7 +6829,7 @@ export class RuntimeController {
     this.initialMaximizedPolicyByWindow.delete(managedId);
     this.windowAdmissionHistory.delete(managedId);
     this.windowBorderRestore.delete(managedId);
-    this.windowDesktopFileNames.delete(managedId);
+    this.windowApplicationRuleIdentities.delete(managedId);
     this.windowStateRevisions.delete(managedId);
     this.forgetRememberedLayerFocus(managedId);
     const releasedContextKey = this.releaseWindow(managedId);
@@ -8609,10 +8613,10 @@ export class RuntimeController {
       return false;
     }
 
-    const desktopFileName = this.applicationDesktopFileName(source);
+    const applicationId = applicationRuleIdentity(source);
     return (
-      desktopFileName !== null &&
-      this.applicationFocusCentering.centersOnFocus(desktopFileName)
+      applicationId !== null &&
+      this.applicationFocusCentering.centersOnFocus(applicationId)
     );
   }
 
@@ -26675,9 +26679,9 @@ export class RuntimeController {
       return;
     }
 
-    const desktopFileName = this.applicationDesktopFileName(source);
-    const destination = desktopFileName
-      ? policy.initialDestinationFor(desktopFileName)
+    const applicationId = applicationRuleIdentity(source);
+    const destination = applicationId
+      ? policy.initialDestinationFor(applicationId)
       : undefined;
     const command = destination
       ? this.freshInitialDestinationCommand(id, source, destination)
@@ -27032,9 +27036,9 @@ export class RuntimeController {
       return false;
     }
 
-    return this.applicationTilingExclusionAppliesToDesktopFileName(
+    return this.applicationTilingExclusionAppliesToIdentity(
       source,
-      this.applicationDesktopFileName(source),
+      applicationRuleIdentity(source),
       exclusions,
     );
   }
@@ -27047,21 +27051,19 @@ export class RuntimeController {
       return false;
     }
 
-    const desktopFileName = this.applicationDesktopFileName(source);
-    return desktopFileName !== null && applications.excludes(desktopFileName);
+    const applicationId = applicationRuleIdentity(source);
+    return applicationId !== null && applications.excludes(applicationId);
   }
 
   private applicationFloatingPosition(
     source: KWinWindow,
   ): ApplicationFloatingPosition | undefined {
-    const desktopFileName = this.applicationDesktopFileName(source);
+    const applicationId = applicationRuleIdentity(source);
     const applicationPosition =
-      desktopFileName === null ||
+      applicationId === null ||
       this.applicationFloatingPositions.canonicalEntries.length === 0
         ? undefined
-        : this.applicationFloatingPositions.floatingPositionFor(
-            desktopFileName,
-          );
+        : this.applicationFloatingPositions.floatingPositionFor(applicationId);
 
     return applicationPosition ?? this.defaultFloatingPosition ?? undefined;
   }
@@ -27147,8 +27149,8 @@ export class RuntimeController {
       return false;
     }
 
-    const desktopFileName = this.applicationDesktopFileName(source);
-    return desktopFileName !== null && applications.excludes(desktopFileName);
+    const applicationId = applicationRuleIdentity(source);
+    return applicationId !== null && applications.excludes(applicationId);
   }
 
   private freshInitialFullWidthApplies(
@@ -27171,8 +27173,8 @@ export class RuntimeController {
       return false;
     }
 
-    const desktopFileName = this.applicationDesktopFileName(source);
-    return desktopFileName !== null && applications.excludes(desktopFileName);
+    const applicationId = applicationRuleIdentity(source);
+    return applicationId !== null && applications.excludes(applicationId);
   }
 
   private freshInitialFocusedApplies(
@@ -27195,8 +27197,8 @@ export class RuntimeController {
       return false;
     }
 
-    const desktopFileName = this.applicationDesktopFileName(source);
-    return desktopFileName !== null && applications.excludes(desktopFileName);
+    const applicationId = applicationRuleIdentity(source);
+    return applicationId !== null && applications.excludes(applicationId);
   }
 
   private freshInitialUnfocusedApplies(
@@ -27537,8 +27539,8 @@ export class RuntimeController {
       return false;
     }
 
-    const desktopFileName = this.applicationDesktopFileName(source);
-    return desktopFileName !== null && applications.excludes(desktopFileName);
+    const applicationId = applicationRuleIdentity(source);
+    return applicationId !== null && applications.excludes(applicationId);
   }
 
   private freshInitialMaximizedApplies(
@@ -27588,8 +27590,8 @@ export class RuntimeController {
       return false;
     }
 
-    const desktopFileName = this.applicationDesktopFileName(source);
-    return desktopFileName !== null && applications.excludes(desktopFileName);
+    const applicationId = applicationRuleIdentity(source);
+    return applicationId !== null && applications.excludes(applicationId);
   }
 
   private freshInitialFullscreenApplies(
@@ -27624,16 +27626,16 @@ export class RuntimeController {
     this.requestFullscreenState(id, source, true);
   }
 
-  private applicationTilingExclusionAppliesToDesktopFileName(
+  private applicationTilingExclusionAppliesToIdentity(
     source: KWinWindow,
-    desktopFileName: string | null,
+    applicationId: string | null,
     exclusions = this.applicationTilingExclusions,
   ): boolean {
     return (
       source.normalWindow &&
-      desktopFileName !== null &&
+      applicationId !== null &&
       exclusions.canonicalEntries.length > 0 &&
-      exclusions.excludes(desktopFileName)
+      exclusions.excludes(applicationId)
     );
   }
 
@@ -27650,49 +27652,35 @@ export class RuntimeController {
       return false;
     }
 
-    const desktopFileName = this.applicationDesktopFileName(source);
+    const applicationId = applicationRuleIdentity(source);
 
-    if (desktopFileName === null) {
+    if (applicationId === null) {
       return false;
     }
 
     return (
       (previous.canonicalEntries.length > 0 &&
-        previous.excludes(desktopFileName)) !==
-      (next.canonicalEntries.length > 0 && next.excludes(desktopFileName))
+        previous.excludes(applicationId)) !==
+      (next.canonicalEntries.length > 0 && next.excludes(applicationId))
     );
   }
 
-  private applicationDesktopFileName(source: KWinWindow): string | null {
-    let desktopFileName: unknown;
-
-    try {
-      desktopFileName = source.desktopFileName;
-    } catch {
-      return null;
-    }
-
-    return typeof desktopFileName === "string" && desktopFileName.length > 0
-      ? desktopFileName
-      : null;
-  }
-
-  private trackWindowDesktopFileNameChange(
+  private trackWindowApplicationRuleIdentityChange(
     id: WindowId,
     source: KWinWindow,
   ): {
     readonly current: string | null;
     readonly previous: string | null;
   } | null {
-    const current = this.applicationDesktopFileName(source);
-    const tracked = this.windowDesktopFileNames.has(id);
-    const previous = this.windowDesktopFileNames.get(id) ?? null;
-    this.windowDesktopFileNames.set(id, current);
+    const current = applicationRuleIdentity(source);
+    const tracked = this.windowApplicationRuleIdentities.has(id);
+    const previous = this.windowApplicationRuleIdentities.get(id) ?? null;
+    this.windowApplicationRuleIdentities.set(id, current);
 
     return tracked && previous !== current ? { current, previous } : null;
   }
 
-  private desktopFileNameChangeRequiresLayout(
+  private applicationRuleIdentityChangeRequiresLayout(
     id: WindowId,
     source: KWinWindow,
     previous: string | null,
@@ -27700,11 +27688,8 @@ export class RuntimeController {
   ): boolean {
     return (
       this.waitingWindowContexts.has(id) ||
-      this.applicationTilingExclusionAppliesToDesktopFileName(
-        source,
-        previous,
-      ) !==
-        this.applicationTilingExclusionAppliesToDesktopFileName(source, current)
+      this.applicationTilingExclusionAppliesToIdentity(source, previous) !==
+        this.applicationTilingExclusionAppliesToIdentity(source, current)
     );
   }
 
@@ -28172,13 +28157,16 @@ export class RuntimeController {
     }
 
     const alreadySynchronizing = this.borderSynchronizationIds.has(id);
-    const desktopFileName =
+    const applicationId =
       source && this.borderlessWindows
-        ? this.applicationDesktopFileName(source)
+        ? applicationRuleIdentity(source)
         : undefined;
 
-    if (desktopFileName !== undefined && !this.windowDesktopFileNames.has(id)) {
-      this.windowDesktopFileNames.set(id, desktopFileName);
+    if (
+      applicationId !== undefined &&
+      !this.windowApplicationRuleIdentities.has(id)
+    ) {
+      this.windowApplicationRuleIdentities.set(id, applicationId);
     }
 
     if (!alreadySynchronizing) {
@@ -28186,7 +28174,7 @@ export class RuntimeController {
     }
 
     try {
-      if (!source || !this.windowUsesBorderlessMode(source, desktopFileName)) {
+      if (!source || !this.windowUsesBorderlessMode(source, applicationId)) {
         this.resetBorderlessClaimBackoff(id);
         this.restoreWindowBorder(id);
         return;
@@ -28365,7 +28353,7 @@ export class RuntimeController {
 
   private windowUsesBorderlessMode(
     source: KWinWindow,
-    knownDesktopFileName?: string | null,
+    knownApplicationId?: string | null,
   ): boolean {
     if (
       !this.started ||
@@ -28378,14 +28366,14 @@ export class RuntimeController {
       return false;
     }
 
-    const desktopFileName =
-      knownDesktopFileName === undefined
-        ? this.applicationDesktopFileName(source)
-        : knownDesktopFileName;
+    const applicationId =
+      knownApplicationId === undefined
+        ? applicationRuleIdentity(source)
+        : knownApplicationId;
 
     return (
-      desktopFileName === null ||
-      !this.applicationBorderlessExclusions.excludes(desktopFileName)
+      applicationId === null ||
+      !this.applicationBorderlessExclusions.excludes(applicationId)
     );
   }
 
@@ -30186,23 +30174,25 @@ export class RuntimeController {
       return this.defaultColumnWidth;
     }
 
-    const desktopFileName = sources[0]?.desktopFileName;
+    const applicationId = sources[0]
+      ? applicationRuleIdentity(sources[0])
+      : null;
 
-    if (typeof desktopFileName !== "string") {
+    if (applicationId === null) {
       return this.defaultColumnWidth;
     }
 
-    const width = this.applicationColumnWidths.columnWidthFor(desktopFileName);
+    const width = this.applicationColumnWidths.columnWidthFor(applicationId);
 
     return width === undefined ? this.defaultColumnWidth : { ...width };
   }
 
   private initialWindowHeight(source: KWinWindow): WindowHeight | undefined {
-    const desktopFileName = source.desktopFileName;
+    const applicationId = applicationRuleIdentity(source);
 
     const applicationHeight =
-      typeof desktopFileName === "string"
-        ? this.applicationWindowHeights.windowHeightFor(desktopFileName)
+      applicationId !== null
+        ? this.applicationWindowHeights.windowHeightFor(applicationId)
         : undefined;
     const height = applicationHeight ?? this.defaultWindowHeight.windowHeight;
 
@@ -30245,15 +30235,15 @@ export class RuntimeController {
   private initialColumnPresentation(
     source: KWinWindow | undefined,
   ): ColumnPresentation {
-    const desktopFileName = source?.desktopFileName;
+    const applicationId = source ? applicationRuleIdentity(source) : null;
 
-    if (typeof desktopFileName !== "string") {
+    if (applicationId === null) {
       return this.defaultColumnPresentation;
     }
 
     return (
       this.applicationColumnPresentations.columnPresentationFor(
-        desktopFileName,
+        applicationId,
       ) ?? this.defaultColumnPresentation
     );
   }

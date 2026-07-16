@@ -7191,7 +7191,7 @@ describe("RuntimeController", () => {
     );
   });
 
-  it("matches border exclusions exactly and treats empty identities as eligible", () => {
+  it("matches resolved border exclusion identities exactly", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
     const exact = createTrackedWindow("exact", output, desktop, {
@@ -7202,16 +7202,29 @@ describe("RuntimeController", () => {
       desktopFileName: "org.example.editor",
       noBorder: false,
     });
-    const empty = createTrackedWindow("empty", output, desktop, {
+    const fallback = createTrackedWindow("fallback", output, desktop, {
       desktopFileName: "",
       noBorder: false,
+      resourceClass: "org.example.Editor",
     });
+    const desktopPriority = createTrackedWindow(
+      "desktop-priority",
+      output,
+      desktop,
+      {
+        desktopFileName: "org.example.Other",
+        noBorder: false,
+        resourceClass: "org.example.Editor",
+      },
+    );
     const missing = createTrackedWindow("missing", output, desktop, {
+      desktopFileName: "",
       noBorder: false,
     });
     const unreadable = createTrackedWindow("unreadable", output, desktop, {
       noBorder: false,
       normalWindow: false,
+      resourceClass: "org.example.Editor",
       specialWindow: true,
     });
     Object.defineProperty(unreadable.window, "desktopFileName", {
@@ -7228,7 +7241,8 @@ describe("RuntimeController", () => {
       [
         exact.window,
         differentCase.window,
-        empty.window,
+        fallback.window,
+        desktopPriority.window,
         missing.window,
         unreadable.window,
       ],
@@ -7243,14 +7257,16 @@ describe("RuntimeController", () => {
     expect(controller.start()).toBe(true);
     expect(exact.window.noBorder).toBe(false);
     expect(differentCase.window.noBorder).toBe(true);
-    expect(empty.window.noBorder).toBe(true);
+    expect(fallback.window.noBorder).toBe(false);
+    expect(desktopPriority.window.noBorder).toBe(true);
     expect(missing.window.noBorder).toBe(true);
-    expect(unreadable.window.noBorder).toBe(true);
+    expect(unreadable.window.noBorder).toBe(false);
 
     controller.stop();
     expect(exact.window.noBorder).toBe(false);
     expect(differentCase.window.noBorder).toBe(false);
-    expect(empty.window.noBorder).toBe(false);
+    expect(fallback.window.noBorder).toBe(false);
+    expect(desktopPriority.window.noBorder).toBe(false);
     expect(missing.window.noBorder).toBe(false);
     expect(unreadable.window.noBorder).toBe(false);
   });
@@ -8225,7 +8241,8 @@ describe("RuntimeController", () => {
     expect([editor.writeCount, browser.writeCount]).toEqual(initialWrites);
 
     const secondBrowser = createTrackedWindow("browser-2", output, desktop, {
-      desktopFileName: "org.example.Browser",
+      desktopFileName: "",
+      resourceClass: "org.example.Browser",
     });
     fixture.windowAdded.emit(secondBrowser.window);
     scheduler.flush();
@@ -8449,8 +8466,9 @@ describe("RuntimeController", () => {
 
     const browser = createTrackedWindow("browser", output, desktop, {
       clientGeometry: { height: 200, width: 300, x: 0, y: 20 },
-      desktopFileName: "org.example.Browser",
+      desktopFileName: "",
       frameGeometry: { height: 220, width: 300, x: 0, y: 0 },
+      resourceClass: "org.example.Browser",
     });
     fixture.windowAdded.emit(browser.window);
     flushManualScheduler(scheduler);
@@ -8492,7 +8510,8 @@ describe("RuntimeController", () => {
       desktopFileName: "org.example.Editor.preview",
     });
     const editor = createTrackedWindow("editor", output, desktop, {
-      desktopFileName: "org.example.Editor",
+      desktopFileName: "",
+      resourceClass: "org.example.Editor",
     });
     const fixture = createWorkspace(
       output,
@@ -8614,8 +8633,9 @@ describe("RuntimeController", () => {
       { desktopFileName: "org.example.Target" },
     );
     const added = createTrackedWindow("added", sourceOutput, firstDesktop, {
-      desktopFileName: "org.example.Target",
+      desktopFileName: "",
       frameGeometry: { height: 220, width: 300, x: 40, y: 30 },
+      resourceClass: "org.example.Target",
     });
     const fixture = createWorkspace(
       sourceOutput,
@@ -10978,8 +10998,9 @@ describe("RuntimeController", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
     const excluded = createTrackedWindow("excluded", output, desktop, {
-      desktopFileName: "org.example.Excluded",
+      desktopFileName: "",
       frameGeometry: { height: 260, width: 340, x: 71, y: 89 },
+      resourceClass: "org.example.Excluded",
     });
     const tiled = createTrackedWindow("tiled", output, desktop, {
       desktopFileName: "org.example.Tiled",
@@ -11118,11 +11139,12 @@ describe("RuntimeController", () => {
     expect(excluded.writeCount).toBe(excludedWrites + 1);
   });
 
-  it("tracks desktop-file identity changes without writing an excluded frame", () => {
+  it("tracks resolved identity changes without writing an excluded frame", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
     const changing = createTrackedWindow("changing", output, desktop, {
-      desktopFileName: "org.example.Tiled",
+      desktopFileName: "",
+      resourceClass: "org.example.Tiled",
     });
     const fixture = createWorkspace(
       output,
@@ -11165,7 +11187,7 @@ describe("RuntimeController", () => {
 
     Object.defineProperty(changing.window, "desktopFileName", {
       configurable: true,
-      value: "org.example.Tiled",
+      value: "",
     });
     changing.desktopFileNameChanged.emit();
 
