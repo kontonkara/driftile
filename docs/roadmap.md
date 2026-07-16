@@ -1,13 +1,12 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.36.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.37.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.36.0 adds fixed resize steps, exact application initial tiled heights,
-selectable transition easing, a small-resize animation threshold, and reliable
-deferred animation replay after workspace presentation. Logical persistence
-remains v4.
+Stable 1.37.0 adds a global initial tiled height, optional numbered desktop
+back-and-forth, and reliable active-window animation replay during desktop
+transition handoffs. Logical persistence remains v4.
 
 ## Foundation (delivered)
 
@@ -1608,6 +1607,28 @@ Release criteria (met):
 
 No other feature belongs to 1.36.0.
 
+## 1.37.0 (released)
+
+- Add a global automatic, proportional, or fixed logical-pixel initial tiled
+  client height beneath exact application rules.
+- Apply the global height only to fresh singleton admission and fresh retiling,
+  preserving existing, restored, and transferred geometry.
+- Add opt-in output-local back-and-forth when a numbered direct desktop action
+  resolves and clamps to the already current desktop.
+- Preserve deferred movement when an active current-context window receives a
+  focus or geometry command before desktop-transition visibility settles.
+
+Release criteria (met):
+
+- Initial heights retain live solver constraints and physical-pixel snapping
+  without changing logical persistence.
+- Numbered back-and-forth rejects missing, stale, cross-output, and unconfirmed
+  history without altering adjacent or explicit last-used actions.
+- Transition replay remains bounded per window and uses only public effect
+  context signals and properties.
+
+No other feature belongs to 1.37.0.
+
 ## Post-v1
 
 Add interaction and presentation features outside the frozen v1 scope without
@@ -1616,17 +1637,3 @@ taking over compositor mechanisms.
 - Keep Plasma's built-in Overview as the compatible baseline.
 - The optional overview must remain removable, preserve the authoritative
   layout state, and fall back cleanly to Plasma's Overview.
-
-### 1.37.0 direction
-
-- Add a global `auto`, proportional, or fixed logical-pixel initial tiled
-  client-height policy beneath exact application rules.
-- Apply it only to fresh singleton admission and fresh retiling, preserving
-  existing, restored, and transferred geometry.
-- Retain live solver constraints and physical-pixel snapping without adding a
-  shortcut, persistence field, or private KWin API.
-- Add opt-in output-local back-and-forth when a numbered direct desktop action
-  resolves and clamps to the already current desktop, without changing
-  adjacent or explicit last-used actions.
-- Preserve deferred movement when an active current-context window receives a
-  focus or geometry command before desktop-transition visibility settles.

@@ -553,7 +553,7 @@ The KConfig decoder accepts at most 65,664 characters in the complete document,
 512 characters in each raw line, 128 nonblank unique IDs, and 255 UTF-8 bytes
 in each trimmed ID. It trims surrounding whitespace and ignores blank lines.
 Control characters, invalid UTF-16, an oversized value, or a duplicate after
-trimming rejects the complete 28-setting snapshot. Accepted IDs have a
+trimming rejects the complete 29-setting snapshot. Accepted IDs have a
 canonical sorted internal form. Home Manager exposes the same policy as
 `programs.driftile.settings.applicationBorderlessExclusions`, a list rendered
 as a sorted newline-delimited KConfig value.

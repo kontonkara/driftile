@@ -1,0 +1,39 @@
+# Driftile 1.37.0
+
+Driftile 1.37.0 is a stable release.
+
+## Highlights
+
+- Deferred window motion survives focus or geometry commands issued while a
+  desktop transition is still settling visibility for the active window.
+- New tiled columns can use a global automatic, proportional, or fixed
+  logical-pixel initial client height. Exact application rules retain priority.
+- Repeating the number of the current desktop can optionally return to the
+  valid output-local last-used desktop.
+
+The new height policy affects future admissions and fresh retiles only. No
+shortcut ID or default binding changes. Logical layout persistence remains v4.
+
+## Compatibility
+
+KDE Plasma and KWin 6.7 or newer are required. Wayland, XWayland, and
+single-output native X11 use the existing compatibility baseline.
+
+## Install
+
+Download matching files from
+[`v1.37.0`](https://github.com/kontonkara/driftile/releases/tag/v1.37.0) and
+verify them with `SHA256SUMS`:
+
+- `driftile-1.37.0.kwinscript`
+- `driftile-overview-1.37.0.kwineffect`, if using the optional overview
+- `driftile-transitions-1.37.0.kwineffect`, if using optional transitions
+- `driftile-shortcuts-1.37.0.mjs`, if using the optional shortcut helper
+
+Disable installed Driftile packages, replace every package you use with the
+matching 1.37.0 artifact, then re-enable them. Nix users should pin the input to
+`v1.37.0` and rebuild.
+
+See the tagged [installation guide](https://github.com/kontonkara/driftile/blob/v1.37.0/docs/installation.md),
+[migration guide](https://github.com/kontonkara/driftile/blob/v1.37.0/docs/migration.md),
+and [configuration guide](https://github.com/kontonkara/driftile/blob/v1.37.0/docs/configuration.md).

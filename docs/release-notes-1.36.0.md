@@ -1,6 +1,6 @@
 # Driftile 1.36.0
 
-Driftile 1.36.0 is the latest stable release.
+Driftile 1.36.0 is a stable release.
 
 ## Highlights
 
