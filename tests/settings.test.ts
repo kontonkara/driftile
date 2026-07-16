@@ -3,6 +3,13 @@ import { decodeApplicationBorderlessExclusions } from "../src/application-border
 import { decodeApplicationInitialFloating } from "../src/application-initial-floating";
 import { decodeApplicationInitialFullWidth } from "../src/application-initial-full-width";
 import { decodeApplicationInitialFullscreen } from "../src/application-initial-fullscreen";
+import {
+  APPLICATION_FLOATING_POSITION_LIMITS,
+  decodeApplicationFloatingPositions,
+  EMPTY_APPLICATION_FLOATING_POSITIONS,
+  sameApplicationFloatingPositions,
+  type ApplicationFloatingPositionAnchor,
+} from "../src/application-floating-positions";
 import { decodeApplicationColumnPresentations } from "../src/application-column-presentations";
 import { decodeApplicationColumnWidthOverrides } from "../src/application-overrides";
 import { decodeApplicationWindowHeightOverrides } from "../src/application-window-heights";
@@ -58,6 +65,14 @@ const validApplicationInitialFloating = decodeApplicationInitialFloating(
 
 if (!validApplicationInitialFloating) {
   throw new Error("application initial-floating fixture is invalid");
+}
+
+const validApplicationFloatingPositions = decodeApplicationFloatingPositions(
+  "org.example.Floating=bottom-right,24,16",
+);
+
+if (!validApplicationFloatingPositions) {
+  throw new Error("application floating-position fixture is invalid");
 }
 
 const validApplicationInitialFullWidth = decodeApplicationInitialFullWidth(
@@ -117,6 +132,7 @@ const validSettings: DriftileSettings = {
   applicationColumnWidths: validApplicationColumnWidths,
   applicationWindowHeights: validApplicationWindowHeights,
   applicationFocusCentering: validApplicationFocusCentering,
+  applicationFloatingPositions: validApplicationFloatingPositions,
   applicationInitialFloating: validApplicationInitialFloating,
   applicationInitialFullWidth: validApplicationInitialFullWidth,
   applicationInitialFullscreen: validApplicationInitialFullscreen,
@@ -153,6 +169,7 @@ const validSettingsInput = {
   applicationColumnWidths: "org.example.Editor=75",
   applicationWindowHeights: "org.example.Editor=75",
   applicationFocusCentering: "org.example.Browser\norg.example.Editor",
+  applicationFloatingPositions: "org.example.Floating=bottom-right,24,16",
   applicationInitialFloating: "org.example.Floating\norg.example.Floating=tool",
   applicationInitialFullWidth: "org.example.Browser\norg.example.Browser=tool",
   applicationInitialFullscreen: "org.example.Game\norg.example.Video",
@@ -223,6 +240,9 @@ describe("Driftile settings", () => {
     ).toEqual([]);
     expect(
       DEFAULT_DRIFTILE_SETTINGS.applicationInitialFloating.canonicalEntries,
+    ).toEqual([]);
+    expect(
+      DEFAULT_DRIFTILE_SETTINGS.applicationFloatingPositions.canonicalEntries,
     ).toEqual([]);
     expect(
       DEFAULT_DRIFTILE_SETTINGS.applicationInitialFullWidth.canonicalEntries,
@@ -306,6 +326,9 @@ describe("Driftile settings", () => {
     expect(decoded?.applicationInitialFloating.canonicalEntries).toEqual(
       validApplicationInitialFloating.canonicalEntries,
     );
+    expect(decoded?.applicationFloatingPositions.canonicalEntries).toEqual(
+      validApplicationFloatingPositions.canonicalEntries,
+    );
     expect(decoded?.applicationInitialFullWidth.canonicalEntries).toEqual(
       validApplicationInitialFullWidth.canonicalEntries,
     );
@@ -354,6 +377,7 @@ describe("Driftile settings", () => {
       applicationColumnWidths: "",
       applicationWindowHeights: "",
       applicationFocusCentering: "",
+      applicationFloatingPositions: "",
       applicationInitialFloating: "",
       applicationInitialFullWidth: "",
       applicationInitialFullscreen: "",
@@ -387,6 +411,7 @@ describe("Driftile settings", () => {
       applicationColumnWidths: "org.example.Browser=80",
       applicationWindowHeights: "org.example.Browser=80",
       applicationFocusCentering: "org.example.Browser",
+      applicationFloatingPositions: "org.example.Floating=top-left,0,0",
       applicationInitialFloating: "org.example.Floating",
       applicationInitialFullWidth: "org.example.Browser",
       applicationInitialFullscreen: "org.example.Game",
@@ -436,6 +461,9 @@ describe("Driftile settings", () => {
     expect(decoded?.applicationFocusCentering.canonicalEntries.join("\n")).toBe(
       settings.applicationFocusCentering,
     );
+    expect(
+      decoded?.applicationFloatingPositions.canonicalEntries.join("\n"),
+    ).toBe(settings.applicationFloatingPositions);
     expect(
       decoded?.applicationInitialFloating.canonicalEntries.join("\n"),
     ).toBe(settings.applicationInitialFloating);
@@ -556,6 +584,13 @@ describe("Driftile settings", () => {
       },
     ],
     [
+      "duplicate application floating-position entries",
+      {
+        applicationFloatingPositions:
+          "org.example.Editor=top,0,0\n org.example.Editor =bottom,0,0",
+      },
+    ],
+    [
       "duplicate application initial-full-width entries",
       {
         applicationInitialFullWidth: "org.example.Editor\n org.example.Editor ",
@@ -638,7 +673,7 @@ describe("Driftile settings", () => {
     },
   );
 
-  it("rejects an incomplete thirty-one-field snapshot", () => {
+  it("rejects an incomplete thirty-two-field snapshot", () => {
     const incomplete: Record<string, unknown> = { ...validSettingsInput };
     delete incomplete["defaultColumnWidthPixels"];
 
@@ -689,6 +724,13 @@ describe("Driftile settings", () => {
 
     if (!changedApplicationInitialFloating) {
       throw new Error("application initial-floating fixture is invalid");
+    }
+
+    const changedApplicationFloatingPositions =
+      decodeApplicationFloatingPositions("org.example.Other=left,10,20");
+
+    if (!changedApplicationFloatingPositions) {
+      throw new Error("application floating-position fixture is invalid");
     }
 
     const changedApplicationInitialFullWidth =
@@ -749,6 +791,7 @@ describe("Driftile settings", () => {
       { applicationColumnWidths: changedApplicationColumnWidths },
       { applicationWindowHeights: changedApplicationWindowHeights },
       { applicationFocusCentering: changedApplicationFocusCentering },
+      { applicationFloatingPositions: changedApplicationFloatingPositions },
       { applicationInitialFloating: changedApplicationInitialFloating },
       { applicationInitialFullWidth: changedApplicationInitialFullWidth },
       { applicationInitialFullscreen: changedApplicationInitialFullscreen },
@@ -780,5 +823,174 @@ describe("Driftile settings", () => {
         sameDriftileSettings(validSettings, { ...validSettings, ...changed }),
       ).toBe(false);
     }
+  });
+});
+
+function decodedApplicationFloatingPositions(value: unknown) {
+  const positions = decodeApplicationFloatingPositions(value);
+
+  if (!positions) {
+    throw new Error("application floating-position fixture is invalid");
+  }
+
+  return positions;
+}
+
+describe("application floating-position codec", () => {
+  it("normalizes entries into deterministic immutable exact lookup state", () => {
+    const input =
+      " org.telegram.desktop = bottom-right,-24,16 \norg.mozilla.firefox=top-left,0,32";
+    const positions = decodedApplicationFloatingPositions(input);
+
+    expect(positions.canonicalEntries).toEqual([
+      "org.mozilla.firefox=top-left,0,32",
+      "org.telegram.desktop=bottom-right,-24,16",
+    ]);
+    expect(positions.floatingPositionFor("org.telegram.desktop")).toEqual({
+      anchor: "bottom-right",
+      x: -24,
+      y: 16,
+    });
+    expect(
+      positions.floatingPositionFor("org.Telegram.desktop"),
+    ).toBeUndefined();
+    expect(
+      positions.floatingPositionFor(" org.telegram.desktop "),
+    ).toBeUndefined();
+    expect(
+      Object.isFrozen(positions.floatingPositionFor("org.telegram.desktop")),
+    ).toBe(true);
+    expect(Object.isFrozen(positions.canonicalEntries)).toBe(true);
+    expect(Object.isFrozen(positions)).toBe(true);
+    expect(input).toContain(" org.telegram.desktop ");
+  });
+
+  it.each<ApplicationFloatingPositionAnchor>([
+    "top-left",
+    "top",
+    "top-right",
+    "right",
+    "bottom-right",
+    "bottom",
+    "bottom-left",
+    "left",
+  ])("accepts the %s anchor", (anchor) => {
+    expect(
+      decodedApplicationFloatingPositions(
+        `application=${anchor},0,0`,
+      ).floatingPositionFor("application"),
+    ).toEqual({ anchor, x: 0, y: 0 });
+  });
+
+  it("accepts blank lines, an empty singleton, and inclusive offset bounds", () => {
+    const positions = decodedApplicationFloatingPositions(
+      "\n minimum=left,-16384,-16384 \n\t\nmaximum=right,16384,16384\n",
+    );
+
+    expect(EMPTY_APPLICATION_FLOATING_POSITIONS.canonicalEntries).toEqual([]);
+    expect(
+      EMPTY_APPLICATION_FLOATING_POSITIONS.floatingPositionFor("application"),
+    ).toBeUndefined();
+    expect(positions.floatingPositionFor("minimum")).toEqual({
+      anchor: "left",
+      x: -16_384,
+      y: -16_384,
+    });
+    expect(positions.floatingPositionFor("maximum")).toEqual({
+      anchor: "right",
+      x: 16_384,
+      y: 16_384,
+    });
+  });
+
+  it("compares canonical semantics rather than input order and spacing", () => {
+    const first = decodedApplicationFloatingPositions(
+      "zeta=bottom,4,-8\n alpha = top,0,1 ",
+    );
+    const equivalent = decodedApplicationFloatingPositions(
+      "alpha=top,0,1\nzeta = bottom,4,-8",
+    );
+    const changed = decodedApplicationFloatingPositions(
+      "alpha=top,0,1\nzeta=bottom,4,-7",
+    );
+
+    expect(sameApplicationFloatingPositions(first, first)).toBe(true);
+    expect(sameApplicationFloatingPositions(first, equivalent)).toBe(true);
+    expect(sameApplicationFloatingPositions(first, changed)).toBe(false);
+  });
+
+  it.each([
+    null,
+    {},
+    ["application=top,0,0"],
+    1,
+    "application=center,0,0",
+    "application=top,+1,0",
+    "application=top,-0,0",
+    "application=top,01,0",
+    "application=top,1.0,0",
+    "application=top,1e2,0",
+    "application=top,16385,0",
+    "application=top,-16385,0",
+    "application=top,0, 0",
+    "application=top,0",
+    "application=top,0,0,0",
+    "application=top,0,0=extra",
+    "=top,0,0",
+    "delete\u007fkey=top,0,0",
+    "bad\ud800key=top,0,0",
+    "application=top,\udc00,0",
+  ])("rejects malformed input atomically: %j", (value) => {
+    expect(decodeApplicationFloatingPositions(value)).toBeNull();
+  });
+
+  it("enforces entry, line, document, identifier, and UTF-8 byte bounds", () => {
+    const maximumEntries = Array.from(
+      { length: APPLICATION_FLOATING_POSITION_LIMITS.entries },
+      (_, index) => `application-${String(index)}=top,0,0`,
+    );
+    const maximumIdentifier = "a".repeat(
+      APPLICATION_FLOATING_POSITION_LIMITS.identifierBytes,
+    );
+    const maximumUtf8Identifier = "é".repeat(127);
+
+    expect(
+      decodeApplicationFloatingPositions(maximumEntries.join("\n")),
+    ).not.toBeNull();
+    expect(
+      decodeApplicationFloatingPositions(
+        [...maximumEntries, "overflow=top,0,0"].join("\n"),
+      ),
+    ).toBeNull();
+    expect(
+      decodeApplicationFloatingPositions(`${maximumIdentifier}=top,0,0`),
+    ).not.toBeNull();
+    expect(
+      decodeApplicationFloatingPositions(`${maximumIdentifier}a=top,0,0`),
+    ).toBeNull();
+    expect(
+      decodeApplicationFloatingPositions(`${maximumUtf8Identifier}=top,0,0`),
+    ).not.toBeNull();
+    expect(
+      decodeApplicationFloatingPositions(`${maximumUtf8Identifier}é=top,0,0`),
+    ).toBeNull();
+    expect(
+      decodeApplicationFloatingPositions(
+        " ".repeat(APPLICATION_FLOATING_POSITION_LIMITS.rawEntryCharacters + 1),
+      ),
+    ).toBeNull();
+    expect(
+      decodeApplicationFloatingPositions(
+        " ".repeat(APPLICATION_FLOATING_POSITION_LIMITS.documentCharacters + 1),
+      ),
+    ).toBeNull();
+  });
+
+  it("rejects duplicate normalized identifiers atomically", () => {
+    expect(
+      decodeApplicationFloatingPositions(
+        "org.example.App=top,0,0\n org.example.App =bottom,1,1",
+      ),
+    ).toBeNull();
   });
 });

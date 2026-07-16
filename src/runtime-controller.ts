@@ -24,6 +24,12 @@ import {
   type ApplicationInitialFloating,
 } from "./application-initial-floating";
 import {
+  EMPTY_APPLICATION_FLOATING_POSITIONS,
+  sameApplicationFloatingPositions,
+  type ApplicationFloatingPosition,
+  type ApplicationFloatingPositions,
+} from "./application-floating-positions";
+import {
   EMPTY_APPLICATION_INITIAL_FULL_WIDTH,
   sameApplicationInitialFullWidth,
   type ApplicationInitialFullWidth,
@@ -890,6 +896,7 @@ export interface RuntimeControllerOptions {
   readonly applicationColumnWidths?: ApplicationColumnWidthOverrides;
   readonly applicationWindowHeights?: ApplicationWindowHeightOverrides;
   readonly applicationFocusCentering?: ApplicationFocusCentering;
+  readonly applicationFloatingPositions?: ApplicationFloatingPositions;
   readonly applicationInitialFloating?: ApplicationInitialFloating;
   readonly applicationInitialFullWidth?: ApplicationInitialFullWidth;
   readonly applicationInitialFullscreen?: ApplicationInitialFullscreen;
@@ -930,6 +937,7 @@ export class RuntimeController {
   private applicationColumnWidths: ApplicationColumnWidthOverrides;
   private applicationWindowHeights: ApplicationWindowHeightOverrides;
   private applicationFocusCentering: ApplicationFocusCentering;
+  private applicationFloatingPositions: ApplicationFloatingPositions;
   private applicationInitialFloating: ApplicationInitialFloating;
   private applicationInitialFullWidth: ApplicationInitialFullWidth;
   private applicationInitialFullscreen: ApplicationInitialFullscreen;
@@ -992,6 +1000,7 @@ export class RuntimeController {
     PendingExternalFullscreenExtraction
   >();
   private readonly floatingWindows = new Map<WindowId, FloatingWindow>();
+  private readonly floatingPositionAdmissionHistory = new Set<WindowId>();
   private readonly fullscreenRequestProbes = new Map<
     WindowId,
     FullscreenRequestProbe
@@ -1171,6 +1180,9 @@ export class RuntimeController {
       EMPTY_APPLICATION_WINDOW_HEIGHT_OVERRIDES;
     this.applicationFocusCentering =
       options.applicationFocusCentering ?? EMPTY_APPLICATION_FOCUS_CENTERING;
+    this.applicationFloatingPositions =
+      options.applicationFloatingPositions ??
+      EMPTY_APPLICATION_FLOATING_POSITIONS;
     this.applicationInitialFloating =
       options.applicationInitialFloating ?? EMPTY_APPLICATION_INITIAL_FLOATING;
     this.applicationInitialFullWidth =
@@ -1989,6 +2001,22 @@ export class RuntimeController {
     }
 
     this.applicationFocusCentering = applications;
+    return true;
+  }
+
+  setApplicationFloatingPositions(
+    positions: ApplicationFloatingPositions,
+  ): boolean {
+    if (
+      sameApplicationFloatingPositions(
+        this.applicationFloatingPositions,
+        positions,
+      )
+    ) {
+      return false;
+    }
+
+    this.applicationFloatingPositions = positions;
     return true;
   }
 
@@ -4000,6 +4028,7 @@ export class RuntimeController {
       this.borderSynchronizationIds.clear();
       this.borderlessSettlementTokens.clear();
       this.floatingWindows.clear();
+      this.floatingPositionAdmissionHistory.clear();
       this.initialFloatingPolicyByWindow.clear();
       this.initialFullWidthPolicyByWindow.clear();
       this.initialFullscreenPolicyByWindow.clear();
@@ -4457,6 +4486,13 @@ export class RuntimeController {
   private readonly handleWindowTracked = (id: string): void => {
     const trackedId = windowId(id);
     const source = this.observer.source(id);
+
+    if (
+      !this.initialWindowDiscoveryComplete ||
+      (source !== undefined && !source.normalWindow)
+    ) {
+      this.floatingPositionAdmissionHistory.add(trackedId);
+    }
 
     if (
       this.initialWindowDiscoveryComplete &&
@@ -6528,6 +6564,7 @@ export class RuntimeController {
     this.transientResumeProbes.delete(managedId);
     this.automaticFloatingWindows.delete(managedId);
     this.floatingWindows.delete(managedId);
+    this.floatingPositionAdmissionHistory.delete(managedId);
     this.toggleGeometryTransitions.delete(managedId);
     this.topologyColumnByWindow.delete(managedId);
     this.borderlessSettlementTokens.delete(managedId);
@@ -14928,7 +14965,7 @@ export class RuntimeController {
     const safeBaseline = baselineSafe
       ? (restoredFrame ?? command.activeWindow.frameGeometry)
       : command.activeWindow.frameGeometry;
-    const floatingRestoreBaseline =
+    const baseFloatingRestoreBaseline =
       baselineSafe && ownedBaseline
         ? cloneRestoreBaseline(ownedBaseline)
         : this.captureRestoreBaseline(
@@ -14937,13 +14974,41 @@ export class RuntimeController {
             "client",
           );
 
-    if (!floatingRestoreBaseline) {
+    if (!baseFloatingRestoreBaseline) {
       return false;
     }
 
+    const firstManualAdmission = !this.floatingPositionAdmissionHistory.has(
+      command.activeId,
+    );
+    const configuredPosition = firstManualAdmission
+      ? this.applicationFloatingPosition(command.activeWindow)
+      : undefined;
+    const positionedFrame = configuredPosition
+      ? resolveApplicationFloatingPositionFrame(
+          safeBaseline,
+          command.contextGeometry,
+          configuredPosition,
+        )
+      : safeBaseline;
+    const targetFrame = this.geometry.canApplyFrame(
+      command.activeId,
+      positionedFrame,
+      command.context,
+    )
+      ? positionedFrame
+      : safeBaseline;
+    const floatingRestoreBaseline = rectsEqual(targetFrame, safeBaseline)
+      ? baseFloatingRestoreBaseline
+      : translateRestoreBaseline(
+          baseFloatingRestoreBaseline,
+          safeBaseline,
+          targetFrame,
+        );
+
     const floatingTarget: WindowGeometry = {
       columnId: preview.placement.columnId,
-      frame: { ...safeBaseline },
+      frame: { ...targetFrame },
       windowId: command.activeId,
     };
     const transitioned = this.applyWindowOwnershipTransition(
@@ -14963,11 +15028,12 @@ export class RuntimeController {
         context.windowIds.delete(command.activeId);
         this.floatingWindows.set(command.activeId, {
           currentContextKey: command.contextKey,
-          expectedFrame: { ...safeBaseline },
+          expectedFrame: { ...targetFrame },
           placement: preview.placement,
           restoreBaseline: floatingRestoreBaseline,
           sourceContextKey: command.contextKey,
         });
+        this.floatingPositionAdmissionHistory.add(command.activeId);
         this.lastFloatingFocus.set(command.contextKey, command.activeId);
         this.capacityParkBackoffs.delete(command.contextKey);
 
@@ -22738,6 +22804,9 @@ export class RuntimeController {
     );
     const previousSuspendedWindows = new Set(this.suspendedWindows);
     const previousWindowAdmissionHistory = new Set(this.windowAdmissionHistory);
+    const previousFloatingPositionAdmissionHistory = new Set(
+      this.floatingPositionAdmissionHistory,
+    );
 
     try {
       this.layout = candidate.layout;
@@ -22774,6 +22843,7 @@ export class RuntimeController {
         this.pendingWindowSyncs.delete(id);
         this.suspendedWindows.delete(id);
         this.windowAdmissionHistory.add(id);
+        this.floatingPositionAdmissionHistory.add(id);
       }
 
       for (const id of candidate.suspendedWindowIds) {
@@ -22807,6 +22877,10 @@ export class RuntimeController {
       );
       replaceSet(this.suspendedWindows, previousSuspendedWindows);
       replaceSet(this.windowAdmissionHistory, previousWindowAdmissionHistory);
+      replaceSet(
+        this.floatingPositionAdmissionHistory,
+        previousFloatingPositionAdmissionHistory,
+      );
       return false;
     }
   }
@@ -26149,6 +26223,8 @@ export class RuntimeController {
       restoreBaseline,
       sourceContextKey: key,
     });
+    this.applyInitialFloatingPosition(id, source, context, contextGeometry);
+
     if (this.workspace.activeWindow === source) {
       this.lastFloatingFocus.set(key, id);
     }
@@ -26240,6 +26316,80 @@ export class RuntimeController {
 
     const desktopFileName = this.applicationDesktopFileName(source);
     return desktopFileName !== null && applications.excludes(desktopFileName);
+  }
+
+  private applicationFloatingPosition(
+    source: KWinWindow,
+  ): ApplicationFloatingPosition | undefined {
+    if (this.applicationFloatingPositions.canonicalEntries.length === 0) {
+      return undefined;
+    }
+
+    const desktopFileName = this.applicationDesktopFileName(source);
+    return desktopFileName === null
+      ? undefined
+      : this.applicationFloatingPositions.floatingPositionFor(desktopFileName);
+  }
+
+  private applyInitialFloatingPosition(
+    id: WindowId,
+    source: KWinWindow,
+    context: ManagedContext,
+    contextGeometry: ContextGeometry,
+  ): void {
+    if (this.floatingPositionAdmissionHistory.has(id)) {
+      return;
+    }
+
+    this.floatingPositionAdmissionHistory.add(id);
+    const position = this.applicationFloatingPosition(source);
+    const floating = this.floatingWindows.get(id);
+
+    if (!position || !floating) {
+      return;
+    }
+
+    const originalFrame = snapshotRect(source.frameGeometry);
+    const targetFrame = resolveApplicationFloatingPositionFrame(
+      originalFrame,
+      contextGeometry,
+      position,
+    );
+
+    if (
+      rectsEqual(originalFrame, targetFrame) ||
+      !this.geometry.canApplyFrame(id, targetFrame, context)
+    ) {
+      return;
+    }
+
+    const applied = this.geometry.apply(
+      [{ frame: targetFrame, windowId: id }],
+      context,
+      () =>
+        this.floatingWindows.get(id) === floating &&
+        this.observer.source(id) === source &&
+        !this.automaticFloatingWindows.has(id) &&
+        !this.automaticallyFloats(source),
+    );
+
+    if (
+      applied !== 1 ||
+      this.floatingWindows.get(id) !== floating ||
+      !rectsEqual(source.frameGeometry, targetFrame)
+    ) {
+      return;
+    }
+
+    this.floatingWindows.set(id, {
+      ...floating,
+      expectedFrame: targetFrame,
+      restoreBaseline: translateRestoreBaseline(
+        floating.restoreBaseline,
+        originalFrame,
+        targetFrame,
+      ),
+    });
   }
 
   private freshInitialFloatingApplies(
@@ -26674,6 +26824,7 @@ export class RuntimeController {
 
     const initiallyFullscreen = this.freshInitialFullscreenApplies(id, source);
     this.automaticFloatingWindows.add(id);
+    this.floatingPositionAdmissionHistory.add(id);
     this.initialFloatingPolicyByWindow.delete(id);
     this.initialFullWidthPolicyByWindow.delete(id);
     const affectedContextKeys = new Set<string>();
@@ -29226,6 +29377,29 @@ function cloneRestoreBaseline(
     : null;
 }
 
+function translateRestoreBaseline(
+  baseline: RestoreBaseline,
+  sourceFrame: Rect,
+  targetFrame: Rect,
+): RestoreBaseline {
+  const deltaX = targetFrame.x - sourceFrame.x;
+  const deltaY = targetFrame.y - sourceFrame.y;
+
+  return {
+    ...baseline,
+    clientFrame: {
+      ...baseline.clientFrame,
+      x: baseline.clientFrame.x + deltaX,
+      y: baseline.clientFrame.y + deltaY,
+    },
+    frame: {
+      ...baseline.frame,
+      x: baseline.frame.x + deltaX,
+      y: baseline.frame.y + deltaY,
+    },
+  };
+}
+
 function snapshotRect(rect: Rect): Rect {
   return {
     height: rect.height,
@@ -29882,6 +30056,74 @@ function clampFrameToWorkArea(frame: Rect, workArea: Rect): Rect {
     x: clamp(frame.x, workArea.x, maximumX),
     y: clamp(frame.y, workArea.y, maximumY),
   };
+}
+
+function resolveApplicationFloatingPositionFrame(
+  frame: Rect,
+  geometry: ContextGeometry,
+  position: ApplicationFloatingPosition,
+): Rect {
+  const { workArea } = geometry;
+  const right = workArea.x + workArea.width;
+  const bottom = workArea.y + workArea.height;
+  const centeredX = workArea.x + (workArea.width - frame.width) / 2;
+  const centeredY = workArea.y + (workArea.height - frame.height) / 2;
+  let x: number;
+  let y: number;
+
+  switch (position.anchor) {
+    case "top-left":
+      x = workArea.x + position.x;
+      y = workArea.y + position.y;
+      break;
+    case "top":
+      x = centeredX + position.x;
+      y = workArea.y + position.y;
+      break;
+    case "top-right":
+      x = right - frame.width - position.x;
+      y = workArea.y + position.y;
+      break;
+    case "right":
+      x = right - frame.width - position.x;
+      y = centeredY + position.y;
+      break;
+    case "bottom-right":
+      x = right - frame.width - position.x;
+      y = bottom - frame.height - position.y;
+      break;
+    case "bottom":
+      x = centeredX + position.x;
+      y = bottom - frame.height - position.y;
+      break;
+    case "bottom-left":
+      x = workArea.x + position.x;
+      y = bottom - frame.height - position.y;
+      break;
+    case "left":
+      x = workArea.x + position.x;
+      y = centeredY + position.y;
+      break;
+  }
+
+  const snapped = {
+    height: frame.height,
+    width: frame.width,
+    x:
+      geometry.pixelGridOrigin.x +
+      roundToPhysicalPixel(
+        x - geometry.pixelGridOrigin.x,
+        geometry.devicePixelRatio,
+      ),
+    y:
+      geometry.pixelGridOrigin.y +
+      roundToPhysicalPixel(
+        y - geometry.pixelGridOrigin.y,
+        geometry.devicePixelRatio,
+      ),
+  };
+
+  return clampFrameToWorkArea(snapped, workArea);
 }
 
 function moveFloatingFrame(

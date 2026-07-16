@@ -8,6 +8,7 @@ import type { ApplicationInitialFullscreen } from "../src/application-initial-fu
 import type { ApplicationColumnWidthOverrides } from "../src/application-overrides";
 import type { ApplicationWindowHeightOverrides } from "../src/application-window-heights";
 import type { ApplicationFocusCentering } from "../src/application-focus-centering";
+import type { ApplicationFloatingPositions } from "../src/application-floating-positions";
 import type { ApplicationTilingExclusions } from "../src/application-tiling-exclusions";
 import type { ColumnWidth } from "../src/core/layout-engine";
 import type { DefaultWindowHeight } from "../src/default-window-height";
@@ -20,6 +21,7 @@ interface DeliveredSettings {
   readonly applicationColumnWidths: readonly string[];
   readonly applicationWindowHeights: readonly string[];
   readonly applicationFocusCentering: readonly string[];
+  readonly applicationFloatingPositions: readonly string[];
   readonly applicationInitialFloating: readonly string[];
   readonly applicationInitialFullWidth: readonly string[];
   readonly applicationInitialFullscreen: readonly string[];
@@ -61,6 +63,7 @@ interface RuntimeControllerOptions {
   readonly applicationColumnWidths: ApplicationColumnWidthOverrides;
   readonly applicationWindowHeights: ApplicationWindowHeightOverrides;
   readonly applicationFocusCentering: ApplicationFocusCentering;
+  readonly applicationFloatingPositions: ApplicationFloatingPositions;
   readonly applicationInitialFloating: ApplicationInitialFloating;
   readonly applicationInitialFullWidth: ApplicationInitialFullWidth;
   readonly applicationInitialFullscreen: ApplicationInitialFullscreen;
@@ -101,6 +104,8 @@ class RuntimeControllerDouble {
         options.applicationWindowHeights.canonicalEntries,
       applicationFocusCentering:
         options.applicationFocusCentering.canonicalEntries,
+      applicationFloatingPositions:
+        options.applicationFloatingPositions.canonicalEntries,
       applicationInitialFloating:
         options.applicationInitialFloating.canonicalEntries,
       applicationInitialFullWidth:
@@ -179,6 +184,17 @@ class RuntimeControllerDouble {
     this.state = {
       ...this.state,
       applicationFocusCentering: applications.canonicalEntries,
+    };
+    return true;
+  }
+
+  setApplicationFloatingPositions(
+    positions: ApplicationFloatingPositions,
+  ): boolean {
+    this.calls.push("applicationFloatingPositions");
+    this.state = {
+      ...this.state,
+      applicationFloatingPositions: positions.canonicalEntries,
     };
     return true;
   }
@@ -453,6 +469,7 @@ describe("runtime settings delivery", () => {
       applicationColumnWidths: "org.example.Editor=75",
       applicationWindowHeights: "org.example.Editor=420px",
       applicationFocusCentering: "org.example.Browser",
+      applicationFloatingPositions: "org.example.Browser=bottom-right,24,16",
       applicationInitialFloating: "org.example.NewFloat",
       applicationInitialFullWidth: "org.example.NewWide",
       applicationInitialFullscreen: "org.example.NewGame",
@@ -485,6 +502,7 @@ describe("runtime settings delivery", () => {
       applicationColumnWidths: ["org.example.Editor=75"],
       applicationWindowHeights: ["org.example.Editor=420px"],
       applicationFocusCentering: ["org.example.Browser"],
+      applicationFloatingPositions: ["org.example.Browser=bottom-right,24,16"],
       applicationInitialFloating: ["org.example.NewFloat"],
       applicationInitialFullWidth: ["org.example.NewWide"],
       applicationInitialFullscreen: ["org.example.NewGame"],
@@ -519,6 +537,7 @@ describe("runtime settings delivery", () => {
       "applicationColumnWidths",
       "applicationWindowHeights",
       "applicationFocusCentering",
+      "applicationFloatingPositions",
       "applicationInitialFloating",
       "applicationInitialFullWidth",
       "applicationInitialFullscreen",
@@ -604,6 +623,7 @@ describe("runtime settings delivery", () => {
       "applicationColumnWidths",
       "applicationWindowHeights",
       "applicationFocusCentering",
+      "applicationFloatingPositions",
       "applicationInitialFloating",
       "applicationInitialFullWidth",
       "applicationInitialFullscreen",
@@ -648,6 +668,7 @@ function settings(
     applicationColumnWidths: "",
     applicationWindowHeights: "",
     applicationFocusCentering: "",
+    applicationFloatingPositions: "",
     applicationInitialFloating: "",
     applicationInitialFullWidth: "",
     applicationInitialFullscreen: "",
@@ -690,6 +711,9 @@ function snapshot(settingsValue: DeliveredSettings): DeliveredSettings {
     applicationColumnWidths: [...settingsValue.applicationColumnWidths],
     applicationWindowHeights: [...settingsValue.applicationWindowHeights],
     applicationFocusCentering: [...settingsValue.applicationFocusCentering],
+    applicationFloatingPositions: [
+      ...settingsValue.applicationFloatingPositions,
+    ],
     applicationInitialFloating: [...settingsValue.applicationInitialFloating],
     applicationInitialFullWidth: [...settingsValue.applicationInitialFullWidth],
     applicationInitialFullscreen: [

@@ -71,6 +71,10 @@ class RuntimeControllerDouble {
     return true;
   }
 
+  setApplicationFloatingPositions(): boolean {
+    return true;
+  }
+
   setApplicationInitialFloating(): boolean {
     return true;
   }
@@ -304,6 +308,9 @@ describe("touchpad navigation", () => {
       'applicationFocusCentering: KWin.readConfig("ApplicationFocusCentering", "")',
     );
     expect(mainQml).toContain(
+      'applicationFloatingPositions: KWin.readConfig("ApplicationFloatingPositions", "")',
+    );
+    expect(mainQml).toContain(
       'applicationInitialFloating: KWin.readConfig("ApplicationInitialFloating", "")',
     );
     expect(mainQml).toContain("root.refreshTouchpadNavigationHandlers(true)");
@@ -428,6 +435,7 @@ function settings(
     applicationColumnWidths: "",
     applicationWindowHeights: "",
     applicationFocusCentering: "",
+    applicationFloatingPositions: "",
     applicationInitialFloating: "",
     applicationInitialFullWidth: "",
     applicationInitialFullscreen: "",

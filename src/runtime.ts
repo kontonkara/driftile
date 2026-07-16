@@ -106,6 +106,7 @@ export function init(
     applicationColumnWidths: settings.applicationColumnWidths,
     applicationWindowHeights: settings.applicationWindowHeights,
     applicationFocusCentering: settings.applicationFocusCentering,
+    applicationFloatingPositions: settings.applicationFloatingPositions,
     applicationInitialFloating: settings.applicationInitialFloating,
     applicationInitialFullWidth: settings.applicationInitialFullWidth,
     applicationInitialFullscreen: settings.applicationInitialFullscreen,
@@ -200,6 +201,9 @@ export function applySettings(settingsSnapshot: unknown): boolean {
   controller.setApplicationColumnWidths(settings.applicationColumnWidths);
   controller.setApplicationWindowHeights(settings.applicationWindowHeights);
   controller.setApplicationFocusCentering(settings.applicationFocusCentering);
+  controller.setApplicationFloatingPositions(
+    settings.applicationFloatingPositions,
+  );
   controller.setApplicationInitialFloating(settings.applicationInitialFloating);
   controller.setApplicationInitialFullWidth(
     settings.applicationInitialFullWidth,

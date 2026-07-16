@@ -7,6 +7,7 @@ import { decodeApplicationInitialFullscreen } from "../src/application-initial-f
 import { decodeApplicationColumnWidthOverrides } from "../src/application-overrides";
 import { decodeApplicationWindowHeightOverrides } from "../src/application-window-heights";
 import { decodeApplicationFocusCentering } from "../src/application-focus-centering";
+import { decodeApplicationFloatingPositions } from "../src/application-floating-positions";
 import { decodeApplicationTilingExclusions } from "../src/application-tiling-exclusions";
 import { decodeDefaultWindowHeight } from "../src/default-window-height";
 import {
@@ -43910,6 +43911,361 @@ describe("RuntimeController output transfers", () => {
   });
 });
 
+describe("RuntimeController application floating positions", () => {
+  it.each([
+    ["top-left", -16_384, -16_384, 1000, 0],
+    ["top", 13, 17, 1363.2, 16.8],
+    ["top-right", 13, 17, 1687.2, 16.8],
+    ["right", 13, 17, 1687.2, 307.2],
+    ["bottom-right", 13, 17, 1687.2, 563.2],
+    ["bottom", 13, 17, 1363.2, 563.2],
+    ["bottom-left", 13, 17, 1012.8, 563.2],
+    ["left", 13, 17, 1012.8, 307.2],
+  ] as const)(
+    "places the first manual floating admission at the %s anchor on the physical grid",
+    (anchor, x, y, expectedX, expectedY) => {
+      const output = {
+        ...createOutput("DP-1", 1000),
+        devicePixelRatio: 1.25,
+      } satisfies KWinOutput;
+      const desktop = { id: "desktop-1" };
+      const peer = createTrackedWindow("peer", output, desktop);
+      const target = createTrackedWindow("target", output, desktop, {
+        clientGeometry: { height: 192, width: 292, x: 1024, y: 54 },
+        desktopFileName: "org.example.Target",
+        frameGeometry: { height: 220, width: 300, x: 1020, y: 30 },
+      });
+      const fixture = createWorkspace(
+        output,
+        desktop,
+        [output],
+        [desktop],
+        [peer.window],
+      );
+      const scheduler = new ManualScheduler();
+      const controller = new RuntimeController(fixture.workspace, {
+        applicationFloatingPositions: requiredApplicationFloatingPositions(
+          `org.example.Target=${anchor},${String(x)},${String(y)}`,
+        ),
+        clientAreaOption: 2,
+        gap: 10,
+        schedule: scheduler.schedule,
+      });
+
+      expect(controller.start()).toBe(true);
+      fixture.windowAdded.emit(target.window);
+      flushManualScheduler(scheduler);
+      fixture.workspace.activeWindow = target.window;
+      flushManualScheduler(scheduler);
+
+      expect(controller.toggleFloating()).toBe(true);
+      expect(target.window.frameGeometry.x).toBeCloseTo(expectedX, 8);
+      expect(target.window.frameGeometry.y).toBeCloseTo(expectedY, 8);
+      expect(target.window.frameGeometry.width).toBe(300);
+      expect(target.window.frameGeometry.height).toBe(220);
+      const floating = runtimeFloatingWindows(controller).get(
+        windowId("target"),
+      );
+
+      expect(floating?.expectedFrame.x).toBeCloseTo(expectedX, 8);
+      expect(floating?.expectedFrame.y).toBeCloseTo(expectedY, 8);
+      expect(floating?.restoreBaseline.frame.x).toBeCloseTo(expectedX, 8);
+      expect(floating?.restoreBaseline.frame.y).toBeCloseTo(expectedY, 8);
+      expect(floating?.restoreBaseline.clientFrame.x).toBeCloseTo(
+        expectedX + 4,
+        8,
+      );
+      expect(floating?.restoreBaseline.clientFrame.y).toBeCloseTo(
+        expectedY + 24,
+        8,
+      );
+    },
+  );
+
+  it("positions a fresh initial-floating fullscreen underlay once", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const peer = createTrackedWindow("peer", output, desktop);
+    const target = createTrackedWindow("target", output, desktop, {
+      desktopFileName: "org.example.Target",
+      frameGeometry: { height: 220, width: 300, x: 40, y: 30 },
+    });
+    const fullscreen = controlFullscreen(target);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [peer.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      applicationFloatingPositions: requiredApplicationFloatingPositions(
+        "org.example.Target=bottom-right,20,30",
+      ),
+      applicationInitialFloating:
+        requiredApplicationInitialFloating("org.example.Target"),
+      applicationInitialFullscreen:
+        requiredApplicationInitialFullscreen("org.example.Target"),
+      clientAreaOption: 2,
+      schedule: scheduler.schedule,
+      scheduleResume: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    fixture.windowAdded.emit(target.window);
+    flushManualScheduler(scheduler);
+
+    expect(fullscreen.fullScreen).toBe(true);
+    expect(target.window.frameGeometry).toEqual({
+      height: 220,
+      width: 300,
+      x: 680,
+      y: 550,
+    });
+    expect(
+      runtimeFloatingWindows(controller).get(windowId("target")),
+    ).toMatchObject({
+      expectedFrame: { height: 220, width: 300, x: 680, y: 550 },
+      restoreBaseline: {
+        frame: { height: 220, width: 300, x: 680, y: 550 },
+      },
+    });
+  });
+
+  it("consumes a rejected initial position without retrying after a live rule change", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const peer = createTrackedWindow("peer", output, desktop);
+    const originalFrame = { height: 200, width: 300, x: 40, y: 30 };
+    const target = createTrackedWindow("target", output, desktop, {
+      desktopFileName: "org.example.Target",
+      frameGeometry: originalFrame,
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [peer.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      applicationFloatingPositions: requiredApplicationFloatingPositions(
+        "org.example.Target=bottom-right,20,30",
+      ),
+      applicationInitialFloating:
+        requiredApplicationInitialFloating("org.example.Target"),
+      clientAreaOption: 2,
+      schedule: scheduler.schedule,
+    });
+    target.setWriteBehavior(() => {
+      throw new Error("injected position rejection");
+    });
+    const warning = vi
+      .spyOn(console, "warn")
+      .mockImplementation(() => undefined);
+
+    expect(controller.start()).toBe(true);
+    fixture.windowAdded.emit(target.window);
+    flushManualScheduler(scheduler);
+    warning.mockRestore();
+    expect(controller.floatingCount).toBe(1);
+    expect(target.window.frameGeometry).toEqual(originalFrame);
+
+    target.setWriteBehavior(null);
+    const writesBeforeLiveChange = target.writeCount;
+    const updatedPositions = requiredApplicationFloatingPositions(
+      "org.example.Target=top-left,240,180",
+    );
+    expect(controller.setApplicationFloatingPositions(updatedPositions)).toBe(
+      true,
+    );
+    expect(controller.setApplicationFloatingPositions(updatedPositions)).toBe(
+      false,
+    );
+    expect(target.writeCount).toBe(writesBeforeLiveChange);
+    fixture.workspace.activeWindow = target.window;
+    flushManualScheduler(scheduler);
+    expect(controller.moveWindowToTiling()).toBe(true);
+    expect(controller.toggleFloating()).toBe(true);
+    expect(target.window.frameGeometry).toEqual(originalFrame);
+    const writes = target.writeCount;
+    controller.reconcile();
+    flushManualScheduler(scheduler);
+    expect(target.writeCount).toBe(writes);
+  });
+
+  it("keeps startup, hydrated, and automatic windows position-consumed", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const startup = createTrackedWindow("startup", output, desktop, {
+      desktopFileName: "org.example.Startup",
+      frameGeometry: { height: 200, width: 300, x: 40, y: 30 },
+    });
+    const sourceFixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [startup.window],
+    );
+    const sourceController = new RuntimeController(sourceFixture.workspace, {
+      clientAreaOption: 2,
+    });
+
+    expect(sourceController.start()).toBe(true);
+    const persisted = requiredLayoutDocument(sourceController);
+    sourceController.stop();
+
+    const hydratedFixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [startup.window],
+    );
+    const hydratedController = new RuntimeController(
+      hydratedFixture.workspace,
+      {
+        applicationFloatingPositions: requiredApplicationFloatingPositions(
+          "org.example.Dialog=top-left,200,100\norg.example.Excluded=right,40,20\norg.example.Startup=bottom-right,20,30\norg.example.Transient=bottom,10,10",
+        ),
+        applicationTilingExclusions: requiredApplicationTilingExclusions(
+          "org.example.Excluded",
+        ),
+        clientAreaOption: 2,
+      },
+    );
+
+    expect(hydratedController.start(persisted)).toBe(true);
+    hydratedFixture.workspace.activeWindow = startup.window;
+    expect(hydratedController.toggleFloating()).toBe(true);
+    expect(startup.window.frameGeometry).toEqual({
+      height: 200,
+      width: 300,
+      x: 40,
+      y: 30,
+    });
+
+    const dialog = createTrackedWindow("dialog", output, desktop, {
+      desktopFileName: "org.example.Dialog",
+      dialog: true,
+      normalWindow: false,
+    });
+    const dialogFrame = { ...dialog.window.frameGeometry };
+    const transient = createTrackedWindow("transient", output, desktop, {
+      desktopFileName: "org.example.Transient",
+      transient: true,
+    });
+    const excluded = createTrackedWindow("excluded", output, desktop, {
+      desktopFileName: "org.example.Excluded",
+    });
+    const automatic = [dialog, transient, excluded];
+    const automaticFrames = automatic.map(({ window }) => ({
+      ...window.frameGeometry,
+    }));
+
+    for (const tracked of automatic) {
+      hydratedFixture.windowAdded.emit(tracked.window);
+    }
+
+    expect(hydratedController.automaticFloatingCount).toBe(3);
+    expect(dialog.window.frameGeometry).toEqual(dialogFrame);
+    expect(automatic.map(({ window }) => window.frameGeometry)).toEqual(
+      automaticFrames,
+    );
+
+    for (const tracked of automatic) {
+      expect(
+        floatingPositionAdmissionHistory(hydratedController).has(
+          windowId(String(tracked.window.internalId)),
+        ),
+      ).toBe(true);
+    }
+
+    expect(
+      floatingPositionAdmissionHistory(hydratedController).has(
+        windowId("startup"),
+      ),
+    ).toBe(true);
+    hydratedFixture.windowRemoved.emit(dialog.window);
+    expect(
+      floatingPositionAdmissionHistory(hydratedController).has(
+        windowId("dialog"),
+      ),
+    ).toBe(false);
+    hydratedController.stop();
+    expect(floatingPositionAdmissionHistory(hydratedController).size).toBe(0);
+  });
+
+  it("defers a fresh rule until the first manual float after an output transfer", () => {
+    const sourceOutput = createOutput("SOURCE", 0);
+    const targetOutput = createOutput("TARGET", 1000);
+    const desktop = { id: "desktop-1" };
+    const sourcePeer = createTrackedWindow(
+      "source-peer",
+      sourceOutput,
+      desktop,
+    );
+    const targetPeer = createTrackedWindow(
+      "target-peer",
+      targetOutput,
+      desktop,
+    );
+    const moved = createTrackedWindow("moved", sourceOutput, desktop, {
+      desktopFileName: "org.example.Moved",
+      frameGeometry: { height: 200, width: 300, x: 80, y: 60 },
+    });
+    const fixture = createWorkspace(
+      sourceOutput,
+      desktop,
+      [sourceOutput, targetOutput],
+      [desktop],
+      [sourcePeer.window, targetPeer.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      applicationFloatingPositions: requiredApplicationFloatingPositions(
+        "org.example.Moved=bottom-right,24,16",
+      ),
+      clientAreaOption: 2,
+      schedule: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    fixture.windowAdded.emit(moved.window);
+    flushManualScheduler(scheduler);
+    fixture.workspace.activeWindow = moved.window;
+    flushManualScheduler(scheduler);
+    expect(
+      floatingPositionAdmissionHistory(controller).has(windowId("moved")),
+    ).toBe(false);
+
+    expect(controller.moveWindowToOutputRight()).toBe(true);
+    flushManualScheduler(scheduler);
+    expect(moved.window.output).toBe(targetOutput);
+    expect(moved.window.frameGeometry).not.toMatchObject({ x: 1676, y: 584 });
+    expect(
+      floatingPositionAdmissionHistory(controller).has(windowId("moved")),
+    ).toBe(false);
+    const firstFloatingSize = {
+      height: moved.window.frameGeometry.height,
+      width: moved.window.frameGeometry.width,
+    };
+
+    expect(controller.toggleFloating()).toBe(true);
+    expect(moved.window.frameGeometry).toEqual({
+      ...firstFloatingSize,
+      x: 2000 - firstFloatingSize.width - 24,
+      y: 800 - firstFloatingSize.height - 16,
+    });
+    expect(
+      floatingPositionAdmissionHistory(controller).has(windowId("moved")),
+    ).toBe(true);
+  });
+});
+
 function createOutputTransferFixture(
   options: {
     readonly destinationCount?: number;
@@ -46707,6 +47063,36 @@ function requiredApplicationInitialFloating(value: string) {
   }
 
   return applications;
+}
+
+function requiredApplicationInitialFullscreen(value: string) {
+  const applications = decodeApplicationInitialFullscreen(value);
+
+  if (!applications) {
+    throw new Error("application initial fullscreen fixture is invalid");
+  }
+
+  return applications;
+}
+
+function requiredApplicationFloatingPositions(value: string) {
+  const positions = decodeApplicationFloatingPositions(value);
+
+  if (!positions) {
+    throw new Error("application floating-position fixture is invalid");
+  }
+
+  return positions;
+}
+
+function floatingPositionAdmissionHistory(
+  controller: RuntimeController,
+): ReadonlySet<WindowId> {
+  return (
+    controller as unknown as {
+      readonly floatingPositionAdmissionHistory: ReadonlySet<WindowId>;
+    }
+  ).floatingPositionAdmissionHistory;
 }
 
 function requiredApplicationFocusCentering(value: string) {
