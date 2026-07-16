@@ -100,7 +100,8 @@ the shared empty tail, is also a target; the current desktop's gutter is not.
 selected desktop gutter uses the same visible keyboard highlight as a window.
 `Delete` requests closure of the selected live window. Desktop targets and
 stale or non-closeable windows are no-ops; the overview stays open until KWin
-actually removes the window, so an application prompt remains usable.
+actually removes the window, so an application prompt remains usable. A middle
+click on a visible thumbnail or non-minimized tab uses the same guarded path.
 
 Typing filters visible windows by title and application identity. Matching is
 case-insensitive and every typed term must match. Arrow navigation immediately

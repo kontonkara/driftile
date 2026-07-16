@@ -47,7 +47,8 @@ The effect animates automatic position and size changes without writing window
 geometry. Manual move or resize and fullscreen remain ineligible. Geometry
 changes received while another fullscreen or workspace transition owns
 presentation are coalesced per window and replayed once when that ownership
-ends. Deletion, configuration reload, or true ineligibility discards the
+ends. Temporary desktop-transition visibility does not discard the captured
+frame. Deletion, configuration reload, or true ineligibility discards the
 pending change. Replay uses no timer or private API and writes neither geometry
 nor persistence.
 

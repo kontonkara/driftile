@@ -635,4 +635,5 @@ Driftile must integrate with, not duplicate:
   KWin, layout, persistence, or configuration state.
 - Delete in the optional overview requests closure only for the exact selected
   closeable window. The effect waits for KWin's removal signal and performs no
-  layout, desktop, focus, or persistence write.
+  layout, desktop, focus, or persistence write. Middle-clicking a visible
+  thumbnail or non-minimized tab reuses the same transaction.

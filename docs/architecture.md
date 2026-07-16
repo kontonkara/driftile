@@ -123,7 +123,8 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Skips manual move or resize, hidden, minimized, fullscreen, special, and
   non-normal windows. Geometry changes received while another fullscreen or
   workspace transition owns presentation are coalesced per window and replayed
-  once when ownership ends; true ineligibility, configuration reload, or
+  once when ownership ends. Temporary desktop-transition visibility preserves
+  the first captured frame; true ineligibility, configuration reload, or
   deletion discards pending work.
 - Cancels superseded per-window animations in constant time, follows Plasma's
   global animation-speed factor, and exposes one bounded duration setting.
