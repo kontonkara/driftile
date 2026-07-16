@@ -144,6 +144,10 @@
       <label>Applications initially maximized by KWin desktopFileName</label>
       <default></default>
     </entry>
+    <entry name="ApplicationInitialFocused" type="String">
+      <label>Applications initially focused by KWin desktopFileName</label>
+      <default></default>
+    </entry>
     <entry name="ApplicationInitialFullscreen" type="String">
       <label>Applications initially fullscreen by KWin desktopFileName</label>
       <default></default>

@@ -684,6 +684,32 @@
            <height>100</height>
           </size>
          </property>
+       </widget>
+      </item>
+      <item>
+        <widget class="QLabel" name="applicationInitialFocusedLabel">
+         <property name="text">
+          <string>Applications initially focused:</string>
+         </property>
+         <property name="buddy">
+          <cstring>kcfg_ApplicationInitialFocused</cstring>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPlainTextEdit" name="kcfg_ApplicationInitialFocused">
+         <property name="toolTip">
+          <string>Enter up to 128 exact, case-sensitive KWin desktopFileName values, one per line. Fresh normal matches request focus once after admission only when their desktop and output context is already visible. The rule never selects a desktop or output and does not suppress normal KWin focus for unlisted applications. Rejected or unavailable focus requests are not retried. Live edits affect future tracked windows only.</string>
+         </property>
+         <property name="whatsThis">
+          <string>Blank lines are ignored. Fresh normal exact matches request focus once after admission only when their desktop and output context is already visible. The rule never selects a desktop or output, leaves normal KWin focus behavior unchanged for unlisted applications, and does not retry rejected or unavailable requests. Live edits affect future tracked windows only.</string>
+         </property>
+         <property name="minimumSize">
+          <size>
+           <width>0</width>
+           <height>100</height>
+          </size>
+         </property>
         </widget>
        </item>
        <item>

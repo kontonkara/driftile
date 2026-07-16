@@ -946,6 +946,7 @@ describe("KWin shortcut handlers", () => {
       "kcfg_ApplicationFloatingPositions",
       "kcfg_ApplicationInitialFullWidth",
       "kcfg_ApplicationInitialMaximized",
+      "kcfg_ApplicationInitialFocused",
       "kcfg_ApplicationInitialFullscreen",
       "kcfg_ApplicationTilingExclusions",
       "kcfg_ApplicationBorderlessExclusions",
@@ -1544,6 +1545,15 @@ describe("KWin shortcut handlers", () => {
     const initialMaximizedWidget = configurationUi.match(
       /<widget class="QPlainTextEdit" name="kcfg_ApplicationInitialMaximized">([\s\S]*?)<\/widget>/,
     )?.[1];
+    const initialFocusedEntry = configuration.match(
+      /<entry name="ApplicationInitialFocused" type="String">([\s\S]*?)<\/entry>/,
+    )?.[1];
+    const initialFocusedLabel = configurationUi.match(
+      /<widget class="QLabel" name="applicationInitialFocusedLabel">([\s\S]*?)<\/widget>/,
+    )?.[1];
+    const initialFocusedWidget = configurationUi.match(
+      /<widget class="QPlainTextEdit" name="kcfg_ApplicationInitialFocused">([\s\S]*?)<\/widget>/,
+    )?.[1];
     const initialFullscreenEntry = configuration.match(
       /<entry name="ApplicationInitialFullscreen" type="String">([\s\S]*?)<\/entry>/,
     )?.[1];
@@ -1699,6 +1709,34 @@ describe("KWin shortcut handlers", () => {
     );
     expect(qml).toContain(
       'applicationInitialMaximized: KWin.readConfig("ApplicationInitialMaximized", "")',
+    );
+    expect(initialFocusedEntry).toContain(
+      "<label>Applications initially focused by KWin desktopFileName</label>",
+    );
+    expect(initialFocusedEntry).toContain("<default></default>");
+    expect(initialFocusedLabel).toContain(
+      "<string>Applications initially focused:</string>",
+    );
+    expect(initialFocusedLabel).toContain(
+      "<cstring>kcfg_ApplicationInitialFocused</cstring>",
+    );
+    expect(initialFocusedWidget).toContain(
+      "Enter up to 128 exact, case-sensitive KWin desktopFileName values, one per line.",
+    );
+    expect(initialFocusedWidget).toContain(
+      "Fresh normal matches request focus once after admission only when their desktop and output context is already visible.",
+    );
+    expect(initialFocusedWidget).toContain(
+      "The rule never selects a desktop or output and does not suppress normal KWin focus for unlisted applications.",
+    );
+    expect(initialFocusedWidget).toContain(
+      "Rejected or unavailable focus requests are not retried.",
+    );
+    expect(initialFocusedWidget).toContain(
+      "Live edits affect future tracked windows only.",
+    );
+    expect(qml).toContain(
+      'applicationInitialFocused: KWin.readConfig("ApplicationInitialFocused", "")',
     );
     expect(initialFullscreenEntry).toContain(
       "<label>Applications initially fullscreen by KWin desktopFileName</label>",
