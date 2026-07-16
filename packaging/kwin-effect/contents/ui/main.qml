@@ -13,6 +13,8 @@ KWin.SceneEffect {
         : null
     readonly property bool configuredTouchpadGesture: touchpadGestureEnabledFromConfig()
     readonly property int configuredTouchpadGestureFingerCount: touchpadGestureFingerCountFromConfig()
+    readonly property int configuredScreenEdge: screenEdgeFromConfig()
+    readonly property color backdropColor: backdropColorFromConfig()
 
     readonly property bool active: controller ? controller.active : false
     readonly property bool loading: controller ? controller.loading : false
@@ -20,6 +22,14 @@ KWin.SceneEffect {
 
     visible: controller ? controller.active : false
     delegate: controller ? controller.overviewDelegate : null
+
+    KWin.ScreenEdgeHandler {
+        edge: effect.configuredScreenEdge
+        enabled: edge !== KWin.ScreenEdgeHandler.NoEdge
+        mode: KWin.ScreenEdgeHandler.Pointer
+
+        onActivated: effect.activate()
+    }
 
     onControllerChanged: syncTouchpadGestureSettings()
     onConfiguredTouchpadGestureChanged: syncTouchpadGestureSettings()
@@ -60,5 +70,50 @@ KWin.SceneEffect {
     function touchpadGestureFingerCountFromConfig() {
         const value = configuration ? Number(configuration.TouchpadGestureFingerCount) : 4;
         return Number.isFinite(value) && Math.floor(value) === value && value >= 3 && value <= 5 ? value : 4;
+    }
+
+    function screenEdgeFromConfig() {
+        const value = configuration ? String(configuration.ScreenEdge).trim().toLowerCase() : "none";
+        switch (value) {
+        case "top-left":
+            return KWin.ScreenEdgeHandler.TopLeftEdge;
+        case "top":
+            return KWin.ScreenEdgeHandler.TopEdge;
+        case "top-right":
+            return KWin.ScreenEdgeHandler.TopRightEdge;
+        case "right":
+            return KWin.ScreenEdgeHandler.RightEdge;
+        case "bottom-right":
+            return KWin.ScreenEdgeHandler.BottomRightEdge;
+        case "bottom":
+            return KWin.ScreenEdgeHandler.BottomEdge;
+        case "bottom-left":
+            return KWin.ScreenEdgeHandler.BottomLeftEdge;
+        case "left":
+            return KWin.ScreenEdgeHandler.LeftEdge;
+        default:
+            return KWin.ScreenEdgeHandler.NoEdge;
+        }
+    }
+
+    function backdropColorFromConfig() {
+        const fallback = "#e60b0f17";
+        const value = configuration ? configuration.BackdropColor : undefined;
+        if (typeof value === "string") {
+            const candidate = value.trim();
+            return /^#(?:[0-9a-f]{6}|[0-9a-f]{8})$/iu.test(candidate) ? candidate : fallback;
+        }
+
+        if (!value || !validColorChannel(value.r) || !validColorChannel(value.g)
+                || !validColorChannel(value.b) || !validColorChannel(value.a)) {
+            return fallback;
+        }
+
+        return value;
+    }
+
+    function validColorChannel(value) {
+        const channel = Number(value);
+        return Number.isFinite(channel) && channel >= 0 && channel <= 1;
     }
 }

@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>440</width>
-    <height>100</height>
+    <height>180</height>
    </rect>
   </property>
   <layout class="QFormLayout" name="formLayout">
@@ -50,8 +50,107 @@
      </property>
     </widget>
    </item>
+   <item row="2" column="0">
+    <widget class="QLabel" name="label_ScreenEdge">
+     <property name="text">
+      <string>Screen edge:</string>
+     </property>
+     <property name="buddy">
+      <cstring>kcfg_ScreenEdge</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="2" column="1">
+    <widget class="QComboBox" name="kcfg_ScreenEdge">
+     <property name="toolTip">
+      <string>Open the overview when the pointer activates this screen edge. Choose none to disable it.</string>
+     </property>
+     <property name="kcfg_property" stdset="0">
+      <string>currentText</string>
+     </property>
+     <item>
+      <property name="text">
+       <string>none</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>top-left</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>top</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>top-right</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>right</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>bottom-right</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>bottom</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>bottom-left</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>left</string>
+      </property>
+     </item>
+    </widget>
+   </item>
+   <item row="3" column="0">
+    <widget class="QLabel" name="label_BackdropColor">
+     <property name="text">
+      <string>Backdrop color:</string>
+     </property>
+     <property name="buddy">
+      <cstring>kcfg_BackdropColor</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="1">
+    <widget class="KColorButton" name="kcfg_BackdropColor">
+     <property name="toolTip">
+      <string>Choose the overview backdrop color and opacity.</string>
+     </property>
+     <property name="color">
+      <color alpha="230">
+       <red>11</red>
+       <green>15</green>
+       <blue>23</blue>
+      </color>
+     </property>
+     <property name="alphaChannelEnabled">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
   </layout>
  </widget>
+ <customwidgets>
+  <customwidget>
+   <class>KColorButton</class>
+   <extends>QPushButton</extends>
+   <header>kcolorbutton.h</header>
+  </customwidget>
+ </customwidgets>
  <resources/>
  <connections/>
 </ui>

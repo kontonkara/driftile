@@ -5,7 +5,9 @@ import "../code/main.js" as OverviewRuntime
 Rectangle {
     id: root
 
-    color: "#e60b0f17"
+    color: sceneEffect && sceneEffect.backdropColor !== undefined
+        ? sceneEffect.backdropColor
+        : "#e60b0f17"
     focus: true
 
     readonly property var sceneEffect: KWin.SceneView.effect

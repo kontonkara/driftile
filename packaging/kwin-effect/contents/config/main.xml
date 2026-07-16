@@ -15,5 +15,13 @@
       <max>5</max>
       <default>4</default>
     </entry>
+    <entry name="ScreenEdge" type="String">
+      <label>Screen edge activation</label>
+      <default>none</default>
+    </entry>
+    <entry name="BackdropColor" type="Color">
+      <label>Overview backdrop color</label>
+      <default>#e60b0f17</default>
+    </entry>
   </group>
 </kcfg>
