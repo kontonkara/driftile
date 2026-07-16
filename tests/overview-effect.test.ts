@@ -68,12 +68,27 @@ describe("overview effect package", () => {
     const fingerCountEntry = configuration.match(
       /<entry name="TouchpadGestureFingerCount"[\s\S]*?<\/entry>/u,
     )?.[0];
+    const screenEdgeEntry = configuration.match(
+      /<entry name="ScreenEdge"[\s\S]*?<\/entry>/u,
+    )?.[0];
+    const backdropColorEntry = configuration.match(
+      /<entry name="BackdropColor"[\s\S]*?<\/entry>/u,
+    )?.[0];
     expect(enabledEntry).toContain("<default>true</default>");
     expect(fingerCountEntry).toContain("<default>4</default>");
     expect(fingerCountEntry).toContain("<min>3</min>");
     expect(fingerCountEntry).toContain("<max>5</max>");
+    expect(screenEdgeEntry).toContain('type="String"');
+    expect(screenEdgeEntry).toContain("<default>none</default>");
+    expect(backdropColorEntry).toContain('type="Color"');
+    expect(backdropColorEntry).toContain("<default>#e60b0f17</default>");
     expect(configurationUi).toContain('name="kcfg_TouchpadGesture"');
     expect(configurationUi).toContain('name="kcfg_TouchpadGestureFingerCount"');
+    expect(configurationUi).toContain('name="kcfg_ScreenEdge"');
+    expect(configurationUi).toContain('name="kcfg_BackdropColor"');
+    expect(configurationUi).toMatch(
+      /name="kcfg_BackdropColor"[\s\S]*?<property name="alphaChannelEnabled">\s*<bool>true<\/bool>/u,
+    );
   });
 
   it("registers one Meta+O toggle and two unbound state actions", () => {
@@ -227,9 +242,68 @@ describe("overview effect package", () => {
     );
   });
 
+  it("opens from one optional pointer edge and applies a safe backdrop", () => {
+    const screenEdgeHandler = main.slice(
+      main.indexOf("KWin.ScreenEdgeHandler {"),
+      main.indexOf("onControllerChanged:"),
+    );
+    const screenEdgeMapping = main.slice(
+      main.indexOf("function screenEdgeFromConfig()"),
+      main.indexOf("function backdropColorFromConfig()"),
+    );
+    const backdropColor = main.slice(
+      main.indexOf("function backdropColorFromConfig()"),
+      main.indexOf("function validColorChannel("),
+    );
+
+    expect(main.match(/KWin\.ScreenEdgeHandler\s*\{/gu)).toHaveLength(1);
+    expect(main).toContain(
+      "readonly property int configuredScreenEdge: screenEdgeFromConfig()",
+    );
+    expect(screenEdgeHandler).toContain("edge: effect.configuredScreenEdge");
+    expect(screenEdgeHandler).toContain(
+      "enabled: edge !== KWin.ScreenEdgeHandler.NoEdge",
+    );
+    expect(screenEdgeHandler).toContain(
+      "mode: KWin.ScreenEdgeHandler.Pointer",
+    );
+    expect(screenEdgeHandler).toContain("onActivated: effect.activate()");
+    expect(screenEdgeHandler).not.toContain("toggle()");
+
+    for (const [configured, edge] of [
+      ["top-left", "TopLeftEdge"],
+      ["top", "TopEdge"],
+      ["top-right", "TopRightEdge"],
+      ["right", "RightEdge"],
+      ["bottom-right", "BottomRightEdge"],
+      ["bottom", "BottomEdge"],
+      ["bottom-left", "BottomLeftEdge"],
+      ["left", "LeftEdge"],
+    ]) {
+      expect(screenEdgeMapping).toContain(`case "${configured}":`);
+      expect(screenEdgeMapping).toContain(
+        `return KWin.ScreenEdgeHandler.${edge};`,
+      );
+    }
+    expect(screenEdgeMapping).toMatch(
+      /default:\s*return KWin\.ScreenEdgeHandler\.NoEdge;/u,
+    );
+    expect(screenEdgeMapping).not.toMatch(/registerScreenEdge|Timer/u);
+
+    expect(main).toContain(
+      "readonly property color backdropColor: backdropColorFromConfig()",
+    );
+    expect(backdropColor).toContain('const fallback = "#e60b0f17"');
+    expect(backdropColor).toContain("configuration.BackdropColor");
+    expect(backdropColor).toContain("validColorChannel(value.a)");
+    expect(scene).toMatch(
+      /color: sceneEffect && sceneEffect\.backdropColor !== undefined\s*\? sceneEffect\.backdropColor\s*: "#e60b0f17"/u,
+    );
+  });
+
   it("keeps a fixed scene-effect proxy over the cache-busted controller", () => {
     expect(createHash("sha256").update(main, "utf8").digest("hex")).toBe(
-      "de09a17513c2d9ad036c5e6bcbe272bf66bff870809978847d62f515fb5ec2be",
+      "a316fd1b56a2f355a8c08e6f7ae80219a02ba28c59e7575ccb113fb105d54f11",
     );
     expect(main).toContain("KWin.SceneEffect {");
     expect(main).toContain("Date.now().toString(36)");
@@ -459,7 +533,7 @@ describe("overview effect package", () => {
       desktopCard.indexOf("function indexOfDesktop("),
     );
 
-    expect(desktopCard.match(/\bTapHandler\s*\{/gu)).toHaveLength(5);
+    expect(desktopCard.match(/\bTapHandler\s*\{/gu)).toHaveLength(6);
     expect(numberGutter.match(/\bTapHandler\s*\{/gu)).toHaveLength(1);
     expect(thumbnail.match(/\bTapHandler\s*\{/gu)).toHaveLength(2);
     expect(tab.match(/\bTapHandler\s*\{/gu)).toHaveLength(2);
@@ -1723,6 +1797,71 @@ describe("overview effect package", () => {
     );
     expect(`${selector}\n${desktopRequest}\n${outputProjection}`).not.toMatch(
       /KWin\.Workspace\.(?:stackingOrder|windows)\b|KWin\.WindowModel|layoutStateReader|model\.(?:contexts|desktopIds|floatingWindows)/u,
+    );
+  });
+
+  it("selects a non-current desktop from empty card content", () => {
+    const viewportStart = desktopCard.indexOf("id: viewport");
+    const backgroundStart = desktopCard.indexOf("id: emptyContentInput");
+    const windowRepeaterStart = desktopCard.indexOf("id: windowRepeater");
+    const background = desktopCard.slice(backgroundStart, windowRepeaterStart);
+    const windowPresentation = desktopCard.slice(
+      desktopCard.indexOf("id: windowPresentation"),
+      desktopCard.indexOf("id: thumbnailShell"),
+    );
+    const windowHitTest = desktopCard.slice(
+      desktopCard.indexOf("function viewportPointHitsWindow("),
+      desktopCard.indexOf("function visualContainsViewportPoint("),
+    );
+    const visualHitTest = desktopCard.slice(
+      desktopCard.indexOf("function visualContainsViewportPoint("),
+      desktopCard.indexOf("function desktopNavigationTargetId("),
+    );
+
+    expect(backgroundStart).toBeGreaterThan(viewportStart);
+    expect(windowRepeaterStart).toBeGreaterThan(backgroundStart);
+    expect(background).toContain("anchors.fill: parent");
+    expect(background).toContain("z: 1");
+    expect(background.match(/\bTapHandler\s*\{/gu)).toHaveLength(1);
+    expect(windowPresentation).toContain(
+      "z: frame && frame.floating ? 1000 + index : 100 + index",
+    );
+
+    expect(background).toContain("acceptedButtons: Qt.LeftButton");
+    expect(background).toContain(
+      "acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad",
+    );
+    expect(background).toMatch(
+      /enabled: !card\.current && card\.desktop && card\.screen\s*&& card\.searchQuery\.trim\(\)\.length === 0/u,
+    );
+    expect(background).toContain(
+      "if (!card.viewportPointHitsWindow(point.position))",
+    );
+    expect(background).toContain(
+      "card.desktopTapped(card.desktop, card.desktopId, card.screen)",
+    );
+    expect(background.match(/card\.desktopTapped\(/gu)).toHaveLength(1);
+    expect(background).not.toMatch(
+      /KWin\.|windowTapped|windowCloseRequested|\.deactivate\(\)|currentDesktop\s*=/u,
+    );
+
+    expect(windowHitTest).toContain("windowRepeater.itemAt(index)");
+    expect(windowHitTest).toContain(
+      "visualContainsViewportPoint(presentation.thumbnailTarget, point)",
+    );
+    expect(windowHitTest).toContain(
+      "visualContainsViewportPoint(presentation.tabTarget, point)",
+    );
+    expect(visualHitTest).toContain("!visual.visible");
+    expect(visualHitTest).toContain(
+      "visual.mapFromItem(emptyContentInput, point.x, point.y)",
+    );
+    expect(visualHitTest).toContain("localPoint.x >= 0");
+    expect(visualHitTest).toContain("localPoint.y >= 0");
+    expect(visualHitTest).toContain("localPoint.x < visual.width");
+    expect(visualHitTest).toContain("localPoint.y < visual.height");
+    expect(`${background}\n${windowHitTest}\n${visualHitTest}`).not.toMatch(
+      /\bMouseArea\s*\{|org\.kde\.kwin\.private/u,
     );
   });
 
