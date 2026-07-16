@@ -6917,6 +6917,12 @@ export class RuntimeController {
   private windowRemovalFocusTarget(
     focus: WindowRemovalFocus,
   ): KWinWindow | null {
+    const previous = this.previousWindowRemovalFocusTarget(focus.contextKey);
+
+    if (previous) {
+      return previous;
+    }
+
     if (focus.layer === "floating") {
       return (
         this.floatingFocusTarget(focus.contextKey) ??
@@ -6928,6 +6934,23 @@ export class RuntimeController {
       this.selectedTiledFocusTarget(focus.contextKey) ??
       this.floatingFocusTarget(focus.contextKey)
     );
+  }
+
+  private previousWindowRemovalFocusTarget(key: string): KWinWindow | null {
+    let previous: KWinWindow | null = null;
+
+    for (const candidateId of this.windowFocusHistory) {
+      const candidate = this.observer.source(candidateId);
+
+      if (
+        candidate &&
+        this.focusAvailableWindowLayer(candidateId, candidate, key)
+      ) {
+        previous = candidate;
+      }
+    }
+
+    return previous;
   }
 
   private selectedTiledFocusTarget(key: string): KWinWindow | null {

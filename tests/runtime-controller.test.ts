@@ -2154,6 +2154,40 @@ describe("RuntimeController", () => {
     },
   );
 
+  it("restores the previously active visible window after closing the active window", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const previous = createTrackedWindow("previous", output, desktop);
+    const removed = createTrackedWindow("removed", output, desktop);
+    const adjacent = createTrackedWindow("adjacent", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [previous.window, removed.window, adjacent.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      schedule: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    fixture.workspace.activeWindow = previous.window;
+    fixture.workspace.activeWindow = removed.window;
+    fixture.workspace.activeWindow = null;
+    flushManualScheduler(scheduler);
+    const activationCount = fixture.activationCount;
+
+    fixture.windowRemoved.emit(removed.window);
+    flushManualScheduler(scheduler);
+
+    expect(fixture.workspace.activeWindow).toBe(previous.window);
+    expect(fixture.activationCount).toBe(activationCount + 1);
+    controller.stop();
+  });
+
   it("focuses the next stack member after removing the selected window", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
