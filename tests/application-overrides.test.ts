@@ -22,31 +22,70 @@ function document(entries: readonly string[]): string {
 
 describe("application column-width override codec", () => {
   it("normalizes entries into deterministic immutable lookup state", () => {
-    const input = document([" org.mozilla.firefox = 60 ", "org.kde.kcalc=100"]);
+    const input = document([
+      " org.mozilla.firefox = 60% ",
+      "org.kde.kcalc=480px",
+    ]);
     const overrides = decoded(input);
 
     expect(overrides.canonicalEntries).toEqual([
-      "org.kde.kcalc=100",
+      "org.kde.kcalc=480px",
       "org.mozilla.firefox=60",
     ]);
+    expect(overrides.columnWidthFor("org.mozilla.firefox")).toEqual({
+      kind: "proportion",
+      value: 0.6,
+    });
+    expect(overrides.columnWidthFor("org.kde.kcalc")).toEqual({
+      kind: "fixed",
+      value: 480,
+    });
     expect(overrides.columnWidthPercentFor("org.mozilla.firefox")).toBe(60);
-    expect(overrides.columnWidthPercentFor("org.kde.kcalc")).toBe(100);
+    expect(overrides.columnWidthPercentFor("org.kde.kcalc")).toBeUndefined();
+    expect(overrides.columnWidthFor("org.kde.KCalc")).toBeUndefined();
+    expect(overrides.columnWidthFor(" org.kde.kcalc ")).toBeUndefined();
+    expect(overrides.columnWidthFor("missing")).toBeUndefined();
     expect(overrides.columnWidthPercentFor("org.kde.KCalc")).toBeUndefined();
     expect(overrides.columnWidthPercentFor(" org.kde.kcalc ")).toBeUndefined();
     expect(overrides.columnWidthPercentFor("missing")).toBeUndefined();
+    expect(Object.isFrozen(overrides.columnWidthFor("org.kde.kcalc"))).toBe(
+      true,
+    );
     expect(Object.isFrozen(overrides)).toBe(true);
     expect(Object.isFrozen(overrides.canonicalEntries)).toBe(true);
-    expect(input).toBe(" org.mozilla.firefox = 60 \norg.kde.kcalc=100");
+    expect(input).toBe(" org.mozilla.firefox = 60% \norg.kde.kcalc=480px");
   });
 
-  it("accepts empty input and inclusive percent bounds", () => {
+  it("accepts empty input and inclusive width bounds", () => {
     const empty = decoded("");
-    const bounded = decoded(document(["minimum=10", "maximum=100"]));
+    const bounded = decoded(
+      document([
+        "minimum-percent=10%",
+        "maximum-percent=100",
+        "minimum-fixed=1px",
+        "maximum-fixed=16384px",
+      ]),
+    );
 
     expect(empty.canonicalEntries).toEqual([]);
+    expect(empty.columnWidthFor("anything")).toBeUndefined();
     expect(empty.columnWidthPercentFor("anything")).toBeUndefined();
-    expect(bounded.columnWidthPercentFor("minimum")).toBe(10);
-    expect(bounded.columnWidthPercentFor("maximum")).toBe(100);
+    expect(bounded.columnWidthFor("minimum-percent")).toEqual({
+      kind: "proportion",
+      value: 0.1,
+    });
+    expect(bounded.columnWidthFor("maximum-percent")).toEqual({
+      kind: "proportion",
+      value: 1,
+    });
+    expect(bounded.columnWidthFor("minimum-fixed")).toEqual({
+      kind: "fixed",
+      value: 1,
+    });
+    expect(bounded.columnWidthFor("maximum-fixed")).toEqual({
+      kind: "fixed",
+      value: 16_384,
+    });
   });
 
   it("ignores blank editor lines without weakening entry validation", () => {
@@ -56,9 +95,9 @@ describe("application column-width override codec", () => {
   });
 
   it("compares normalized semantics rather than input order and spacing", () => {
-    const first = decoded(document(["zeta=75", " alpha = 25 "]));
-    const second = decoded(document(["alpha=25", "zeta = 75"]));
-    const changed = decoded(document(["alpha=25", "zeta=76"]));
+    const first = decoded(document(["zeta=750px", " alpha = 25% "]));
+    const second = decoded(document(["alpha=25", "zeta = 750px"]));
+    const changed = decoded(document(["alpha=25", "zeta=751px"]));
 
     expect(sameApplicationColumnWidthOverrides(first, first)).toBe(true);
     expect(sameApplicationColumnWidthOverrides(first, second)).toBe(true);
@@ -150,9 +189,15 @@ describe("application column-width override codec", () => {
     "application=010",
     "application=10.0",
     "application=1e2",
-    "application=10px",
+    "application=10 %",
+    "application=0px",
+    "application=16385px",
+    "application=01px",
+    "application=1.0px",
+    "application=+1px",
+    "application=1PX",
     "application=",
-  ])("rejects a non-canonical percent: %j", (entry) => {
+  ])("rejects a non-canonical width: %j", (entry) => {
     expect(decodeApplicationColumnWidthOverrides(entry)).toBeNull();
   });
 

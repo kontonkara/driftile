@@ -28360,12 +28360,9 @@ export class RuntimeController {
       return this.defaultColumnWidth;
     }
 
-    const percent =
-      this.applicationColumnWidths.columnWidthPercentFor(desktopFileName);
+    const width = this.applicationColumnWidths.columnWidthFor(desktopFileName);
 
-    return percent === undefined
-      ? this.defaultColumnWidth
-      : { kind: "proportion", value: percent / 100 };
+    return width === undefined ? this.defaultColumnWidth : { ...width };
   }
 
   private resolveManagedContext(window: ObservedWindow): ManagedContext | null {

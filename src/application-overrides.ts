@@ -1,12 +1,17 @@
+import type { ColumnWidth } from "./core/layout-engine";
+
 export const APPLICATION_COLUMN_WIDTH_OVERRIDE_LIMITS = Object.freeze({
   documentCharacters: 65_664,
   entries: 128,
   identifierBytes: 255,
+  maximumFixed: 16_384,
+  minimumFixed: 1,
   rawEntryCharacters: 512,
 });
 
 export interface ApplicationColumnWidthOverrides {
   readonly canonicalEntries: readonly string[];
+  columnWidthFor(desktopFileName: string): ColumnWidth | undefined;
   columnWidthPercentFor(desktopFileName: string): number | undefined;
 }
 
@@ -14,11 +19,13 @@ export const EMPTY_APPLICATION_COLUMN_WIDTH_OVERRIDES =
   decodeApplicationColumnWidthOverrides("") as ApplicationColumnWidthOverrides;
 
 interface ParsedOverride {
+  readonly canonicalWidth: string;
   readonly desktopFileName: string;
-  readonly percent: number;
+  readonly width: ColumnWidth;
 }
 
-const canonicalPercent = /^(?:[1-9][0-9]|100)$/u;
+const canonicalFixed = /^(?:[1-9][0-9]{0,4})px$/u;
+const canonicalPercent = /^(?:[1-9][0-9]|100)%?$/u;
 
 export function decodeApplicationColumnWidthOverrides(
   value: unknown,
@@ -32,7 +39,7 @@ export function decodeApplicationColumnWidthOverrides(
 
   const candidates = value.length === 0 ? [] : value.split("\n");
   const parsedOverrides: ParsedOverride[] = [];
-  const widths = new Map<string, number>();
+  const widths = new Map<string, ColumnWidth>();
 
   for (const candidate of candidates) {
     if (candidate.trim().length === 0) {
@@ -52,20 +59,26 @@ export function decodeApplicationColumnWidthOverrides(
     }
 
     parsedOverrides.push(parsed);
-    widths.set(parsed.desktopFileName, parsed.percent);
+    widths.set(parsed.desktopFileName, parsed.width);
   }
 
   parsedOverrides.sort(compareOverrides);
   const canonicalEntries = Object.freeze(
     parsedOverrides.map(
-      ({ desktopFileName, percent }) => `${desktopFileName}=${String(percent)}`,
+      ({ canonicalWidth, desktopFileName }) =>
+        `${desktopFileName}=${canonicalWidth}`,
     ),
   );
 
   return Object.freeze({
     canonicalEntries,
-    columnWidthPercentFor: (desktopFileName: string): number | undefined =>
+    columnWidthFor: (desktopFileName: string): ColumnWidth | undefined =>
       widths.get(desktopFileName),
+    columnWidthPercentFor: (desktopFileName: string): number | undefined => {
+      const width = widths.get(desktopFileName);
+
+      return width?.kind === "proportion" ? width.value * 100 : undefined;
+    },
   });
 }
 
@@ -101,7 +114,7 @@ function parseOverride(value: unknown): ParsedOverride | null {
   }
 
   const desktopFileName = value.slice(0, separator).trim();
-  const encodedPercent = value.slice(separator + 1).trim();
+  const encodedWidth = value.slice(separator + 1).trim();
   const identifierBytes = utf8ByteLength(desktopFileName);
 
   if (
@@ -109,15 +122,40 @@ function parseOverride(value: unknown): ParsedOverride | null {
     identifierBytes === null ||
     identifierBytes >
       APPLICATION_COLUMN_WIDTH_OVERRIDE_LIMITS.identifierBytes ||
-    hasControlCharacter(desktopFileName) ||
-    !canonicalPercent.test(encodedPercent)
+    hasControlCharacter(desktopFileName)
   ) {
     return null;
   }
 
+  if (canonicalFixed.test(encodedWidth)) {
+    const fixed = Number(encodedWidth.slice(0, -2));
+
+    if (
+      fixed < APPLICATION_COLUMN_WIDTH_OVERRIDE_LIMITS.minimumFixed ||
+      fixed > APPLICATION_COLUMN_WIDTH_OVERRIDE_LIMITS.maximumFixed
+    ) {
+      return null;
+    }
+
+    return {
+      canonicalWidth: encodedWidth,
+      desktopFileName,
+      width: Object.freeze({ kind: "fixed", value: fixed }),
+    };
+  }
+
+  if (!canonicalPercent.test(encodedWidth)) {
+    return null;
+  }
+
+  const percent = Number(
+    encodedWidth.endsWith("%") ? encodedWidth.slice(0, -1) : encodedWidth,
+  );
+
   return {
+    canonicalWidth: String(percent),
     desktopFileName,
-    percent: Number(encodedPercent),
+    width: Object.freeze({ kind: "proportion", value: percent / 100 }),
   };
 }
 

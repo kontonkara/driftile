@@ -7956,7 +7956,14 @@ describe("RuntimeController", () => {
   });
 
   it("applies exact application width overrides only to new columns", () => {
-    const output = createOutput("DP-1", 0);
+    const output = {
+      ...createOutput("DP-1", 0),
+      devicePixelRatio: 1.25,
+    } satisfies KWinOutput;
+    const targetOutput = {
+      ...createOutput("DP-2", 1000),
+      devicePixelRatio: 1.25,
+    } satisfies KWinOutput;
     const desktop = { id: "desktop-1" };
     const editor = createTrackedWindow("editor", output, desktop, {
       desktopFileName: "org.example.Editor",
@@ -7964,16 +7971,17 @@ describe("RuntimeController", () => {
     const browser = createTrackedWindow("browser", output, desktop, {
       desktopFileName: "org.example.Browser",
     });
+    const targetPeer = createTrackedWindow("target-peer", targetOutput, desktop);
     const fixture = createWorkspace(
       output,
       desktop,
-      [output],
+      [output, targetOutput],
       [desktop],
-      [editor.window, browser.window],
+      [editor.window, browser.window, targetPeer.window],
     );
     const scheduler = new ManualScheduler();
     const initialOverrides = decodeApplicationColumnWidthOverrides(
-      "org.example.Editor=60",
+      "org.example.Editor=30%",
     );
 
     if (!initialOverrides) {
@@ -7983,7 +7991,7 @@ describe("RuntimeController", () => {
     const controller = new RuntimeController(fixture.workspace, {
       applicationColumnWidths: initialOverrides,
       clientAreaOption: 2,
-      columnWidth: { kind: "proportion", value: 0.4 },
+      columnWidth: { kind: "proportion", value: 0.2 },
       schedule: scheduler.schedule,
     });
 
@@ -7996,8 +8004,8 @@ describe("RuntimeController", () => {
     expect(
       initial.columns.map((column) => [column.windowIds[0], column.width]),
     ).toEqual([
-      [windowId("editor"), { kind: "proportion", value: 0.6 }],
-      [windowId("browser"), { kind: "proportion", value: 0.4 }],
+      [windowId("editor"), { kind: "proportion", value: 0.3 }],
+      [windowId("browser"), { kind: "proportion", value: 0.2 }],
     ]);
     const initialFrames = [
       { ...editor.window.frameGeometry },
@@ -8006,10 +8014,10 @@ describe("RuntimeController", () => {
     const initialWrites = [editor.writeCount, browser.writeCount];
 
     const updatedOverrides = decodeApplicationColumnWidthOverrides(
-      "org.example.Editor=70\norg.example.Browser=80",
+      "org.example.Editor=40%\norg.example.Browser=321px",
     );
     const reorderedOverrides = decodeApplicationColumnWidthOverrides(
-      "org.example.Browser=80\norg.example.Editor=70",
+      "org.example.Browser=321px\norg.example.Editor=40",
     );
 
     if (!updatedOverrides || !reorderedOverrides) {
@@ -8041,12 +8049,37 @@ describe("RuntimeController", () => {
       updated.columns.find((column) =>
         column.windowIds.includes(windowId("browser-2")),
       )?.width,
-    ).toEqual({ kind: "proportion", value: 0.8 });
+    ).toEqual({ kind: "fixed", value: 321 });
+    expect(
+      Number.isInteger(
+        secondBrowser.window.frameGeometry.width * output.devicePixelRatio,
+      ),
+    ).toBe(true);
     expect(
       updated.columns.find((column) =>
         column.windowIds.includes(windowId("editor")),
       )?.width,
-    ).toEqual({ kind: "proportion", value: 0.6 });
+    ).toEqual({ kind: "proportion", value: 0.3 });
+
+    fixture.workspace.activeWindow = secondBrowser.window;
+    expect(controller.toggleFloating()).toBe(true);
+    expect(controller.toggleFloating()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "fixed",
+      value: 321,
+    });
+    expect(controller.moveColumnToOutputRight()).toBe(true);
+    expect(secondBrowser.window.output).toBe(targetOutput);
+    expect(activeColumnWidth(controller, targetOutput, desktop)).toEqual({
+      kind: "fixed",
+      value: 321,
+    });
+    expect(
+      Number.isInteger(
+        secondBrowser.window.frameGeometry.width *
+          targetOutput.devicePixelRatio,
+      ),
+    ).toBe(true);
 
     const constrainedBrowser = createTrackedWindow(
       "browser-constrained",
@@ -8070,7 +8103,7 @@ describe("RuntimeController", () => {
         .columns.find((column) =>
           column.windowIds.includes(windowId("browser-constrained")),
         )?.width,
-    ).toEqual({ kind: "fixed", value: 250 });
+    ).toEqual({ kind: "fixed", value: 249.6 });
   });
 
   it("lets exact application presentations override the global default", () => {
@@ -28536,8 +28569,11 @@ describe("RuntimeController", () => {
     const controller = new RuntimeController(fixture.workspace, {
       applicationColumnWidths: Object.freeze({
         canonicalEntries: Object.freeze([]),
-        columnWidthPercentFor: () => {
+        columnWidthFor: () => {
           applicationOverrideLookupCount += 1;
+          return undefined;
+        },
+        columnWidthPercentFor: () => {
           return undefined;
         },
       }),
