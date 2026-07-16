@@ -8797,6 +8797,8 @@ export class RuntimeController {
         this.observer.source(targetId) === target &&
         this.focusAvailableWindowLayer(targetId, target, key) === "tiling" &&
         this.requestWindowFocus(targetId, target, key, "tiling"),
+      undefined,
+      targetId,
     );
 
     if (!focused) {
@@ -21933,6 +21935,7 @@ export class RuntimeController {
     rollback: () => boolean,
     accept?: () => boolean,
     rollbackFrames?: ReadonlyMap<WindowId, Rect>,
+    preferredForwardWriteId?: WindowId,
   ): boolean {
     if (!mutate()) {
       return false;
@@ -22073,6 +22076,7 @@ export class RuntimeController {
         (id) =>
           !this.hasTopologyBarrier() &&
           this.observer.source(id) === mutationSources.get(id),
+        preferredForwardWriteId,
       );
     } catch (error) {
       forwardError = String(error);
@@ -29306,6 +29310,7 @@ export class RuntimeController {
     context: RuntimeContext,
     sampledGeometries?: ReadonlyMap<string, ContextGeometry>,
     canContinueWriting?: (id: WindowId) => boolean,
+    preferredForwardWriteId?: WindowId,
   ): number {
     if (this.refreshContextAutomaticFloatingOwnership(context)) {
       this.ownershipFollowUpRequired = true;
@@ -29393,8 +29398,29 @@ export class RuntimeController {
     }
 
     const changes = diffWindowGeometries(writableLayout, observed);
+    const preferredChangeIndex =
+      preferredForwardWriteId === undefined
+        ? -1
+        : changes.findIndex(
+            (change) => change.windowId === preferredForwardWriteId,
+          );
+
+    let orderedChanges = changes;
+
+    if (preferredChangeIndex > 0) {
+      const preferredChange = changes[preferredChangeIndex];
+
+      if (preferredChange) {
+        orderedChanges = [
+          preferredChange,
+          ...changes.slice(0, preferredChangeIndex),
+          ...changes.slice(preferredChangeIndex + 1),
+        ];
+      }
+    }
+
     const applied = this.geometry.apply(
-      changes,
+      orderedChanges,
       context,
       (change) =>
         this.windowOwnershipClassificationIsCurrent(change.windowId) &&

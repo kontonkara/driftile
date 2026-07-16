@@ -12805,14 +12805,21 @@ describe("RuntimeController", () => {
   it("focuses adjacent managed columns and stops at their boundaries", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
-    const first = createTrackedWindow("window-1", output, desktop);
-    const second = createTrackedWindow("window-2", output, desktop);
+    const windows = Array.from({ length: 4 }, (_value, index) =>
+      createTrackedWindow(`window-${String(index + 1)}`, output, desktop),
+    );
+    const [first, second, third, fourth] = windows;
+
+    if (!first || !second || !third || !fourth) {
+      throw new Error("missing horizontal focus fixture");
+    }
+
     const fixture = createWorkspace(
       output,
       desktop,
       [output],
       [desktop],
-      [first.window, second.window],
+      windows.map(({ window }) => window),
     );
     const controller = new RuntimeController(fixture.workspace, {
       clientAreaOption: 2,
@@ -12820,15 +12827,52 @@ describe("RuntimeController", () => {
     });
 
     controller.start();
+    installTestLayout(
+      controller,
+      output,
+      desktop,
+      "column:1",
+      windows.map((_window, index) => ({
+        id: `column:${String(index + 1)}`,
+        width: {
+          kind: "proportion",
+          value: index === 0 ? 1 : 0.33,
+        },
+        windowIds: [`window-${String(index + 1)}`],
+      })),
+    );
+    fixture.workspace.activeWindow = first.window;
+    const activationCount = fixture.activationCount;
+    const writeOrder: string[] = [];
 
-    expect(fixture.workspace.activeWindow).toBe(second.window);
-    expect(controller.focusLeft()).toBe(true);
-    expect(fixture.workspace.activeWindow).toBe(first.window);
+    for (const tracked of windows) {
+      tracked.setWriteBehavior((_frame, commit) => {
+        writeOrder.push(String(tracked.window.internalId));
+        commit();
+      });
+    }
+
     expect(controller.focusLeft()).toBe(false);
+    expect(fixture.workspace.activeWindow).toBe(first.window);
     expect(controller.focusRight()).toBe(true);
     expect(fixture.workspace.activeWindow).toBe(second.window);
+    expect(writeOrder).toEqual([
+      "window-2",
+      "window-1",
+      "window-3",
+      "window-4",
+    ]);
+
+    for (const tracked of windows) {
+      tracked.setWriteBehavior(null);
+    }
+
+    expect(controller.focusRight()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(third.window);
+    expect(controller.focusRight()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(fourth.window);
     expect(controller.focusRight()).toBe(false);
-    expect(fixture.activationCount).toBe(2);
+    expect(fixture.activationCount).toBe(activationCount + 3);
   });
 
   it("toggles previous focus across tiled and manual-floating windows while skipping ineligible history", () => {
