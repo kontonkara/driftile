@@ -130,7 +130,7 @@ QtObject {
     }
 
     function activate() {
-        if (active || loading) {
+        if (active || loading || plasmaOverviewIsActive()) {
             return;
         }
 
@@ -152,8 +152,39 @@ QtObject {
         overviewModel = null;
     }
 
+    function plasmaOverviewIsActive() {
+        try {
+            const workspace = KWin.Workspace;
+            if (!workspace || typeof workspace.isEffectActive !== "function") {
+                return true;
+            }
+
+            return workspace.isEffectActive("overview") === true;
+        } catch (error) {
+            return true;
+        }
+    }
+
+    function cancelPendingActivation(attemptId) {
+        if (!loading || active || attemptId <= 0 || attemptId !== pendingActivationAttemptId) {
+            return false;
+        }
+
+        pendingActivationAttemptId = 0;
+        layoutStateReader.cancel();
+        active = false;
+        loading = false;
+        overviewModel = null;
+        return true;
+    }
+
     function acceptLayoutState(attemptId, document) {
         if (!loading || active || attemptId <= 0 || attemptId !== pendingActivationAttemptId) {
+            return;
+        }
+
+        if (plasmaOverviewIsActive()) {
+            cancelPendingActivation(attemptId);
             return;
         }
 
@@ -170,6 +201,11 @@ QtObject {
                 return;
             }
 
+            if (plasmaOverviewIsActive()) {
+                cancelPendingActivation(attemptId);
+                return;
+            }
+
             pendingActivationAttemptId = 0;
             overviewModel = result.value;
             loading = false;
@@ -181,6 +217,11 @@ QtObject {
 
     function rejectLayoutState(attemptId, reason) {
         if (!loading || active || attemptId <= 0 || attemptId !== pendingActivationAttemptId) {
+            return;
+        }
+
+        if (plasmaOverviewIsActive()) {
+            cancelPendingActivation(attemptId);
             return;
         }
 

@@ -294,6 +294,14 @@ describe("overview effect package", () => {
       controller.indexOf("function deactivate()"),
       controller.indexOf("function acceptLayoutState("),
     );
+    const plasmaOverview = controller.slice(
+      controller.indexOf("function plasmaOverviewIsActive("),
+      controller.indexOf("function cancelPendingActivation("),
+    );
+    const cancelPending = controller.slice(
+      controller.indexOf("function cancelPendingActivation("),
+      controller.indexOf("function acceptLayoutState("),
+    );
     const accept = controller.slice(
       controller.indexOf("function acceptLayoutState("),
       controller.indexOf("function rejectLayoutState("),
@@ -323,14 +331,29 @@ describe("overview effect package", () => {
     );
     expect(activate).toContain("pendingActivationAttemptId = attemptId");
     expect(activate).toContain("layoutStateReader.sample(attemptId)");
+    expect(activate).toMatch(
+      /if \(active \|\| loading \|\| plasmaOverviewIsActive\(\)\) \{\s*return;\s*\}/u,
+    );
     expect(deactivate).toMatch(
       /pendingActivationAttemptId = 0;[\s\S]*layoutStateReader\.cancel\(\)/u,
     );
+    expect(plasmaOverview).toMatch(
+      /const workspace = KWin\.Workspace;[\s\S]*workspace\.isEffectActive\("overview"\) === true;/u,
+    );
+    expect(cancelPending).toMatch(
+      /if \(!loading \|\| active \|\| attemptId <= 0 \|\| attemptId !== pendingActivationAttemptId\) \{\s*return false;\s*\}[\s\S]*layoutStateReader\.cancel\(\);[\s\S]*return true;/u,
+    );
     expect(accept).toContain("attemptId !== pendingActivationAttemptId");
+    expect(accept).toMatch(
+      /if \(plasmaOverviewIsActive\(\)\) \{\s*cancelPendingActivation\(attemptId\);\s*return;\s*\}[\s\S]*runtime\.loadOverviewModel\([\s\S]*if \(plasmaOverviewIsActive\(\)\) \{\s*cancelPendingActivation\(attemptId\);\s*return;\s*\}[\s\S]*overviewModel = result\.value;/u,
+    );
     expect(accept).toMatch(
       /pendingActivationAttemptId = 0;[\s\S]*overviewModel = result\.value;[\s\S]*loading = false;[\s\S]*active = true;/u,
     );
     expect(reject).toContain("attemptId !== pendingActivationAttemptId");
+    expect(reject).toMatch(
+      /if \(plasmaOverviewIsActive\(\)\) \{\s*cancelPendingActivation\(attemptId\);\s*return;\s*\}/u,
+    );
     expect(reject).toContain("activation rejected reason=${reason}");
 
     const guard = reject.indexOf("if (!loading || active");
@@ -346,6 +369,9 @@ describe("overview effect package", () => {
 
     expect(`${toggle}\n${activate}\n${deactivate}\n${accept}`).not.toContain(
       "rejectionOsdCall",
+    );
+    expect(`${plasmaOverview}\n${cancelPending}`).not.toMatch(
+      /rejectionOsdCall|console\.(?:warn|error)|KWin\.DBusCall|\b(?:activateEffect|deactivateEffect|loadEffect|reconfigureEffect|setEffectActive|toggleEffect|unloadEffect)\s*\(/u,
     );
     expect(reject).not.toMatch(
       /\b(?:Timer|Settings|ShortcutHandler|MouseArea)\s*\{|\.setValue\s*\(|KWin\.Workspace\./u,
