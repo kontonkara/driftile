@@ -853,4 +853,7 @@ pre-existing borderless state remains untouched.
 
 If KWin rejects the first borderless request while a new decoration is still
 initializing, Driftile retries once after the next decoration-policy settlement
-signal instead of leaving that window decorated.
+signal instead of leaving that window decorated. When both requests are
+rejected for the same exact non-normal helper role, later identical helpers
+share a bounded session backoff until the relevant policy changes; normal
+windows always retain their own attempt.

@@ -160,7 +160,9 @@ Horizontal focus normally reveals the destination with the smallest required
 viewport change. Optional overflow centering keeps that behavior while the
 destination and its nearest neighbor toward the previous focus both fit the
 work area; otherwise it centers the destination. Always-center and exact
-application policies retain priority.
+application policies retain priority. The destination receives its target
+frame before the other changed columns, while focus commits only after the
+complete geometry transaction succeeds.
 
 Optional single-column centering is a geometry invariant rather than a focus
 action. When a context contains exactly one tiled column, including a

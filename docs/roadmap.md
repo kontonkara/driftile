@@ -1862,6 +1862,12 @@ No unrelated feature belongs to 1.45.0.
   settling correction instead of snapping to the final size.
 - Keep threshold suppression for isolated small resizes and retire empty
   transition state after a failed or unnecessary retarget.
+- Present the selected tiled column before the other geometry participants so
+  full-width focus handoffs do not expose an incoherent intermediate frame.
+- Cache unchanged transition window-class classification and evaluate dynamic
+  eligibility once per geometry signal.
+- Share a bounded session backoff after two rejected borderless requests for
+  the same exact non-normal helper role while retaining explicit policy retry.
 
 Release criteria:
 
@@ -1871,6 +1877,10 @@ Release criteria:
   fallback order remain unchanged.
 - Small settling corrections retain the active visual interpolation and capped
   retarget duration without restarting position motion.
+- Focus transactions preserve rollback semantics while writing the selected
+  target first, and ordinary layout mutations retain strip-order writes.
+- Transition eligibility avoids duplicate hot-path work, and repeated helper
+  decoration rejection remains bounded without suppressing normal windows.
 - Focused runtime and transition checks pass before one grouped package gate.
 
 No unrelated feature belongs to 1.46.0.
