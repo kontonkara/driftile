@@ -129,6 +129,12 @@ Initial floating, sizing, presentation, and native-state rules then resolve in
 the confirmed destination context. Missing, stale, related, or rejected
 targets fall back once to the window's existing KWin context.
 
+An exact fresh-window maximize rule requests KWin's native work-area-edge
+state after the tiled or floating underlay is admitted. Initial
+fullscreen runs afterward when both policies match. Unsupported and rejected
+requests are one-shot; startup, restored, and already tracked windows are not
+changed.
+
 Horizontal focus normally reveals the destination with the smallest required
 viewport change. Optional overflow centering keeps that behavior while the
 destination and its nearest neighbor toward the previous focus both fit the

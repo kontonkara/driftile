@@ -1671,6 +1671,8 @@ No other feature belongs to 1.38.0.
   output, or both.
 - Apply a confirmed destination before initial floating, tiled sizing,
   presentation, full-width, and fullscreen policies.
+- Add an exact fresh-window native maximize-to-edges rule after underlay
+  admission and before an optional initial fullscreen request.
 - Keep startup, restored, related, and already admitted windows unchanged;
   never select a desktop or change focus as part of assignment.
 - Expose the bounded rule map through KConfig, NixOS, and Home Manager without
@@ -1684,3 +1686,5 @@ Release criteria:
   intermediate state, fall back safely, and are not retried.
 - Destination-relative initial floating placement and ordinary tiled admission
   use the confirmed target work area and layout context.
+- Native maximize remains under KWin ownership and preserves the admitted
+  tiled or floating state beneath it without retrying unsupported requests.

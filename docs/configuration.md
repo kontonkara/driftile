@@ -109,7 +109,8 @@ The activation writes only `ApplicationBorderlessExclusions`,
 `ApplicationFocusCentering`, `ApplicationFloatingPositions`,
 `ApplicationInitialDestinations`,
 `ApplicationInitialFloating`, `ApplicationInitialFullWidth`,
-`ApplicationInitialFullscreen`, `ApplicationTilingExclusions`,
+`ApplicationInitialFullscreen`, `ApplicationInitialMaximized`,
+`ApplicationTilingExclusions`,
 `BorderlessWindows`, `CenterFocusedColumn`, `Gap`,
 `DefaultColumnPresentation`, `DefaultColumnWidthPercent`,
 `DefaultColumnWidthPixels`, `DefaultWindowHeight`, `ColumnWidthPresets`,
@@ -175,6 +176,10 @@ programs.driftile.settings.applicationFloatingPositions = {
 
 programs.driftile.settings.applicationInitialFullWidth = [
   "org.mozilla.firefox"
+];
+
+programs.driftile.settings.applicationInitialMaximized = [
+  "org.kde.konsole"
 ];
 
 programs.driftile.settings.applicationInitialFullscreen = [
@@ -481,9 +486,10 @@ windows first tracked afterward.
 
 After a confirmed assignment, initial floating and floating-position rules use
 the destination work area, initial tiled sizing and presentation use the
-destination layout context, and an initial fullscreen request runs last. The
-policy adds no shortcut or persistence field. At most 128 rules are accepted;
-application IDs and output names are each limited to 255 UTF-8 bytes.
+destination layout context, native maximize runs after admission, and an
+initial fullscreen request runs last. The policy adds no shortcut or
+persistence field. At most 128 rules are accepted; application IDs and output
+names are each limited to 255 UTF-8 bytes.
 
 ## Applications initially floating
 
@@ -543,6 +549,24 @@ The matching application width or global default is retained as the
 re-tiled, or already admitted windows are unchanged. An initially floating or
 automatically floating window does not use the rule. Live edits affect only
 windows first tracked afterward and perform no immediate geometry write.
+
+## Applications initially maximized to edges
+
+**Applications initially maximized to edges** requests KWin's native
+work-area-edge maximize for a freshly admitted exact normal-window match. This
+is distinct from a Driftile full-width column: KWin owns the maximized state,
+while the admitted tiled or floating state remains underneath for
+restore.
+
+Enter exact, case-sensitive KWin `desktopFileName` values, one per line, under
+the application-list limits. Destination, initial floating placement, tiled
+sizing, presentation, and full-width rules settle first. Native maximize is
+requested next, and an initial fullscreen request runs last.
+
+Startup, restored, transferred, re-admitted, and already tracked windows are
+unchanged. Unsupported or rejected requests are consumed without retry. Live
+edits affect only windows first tracked afterward and add no shortcut or
+persistence field.
 
 ## Applications initially fullscreen
 

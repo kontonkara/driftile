@@ -319,6 +319,7 @@ programs.driftile.settings = {
     };
   };
   applicationInitialFullWidth = [ ];
+  applicationInitialMaximized = [ ];
   applicationInitialFullscreen = [ ];
   applicationTilingExclusions = [ ];
   borderlessWindows = true;
@@ -346,6 +347,7 @@ keeps the exact built-in `1/3`, `1/2`, and `2/3` cycle. See
 [Application initial destinations](configuration.md#application-initial-destinations),
 [Applications initially floating](configuration.md#applications-initially-floating),
 [Application floating positions](configuration.md#application-floating-positions),
+[Applications initially maximized to edges](configuration.md#applications-initially-maximized-to-edges),
 [Window height presets](configuration.md#window-height-presets),
 and
 [Application borderless exclusions](configuration.md#application-borderless-exclusions)

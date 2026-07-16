@@ -56,6 +56,9 @@ The ownership rule is strict:
   reclassified.
 - Up to 128 exact application IDs whose genuinely new tiled windows start as
   full-width singleton columns while retaining their normal width for restore.
+- Up to 128 exact application IDs whose genuinely new normal windows request
+  native work-area-edge maximize after their tiled or floating underlay is
+  admitted.
 - Up to 128 exact application IDs whose genuinely new fullscreen-capable
   windows request native fullscreen after their underlying admission settles.
 - Up to 128 exact KWin `desktopFileName` exclusions that keep matching
