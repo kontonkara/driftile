@@ -408,6 +408,8 @@ describe("transition effect package", () => {
       height: 190,
     });
     expect(sizeOnlyHarness.animationRequests).toHaveLength(0);
+    expect(sizeOnlyHarness.retargetCalls).toHaveLength(0);
+    expect("driftileTransitionAnimation" in sizeOnlyHarness.window).toBe(false);
 
     const largeResizeHarness = createHarness();
     changeGeometry(largeResizeHarness.window, {
@@ -428,6 +430,49 @@ describe("transition effect package", () => {
         to: { value1: 175.5, value2: 130 },
       },
     ]);
+  });
+
+  it("cleans up a failed small size retarget", () => {
+    const harness = createHarness();
+    changeGeometry(harness.window, {
+      x: -30,
+      y: -20,
+      width: 400,
+      height: 300,
+    });
+    expect(harness.animationRequests[0]?.animations).toMatchObject([
+      { type: "size" },
+    ]);
+
+    harness.failedRetargets.add(1);
+    changeGeometry(harness.window, {
+      x: -30,
+      y: -20,
+      width: 405,
+      height: 305,
+    });
+
+    expect(harness.retargetCalls).toEqual([
+      {
+        animationId: 1,
+        target: { value1: 405, value2: 305 },
+        duration: 100,
+      },
+    ]);
+    expect(harness.animationRequests).toHaveLength(1);
+    expect(harness.cancelledAnimations).toHaveLength(0);
+    expect("driftileTransitionAnimation" in harness.window).toBe(false);
+
+    let staleStateReads = 0;
+    Object.defineProperty(harness.window, "driftileTransitionAnimation", {
+      configurable: true,
+      get() {
+        staleStateReads += 1;
+        return undefined;
+      },
+    });
+    harness.setFullScreenEffectActive(true);
+    expect(staleStateReads).toBe(0);
   });
 
   it("supports a zero resize threshold and falls back on malformed values", () => {
@@ -469,7 +514,7 @@ describe("transition effect package", () => {
     }
   });
 
-  it("cancels a stale resize target without interrupting movement", () => {
+  it("retargets a small resize correction without interrupting movement", () => {
     const harness = createHarness();
     changeGeometry(harness.window, {
       x: 40,
@@ -484,8 +529,12 @@ describe("transition effect package", () => {
       height: 255,
     });
 
-    expect(harness.cancelledAnimations).toEqual([1]);
     expect(harness.retargetCalls).toEqual([
+      {
+        animationId: 1,
+        target: { value1: 408, value2: 255 },
+        duration: 100,
+      },
       {
         animationId: 2,
         target: { value1: 264, value2: 197.5 },
@@ -493,6 +542,7 @@ describe("transition effect package", () => {
       },
     ]);
     expect(harness.animationRequests).toHaveLength(1);
+    expect(harness.cancelledAnimations).toHaveLength(0);
   });
 
   it("uses only the required attributes for position-only and size-only changes", () => {
