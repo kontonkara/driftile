@@ -128,6 +128,14 @@
       <label>Applications initially floating by desktop-file ID</label>
       <default></default>
     </entry>
+    <entry name="ApplicationInitialFullWidth" type="String">
+      <label>Applications initially full-width by KWin desktopFileName</label>
+      <default></default>
+    </entry>
+    <entry name="ApplicationInitialFullscreen" type="String">
+      <label>Applications initially fullscreen by KWin desktopFileName</label>
+      <default></default>
+    </entry>
     <entry name="ApplicationTilingExclusions" type="String">
       <label>Applications excluded from tiling by desktop-file ID</label>
       <default></default>

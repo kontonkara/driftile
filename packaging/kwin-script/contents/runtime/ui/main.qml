@@ -1108,6 +1108,8 @@ QtObject {
             applicationWindowHeights: KWin.readConfig("ApplicationWindowHeights", ""),
             applicationFocusCentering: KWin.readConfig("ApplicationFocusCentering", ""),
             applicationInitialFloating: KWin.readConfig("ApplicationInitialFloating", ""),
+            applicationInitialFullWidth: KWin.readConfig("ApplicationInitialFullWidth", ""),
+            applicationInitialFullscreen: KWin.readConfig("ApplicationInitialFullscreen", ""),
             applicationTilingExclusions: KWin.readConfig("ApplicationTilingExclusions", ""),
             alwaysCenterSingleColumn: KWin.readConfig("AlwaysCenterSingleColumn", false),
             borderlessWindows: KWin.readConfig("BorderlessWindows", true),

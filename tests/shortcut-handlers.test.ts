@@ -942,6 +942,8 @@ describe("KWin shortcut handlers", () => {
       "kcfg_ApplicationWindowHeights",
       "kcfg_ApplicationFocusCentering",
       "kcfg_ApplicationInitialFloating",
+      "kcfg_ApplicationInitialFullWidth",
+      "kcfg_ApplicationInitialFullscreen",
       "kcfg_ApplicationTilingExclusions",
       "kcfg_ApplicationBorderlessExclusions",
     ];
@@ -1493,7 +1495,7 @@ describe("KWin shortcut handlers", () => {
     expect(runtime).toContain("controller.setApplicationColumnPresentations(");
   });
 
-  it("exposes exact application initial-floating rules as a bounded list", () => {
+  it("exposes exact application admission rules as bounded lists", () => {
     const initialFloatingEntry = configuration.match(
       /<entry name="ApplicationInitialFloating" type="String">([\s\S]*?)<\/entry>/,
     )?.[1];
@@ -1502,6 +1504,24 @@ describe("KWin shortcut handlers", () => {
     )?.[1];
     const initialFloatingWidget = configurationUi.match(
       /<widget class="QPlainTextEdit" name="kcfg_ApplicationInitialFloating">([\s\S]*?)<\/widget>/,
+    )?.[1];
+    const initialFullWidthEntry = configuration.match(
+      /<entry name="ApplicationInitialFullWidth" type="String">([\s\S]*?)<\/entry>/,
+    )?.[1];
+    const initialFullWidthLabel = configurationUi.match(
+      /<widget class="QLabel" name="applicationInitialFullWidthLabel">([\s\S]*?)<\/widget>/,
+    )?.[1];
+    const initialFullWidthWidget = configurationUi.match(
+      /<widget class="QPlainTextEdit" name="kcfg_ApplicationInitialFullWidth">([\s\S]*?)<\/widget>/,
+    )?.[1];
+    const initialFullscreenEntry = configuration.match(
+      /<entry name="ApplicationInitialFullscreen" type="String">([\s\S]*?)<\/entry>/,
+    )?.[1];
+    const initialFullscreenLabel = configurationUi.match(
+      /<widget class="QLabel" name="applicationInitialFullscreenLabel">([\s\S]*?)<\/widget>/,
+    )?.[1];
+    const initialFullscreenWidget = configurationUi.match(
+      /<widget class="QPlainTextEdit" name="kcfg_ApplicationInitialFullscreen">([\s\S]*?)<\/widget>/,
     )?.[1];
 
     expect(initialFloatingEntry).toContain(
@@ -1522,6 +1542,59 @@ describe("KWin shortcut handlers", () => {
     );
     expect(qml).toContain(
       'applicationInitialFloating: KWin.readConfig("ApplicationInitialFloating", "")',
+    );
+    expect(initialFullWidthEntry).toContain(
+      "<label>Applications initially full-width by KWin desktopFileName</label>",
+    );
+    expect(initialFullWidthEntry).toContain("<default></default>");
+    expect(initialFullWidthLabel).toContain(
+      "<string>Applications initially full-width:</string>",
+    );
+    expect(initialFullWidthLabel).toContain(
+      "<cstring>kcfg_ApplicationInitialFullWidth</cstring>",
+    );
+    expect(initialFullWidthWidget).toContain(
+      "Enter up to 128 exact, case-sensitive KWin desktopFileName values, one per line.",
+    );
+    expect(initialFullWidthWidget).toContain(
+      "Genuinely new normal tiled matches open as full-width columns.",
+    );
+    expect(initialFullWidthWidget).toContain(
+      "Their exact application or default width remains the Meta+F restore width.",
+    );
+    expect(initialFullWidthWidget).toContain(
+      "Existing, restored, transferred, and freshly re-tiled windows are unchanged.",
+    );
+    expect(initialFullWidthWidget).toContain(
+      "Live edits affect future tracked windows and do not move current ones.",
+    );
+    expect(qml).toContain(
+      'applicationInitialFullWidth: KWin.readConfig("ApplicationInitialFullWidth", "")',
+    );
+    expect(initialFullscreenEntry).toContain(
+      "<label>Applications initially fullscreen by KWin desktopFileName</label>",
+    );
+    expect(initialFullscreenEntry).toContain("<default></default>");
+    expect(initialFullscreenLabel).toContain(
+      "<string>Applications initially fullscreen:</string>",
+    );
+    expect(initialFullscreenLabel).toContain(
+      "<cstring>kcfg_ApplicationInitialFullscreen</cstring>",
+    );
+    expect(initialFullscreenWidget).toContain(
+      "Enter up to 128 exact, case-sensitive KWin desktopFileName values, one per line.",
+    );
+    expect(initialFullscreenWidget).toContain(
+      "Only genuinely new matching windows start fullscreen, and only when KWin reports that fullscreen is supported.",
+    );
+    expect(initialFullscreenWidget).toContain(
+      "Exiting fullscreen returns each window to its admitted tiled or floating state.",
+    );
+    expect(initialFullscreenWidget).toContain(
+      "Live edits affect future tracked windows only and do not rewrite existing windows.",
+    );
+    expect(qml).toContain(
+      'applicationInitialFullscreen: KWin.readConfig("ApplicationInitialFullscreen", "")',
     );
   });
 

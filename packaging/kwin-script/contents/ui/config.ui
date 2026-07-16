@@ -583,6 +583,58 @@
         </widget>
        </item>
        <item>
+        <widget class="QLabel" name="applicationInitialFullWidthLabel">
+         <property name="text">
+          <string>Applications initially full-width:</string>
+         </property>
+         <property name="buddy">
+          <cstring>kcfg_ApplicationInitialFullWidth</cstring>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPlainTextEdit" name="kcfg_ApplicationInitialFullWidth">
+         <property name="toolTip">
+          <string>Enter up to 128 exact, case-sensitive KWin desktopFileName values, one per line. Genuinely new normal tiled matches open as full-width columns. Their exact application or default width remains the Meta+F restore width. Existing, restored, transferred, and freshly re-tiled windows are unchanged. Live edits affect future tracked windows and do not move current ones.</string>
+         </property>
+         <property name="whatsThis">
+          <string>Blank lines are ignored. Only genuinely new normal tiled windows matching an exact desktopFileName open as full-width columns; their configured application or default width remains the Meta+F restore width. Existing, restored, transferred, and freshly re-tiled windows are unchanged. Live edits affect future tracked windows and do not move current ones.</string>
+         </property>
+         <property name="minimumSize">
+          <size>
+           <width>0</width>
+           <height>100</height>
+          </size>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="applicationInitialFullscreenLabel">
+         <property name="text">
+          <string>Applications initially fullscreen:</string>
+         </property>
+         <property name="buddy">
+          <cstring>kcfg_ApplicationInitialFullscreen</cstring>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPlainTextEdit" name="kcfg_ApplicationInitialFullscreen">
+         <property name="toolTip">
+          <string>Enter up to 128 exact, case-sensitive KWin desktopFileName values, one per line. Only genuinely new matching windows start fullscreen, and only when KWin reports that fullscreen is supported. Exiting fullscreen returns each window to its admitted tiled or floating state. Live edits affect future tracked windows only and do not rewrite existing windows.</string>
+         </property>
+         <property name="whatsThis">
+          <string>Blank lines are ignored. Only genuinely new exact matches start fullscreen when the window supports it. Exiting fullscreen restores the tiled or floating state established during admission. Existing windows are never rewritten, and live edits affect only windows tracked in the future.</string>
+         </property>
+         <property name="minimumSize">
+          <size>
+           <width>0</width>
+           <height>100</height>
+          </size>
+         </property>
+        </widget>
+       </item>
+       <item>
         <widget class="QLabel" name="applicationTilingExclusionsLabel">
          <property name="text">
           <string>Applications excluded from tiling:</string>
