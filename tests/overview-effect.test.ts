@@ -629,6 +629,104 @@ describe("overview effect package", () => {
     );
   });
 
+  it("snapshots effect-window action fields outside live handler bindings", () => {
+    const presentation = desktopCard.slice(
+      desktopCard.indexOf("id: windowPresentation"),
+      desktopCard.indexOf("id: activeColumnBadge"),
+    );
+    const snapshot = desktopCard.slice(
+      desktopCard.indexOf("function snapshotWindowActions("),
+      desktopCard.indexOf("function windowSnapshotCanDrag("),
+    );
+    const snapshotDrag = desktopCard.slice(
+      desktopCard.indexOf("function windowSnapshotCanDrag("),
+      desktopCard.indexOf("function windowSnapshotCanRequestClose("),
+    );
+    const liveDrop = desktopCard.slice(
+      desktopCard.indexOf("function windowDropIsValid("),
+      desktopCard.indexOf("function windowDropSourceIsEligible("),
+    );
+    const snapshotClose = desktopCard.slice(
+      desktopCard.indexOf("function windowSnapshotCanRequestClose("),
+      desktopCard.indexOf("function windowCanDrag("),
+    );
+    const snapshotDrop = desktopCard.slice(
+      desktopCard.indexOf("function windowDropSourceIsEligible("),
+      desktopCard.indexOf("function windowIsActionable("),
+    );
+
+    expect(presentation).toContain("property var actionSnapshot: null");
+    expect(presentation).toContain(
+      "Component.onCompleted: refreshActionSnapshot()",
+    );
+    expect(presentation).toContain(
+      "onCandidateChanged: refreshActionSnapshot()",
+    );
+    for (const signal of [
+      "Closeable",
+      "Deleted",
+      "Desktops",
+      "Managed",
+      "Minimized",
+      "Modal",
+      "Moveable",
+      "NormalWindow",
+      "Output",
+      "Transient",
+      "TransientFor",
+      "WantsInput",
+    ]) {
+      expect(presentation).toContain(`function on${signal}Changed()`);
+    }
+    expect(presentation).toContain(
+      "enabled: thumbnailShell.visible && windowPresentation.dragEligible",
+    );
+    expect(presentation).toContain(
+      "enabled: tabShell.visible && windowPresentation.closeEligible",
+    );
+    expect(presentation).toContain("wId: model.window.internalId");
+    expect(presentation).not.toContain("card.windowCanDrag(");
+    expect(presentation).not.toContain("card.windowCanRequestClose(");
+
+    for (const property of [
+      "candidate.closeable",
+      "candidate.deleted",
+      "candidate.desktops",
+      "candidate.internalId",
+      "candidate.managed",
+      "candidate.minimized",
+      "candidate.modal",
+      "candidate.moveable",
+      "candidate.normalWindow",
+      "candidate.output",
+      "candidate.transient",
+      "candidate.transientFor",
+      "candidate.wantsInput",
+    ]) {
+      expect(snapshot).toContain(property);
+    }
+    expect(snapshotDrag).toContain("snapshot.transient !== false");
+    expect(snapshotDrag).toContain("snapshot.transientFor !== null");
+    expect(snapshotDrag).toContain("desktops && desktops.length === 1");
+    expect(snapshot).toContain("let desktops = null");
+    expect(snapshotClose).toContain("if (!snapshot.desktops)");
+    expect(snapshotDrop).toContain("source.dragEligible === true");
+    expect(snapshotDrop).not.toContain("windowCanDrag(");
+    expect(desktopCard).toContain(
+      "containsDrag && card.windowDropSourceIsEligible(drag.source, drag.keys)",
+    );
+    expect(liveDrop).toContain("windowCanDrag(source)");
+    expect(desktopCard).toContain(
+      "onEntered: drag => drag.accepted = card.windowDropIsValid(drag.source, drag.keys)",
+    );
+    expect(desktopCard).toContain(
+      "onPositionChanged: drag => drag.accepted = card.windowDropIsValid(drag.source, drag.keys)",
+    );
+    expect(desktopCard).toContain(
+      "if (!card.windowDropIsValid(source, drop.keys))",
+    );
+  });
+
   it("moves one exact live window through a guarded desktop drop", () => {
     const delegate = scene.slice(
       scene.indexOf("DesktopCard {"),
@@ -767,11 +865,11 @@ describe("overview effect package", () => {
   it("moves one exact live window across outputs and compensates partial writes", () => {
     const sourceHandlers = desktopCard.slice(
       desktopCard.indexOf("id: thumbnailDragHandler"),
-      desktopCard.indexOf("function windowCanRequestClose("),
+      desktopCard.indexOf("id: activeColumnBadge"),
     );
     const transport = desktopCard.slice(
       desktopCard.indexOf("function requestCrossOutputWindowDrop("),
-      desktopCard.indexOf("function windowCanRequestClose("),
+      desktopCard.indexOf("function windowDropIsValid("),
     );
     const effectConnections = scene.slice(
       scene.indexOf("target: root.sceneEffect"),
@@ -1391,8 +1489,8 @@ describe("overview effect package", () => {
       desktopCard.indexOf("function indexOfDesktop("),
     );
     const eligibility = desktopCard.slice(
-      desktopCard.indexOf("function windowCanRequestClose("),
-      desktopCard.indexOf("function windowDropIsValid("),
+      desktopCard.indexOf("function windowSnapshotCanRequestClose("),
+      desktopCard.indexOf("function windowCanDrag("),
     );
     const desktopDelegate = scene.slice(
       scene.indexOf("DesktopCard {"),
@@ -1410,7 +1508,7 @@ describe("overview effect package", () => {
       { source: tab, id: "tabShell" },
     ]) {
       expect(visual.source).toContain(
-        `enabled: card.windowCanRequestClose(windowPresentation, ${visual.id})`,
+        `enabled: ${visual.id}.visible && windowPresentation.closeEligible`,
       );
       expect(visual.source).toContain(
         "onTapped: card.windowCloseRequested(windowPresentation.candidate,",
@@ -1421,24 +1519,18 @@ describe("overview effect package", () => {
       expect(visual.source).toContain("windowPresentation.sourceScreen)");
     }
 
-    expect(eligibility).toContain("!visual || !visual.visible");
     expect(eligibility).toContain("presentation.matchesSearch !== true");
-    expect(eligibility).toContain("candidate.deleted");
-    expect(eligibility).toContain("candidate.minimized");
-    expect(eligibility).toContain("presentation.minimizedWindow");
-    expect(eligibility).toContain("candidate.managed !== true");
-    expect(eligibility).toContain("candidate.closeable !== true");
+    expect(eligibility).toContain("snapshot.deleted");
+    expect(eligibility).toContain("snapshot.minimized");
+    expect(eligibility).toContain("snapshot.managed !== true");
+    expect(eligibility).toContain("snapshot.closeable !== true");
+    expect(eligibility).toContain("snapshot.windowId.length === 0");
+    expect(eligibility).toContain("snapshot.output !== expectedScreen");
     expect(eligibility).toContain(
-      'typeof candidate.closeWindow !== "function"',
+      "snapshot.desktops[index] === expectedDesktop",
     );
-    expect(eligibility).toContain("String(candidate.internalId) !== windowId");
     expect(eligibility).toContain(
-      "String(expectedDesktop.id) !== expectedDesktopId",
-    );
-    expect(eligibility).toContain("candidate.output !== expectedScreen");
-    expect(eligibility).toContain("candidateDesktop === expectedDesktop");
-    expect(eligibility).toContain(
-      "String(candidateDesktop.id) === expectedDesktopId",
+      "snapshot.desktopIds[index] === expectedDesktopId",
     );
     expect(desktopCard).not.toContain("candidate.closeWindow()");
 

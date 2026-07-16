@@ -198,12 +198,15 @@ Rectangle {
                 id: windowPresentation
 
                 readonly property var candidate: model.window
+                property var actionSnapshot: null
                 readonly property bool matchesSearch: card.windowMatchesSearch(candidate)
                 readonly property string windowId: model.window ? String(model.window.internalId) : ""
                 readonly property var tiledPresentation: card.tiledPresentations[windowId]
                 readonly property var frame: card.frameForWindow(model.window, windowId)
                 readonly property bool selectedThumbnail: !tiledPresentation || tiledPresentation.selected
                 readonly property bool minimizedWindow: model.window ? model.window.minimized : false
+                readonly property bool dragEligible: card.windowSnapshotCanDrag(windowPresentation)
+                readonly property bool closeEligible: card.windowSnapshotCanRequestClose(windowPresentation)
                 readonly property var sourceDesktop: card.desktop
                 readonly property string sourceDesktopId: card.desktopId
                 readonly property var sourceScreen: card.screen
@@ -215,14 +218,21 @@ Rectangle {
                 opacity: thumbnailShell.Drag.active || tabShell.Drag.active ? 0.72 : 1
                 z: frame && frame.floating ? 1000 + index : 100 + index
 
-                onCandidateChanged: card.navigationTargetsChanged()
+                onCandidateChanged: refreshActionSnapshot()
+
+                Component.onCompleted: refreshActionSnapshot()
+
+                function refreshActionSnapshot() {
+                    actionSnapshot = card.snapshotWindowActions(candidate);
+                    card.navigationTargetsChanged();
+                }
 
                 Connections {
                     target: windowPresentation.candidate
                     ignoreUnknownSignals: true
 
                     function onDeletedChanged() {
-                        card.navigationTargetsChanged();
+                        windowPresentation.refreshActionSnapshot();
                     }
 
                     function onFrameGeometryChanged() {
@@ -238,11 +248,11 @@ Rectangle {
                     }
 
                     function onMinimizedChanged() {
-                        card.navigationTargetsChanged();
+                        windowPresentation.refreshActionSnapshot();
                     }
 
                     function onOutputChanged() {
-                        card.navigationTargetsChanged();
+                        windowPresentation.refreshActionSnapshot();
                     }
 
                     function onWindowClassChanged() {
@@ -250,7 +260,39 @@ Rectangle {
                     }
 
                     function onWantsInputChanged() {
-                        card.navigationTargetsChanged();
+                        windowPresentation.refreshActionSnapshot();
+                    }
+
+                    function onCloseableChanged() {
+                        windowPresentation.refreshActionSnapshot();
+                    }
+
+                    function onDesktopsChanged() {
+                        windowPresentation.refreshActionSnapshot();
+                    }
+
+                    function onManagedChanged() {
+                        windowPresentation.refreshActionSnapshot();
+                    }
+
+                    function onModalChanged() {
+                        windowPresentation.refreshActionSnapshot();
+                    }
+
+                    function onMoveableChanged() {
+                        windowPresentation.refreshActionSnapshot();
+                    }
+
+                    function onNormalWindowChanged() {
+                        windowPresentation.refreshActionSnapshot();
+                    }
+
+                    function onTransientChanged() {
+                        windowPresentation.refreshActionSnapshot();
+                    }
+
+                    function onTransientForChanged() {
+                        windowPresentation.refreshActionSnapshot();
                     }
                 }
 
@@ -317,7 +359,7 @@ Rectangle {
                     TapHandler {
                         acceptedButtons: Qt.MiddleButton
                         acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
-                        enabled: card.windowCanRequestClose(windowPresentation, thumbnailShell)
+                        enabled: thumbnailShell.visible && windowPresentation.closeEligible
                         onTapped: card.windowCloseRequested(windowPresentation.candidate,
                                                            windowPresentation.windowId,
                                                            windowPresentation.sourceDesktop,
@@ -332,7 +374,7 @@ Rectangle {
                         acceptedButtons: Qt.LeftButton
                         acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
                         acceptedModifiers: Qt.NoModifier
-                        enabled: thumbnailShell.visible && card.windowCanDrag(windowPresentation)
+                        enabled: thumbnailShell.visible && windowPresentation.dragEligible
 
                         onGrabChanged: (transition, point) => {
                             if (transition === PointerDevice.GrabExclusive) {
@@ -432,7 +474,7 @@ Rectangle {
                     TapHandler {
                         acceptedButtons: Qt.MiddleButton
                         acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
-                        enabled: card.windowCanRequestClose(windowPresentation, tabShell)
+                        enabled: tabShell.visible && windowPresentation.closeEligible
                         onTapped: card.windowCloseRequested(windowPresentation.candidate,
                                                            windowPresentation.windowId,
                                                            windowPresentation.sourceDesktop,
@@ -448,7 +490,7 @@ Rectangle {
                         acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
                         acceptedModifiers: Qt.NoModifier
                         enabled: tabShell.visible && windowPresentation.tiledPresentation
-                                 && !windowPresentation.minimizedWindow && card.windowCanDrag(windowPresentation)
+                                 && !windowPresentation.minimizedWindow && windowPresentation.dragEligible
 
                         onGrabChanged: (transition, point) => {
                             if (transition === PointerDevice.GrabExclusive) {
@@ -524,7 +566,7 @@ Rectangle {
     DropArea {
         id: windowDropArea
 
-        readonly property bool validTarget: containsDrag && card.windowDropIsValid(drag.source, drag.keys)
+        readonly property bool validTarget: containsDrag && card.windowDropSourceIsEligible(drag.source, drag.keys)
 
         anchors.fill: parent
         keys: ["driftile-window"]
@@ -609,6 +651,100 @@ Rectangle {
         return JSON.stringify(["window", desktopId, windowId]);
     }
 
+    function snapshotWindowActions(candidate) {
+        if (!candidate) {
+            return null;
+        }
+
+        try {
+            const internalId = candidate.internalId;
+            let desktops = null;
+            const desktopIds = [];
+            if (candidate.desktops) {
+                desktops = [];
+                for (const candidateDesktop of candidate.desktops) {
+                    desktops.push(candidateDesktop);
+                    desktopIds.push(String(candidateDesktop.id));
+                }
+            }
+
+            return {
+                closeable: candidate.closeable === true && typeof candidate.closeWindow === "function",
+                deleted: candidate.deleted === true,
+                desktopIds,
+                desktops,
+                managed: candidate.managed === true,
+                minimized: candidate.minimized === true,
+                modal: candidate.modal,
+                moveable: candidate.moveable === true,
+                normalWindow: candidate.normalWindow === true,
+                output: candidate.output,
+                transient: candidate.transient,
+                transientFor: candidate.transientFor,
+                wantsInput: candidate.wantsInput === true,
+                windowId: internalId === undefined || internalId === null ? "" : String(internalId)
+            };
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function windowSnapshotCanDrag(presentation) {
+        try {
+            const snapshot = presentation ? presentation.actionSnapshot : null;
+            const sourceDesktop = presentation ? presentation.sourceDesktop : null;
+            const sourceDesktopId = presentation ? presentation.sourceDesktopId : null;
+            const sourceScreen = presentation ? presentation.sourceScreen : null;
+            if (!snapshot || presentation.matchesSearch !== true || snapshot.deleted || snapshot.minimized
+                    || snapshot.wantsInput !== true || snapshot.normalWindow !== true || snapshot.managed !== true
+                    || snapshot.moveable !== true || snapshot.modal !== false || snapshot.windowId.length === 0
+                    || !sourceDesktop || typeof sourceDesktopId !== "string" || sourceDesktopId.length === 0
+                    || !sourceScreen || snapshot.output !== sourceScreen
+                    || snapshot.transient !== false || snapshot.transientFor !== null) {
+                return false;
+            }
+
+            const desktops = snapshot.desktops;
+            return desktops && desktops.length === 1 && desktops[0] === sourceDesktop
+                    && snapshot.desktopIds.length === 1 && snapshot.desktopIds[0] === sourceDesktopId;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function windowSnapshotCanRequestClose(presentation) {
+        try {
+            const snapshot = presentation ? presentation.actionSnapshot : null;
+            const expectedDesktop = presentation ? presentation.sourceDesktop : null;
+            const expectedDesktopId = presentation ? presentation.sourceDesktopId : "";
+            const expectedScreen = presentation ? presentation.sourceScreen : null;
+            if (!snapshot || presentation.matchesSearch !== true || snapshot.deleted || snapshot.minimized
+                    || snapshot.managed !== true || snapshot.closeable !== true || snapshot.windowId.length === 0
+                    || !expectedDesktop || typeof expectedDesktopId !== "string" || expectedDesktopId.length === 0
+                    || !expectedScreen
+                    || snapshot.output !== expectedScreen) {
+                return false;
+            }
+
+            if (!snapshot.desktops) {
+                return false;
+            }
+            if (snapshot.desktops.length === 0) {
+                return true;
+            }
+
+            for (let index = 0; index < snapshot.desktops.length; index += 1) {
+                if (snapshot.desktops[index] === expectedDesktop && snapshot.desktopIds[index] === expectedDesktopId) {
+                    return true;
+                }
+            }
+
+            return false;
+        } catch (error) {
+            return false;
+        }
+    }
+
     function windowCanDrag(presentation) {
         try {
             const candidate = presentation ? presentation.candidate : null;
@@ -667,52 +803,22 @@ Rectangle {
         }
     }
 
-    function windowCanRequestClose(presentation, visual) {
-        try {
-            const candidate = presentation ? presentation.candidate : null;
-            const windowId = presentation ? presentation.windowId : "";
-            const expectedDesktop = presentation ? presentation.sourceDesktop : null;
-            const expectedDesktopId = presentation ? presentation.sourceDesktopId : "";
-            const expectedScreen = presentation ? presentation.sourceScreen : null;
-            if (!visual || !visual.visible || !candidate || presentation.matchesSearch !== true
-                    || candidate.deleted || candidate.minimized || presentation.minimizedWindow
-                    || candidate.managed !== true || candidate.closeable !== true
-                    || typeof candidate.closeWindow !== "function" || candidate.internalId === undefined
-                    || candidate.internalId === null || typeof windowId !== "string" || windowId.length === 0
-                    || String(candidate.internalId) !== windowId || !expectedDesktop
-                    || expectedDesktop.id === undefined || expectedDesktop.id === null
-                    || typeof expectedDesktopId !== "string" || expectedDesktopId.length === 0
-                    || String(expectedDesktop.id) !== expectedDesktopId || !expectedScreen
-                    || candidate.output !== expectedScreen) {
-                return false;
-            }
-
-            const desktops = candidate.desktops;
-            if (!desktops) {
-                return false;
-            }
-            if (desktops.length === 0) {
-                return true;
-            }
-
-            for (const candidateDesktop of desktops) {
-                if (candidateDesktop === expectedDesktop && String(candidateDesktop.id) === expectedDesktopId) {
-                    return true;
-                }
-            }
-
-            return false;
-        } catch (error) {
-            return false;
-        }
-    }
-
     function windowDropIsValid(source, keys) {
         try {
             return keys && typeof keys.indexOf === "function" && keys.indexOf("driftile-window") >= 0
                     && windowCanDrag(source) && desktop && screen && desktop.id !== undefined && desktop.id !== null
                     && String(desktop.id) === desktopId && source.sourceScreen === screen
                     && source.sourceDesktopId !== desktopId;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function windowDropSourceIsEligible(source, keys) {
+        try {
+            return keys && typeof keys.indexOf === "function" && keys.indexOf("driftile-window") >= 0 && source
+                    && source.dragEligible === true && desktop && screen && desktopId.length > 0
+                    && source.sourceScreen === screen && source.sourceDesktopId !== desktopId;
         } catch (error) {
             return false;
         }
