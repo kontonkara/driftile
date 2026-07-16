@@ -70,6 +70,14 @@ inside the visible column span and hides when the complete label cannot fit or
 its source state is invalid. It accepts no input and changes no window, layout,
 setting, shortcut, persistence, or KWin state.
 
+Inside the optional overview, an unmodified vertical mouse wheel cycles the
+current actionable targets in visual order. Search limits the set to matching
+windows; without a query, non-current desktop gutters also participate.
+High-resolution deltas use bounded accumulation and a bounded step count. The
+search overlay reports the unique window-result count or an explicit no-match
+message as plain text. These interactions change only overview selection and
+perform no KWin, layout, configuration, or persistence write.
+
 ## Delivery contract
 
 | Area                 | Required behavior                                                                               | Target    |
@@ -90,7 +98,7 @@ setting, shortcut, persistence, or KWin state.
 | Pointer resize       | Adopt one completed horizontal column resize or vertical stacked-window resize                  | Available |
 | Overview companion   | Filter or activate windows; select or reorder desktops; move windows between desktop cards      | Available |
 | Tabbed columns       | Toggle presentation; select or reorder members with the existing vertical grammar               | 1.19.0    |
-| Pointer navigation   | Provide wheel navigation through the shared layout model                                        | Future    |
+| Pointer navigation   | Cycle the overview's shared actionable target model with vertical mouse wheel input             | Available |
 
 Adjacent and numbered single-window transfers remain secondary, unbound
 actions. Default desktop and output transfer shortcuts must move the whole

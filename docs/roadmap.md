@@ -1438,7 +1438,8 @@ Keyboard typing in the optional overview applies a bounded, case-insensitive
 window-title and application search. Every query term must match; Backspace
 edits one Unicode code point, Escape clears before closing, and spatial
 selection repairs within the remaining visible targets. Search remains
-session-only and read-only toward KWin and layout state.
+session-only and read-only toward KWin and layout state. Plain-text feedback
+shows the unique matching-window count or an explicit no-match message.
 
 Keyboard navigation also includes the number gutter of every non-current live
 desktop, including the shared empty tail. Enter reuses the guarded desktop
@@ -1448,6 +1449,12 @@ stay outside an active window search.
 The same target set supports bounded sequential keyboard traversal. Tab and
 Shift+Tab wrap in deterministic visual order, Home and End select its
 boundaries, and a selected desktop gutter receives an explicit focus outline.
+
+An unmodified vertical mouse wheel cycles that same actionable target set in
+visual order. Search limits it to matching windows; without a query,
+non-current desktop gutters also participate. High-resolution deltas use a
+bounded remainder and bounded per-event step count, changing only overview
+selection with no KWin or layout write.
 
 Delete requests closure only for the exact selected live window. Desktop
 targets, stale state, and non-closeable windows are no-ops; the effect remains

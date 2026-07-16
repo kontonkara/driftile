@@ -632,7 +632,13 @@ Driftile must integrate with, not duplicate:
   the main script remains the layout owner.
 - Typing in the optional overview filters its live window presentations by
   title and application identity. The bounded session-only query changes no
-  KWin, layout, persistence, or configuration state.
+  KWin, layout, persistence, or configuration state. Plain-text feedback shows
+  the unique matching-window count or an explicit no-match message.
+- An unmodified vertical mouse wheel cycles the overview's current actionable
+  targets. Search-filtered windows form the set while a query is active;
+  otherwise non-current desktop gutters also participate. Bounded
+  high-resolution accumulation changes only the overview selection and writes
+  no KWin, layout, persistence, or configuration state.
 - Delete in the optional overview requests closure only for the exact selected
   closeable window. The effect waits for KWin's removal signal and performs no
   layout, desktop, focus, or persistence write. Middle-clicking a visible

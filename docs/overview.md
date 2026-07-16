@@ -108,10 +108,18 @@ case-insensitive and every typed term must match. Arrow navigation immediately
 repairs its selection within the filtered results; `Backspace` removes one
 Unicode code point and `Escape` clears a non-empty query before it can close the
 effect. Desktop-gutter targets stay hidden while a search query is active. The
-query is session-only and is discarded when the effect closes.
+query is session-only and is discarded when the effect closes. Its plain-text
+feedback reports the unique matching-window count or `No matching windows`.
+
+An unmodified vertical mouse wheel cycles the current actionable targets in
+visual order. An active search limits the cycle to matching windows; otherwise
+non-current desktop gutters also participate. High-resolution deltas accumulate
+in a bounded remainder, and one event can advance only a bounded number of
+steps. Wheel navigation changes only the selected highlight and performs no
+KWin, layout, or persistent-state write.
 
 The interaction adds no layout or persistent state, KConfig value, shortcut,
-schema, or private API. Pointer behavior remains unchanged.
+schema, or private API.
 
 ## Desktop reordering
 
