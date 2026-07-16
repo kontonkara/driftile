@@ -126,6 +126,7 @@ export function init(
     ...indicatorCallbacks,
     ...previewCallbacks,
     startupStabilizationProbes: STARTUP_STABILIZATION_PROBES,
+    workspaceAutoBackAndForth: settings.workspaceAutoBackAndForth,
     ...(layoutPersistence.onStateChanged === undefined
       ? {}
       : { onLayoutStateChanged: layoutPersistence.onStateChanged }),
@@ -216,6 +217,7 @@ export function applySettings(settingsSnapshot: unknown): boolean {
   controller.setWindowHeightPresets(settings.windowHeightPresets.cycle);
   controller.setWindowHeightStepPercent(settings.windowHeightStepPercent);
   controller.setWindowHeightStepPixels(settings.windowHeightStepPixels);
+  controller.setWorkspaceAutoBackAndForth(settings.workspaceAutoBackAndForth);
   controller.setGap(settings.gap);
 
   if (settings.borderlessWindows) {

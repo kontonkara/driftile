@@ -142,6 +142,10 @@ class RuntimeControllerDouble {
   setWindowHeightStepPixels(): boolean {
     return true;
   }
+
+  setWorkspaceAutoBackAndForth(): boolean {
+    return true;
+  }
 }
 
 afterEach(() => {
@@ -439,6 +443,7 @@ function settings(
     windowHeightPresets: "",
     windowHeightStepPixels: 0,
     windowHeightStepPercent: 10,
+    workspaceAutoBackAndForth: false,
     ...overrides,
   };
 }

@@ -38165,20 +38165,90 @@ describe("RuntimeController", () => {
       desktops[1],
     );
     expect(controller.focusDesktop(1)).toBe(false);
+    expect(controller.setWorkspaceAutoBackAndForth(true)).toBe(true);
+    expect(controller.setWorkspaceAutoBackAndForth(true)).toBe(false);
+    expect(fixture.desktopSwitchCount).toBe(1);
+    expect(controller.focusDesktop(1)).toBe(true);
+    expect(fixture.workspace.currentDesktopForScreen?.(activeOutput)).toBe(
+      desktops[1],
+    );
     expect(controller.focusDesktop(9)).toBe(true);
     expect(fixture.workspace.currentDesktopForScreen?.(activeOutput)).toBe(
       desktops[2],
     );
+    expect(controller.focusDesktop(9)).toBe(true);
+    expect(fixture.workspace.currentDesktopForScreen?.(activeOutput)).toBe(
+      desktops[1],
+    );
     expect(fixture.workspace.currentDesktopForScreen?.(otherOutput)).toBe(
       desktops[1],
     );
-    expect(fixture.desktopSwitchCount).toBe(2);
+    expect(fixture.desktopSwitchCount).toBe(4);
 
     for (const invalid of [0, -1, 1.5, Number.NaN]) {
       expect(controller.focusDesktop(invalid)).toBe(false);
     }
 
-    expect(fixture.desktopSwitchCount).toBe(2);
+    expect(fixture.desktopSwitchCount).toBe(4);
+  });
+
+  it("isolates numbered back-and-forth history by output", () => {
+    const activeOutput = createOutput("DP-1", 0);
+    const otherOutput = createOutput("HDMI-A-1", 1000);
+    const desktops = [
+      { id: "desktop-1" },
+      { id: "desktop-2" },
+      { id: "desktop-tail" },
+    ] as const;
+    const fixture = createWorkspace(
+      activeOutput,
+      desktops[0],
+      [activeOutput, otherOutput],
+      desktops,
+      [],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      workspaceAutoBackAndForth: true,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(controller.focusDesktop(1)).toBe(false);
+    expect(fixture.desktopSwitchCount).toBe(0);
+
+    fixture.setCurrentDesktop(activeOutput, desktops[1]);
+    fixture.setCurrentDesktop(otherOutput, desktops[2]);
+    expect(controller.focusDesktop(2)).toBe(true);
+    expect(fixture.workspace.currentDesktopForScreen?.(activeOutput)).toBe(
+      desktops[0],
+    );
+    expect(fixture.workspace.currentDesktopForScreen?.(otherOutput)).toBe(
+      desktops[2],
+    );
+
+    Object.defineProperty(fixture.workspace, "activeScreen", {
+      configurable: true,
+      value: otherOutput,
+    });
+    expect(controller.focusDesktop(9)).toBe(true);
+    expect(fixture.workspace.currentDesktopForScreen?.(activeOutput)).toBe(
+      desktops[0],
+    );
+    expect(fixture.workspace.currentDesktopForScreen?.(otherOutput)).toBe(
+      desktops[0],
+    );
+
+    fixture.setCurrentDesktop(otherOutput, desktops[2]);
+    fixture.setDesktopSwitchBehavior(() => undefined);
+    expect(controller.focusDesktop(9)).toBe(false);
+    expect(fixture.workspace.currentDesktopForScreen?.(otherOutput)).toBe(
+      desktops[2],
+    );
+    fixture.setDesktopSwitchBehavior(null);
+    expect(controller.focusDesktop(9)).toBe(true);
+    expect(fixture.workspace.currentDesktopForScreen?.(otherOutput)).toBe(
+      desktops[0],
+    );
   });
 
   it("toggles the last-used desktop after external and controller selections", () => {
@@ -38350,6 +38420,7 @@ describe("RuntimeController", () => {
     });
     const controller = new RuntimeController(fixture.workspace, {
       clientAreaOption: 2,
+      workspaceAutoBackAndForth: true,
     });
 
     expect(controller.start()).toBe(true);
@@ -38357,6 +38428,7 @@ describe("RuntimeController", () => {
     desktops = [second];
     desktopsChanged.emit();
     expect(controller.focusLastUsedDesktop()).toBe(false);
+    expect(controller.focusDesktop(9)).toBe(false);
 
     desktops = [first, second];
     desktopsChanged.emit();

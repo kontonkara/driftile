@@ -35,6 +35,7 @@ interface DeliveredSettings {
   readonly windowHeightPresets: readonly WindowHeightPresetCycleEntry[];
   readonly windowHeightStepPixels: number;
   readonly windowHeightStepPercent: number;
+  readonly workspaceAutoBackAndForth: boolean;
 }
 
 type RuntimeSettingsInput = Record<
@@ -65,6 +66,7 @@ interface RuntimeControllerOptions {
   readonly emptyDesktopAboveFirst: boolean;
   readonly gap: number;
   readonly schedule: (callback: () => void) => void;
+  readonly workspaceAutoBackAndForth: boolean;
 }
 
 const controllerInstances: RuntimeControllerDouble[] = [];
@@ -112,6 +114,7 @@ class RuntimeControllerDouble {
       windowHeightPresets: [],
       windowHeightStepPixels: 0,
       windowHeightStepPercent: 1,
+      workspaceAutoBackAndForth: options.workspaceAutoBackAndForth,
     };
     controllerInstances.push(this);
   }
@@ -320,6 +323,12 @@ class RuntimeControllerDouble {
     };
     return true;
   }
+
+  setWorkspaceAutoBackAndForth(value: boolean): boolean {
+    this.calls.push("workspaceAutoBackAndForth");
+    this.state = { ...this.state, workspaceAutoBackAndForth: value };
+    return true;
+  }
 }
 
 afterEach(() => {
@@ -426,6 +435,7 @@ describe("runtime settings delivery", () => {
       windowHeightPresets: "25,480px,50,960px,75",
       windowHeightStepPixels: 96,
       windowHeightStepPercent: 17,
+      workspaceAutoBackAndForth: true,
     });
     const expected: DeliveredSettings = {
       applicationBorderlessExclusions: ["org.example.NewBorder"],
@@ -450,6 +460,7 @@ describe("runtime settings delivery", () => {
       windowHeightPresets: heightPresetCycle([25, "480px", 50, "960px", 75]),
       windowHeightStepPixels: 96,
       windowHeightStepPercent: 17,
+      workspaceAutoBackAndForth: true,
     };
 
     expect(runtime.applySettings(next)).toBe(true);
@@ -479,6 +490,7 @@ describe("runtime settings delivery", () => {
       "windowHeightPresets",
       "windowHeightStepPercent",
       "windowHeightStepPixels",
+      "workspaceAutoBackAndForth",
       "gap",
     ]);
     expect(controller.borderDeliverySnapshots).toEqual([
@@ -561,6 +573,7 @@ describe("runtime settings delivery", () => {
       "windowHeightPresets",
       "windowHeightStepPercent",
       "windowHeightStepPixels",
+      "workspaceAutoBackAndForth",
       "gap",
       "borderlessWindows",
     ]);
@@ -610,6 +623,7 @@ function settings(
     windowHeightPresets: "",
     windowHeightStepPixels: 0,
     windowHeightStepPercent: 10,
+    workspaceAutoBackAndForth: false,
     ...overrides,
   };
 }

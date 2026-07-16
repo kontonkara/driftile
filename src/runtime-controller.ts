@@ -908,6 +908,7 @@ export interface RuntimeControllerOptions {
   ) => void;
   readonly showPointerDropPreview?: (frame: Rect) => void;
   readonly startupStabilizationProbes?: number;
+  readonly workspaceAutoBackAndForth?: boolean;
 }
 
 export class RuntimeController {
@@ -1127,6 +1128,7 @@ export class RuntimeController {
   private workScheduled = false;
   private readonly activities: KWinActivityAdapter;
   private readonly workspace: KWinWorkspace;
+  private workspaceAutoBackAndForth: boolean;
 
   constructor(workspace: KWinWorkspace, options: RuntimeControllerOptions) {
     this.alwaysCenterSingleColumn =
@@ -1161,6 +1163,10 @@ export class RuntimeController {
     this.centerFocusedColumnOnOverflow =
       typeof options.centerFocusedColumnOnOverflow === "boolean"
         ? options.centerFocusedColumnOnOverflow
+        : false;
+    this.workspaceAutoBackAndForth =
+      typeof options.workspaceAutoBackAndForth === "boolean"
+        ? options.workspaceAutoBackAndForth
         : false;
     this.defaultColumnPresentation =
       options.defaultColumnPresentation ?? "stacked";
@@ -2204,6 +2210,18 @@ export class RuntimeController {
     return true;
   }
 
+  setWorkspaceAutoBackAndForth(enabled: boolean): boolean {
+    if (
+      typeof enabled !== "boolean" ||
+      enabled === this.workspaceAutoBackAndForth
+    ) {
+      return false;
+    }
+
+    this.workspaceAutoBackAndForth = enabled;
+    return true;
+  }
+
   focusLeft(): boolean {
     return this.focusHorizontal("left");
   }
@@ -2481,10 +2499,40 @@ export class RuntimeController {
       return false;
     }
 
+    if (this.workspaceAutoBackAndForth) {
+      const output = this.workspace.activeScreen;
+
+      if (output && this.workspace.screens.includes(output)) {
+        const current = currentDesktopForOutput(this.workspace, output);
+        const currentIndex = current
+          ? this.workspace.desktops.findIndex(
+              (desktop) => desktop.id === current.id,
+            )
+          : -1;
+        const targetIndex = this.desktopTargetIndex(currentIndex, {
+          index,
+          kind: "index",
+        });
+
+        if (
+          currentIndex >= 0 &&
+          this.workspace.desktops[targetIndex]?.id === current?.id
+        ) {
+          return this.focusLastUsedDesktopOnOutput(output);
+        }
+      }
+    }
+
     return this.focusDesktopTarget({ index, kind: "index" });
   }
 
   focusLastUsedDesktop(): boolean {
+    return this.focusLastUsedDesktopOnOutput(this.workspace.activeScreen);
+  }
+
+  private focusLastUsedDesktopOnOutput(
+    output: KWinOutput | null | undefined,
+  ): boolean {
     if (
       !this.started ||
       this.stackEditOperation ||
@@ -2493,8 +2541,6 @@ export class RuntimeController {
     ) {
       return false;
     }
-
-    const output = this.workspace.activeScreen;
 
     if (!output || !this.workspace.screens.includes(output)) {
       return false;
@@ -2516,10 +2562,13 @@ export class RuntimeController {
       return false;
     }
 
-    return this.focusDesktopTarget({
-      desktopId: history.previousDesktopId,
-      kind: "id",
-    });
+    return this.focusDesktopTarget(
+      {
+        desktopId: history.previousDesktopId,
+        kind: "id",
+      },
+      output,
+    );
   }
 
   focusWindowPrevious(): boolean {
