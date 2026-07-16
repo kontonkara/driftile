@@ -193,6 +193,10 @@ let
   renderApplicationFocusCentering = renderApplicationTilingExclusions;
   applicationInitialFloatingType = applicationTilingExclusionType;
   renderApplicationInitialFloating = renderApplicationTilingExclusions;
+  applicationInitialFullscreenType = applicationTilingExclusionType;
+  renderApplicationInitialFullscreen = renderApplicationTilingExclusions;
+  applicationInitialFullWidthType = applicationTilingExclusionType;
+  renderApplicationInitialFullWidth = renderApplicationTilingExclusions;
   transitionWindowClassExclusionType = applicationTilingExclusionType;
   renderTransitionWindowClassExclusions = renderApplicationTilingExclusions;
   validPresetSequence =
@@ -398,6 +402,18 @@ in
               type = applicationInitialFloatingType;
               default = [ ];
               description = "Exact desktop-file IDs whose newly admitted windows start manually floating.";
+            };
+
+            applicationInitialFullscreen = lib.mkOption {
+              type = applicationInitialFullscreenType;
+              default = [ ];
+              description = "Exact case-sensitive KWin desktopFileName strings whose newly admitted windows start fullscreen.";
+            };
+
+            applicationInitialFullWidth = lib.mkOption {
+              type = applicationInitialFullWidthType;
+              default = [ ];
+              description = "Exact case-sensitive KWin desktopFileName strings whose newly admitted windows start in full-width columns.";
             };
 
             applicationTilingExclusions = lib.mkOption {
@@ -617,6 +633,10 @@ in
             renderApplicationFocusCentering cfg.settings.applicationFocusCentering;
           ApplicationInitialFloating =
             renderApplicationInitialFloating cfg.settings.applicationInitialFloating;
+          ApplicationInitialFullscreen =
+            renderApplicationInitialFullscreen cfg.settings.applicationInitialFullscreen;
+          ApplicationInitialFullWidth =
+            renderApplicationInitialFullWidth cfg.settings.applicationInitialFullWidth;
           ApplicationTilingExclusions = renderApplicationTilingExclusions cfg.settings.applicationTilingExclusions;
           BorderlessWindows = cfg.settings.borderlessWindows;
           CenterFocusedColumn = cfg.settings.centerFocusedColumn;

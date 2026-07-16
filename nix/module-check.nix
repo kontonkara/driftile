@@ -470,6 +470,14 @@ let
             "org.example.Terminal"
             "org.example.Browser"
           ];
+          applicationInitialFullscreen = [
+            "org.example.Terminal"
+            "org.example.Browser"
+          ];
+          applicationInitialFullWidth = [
+            "org.example.Terminal"
+            "org.example.Browser"
+          ];
           applicationTilingExclusions = [
             "org.example.Editor=tool"
             "org.example.Browser"
@@ -723,6 +731,30 @@ let
         ) 128;
       }
       { };
+  homeManagerMaximumInitialFullWidth =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.settings.applicationInitialFullWidth = builtins.genList (
+          index: "org.example.App${toString index}"
+        ) 128;
+      }
+      { };
+  homeManagerMaximumInitialFullscreen =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.settings.applicationInitialFullscreen = builtins.genList (
+          index: "org.example.App${toString index}"
+        ) 128;
+      }
+      { };
   homeManagerMaximumBorderlessExclusions =
     evaluate homeManagerModule
       [
@@ -763,6 +795,30 @@ let
         programs.driftile.enable = true;
       };
   invalidSettings = [
+    { applicationInitialFullscreen = "org.example.Editor"; }
+    {
+      applicationInitialFullscreen = [
+        "org.example.Editor"
+        "org.example.Editor"
+      ];
+    }
+    {
+      applicationInitialFullscreen = builtins.genList (
+        index: "org.example.App${toString index}"
+      ) 129;
+    }
+    { applicationInitialFullWidth = "org.example.Editor"; }
+    {
+      applicationInitialFullWidth = [
+        "org.example.Editor"
+        "org.example.Editor"
+      ];
+    }
+    {
+      applicationInitialFullWidth = builtins.genList (
+        index: "org.example.App${toString index}"
+      ) 129;
+    }
     { applicationFocusCentering = "org.example.Editor"; }
     { applicationFocusCentering = [ " org.example.Editor" ]; }
     {
@@ -1128,6 +1184,12 @@ let
       ApplicationInitialFloating = ''
         org.example.Browser
         org.example.Terminal'';
+      ApplicationInitialFullscreen = ''
+        org.example.Browser
+        org.example.Terminal'';
+      ApplicationInitialFullWidth = ''
+        org.example.Browser
+        org.example.Terminal'';
       ApplicationTilingExclusions = ''
         org.example.Browser
         org.example.Editor=tool'';
@@ -1163,6 +1225,8 @@ let
       ApplicationWindowHeights = "";
       ApplicationFocusCentering = "";
       ApplicationInitialFloating = "";
+      ApplicationInitialFullscreen = "";
+      ApplicationInitialFullWidth = "";
       ApplicationTilingExclusions = "";
       BorderlessWindows = true;
       CenterFocusedColumn = false;
@@ -1333,11 +1397,11 @@ assert homeManagerSettings.config.qt.kde.settings == expectedSettings;
 assert homeManagerDefaultSettings.config.qt.kde.settings == expectedDefaultSettings;
 assert
   builtins.length (builtins.attrNames expectedSettings.kwinrc."Script-io.github.kontonkara.driftile")
-  == 29;
+  == 31;
 assert
   builtins.length (
     builtins.attrNames expectedDefaultSettings.kwinrc."Script-io.github.kontonkara.driftile"
-  ) == 26;
+  ) == 28;
 assert
   homeManagerMaximumDefaultColumnWidthPixels.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".DefaultColumnWidthPixels
   == 16384;
@@ -1403,6 +1467,16 @@ assert
 assert
   builtins.length (
     lib.splitString "\n"
+      homeManagerMaximumInitialFullWidth.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ApplicationInitialFullWidth
+  ) == 128;
+assert
+  builtins.length (
+    lib.splitString "\n"
+      homeManagerMaximumInitialFullscreen.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ApplicationInitialFullscreen
+  ) == 128;
+assert
+  builtins.length (
+    lib.splitString "\n"
       homeManagerMaximumBorderlessExclusions.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ApplicationBorderlessExclusions
   ) == 128;
 assert
@@ -1429,6 +1503,8 @@ assert
       ApplicationWindowHeights = "";
       ApplicationFocusCentering = "";
       ApplicationInitialFloating = "";
+      ApplicationInitialFullscreen = "";
+      ApplicationInitialFullWidth = "";
       ApplicationTilingExclusions = "";
       BorderlessWindows = true;
       CenterFocusedColumn = false;
