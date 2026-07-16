@@ -497,6 +497,10 @@ let
             };
             "org.example.Editor".output = "HDMI-A-1";
             "org.example.Terminal".desktop = 25;
+            "org.example.Work" = {
+              desktopName = "Work";
+              output = "DP-3";
+            };
           };
           applicationFloatingPositions = {
             "org.example.Browser" = {
@@ -848,6 +852,8 @@ let
         programs.driftile.settings.applicationInitialDestinations = {
           "org.example.Maximum".desktop = 25;
           "org.example.Minimum".desktop = 1;
+          "org.example.Named".desktopName =
+            builtins.concatStringsSep "" (builtins.genList (_: "é") 127) + "a";
           "org.example.Output".output =
             builtins.concatStringsSep "" (builtins.genList (_: "é") 127) + "a";
         };
@@ -973,6 +979,21 @@ let
     { applicationInitialDestinations."org.example.Editor".desktop = 0; }
     { applicationInitialDestinations."org.example.Editor".desktop = 26; }
     { applicationInitialDestinations."org.example.Editor".desktop = 1.5; }
+    { applicationInitialDestinations."org.example.Editor".desktopName = ""; }
+    { applicationInitialDestinations."org.example.Editor".desktopName = " Work"; }
+    { applicationInitialDestinations."org.example.Editor".desktopName = "Work "; }
+    { applicationInitialDestinations."org.example.Editor".desktopName = "Work,Personal"; }
+    { applicationInitialDestinations."org.example.Editor".desktopName = "Work\nPersonal"; }
+    {
+      applicationInitialDestinations."org.example.Editor".desktopName =
+        builtins.concatStringsSep "" (builtins.genList (_: "é") 128);
+    }
+    {
+      applicationInitialDestinations."org.example.Editor" = {
+        desktop = 1;
+        desktopName = "Work";
+      };
+    }
     { applicationInitialDestinations."org.example.Editor".output = ""; }
     { applicationInitialDestinations."org.example.Editor".output = " DP-1"; }
     { applicationInitialDestinations."org.example.Editor".output = "DP-1 "; }
@@ -1514,7 +1535,8 @@ let
       ApplicationInitialDestinations = ''
         org.example.Browser=desktop:2,output:DP-2
         org.example.Editor=output:HDMI-A-1
-        org.example.Terminal=desktop:25'';
+        org.example.Terminal=desktop:25
+        org.example.Work=desktop-name:Work,output:DP-3'';
       ApplicationTilingExclusions = ''
         org.example.Browser
         org.example.Editor=tool'';
@@ -1829,11 +1851,15 @@ assert
     rendered =
       homeManagerInitialDestinationBounds.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ApplicationInitialDestinations;
     lines = lib.splitString "\n" rendered;
+    desktopNamePrefix = "org.example.Named=desktop-name:";
+    desktopNameLine = builtins.elemAt lines 2;
     outputPrefix = "org.example.Output=output:";
-    outputLine = builtins.elemAt lines 2;
+    outputLine = builtins.elemAt lines 3;
   in
   builtins.elem "org.example.Maximum=desktop:25" lines
   && builtins.elem "org.example.Minimum=desktop:1" lines
+  && lib.hasPrefix desktopNamePrefix desktopNameLine
+  && builtins.stringLength (lib.removePrefix desktopNamePrefix desktopNameLine) == 255
   && lib.hasPrefix outputPrefix outputLine
   && builtins.stringLength (lib.removePrefix outputPrefix outputLine) == 255;
 assert

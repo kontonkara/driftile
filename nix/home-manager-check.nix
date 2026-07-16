@@ -86,6 +86,10 @@ let
           };
           "org.example.Editor".output = "HDMI-A-1";
           "org.example.Terminal".desktop = 25;
+          "org.example.Work" = {
+            desktopName = "Work";
+            output = "DP-3";
+          };
         };
         applicationFloatingPositions = {
           "org.example.Browser" = {
@@ -275,6 +279,8 @@ let
     programs.driftile.settings.applicationInitialDestinations = {
       "org.example.Maximum".desktop = 25;
       "org.example.Minimum".desktop = 1;
+      "org.example.Named".desktopName =
+        builtins.concatStringsSep "" (builtins.genList (_: "é") 127) + "a";
       "org.example.Output".output =
         builtins.concatStringsSep "" (builtins.genList (_: "é") 127) + "a";
     };
@@ -543,11 +549,15 @@ assert
     rendered =
       initialDestinationBounds.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ApplicationInitialDestinations;
     lines = lib.splitString "\n" rendered;
+    desktopNamePrefix = "org.example.Named=desktop-name:";
+    desktopNameLine = builtins.elemAt lines 2;
     outputPrefix = "org.example.Output=output:";
-    outputLine = builtins.elemAt lines 2;
+    outputLine = builtins.elemAt lines 3;
   in
   builtins.elem "org.example.Maximum=desktop:25" lines
   && builtins.elem "org.example.Minimum=desktop:1" lines
+  && lib.hasPrefix desktopNamePrefix desktopNameLine
+  && builtins.stringLength (lib.removePrefix desktopNamePrefix desktopNameLine) == 255
   && lib.hasPrefix outputPrefix outputLine
   && builtins.stringLength (lib.removePrefix outputPrefix outputLine) == 255;
 assert
@@ -567,8 +577,30 @@ assert
     [ ]
     { "org.example.Editor" = "desktop:1"; }
     { "org.example.Editor" = { }; }
+    {
+      "org.example.Editor" = {
+        desktop = null;
+        desktopName = null;
+        output = null;
+      };
+    }
     { "org.example.Editor".desktop = 0; }
     { "org.example.Editor".desktop = 26; }
+    { "org.example.Editor".desktopName = ""; }
+    { "org.example.Editor".desktopName = " Work"; }
+    { "org.example.Editor".desktopName = "Work "; }
+    { "org.example.Editor".desktopName = "Work,Personal"; }
+    { "org.example.Editor".desktopName = "Work\nPersonal"; }
+    {
+      "org.example.Editor".desktopName =
+        builtins.concatStringsSep "" (builtins.genList (_: "é") 128);
+    }
+    {
+      "org.example.Editor" = {
+        desktop = 1;
+        desktopName = "Work";
+      };
+    }
     { "org.example.Editor".output = ""; }
     { "org.example.Editor".output = " DP-1"; }
     { "org.example.Editor".output = "DP,1"; }
@@ -715,7 +747,8 @@ assert
       ApplicationInitialDestinations = ''
         org.example.Browser=desktop:2,output:DP-2
         org.example.Editor=output:HDMI-A-1
-        org.example.Terminal=desktop:25'';
+        org.example.Terminal=desktop:25
+        org.example.Work=desktop-name:Work,output:DP-3'';
       ApplicationTilingExclusions = ''
         org.example.Browser
         org.example.Editor=tool'';

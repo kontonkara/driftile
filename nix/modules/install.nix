@@ -211,12 +211,19 @@ let
     && !hasEcmaScriptNonAsciiPadding value
     && !hasControlCharacter value
     && !lib.hasInfix "," value;
+  validDesktopName = validOutputName;
   applicationInitialDestinationType = lib.types.submodule {
     options = {
       desktop = lib.mkOption {
         type = lib.types.nullOr (lib.types.ints.between 1 25);
         default = null;
         description = "Optional one-based virtual desktop assigned to a newly admitted window.";
+      };
+
+      desktopName = lib.mkOption {
+        type = lib.types.nullOr (lib.types.addCheck lib.types.str validDesktopName);
+        default = null;
+        description = "Optional exact virtual desktop name assigned to a newly admitted window.";
       };
 
       output = lib.mkOption {
@@ -233,12 +240,14 @@ let
       builtins.length (builtins.attrNames destinations) <= 128
       && lib.all validMappedDesktopFileName (builtins.attrNames destinations)
       && lib.all (
-        destination: destination.desktop != null || destination.output != null
+        destination:
+        (destination.desktop == null || destination.desktopName == null)
+        && (destination.desktop != null || destination.desktopName != null || destination.output != null)
       ) (builtins.attrValues destinations)
     then
       destinations
     else
-      throw "programs.driftile.settings.applicationInitialDestinations must use at most 128 valid desktopFileName keys without '=' and assign a desktop, an output, or both.";
+      throw "programs.driftile.settings.applicationInitialDestinations must use at most 128 valid desktopFileName keys without '=', assign a desktop number, desktop name, or output, and not combine desktop with desktopName.";
   renderApplicationInitialDestinations =
     destinations:
     lib.concatStringsSep "\n" (
@@ -248,6 +257,7 @@ let
           destination = destinations.${desktopFileName};
           fields =
             lib.optional (destination.desktop != null) "desktop:${toString destination.desktop}"
+            ++ lib.optional (destination.desktopName != null) "desktop-name:${destination.desktopName}"
             ++ lib.optional (destination.output != null) "output:${destination.output}";
         in
         "${desktopFileName}=${lib.concatStringsSep "," fields}"
