@@ -43,9 +43,9 @@ The ownership rule is strict:
 - Live global tiled-window gap from 0 to 64 logical pixels without changing layout state.
 - Configurable 10%–100% default width for newly admitted columns, ordinary
   fresh cross-context retiles, and contextual tiled or manual-floating reset.
-- Up to 128 application-specific 10%–100% initial singleton widths, matched by
-  exact KWin `desktopFileName` with global-default fallback and live constraint
-  clamping.
+- Up to 128 application-specific proportional or fixed logical-pixel initial
+  singleton widths, matched by exact KWin `desktopFileName` with global-default
+  fallback, live constraints, and output-pixel snapping.
 - Up to 128 exact, case-sensitive KWin `desktopFileName` values whose freshly
   admitted normal windows start under ordinary manual-floating ownership while
   retaining their KWin frames. Existing and hydrated ownership is not
@@ -605,10 +605,12 @@ Driftile must integrate with, not duplicate:
 - A live gap change reflows visible tiled contexts only. It preserves logical order, widths, height policies, focus, floating frames, excluded windows, and minimized frames; hidden contexts adopt it when shown.
 - A default-width change leaves existing column width policies unchanged. Newly admitted columns, ordinary fresh cross-context retiles, and explicit reset use the new proportion subject to live window constraints. A cross-context pointer gutter extraction keeps its source width. Retrying a waiting admission may add a column and update the affected viewport and frames; otherwise the policy change performs no frame writes.
 - Application-width rules use one exact, case-sensitive `desktopFileName` entry
-  per line and allow 10%–100%; more than 128 entries reject the complete
-  setting. Only newly created or freshly admitted singleton columns consult the
-  bounded lookup; existing columns keep their width, missing matches use the
-  global default, and normal constraints may clamp the result.
+  per line. Legacy bare `10`–`100` and explicit `10%`–`100%` values are
+  proportional; `1px`–`16384px` values are fixed logical widths. More than 128
+  entries reject the complete setting. Only fresh singleton admission consults
+  the bounded lookup; existing, restored, joined, and explicitly reset columns
+  retain their normal policies. Missing matches use the global default, and
+  fixed widths remain subject to live constraints and output-pixel snapping.
 - Initial-floating rules use the same bounded exact-ID policy and apply only at
   fresh admission. Existing or hydrated ownership wins; tiling exclusions and
   automatic floating roles take priority. Toggling the resulting ordinary

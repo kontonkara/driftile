@@ -394,6 +394,13 @@ other KWin-owned roles: tiling commands are no-ops and Driftile does not write
 its frame. Clearing the rule admits an otherwise eligible window as a fresh
 singleton after native-state and interactive-move blockers settle.
 
+An exact application initial-width rule is read only for fresh singleton
+admission. Bare `10`–`100` and explicit `10%`–`100%` values are proportional;
+`1px`–`16384px` values request a fixed logical width. The admitted window's
+live constraints and assigned output's pixel grid determine the final width.
+Rule changes do not rewrite existing or restored columns, windows joining a
+column, or the explicit reset policy.
+
 An exact application policy can instead make a newly admitted normal window an
 ordinary manually floating window while preserving its KWin frame. The policy
 is fresh-only: existing and hydrated tiled or floating ownership is

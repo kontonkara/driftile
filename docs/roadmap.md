@@ -92,9 +92,10 @@ The current runtime already:
   frames.
 - Configures a 10%–100% default width for newly admitted columns, fresh
   cross-context retiles, and contextual reset without changing existing widths.
-- Configures up to 128 exact `desktopFileName` initial singleton widths, with a
-  constant-time admission lookup, global-default fallback, and normal
-  constraint clamping. Existing columns remain unchanged.
+- Configures up to 128 exact `desktopFileName` proportional or fixed
+  logical-pixel initial singleton widths, with a constant-time admission
+  lookup, global-default fallback, live constraints, and output-pixel snapping.
+  Existing columns remain unchanged.
 - Excludes up to 128 exact, case-sensitive `desktopFileName` values from layout
   ownership, with live release and fresh readmission when the policy changes.
 - Configures up to 16 mixed proportional or fixed logical-pixel column-width
@@ -1556,6 +1557,10 @@ No other feature belongs to 1.34.0.
   reorder boundaries.
 - Accept mixed proportional and fixed logical-pixel column-width and
   window-height preset cycles through KConfig, NixOS, and Home Manager.
+- Extend exact application initial-width rules from legacy bare percentages to
+  explicit percentages and fixed `1px`–`16384px` logical widths. Only fresh
+  singleton admission reads a rule; constraints and output-pixel snapping stay
+  authoritative.
 - Keep the geometry behaviors inside the existing solver and physical-pixel
   snapping boundary. Floating windows, multi-column contexts, and logical
   persistence remain unchanged.
