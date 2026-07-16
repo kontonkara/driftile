@@ -44,6 +44,8 @@ interface WindowStub {
   readonly windowHiddenChanged: Signal<[WindowStub]>;
   readonly windowDesktopsChanged: Signal<[WindowStub]>;
   visible: boolean;
+  onCurrentDesktop: boolean;
+  isOnActivity(activityId: string): boolean;
   deleted: boolean;
   minimized: boolean;
   fullScreen: boolean;
@@ -119,6 +121,8 @@ function createWindow(overrides: Partial<WindowStub> = {}): WindowStub {
     windowHiddenChanged: createSignal<[WindowStub]>(),
     windowDesktopsChanged: createSignal<[WindowStub]>(),
     visible: true,
+    onCurrentDesktop: true,
+    isOnActivity: () => true,
     deleted: false,
     minimized: false,
     fullScreen: false,
@@ -188,6 +192,8 @@ function createHarness(
   };
   let nextAnimationId = 1;
   const effects = {
+    activeWindow: null as WindowStub | null,
+    currentActivity: "activity-1",
     hasActiveFullScreenEffect: false,
     stackingOrder: [window],
     windowAdded,
@@ -922,6 +928,62 @@ describe("transition effect package", () => {
     harness.window.windowDesktopsChanged.emit(harness.window);
     harness.effects.desktopChanged.emit(null, null, null, null);
     expect(harness.animationRequests).toHaveLength(1);
+  });
+
+  it("replays active motion when desktop visibility settles late", () => {
+    const harness = createHarness({
+      window: createWindow({ visible: false }),
+    });
+    harness.setFullScreenEffectActive(true);
+
+    changeGeometry(harness.window, {
+      x: 60,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+    harness.effects.activeWindow = harness.window;
+    harness.effects.windowActivated.emit(harness.window);
+
+    expect(harness.animationRequests).toHaveLength(0);
+
+    harness.setFullScreenEffectActive(false);
+
+    expect(harness.animationRequests).toHaveLength(1);
+    expect(harness.animationRequests[0]).toMatchObject({
+      animations: [
+        {
+          type: "size",
+          from: { value1: 300, value2: 200 },
+          to: { value1: 500, value2: 300 },
+        },
+        {
+          type: "position",
+          from: { value1: 170, value2: 130 },
+          to: { value1: 310, value2: 220 },
+        },
+      ],
+    });
+
+    harness.window.visible = true;
+    changeGeometry(harness.window, {
+      x: 80,
+      y: 90,
+      width: 600,
+      height: 350,
+    });
+    expect(harness.retargetCalls).toEqual([
+      {
+        animationId: 1,
+        target: { value1: 600, value2: 350 },
+        duration: 180,
+      },
+      {
+        animationId: 2,
+        target: { value1: 380, value2: 265 },
+        duration: 180,
+      },
+    ]);
   });
 
   it("replays deferred geometry on a later visible geometry opportunity", () => {

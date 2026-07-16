@@ -46,9 +46,7 @@ class DriftileTransitionsEffect {
       );
     }
     if (effects.windowActivated) {
-      effects.windowActivated.connect(
-        this.onVisibilityContextChanged.bind(this),
-      );
+      effects.windowActivated.connect(this.onWindowActivated.bind(this));
     }
     if (effects.currentActivityChanged) {
       effects.currentActivityChanged.connect(
@@ -174,6 +172,10 @@ class DriftileTransitionsEffect {
     }
   }
 
+  onWindowActivated(window) {
+    this.replayDeferredTransition(window);
+  }
+
   onWindowVisibilityOpportunity(window) {
     this.replayDeferredTransition(window);
   }
@@ -208,12 +210,22 @@ class DriftileTransitionsEffect {
       return;
     }
 
-    if (!window.visible) {
+    if (!this.isDeferredTransitionPresentable(window)) {
       return;
     }
 
     delete window[DEFERRED_PROPERTY];
     this.animateWindowTransition(window, oldGeometry, newGeometry);
+  }
+
+  isDeferredTransitionPresentable(window) {
+    return (
+      window.visible ||
+      (effects.activeWindow === window &&
+        window.onCurrentDesktop &&
+        (effects.currentActivity.length === 0 ||
+          window.isOnActivity(effects.currentActivity)))
+    );
   }
 
   animateWindowTransition(window, oldGeometry, newGeometry) {
