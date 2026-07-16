@@ -806,8 +806,9 @@ describe("transition effect package", () => {
       { length: 128 },
       (_, index) => `org.example.app${String(index)}`,
     );
+    const lastValidEntry = validEntries[validEntries.length - 1] ?? "";
     const validHarness = createHarness({
-      window: createWindow({ windowClass: validEntries[127] }),
+      window: createWindow({ windowClass: lastValidEntry }),
       windowClassExclusions: validEntries.join("\n"),
     });
     changeGeometry(validHarness.window, {
