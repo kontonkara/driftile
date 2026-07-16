@@ -1,12 +1,12 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.39.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.40.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.39.0 adds exact fresh-window destination assignment and native
-maximize-to-work-area-edges after normal underlay admission. Logical
-persistence remains v4.
+Stable 1.40.0 adds exact fresh-window focus policies, restores recent focus
+after a close, and hardens geometry transitions across desktop-effect
+handoffs. Logical persistence remains v4.
 
 ## Foundation (delivered)
 
@@ -1691,7 +1691,7 @@ Release criteria (met):
 
 No other feature belongs to 1.39.0.
 
-### 1.40.0 (in development)
+### 1.40.0 (released)
 
 - Add an exact fresh-window application rule that requests focus once after
   tiled or floating admission when the destination context is already visible.
@@ -1706,7 +1706,7 @@ No other feature belongs to 1.39.0.
 - Expose the bounded exact application list through KConfig, NixOS, and Home
   Manager without a shortcut or persistence-schema change.
 
-Release criteria:
+Release criteria (met):
 
 - Unlisted applications retain KWin's ordinary focus behavior.
 - A matching unfocused window that never becomes active causes no focus write.
@@ -1714,4 +1714,4 @@ Release criteria:
 - Live settings affect only windows first tracked afterward.
 - The implementation remains within public Plasma 6.7+ APIs.
 
-No other feature currently belongs to 1.40.0.
+No other feature belongs to 1.40.0.

@@ -1,0 +1,44 @@
+# Driftile 1.40.0
+
+Driftile 1.40.0 is a stable release.
+
+## Highlights
+
+- Exact application rules can request focus once for a fresh matching window,
+  or restore the previous visible window when a fresh match receives KWin's
+  initial focus.
+- Closing the active managed window restores the most recently focused live
+  window in the same visible context before using layout-order fallbacks.
+- Optional geometry transitions remain continuous across desktop-effect
+  handoffs and rapid movement through negative global coordinates.
+- Rejected borderless requests are bounded, and transition replay visits only
+  windows with pending movement.
+
+Initial focus rules never reveal another desktop or output. Rejected requests
+are consumed without polling, and existing, restored, transferred, or already
+admitted windows keep their current behavior. No shortcut or logical
+persistence migration is required.
+
+## Compatibility
+
+KDE Plasma and KWin 6.7 or newer are required. Wayland, XWayland, and
+single-output native X11 use the existing compatibility baseline.
+
+## Install
+
+Download matching files from
+[`v1.40.0`](https://github.com/kontonkara/driftile/releases/tag/v1.40.0) and
+verify them with `SHA256SUMS`:
+
+- `driftile-1.40.0.kwinscript`
+- `driftile-overview-1.40.0.kwineffect`, if using the optional overview
+- `driftile-transitions-1.40.0.kwineffect`, if using optional transitions
+- `driftile-shortcuts-1.40.0.mjs`, if using the optional shortcut helper
+
+Disable installed Driftile packages, replace every package you use with the
+matching 1.40.0 artifact, then re-enable them. Nix users should pin the input
+to `v1.40.0` and rebuild.
+
+See the tagged [installation guide](https://github.com/kontonkara/driftile/blob/v1.40.0/docs/installation.md),
+[migration guide](https://github.com/kontonkara/driftile/blob/v1.40.0/docs/migration.md),
+and [configuration guide](https://github.com/kontonkara/driftile/blob/v1.40.0/docs/configuration.md).
