@@ -1,13 +1,12 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.42.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.43.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.42.0 adds global fresh-window destination and focus defaults, settles
-close-focus recovery inside the original visible context, and preserves rapid
-focus-handoff animations across delayed desktop visibility. Logical persistence
-remains v4.
+Stable 1.43.0 retains delayed close-focus recovery, retries decoration policy
+claims after KWin settlement, bounds transition bookkeeping, and keeps the
+Plasma launcher outside geometry interpolation. Logical persistence remains v4.
 
 ## Foundation (delivered)
 
@@ -1781,7 +1780,7 @@ Release criteria (met):
 
 No other feature belongs to 1.42.0.
 
-### 1.43.0 (in development)
+### 1.43.0 (released)
 
 - Keep close-focus recovery alive for one delayed activation settlement while
   accepting any legitimate replacement without stealing focus back.
@@ -1791,7 +1790,7 @@ No other feature belongs to 1.42.0.
   active participants, and discard net-zero deferred movement.
 - Keep the Plasma shell launcher outside geometry interpolation.
 
-Release criteria:
+Release criteria (met):
 
 - Focused close, decoration, and transition checks pass.
 - One grouped unit, package, Nix, X11, and Wayland gate passes on the batch
