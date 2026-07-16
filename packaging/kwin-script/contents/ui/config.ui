@@ -420,6 +420,26 @@
            </property>
           </widget>
          </item>
+         <item row="11" column="0">
+          <widget class="QLabel" name="defaultFloatingPositionLabel">
+           <property name="text">
+            <string>Default initial floating position:</string>
+           </property>
+           <property name="buddy">
+            <cstring>kcfg_DefaultFloatingPosition</cstring>
+           </property>
+          </widget>
+         </item>
+         <item row="11" column="1">
+          <widget class="QLineEdit" name="kcfg_DefaultFloatingPosition">
+           <property name="toolTip">
+            <string>Use anchor,x,y to place a genuinely new normal window when it first enters manual floating. Anchors are top-left, top, top-right, right, bottom-right, bottom, bottom-left, or left; offsets are signed logical pixels from -16384 to 16384. An exact application rule takes precedence. Blank disables the default.</string>
+           </property>
+           <property name="placeholderText">
+            <string>bottom-right,24,24</string>
+           </property>
+          </widget>
+         </item>
         </layout>
        </item>
        <item>

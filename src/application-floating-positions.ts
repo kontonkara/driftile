@@ -134,7 +134,22 @@ function parseFloatingPosition(value: string): ParsedFloatingPosition | null {
     return null;
   }
 
-  const fields = encodedPosition.split(",");
+  const position = decodeFloatingPositionValue(encodedPosition);
+
+  if (!position) {
+    return null;
+  }
+
+  return {
+    desktopFileName,
+    position,
+  };
+}
+
+export function decodeFloatingPositionValue(
+  value: string,
+): ApplicationFloatingPosition | null {
+  const fields = value.split(",");
   const anchor = fields[0];
   const encodedX = fields[1];
   const encodedY = fields[2];
@@ -151,14 +166,13 @@ function parseFloatingPosition(value: string): ParsedFloatingPosition | null {
   const x = decodeOffset(encodedX);
   const y = decodeOffset(encodedY);
 
-  if (x === null || y === null) {
-    return null;
-  }
+  return x === null || y === null ? null : Object.freeze({ anchor, x, y });
+}
 
-  return {
-    desktopFileName,
-    position: Object.freeze({ anchor, x, y }),
-  };
+export function encodeFloatingPositionValue(
+  position: ApplicationFloatingPosition,
+): string {
+  return `${position.anchor},${String(position.x)},${String(position.y)}`;
 }
 
 function decodeOffset(value: string): number | null {
@@ -193,7 +207,7 @@ function encodeFloatingPosition(
   desktopFileName: string,
   position: ApplicationFloatingPosition,
 ): string {
-  return `${desktopFileName}=${position.anchor},${String(position.x)},${String(position.y)}`;
+  return `${desktopFileName}=${encodeFloatingPositionValue(position)}`;
 }
 
 function utf8ByteLength(value: string): number | null {

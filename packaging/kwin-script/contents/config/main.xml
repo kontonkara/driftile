@@ -72,6 +72,10 @@
       <label>Default initial tiled client height</label>
       <default>auto</default>
     </entry>
+    <entry name="DefaultFloatingPosition" type="String">
+      <label>Default initial floating position</label>
+      <default></default>
+    </entry>
     <entry name="DefaultColumnPresentation" type="String">
       <label>Default column presentation</label>
       <default>stacked</default>

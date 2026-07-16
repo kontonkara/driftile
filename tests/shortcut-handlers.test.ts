@@ -935,6 +935,7 @@ describe("KWin shortcut handlers", () => {
       "kcfg_WindowHeightStepPercent",
       "kcfg_WindowHeightStepPixels",
       "kcfg_WindowHeightPresets",
+      "kcfg_DefaultFloatingPosition",
     ];
     const applicationControls = [
       "kcfg_ApplicationColumnPresentations",
@@ -1220,7 +1221,7 @@ describe("KWin shortcut handlers", () => {
     );
   });
 
-  it("exposes default column width and initial window height policies", () => {
+  it("exposes default column width, tiled height, and floating position policies", () => {
     const widthEntry = configuration.match(
       /<entry name="DefaultColumnWidthPercent" type="Int">([\s\S]*?)<\/entry>/,
     )?.[1];
@@ -1247,6 +1248,15 @@ describe("KWin shortcut handlers", () => {
     )?.[1];
     const heightWidget = configurationUi.match(
       /<widget class="QLineEdit" name="kcfg_DefaultWindowHeight">([\s\S]*?)<\/widget>/,
+    )?.[1];
+    const floatingPositionEntry = configuration.match(
+      /<entry name="DefaultFloatingPosition" type="String">([\s\S]*?)<\/entry>/,
+    )?.[1];
+    const floatingPositionLabel = configurationUi.match(
+      /<widget class="QLabel" name="defaultFloatingPositionLabel">([\s\S]*?)<\/widget>/,
+    )?.[1];
+    const floatingPositionWidget = configurationUi.match(
+      /<widget class="QLineEdit" name="kcfg_DefaultFloatingPosition">([\s\S]*?)<\/widget>/,
     )?.[1];
 
     expect(widthEntry).toContain(
@@ -1343,6 +1353,33 @@ describe("KWin shortcut handlers", () => {
     );
     expect(runtime).toContain(
       "controller.setDefaultWindowHeight(settings.defaultWindowHeight)",
+    );
+    expect(floatingPositionEntry).toContain(
+      "<label>Default initial floating position</label>",
+    );
+    expect(floatingPositionEntry).toContain("<default></default>");
+    expect(floatingPositionLabel).toContain(
+      "<string>Default initial floating position:</string>",
+    );
+    expect(floatingPositionLabel).toContain(
+      "<cstring>kcfg_DefaultFloatingPosition</cstring>",
+    );
+    expect(floatingPositionWidget).toContain("Use anchor,x,y");
+    expect(floatingPositionWidget).toContain(
+      "An exact application rule takes precedence.",
+    );
+    expect(floatingPositionWidget).toContain("Blank disables the default.");
+    expect(floatingPositionWidget).toContain(
+      "<string>bottom-right,24,24</string>",
+    );
+    expect(qml).toContain(
+      'defaultFloatingPosition: KWin.readConfig("DefaultFloatingPosition", "")',
+    );
+    expect(runtime).toContain(
+      "defaultFloatingPosition: settings.defaultFloatingPosition",
+    );
+    expect(runtime).toContain(
+      "controller.setDefaultFloatingPosition(settings.defaultFloatingPosition)",
     );
   });
 

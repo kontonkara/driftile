@@ -50,6 +50,7 @@ import {
   decodeApplicationFloatingPositions,
   EMPTY_APPLICATION_FLOATING_POSITIONS,
   sameApplicationFloatingPositions,
+  type ApplicationFloatingPosition,
   type ApplicationFloatingPositions,
 } from "./application-floating-positions";
 import {
@@ -96,6 +97,10 @@ import {
   type DefaultWindowHeight,
 } from "./default-window-height";
 import {
+  decodeDefaultFloatingPosition,
+  sameDefaultFloatingPositions,
+} from "./default-floating-position";
+import {
   decodeWindowHeightPresetPercentages,
   EMPTY_WINDOW_HEIGHT_PRESET_PERCENTAGES,
   sameWindowHeightPresetPercentages,
@@ -114,7 +119,7 @@ const MIN_RESIZE_STEP_PIXELS = 0;
 const MAX_RESIZE_STEP_PIXELS = 16_384;
 const MIN_TOUCHPAD_NAVIGATION_FINGER_COUNT = 3;
 const MAX_TOUCHPAD_NAVIGATION_FINGER_COUNT = 5;
-const SETTINGS_FIELD_COUNT = 36;
+const SETTINGS_FIELD_COUNT = 37;
 
 export interface DriftileSettings {
   readonly applicationBorderlessExclusions: ApplicationBorderlessExclusions;
@@ -141,6 +146,7 @@ export interface DriftileSettings {
   readonly defaultColumnPresentation: ColumnPresentation;
   readonly defaultColumnWidthPercent: number;
   readonly defaultColumnWidthPixels: number;
+  readonly defaultFloatingPosition: ApplicationFloatingPosition | null;
   readonly defaultWindowHeight: DefaultWindowHeight;
   readonly emptyDesktopAboveFirst: boolean;
   readonly gap: number;
@@ -180,6 +186,7 @@ export const DEFAULT_DRIFTILE_SETTINGS: DriftileSettings = Object.freeze({
   defaultColumnPresentation: "stacked",
   defaultColumnWidthPercent: 33,
   defaultColumnWidthPixels: 0,
+  defaultFloatingPosition: null,
   defaultWindowHeight: AUTOMATIC_DEFAULT_WINDOW_HEIGHT,
   emptyDesktopAboveFirst: false,
   gap: 16,
@@ -229,6 +236,7 @@ export function decodeDriftileSettings(
     !owns(candidate, "defaultColumnPresentation") ||
     !owns(candidate, "defaultColumnWidthPercent") ||
     !owns(candidate, "defaultColumnWidthPixels") ||
+    !owns(candidate, "defaultFloatingPosition") ||
     !owns(candidate, "defaultWindowHeight") ||
     !owns(candidate, "emptyDesktopAboveFirst") ||
     !owns(candidate, "gap") ||
@@ -300,6 +308,9 @@ export function decodeDriftileSettings(
   const defaultColumnPresentation = candidate["defaultColumnPresentation"];
   const defaultColumnWidthPercent = candidate["defaultColumnWidthPercent"];
   const defaultColumnWidthPixels = candidate["defaultColumnWidthPixels"];
+  const decodedDefaultFloatingPosition = decodeDefaultFloatingPosition(
+    candidate["defaultFloatingPosition"],
+  );
   const defaultWindowHeight = decodeDefaultWindowHeight(
     candidate["defaultWindowHeight"],
   );
@@ -359,6 +370,7 @@ export function decodeDriftileSettings(
       MIN_DEFAULT_COLUMN_WIDTH_PIXELS,
       MAX_DEFAULT_COLUMN_WIDTH_PIXELS,
     ) ||
+    !decodedDefaultFloatingPosition ||
     !defaultWindowHeight ||
     typeof emptyDesktopAboveFirst !== "boolean" ||
     !isBoundedNumber(gap, MIN_GAP, MAX_GAP) ||
@@ -412,6 +424,7 @@ export function decodeDriftileSettings(
     defaultColumnPresentation,
     defaultColumnWidthPercent,
     defaultColumnWidthPixels,
+    defaultFloatingPosition: decodedDefaultFloatingPosition.floatingPosition,
     defaultWindowHeight,
     emptyDesktopAboveFirst,
     gap,
@@ -502,6 +515,10 @@ export function sameDriftileSettings(
     left.defaultColumnPresentation === right.defaultColumnPresentation &&
     left.defaultColumnWidthPercent === right.defaultColumnWidthPercent &&
     left.defaultColumnWidthPixels === right.defaultColumnWidthPixels &&
+    sameDefaultFloatingPositions(
+      left.defaultFloatingPosition,
+      right.defaultFloatingPosition,
+    ) &&
     sameDefaultWindowHeights(
       left.defaultWindowHeight,
       right.defaultWindowHeight,

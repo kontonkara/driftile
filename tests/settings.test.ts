@@ -17,6 +17,7 @@ import {
   decodeApplicationFloatingPositions,
   EMPTY_APPLICATION_FLOATING_POSITIONS,
   sameApplicationFloatingPositions,
+  type ApplicationFloatingPosition,
   type ApplicationFloatingPositionAnchor,
 } from "../src/application-floating-positions";
 import { decodeApplicationColumnPresentations } from "../src/application-column-presentations";
@@ -26,6 +27,11 @@ import { decodeApplicationFocusCentering } from "../src/application-focus-center
 import { decodeApplicationTilingExclusions } from "../src/application-tiling-exclusions";
 import { decodeColumnWidthPresetPercentages } from "../src/column-width-presets";
 import { decodeDefaultWindowHeight } from "../src/default-window-height";
+import {
+  decodeDefaultFloatingPosition,
+  DISABLED_DEFAULT_FLOATING_POSITION,
+  sameDefaultFloatingPositions,
+} from "../src/default-floating-position";
 import { decodeWindowHeightPresetPercentages } from "../src/window-height-presets";
 import {
   decodeDriftileSettings,
@@ -168,6 +174,13 @@ if (!validDefaultWindowHeight) {
   throw new Error("default window-height fixture is invalid");
 }
 
+const validDefaultFloatingPosition =
+  decodeDefaultFloatingPosition("bottom-left,-40,24");
+
+if (!validDefaultFloatingPosition?.floatingPosition) {
+  throw new Error("default floating-position fixture is invalid");
+}
+
 const validSettings: DriftileSettings = {
   applicationBorderlessExclusions: validApplicationBorderlessExclusions,
   applicationColumnPresentations: validApplicationColumnPresentations,
@@ -193,6 +206,7 @@ const validSettings: DriftileSettings = {
   defaultColumnPresentation: "tabbed",
   defaultColumnWidthPercent: 75,
   defaultColumnWidthPixels: 960,
+  defaultFloatingPosition: validDefaultFloatingPosition.floatingPosition,
   defaultWindowHeight: validDefaultWindowHeight,
   emptyDesktopAboveFirst: true,
   gap: 32.5,
@@ -235,6 +249,7 @@ const validSettingsInput = {
   defaultColumnPresentation: validSettings.defaultColumnPresentation,
   defaultColumnWidthPercent: validSettings.defaultColumnWidthPercent,
   defaultColumnWidthPixels: validSettings.defaultColumnWidthPixels,
+  defaultFloatingPosition: validDefaultFloatingPosition.canonicalValue,
   defaultWindowHeight: validSettings.defaultWindowHeight.canonicalValue,
   emptyDesktopAboveFirst: validSettings.emptyDesktopAboveFirst,
   gap: validSettings.gap,
@@ -261,6 +276,7 @@ describe("Driftile settings", () => {
       defaultColumnPresentation: "stacked",
       defaultColumnWidthPercent: 33,
       defaultColumnWidthPixels: 0,
+      defaultFloatingPosition: null,
       emptyDesktopAboveFirst: false,
       gap: 16,
       showTabIndicator: true,
@@ -276,6 +292,11 @@ describe("Driftile settings", () => {
       canonicalValue: "auto",
       windowHeight: null,
     });
+    expect(DISABLED_DEFAULT_FLOATING_POSITION).toEqual({
+      canonicalValue: "",
+      floatingPosition: null,
+    });
+    expect(Object.isFrozen(DISABLED_DEFAULT_FLOATING_POSITION)).toBe(true);
     expect(
       DEFAULT_DRIFTILE_SETTINGS.applicationBorderlessExclusions
         .canonicalEntries,
@@ -350,6 +371,7 @@ describe("Driftile settings", () => {
       defaultColumnPresentation: validSettings.defaultColumnPresentation,
       defaultColumnWidthPercent: validSettings.defaultColumnWidthPercent,
       defaultColumnWidthPixels: validSettings.defaultColumnWidthPixels,
+      defaultFloatingPosition: validSettings.defaultFloatingPosition,
       defaultWindowHeight: validSettings.defaultWindowHeight,
       emptyDesktopAboveFirst: validSettings.emptyDesktopAboveFirst,
       gap: validSettings.gap,
@@ -499,6 +521,7 @@ describe("Driftile settings", () => {
       defaultColumnPresentation: "stacked",
       defaultColumnWidthPercent: 10,
       defaultColumnWidthPixels: 0,
+      defaultFloatingPosition: "",
       defaultWindowHeight: "auto",
       emptyDesktopAboveFirst: false,
       gap: 0,
@@ -537,6 +560,7 @@ describe("Driftile settings", () => {
       defaultColumnPresentation: "tabbed",
       defaultColumnWidthPercent: 100,
       defaultColumnWidthPixels: 16_384,
+      defaultFloatingPosition: "right,16384,-16384",
       defaultWindowHeight: "16384px",
       emptyDesktopAboveFirst: true,
       gap: 64,
@@ -562,6 +586,10 @@ describe("Driftile settings", () => {
     );
     expect(decoded?.defaultWindowHeight.canonicalValue).toBe(
       settings.defaultWindowHeight,
+    );
+    expect(decoded?.defaultFloatingPosition).toEqual(
+      decodeDefaultFloatingPosition(settings.defaultFloatingPosition)
+        ?.floatingPosition,
     );
     expect(decoded?.applicationWindowHeights.canonicalEntries.join("\n")).toBe(
       settings.applicationWindowHeights,
@@ -680,6 +708,10 @@ describe("Driftile settings", () => {
     ["an invalid default presentation", { defaultColumnPresentation: "tiled" }],
     ["invalid column-width presets", { columnWidthPresets: "50,40" }],
     ["invalid window-height presets", { windowHeightPresets: "50,40" }],
+    [
+      "an invalid default floating position",
+      { defaultFloatingPosition: "center,0,0" },
+    ],
     ["an invalid default window height", { defaultWindowHeight: "9" }],
     [
       "invalid application overrides",
@@ -821,7 +853,7 @@ describe("Driftile settings", () => {
     },
   );
 
-  it("rejects an incomplete thirty-six-field snapshot", () => {
+  it("rejects an incomplete thirty-seven-field snapshot", () => {
     const incomplete: Record<string, unknown> = { ...validSettingsInput };
     delete incomplete["defaultColumnWidthPixels"];
 
@@ -952,6 +984,13 @@ describe("Driftile settings", () => {
       throw new Error("default window-height fixture is invalid");
     }
 
+    const changedDefaultFloatingPosition =
+      decodeDefaultFloatingPosition("top-right,12,-8")?.floatingPosition;
+
+    if (!changedDefaultFloatingPosition) {
+      throw new Error("default floating-position fixture is invalid");
+    }
+
     const changedApplicationTilingExclusions =
       decodeApplicationTilingExclusions("org.example.Other");
 
@@ -990,6 +1029,7 @@ describe("Driftile settings", () => {
       { defaultColumnPresentation: "stacked" as const },
       { defaultColumnWidthPercent: 76 },
       { defaultColumnWidthPixels: 961 },
+      { defaultFloatingPosition: changedDefaultFloatingPosition },
       { defaultWindowHeight: changedDefaultWindowHeight },
       { emptyDesktopAboveFirst: false },
       { gap: 33 },
@@ -1007,6 +1047,107 @@ describe("Driftile settings", () => {
         sameDriftileSettings(validSettings, { ...validSettings, ...changed }),
       ).toBe(false);
     }
+  });
+});
+
+function decodedDefaultFloatingPosition(value: unknown) {
+  const position = decodeDefaultFloatingPosition(value);
+
+  if (!position) {
+    throw new Error("default floating-position fixture is invalid");
+  }
+
+  return position;
+}
+
+describe("default floating-position codec", () => {
+  it("normalizes an immutable enabled value without retaining its input", () => {
+    const input = " bottom-right,-24,16 ";
+    const decoded = decodedDefaultFloatingPosition(input);
+
+    expect(decoded).toEqual({
+      canonicalValue: "bottom-right,-24,16",
+      floatingPosition: {
+        anchor: "bottom-right",
+        x: -24,
+        y: 16,
+      },
+    });
+    expect(Object.isFrozen(decoded.floatingPosition)).toBe(true);
+    expect(Object.isFrozen(decoded)).toBe(true);
+    expect(input).toBe(" bottom-right,-24,16 ");
+  });
+
+  it.each<ApplicationFloatingPositionAnchor>([
+    "top-left",
+    "top",
+    "top-right",
+    "right",
+    "bottom-right",
+    "bottom",
+    "bottom-left",
+    "left",
+  ])("accepts the %s anchor", (anchor) => {
+    expect(
+      decodedDefaultFloatingPosition(`${anchor},0,0`).floatingPosition,
+    ).toEqual({ anchor, x: 0, y: 0 });
+  });
+
+  it("supports a disabled singleton and inclusive offset bounds", () => {
+    expect(decodeDefaultFloatingPosition("")).toBe(
+      DISABLED_DEFAULT_FLOATING_POSITION,
+    );
+    expect(decodeDefaultFloatingPosition(" \t ")).toBe(
+      DISABLED_DEFAULT_FLOATING_POSITION,
+    );
+    expect(
+      decodedDefaultFloatingPosition("left,-16384,16384").floatingPosition,
+    ).toEqual({ anchor: "left", x: -16_384, y: 16_384 });
+  });
+
+  it("compares disabled and enabled positions by semantic value", () => {
+    const position =
+      decodedDefaultFloatingPosition("top,4,-8").floatingPosition;
+    const equivalent: ApplicationFloatingPosition = Object.freeze({
+      anchor: "top",
+      x: 4,
+      y: -8,
+    });
+    const changed: ApplicationFloatingPosition = Object.freeze({
+      anchor: "top",
+      x: 4,
+      y: -7,
+    });
+
+    expect(sameDefaultFloatingPositions(null, null)).toBe(true);
+    expect(sameDefaultFloatingPositions(position, equivalent)).toBe(true);
+    expect(sameDefaultFloatingPositions(position, changed)).toBe(false);
+    expect(sameDefaultFloatingPositions(position, null)).toBe(false);
+  });
+
+  it.each([
+    null,
+    {},
+    ["top,0,0"],
+    1,
+    "center,0,0",
+    "top,+1,0",
+    "top,-0,0",
+    "top,01,0",
+    "top,1.0,0",
+    "top,1e2,0",
+    "top,16385,0",
+    "top,-16385,0",
+    "top,0, 0",
+    "top,0",
+    "top,0,0,0",
+    "top,0,0\n",
+  ])("rejects malformed input atomically: %j", (value) => {
+    expect(decodeDefaultFloatingPosition(value)).toBeNull();
+  });
+
+  it("rejects an oversized encoded value before parsing", () => {
+    expect(decodeDefaultFloatingPosition(" ".repeat(33))).toBeNull();
   });
 });
 
