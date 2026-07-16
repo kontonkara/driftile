@@ -277,7 +277,7 @@ describe("overview effect package", () => {
       ["bottom", "BottomEdge"],
       ["bottom-left", "BottomLeftEdge"],
       ["left", "LeftEdge"],
-    ]) {
+    ] as const) {
       expect(screenEdgeMapping).toContain(`case "${configured}":`);
       expect(screenEdgeMapping).toContain(
         `return KWin.ScreenEdgeHandler.${edge};`,
