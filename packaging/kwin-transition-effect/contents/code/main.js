@@ -11,6 +11,7 @@ const MAXIMUM_RESIZE_ANIMATION_THRESHOLD = 64;
 const MAXIMUM_EXCLUSION_COUNT = 128;
 const MAXIMUM_EXCLUSION_BYTES = 255;
 const MAXIMUM_EXCLUSION_CONFIG_BYTES = 33024;
+const SHELL_WINDOW_CLASSES = new Set(["krunner", "org.kde.krunner"]);
 const MANAGED_PROPERTY = "driftileTransitionsManaged";
 const ANIMATION_PROPERTY = "driftileTransitionAnimation";
 const DEFERRED_PROPERTY = "driftileDeferredTransition";
@@ -572,6 +573,7 @@ class DriftileTransitionsEffect {
       window.managed &&
       window.moveable &&
       (window.hasDecoration || !window.keepAbove) &&
+      !this.isShellWindow(window) &&
       !this.isConfiguredWindowExcluded(window) &&
       !window.move &&
       !window.resize
@@ -709,6 +711,18 @@ class DriftileTransitionsEffect {
       typeof windowClass === "string" &&
       this.windowClassExclusions.has(windowClass)
     );
+  }
+
+  isShellWindow(window) {
+    const windowClass = window.windowClass;
+    if (typeof windowClass !== "string") {
+      return false;
+    }
+
+    return windowClass
+      .trim()
+      .split(/\s+/u)
+      .some((component) => SHELL_WINDOW_CLASSES.has(component));
   }
 
   geometryChanged(oldGeometry, newGeometry) {

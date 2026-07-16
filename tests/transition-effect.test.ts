@@ -1604,6 +1604,38 @@ describe("transition effect package", () => {
     expect(harness.animationRequests).toHaveLength(1);
   });
 
+  it("keeps the shell launcher at its native compact geometry", () => {
+    for (const windowClass of [
+      "krunner krunner",
+      "krunner org.kde.krunner",
+      "org.kde.krunner org.kde.krunner",
+    ]) {
+      const window = createWindow({ windowClass });
+      const harness = createHarness({ window });
+
+      changeGeometry(window, {
+        x: 640,
+        y: 24,
+        width: 640,
+        height: 84,
+      });
+
+      expect(harness.animationRequests, windowClass).toHaveLength(0);
+    }
+
+    const ordinaryWindow = createWindow({
+      windowClass: "krunner-helper org.example.krunner-helper",
+    });
+    const ordinaryHarness = createHarness({ window: ordinaryWindow });
+    changeGeometry(ordinaryWindow, {
+      x: 40,
+      y: 50,
+      width: 400,
+      height: 250,
+    });
+    expect(ordinaryHarness.animationRequests).toHaveLength(1);
+  });
+
   it("retargets consecutive geometry changes without restarting active attributes", () => {
     const harness = createHarness();
     changeGeometry(harness.window, {
