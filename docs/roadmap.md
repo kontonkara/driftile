@@ -1588,4 +1588,16 @@ taking over compositor mechanisms.
 
 - Keep Plasma's built-in Overview as the compatible baseline.
 
+### 1.36.0 direction
+
+The next bounded sizing slice is intended to:
+
+- Add optional fixed logical-pixel deltas for explicit column-width and
+  window-height decrease or increase actions.
+- Keep the existing percentage-point steps when the corresponding fixed value
+  is `0`; a positive value overrides only that action pair.
+- Apply live constraints and physical-pixel snapping without rewriting existing
+  geometry when a setting changes.
+- Add no shortcut, binding, layout-persistence field, or private KWin API.
+
 The optional overview must remain removable, preserve the authoritative layout state, and fall back cleanly to Plasma's Overview.

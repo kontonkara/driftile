@@ -6,7 +6,8 @@ The settings page groups the existing controls into two tabs:
 
 - **General**: window decorations, focus and single-column centering, touchpad
   navigation, window gap, tab feedback, default column presentation and width,
-  column width step and presets, and window height step and presets.
+  proportional or fixed column-width steps and presets, and proportional or
+  fixed window-height steps and presets.
 - **Applications**: initial column widths and presentation, focus centering,
   initial floating rules, tiling exclusions, and decoration exclusions.
 
@@ -97,13 +98,14 @@ The activation writes only `ApplicationBorderlessExclusions`,
 `BorderlessWindows`, `CenterFocusedColumn`, `Gap`,
 `DefaultColumnPresentation`, `DefaultColumnWidthPercent`,
 `DefaultColumnWidthPixels`, `ColumnWidthPresets`, `ColumnWidthStepPercent`,
+`ColumnWidthStepPixels`,
 `ShowTabIndicator`, `TouchpadNavigation`,
 `TouchpadWorkspaceNavigation`, `TouchpadNavigationFingerCount`,
 `TouchpadNaturalScroll`,
-`WindowHeightPresets`, and `WindowHeightStepPercent` in Driftile's `kwinrc`
-group. It does not replace the file or manage shortcuts. A running KWin session
-is asked to reconfigure on a best-effort basis; otherwise the values apply on
-its next reload or start.
+`WindowHeightPresets`, `WindowHeightStepPercent`, and
+`WindowHeightStepPixels` in Driftile's `kwinrc` group. It does not replace the
+file or manage shortcuts. A running KWin session is asked to reconfigure on a
+best-effort basis; otherwise the values apply on its next reload or start.
 
 When non-null, `alwaysCenterSingleColumn` and
 `centerFocusedColumnOnOverflow` additionally write `AlwaysCenterSingleColumn`
@@ -143,6 +145,7 @@ programs.driftile.settings.centerFocusedColumn = false;
 programs.driftile.settings.centerFocusedColumnOnOverflow = true;
 programs.driftile.settings.alwaysCenterSingleColumn = true;
 programs.driftile.settings.columnWidthPresets = [ 20 50 80 ];
+programs.driftile.settings.columnWidthStepPixels = 0;
 programs.driftile.settings.defaultColumnPresentation = "stacked";
 programs.driftile.settings.defaultColumnWidthPixels = 0;
 programs.driftile.settings.gap = 7.5;
@@ -152,6 +155,7 @@ programs.driftile.settings.touchpadWorkspaceNavigation = true;
 programs.driftile.settings.touchpadNavigationFingerCount = 4;
 programs.driftile.settings.touchpadNaturalScroll = true;
 programs.driftile.settings.windowHeightPresets = [ 25 50 75 ];
+programs.driftile.settings.windowHeightStepPixels = 0;
 ```
 
 Application widths accept legacy integers from `10` through `100`, explicit
@@ -385,9 +389,19 @@ application-specific initial widths and are not stored in layout persistence.
 
 ## Column width step
 
-**Column width step** controls the **Decrease column width** and **Increase column width** actions. The default is `10%`; the range is `1%`–`50%`.
+**Column width step** controls the **Decrease column width** and **Increase
+column width** actions. The default is `10%`; the range is `1%`–`50%`. It is a
+percentage-point step of the gap-adjusted work-area span, not a percentage of
+the current frame.
 
-The value is a percentage-point step of the gap-adjusted work-area span, not a percentage of the current frame. Changing it does not resize or move any window; the next explicit decrease or increase uses the new step. Reset, presets, full width, and available-width expansion are unchanged. Hard window constraints can clamp the result to a fixed boundary.
+**Fixed column width step** optionally overrides that percentage with a fixed
+logical-pixel delta. `0` uses the percentage step; positive values range from
+`1px` through `16384px`. Both modes use the same live window constraints and
+assigned output's physical-pixel grid, so a result can be clamped or snapped.
+
+Changing either setting does not resize or move existing geometry. The next
+explicit decrease or increase reads the current setting. Reset, presets, full
+width, and available-width expansion are unchanged.
 
 ## Column width presets
 
@@ -404,7 +418,8 @@ shared singleton resolution, live constraints, and physical-pixel grid.
 
 ## Window height step
 
-**Window height step** controls the **Decrease window height** and **Increase window height** actions. The default is `10%`; the range is `1%`–`50%`.
+**Window height step** controls the **Decrease window height** and **Increase
+window height** actions. The default is `10%`; the range is `1%`–`50%`.
 
 For a tiled active window, the value is a percentage-point step of the
 gap-adjusted work-area height and the existing stack redistribution remains
@@ -414,8 +429,15 @@ width and top-left unless the partial-visibility bounds require a minimal
 origin clamp. It snaps with the assigned output's device-pixel ratio and
 respects live decorated size constraints.
 
-Changing the value performs no layout work. Window-height presets are configured
-separately, and window-height reset remains tiled-only.
+**Fixed window height step** optionally overrides that percentage with a fixed
+logical-pixel delta. `0` uses the percentage step; positive values range from
+`1px` through `16384px`. Tiled and eligible manually floating paths retain
+their existing redistribution and origin behavior, enforce live constraints,
+and snap the result to the assigned output's physical-pixel grid.
+
+Changing either setting performs no layout or frame write. The next explicit
+decrease or increase reads the current setting. Window-height presets are
+configured separately, and window-height reset remains tiled-only.
 
 ## Window height presets
 
