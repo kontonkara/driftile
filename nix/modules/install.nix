@@ -473,6 +473,12 @@ in
               description = "Column width adjustment in percentage points.";
             };
 
+            columnWidthStepPixels = lib.mkOption {
+              type = lib.types.ints.between 0 16384;
+              default = 0;
+              description = "Column width adjustment in fixed logical pixels; zero uses columnWidthStepPercent.";
+            };
+
             windowHeightPresets = lib.mkOption {
               type = windowHeightPresetType;
               default = [ ];
@@ -483,6 +489,12 @@ in
               type = lib.types.ints.between 1 50;
               default = 10;
               description = "Window height adjustment in percentage points.";
+            };
+
+            windowHeightStepPixels = lib.mkOption {
+              type = lib.types.ints.between 0 16384;
+              default = 0;
+              description = "Window height adjustment in fixed logical pixels; zero uses windowHeightStepPercent.";
             };
           };
         }
@@ -565,6 +577,7 @@ in
           CenterFocusedColumn = cfg.settings.centerFocusedColumn;
           ColumnWidthPresets = renderColumnWidthPresets cfg.settings.columnWidthPresets;
           ColumnWidthStepPercent = cfg.settings.columnWidthStepPercent;
+          ColumnWidthStepPixels = cfg.settings.columnWidthStepPixels;
           DefaultColumnPresentation = cfg.settings.defaultColumnPresentation;
           DefaultColumnWidthPercent = cfg.settings.defaultColumnWidthPercent;
           DefaultColumnWidthPixels = cfg.settings.defaultColumnWidthPixels;
@@ -576,6 +589,7 @@ in
           TouchpadWorkspaceNavigation = cfg.settings.touchpadWorkspaceNavigation;
           WindowHeightPresets = renderWindowHeightPresets cfg.settings.windowHeightPresets;
           WindowHeightStepPercent = cfg.settings.windowHeightStepPercent;
+          WindowHeightStepPixels = cfg.settings.windowHeightStepPixels;
         }
         // lib.optionalAttrs (cfg.settings.alwaysCenterSingleColumn != null) {
           AlwaysCenterSingleColumn = cfg.settings.alwaysCenterSingleColumn;

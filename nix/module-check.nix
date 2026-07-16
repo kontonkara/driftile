@@ -457,6 +457,7 @@ let
             "1280px"
           ];
           columnWidthStepPercent = 13;
+          columnWidthStepPixels = 144;
           defaultColumnPresentation = "tabbed";
           defaultColumnWidthPercent = 65;
           defaultColumnWidthPixels = 960;
@@ -475,6 +476,7 @@ let
             90
           ];
           windowHeightStepPercent = 17;
+          windowHeightStepPixels = 96;
         };
       }
       { };
@@ -499,6 +501,19 @@ let
       ]
       {
         programs.driftile.settings.defaultColumnWidthPixels = 16384;
+      }
+      { };
+  homeManagerMaximumStepPixels =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.settings = {
+          columnWidthStepPixels = 16384;
+          windowHeightStepPixels = 16384;
+        };
       }
       { };
   homeManagerMaximumOverrides =
@@ -734,6 +749,10 @@ let
     { defaultColumnWidthPixels = "960"; }
     { columnWidthStepPercent = 0; }
     { columnWidthStepPercent = 51; }
+    { columnWidthStepPixels = -1; }
+    { columnWidthStepPixels = 16385; }
+    { columnWidthStepPixels = 1.5; }
+    { columnWidthStepPixels = "144"; }
     { columnWidthPresets = [ 9 ]; }
     { columnWidthPresets = [ 101 ]; }
     { columnWidthPresets = [ 50.5 ]; }
@@ -808,6 +827,10 @@ let
     { windowHeightPresets = builtins.genList (index: index + 10) 17; }
     { windowHeightStepPercent = 0; }
     { windowHeightStepPercent = 51; }
+    { windowHeightStepPixels = -1; }
+    { windowHeightStepPixels = 16385; }
+    { windowHeightStepPixels = 1.5; }
+    { windowHeightStepPixels = "96"; }
     { applicationColumnWidths."org.example.Editor" = 9; }
     { applicationColumnWidths."org.example.Editor" = 101; }
     { applicationColumnWidths."org.example.Editor" = "9%"; }
@@ -983,6 +1006,7 @@ let
       CenterFocusedColumnOnOverflow = true;
       ColumnWidthPresets = "20,50%,640px,80,1280px";
       ColumnWidthStepPercent = 13;
+      ColumnWidthStepPixels = 144;
       DefaultColumnPresentation = "tabbed";
       DefaultColumnWidthPercent = 65;
       DefaultColumnWidthPixels = 960;
@@ -995,6 +1019,7 @@ let
       TouchpadWorkspaceNavigation = true;
       WindowHeightPresets = "30,480px,60%,720px,90";
       WindowHeightStepPercent = 17;
+      WindowHeightStepPixels = 96;
     };
   };
   expectedDefaultSettings = {
@@ -1009,6 +1034,7 @@ let
       CenterFocusedColumn = false;
       ColumnWidthPresets = "";
       ColumnWidthStepPercent = 10;
+      ColumnWidthStepPixels = 0;
       DefaultColumnPresentation = "stacked";
       DefaultColumnWidthPercent = 33;
       DefaultColumnWidthPixels = 0;
@@ -1020,6 +1046,7 @@ let
       TouchpadWorkspaceNavigation = false;
       WindowHeightPresets = "";
       WindowHeightStepPercent = 10;
+      WindowHeightStepPixels = 0;
     };
   };
   homeManagerValid = verifyModule homeManagerModule [
@@ -1148,13 +1175,19 @@ assert homeManagerSettings.config.qt.kde.settings == expectedSettings;
 assert homeManagerDefaultSettings.config.qt.kde.settings == expectedDefaultSettings;
 assert
   builtins.length (builtins.attrNames expectedSettings.kwinrc."Script-io.github.kontonkara.driftile")
-  == 24;
+  == 26;
 assert
   builtins.length (
     builtins.attrNames expectedDefaultSettings.kwinrc."Script-io.github.kontonkara.driftile"
-  ) == 21;
+  ) == 23;
 assert
   homeManagerMaximumDefaultColumnWidthPixels.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".DefaultColumnWidthPixels
+  == 16384;
+assert
+  homeManagerMaximumStepPixels.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ColumnWidthStepPixels
+  == 16384;
+assert
+  homeManagerMaximumStepPixels.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".WindowHeightStepPixels
   == 16384;
 assert
   builtins.length (
@@ -1216,6 +1249,7 @@ assert
       CenterFocusedColumn = false;
       ColumnWidthPresets = "";
       ColumnWidthStepPercent = 10;
+      ColumnWidthStepPixels = 0;
       DefaultColumnPresentation = "stacked";
       DefaultColumnWidthPercent = 33;
       DefaultColumnWidthPixels = 0;
@@ -1227,6 +1261,7 @@ assert
       TouchpadWorkspaceNavigation = false;
       WindowHeightPresets = "";
       WindowHeightStepPercent = 10;
+      WindowHeightStepPixels = 0;
     };
   };
 assert lib.all invalidSettingsRejected invalidSettings;

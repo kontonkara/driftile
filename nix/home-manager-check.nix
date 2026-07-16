@@ -70,6 +70,7 @@ let
           "1280px"
         ];
         columnWidthStepPercent = 13;
+        columnWidthStepPixels = 144;
         defaultColumnPresentation = "tabbed";
         defaultColumnWidthPercent = 65;
         defaultColumnWidthPixels = 960;
@@ -88,6 +89,7 @@ let
           90
         ];
         windowHeightStepPercent = 17;
+        windowHeightStepPixels = 96;
       };
       shortcuts = {
         driftile_focus_column_left = [ "Meta+A" ];
@@ -411,6 +413,7 @@ assert
       CenterFocusedColumnOnOverflow = true;
       ColumnWidthPresets = "20,50%,640px,80,1280px";
       ColumnWidthStepPercent = 13;
+      ColumnWidthStepPixels = 144;
       DefaultColumnPresentation = "tabbed";
       DefaultColumnWidthPercent = 65;
       DefaultColumnWidthPixels = 960;
@@ -423,12 +426,13 @@ assert
       TouchpadWorkspaceNavigation = true;
       WindowHeightPresets = "30,480px,60%,720px,90";
       WindowHeightStepPercent = 17;
+      WindowHeightStepPixels = 96;
     };
   };
 assert
   builtins.length (
     builtins.attrNames standalone.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile"
-  ) == 24;
+  ) == 26;
 assert
   standalone.config.xdg.configFile."driftile/shortcuts.json".text == ''
     {"bindings":{"driftile_focus_column_left":["Meta+A"],"driftile_reset_column_width":[]},"version":1}
@@ -458,6 +462,7 @@ assert
       CenterFocusedColumn = false;
       ColumnWidthPresets = "";
       ColumnWidthStepPercent = 10;
+      ColumnWidthStepPixels = 0;
       DefaultColumnPresentation = "stacked";
       DefaultColumnWidthPercent = 33;
       DefaultColumnWidthPixels = 0;
@@ -469,6 +474,7 @@ assert
       TouchpadWorkspaceNavigation = false;
       WindowHeightPresets = "";
       WindowHeightStepPercent = 10;
+      WindowHeightStepPixels = 0;
     };
   };
 assert
