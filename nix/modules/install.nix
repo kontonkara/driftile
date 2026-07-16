@@ -195,6 +195,8 @@ let
   renderApplicationInitialFloating = renderApplicationTilingExclusions;
   applicationInitialFocusedType = applicationTilingExclusionType;
   renderApplicationInitialFocused = renderApplicationTilingExclusions;
+  applicationInitialUnfocusedType = applicationTilingExclusionType;
+  renderApplicationInitialUnfocused = renderApplicationTilingExclusions;
   applicationInitialFullscreenType = applicationTilingExclusionType;
   renderApplicationInitialFullscreen = renderApplicationTilingExclusions;
   applicationInitialMaximizedType = applicationTilingExclusionType;
@@ -512,6 +514,12 @@ in
               description = "Exact case-sensitive KWin desktopFileName strings whose newly admitted windows request focus once in an already visible context.";
             };
 
+            applicationInitialUnfocused = lib.mkOption {
+              type = applicationInitialUnfocusedType;
+              default = [ ];
+              description = "Exact case-sensitive KWin desktopFileName strings whose newly admitted windows suppress or undo initial focus once after admission in an already visible context. This rule takes precedence over applicationInitialFocused, never selects a desktop or output, and affects only future windows.";
+            };
+
             applicationInitialFullscreen = lib.mkOption {
               type = applicationInitialFullscreenType;
               default = [ ];
@@ -763,6 +771,8 @@ in
             renderApplicationInitialFloating cfg.settings.applicationInitialFloating;
           ApplicationInitialFocused =
             renderApplicationInitialFocused cfg.settings.applicationInitialFocused;
+          ApplicationInitialUnfocused =
+            renderApplicationInitialUnfocused cfg.settings.applicationInitialUnfocused;
           ApplicationInitialFullscreen =
             renderApplicationInitialFullscreen cfg.settings.applicationInitialFullscreen;
           ApplicationInitialMaximized =
