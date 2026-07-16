@@ -1,7 +1,30 @@
 # Migration
 
-The latest stable release is 1.45.0. Use the steps below when changing release
+The latest stable release is 1.46.0. Use the steps below when changing release
 generations, and never combine files from different releases.
+
+## Upgrade from 1.45.0 to 1.46.0
+
+1. Release a helper-owned shortcut profile with the installed helper.
+2. Disable Driftile and both optional effects in System Settings.
+3. Install matching 1.46.0 artifacts, or pin the Nix input to `v1.46.0` and
+   rebuild.
+4. Re-enable Driftile and only the optional effects you use, then reclaim the
+   helper profile if needed.
+
+Logical layout state remains v4, and settings, shortcut IDs, and default
+bindings are unchanged. Upgrade the main script for close-focus recovery,
+target-first focus presentation, and bounded borderless-helper retries. Upgrade
+the optional transition effect for settling-resize retargeting and reduced
+geometry hot-path work. The optional overview is unchanged.
+
+## Roll back from 1.46.0 to 1.45.0
+
+Release a helper-owned profile, disable Driftile and both optional effects,
+then restore matching verified 1.45.0 artifacts or pin the Nix input to
+`v1.45.0` and rebuild. Both versions use logical layout state v4 with the same
+settings and action IDs, so no state conversion or configuration removal is
+required.
 
 ## Upgrade from 1.44.0 to 1.45.0
 
