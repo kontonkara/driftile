@@ -37,7 +37,14 @@ jobs:
         run: nix develop --no-update-lock-file --command npm run package:check
 
       - name: Evaluate flake outputs for every system
-        run: nix flake check --no-update-lock-file --all-systems --no-build
+        run: |
+          if nix flake check --no-update-lock-file --all-systems --no-build; then
+            exit 0
+          fi
+
+          echo "::warning::All-system evaluation failed; retrying once after a transient-fetch delay."
+          sleep 20
+          nix flake check --no-update-lock-file --all-systems --no-build
 
       - name: Build native flake checks
         run: nix flake check --no-update-lock-file
