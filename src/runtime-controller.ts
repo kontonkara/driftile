@@ -24,6 +24,12 @@ import {
   type ApplicationInitialFloating,
 } from "./application-initial-floating";
 import {
+  EMPTY_APPLICATION_INITIAL_DESTINATIONS,
+  sameApplicationInitialDestinations,
+  type ApplicationInitialDestination,
+  type ApplicationInitialDestinations,
+} from "./application-initial-destinations";
+import {
   EMPTY_APPLICATION_FLOATING_POSITIONS,
   sameApplicationFloatingPositions,
   type ApplicationFloatingPosition,
@@ -889,6 +895,15 @@ interface LayoutHydrationCandidate {
   readonly windows: ReadonlyMap<WindowId, LayoutHydrationWindowSnapshot>;
 }
 
+interface FreshInitialDestinationCommand {
+  readonly id: WindowId;
+  readonly source: KWinWindow;
+  readonly sourceDesktop: KWinVirtualDesktop;
+  readonly sourceOutput: KWinOutput;
+  readonly targetDesktop: KWinVirtualDesktop;
+  readonly targetOutput: KWinOutput;
+}
+
 export interface RuntimeControllerOptions {
   readonly alwaysCenterSingleColumn?: boolean;
   readonly applicationBorderlessExclusions?: ApplicationBorderlessExclusions;
@@ -897,6 +912,7 @@ export interface RuntimeControllerOptions {
   readonly applicationWindowHeights?: ApplicationWindowHeightOverrides;
   readonly applicationFocusCentering?: ApplicationFocusCentering;
   readonly applicationFloatingPositions?: ApplicationFloatingPositions;
+  readonly applicationInitialDestinations?: ApplicationInitialDestinations;
   readonly applicationInitialFloating?: ApplicationInitialFloating;
   readonly applicationInitialFullWidth?: ApplicationInitialFullWidth;
   readonly applicationInitialFullscreen?: ApplicationInitialFullscreen;
@@ -938,6 +954,7 @@ export class RuntimeController {
   private applicationWindowHeights: ApplicationWindowHeightOverrides;
   private applicationFocusCentering: ApplicationFocusCentering;
   private applicationFloatingPositions: ApplicationFloatingPositions;
+  private applicationInitialDestinations: ApplicationInitialDestinations;
   private applicationInitialFloating: ApplicationInitialFloating;
   private applicationInitialFullWidth: ApplicationInitialFullWidth;
   private applicationInitialFullscreen: ApplicationInitialFullscreen;
@@ -1011,6 +1028,11 @@ export class RuntimeController {
   private readonly initialFloatingPolicyByWindow = new Map<
     WindowId,
     ApplicationInitialFloating
+  >();
+  private readonly initialDestinationOperations = new Set<WindowId>();
+  private readonly initialDestinationPolicyByWindow = new Map<
+    WindowId,
+    ApplicationInitialDestinations
   >();
   private readonly initialFullWidthPolicyByWindow = new Map<
     WindowId,
@@ -1183,6 +1205,9 @@ export class RuntimeController {
     this.applicationFloatingPositions =
       options.applicationFloatingPositions ??
       EMPTY_APPLICATION_FLOATING_POSITIONS;
+    this.applicationInitialDestinations =
+      options.applicationInitialDestinations ??
+      EMPTY_APPLICATION_INITIAL_DESTINATIONS;
     this.applicationInitialFloating =
       options.applicationInitialFloating ?? EMPTY_APPLICATION_INITIAL_FLOATING;
     this.applicationInitialFullWidth =
@@ -2017,6 +2042,22 @@ export class RuntimeController {
     }
 
     this.applicationFloatingPositions = positions;
+    return true;
+  }
+
+  setApplicationInitialDestinations(
+    destinations: ApplicationInitialDestinations,
+  ): boolean {
+    if (
+      sameApplicationInitialDestinations(
+        this.applicationInitialDestinations,
+        destinations,
+      )
+    ) {
+      return false;
+    }
+
+    this.applicationInitialDestinations = destinations;
     return true;
   }
 
@@ -4029,6 +4070,8 @@ export class RuntimeController {
       this.borderlessSettlementTokens.clear();
       this.floatingWindows.clear();
       this.floatingPositionAdmissionHistory.clear();
+      this.initialDestinationOperations.clear();
+      this.initialDestinationPolicyByWindow.clear();
       this.initialFloatingPolicyByWindow.clear();
       this.initialFullWidthPolicyByWindow.clear();
       this.initialFullscreenPolicyByWindow.clear();
@@ -4421,14 +4464,21 @@ export class RuntimeController {
 
   private readonly handleWindowAdded = (window: ObservedWindow): void => {
     const addedId = windowId(window.id);
+    const source = this.observer.source(window.id);
+
+    if (source) {
+      this.applyFreshInitialDestination(addedId, source);
+    }
 
     if (this.hydrationInProgress) {
       this.pendingWindowSyncs.add(addedId);
       return;
     }
 
-    const source = this.observer.source(window.id);
-    const addedContext = this.resolveManagedContext(window);
+    const liveObserved = source ? normalizeWindow(source) : null;
+    const addedContext = liveObserved
+      ? this.resolveManagedContext(liveObserved)
+      : null;
 
     if (addedContext) {
       const addedContextKey = contextKey(addedContext);
@@ -4492,6 +4542,17 @@ export class RuntimeController {
       (source !== undefined && !source.normalWindow)
     ) {
       this.floatingPositionAdmissionHistory.add(trackedId);
+    }
+
+    if (
+      this.initialWindowDiscoveryComplete &&
+      source?.normalWindow &&
+      this.applicationInitialDestinations.canonicalEntries.length > 0
+    ) {
+      this.initialDestinationPolicyByWindow.set(
+        trackedId,
+        this.applicationInitialDestinations,
+      );
     }
 
     if (
@@ -6154,6 +6215,13 @@ export class RuntimeController {
     const changedId = windowId(id);
     const source = this.observer.source(id);
 
+    if (
+      cause === "context" &&
+      this.initialDestinationOperations.has(changedId)
+    ) {
+      return;
+    }
+
     if (this.borderSynchronizationIds.has(changedId)) {
       return;
     }
@@ -6565,6 +6633,8 @@ export class RuntimeController {
     this.automaticFloatingWindows.delete(managedId);
     this.floatingWindows.delete(managedId);
     this.floatingPositionAdmissionHistory.delete(managedId);
+    this.initialDestinationOperations.delete(managedId);
+    this.initialDestinationPolicyByWindow.delete(managedId);
     this.toggleGeometryTransitions.delete(managedId);
     this.topologyColumnByWindow.delete(managedId);
     this.borderlessSettlementTokens.delete(managedId);
@@ -22855,6 +22925,7 @@ export class RuntimeController {
       }
 
       for (const id of candidate.hydratedWindowIds) {
+        this.initialDestinationPolicyByWindow.delete(id);
         this.initialFloatingPolicyByWindow.delete(id);
         this.initialFullWidthPolicyByWindow.delete(id);
         this.initialFullscreenPolicyByWindow.delete(id);
@@ -24238,6 +24309,10 @@ export class RuntimeController {
 
     for (const id of this.pendingWindowSyncs) {
       const source = this.observer.source(id);
+
+      if (source) {
+        this.applyFreshInitialDestination(id, source);
+      }
 
       if (!this.synchronizeAutomaticFloatingWindow(id, source)) {
         pendingIds.push(id);
@@ -25925,6 +26000,7 @@ export class RuntimeController {
     }
 
     const id = windowId(String(source.internalId));
+    this.applyFreshInitialDestination(id, source);
     const observed = normalizeWindow(source);
     const capacityLease = this.capacityLeaseByWindow.get(id);
 
@@ -26231,6 +26307,286 @@ export class RuntimeController {
     this.capacityParkBackoffs.delete(key);
     this.finishInitialFullscreenAdmission(id, source, initiallyFullscreen);
     return true;
+  }
+
+  private applyFreshInitialDestination(id: WindowId, source: KWinWindow): void {
+    const policy = this.initialDestinationPolicyByWindow.get(id);
+
+    if (!policy || this.initialDestinationOperations.has(id)) {
+      return;
+    }
+
+    this.initialDestinationPolicyByWindow.delete(id);
+
+    if (
+      this.windowAdmissionHistory.has(id) ||
+      this.managedWindows.has(id) ||
+      this.floatingWindows.has(id) ||
+      this.automaticFloatingWindows.has(id) ||
+      !source.normalWindow ||
+      source.dialog ||
+      source.modal ||
+      source.transient ||
+      Boolean(source.transientFor) ||
+      source.deleted ||
+      !source.managed
+    ) {
+      return;
+    }
+
+    const desktopFileName = this.applicationDesktopFileName(source);
+    const destination = desktopFileName
+      ? policy.initialDestinationFor(desktopFileName)
+      : undefined;
+    const command = destination
+      ? this.freshInitialDestinationCommand(id, source, destination)
+      : null;
+
+    if (!command || !this.initialDestinationChangesContext(command)) {
+      return;
+    }
+
+    this.initialDestinationOperations.add(id);
+
+    try {
+      this.commitFreshInitialDestination(command);
+    } catch (error) {
+      this.rollbackFreshInitialDestination(command);
+      console.warn(
+        `[driftile] initial destination skipped window=${String(id)} error=${String(error)}`,
+      );
+    } finally {
+      this.initialDestinationOperations.delete(id);
+    }
+  }
+
+  private freshInitialDestinationCommand(
+    id: WindowId,
+    source: KWinWindow,
+    destination: ApplicationInitialDestination,
+  ): FreshInitialDestinationCommand | null {
+    let sourceDesktop: KWinVirtualDesktop | undefined;
+    let sourceOutput: KWinOutput | null;
+
+    try {
+      sourceDesktop =
+        !source.onAllDesktops && source.desktops.length === 1
+          ? source.desktops[0]
+          : undefined;
+      sourceOutput = source.output;
+    } catch {
+      return null;
+    }
+
+    if (!sourceDesktop || !sourceOutput) {
+      return null;
+    }
+
+    const liveSourceOutput = this.workspace.screens.find(
+      (candidate) => candidate.name === sourceOutput.name,
+    );
+    const targetOutput = destination.output
+      ? this.workspace.screens.find(
+          (candidate) => candidate.name === destination.output,
+        )
+      : liveSourceOutput;
+
+    if (!liveSourceOutput || !targetOutput) {
+      return null;
+    }
+
+    const targetDesktop =
+      destination.desktop === undefined
+        ? targetOutput.name === liveSourceOutput.name
+          ? sourceDesktop
+          : currentDesktopForOutput(this.workspace, targetOutput)
+        : this.workspace.desktops[destination.desktop - 1];
+
+    if (
+      !targetDesktop ||
+      !this.workspace.desktops.some(
+        (desktop) => desktop.id === sourceDesktop.id,
+      )
+    ) {
+      return null;
+    }
+
+    return {
+      id,
+      source,
+      sourceDesktop,
+      sourceOutput: liveSourceOutput,
+      targetDesktop,
+      targetOutput,
+    };
+  }
+
+  private initialDestinationChangesContext(
+    command: FreshInitialDestinationCommand,
+  ): boolean {
+    return (
+      command.sourceOutput.name !== command.targetOutput.name ||
+      command.sourceDesktop.id !== command.targetDesktop.id
+    );
+  }
+
+  private commitFreshInitialDestination(
+    command: FreshInitialDestinationCommand,
+  ): void {
+    const outputChanges =
+      command.sourceOutput.name !== command.targetOutput.name;
+    const desktopChanges =
+      command.sourceDesktop.id !== command.targetDesktop.id;
+
+    if (
+      !this.freshInitialDestinationIdentityIsCurrent(command) ||
+      command.source.output?.name !== command.sourceOutput.name ||
+      !windowIsOnDesktop(command.source, command.sourceDesktop)
+    ) {
+      throw new Error("destination is no longer available");
+    }
+
+    if (outputChanges && desktopChanges) {
+      command.source.desktops = [command.sourceDesktop, command.targetDesktop];
+
+      if (
+        !windowIsOnDesktopPair(
+          command.source,
+          command.sourceDesktop,
+          command.targetDesktop,
+        )
+      ) {
+        throw new Error("desktop staging was rejected");
+      }
+    }
+
+    if (outputChanges) {
+      if (typeof this.workspace.sendClientToScreen !== "function") {
+        throw new Error("output transfer is unavailable");
+      }
+
+      this.workspace.sendClientToScreen(command.source, command.targetOutput);
+
+      if (command.source.output.name !== command.targetOutput.name) {
+        throw new Error("output transfer was rejected");
+      }
+    }
+
+    if (desktopChanges) {
+      command.source.desktops = [command.targetDesktop];
+
+      if (!windowIsOnDesktop(command.source, command.targetDesktop)) {
+        throw new Error("desktop transfer was rejected");
+      }
+    }
+
+    if (
+      !this.freshInitialDestinationIdentityIsCurrent(command) ||
+      command.source.output.name !== command.targetOutput.name ||
+      !windowIsOnDesktop(command.source, command.targetDesktop)
+    ) {
+      throw new Error("destination changed during transfer");
+    }
+  }
+
+  private rollbackFreshInitialDestination(
+    command: FreshInitialDestinationCommand,
+  ): void {
+    if (this.observer.source(command.id) !== command.source) {
+      return;
+    }
+
+    const outputChanges =
+      command.sourceOutput.name !== command.targetOutput.name;
+    const desktopChanges =
+      command.sourceDesktop.id !== command.targetDesktop.id;
+
+    try {
+      const outputName = command.source.output?.name;
+      const membershipOwned =
+        windowIsOnDesktop(command.source, command.sourceDesktop) ||
+        windowIsOnDesktop(command.source, command.targetDesktop) ||
+        windowIsOnDesktopPair(
+          command.source,
+          command.sourceDesktop,
+          command.targetDesktop,
+        );
+
+      if (
+        !membershipOwned ||
+        (outputName !== command.sourceOutput.name &&
+          outputName !== command.targetOutput.name)
+      ) {
+        return;
+      }
+
+      if (outputChanges && outputName === command.targetOutput.name) {
+        if (
+          desktopChanges &&
+          windowIsOnDesktop(command.source, command.targetDesktop)
+        ) {
+          command.source.desktops = [
+            command.sourceDesktop,
+            command.targetDesktop,
+          ];
+        }
+
+        if (
+          desktopChanges &&
+          !windowIsOnDesktopPair(
+            command.source,
+            command.sourceDesktop,
+            command.targetDesktop,
+          )
+        ) {
+          return;
+        }
+
+        this.workspace.sendClientToScreen?.(
+          command.source,
+          command.sourceOutput,
+        );
+      }
+
+      if (
+        command.source.output?.name === command.sourceOutput.name &&
+        desktopChanges &&
+        (windowIsOnDesktop(command.source, command.targetDesktop) ||
+          windowIsOnDesktopPair(
+            command.source,
+            command.sourceDesktop,
+            command.targetDesktop,
+          ))
+      ) {
+        command.source.desktops = [command.sourceDesktop];
+      }
+    } catch (error) {
+      console.warn(
+        `[driftile] initial destination rollback stopped window=${String(command.id)} error=${String(error)}`,
+      );
+    }
+  }
+
+  private freshInitialDestinationIdentityIsCurrent(
+    command: FreshInitialDestinationCommand,
+  ): boolean {
+    return (
+      this.observer.source(command.id) === command.source &&
+      !command.source.deleted &&
+      command.source.managed &&
+      this.workspace.screens.some(
+        (output) => output.name === command.sourceOutput.name,
+      ) &&
+      this.workspace.screens.some(
+        (output) => output.name === command.targetOutput.name,
+      ) &&
+      this.workspace.desktops.some(
+        (desktop) => desktop.id === command.sourceDesktop.id,
+      ) &&
+      this.workspace.desktops.some(
+        (desktop) => desktop.id === command.targetDesktop.id,
+      )
+    );
   }
 
   private automaticallyFloats(source: KWinWindow): boolean {

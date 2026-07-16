@@ -4,6 +4,12 @@ import { decodeApplicationInitialFloating } from "../src/application-initial-flo
 import { decodeApplicationInitialFullWidth } from "../src/application-initial-full-width";
 import { decodeApplicationInitialFullscreen } from "../src/application-initial-fullscreen";
 import {
+  APPLICATION_INITIAL_DESTINATION_LIMITS,
+  decodeApplicationInitialDestinations,
+  EMPTY_APPLICATION_INITIAL_DESTINATIONS,
+  sameApplicationInitialDestinations,
+} from "../src/application-initial-destinations";
+import {
   APPLICATION_FLOATING_POSITION_LIMITS,
   decodeApplicationFloatingPositions,
   EMPTY_APPLICATION_FLOATING_POSITIONS,
@@ -75,6 +81,15 @@ if (!validApplicationFloatingPositions) {
   throw new Error("application floating-position fixture is invalid");
 }
 
+const validApplicationInitialDestinations =
+  decodeApplicationInitialDestinations(
+    "org.example.Chat=desktop:2,output:DP-1",
+  );
+
+if (!validApplicationInitialDestinations) {
+  throw new Error("application initial-destination fixture is invalid");
+}
+
 const validApplicationInitialFullWidth = decodeApplicationInitialFullWidth(
   "org.example.Browser\norg.example.Browser=tool",
 );
@@ -133,6 +148,7 @@ const validSettings: DriftileSettings = {
   applicationWindowHeights: validApplicationWindowHeights,
   applicationFocusCentering: validApplicationFocusCentering,
   applicationFloatingPositions: validApplicationFloatingPositions,
+  applicationInitialDestinations: validApplicationInitialDestinations,
   applicationInitialFloating: validApplicationInitialFloating,
   applicationInitialFullWidth: validApplicationInitialFullWidth,
   applicationInitialFullscreen: validApplicationInitialFullscreen,
@@ -170,6 +186,7 @@ const validSettingsInput = {
   applicationWindowHeights: "org.example.Editor=75",
   applicationFocusCentering: "org.example.Browser\norg.example.Editor",
   applicationFloatingPositions: "org.example.Floating=bottom-right,24,16",
+  applicationInitialDestinations: "org.example.Chat=desktop:2,output:DP-1",
   applicationInitialFloating: "org.example.Floating\norg.example.Floating=tool",
   applicationInitialFullWidth: "org.example.Browser\norg.example.Browser=tool",
   applicationInitialFullscreen: "org.example.Game\norg.example.Video",
@@ -243,6 +260,9 @@ describe("Driftile settings", () => {
     ).toEqual([]);
     expect(
       DEFAULT_DRIFTILE_SETTINGS.applicationFloatingPositions.canonicalEntries,
+    ).toEqual([]);
+    expect(
+      DEFAULT_DRIFTILE_SETTINGS.applicationInitialDestinations.canonicalEntries,
     ).toEqual([]);
     expect(
       DEFAULT_DRIFTILE_SETTINGS.applicationInitialFullWidth.canonicalEntries,
@@ -329,6 +349,19 @@ describe("Driftile settings", () => {
     expect(decoded?.applicationFloatingPositions.canonicalEntries).toEqual(
       validApplicationFloatingPositions.canonicalEntries,
     );
+    expect(decoded?.applicationInitialDestinations.canonicalEntries).toEqual(
+      validApplicationInitialDestinations.canonicalEntries,
+    );
+    expect(
+      decoded?.applicationInitialDestinations.initialDestinationFor(
+        "org.example.Chat",
+      ),
+    ).toEqual({ desktop: 2, output: "DP-1" });
+    expect(
+      decoded?.applicationInitialDestinations.initialDestinationFor(
+        "org.example.chat",
+      ),
+    ).toBeUndefined();
     expect(decoded?.applicationInitialFullWidth.canonicalEntries).toEqual(
       validApplicationInitialFullWidth.canonicalEntries,
     );
@@ -378,6 +411,7 @@ describe("Driftile settings", () => {
       applicationWindowHeights: "",
       applicationFocusCentering: "",
       applicationFloatingPositions: "",
+      applicationInitialDestinations: "",
       applicationInitialFloating: "",
       applicationInitialFullWidth: "",
       applicationInitialFullscreen: "",
@@ -412,6 +446,7 @@ describe("Driftile settings", () => {
       applicationWindowHeights: "org.example.Browser=80",
       applicationFocusCentering: "org.example.Browser",
       applicationFloatingPositions: "org.example.Floating=top-left,0,0",
+      applicationInitialDestinations: "org.example.Chat=desktop:25,output:DP-1",
       applicationInitialFloating: "org.example.Floating",
       applicationInitialFullWidth: "org.example.Browser",
       applicationInitialFullscreen: "org.example.Game",
@@ -464,6 +499,9 @@ describe("Driftile settings", () => {
     expect(
       decoded?.applicationFloatingPositions.canonicalEntries.join("\n"),
     ).toBe(settings.applicationFloatingPositions);
+    expect(
+      decoded?.applicationInitialDestinations.canonicalEntries.join("\n"),
+    ).toBe(settings.applicationInitialDestinations);
     expect(
       decoded?.applicationInitialFloating.canonicalEntries.join("\n"),
     ).toBe(settings.applicationInitialFloating);
@@ -591,6 +629,13 @@ describe("Driftile settings", () => {
       },
     ],
     [
+      "duplicate application initial-destination entries",
+      {
+        applicationInitialDestinations:
+          "org.example.Editor=desktop:1\n org.example.Editor =output:DP-1",
+      },
+    ],
+    [
       "duplicate application initial-full-width entries",
       {
         applicationInitialFullWidth: "org.example.Editor\n org.example.Editor ",
@@ -673,7 +718,7 @@ describe("Driftile settings", () => {
     },
   );
 
-  it("rejects an incomplete thirty-two-field snapshot", () => {
+  it("rejects an incomplete thirty-three-field snapshot", () => {
     const incomplete: Record<string, unknown> = { ...validSettingsInput };
     delete incomplete["defaultColumnWidthPixels"];
 
@@ -731,6 +776,15 @@ describe("Driftile settings", () => {
 
     if (!changedApplicationFloatingPositions) {
       throw new Error("application floating-position fixture is invalid");
+    }
+
+    const changedApplicationInitialDestinations =
+      decodeApplicationInitialDestinations(
+        "org.example.Other=desktop:3,output:HDMI-A-1",
+      );
+
+    if (!changedApplicationInitialDestinations) {
+      throw new Error("application initial-destination fixture is invalid");
     }
 
     const changedApplicationInitialFullWidth =
@@ -792,6 +846,9 @@ describe("Driftile settings", () => {
       { applicationWindowHeights: changedApplicationWindowHeights },
       { applicationFocusCentering: changedApplicationFocusCentering },
       { applicationFloatingPositions: changedApplicationFloatingPositions },
+      {
+        applicationInitialDestinations: changedApplicationInitialDestinations,
+      },
       { applicationInitialFloating: changedApplicationInitialFloating },
       { applicationInitialFullWidth: changedApplicationInitialFullWidth },
       { applicationInitialFullscreen: changedApplicationInitialFullscreen },
@@ -823,6 +880,218 @@ describe("Driftile settings", () => {
         sameDriftileSettings(validSettings, { ...validSettings, ...changed }),
       ).toBe(false);
     }
+  });
+});
+
+function decodedApplicationInitialDestinations(value: unknown) {
+  const destinations = decodeApplicationInitialDestinations(value);
+
+  if (!destinations) {
+    throw new Error("application initial-destination fixture is invalid");
+  }
+
+  return destinations;
+}
+
+describe("application initial-destination codec", () => {
+  it("normalizes entries into deterministic immutable exact lookup state", () => {
+    const input =
+      " org.telegram.desktop =output:DP-1,desktop:2\norg.mozilla.firefox=desktop:3";
+    const destinations = decodedApplicationInitialDestinations(input);
+
+    expect(destinations.canonicalEntries).toEqual([
+      "org.mozilla.firefox=desktop:3",
+      "org.telegram.desktop=desktop:2,output:DP-1",
+    ]);
+    expect(destinations.initialDestinationFor("org.telegram.desktop")).toEqual({
+      desktop: 2,
+      output: "DP-1",
+    });
+    expect(
+      destinations.initialDestinationFor("org.Telegram.desktop"),
+    ).toBeUndefined();
+    expect(
+      destinations.initialDestinationFor(" org.telegram.desktop "),
+    ).toBeUndefined();
+    expect(
+      Object.isFrozen(
+        destinations.initialDestinationFor("org.telegram.desktop"),
+      ),
+    ).toBe(true);
+    expect(Object.isFrozen(destinations.canonicalEntries)).toBe(true);
+    expect(Object.isFrozen(destinations)).toBe(true);
+    expect(input).toContain("output:DP-1,desktop:2");
+  });
+
+  it("accepts either destination field, both fields, and blank lines", () => {
+    const destinations = decodedApplicationInitialDestinations(
+      "\n desktop-only =desktop:1\n\t\noutput-only=output:HDMI-A-1\n both=desktop:25,output:DP-2\n",
+    );
+
+    expect(EMPTY_APPLICATION_INITIAL_DESTINATIONS.canonicalEntries).toEqual([]);
+    expect(
+      EMPTY_APPLICATION_INITIAL_DESTINATIONS.initialDestinationFor(
+        "application",
+      ),
+    ).toBeUndefined();
+    expect(destinations.initialDestinationFor("desktop-only")).toEqual({
+      desktop: 1,
+    });
+    expect(destinations.initialDestinationFor("output-only")).toEqual({
+      output: "HDMI-A-1",
+    });
+    expect(destinations.initialDestinationFor("both")).toEqual({
+      desktop: 25,
+      output: "DP-2",
+    });
+  });
+
+  it("compares canonical semantics rather than entry or field order", () => {
+    const first = decodedApplicationInitialDestinations(
+      "zeta=output:DP-1,desktop:4\n alpha =desktop:2",
+    );
+    const equivalent = decodedApplicationInitialDestinations(
+      "alpha=desktop:2\nzeta=desktop:4,output:DP-1",
+    );
+    const changed = decodedApplicationInitialDestinations(
+      "alpha=desktop:2\nzeta=desktop:4,output:DP-2",
+    );
+
+    expect(sameApplicationInitialDestinations(first, first)).toBe(true);
+    expect(sameApplicationInitialDestinations(first, equivalent)).toBe(true);
+    expect(sameApplicationInitialDestinations(first, changed)).toBe(false);
+  });
+
+  it.each([
+    null,
+    {},
+    ["application=desktop:2"],
+    1,
+    "application",
+    "=desktop:2",
+    "application=",
+    "application=workspace:2",
+    "application=desktop:0",
+    "application=desktop:26",
+    "application=desktop:+2",
+    "application=desktop:02",
+    "application=desktop:2.0",
+    "application=desktop:2e0",
+    "application=desktop: 2",
+    "application=desktop:2 ",
+    "application= desktop:2",
+    "application=desktop:2, output:DP-1",
+    "application=desktop:2,desktop:3",
+    "application=output:DP-1,output:DP-2",
+    "application=desktop:2,output:",
+    "application=output: DP-1",
+    "application=output:DP-1 ",
+    "application=output:DP-1,extra",
+    "application=desktop:2,output:DP-1,",
+    "application=desktop:2=output:DP-1",
+    "delete\u007fkey=desktop:2",
+    "bad\ud800key=desktop:2",
+    "application=output:bad\u0080name",
+    "application=output:bad\udc00name",
+  ])("rejects malformed input atomically: %j", (value) => {
+    expect(decodeApplicationInitialDestinations(value)).toBeNull();
+  });
+
+  it("enforces entry, line, document, identifier, output, and UTF-8 bounds", () => {
+    const maximumEntries = Array.from(
+      { length: APPLICATION_INITIAL_DESTINATION_LIMITS.entries },
+      (_, index) => `application-${String(index)}=desktop:1`,
+    );
+    const maximumIdentifier = "a".repeat(
+      APPLICATION_INITIAL_DESTINATION_LIMITS.identifierBytes,
+    );
+    const maximumUtf8Identifier = `${"é".repeat(127)}a`;
+    const maximumOutput = "o".repeat(
+      APPLICATION_INITIAL_DESTINATION_LIMITS.outputNameBytes,
+    );
+    const maximumUtf8Output = `${"é".repeat(127)}a`;
+    const maximumLineIdentifier = "a".repeat(249);
+    const maximumDocument = Array.from(
+      { length: APPLICATION_INITIAL_DESTINATION_LIMITS.entries },
+      (_, index) => {
+        const prefix = `application-${String(index).padStart(3, "0")}`;
+        const identifier = `${prefix}${"a".repeat(249 - prefix.length)}`;
+
+        return `${identifier}=output:${maximumOutput}`;
+      },
+    ).join("\n");
+
+    expect(
+      decodeApplicationInitialDestinations(maximumEntries.join("\n")),
+    ).not.toBeNull();
+    expect(
+      decodeApplicationInitialDestinations(
+        [...maximumEntries, "overflow=desktop:1"].join("\n"),
+      ),
+    ).toBeNull();
+    expect(
+      decodeApplicationInitialDestinations(`${maximumIdentifier}=desktop:1`),
+    ).not.toBeNull();
+    expect(
+      decodeApplicationInitialDestinations(`${maximumIdentifier}a=desktop:1`),
+    ).toBeNull();
+    expect(
+      decodeApplicationInitialDestinations(
+        `${maximumUtf8Identifier}=desktop:1`,
+      ),
+    ).not.toBeNull();
+    expect(
+      decodeApplicationInitialDestinations(
+        `${maximumUtf8Identifier}é=desktop:1`,
+      ),
+    ).toBeNull();
+    expect(
+      decodeApplicationInitialDestinations(
+        `application=output:${maximumOutput}`,
+      ),
+    ).not.toBeNull();
+    expect(
+      decodeApplicationInitialDestinations(
+        `application=output:${maximumOutput}o`,
+      ),
+    ).toBeNull();
+    expect(
+      decodeApplicationInitialDestinations(
+        `application=output:${maximumUtf8Output}`,
+      ),
+    ).not.toBeNull();
+    expect(
+      decodeApplicationInitialDestinations(
+        `application=output:${maximumUtf8Output}é`,
+      ),
+    ).toBeNull();
+    expect(
+      decodeApplicationInitialDestinations(
+        `${maximumLineIdentifier}=output:${maximumOutput}`,
+      ),
+    ).not.toBeNull();
+    expect(
+      decodeApplicationInitialDestinations(
+        `${maximumLineIdentifier}a=output:${maximumOutput}`,
+      ),
+    ).toBeNull();
+    expect(maximumDocument.length).toBe(
+      APPLICATION_INITIAL_DESTINATION_LIMITS.documentCharacters - 1,
+    );
+    expect(
+      decodeApplicationInitialDestinations(`${maximumDocument}\n`),
+    ).not.toBeNull();
+    expect(
+      decodeApplicationInitialDestinations(`${maximumDocument}\n\n`),
+    ).toBeNull();
+  });
+
+  it("rejects duplicate normalized identifiers atomically", () => {
+    expect(
+      decodeApplicationInitialDestinations(
+        "org.example.App=desktop:2\n org.example.App =output:DP-1",
+      ),
+    ).toBeNull();
   });
 });
 

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { decodeApplicationBorderlessExclusions } from "../src/application-borderless-exclusions";
 import { decodeApplicationColumnPresentations } from "../src/application-column-presentations";
+import { decodeApplicationInitialDestinations } from "../src/application-initial-destinations";
 import { decodeApplicationInitialFloating } from "../src/application-initial-floating";
 import { decodeApplicationInitialFullWidth } from "../src/application-initial-full-width";
 import { decodeApplicationInitialFullscreen } from "../src/application-initial-fullscreen";
@@ -8437,6 +8438,175 @@ describe("RuntimeController", () => {
       ["stacked", [windowId("existing")]],
       ["tabbed", [windowId("added")]],
     ]);
+  });
+
+  it("routes fresh applications before applying their initial state", () => {
+    const sourceOutput = createOutput("DP-1", 0);
+    const targetOutput = createOutput("DP-2", 1000);
+    const firstDesktop = { id: "desktop-1" };
+    const secondDesktop = { id: "desktop-2" };
+    const existing = createTrackedWindow(
+      "existing",
+      sourceOutput,
+      firstDesktop,
+      { desktopFileName: "org.example.Target" },
+    );
+    const added = createTrackedWindow("added", sourceOutput, firstDesktop, {
+      desktopFileName: "org.example.Target",
+      frameGeometry: { height: 220, width: 300, x: 40, y: 30 },
+    });
+    const fixture = createWorkspace(
+      sourceOutput,
+      firstDesktop,
+      [sourceOutput, targetOutput],
+      [firstDesktop, secondDesktop],
+      [existing.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      applicationFloatingPositions: requiredApplicationFloatingPositions(
+        "org.example.Target=top-left,20,30",
+      ),
+      applicationInitialDestinations: requiredApplicationInitialDestinations(
+        "org.example.Target=desktop:2,output:DP-2",
+      ),
+      applicationInitialFloating:
+        requiredApplicationInitialFloating("org.example.Target"),
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    const activationCount = fixture.activationCount;
+    const desktopSwitchCount = fixture.desktopSwitchCount;
+    fixture.windowAdded.emit(added.window);
+    flushManualScheduler(scheduler);
+
+    expect(existing.window.output).toBe(sourceOutput);
+    expect(existing.window.desktops).toEqual([firstDesktop]);
+    expect(added.window.output).toBe(targetOutput);
+    expect(added.window.desktops).toEqual([secondDesktop]);
+    expect(added.desktopWriteCount).toBe(2);
+    expect(fixture.outputTransferCount).toBe(1);
+    expect(fixture.desktopSwitchCount).toBe(desktopSwitchCount);
+    expect(fixture.activationCount).toBe(activationCount);
+    expect(fixture.workspace.activeWindow).toBe(existing.window);
+    expect(controller.managedCount).toBe(1);
+    expect(controller.floatingCount).toBe(1);
+    expect(added.window.frameGeometry).toEqual({
+      height: 220,
+      width: 300,
+      x: 1020,
+      y: 30,
+    });
+  });
+
+  it("uses the target output desktop for future output-only rules", () => {
+    const sourceOutput = createOutput("DP-1", 0);
+    const targetOutput = createOutput("DP-2", 1000);
+    const firstDesktop = { id: "desktop-1" };
+    const secondDesktop = { id: "desktop-2" };
+    const existing = createTrackedWindow(
+      "existing",
+      sourceOutput,
+      firstDesktop,
+      { desktopFileName: "org.example.Target" },
+    );
+    const fixture = createWorkspace(
+      sourceOutput,
+      firstDesktop,
+      [sourceOutput, targetOutput],
+      [firstDesktop, secondDesktop],
+      [existing.window],
+    );
+    fixture.setCurrentDesktop(targetOutput, secondDesktop);
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    expect(controller.start()).toBe(true);
+    const destinations = requiredApplicationInitialDestinations(
+      "org.example.Target=output:DP-2",
+    );
+    expect(controller.setApplicationInitialDestinations(destinations)).toBe(
+      true,
+    );
+    expect(controller.setApplicationInitialDestinations(destinations)).toBe(
+      false,
+    );
+    expect(existing.window.output).toBe(sourceOutput);
+    expect(existing.window.desktops).toEqual([firstDesktop]);
+
+    const added = createTrackedWindow("added", sourceOutput, firstDesktop, {
+      desktopFileName: "org.example.Target",
+    });
+    fixture.windowAdded.emit(added.window);
+
+    expect(added.window.output).toBe(targetOutput);
+    expect(added.window.desktops).toEqual([secondDesktop]);
+    expect(added.desktopWriteCount).toBe(2);
+    expect(fixture.outputTransferCount).toBe(1);
+  });
+
+  it("rolls back rejected initial destinations without retrying related windows", () => {
+    const sourceOutput = createOutput("DP-1", 0);
+    const targetOutput = createOutput("DP-2", 1000);
+    const firstDesktop = { id: "desktop-1" };
+    const secondDesktop = { id: "desktop-2" };
+    const peer = createTrackedWindow("peer", sourceOutput, firstDesktop);
+    const target = createTrackedWindow("target", sourceOutput, firstDesktop, {
+      desktopFileName: "org.example.Target",
+    });
+    const fixture = createWorkspace(
+      sourceOutput,
+      firstDesktop,
+      [sourceOutput, targetOutput],
+      [firstDesktop, secondDesktop],
+      [peer.window],
+    );
+    const scheduler = new ManualScheduler();
+    const destinations = requiredApplicationInitialDestinations(
+      "org.example.Target=desktop:2,output:DP-2",
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      applicationInitialDestinations: destinations,
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+    fixture.setOutputTransferBehavior(() => undefined);
+    const warning = vi
+      .spyOn(console, "warn")
+      .mockImplementation(() => undefined);
+
+    expect(controller.start()).toBe(true);
+    fixture.windowAdded.emit(target.window);
+    flushManualScheduler(scheduler);
+    expect(target.window.output).toBe(sourceOutput);
+    expect(target.window.desktops).toEqual([firstDesktop]);
+    expect(target.desktopWriteCount).toBe(2);
+    expect(fixture.outputTransferCount).toBe(1);
+
+    fixture.setOutputTransferBehavior(null);
+    controller.reconcile();
+    flushManualScheduler(scheduler);
+    expect(target.window.output).toBe(sourceOutput);
+    expect(target.window.desktops).toEqual([firstDesktop]);
+    expect(fixture.outputTransferCount).toBe(1);
+
+    const related = createTrackedWindow("related", sourceOutput, firstDesktop, {
+      desktopFileName: "org.example.Target",
+      transient: true,
+      transientFor: peer.window,
+    });
+    fixture.windowAdded.emit(related.window);
+    flushManualScheduler(scheduler);
+    warning.mockRestore();
+    expect(related.window.output).toBe(sourceOutput);
+    expect(related.window.desktops).toEqual([firstDesktop]);
+    expect(fixture.outputTransferCount).toBe(1);
   });
 
   it("floats only newly tracked matching applications until explicitly tiled", () => {
@@ -47063,6 +47233,16 @@ function requiredApplicationInitialFloating(value: string) {
   }
 
   return applications;
+}
+
+function requiredApplicationInitialDestinations(value: string) {
+  const destinations = decodeApplicationInitialDestinations(value);
+
+  if (!destinations) {
+    throw new Error("application initial destinations fixture is invalid");
+  }
+
+  return destinations;
 }
 
 function requiredApplicationInitialFullscreen(value: string) {

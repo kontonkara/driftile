@@ -29,6 +29,12 @@ import {
   type ApplicationInitialFloating,
 } from "./application-initial-floating";
 import {
+  decodeApplicationInitialDestinations,
+  EMPTY_APPLICATION_INITIAL_DESTINATIONS,
+  sameApplicationInitialDestinations,
+  type ApplicationInitialDestinations,
+} from "./application-initial-destinations";
+import {
   decodeApplicationFloatingPositions,
   EMPTY_APPLICATION_FLOATING_POSITIONS,
   sameApplicationFloatingPositions,
@@ -90,7 +96,7 @@ const MIN_RESIZE_STEP_PIXELS = 0;
 const MAX_RESIZE_STEP_PIXELS = 16_384;
 const MIN_TOUCHPAD_NAVIGATION_FINGER_COUNT = 3;
 const MAX_TOUCHPAD_NAVIGATION_FINGER_COUNT = 5;
-const SETTINGS_FIELD_COUNT = 32;
+const SETTINGS_FIELD_COUNT = 33;
 
 export interface DriftileSettings {
   readonly applicationBorderlessExclusions: ApplicationBorderlessExclusions;
@@ -99,6 +105,7 @@ export interface DriftileSettings {
   readonly applicationWindowHeights: ApplicationWindowHeightOverrides;
   readonly applicationFocusCentering: ApplicationFocusCentering;
   readonly applicationFloatingPositions: ApplicationFloatingPositions;
+  readonly applicationInitialDestinations: ApplicationInitialDestinations;
   readonly applicationInitialFloating: ApplicationInitialFloating;
   readonly applicationInitialFullWidth: ApplicationInitialFullWidth;
   readonly applicationInitialFullscreen: ApplicationInitialFullscreen;
@@ -134,6 +141,7 @@ export const DEFAULT_DRIFTILE_SETTINGS: DriftileSettings = Object.freeze({
   applicationWindowHeights: EMPTY_APPLICATION_WINDOW_HEIGHT_OVERRIDES,
   applicationFocusCentering: EMPTY_APPLICATION_FOCUS_CENTERING,
   applicationFloatingPositions: EMPTY_APPLICATION_FLOATING_POSITIONS,
+  applicationInitialDestinations: EMPTY_APPLICATION_INITIAL_DESTINATIONS,
   applicationInitialFloating: EMPTY_APPLICATION_INITIAL_FLOATING,
   applicationInitialFullWidth: EMPTY_APPLICATION_INITIAL_FULL_WIDTH,
   applicationInitialFullscreen: EMPTY_APPLICATION_INITIAL_FULLSCREEN,
@@ -179,6 +187,7 @@ export function decodeDriftileSettings(
     !owns(candidate, "applicationWindowHeights") ||
     !owns(candidate, "applicationFocusCentering") ||
     !owns(candidate, "applicationFloatingPositions") ||
+    !owns(candidate, "applicationInitialDestinations") ||
     !owns(candidate, "applicationInitialFloating") ||
     !owns(candidate, "applicationInitialFullWidth") ||
     !owns(candidate, "applicationInitialFullscreen") ||
@@ -226,6 +235,9 @@ export function decodeDriftileSettings(
   );
   const applicationFloatingPositions = decodeApplicationFloatingPositions(
     candidate["applicationFloatingPositions"],
+  );
+  const applicationInitialDestinations = decodeApplicationInitialDestinations(
+    candidate["applicationInitialDestinations"],
   );
   const applicationInitialFloating = decodeApplicationInitialFloating(
     candidate["applicationInitialFloating"],
@@ -277,6 +289,7 @@ export function decodeDriftileSettings(
     !applicationWindowHeights ||
     !applicationFocusCentering ||
     !applicationFloatingPositions ||
+    !applicationInitialDestinations ||
     !applicationInitialFloating ||
     !applicationInitialFullWidth ||
     !applicationInitialFullscreen ||
@@ -342,6 +355,7 @@ export function decodeDriftileSettings(
     applicationWindowHeights,
     applicationFocusCentering,
     applicationFloatingPositions,
+    applicationInitialDestinations,
     applicationInitialFloating,
     applicationInitialFullWidth,
     applicationInitialFullscreen,
@@ -399,6 +413,10 @@ export function sameDriftileSettings(
     sameApplicationFloatingPositions(
       left.applicationFloatingPositions,
       right.applicationFloatingPositions,
+    ) &&
+    sameApplicationInitialDestinations(
+      left.applicationInitialDestinations,
+      right.applicationInitialDestinations,
     ) &&
     sameApplicationInitialFloating(
       left.applicationInitialFloating,
