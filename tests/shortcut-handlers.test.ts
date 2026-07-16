@@ -928,8 +928,10 @@ describe("KWin shortcut handlers", () => {
       "kcfg_DefaultColumnWidthPercent",
       "kcfg_DefaultColumnWidthPixels",
       "kcfg_ColumnWidthStepPercent",
+      "kcfg_ColumnWidthStepPixels",
       "kcfg_ColumnWidthPresets",
       "kcfg_WindowHeightStepPercent",
+      "kcfg_WindowHeightStepPixels",
       "kcfg_WindowHeightPresets",
     ];
     const applicationControls = [
@@ -1456,11 +1458,20 @@ describe("KWin shortcut handlers", () => {
     const stepEntry = configuration.match(
       /<entry name="ColumnWidthStepPercent" type="Int">([\s\S]*?)<\/entry>/,
     )?.[1];
+    const fixedStepEntry = configuration.match(
+      /<entry name="ColumnWidthStepPixels" type="Int">([\s\S]*?)<\/entry>/,
+    )?.[1];
     const stepLabel = configurationUi.match(
       /<widget class="QLabel" name="columnWidthStepLabel">([\s\S]*?)<\/widget>/,
     )?.[1];
     const stepWidget = configurationUi.match(
       /<widget class="QSpinBox" name="kcfg_ColumnWidthStepPercent">([\s\S]*?)<\/widget>/,
+    )?.[1];
+    const fixedStepLabel = configurationUi.match(
+      /<widget class="QLabel" name="columnWidthStepPixelsLabel">([\s\S]*?)<\/widget>/,
+    )?.[1];
+    const fixedStepWidget = configurationUi.match(
+      /<widget class="QSpinBox" name="kcfg_ColumnWidthStepPixels">([\s\S]*?)<\/widget>/,
     )?.[1];
 
     expect(stepEntry).toContain("<label>Column width step in percent</label>");
@@ -1481,8 +1492,41 @@ describe("KWin shortcut handlers", () => {
     expect(stepWidget).toMatch(
       /<property name="value">\s*<number>10<\/number>/,
     );
+    expect(fixedStepEntry).toContain(
+      "<label>Fixed column width step in logical pixels; zero uses percent</label>",
+    );
+    expect(fixedStepEntry).toContain("<default>0</default>");
+    expect(fixedStepEntry).toContain("<min>0</min>");
+    expect(fixedStepEntry).toContain("<max>16384</max>");
+    expect(fixedStepLabel).toContain(
+      "<string>Fixed column width step:</string>",
+    );
+    expect(fixedStepLabel).toContain(
+      "<cstring>kcfg_ColumnWidthStepPixels</cstring>",
+    );
+    expect(fixedStepWidget).toContain(
+      "<string>Use percentage step above</string>",
+    );
+    expect(fixedStepWidget).toContain("Zero uses the percentage step above.");
+    expect(fixedStepWidget).toContain("without rewriting existing geometry");
+    expect(fixedStepWidget).toContain(
+      "Window constraints and output-pixel snapping remain authoritative.",
+    );
+    expect(fixedStepWidget).toContain("<string> px</string>");
+    expect(fixedStepWidget).toMatch(
+      /<property name="minimum">\s*<number>0<\/number>/,
+    );
+    expect(fixedStepWidget).toMatch(
+      /<property name="maximum">\s*<number>16384<\/number>/,
+    );
+    expect(fixedStepWidget).toMatch(
+      /<property name="value">\s*<number>0<\/number>/,
+    );
     expect(qml).toContain(
       `columnWidthStepPercent: KWin.readConfig("ColumnWidthStepPercent", ${String(DEFAULT_DRIFTILE_SETTINGS.columnWidthStepPercent)})`,
+    );
+    expect(qml).toContain(
+      'columnWidthStepPixels: KWin.readConfig("ColumnWidthStepPixels", 0)',
     );
     expect(runtime).toContain(
       "controller.setColumnWidthStepPercent(settings.columnWidthStepPercent)",
@@ -1532,11 +1576,20 @@ describe("KWin shortcut handlers", () => {
     const stepEntry = configuration.match(
       /<entry name="WindowHeightStepPercent" type="Int">([\s\S]*?)<\/entry>/,
     )?.[1];
+    const fixedStepEntry = configuration.match(
+      /<entry name="WindowHeightStepPixels" type="Int">([\s\S]*?)<\/entry>/,
+    )?.[1];
     const stepLabel = configurationUi.match(
       /<widget class="QLabel" name="windowHeightStepLabel">([\s\S]*?)<\/widget>/,
     )?.[1];
     const stepWidget = configurationUi.match(
       /<widget class="QSpinBox" name="kcfg_WindowHeightStepPercent">([\s\S]*?)<\/widget>/,
+    )?.[1];
+    const fixedStepLabel = configurationUi.match(
+      /<widget class="QLabel" name="windowHeightStepPixelsLabel">([\s\S]*?)<\/widget>/,
+    )?.[1];
+    const fixedStepWidget = configurationUi.match(
+      /<widget class="QSpinBox" name="kcfg_WindowHeightStepPixels">([\s\S]*?)<\/widget>/,
     )?.[1];
 
     expect(stepEntry).toContain("<label>Window height step in percent</label>");
@@ -1557,8 +1610,41 @@ describe("KWin shortcut handlers", () => {
     expect(stepWidget).toMatch(
       /<property name="value">\s*<number>10<\/number>/,
     );
+    expect(fixedStepEntry).toContain(
+      "<label>Fixed window height step in logical pixels; zero uses percent</label>",
+    );
+    expect(fixedStepEntry).toContain("<default>0</default>");
+    expect(fixedStepEntry).toContain("<min>0</min>");
+    expect(fixedStepEntry).toContain("<max>16384</max>");
+    expect(fixedStepLabel).toContain(
+      "<string>Fixed window height step:</string>",
+    );
+    expect(fixedStepLabel).toContain(
+      "<cstring>kcfg_WindowHeightStepPixels</cstring>",
+    );
+    expect(fixedStepWidget).toContain(
+      "<string>Use percentage step above</string>",
+    );
+    expect(fixedStepWidget).toContain("Zero uses the percentage step above.");
+    expect(fixedStepWidget).toContain("without rewriting existing geometry");
+    expect(fixedStepWidget).toContain(
+      "Window constraints and output-pixel snapping remain authoritative.",
+    );
+    expect(fixedStepWidget).toContain("<string> px</string>");
+    expect(fixedStepWidget).toMatch(
+      /<property name="minimum">\s*<number>0<\/number>/,
+    );
+    expect(fixedStepWidget).toMatch(
+      /<property name="maximum">\s*<number>16384<\/number>/,
+    );
+    expect(fixedStepWidget).toMatch(
+      /<property name="value">\s*<number>0<\/number>/,
+    );
     expect(qml).toContain(
       `windowHeightStepPercent: KWin.readConfig("WindowHeightStepPercent", ${String(DEFAULT_DRIFTILE_SETTINGS.windowHeightStepPercent)})`,
+    );
+    expect(qml).toContain(
+      'windowHeightStepPixels: KWin.readConfig("WindowHeightStepPixels", 0)',
     );
     expect(runtime).toContain(
       "controller.setWindowHeightStepPercent(settings.windowHeightStepPercent)",

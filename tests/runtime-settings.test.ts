@@ -22,12 +22,14 @@ interface DeliveredSettings {
   readonly centerFocusedColumn: boolean;
   readonly centerFocusedColumnOnOverflow: boolean;
   readonly columnWidthPresets: readonly ColumnWidth[];
+  readonly columnWidthStepPixels: number;
   readonly columnWidthStepPercent: number;
   readonly defaultColumnWidth: ColumnWidth;
   readonly defaultColumnPresentation: "stacked" | "tabbed";
   readonly emptyDesktopAboveFirst: boolean;
   readonly gap: number;
   readonly windowHeightPresets: readonly WindowHeightPresetCycleEntry[];
+  readonly windowHeightStepPixels: number;
   readonly windowHeightStepPercent: number;
 }
 
@@ -92,12 +94,14 @@ class RuntimeControllerDouble {
       centerFocusedColumn: false,
       centerFocusedColumnOnOverflow: false,
       columnWidthPresets: [],
+      columnWidthStepPixels: 0,
       columnWidthStepPercent: 1,
       defaultColumnWidth: { ...options.columnWidth },
       defaultColumnPresentation: options.defaultColumnPresentation,
       emptyDesktopAboveFirst: options.emptyDesktopAboveFirst,
       gap: options.gap,
       windowHeightPresets: [],
+      windowHeightStepPixels: 0,
       windowHeightStepPercent: 1,
     };
     controllerInstances.push(this);
@@ -232,6 +236,12 @@ class RuntimeControllerDouble {
     return true;
   }
 
+  setColumnWidthStepPixels(value: number): boolean {
+    this.calls.push("columnWidthStepPixels");
+    this.state = { ...this.state, columnWidthStepPixels: value };
+    return true;
+  }
+
   setDefaultColumnWidth(value: ColumnWidth): boolean {
     this.calls.push("defaultColumnWidth");
     this.state = { ...this.state, defaultColumnWidth: { ...value } };
@@ -259,6 +269,12 @@ class RuntimeControllerDouble {
   setWindowHeightStepPercent(value: number): boolean {
     this.calls.push("windowHeightStepPercent");
     this.state = { ...this.state, windowHeightStepPercent: value };
+    return true;
+  }
+
+  setWindowHeightStepPixels(value: number): boolean {
+    this.calls.push("windowHeightStepPixels");
+    this.state = { ...this.state, windowHeightStepPixels: value };
     return true;
   }
 
@@ -365,6 +381,7 @@ describe("runtime settings delivery", () => {
       centerFocusedColumn: true,
       centerFocusedColumnOnOverflow: true,
       columnWidthPresets: "20,640px,50,1280px,80",
+      columnWidthStepPixels: 144,
       columnWidthStepPercent: 13,
       defaultColumnPresentation: "tabbed",
       defaultColumnWidthPercent: 65,
@@ -376,6 +393,7 @@ describe("runtime settings delivery", () => {
       touchpadNaturalScroll: false,
       touchpadWorkspaceNavigation: true,
       windowHeightPresets: "25,480px,50,960px,75",
+      windowHeightStepPixels: 96,
       windowHeightStepPercent: 17,
     });
     const expected: DeliveredSettings = {
@@ -390,12 +408,14 @@ describe("runtime settings delivery", () => {
       centerFocusedColumn: true,
       centerFocusedColumnOnOverflow: true,
       columnWidthPresets: columnWidthPolicies([20, "640px", 50, "1280px", 80]),
+      columnWidthStepPixels: 144,
       columnWidthStepPercent: 13,
       defaultColumnWidth: { kind: "fixed", value: 720 },
       defaultColumnPresentation: "tabbed",
       emptyDesktopAboveFirst: false,
       gap: 7.5,
       windowHeightPresets: heightPresetCycle([25, "480px", 50, "960px", 75]),
+      windowHeightStepPixels: 96,
       windowHeightStepPercent: 17,
     };
 
@@ -420,8 +440,10 @@ describe("runtime settings delivery", () => {
       "emptyDesktopAboveFirst",
       "columnWidthPresets",
       "columnWidthStepPercent",
+      "columnWidthStepPixels",
       "windowHeightPresets",
       "windowHeightStepPercent",
+      "windowHeightStepPixels",
       "gap",
     ]);
     expect(controller.borderDeliverySnapshots).toEqual([
@@ -498,8 +520,10 @@ describe("runtime settings delivery", () => {
       "emptyDesktopAboveFirst",
       "columnWidthPresets",
       "columnWidthStepPercent",
+      "columnWidthStepPixels",
       "windowHeightPresets",
       "windowHeightStepPercent",
+      "windowHeightStepPixels",
       "gap",
       "borderlessWindows",
     ]);
@@ -532,6 +556,7 @@ function settings(
     centerFocusedColumn: false,
     centerFocusedColumnOnOverflow: false,
     columnWidthPresets: "",
+    columnWidthStepPixels: 0,
     columnWidthStepPercent: 10,
     defaultColumnPresentation: "stacked",
     defaultColumnWidthPercent: 50,
@@ -544,6 +569,7 @@ function settings(
     touchpadNaturalScroll: true,
     touchpadWorkspaceNavigation: false,
     windowHeightPresets: "",
+    windowHeightStepPixels: 0,
     windowHeightStepPercent: 10,
     ...overrides,
   };

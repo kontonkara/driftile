@@ -99,6 +99,10 @@ class RuntimeControllerDouble {
     return true;
   }
 
+  setColumnWidthStepPixels(): boolean {
+    return true;
+  }
+
   setDefaultColumnWidthPercent(): boolean {
     return true;
   }
@@ -124,6 +128,10 @@ class RuntimeControllerDouble {
   }
 
   setWindowHeightStepPercent(): boolean {
+    return true;
+  }
+
+  setWindowHeightStepPixels(): boolean {
     return true;
   }
 }
@@ -406,6 +414,7 @@ function settings(
     centerFocusedColumn: false,
     centerFocusedColumnOnOverflow: false,
     columnWidthPresets: "",
+    columnWidthStepPixels: 0,
     columnWidthStepPercent: 10,
     defaultColumnPresentation: "stacked",
     defaultColumnWidthPercent: 50,
@@ -418,6 +427,7 @@ function settings(
     touchpadNavigationFingerCount: 5,
     touchpadNaturalScroll: true,
     windowHeightPresets: "",
+    windowHeightStepPixels: 0,
     windowHeightStepPercent: 10,
     ...overrides,
   };

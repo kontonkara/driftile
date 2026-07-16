@@ -8345,6 +8345,7 @@ describe("RuntimeController", () => {
     });
     const state = controller as unknown as {
       readonly columnWidthStep: number;
+      readonly columnWidthStepPixels: number;
     };
 
     expect(controller.start()).toBe(true);
@@ -8360,7 +8361,9 @@ describe("RuntimeController", () => {
     const settledGeometryLookups = geometryLookups;
 
     expect(state.columnWidthStep).toBe(0.1);
+    expect(state.columnWidthStepPixels).toBe(0);
     expect(controller.setColumnWidthStepPercent(10)).toBe(false);
+    expect(controller.setColumnWidthStepPixels(0)).toBe(false);
 
     for (const invalid of [
       0,
@@ -8373,6 +8376,17 @@ describe("RuntimeController", () => {
       expect(controller.setColumnWidthStepPercent(invalid)).toBe(false);
     }
 
+    for (const invalid of [
+      -1,
+      16_385,
+      1.5,
+      Number.NaN,
+      Number.NEGATIVE_INFINITY,
+      Number.POSITIVE_INFINITY,
+    ]) {
+      expect(controller.setColumnWidthStepPixels(invalid)).toBe(false);
+    }
+
     expect(controller.setColumnWidthStepPercent(1)).toBe(true);
     expect(state.columnWidthStep).toBe(0.01);
     expect(controller.setColumnWidthStepPercent(50)).toBe(true);
@@ -8380,6 +8394,13 @@ describe("RuntimeController", () => {
     expect(controller.setColumnWidthStepPercent(17)).toBe(true);
     expect(controller.setColumnWidthStepPercent(17)).toBe(false);
     expect(state.columnWidthStep).toBe(0.17);
+    expect(controller.setColumnWidthStepPixels(1)).toBe(true);
+    expect(state.columnWidthStepPixels).toBe(1);
+    expect(controller.setColumnWidthStepPixels(16_384)).toBe(true);
+    expect(state.columnWidthStepPixels).toBe(16_384);
+    expect(controller.setColumnWidthStepPixels(144)).toBe(true);
+    expect(controller.setColumnWidthStepPixels(144)).toBe(false);
+    expect(state.columnWidthStepPixels).toBe(144);
 
     expect(geometryLookups).toBe(settledGeometryLookups);
     expect(scheduler.pendingCount).toBe(0);
@@ -8426,6 +8447,7 @@ describe("RuntimeController", () => {
     const state = controller as unknown as {
       readonly columnWidthStep: number;
       readonly windowHeightStep: number;
+      readonly windowHeightStepPixels: number;
     };
 
     expect(controller.start()).toBe(true);
@@ -8441,8 +8463,10 @@ describe("RuntimeController", () => {
     const settledGeometryLookups = geometryLookups;
 
     expect(state.windowHeightStep).toBe(0.1);
+    expect(state.windowHeightStepPixels).toBe(0);
     expect(state.columnWidthStep).toBe(0.1);
     expect(controller.setWindowHeightStepPercent(10)).toBe(false);
+    expect(controller.setWindowHeightStepPixels(0)).toBe(false);
 
     for (const invalid of [
       0,
@@ -8455,6 +8479,17 @@ describe("RuntimeController", () => {
       expect(controller.setWindowHeightStepPercent(invalid)).toBe(false);
     }
 
+    for (const invalid of [
+      -1,
+      16_385,
+      1.5,
+      Number.NaN,
+      Number.NEGATIVE_INFINITY,
+      Number.POSITIVE_INFINITY,
+    ]) {
+      expect(controller.setWindowHeightStepPixels(invalid)).toBe(false);
+    }
+
     expect(controller.setWindowHeightStepPercent(1)).toBe(true);
     expect(state.windowHeightStep).toBe(0.01);
     expect(controller.setWindowHeightStepPercent(50)).toBe(true);
@@ -8462,6 +8497,13 @@ describe("RuntimeController", () => {
     expect(controller.setWindowHeightStepPercent(17)).toBe(true);
     expect(controller.setWindowHeightStepPercent(17)).toBe(false);
     expect(state.windowHeightStep).toBe(0.17);
+    expect(controller.setWindowHeightStepPixels(1)).toBe(true);
+    expect(state.windowHeightStepPixels).toBe(1);
+    expect(controller.setWindowHeightStepPixels(16_384)).toBe(true);
+    expect(state.windowHeightStepPixels).toBe(16_384);
+    expect(controller.setWindowHeightStepPixels(96)).toBe(true);
+    expect(controller.setWindowHeightStepPixels(96)).toBe(false);
+    expect(state.windowHeightStepPixels).toBe(96);
     expect(state.columnWidthStep).toBe(0.1);
 
     expect(geometryLookups).toBe(settledGeometryLookups);
@@ -19694,6 +19736,19 @@ describe("RuntimeController", () => {
     );
     expect(active.window.frameGeometry).toEqual(originalFrame);
 
+    expect(controller.setColumnWidthStepPixels(75)).toBe(true);
+    expectResize(
+      controller.increaseColumnWidth.bind(controller),
+      { ...originalFrame, width: 355.2 },
+      { ...originalClientFrame, width: 335.2 },
+    );
+    expectResize(
+      controller.decreaseColumnWidth.bind(controller),
+      originalFrame,
+      originalClientFrame,
+    );
+    expect(controller.setColumnWidthStepPixels(0)).toBe(true);
+
     maximumSize.width = 200;
     expectNoResize(controller.increaseColumnWidth.bind(controller));
     maximumSize.width = 460;
@@ -20040,6 +20095,19 @@ describe("RuntimeController", () => {
       originalFrame,
       originalClientFrame,
     );
+
+    expect(controller.setWindowHeightStepPixels(75)).toBe(true);
+    expectResize(
+      controller.increaseWindowHeight.bind(controller),
+      { ...originalFrame, height: 395.2 },
+      { ...originalClientFrame, height: 361.2 },
+    );
+    expectResize(
+      controller.decreaseWindowHeight.bind(controller),
+      originalFrame,
+      originalClientFrame,
+    );
+    expect(controller.setWindowHeightStepPixels(0)).toBe(true);
 
     maximumSize.height = 200;
     expectNoResize(controller.increaseWindowHeight.bind(controller));
@@ -24714,7 +24782,7 @@ describe("RuntimeController", () => {
     expect(fixture.activationCount).toBe(0);
   });
 
-  it("anchors a configured width step to the current default only for incremental actions", () => {
+  it("applies percentage and fixed width steps only to incremental actions", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
     const active = createTrackedWindow("window-1", output, desktop);
@@ -24774,6 +24842,30 @@ describe("RuntimeController", () => {
       kind: "proportion",
       value: 0.4,
     });
+
+    expect(controller.setColumnWidthStepPixels(100)).toBe(true);
+    expect(controller.increaseColumnWidth()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "fixed",
+      value: 486,
+    });
+    expect(active.window.frameGeometry.width).toBe(486);
+    expect(controller.decreaseColumnWidth()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "fixed",
+      value: 386,
+    });
+    expect(active.window.frameGeometry.width).toBe(386);
+    expect(controller.resetColumnWidth()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "proportion",
+      value: 0.4,
+    });
+    expect(controller.setColumnWidthStepPixels(0)).toBe(true);
+    expect(controller.increaseColumnWidth()).toBe(true);
+    width = activeColumnWidth(controller, output, desktop);
+    expect(width?.kind).toBe("proportion");
+    expect(width?.value).toBeCloseTo(0.55, 12);
     expect(fixture.workspace.activeWindow).toBe(active.window);
     expect(fixture.activationCount).toBe(0);
   });
@@ -25247,7 +25339,7 @@ describe("RuntimeController", () => {
     expect(fixture.workspace.activeWindow).toBe(active.window);
   });
 
-  it("applies a configured height step to the work-area span only for incremental actions", () => {
+  it("applies percentage and fixed height steps only to incremental actions", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
     const active = createTrackedWindow("window-1", output, desktop);
@@ -25291,6 +25383,18 @@ describe("RuntimeController", () => {
     expect(activeColumnWindowHeights(controller, output, desktop)).toEqual([
       { kind: "auto", weight: 1 },
     ]);
+
+    expect(controller.setWindowHeightStepPixels(120)).toBe(true);
+    expect(controller.decreaseWindowHeight()).toBe(true);
+    expect(active.window.frameGeometry.height).toBe(660);
+    expect(activeColumnWindowHeights(controller, output, desktop)).toEqual([
+      { clientHeight: 660, kind: "fixed" },
+    ]);
+    expect(controller.increaseWindowHeight()).toBe(true);
+    expect(active.window.frameGeometry.height).toBe(780);
+    expect(controller.setWindowHeightStepPixels(0)).toBe(true);
+    expect(controller.decreaseWindowHeight()).toBe(true);
+    expect(active.window.frameGeometry.height).toBe(662);
     expect(fixture.workspace.activeWindow).toBe(active.window);
     expect(fixture.activationCount).toBe(0);
   });

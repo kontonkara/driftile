@@ -1113,6 +1113,7 @@ QtObject {
             centerFocusedColumn: KWin.readConfig("CenterFocusedColumn", false),
             centerFocusedColumnOnOverflow: KWin.readConfig("CenterFocusedColumnOnOverflow", false),
             columnWidthPresets: KWin.readConfig("ColumnWidthPresets", ""),
+            columnWidthStepPixels: KWin.readConfig("ColumnWidthStepPixels", 0),
             columnWidthStepPercent: KWin.readConfig("ColumnWidthStepPercent", 10),
             defaultColumnPresentation: KWin.readConfig("DefaultColumnPresentation", "stacked"),
             defaultColumnWidthPercent: KWin.readConfig("DefaultColumnWidthPercent", 33),
@@ -1125,6 +1126,7 @@ QtObject {
             touchpadNavigationFingerCount: KWin.readConfig("TouchpadNavigationFingerCount", 5),
             touchpadNaturalScroll: KWin.readConfig("TouchpadNaturalScroll", true),
             windowHeightPresets: KWin.readConfig("WindowHeightPresets", ""),
+            windowHeightStepPixels: KWin.readConfig("WindowHeightStepPixels", 0),
             windowHeightStepPercent: KWin.readConfig("WindowHeightStepPercent", 10)
         };
     }

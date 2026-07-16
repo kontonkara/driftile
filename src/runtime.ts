@@ -135,8 +135,10 @@ export function init(
   );
   nextController.setColumnWidthPresets(settings.columnWidthPresets.presets);
   nextController.setColumnWidthStepPercent(settings.columnWidthStepPercent);
+  nextController.setColumnWidthStepPixels(settings.columnWidthStepPixels);
   nextController.setWindowHeightPresets(settings.windowHeightPresets.cycle);
   nextController.setWindowHeightStepPercent(settings.windowHeightStepPercent);
+  nextController.setWindowHeightStepPixels(settings.windowHeightStepPixels);
 
   if (!nextController.start(layoutPersistence.initialState)) {
     console.warn("[driftile] no output or virtual desktop available");
@@ -206,8 +208,10 @@ export function applySettings(settingsSnapshot: unknown): boolean {
   controller.setEmptyDesktopAboveFirst(settings.emptyDesktopAboveFirst);
   controller.setColumnWidthPresets(settings.columnWidthPresets.presets);
   controller.setColumnWidthStepPercent(settings.columnWidthStepPercent);
+  controller.setColumnWidthStepPixels(settings.columnWidthStepPixels);
   controller.setWindowHeightPresets(settings.windowHeightPresets.cycle);
   controller.setWindowHeightStepPercent(settings.windowHeightStepPercent);
+  controller.setWindowHeightStepPixels(settings.windowHeightStepPixels);
   controller.setGap(settings.gap);
 
   if (settings.borderlessWindows) {

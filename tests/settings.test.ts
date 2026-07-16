@@ -89,6 +89,7 @@ const validSettings: DriftileSettings = {
   centerFocusedColumn: true,
   centerFocusedColumnOnOverflow: true,
   columnWidthPresets: validColumnWidthPresets,
+  columnWidthStepPixels: 240,
   columnWidthStepPercent: 25,
   defaultColumnPresentation: "tabbed",
   defaultColumnWidthPercent: 75,
@@ -101,6 +102,7 @@ const validSettings: DriftileSettings = {
   touchpadNaturalScroll: false,
   touchpadWorkspaceNavigation: true,
   windowHeightPresets: validWindowHeightPresets,
+  windowHeightStepPixels: 180,
   windowHeightStepPercent: 20,
 };
 
@@ -118,6 +120,7 @@ const validSettingsInput = {
   centerFocusedColumn: validSettings.centerFocusedColumn,
   centerFocusedColumnOnOverflow: validSettings.centerFocusedColumnOnOverflow,
   columnWidthPresets: validSettings.columnWidthPresets.canonicalValue,
+  columnWidthStepPixels: validSettings.columnWidthStepPixels,
   columnWidthStepPercent: validSettings.columnWidthStepPercent,
   defaultColumnPresentation: validSettings.defaultColumnPresentation,
   defaultColumnWidthPercent: validSettings.defaultColumnWidthPercent,
@@ -130,6 +133,7 @@ const validSettingsInput = {
   touchpadNaturalScroll: validSettings.touchpadNaturalScroll,
   touchpadWorkspaceNavigation: validSettings.touchpadWorkspaceNavigation,
   windowHeightPresets: validSettings.windowHeightPresets.canonicalValue,
+  windowHeightStepPixels: validSettings.windowHeightStepPixels,
   windowHeightStepPercent: validSettings.windowHeightStepPercent,
 };
 
@@ -140,6 +144,7 @@ describe("Driftile settings", () => {
       borderlessWindows: true,
       centerFocusedColumn: false,
       centerFocusedColumnOnOverflow: false,
+      columnWidthStepPixels: 0,
       columnWidthStepPercent: 10,
       defaultColumnPresentation: "stacked",
       defaultColumnWidthPercent: 33,
@@ -151,6 +156,7 @@ describe("Driftile settings", () => {
       touchpadNavigationFingerCount: 5,
       touchpadNaturalScroll: true,
       touchpadWorkspaceNavigation: false,
+      windowHeightStepPixels: 0,
       windowHeightStepPercent: 10,
     });
     expect(
@@ -198,6 +204,7 @@ describe("Driftile settings", () => {
       centerFocusedColumnOnOverflow:
         validSettings.centerFocusedColumnOnOverflow,
       columnWidthPresets: validSettings.columnWidthPresets,
+      columnWidthStepPixels: validSettings.columnWidthStepPixels,
       columnWidthStepPercent: validSettings.columnWidthStepPercent,
       defaultColumnPresentation: validSettings.defaultColumnPresentation,
       defaultColumnWidthPercent: validSettings.defaultColumnWidthPercent,
@@ -211,6 +218,7 @@ describe("Driftile settings", () => {
       touchpadNaturalScroll: validSettings.touchpadNaturalScroll,
       touchpadWorkspaceNavigation: validSettings.touchpadWorkspaceNavigation,
       windowHeightPresets: validSettings.windowHeightPresets,
+      windowHeightStepPixels: validSettings.windowHeightStepPixels,
       windowHeightStepPercent: validSettings.windowHeightStepPercent,
     });
     expect(decoded?.applicationColumnWidths.canonicalEntries).toEqual(
@@ -271,6 +279,7 @@ describe("Driftile settings", () => {
       centerFocusedColumn: false,
       centerFocusedColumnOnOverflow: false,
       columnWidthPresets: "10",
+      columnWidthStepPixels: 0,
       columnWidthStepPercent: 1,
       defaultColumnPresentation: "stacked",
       defaultColumnWidthPercent: 10,
@@ -283,6 +292,7 @@ describe("Driftile settings", () => {
       touchpadNaturalScroll: false,
       touchpadWorkspaceNavigation: false,
       windowHeightPresets: "10",
+      windowHeightStepPixels: 0,
       windowHeightStepPercent: 1,
     },
     {
@@ -297,6 +307,7 @@ describe("Driftile settings", () => {
       centerFocusedColumn: true,
       centerFocusedColumnOnOverflow: true,
       columnWidthPresets: "100",
+      columnWidthStepPixels: 16_384,
       columnWidthStepPercent: 50,
       defaultColumnPresentation: "tabbed",
       defaultColumnWidthPercent: 100,
@@ -309,6 +320,7 @@ describe("Driftile settings", () => {
       touchpadNaturalScroll: true,
       touchpadWorkspaceNavigation: true,
       windowHeightPresets: "100",
+      windowHeightStepPixels: 16_384,
       windowHeightStepPercent: 50,
     },
   ])("accepts the inclusive numeric bounds", (settings) => {
@@ -344,6 +356,7 @@ describe("Driftile settings", () => {
       borderlessWindows: settings.borderlessWindows,
       centerFocusedColumn: settings.centerFocusedColumn,
       centerFocusedColumnOnOverflow: settings.centerFocusedColumnOnOverflow,
+      columnWidthStepPixels: settings.columnWidthStepPixels,
       columnWidthStepPercent: settings.columnWidthStepPercent,
       defaultColumnPresentation: settings.defaultColumnPresentation,
       defaultColumnWidthPercent: settings.defaultColumnWidthPercent,
@@ -355,6 +368,7 @@ describe("Driftile settings", () => {
       touchpadNavigationFingerCount: settings.touchpadNavigationFingerCount,
       touchpadNaturalScroll: settings.touchpadNaturalScroll,
       touchpadWorkspaceNavigation: settings.touchpadWorkspaceNavigation,
+      windowHeightStepPixels: settings.windowHeightStepPixels,
       windowHeightStepPercent: settings.windowHeightStepPercent,
     });
   });
@@ -467,12 +481,24 @@ describe("Driftile settings", () => {
     ["a fractional width step", { columnWidthStepPercent: 10.5 }],
     ["a width step below its range", { columnWidthStepPercent: 0 }],
     ["a width step above its range", { columnWidthStepPercent: 51 }],
+    ["a non-numeric fixed width step", { columnWidthStepPixels: "0" }],
+    ["a non-finite fixed width step", { columnWidthStepPixels: Number.NaN }],
+    ["an infinite fixed width step", { columnWidthStepPixels: Infinity }],
+    ["a fractional fixed width step", { columnWidthStepPixels: 10.5 }],
+    ["a fixed width step below its range", { columnWidthStepPixels: -1 }],
+    ["a fixed width step above its range", { columnWidthStepPixels: 16_385 }],
     ["a non-numeric height step", { windowHeightStepPercent: "10" }],
     ["a non-finite height step", { windowHeightStepPercent: Number.NaN }],
     ["an infinite height step", { windowHeightStepPercent: -Infinity }],
     ["a fractional height step", { windowHeightStepPercent: 10.5 }],
     ["a height step below its range", { windowHeightStepPercent: 0 }],
     ["a height step above its range", { windowHeightStepPercent: 51 }],
+    ["a non-numeric fixed height step", { windowHeightStepPixels: "0" }],
+    ["a non-finite fixed height step", { windowHeightStepPixels: Number.NaN }],
+    ["an infinite fixed height step", { windowHeightStepPixels: -Infinity }],
+    ["a fractional fixed height step", { windowHeightStepPixels: 10.5 }],
+    ["a fixed height step below its range", { windowHeightStepPixels: -1 }],
+    ["a fixed height step above its range", { windowHeightStepPixels: 16_385 }],
   ])("rejects %s atomically", (_description, invalidField) => {
     const input = { ...validSettingsInput, ...invalidField };
 
@@ -487,7 +513,7 @@ describe("Driftile settings", () => {
     },
   );
 
-  it("rejects the previous twenty-three-field snapshot", () => {
+  it("rejects an incomplete twenty-five-field snapshot", () => {
     const incomplete: Record<string, unknown> = { ...validSettingsInput };
     delete incomplete["defaultColumnWidthPixels"];
 
@@ -577,6 +603,7 @@ describe("Driftile settings", () => {
       { centerFocusedColumn: false },
       { centerFocusedColumnOnOverflow: false },
       { columnWidthPresets: changedColumnWidthPresets },
+      { columnWidthStepPixels: 241 },
       { columnWidthStepPercent: 26 },
       { defaultColumnPresentation: "stacked" as const },
       { defaultColumnWidthPercent: 76 },
@@ -589,6 +616,7 @@ describe("Driftile settings", () => {
       { touchpadNaturalScroll: true },
       { touchpadWorkspaceNavigation: false },
       { windowHeightPresets: changedWindowHeightPresets },
+      { windowHeightStepPixels: 181 },
       { windowHeightStepPercent: 21 },
     ]) {
       expect(

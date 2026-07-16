@@ -164,9 +164,11 @@ const DEFAULT_WINDOW_HEIGHT_STEP_PERCENT = 10;
 const MAX_DEFAULT_COLUMN_WIDTH_PERCENT = 100;
 const MAX_DEFAULT_COLUMN_WIDTH_PIXELS = 16_384;
 const MAX_RESIZE_STEP_PERCENT = 50;
+const MAX_RESIZE_STEP_PIXELS = 16_384;
 const MIN_DEFAULT_COLUMN_WIDTH_PERCENT = 10;
 const MIN_DEFAULT_COLUMN_WIDTH_PIXELS = 1;
 const MIN_RESIZE_STEP_PERCENT = 1;
+const MIN_RESIZE_STEP_PIXELS = 0;
 const MAX_POINTER_EXTERNAL_CONTEXT_PROBES = 20;
 const MAX_POINTER_COLUMN_DROP_SETTLEMENT_PROBES = 20;
 const MAX_POINTER_RESIZE_COMPENSATION_PROBES = 40;
@@ -940,6 +942,7 @@ export class RuntimeController {
     Map<ColumnId, number>
   >();
   private columnWidthStep = DEFAULT_COLUMN_WIDTH_STEP_PERCENT / 100;
+  private columnWidthStepPixels = 0;
   private columnWidthPresets: readonly ColumnWidth[];
   private readonly contexts = new Map<string, RuntimeContext>();
   private readonly desktopHistoryRecordingSuppressions = new Set<object>();
@@ -1049,6 +1052,7 @@ export class RuntimeController {
   private defaultColumnPresentation: ColumnPresentation;
   private defaultColumnWidth: ColumnWidth;
   private windowHeightStep = DEFAULT_WINDOW_HEIGHT_STEP_PERCENT / 100;
+  private windowHeightStepPixels = 0;
   private windowHeightPresetCycle: readonly WindowHeightPresetCycleEntry[] =
     DEFAULT_WINDOW_HEIGHT_PRESET_CYCLE;
   private readonly requestedSuspensions = new Map<
@@ -1961,6 +1965,17 @@ export class RuntimeController {
     return true;
   }
 
+  setColumnWidthStepPixels(value: number): boolean {
+    const pixels = normalizeResizeStepPixels(value);
+
+    if (pixels === null || pixels === this.columnWidthStepPixels) {
+      return false;
+    }
+
+    this.columnWidthStepPixels = pixels;
+    return true;
+  }
+
   setColumnWidthPresets(
     values: readonly number[] | readonly ColumnWidth[],
   ): boolean {
@@ -1988,6 +2003,17 @@ export class RuntimeController {
     }
 
     this.windowHeightStep = step;
+    return true;
+  }
+
+  setWindowHeightStepPixels(value: number): boolean {
+    const pixels = normalizeResizeStepPixels(value);
+
+    if (pixels === null || pixels === this.windowHeightStepPixels) {
+      return false;
+    }
+
+    this.windowHeightStepPixels = pixels;
     return true;
   }
 
@@ -8744,10 +8770,17 @@ export class RuntimeController {
       case "decrease":
       case "increase": {
         const direction = action === "increase" ? 1 : -1;
+        const stepPixels =
+          axis === "width"
+            ? this.columnWidthStepPixels
+            : this.windowHeightStepPixels;
         const step =
-          axis === "width" ? this.columnWidthStep : this.windowHeightStep;
-        const requestedExtent =
-          originalExtent + direction * step * workAreaExtent;
+          stepPixels > 0
+            ? stepPixels
+            : (axis === "width"
+                ? this.columnWidthStep
+                : this.windowHeightStep) * workAreaExtent;
+        const requestedExtent = originalExtent + direction * step;
 
         if (!Number.isFinite(requestedExtent)) {
           return null;
@@ -15041,7 +15074,10 @@ export class RuntimeController {
 
         const requested =
           currentActiveFrame.height +
-          direction * this.windowHeightStep * denominator;
+          direction *
+            (this.windowHeightStepPixels > 0
+              ? this.windowHeightStepPixels
+              : this.windowHeightStep * denominator);
         const targetFrameHeight = clamp(
           roundToPhysicalPixel(
             requested,
@@ -15371,6 +15407,12 @@ export class RuntimeController {
       return null;
     }
 
+    const currentPixels = this.resolvedColumnWidth(current, denominator);
+
+    if (currentPixels === null) {
+      return null;
+    }
+
     let candidate: ColumnWidth | null;
 
     switch (action) {
@@ -15385,18 +15427,28 @@ export class RuntimeController {
         break;
       default: {
         const direction = action === "increase" ? 1 : -1;
-        const currentProportion =
-          current.kind === "proportion"
-            ? current.value
-            : (current.value + this.gap) / denominator;
-        candidate = {
-          kind: "proportion",
-          value: this.steppedWidthValue(
-            currentProportion,
-            this.columnWidthStep,
-            direction,
-          ),
-        };
+        if (this.columnWidthStepPixels > 0) {
+          candidate = {
+            kind: "fixed",
+            value: roundToPhysicalPixel(
+              currentPixels + direction * this.columnWidthStepPixels,
+              devicePixelRatio,
+            ),
+          };
+        } else {
+          const currentProportion =
+            current.kind === "proportion"
+              ? current.value
+              : (current.value + this.gap) / denominator;
+          candidate = {
+            kind: "proportion",
+            value: this.steppedWidthValue(
+              currentProportion,
+              this.columnWidthStep,
+              direction,
+            ),
+          };
+        }
       }
     }
 
@@ -15404,13 +15456,12 @@ export class RuntimeController {
       return null;
     }
 
-    const currentPixels = this.resolvedColumnWidth(current, denominator);
     let candidatePixels =
       candidate.kind === "fixed"
         ? candidate.value
         : candidate.value * denominator - this.gap;
 
-    if (currentPixels === null || !Number.isFinite(candidatePixels)) {
+    if (!Number.isFinite(candidatePixels)) {
       return null;
     }
 
@@ -29144,6 +29195,15 @@ function normalizeResizeStepPercent(value: number): number | null {
     Number.isInteger(value) &&
     value >= MIN_RESIZE_STEP_PERCENT &&
     value <= MAX_RESIZE_STEP_PERCENT
+    ? value
+    : null;
+}
+
+function normalizeResizeStepPixels(value: number): number | null {
+  return Number.isFinite(value) &&
+    Number.isInteger(value) &&
+    value >= MIN_RESIZE_STEP_PIXELS &&
+    value <= MAX_RESIZE_STEP_PIXELS
     ? value
     : null;
 }
