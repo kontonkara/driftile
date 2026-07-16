@@ -76,10 +76,50 @@ describe("overview effect package", () => {
     expect(configurationUi).toContain('name="kcfg_TouchpadGestureFingerCount"');
   });
 
-  it("registers one Meta+O toggle action and no screen edge", () => {
-    expect(controller.match(/KWin\.ShortcutHandler\s*\{/gu)).toHaveLength(1);
-    expect(controller).toContain('name: "driftile_toggle_overview"');
-    expect(controller).toContain('sequence: "Meta+O"');
+  it("registers one Meta+O toggle and two unbound state actions", () => {
+    const toggleAction = controller.slice(
+      controller.indexOf(
+        "readonly property KWin.ShortcutHandler toggleShortcut",
+      ),
+      controller.indexOf("readonly property KWin.ShortcutHandler openShortcut"),
+    );
+    const openAction = controller.slice(
+      controller.indexOf("readonly property KWin.ShortcutHandler openShortcut"),
+      controller.indexOf(
+        "readonly property KWin.ShortcutHandler closeShortcut",
+      ),
+    );
+    const closeAction = controller.slice(
+      controller.indexOf(
+        "readonly property KWin.ShortcutHandler closeShortcut",
+      ),
+      controller.indexOf("readonly property Loader touchpadGestureLoader"),
+    );
+    const open = controller.slice(
+      controller.indexOf("function open()"),
+      controller.indexOf("function close()"),
+    );
+    const close = controller.slice(
+      controller.indexOf("function close()"),
+      controller.indexOf("function applyTouchpadGestureSettings("),
+    );
+
+    expect(controller.match(/KWin\.ShortcutHandler\s*\{/gu)).toHaveLength(3);
+    expect(toggleAction).toContain('name: "driftile_toggle_overview"');
+    expect(toggleAction).toContain('sequence: "Meta+O"');
+    expect(toggleAction).toContain("onActivated: controller.toggle()");
+    expect(openAction).toContain('name: "driftile_open_overview"');
+    expect(openAction).toContain("onActivated: controller.open()");
+    expect(closeAction).toContain('name: "driftile_close_overview"');
+    expect(closeAction).toContain("onActivated: controller.close()");
+    expect(openAction).not.toMatch(/\bsequence\s*:/u);
+    expect(closeAction).not.toMatch(/\bsequence\s*:/u);
+    expect(open).toMatch(
+      /if \(active \|\| loading\) \{\s*return;\s*\}\s*activate\(\);/u,
+    );
+    expect(close).toMatch(
+      /if \(!active && !loading\) \{\s*return;\s*\}\s*deactivate\(\);/u,
+    );
     expect(controller).not.toMatch(/ScreenEdge|registerScreenEdge/u);
     expect(main).not.toContain("ShortcutHandler");
   });
@@ -154,12 +194,8 @@ describe("overview effect package", () => {
       rebuild.indexOf("touchpadGestureLoader.active = true"),
     ).toBeGreaterThan(rebuild.indexOf("setSource("));
 
-    expect(open).toMatch(
-      /if \(active \|\| loading\) \{\s*return;\s*\}\s*activate\(\);/u,
-    );
-    expect(close).toMatch(
-      /if \(!active && !loading\) \{\s*return;\s*\}\s*deactivate\(\);/u,
-    );
+    expect(open).toMatch(/open\(\);/u);
+    expect(close).toMatch(/close\(\);/u);
 
     expect(
       touchpadGesture.match(/KWin\.SwipeGestureHandler \{/gu),

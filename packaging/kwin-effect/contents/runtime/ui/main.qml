@@ -34,6 +34,18 @@ QtObject {
         onActivated: controller.toggle()
     }
 
+    readonly property KWin.ShortcutHandler openShortcut: KWin.ShortcutHandler {
+        name: "driftile_open_overview"
+        text: "Driftile: Open overview"
+        onActivated: controller.open()
+    }
+
+    readonly property KWin.ShortcutHandler closeShortcut: KWin.ShortcutHandler {
+        name: "driftile_close_overview"
+        text: "Driftile: Close overview"
+        onActivated: controller.close()
+    }
+
     readonly property Loader touchpadGestureLoader: Loader {
         active: false
     }
@@ -57,6 +69,22 @@ QtObject {
         } else {
             activate();
         }
+    }
+
+    function open() {
+        if (active || loading) {
+            return;
+        }
+
+        activate();
+    }
+
+    function close() {
+        if (!active && !loading) {
+            return;
+        }
+
+        deactivate();
     }
 
     function applyTouchpadGestureSettings(enabled, fingerCount) {
@@ -94,19 +122,11 @@ QtObject {
     }
 
     function openFromTouchpadGesture() {
-        if (active || loading) {
-            return;
-        }
-
-        activate();
+        open();
     }
 
     function closeFromTouchpadGesture() {
-        if (!active && !loading) {
-            return;
-        }
-
-        deactivate();
+        close();
     }
 
     function activate() {
