@@ -5,6 +5,8 @@
 
 const DEFAULT_DURATION = 180;
 const MAXIMUM_DURATION = 1000;
+const DEFAULT_RESIZE_ANIMATION_THRESHOLD = 10;
+const MAXIMUM_RESIZE_ANIMATION_THRESHOLD = 64;
 const MAXIMUM_EXCLUSION_COUNT = 128;
 const MAXIMUM_EXCLUSION_BYTES = 255;
 const MAXIMUM_EXCLUSION_CONFIG_BYTES = 33024;
@@ -24,6 +26,8 @@ class DriftileTransitionsEffect {
     this.duration = 0;
     this.animatePosition = true;
     this.animateSize = true;
+    this.easingCurve = QEasingCurve.OutCubic;
+    this.resizeAnimationThreshold = DEFAULT_RESIZE_ANIMATION_THRESHOLD;
     this.windowClassExclusionsValid = true;
     this.windowClassExclusions = new Set();
     this.managedWindows = [];
@@ -69,6 +73,8 @@ class DriftileTransitionsEffect {
     this.duration = animationTime(baseDuration);
     this.animatePosition = this.readBooleanConfig("AnimatePosition", true);
     this.animateSize = this.readBooleanConfig("AnimateSize", true);
+    this.easingCurve = this.readEasingCurveConfig();
+    this.resizeAnimationThreshold = this.readResizeAnimationThresholdConfig();
     const exclusionConfig = this.parseWindowClassExclusions(
       effect.readConfig("WindowClassExclusions", ""),
     );
@@ -215,14 +221,23 @@ class DriftileTransitionsEffect {
       return;
     }
 
+    const sizeGeometryChanged =
+      oldGeometry.width !== newGeometry.width ||
+      oldGeometry.height !== newGeometry.height;
+    const resizeDelta = Math.max(
+      Math.abs(oldGeometry.width - newGeometry.width),
+      Math.abs(oldGeometry.height - newGeometry.height),
+    );
     const sizeChanged =
       this.animateSize &&
-      (oldGeometry.width !== newGeometry.width ||
-        oldGeometry.height !== newGeometry.height);
-    const oldPositionWidth = this.animateSize
+      sizeGeometryChanged &&
+      resizeDelta > this.resizeAnimationThreshold;
+    const sizeInterpolationSuppressed =
+      this.animateSize && sizeGeometryChanged && !sizeChanged;
+    const oldPositionWidth = sizeChanged
       ? oldGeometry.width
       : newGeometry.width;
-    const oldPositionHeight = this.animateSize
+    const oldPositionHeight = sizeChanged
       ? oldGeometry.height
       : newGeometry.height;
     const oldPosition = {
@@ -241,11 +256,23 @@ class DriftileTransitionsEffect {
       positionChanged &&
       this.canAnimateAbsolutePosition(oldPosition, newPosition);
 
+    let state;
+    if (
+      sizeInterpolationSuppressed &&
+      window[ANIMATION_PROPERTY] !== undefined
+    ) {
+      state = this.windowAnimationState(window);
+      this.cancelSizeAnimation(state);
+      window[ANIMATION_PROPERTY] = state;
+    }
+
     if (!sizeChanged && !positionChanged) {
       return;
     }
 
-    const state = this.windowAnimationState(window);
+    if (state === undefined) {
+      state = this.windowAnimationState(window);
+    }
     const previousPositionMode = state[POSITION_MODE_PROPERTY];
     const animations = [];
     const animationProperties = [];
@@ -266,7 +293,7 @@ class DriftileTransitionsEffect {
           value2: oldGeometry.height,
         },
         to: newSize,
-        curve: QEasingCurve.OutCubic,
+        curve: this.easingCurve,
       });
     }
     if (usesAbsolutePosition) {
@@ -276,7 +303,7 @@ class DriftileTransitionsEffect {
           type: Effect.Position,
           from: oldPosition,
           to: newPosition,
-          curve: QEasingCurve.OutCubic,
+          curve: this.easingCurve,
         });
       }
     } else if (positionChanged) {
@@ -288,7 +315,7 @@ class DriftileTransitionsEffect {
           value2: oldPosition.value2 - newPosition.value2,
         },
         to: { value1: 0, value2: 0 },
-        curve: QEasingCurve.OutCubic,
+        curve: this.easingCurve,
       });
     }
 
@@ -362,6 +389,47 @@ class DriftileTransitionsEffect {
       return true;
     }
     return fallback;
+  }
+
+  readEasingCurveConfig() {
+    switch (effect.readConfig("EasingCurve", "out-cubic")) {
+      case "linear":
+        return QEasingCurve.Linear;
+      case "out-quad":
+        return QEasingCurve.OutQuad;
+      case "out-cubic":
+        return QEasingCurve.OutCubic;
+      case "out-quart":
+        return QEasingCurve.OutQuart;
+      case "out-quint":
+        return QEasingCurve.OutQuint;
+      case "out-expo":
+        return QEasingCurve.OutExpo;
+      default:
+        return QEasingCurve.OutCubic;
+    }
+  }
+
+  readResizeAnimationThresholdConfig() {
+    const configuredValue = effect.readConfig(
+      "ResizeAnimationThreshold",
+      DEFAULT_RESIZE_ANIMATION_THRESHOLD,
+    );
+    if (
+      (typeof configuredValue !== "number" &&
+        typeof configuredValue !== "string") ||
+      (typeof configuredValue === "string" &&
+        configuredValue.trim().length === 0)
+    ) {
+      return DEFAULT_RESIZE_ANIMATION_THRESHOLD;
+    }
+
+    const threshold = Number(configuredValue);
+    return Number.isInteger(threshold) &&
+      threshold >= 0 &&
+      threshold <= MAXIMUM_RESIZE_ANIMATION_THRESHOLD
+      ? threshold
+      : DEFAULT_RESIZE_ANIMATION_THRESHOLD;
   }
 
   parseWindowClassExclusions(configuredValue) {
@@ -576,11 +644,16 @@ class DriftileTransitionsEffect {
       return;
     }
 
-    if (state[SIZE_ANIMATION] !== undefined) {
-      cancel(state[SIZE_ANIMATION]);
-    }
+    this.cancelSizeAnimation(state);
     this.cancelPositionAnimations(state);
     delete window[ANIMATION_PROPERTY];
+  }
+
+  cancelSizeAnimation(state) {
+    if (state[SIZE_ANIMATION] !== undefined) {
+      cancel(state[SIZE_ANIMATION]);
+      delete state[SIZE_ANIMATION];
+    }
   }
 
   clearWindowTransitions(window) {

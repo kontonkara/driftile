@@ -152,6 +152,8 @@ function createHarness(
     readonly scaledDuration?: number;
     readonly animatePosition?: unknown;
     readonly animateSize?: unknown;
+    readonly easingCurve?: unknown;
+    readonly resizeAnimationThreshold?: unknown;
     readonly windowClassExclusions?: unknown;
   } = {},
 ) {
@@ -173,6 +175,12 @@ function createHarness(
     AnimatePosition: options.animatePosition ?? true,
     AnimateSize: options.animateSize ?? true,
     Duration: options.configuredDuration ?? 180,
+    EasingCurve:
+      options.easingCurve === undefined ? "out-cubic" : options.easingCurve,
+    ResizeAnimationThreshold:
+      options.resizeAnimationThreshold === undefined
+        ? 10
+        : options.resizeAnimationThreshold,
     WindowClassExclusions:
       options.windowClassExclusions === undefined
         ? ""
@@ -197,7 +205,12 @@ function createHarness(
       Translation: "translation",
     },
     QEasingCurve: {
+      Linear: "linear",
+      OutQuad: "out-quad",
       OutCubic: "out-cubic",
+      OutQuart: "out-quart",
+      OutQuint: "out-quint",
+      OutExpo: "out-expo",
     },
     animate(request: AnimationRequest) {
       animationRequests.push(request);
@@ -273,14 +286,20 @@ describe("transition effect package", () => {
     expect(metadata["X-KDE-ConfigModule"]).toBe("kcm_kwin4_genericscripted");
     expect(config).toContain('<entry name="Duration" type="UInt">');
     expect(config).toContain("<default>180</default>");
+    expect(config).toContain('<entry name="EasingCurve" type="String">');
     expect(config).toContain('<entry name="AnimatePosition" type="Bool">');
     expect(config).toContain('<entry name="AnimateSize" type="Bool">');
+    expect(config).toContain(
+      '<entry name="ResizeAnimationThreshold" type="UInt">',
+    );
     expect(config).toContain(
       '<entry name="WindowClassExclusions" type="String">',
     );
     expect(configUi).toContain('name="kcfg_Duration"');
+    expect(configUi).toContain('name="kcfg_EasingCurve"');
     expect(configUi).toContain('name="kcfg_AnimatePosition"');
     expect(configUi).toContain('name="kcfg_AnimateSize"');
+    expect(configUi).toContain('name="kcfg_ResizeAnimationThreshold"');
     expect(configUi).toContain('name="kcfg_WindowClassExclusions"');
     expect(configUi).toContain("<number>1000</number>");
 
@@ -318,6 +337,164 @@ describe("transition effect package", () => {
         },
       ],
     });
+  });
+
+  it("applies the configured easing curve to synchronized attributes", () => {
+    const easingCurves = [
+      "linear",
+      "out-quad",
+      "out-cubic",
+      "out-quart",
+      "out-quint",
+      "out-expo",
+    ] as const;
+
+    for (const easingCurve of easingCurves) {
+      const harness = createHarness({ easingCurve });
+      changeGeometry(harness.window, {
+        x: 60,
+        y: 70,
+        width: 500,
+        height: 300,
+      });
+
+      expect(
+        harness.animationRequests[0]?.animations.map(
+          (animation) => animation.curve,
+        ),
+        easingCurve,
+      ).toEqual([easingCurve, easingCurve]);
+    }
+  });
+
+  it("falls back to out-cubic for malformed or inexact easing names", () => {
+    for (const easingCurve of ["OutCubic", "out-cubic ", "unknown", 3, null]) {
+      const harness = createHarness({ easingCurve });
+      changeGeometry(harness.window, {
+        x: 60,
+        y: 70,
+        width: 500,
+        height: 300,
+      });
+
+      expect(
+        harness.animationRequests[0]?.animations.map(
+          (animation) => animation.curve,
+        ),
+        String(easingCurve),
+      ).toEqual(["out-cubic", "out-cubic"]);
+    }
+  });
+
+  it("suppresses only resize interpolation at or below the threshold", () => {
+    const movingHarness = createHarness();
+    changeGeometry(movingHarness.window, {
+      x: 50,
+      y: 70,
+      width: 310,
+      height: 190,
+    });
+    expect(movingHarness.animationRequests[0]?.animations).toMatchObject([
+      {
+        type: "position",
+        from: { value1: 175, value2: 125 },
+        to: { value1: 205, value2: 165 },
+      },
+    ]);
+
+    const sizeOnlyHarness = createHarness();
+    changeGeometry(sizeOnlyHarness.window, {
+      x: 20,
+      y: 30,
+      width: 310,
+      height: 190,
+    });
+    expect(sizeOnlyHarness.animationRequests).toHaveLength(0);
+
+    const largeResizeHarness = createHarness();
+    changeGeometry(largeResizeHarness.window, {
+      x: 20,
+      y: 30,
+      width: 311,
+      height: 200,
+    });
+    expect(largeResizeHarness.animationRequests[0]?.animations).toMatchObject([
+      {
+        type: "size",
+        from: { value1: 300, value2: 200 },
+        to: { value1: 311, value2: 200 },
+      },
+      {
+        type: "position",
+        from: { value1: 170, value2: 130 },
+        to: { value1: 175.5, value2: 130 },
+      },
+    ]);
+  });
+
+  it("supports a zero resize threshold and falls back on malformed values", () => {
+    const zeroThresholdHarness = createHarness({
+      resizeAnimationThreshold: 0,
+    });
+    changeGeometry(zeroThresholdHarness.window, {
+      x: 20,
+      y: 30,
+      width: 301,
+      height: 200,
+    });
+    expect(
+      zeroThresholdHarness.animationRequests[0]?.animations[0],
+    ).toMatchObject({ type: "size" });
+
+    const malformedThresholds: readonly unknown[] = [
+      -1,
+      65,
+      1.5,
+      "",
+      "10px",
+      false,
+      null,
+      {},
+    ];
+    for (const resizeAnimationThreshold of malformedThresholds) {
+      const harness = createHarness({ resizeAnimationThreshold });
+      changeGeometry(harness.window, {
+        x: 20,
+        y: 30,
+        width: 310,
+        height: 200,
+      });
+      expect(
+        harness.animationRequests,
+        String(resizeAnimationThreshold),
+      ).toHaveLength(0);
+    }
+  });
+
+  it("cancels a stale resize target without interrupting movement", () => {
+    const harness = createHarness();
+    changeGeometry(harness.window, {
+      x: 40,
+      y: 50,
+      width: 400,
+      height: 250,
+    });
+    changeGeometry(harness.window, {
+      x: 60,
+      y: 70,
+      width: 408,
+      height: 255,
+    });
+
+    expect(harness.cancelledAnimations).toEqual([1]);
+    expect(harness.retargetCalls).toEqual([
+      {
+        animationId: 2,
+        target: { value1: 264, value2: 197.5 },
+        duration: 180,
+      },
+    ]);
+    expect(harness.animationRequests).toHaveLength(1);
   });
 
   it("uses only the required attributes for position-only and size-only changes", () => {

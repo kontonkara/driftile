@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>520</width>
-    <height>260</height>
+    <height>340</height>
    </rect>
   </property>
   <layout class="QFormLayout" name="formLayout">
@@ -49,7 +49,57 @@
      </property>
     </widget>
    </item>
-   <item row="1" column="0" colspan="2">
+   <item row="1" column="0">
+    <widget class="QLabel" name="label_EasingCurve">
+     <property name="text">
+      <string>Easing curve:</string>
+     </property>
+     <property name="buddy">
+      <cstring>kcfg_EasingCurve</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="1" column="1">
+    <widget class="QComboBox" name="kcfg_EasingCurve">
+     <property name="kcfg_property" stdset="0">
+      <string>currentText</string>
+     </property>
+     <property name="toolTip">
+      <string>Choose how movement and size interpolation progress over the transition duration.</string>
+     </property>
+     <item>
+      <property name="text">
+       <string>linear</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>out-quad</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>out-cubic</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>out-quart</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>out-quint</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>out-expo</string>
+      </property>
+     </item>
+    </widget>
+   </item>
+   <item row="2" column="0" colspan="2">
     <widget class="QCheckBox" name="kcfg_AnimatePosition">
      <property name="text">
       <string>Animate window movement</string>
@@ -62,7 +112,7 @@
      </property>
     </widget>
    </item>
-   <item row="2" column="0" colspan="2">
+   <item row="3" column="0" colspan="2">
     <widget class="QCheckBox" name="kcfg_AnimateSize">
      <property name="text">
       <string>Animate window size changes</string>
@@ -75,7 +125,33 @@
      </property>
     </widget>
    </item>
-   <item row="3" column="0">
+   <item row="4" column="0">
+    <widget class="QLabel" name="label_ResizeAnimationThreshold">
+     <property name="text">
+      <string>Resize animation threshold:</string>
+     </property>
+     <property name="buddy">
+      <cstring>kcfg_ResizeAnimationThreshold</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="4" column="1">
+    <widget class="QSpinBox" name="kcfg_ResizeAnimationThreshold">
+     <property name="toolTip">
+      <string>Resizes whose maximum dimension delta is at or below this threshold snap without size interpolation; movement may still animate.</string>
+     </property>
+     <property name="suffix">
+      <string> px</string>
+     </property>
+     <property name="maximum">
+      <number>64</number>
+     </property>
+     <property name="value">
+      <number>10</number>
+     </property>
+    </widget>
+   </item>
+   <item row="5" column="0">
     <widget class="QLabel" name="label_WindowClassExclusions">
      <property name="text">
       <string>Excluded KWin window classes:</string>
@@ -85,7 +161,7 @@
      </property>
     </widget>
    </item>
-   <item row="3" column="1">
+   <item row="5" column="1">
     <widget class="QPlainTextEdit" name="kcfg_WindowClassExclusions">
      <property name="toolTip">
       <string>Enter up to 128 exact, case-sensitive KWin windowClass strings, one per line.</string>

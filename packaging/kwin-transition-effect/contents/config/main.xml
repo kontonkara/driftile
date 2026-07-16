@@ -9,6 +9,10 @@
       <label>Transition duration</label>
       <default>180</default>
     </entry>
+    <entry name="EasingCurve" type="String">
+      <label>Transition easing curve</label>
+      <default>out-cubic</default>
+    </entry>
     <entry name="AnimatePosition" type="Bool">
       <label>Animate window movement</label>
       <default>true</default>
@@ -16,6 +20,12 @@
     <entry name="AnimateSize" type="Bool">
       <label>Animate window size changes</label>
       <default>true</default>
+    </entry>
+    <entry name="ResizeAnimationThreshold" type="UInt">
+      <label>Resize animation threshold</label>
+      <default>10</default>
+      <min>0</min>
+      <max>64</max>
     </entry>
     <entry name="WindowClassExclusions" type="String">
       <label>KWin window classes excluded from transitions</label>
