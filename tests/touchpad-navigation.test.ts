@@ -91,6 +91,10 @@ class RuntimeControllerDouble {
     return true;
   }
 
+  setApplicationInitialMaximized(): boolean {
+    return true;
+  }
+
   setApplicationTilingExclusions(): boolean {
     return true;
   }
@@ -447,6 +451,7 @@ function settings(
     applicationInitialFloating: "",
     applicationInitialFullWidth: "",
     applicationInitialFullscreen: "",
+    applicationInitialMaximized: "",
     applicationTilingExclusions: "",
     alwaysCenterSingleColumn: false,
     borderlessWindows: true,

@@ -3,6 +3,7 @@ import { decodeApplicationBorderlessExclusions } from "../src/application-border
 import { decodeApplicationInitialFloating } from "../src/application-initial-floating";
 import { decodeApplicationInitialFullWidth } from "../src/application-initial-full-width";
 import { decodeApplicationInitialFullscreen } from "../src/application-initial-fullscreen";
+import { decodeApplicationInitialMaximized } from "../src/application-initial-maximized";
 import {
   APPLICATION_INITIAL_DESTINATION_LIMITS,
   decodeApplicationInitialDestinations,
@@ -106,6 +107,14 @@ if (!validApplicationInitialFullscreen) {
   throw new Error("application initial-fullscreen fixture is invalid");
 }
 
+const validApplicationInitialMaximized = decodeApplicationInitialMaximized(
+  "org.example.Mail\norg.example.Calendar",
+);
+
+if (!validApplicationInitialMaximized) {
+  throw new Error("application initial-maximized fixture is invalid");
+}
+
 const validApplicationFocusCentering = decodeApplicationFocusCentering(
   "org.example.Browser\norg.example.Editor",
 );
@@ -152,6 +161,7 @@ const validSettings: DriftileSettings = {
   applicationInitialFloating: validApplicationInitialFloating,
   applicationInitialFullWidth: validApplicationInitialFullWidth,
   applicationInitialFullscreen: validApplicationInitialFullscreen,
+  applicationInitialMaximized: validApplicationInitialMaximized,
   applicationTilingExclusions: validApplicationTilingExclusions,
   alwaysCenterSingleColumn: true,
   borderlessWindows: false,
@@ -190,6 +200,7 @@ const validSettingsInput = {
   applicationInitialFloating: "org.example.Floating\norg.example.Floating=tool",
   applicationInitialFullWidth: "org.example.Browser\norg.example.Browser=tool",
   applicationInitialFullscreen: "org.example.Game\norg.example.Video",
+  applicationInitialMaximized: "org.example.Mail\norg.example.Calendar",
   applicationTilingExclusions: "org.example.Legacy\norg.example.Editor=tool",
   alwaysCenterSingleColumn: validSettings.alwaysCenterSingleColumn,
   borderlessWindows: validSettings.borderlessWindows,
@@ -269,6 +280,9 @@ describe("Driftile settings", () => {
     ).toEqual([]);
     expect(
       DEFAULT_DRIFTILE_SETTINGS.applicationInitialFullscreen.canonicalEntries,
+    ).toEqual([]);
+    expect(
+      DEFAULT_DRIFTILE_SETTINGS.applicationInitialMaximized.canonicalEntries,
     ).toEqual([]);
     expect(
       DEFAULT_DRIFTILE_SETTINGS.applicationFocusCentering.canonicalEntries,
@@ -368,6 +382,9 @@ describe("Driftile settings", () => {
     expect(decoded?.applicationInitialFullscreen.canonicalEntries).toEqual(
       validApplicationInitialFullscreen.canonicalEntries,
     );
+    expect(decoded?.applicationInitialMaximized.canonicalEntries).toEqual(
+      validApplicationInitialMaximized.canonicalEntries,
+    );
     expect(decoded?.applicationFocusCentering.canonicalEntries).toEqual(
       validApplicationFocusCentering.canonicalEntries,
     );
@@ -395,6 +412,12 @@ describe("Driftile settings", () => {
     expect(
       decoded?.applicationInitialFullscreen.excludes("org.example.game"),
     ).toBe(false);
+    expect(
+      decoded?.applicationInitialMaximized.excludes("org.example.Mail"),
+    ).toBe(true);
+    expect(
+      decoded?.applicationInitialMaximized.excludes("org.example.mail"),
+    ).toBe(false);
     expect(decoded?.applicationTilingExclusions.canonicalEntries).toEqual(
       validApplicationTilingExclusions.canonicalEntries,
     );
@@ -415,6 +438,7 @@ describe("Driftile settings", () => {
       applicationInitialFloating: "",
       applicationInitialFullWidth: "",
       applicationInitialFullscreen: "",
+      applicationInitialMaximized: "",
       applicationTilingExclusions: "",
       alwaysCenterSingleColumn: false,
       borderlessWindows: true,
@@ -450,6 +474,7 @@ describe("Driftile settings", () => {
       applicationInitialFloating: "org.example.Floating",
       applicationInitialFullWidth: "org.example.Browser",
       applicationInitialFullscreen: "org.example.Game",
+      applicationInitialMaximized: "org.example.Mail",
       applicationTilingExclusions: "org.example.Legacy",
       alwaysCenterSingleColumn: true,
       borderlessWindows: false,
@@ -511,6 +536,9 @@ describe("Driftile settings", () => {
     expect(
       decoded?.applicationInitialFullscreen.canonicalEntries.join("\n"),
     ).toBe(settings.applicationInitialFullscreen);
+    expect(
+      decoded?.applicationInitialMaximized.canonicalEntries.join("\n"),
+    ).toBe(settings.applicationInitialMaximized);
     expect(
       decoded?.applicationTilingExclusions.canonicalEntries.join("\n"),
     ).toBe(settings.applicationTilingExclusions);
@@ -649,6 +677,12 @@ describe("Driftile settings", () => {
       },
     ],
     [
+      "duplicate application initial-maximized entries",
+      {
+        applicationInitialMaximized: "org.example.Editor\n org.example.Editor ",
+      },
+    ],
+    [
       "duplicate application focus-centering entries",
       {
         applicationFocusCentering: "org.example.Editor\n org.example.Editor ",
@@ -718,7 +752,7 @@ describe("Driftile settings", () => {
     },
   );
 
-  it("rejects an incomplete thirty-three-field snapshot", () => {
+  it("rejects an incomplete thirty-four-field snapshot", () => {
     const incomplete: Record<string, unknown> = { ...validSettingsInput };
     delete incomplete["defaultColumnWidthPixels"];
 
@@ -801,6 +835,13 @@ describe("Driftile settings", () => {
       throw new Error("application initial-fullscreen fixture is invalid");
     }
 
+    const changedApplicationInitialMaximized =
+      decodeApplicationInitialMaximized("org.example.Other");
+
+    if (!changedApplicationInitialMaximized) {
+      throw new Error("application initial-maximized fixture is invalid");
+    }
+
     const changedApplicationFocusCentering =
       decodeApplicationFocusCentering("org.example.Other");
 
@@ -852,6 +893,7 @@ describe("Driftile settings", () => {
       { applicationInitialFloating: changedApplicationInitialFloating },
       { applicationInitialFullWidth: changedApplicationInitialFullWidth },
       { applicationInitialFullscreen: changedApplicationInitialFullscreen },
+      { applicationInitialMaximized: changedApplicationInitialMaximized },
       { applicationTilingExclusions: changedApplicationTilingExclusions },
       { alwaysCenterSingleColumn: false },
       { borderlessWindows: true },

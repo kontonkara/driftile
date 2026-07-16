@@ -111,6 +111,7 @@ export function init(
     applicationInitialFloating: settings.applicationInitialFloating,
     applicationInitialFullWidth: settings.applicationInitialFullWidth,
     applicationInitialFullscreen: settings.applicationInitialFullscreen,
+    applicationInitialMaximized: settings.applicationInitialMaximized,
     applicationTilingExclusions: settings.applicationTilingExclusions,
     borderlessWindows: settings.borderlessWindows,
     clientAreaOption,
@@ -214,6 +215,9 @@ export function applySettings(settingsSnapshot: unknown): boolean {
   );
   controller.setApplicationInitialFullscreen(
     settings.applicationInitialFullscreen,
+  );
+  controller.setApplicationInitialMaximized(
+    settings.applicationInitialMaximized,
   );
   controller.setApplicationTilingExclusions(
     settings.applicationTilingExclusions,

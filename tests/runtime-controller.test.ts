@@ -5,6 +5,7 @@ import { decodeApplicationInitialDestinations } from "../src/application-initial
 import { decodeApplicationInitialFloating } from "../src/application-initial-floating";
 import { decodeApplicationInitialFullWidth } from "../src/application-initial-full-width";
 import { decodeApplicationInitialFullscreen } from "../src/application-initial-fullscreen";
+import { decodeApplicationInitialMaximized } from "../src/application-initial-maximized";
 import { decodeApplicationColumnWidthOverrides } from "../src/application-overrides";
 import { decodeApplicationWindowHeightOverrides } from "../src/application-window-heights";
 import { decodeApplicationFocusCentering } from "../src/application-focus-centering";
@@ -8678,6 +8679,55 @@ describe("RuntimeController", () => {
         )
         .columns.flatMap((column) => column.windowIds),
     ).toEqual([windowId("existing"), windowId("added")]);
+  });
+
+  it("requests native maximize once for fresh exact application matches", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const existing = createTrackedWindow("existing", output, desktop, {
+      desktopFileName: "org.example.Editor",
+    });
+    const existingMaximize = controlMaximize(existing);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [existing.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      applicationInitialMaximized:
+        requiredApplicationInitialMaximized("org.example.Editor"),
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(existingMaximize.calls).toEqual([]);
+
+    const added = createTrackedWindow("added", output, desktop, {
+      desktopFileName: "org.example.Editor",
+    });
+    const addedMaximize = controlMaximize(added);
+    fixture.windowAdded.emit(added.window);
+    flushManualScheduler(scheduler);
+    expect(addedMaximize.calls).toEqual([[true, true]]);
+    expect(addedMaximize.maximizeMode).toBe(3);
+
+    const rejected = createTrackedWindow("rejected", output, desktop, {
+      desktopFileName: "org.example.Editor",
+    });
+    const rejectedMaximize = controlMaximize(rejected, { write: "reject" });
+    fixture.windowAdded.emit(rejected.window);
+    flushManualScheduler(scheduler);
+    expect(rejectedMaximize.calls).toEqual([[true, true]]);
+    expect(rejectedMaximize.maximizeMode).toBe(0);
+
+    controller.reconcile();
+    flushManualScheduler(scheduler);
+    expect(rejectedMaximize.calls).toEqual([[true, true]]);
   });
 
   it("captures initial full-width and fullscreen policies for fresh admissions", () => {
@@ -47250,6 +47300,16 @@ function requiredApplicationInitialFullscreen(value: string) {
 
   if (!applications) {
     throw new Error("application initial fullscreen fixture is invalid");
+  }
+
+  return applications;
+}
+
+function requiredApplicationInitialMaximized(value: string) {
+  const applications = decodeApplicationInitialMaximized(value);
+
+  if (!applications) {
+    throw new Error("application initial maximized fixture is invalid");
   }
 
   return applications;

@@ -53,6 +53,12 @@ import {
   type ApplicationInitialFullscreen,
 } from "./application-initial-fullscreen";
 import {
+  decodeApplicationInitialMaximized,
+  EMPTY_APPLICATION_INITIAL_MAXIMIZED,
+  sameApplicationInitialMaximized,
+  type ApplicationInitialMaximized,
+} from "./application-initial-maximized";
+import {
   decodeApplicationFocusCentering,
   EMPTY_APPLICATION_FOCUS_CENTERING,
   sameApplicationFocusCentering,
@@ -96,7 +102,7 @@ const MIN_RESIZE_STEP_PIXELS = 0;
 const MAX_RESIZE_STEP_PIXELS = 16_384;
 const MIN_TOUCHPAD_NAVIGATION_FINGER_COUNT = 3;
 const MAX_TOUCHPAD_NAVIGATION_FINGER_COUNT = 5;
-const SETTINGS_FIELD_COUNT = 33;
+const SETTINGS_FIELD_COUNT = 34;
 
 export interface DriftileSettings {
   readonly applicationBorderlessExclusions: ApplicationBorderlessExclusions;
@@ -109,6 +115,7 @@ export interface DriftileSettings {
   readonly applicationInitialFloating: ApplicationInitialFloating;
   readonly applicationInitialFullWidth: ApplicationInitialFullWidth;
   readonly applicationInitialFullscreen: ApplicationInitialFullscreen;
+  readonly applicationInitialMaximized: ApplicationInitialMaximized;
   readonly applicationTilingExclusions: ApplicationTilingExclusions;
   readonly alwaysCenterSingleColumn: boolean;
   readonly borderlessWindows: boolean;
@@ -145,6 +152,7 @@ export const DEFAULT_DRIFTILE_SETTINGS: DriftileSettings = Object.freeze({
   applicationInitialFloating: EMPTY_APPLICATION_INITIAL_FLOATING,
   applicationInitialFullWidth: EMPTY_APPLICATION_INITIAL_FULL_WIDTH,
   applicationInitialFullscreen: EMPTY_APPLICATION_INITIAL_FULLSCREEN,
+  applicationInitialMaximized: EMPTY_APPLICATION_INITIAL_MAXIMIZED,
   applicationTilingExclusions: EMPTY_APPLICATION_TILING_EXCLUSIONS,
   alwaysCenterSingleColumn: false,
   borderlessWindows: true,
@@ -191,6 +199,7 @@ export function decodeDriftileSettings(
     !owns(candidate, "applicationInitialFloating") ||
     !owns(candidate, "applicationInitialFullWidth") ||
     !owns(candidate, "applicationInitialFullscreen") ||
+    !owns(candidate, "applicationInitialMaximized") ||
     !owns(candidate, "applicationTilingExclusions") ||
     !owns(candidate, "alwaysCenterSingleColumn") ||
     !owns(candidate, "borderlessWindows") ||
@@ -248,6 +257,9 @@ export function decodeDriftileSettings(
   const applicationInitialFullscreen = decodeApplicationInitialFullscreen(
     candidate["applicationInitialFullscreen"],
   );
+  const applicationInitialMaximized = decodeApplicationInitialMaximized(
+    candidate["applicationInitialMaximized"],
+  );
   const applicationTilingExclusions = decodeApplicationTilingExclusions(
     candidate["applicationTilingExclusions"],
   );
@@ -293,6 +305,7 @@ export function decodeDriftileSettings(
     !applicationInitialFloating ||
     !applicationInitialFullWidth ||
     !applicationInitialFullscreen ||
+    !applicationInitialMaximized ||
     !applicationTilingExclusions ||
     typeof alwaysCenterSingleColumn !== "boolean" ||
     typeof borderlessWindows !== "boolean" ||
@@ -359,6 +372,7 @@ export function decodeDriftileSettings(
     applicationInitialFloating,
     applicationInitialFullWidth,
     applicationInitialFullscreen,
+    applicationInitialMaximized,
     applicationTilingExclusions,
     alwaysCenterSingleColumn,
     borderlessWindows,
@@ -429,6 +443,10 @@ export function sameDriftileSettings(
     sameApplicationInitialFullscreen(
       left.applicationInitialFullscreen,
       right.applicationInitialFullscreen,
+    ) &&
+    sameApplicationInitialMaximized(
+      left.applicationInitialMaximized,
+      right.applicationInitialMaximized,
     ) &&
     sameApplicationTilingExclusions(
       left.applicationTilingExclusions,
