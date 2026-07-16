@@ -365,6 +365,37 @@ let
       {
         programs.driftile.transitions.enable = true;
       };
+  homeManagerTransitionSettings =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.transitions = {
+          animatePosition = false;
+          animateSize = true;
+          windowClassExclusions = [
+            "konsole org.kde.konsole"
+            "firefox firefox"
+          ];
+        };
+      }
+      { };
+  homeManagerTransitionSettingsUnmanaged =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.transitions = {
+          animatePosition = null;
+          animateSize = null;
+          windowClassExclusions = null;
+        };
+      }
+      { };
   homeManagerOptionSurface =
     evaluate homeManagerModule
       [
@@ -796,6 +827,25 @@ let
       );
     in
     !evaluated.success;
+  invalidTransitionSettingRejected =
+    setting:
+    let
+      evaluated = builtins.tryEval (
+        builtins.deepSeq
+          (evaluate homeManagerModule
+            [
+              "home"
+              "packages"
+            ]
+            {
+              programs.driftile.transitions = setting;
+            }
+            { }
+          ).config.qt.kde.settings
+          true
+      );
+    in
+    !evaluated.success;
   expectedSettings = {
     kwinrc."Script-io.github.kontonkara.driftile" = {
       ApplicationBorderlessExclusions = ''
@@ -886,9 +936,15 @@ assert homeManagerOptionSurface.options.programs.driftile ? settings;
 assert homeManagerOptionSurface.options.programs.driftile.overview ? touchpadGesture;
 assert homeManagerOptionSurface.options.programs.driftile ? transitions;
 assert homeManagerOptionSurface.options.programs.driftile.transitions ? duration;
+assert homeManagerOptionSurface.options.programs.driftile.transitions ? animatePosition;
+assert homeManagerOptionSurface.options.programs.driftile.transitions ? animateSize;
+assert homeManagerOptionSurface.options.programs.driftile.transitions ? windowClassExclusions;
 assert nixosOptionSurface.options.programs.driftile ? transitions;
 assert !(nixosOptionSurface.options.programs.driftile.overview ? touchpadGesture);
 assert !(nixosOptionSurface.options.programs.driftile.transitions ? duration);
+assert !(nixosOptionSurface.options.programs.driftile.transitions ? animatePosition);
+assert !(nixosOptionSurface.options.programs.driftile.transitions ? animateSize);
+assert !(nixosOptionSurface.options.programs.driftile.transitions ? windowClassExclusions);
 assert !(nixosOptionSurface.options.programs.driftile ? settings);
 assert packagePaths [ "home" "packages" ] homeManagerOverviewTouchpadGesture == [ ];
 assert packagePaths [ "home" "packages" ] homeManagerOverviewTouchpadGestureDefaults == [ ];
@@ -924,6 +980,7 @@ assert invalidOverviewTouchpadGestureRejected { fingerCount = 4.5; };
 assert packagePaths [ "home" "packages" ] homeManagerTransitionDurationMinimum == [ ];
 assert packagePaths [ "home" "packages" ] homeManagerTransitionDurationMaximum == [ ];
 assert packagePaths [ "home" "packages" ] homeManagerTransitionDurationWithSystemInstall == [ ];
+assert packagePaths [ "home" "packages" ] homeManagerTransitionSettings == [ ];
 assert
   homeManagerTransitionDurationMinimum.config.qt.kde.settings == {
     kwinrc."Effect-io.github.kontonkara.driftile.transitions".Duration = 0;
@@ -934,12 +991,37 @@ assert
   };
 assert homeManagerTransitionDurationUnmanaged.config.qt.kde.settings == { };
 assert
+  homeManagerTransitionSettings.config.qt.kde.settings == {
+    kwinrc."Effect-io.github.kontonkara.driftile.transitions" = {
+      AnimatePosition = false;
+      AnimateSize = true;
+      WindowClassExclusions = ''
+        firefox firefox
+        konsole org.kde.konsole'';
+    };
+  };
+assert homeManagerTransitionSettingsUnmanaged.config.qt.kde.settings == { };
+assert
   homeManagerTransitionDurationWithSystemInstall.config.qt.kde.settings == {
     kwinrc."Effect-io.github.kontonkara.driftile.transitions".Duration = 240;
   };
 assert invalidTransitionDurationRejected (-1);
 assert invalidTransitionDurationRejected 1001;
 assert invalidTransitionDurationRejected 1.5;
+assert invalidTransitionSettingRejected { animatePosition = "false"; };
+assert invalidTransitionSettingRejected { animateSize = "true"; };
+assert invalidTransitionSettingRejected { windowClassExclusions = "editor example.Editor"; };
+assert invalidTransitionSettingRejected { windowClassExclusions = [ " konsole org.kde.konsole" ]; };
+assert
+  invalidTransitionSettingRejected {
+    windowClassExclusions = [
+      (builtins.concatStringsSep "" (builtins.genList (_: "é") 128))
+    ];
+  };
+assert
+  invalidTransitionSettingRejected {
+    windowClassExclusions = builtins.genList (index: "app${toString index} example.App${toString index}") 129;
+  };
 assert packagePaths [ "home" "packages" ] homeManagerSettings == [ ];
 assert
   packagePaths [ "home" "packages" ] homeManagerDefaultSettings == [ (toString defaultPackage) ];

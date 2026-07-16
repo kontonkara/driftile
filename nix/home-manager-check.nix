@@ -162,6 +162,23 @@ let
   transitionDurationUnmanaged = evaluateHome {
     programs.driftile.transitions.duration = null;
   } { };
+  transitionSettings = evaluateHome {
+    programs.driftile.transitions = {
+      animatePosition = false;
+      animateSize = true;
+      windowClassExclusions = [
+        "konsole org.kde.konsole"
+        "firefox firefox"
+      ];
+    };
+  } { };
+  transitionSettingsUnmanaged = evaluateHome {
+    programs.driftile.transitions = {
+      animatePosition = null;
+      animateSize = null;
+      windowClassExclusions = null;
+    };
+  } { };
   invalidTransitionDurationRejected =
     duration:
     let
@@ -169,6 +186,18 @@ let
         builtins.deepSeq
           (evaluateHome {
             programs.driftile.transitions.duration = duration;
+          } { }).config.qt.kde.settings
+          true
+      );
+    in
+    !evaluated.success;
+  invalidTransitionSettingRejected =
+    setting:
+    let
+      evaluated = builtins.tryEval (
+        builtins.deepSeq
+          (evaluateHome {
+            programs.driftile.transitions = setting;
           } { }).config.qt.kde.settings
           true
       );
@@ -307,6 +336,7 @@ assert transitionsPackageCount transitionsDisabled == 0;
 assert !lib.elem (toString pkgs.hello) (homePackagePaths transitionsDisabled);
 assert transitionsPackageCount transitionDurationMinimum == 0;
 assert transitionsPackageCount transitionDurationMaximum == 0;
+assert transitionsPackageCount transitionSettings == 0;
 assert
   transitionDurationMinimum.config.qt.kde.settings == {
     kwinrc."Effect-io.github.kontonkara.driftile.transitions".Duration = 0;
@@ -316,9 +346,34 @@ assert
     kwinrc."Effect-io.github.kontonkara.driftile.transitions".Duration = 1000;
   };
 assert transitionDurationUnmanaged.config.qt.kde.settings == { };
+assert
+  transitionSettings.config.qt.kde.settings == {
+    kwinrc."Effect-io.github.kontonkara.driftile.transitions" = {
+      AnimatePosition = false;
+      AnimateSize = true;
+      WindowClassExclusions = ''
+        firefox firefox
+        konsole org.kde.konsole'';
+    };
+  };
+assert transitionSettingsUnmanaged.config.qt.kde.settings == { };
 assert invalidTransitionDurationRejected (-1);
 assert invalidTransitionDurationRejected 1001;
 assert invalidTransitionDurationRejected 1.5;
+assert invalidTransitionSettingRejected { animatePosition = "false"; };
+assert invalidTransitionSettingRejected { animateSize = "true"; };
+assert invalidTransitionSettingRejected { windowClassExclusions = "editor example.Editor"; };
+assert invalidTransitionSettingRejected { windowClassExclusions = [ "konsole org.kde.konsole " ]; };
+assert
+  invalidTransitionSettingRejected {
+    windowClassExclusions = [
+      (builtins.concatStringsSep "" (builtins.genList (_: "a") 256))
+    ];
+  };
+assert
+  invalidTransitionSettingRejected {
+    windowClassExclusions = builtins.genList (index: "app${toString index} example.App${toString index}") 129;
+  };
 assert
   standalone.config.qt.kde.settings == {
     kwinrc."Script-io.github.kontonkara.driftile" = {

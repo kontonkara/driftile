@@ -135,6 +135,8 @@ let
   renderApplicationFocusCentering = renderApplicationTilingExclusions;
   applicationInitialFloatingType = applicationTilingExclusionType;
   renderApplicationInitialFloating = renderApplicationTilingExclusions;
+  transitionWindowClassExclusionType = applicationTilingExclusionType;
+  renderTransitionWindowClassExclusions = renderApplicationTilingExclusions;
   strictlyIncreasing =
     values:
     builtins.length values < 2
@@ -230,6 +232,24 @@ in
           type = lib.types.nullOr (lib.types.ints.between 0 1000);
           default = null;
           description = "Transition duration in milliseconds; null leaves the KConfig value unmanaged.";
+        };
+
+        animatePosition = lib.mkOption {
+          type = lib.types.nullOr lib.types.bool;
+          default = null;
+          description = "Whether to animate window movement; null leaves the KConfig value unmanaged.";
+        };
+
+        animateSize = lib.mkOption {
+          type = lib.types.nullOr lib.types.bool;
+          default = null;
+          description = "Whether to animate window size changes; null leaves the KConfig value unmanaged.";
+        };
+
+        windowClassExclusions = lib.mkOption {
+          type = lib.types.nullOr transitionWindowClassExclusionType;
+          default = null;
+          description = "Up to 128 exact KWin windowClass strings excluded from transitions; null leaves the KConfig value unmanaged.";
         };
       };
   }
@@ -473,6 +493,24 @@ in
       lib.mkIf (cfg.transitions.duration != null) {
         qt.kde.settings.kwinrc."Effect-${pluginId}.transitions".Duration =
           cfg.transitions.duration;
+      }
+    ))
+    (lib.optionalAttrs homeSettings (
+      lib.mkIf (cfg.transitions.animatePosition != null) {
+        qt.kde.settings.kwinrc."Effect-${pluginId}.transitions".AnimatePosition =
+          cfg.transitions.animatePosition;
+      }
+    ))
+    (lib.optionalAttrs homeSettings (
+      lib.mkIf (cfg.transitions.animateSize != null) {
+        qt.kde.settings.kwinrc."Effect-${pluginId}.transitions".AnimateSize =
+          cfg.transitions.animateSize;
+      }
+    ))
+    (lib.optionalAttrs homeSettings (
+      lib.mkIf (cfg.transitions.windowClassExclusions != null) {
+        qt.kde.settings.kwinrc."Effect-${pluginId}.transitions".WindowClassExclusions =
+          renderTransitionWindowClassExclusions cfg.transitions.windowClassExclusions;
       }
     ))
   ];
