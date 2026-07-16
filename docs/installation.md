@@ -318,6 +318,7 @@ programs.driftile.settings = {
     desktopName = "Development";
     output = "DP-2";
   };
+  defaultInitialFocus = "default";
   applicationInitialFocused = [ ];
   applicationInitialUnfocused = [ ];
   applicationInitialFloating = [ ];

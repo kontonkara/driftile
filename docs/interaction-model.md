@@ -131,16 +131,17 @@ Initial floating, sizing, presentation, and native-state rules then resolve in
 the confirmed destination context. Missing, stale, related, or rejected
 targets fall back once to the window's existing KWin context.
 
-An exact fresh-window focus rule requests activation after tiled or floating
-admission only when that context is already visible. It never selects a
-desktop or output, and a rejected request is not retried. Native maximize and
-fullscreen requests run afterward.
+An exact fresh-window focus rule overrides the optional global `focused`,
+`unfocused`, or ordinary default. A positive decision requests activation after
+tiled or floating admission only when that context is already visible. It never
+selects a desktop or output, and a rejected request is not retried. Native
+maximize and fullscreen requests run afterward.
 
-The matching unfocused rule instead waits one event-loop for KWin's ordinary
-activation to settle. If the fresh window became active, Driftile restores the
-previous live visible window or clears focus when no such window remains. It
-does nothing when the fresh window stayed inactive, never reveals a hidden
-context, and takes priority over the positive rule.
+The matching or global unfocused policy instead waits one event-loop for
+KWin's ordinary activation to settle. If the fresh window became active,
+Driftile restores the previous live visible window or clears focus when no such
+window remains. It does nothing when the fresh window stayed inactive, never
+reveals a hidden context, and takes priority over the positive rule.
 
 An exact fresh-window maximize rule requests KWin's native work-area-edge
 state after the tiled or floating underlay is admitted. Initial

@@ -600,6 +600,23 @@ transient windows are not repositioned. Desktop and output transfers preserve
 the current frame. Live edits affect only future first manual-floating
 placements and add no persistence field.
 
+## Default initial focus
+
+**Default initial focus** controls genuinely new normal windows without an
+exact focus rule:
+
+- `default` preserves KWin's ordinary focus behavior;
+- `focused` requests focus once after admission when the destination context is
+  already visible;
+- `unfocused` restores the previous live visible window if the new window took
+  focus.
+
+Exact **Applications initially focused** and **Applications initially
+unfocused** entries override this setting; the unfocused rule wins when an ID
+appears in both lists. Startup-existing, restored, transferred, re-admitted,
+and already tracked windows remain unchanged. Live edits affect only windows
+first tracked afterward.
+
 ## Applications initially focused
 
 **Applications initially focused** requests focus once after Driftile admits a
@@ -609,8 +626,8 @@ exact application IDs, one per line, under the application-list limits.
 The request is made only when the destination desktop and output are already
 visible. Driftile does not select a desktop or output to reveal the window.
 When the request is unavailable or rejected, it is consumed without retry.
-Unlisted applications keep KWin's ordinary focus behavior; this setting does
-not suppress focus.
+Unlisted applications use **Default initial focus**. This exact list does not
+suppress focus.
 
 Startup-existing, restored, transferred, re-admitted, and already tracked
 windows are unchanged. Initial destination and underlay admission settle
@@ -631,6 +648,7 @@ never selects a desktop or output for this rule.
 
 The request is one-shot and is not retried when KWin rejects it. If the same
 application appears in both initial-focus lists, this unfocused rule wins.
+Unlisted applications use **Default initial focus**.
 Startup-existing, restored, transferred, re-admitted, and already tracked
 windows are unchanged. Native maximize and fullscreen requests follow the
 focus decision. Live edits affect only windows first tracked afterward and add

@@ -1757,6 +1757,8 @@ No other feature belongs to 1.41.0.
   one-shot rollback, and the existing initial-admission order.
 - Expose the setting through KConfig, NixOS, and Home Manager without adding a
   shortcut or persistence field.
+- Add a global `default`, `focused`, or `unfocused` fresh-window focus policy
+  beneath exact application focus rules.
 
 Release criteria:
 
@@ -1766,5 +1768,7 @@ Release criteria:
   unchanged; live edits affect only windows first tracked afterward.
 - Destination resolution never selects a desktop or changes focus and remains
   within public Plasma 6.7+ APIs.
+- Exact unfocused rules win over exact focused rules, exact rules win over the
+  global focus policy, and `default` preserves ordinary KWin behavior.
 
 No other feature currently belongs to 1.42.0.

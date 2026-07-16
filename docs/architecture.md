@@ -276,6 +276,10 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   exact lookup wins; otherwise the captured default reuses the same guarded
   desktop/output transaction. Existing and already tracked windows do not read
   a later setting change.
+- Captures one global initial-focus default with both bounded exact application
+  sets. Resolution performs one application-ID lookup per fresh admission:
+  exact unfocused wins, then exact focused, then the global default. Existing
+  and already tracked windows do not reread the policy.
 - Parses at most 128 application tiling exclusions into an exact case-sensitive
   resolved-ID set. Admission uses one constant-time lookup; a live policy
   replacement scans the observed window set once and schedules only windows

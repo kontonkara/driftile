@@ -57,6 +57,8 @@ The ownership rule is strict:
 - Up to 128 exact application IDs whose genuinely new normal windows request
   focus once after admission when their desktop and output are already visible,
   without selecting either context.
+- One optional global `focused` or `unfocused` policy beneath exact focus
+  application rules; `default` preserves KWin's ordinary behavior.
 - Up to 128 exact application IDs whose genuinely new normal windows cannot
   retain initial focus in an already visible context; the previous live visible
   window is restored once, with this rule taking priority over initial focus.
