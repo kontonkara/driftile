@@ -1,15 +1,14 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.31.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.32.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.31.0 expands pointer interactions across contexts, adopts vertical
-resizes, restores focus after closing a window, and keeps a full-width successor
-visible beside a normal active column. Layout identity now includes activity,
-with logical persistence v4 and a current-activity-only overview. An optional,
-independently installed effect adds geometry transitions without taking layout
-ownership.
+Stable 1.32.0 expands unbound focus, movement, output, and desktop traversal;
+adds configurable native-Wayland gestures; and extends the optional overview
+with transfer, search, keyboard, wheel, and close interactions. The optional
+transition effect now retargets rapid changes and replays geometry changed
+during workspace effects. Logical persistence remains v4.
 
 ## Foundation (delivered)
 
@@ -1318,9 +1317,9 @@ Release criteria (met):
 
 No other feature belongs to 1.31.0.
 
-## 1.32.0 (in development)
+## 1.32.0 (released)
 
-The current slice adds four unbound alternatives to vertical focus and window
+The release adds four unbound alternatives to vertical focus and window
 movement. They navigate or reorder within the active column, then use the
 previous or next desktop only at the corresponding boundary. Existing default
 vertical bindings remain unchanged; users may assign the alternatives in
@@ -1466,6 +1465,18 @@ targets, stale state, and non-closeable windows are no-ops; the effect remains
 open until KWin reports actual removal and performs no layout write. A separate
 middle-click handler exposes the same guarded close path for visible thumbnails
 and non-minimized tabs without changing left-click or drag behavior.
+
+Release criteria (met):
+
+- New navigation and movement actions are unbound, fail closed on stale state,
+  and preserve the existing default action set except for fresh preset-width
+  shortcut records.
+- Gesture, overview, and transition behavior stays optional, uses public KWin
+  APIs, and does not take ownership of layout persistence.
+- Release archives, native Nix packages, and the grouped X11 and Wayland
+  checks pass on the exact release commit before publication.
+
+No other feature belongs to 1.32.0.
 
 ## Post-v1
 

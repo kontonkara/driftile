@@ -54,7 +54,7 @@ swipe opens the companion and a down swipe closes an active or pending
 activation. The gesture can be disabled or changed to `3`–`5` fingers in the
 effect settings.
 
-Current development also lets a visible thumbnail or non-minimized tab be
+Version 1.32.0 also lets a visible thumbnail or non-minimized tab be
 dragged onto another desktop card on the same output. A successful drop moves
 that one window and closes the companion; invalid or stale drops leave both the
 window and companion unchanged.
@@ -181,8 +181,8 @@ activation, and normal close remain silent.
 
 ## Install a release
 
-Download `driftile-overview-1.31.0.kwineffect` and `SHA256SUMS` from the stable
-[1.31.0 release](release-notes-1.31.0.md), then verify the archive:
+Download `driftile-overview-1.32.0.kwineffect` and `SHA256SUMS` from the stable
+[1.32.0 release](release-notes-1.32.0.md), then verify the archive:
 
 ```console
 $ sha256sum --check --ignore-missing SHA256SUMS
@@ -192,7 +192,7 @@ Install the overview package as the desktop user:
 
 ```bash
 kpackagetool6 --type=KWin/Effect \
-  --install ./driftile-overview-1.31.0.kwineffect
+  --install ./driftile-overview-1.32.0.kwineffect
 ```
 
 To build the same versioned archive from source, run `npm ci` followed by
@@ -217,7 +217,7 @@ uninstalling the package.
 
 ## NixOS and Home Manager
 
-The 1.31.0 flake exposes the effect separately as
+The 1.32.0 flake exposes the effect separately as
 `packages.<system>.driftile-overview`. The NixOS and Home Manager modules keep
 it opt-in:
 
@@ -245,8 +245,8 @@ scope; `null` leaves both KConfig values untouched.
 
 ## Validation
 
-Version 1.31.0 validates current-activity projection and closes the companion
-when activity topology changes, preventing interaction with stale delegates.
+Version 1.32.0 validates its gesture, transfer, search, keyboard, pointer, and
+close paths without giving the companion ownership of layout state.
 
 ## Safety boundary
 

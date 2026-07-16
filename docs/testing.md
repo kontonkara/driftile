@@ -312,7 +312,7 @@ SHA passes the existing mixed Konsole, Firefox, KCalc, and XWayland pool plus
 the physical pointer and shortcut baseline. It did not physically exercise the
 new gutter target, and no visible VM was run.
 
-The 1.31.0 development slice adds destination-only gutter planning for
+The 1.31.0 release adds destination-only gutter planning for
 before, between, and after boundaries; one atomic cross-context stack-member
 transfer into a fresh singleton; and focused runtime cases for cross-output,
 cross-desktop, and invalidated-boundary fallback. Exact-window priority and the

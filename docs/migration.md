@@ -1,7 +1,30 @@
 # Migration
 
-The latest stable release is 1.31.0. Use the steps below when changing release
+The latest stable release is 1.32.0. Use the steps below when changing release
 generations, and never combine files from different releases.
+
+## Upgrade from 1.31.0 to 1.32.0
+
+1. If the 1.31.0 helper owns the shortcut profile, run its `release` command
+   before replacing it. Stop on a preserved manual-edit conflict; do not use
+   `--force`.
+2. Disable Driftile and both optional effects in System Settings.
+3. Install matching 1.32.0 main, overview, transition, and helper artifacts as
+   needed, or pin the Nix input to `v1.32.0` and rebuild.
+4. Re-enable Driftile and only the optional effects you use.
+5. If using the helper, claim the profile with the 1.32.0 helper and run
+   `check` with the same optional custom profile.
+
+Logical layout state remains v4 and needs no conversion. Existing KGlobalAccel
+assignments and KConfig values remain compatible. New gesture settings are
+opt-in, while a fresh shortcut profile uses the updated preset-width mapping.
+
+## Roll back from 1.32.0 to 1.31.0
+
+Release a helper-owned profile with the 1.32.0 helper, disable Driftile and
+both optional effects, then restore matching verified 1.31.0 artifacts. For
+NixOS or Home Manager, restore the input to `v1.31.0` and rebuild each owning
+generation. Logical state remains v4, so no state-file conversion is required.
 
 ## Upgrade from 1.30.0 to 1.31.0
 
