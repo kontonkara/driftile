@@ -52,6 +52,8 @@ The ownership rule is strict:
 - Up to 128 exact fresh-window destination rules that assign a normal
   application to a one-based virtual desktop, named output, or both before
   admission, without selecting a desktop or changing focus.
+- One optional global fresh-window destination beneath exact application rules,
+  with the same desktop/output resolution and one-shot failure behavior.
 - Up to 128 exact application IDs whose genuinely new normal windows request
   focus once after admission when their desktop and output are already visible,
   without selecting either context.

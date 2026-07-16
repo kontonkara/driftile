@@ -271,6 +271,11 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   ownership while preserving its KWin frame. Existing or hydrated ownership is
   not reclassified; tiling exclusions and automatic floating roles take
   priority.
+- Captures one optional global initial destination beside the bounded exact
+  application map when a fresh normal window is first tracked. One constant-time
+  exact lookup wins; otherwise the captured default reuses the same guarded
+  desktop/output transaction. Existing and already tracked windows do not read
+  a later setting change.
 - Parses at most 128 application tiling exclusions into an exact case-sensitive
   resolved-ID set. Admission uses one constant-time lookup; a live policy
   replacement scans the observed window set once and schedules only windows

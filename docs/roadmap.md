@@ -1748,3 +1748,23 @@ Release criteria (met):
   bounded, animation-scale-aware interval and skip unchanged targets.
 
 No other feature belongs to 1.41.0.
+
+### 1.42.0 (in development)
+
+- Add an optional global initial virtual desktop and output destination for
+  genuinely new normal windows beneath exact application rules.
+- Reuse numeric or exact named desktop selection, output-only routing,
+  one-shot rollback, and the existing initial-admission order.
+- Expose the setting through KConfig, NixOS, and Home Manager without adding a
+  shortcut or persistence field.
+
+Release criteria:
+
+- Exact application destinations always take precedence over the global
+  default.
+- Startup-existing, restored, related, and already tracked windows remain
+  unchanged; live edits affect only windows first tracked afterward.
+- Destination resolution never selects a desktop or changes focus and remains
+  within public Plasma 6.7+ APIs.
+
+No other feature currently belongs to 1.42.0.

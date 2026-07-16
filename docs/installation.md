@@ -314,6 +314,10 @@ programs.driftile.settings = {
     };
     "org.kde.konsole".desktopName = "Development";
   };
+  defaultInitialDestination = {
+    desktopName = "Development";
+    output = "DP-2";
+  };
   applicationInitialFocused = [ ];
   applicationInitialUnfocused = [ ];
   applicationInitialFloating = [ ];

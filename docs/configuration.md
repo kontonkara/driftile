@@ -490,6 +490,19 @@ later forms its own column uses the moved application's current rule. Existing
 columns are not rewritten when the setting changes, and a window joining an
 existing column always adopts the target column's mode.
 
+## Default initial destination
+
+**Default initial destination** accepts one destination without an application
+ID, for example `desktop:2`, `desktop-name:Development`, `output:DP-2`, or
+`desktop-name:Development,output:DP-2`. Blank disables it. It applies to a
+genuinely new normal window only when no exact application destination rule
+matches.
+
+Desktop and output resolution, one-shot failure behavior, admission order, and
+fresh-only guards are identical to the application rules below. Changing the
+default affects only windows first tracked afterward and never selects a
+desktop or changes focus.
+
 ## Application initial destinations
 
 **Application initial destinations** assigns a genuinely new normal window to
@@ -516,8 +529,9 @@ already admitted, dialog, transient, and other non-normal windows are not
 moved. The destination policy itself neither changes focus nor selects a
 desktop. A missing output or desktop, unavailable public transfer API, or
 rejected assignment leaves the window in its accepted KWin context and is not
-retried. Renaming a virtual desktop affects future windows only; live rule
-edits likewise affect only windows first tracked afterward.
+retried. A window without an exact match uses **Default initial destination**
+when configured. Renaming a virtual desktop affects future windows only; live
+rule edits likewise affect only windows first tracked afterward.
 
 After a confirmed assignment, initial floating and floating-position rules use
 the destination work area, initial tiled sizing and presentation use the
