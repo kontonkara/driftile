@@ -1832,6 +1832,10 @@ No unrelated feature belongs to 1.44.0.
   action, default binding, or persistence field.
 - Add nine unbound actions that move the selected desktop directly to a
   one-based movable position while preserving protected empty boundaries.
+- Recover the most recent eligible same-context focus when the active window
+  closes while an unrelated geometry transition is still settling.
+- Retain immediate focus motion after a workspace presentation handoff instead
+  of dropping the first hidden geometry update.
 
 Release criteria:
 
@@ -1841,6 +1845,8 @@ Release criteria:
   names.
 - Direct reorder clamps oversized positions, treats the current position as a
   no-op, and retains the existing exact one-call verification.
+- Close-focus recovery remains bounded and accepts a legitimate replacement,
+  while post-workspace transition replay retains the earliest frame.
 - One grouped unit, package, Nix, X11, and Wayland gate passes on the batch
   head before publication.
 
