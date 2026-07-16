@@ -879,6 +879,15 @@ describe("overview effect package", () => {
         `root.navigateKeyboardSelection("${direction}")`,
       );
     }
+    expect(keyHandler).toContain("event.key === Qt.Key_Tab");
+    expect(keyHandler).toContain("event.key === Qt.Key_Backtab");
+    expect(keyHandler).toContain("event.key === Qt.Key_Home");
+    expect(keyHandler).toContain("event.key === Qt.Key_End");
+    for (const direction of ["next", "previous", "first", "last"]) {
+      expect(keyHandler).toContain(
+        `root.navigateKeyboardSequence("${direction}")`,
+      );
+    }
     expect(keyHandler).toContain("event.key === Qt.Key_Enter");
     expect(keyHandler).toContain("event.key === Qt.Key_Return");
     expect(keyHandler).toContain("event.key === Qt.Key_Space");
@@ -896,6 +905,12 @@ describe("overview effect package", () => {
     );
     expect(navigation).toContain(
       "runtime.findOverviewNavigationTarget(keyboardSelectionId, targets, direction)",
+    );
+    expect(navigation).toContain(
+      'typeof runtime.findOverviewSequentialNavigationTarget !== "function"',
+    );
+    expect(navigation).toContain(
+      "runtime.findOverviewSequentialNavigationTarget(keyboardSelectionId, targets, direction)",
     );
     expect(navigation).toContain(
       "focusWindow(target.candidate, target.windowId, target.desktop, target.desktopId, target.screen)",
@@ -959,14 +974,16 @@ describe("overview effect package", () => {
       expect(visual).not.toContain("isSelectedNavigationTarget");
     }
     expect(desktopCard).not.toContain("function isSelectedNavigationTarget(");
-    expect(desktopCard.match(/border\.color: "#ffd166"/gu)).toHaveLength(2);
+    expect(desktopCard.match(/border\.color: "#ffd166"/gu)).toHaveLength(3);
     expect(desktopCard.match(/keyboardSelected \? 3 : 0/gu)).toHaveLength(2);
-    expect(
-      desktopCard.slice(
-        desktopCard.indexOf("id: numberGutter"),
-        desktopCard.indexOf("id: viewport"),
-      ),
-    ).not.toContain("keyboardSelectionId");
+    const numberGutter = desktopCard.slice(
+      desktopCard.indexOf("id: numberGutter"),
+      desktopCard.indexOf("id: viewport"),
+    );
+    expect(numberGutter).toContain(
+      "card.keyboardSelectionId === card.desktopNavigationTargetId()",
+    );
+    expect(numberGutter).toContain("visible: numberGutter.keyboardSelected");
     expect(`${scene}\n${desktopCard}`).not.toMatch(
       /\bTimer\s*\{|KWin\.Workspace\.(?:stackingOrder|windows)\b|\.setValue\s*\(/u,
     );

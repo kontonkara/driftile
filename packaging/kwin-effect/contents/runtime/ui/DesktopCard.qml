@@ -52,6 +52,9 @@ Rectangle {
     Item {
         id: numberGutter
 
+        readonly property bool keyboardSelected: !card.current && card.searchQuery.trim().length === 0
+            && card.keyboardSelectionId === card.desktopNavigationTargetId()
+
         width: card.contentLeft
         height: card.height
 
@@ -65,6 +68,16 @@ Rectangle {
             font.pixelSize: Math.max(12, Math.min(20, card.height * 0.2))
             horizontalAlignment: Text.AlignHCenter
             elide: Text.ElideRight
+        }
+
+        Rectangle {
+            anchors.fill: parent
+            anchors.margins: 3
+            visible: numberGutter.keyboardSelected
+            color: "transparent"
+            border.width: 3
+            border.color: "#ffd166"
+            radius: 4
         }
 
         TapHandler {

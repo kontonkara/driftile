@@ -65,6 +65,15 @@ Rectangle {
             root.navigateKeyboardSelection("up");
         } else if (unmodified && event.key === Qt.Key_Down) {
             root.navigateKeyboardSelection("down");
+        } else if (unmodified && event.key === Qt.Key_Tab) {
+            root.navigateKeyboardSequence("next");
+        } else if ((modifiers === Qt.ShiftModifier && event.key === Qt.Key_Tab)
+                   || event.key === Qt.Key_Backtab) {
+            root.navigateKeyboardSequence("previous");
+        } else if (unmodified && event.key === Qt.Key_Home) {
+            root.navigateKeyboardSequence("first");
+        } else if (unmodified && event.key === Qt.Key_End) {
+            root.navigateKeyboardSequence("last");
         } else if (unmodified
                    && (event.key === Qt.Key_Enter || event.key === Qt.Key_Return
                        || (event.key === Qt.Key_Space && searchQuery.length === 0))) {
@@ -483,6 +492,28 @@ Rectangle {
 
         try {
             const targetId = runtime.findOverviewNavigationTarget(keyboardSelectionId, targets, direction);
+            if (typeof targetId === "string" && navigationTargetForId(targets, targetId)) {
+                keyboardSelectionId = targetId;
+            }
+        } catch (error) {
+            return;
+        }
+    }
+
+    function navigateKeyboardSequence(direction) {
+        const targets = collectNavigationTargets();
+        repairKeyboardSelectionFrom(targets);
+        if (keyboardSelectionId.length === 0) {
+            return;
+        }
+
+        const runtime = OverviewRuntime.DriftileOverview;
+        if (!runtime || typeof runtime.findOverviewSequentialNavigationTarget !== "function") {
+            return;
+        }
+
+        try {
+            const targetId = runtime.findOverviewSequentialNavigationTarget(keyboardSelectionId, targets, direction);
             if (typeof targetId === "string" && navigationTargetForId(targets, targetId)) {
                 keyboardSelectionId = targetId;
             }
