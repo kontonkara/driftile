@@ -1,7 +1,31 @@
 # Migration
 
-The latest stable release is 1.35.0. Use the steps below when changing release
+The latest stable release is 1.36.0. Use the steps below when changing release
 generations, and never combine files from different releases.
+
+## Upgrade from 1.35.0 to 1.36.0
+
+1. Release a helper-owned shortcut profile with the installed helper.
+2. Disable Driftile and both optional effects in System Settings.
+3. Install matching 1.36.0 artifacts, or pin the Nix input to `v1.36.0` and
+   rebuild.
+4. Re-enable Driftile and only the optional effects you use, then reclaim the
+   unchanged helper profile if needed.
+
+Logical layout state remains v4, and shortcut action IDs and default bindings
+are unchanged. Fixed resize steps and application initial tiled heights are
+opt-in. The transition effect keeps `out-cubic` easing by default and skips
+size interpolation for resize deltas of at most `10` logical pixels; set its
+threshold to `0` to animate every nonzero resize as before.
+
+## Roll back from 1.36.0 to 1.35.0
+
+Release a helper-owned profile, disable Driftile and both optional effects,
+then restore matching verified 1.35.0 artifacts. NixOS and Home Manager users
+should restore the input to `v1.35.0` and rebuild. The older packages ignore
+the additive resize-step, application-height, easing, and resize-threshold
+keys. Both versions use logical layout state v4 and understand proportional
+and fixed tiled heights, so no state conversion is required.
 
 ## Upgrade from 1.34.0 to 1.35.0
 

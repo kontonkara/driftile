@@ -1,13 +1,13 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.35.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.36.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.35.0 adds opt-in singleton centering, fractional gaps, an optional
-leading empty desktop, and mixed proportional or fixed logical-pixel sizing
-for presets, application rules, and the default column width. Logical
-persistence remains v4.
+Stable 1.36.0 adds fixed resize steps, exact application initial tiled heights,
+selectable transition easing, a small-resize animation threshold, and reliable
+deferred animation replay after workspace presentation. Logical persistence
+remains v4.
 
 ## Foundation (delivered)
 
@@ -1581,29 +1581,38 @@ Release criteria (met):
 
 No other feature belongs to 1.35.0.
 
+## 1.36.0 (released)
+
+- Add optional fixed logical-pixel deltas for explicit column-width and
+  window-height decrease or increase actions. A value of `0` retains the
+  existing percentage-point step for the corresponding action pair.
+- Add exact per-application initial tiled client heights in proportional or
+  fixed logical-pixel form. Fresh singleton admission and fresh retiling use
+  the existing constrained, output-pixel-snapped path without rewriting
+  existing geometry when a rule changes.
+- Let the optional transition effect select one of six bounded easing curves,
+  retaining `out-cubic` as the default.
+- Skip size interpolation for resize deltas at or below a configurable
+  logical-pixel threshold while allowing simultaneous movement to animate.
+- Replay deferred motion when activation makes a window visible after a
+  workspace or fullscreen presentation handoff.
+
+Release criteria (met):
+
+- Fixed and proportional sizing paths retain live constraints and physical
+  pixel-grid snapping on Wayland, XWayland, and native X11.
+- Transition replay remains bounded per window, uses public effect signals,
+  and writes no geometry or persistence.
+- Settings are available through KConfig, NixOS, and Home Manager without a
+  shortcut, default binding, private KWin API, or persistence-schema change.
+
+No other feature belongs to 1.36.0.
+
 ## Post-v1
 
 Add interaction and presentation features outside the frozen v1 scope without
 taking over compositor mechanisms.
 
 - Keep Plasma's built-in Overview as the compatible baseline.
-
-### 1.36.0 direction
-
-The next bounded sizing slice is intended to:
-
-- Add optional fixed logical-pixel deltas for explicit column-width and
-  window-height decrease or increase actions.
-- Add exact per-application initial tiled client heights in proportional or
-  fixed logical-pixel form, limited to fresh singleton admission.
-- Keep the existing percentage-point steps when the corresponding fixed value
-  is `0`; a positive value overrides only that action pair.
-- Apply live constraints and physical-pixel snapping without rewriting existing
-  geometry when a setting changes.
-- Make the optional transition easing selectable from a small validated set,
-  retaining `out-cubic` as the default.
-- Skip size interpolation for resize deltas at or below a configurable
-  logical-pixel threshold while allowing simultaneous movement to animate.
-- Add no shortcut, binding, layout-persistence field, or private KWin API.
-
-The optional overview must remain removable, preserve the authoritative layout state, and fall back cleanly to Plasma's Overview.
+- The optional overview must remain removable, preserve the authoritative
+  layout state, and fall back cleanly to Plasma's Overview.
