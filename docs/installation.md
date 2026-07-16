@@ -190,7 +190,7 @@ for key in ApplicationBorderlessExclusions ApplicationColumnPresentations \
   CenterFocusedColumnOnOverflow ColumnWidthPresets ColumnWidthStepPercent \
   ColumnWidthStepPixels DefaultColumnPresentation DefaultColumnWidthPercent \
   DefaultColumnWidthPixels DefaultWindowHeight EmptyDesktopAboveFirst Gap \
-  ShowTabIndicator TouchpadNavigation \
+  NumberedDesktopTargets ShowTabIndicator TouchpadNavigation \
   TouchpadWorkspaceNavigation TouchpadNavigationFingerCount \
   TouchpadNaturalScroll WindowHeightPresets WindowHeightStepPercent \
   WindowHeightStepPixels WorkspaceAutoBackAndForth; do
@@ -198,7 +198,8 @@ for key in ApplicationBorderlessExclusions ApplicationColumnPresentations \
     --group Script-io.github.kontonkara.driftile \
     --key "$key" --delete ""
 done
-for key in TouchpadGesture TouchpadGestureFingerCount; do
+for key in BackdropColor ScreenEdge TouchpadGesture \
+  TouchpadGestureFingerCount; do
   kwriteconfig6 --file kwinrc \
     --group Effect-io.github.kontonkara.driftile.overview \
     --key "$key" --delete ""

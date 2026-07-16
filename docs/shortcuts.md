@@ -366,9 +366,13 @@ adopt that output's selected desktop without switching desktops. KWin chooses
 the destination frame; Driftile does not write geometry or either tiled layout.
 Blocked floating targets do not fall through to whole-column transfer.
 
-Numbered desktop actions use one-based positions. A number beyond the current
-desktop count selects the shared trailing empty desktop; moving a column or one
-window there causes Driftile to append a new empty tail through KWin.
+Numbered desktop actions use one-based positions by default. A number beyond
+the current desktop count selects the shared trailing empty desktop; moving a
+column or one window there causes Driftile to append a new empty tail through
+KWin. The optional numbered-target map redirects an existing slot to one exact,
+unique live desktop name for focus and both transfer variants. Unconfigured
+slots keep positional behavior; missing or ambiguous configured names are
+no-ops.
 
 `Meta+,` appends the immediate right column's top window to the active column.
 `Meta+.` creates a new right column from the active column's bottom window.

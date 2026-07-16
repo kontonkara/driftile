@@ -1819,3 +1819,25 @@ Release criteria (met):
   head before publication.
 
 No unrelated feature belongs to 1.44.0.
+
+### 1.45.0 (in development)
+
+- Let existing numbered focus, whole-column transfer, and single-window
+  transfer actions target exact virtual desktop names.
+- Preserve one-based position and shared-tail clamping for every unconfigured
+  slot.
+- Resolve live names per command and reject missing or ambiguous configured
+  names without positional fallback.
+- Expose the bounded mapping through KConfig and Home Manager without adding an
+  action, default binding, or persistence field.
+
+Release criteria:
+
+- Named focus and both transfer paths share one resolver, while numbered
+  back-and-forth compares the resolved desktop identity.
+- Live edits and desktop renames apply without restarting KWin or caching stale
+  names.
+- One grouped unit, package, Nix, X11, and Wayland gate passes on the batch
+  head before publication.
+
+No unrelated feature belongs to 1.45.0.

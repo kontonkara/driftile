@@ -138,6 +138,7 @@ The activation writes only `ApplicationBorderlessExclusions`,
 `ShowTabIndicator`, `TouchpadNavigation`,
 `TouchpadWorkspaceNavigation`, `TouchpadNavigationFingerCount`,
 `TouchpadNaturalScroll`, `WorkspaceAutoBackAndForth`,
+`NumberedDesktopTargets`,
 `WindowHeightPresets`, `WindowHeightStepPercent`, and
 `WindowHeightStepPixels` in Driftile's `kwinrc` group. It does not replace the
 file or manage shortcuts. A running KWin session is asked to reconfigure on a
@@ -347,12 +348,35 @@ finger count, or natural direction recreates only the enabled gesture handlers
 without restarting KWin. Native X11 treats both enabled options as safe no-ops,
 and neither option adds a shortcut action or default key binding.
 
-## Numbered desktop back-and-forth
+## Numbered desktop targets and back-and-forth
+
+**Numbered desktop targets** optionally maps any existing `1` through `9`
+action to one exact, case-sensitive virtual desktop name. Enter one
+`slot=desktop name` pair per line. The mapping applies equally to direct focus,
+whole-column transfer, and single-window transfer. An unconfigured slot keeps
+its one-based positional behavior, including clamping beyond the current count
+to the shared empty tail.
+
+A configured name must match exactly one current KWin desktop. A missing or
+duplicate live name is a no-op and never falls back to a position. Names are
+resolved for every command, so desktop renames and live setting changes need no
+restart or cache refresh. Applying the setting alone never selects a desktop,
+moves a window, or changes layout state.
+
+Home Manager accepts an attribute set and writes entries in numeric order:
+
+```nix
+programs.driftile.settings.numberedDesktopTargets = {
+  "1" = "Web";
+  "2" = "Code";
+  "9" = "Archive";
+};
+```
 
 **Repeat the current desktop number to return to the last-used desktop** is
 disabled by default. When enabled, repeating a numbered direct desktop action
-whose resolved and clamped target is already current selects the valid,
-distinct last-used desktop on the active output instead.
+whose resolved target is already current selects the valid, distinct last-used
+desktop on the active output instead.
 
 Missing history, a removed or stale historical target, and a rejected desktop
 selection are no-ops. The adjacent desktop actions and the explicit **Focus

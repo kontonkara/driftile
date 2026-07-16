@@ -11,8 +11,15 @@ Driftile uses one keyboard grammar and does not wrap at layout boundaries:
 - `1..9` address a virtual desktop directly; adding `Ctrl` moves the active column there.
 - `W` toggles the active tiled column between stacked and tabbed presentation.
 
+An optional exact-name map can retarget each existing `1..9` action without
+adding shortcuts. It applies to focus, whole-column transfer, and single-window
+transfer. Unconfigured slots remain positional and clamp to the shared empty
+tail. A configured name must identify exactly one live desktop; missing or
+duplicate names are no-ops. Resolution happens on every command, so renames
+take effect immediately.
+
 Optional numbered back-and-forth changes only a repeated direct `1..9`
-selection whose resolved and clamped target is already current. With a valid,
+selection whose resolved target is already current. With a valid,
 distinct output-local last-used desktop, the repeated action selects that
 desktop instead. Missing history, stale targets, and rejected selection are
 no-ops. Adjacent navigation and the explicit **Focus last-used desktop** action
