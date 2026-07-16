@@ -104,6 +104,7 @@ export function init(
     applicationBorderlessExclusions: settings.applicationBorderlessExclusions,
     applicationColumnPresentations: settings.applicationColumnPresentations,
     applicationColumnWidths: settings.applicationColumnWidths,
+    applicationWindowHeights: settings.applicationWindowHeights,
     applicationFocusCentering: settings.applicationFocusCentering,
     applicationInitialFloating: settings.applicationInitialFloating,
     applicationTilingExclusions: settings.applicationTilingExclusions,
@@ -193,6 +194,7 @@ export function applySettings(settingsSnapshot: unknown): boolean {
     settings.applicationColumnPresentations,
   );
   controller.setApplicationColumnWidths(settings.applicationColumnWidths);
+  controller.setApplicationWindowHeights(settings.applicationWindowHeights);
   controller.setApplicationFocusCentering(settings.applicationFocusCentering);
   controller.setApplicationInitialFloating(settings.applicationInitialFloating);
   controller.setApplicationTilingExclusions(

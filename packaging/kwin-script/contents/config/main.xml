@@ -108,6 +108,10 @@
       <label>Initial column widths in percent or pixels by desktop-file ID</label>
       <default></default>
     </entry>
+    <entry name="ApplicationWindowHeights" type="String">
+      <label>Initial tiled client heights in percent or pixels by desktop-file ID</label>
+      <default></default>
+    </entry>
     <entry name="ApplicationFocusCentering" type="String">
       <label>Applications centered after horizontal focus navigation by KWin desktopFileName</label>
       <default></default>

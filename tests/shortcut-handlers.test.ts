@@ -937,6 +937,7 @@ describe("KWin shortcut handlers", () => {
     const applicationControls = [
       "kcfg_ApplicationColumnPresentations",
       "kcfg_ApplicationColumnWidths",
+      "kcfg_ApplicationWindowHeights",
       "kcfg_ApplicationFocusCentering",
       "kcfg_ApplicationInitialFloating",
       "kcfg_ApplicationTilingExclusions",
@@ -1291,32 +1292,45 @@ describe("KWin shortcut handlers", () => {
     );
   });
 
-  it("exposes exact mixed application width overrides as a bounded list", () => {
-    const overridesEntry = configuration.match(
+  it("exposes exact mixed application size overrides as bounded lists", () => {
+    const widthOverridesEntry = configuration.match(
       /<entry name="ApplicationColumnWidths" type="String">([\s\S]*?)<\/entry>/,
     )?.[1];
-    const overridesWidget = configurationUi.match(
+    const widthOverridesWidget = configurationUi.match(
       /<widget class="QPlainTextEdit" name="kcfg_ApplicationColumnWidths">([\s\S]*?)<\/widget>/,
     )?.[1];
+    const heightOverridesEntry = configuration.match(
+      /<entry name="ApplicationWindowHeights" type="String">([\s\S]*?)<\/entry>/,
+    )?.[1];
+    const heightOverridesLabel = configurationUi.match(
+      /<widget class="QLabel" name="applicationWindowHeightsLabel">([\s\S]*?)<\/widget>/,
+    )?.[1];
+    const heightOverridesWidget = configurationUi.match(
+      /<widget class="QPlainTextEdit" name="kcfg_ApplicationWindowHeights">([\s\S]*?)<\/widget>/,
+    )?.[1];
 
-    expect(overridesEntry).toContain(
+    expect(widthOverridesEntry).toContain(
       "<label>Initial column widths in percent or pixels by desktop-file ID</label>",
     );
-    expect(overridesEntry).toContain("<default></default>");
+    expect(widthOverridesEntry).toContain("<default></default>");
     expect(configurationUi).toContain(
       "<string>Application initial column widths (% or px):</string>",
     );
-    expect(overridesWidget).toContain("org.kde.konsole=60");
-    expect(overridesWidget).toContain("org.mozilla.firefox=960px");
-    expect(overridesWidget).toContain("bare 10 to 100 percentage");
-    expect(overridesWidget).toContain("explicit 10% to 100% percentage");
-    expect(overridesWidget).toContain("fixed 1px to 16384px logical width");
-    expect(overridesWidget).toContain("only fresh singleton admission");
-    expect(overridesWidget).toContain("constrained by the admitted window");
-    expect(overridesWidget).toContain(
+    expect(widthOverridesWidget).toContain("org.kde.konsole=60");
+    expect(widthOverridesWidget).toContain("org.mozilla.firefox=960px");
+    expect(widthOverridesWidget).toContain("bare 10 to 100 percentage");
+    expect(widthOverridesWidget).toContain("explicit 10% to 100% percentage");
+    expect(widthOverridesWidget).toContain(
+      "fixed 1px to 16384px logical width",
+    );
+    expect(widthOverridesWidget).toContain("only fresh singleton admission");
+    expect(widthOverridesWidget).toContain(
+      "constrained by the admitted window",
+    );
+    expect(widthOverridesWidget).toContain(
       "snapped to the assigned output pixel grid",
     );
-    expect(overridesWidget).toContain(
+    expect(widthOverridesWidget).toContain(
       "Existing columns and reset behavior are unchanged.",
     );
     expect(qml).toContain(
@@ -1327,6 +1341,43 @@ describe("KWin shortcut handlers", () => {
     );
     expect(runtime).toContain(
       "controller.setApplicationColumnWidths(settings.applicationColumnWidths)",
+    );
+
+    expect(heightOverridesEntry).toContain(
+      "<label>Initial tiled client heights in percent or pixels by desktop-file ID</label>",
+    );
+    expect(heightOverridesEntry).toContain("<default></default>");
+    expect(heightOverridesLabel).toContain(
+      "<string>Application initial tiled client heights (% or px):</string>",
+    );
+    expect(heightOverridesLabel).toContain(
+      "<cstring>kcfg_ApplicationWindowHeights</cstring>",
+    );
+    expect(heightOverridesWidget).toContain(
+      "exact, case-sensitive KWin desktopFileName",
+    );
+    expect(heightOverridesWidget).toContain("org.kde.konsole=60");
+    expect(heightOverridesWidget).toContain("org.mozilla.firefox=720px");
+    expect(heightOverridesWidget).toContain("desktopFileName=value");
+    expect(heightOverridesWidget).toContain("bare 10 to 100 percentage");
+    expect(heightOverridesWidget).toContain("explicit 10% to 100% percentage");
+    expect(heightOverridesWidget).toContain(
+      "fixed 1px to 16384px logical client height",
+    );
+    expect(heightOverridesWidget).toContain(
+      "only fresh singleton tiled admission",
+    );
+    expect(heightOverridesWidget).toContain(
+      "Existing, restored, and transferred geometry is unchanged.",
+    );
+    expect(heightOverridesWidget).toContain(
+      "Solver constraints and output pixel-grid snapping remain authoritative.",
+    );
+    expect(qml).toContain(
+      'applicationWindowHeights: KWin.readConfig("ApplicationWindowHeights", "")',
+    );
+    expect(runtime).toContain(
+      "controller.setApplicationWindowHeights(settings.applicationWindowHeights)",
     );
   });
 

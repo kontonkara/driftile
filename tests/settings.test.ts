@@ -3,6 +3,7 @@ import { decodeApplicationBorderlessExclusions } from "../src/application-border
 import { decodeApplicationInitialFloating } from "../src/application-initial-floating";
 import { decodeApplicationColumnPresentations } from "../src/application-column-presentations";
 import { decodeApplicationColumnWidthOverrides } from "../src/application-overrides";
+import { decodeApplicationWindowHeightOverrides } from "../src/application-window-heights";
 import { decodeApplicationFocusCentering } from "../src/application-focus-centering";
 import { decodeApplicationTilingExclusions } from "../src/application-tiling-exclusions";
 import { decodeColumnWidthPresetPercentages } from "../src/column-width-presets";
@@ -20,6 +21,14 @@ const validApplicationColumnWidths = decodeApplicationColumnWidthOverrides(
 
 if (!validApplicationColumnWidths) {
   throw new Error("application override fixture is invalid");
+}
+
+const validApplicationWindowHeights = decodeApplicationWindowHeightOverrides(
+  "org.example.Editor=75",
+);
+
+if (!validApplicationWindowHeights) {
+  throw new Error("application window-height fixture is invalid");
 }
 
 const validApplicationColumnPresentations =
@@ -81,6 +90,7 @@ const validSettings: DriftileSettings = {
   applicationBorderlessExclusions: validApplicationBorderlessExclusions,
   applicationColumnPresentations: validApplicationColumnPresentations,
   applicationColumnWidths: validApplicationColumnWidths,
+  applicationWindowHeights: validApplicationWindowHeights,
   applicationFocusCentering: validApplicationFocusCentering,
   applicationInitialFloating: validApplicationInitialFloating,
   applicationTilingExclusions: validApplicationTilingExclusions,
@@ -112,6 +122,7 @@ const validSettingsInput = {
   applicationColumnPresentations:
     "org.example.Browser=tabbed\norg.example.Editor=stacked",
   applicationColumnWidths: "org.example.Editor=75",
+  applicationWindowHeights: "org.example.Editor=75",
   applicationFocusCentering: "org.example.Browser\norg.example.Editor",
   applicationInitialFloating: "org.example.Floating\norg.example.Floating=tool",
   applicationTilingExclusions: "org.example.Legacy\norg.example.Editor=tool",
@@ -165,6 +176,9 @@ describe("Driftile settings", () => {
     ).toEqual([]);
     expect(
       DEFAULT_DRIFTILE_SETTINGS.applicationColumnWidths.canonicalEntries,
+    ).toEqual([]);
+    expect(
+      DEFAULT_DRIFTILE_SETTINGS.applicationWindowHeights.canonicalEntries,
     ).toEqual([]);
     expect(
       DEFAULT_DRIFTILE_SETTINGS.applicationColumnPresentations.canonicalEntries,
@@ -224,6 +238,9 @@ describe("Driftile settings", () => {
     expect(decoded?.applicationColumnWidths.canonicalEntries).toEqual(
       validApplicationColumnWidths.canonicalEntries,
     );
+    expect(decoded?.applicationWindowHeights.canonicalEntries).toEqual(
+      validApplicationWindowHeights.canonicalEntries,
+    );
     expect(decoded?.applicationColumnPresentations.canonicalEntries).toEqual(
       validApplicationColumnPresentations.canonicalEntries,
     );
@@ -271,6 +288,7 @@ describe("Driftile settings", () => {
       applicationBorderlessExclusions: "",
       applicationColumnPresentations: "",
       applicationColumnWidths: "",
+      applicationWindowHeights: "",
       applicationFocusCentering: "",
       applicationInitialFloating: "",
       applicationTilingExclusions: "",
@@ -299,6 +317,7 @@ describe("Driftile settings", () => {
       applicationBorderlessExclusions: "org.example.Decorated",
       applicationColumnPresentations: "org.example.Browser=tabbed",
       applicationColumnWidths: "org.example.Browser=80",
+      applicationWindowHeights: "org.example.Browser=80",
       applicationFocusCentering: "org.example.Browser",
       applicationInitialFloating: "org.example.Floating",
       applicationTilingExclusions: "org.example.Legacy",
@@ -332,6 +351,9 @@ describe("Driftile settings", () => {
     ).toBe(settings.applicationBorderlessExclusions);
     expect(decoded?.applicationColumnWidths.canonicalEntries.join("\n")).toBe(
       settings.applicationColumnWidths,
+    );
+    expect(decoded?.applicationWindowHeights.canonicalEntries.join("\n")).toBe(
+      settings.applicationWindowHeights,
     );
     expect(
       decoded?.applicationColumnPresentations.canonicalEntries.join("\n"),
@@ -427,6 +449,10 @@ describe("Driftile settings", () => {
       { applicationColumnWidths: "org.example.Editor=9" },
     ],
     [
+      "invalid application window heights",
+      { applicationWindowHeights: "org.example.Editor=9" },
+    ],
+    [
       "invalid application column presentation",
       { applicationColumnPresentations: "org.example.Editor=tiled" },
     ],
@@ -513,7 +539,7 @@ describe("Driftile settings", () => {
     },
   );
 
-  it("rejects an incomplete twenty-five-field snapshot", () => {
+  it("rejects an incomplete twenty-seven-field snapshot", () => {
     const incomplete: Record<string, unknown> = { ...validSettingsInput };
     delete incomplete["defaultColumnWidthPixels"];
 
@@ -536,6 +562,13 @@ describe("Driftile settings", () => {
 
     if (!changedApplicationColumnWidths) {
       throw new Error("application override fixture is invalid");
+    }
+
+    const changedApplicationWindowHeights =
+      decodeApplicationWindowHeightOverrides("org.example.Editor=76");
+
+    if (!changedApplicationWindowHeights) {
+      throw new Error("application window-height fixture is invalid");
     }
 
     const changedApplicationColumnPresentations =
@@ -595,6 +628,7 @@ describe("Driftile settings", () => {
         applicationColumnPresentations: changedApplicationColumnPresentations,
       },
       { applicationColumnWidths: changedApplicationColumnWidths },
+      { applicationWindowHeights: changedApplicationWindowHeights },
       { applicationFocusCentering: changedApplicationFocusCentering },
       { applicationInitialFloating: changedApplicationInitialFloating },
       { applicationTilingExclusions: changedApplicationTilingExclusions },

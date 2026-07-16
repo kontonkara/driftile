@@ -4,6 +4,7 @@ import type { ApplicationBorderlessExclusions } from "../src/application-borderl
 import type { ApplicationColumnPresentations } from "../src/application-column-presentations";
 import type { ApplicationInitialFloating } from "../src/application-initial-floating";
 import type { ApplicationColumnWidthOverrides } from "../src/application-overrides";
+import type { ApplicationWindowHeightOverrides } from "../src/application-window-heights";
 import type { ApplicationFocusCentering } from "../src/application-focus-centering";
 import type { ApplicationTilingExclusions } from "../src/application-tiling-exclusions";
 import type { ColumnWidth } from "../src/core/layout-engine";
@@ -14,6 +15,7 @@ interface DeliveredSettings {
   readonly applicationBorderlessExclusions: readonly string[];
   readonly applicationColumnPresentations: readonly string[];
   readonly applicationColumnWidths: readonly string[];
+  readonly applicationWindowHeights: readonly string[];
   readonly applicationFocusCentering: readonly string[];
   readonly applicationInitialFloating: readonly string[];
   readonly applicationTilingExclusions: readonly string[];
@@ -50,6 +52,7 @@ interface RuntimeControllerOptions {
   readonly applicationBorderlessExclusions: ApplicationBorderlessExclusions;
   readonly applicationColumnPresentations: ApplicationColumnPresentations;
   readonly applicationColumnWidths: ApplicationColumnWidthOverrides;
+  readonly applicationWindowHeights: ApplicationWindowHeightOverrides;
   readonly applicationFocusCentering: ApplicationFocusCentering;
   readonly applicationInitialFloating: ApplicationInitialFloating;
   readonly applicationTilingExclusions: ApplicationTilingExclusions;
@@ -83,6 +86,8 @@ class RuntimeControllerDouble {
       applicationColumnPresentations:
         options.applicationColumnPresentations.canonicalEntries,
       applicationColumnWidths: options.applicationColumnWidths.canonicalEntries,
+      applicationWindowHeights:
+        options.applicationWindowHeights.canonicalEntries,
       applicationFocusCentering:
         options.applicationFocusCentering.canonicalEntries,
       applicationInitialFloating:
@@ -124,6 +129,17 @@ class RuntimeControllerDouble {
     this.state = {
       ...this.state,
       applicationColumnWidths: overrides.canonicalEntries,
+    };
+    return true;
+  }
+
+  setApplicationWindowHeights(
+    overrides: ApplicationWindowHeightOverrides,
+  ): boolean {
+    this.calls.push("applicationWindowHeights");
+    this.state = {
+      ...this.state,
+      applicationWindowHeights: overrides.canonicalEntries,
     };
     return true;
   }
@@ -373,6 +389,7 @@ describe("runtime settings delivery", () => {
       applicationBorderlessExclusions: "org.example.NewBorder",
       applicationColumnPresentations: "org.example.Editor=tabbed",
       applicationColumnWidths: "org.example.Editor=75",
+      applicationWindowHeights: "org.example.Editor=420px",
       applicationFocusCentering: "org.example.Browser",
       applicationInitialFloating: "org.example.NewFloat",
       applicationTilingExclusions: "org.example.NewlyExcluded",
@@ -400,6 +417,7 @@ describe("runtime settings delivery", () => {
       applicationBorderlessExclusions: ["org.example.NewBorder"],
       applicationColumnPresentations: ["org.example.Editor=tabbed"],
       applicationColumnWidths: ["org.example.Editor=75"],
+      applicationWindowHeights: ["org.example.Editor=420px"],
       applicationFocusCentering: ["org.example.Browser"],
       applicationInitialFloating: ["org.example.NewFloat"],
       applicationTilingExclusions: ["org.example.NewlyExcluded"],
@@ -429,6 +447,7 @@ describe("runtime settings delivery", () => {
       "applicationBorderlessExclusions",
       "applicationColumnPresentations",
       "applicationColumnWidths",
+      "applicationWindowHeights",
       "applicationFocusCentering",
       "applicationInitialFloating",
       "applicationTilingExclusions",
@@ -509,6 +528,7 @@ describe("runtime settings delivery", () => {
       "applicationBorderlessExclusions",
       "applicationColumnPresentations",
       "applicationColumnWidths",
+      "applicationWindowHeights",
       "applicationFocusCentering",
       "applicationInitialFloating",
       "applicationTilingExclusions",
@@ -548,6 +568,7 @@ function settings(
     applicationBorderlessExclusions: "",
     applicationColumnPresentations: "",
     applicationColumnWidths: "",
+    applicationWindowHeights: "",
     applicationFocusCentering: "",
     applicationInitialFloating: "",
     applicationTilingExclusions: "",
@@ -585,6 +606,7 @@ function snapshot(settingsValue: DeliveredSettings): DeliveredSettings {
       ...settingsValue.applicationColumnPresentations,
     ],
     applicationColumnWidths: [...settingsValue.applicationColumnWidths],
+    applicationWindowHeights: [...settingsValue.applicationWindowHeights],
     applicationFocusCentering: [...settingsValue.applicationFocusCentering],
     applicationInitialFloating: [...settingsValue.applicationInitialFloating],
     applicationTilingExclusions: [...settingsValue.applicationTilingExclusions],

@@ -63,6 +63,10 @@ class RuntimeControllerDouble {
     return true;
   }
 
+  setApplicationWindowHeights(): boolean {
+    return true;
+  }
+
   setApplicationFocusCentering(): boolean {
     return true;
   }

@@ -89,6 +89,7 @@ export interface ManageWindowCommand {
   readonly activityId: ActivityId;
   readonly columnId: ColumnId;
   readonly desktopId: DesktopId;
+  readonly initialWindowHeight?: WindowHeight;
   readonly outputId: OutputId;
   readonly presentation?: ColumnPresentation;
   readonly width: ColumnWidth;
@@ -349,6 +350,10 @@ export class LayoutEngine {
   manageWindow(command: ManageWindowCommand): boolean {
     assertValidWidth(command.width);
 
+    if (command.initialWindowHeight) {
+      assertValidWindowHeight(command.initialWindowHeight);
+    }
+
     if (this.placements.has(command.windowId)) {
       return false;
     }
@@ -374,6 +379,9 @@ export class LayoutEngine {
       presentation: command.presentation ?? "stacked",
       selectedWindowId: command.windowId,
       width: { ...command.width },
+      ...(command.initialWindowHeight
+        ? { windowHeights: [cloneWindowHeight(command.initialWindowHeight)] }
+        : {}),
       windowIds: [command.windowId],
     };
     const activeIndex =

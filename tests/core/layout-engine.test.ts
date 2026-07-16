@@ -113,6 +113,7 @@ describe("LayoutEngine", () => {
       columnId: columnId("column-2"),
       activityId: activity,
       desktopId: desktop,
+      initialWindowHeight: { index: 150, kind: "preset" },
       outputId: output,
       width: { kind: "proportion", value: 0.33 },
       windowId: windowId("window-2"),
@@ -122,7 +123,11 @@ describe("LayoutEngine", () => {
       activeColumnId: "column-1",
       columns: [
         { id: "column-1", windowIds: ["window-1"] },
-        { id: "column-2", windowIds: ["window-2"] },
+        {
+          id: "column-2",
+          windowHeights: [{ index: 150, kind: "preset" }],
+          windowIds: ["window-2"],
+        },
       ],
     });
   });

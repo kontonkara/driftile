@@ -4,6 +4,11 @@ import {
   type ApplicationColumnWidthOverrides,
 } from "./application-overrides";
 import {
+  EMPTY_APPLICATION_WINDOW_HEIGHT_OVERRIDES,
+  sameApplicationWindowHeightOverrides,
+  type ApplicationWindowHeightOverrides,
+} from "./application-window-heights";
+import {
   EMPTY_APPLICATION_COLUMN_PRESENTATIONS,
   sameApplicationColumnPresentations,
   type ApplicationColumnPresentations,
@@ -867,6 +872,7 @@ export interface RuntimeControllerOptions {
   readonly applicationBorderlessExclusions?: ApplicationBorderlessExclusions;
   readonly applicationColumnPresentations?: ApplicationColumnPresentations;
   readonly applicationColumnWidths?: ApplicationColumnWidthOverrides;
+  readonly applicationWindowHeights?: ApplicationWindowHeightOverrides;
   readonly applicationFocusCentering?: ApplicationFocusCentering;
   readonly applicationInitialFloating?: ApplicationInitialFloating;
   readonly applicationTilingExclusions?: ApplicationTilingExclusions;
@@ -902,6 +908,7 @@ export class RuntimeController {
   private applicationBorderlessExclusions: ApplicationBorderlessExclusions;
   private applicationColumnPresentations: ApplicationColumnPresentations;
   private applicationColumnWidths: ApplicationColumnWidthOverrides;
+  private applicationWindowHeights: ApplicationWindowHeightOverrides;
   private applicationFocusCentering: ApplicationFocusCentering;
   private applicationInitialFloating: ApplicationInitialFloating;
   private applicationTilingExclusions: ApplicationTilingExclusions;
@@ -1127,6 +1134,9 @@ export class RuntimeController {
     this.applicationColumnWidths =
       options.applicationColumnWidths ??
       EMPTY_APPLICATION_COLUMN_WIDTH_OVERRIDES;
+    this.applicationWindowHeights =
+      options.applicationWindowHeights ??
+      EMPTY_APPLICATION_WINDOW_HEIGHT_OVERRIDES;
     this.applicationFocusCentering =
       options.applicationFocusCentering ?? EMPTY_APPLICATION_FOCUS_CENTERING;
     this.applicationInitialFloating =
@@ -1797,6 +1807,35 @@ export class RuntimeController {
     }
 
     this.applicationColumnWidths = overrides;
+
+    if (!this.started) {
+      return true;
+    }
+
+    for (const key of this.waitingWindowIds.keys()) {
+      this.pendingAdmissionContexts.add(key);
+    }
+
+    if (this.pendingAdmissionContexts.size > 0) {
+      this.scheduleDeferredRuntimeWork();
+    }
+
+    return true;
+  }
+
+  setApplicationWindowHeights(
+    overrides: ApplicationWindowHeightOverrides,
+  ): boolean {
+    if (
+      sameApplicationWindowHeightOverrides(
+        this.applicationWindowHeights,
+        overrides,
+      )
+    ) {
+      return false;
+    }
+
+    this.applicationWindowHeights = overrides;
 
     if (!this.started) {
       return true;
@@ -15854,6 +15893,8 @@ export class RuntimeController {
       return null;
     }
 
+    const windowHeight = this.initialWindowHeight(activeWindow);
+
     return {
       activityId: managedContext.activityId,
       columnId: detachedColumnId,
@@ -15867,6 +15908,7 @@ export class RuntimeController {
       outputId: managedContext.outputId,
       previousColumnId: context.columns[columnIndex - 1]?.id ?? null,
       previousWindowId: null,
+      ...(windowHeight ? { windowHeight } : {}),
       windowId: activeId,
     };
   }
@@ -25384,6 +25426,7 @@ export class RuntimeController {
         [candidate.source],
         contextGeometry,
       );
+      const initialWindowHeight = this.initialWindowHeight(candidate.source);
 
       if (!width) {
         this.deferWindow(candidate.id, key, contextGeometry.fingerprint);
@@ -25394,6 +25437,7 @@ export class RuntimeController {
         activityId: context.activityId,
         columnId: columnId(`column:${String(candidate.id)}`),
         desktopId: context.desktopId,
+        ...(initialWindowHeight ? { initialWindowHeight } : {}),
         outputId: context.outputId,
         presentation: this.initialColumnPresentation(candidate.source),
         width,
@@ -25638,6 +25682,7 @@ export class RuntimeController {
     }
 
     const width = this.constrainedDefaultColumnWidth([source], contextGeometry);
+    const initialWindowHeight = this.initialWindowHeight(source);
 
     if (!width) {
       this.deferWindow(id, key, contextGeometry.fingerprint);
@@ -25648,6 +25693,7 @@ export class RuntimeController {
       activityId: context.activityId,
       columnId: columnId(`column:${observed.id}`),
       desktopId: context.desktopId,
+      ...(initialWindowHeight ? { initialWindowHeight } : {}),
       outputId: context.outputId,
       presentation: this.initialColumnPresentation(source),
       width,
@@ -28424,6 +28470,19 @@ export class RuntimeController {
     const width = this.applicationColumnWidths.columnWidthFor(desktopFileName);
 
     return width === undefined ? this.defaultColumnWidth : { ...width };
+  }
+
+  private initialWindowHeight(source: KWinWindow): WindowHeight | undefined {
+    const desktopFileName = source.desktopFileName;
+
+    if (typeof desktopFileName !== "string") {
+      return undefined;
+    }
+
+    const height =
+      this.applicationWindowHeights.windowHeightFor(desktopFileName);
+
+    return height === undefined ? undefined : { ...height };
   }
 
   private resolveManagedContext(window: ObservedWindow): ManagedContext | null {

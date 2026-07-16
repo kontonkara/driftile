@@ -475,6 +475,32 @@
         </widget>
        </item>
        <item>
+        <widget class="QLabel" name="applicationWindowHeightsLabel">
+         <property name="text">
+          <string>Application initial tiled client heights (% or px):</string>
+         </property>
+         <property name="buddy">
+          <cstring>kcfg_ApplicationWindowHeights</cstring>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPlainTextEdit" name="kcfg_ApplicationWindowHeights">
+         <property name="toolTip">
+          <string>Enter up to 128 exact, case-sensitive KWin desktopFileName and height pairs, one per line, for example org.kde.konsole=60 or org.mozilla.firefox=720px.</string>
+         </property>
+         <property name="whatsThis">
+          <string>Each nonempty desktopFileName=value line affects only fresh singleton tiled admission. After the equals sign, use a bare 10 to 100 percentage, an explicit 10% to 100% percentage, or a fixed 1px to 16384px logical client height. Existing, restored, and transferred geometry is unchanged. Solver constraints and output pixel-grid snapping remain authoritative.</string>
+         </property>
+         <property name="minimumSize">
+          <size>
+           <width>0</width>
+           <height>140</height>
+          </size>
+         </property>
+        </widget>
+       </item>
+       <item>
         <widget class="QLabel" name="applicationFocusCenteringLabel">
          <property name="text">
           <string>Applications centered during horizontal focus:</string>

@@ -5,6 +5,12 @@ import {
   type ApplicationColumnWidthOverrides,
 } from "./application-overrides";
 import {
+  decodeApplicationWindowHeightOverrides,
+  EMPTY_APPLICATION_WINDOW_HEIGHT_OVERRIDES,
+  sameApplicationWindowHeightOverrides,
+  type ApplicationWindowHeightOverrides,
+} from "./application-window-heights";
+import {
   decodeApplicationColumnPresentations,
   EMPTY_APPLICATION_COLUMN_PRESENTATIONS,
   sameApplicationColumnPresentations,
@@ -60,12 +66,13 @@ const MIN_RESIZE_STEP_PIXELS = 0;
 const MAX_RESIZE_STEP_PIXELS = 16_384;
 const MIN_TOUCHPAD_NAVIGATION_FINGER_COUNT = 3;
 const MAX_TOUCHPAD_NAVIGATION_FINGER_COUNT = 5;
-const SETTINGS_FIELD_COUNT = 26;
+const SETTINGS_FIELD_COUNT = 27;
 
 export interface DriftileSettings {
   readonly applicationBorderlessExclusions: ApplicationBorderlessExclusions;
   readonly applicationColumnPresentations: ApplicationColumnPresentations;
   readonly applicationColumnWidths: ApplicationColumnWidthOverrides;
+  readonly applicationWindowHeights: ApplicationWindowHeightOverrides;
   readonly applicationFocusCentering: ApplicationFocusCentering;
   readonly applicationInitialFloating: ApplicationInitialFloating;
   readonly applicationTilingExclusions: ApplicationTilingExclusions;
@@ -95,6 +102,7 @@ export const DEFAULT_DRIFTILE_SETTINGS: DriftileSettings = Object.freeze({
   applicationBorderlessExclusions: EMPTY_APPLICATION_BORDERLESS_EXCLUSIONS,
   applicationColumnPresentations: EMPTY_APPLICATION_COLUMN_PRESENTATIONS,
   applicationColumnWidths: EMPTY_APPLICATION_COLUMN_WIDTH_OVERRIDES,
+  applicationWindowHeights: EMPTY_APPLICATION_WINDOW_HEIGHT_OVERRIDES,
   applicationFocusCentering: EMPTY_APPLICATION_FOCUS_CENTERING,
   applicationInitialFloating: EMPTY_APPLICATION_INITIAL_FLOATING,
   applicationTilingExclusions: EMPTY_APPLICATION_TILING_EXCLUSIONS,
@@ -134,6 +142,7 @@ export function decodeDriftileSettings(
     !owns(candidate, "applicationBorderlessExclusions") ||
     !owns(candidate, "applicationColumnPresentations") ||
     !owns(candidate, "applicationColumnWidths") ||
+    !owns(candidate, "applicationWindowHeights") ||
     !owns(candidate, "applicationFocusCentering") ||
     !owns(candidate, "applicationInitialFloating") ||
     !owns(candidate, "applicationTilingExclusions") ||
@@ -169,6 +178,9 @@ export function decodeDriftileSettings(
   );
   const applicationColumnWidths = decodeApplicationColumnWidthOverrides(
     candidate["applicationColumnWidths"],
+  );
+  const applicationWindowHeights = decodeApplicationWindowHeightOverrides(
+    candidate["applicationWindowHeights"],
   );
   const applicationFocusCentering = decodeApplicationFocusCentering(
     candidate["applicationFocusCentering"],
@@ -210,6 +222,7 @@ export function decodeDriftileSettings(
     !applicationBorderlessExclusions ||
     !applicationColumnPresentations ||
     !applicationColumnWidths ||
+    !applicationWindowHeights ||
     !applicationFocusCentering ||
     !applicationInitialFloating ||
     !applicationTilingExclusions ||
@@ -269,6 +282,7 @@ export function decodeDriftileSettings(
     applicationBorderlessExclusions,
     applicationColumnPresentations,
     applicationColumnWidths,
+    applicationWindowHeights,
     applicationFocusCentering,
     applicationInitialFloating,
     applicationTilingExclusions,
@@ -311,6 +325,10 @@ export function sameDriftileSettings(
     sameApplicationColumnWidthOverrides(
       left.applicationColumnWidths,
       right.applicationColumnWidths,
+    ) &&
+    sameApplicationWindowHeightOverrides(
+      left.applicationWindowHeights,
+      right.applicationWindowHeights,
     ) &&
     sameApplicationFocusCentering(
       left.applicationFocusCentering,

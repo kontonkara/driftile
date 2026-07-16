@@ -3,6 +3,7 @@ import { decodeApplicationBorderlessExclusions } from "../src/application-border
 import { decodeApplicationColumnPresentations } from "../src/application-column-presentations";
 import { decodeApplicationInitialFloating } from "../src/application-initial-floating";
 import { decodeApplicationColumnWidthOverrides } from "../src/application-overrides";
+import { decodeApplicationWindowHeightOverrides } from "../src/application-window-heights";
 import { decodeApplicationFocusCentering } from "../src/application-focus-centering";
 import { decodeApplicationTilingExclusions } from "../src/application-tiling-exclusions";
 import {
@@ -8126,6 +8127,168 @@ describe("RuntimeController", () => {
           column.windowIds.includes(windowId("browser-constrained")),
         )?.width,
     ).toEqual({ kind: "fixed", value: 249.6 });
+  });
+
+  it("applies exact application heights only to fresh singleton admissions", () => {
+    const output = {
+      ...createOutput("DP-1", 0),
+      devicePixelRatio: 1.25,
+    } satisfies KWinOutput;
+    const targetOutput = {
+      ...createOutput("DP-2", 1000),
+      devicePixelRatio: 1.25,
+    } satisfies KWinOutput;
+    const desktop = { id: "desktop-1" };
+    const editor = createTrackedWindow("editor", output, desktop, {
+      clientGeometry: { height: 200, width: 300, x: 0, y: 20 },
+      desktopFileName: "org.example.Editor",
+      frameGeometry: { height: 220, width: 300, x: 0, y: 0 },
+    });
+    const caseMismatch = createTrackedWindow("case-mismatch", output, desktop, {
+      desktopFileName: "org.example.editor",
+    });
+    const utility = createTrackedWindow("utility", output, desktop, {
+      desktopFileName: "org.example.Utility",
+    });
+    const targetPeer = createTrackedWindow(
+      "target-peer",
+      targetOutput,
+      desktop,
+    );
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output, targetOutput],
+      [desktop],
+      [editor.window, caseMismatch.window, targetPeer.window],
+    );
+    const scheduler = new ManualScheduler();
+    const initialHeights = decodeApplicationWindowHeightOverrides(
+      "org.example.Editor=50%\norg.example.Utility=240px",
+    );
+    const initialFloating = decodeApplicationInitialFloating(
+      "org.example.Utility",
+    );
+
+    if (!initialHeights || !initialFloating) {
+      throw new Error("application height fixture is invalid");
+    }
+
+    const controller = new RuntimeController(fixture.workspace, {
+      applicationInitialFloating: initialFloating,
+      applicationWindowHeights: initialHeights,
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 200 },
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    let snapshot = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
+    );
+    expect(
+      snapshot.columns.find((column) =>
+        column.windowIds.includes(windowId("editor")),
+      )?.windowHeights,
+    ).toEqual([{ index: 150, kind: "preset" }]);
+    expect(
+      snapshot.columns.find((column) =>
+        column.windowIds.includes(windowId("case-mismatch")),
+      ),
+    ).not.toHaveProperty("windowHeights");
+    expect(editor.window.frameGeometry.height).toBe(384.8);
+    expect(Number.isInteger(editor.window.frameGeometry.height * 1.25)).toBe(
+      true,
+    );
+    fixture.windowAdded.emit(utility.window);
+    flushManualScheduler(scheduler);
+    expect(controller.floatingCount).toBe(1);
+    expect(
+      runtimeLayout(controller)
+        .snapshot(
+          outputId(output.name),
+          desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
+        )
+        .columns.some((column) =>
+          column.windowIds.includes(windowId("utility")),
+        ),
+    ).toBe(false);
+
+    fixture.workspace.activeWindow = utility.window;
+    expect(controller.moveWindowToTiling()).toBe(true);
+    expect(
+      runtimeLayout(controller)
+        .snapshot(
+          outputId(output.name),
+          desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
+        )
+        .columns.find((column) =>
+          column.windowIds.includes(windowId("utility")),
+        )?.windowHeights,
+    ).toEqual([{ clientHeight: 240, kind: "fixed" }]);
+
+    const updatedHeights = decodeApplicationWindowHeightOverrides(
+      "org.example.Editor=60\norg.example.Browser=321px",
+    );
+    const equivalentHeights = decodeApplicationWindowHeightOverrides(
+      "org.example.Browser=321px\norg.example.Editor=60%",
+    );
+
+    if (!updatedHeights || !equivalentHeights) {
+      throw new Error("application height fixture is invalid");
+    }
+
+    const editorFrame = { ...editor.window.frameGeometry };
+    const editorWrites = editor.writeCount;
+    expect(controller.setApplicationWindowHeights(updatedHeights)).toBe(true);
+    expect(controller.setApplicationWindowHeights(equivalentHeights)).toBe(
+      false,
+    );
+    expect(editor.window.frameGeometry).toEqual(editorFrame);
+    expect(editor.writeCount).toBe(editorWrites);
+    expect(scheduler.pendingCount).toBe(0);
+
+    const browser = createTrackedWindow("browser", output, desktop, {
+      clientGeometry: { height: 200, width: 300, x: 0, y: 20 },
+      desktopFileName: "org.example.Browser",
+      frameGeometry: { height: 220, width: 300, x: 0, y: 0 },
+    });
+    fixture.windowAdded.emit(browser.window);
+    flushManualScheduler(scheduler);
+    snapshot = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
+    );
+    expect(
+      snapshot.columns.find((column) =>
+        column.windowIds.includes(windowId("browser")),
+      )?.windowHeights,
+    ).toEqual([{ clientHeight: 321, kind: "fixed" }]);
+    expect(browser.window.clientGeometry.height).toBeCloseTo(320.8, 8);
+    expect(Number.isInteger(browser.window.frameGeometry.height * 1.25)).toBe(
+      true,
+    );
+
+    fixture.workspace.activeWindow = browser.window;
+    expect(controller.resetWindowHeight()).toBe(true);
+    expect(controller.moveColumnToOutputRight()).toBe(true);
+    expect(
+      runtimeLayout(controller)
+        .snapshot(
+          outputId(targetOutput.name),
+          desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
+        )
+        .columns.find((column) =>
+          column.windowIds.includes(windowId("browser")),
+        ),
+    ).not.toHaveProperty("windowHeights");
   });
 
   it("lets exact application presentations override the global default", () => {
