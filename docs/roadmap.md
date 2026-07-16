@@ -1628,3 +1628,5 @@ taking over compositor mechanisms.
 - Add opt-in output-local back-and-forth when a numbered direct desktop action
   resolves and clamps to the already current desktop, without changing
   adjacent or explicit last-used actions.
+- Preserve deferred movement when an active current-context window receives a
+  focus or geometry command before desktop-transition visibility settles.
