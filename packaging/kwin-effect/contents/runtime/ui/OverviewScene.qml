@@ -23,6 +23,7 @@ Rectangle {
                                                                         / desktopIds.length) : 0
     property bool desktopReorderAvailable: false
     property string keyboardSelectionId: ""
+    property string searchQuery: ""
     property bool desktopReorderActive: false
     property real desktopReorderCardGap: 0
     property real desktopReorderCardHeight: 0
@@ -43,27 +44,41 @@ Rectangle {
     property string desktopReorderSourceId: ""
     property int desktopReorderSourceIndex: -1
 
+    onSearchQueryChanged: Qt.callLater(root.repairKeyboardSelection)
+
     Keys.onPressed: event => {
-        if ((event.modifiers & ~Qt.KeypadModifier) !== Qt.NoModifier) {
+        const modifiers = event.modifiers & ~Qt.KeypadModifier;
+        const forbiddenModifiers = Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier;
+        if ((modifiers & forbiddenModifiers) !== Qt.NoModifier) {
             event.accepted = false;
             return;
         }
 
+        const unmodified = modifiers === Qt.NoModifier;
+        const searchTextModifier = unmodified || modifiers === Qt.ShiftModifier;
         let handled = true;
-        if (event.key === Qt.Key_Left) {
+        if (unmodified && event.key === Qt.Key_Left) {
             root.navigateKeyboardSelection("left");
-        } else if (event.key === Qt.Key_Right) {
+        } else if (unmodified && event.key === Qt.Key_Right) {
             root.navigateKeyboardSelection("right");
-        } else if (event.key === Qt.Key_Up) {
+        } else if (unmodified && event.key === Qt.Key_Up) {
             root.navigateKeyboardSelection("up");
-        } else if (event.key === Qt.Key_Down) {
+        } else if (unmodified && event.key === Qt.Key_Down) {
             root.navigateKeyboardSelection("down");
-        } else if (event.key === Qt.Key_Enter || event.key === Qt.Key_Return || event.key === Qt.Key_Space) {
+        } else if (unmodified
+                   && (event.key === Qt.Key_Enter || event.key === Qt.Key_Return
+                       || (event.key === Qt.Key_Space && searchQuery.length === 0))) {
             root.activateKeyboardSelection();
-        } else if (event.key === Qt.Key_Escape) {
-            if (sceneEffect) {
+        } else if (searchTextModifier && event.key === Qt.Key_Backspace && searchQuery.length > 0) {
+            root.removeLastSearchCharacter();
+        } else if (searchTextModifier && event.key === Qt.Key_Escape) {
+            if (searchQuery.length > 0) {
+                searchQuery = "";
+            } else if (sceneEffect) {
                 sceneEffect.deactivate();
             }
+        } else if (searchTextModifier && root.isPrintableSearchText(event.text)) {
+            root.appendSearchText(event.text);
         } else {
             handled = false;
         }
@@ -75,6 +90,17 @@ Rectangle {
         desktopReorderAvailable = typeof KWin.Workspace.moveDesktop === "function";
         forceActiveFocus();
         Qt.callLater(root.repairKeyboardSelection);
+    }
+
+    Connections {
+        target: root.sceneEffect
+        ignoreUnknownSignals: true
+
+        function onActiveChanged() {
+            if (!root.sceneEffect || root.sceneEffect.active !== true) {
+                root.searchQuery = "";
+            }
+        }
     }
 
     Connections {
@@ -131,6 +157,7 @@ Rectangle {
             desktopId: modelData
             floatingWindows: root.floatingFor(modelData)
             keyboardSelectionId: root.keyboardSelectionId
+            searchQuery: root.searchQuery
             screen: root.targetScreen
             onDesktopReorderCanceled: expectedDesktopId => root.cancelDesktopReorder(expectedDesktopId)
             onDesktopReorderGrabbed: (candidate, expectedDesktopId, expectedScreen, sceneX, sceneY) =>
@@ -151,6 +178,36 @@ Rectangle {
                                  root.moveWindowToDesktop(candidate, expectedWindowId, expectedSourceDesktop,
                                                           expectedSourceDesktopId, expectedTargetDesktop,
                                                           expectedTargetDesktopId, expectedScreen)
+        }
+    }
+
+    Rectangle {
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.top: parent.top
+        anchors.topMargin: Math.max(8, root.outerMargin * 0.3)
+        width: Math.min(Math.max(1, root.width - root.outerMargin * 2),
+                        Math.max(160, searchOverlayText.implicitWidth + 28))
+        height: 34
+        visible: root.searchQuery.length > 0
+        color: "#f21a2230"
+        border.width: 1
+        border.color: "#86aee8"
+        radius: 8
+        z: 20000
+
+        Text {
+            id: searchOverlayText
+
+            anchors.fill: parent
+            anchors.leftMargin: 14
+            anchors.rightMargin: 14
+            text: `Search: ${root.searchQuery}`
+            textFormat: Text.PlainText
+            color: "#f3f7ff"
+            font.pixelSize: 14
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            elide: Text.ElideRight
         }
     }
 
@@ -514,6 +571,55 @@ Rectangle {
         }
 
         return match;
+    }
+
+    function appendSearchText(input) {
+        const runtime = OverviewRuntime.DriftileOverview;
+        if (!runtime || typeof runtime.appendOverviewSearchText !== "function") {
+            return;
+        }
+
+        const current = searchQuery;
+        try {
+            const next = runtime.appendOverviewSearchText(current, input);
+            if (typeof next === "string") {
+                searchQuery = next;
+            }
+        } catch (error) {
+            return;
+        }
+    }
+
+    function removeLastSearchCharacter() {
+        const runtime = OverviewRuntime.DriftileOverview;
+        if (!runtime || typeof runtime.removeLastOverviewSearchCharacter !== "function") {
+            return;
+        }
+
+        const current = searchQuery;
+        try {
+            const next = runtime.removeLastOverviewSearchCharacter(current);
+            if (typeof next === "string") {
+                searchQuery = next;
+            }
+        } catch (error) {
+            return;
+        }
+    }
+
+    function isPrintableSearchText(input) {
+        if (typeof input !== "string" || input.length === 0) {
+            return false;
+        }
+
+        for (const character of input) {
+            const codePoint = character.codePointAt(0);
+            if (codePoint < 0x20 || (codePoint >= 0x7f && codePoint <= 0x9f)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     function selectDesktop(candidate, expectedDesktopId, expectedScreen) {

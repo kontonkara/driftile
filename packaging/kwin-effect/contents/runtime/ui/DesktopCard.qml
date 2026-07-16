@@ -1,5 +1,6 @@
 import QtQuick
 import org.kde.kwin as KWin
+import "../code/main.js" as OverviewRuntime
 
 Rectangle {
     id: card
@@ -12,6 +13,7 @@ Rectangle {
     required property string desktopId
     required property var floatingWindows
     required property var screen
+    required property string searchQuery
     property string keyboardSelectionId: ""
 
     signal desktopTapped(var candidate, string expectedDesktopId, var expectedScreen)
@@ -181,6 +183,7 @@ Rectangle {
                 id: windowPresentation
 
                 readonly property var candidate: model.window
+                readonly property bool matchesSearch: card.windowMatchesSearch(candidate)
                 readonly property string windowId: model.window ? String(model.window.internalId) : ""
                 readonly property var tiledPresentation: card.tiledPresentations[windowId]
                 readonly property var frame: card.frameForWindow(model.window, windowId)
@@ -211,11 +214,23 @@ Rectangle {
                         card.navigationTargetsChanged();
                     }
 
+                    function onCaptionChanged() {
+                        card.navigationTargetsChanged();
+                    }
+
+                    function onDesktopFileNameChanged() {
+                        card.navigationTargetsChanged();
+                    }
+
                     function onMinimizedChanged() {
                         card.navigationTargetsChanged();
                     }
 
                     function onOutputChanged() {
+                        card.navigationTargetsChanged();
+                    }
+
+                    function onWindowClassChanged() {
                         card.navigationTargetsChanged();
                     }
 
@@ -227,8 +242,8 @@ Rectangle {
                 Item {
                     id: thumbnailShell
 
-                    readonly property bool keyboardTarget: !windowPresentation.tiledPresentation
-                        || windowPresentation.tiledPresentation.selected
+                    readonly property bool keyboardTarget: windowPresentation.matchesSearch
+                        && (!windowPresentation.tiledPresentation || windowPresentation.tiledPresentation.selected)
                     readonly property bool keyboardSelected: keyboardTarget
                         && card.keyboardSelectionId === card.navigationTargetId(windowPresentation.windowId)
 
@@ -238,7 +253,7 @@ Rectangle {
                     height: windowPresentation.frame ? Math.max(1, windowPresentation.frame.height) : 0
                     visible: windowPresentation.selectedThumbnail && windowPresentation.frame !== null
                              && windowPresentation.frame !== undefined && model.window
-                             && !windowPresentation.minimizedWindow
+                             && !windowPresentation.minimizedWindow && windowPresentation.matchesSearch
                     clip: true
 
                     Drag.active: false
@@ -318,7 +333,7 @@ Rectangle {
                     readonly property var frame: windowPresentation.tiledPresentation
                         ? windowPresentation.tiledPresentation.tabFrame : null
                     readonly property bool keyboardTarget: windowPresentation.tiledPresentation
-                        && !windowPresentation.tiledPresentation.selected
+                        && !windowPresentation.tiledPresentation.selected && windowPresentation.matchesSearch
                     readonly property bool keyboardSelected: keyboardTarget
                         && card.keyboardSelectionId === card.navigationTargetId(windowPresentation.windowId)
 
@@ -326,7 +341,7 @@ Rectangle {
                     y: frame ? frame.y : 0
                     width: frame ? frame.width : 0
                     height: frame ? frame.height : 0
-                    visible: frame !== null && model.window
+                    visible: frame !== null && model.window && windowPresentation.matchesSearch
                     opacity: windowPresentation.minimizedWindow ? 0.6 : 1
                     color: windowPresentation.minimizedWindow ? "#252e3d"
                                                                : windowPresentation.tiledPresentation
@@ -482,6 +497,8 @@ Rectangle {
         }
     }
 
+    onSearchQueryChanged: card.navigationTargetsChanged()
+
     function collectNavigationTargets(sceneItem) {
         const targets = [];
         if (!sceneItem || !desktop || !screen) {
@@ -490,7 +507,7 @@ Rectangle {
 
         for (let index = 0; index < windowRepeater.count; index += 1) {
             const presentation = windowRepeater.itemAt(index);
-            if (!presentation || !windowIsActionable(presentation.candidate)) {
+            if (!presentation || !presentation.matchesSearch || !windowIsActionable(presentation.candidate)) {
                 continue;
             }
 
@@ -528,7 +545,8 @@ Rectangle {
             const sourceDesktop = presentation ? presentation.sourceDesktop : null;
             const sourceDesktopId = presentation ? presentation.sourceDesktopId : null;
             const sourceScreen = presentation ? presentation.sourceScreen : null;
-            if (!candidate || candidate.deleted || candidate.minimized || presentation.minimizedWindow
+            if (!candidate || presentation.matchesSearch !== true || candidate.deleted || candidate.minimized
+                    || presentation.minimizedWindow
                     || candidate.wantsInput !== true || candidate.normalWindow !== true
                     || candidate.managed !== true || candidate.moveable !== true || candidate.modal !== false
                     || candidate.internalId === undefined || candidate.internalId === null
@@ -565,6 +583,29 @@ Rectangle {
         return candidate && !candidate.deleted && !candidate.minimized && candidate.wantsInput === true
                 && candidate.output === screen && candidate.internalId !== undefined && candidate.internalId !== null
                 && String(candidate.internalId).length > 0;
+    }
+
+    function windowMatchesSearch(candidate) {
+        const query = typeof searchQuery === "string" ? searchQuery : "";
+        try {
+            const runtime = OverviewRuntime.DriftileOverview;
+            if (!runtime || typeof runtime.matchesOverviewWindowSearch !== "function") {
+                return query.length === 0;
+            }
+
+            return runtime.matchesOverviewWindowSearch(query, {
+                caption: candidate && candidate.caption !== undefined && candidate.caption !== null
+                    ? String(candidate.caption) : "",
+                resourceClass: candidate && candidate.resourceClass !== undefined && candidate.resourceClass !== null
+                    ? String(candidate.resourceClass) : "",
+                resourceName: candidate && candidate.resourceName !== undefined && candidate.resourceName !== null
+                    ? String(candidate.resourceName) : "",
+                desktopFileName: candidate && candidate.desktopFileName !== undefined
+                    && candidate.desktopFileName !== null ? String(candidate.desktopFileName) : ""
+            }) === true;
+        } catch (error) {
+            return query.length === 0;
+        }
     }
 
     function clippedNavigationRect(visual, sceneItem) {

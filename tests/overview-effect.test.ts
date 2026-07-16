@@ -860,10 +860,13 @@ describe("overview effect package", () => {
     expect(scene).toContain('import "../code/main.js" as OverviewRuntime');
     expect(scene).toContain('property string keyboardSelectionId: ""');
     expect(keyHandler).toContain(
-      "(event.modifiers & ~Qt.KeypadModifier) !== Qt.NoModifier",
+      "const modifiers = event.modifiers & ~Qt.KeypadModifier",
+    );
+    expect(keyHandler).toContain(
+      "const forbiddenModifiers = Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier",
     );
     expect(keyHandler).toMatch(
-      /\(event\.modifiers & ~Qt\.KeypadModifier\) !== Qt\.NoModifier\) \{\s*event\.accepted = false;\s*return;/u,
+      /\(modifiers & forbiddenModifiers\) !== Qt\.NoModifier\) \{\s*event\.accepted = false;\s*return;/u,
     );
     for (const [key, direction] of [
       ["Left", "left"],
@@ -966,6 +969,69 @@ describe("overview effect package", () => {
     ).not.toContain("keyboardSelectionId");
     expect(`${scene}\n${desktopCard}`).not.toMatch(
       /\bTimer\s*\{|KWin\.Workspace\.(?:stackingOrder|windows)\b|\.setValue\s*\(/u,
+    );
+  });
+
+  it("filters overview windows through one bounded session query", () => {
+    const keyHandler = scene.slice(
+      scene.indexOf("Keys.onPressed:"),
+      scene.indexOf("Component.onCompleted:"),
+    );
+    const searchFunctions = scene.slice(
+      scene.indexOf("function appendSearchText("),
+      scene.indexOf("function selectDesktop("),
+    );
+    const matcher = desktopCard.slice(
+      desktopCard.indexOf("function windowMatchesSearch("),
+      desktopCard.indexOf("function clippedNavigationRect("),
+    );
+
+    expect(scene).toContain('property string searchQuery: ""');
+    expect(scene).toContain("searchQuery: root.searchQuery");
+    expect(scene).toContain(
+      "onSearchQueryChanged: Qt.callLater(root.repairKeyboardSelection)",
+    );
+    expect(keyHandler).toContain("event.key === Qt.Key_Backspace");
+    expect(keyHandler).toContain("root.removeLastSearchCharacter()");
+    expect(keyHandler).toContain(
+      "event.key === Qt.Key_Space && searchQuery.length === 0",
+    );
+    expect(keyHandler).toMatch(
+      /event\.key === Qt\.Key_Escape[\s\S]*searchQuery = "";[\s\S]*sceneEffect\.deactivate\(\);/u,
+    );
+    expect(keyHandler).toContain("root.isPrintableSearchText(event.text)");
+    expect(searchFunctions).toContain(
+      'typeof runtime.appendOverviewSearchText !== "function"',
+    );
+    expect(searchFunctions).toContain(
+      'typeof runtime.removeLastOverviewSearchCharacter !== "function"',
+    );
+    expect(scene).toContain("function onActiveChanged()");
+    expect(scene).toContain('root.searchQuery = ""');
+    expect(scene).toContain("textFormat: Text.PlainText");
+    expect(scene).not.toContain("TextInput");
+
+    expect(desktopCard).toContain("required property string searchQuery");
+    expect(desktopCard).toContain(
+      "readonly property bool matchesSearch: card.windowMatchesSearch(candidate)",
+    );
+    expect(desktopCard).toContain("!presentation.matchesSearch");
+    expect(desktopCard).toContain("function onCaptionChanged()");
+    expect(desktopCard).toContain("function onDesktopFileNameChanged()");
+    expect(desktopCard).toContain("function onWindowClassChanged()");
+    for (const field of [
+      "caption",
+      "resourceClass",
+      "resourceName",
+      "desktopFileName",
+    ]) {
+      expect(matcher).toContain(`${field}:`);
+    }
+    expect(matcher).toContain(
+      'typeof runtime.matchesOverviewWindowSearch !== "function"',
+    );
+    expect(`${scene}\n${desktopCard}`).not.toMatch(
+      /\b(?:Timer|TextInput)\s*\{|\.setValue\s*\(/u,
     );
   });
 
