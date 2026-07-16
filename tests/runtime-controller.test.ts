@@ -24956,6 +24956,45 @@ describe("RuntimeController", () => {
     });
   });
 
+  it("cycles mixed proportional and fixed column widths", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const active = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [active.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    expect(
+      controller.setColumnWidthPresets([
+        { kind: "proportion", value: 0.25 },
+        { kind: "fixed", value: 600 },
+        { kind: "proportion", value: 0.75 },
+      ]),
+    ).toBe(true);
+    expect(controller.start()).toBe(true);
+
+    expect(controller.switchPresetColumnWidth()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "fixed",
+      value: 600,
+    });
+    expect(active.window.frameGeometry.width).toBe(600);
+
+    expect(controller.switchPresetColumnWidth()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "proportion",
+      value: 0.75,
+    });
+  });
+
   it("restores exact legacy thirds from an empty preset list", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
@@ -25579,6 +25618,64 @@ describe("RuntimeController", () => {
       { index: 125, kind: "preset" },
     ]);
     expect(requiredLayoutDocument(restored)).toBe(customDocument);
+    restored.stop();
+  });
+
+  it("keeps a fixed height preset stable after its live profile changes", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const active = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [active.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    expect(
+      controller.setWindowHeightPresets([
+        {
+          policy: { kind: "proportion", value: 0.25 },
+          stateIndex: 125,
+        },
+        { policy: { kind: "fixed", value: 300 }, stateIndex: 500 },
+        {
+          policy: { kind: "proportion", value: 0.75 },
+          stateIndex: 175,
+        },
+      ]),
+    ).toBe(true);
+    expect(controller.start()).toBe(true);
+    expect(controller.switchPresetWindowHeight()).toBe(true);
+    expect(controller.switchPresetWindowHeight()).toBe(true);
+    expect(active.window.frameGeometry.height).toBe(300);
+    expect(activeColumnWindowHeights(controller, output, desktop)).toEqual([
+      { index: 500, kind: "preset" },
+    ]);
+
+    const document = requiredLayoutDocument(controller);
+    expect(controller.setWindowHeightPresets([30, 60, 90])).toBe(true);
+    expect(controller.reconcile()).toBe(0);
+    expect(active.window.frameGeometry.height).toBe(300);
+    expect(activeColumnWindowHeights(controller, output, desktop)).toEqual([
+      { index: 500, kind: "preset" },
+    ]);
+    controller.stop();
+
+    const restored = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+    expect(restored.start(document)).toBe(true);
+    expect(active.window.frameGeometry.height).toBe(300);
+    expect(activeColumnWindowHeights(restored, output, desktop)).toEqual([
+      { index: 500, kind: "preset" },
+    ]);
     restored.stop();
   });
 

@@ -1092,12 +1092,37 @@ describe("solveStripGeometry", () => {
       windowHeightPresets: [{ kind: "fixed", value: 300 }],
       workArea: { height: 1000, width: 1000, x: 0, y: 0 },
     });
+    const resolvedFixed = solveStripGeometry({
+      context: {
+        ...context,
+        columns: [
+          {
+            ...column,
+            windowHeights: [
+              { index: 840, kind: "preset" },
+              { kind: "auto", weight: 1 },
+            ],
+            windowIds: [first, windowId("window-2")],
+          },
+        ],
+      },
+      devicePixelRatio: 1,
+      gap: 10,
+      pixelGridOrigin: { x: 0, y: 0 },
+      windowHeightBounds: new Map([[first, { decorationHeight: 20 }]]),
+      windowHeightPresetResolver: (stateIndex) =>
+        stateIndex === 840 ? { kind: "fixed", value: 640 } : null,
+      workArea: { height: 1000, width: 1000, x: 0, y: 0 },
+    });
 
     expect(proportional.windows.map((window) => window.frame.height)).toEqual([
       485, 485,
     ]);
     expect(fixed.windows.map((window) => window.frame.height)).toEqual([
       320, 650,
+    ]);
+    expect(resolvedFixed.windows.map((window) => window.frame.height)).toEqual([
+      660, 310,
     ]);
   });
 

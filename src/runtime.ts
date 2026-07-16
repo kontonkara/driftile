@@ -134,11 +134,9 @@ export function init(
   nextController.setCenterFocusedColumnOnOverflow(
     settings.centerFocusedColumnOnOverflow,
   );
-  nextController.setColumnWidthPresets(settings.columnWidthPresets.percentages);
+  nextController.setColumnWidthPresets(settings.columnWidthPresets.presets);
   nextController.setColumnWidthStepPercent(settings.columnWidthStepPercent);
-  nextController.setWindowHeightPresets(
-    settings.windowHeightPresets.percentages,
-  );
+  nextController.setWindowHeightPresets(settings.windowHeightPresets.cycle);
   nextController.setWindowHeightStepPercent(settings.windowHeightStepPercent);
 
   if (!nextController.start(layoutPersistence.initialState)) {
@@ -207,9 +205,9 @@ export function applySettings(settingsSnapshot: unknown): boolean {
   controller.setDefaultColumnPresentation(settings.defaultColumnPresentation);
   controller.setDefaultColumnWidthPercent(settings.defaultColumnWidthPercent);
   controller.setEmptyDesktopAboveFirst(settings.emptyDesktopAboveFirst);
-  controller.setColumnWidthPresets(settings.columnWidthPresets.percentages);
+  controller.setColumnWidthPresets(settings.columnWidthPresets.presets);
   controller.setColumnWidthStepPercent(settings.columnWidthStepPercent);
-  controller.setWindowHeightPresets(settings.windowHeightPresets.percentages);
+  controller.setWindowHeightPresets(settings.windowHeightPresets.cycle);
   controller.setWindowHeightStepPercent(settings.windowHeightStepPercent);
   controller.setGap(settings.gap);
 

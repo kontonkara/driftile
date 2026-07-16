@@ -817,6 +817,42 @@ describe("layout persistence codec", () => {
     expect(() => encodeLayoutPersistence(hugeViewport)).toThrow();
   });
 
+  it("persists the bounded fixed-height preset state range", () => {
+    const state = persistedState();
+    const context = required(state.contexts[0]);
+    const column = required(context.columns[0]);
+    const member = required(column.members[0]);
+    const withPresetIndex = (index: number): LayoutPersistenceV4 => ({
+      ...state,
+      contexts: [
+        {
+          ...context,
+          columns: [
+            {
+              ...column,
+              members: [
+                { ...member, height: { index, kind: "preset" } },
+                ...column.members.slice(1),
+              ],
+            },
+            ...context.columns.slice(1),
+          ],
+        },
+      ],
+    });
+
+    expect(() =>
+      encodeLayoutPersistence(
+        withPresetIndex(LAYOUT_PERSISTENCE_LIMITS.presetIndex),
+      ),
+    ).not.toThrow();
+    expect(() =>
+      encodeLayoutPersistence(
+        withPresetIndex(LAYOUT_PERSISTENCE_LIMITS.presetIndex + 1),
+      ),
+    ).toThrow();
+  });
+
   it("strictly validates restore baseline geometry and metadata", () => {
     const state = persistedState();
     const context = required(state.contexts[0]);

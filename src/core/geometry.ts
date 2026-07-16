@@ -20,6 +20,9 @@ export interface StripGeometryInput {
   readonly gap: number;
   readonly pixelGridOrigin: Point;
   readonly windowHeightBounds?: ReadonlyMap<WindowId, WindowHeightBounds>;
+  readonly windowHeightPresetResolver?: (
+    stateIndex: number,
+  ) => ColumnWidth | null;
   readonly windowHeightPresets?: readonly ColumnWidth[];
   readonly workArea: Rect;
 }
@@ -959,7 +962,8 @@ function resolveNonAutomaticFrameHeight(
   }
 
   const presets = input.windowHeightPresets ?? DEFAULT_WINDOW_HEIGHT_PRESETS;
-  const preset = presets[height.index];
+  const preset =
+    input.windowHeightPresetResolver?.(height.index) ?? presets[height.index];
 
   if (!preset) {
     throw new RangeError("window height preset index is out of range");
@@ -1100,6 +1104,13 @@ function resolveColumnWidth(
 }
 
 function validateInput(input: StripGeometryInput): void {
+  if (
+    input.windowHeightPresetResolver !== undefined &&
+    typeof input.windowHeightPresetResolver !== "function"
+  ) {
+    throw new RangeError("window height preset resolver must be a function");
+  }
+
   for (const value of [
     input.workArea.x,
     input.workArea.y,

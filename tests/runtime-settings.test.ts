@@ -6,7 +6,9 @@ import type { ApplicationInitialFloating } from "../src/application-initial-floa
 import type { ApplicationColumnWidthOverrides } from "../src/application-overrides";
 import type { ApplicationFocusCentering } from "../src/application-focus-centering";
 import type { ApplicationTilingExclusions } from "../src/application-tiling-exclusions";
+import type { ColumnWidth } from "../src/core/layout-engine";
 import type { KWinWorkspace } from "../src/platform/kwin/api";
+import type { WindowHeightPresetCycleEntry } from "../src/window-height-presets";
 
 interface DeliveredSettings {
   readonly applicationBorderlessExclusions: readonly string[];
@@ -19,13 +21,13 @@ interface DeliveredSettings {
   readonly borderlessWindows: boolean;
   readonly centerFocusedColumn: boolean;
   readonly centerFocusedColumnOnOverflow: boolean;
-  readonly columnWidthPresets: readonly number[];
+  readonly columnWidthPresets: readonly ColumnWidth[];
   readonly columnWidthStepPercent: number;
   readonly defaultColumnPresentation: "stacked" | "tabbed";
   readonly defaultColumnWidthPercent: number;
   readonly emptyDesktopAboveFirst: boolean;
   readonly gap: number;
-  readonly windowHeightPresets: readonly number[];
+  readonly windowHeightPresets: readonly WindowHeightPresetCycleEntry[];
   readonly windowHeightStepPercent: number;
 }
 
@@ -209,9 +211,12 @@ class RuntimeControllerDouble {
     return true;
   }
 
-  setColumnWidthPresets(values: readonly number[]): boolean {
+  setColumnWidthPresets(values: readonly ColumnWidth[]): boolean {
     this.calls.push("columnWidthPresets");
-    this.state = { ...this.state, columnWidthPresets: [...values] };
+    this.state = {
+      ...this.state,
+      columnWidthPresets: values.map((value) => ({ ...value })),
+    };
     return true;
   }
 
@@ -251,9 +256,17 @@ class RuntimeControllerDouble {
     return true;
   }
 
-  setWindowHeightPresets(values: readonly number[]): boolean {
+  setWindowHeightPresets(
+    values: readonly WindowHeightPresetCycleEntry[],
+  ): boolean {
     this.calls.push("windowHeightPresets");
-    this.state = { ...this.state, windowHeightPresets: [...values] };
+    this.state = {
+      ...this.state,
+      windowHeightPresets: values.map((value) => ({
+        policy: { ...value.policy },
+        stateIndex: value.stateIndex,
+      })),
+    };
     return true;
   }
 }
@@ -284,7 +297,7 @@ describe("runtime settings delivery", () => {
       applicationTilingExclusions: "org.example.InitiallyExcluded",
       alwaysCenterSingleColumn: true,
       emptyDesktopAboveFirst: true,
-      windowHeightPresets: "30,60,90",
+      windowHeightPresets: "30,640px,60,960px,90",
     });
 
     runtime.init(
@@ -312,9 +325,9 @@ describe("runtime settings delivery", () => {
     expect(controller.deliveredSettings.applicationInitialFloating).toEqual([
       "org.example.InitialFloat",
     ]);
-    expect(controller.deliveredSettings.windowHeightPresets).toEqual([
-      30, 60, 90,
-    ]);
+    expect(controller.deliveredSettings.windowHeightPresets).toEqual(
+      heightPresetCycle([30, "640px", 60, "960px", 90]),
+    );
     expect(controller.deliveredSettings.alwaysCenterSingleColumn).toBe(true);
     expect(controller.deliveredSettings.emptyDesktopAboveFirst).toBe(true);
     expect(runtime.getTouchpadWorkspaceNavigation()).toBe(false);
@@ -341,7 +354,7 @@ describe("runtime settings delivery", () => {
       borderlessWindows: false,
       centerFocusedColumn: true,
       centerFocusedColumnOnOverflow: true,
-      columnWidthPresets: "20,50,80",
+      columnWidthPresets: "20,640px,50,1280px,80",
       columnWidthStepPercent: 13,
       defaultColumnPresentation: "tabbed",
       defaultColumnWidthPercent: 65,
@@ -351,7 +364,7 @@ describe("runtime settings delivery", () => {
       touchpadNavigationFingerCount: 3,
       touchpadNaturalScroll: false,
       touchpadWorkspaceNavigation: true,
-      windowHeightPresets: "25,50,75",
+      windowHeightPresets: "25,480px,50,960px,75",
       windowHeightStepPercent: 17,
     });
     const expected: DeliveredSettings = {
@@ -365,13 +378,13 @@ describe("runtime settings delivery", () => {
       borderlessWindows: false,
       centerFocusedColumn: true,
       centerFocusedColumnOnOverflow: true,
-      columnWidthPresets: [20, 50, 80],
+      columnWidthPresets: columnWidthPolicies([20, "640px", 50, "1280px", 80]),
       columnWidthStepPercent: 13,
       defaultColumnPresentation: "tabbed",
       defaultColumnWidthPercent: 65,
       emptyDesktopAboveFirst: false,
       gap: 7.5,
-      windowHeightPresets: [25, 50, 75],
+      windowHeightPresets: heightPresetCycle([25, "480px", 50, "960px", 75]),
       windowHeightStepPercent: 17,
     };
 
@@ -537,7 +550,41 @@ function snapshot(settingsValue: DeliveredSettings): DeliveredSettings {
     applicationFocusCentering: [...settingsValue.applicationFocusCentering],
     applicationInitialFloating: [...settingsValue.applicationInitialFloating],
     applicationTilingExclusions: [...settingsValue.applicationTilingExclusions],
-    columnWidthPresets: [...settingsValue.columnWidthPresets],
-    windowHeightPresets: [...settingsValue.windowHeightPresets],
+    columnWidthPresets: settingsValue.columnWidthPresets.map((value) => ({
+      ...value,
+    })),
+    windowHeightPresets: settingsValue.windowHeightPresets.map((value) => ({
+      policy: { ...value.policy },
+      stateIndex: value.stateIndex,
+    })),
   };
+}
+
+function columnWidthPolicies(
+  values: readonly (number | `${number}px`)[],
+): readonly ColumnWidth[] {
+  return values.map((value) =>
+    typeof value === "number"
+      ? { kind: "proportion", value: value / 100 }
+      : { kind: "fixed", value: Number(value.slice(0, -2)) },
+  );
+}
+
+function heightPresetCycle(
+  values: readonly (number | `${number}px`)[],
+): readonly WindowHeightPresetCycleEntry[] {
+  return values.map((value) => {
+    if (typeof value === "number") {
+      return {
+        policy: { kind: "proportion", value: value / 100 },
+        stateIndex: 100 + value,
+      };
+    }
+
+    const pixels = Number(value.slice(0, -2));
+    return {
+      policy: { kind: "fixed", value: pixels },
+      stateIndex: 200 + pixels,
+    };
+  });
 }

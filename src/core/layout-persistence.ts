@@ -21,7 +21,7 @@ export const LAYOUT_PERSISTENCE_LIMITS = Object.freeze({
   membersPerColumn: 256,
   numericMagnitude: 1_000_000,
   outputs: 32,
-  presetIndex: 255,
+  presetIndex: 16_584,
   windows: 4_096,
 });
 

@@ -31,7 +31,8 @@ import {
 import { COLUMN_WIDTH_PRESET_LIMITS } from "./column-width-presets";
 import {
   DEFAULT_WINDOW_HEIGHT_PRESET_CYCLE,
-  WINDOW_HEIGHT_PRESET_RESOLUTION_TABLE,
+  WINDOW_HEIGHT_PRESET_LIMITS,
+  resolveWindowHeightPresetPolicy,
   sameWindowHeightPresetCycles,
   windowHeightPresetCycleFromPercentages,
   type WindowHeightPresetCycleEntry,
@@ -1950,8 +1951,10 @@ export class RuntimeController {
     return true;
   }
 
-  setColumnWidthPresets(percentages: readonly number[]): boolean {
-    const presets = columnWidthPresetsFromPercentages(percentages);
+  setColumnWidthPresets(
+    values: readonly number[] | readonly ColumnWidth[],
+  ): boolean {
+    const presets = normalizeColumnWidthPresetValues(values);
 
     if (!presets || sameColumnWidths(this.columnWidthPresets, presets)) {
       return false;
@@ -1978,8 +1981,10 @@ export class RuntimeController {
     return true;
   }
 
-  setWindowHeightPresets(percentages: readonly number[]): boolean {
-    const cycle = windowHeightPresetCycleFromPercentages(percentages);
+  setWindowHeightPresets(
+    values: readonly number[] | readonly WindowHeightPresetCycleEntry[],
+  ): boolean {
+    const cycle = normalizeWindowHeightPresetValues(values);
 
     if (
       !cycle ||
@@ -16455,7 +16460,7 @@ export class RuntimeController {
     return solveStripGeometry({
       ...input,
       windowHeightBounds,
-      windowHeightPresets: WINDOW_HEIGHT_PRESET_RESOLUTION_TABLE,
+      windowHeightPresetResolver: resolveWindowHeightPresetPolicy,
     });
   }
 
@@ -29151,6 +29156,133 @@ function columnWidthPresetsFromPercentages(
   }
 
   return presets;
+}
+
+function normalizeColumnWidthPresetValues(
+  values: readonly number[] | readonly ColumnWidth[],
+): readonly ColumnWidth[] | null {
+  if (!Array.isArray(values)) {
+    return null;
+  }
+
+  if (values.length === 0 || typeof values[0] === "number") {
+    return columnWidthPresetsFromPercentages(values as readonly number[]);
+  }
+
+  if (values.length > COLUMN_WIDTH_PRESET_LIMITS.entries) {
+    return null;
+  }
+
+  const presets: ColumnWidth[] = [];
+  let previousFixed = 0;
+  let previousProportion = 0;
+
+  for (const value of values as readonly unknown[]) {
+    if (typeof value !== "object" || value === null) {
+      return null;
+    }
+
+    const policy = value as Partial<ColumnWidth>;
+
+    if (
+      policy.kind === "fixed" &&
+      typeof policy.value === "number" &&
+      Number.isInteger(policy.value) &&
+      policy.value >= COLUMN_WIDTH_PRESET_LIMITS.minimumFixed &&
+      policy.value <= COLUMN_WIDTH_PRESET_LIMITS.maximumFixed &&
+      policy.value > previousFixed
+    ) {
+      previousFixed = policy.value;
+      presets.push({ kind: policy.kind, value: policy.value });
+      continue;
+    }
+
+    if (
+      policy.kind === "proportion" &&
+      typeof policy.value === "number" &&
+      Number.isFinite(policy.value) &&
+      policy.value >= COLUMN_WIDTH_PRESET_LIMITS.minimumPercent / 100 &&
+      policy.value <= COLUMN_WIDTH_PRESET_LIMITS.maximumPercent / 100 &&
+      policy.value > previousProportion
+    ) {
+      previousProportion = policy.value;
+      presets.push({ kind: policy.kind, value: policy.value });
+      continue;
+    }
+
+    return null;
+  }
+
+  return presets;
+}
+
+function normalizeWindowHeightPresetValues(
+  values: readonly number[] | readonly WindowHeightPresetCycleEntry[],
+): readonly WindowHeightPresetCycleEntry[] | null {
+  if (!Array.isArray(values)) {
+    return null;
+  }
+
+  if (values.length === 0 || typeof values[0] === "number") {
+    return windowHeightPresetCycleFromPercentages(values as readonly number[]);
+  }
+
+  if (values.length > WINDOW_HEIGHT_PRESET_LIMITS.entries) {
+    return null;
+  }
+
+  const cycle: WindowHeightPresetCycleEntry[] = [];
+  const stateIndexes = new Set<number>();
+  let previousFixed = 0;
+  let previousProportion = 0;
+
+  for (const value of values as readonly unknown[]) {
+    if (typeof value !== "object" || value === null) {
+      return null;
+    }
+
+    const entry = value as Partial<WindowHeightPresetCycleEntry>;
+    const stateIndex = entry.stateIndex;
+    const policy = entry.policy;
+
+    if (
+      typeof stateIndex !== "number" ||
+      !Number.isInteger(stateIndex) ||
+      stateIndex < 0 ||
+      stateIndexes.has(stateIndex) ||
+      !policy
+    ) {
+      return null;
+    }
+
+    const resolved = resolveWindowHeightPresetPolicy(stateIndex);
+
+    if (!resolved || !sameColumnWidth(policy, resolved)) {
+      return null;
+    }
+
+    if (policy.kind === "fixed") {
+      if (policy.value <= previousFixed) {
+        return null;
+      }
+
+      previousFixed = policy.value;
+    } else {
+      if (policy.value <= previousProportion) {
+        return null;
+      }
+
+      previousProportion = policy.value;
+    }
+
+    stateIndexes.add(stateIndex);
+    cycle.push({
+      policy: { kind: policy.kind, value: policy.value },
+      stateIndex,
+    });
+  }
+
+  return cycle;
 }
 
 function normalizeGap(value: number): number | null {
