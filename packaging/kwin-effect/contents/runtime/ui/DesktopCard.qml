@@ -339,11 +339,17 @@ Rectangle {
                                 thumbnailShell.Drag.active = true;
                             } else if (transition === PointerDevice.UngrabExclusive) {
                                 if (point.state === EventPoint.Released) {
-                                    thumbnailShell.Drag.drop();
+                                    const source = windowPresentation;
+                                    const action = thumbnailShell.Drag.drop();
+                                    thumbnailShell.Drag.active = false;
+                                    if (action === Qt.MoveAction) {
+                                        return;
+                                    }
+                                    card.requestCrossOutputWindowDrop(source, point);
                                 } else {
                                     thumbnailShell.Drag.cancel();
+                                    thumbnailShell.Drag.active = false;
                                 }
-                                thumbnailShell.Drag.active = false;
                             } else if (transition === PointerDevice.CancelGrabExclusive
                                        || transition === PointerDevice.CancelGrabPassive) {
                                 thumbnailShell.Drag.cancel();
@@ -449,11 +455,17 @@ Rectangle {
                                 tabShell.Drag.active = true;
                             } else if (transition === PointerDevice.UngrabExclusive) {
                                 if (point.state === EventPoint.Released) {
-                                    tabShell.Drag.drop();
+                                    const source = windowPresentation;
+                                    const action = tabShell.Drag.drop();
+                                    tabShell.Drag.active = false;
+                                    if (action === Qt.MoveAction) {
+                                        return;
+                                    }
+                                    card.requestCrossOutputWindowDrop(source, point);
                                 } else {
                                     tabShell.Drag.cancel();
+                                    tabShell.Drag.active = false;
                                 }
-                                tabShell.Drag.active = false;
                             } else if (transition === PointerDevice.CancelGrabExclusive
                                        || transition === PointerDevice.CancelGrabPassive) {
                                 tabShell.Drag.cancel();
@@ -624,6 +636,34 @@ Rectangle {
                     && String(desktops[0].id) === sourceDesktopId;
         } catch (error) {
             return false;
+        }
+    }
+
+    function requestCrossOutputWindowDrop(source, point) {
+        if (!source || !point || !screen || !Number.isFinite(point.scenePosition.x)
+                || !Number.isFinite(point.scenePosition.y)) {
+            return;
+        }
+
+        const effect = KWin.SceneView.effect;
+        if (!effect || typeof effect.checkItemDroppedOutOfScreen !== "function") {
+            return;
+        }
+
+        let globalPosition;
+        try {
+            globalPosition = screen.mapToGlobal(point.scenePosition);
+        } catch (error) {
+            return;
+        }
+        if (!globalPosition || !Number.isFinite(globalPosition.x) || !Number.isFinite(globalPosition.y)) {
+            return;
+        }
+
+        try {
+            effect.checkItemDroppedOutOfScreen(globalPosition, source);
+        } catch (error) {
+            return;
         }
     }
 

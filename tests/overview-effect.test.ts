@@ -415,6 +415,8 @@ describe("overview effect package", () => {
         .match(/(?:model\.window|candidate)\.[A-Za-z0-9_]+\s*=(?!=)/gu) ?? [];
     expect(windowWrites.map((write) => write.replace(/\s*=$/u, ""))).toEqual([
       "candidate.desktops",
+      "candidate.desktops",
+      "candidate.desktops",
     ]);
     expect(qmlSources.join("\n")).not.toMatch(/\.setValue\s*\(/u);
   });
@@ -651,7 +653,7 @@ describe("overview effect package", () => {
     expect(desktopCard.match(/\bDragHandler\s*\{/gu)).toHaveLength(3);
     expect(desktopCard.match(/\bDropArea\s*\{/gu)).toHaveLength(1);
     expect(desktopCard.match(/\.Drag\.active = true;/gu)).toHaveLength(2);
-    expect(desktopCard.match(/\.Drag\.active = false;/gu)).toHaveLength(4);
+    expect(desktopCard.match(/\.Drag\.active = false;/gu)).toHaveLength(6);
     expect(delegate).toMatch(
       /onWindowDropped:\s*\(candidate, expectedWindowId, expectedSourceDesktop, expectedSourceDesktopId,\s*expectedTargetDesktop, expectedTargetDesktopId, expectedScreen\)\s*=>\s*root\.moveWindowToDesktop\(candidate, expectedWindowId, expectedSourceDesktop,\s*expectedSourceDesktopId, expectedTargetDesktop,\s*expectedTargetDesktopId, expectedScreen\)/u,
     );
@@ -677,9 +679,10 @@ describe("overview effect package", () => {
       "accepted = runtime.planOverviewWindowDesktopDrop(model, {",
     );
     for (const field of [
-      "outputId: expectedOutputId",
       "sourceDesktopId: expectedSourceDesktopId",
+      "sourceOutputId: expectedOutputId",
       "targetDesktopId: expectedTargetDesktopId",
+      "targetOutputId: expectedOutputId",
       "windowId: expectedWindowId",
     ]) {
       expect(transaction).toContain(field);
@@ -722,7 +725,7 @@ describe("overview effect package", () => {
     }
 
     expect(
-      scene.match(/candidate\.desktops\s*=\s*\[liveTargetDesktop\]/gu),
+      transaction.match(/candidate\.desktops\s*=\s*\[liveTargetDesktop\]/gu),
     ).toHaveLength(1);
     expect(transaction).toContain(
       "windowUsesDesktop(candidate, liveSourceDesktop, expectedSourceDesktopId)",
@@ -758,6 +761,169 @@ describe("overview effect package", () => {
 
     expect(transaction).not.toMatch(
       /KWin\.(?:SceneView|Workspace)\.[A-Za-z0-9_]+\s*=(?!=)|candidate\.(?:output|geometry|frameGeometry)\s*=(?!=)|org\.kde\.kwin\.private|\bTimer\s*\{|setTimeout|\.setValue\s*\(/u,
+    );
+  });
+
+  it("moves one exact live window across outputs and compensates partial writes", () => {
+    const sourceHandlers = desktopCard.slice(
+      desktopCard.indexOf("id: thumbnailDragHandler"),
+      desktopCard.indexOf("function windowCanRequestClose("),
+    );
+    const transport = desktopCard.slice(
+      desktopCard.indexOf("function requestCrossOutputWindowDrop("),
+      desktopCard.indexOf("function windowCanRequestClose("),
+    );
+    const effectConnections = scene.slice(
+      scene.indexOf("target: root.sceneEffect"),
+      scene.indexOf("target: KWin.Workspace"),
+    );
+    const targetResolution = scene.slice(
+      scene.indexOf("function handleCrossOutputWindowDrop("),
+      scene.indexOf("function moveWindowAcrossOutputs("),
+    );
+    const transaction = scene.slice(
+      scene.indexOf("function moveWindowAcrossOutputs("),
+      scene.indexOf("function settleFailedCrossOutputWindowDrop("),
+    );
+    const settlement = scene.slice(
+      scene.indexOf("function settleFailedCrossOutputWindowDrop("),
+      scene.indexOf("function crossOutputDropSceneIsExact("),
+    );
+    const sceneGuard = scene.slice(
+      scene.indexOf("function crossOutputDropSceneIsExact("),
+      scene.indexOf("function moveWindowToDesktop("),
+    );
+
+    expect(
+      sourceHandlers.match(/const action = .*\.Drag\.drop\(\);/gu),
+    ).toHaveLength(2);
+    expect(sourceHandlers.match(/action === Qt\.MoveAction/gu)).toHaveLength(2);
+    expect(
+      sourceHandlers.match(
+        /card\.requestCrossOutputWindowDrop\(source, point\)/gu,
+      ),
+    ).toHaveLength(2);
+    expect(transport).toContain("screen.mapToGlobal(point.scenePosition)");
+    expect(transport).toContain(
+      'typeof effect.checkItemDroppedOutOfScreen !== "function"',
+    );
+    expect(transport).toContain(
+      "effect.checkItemDroppedOutOfScreen(globalPosition, source)",
+    );
+
+    expect(effectConnections).toMatch(
+      /function onItemDroppedOutOfScreen\(globalPosition, source, screen\)\s*\{\s*root\.handleCrossOutputWindowDrop\(globalPosition, source, screen\);\s*\}/u,
+    );
+    expect(targetResolution).toContain(
+      "const targetCard = crossOutputDropTargetAt(globalPosition, expectedTargetScreen);",
+    );
+    expect(targetResolution).toContain(
+      "liveTargetScreen.mapFromGlobal(globalPosition)",
+    );
+    expect(targetResolution).toContain(
+      "for (let index = 0; index < desktopRepeater.count; index += 1)",
+    );
+    expect(targetResolution).toContain(
+      "candidate.mapFromItem(root, localPosition.x, localPosition.y)",
+    );
+    expect(targetResolution).toMatch(
+      /if \(targetCard\) \{\s*return null;\s*\}/u,
+    );
+    expect(targetResolution).toContain(
+      "moveWindowAcrossOutputs(source.candidate, source.windowId, source.sourceDesktop,",
+    );
+
+    expect(transaction).toContain(
+      'typeof KWin.Workspace.sendClientToScreen !== "function"',
+    );
+    expect(transaction).toContain(
+      "accepted = runtime.planOverviewWindowDesktopDrop(model, {",
+    );
+    for (const field of [
+      "sourceDesktopId: expectedSourceDesktopId",
+      "sourceOutputId",
+      "targetDesktopId: expectedTargetDesktopId",
+      "targetOutputId",
+      "windowId: expectedWindowId",
+    ]) {
+      expect(transaction).toContain(field);
+    }
+    expect(transaction).toContain(
+      "const targetWorkspaceOutput = workspaceOutputAt(globalPosition);",
+    );
+    expect(transaction).toContain(
+      "KWin.Workspace.sendClientToScreen(candidate, targetWorkspaceOutput)",
+    );
+    expect(transaction).toContain("candidate.output !== targetWorkspaceOutput");
+    expect(transaction).toContain("candidate.desktops = [liveTargetDesktop]");
+    expect(
+      transaction.match(/crossOutputDropSceneIsExact\(state\)/gu).length,
+    ).toBeGreaterThanOrEqual(3);
+    expect(
+      transaction.match(/windowDesktopDropCandidateIsExact\(/gu).length,
+    ).toBeGreaterThanOrEqual(4);
+    expect(transaction).toContain(
+      "windowUsesDesktop(candidate, liveSourceDesktop, expectedSourceDesktopId)",
+    );
+    expect(transaction).toContain("effect.deactivate();");
+
+    const outputWrite = transaction.indexOf(
+      "KWin.Workspace.sendClientToScreen(candidate, targetWorkspaceOutput)",
+    );
+    const outputConfirmation = transaction.indexOf(
+      "candidate.output !== targetWorkspaceOutput",
+      outputWrite,
+    );
+    const desktopWrite = transaction.indexOf(
+      "candidate.desktops = [liveTargetDesktop]",
+      outputConfirmation,
+    );
+    const finalConfirmation = transaction.lastIndexOf(
+      "windowDesktopDropCandidateIsExact(",
+    );
+    const deactivate = transaction.indexOf("effect.deactivate();");
+    expect(outputWrite).toBeGreaterThan(0);
+    expect(outputConfirmation).toBeGreaterThan(outputWrite);
+    expect(desktopWrite).toBeGreaterThan(outputConfirmation);
+    expect(finalConfirmation).toBeGreaterThan(desktopWrite);
+    expect(deactivate).toBeGreaterThan(finalConfirmation);
+
+    expect(settlement).toContain("compensateCrossOutputWindowDrop(state)");
+    expect(settlement).toContain(
+      "state.candidate.desktops = [state.liveSourceDesktop]",
+    );
+    expect(settlement).toContain(
+      "KWin.Workspace.sendClientToScreen(state.candidate, state.sourceWorkspaceOutput)",
+    );
+    expect(settlement).toContain("state.effect.deactivate();");
+    expect(sceneGuard).toContain(
+      "state.liveSourceScreen === state.liveTargetScreen",
+    );
+    expect(sceneGuard).toContain("state.sourceOutput === state.targetOutput");
+    expect(sceneGuard).toContain(
+      "state.sourceOutputId === state.targetOutputId",
+    );
+    expect(sceneGuard).toContain(
+      "workspaceOutputAt(state.targetGlobalPosition) !== state.targetWorkspaceOutput",
+    );
+    expect(sceneGuard).toContain(
+      "state.sourceWorkspaceOutput !== state.liveSourceScreen",
+    );
+    expect(sceneGuard).toContain(
+      "state.targetWorkspaceOutput !== state.liveTargetScreen",
+    );
+    expect(scene).not.toContain("function workspaceOutputMatchesSceneScreen(");
+    expect(sceneGuard).toContain(
+      "projectedOutput(state.model, state.liveSourceScreen) !== state.sourceOutput",
+    );
+    expect(sceneGuard).toContain(
+      "projectedOutput(state.model, state.liveTargetScreen) !== state.targetOutput",
+    );
+
+    expect(
+      `${transport}\n${targetResolution}\n${transaction}\n${settlement}\n${sceneGuard}`,
+    ).not.toMatch(
+      /org\.kde\.kwin\.private|\bTimer\s*\{|setTimeout|\.setValue\s*\(|candidate\.(?:output|geometry|frameGeometry)\s*=(?!=)/u,
     );
   });
 

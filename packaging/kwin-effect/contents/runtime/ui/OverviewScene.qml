@@ -115,6 +115,10 @@ Rectangle {
                 root.searchQuery = "";
             }
         }
+
+        function onItemDroppedOutOfScreen(globalPosition, source, screen) {
+            root.handleCrossOutputWindowDrop(globalPosition, source, screen);
+        }
     }
 
     Connections {
@@ -942,6 +946,304 @@ Rectangle {
         return false;
     }
 
+    function handleCrossOutputWindowDrop(globalPosition, source, expectedTargetScreen) {
+        const targetCard = crossOutputDropTargetAt(globalPosition, expectedTargetScreen);
+        if (!targetCard || !source) {
+            return;
+        }
+
+        moveWindowAcrossOutputs(source.candidate, source.windowId, source.sourceDesktop,
+                                source.sourceDesktopId, source.sourceScreen, targetCard.desktop,
+                                targetCard.desktopId, targetCard.screen, globalPosition);
+    }
+
+    function crossOutputDropTargetAt(globalPosition, expectedTargetScreen) {
+        const liveTargetScreen = liveScreenFor(expectedTargetScreen);
+        if (!globalPosition || !liveTargetScreen || liveTargetScreen !== targetScreen
+                || !Number.isFinite(globalPosition.x) || !Number.isFinite(globalPosition.y)) {
+            return null;
+        }
+
+        let localPosition;
+        try {
+            localPosition = liveTargetScreen.mapFromGlobal(globalPosition);
+        } catch (error) {
+            return null;
+        }
+        if (!localPosition || !Number.isFinite(localPosition.x) || !Number.isFinite(localPosition.y)
+                || localPosition.x < 0 || localPosition.y < 0 || localPosition.x >= width
+                || localPosition.y >= height) {
+            return null;
+        }
+
+        let targetCard = null;
+        for (let index = 0; index < desktopRepeater.count; index += 1) {
+            const candidate = desktopRepeater.itemAt(index);
+            if (!candidate || !candidate.visible || candidate.screen !== liveTargetScreen
+                    || !candidate.desktop || candidate.desktopId.length === 0) {
+                continue;
+            }
+
+            let cardPosition;
+            try {
+                cardPosition = candidate.mapFromItem(root, localPosition.x, localPosition.y);
+            } catch (error) {
+                return null;
+            }
+            if (!cardPosition || !Number.isFinite(cardPosition.x) || !Number.isFinite(cardPosition.y)
+                    || cardPosition.x < 0 || cardPosition.y < 0 || cardPosition.x >= candidate.width
+                    || cardPosition.y >= candidate.height) {
+                continue;
+            }
+            if (targetCard) {
+                return null;
+            }
+            targetCard = candidate;
+        }
+
+        return targetCard;
+    }
+
+    function moveWindowAcrossOutputs(candidate, expectedWindowId, expectedSourceDesktop,
+                                     expectedSourceDesktopId, expectedSourceScreen, expectedTargetDesktop,
+                                     expectedTargetDesktopId, expectedTargetScreen, globalPosition) {
+        const effect = sceneEffect;
+        const model = overviewModel;
+        const liveSourceScreen = liveScreenFor(expectedSourceScreen);
+        const liveTargetScreen = liveScreenFor(expectedTargetScreen);
+        const sourceWorkspaceOutput = candidate ? candidate.output : null;
+        const targetWorkspaceOutput = workspaceOutputAt(globalPosition);
+        const sourceOutput = projectedOutput(model, liveSourceScreen);
+        const targetOutput = projectedOutput(model, liveTargetScreen);
+        const sourceOutputId = sourceOutput ? String(sourceOutput.outputId) : "";
+        const targetOutputId = targetOutput ? String(targetOutput.outputId) : "";
+        const liveSourceDesktop = liveDesktopFor(expectedSourceDesktop, expectedSourceDesktopId);
+        const liveTargetDesktop = liveDesktopFor(expectedTargetDesktop, expectedTargetDesktopId);
+        const currentActivity = KWin.Workspace.currentActivity;
+        const expectedActivityId = currentActivity === undefined || currentActivity === null ? ""
+                                                                                              : String(currentActivity);
+        const state = {
+            candidate,
+            effect,
+            expectedActivityId,
+            expectedWindowId,
+            liveSourceDesktop,
+            liveSourceScreen,
+            liveTargetDesktop,
+            liveTargetScreen,
+            model,
+            sourceDesktopId: expectedSourceDesktopId,
+            sourceOutput,
+            sourceOutputId,
+            sourceWorkspaceOutput,
+            targetDesktopId: expectedTargetDesktopId,
+            targetGlobalPosition: globalPosition,
+            targetOutput,
+            targetOutputId,
+            targetWorkspaceOutput
+        };
+
+        if (!crossOutputDropSceneIsExact(state)
+                || !windowDesktopDropCandidateIsExact(candidate, expectedWindowId, sourceWorkspaceOutput,
+                                                       liveSourceDesktop, expectedSourceDesktopId,
+                                                       expectedActivityId)) {
+            return;
+        }
+
+        const runtime = OverviewRuntime.DriftileOverview;
+        if (!runtime || typeof runtime.planOverviewWindowDesktopDrop !== "function"
+                || typeof KWin.Workspace.sendClientToScreen !== "function") {
+            return;
+        }
+
+        let accepted = false;
+        try {
+            accepted = runtime.planOverviewWindowDesktopDrop(model, {
+                                                                 sourceDesktopId: expectedSourceDesktopId,
+                                                                 sourceOutputId,
+                                                                 targetDesktopId: expectedTargetDesktopId,
+                                                                 targetOutputId,
+                                                                 windowId: expectedWindowId
+                                                             }) === true;
+        } catch (error) {
+            return;
+        }
+        if (!accepted || !crossOutputDropSceneIsExact(state)
+                || !windowDesktopDropCandidateIsExact(candidate, expectedWindowId, sourceWorkspaceOutput,
+                                                       liveSourceDesktop, expectedSourceDesktopId,
+                                                       expectedActivityId)) {
+            return;
+        }
+
+        try {
+            KWin.Workspace.sendClientToScreen(candidate, targetWorkspaceOutput);
+        } catch (error) {
+            settleFailedCrossOutputWindowDrop(state);
+            return;
+        }
+        if (candidate.output !== targetWorkspaceOutput) {
+            settleFailedCrossOutputWindowDrop(state);
+            return;
+        }
+        if (!crossOutputDropSceneIsExact(state)
+                || !windowDesktopDropCandidateIsExact(candidate, expectedWindowId, targetWorkspaceOutput,
+                                                       liveSourceDesktop, expectedSourceDesktopId,
+                                                       expectedActivityId)) {
+            settleFailedCrossOutputWindowDrop(state);
+            return;
+        }
+
+        if (liveSourceDesktop !== liveTargetDesktop || expectedSourceDesktopId !== expectedTargetDesktopId) {
+            try {
+                candidate.desktops = [liveTargetDesktop];
+            } catch (error) {
+                settleFailedCrossOutputWindowDrop(state);
+                return;
+            }
+        }
+
+        if (!crossOutputDropSceneIsExact(state)
+                || !windowDesktopDropCandidateIsExact(candidate, expectedWindowId, targetWorkspaceOutput,
+                                                       liveTargetDesktop, expectedTargetDesktopId,
+                                                       expectedActivityId)
+                || (expectedSourceDesktopId !== expectedTargetDesktopId
+                    && windowUsesDesktop(candidate, liveSourceDesktop, expectedSourceDesktopId))) {
+            settleFailedCrossOutputWindowDrop(state);
+            return;
+        }
+        effect.deactivate();
+    }
+
+    function settleFailedCrossOutputWindowDrop(state) {
+        if (!state || !state.candidate) {
+            return;
+        }
+        const sourceStateIsExact = windowDesktopDropCandidateIsExact(state.candidate, state.expectedWindowId,
+                                                                     state.sourceWorkspaceOutput,
+                                                                     state.liveSourceDesktop,
+                                                                     state.sourceDesktopId,
+                                                                     state.expectedActivityId);
+        if (sourceStateIsExact) {
+            if (!crossOutputDropSceneIsExact(state) && state.effect && state.effect === sceneEffect
+                    && state.effect.active === true) {
+                state.effect.deactivate();
+            }
+            return;
+        }
+
+        compensateCrossOutputWindowDrop(state);
+        if (state.effect && state.effect === sceneEffect && state.effect.active === true) {
+            state.effect.deactivate();
+        }
+    }
+
+    function compensateCrossOutputWindowDrop(state) {
+        if (!crossOutputDropSceneIsExact(state) || state.candidate.output !== state.targetWorkspaceOutput
+                || typeof KWin.Workspace.sendClientToScreen !== "function") {
+            return false;
+        }
+
+        const atSourceDesktop = windowDesktopDropCandidateIsExact(state.candidate, state.expectedWindowId,
+                                                                  state.targetWorkspaceOutput,
+                                                                  state.liveSourceDesktop,
+                                                                  state.sourceDesktopId,
+                                                                  state.expectedActivityId);
+        const atTargetDesktop = windowDesktopDropCandidateIsExact(state.candidate, state.expectedWindowId,
+                                                                  state.targetWorkspaceOutput,
+                                                                  state.liveTargetDesktop,
+                                                                  state.targetDesktopId,
+                                                                  state.expectedActivityId);
+        if (!atSourceDesktop && !atTargetDesktop) {
+            return false;
+        }
+
+        if (!atSourceDesktop) {
+            try {
+                state.candidate.desktops = [state.liveSourceDesktop];
+            } catch (error) {
+                return false;
+            }
+            if (!windowDesktopDropCandidateIsExact(state.candidate, state.expectedWindowId,
+                                                   state.targetWorkspaceOutput, state.liveSourceDesktop,
+                                                   state.sourceDesktopId, state.expectedActivityId)) {
+                return false;
+            }
+        }
+
+        if (!crossOutputDropSceneIsExact(state)) {
+            return false;
+        }
+        try {
+            KWin.Workspace.sendClientToScreen(state.candidate, state.sourceWorkspaceOutput);
+        } catch (error) {
+            return false;
+        }
+
+        return windowDesktopDropCandidateIsExact(state.candidate, state.expectedWindowId,
+                                                 state.sourceWorkspaceOutput, state.liveSourceDesktop,
+                                                 state.sourceDesktopId, state.expectedActivityId);
+    }
+
+    function crossOutputDropSceneIsExact(state) {
+        if (!state || !state.effect || state.effect !== sceneEffect || state.effect.active !== true || !state.model
+                || state.effect.overviewModel !== state.model || overviewModel !== state.model
+                || !state.liveSourceScreen || !state.liveTargetScreen
+                || state.liveSourceScreen === state.liveTargetScreen || targetScreen !== state.liveTargetScreen
+                || liveScreenFor(state.liveSourceScreen) !== state.liveSourceScreen
+                || liveScreenFor(state.liveTargetScreen) !== state.liveTargetScreen
+                || !workspaceOutputIsLive(state.sourceWorkspaceOutput)
+                || !workspaceOutputIsLive(state.targetWorkspaceOutput)
+                || state.sourceWorkspaceOutput !== state.liveSourceScreen
+                || state.targetWorkspaceOutput !== state.liveTargetScreen
+                || state.sourceWorkspaceOutput === state.targetWorkspaceOutput
+                || workspaceOutputAt(state.targetGlobalPosition) !== state.targetWorkspaceOutput
+                || !state.sourceOutput
+                || !state.targetOutput || state.sourceOutput === state.targetOutput
+                || state.sourceOutputId.length === 0 || state.targetOutputId.length === 0
+                || state.sourceOutputId === state.targetOutputId
+                || String(state.sourceOutput.outputId) !== state.sourceOutputId
+                || String(state.targetOutput.outputId) !== state.targetOutputId
+                || projectedOutput(state.model, state.liveSourceScreen) !== state.sourceOutput
+                || projectedOutput(state.model, state.liveTargetScreen) !== state.targetOutput
+                || outputId !== state.targetOutputId || !state.liveSourceDesktop || !state.liveTargetDesktop
+                || state.sourceDesktopId.length === 0 || state.targetDesktopId.length === 0
+                || String(state.liveSourceDesktop.id) !== state.sourceDesktopId
+                || String(state.liveTargetDesktop.id) !== state.targetDesktopId
+                || liveDesktopFor(state.liveSourceDesktop, state.sourceDesktopId) !== state.liveSourceDesktop
+                || liveDesktopFor(state.liveTargetDesktop, state.targetDesktopId) !== state.liveTargetDesktop) {
+            return false;
+        }
+
+        return true;
+    }
+
+    function workspaceOutputAt(globalPosition) {
+        if (!globalPosition || !Number.isFinite(globalPosition.x) || !Number.isFinite(globalPosition.y)
+                || typeof KWin.Workspace.screenAt !== "function") {
+            return null;
+        }
+
+        try {
+            return KWin.Workspace.screenAt(globalPosition);
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function workspaceOutputIsLive(expectedOutput) {
+        if (!expectedOutput) {
+            return false;
+        }
+
+        let matches = 0;
+        for (const output of KWin.Workspace.screens) {
+            if (output === expectedOutput) {
+                matches += 1;
+            }
+        }
+        return matches === 1;
+    }
+
     function moveWindowToDesktop(candidate, expectedWindowId, expectedSourceDesktop, expectedSourceDesktopId,
                                  expectedTargetDesktop, expectedTargetDesktopId, expectedScreen) {
         const effect = sceneEffect;
@@ -970,9 +1272,10 @@ Rectangle {
         let accepted = false;
         try {
             accepted = runtime.planOverviewWindowDesktopDrop(model, {
-                                                                 outputId: expectedOutputId,
                                                                  sourceDesktopId: expectedSourceDesktopId,
+                                                                 sourceOutputId: expectedOutputId,
                                                                  targetDesktopId: expectedTargetDesktopId,
+                                                                 targetOutputId: expectedOutputId,
                                                                  windowId: expectedWindowId
                                                              }) === true;
         } catch (error) {

@@ -1,9 +1,10 @@
 import { LAYOUT_PERSISTENCE_LIMITS } from "../core/layout-persistence";
 
 interface OverviewWindowDesktopDropRequest {
-  readonly outputId: string;
   readonly sourceDesktopId: string;
+  readonly sourceOutputId: string;
   readonly targetDesktopId: string;
+  readonly targetOutputId: string;
   readonly windowId: string;
 }
 
@@ -19,7 +20,10 @@ export function planOverviewWindowDesktopDrop(
       return false;
     }
 
-    if (drop.sourceDesktopId === drop.targetDesktopId) {
+    if (
+      drop.sourceOutputId === drop.targetOutputId &&
+      drop.sourceDesktopId === drop.targetDesktopId
+    ) {
       return false;
     }
 
@@ -42,7 +46,8 @@ export function planOverviewWindowDesktopDrop(
       floatingWindows.length > LAYOUT_PERSISTENCE_LIMITS.floatingWindows ||
       !desktopIds.has(drop.sourceDesktopId) ||
       !desktopIds.has(drop.targetDesktopId) ||
-      !outputIds.has(drop.outputId)
+      !outputIds.has(drop.sourceOutputId) ||
+      !outputIds.has(drop.targetOutputId)
     ) {
       return false;
     }
@@ -84,17 +89,18 @@ export function planOverviewWindowDesktopDrop(
       }
       contextKeys.add(contextKey);
 
-      const matchesOutput = outputId === drop.outputId;
-      const sourceContext = matchesOutput && desktopId === drop.sourceDesktopId;
+      const sourceContext =
+        outputId === drop.sourceOutputId && desktopId === drop.sourceDesktopId;
 
       if (sourceContext) {
         sourceContextCount += 1;
       }
 
-      if (desktopId === drop.targetDesktopId) {
-        if (matchesOutput) {
-          exactTargetContextCount += 1;
-        }
+      if (
+        outputId === drop.targetOutputId &&
+        desktopId === drop.targetDesktopId
+      ) {
+        exactTargetContextCount += 1;
       }
 
       for (const value of columns) {
@@ -164,7 +170,7 @@ export function planOverviewWindowDesktopDrop(
 
       if (
         windowId === drop.windowId &&
-        outputId === drop.outputId &&
+        outputId === drop.sourceOutputId &&
         desktopId === drop.sourceDesktopId
       ) {
         sourceWindowCount += 1;
@@ -184,21 +190,29 @@ function readRequest(value: unknown): OverviewWindowDesktopDropRequest | null {
     return null;
   }
 
-  const outputId = candidate["outputId"];
   const sourceDesktopId = candidate["sourceDesktopId"];
+  const sourceOutputId = candidate["sourceOutputId"];
   const targetDesktopId = candidate["targetDesktopId"];
+  const targetOutputId = candidate["targetOutputId"];
   const windowId = candidate["windowId"];
 
   if (
-    !validIdentifier(outputId) ||
     !validIdentifier(sourceDesktopId) ||
+    !validIdentifier(sourceOutputId) ||
     !validIdentifier(targetDesktopId) ||
+    !validIdentifier(targetOutputId) ||
     !validIdentifier(windowId)
   ) {
     return null;
   }
 
-  return { outputId, sourceDesktopId, targetDesktopId, windowId };
+  return {
+    sourceDesktopId,
+    sourceOutputId,
+    targetDesktopId,
+    targetOutputId,
+    windowId,
+  };
 }
 
 function indexIdentifiers(value: unknown, limit: number): Set<string> | null {

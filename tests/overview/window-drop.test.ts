@@ -58,9 +58,10 @@ function model(overrides: Readonly<Record<string, unknown>> = {}) {
 
 function request(overrides: Readonly<Record<string, unknown>> = {}) {
   return {
-    outputId: OUTPUT,
     sourceDesktopId: SOURCE_DESKTOP,
+    sourceOutputId: OUTPUT,
     targetDesktopId: TARGET_DESKTOP,
+    targetOutputId: OUTPUT,
     windowId: WINDOW,
     ...overrides,
   };
@@ -83,12 +84,40 @@ describe("planOverviewWindowDesktopDrop", () => {
     ).toBe(true);
   });
 
+  it("accepts a cross-output transfer to the same desktop", () => {
+    expect(
+      planOverviewWindowDesktopDrop(
+        model(),
+        request({
+          targetDesktopId: SOURCE_DESKTOP,
+          targetOutputId: OTHER_OUTPUT,
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("accepts a cross-output transfer to a materialized target desktop", () => {
+    expect(
+      planOverviewWindowDesktopDrop(
+        model({
+          contexts: [
+            context(SOURCE_DESKTOP, [WINDOW]),
+            context(TARGET_DESKTOP, ["window-c"], OTHER_OUTPUT),
+          ],
+          floatingWindows: [],
+        }),
+        request({ targetOutputId: OTHER_OUTPUT }),
+      ),
+    ).toBe(true);
+  });
+
   it.each([
     null,
     {},
-    request({ outputId: "" }),
     request({ sourceDesktopId: "" }),
+    request({ sourceOutputId: "" }),
     request({ targetDesktopId: "" }),
+    request({ targetOutputId: "" }),
     request({ windowId: "" }),
     request({ targetDesktopId: SOURCE_DESKTOP }),
   ])("rejects malformed or same-target requests", (candidate) => {
@@ -96,7 +125,8 @@ describe("planOverviewWindowDesktopDrop", () => {
   });
 
   it.each([
-    request({ outputId: "unknown-output" }),
+    request({ sourceOutputId: "unknown-output" }),
+    request({ targetOutputId: "unknown-output" }),
     request({ sourceDesktopId: "unknown-source" }),
     request({ targetDesktopId: "unknown-target" }),
     request({ windowId: "unknown-window" }),
@@ -137,7 +167,7 @@ describe("planOverviewWindowDesktopDrop", () => {
     ).toBe(false);
   });
 
-  it("accepts a target materialized only on another output", () => {
+  it("accepts a same-output target when that desktop is also materialized elsewhere", () => {
     expect(
       planOverviewWindowDesktopDrop(
         model({
@@ -195,6 +225,22 @@ describe("planOverviewWindowDesktopDrop", () => {
           floatingWindows: [],
         }),
         request(),
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects duplicate exact cross-output target contexts", () => {
+    expect(
+      planOverviewWindowDesktopDrop(
+        model({
+          contexts: [
+            context(SOURCE_DESKTOP, [WINDOW]),
+            context(TARGET_DESKTOP, [], OTHER_OUTPUT),
+            context(TARGET_DESKTOP, [], OTHER_OUTPUT),
+          ],
+          floatingWindows: [],
+        }),
+        request({ targetOutputId: OTHER_OUTPUT }),
       ),
     ).toBe(false);
   });
