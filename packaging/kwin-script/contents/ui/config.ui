@@ -82,6 +82,39 @@
         </widget>
        </item>
        <item>
+        <layout class="QFormLayout" name="numberedDesktopTargetsLayout">
+         <item row="0" column="0">
+          <widget class="QLabel" name="numberedDesktopTargetsLabel">
+           <property name="text">
+            <string>Numbered desktop targets:</string>
+           </property>
+           <property name="buddy">
+            <cstring>kcfg_NumberedDesktopTargets</cstring>
+           </property>
+          </widget>
+         </item>
+         <item row="0" column="1">
+          <widget class="QPlainTextEdit" name="kcfg_NumberedDesktopTargets">
+           <property name="toolTip">
+            <string>Enter slot=exact desktop name pairs for slots 1 through 9, one per line. Empty slots keep positional selection.</string>
+           </property>
+           <property name="minimumSize">
+            <size>
+             <width>0</width>
+             <height>72</height>
+            </size>
+           </property>
+           <property name="maximumSize">
+            <size>
+             <width>16777215</width>
+             <height>72</height>
+            </size>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item>
         <widget class="QCheckBox" name="kcfg_EmptyDesktopAboveFirst">
          <property name="text">
           <string>Keep an empty virtual desktop before the first occupied desktop</string>

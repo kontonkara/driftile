@@ -923,6 +923,7 @@ describe("KWin shortcut handlers", () => {
       "kcfg_TouchpadNavigation",
       "kcfg_TouchpadWorkspaceNavigation",
       "kcfg_WorkspaceAutoBackAndForth",
+      "kcfg_NumberedDesktopTargets",
       "kcfg_EmptyDesktopAboveFirst",
       "kcfg_TouchpadNavigationFingerCount",
       "kcfg_TouchpadNaturalScroll",
@@ -1126,6 +1127,15 @@ describe("KWin shortcut handlers", () => {
     const autoBackAndForthWidget = configurationUi.match(
       /<widget class="QCheckBox" name="kcfg_WorkspaceAutoBackAndForth">([\s\S]*?)<\/widget>/,
     )?.[1];
+    const numberedTargetsEntry = configuration.match(
+      /<entry name="NumberedDesktopTargets" type="String">([\s\S]*?)<\/entry>/,
+    )?.[1];
+    const numberedTargetsLabel = configurationUi.match(
+      /<widget class="QLabel" name="numberedDesktopTargetsLabel">([\s\S]*?)<\/widget>/,
+    )?.[1];
+    const numberedTargetsWidget = configurationUi.match(
+      /<widget class="QPlainTextEdit" name="kcfg_NumberedDesktopTargets">([\s\S]*?)<\/widget>/,
+    )?.[1];
     const leadingDesktopEntry = configuration.match(
       /<entry name="EmptyDesktopAboveFirst" type="Bool">([\s\S]*?)<\/entry>/,
     )?.[1];
@@ -1165,6 +1175,28 @@ describe("KWin shortcut handlers", () => {
     expect(autoBackAndForthWidget).toContain(
       "Changing this setting does not switch desktops or alter selection history.",
     );
+    expect(numberedTargetsEntry).toContain(
+      "<label>Exact virtual desktop names for numbered targets</label>",
+    );
+    expect(numberedTargetsEntry).toContain("<default></default>");
+    expect(numberedTargetsLabel).toContain(
+      "<string>Numbered desktop targets:</string>",
+    );
+    expect(numberedTargetsLabel).toContain(
+      "<cstring>kcfg_NumberedDesktopTargets</cstring>",
+    );
+    expect(numberedTargetsWidget).toContain(
+      "Enter slot=exact desktop name pairs for slots 1 through 9, one per line.",
+    );
+    expect(numberedTargetsWidget).toContain(
+      "Empty slots keep positional selection.",
+    );
+    expect(numberedTargetsWidget).toMatch(
+      /<property name="minimumSize">[\s\S]*?<height>72<\/height>/,
+    );
+    expect(numberedTargetsWidget).toMatch(
+      /<property name="maximumSize">[\s\S]*?<height>72<\/height>/,
+    );
     expect(leadingDesktopEntry).toContain(
       "<label>Keep an empty virtual desktop before the first occupied desktop</label>",
     );
@@ -1180,6 +1212,9 @@ describe("KWin shortcut handlers", () => {
     );
     expect(qml).toContain(
       'workspaceAutoBackAndForth: KWin.readConfig("WorkspaceAutoBackAndForth", false)',
+    );
+    expect(qml).toContain(
+      'numberedDesktopTargets: KWin.readConfig("NumberedDesktopTargets", "")',
     );
     expect(runtime).toContain(
       "workspaceAutoBackAndForth: settings.workspaceAutoBackAndForth",
