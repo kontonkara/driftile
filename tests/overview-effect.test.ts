@@ -383,9 +383,14 @@ describe("overview effect package", () => {
       "KWin.Workspace.activeWindow",
       "KWin.Workspace.currentDesktop",
     ]);
-    expect(qmlSources.join("\n")).not.toMatch(
-      /(?:model\.window|candidate)\.[A-Za-z0-9_]+\s*=(?!=)|\.setValue\s*\(/u,
-    );
+    const windowWrites =
+      qmlSources
+        .join("\n")
+        .match(/(?:model\.window|candidate)\.[A-Za-z0-9_]+\s*=(?!=)/gu) ?? [];
+    expect(windowWrites.map((write) => write.replace(/\s*=$/u, ""))).toEqual([
+      "candidate.desktops",
+    ]);
+    expect(qmlSources.join("\n")).not.toMatch(/\.setValue\s*\(/u);
   });
 
   it("activates current and non-current thumbnails through one guarded path", () => {
@@ -596,6 +601,140 @@ describe("overview effect package", () => {
     );
   });
 
+  it("moves one exact live window through a guarded desktop drop", () => {
+    const delegate = scene.slice(
+      scene.indexOf("DesktopCard {"),
+      scene.indexOf("Rectangle {", scene.indexOf("DesktopCard {")),
+    );
+    const transaction = scene.slice(
+      scene.indexOf("function moveWindowToDesktop("),
+      scene.indexOf("function windowDesktopDropSceneIsExact("),
+    );
+    const sceneGuard = scene.slice(
+      scene.indexOf("function windowDesktopDropSceneIsExact("),
+      scene.indexOf("function windowDesktopDropCandidateIsExact("),
+    );
+    const candidateGuard = scene.slice(
+      scene.indexOf("function windowDesktopDropCandidateIsExact("),
+      scene.indexOf("function orderedDesktopIds("),
+    );
+
+    expect(desktopCard).toMatch(
+      /signal windowDropped\(var candidate, string expectedWindowId, var expectedSourceDesktop,\s*string expectedSourceDesktopId, var expectedTargetDesktop,\s*string expectedTargetDesktopId, var expectedScreen\)/u,
+    );
+    expect(desktopCard.match(/\bDragHandler\s*\{/gu)).toHaveLength(3);
+    expect(desktopCard.match(/\bDropArea\s*\{/gu)).toHaveLength(1);
+    expect(desktopCard.match(/\.Drag\.active = true;/gu)).toHaveLength(2);
+    expect(desktopCard.match(/\.Drag\.active = false;/gu)).toHaveLength(4);
+    expect(delegate).toMatch(
+      /onWindowDropped:\s*\(candidate, expectedWindowId, expectedSourceDesktop, expectedSourceDesktopId,\s*expectedTargetDesktop, expectedTargetDesktopId, expectedScreen\)\s*=>\s*root\.moveWindowToDesktop\(candidate, expectedWindowId, expectedSourceDesktop,\s*expectedSourceDesktopId, expectedTargetDesktop,\s*expectedTargetDesktopId, expectedScreen\)/u,
+    );
+
+    expect(transaction).toContain("const effect = sceneEffect;");
+    expect(transaction).toContain("const model = overviewModel;");
+    expect(transaction).toContain(
+      "const liveScreen = liveScreenFor(expectedScreen);",
+    );
+    expect(transaction).toContain(
+      "const expectedOutput = projectedOutput(model, liveScreen);",
+    );
+    expect(transaction).toContain(
+      "liveDesktopFor(expectedSourceDesktop, expectedSourceDesktopId)",
+    );
+    expect(transaction).toContain(
+      "liveDesktopFor(expectedTargetDesktop, expectedTargetDesktopId)",
+    );
+    expect(transaction).toContain(
+      'typeof runtime.planOverviewWindowDesktopDrop !== "function"',
+    );
+    expect(transaction).toContain(
+      "accepted = runtime.planOverviewWindowDesktopDrop(model, {",
+    );
+    for (const field of [
+      "outputId: expectedOutputId",
+      "sourceDesktopId: expectedSourceDesktopId",
+      "targetDesktopId: expectedTargetDesktopId",
+      "windowId: expectedWindowId",
+    ]) {
+      expect(transaction).toContain(field);
+    }
+    expect(transaction).toContain("}) === true;");
+    expect(transaction).toContain("catch (error)");
+    expect(transaction.match(/windowDesktopDropSceneIsExact\(/gu)).toHaveLength(
+      3,
+    );
+    expect(
+      transaction.match(/windowDesktopDropCandidateIsExact\(/gu),
+    ).toHaveLength(3);
+
+    expect(sceneGuard).toContain("liveSourceDesktop !== liveTargetDesktop");
+    expect(sceneGuard).toContain(
+      "expectedSourceDesktopId !== expectedTargetDesktopId",
+    );
+    expect(sceneGuard.match(/desktopContextIsExact\(/gu)).toHaveLength(2);
+    for (const guard of [
+      "candidate.deleted",
+      "candidate.minimized",
+      "candidate.wantsInput !== true",
+      "candidate.normalWindow !== true",
+      "candidate.managed !== true",
+      "candidate.moveable !== true",
+      "candidate.modal !== false",
+      "candidate.internalId === undefined",
+      "candidate.internalId === null",
+      "String(candidate.internalId) !== expectedWindowId",
+      "candidate.output !== liveScreen",
+      "String(KWin.Workspace.currentActivity) !== expectedActivityId",
+      "!windowUsesActivity(candidate, expectedActivityId)",
+      "candidate.transient !== false",
+      "candidate.transientFor !== null",
+      "desktops.length === 1",
+      "desktops[0] === expectedDesktop",
+      "String(desktops[0].id) === expectedDesktopId",
+    ]) {
+      expect(candidateGuard).toContain(guard);
+    }
+
+    expect(
+      scene.match(/candidate\.desktops\s*=\s*\[liveTargetDesktop\]/gu),
+    ).toHaveLength(1);
+    expect(transaction).toContain(
+      "windowUsesDesktop(candidate, liveSourceDesktop, expectedSourceDesktopId)",
+    );
+    expect(transaction.match(/effect\.deactivate\(\)/gu)).toHaveLength(1);
+
+    const initialValidation = transaction.indexOf(
+      "if (!windowDesktopDropSceneIsExact(",
+    );
+    const planner = transaction.indexOf(
+      "accepted = runtime.planOverviewWindowDesktopDrop(",
+    );
+    const preWriteValidation = transaction.indexOf("if (!accepted", planner);
+    const desktopWrite = transaction.indexOf(
+      "candidate.desktops = [liveTargetDesktop]",
+    );
+    const confirmation = transaction.indexOf(
+      "if (!windowDesktopDropSceneIsExact(",
+      desktopWrite,
+    );
+    const sourceGone = transaction.indexOf(
+      "windowUsesDesktop(candidate, liveSourceDesktop, expectedSourceDesktopId)",
+      desktopWrite,
+    );
+    const deactivate = transaction.indexOf("effect.deactivate()");
+    expect(initialValidation).toBeGreaterThan(0);
+    expect(planner).toBeGreaterThan(initialValidation);
+    expect(preWriteValidation).toBeGreaterThan(planner);
+    expect(desktopWrite).toBeGreaterThan(preWriteValidation);
+    expect(confirmation).toBeGreaterThan(desktopWrite);
+    expect(sourceGone).toBeGreaterThan(confirmation);
+    expect(deactivate).toBeGreaterThan(sourceGone);
+
+    expect(transaction).not.toMatch(
+      /KWin\.(?:SceneView|Workspace)\.[A-Za-z0-9_]+\s*=(?!=)|candidate\.(?:output|geometry|frameGeometry)\s*=(?!=)|org\.kde\.kwin\.private|\bTimer\s*\{|setTimeout|\.setValue\s*\(/u,
+    );
+  });
+
   it("reorders live desktop cards only through one guarded gutter drag", () => {
     const numberGutter = desktopCard.slice(
       desktopCard.indexOf("id: numberGutter"),
@@ -614,7 +753,7 @@ describe("overview effect package", () => {
       scene.indexOf("function outputIdForScreen("),
     );
 
-    expect(desktopCard.match(/\bDragHandler\s*\{/gu)).toHaveLength(1);
+    expect(numberGutter.match(/\bDragHandler\s*\{/gu)).toHaveLength(1);
     expect(numberGutter).toContain("target: null");
     expect(numberGutter).toContain("acceptedButtons: Qt.LeftButton");
     expect(numberGutter).toContain(
@@ -647,7 +786,7 @@ describe("overview effect package", () => {
       /resetDesktopReorder\(\);\s*if \(sceneEffect\) \{\s*sceneEffect\.deactivate\(\);/u,
     );
     expect(`${scene}\n${desktopCard}`).not.toMatch(
-      /\b(?:DropArea|MouseArea|Timer)\s*\{|KWin\.Workspace\.(?:stackingOrder|windows)\b|\.setValue\s*\(/u,
+      /\b(?:MouseArea|Timer)\s*\{|KWin\.Workspace\.(?:stackingOrder|windows)\b|\.setValue\s*\(/u,
     );
   });
 

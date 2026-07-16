@@ -146,6 +146,11 @@ Rectangle {
             onWindowTapped: (candidate, expectedWindowId, expectedDesktop, expectedDesktopId, expectedScreen) =>
                                 root.focusWindow(candidate, expectedWindowId, expectedDesktop, expectedDesktopId,
                                                  expectedScreen)
+            onWindowDropped: (candidate, expectedWindowId, expectedSourceDesktop, expectedSourceDesktopId,
+                              expectedTargetDesktop, expectedTargetDesktopId, expectedScreen) =>
+                                 root.moveWindowToDesktop(candidate, expectedWindowId, expectedSourceDesktop,
+                                                          expectedSourceDesktopId, expectedTargetDesktop,
+                                                          expectedTargetDesktopId, expectedScreen)
         }
     }
 
@@ -672,6 +677,96 @@ Rectangle {
         }
 
         return false;
+    }
+
+    function moveWindowToDesktop(candidate, expectedWindowId, expectedSourceDesktop, expectedSourceDesktopId,
+                                 expectedTargetDesktop, expectedTargetDesktopId, expectedScreen) {
+        const effect = sceneEffect;
+        const model = overviewModel;
+        const liveScreen = liveScreenFor(expectedScreen);
+        const expectedOutput = projectedOutput(model, liveScreen);
+        const expectedOutputId = expectedOutput ? String(expectedOutput.outputId) : "";
+        const liveSourceDesktop = liveDesktopFor(expectedSourceDesktop, expectedSourceDesktopId);
+        const liveTargetDesktop = liveDesktopFor(expectedTargetDesktop, expectedTargetDesktopId);
+        const currentActivity = KWin.Workspace.currentActivity;
+        const expectedActivityId = currentActivity === undefined || currentActivity === null ? ""
+                                                                                              : String(currentActivity);
+        if (!windowDesktopDropSceneIsExact(effect, model, liveScreen, expectedOutput, expectedOutputId,
+                                           liveSourceDesktop, expectedSourceDesktopId, liveTargetDesktop,
+                                           expectedTargetDesktopId)
+                || !windowDesktopDropCandidateIsExact(candidate, expectedWindowId, liveScreen, liveSourceDesktop,
+                                                       expectedSourceDesktopId, expectedActivityId)) {
+            return;
+        }
+
+        const runtime = OverviewRuntime.DriftileOverview;
+        if (!runtime || typeof runtime.planOverviewWindowDesktopDrop !== "function") {
+            return;
+        }
+
+        let accepted = false;
+        try {
+            accepted = runtime.planOverviewWindowDesktopDrop(model, {
+                                                                 outputId: expectedOutputId,
+                                                                 sourceDesktopId: expectedSourceDesktopId,
+                                                                 targetDesktopId: expectedTargetDesktopId,
+                                                                 windowId: expectedWindowId
+                                                             }) === true;
+        } catch (error) {
+            return;
+        }
+        if (!accepted || !windowDesktopDropSceneIsExact(effect, model, liveScreen, expectedOutput, expectedOutputId,
+                                                        liveSourceDesktop, expectedSourceDesktopId, liveTargetDesktop,
+                                                        expectedTargetDesktopId)
+                || !windowDesktopDropCandidateIsExact(candidate, expectedWindowId, liveScreen, liveSourceDesktop,
+                                                       expectedSourceDesktopId, expectedActivityId)) {
+            return;
+        }
+
+        try {
+            candidate.desktops = [liveTargetDesktop];
+        } catch (error) {
+            return;
+        }
+
+        if (!windowDesktopDropSceneIsExact(effect, model, liveScreen, expectedOutput, expectedOutputId,
+                                           liveSourceDesktop, expectedSourceDesktopId, liveTargetDesktop,
+                                           expectedTargetDesktopId)
+                || !windowDesktopDropCandidateIsExact(candidate, expectedWindowId, liveScreen, liveTargetDesktop,
+                                                       expectedTargetDesktopId, expectedActivityId)
+                || windowUsesDesktop(candidate, liveSourceDesktop, expectedSourceDesktopId)) {
+            return;
+        }
+        effect.deactivate();
+    }
+
+    function windowDesktopDropSceneIsExact(effect, model, liveScreen, expectedOutput, expectedOutputId,
+                                           liveSourceDesktop, expectedSourceDesktopId, liveTargetDesktop,
+                                           expectedTargetDesktopId) {
+        return liveSourceDesktop !== liveTargetDesktop && expectedSourceDesktopId !== expectedTargetDesktopId
+                && desktopContextIsExact(effect, model, liveScreen, expectedOutput, expectedOutputId,
+                                         liveSourceDesktop, expectedSourceDesktopId)
+                && desktopContextIsExact(effect, model, liveScreen, expectedOutput, expectedOutputId,
+                                         liveTargetDesktop, expectedTargetDesktopId);
+    }
+
+    function windowDesktopDropCandidateIsExact(candidate, expectedWindowId, liveScreen, expectedDesktop,
+                                               expectedDesktopId, expectedActivityId) {
+        if (!candidate || candidate.deleted || candidate.minimized || candidate.wantsInput !== true
+                || candidate.normalWindow !== true || candidate.managed !== true || candidate.moveable !== true
+                || candidate.modal !== false || candidate.internalId === undefined || candidate.internalId === null
+                || expectedWindowId.length === 0
+                || String(candidate.internalId) !== expectedWindowId || candidate.output !== liveScreen
+                || expectedActivityId.length === 0
+                || String(KWin.Workspace.currentActivity) !== expectedActivityId
+                || !windowUsesActivity(candidate, expectedActivityId) || candidate.transient !== false
+                || candidate.transientFor !== null) {
+            return false;
+        }
+
+        const desktops = candidate.desktops;
+        return desktops && desktops.length === 1 && desktops[0] === expectedDesktop
+                && String(desktops[0].id) === expectedDesktopId;
     }
 
     function orderedDesktopIds() {

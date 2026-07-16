@@ -21,6 +21,9 @@ Rectangle {
     signal desktopReorderMoved(string expectedDesktopId, real sceneX, real sceneY)
     signal desktopReorderReleased(string expectedDesktopId, real sceneX, real sceneY)
     signal navigationTargetsChanged()
+    signal windowDropped(var candidate, string expectedWindowId, var expectedSourceDesktop,
+                         string expectedSourceDesktopId, var expectedTargetDesktop,
+                         string expectedTargetDesktopId, var expectedScreen)
     signal windowTapped(var candidate, string expectedWindowId, var expectedDesktop, string expectedDesktopId,
                         var expectedScreen)
 
@@ -37,9 +40,10 @@ Rectangle {
     readonly property var floatingWindowIds: buildFloatingWindowIds()
     property int columnDelegateRevision: 0
 
-    color: desktopReorderSource ? "#f050607a" : current ? "#f02b3548" : "#dc171e2a"
-    border.width: current ? 2 : 1
-    border.color: current ? "#a8c7ff" : "#526179"
+    color: windowDropArea.validTarget ? "#ee2f4057"
+                                      : desktopReorderSource ? "#f050607a" : current ? "#f02b3548" : "#dc171e2a"
+    border.width: windowDropArea.validTarget || current ? 2 : 1
+    border.color: windowDropArea.validTarget ? "#86aee8" : current ? "#a8c7ff" : "#526179"
     radius: 8
     clip: true
 
@@ -182,11 +186,15 @@ Rectangle {
                 readonly property var frame: card.frameForWindow(model.window, windowId)
                 readonly property bool selectedThumbnail: !tiledPresentation || tiledPresentation.selected
                 readonly property bool minimizedWindow: model.window ? model.window.minimized : false
+                readonly property var sourceDesktop: card.desktop
+                readonly property string sourceDesktopId: card.desktopId
+                readonly property var sourceScreen: card.screen
                 readonly property var thumbnailTarget: thumbnailShell
                 readonly property var tabTarget: tabShell
 
                 width: viewport.width
                 height: viewport.height
+                opacity: thumbnailShell.Drag.active || tabShell.Drag.active ? 0.72 : 1
                 z: frame && frame.floating ? 1000 + index : 100 + index
 
                 onCandidateChanged: card.navigationTargetsChanged()
@@ -233,6 +241,16 @@ Rectangle {
                              && !windowPresentation.minimizedWindow
                     clip: true
 
+                    Drag.active: false
+                    Drag.source: windowPresentation
+                    Drag.hotSpot.x: thumbnailDragHandler.centroid.pressPosition.x
+                                    + thumbnailDragHandler.activeTranslation.x
+                    Drag.hotSpot.y: thumbnailDragHandler.centroid.pressPosition.y
+                                    + thumbnailDragHandler.activeTranslation.y
+                    Drag.keys: ["driftile-window"]
+                    Drag.proposedAction: Qt.MoveAction
+                    Drag.supportedActions: Qt.MoveAction
+
                     Rectangle {
                         anchors.fill: parent
                         color: "#131a25"
@@ -265,6 +283,33 @@ Rectangle {
                         onTapped: card.windowTapped(model.window, windowPresentation.windowId, card.desktop,
                                                     card.desktopId, card.screen)
                     }
+
+                    DragHandler {
+                        id: thumbnailDragHandler
+
+                        target: null
+                        acceptedButtons: Qt.LeftButton
+                        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                        acceptedModifiers: Qt.NoModifier
+                        enabled: thumbnailShell.visible && card.windowCanDrag(windowPresentation)
+
+                        onGrabChanged: (transition, point) => {
+                            if (transition === PointerDevice.GrabExclusive) {
+                                thumbnailShell.Drag.active = true;
+                            } else if (transition === PointerDevice.UngrabExclusive) {
+                                if (point.state === EventPoint.Released) {
+                                    thumbnailShell.Drag.drop();
+                                } else {
+                                    thumbnailShell.Drag.cancel();
+                                }
+                                thumbnailShell.Drag.active = false;
+                            } else if (transition === PointerDevice.CancelGrabExclusive
+                                       || transition === PointerDevice.CancelGrabPassive) {
+                                thumbnailShell.Drag.cancel();
+                                thumbnailShell.Drag.active = false;
+                            }
+                        }
+                    }
                 }
 
                 Rectangle {
@@ -294,6 +339,14 @@ Rectangle {
                                                                        ? "#f4f8ff" : "#71839e"
                     radius: 2
                     clip: true
+
+                    Drag.active: false
+                    Drag.source: windowPresentation
+                    Drag.hotSpot.x: tabDragHandler.centroid.pressPosition.x + tabDragHandler.activeTranslation.x
+                    Drag.hotSpot.y: tabDragHandler.centroid.pressPosition.y + tabDragHandler.activeTranslation.y
+                    Drag.keys: ["driftile-window"]
+                    Drag.proposedAction: Qt.MoveAction
+                    Drag.supportedActions: Qt.MoveAction
 
                     Text {
                         anchors.fill: parent
@@ -327,6 +380,34 @@ Rectangle {
                                  && !windowPresentation.minimizedWindow && card.desktop && card.screen
                         onTapped: card.windowTapped(model.window, windowPresentation.windowId, card.desktop,
                                                     card.desktopId, card.screen)
+                    }
+
+                    DragHandler {
+                        id: tabDragHandler
+
+                        target: null
+                        acceptedButtons: Qt.LeftButton
+                        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                        acceptedModifiers: Qt.NoModifier
+                        enabled: tabShell.visible && windowPresentation.tiledPresentation
+                                 && !windowPresentation.minimizedWindow && card.windowCanDrag(windowPresentation)
+
+                        onGrabChanged: (transition, point) => {
+                            if (transition === PointerDevice.GrabExclusive) {
+                                tabShell.Drag.active = true;
+                            } else if (transition === PointerDevice.UngrabExclusive) {
+                                if (point.state === EventPoint.Released) {
+                                    tabShell.Drag.drop();
+                                } else {
+                                    tabShell.Drag.cancel();
+                                }
+                                tabShell.Drag.active = false;
+                            } else if (transition === PointerDevice.CancelGrabExclusive
+                                       || transition === PointerDevice.CancelGrabPassive) {
+                                tabShell.Drag.cancel();
+                                tabShell.Drag.active = false;
+                            }
+                        }
                     }
                 }
             }
@@ -376,6 +457,31 @@ Rectangle {
         }
     }
 
+    DropArea {
+        id: windowDropArea
+
+        readonly property bool validTarget: containsDrag && card.windowDropIsValid(drag.source, drag.keys)
+
+        anchors.fill: parent
+        keys: ["driftile-window"]
+        z: 10000
+
+        onEntered: drag => drag.accepted = card.windowDropIsValid(drag.source, drag.keys)
+        onPositionChanged: drag => drag.accepted = card.windowDropIsValid(drag.source, drag.keys)
+        onDropped: drop => {
+            const source = drop.source;
+            if (!card.windowDropIsValid(source, drop.keys)) {
+                drop.accepted = false;
+                return;
+            }
+
+            drop.action = Qt.MoveAction;
+            drop.accepted = true;
+            card.windowDropped(source.candidate, source.windowId, source.sourceDesktop, source.sourceDesktopId,
+                               card.desktop, card.desktopId, card.screen);
+        }
+    }
+
     function collectNavigationTargets(sceneItem) {
         const targets = [];
         if (!sceneItem || !desktop || !screen) {
@@ -413,6 +519,46 @@ Rectangle {
 
     function navigationTargetId(windowId) {
         return JSON.stringify([desktopId, windowId]);
+    }
+
+    function windowCanDrag(presentation) {
+        try {
+            const candidate = presentation ? presentation.candidate : null;
+            const windowId = presentation ? presentation.windowId : null;
+            const sourceDesktop = presentation ? presentation.sourceDesktop : null;
+            const sourceDesktopId = presentation ? presentation.sourceDesktopId : null;
+            const sourceScreen = presentation ? presentation.sourceScreen : null;
+            if (!candidate || candidate.deleted || candidate.minimized || presentation.minimizedWindow
+                    || candidate.wantsInput !== true || candidate.normalWindow !== true
+                    || candidate.managed !== true || candidate.moveable !== true || candidate.modal !== false
+                    || candidate.internalId === undefined || candidate.internalId === null
+                    || typeof windowId !== "string" || windowId.length === 0
+                    || String(candidate.internalId) !== windowId || !sourceDesktop
+                    || sourceDesktop.id === undefined || sourceDesktop.id === null
+                    || typeof sourceDesktopId !== "string" || sourceDesktopId.length === 0
+                    || String(sourceDesktop.id) !== sourceDesktopId || !sourceScreen
+                    || candidate.output !== sourceScreen || candidate.transient !== false
+                    || candidate.transientFor !== null) {
+                return false;
+            }
+
+            const desktops = candidate.desktops;
+            return desktops && desktops.length === 1 && desktops[0] === sourceDesktop
+                    && String(desktops[0].id) === sourceDesktopId;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function windowDropIsValid(source, keys) {
+        try {
+            return keys && typeof keys.indexOf === "function" && keys.indexOf("driftile-window") >= 0
+                    && windowCanDrag(source) && desktop && screen && desktop.id !== undefined && desktop.id !== null
+                    && String(desktop.id) === desktopId && source.sourceScreen === screen
+                    && source.sourceDesktopId !== desktopId;
+        } catch (error) {
+            return false;
+        }
     }
 
     function windowIsActionable(candidate) {
