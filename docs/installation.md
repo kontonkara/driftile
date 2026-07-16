@@ -11,9 +11,9 @@ the desktop user, not with `sudo`.
 - **Any compatible Linux distribution:** install the standard KWin package from
   [Install a release](#install-a-release).
 - **NixOS:** use the system module under
-  [NixOS and Home Manager](#nixos-and-home-manager).
-- **Home Manager:** use the per-user module in the same
-  [NixOS and Home Manager](#nixos-and-home-manager) section.
+  [NixOS](#nixos).
+- **Home Manager:** use the per-user module under
+  [Home Manager](#home-manager).
 
 ## Install a release
 
@@ -179,16 +179,31 @@ steps above, then remove Driftile's stored KConfig values and layout snapshot:
 kwriteconfig6 --file kwinrc --group Plugins \
   --key io.github.kontonkara.driftileEnabled --delete ""
 for key in ApplicationBorderlessExclusions ApplicationColumnPresentations \
-  ApplicationColumnWidths \
+  ApplicationColumnWidths ApplicationFloatingPositions \
   ApplicationFocusCentering ApplicationInitialFloating \
-  ApplicationTilingExclusions BorderlessWindows CenterFocusedColumn \
-  ColumnWidthPresets ColumnWidthStepPercent DefaultColumnPresentation \
-  DefaultColumnWidthPercent DefaultColumnWidthPixels Gap ShowTabIndicator \
-  TouchpadNavigation \
+  ApplicationInitialFullscreen ApplicationInitialFullWidth \
+  ApplicationTilingExclusions ApplicationWindowHeights \
+  AlwaysCenterSingleColumn BorderlessWindows CenterFocusedColumn \
+  CenterFocusedColumnOnOverflow ColumnWidthPresets ColumnWidthStepPercent \
+  ColumnWidthStepPixels DefaultColumnPresentation DefaultColumnWidthPercent \
+  DefaultColumnWidthPixels DefaultWindowHeight EmptyDesktopAboveFirst Gap \
+  ShowTabIndicator TouchpadNavigation \
   TouchpadWorkspaceNavigation TouchpadNavigationFingerCount \
-  TouchpadNaturalScroll WindowHeightPresets WindowHeightStepPercent; do
+  TouchpadNaturalScroll WindowHeightPresets WindowHeightStepPercent \
+  WindowHeightStepPixels WorkspaceAutoBackAndForth; do
   kwriteconfig6 --file kwinrc \
     --group Script-io.github.kontonkara.driftile \
+    --key "$key" --delete ""
+done
+for key in TouchpadGesture TouchpadGestureFingerCount; do
+  kwriteconfig6 --file kwinrc \
+    --group Effect-io.github.kontonkara.driftile.overview \
+    --key "$key" --delete ""
+done
+for key in AnimatePosition AnimateSize Duration EasingCurve \
+  ResizeAnimationThreshold WindowClassExclusions; do
+  kwriteconfig6 --file kwinrc \
+    --group Effect-io.github.kontonkara.driftile.transitions \
     --key "$key" --delete ""
 done
 rm -- "${XDG_CONFIG_HOME:-$HOME/.config}/driftile-layout-state.ini"
@@ -207,6 +222,8 @@ The flake exposes packages and installation modules for `x86_64-linux` and
 inputs.driftile.url = "github:kontonkara/driftile/v1.37.0";
 ```
 
+### NixOS
+
 For a system-wide NixOS installation, import the NixOS module:
 
 ```nix
@@ -217,6 +234,8 @@ modules = [
   }
 ];
 ```
+
+### Home Manager
 
 For a per-user installation, import the module into an existing Home Manager
 configuration:
@@ -229,6 +248,8 @@ modules = [
   }
 ];
 ```
+
+### Shared options
 
 The 1.37.0 module exposes the optional overview as a separate package. It
 remains disabled unless requested:

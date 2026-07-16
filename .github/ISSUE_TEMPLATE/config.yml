@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Troubleshooting guide
+    url: https://github.com/kontonkara/driftile/blob/main/docs/troubleshooting.md
+    about: Check common recovery steps and diagnostics before filing a bug.

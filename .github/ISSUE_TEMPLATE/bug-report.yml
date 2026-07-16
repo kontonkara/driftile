@@ -1,0 +1,77 @@
+name: Bug report
+description: Report behavior that is incorrect or unexpected
+title: "bug: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: Before reporting, check the [troubleshooting guide](https://github.com/kontonkara/driftile/blob/main/docs/troubleshooting.md) and the [latest stable release](https://github.com/kontonkara/driftile/releases/latest).
+  - type: input
+    id: version
+    attributes:
+      label: Driftile version
+      placeholder: Release tag or commit SHA
+    validations:
+      required: true
+  - type: input
+    id: plasma
+    attributes:
+      label: Plasma and KWin version
+      placeholder: Plasma 6.7.0, KWin 6.7.0
+    validations:
+      required: true
+  - type: dropdown
+    id: session
+    attributes:
+      label: Session
+      options:
+        - Wayland
+        - X11
+    validations:
+      required: true
+  - type: dropdown
+    id: installation
+    attributes:
+      label: Installation method
+      options:
+        - Release KPackage
+        - NixOS module
+        - Home Manager module
+        - Source checkout
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include the relevant window types, shortcuts, outputs, and desktops.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: Add relevant logs, screenshots, and configuration. Remove private data first.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I reproduced this with the latest stable release.
+          required: true
+        - label: I checked the troubleshooting guide and existing issues.
+          required: true

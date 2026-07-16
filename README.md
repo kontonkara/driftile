@@ -4,32 +4,35 @@
 [![Latest release](https://img.shields.io/github/v/release/kontonkara/driftile?display_name=tag)](https://github.com/kontonkara/driftile/releases/latest)
 
 Driftile is a KWin extension that adds scrollable tiling and dynamic workspaces
-to KDE Plasma. KWin remains responsible for compositing, windows, outputs, and
-virtual desktops; Driftile provides the layout and interaction policy.
+to KDE Plasma. It changes layout and interaction policy while KWin remains the
+compositor and window manager.
 
 ## Features
 
-- Horizontal scrollable columns with stacked and tabbed window layouts.
-- Independent retained layouts for each output, virtual desktop, and activity,
-  with a shared trailing empty desktop and an optional leading empty desktop.
-- Keyboard and pointer control for focus, movement, reordering, resizing,
-  drag-and-drop, centering, and transfers between outputs or desktops.
-- Full-width columns, manual floating, native fullscreen and maximize support,
-  and stable minimized-window slots.
-- Configurable gaps, width and height presets, application rules, focus
-  centering, and optional borderless windows.
-- Layout restoration plus optional overview, smooth transitions, and
-  reversible shortcut companions.
+- Scrollable columns with stacked or tabbed windows.
+- Retained layouts per output, virtual desktop, and activity.
+- Keyboard and pointer control for focus, movement, resizing, drag-and-drop,
+  and transfers between outputs or desktops.
+- Full-width columns, floating windows, native fullscreen and maximize, and
+  stable minimized-window slots.
+- Configurable gaps, sizing presets, application rules, borders, overview,
+  transitions, shortcuts, and layout restoration.
 
 ## Installation
 
-Driftile requires KDE Plasma with KWin 6.7 or newer.
+Driftile requires KDE Plasma with KWin 6.7 or newer. Choose the installation
+path for your system:
 
-### Any compatible Linux distribution
+| System                            | Instructions                                                           |
+| --------------------------------- | ---------------------------------------------------------------------- |
+| Any compatible Linux distribution | [Install the release KPackage](docs/installation.md#install-a-release) |
+| NixOS                             | [Import the NixOS flake module](docs/installation.md#nixos)            |
+| Home Manager                      | [Import the per-user flake module](docs/installation.md#home-manager)  |
 
-Download the `.kwinscript` archive and `SHA256SUMS` from the
-[latest release](https://github.com/kontonkara/driftile/releases/latest), verify
-the download, and install it as your desktop user:
+For a standard installation, download the `.kwinscript` archive and
+`SHA256SUMS` from the
+[latest release](https://github.com/kontonkara/driftile/releases/latest), then
+run as your desktop user:
 
 ```bash
 sha256sum --check --ignore-missing SHA256SUMS
@@ -37,22 +40,8 @@ kpackagetool6 --type=KWin/Script --install ./driftile-*.kwinscript
 ```
 
 Enable **Driftile** in **System Settings > Window Management > KWin Scripts**.
-The [installation guide](docs/installation.md) covers upgrades, removal, the
-optional overview and transition effects, and the shortcut helper.
-
-### NixOS
-
-Pin a release tag as a flake input, import `driftile.nixosModules.default`, and
-set `programs.driftile.enable = true`. See the
-[NixOS instructions](docs/installation.md#nixos-and-home-manager) for the
-complete module example.
-
-### Home Manager
-
-Import `driftile.homeManagerModules.default` and set
-`programs.driftile.enable = true`. The same module can manage settings and a
-shortcut profile without installing a second copy of the package. See the
-[Home Manager instructions](docs/installation.md#nixos-and-home-manager).
+The [installation guide](docs/installation.md) also covers upgrades, removal,
+the optional overview and transition effects, and shortcut setup.
 
 ## Configuration
 
@@ -60,20 +49,19 @@ Open Driftile's entry under **System Settings > Window Management > KWin
 Scripts** for layout and application settings. Manage key bindings under
 **System Settings > Keyboard > Shortcuts** by searching for **Driftile**.
 
-Nix users can declare the same settings through
-`programs.driftile.settings`. See [Configuration](docs/configuration.md) and
-[Shortcuts](docs/shortcuts.md).
+Nix users can declare the same settings through `programs.driftile.settings`.
+See [Configuration](docs/configuration.md), [Shortcuts](docs/shortcuts.md), and
+the [interaction guide](docs/interaction-model.md).
 
 ## Compatibility
 
-- Native Wayland is the primary target; Wayland and XWayland windows share the
-  same layout model.
-- Native X11 is supported on a single output. Multi-output native X11 remains
-  unverified.
+- Wayland is the primary target; native Wayland and XWayland windows share one
+  layout model.
+- Native X11 is supported on one output; multi-output native X11 is unverified.
 - Touchpad navigation is available only on native Wayland.
 - With multiple activities, Driftile manages windows assigned to exactly one
   activity. Windows shared across activities remain under KWin ownership.
-- Release archives are standard KWin KPackages and are not tied to NixOS.
+- Release archives are standard KWin KPackages and are distribution-neutral.
 
 See [Compatibility](docs/compatibility.md) for current platform and hardware
 limits.
@@ -82,14 +70,11 @@ limits.
 
 Driftile is under active development. Use the
 [latest stable release](https://github.com/kontonkara/driftile/releases/latest)
-for regular installation; `main` may include unreleased behavior.
-For problems, follow the [troubleshooting guide](docs/troubleshooting.md) and
-[open an issue](https://github.com/kontonkara/driftile/issues/new).
-
-## Documentation
-
-The [documentation index](docs/README.md) links the installation,
-configuration, usage, compatibility, and troubleshooting guides.
+for normal installation; `main` can contain unreleased behavior. Start with the
+[documentation index](docs/README.md) or the
+[troubleshooting guide](docs/troubleshooting.md), then
+[open an issue](https://github.com/kontonkara/driftile/issues/new/choose) if the
+problem remains.
 
 ## License
 
