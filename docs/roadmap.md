@@ -1726,3 +1726,5 @@ No other feature belongs to 1.40.0.
   changing shortcuts or persisted layout state.
 - Add an optional global first-manual-floating position beneath exact
   application rules, reusing the same anchor, clamp, and pixel-snap behavior.
+- Bound rapid transition retarget latency and skip unchanged synchronized
+  targets without restarting active animations.

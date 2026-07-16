@@ -68,10 +68,14 @@ persistence.
 Launchers, switcher-hidden windows, OSDs, outlines, lock-screen and internal
 windows, popups, transient dialogs, frameless shell overlays, and other
 non-movable windows are outside the effect. Consecutive geometry updates
-retarget the active position and size transitions in place. Position animation
-uses a non-negative absolute base plus a signed translation, so rapid commands
-and outputs with negative global coordinates do not restart or accumulate
-transitions. Movement and size animation can be disabled independently.
+retarget the active position and size transitions in place. The first transition
+uses the configured duration; later retargets use at most a `100` millisecond
+base interval, follow Plasma's animation-speed setting, and never outlast the
+configured duration. Targets that have not changed are not submitted again.
+Position animation uses a non-negative absolute base plus a signed translation,
+so rapid commands and outputs with negative global coordinates do not restart
+or accumulate transitions. Movement and size animation can be disabled
+independently.
 
 `WindowClassExclusions` accepts at most 128 exact, case-sensitive KWin
 `windowClass` values, one per line and at most 255 UTF-8 bytes each. Use KWin's
