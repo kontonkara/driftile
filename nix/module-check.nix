@@ -450,8 +450,10 @@ let
           centerFocusedColumnOnOverflow = true;
           columnWidthPresets = [
             20
-            50
+            "50%"
+            "640px"
             80
+            "1280px"
           ];
           columnWidthStepPercent = 13;
           defaultColumnPresentation = "tabbed";
@@ -465,7 +467,9 @@ let
           touchpadWorkspaceNavigation = true;
           windowHeightPresets = [
             30
-            60
+            "480px"
+            "60%"
+            "720px"
             90
           ];
           windowHeightStepPercent = 17;
@@ -533,6 +537,29 @@ let
       ]
       {
         programs.driftile.settings.windowHeightPresets = builtins.genList (index: index + 10) 16;
+      }
+      { };
+  homeManagerMixedPresetBounds =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.settings = {
+          columnWidthPresets = [
+            10
+            "1px"
+            "100%"
+            "16384px"
+          ];
+          windowHeightPresets = [
+            "10%"
+            "1px"
+            100
+            "16384px"
+          ];
+        };
       }
       { };
   homeManagerSettingsWithSystemInstall =
@@ -680,6 +707,25 @@ let
     { columnWidthPresets = [ 101 ]; }
     { columnWidthPresets = [ 50.5 ]; }
     { columnWidthPresets = [ "50" ]; }
+    { columnWidthPresets = [ "9%" ]; }
+    { columnWidthPresets = [ "101%" ]; }
+    { columnWidthPresets = [ "0px" ]; }
+    { columnWidthPresets = [ "16385px" ]; }
+    { columnWidthPresets = [ "01%" ]; }
+    { columnWidthPresets = [ "01px" ]; }
+    {
+      columnWidthPresets = [
+        20
+        "20%"
+      ];
+    }
+    {
+      columnWidthPresets = [
+        "200px"
+        50
+        "100px"
+      ];
+    }
     {
       columnWidthPresets = [
         50
@@ -697,6 +743,25 @@ let
     { windowHeightPresets = [ 101 ]; }
     { windowHeightPresets = [ 50.5 ]; }
     { windowHeightPresets = [ "50" ]; }
+    { windowHeightPresets = [ "9%" ]; }
+    { windowHeightPresets = [ "101%" ]; }
+    { windowHeightPresets = [ "0px" ]; }
+    { windowHeightPresets = [ "16385px" ]; }
+    { windowHeightPresets = [ "01%" ]; }
+    { windowHeightPresets = [ "01px" ]; }
+    {
+      windowHeightPresets = [
+        20
+        "20%"
+      ];
+    }
+    {
+      windowHeightPresets = [
+        "200px"
+        50
+        "100px"
+      ];
+    }
     {
       windowHeightPresets = [
         50
@@ -876,7 +941,7 @@ let
       BorderlessWindows = false;
       CenterFocusedColumn = true;
       CenterFocusedColumnOnOverflow = true;
-      ColumnWidthPresets = "20,50,80";
+      ColumnWidthPresets = "20,50%,640px,80,1280px";
       ColumnWidthStepPercent = 13;
       DefaultColumnPresentation = "tabbed";
       DefaultColumnWidthPercent = 65;
@@ -887,7 +952,7 @@ let
       TouchpadNavigationFingerCount = 4;
       TouchpadNaturalScroll = false;
       TouchpadWorkspaceNavigation = true;
-      WindowHeightPresets = "30,60,90";
+      WindowHeightPresets = "30,480px,60%,720px,90";
       WindowHeightStepPercent = 17;
     };
   };
@@ -1080,6 +1145,12 @@ assert
 assert
   homeManagerMaximumHeightPresets.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".WindowHeightPresets
   == "10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25";
+assert
+  homeManagerMixedPresetBounds.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ColumnWidthPresets
+  == "10,1px,100%,16384px";
+assert
+  homeManagerMixedPresetBounds.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".WindowHeightPresets
+  == "10%,1px,100,16384px";
 assert
   homeManagerSettingsWithSystemInstall.config.qt.kde.settings == {
     kwinrc."Script-io.github.kontonkara.driftile" = {

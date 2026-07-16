@@ -137,20 +137,82 @@ let
   renderApplicationInitialFloating = renderApplicationTilingExclusions;
   transitionWindowClassExclusionType = applicationTilingExclusionType;
   renderTransitionWindowClassExclusions = renderApplicationTilingExclusions;
-  strictlyIncreasing =
-    values:
-    builtins.length values < 2
-    || (
-      builtins.head values < builtins.head (builtins.tail values)
-      && strictlyIncreasing (builtins.tail values)
-    );
-  columnWidthPresetType = lib.types.addCheck (lib.types.listOf (lib.types.ints.between 10 100)) (
-    presets: builtins.length presets <= 16 && strictlyIncreasing presets
-  );
+  parsePresetToken =
+    preset:
+    if builtins.isInt preset then
+      {
+        unit = "percent";
+        value = preset;
+      }
+    else if !builtins.isString preset then
+      null
+    else if builtins.stringLength preset > 7 then
+      null
+    else
+      let
+        percentMatch = builtins.match "([1-9][0-9]*)%" preset;
+        pixelMatch = builtins.match "([1-9][0-9]*)px" preset;
+      in
+      if percentMatch != null then
+        let
+          value = builtins.fromJSON (builtins.head percentMatch);
+        in
+        if value >= 10 && value <= 100 then
+          {
+            unit = "percent";
+            inherit value;
+          }
+        else
+          null
+      else if pixelMatch != null then
+        let
+          value = builtins.fromJSON (builtins.head pixelMatch);
+        in
+        if value >= 1 && value <= 16384 then
+          {
+            unit = "pixels";
+            inherit value;
+          }
+        else
+          null
+      else
+        null;
+  validPresetSequence =
+    presets:
+    let
+      result = lib.foldl'
+        (
+          state: preset:
+          let
+            parsed = parsePresetToken preset;
+          in
+          if !state.valid || parsed == null then
+            state // { valid = false; }
+          else if parsed.unit == "percent" then
+            {
+              inherit (state) pixels;
+              percent = parsed.value;
+              valid = parsed.value > state.percent;
+            }
+          else
+            {
+              inherit (state) percent;
+              pixels = parsed.value;
+              valid = parsed.value > state.pixels;
+            }
+        )
+        {
+          percent = 9;
+          pixels = 0;
+          valid = true;
+        }
+        presets;
+    in
+    builtins.length presets <= 16 && result.valid;
+  presetTokenType = lib.types.either (lib.types.ints.between 10 100) lib.types.str;
+  columnWidthPresetType = lib.types.addCheck (lib.types.listOf presetTokenType) validPresetSequence;
   renderColumnWidthPresets = presets: lib.concatStringsSep "," (map toString presets);
-  windowHeightPresetType = lib.types.addCheck (lib.types.listOf (lib.types.ints.between 10 100)) (
-    presets: builtins.length presets <= 16 && strictlyIncreasing presets
-  );
+  windowHeightPresetType = lib.types.addCheck (lib.types.listOf presetTokenType) validPresetSequence;
   renderWindowHeightPresets = presets: lib.concatStringsSep "," (map toString presets);
   systemMainInstallEnabled = lib.attrByPath [
     "programs"
@@ -364,7 +426,7 @@ in
             columnWidthPresets = lib.mkOption {
               type = columnWidthPresetType;
               default = [ ];
-              description = "Strictly increasing column width presets in percent; an empty list uses the built-in thirds.";
+              description = "Up to 16 mixed column width presets. Integers are percentages from 10 to 100; strings must use canonical 10% to 100% or 1px to 16384px forms. Values must increase within each unit; an empty list uses the built-in thirds.";
             };
 
             gap = lib.mkOption {
@@ -397,7 +459,7 @@ in
             windowHeightPresets = lib.mkOption {
               type = windowHeightPresetType;
               default = [ ];
-              description = "Strictly increasing window height presets in percent; an empty list uses the built-in thirds.";
+              description = "Up to 16 mixed window height presets. Integers are percentages from 10 to 100; strings must use canonical 10% to 100% or 1px to 16384px forms. Values must increase within each unit; an empty list uses the built-in thirds.";
             };
 
             windowHeightStepPercent = lib.mkOption {

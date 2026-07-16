@@ -231,7 +231,7 @@
          <item row="4" column="0">
           <widget class="QLabel" name="columnWidthPresetsLabel">
            <property name="text">
-            <string>Column width presets:</string>
+            <string>Column width presets (% or px):</string>
            </property>
            <property name="buddy">
             <cstring>kcfg_ColumnWidthPresets</cstring>
@@ -241,10 +241,10 @@
          <item row="4" column="1">
           <widget class="QLineEdit" name="kcfg_ColumnWidthPresets">
            <property name="toolTip">
-            <string>Comma-separated, strictly increasing percentages from 10 to 100. Blank uses the built-in thirds.</string>
+            <string>Up to 16 comma-separated presets. Percentages use bare 10 to 100 or explicit 10% to 100%; fixed sizes use 1px to 16384px. Values must increase within each unit. Blank uses the built-in thirds.</string>
            </property>
            <property name="placeholderText">
-            <string>Built-in thirds</string>
+            <string>33, 50%, 800px</string>
            </property>
           </widget>
          </item>
@@ -277,7 +277,7 @@
          <item row="6" column="0">
           <widget class="QLabel" name="windowHeightPresetsLabel">
            <property name="text">
-            <string>Window height presets:</string>
+            <string>Window height presets (% or px):</string>
            </property>
            <property name="buddy">
             <cstring>kcfg_WindowHeightPresets</cstring>
@@ -287,10 +287,10 @@
          <item row="6" column="1">
           <widget class="QLineEdit" name="kcfg_WindowHeightPresets">
            <property name="toolTip">
-            <string>Comma-separated, strictly increasing percentages from 10 to 100. Blank uses the built-in 1/3, 1/2, and 2/3 proportions.</string>
+            <string>Up to 16 comma-separated presets. Percentages use bare 10 to 100 or explicit 10% to 100%; fixed sizes use 1px to 16384px. Values must increase within each unit. Blank uses the built-in 1/3, 1/2, and 2/3 proportions.</string>
            </property>
            <property name="placeholderText">
-            <string>Built-in 1/3, 1/2, 2/3</string>
+            <string>33, 50%, 720px</string>
            </property>
           </widget>
          </item>

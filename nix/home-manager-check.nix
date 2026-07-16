@@ -63,8 +63,10 @@ let
         centerFocusedColumnOnOverflow = true;
         columnWidthPresets = [
           20
-          50
+          "50%"
+          "640px"
           80
+          "1280px"
         ];
         columnWidthStepPercent = 13;
         defaultColumnPresentation = "tabbed";
@@ -78,7 +80,9 @@ let
         touchpadWorkspaceNavigation = true;
         windowHeightPresets = [
           30
-          60
+          "480px"
+          "60%"
+          "720px"
           90
         ];
         windowHeightStepPercent = 17;
@@ -402,7 +406,7 @@ assert
       BorderlessWindows = false;
       CenterFocusedColumn = true;
       CenterFocusedColumnOnOverflow = true;
-      ColumnWidthPresets = "20,50,80";
+      ColumnWidthPresets = "20,50%,640px,80,1280px";
       ColumnWidthStepPercent = 13;
       DefaultColumnPresentation = "tabbed";
       DefaultColumnWidthPercent = 65;
@@ -413,7 +417,7 @@ assert
       TouchpadNavigationFingerCount = 4;
       TouchpadNaturalScroll = false;
       TouchpadWorkspaceNavigation = true;
-      WindowHeightPresets = "30,60,90";
+      WindowHeightPresets = "30,480px,60%,720px,90";
       WindowHeightStepPercent = 17;
     };
   };

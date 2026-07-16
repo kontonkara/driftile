@@ -1431,7 +1431,7 @@ describe("KWin shortcut handlers", () => {
     );
   });
 
-  it("exposes a bounded custom column-width preset cycle", () => {
+  it("exposes a bounded mixed column-width preset cycle", () => {
     const presetsEntry = configuration.match(
       /<entry name="ColumnWidthPresets" type="String">([\s\S]*?)<\/entry>/,
     )?.[1];
@@ -1443,23 +1443,30 @@ describe("KWin shortcut handlers", () => {
     )?.[1];
 
     expect(presetsEntry).toContain(
-      "<label>Column width presets in percent</label>",
+      "<label>Column width presets in percent or pixels</label>",
     );
     expect(presetsEntry).toContain("<default></default>");
-    expect(presetsLabel).toContain("<string>Column width presets:</string>");
+    expect(presetsLabel).toContain(
+      "<string>Column width presets (% or px):</string>",
+    );
     expect(presetsLabel).toContain(
       "<cstring>kcfg_ColumnWidthPresets</cstring>",
     );
-    expect(presetsWidget).toContain("Comma-separated");
+    expect(presetsWidget).toContain("Up to 16 comma-separated presets.");
+    expect(presetsWidget).toContain("bare 10 to 100");
+    expect(presetsWidget).toContain("explicit 10% to 100%");
+    expect(presetsWidget).toContain("1px to 16384px");
+    expect(presetsWidget).toContain("Values must increase within each unit.");
     expect(presetsWidget).toContain("Blank uses the built-in thirds.");
+    expect(presetsWidget).toContain("33, 50%, 800px");
     expect(qml).toContain(
       'columnWidthPresets: KWin.readConfig("ColumnWidthPresets", "")',
     );
     expect(runtime).toContain(
-      "nextController.setColumnWidthPresets(settings.columnWidthPresets.percentages)",
+      "nextController.setColumnWidthPresets(settings.columnWidthPresets.presets)",
     );
     expect(runtime).toContain(
-      "controller.setColumnWidthPresets(settings.columnWidthPresets.percentages)",
+      "controller.setColumnWidthPresets(settings.columnWidthPresets.presets)",
     );
   });
 
@@ -1500,7 +1507,7 @@ describe("KWin shortcut handlers", () => {
     );
   });
 
-  it("exposes a bounded custom window-height preset cycle", () => {
+  it("exposes a bounded mixed window-height preset cycle", () => {
     const presetsEntry = configuration.match(
       /<entry name="WindowHeightPresets" type="String">([\s\S]*?)<\/entry>/,
     )?.[1];
@@ -1512,25 +1519,32 @@ describe("KWin shortcut handlers", () => {
     )?.[1];
 
     expect(presetsEntry).toContain(
-      "<label>Window height presets in percent</label>",
+      "<label>Window height presets in percent or pixels</label>",
     );
     expect(presetsEntry).toContain("<default></default>");
-    expect(presetsLabel).toContain("<string>Window height presets:</string>");
+    expect(presetsLabel).toContain(
+      "<string>Window height presets (% or px):</string>",
+    );
     expect(presetsLabel).toContain(
       "<cstring>kcfg_WindowHeightPresets</cstring>",
     );
-    expect(presetsWidget).toContain("Comma-separated");
+    expect(presetsWidget).toContain("Up to 16 comma-separated presets.");
+    expect(presetsWidget).toContain("bare 10 to 100");
+    expect(presetsWidget).toContain("explicit 10% to 100%");
+    expect(presetsWidget).toContain("1px to 16384px");
+    expect(presetsWidget).toContain("Values must increase within each unit.");
     expect(presetsWidget).toContain(
       "Blank uses the built-in 1/3, 1/2, and 2/3 proportions.",
     );
+    expect(presetsWidget).toContain("33, 50%, 720px");
     expect(qml).toContain(
       'windowHeightPresets: KWin.readConfig("WindowHeightPresets", "")',
     );
-    expect(runtime).toMatch(
-      /nextController\.setWindowHeightPresets\(\s*settings\.windowHeightPresets\.percentages,\s*\)/u,
+    expect(runtime).toContain(
+      "nextController.setWindowHeightPresets(settings.windowHeightPresets.cycle)",
     );
     expect(runtime).toContain(
-      "controller.setWindowHeightPresets(settings.windowHeightPresets.percentages)",
+      "controller.setWindowHeightPresets(settings.windowHeightPresets.cycle)",
     );
   });
 
