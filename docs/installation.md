@@ -1,6 +1,6 @@
 # Installation
 
-Driftile 1.38.0 is the latest stable release. It requires KDE Plasma with KWin
+Driftile 1.39.0 is the latest stable release. It requires KDE Plasma with KWin
 6.7 or newer and `kpackagetool6`, and targets Wayland, XWayland, and a
 single-output native X11 session.
 Touchpad navigation is available only on native Wayland. Run all commands as
@@ -18,15 +18,15 @@ the desktop user, not with `sudo`.
 ## Install a release
 
 Download these files from the
-[`v1.38.0` release](https://github.com/kontonkara/driftile/releases/tag/v1.38.0):
+[`v1.39.0` release](https://github.com/kontonkara/driftile/releases/tag/v1.39.0):
 
-- `driftile-1.38.0.kwinscript`
-- `driftile-overview-1.38.0.kwineffect` if using the optional overview
-- `driftile-transitions-1.38.0.kwineffect` if using optional geometry
+- `driftile-1.39.0.kwinscript`
+- `driftile-overview-1.39.0.kwineffect` if using the optional overview
+- `driftile-transitions-1.39.0.kwineffect` if using optional geometry
   transitions
 - `SHA256SUMS`
 - `LICENSE`
-- `driftile-shortcuts-1.38.0.mjs` if using the optional shortcut helper
+- `driftile-shortcuts-1.39.0.mjs` if using the optional shortcut helper
 
 Verify every downloaded release asset before installing it:
 
@@ -38,7 +38,7 @@ Install the KWin package:
 
 ```bash
 kpackagetool6 --type=KWin/Script \
-  --install ./driftile-1.38.0.kwinscript
+  --install ./driftile-1.39.0.kwinscript
 ```
 
 Open **System Settings > Window Management > KWin Scripts**, enable
@@ -52,7 +52,7 @@ Install the optional transition effect separately:
 
 ```bash
 kpackagetool6 --type=KWin/Effect \
-  --install ./driftile-transitions-1.38.0.kwineffect
+  --install ./driftile-transitions-1.39.0.kwineffect
 ```
 
 Enable **Driftile Transitions** under **System Settings > Window Management >
@@ -64,7 +64,7 @@ default.
 
 ## Configure shortcuts
 
-Driftile works without the companion helper. The 1.38.0 helper claims the
+Driftile works without the companion helper. The 1.39.0 helper claims the
 bundled defaults and accepts custom profiles. Any action can instead be
 assigned manually.
 
@@ -75,8 +75,8 @@ Driftile before running it, and keep the helper until its saved claim has been
 released.
 
 ```bash
-node ./driftile-shortcuts-1.38.0.mjs claim
-node ./driftile-shortcuts-1.38.0.mjs check
+node ./driftile-shortcuts-1.39.0.mjs claim
+node ./driftile-shortcuts-1.39.0.mjs check
 ```
 
 `claim` transactionally saves and replaces active conflicting assignments.
@@ -84,7 +84,7 @@ node ./driftile-shortcuts-1.38.0.mjs check
 after the claim:
 
 ```bash
-node ./driftile-shortcuts-1.38.0.mjs release
+node ./driftile-shortcuts-1.39.0.mjs release
 ```
 
 If `release` reports assignments edited after the claim, stop and resolve them
@@ -96,9 +96,9 @@ Pass the same custom file to `claim` and `check`. `release` reads the saved
 transaction and rejects `--profile`:
 
 ```bash
-node ./driftile-shortcuts-1.38.0.mjs claim --profile ./shortcuts.json
-node ./driftile-shortcuts-1.38.0.mjs check --profile ./shortcuts.json
-node ./driftile-shortcuts-1.38.0.mjs release
+node ./driftile-shortcuts-1.39.0.mjs claim --profile ./shortcuts.json
+node ./driftile-shortcuts-1.39.0.mjs check --profile ./shortcuts.json
+node ./driftile-shortcuts-1.39.0.mjs release
 ```
 
 Release the current claim before claiming a changed profile.
@@ -180,8 +180,9 @@ kwriteconfig6 --file kwinrc --group Plugins \
   --key io.github.kontonkara.driftileEnabled --delete ""
 for key in ApplicationBorderlessExclusions ApplicationColumnPresentations \
   ApplicationColumnWidths ApplicationFloatingPositions \
-  ApplicationFocusCentering ApplicationInitialFloating \
-  ApplicationInitialFullscreen ApplicationInitialFullWidth \
+  ApplicationFocusCentering ApplicationInitialDestinations \
+  ApplicationInitialFloating ApplicationInitialFullscreen \
+  ApplicationInitialFullWidth ApplicationInitialMaximized \
   ApplicationTilingExclusions ApplicationWindowHeights \
   AlwaysCenterSingleColumn BorderlessWindows CenterFocusedColumn \
   CenterFocusedColumnOnOverflow ColumnWidthPresets ColumnWidthStepPercent \
@@ -219,7 +220,7 @@ The flake exposes packages and installation modules for `x86_64-linux` and
 `aarch64-linux`. Add Driftile as an input:
 
 ```nix
-inputs.driftile.url = "github:kontonkara/driftile/v1.38.0";
+inputs.driftile.url = "github:kontonkara/driftile/v1.39.0";
 ```
 
 ### NixOS
@@ -251,7 +252,7 @@ modules = [
 
 ### Shared options
 
-The 1.38.0 module exposes the optional overview as a separate package. It
+The 1.39.0 module exposes the optional overview as a separate package. It
 remains disabled unless requested:
 
 ```nix
@@ -359,7 +360,7 @@ already installed by NixOS or another system module, keep
 Manager. See [Configuration](configuration.md#home-manager) for ownership and
 reload behavior.
 
-The 1.38.0 Home Manager module can also generate a custom shortcut profile:
+The 1.39.0 Home Manager module can also generate a custom shortcut profile:
 
 ```nix
 programs.driftile.shortcuts = {

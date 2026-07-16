@@ -1,7 +1,29 @@
 # Migration
 
-The latest stable release is 1.38.0. Use the steps below when changing release
+The latest stable release is 1.39.0. Use the steps below when changing release
 generations, and never combine files from different releases.
+
+## Upgrade from 1.38.0 to 1.39.0
+
+1. Release a helper-owned shortcut profile with the installed helper.
+2. Disable Driftile and both optional effects in System Settings.
+3. Install matching 1.39.0 artifacts, or pin the Nix input to `v1.39.0` and
+   rebuild.
+4. Re-enable Driftile and only the optional effects you use, then reclaim the
+   unchanged helper profile if needed.
+
+Logical layout state remains v4, and shortcut IDs and default bindings are
+unchanged. Exact initial destination and native maximize-to-edges rules default
+to empty and apply only to fresh matching normal windows. Existing, restored,
+related, transferred, and already admitted windows remain unchanged.
+
+## Roll back from 1.39.0 to 1.38.0
+
+Release a helper-owned profile, disable Driftile and both optional effects,
+then restore matching verified 1.38.0 artifacts. NixOS and Home Manager users
+should restore the input to `v1.38.0` and rebuild. The older package ignores
+the additive destination and initial-maximize keys. Both versions use logical
+layout state v4, so no state conversion is required.
 
 ## Upgrade from 1.37.0 to 1.38.0
 

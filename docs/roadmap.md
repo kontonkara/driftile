@@ -1,12 +1,12 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.38.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.39.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.38.0 adds exact initial full-width, fullscreen, and floating-position
-application rules plus continuous rapid animation retargeting across desktop
-handoffs and negative global coordinates. Logical persistence remains v4.
+Stable 1.39.0 adds exact fresh-window destination assignment and native
+maximize-to-work-area-edges after normal underlay admission. Logical
+persistence remains v4.
 
 ## Foundation (delivered)
 
@@ -1665,7 +1665,7 @@ Release criteria (met):
 
 No other feature belongs to 1.38.0.
 
-### 1.39.0 (in development)
+### 1.39.0 (released)
 
 - Add exact fresh-window rules for an initial one-based virtual desktop, named
   output, or both.
@@ -1678,7 +1678,7 @@ No other feature belongs to 1.38.0.
 - Expose the bounded rule map through KConfig, NixOS, and Home Manager without
   a shortcut or persistence-schema change.
 
-Release criteria:
+Release criteria (met):
 
 - Cross-output desktop assignment uses only public Plasma 6.7+ APIs and
   confirms each synchronous membership and output transition.
@@ -1688,3 +1688,5 @@ Release criteria:
   use the confirmed target work area and layout context.
 - Native maximize remains under KWin ownership and preserves the admitted
   tiled or floating state beneath it without retrying unsupported requests.
+
+No other feature belongs to 1.39.0.
