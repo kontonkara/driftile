@@ -128,6 +128,10 @@
       <label>Applications initially floating by desktop-file ID</label>
       <default></default>
     </entry>
+    <entry name="ApplicationFloatingPositions" type="String">
+      <label>Application floating positions</label>
+      <default></default>
+    </entry>
     <entry name="ApplicationInitialFullWidth" type="String">
       <label>Applications initially full-width by KWin desktopFileName</label>
       <default></default>

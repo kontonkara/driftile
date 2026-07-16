@@ -942,6 +942,7 @@ describe("KWin shortcut handlers", () => {
       "kcfg_ApplicationWindowHeights",
       "kcfg_ApplicationFocusCentering",
       "kcfg_ApplicationInitialFloating",
+      "kcfg_ApplicationFloatingPositions",
       "kcfg_ApplicationInitialFullWidth",
       "kcfg_ApplicationInitialFullscreen",
       "kcfg_ApplicationTilingExclusions",
@@ -1505,6 +1506,15 @@ describe("KWin shortcut handlers", () => {
     const initialFloatingWidget = configurationUi.match(
       /<widget class="QPlainTextEdit" name="kcfg_ApplicationInitialFloating">([\s\S]*?)<\/widget>/,
     )?.[1];
+    const floatingPositionsEntry = configuration.match(
+      /<entry name="ApplicationFloatingPositions" type="String">([\s\S]*?)<\/entry>/,
+    )?.[1];
+    const floatingPositionsLabel = configurationUi.match(
+      /<widget class="QLabel" name="applicationFloatingPositionsLabel">([\s\S]*?)<\/widget>/,
+    )?.[1];
+    const floatingPositionsWidget = configurationUi.match(
+      /<widget class="QPlainTextEdit" name="kcfg_ApplicationFloatingPositions">([\s\S]*?)<\/widget>/,
+    )?.[1];
     const initialFullWidthEntry = configuration.match(
       /<entry name="ApplicationInitialFullWidth" type="String">([\s\S]*?)<\/entry>/,
     )?.[1];
@@ -1542,6 +1552,43 @@ describe("KWin shortcut handlers", () => {
     );
     expect(qml).toContain(
       'applicationInitialFloating: KWin.readConfig("ApplicationInitialFloating", "")',
+    );
+    expect(floatingPositionsEntry).toContain(
+      "<label>Application floating positions</label>",
+    );
+    expect(floatingPositionsEntry).toContain("<default></default>");
+    expect(floatingPositionsLabel).toContain(
+      "<string>Application floating positions:</string>",
+    );
+    expect(floatingPositionsLabel).toContain(
+      "<cstring>kcfg_ApplicationFloatingPositions</cstring>",
+    );
+    expect(floatingPositionsWidget).toContain(
+      "Enter up to 128 exact, case-sensitive KWin desktopFileName=anchor,x,y rules, one per line.",
+    );
+    expect(floatingPositionsWidget).toContain(
+      "Anchors are top-left, top, top-right, right, bottom-right, bottom, bottom-left, or left.",
+    );
+    expect(floatingPositionsWidget).toContain(
+      "Offsets are signed integer logical pixels from -16384 to 16384.",
+    );
+    expect(floatingPositionsWidget).toContain(
+      "Rules apply when a genuinely new normal window starts manual floating or a tiled window first enters manual floating.",
+    );
+    expect(floatingPositionsWidget).toContain(
+      "A remembered manual position wins afterward.",
+    );
+    expect(floatingPositionsWidget).toContain(
+      "Startup-existing, restored, already manually floating, automatic, and dialog windows are not repositioned.",
+    );
+    expect(floatingPositionsWidget).toContain(
+      "Desktop and output transfers preserve the current frame.",
+    );
+    expect(floatingPositionsWidget).toContain(
+      "Live edits affect future first manual-floating placements only.",
+    );
+    expect(qml).toContain(
+      'applicationFloatingPositions: KWin.readConfig("ApplicationFloatingPositions", "")',
     );
     expect(initialFullWidthEntry).toContain(
       "<label>Applications initially full-width by KWin desktopFileName</label>",
