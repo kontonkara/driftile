@@ -410,6 +410,7 @@ function settings(
     applicationBorderlessExclusions: "",
     applicationColumnPresentations: "",
     applicationColumnWidths: "",
+    applicationWindowHeights: "",
     applicationFocusCentering: "",
     applicationInitialFloating: "",
     applicationTilingExclusions: "",
