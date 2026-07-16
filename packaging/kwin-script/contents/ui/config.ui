@@ -713,6 +713,32 @@
         </widget>
        </item>
        <item>
+        <widget class="QLabel" name="applicationInitialUnfocusedLabel">
+         <property name="text">
+          <string>Applications initially unfocused:</string>
+         </property>
+         <property name="buddy">
+          <cstring>kcfg_ApplicationInitialUnfocused</cstring>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPlainTextEdit" name="kcfg_ApplicationInitialUnfocused">
+         <property name="toolTip">
+          <string>Enter up to 128 exact, case-sensitive KWin desktopFileName values, one per line. Fresh normal matches suppress or undo initial focus once after admission only when their desktop and output context is already visible. The rule never selects a desktop or output and wins when the same application is also listed as initially focused. Rejected or unavailable one-shot requests are not retried. Live edits affect future tracked windows only.</string>
+         </property>
+         <property name="whatsThis">
+          <string>Blank lines are ignored. Fresh normal exact matches suppress or undo initial focus once after admission only when their desktop and output context is already visible. The rule never selects a desktop or output, takes precedence over the initially focused rule, and does not retry rejected or unavailable requests. Live edits affect future tracked windows only.</string>
+         </property>
+         <property name="minimumSize">
+          <size>
+           <width>0</width>
+           <height>100</height>
+          </size>
+         </property>
+        </widget>
+       </item>
+       <item>
         <widget class="QLabel" name="applicationInitialFullscreenLabel">
          <property name="text">
           <string>Applications initially fullscreen:</string>

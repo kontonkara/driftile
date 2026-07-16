@@ -1113,6 +1113,7 @@ QtObject {
             applicationInitialFullWidth: KWin.readConfig("ApplicationInitialFullWidth", ""),
             applicationInitialMaximized: KWin.readConfig("ApplicationInitialMaximized", ""),
             applicationInitialFocused: KWin.readConfig("ApplicationInitialFocused", ""),
+            applicationInitialUnfocused: KWin.readConfig("ApplicationInitialUnfocused", ""),
             applicationInitialFullscreen: KWin.readConfig("ApplicationInitialFullscreen", ""),
             applicationTilingExclusions: KWin.readConfig("ApplicationTilingExclusions", ""),
             alwaysCenterSingleColumn: KWin.readConfig("AlwaysCenterSingleColumn", false),
