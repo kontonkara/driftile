@@ -1,7 +1,31 @@
 # Migration
 
-The latest stable release is 1.40.0. Use the steps below when changing release
+The latest stable release is 1.41.0. Use the steps below when changing release
 generations, and never combine files from different releases.
+
+## Upgrade from 1.40.0 to 1.41.0
+
+1. Release a helper-owned shortcut profile with the installed helper.
+2. Disable Driftile and both optional effects in System Settings.
+3. Install matching 1.41.0 artifacts, or pin the Nix input to `v1.41.0` and
+   rebuild.
+4. Re-enable Driftile and only the optional effects you use, then reclaim the
+   unchanged helper profile if needed.
+
+Logical layout state remains v4, and shortcut IDs and default bindings are
+unchanged. Existing application-rule values remain valid; when
+`desktopFileName` is unavailable, the same exact values may now match
+`resourceClass`. The new default floating position is disabled unless
+configured, and named desktop destinations affect only new matching windows.
+
+## Roll back from 1.41.0 to 1.40.0
+
+Release a helper-owned profile, disable Driftile and both optional effects,
+then restore matching verified 1.40.0 artifacts. NixOS and Home Manager users
+should remove `defaultFloatingPosition` if configured, restore the input to
+`v1.40.0`, and rebuild. Both versions use logical layout state v4, so no state
+conversion is required. Version 1.40.0 ignores named desktop destination syntax
+and cannot use `resourceClass` as an application-rule fallback.
 
 ## Upgrade from 1.39.0 to 1.40.0
 

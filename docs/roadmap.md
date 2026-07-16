@@ -1,12 +1,13 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.40.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.41.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.40.0 adds exact fresh-window focus policies, restores recent focus
-after a close, and hardens geometry transitions across desktop-effect
-handoffs. Logical persistence remains v4.
+Stable 1.41.0 adds named initial desktop destinations, a default first-floating
+position, application-rule fallback identities, more reliable close-focus
+handoff, and lower-latency transition retargeting. Logical persistence remains
+v4.
 
 ## Foundation (delivered)
 
@@ -1716,7 +1717,7 @@ Release criteria (met):
 
 No other feature belongs to 1.40.0.
 
-### 1.41.0 (in development)
+### 1.41.0 (released)
 
 - Allow a fresh-window destination to select a virtual desktop by its exact,
   case-sensitive name instead of its current numeric position.
@@ -1732,3 +1733,18 @@ No other feature belongs to 1.40.0.
   an ineligible interim surface while closing the active window.
 - Resolve exact application rules from `desktopFileName`, falling back to
   `resourceClass` only when the desktop-file ID is unavailable.
+
+Release criteria (met):
+
+- Named destinations fail closed unless exactly one current virtual desktop
+  matches, and never select a desktop or change focus.
+- Default floating placement remains opt-in, fresh-only, clamped, and snapped
+  to the destination output's physical-pixel grid.
+- A usable `desktopFileName` always wins; `resourceClass` is read only when the
+  desktop-file ID is unavailable, without changing the settings schema.
+- Close-focus recovery ignores ineligible interim surfaces but never overrides
+  a live replacement selected by KWin.
+- Initial transition duration remains configurable while rapid retargets use a
+  bounded, animation-scale-aware interval and skip unchanged targets.
+
+No other feature belongs to 1.41.0.
