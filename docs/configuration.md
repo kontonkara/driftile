@@ -18,21 +18,30 @@ invalid value through an external configuration tool rejects the entire update
 and preserves the active settings; valid changes apply without reloading the
 extension.
 
-## Optional overview gesture
+## Optional overview access and appearance
 
 The separately installed **Driftile Overview** effect uses a four-finger up
 swipe to open and a down swipe to close by default. Configure or disable the
-gesture from the effect's settings. Finger counts range from `3` to `5`.
+gesture from the effect's settings. Finger counts range from `3` to `5`. A
+pointer screen edge can also open the effect and is disabled by default. The
+same page controls the backdrop color and opacity.
 
-Home Manager leaves these KConfig values unmanaged by default. A complete
-profile can own both independently of package installation:
+Home Manager leaves these KConfig values unmanaged by default. It can manage
+them independently of package installation:
 
 ```nix
+programs.driftile.overview.screenEdge = "top-left";
+programs.driftile.overview.backdropColor = "#E60B0F17";
 programs.driftile.overview.touchpadGesture = {
   enable = true;
   fingerCount = 4;
 };
 ```
+
+`screenEdge` accepts `none` or one of the eight named edges and corners.
+`backdropColor` uses strict `#AARRGGBB` form. Set either option to `null` to
+leave its existing KConfig value untouched; use `none` to manage and disable
+screen-edge activation.
 
 Use a different count from vertical desktop navigation and Plasma's built-in
 Overview, or disable the overlapping gesture, so each global direction has one

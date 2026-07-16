@@ -259,15 +259,19 @@ remains disabled unless requested:
 
 ```nix
 programs.driftile.overview.enable = true;
+programs.driftile.overview.screenEdge = "top-left";
+programs.driftile.overview.backdropColor = "#E60B0F17";
 programs.driftile.overview.touchpadGesture = {
   enable = true;
   fingerCount = 4;
 };
 ```
 
-`overview.touchpadGesture` is a Home Manager-only nullable profile. Its default
-is `null`, which leaves the effect's existing gesture values untouched; it can
-manage an overview installed in another scope.
+`overview.screenEdge`, `overview.backdropColor`, and
+`overview.touchpadGesture` are Home Manager-only nullable options. Their
+defaults are `null`, which leaves the effect's existing values untouched; they
+can manage an overview installed in another scope. Screen-edge activation is
+disabled by default in the effect itself.
 
 The modules also expose the optional transition effect as an independent
 package:

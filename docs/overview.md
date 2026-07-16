@@ -62,12 +62,17 @@ window and companion unchanged.
 Version 1.33.0 extends the same gesture to another output. The destination card
 selects both the output and desktop; the existing same-output path is unchanged.
 
+The 1.44.0 development line adds optional pointer screen-edge activation, a
+configurable backdrop color with opacity, and desktop selection from empty
+content in a non-current card. Window, tab, gutter, reorder, and drop targets
+retain their existing priority.
+
 The companion is disabled by default. When enabled with a fresh shortcut
 record, `Meta+O` toggles it. KGlobalAccel preserves an existing assignment
 across upgrades, including an explicitly unbound action, so review it in
 **System Settings > Keyboard > Shortcuts** after upgrading. The effect has no
-screen edge and requires the main Driftile KWin script because that script
-publishes the authoritative layout snapshot.
+screen edge by default and requires the main Driftile KWin script because that
+script publishes the authoritative layout snapshot.
 
 `driftile_open_overview` and `driftile_close_overview` are separate unbound
 actions for one-way automation. Opening an active or pending overview and
@@ -84,6 +89,17 @@ The gesture uses KWin's native Wayland API and is a safe no-op on native X11.
 Plasma's built-in Overview also uses four-finger vertical gestures. Disable
 one overview gesture or choose a free count; vertical desktop navigation must
 also use a different count so each global direction has one owner.
+
+## Pointer screen edge and backdrop
+
+The effect can reserve one pointer edge or corner through KWin's public screen
+edge handler. `none` is the default and reserves nothing. Changing the setting
+live releases the old edge before reserving the new one. Activation only opens
+the effect; reaching the edge again cannot close an active or loading overview.
+
+Backdrop color and opacity are configurable through the same effect settings.
+Invalid external edge or color values fall back to no edge and the built-in
+backdrop without changing layout state.
 
 ## Keyboard navigation
 
@@ -125,6 +141,11 @@ KWin, layout, or persistent-state write.
 
 The interaction adds no layout or persistent state, KConfig value, shortcut,
 schema, or private API.
+
+A left click on empty content in a non-current desktop card uses the same
+guarded desktop-selection path as its number gutter. Visible thumbnails and
+tabs, active search results, the current card, gutter reorder, and window drag
+or close input remain separate.
 
 ## Desktop reordering
 
@@ -231,10 +252,12 @@ it opt-in:
 programs.driftile.overview.enable = true;
 ```
 
-Home Manager can additionally manage the gesture independently of package
-ownership:
+Home Manager can additionally manage access and appearance independently of
+package ownership:
 
 ```nix
+programs.driftile.overview.screenEdge = "top-left";
+programs.driftile.overview.backdropColor = "#E60B0F17";
 programs.driftile.overview.touchpadGesture = {
   enable = true;
   fingerCount = 4;
@@ -245,9 +268,9 @@ The main script and overview can be installed independently. For example, a
 system-wide main package can be combined with a per-user overview. Do not
 install the same package ID through both NixOS and Home Manager for one user.
 Neither module enables the effect in KWin; enable it in Desktop Effects and
-adjust its shortcut or touchpad gesture only if needed. The Home Manager-only
-nullable `touchpadGesture` profile can manage an effect installed in another
-scope; `null` leaves both KConfig values untouched.
+adjust its shortcut, screen edge, backdrop, or touchpad gesture only if needed.
+The Home Manager-only nullable overview options can manage an effect installed
+in another scope; `null` leaves their KConfig values untouched.
 
 ## Validation
 
@@ -299,13 +322,16 @@ closes the stale effect, and performs no rollback.
 Ordinary KWin activation may raise the window, and Driftile's existing focus
 handling may reveal its tiled column. Beyond a confirmed desktop request, the
 effect does not switch activities, move windows, write memberships, outputs,
-geometry, or settings, register a screen edge, or assign another shortcut.
+geometry, or settings, or assign another shortcut. Its optional public screen
+edge only requests activation and owns no layout state.
 Desktop-card drag may change only the global desktop order through the guarded
 public path above. Keyboard activation reuses the existing guarded paths. The
 overview gesture adds no shortcut action, input grab, persistence field,
-private API, second window model, timer, or KWin write. Pointer and keyboard
-interaction still perform no window, stacking-order, or layout scan. The
-effect does not infer columns from window geometry or add animation.
+private API, second window model, timer, or KWin write. Ordinary pointer and
+keyboard interaction still perform no window, stacking-order, or layout scan;
+an empty-card click performs one bounded visible-delegate hit test before the
+existing desktop action. The effect does not infer columns from window geometry
+or add animation.
 Disabling or uninstalling it leaves the main extension and Plasma's built-in
 Overview unchanged.
 

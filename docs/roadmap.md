@@ -1797,3 +1797,25 @@ Release criteria (met):
   head before publication.
 
 No unrelated feature belongs to 1.43.0.
+
+### 1.44.0 (in development)
+
+- Add optional pointer screen-edge activation to the overview across all eight
+  edges and corners, with `none` as the no-reservation default.
+- Add a configurable alpha backdrop while retaining the existing color by
+  default.
+- Select a non-current desktop by clicking empty card content without changing
+  window, tab, gutter, reorder, search, or drag behavior.
+- Let Home Manager manage the edge and strict `#AARRGGBB` backdrop independently
+  of package installation.
+
+Release criteria:
+
+- Live edge changes release the previous public KWin reservation, malformed
+  external values fail safely, and edge activation never closes the overview.
+- Empty-card selection reuses the guarded desktop path and never duplicates a
+  window or tab action.
+- One grouped unit, package, Nix, X11, and Wayland gate passes on the batch
+  head before publication.
+
+No unrelated feature belongs to 1.44.0.
