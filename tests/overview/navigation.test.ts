@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { findOverviewNavigationTarget } from "../../src/overview/runtime";
+import { LAYOUT_PERSISTENCE_LIMITS } from "../../src/core/layout-persistence";
+import {
+  findOverviewNavigationTarget,
+  findOverviewSequentialNavigationTarget,
+} from "../../src/overview/runtime";
 
 describe("findOverviewNavigationTarget", () => {
   it.each([
@@ -157,6 +161,187 @@ describe("findOverviewNavigationTarget", () => {
         "right",
       ),
     ).toBeNull();
+  });
+});
+
+describe("findOverviewSequentialNavigationTarget", () => {
+  const visuallyOrdered = [
+    target("first-a", 0, 0),
+    target("first-b", 0, 0),
+    target("source", 100, 0),
+    target("last", -100, 100),
+  ];
+
+  it.each([
+    ["first", "first-a"],
+    ["last", "last"],
+    ["next", "last"],
+    ["previous", "first-b"],
+  ] as const)("selects the %s visual target", (direction, expected) => {
+    expect(
+      findOverviewSequentialNavigationTarget(
+        "source",
+        [...visuallyOrdered].reverse(),
+        direction,
+      ),
+    ).toBe(expected);
+  });
+
+  it("uses visual order independent of input order", () => {
+    const shuffled = [
+      visuallyOrdered[2],
+      visuallyOrdered[0],
+      visuallyOrdered[3],
+      visuallyOrdered[1],
+    ];
+
+    for (const direction of ["first", "last", "next", "previous"] as const) {
+      expect(
+        findOverviewSequentialNavigationTarget("source", shuffled, direction),
+      ).toBe(
+        findOverviewSequentialNavigationTarget(
+          "source",
+          visuallyOrdered,
+          direction,
+        ),
+      );
+    }
+  });
+
+  it("wraps next and previous at visual endpoints", () => {
+    expect(
+      findOverviewSequentialNavigationTarget("last", visuallyOrdered, "next"),
+    ).toBe("first-a");
+    expect(
+      findOverviewSequentialNavigationTarget(
+        "first-a",
+        visuallyOrdered,
+        "previous",
+      ),
+    ).toBe("last");
+  });
+
+  it("skips malformed non-source targets", () => {
+    const oversizedId = "x".repeat(
+      LAYOUT_PERSISTENCE_LIMITS.identifierCharacters * 2 + 33,
+    );
+
+    expect(
+      findOverviewSequentialNavigationTarget(
+        "source",
+        [
+          null,
+          [],
+          { id: "" },
+          target(oversizedId, 0, 0),
+          { id: "invalid-rect", rect: { height: 0, width: 100, x: 0, y: 0 } },
+          target("source", 100, 0),
+          target("next", 200, 0),
+        ],
+        "next",
+      ),
+    ).toBe("next");
+  });
+
+  it("accepts the maximum bounded composite target id", () => {
+    const maximumId = "x".repeat(
+      LAYOUT_PERSISTENCE_LIMITS.identifierCharacters * 2 + 32,
+    );
+
+    expect(
+      findOverviewSequentialNavigationTarget(
+        maximumId,
+        [target(maximumId, 0, 0), target("next", 100, 0)],
+        "next",
+      ),
+    ).toBe("next");
+  });
+
+  it("fails closed for invalid or missing sources and directions", () => {
+    const validTargets = [target("source", 0, 0), target("next", 100, 0)];
+    const oversizedId = "x".repeat(
+      LAYOUT_PERSISTENCE_LIMITS.identifierCharacters * 2 + 33,
+    );
+
+    expect(
+      findOverviewSequentialNavigationTarget("", validTargets, "next"),
+    ).toBeNull();
+    expect(
+      findOverviewSequentialNavigationTarget(oversizedId, validTargets, "next"),
+    ).toBeNull();
+    expect(
+      findOverviewSequentialNavigationTarget("missing", validTargets, "next"),
+    ).toBeNull();
+    expect(
+      findOverviewSequentialNavigationTarget(
+        "source",
+        [
+          { id: "source", rect: { height: 100, width: 0, x: 0, y: 0 } },
+          target("next", 100, 0),
+        ],
+        "next",
+      ),
+    ).toBeNull();
+    expect(
+      findOverviewSequentialNavigationTarget("source", validTargets, "right"),
+    ).toBeNull();
+  });
+
+  it("rejects duplicate valid ids and oversized target arrays", () => {
+    expect(
+      findOverviewSequentialNavigationTarget(
+        "source",
+        [
+          target("source", 0, 0),
+          target("duplicate", 100, 0),
+          target("duplicate", 200, 0),
+        ],
+        "next",
+      ),
+    ).toBeNull();
+
+    const oversizedTargets = Array.from(
+      {
+        length:
+          LAYOUT_PERSISTENCE_LIMITS.windows +
+          LAYOUT_PERSISTENCE_LIMITS.contexts +
+          1,
+      },
+      (_, index) => target(`target-${String(index)}`, index, 0),
+    );
+    expect(
+      findOverviewSequentialNavigationTarget(
+        "target-0",
+        oversizedTargets,
+        "next",
+      ),
+    ).toBeNull();
+  });
+
+  it("fails closed when target access throws", () => {
+    const hostileId = Object.defineProperty({}, "id", {
+      get(): never {
+        throw new Error("unavailable");
+      },
+    });
+    const hostileRect = {
+      id: "hostile-rect",
+      rect: Object.defineProperty({}, "x", {
+        get(): never {
+          throw new Error("unavailable");
+        },
+      }),
+    };
+
+    for (const hostile of [hostileId, hostileRect]) {
+      expect(
+        findOverviewSequentialNavigationTarget(
+          "source",
+          [target("source", 0, 0), hostile, target("next", 100, 0)],
+          "next",
+        ),
+      ).toBeNull();
+    }
   });
 });
 

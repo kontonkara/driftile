@@ -4,7 +4,10 @@ import {
   type OverviewLiveLayout,
 } from "./layout-view";
 
-export { findOverviewNavigationTarget } from "./navigation";
+export {
+  findOverviewNavigationTarget,
+  findOverviewSequentialNavigationTarget,
+} from "./navigation";
 export { planOverviewDesktopDrop } from "./desktop-drop";
 export { planOverviewWindowDesktopDrop } from "./window-drop";
 export {
