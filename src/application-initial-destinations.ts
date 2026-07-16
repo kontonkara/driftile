@@ -1,5 +1,6 @@
 export const APPLICATION_INITIAL_DESTINATION_LIMITS = Object.freeze({
   documentCharacters: 65_664,
+  desktopNameBytes: 255,
   entries: 128,
   identifierBytes: 255,
   outputNameBytes: 255,
@@ -8,6 +9,7 @@ export const APPLICATION_INITIAL_DESTINATION_LIMITS = Object.freeze({
 
 export interface ApplicationInitialDestination {
   readonly desktop?: number;
+  readonly desktopName?: string;
   readonly output?: string;
 }
 
@@ -128,11 +130,12 @@ function parseInitialDestination(
 
   const fields = encodedDestination.split(",");
 
-  if (fields.length < 1 || fields.length > 2) {
+  if (fields.length < 1 || fields.length > 3) {
     return null;
   }
 
   let desktop: number | undefined;
+  let desktopName: string | undefined;
   let output: string | undefined;
 
   for (const field of fields) {
@@ -141,7 +144,7 @@ function parseInitialDestination(
     }
 
     if (field.startsWith("desktop:")) {
-      if (desktop !== undefined) {
+      if (desktop !== undefined || desktopName !== undefined) {
         return null;
       }
 
@@ -152,6 +155,29 @@ function parseInitialDestination(
       }
 
       desktop = Number(encodedDesktop);
+      continue;
+    }
+
+    if (field.startsWith("desktop-name:")) {
+      if (desktop !== undefined || desktopName !== undefined) {
+        return null;
+      }
+
+      const encodedDesktopName = field.slice("desktop-name:".length);
+      const desktopNameBytes = utf8ByteLength(encodedDesktopName);
+
+      if (
+        encodedDesktopName.length === 0 ||
+        encodedDesktopName.trim() !== encodedDesktopName ||
+        desktopNameBytes === null ||
+        desktopNameBytes >
+          APPLICATION_INITIAL_DESTINATION_LIMITS.desktopNameBytes ||
+        hasControlCharacter(encodedDesktopName)
+      ) {
+        return null;
+      }
+
+      desktopName = encodedDesktopName;
       continue;
     }
 
@@ -181,12 +207,17 @@ function parseInitialDestination(
     return null;
   }
 
-  if (desktop === undefined && output === undefined) {
+  if (
+    desktop === undefined &&
+    desktopName === undefined &&
+    output === undefined
+  ) {
     return null;
   }
 
   const destination = Object.freeze({
     ...(desktop === undefined ? {} : { desktop }),
+    ...(desktopName === undefined ? {} : { desktopName }),
     ...(output === undefined ? {} : { output }),
   });
 
@@ -201,6 +232,8 @@ function encodeInitialDestination(
 
   if (destination.desktop !== undefined) {
     fields.push(`desktop:${String(destination.desktop)}`);
+  } else if (destination.desktopName !== undefined) {
+    fields.push(`desktop-name:${destination.desktopName}`);
   }
 
   if (destination.output !== undefined) {

@@ -1023,13 +1023,17 @@ function decodedApplicationInitialDestinations(value: unknown) {
 describe("application initial-destination codec", () => {
   it("normalizes entries into deterministic immutable exact lookup state", () => {
     const input =
-      " org.telegram.desktop =output:DP-1,desktop:2\norg.mozilla.firefox=desktop:3";
+      " org.telegram.desktop =output:DP-1,desktop:2\norg.mozilla.firefox=output:HDMI-A-1,desktop-name:Web Browsing";
     const destinations = decodedApplicationInitialDestinations(input);
 
     expect(destinations.canonicalEntries).toEqual([
-      "org.mozilla.firefox=desktop:3",
+      "org.mozilla.firefox=desktop-name:Web Browsing,output:HDMI-A-1",
       "org.telegram.desktop=desktop:2,output:DP-1",
     ]);
+    expect(destinations.initialDestinationFor("org.mozilla.firefox")).toEqual({
+      desktopName: "Web Browsing",
+      output: "HDMI-A-1",
+    });
     expect(destinations.initialDestinationFor("org.telegram.desktop")).toEqual({
       desktop: 2,
       output: "DP-1",
@@ -1050,9 +1054,9 @@ describe("application initial-destination codec", () => {
     expect(input).toContain("output:DP-1,desktop:2");
   });
 
-  it("accepts either destination field, both fields, and blank lines", () => {
+  it("accepts numeric, named, output-only, combined destinations, and blank lines", () => {
     const destinations = decodedApplicationInitialDestinations(
-      "\n desktop-only =desktop:1\n\t\noutput-only=output:HDMI-A-1\n both=desktop:25,output:DP-2\n",
+      "\n desktop-only =desktop:1\n\t\nnamed-only=desktop-name:Development\noutput-only=output:HDMI-A-1\n both=desktop:25,output:DP-2\n",
     );
 
     expect(EMPTY_APPLICATION_INITIAL_DESTINATIONS.canonicalEntries).toEqual([]);
@@ -1063,6 +1067,9 @@ describe("application initial-destination codec", () => {
     ).toBeUndefined();
     expect(destinations.initialDestinationFor("desktop-only")).toEqual({
       desktop: 1,
+    });
+    expect(destinations.initialDestinationFor("named-only")).toEqual({
+      desktopName: "Development",
     });
     expect(destinations.initialDestinationFor("output-only")).toEqual({
       output: "HDMI-A-1",
@@ -1109,6 +1116,14 @@ describe("application initial-destination codec", () => {
     "application= desktop:2",
     "application=desktop:2, output:DP-1",
     "application=desktop:2,desktop:3",
+    "application=desktop:2,desktop-name:Development",
+    "application=desktop-name:Development,desktop:2",
+    "application=desktop-name:Development,desktop-name:Review",
+    "application=desktop:2,desktop-name:Development,output:DP-1",
+    "application=desktop-name:",
+    "application=desktop-name: Development",
+    "application=desktop-name:Development ",
+    "application=desktop-name:Development,Review",
     "application=output:DP-1,output:DP-2",
     "application=desktop:2,output:",
     "application=output: DP-1",
@@ -1118,13 +1133,15 @@ describe("application initial-destination codec", () => {
     "application=desktop:2=output:DP-1",
     "delete\u007fkey=desktop:2",
     "bad\ud800key=desktop:2",
+    "application=desktop-name:bad\u0080name",
+    "application=desktop-name:bad\udc00name",
     "application=output:bad\u0080name",
     "application=output:bad\udc00name",
   ])("rejects malformed input atomically: %j", (value) => {
     expect(decodeApplicationInitialDestinations(value)).toBeNull();
   });
 
-  it("enforces entry, line, document, identifier, output, and UTF-8 bounds", () => {
+  it("enforces entry, line, document, identifier, desktop-name, output, and UTF-8 bounds", () => {
     const maximumEntries = Array.from(
       { length: APPLICATION_INITIAL_DESTINATION_LIMITS.entries },
       (_, index) => `application-${String(index)}=desktop:1`,
@@ -1133,6 +1150,10 @@ describe("application initial-destination codec", () => {
       APPLICATION_INITIAL_DESTINATION_LIMITS.identifierBytes,
     );
     const maximumUtf8Identifier = `${"é".repeat(127)}a`;
+    const maximumDesktopName = "d".repeat(
+      APPLICATION_INITIAL_DESTINATION_LIMITS.desktopNameBytes,
+    );
+    const maximumUtf8DesktopName = `${"é".repeat(127)}a`;
     const maximumOutput = "o".repeat(
       APPLICATION_INITIAL_DESTINATION_LIMITS.outputNameBytes,
     );
@@ -1170,6 +1191,26 @@ describe("application initial-destination codec", () => {
     expect(
       decodeApplicationInitialDestinations(
         `${maximumUtf8Identifier}é=desktop:1`,
+      ),
+    ).toBeNull();
+    expect(
+      decodeApplicationInitialDestinations(
+        `application=desktop-name:${maximumDesktopName}`,
+      ),
+    ).not.toBeNull();
+    expect(
+      decodeApplicationInitialDestinations(
+        `application=desktop-name:${maximumDesktopName}d`,
+      ),
+    ).toBeNull();
+    expect(
+      decodeApplicationInitialDestinations(
+        `application=desktop-name:${maximumUtf8DesktopName}`,
+      ),
+    ).not.toBeNull();
+    expect(
+      decodeApplicationInitialDestinations(
+        `application=desktop-name:${maximumUtf8DesktopName}é`,
       ),
     ).toBeNull();
     expect(

@@ -569,10 +569,10 @@
        <item>
         <widget class="QPlainTextEdit" name="kcfg_ApplicationInitialDestinations">
          <property name="toolTip">
-          <string>Enter up to 128 exact, case-sensitive KWin desktopFileName=desktop:2,output:DP-1 rules, one per line. Include either or both comma-separated fields. Desktop numbers are 1 to 25; output names are exact, case-sensitive KWin output names.</string>
+          <string>Enter up to 128 exact, case-sensitive KWin desktopFileName=desktop-name:Work,output:DP-1 rules, one per line. Use desktop:2 or desktop-name:Work, optionally with an output. Desktop numbers are 1 to 25; desktop and output names are exact and case-sensitive.</string>
          </property>
          <property name="whatsThis">
-          <string>Rules apply once to genuinely new normal windows, before initial floating, full-width, and fullscreen rules. Admission writes only the new window's desktop and output assignment; it never moves an already tracked window, changes focus, or switches the current desktop. Missing or rejected destinations use a safe one-shot fallback. Live edits affect future windows only.</string>
+          <string>Rules apply once to genuinely new normal windows, before initial floating, full-width, and fullscreen rules. A named desktop must match exactly one current virtual desktop. Admission writes only the new window's desktop and output assignment; it never moves an already tracked window, changes focus, or switches the current desktop. Missing, ambiguous, or rejected destinations use a safe one-shot fallback. Live edits affect future windows only.</string>
          </property>
          <property name="minimumSize">
           <size>

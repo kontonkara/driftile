@@ -1585,22 +1585,25 @@ describe("KWin shortcut handlers", () => {
       "<cstring>kcfg_ApplicationInitialDestinations</cstring>",
     );
     expect(initialDestinationsWidget).toContain(
-      "Enter up to 128 exact, case-sensitive KWin desktopFileName=desktop:2,output:DP-1 rules, one per line.",
+      "Enter up to 128 exact, case-sensitive KWin desktopFileName=desktop-name:Work,output:DP-1 rules, one per line.",
     );
     expect(initialDestinationsWidget).toContain(
-      "Include either or both comma-separated fields.",
+      "Use desktop:2 or desktop-name:Work, optionally with an output.",
     );
     expect(initialDestinationsWidget).toContain(
-      "Desktop numbers are 1 to 25; output names are exact, case-sensitive KWin output names.",
+      "Desktop numbers are 1 to 25; desktop and output names are exact and case-sensitive.",
     );
     expect(initialDestinationsWidget).toContain(
       "Rules apply once to genuinely new normal windows, before initial floating, full-width, and fullscreen rules.",
     );
     expect(initialDestinationsWidget).toContain(
+      "A named desktop must match exactly one current virtual desktop.",
+    );
+    expect(initialDestinationsWidget).toContain(
       "Admission writes only the new window's desktop and output assignment; it never moves an already tracked window, changes focus, or switches the current desktop.",
     );
     expect(initialDestinationsWidget).toContain(
-      "Missing or rejected destinations use a safe one-shot fallback.",
+      "Missing, ambiguous, or rejected destinations use a safe one-shot fallback.",
     );
     expect(initialDestinationsWidget).toContain(
       "Live edits affect future windows only.",
