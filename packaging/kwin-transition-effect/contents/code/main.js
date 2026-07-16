@@ -27,6 +27,7 @@ class DriftileTransitionsEffect {
     this.windowClassExclusionsValid = true;
     this.windowClassExclusions = new Set();
     this.managedWindows = [];
+    this.deferredWindows = new Set();
 
     effect.configChanged.connect(this.loadConfig.bind(this));
     effects.windowAdded.connect(this.manage.bind(this));
@@ -160,24 +161,16 @@ class DriftileTransitionsEffect {
       return;
     }
 
-    for (const window of this.managedWindows) {
-      this.replayDeferredTransition(window);
-    }
+    this.replayDeferredTransitions();
   }
 
   onVisibilityContextChanged() {
-    for (const window of this.managedWindows) {
-      this.replayDeferredTransition(window);
-    }
+    this.replayDeferredTransitions();
   }
 
   onWindowActivated(window) {
     this.replayDeferredTransition(window);
-    for (const candidate of this.managedWindows) {
-      if (candidate !== window) {
-        this.replayDeferredTransition(candidate);
-      }
-    }
+    this.replayDeferredTransitions(window);
   }
 
   onWindowVisibilityOpportunity(window) {
@@ -186,11 +179,21 @@ class DriftileTransitionsEffect {
 
   deferWindowTransition(window, oldGeometry) {
     if (window[DEFERRED_PROPERTY] !== undefined) {
+      this.deferredWindows.add(window);
       return;
     }
 
     this.cancelWindowAnimation(window);
     window[DEFERRED_PROPERTY] = this.copyGeometry(oldGeometry);
+    this.deferredWindows.add(window);
+  }
+
+  replayDeferredTransitions(excludedWindow) {
+    for (const window of this.deferredWindows) {
+      if (window !== excludedWindow) {
+        this.replayDeferredTransition(window);
+      }
+    }
   }
 
   replayDeferredTransition(window) {
@@ -200,6 +203,7 @@ class DriftileTransitionsEffect {
 
     const oldGeometry = window[DEFERRED_PROPERTY];
     if (oldGeometry === undefined) {
+      this.deferredWindows.delete(window);
       return;
     }
 
@@ -223,6 +227,7 @@ class DriftileTransitionsEffect {
     }
 
     delete window[DEFERRED_PROPERTY];
+    this.deferredWindows.delete(window);
     this.animateWindowTransition(window, oldGeometry, newGeometry);
   }
 
@@ -648,6 +653,7 @@ class DriftileTransitionsEffect {
 
     this.cancelWindowAnimation(window);
     delete window[DEFERRED_PROPERTY];
+    this.deferredWindows.delete(window);
   }
 }
 

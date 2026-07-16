@@ -875,8 +875,20 @@ describe("transition effect package", () => {
       geometry: { x: 340, y: 30, width: 300, height: 200 },
       visible: false,
     });
+    const idleWindow = createWindow({
+      geometry: { x: 660, y: 30, width: 300, height: 200 },
+    });
+    let idleDeferredReads = 0;
+    Object.defineProperty(idleWindow, "driftileDeferredTransition", {
+      configurable: true,
+      get() {
+        idleDeferredReads += 1;
+        return undefined;
+      },
+    });
     harness.window.visible = false;
     harness.effects.windowAdded.emit(secondWindow);
+    harness.effects.windowAdded.emit(idleWindow);
     harness.setFullScreenEffectActive(true);
 
     changeGeometry(harness.window, {
@@ -906,6 +918,7 @@ describe("transition effect package", () => {
     harness.effects.windowActivated.emit(harness.window);
     harness.effects.desktopChanged.emit(null, null, null, null);
     expect(harness.animationRequests).toHaveLength(2);
+    expect(idleDeferredReads).toBe(0);
   });
 
   it("captures deferred geometry while a transition hides the window", () => {
@@ -1499,8 +1512,17 @@ describe("transition effect package", () => {
       height: 250,
     });
     configHarness.configChanged.emit();
+    let configDeferredReads = 0;
+    Object.defineProperty(configHarness.window, "driftileDeferredTransition", {
+      configurable: true,
+      get() {
+        configDeferredReads += 1;
+        return undefined;
+      },
+    });
     configHarness.setFullScreenEffectActive(false);
     expect(configHarness.animationRequests).toHaveLength(0);
+    expect(configDeferredReads).toBe(0);
 
     const deletedHarness = createHarness();
     deletedHarness.setFullScreenEffectActive(true);
@@ -1511,8 +1533,17 @@ describe("transition effect package", () => {
       height: 250,
     });
     deletedHarness.windowDeleted.emit(deletedHarness.window);
+    let deletedDeferredReads = 0;
+    Object.defineProperty(deletedHarness.window, "driftileDeferredTransition", {
+      configurable: true,
+      get() {
+        deletedDeferredReads += 1;
+        return undefined;
+      },
+    });
     deletedHarness.setFullScreenEffectActive(false);
     expect(deletedHarness.animationRequests).toHaveLength(0);
+    expect(deletedDeferredReads).toBe(0);
 
     const ineligibleHarness = createHarness();
     ineligibleHarness.setFullScreenEffectActive(true);
