@@ -120,6 +120,18 @@ destination and its nearest neighbor toward the previous focus both fit the
 work area; otherwise it centers the destination. Always-center and exact
 application policies retain priority.
 
+Optional single-column centering is a geometry invariant rather than a focus
+action. When a context contains exactly one tiled column, including a
+multi-window stack, it keeps that column centered through reflow. Floating
+windows and contexts with two or more tiled columns are unchanged. Enabling the
+policy reflows visible singleton contexts; disabling it leaves the current
+viewport in place and stops enforcing the centered result.
+
+The tiled gap is a `0`–`64` logical-pixel value and may be fractional. Solved
+window edges are snapped to each output's physical-pixel grid, so scales that
+cannot represent a requested subpixel gap exactly may distribute one physical
+pixel unevenly between adjacent gaps.
+
 Floating output transfer selects the same deterministic adjacent output as the
 tiled command and adopts that output's selected desktop without switching any
 desktop. It accepts only one relation-free manual or automatic floating window.

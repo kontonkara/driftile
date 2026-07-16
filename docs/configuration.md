@@ -4,13 +4,13 @@ Open **System Settings > Window Management > KWin Scripts** and configure Drifti
 
 The settings page groups the existing controls into two tabs:
 
-- **General**: window decorations, focus centering, touchpad navigation, window
-  gap, tab feedback, default column presentation and width, column width step
-  and presets, and window height step and presets.
+- **General**: window decorations, focus and single-column centering, touchpad
+  navigation, window gap, tab feedback, default column presentation and width,
+  column width step and presets, and window height step and presets.
 - **Applications**: initial column widths and presentation, focus centering,
   initial floating rules, tiling exclusions, and decoration exclusions.
 
-Driftile validates all twenty settings as one snapshot. Applying an invalid
+Driftile validates all twenty-two settings as one snapshot. Applying an invalid
 value through an external configuration tool rejects the entire update and
 preserves the active settings; valid changes apply without reloading the
 extension.
@@ -83,9 +83,10 @@ programs.driftile.transitions = {
 ## Home Manager
 
 `programs.driftile.settings` is `null` by default, so Home Manager writes no
-Driftile setting. A non-null value is one complete typed profile: omitted fields
-take the defaults documented below, and Home Manager writes all twenty
-values.
+Driftile setting. In a non-null profile, ordinary omitted fields take the
+defaults documented below. The nullable `alwaysCenterSingleColumn` and
+`centerFocusedColumnOnOverflow` options default to `null`, leaving their KConfig
+keys unmanaged.
 This profile works with `programs.driftile.enable = false` when the package is
 installed system-wide.
 
@@ -102,6 +103,10 @@ The activation writes only `ApplicationBorderlessExclusions`,
 group. It does not replace the file or manage shortcuts. A running KWin session
 is asked to reconfigure on a best-effort basis; otherwise the values apply on
 its next reload or start.
+
+When non-null, `alwaysCenterSingleColumn` and
+`centerFocusedColumnOnOverflow` additionally write `AlwaysCenterSingleColumn`
+and `CenterFocusedColumnOnOverflow` respectively.
 
 Declare application widths as a typed attribute set and exclusions as lists.
 Home Manager sorts desktop-file IDs before writing newline-delimited KConfig
@@ -135,8 +140,10 @@ programs.driftile.settings.applicationTilingExclusions = [
 
 programs.driftile.settings.centerFocusedColumn = false;
 programs.driftile.settings.centerFocusedColumnOnOverflow = true;
+programs.driftile.settings.alwaysCenterSingleColumn = true;
 programs.driftile.settings.columnWidthPresets = [ 20 50 80 ];
 programs.driftile.settings.defaultColumnPresentation = "stacked";
+programs.driftile.settings.gap = 7.5;
 programs.driftile.settings.showTabIndicator = true;
 programs.driftile.settings.touchpadNavigation = true;
 programs.driftile.settings.touchpadWorkspaceNavigation = true;
@@ -201,6 +208,14 @@ keeps the normal minimal reveal. Replacing the list performs no immediate
 layout, viewport, focus, or persistence write; it applies to the next left,
 right, first, or last tiled-focus action.
 
+**Keep a single tiled column centered** is disabled by default. When enabled,
+one tiled column stays centered in its output, desktop, and activity; a stack
+with multiple windows still counts as one column. This geometry invariant takes
+precedence over viewport reveal and focus-centering policies. Floating windows
+and contexts with two or more tiled columns are unaffected. Enabling it reflows
+visible single-column contexts live. Disabling it stops enforcement without
+forcing the current column away from its centered position.
+
 ## Touchpad navigation
 
 **Enable horizontal touchpad navigation** focuses tiled columns. **Enable
@@ -228,9 +243,17 @@ and neither option adds a shortcut action or default key binding.
 
 ## Window gap
 
-**Window gap** controls spacing between tiled windows and work-area edges in logical pixels. The default is `16`; the range is `0`–`64`, and `0` removes gaps.
+**Window gap** controls spacing between tiled windows and work-area edges in
+logical pixels. The default is `16`; the range is `0`–`64`, and `0` removes
+gaps. The settings UI steps by `0.5`, while KConfig and Home Manager accept any
+in-range numeric value, such as `1.2`.
 
-Changes apply live to visible tiled contexts. Window order, widths, height policies, focus, manually floating frames, automatically excluded windows, and minimized frames stay unchanged. Hidden desktops use the new value when they become visible.
+Changes apply live to visible tiled contexts. Window order, widths, height
+policies, focus, manually floating frames, automatically excluded windows, and
+minimized frames stay unchanged. Hidden desktops use the new value when they
+become visible. Driftile snaps solved edges to the output's physical-pixel grid;
+when a scale cannot represent the requested subpixel spacing exactly, adjacent
+physical gaps may differ by one pixel.
 
 ## Default column presentation
 
@@ -396,7 +419,7 @@ The KConfig decoder accepts at most 65,664 characters in the complete document,
 512 characters in each raw line, 128 nonblank unique IDs, and 255 UTF-8 bytes
 in each trimmed ID. It trims surrounding whitespace and ignores blank lines.
 Control characters, invalid UTF-16, an oversized value, or a duplicate after
-trimming rejects the complete twenty-setting snapshot. Accepted IDs have a
+trimming rejects the complete twenty-two-setting snapshot. Accepted IDs have a
 canonical sorted internal form. Home Manager exposes the same policy as
 `programs.driftile.settings.applicationBorderlessExclusions`, a list rendered
 as a sorted newline-delimited KConfig value.

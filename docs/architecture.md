@@ -240,6 +240,15 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   global policy before replacing exclusions, or install the new exclusions
   before enabling the global policy.
 - Defers live gap changes across structural transactions, then reflows dirty visible contexts and retries capacity admissions under one settled value.
+- Keeps the gap in logical pixels through solving, including fractional values,
+  then snaps window edges to the output pixel grid. Where the scale cannot
+  represent every requested edge exactly, adjacent physical gaps may differ by
+  one pixel without changing logical layout state.
+- Treats enabled single-column centering as the highest-priority viewport
+  geometry invariant: exactly one tiled column, including a stack, is centered
+  on every solve. Enabling it dirties visible singleton contexts; disabling it
+  performs no forced reflow. Floating windows and contexts with multiple
+  columns bypass the invariant.
 - Applies default-width changes before admission without changing existing
   column policies or floating frames; newly admitted columns, ordinary fresh
   cross-context retiles, and later contextual resets read the current policy.
@@ -312,6 +321,7 @@ RuntimeState
   contexts: Map<ContextKey, LayoutContext>
   dirtyContexts: Set<ContextKey>
   gap: number
+  alwaysCenterSingleColumn: boolean
   centerFocusedColumn: boolean
   centerFocusedColumnOnOverflow: boolean
   columnWidthStep: number

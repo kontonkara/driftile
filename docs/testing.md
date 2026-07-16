@@ -247,6 +247,12 @@ resizing owns its guarded frame request.
 
 The unit suite also covers shortcut manifests, live gap bounds, coalescing, exact reflow, hidden-context deferral, and zero writes to minimized or floating windows, default-width bounds, existing-layout preservation, deferred application, constrained waiting admission, newly admitted columns, and reset, resize-step bounds, no-write live changes, exact percentage-point actions, stack redistribution, decorated constraints, physical-pixel clamps, and rollback, unusable singleton, grouped, delayed-startup, and managed-context recovery with healthy-context isolation, a 128-cycle window lifecycle with synchronous geometry acknowledgements and bounded scheduler settlement, one-step desktop-reorder permutations, boundaries, rejection paths, and pinned-tail preservation, numbered desktop validation and tail clamping, immutable whole-column previews, floating transfer isolation and relationship guards, whole-column minimized-passive desktop and output transfer, secondary transfer with retained same-column minimized peers, zero mechanism and geometry writes, cancellation and rollback races, fail-closed minimized windows outside the source column or in the target context for default whole-column and secondary single-window transfers, batch transfer commits and rollback, trailing-desktop ownership, stack mutations and rollback, weighted window heights, deterministic output routing, floating ownership, guarded directional movement, partial-visibility bounds, exact work-area centering, layer focus memory and geometric navigation, minimized tiled-slot and manual-floating-frame retention, minimized focus skipping, vertical reorder, horizontal extraction, direct insertion across minimized source and target peers, fully minimized targets, skipped-singleton nonparticipation, authoritative hidden-frame changes, state-round-trip rollback, fail-closed state blockers, explicit consume, and explicit expel across minimized passive slots, no-wrap boundaries, transactional tiled-layer reveal, synchronous and deferred focus confirmation, reentrant focus rejection and rollback, fail-closed non-minimize suspension blockers, all-member transaction guards, projected stack rollback across authoritative removals, stacked fullscreen and maximize extraction past settled minimized peers, exact compensation, optional borderless ownership, reclassification, decorated frame constraints, topology-stable resize and reset clamps, cached silent hard-bound changes, test-only advisory increment and aspect metadata, available-width expansion, exact signed-offset centering, column and window sizing rollback, rotation bursts, rapid same-name output replacement, topology barriers, capacity recovery, and stale callback cancellation.
 
+Focused geometry coverage accepts arbitrary in-range fractional gaps, including
+values outside the UI's half-pixel step, and checks pixel-grid snapping across
+integer and fractional output scales. Single-column centering cases cover a
+singleton and stack, live enable, disable without forced uncentering, and
+unchanged floating or multi-column contexts.
+
 Manual-floating size coverage verifies configured gap-free work-area width and
 height steps, width presets and global-default reset through exact singleton
 resolution, decorated live bounds, positive client extents, pixel-grid snapping,
@@ -266,7 +272,7 @@ clamping for new singleton columns. Nix module checks verify the canonical
 KConfig encoding from typed Home Manager profiles.
 
 Application-exclusion coverage verifies bounded exact-ID decoding, canonical
-Home Manager encoding, atomic seventeen-setting updates, startup exclusion, live
+Home Manager encoding, atomic settings updates, startup exclusion, live
 release and fresh readmission, native-state blockers, persistence omission,
 constant-time membership checks, and zero writes to excluded frames.
 

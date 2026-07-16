@@ -87,7 +87,9 @@ The current runtime already:
   policy, and restoring owned state on disable. Up to 128 exact
   `desktopFileName` exclusions keep matching applications under KWin's existing
   decoration policy.
-- Applies a global 0–64 logical-pixel tiled-window gap live without mutating layout order, sizing policies, focus, floating frames, or minimized frames.
+- Applies a global fractional 0–64 logical-pixel tiled-window gap live without
+  mutating layout order, sizing policies, focus, floating frames, or minimized
+  frames.
 - Configures a 10%–100% default width for newly admitted columns, fresh
   cross-context retiles, and contextual reset without changing existing widths.
 - Configures up to 128 exact `desktopFileName` initial singleton widths, with a
@@ -117,7 +119,7 @@ The current runtime already:
   assignments remain unchanged.
 - Provides a reversible shortcut helper for the bundled defaults and explicit
   JSON v1 profiles; a UI without a Node.js dependency remains future work.
-- Lets Home Manager write the twenty typed settings or generate a portable
+- Lets Home Manager write typed settings or generate a portable
   shortcut profile without installing a second KWin package; shortcut claiming
   remains explicit.
 - Leaves dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows outside layout ownership, separate from manual floating.
@@ -1542,6 +1544,16 @@ Release criteria (met):
 - Exact release SHA CI passes before the release commit is tagged.
 
 No other feature belongs to 1.34.0.
+
+## 1.35.0 (in development)
+
+- Add opt-in centering for a context containing exactly one tiled column or
+  stack, with live enable and no forced movement when disabled.
+- Accept fractional `0`–`64` logical-pixel gaps through KConfig and Home
+  Manager; the UI uses a `0.5` step without rejecting other in-range values.
+- Keep both behaviors inside the existing geometry solver and physical-pixel
+  snapping boundary. Floating windows, multi-column contexts, and logical
+  persistence remain unchanged.
 
 ## Post-v1
 
