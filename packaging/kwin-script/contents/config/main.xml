@@ -32,6 +32,10 @@
       <label>Enable vertical touchpad desktop navigation</label>
       <default>false</default>
     </entry>
+    <entry name="EmptyDesktopAboveFirst" type="Bool">
+      <label>Keep an empty virtual desktop before the first occupied desktop</label>
+      <default>false</default>
+    </entry>
     <entry name="TouchpadNavigationFingerCount" type="Int">
       <label>Touchpad navigation finger count</label>
       <default>5</default>

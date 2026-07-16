@@ -325,6 +325,12 @@ in
               description = "Whether horizontal focus centers the destination only when the old and new columns do not both fit; null leaves the KConfig value unmanaged.";
             };
 
+            emptyDesktopAboveFirst = lib.mkOption {
+              type = lib.types.nullOr lib.types.bool;
+              default = null;
+              description = "Whether one empty virtual desktop is maintained before the first occupied desktop; null leaves the KConfig value unmanaged.";
+            };
+
             showTabIndicator = lib.mkOption {
               type = lib.types.bool;
               default = true;
@@ -496,6 +502,9 @@ in
         }
         // lib.optionalAttrs (cfg.settings.centerFocusedColumnOnOverflow != null) {
           CenterFocusedColumnOnOverflow = cfg.settings.centerFocusedColumnOnOverflow;
+        }
+        // lib.optionalAttrs (cfg.settings.emptyDesktopAboveFirst != null) {
+          EmptyDesktopAboveFirst = cfg.settings.emptyDesktopAboveFirst;
         };
       }
     ))

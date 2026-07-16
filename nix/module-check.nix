@@ -456,6 +456,7 @@ let
           columnWidthStepPercent = 13;
           defaultColumnPresentation = "tabbed";
           defaultColumnWidthPercent = 65;
+          emptyDesktopAboveFirst = true;
           gap = 7.5;
           showTabIndicator = false;
           touchpadNavigation = true;
@@ -660,6 +661,7 @@ let
     { alwaysCenterSingleColumn = "true"; }
     { centerFocusedColumn = "true"; }
     { centerFocusedColumnOnOverflow = "true"; }
+    { emptyDesktopAboveFirst = "true"; }
     { showTabIndicator = "true"; }
     { touchpadNavigation = "true"; }
     { touchpadNavigationFingerCount = 2; }
@@ -878,6 +880,7 @@ let
       ColumnWidthStepPercent = 13;
       DefaultColumnPresentation = "tabbed";
       DefaultColumnWidthPercent = 65;
+      EmptyDesktopAboveFirst = true;
       Gap = 7.5;
       ShowTabIndicator = false;
       TouchpadNavigation = true;
@@ -1038,7 +1041,7 @@ assert homeManagerSettings.config.qt.kde.settings == expectedSettings;
 assert homeManagerDefaultSettings.config.qt.kde.settings == expectedDefaultSettings;
 assert
   builtins.length (builtins.attrNames expectedSettings.kwinrc."Script-io.github.kontonkara.driftile")
-  == 22;
+  == 23;
 assert
   builtins.length (
     builtins.attrNames expectedDefaultSettings.kwinrc."Script-io.github.kontonkara.driftile"

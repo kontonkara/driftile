@@ -72,6 +72,16 @@
         </widget>
        </item>
        <item>
+        <widget class="QCheckBox" name="kcfg_EmptyDesktopAboveFirst">
+         <property name="text">
+          <string>Keep an empty virtual desktop before the first occupied desktop</string>
+         </property>
+         <property name="toolTip">
+          <string>Maintains one leading empty desktop independently of the shared trailing empty desktop.</string>
+         </property>
+        </widget>
+       </item>
+       <item>
         <layout class="QFormLayout" name="touchpadNavigationLayout">
          <item row="0" column="0">
           <widget class="QLabel" name="touchpadNavigationFingerCountLabel">

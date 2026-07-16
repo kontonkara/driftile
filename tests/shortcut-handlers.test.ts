@@ -920,6 +920,7 @@ describe("KWin shortcut handlers", () => {
       "kcfg_ShowTabIndicator",
       "kcfg_TouchpadNavigation",
       "kcfg_TouchpadWorkspaceNavigation",
+      "kcfg_EmptyDesktopAboveFirst",
       "kcfg_TouchpadNavigationFingerCount",
       "kcfg_TouchpadNaturalScroll",
       "kcfg_Gap",
@@ -1100,6 +1101,12 @@ describe("KWin shortcut handlers", () => {
     const workspaceNavigationWidget = configurationUi.match(
       /<widget class="QCheckBox" name="kcfg_TouchpadWorkspaceNavigation">([\s\S]*?)<\/widget>/,
     )?.[1];
+    const leadingDesktopEntry = configuration.match(
+      /<entry name="EmptyDesktopAboveFirst" type="Bool">([\s\S]*?)<\/entry>/,
+    )?.[1];
+    const leadingDesktopWidget = configurationUi.match(
+      /<widget class="QCheckBox" name="kcfg_EmptyDesktopAboveFirst">([\s\S]*?)<\/widget>/,
+    )?.[1];
 
     expect(workspaceNavigationEntry).toContain(
       "<label>Enable vertical touchpad desktop navigation</label>",
@@ -1110,6 +1117,19 @@ describe("KWin shortcut handlers", () => {
     );
     expect(workspaceNavigationWidget).toContain(
       "<string>Swipe vertically to focus the adjacent virtual desktop.</string>",
+    );
+    expect(leadingDesktopEntry).toContain(
+      "<label>Keep an empty virtual desktop before the first occupied desktop</label>",
+    );
+    expect(leadingDesktopEntry).toContain("<default>false</default>");
+    expect(leadingDesktopWidget).toContain(
+      "<string>Keep an empty virtual desktop before the first occupied desktop</string>",
+    );
+    expect(leadingDesktopWidget).toContain(
+      "Maintains one leading empty desktop independently of the shared trailing empty desktop.",
+    );
+    expect(qml).toContain(
+      'emptyDesktopAboveFirst: KWin.readConfig("EmptyDesktopAboveFirst", false)',
     );
     expect(runtime).toContain(
       "export function getTouchpadWorkspaceNavigation(): boolean",
