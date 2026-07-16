@@ -347,6 +347,14 @@ const shortcutActionCatalog = [
     defaultSequence: "Meta+V",
   },
   {
+    name: "driftile_move_window_to_floating",
+    text: "Driftile: Move window to floating",
+  },
+  {
+    name: "driftile_move_window_to_tiling",
+    text: "Driftile: Move window to tiling",
+  },
+  {
     name: "driftile_switch_focus_between_floating_and_tiling",
     text: "Driftile: Switch focus between floating and tiling",
     defaultSequence: "Meta+Shift+V",
@@ -722,6 +730,14 @@ const shortcutActionCatalog = [
     defaultSequence: "Meta+Shift+R",
   },
   {
+    name: "driftile_switch_preset_window_width",
+    text: "Driftile: Switch preset window width",
+  },
+  {
+    name: "driftile_switch_preset_window_width_back",
+    text: "Driftile: Switch preset window width back",
+  },
+  {
     name: "driftile_maximize_column",
     text: "Driftile: Maximize column",
     defaultSequence: "Meta+F",
@@ -748,6 +764,10 @@ const shortcutActionCatalog = [
     name: "driftile_center_column",
     text: "Driftile: Center column",
     defaultSequence: "Meta+C",
+  },
+  {
+    name: "driftile_center_window",
+    text: "Driftile: Center window",
   },
   {
     name: "driftile_center_visible_columns",

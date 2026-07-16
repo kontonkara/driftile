@@ -64,6 +64,9 @@ const expectedHandlers: Readonly<
     activated: "Runtime.DriftileRuntime.centerVisibleColumns()",
     sequence: "Meta+Ctrl+C",
   },
+  driftile_center_window: {
+    activated: "Runtime.DriftileRuntime.centerWindow()",
+  },
   driftile_consume_window_into_column: {
     activated: "Runtime.DriftileRuntime.consumeWindowIntoColumn()",
     sequence: "Meta+,",
@@ -572,6 +575,9 @@ const expectedHandlers: Readonly<
   driftile_move_window_to_desktop_9: {
     activated: "Runtime.DriftileRuntime.moveWindowToDesktop(9)",
   },
+  driftile_move_window_to_floating: {
+    activated: "Runtime.DriftileRuntime.moveWindowToFloating()",
+  },
   driftile_move_window_to_next_desktop: {
     activated: "Runtime.DriftileRuntime.moveWindowToNextDesktop()",
   },
@@ -614,6 +620,9 @@ const expectedHandlers: Readonly<
   driftile_move_window_to_previous_desktop_page_up: {
     activated: "Runtime.DriftileRuntime.moveWindowToPreviousDesktop()",
   },
+  driftile_move_window_to_tiling: {
+    activated: "Runtime.DriftileRuntime.moveWindowToTiling()",
+  },
   driftile_move_window_up: {
     activated: "Runtime.DriftileRuntime.moveWindowUp()",
     sequence: "Meta+Ctrl+K",
@@ -653,6 +662,12 @@ const expectedHandlers: Readonly<
   },
   driftile_switch_preset_window_height_back: {
     activated: "Runtime.DriftileRuntime.switchPresetWindowHeightBack()",
+  },
+  driftile_switch_preset_window_width: {
+    activated: "Runtime.DriftileRuntime.switchPresetWindowWidth()",
+  },
+  driftile_switch_preset_window_width_back: {
+    activated: "Runtime.DriftileRuntime.switchPresetWindowWidthBack()",
   },
   driftile_toggle_floating: {
     activated: "Runtime.DriftileRuntime.toggleFloating()",
@@ -702,7 +717,7 @@ describe("KWin shortcut handlers", () => {
   });
 
   it("keeps the canonical action catalog synchronized with QML", () => {
-    expect(shortcutActions).toHaveLength(176);
+    expect(shortcutActions).toHaveLength(181);
     expect(shortcutActions).toEqual(
       handlers.map(({ name, sequence, text }) => ({
         name,
@@ -715,7 +730,7 @@ describe("KWin shortcut handlers", () => {
     ).toHaveLength(88);
     expect(
       shortcutActions.filter((action) => action.defaultSequence === undefined),
-    ).toHaveLength(88);
+    ).toHaveLength(93);
   });
 
   it("uses unique lowercase action identifiers and key sequences", () => {
@@ -771,6 +786,7 @@ describe("KWin shortcut handlers", () => {
         .map((handler) => handler.name)
         .sort(),
     ).toEqual([
+      "driftile_center_window",
       "driftile_focus_column_1",
       "driftile_focus_column_2",
       "driftile_focus_column_3",
@@ -837,6 +853,7 @@ describe("KWin shortcut handlers", () => {
       "driftile_move_window_to_desktop_7",
       "driftile_move_window_to_desktop_8",
       "driftile_move_window_to_desktop_9",
+      "driftile_move_window_to_floating",
       "driftile_move_window_to_next_desktop",
       "driftile_move_window_to_next_desktop_page_down",
       "driftile_move_window_to_output_down",
@@ -851,6 +868,7 @@ describe("KWin shortcut handlers", () => {
       "driftile_move_window_to_output_up_arrow",
       "driftile_move_window_to_previous_desktop",
       "driftile_move_window_to_previous_desktop_page_up",
+      "driftile_move_window_to_tiling",
       "driftile_move_window_up_or_to_output_up",
       "driftile_move_window_up_or_to_previous_desktop",
       "driftile_reset_column_width",
@@ -859,6 +877,8 @@ describe("KWin shortcut handlers", () => {
       "driftile_swap_window_left",
       "driftile_swap_window_right",
       "driftile_switch_preset_window_height_back",
+      "driftile_switch_preset_window_width",
+      "driftile_switch_preset_window_width_back",
     ]);
   });
 

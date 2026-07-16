@@ -525,6 +525,16 @@ QtObject {
         sequence: "Meta+V"
         onActivated: Runtime.DriftileRuntime.toggleFloating()
     }
+    readonly property ShortcutHandler moveWindowToFloatingShortcut: ShortcutHandler {
+        name: "driftile_move_window_to_floating"
+        text: "Driftile: Move window to floating"
+        onActivated: Runtime.DriftileRuntime.moveWindowToFloating()
+    }
+    readonly property ShortcutHandler moveWindowToTilingShortcut: ShortcutHandler {
+        name: "driftile_move_window_to_tiling"
+        text: "Driftile: Move window to tiling"
+        onActivated: Runtime.DriftileRuntime.moveWindowToTiling()
+    }
     readonly property ShortcutHandler switchLayerFocusShortcut: ShortcutHandler {
         name: "driftile_switch_focus_between_floating_and_tiling"
         text: "Driftile: Switch focus between floating and tiling"
@@ -981,6 +991,16 @@ QtObject {
         sequence: "Meta+Shift+R"
         onActivated: Runtime.DriftileRuntime.switchPresetColumnWidthBack()
     }
+    readonly property ShortcutHandler switchPresetWindowWidthShortcut: ShortcutHandler {
+        name: "driftile_switch_preset_window_width"
+        text: "Driftile: Switch preset window width"
+        onActivated: Runtime.DriftileRuntime.switchPresetWindowWidth()
+    }
+    readonly property ShortcutHandler switchPresetWindowWidthBackShortcut: ShortcutHandler {
+        name: "driftile_switch_preset_window_width_back"
+        text: "Driftile: Switch preset window width back"
+        onActivated: Runtime.DriftileRuntime.switchPresetWindowWidthBack()
+    }
     readonly property ShortcutHandler maximizeColumnShortcut: ShortcutHandler {
         name: "driftile_maximize_column"
         text: "Driftile: Maximize column"
@@ -1014,6 +1034,11 @@ QtObject {
         text: "Driftile: Center column"
         sequence: "Meta+C"
         onActivated: Runtime.DriftileRuntime.centerColumn()
+    }
+    readonly property ShortcutHandler centerWindowShortcut: ShortcutHandler {
+        name: "driftile_center_window"
+        text: "Driftile: Center window"
+        onActivated: Runtime.DriftileRuntime.centerWindow()
     }
     readonly property ShortcutHandler centerVisibleColumnsShortcut: ShortcutHandler {
         name: "driftile_center_visible_columns"

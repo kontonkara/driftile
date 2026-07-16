@@ -391,6 +391,14 @@ export function toggleFloating(): void {
   runCommand((activeController) => activeController.toggleFloating());
 }
 
+export function moveWindowToFloating(): void {
+  runCommand((activeController) => activeController.moveWindowToFloating());
+}
+
+export function moveWindowToTiling(): void {
+  runCommand((activeController) => activeController.moveWindowToTiling());
+}
+
 export function switchFocusBetweenFloatingAndTiling(): void {
   runCommand((activeController) =>
     activeController.switchFocusBetweenFloatingAndTiling(),
@@ -501,6 +509,16 @@ export function switchPresetColumnWidthBack(): void {
   );
 }
 
+export function switchPresetWindowWidth(): void {
+  runCommand((activeController) => activeController.switchPresetColumnWidth());
+}
+
+export function switchPresetWindowWidthBack(): void {
+  runCommand((activeController) =>
+    activeController.switchPresetColumnWidthBack(),
+  );
+}
+
 export function decreaseWindowHeight(): void {
   runCommand((activeController) => activeController.decreaseWindowHeight());
 }
@@ -528,6 +546,10 @@ export function maximizeColumn(): void {
 }
 
 export function centerColumn(): void {
+  runCommand((activeController) => activeController.centerColumn());
+}
+
+export function centerWindow(): void {
   runCommand((activeController) => activeController.centerColumn());
 }
 
