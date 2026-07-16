@@ -1,8 +1,6 @@
 # Driftile 1.1.0-rc.1
 
-Driftile 1.1.0-rc.1 was a prerelease candidate for testing the 1.1 release. It
-was not a stable release; at publication, 1.0.0 remained the latest stable
-version.
+Driftile 1.1.0-rc.1 was a prerelease candidate for testing the 1.1 release. It was not a stable release.
 
 ## Requirements and assets
 

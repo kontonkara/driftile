@@ -1,7 +1,6 @@
 # Driftile 1.16.0-rc.1
 
-Driftile 1.16.0-rc.1 is a prerelease candidate for 1.16.0 validation. It is not
-a stable release; 1.15.1 remains the latest stable version.
+Driftile 1.16.0-rc.1 is a prerelease candidate for 1.16.0 validation. It was not a stable release.
 
 ## Changes since 1.15.1
 

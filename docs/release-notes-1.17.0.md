@@ -1,6 +1,6 @@
 # Driftile 1.17.0
 
-Driftile 1.17.0 is the latest stable release.
+Driftile 1.17.0 was published as a stable release.
 
 ## Requirements and assets
 

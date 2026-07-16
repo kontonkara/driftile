@@ -1,6 +1,6 @@
 # Driftile 1.9.1
 
-Driftile 1.9.1 is the latest stable release.
+Driftile 1.9.1 was published as a stable release.
 
 ## Requirements and assets
 
