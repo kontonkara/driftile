@@ -304,6 +304,12 @@ programs.driftile.settings = {
     "org.kde.konsole" = 60;
   };
   applicationFocusCentering = [ ];
+  applicationInitialDestinations = {
+    "org.mozilla.firefox" = {
+      desktop = 2;
+      output = "DP-2";
+    };
+  };
   applicationInitialFloating = [ ];
   applicationFloatingPositions = {
     "org.kde.kcalc" = {
@@ -337,6 +343,7 @@ Application policy lists default to empty; an empty `windowHeightPresets` list
 keeps the exact built-in `1/3`, `1/2`, and `2/3` cycle. See
 [Application column presentation](configuration.md#application-column-presentation),
 [Horizontal focus centering](configuration.md#horizontal-focus-centering),
+[Application initial destinations](configuration.md#application-initial-destinations),
 [Applications initially floating](configuration.md#applications-initially-floating),
 [Application floating positions](configuration.md#application-floating-positions),
 [Window height presets](configuration.md#window-height-presets),

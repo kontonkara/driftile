@@ -1664,3 +1664,23 @@ Release criteria (met):
   logical persistence or shortcut assignments.
 
 No other feature belongs to 1.38.0.
+
+### 1.39.0 (in development)
+
+- Add exact fresh-window rules for an initial one-based virtual desktop, named
+  output, or both.
+- Apply a confirmed destination before initial floating, tiled sizing,
+  presentation, full-width, and fullscreen policies.
+- Keep startup, restored, related, and already admitted windows unchanged;
+  never select a desktop or change focus as part of assignment.
+- Expose the bounded rule map through KConfig, NixOS, and Home Manager without
+  a shortcut or persistence-schema change.
+
+Release criteria:
+
+- Cross-output desktop assignment uses only public Plasma 6.7+ APIs and
+  confirms each synchronous membership and output transition.
+- Rejected or unavailable destinations restore only transaction-owned
+  intermediate state, fall back safely, and are not retried.
+- Destination-relative initial floating placement and ordinary tiled admission
+  use the confirmed target work area and layout context.

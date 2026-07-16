@@ -47,6 +47,9 @@ The ownership rule is strict:
 - Up to 128 application-specific proportional or fixed logical-pixel initial
   singleton widths, matched by exact KWin `desktopFileName` with global-default
   fallback, live constraints, and output-pixel snapping.
+- Up to 128 exact fresh-window destination rules that assign a normal
+  application to a one-based virtual desktop, named output, or both before
+  admission, without selecting a desktop or changing focus.
 - Up to 128 exact, case-sensitive KWin `desktopFileName` values whose freshly
   admitted normal windows start under ordinary manual-floating ownership while
   retaining their KWin frames. Existing and hydrated ownership is not

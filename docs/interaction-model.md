@@ -122,6 +122,13 @@ actions. Default desktop and output transfer shortcuts must move the whole
 active column. An active floating layer changes either transfer to the active
 window only.
 
+Fresh application destination rules run before ordinary admission. An exact
+rule may assign the new normal window to a one-based virtual desktop, a named
+output, or both, while leaving the selected desktops and active window intact.
+Initial floating, sizing, presentation, and native-state rules then resolve in
+the confirmed destination context. Missing, stale, related, or rejected
+targets fall back once to the window's existing KWin context.
+
 Horizontal focus normally reveals the destination with the smallest required
 viewport change. Optional overflow centering keeps that behavior while the
 destination and its nearest neighbor toward the previous focus both fit the

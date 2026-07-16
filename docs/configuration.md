@@ -107,6 +107,7 @@ The activation writes only `ApplicationBorderlessExclusions`,
 `ApplicationColumnPresentations`, `ApplicationColumnWidths`,
 `ApplicationWindowHeights`,
 `ApplicationFocusCentering`, `ApplicationFloatingPositions`,
+`ApplicationInitialDestinations`,
 `ApplicationInitialFloating`, `ApplicationInitialFullWidth`,
 `ApplicationInitialFullscreen`, `ApplicationTilingExclusions`,
 `BorderlessWindows`, `CenterFocusedColumn`, `Gap`,
@@ -151,6 +152,14 @@ programs.driftile.settings.applicationColumnPresentations = {
 programs.driftile.settings.applicationFocusCentering = [
   "org.mozilla.firefox"
 ];
+
+programs.driftile.settings.applicationInitialDestinations = {
+  "org.mozilla.firefox" = {
+    desktop = 2;
+    output = "DP-2";
+  };
+  "org.telegram.desktop".output = "HDMI-A-1";
+};
 
 programs.driftile.settings.applicationInitialFloating = [
   "org.kde.kcalc"
@@ -445,6 +454,37 @@ later forms its own column uses the moved application's current rule. Existing
 columns are not rewritten when the setting changes, and a window joining an
 existing column always adopts the target column's mode.
 
+## Application initial destinations
+
+**Application initial destinations** assigns a genuinely new normal window to
+a virtual desktop, output, or both before Driftile classifies and admits it.
+Enter one exact, case-sensitive rule per line:
+
+```text
+org.mozilla.firefox=desktop:2,output:DP-2
+org.telegram.desktop=output:HDMI-A-1
+org.kde.konsole=desktop:3
+```
+
+Desktop numbers are one-based positions in KWin's current desktop order and
+range from `1` to `25`. Output names are exact KWin names. A desktop-only rule
+keeps the window's output. An output-only rule uses the selected desktop of the
+target output; moving to the same output keeps the window's current desktop.
+Use KWin's debug console to inspect both identifiers.
+
+The assignment is fresh-only and one-shot. Startup-existing, restored,
+already admitted, dialog, transient, and other non-normal windows are not
+moved. Driftile neither changes focus nor selects a desktop. A missing output
+or desktop, unavailable public transfer API, or rejected assignment leaves the
+window in its accepted KWin context and is not retried. Live edits affect only
+windows first tracked afterward.
+
+After a confirmed assignment, initial floating and floating-position rules use
+the destination work area, initial tiled sizing and presentation use the
+destination layout context, and an initial fullscreen request runs last. The
+policy adds no shortcut or persistence field. At most 128 rules are accepted;
+application IDs and output names are each limited to 255 UTF-8 bytes.
+
 ## Applications initially floating
 
 **Applications initially floating** starts a matching normal application
@@ -621,7 +661,7 @@ The KConfig decoder accepts at most 65,664 characters in the complete document,
 512 characters in each raw line, 128 nonblank unique IDs, and 255 UTF-8 bytes
 in each trimmed ID. It trims surrounding whitespace and ignores blank lines.
 Control characters, invalid UTF-16, an oversized value, or a duplicate after
-trimming rejects the complete 32-setting snapshot. Accepted IDs have a
+trimming rejects the complete 33-setting snapshot. Accepted IDs have a
 canonical sorted internal form. Home Manager exposes the same policy as
 `programs.driftile.settings.applicationBorderlessExclusions`, a list rendered
 as a sorted newline-delimited KConfig value.
