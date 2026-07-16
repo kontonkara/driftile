@@ -15,6 +15,11 @@ QtObject {
     property int touchpadGestureFingerCount: 4
     readonly property var overviewDelegate: Qt.createComponent("OverviewScene.qml")
 
+    readonly property Settings mainScriptSettings: Settings {
+        category: "Script-io.github.kontonkara.driftile"
+        location: StandardPaths.writableLocation(StandardPaths.GenericConfigLocation) + "/kwinrc"
+    }
+
     readonly property KWin.DBusCall rejectionOsdCall: KWin.DBusCall {
         service: "org.kde.plasmashell"
         path: "/org/kde/osdService"
@@ -127,6 +132,15 @@ QtObject {
 
     function closeFromTouchpadGesture() {
         close();
+    }
+
+    function emptyDesktopAboveFirstFromConfig() {
+        try {
+            mainScriptSettings.sync();
+            return mainScriptSettings.value("EmptyDesktopAboveFirst", false) === true;
+        } catch (error) {
+            return false;
+        }
     }
 
     function activate() {

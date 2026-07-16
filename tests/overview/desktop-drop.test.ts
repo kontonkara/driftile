@@ -19,6 +19,29 @@ describe("planOverviewDesktopDrop", () => {
   );
 
   it.each([
+    [0, [null, null, null, null, null]],
+    [1, [null, null, null, 2, 3]],
+    [2, [null, 1, null, null, 3]],
+    [3, [null, 1, 2, null, null]],
+    [4, [null, null, null, null, null]],
+  ] as const)(
+    "protects both empty boundaries for source %i",
+    (sourceIndex, expectedTargets) => {
+      expect(
+        expectedTargets.map((_, insertionSlot) =>
+          planOverviewDesktopDrop(5, sourceIndex, insertionSlot, true),
+        ),
+      ).toEqual(expectedTargets);
+    },
+  );
+
+  it("preserves the trailing-only default", () => {
+    expect(planOverviewDesktopDrop(4, 0, 3)).toBe(2);
+    expect(planOverviewDesktopDrop(4, 0, 3, false)).toBe(2);
+    expect(planOverviewDesktopDrop(4, 0, 3, true)).toBeNull();
+  });
+
+  it.each([
     [1, 0, 0],
     [2, 0, 0],
     [2, 0, 1],
@@ -40,4 +63,10 @@ describe("planOverviewDesktopDrop", () => {
       ).toBeNull();
     },
   );
+
+  it("rejects a non-boolean boundary mode", () => {
+    expect(
+      planOverviewDesktopDrop(4, 1, 3, "true" as unknown as boolean),
+    ).toBeNull();
+  });
 });

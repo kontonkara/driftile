@@ -22,6 +22,7 @@ Rectangle {
                                                                             * Math.max(0, desktopIds.length - 1))
                                                                         / desktopIds.length) : 0
     property bool desktopReorderAvailable: false
+    property bool emptyDesktopAboveFirst: false
     property string keyboardSelectionId: ""
     property int overviewWheelRemainder: 0
     property string searchQuery: ""
@@ -34,6 +35,7 @@ Rectangle {
     property var desktopReorderDesktopIds: []
     property var desktopReorderDesktopObjects: []
     property var desktopReorderEffect: null
+    property bool desktopReorderEmptyDesktopAboveFirst: false
     property int desktopReorderInsertionSlot: -1
     property var desktopReorderModel: null
     property real desktopReorderOuterMargin: 0
@@ -101,6 +103,7 @@ Rectangle {
 
     Component.onCompleted: {
         desktopReorderAvailable = typeof KWin.Workspace.moveDesktop === "function";
+        refreshEmptyDesktopBoundarySetting();
         forceActiveFocus();
         Qt.callLater(root.repairKeyboardSelection);
     }
@@ -113,6 +116,8 @@ Rectangle {
             if (!root.sceneEffect || root.sceneEffect.active !== true) {
                 root.overviewWheelRemainder = 0;
                 root.searchQuery = "";
+            } else {
+                root.refreshEmptyDesktopBoundarySetting();
             }
         }
 
@@ -178,7 +183,9 @@ Rectangle {
             context: root.contextFor(modelData)
             current: root.currentDesktop !== null && String(root.currentDesktop.id) === modelData
             desktop: root.desktopForId(modelData)
-            desktopReorderEnabled: root.desktopReorderAvailable && root.desktopIds.length > 2
+            desktopReorderEnabled: root.desktopReorderAvailable
+                                     && root.desktopIds.length > (root.emptyDesktopAboveFirst ? 3 : 2)
+                                     && index >= (root.emptyDesktopAboveFirst ? 1 : 0)
                                      && index < root.desktopIds.length - 1
             desktopReorderSource: root.desktopReorderActive && root.desktopReorderSourceId === modelData
             desktopId: modelData
@@ -265,6 +272,10 @@ Rectangle {
         }
         resetDesktopReorder();
 
+        const keepEmptyDesktopAboveFirst = emptyDesktopAboveFirstFromConfig();
+        emptyDesktopAboveFirst = keepEmptyDesktopAboveFirst;
+        const firstMovableIndex = keepEmptyDesktopAboveFirst ? 1 : 0;
+
         const effect = sceneEffect;
         const model = overviewModel;
         const liveScreen = liveScreenFor(expectedScreen);
@@ -274,14 +285,15 @@ Rectangle {
         const snapshot = liveDesktopSnapshot();
         const selectedDesktop = currentDesktop;
         if (!desktopContextIsExact(effect, model, liveScreen, expectedOutput, expectedOutputId, liveDesktop,
-                                   expectedDesktopId) || !snapshot || snapshot.ids.length <= 2
+                                   expectedDesktopId) || !snapshot
+                || snapshot.ids.length <= firstMovableIndex + 2
                 || !sameStringList(snapshot.ids, desktopIds) || !selectedDesktop
                 || String(selectedDesktop.id).length === 0) {
             return;
         }
 
         const sourceIndex = snapshot.ids.indexOf(expectedDesktopId);
-        if (sourceIndex < 0 || sourceIndex >= snapshot.ids.length - 1
+        if (sourceIndex < firstMovableIndex || sourceIndex >= snapshot.ids.length - 1
                 || snapshot.objects[sourceIndex] !== liveDesktop) {
             return;
         }
@@ -294,6 +306,7 @@ Rectangle {
         desktopReorderDesktopIds = snapshot.ids;
         desktopReorderDesktopObjects = snapshot.objects;
         desktopReorderEffect = effect;
+        desktopReorderEmptyDesktopAboveFirst = keepEmptyDesktopAboveFirst;
         desktopReorderModel = model;
         desktopReorderOuterMargin = outerMargin;
         desktopReorderOutput = expectedOutput;
@@ -334,6 +347,8 @@ Rectangle {
         const sourceIndex = desktopReorderSourceIndex;
         const expectedIds = desktopReorderDesktopIds;
         const expectedObjects = desktopReorderDesktopObjects;
+        const keepEmptyDesktopAboveFirst = desktopReorderEmptyDesktopAboveFirst;
+        const firstMovableIndex = keepEmptyDesktopAboveFirst ? 1 : 0;
         const selectedDesktop = desktopReorderCurrentDesktop;
         const selectedDesktopId = desktopReorderCurrentDesktopId;
         const snapshot = liveDesktopSnapshot();
@@ -345,9 +360,12 @@ Rectangle {
             && selectedDesktopId === String(currentDesktop ? currentDesktop.id : "");
         const orderUnchanged = snapshot && sameDesktopSnapshot(snapshot, expectedObjects, expectedIds)
             && sameStringList(snapshot.ids, desktopIds) && sourceIndex >= 0
-            && sourceIndex < snapshot.ids.length - 1 && snapshot.objects[sourceIndex] === source
+            && sourceIndex >= firstMovableIndex && sourceIndex < snapshot.ids.length - 1
+            && snapshot.objects[sourceIndex] === source
             && snapshot.ids[sourceIndex] === sourceId;
+        const settingUnchanged = keepEmptyDesktopAboveFirst === emptyDesktopAboveFirstFromConfig();
         const canCommit = targetIndex !== null && geometryUnchanged && contextUnchanged && orderUnchanged
+            && settingUnchanged
             && typeof KWin.Workspace.moveDesktop === "function";
 
         resetDesktopReorder();
@@ -377,6 +395,7 @@ Rectangle {
         desktopReorderDesktopIds = [];
         desktopReorderDesktopObjects = [];
         desktopReorderEffect = null;
+        desktopReorderEmptyDesktopAboveFirst = false;
         desktopReorderInsertionSlot = -1;
         desktopReorderModel = null;
         desktopReorderOuterMargin = 0;
@@ -403,19 +422,22 @@ Rectangle {
             return -1;
         }
 
+        const firstMovableIndex = desktopReorderEmptyDesktopAboveFirst ? 1 : 0;
         const movableCount = desktopReorderDesktopIds.length - 1;
         const stride = desktopReorderCardHeight + desktopReorderCardGap;
+        const movableTop = desktopReorderOuterMargin + firstMovableIndex * stride;
         const protectedTop = desktopReorderOuterMargin + movableCount * stride;
         if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)
                 || point.x < desktopReorderOuterMargin
                 || point.x >= desktopReorderSceneWidth - desktopReorderOuterMargin
-                || point.y < desktopReorderOuterMargin || point.y >= protectedTop) {
+                || point.y < movableTop || point.y >= protectedTop) {
             return -1;
         }
 
-        return Math.max(0, Math.min(movableCount, Math.floor((point.y - desktopReorderOuterMargin
-                                                               + desktopReorderCardHeight / 2
-                                                               + desktopReorderCardGap) / stride)));
+        return Math.max(firstMovableIndex,
+                        Math.min(movableCount, Math.floor((point.y - desktopReorderOuterMargin
+                                                           + desktopReorderCardHeight / 2
+                                                           + desktopReorderCardGap) / stride)));
     }
 
     function plannedDesktopReorderIndex(insertionSlot) {
@@ -426,12 +448,28 @@ Rectangle {
 
         try {
             const targetIndex = runtime.planOverviewDesktopDrop(desktopReorderDesktopIds.length,
-                                                                desktopReorderSourceIndex, insertionSlot);
-            return typeof targetIndex === "number" && targetIndex >= 0
+                                                                desktopReorderSourceIndex, insertionSlot,
+                                                                desktopReorderEmptyDesktopAboveFirst);
+            const firstMovableIndex = desktopReorderEmptyDesktopAboveFirst ? 1 : 0;
+            return typeof targetIndex === "number" && targetIndex >= firstMovableIndex
                     && targetIndex < desktopReorderDesktopIds.length - 1 && Math.floor(targetIndex) === targetIndex
                 ? targetIndex : null;
         } catch (error) {
             return null;
+        }
+    }
+
+    function refreshEmptyDesktopBoundarySetting() {
+        emptyDesktopAboveFirst = emptyDesktopAboveFirstFromConfig();
+    }
+
+    function emptyDesktopAboveFirstFromConfig() {
+        try {
+            const controller = sceneEffect ? sceneEffect.controller : null;
+            return controller && typeof controller.emptyDesktopAboveFirstFromConfig === "function"
+                ? controller.emptyDesktopAboveFirstFromConfig() === true : false;
+        } catch (error) {
+            return false;
         }
     }
 

@@ -1061,12 +1061,35 @@ describe("overview effect package", () => {
     expect(numberGutter).toContain("card.desktopReorderReleased(");
     expect(numberGutter).toContain("card.desktopReorderCanceled(");
 
-    expect(reorderDelegate).toContain("root.desktopIds.length > 2");
+    expect(controller).toContain("import QtCore");
+    expect(controller).toContain(
+      'category: "Script-io.github.kontonkara.driftile"',
+    );
+    expect(controller).toContain(
+      'StandardPaths.writableLocation(StandardPaths.GenericConfigLocation) + "/kwinrc"',
+    );
+    expect(controller).toContain(
+      'mainScriptSettings.value("EmptyDesktopAboveFirst", false) === true',
+    );
+    expect(controller).toContain("mainScriptSettings.sync()");
+    expect(reorderDelegate).toContain(
+      "root.desktopIds.length > (root.emptyDesktopAboveFirst ? 3 : 2)",
+    );
+    expect(reorderDelegate).toContain(
+      "index >= (root.emptyDesktopAboveFirst ? 1 : 0)",
+    );
     expect(reorderDelegate).toContain("index < root.desktopIds.length - 1");
     expect(scene).toContain(
       "visible: root.desktopReorderActive && root.desktopReorderInsertionSlot >= 0",
     );
     expect(reorder).toContain("runtime.planOverviewDesktopDrop(");
+    expect(reorder).toContain("desktopReorderEmptyDesktopAboveFirst");
+    expect(reorder).toContain(
+      "keepEmptyDesktopAboveFirst === emptyDesktopAboveFirstFromConfig()",
+    );
+    expect(reorder).toContain(
+      "point.y < movableTop || point.y >= protectedTop",
+    );
     expect(reorder).toContain("root.mapFromItem(null, sceneX, sceneY)");
     expect(reorder).toContain(
       'typeof KWin.Workspace.moveDesktop === "function"',
