@@ -2190,6 +2190,47 @@ describe("RuntimeController", () => {
     controller.stop();
   });
 
+  it("restores previous focus when the closing window frame is still settling", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const previous = createTrackedWindow("previous", output, desktop);
+    const removed = createTrackedWindow("removed", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [previous.window, removed.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      schedule: scheduler.schedule,
+    });
+    let delayedFrameCommit: (() => void) | null = null;
+
+    expect(controller.start()).toBe(true);
+    fixture.workspace.activeWindow = previous.window;
+    fixture.workspace.activeWindow = removed.window;
+    flushManualScheduler(scheduler);
+    removed.setWriteBehavior((_frame, commit) => {
+      delayedFrameCommit = commit;
+    });
+
+    expect(controller.increaseColumnWidth()).toBe(true);
+    expect(delayedFrameCommit).not.toBeNull();
+    removed.setWriteBehavior(null);
+    fixture.workspace.activeWindow = null;
+    const activationCount = fixture.activationCount;
+
+    fixture.windowRemoved.emit(removed.window);
+    flushManualScheduler(scheduler);
+
+    expect(fixture.workspace.activeWindow).toBe(previous.window);
+    expect(fixture.activationCount).toBe(activationCount + 1);
+    controller.stop();
+  });
+
   it("restores previous focus past an ineligible interim activation", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
@@ -25996,17 +26037,20 @@ describe("RuntimeController", () => {
     expect(transitionState.toggleGeometryTransitions.size).toBe(1);
     expect(transitionState.toggleTransitionProbes.size).toBe(1);
     expect(resumeScheduler.pendingCount).toBe(1);
-    expect(workScheduler.pendingCount).toBe(0);
+    expect(workScheduler.pendingCount).toBe(1);
     expect(waiting.writeCount).toBe(0);
     resumeScheduler.flush();
 
     expect(transitionState.toggleGeometryTransitions.size).toBe(0);
     expect(transitionState.toggleTransitionProbes.size).toBe(0);
     expect(resumeScheduler.pendingCount).toBe(0);
-    expect(workScheduler.pendingCount).toBe(1);
+    expect(workScheduler.pendingCount).toBe(2);
     expect(controller.managedCount).toBe(1);
     expect(waiting.writeCount).toBe(0);
-    workScheduler.flush();
+
+    while (workScheduler.pendingCount > 0) {
+      workScheduler.flush();
+    }
 
     expect(controller.floatingCount).toBe(0);
     expect(controller.managedCount).toBe(2);

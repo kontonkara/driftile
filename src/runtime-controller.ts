@@ -6894,7 +6894,6 @@ export class RuntimeController {
     const removalFocus = this.windowRemovalFocus(managedId, floating);
     const recoverFocus =
       removalFocus !== null &&
-      transition === undefined &&
       this.shouldRecoverWindowRemovalFocus(managedId, removalFocus);
 
     if (floating) {
