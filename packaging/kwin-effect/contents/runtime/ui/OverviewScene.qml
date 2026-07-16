@@ -499,7 +499,13 @@ Rectangle {
             return;
         }
 
-        focusWindow(target.candidate, target.windowId, target.desktop, target.desktopId, target.screen);
+        if (target.kind === "desktop") {
+            selectDesktop(target.candidate, target.desktopId, target.screen);
+        } else if (target.kind === "window") {
+            focusWindow(target.candidate, target.windowId, target.desktop, target.desktopId, target.screen);
+        } else {
+            repairKeyboardSelectionFrom(targets);
+        }
     }
 
     function repairKeyboardSelection() {
@@ -523,7 +529,7 @@ Rectangle {
         let firstVisual = null;
 
         for (const target of targets) {
-            if (target.candidate === activeWindow) {
+            if (target.kind === "window" && target.candidate === activeWindow) {
                 if (target.desktopId === activeDesktopId) {
                     return target;
                 }
@@ -531,7 +537,7 @@ Rectangle {
                     firstActive = target;
                 }
             }
-            if (target.desktopId === activeDesktopId
+            if (target.kind === "window" && target.desktopId === activeDesktopId
                     && (!firstCurrentDesktop || navigationTargetPrecedes(target, firstCurrentDesktop))) {
                 firstCurrentDesktop = target;
             }

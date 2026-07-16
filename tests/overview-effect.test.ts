@@ -934,7 +934,7 @@ describe("overview effect package", () => {
       expect(cardTargets).toMatch(new RegExp(`\\b${field}(?::|,)`, "u"));
     }
     expect(cardTargets).toContain(
-      "return JSON.stringify([desktopId, windowId])",
+      'return JSON.stringify(["window", desktopId, windowId])',
     );
     expect(cardTargets).toContain("!candidate.deleted");
     expect(cardTargets).toContain("!candidate.minimized");
@@ -969,6 +969,61 @@ describe("overview effect package", () => {
     ).not.toContain("keyboardSelectionId");
     expect(`${scene}\n${desktopCard}`).not.toMatch(
       /\bTimer\s*\{|KWin\.Workspace\.(?:stackingOrder|windows)\b|\.setValue\s*\(/u,
+    );
+  });
+
+  it("navigates to non-current desktop gutters including an empty tail", () => {
+    const cardTargets = desktopCard.slice(
+      desktopCard.indexOf("function collectNavigationTargets("),
+      desktopCard.indexOf("function windowCanDrag("),
+    );
+    const activation = scene.slice(
+      scene.indexOf("function activateKeyboardSelection("),
+      scene.indexOf("function repairKeyboardSelection("),
+    );
+    const initialSelection = scene.slice(
+      scene.indexOf("function preferredInitialNavigationTarget("),
+      scene.indexOf("function navigationTargetPrecedes("),
+    );
+
+    expect(desktopCard).toContain(
+      "onCurrentChanged: card.navigationTargetsChanged()",
+    );
+    expect(cardTargets).toContain(
+      "if (!current && searchQuery.trim().length === 0)",
+    );
+    expect(cardTargets).toContain(
+      "clippedCardNavigationRect(numberGutter, sceneItem)",
+    );
+    expect(cardTargets).toContain('kind: "desktop"');
+    expect(cardTargets).toContain('kind: "window"');
+    expect(cardTargets).toContain(
+      'return JSON.stringify(["desktop", desktopId])',
+    );
+    expect(cardTargets).toContain(
+      'return JSON.stringify(["window", desktopId, windowId])',
+    );
+    const cardClip = desktopCard.slice(
+      desktopCard.indexOf("function clippedCardNavigationRect("),
+      desktopCard.indexOf("function intersectRects("),
+    );
+    expect(cardClip).toContain("visual.mapToItem(sceneItem");
+    expect(cardClip).toContain("card.mapToItem(sceneItem");
+    expect(cardClip).not.toContain("viewport.mapToItem(sceneItem");
+
+    expect(activation).toContain('target.kind === "desktop"');
+    expect(activation).toContain(
+      "selectDesktop(target.candidate, target.desktopId, target.screen)",
+    );
+    expect(activation).toContain('target.kind === "window"');
+    expect(activation).toContain(
+      "focusWindow(target.candidate, target.windowId, target.desktop, target.desktopId, target.screen)",
+    );
+    expect(initialSelection).toContain(
+      'target.kind === "window" && target.candidate === activeWindow',
+    );
+    expect(initialSelection).toContain(
+      'target.kind === "window" && target.desktopId === activeDesktopId',
     );
   });
 
