@@ -15,6 +15,7 @@ import { decodeApplicationFocusCentering } from "../src/application-focus-center
 import { decodeApplicationFloatingPositions } from "../src/application-floating-positions";
 import { decodeApplicationTilingExclusions } from "../src/application-tiling-exclusions";
 import { decodeDefaultWindowHeight } from "../src/default-window-height";
+import { decodeNumberedDesktopTargets } from "../src/numbered-desktop-targets";
 import {
   activityId,
   columnId,
@@ -39542,6 +39543,123 @@ describe("RuntimeController", () => {
     expect(fixture.desktopSwitchCount).toBe(4);
   });
 
+  it("resolves numbered desktop names live and preserves positional fallback", () => {
+    const output = createOutput("DP-1", 0);
+    const code = { id: "desktop-code", name: "Code" };
+    const chat = { id: "desktop-chat", name: "Chat" };
+    const tail = { id: "desktop-tail", name: "Tail" };
+    const desktops = [code, chat, tail] as const;
+    const targets = decodeNumberedDesktopTargets("1=Chat\n9=Code");
+
+    if (!targets) {
+      throw new Error("missing numbered desktop target fixture");
+    }
+
+    const fixture = createWorkspace(
+      output,
+      desktops[0],
+      [output],
+      desktops,
+      [],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      numberedDesktopTargets: targets,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(controller.focusDesktop(1)).toBe(true);
+    expect(fixture.workspace.currentDesktopForScreen?.(output)).toBe(
+      desktops[1],
+    );
+    expect(controller.focusDesktop(2)).toBe(false);
+    expect(controller.focusDesktop(9)).toBe(true);
+    expect(fixture.workspace.currentDesktopForScreen?.(output)).toBe(
+      desktops[0],
+    );
+
+    code.name = "Archive";
+    tail.name = "Code";
+    expect(controller.focusDesktop(9)).toBe(true);
+    expect(fixture.workspace.currentDesktopForScreen?.(output)).toBe(
+      desktops[2],
+    );
+  });
+
+  it("fails closed for missing and ambiguous numbered desktop names", () => {
+    const output = createOutput("DP-1", 0);
+    const desktops = [
+      { id: "desktop-work-1", name: "Work" },
+      { id: "desktop-work-2", name: "Work" },
+      { id: "desktop-other", name: "Other" },
+    ] as const;
+    const targets = decodeNumberedDesktopTargets("1=Work\n2=Missing");
+    const replacement = decodeNumberedDesktopTargets("1=Other");
+
+    if (!targets || !replacement) {
+      throw new Error("missing fail-closed numbered target fixture");
+    }
+
+    const fixture = createWorkspace(
+      output,
+      desktops[2],
+      [output],
+      desktops,
+      [],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      numberedDesktopTargets: targets,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(controller.focusDesktop(1)).toBe(false);
+    expect(controller.focusDesktop(2)).toBe(false);
+    expect(fixture.desktopSwitchCount).toBe(0);
+    expect(controller.setNumberedDesktopTargets(replacement)).toBe(true);
+    expect(controller.setNumberedDesktopTargets(replacement)).toBe(false);
+    expect(controller.focusDesktop(1)).toBe(false);
+    expect(fixture.desktopSwitchCount).toBe(0);
+  });
+
+  it("applies numbered back-and-forth after resolving the desktop name", () => {
+    const output = createOutput("DP-1", 0);
+    const desktops = [
+      { id: "desktop-first", name: "First" },
+      { id: "desktop-web", name: "Web" },
+      { id: "desktop-tail", name: "Tail" },
+    ] as const;
+    const targets = decodeNumberedDesktopTargets("1=Web");
+
+    if (!targets) {
+      throw new Error("missing back-and-forth numbered target fixture");
+    }
+
+    const fixture = createWorkspace(
+      output,
+      desktops[0],
+      [output],
+      desktops,
+      [],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      numberedDesktopTargets: targets,
+      workspaceAutoBackAndForth: true,
+    });
+
+    expect(controller.start()).toBe(true);
+    fixture.setCurrentDesktop(output, desktops[1]);
+    expect(controller.focusDesktop(1)).toBe(true);
+    expect(fixture.workspace.currentDesktopForScreen?.(output)).toBe(
+      desktops[0],
+    );
+    expect(controller.focusDesktop(1)).toBe(true);
+    expect(fixture.workspace.currentDesktopForScreen?.(output)).toBe(
+      desktops[1],
+    );
+  });
+
   it("isolates numbered back-and-forth history by output", () => {
     const activeOutput = createOutput("DP-1", 0);
     const otherOutput = createOutput("HDMI-A-1", 1000);
@@ -40986,6 +41104,43 @@ describe("RuntimeController desktop transfers", () => {
     for (const invalid of [0, -1, 1.5, Number.NaN]) {
       expect(controller.moveColumnToDesktop(invalid)).toBe(false);
     }
+  });
+
+  it("uses named numbered targets for column and single-window transfers", () => {
+    const columnTransfer = createDesktopTransferFixture({ sourceStack: true });
+    const windowTransfer = createDesktopTransferFixture({ sourceStack: true });
+    const targets = decodeNumberedDesktopTargets("1=Code");
+
+    if (!targets) {
+      throw new Error("missing numbered transfer target fixture");
+    }
+
+    Object.defineProperty(columnTransfer.desktops[1], "name", {
+      configurable: true,
+      value: "Code",
+    });
+    Object.defineProperty(windowTransfer.desktops[1], "name", {
+      configurable: true,
+      value: "Code",
+    });
+    expect(columnTransfer.controller.setNumberedDesktopTargets(targets)).toBe(
+      true,
+    );
+    expect(windowTransfer.controller.setNumberedDesktopTargets(targets)).toBe(
+      true,
+    );
+
+    expect(columnTransfer.controller.moveColumnToDesktop(1)).toBe(true);
+    expect(columnTransfer.moved.window.desktops).toEqual([
+      columnTransfer.desktops[1],
+    ]);
+    expect(windowTransfer.controller.moveWindowToDesktop(1)).toBe(true);
+    expect(windowTransfer.moved.window.desktops).toEqual([
+      windowTransfer.desktops[1],
+    ]);
+    expect(windowTransfer.source.window.desktops).toEqual([
+      windowTransfer.desktops[0],
+    ]);
   });
 
   it("moves one stacked window to a numbered desktop and clamps to the tail", () => {

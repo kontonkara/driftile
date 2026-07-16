@@ -83,6 +83,11 @@ import {
   type DefaultInitialFocus,
 } from "./default-initial-focus";
 import {
+  EMPTY_NUMBERED_DESKTOP_TARGETS,
+  sameNumberedDesktopTargets,
+  type NumberedDesktopTargets,
+} from "./numbered-desktop-targets";
+import {
   DEFAULT_WINDOW_HEIGHT_PRESET_CYCLE,
   WINDOW_HEIGHT_PRESET_LIMITS,
   resolveWindowHeightPresetPolicy,
@@ -274,8 +279,8 @@ type DesktopTransferTarget =
       readonly kind: "id";
     }
   | {
-      readonly index: number;
-      readonly kind: "index";
+      readonly kind: "numbered";
+      readonly slot: number;
     };
 type VerticalEdge = "bottom" | "top";
 type FloatingFocusDestination =
@@ -980,6 +985,7 @@ export interface RuntimeControllerOptions {
   readonly layoutHydrationRetryProbes?: number;
   readonly layoutStateForCurrentTopology?: () => string;
   readonly knownLayoutSnapshots?: () => readonly LayoutPersistenceCatalogSnapshot[];
+  readonly numberedDesktopTargets?: NumberedDesktopTargets;
   readonly onLayoutStateChanged?: (canonicalState: string) => void;
   readonly schedule?: (callback: () => void) => void;
   readonly scheduleResume?: (callback: () => void) => void;
@@ -1259,6 +1265,7 @@ export class RuntimeController {
   private readonly windowStateRevisions = new Map<WindowId, number>();
   private workScheduled = false;
   private readonly activities: KWinActivityAdapter;
+  private numberedDesktopTargets: NumberedDesktopTargets;
   private readonly workspace: KWinWorkspace;
   private workspaceAutoBackAndForth: boolean;
 
@@ -1341,6 +1348,8 @@ export class RuntimeController {
     );
     this.layoutStateForCurrentTopology = options.layoutStateForCurrentTopology;
     this.knownLayoutSnapshots = options.knownLayoutSnapshots;
+    this.numberedDesktopTargets =
+      options.numberedDesktopTargets ?? EMPTY_NUMBERED_DESKTOP_TARGETS;
     this.hidePointerDropPreview = options.hidePointerDropPreview;
     this.onLayoutStateChanged = options.onLayoutStateChanged;
     this.schedule =
@@ -2539,6 +2548,15 @@ export class RuntimeController {
     return true;
   }
 
+  setNumberedDesktopTargets(targets: NumberedDesktopTargets): boolean {
+    if (sameNumberedDesktopTargets(this.numberedDesktopTargets, targets)) {
+      return false;
+    }
+
+    this.numberedDesktopTargets = targets;
+    return true;
+  }
+
   focusLeft(): boolean {
     return this.focusHorizontal("left");
   }
@@ -2827,8 +2845,8 @@ export class RuntimeController {
             )
           : -1;
         const targetIndex = this.desktopTargetIndex(currentIndex, {
-          index,
-          kind: "index",
+          kind: "numbered",
+          slot: index,
         });
 
         if (
@@ -2840,7 +2858,7 @@ export class RuntimeController {
       }
     }
 
-    return this.focusDesktopTarget({ index, kind: "index" });
+    return this.focusDesktopTarget({ kind: "numbered", slot: index });
   }
 
   focusLastUsedDesktop(): boolean {
@@ -3515,7 +3533,10 @@ export class RuntimeController {
       return false;
     }
 
-    return this.moveActiveWindowToDesktop({ index, kind: "index" }, false);
+    return this.moveActiveWindowToDesktop(
+      { kind: "numbered", slot: index },
+      false,
+    );
   }
 
   moveColumnToPreviousDesktop(): boolean {
@@ -3537,7 +3558,10 @@ export class RuntimeController {
       return false;
     }
 
-    return this.moveActiveWindowToDesktop({ index, kind: "index" }, true);
+    return this.moveActiveWindowToDesktop(
+      { kind: "numbered", slot: index },
+      true,
+    );
   }
 
   moveWindowToOutputLeft(): boolean {
@@ -8278,11 +8302,32 @@ export class RuntimeController {
       );
     }
 
-    if (!validDesktopIndex(target.index)) {
+    if (!validDesktopIndex(target.slot)) {
       return -1;
     }
 
-    return Math.min(target.index - 1, this.workspace.desktops.length - 1);
+    const configuredName =
+      this.numberedDesktopTargets.desktopNameFor(target.slot);
+
+    if (configuredName === undefined) {
+      return Math.min(target.slot - 1, this.workspace.desktops.length - 1);
+    }
+
+    let matchingIndex = -1;
+
+    for (let index = 0; index < this.workspace.desktops.length; index += 1) {
+      if (this.workspace.desktops[index]?.name !== configuredName) {
+        continue;
+      }
+
+      if (matchingIndex >= 0) {
+        return -1;
+      }
+
+      matchingIndex = index;
+    }
+
+    return matchingIndex;
   }
 
   private reconcileDesktopSelectionHistory(): void {
