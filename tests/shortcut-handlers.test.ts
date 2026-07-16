@@ -915,6 +915,7 @@ describe("KWin shortcut handlers", () => {
     const generalControls = [
       "kcfg_BorderlessWindows",
       "kcfg_CenterFocusedColumn",
+      "kcfg_CenterFocusedColumnOnOverflow",
       "kcfg_ShowTabIndicator",
       "kcfg_TouchpadNavigation",
       "kcfg_TouchpadWorkspaceNavigation",
@@ -983,6 +984,12 @@ describe("KWin shortcut handlers", () => {
     const centeringWidget = configurationUi.match(
       /<widget class="QCheckBox" name="kcfg_CenterFocusedColumn">([\s\S]*?)<\/widget>/,
     )?.[1];
+    const overflowCenteringEntry = configuration.match(
+      /<entry name="CenterFocusedColumnOnOverflow" type="Bool">([\s\S]*?)<\/entry>/,
+    )?.[1];
+    const overflowCenteringWidget = configurationUi.match(
+      /<widget class="QCheckBox" name="kcfg_CenterFocusedColumnOnOverflow">([\s\S]*?)<\/widget>/,
+    )?.[1];
     const applicationCenteringEntry = configuration.match(
       /<entry name="ApplicationFocusCentering" type="String">([\s\S]*?)<\/entry>/,
     )?.[1];
@@ -1002,6 +1009,19 @@ describe("KWin shortcut handlers", () => {
     );
     expect(qml).toContain(
       'centerFocusedColumn: KWin.readConfig("CenterFocusedColumn", false)',
+    );
+    expect(overflowCenteringEntry).toContain(
+      "<label>Center focused columns when old and new columns do not both fit</label>",
+    );
+    expect(overflowCenteringEntry).toContain("<default>false</default>");
+    expect(overflowCenteringWidget).toContain(
+      "<string>Center focused columns when the old and new columns do not both fit</string>",
+    );
+    expect(overflowCenteringWidget).toContain(
+      "The always-center setting above takes precedence.",
+    );
+    expect(qml).toContain(
+      'centerFocusedColumnOnOverflow: KWin.readConfig("CenterFocusedColumnOnOverflow", false)',
     );
     expect(applicationCenteringEntry).toContain(
       "<label>Applications centered after horizontal focus navigation by KWin desktopFileName</label>",
@@ -1024,6 +1044,12 @@ describe("KWin shortcut handlers", () => {
     );
     expect(runtime).toContain(
       "controller.setCenterFocusedColumn(settings.centerFocusedColumn)",
+    );
+    expect(runtime).toMatch(
+      /nextController\.setCenterFocusedColumnOnOverflow\(\s*settings\.centerFocusedColumnOnOverflow,?\s*\)/u,
+    );
+    expect(runtime).toMatch(
+      /controller\.setCenterFocusedColumnOnOverflow\(\s*settings\.centerFocusedColumnOnOverflow,?\s*\)/u,
     );
   });
 

@@ -11903,6 +11903,7 @@ describe("RuntimeController", () => {
       applicationFocusCentering: requiredApplicationFocusCentering(
         "org.example.Centered",
       ),
+      centerFocusedColumnOnOverflow: true,
       clientAreaOption: 2,
       columnWidth: { kind: "fixed", value: 300 },
       gap: 10,
@@ -11973,6 +11974,212 @@ describe("RuntimeController", () => {
     expect(centerX(last)).toBe(500);
   });
 
+  it("keeps fitting horizontal focus adjacent and centers only on overflow", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const windows = Array.from({ length: 3 }, (_value, index) =>
+      createTrackedWindow(`window-${String(index + 1)}`, output, desktop),
+    );
+    const [first, second, third] = windows;
+
+    if (!first || !second || !third) {
+      throw new Error("missing overflow focus fixture");
+    }
+
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map(({ window }) => window),
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      centerFocusedColumnOnOverflow: true,
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    expect(controller.start()).toBe(true);
+    const layout = installTestLayout(
+      controller,
+      output,
+      desktop,
+      "column:1",
+      windows.map((_window, index) => ({
+        id: `column:${String(index + 1)}`,
+        width: { kind: "fixed", value: 400 },
+        windowIds: [`window-${String(index + 1)}`],
+      })),
+    );
+    const viewportOffset = (): number =>
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ).viewportOffset;
+    const centerX = (tracked: TrackedWindow): number =>
+      tracked.window.frameGeometry.x + tracked.window.frameGeometry.width / 2;
+    fixture.workspace.activeWindow = first.window;
+
+    expect(controller.focusRight()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(second.window);
+    expect(viewportOffset()).toBe(0);
+    expect(centerX(second)).toBe(620);
+
+    const beforeSameColumn = viewportOffset();
+    expect(controller.focusColumn(2)).toBe(false);
+    expect(viewportOffset()).toBe(beforeSameColumn);
+
+    expect(controller.focusRight()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(third.window);
+    expect(viewportOffset()).toBe(240);
+    expect(centerX(third)).toBe(790);
+  });
+
+  it("keeps a non-adjacent last-column jump beside its fitting neighbor", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const windows = Array.from({ length: 4 }, (_value, index) =>
+      createTrackedWindow(`window-${String(index + 1)}`, output, desktop),
+    );
+    const first = windows[0];
+    const last = windows[3];
+
+    if (!first || !last) {
+      throw new Error("missing non-adjacent overflow focus fixture");
+    }
+
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map(({ window }) => window),
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      centerFocusedColumnOnOverflow: true,
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    expect(controller.start()).toBe(true);
+    const layout = installTestLayout(
+      controller,
+      output,
+      desktop,
+      "column:1",
+      windows.map((_window, index) => ({
+        id: `column:${String(index + 1)}`,
+        width: { kind: "fixed", value: 300 },
+        windowIds: [`window-${String(index + 1)}`],
+      })),
+    );
+    fixture.workspace.activeWindow = first.window;
+
+    expect(controller.focusLastColumn()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(last.window);
+    expect(
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ).viewportOffset,
+    ).toBe(250);
+    expect(
+      last.window.frameGeometry.x + last.window.frameGeometry.width / 2,
+    ).toBe(840);
+  });
+
+  it("centers overflowing stacks without disturbing minimized members", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const windows = [
+      createTrackedWindow("active", output, desktop),
+      createTrackedWindow("active-minimized", output, desktop),
+      createTrackedWindow("target-minimized", output, desktop),
+      createTrackedWindow("target", output, desktop),
+      createTrackedWindow("far", output, desktop),
+    ];
+    const [active, activeMinimized, targetMinimized, target, far] = windows;
+
+    if (!active || !activeMinimized || !targetMinimized || !target || !far) {
+      throw new Error("missing stacked overflow focus fixture");
+    }
+
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      windows.map(({ window }) => window),
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      centerFocusedColumnOnOverflow: true,
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+      scheduleResume: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    const layout = installTestLayout(
+      controller,
+      output,
+      desktop,
+      "column:active",
+      [
+        {
+          id: "column:active",
+          selectedWindowId: "active",
+          width: { kind: "fixed", value: 600 },
+          windowIds: ["active", "active-minimized"],
+        },
+        {
+          id: "column:target",
+          selectedWindowId: "target",
+          width: { kind: "fixed", value: 600 },
+          windowIds: ["target-minimized", "target"],
+        },
+        {
+          id: "column:far",
+          width: { kind: "fixed", value: 600 },
+          windowIds: ["far"],
+        },
+      ],
+    );
+    fixture.workspace.activeWindow = active.window;
+    setWindowState("minimized", activeMinimized, true);
+    setWindowState("minimized", targetMinimized, true);
+    flushManualScheduler(scheduler);
+    const beforeColumns = layout.snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
+    ).columns;
+
+    expect(controller.focusRight()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(target.window);
+    expect(
+      target.window.frameGeometry.x + target.window.frameGeometry.width / 2,
+    ).toBe(500);
+    expect(activeMinimized.window.minimized).toBe(true);
+    expect(targetMinimized.window.minimized).toBe(true);
+    expect(
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ).columns,
+    ).toEqual(
+      beforeColumns.map((column) =>
+        column.id === columnId("column:target")
+          ? { ...column, selectedWindowId: windowId("target") }
+          : column,
+      ),
+    );
+  });
+
   it("updates horizontal focus centering without runtime writes", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
@@ -12030,6 +12237,14 @@ describe("RuntimeController", () => {
     expect(controller.setCenterFocusedColumn(true)).toBe(false);
     expect(controller.setCenterFocusedColumn(false)).toBe(true);
     expect(controller.setCenterFocusedColumn(false)).toBe(false);
+    expect(
+      controller.setCenterFocusedColumnOnOverflow("true" as unknown as boolean),
+    ).toBe(false);
+    expect(controller.setCenterFocusedColumnOnOverflow(false)).toBe(false);
+    expect(controller.setCenterFocusedColumnOnOverflow(true)).toBe(true);
+    expect(controller.setCenterFocusedColumnOnOverflow(true)).toBe(false);
+    expect(controller.setCenterFocusedColumnOnOverflow(false)).toBe(true);
+    expect(controller.setCenterFocusedColumnOnOverflow(false)).toBe(false);
 
     expect(
       layout.snapshot(

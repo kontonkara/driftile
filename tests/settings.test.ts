@@ -86,6 +86,7 @@ const validSettings: DriftileSettings = {
   applicationTilingExclusions: validApplicationTilingExclusions,
   borderlessWindows: false,
   centerFocusedColumn: true,
+  centerFocusedColumnOnOverflow: true,
   columnWidthPresets: validColumnWidthPresets,
   columnWidthStepPercent: 25,
   defaultColumnPresentation: "tabbed",
@@ -111,6 +112,7 @@ const validSettingsInput = {
   applicationTilingExclusions: "org.example.Legacy\norg.example.Editor=tool",
   borderlessWindows: validSettings.borderlessWindows,
   centerFocusedColumn: validSettings.centerFocusedColumn,
+  centerFocusedColumnOnOverflow: validSettings.centerFocusedColumnOnOverflow,
   columnWidthPresets: validSettings.columnWidthPresets.canonicalValue,
   columnWidthStepPercent: validSettings.columnWidthStepPercent,
   defaultColumnPresentation: validSettings.defaultColumnPresentation,
@@ -130,6 +132,7 @@ describe("Driftile settings", () => {
     expect(DEFAULT_DRIFTILE_SETTINGS).toMatchObject({
       borderlessWindows: true,
       centerFocusedColumn: false,
+      centerFocusedColumnOnOverflow: false,
       columnWidthStepPercent: 10,
       defaultColumnPresentation: "stacked",
       defaultColumnWidthPercent: 33,
@@ -182,6 +185,8 @@ describe("Driftile settings", () => {
     expect(decoded).toMatchObject({
       borderlessWindows: validSettings.borderlessWindows,
       centerFocusedColumn: validSettings.centerFocusedColumn,
+      centerFocusedColumnOnOverflow:
+        validSettings.centerFocusedColumnOnOverflow,
       columnWidthPresets: validSettings.columnWidthPresets,
       columnWidthStepPercent: validSettings.columnWidthStepPercent,
       defaultColumnPresentation: validSettings.defaultColumnPresentation,
@@ -251,6 +256,7 @@ describe("Driftile settings", () => {
       applicationTilingExclusions: "",
       borderlessWindows: true,
       centerFocusedColumn: false,
+      centerFocusedColumnOnOverflow: false,
       columnWidthPresets: "10",
       columnWidthStepPercent: 1,
       defaultColumnPresentation: "stacked",
@@ -273,6 +279,7 @@ describe("Driftile settings", () => {
       applicationTilingExclusions: "org.example.Legacy",
       borderlessWindows: false,
       centerFocusedColumn: true,
+      centerFocusedColumnOnOverflow: true,
       columnWidthPresets: "100",
       columnWidthStepPercent: 50,
       defaultColumnPresentation: "tabbed",
@@ -317,6 +324,7 @@ describe("Driftile settings", () => {
     expect(decoded).toMatchObject({
       borderlessWindows: settings.borderlessWindows,
       centerFocusedColumn: settings.centerFocusedColumn,
+      centerFocusedColumnOnOverflow: settings.centerFocusedColumnOnOverflow,
       columnWidthStepPercent: settings.columnWidthStepPercent,
       defaultColumnPresentation: settings.defaultColumnPresentation,
       defaultColumnWidthPercent: settings.defaultColumnWidthPercent,
@@ -333,6 +341,10 @@ describe("Driftile settings", () => {
   it.each([
     ["a non-boolean borderless setting", { borderlessWindows: 1 }],
     ["a non-boolean centering setting", { centerFocusedColumn: 1 }],
+    [
+      "a non-boolean overflow centering setting",
+      { centerFocusedColumnOnOverflow: 1 },
+    ],
     ["a non-boolean tab-indicator setting", { showTabIndicator: 1 }],
     ["a non-boolean touchpad setting", { touchpadNavigation: 1 }],
     [
@@ -438,9 +450,9 @@ describe("Driftile settings", () => {
     },
   );
 
-  it("rejects the previous nineteen-field snapshot", () => {
+  it("rejects the previous twenty-field snapshot", () => {
     const incomplete: Record<string, unknown> = { ...validSettingsInput };
-    delete incomplete["touchpadWorkspaceNavigation"];
+    delete incomplete["centerFocusedColumnOnOverflow"];
 
     expect(decodeDriftileSettings(incomplete)).toBeNull();
   });
@@ -525,6 +537,7 @@ describe("Driftile settings", () => {
       { applicationTilingExclusions: changedApplicationTilingExclusions },
       { borderlessWindows: true },
       { centerFocusedColumn: false },
+      { centerFocusedColumnOnOverflow: false },
       { columnWidthPresets: changedColumnWidthPresets },
       { columnWidthStepPercent: 26 },
       { defaultColumnPresentation: "stacked" as const },

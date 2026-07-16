@@ -129,6 +129,9 @@ export function init(
     settings.defaultColumnWidthPercent,
   );
   nextController.setCenterFocusedColumn(settings.centerFocusedColumn);
+  nextController.setCenterFocusedColumnOnOverflow(
+    settings.centerFocusedColumnOnOverflow,
+  );
   nextController.setColumnWidthPresets(settings.columnWidthPresets.percentages);
   nextController.setColumnWidthStepPercent(settings.columnWidthStepPercent);
   nextController.setWindowHeightPresets(
@@ -195,6 +198,9 @@ export function applySettings(settingsSnapshot: unknown): boolean {
     settings.applicationTilingExclusions,
   );
   controller.setCenterFocusedColumn(settings.centerFocusedColumn);
+  controller.setCenterFocusedColumnOnOverflow(
+    settings.centerFocusedColumnOnOverflow,
+  );
   controller.setDefaultColumnPresentation(settings.defaultColumnPresentation);
   controller.setDefaultColumnWidthPercent(settings.defaultColumnWidthPercent);
   controller.setColumnWidthPresets(settings.columnWidthPresets.percentages);

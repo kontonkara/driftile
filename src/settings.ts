@@ -56,7 +56,7 @@ const MIN_RESIZE_STEP_PERCENT = 1;
 const MAX_RESIZE_STEP_PERCENT = 50;
 const MIN_TOUCHPAD_NAVIGATION_FINGER_COUNT = 3;
 const MAX_TOUCHPAD_NAVIGATION_FINGER_COUNT = 5;
-const SETTINGS_FIELD_COUNT = 20;
+const SETTINGS_FIELD_COUNT = 21;
 
 export interface DriftileSettings {
   readonly applicationBorderlessExclusions: ApplicationBorderlessExclusions;
@@ -67,6 +67,7 @@ export interface DriftileSettings {
   readonly applicationTilingExclusions: ApplicationTilingExclusions;
   readonly borderlessWindows: boolean;
   readonly centerFocusedColumn: boolean;
+  readonly centerFocusedColumnOnOverflow: boolean;
   readonly columnWidthPresets: ColumnWidthPresetPercentages;
   readonly columnWidthStepPercent: number;
   readonly defaultColumnPresentation: ColumnPresentation;
@@ -90,6 +91,7 @@ export const DEFAULT_DRIFTILE_SETTINGS: DriftileSettings = Object.freeze({
   applicationTilingExclusions: EMPTY_APPLICATION_TILING_EXCLUSIONS,
   borderlessWindows: true,
   centerFocusedColumn: false,
+  centerFocusedColumnOnOverflow: false,
   columnWidthPresets: EMPTY_COLUMN_WIDTH_PRESET_PERCENTAGES,
   columnWidthStepPercent: 10,
   defaultColumnPresentation: "stacked",
@@ -123,6 +125,7 @@ export function decodeDriftileSettings(
     !owns(candidate, "applicationTilingExclusions") ||
     !owns(candidate, "borderlessWindows") ||
     !owns(candidate, "centerFocusedColumn") ||
+    !owns(candidate, "centerFocusedColumnOnOverflow") ||
     !owns(candidate, "columnWidthPresets") ||
     !owns(candidate, "columnWidthStepPercent") ||
     !owns(candidate, "defaultColumnPresentation") ||
@@ -159,6 +162,8 @@ export function decodeDriftileSettings(
   );
   const borderlessWindows = candidate["borderlessWindows"];
   const centerFocusedColumn = candidate["centerFocusedColumn"];
+  const centerFocusedColumnOnOverflow =
+    candidate["centerFocusedColumnOnOverflow"];
   const columnWidthPresets = decodeColumnWidthPresetPercentages(
     candidate["columnWidthPresets"],
   );
@@ -186,6 +191,7 @@ export function decodeDriftileSettings(
     !applicationTilingExclusions ||
     typeof borderlessWindows !== "boolean" ||
     typeof centerFocusedColumn !== "boolean" ||
+    typeof centerFocusedColumnOnOverflow !== "boolean" ||
     !columnWidthPresets ||
     !isBoundedInteger(
       columnWidthStepPercent,
@@ -227,6 +233,7 @@ export function decodeDriftileSettings(
     applicationTilingExclusions,
     borderlessWindows,
     centerFocusedColumn,
+    centerFocusedColumnOnOverflow,
     columnWidthPresets,
     columnWidthStepPercent,
     defaultColumnPresentation,
@@ -273,6 +280,8 @@ export function sameDriftileSettings(
     ) &&
     left.borderlessWindows === right.borderlessWindows &&
     left.centerFocusedColumn === right.centerFocusedColumn &&
+    left.centerFocusedColumnOnOverflow ===
+      right.centerFocusedColumnOnOverflow &&
     sameColumnWidthPresetPercentages(
       left.columnWidthPresets,
       right.columnWidthPresets,

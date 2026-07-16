@@ -17,6 +17,7 @@ interface DeliveredSettings {
   readonly applicationTilingExclusions: readonly string[];
   readonly borderlessWindows: boolean;
   readonly centerFocusedColumn: boolean;
+  readonly centerFocusedColumnOnOverflow: boolean;
   readonly columnWidthPresets: readonly number[];
   readonly columnWidthStepPercent: number;
   readonly defaultColumnPresentation: "stacked" | "tabbed";
@@ -77,6 +78,7 @@ class RuntimeControllerDouble {
         options.applicationTilingExclusions.canonicalEntries,
       borderlessWindows: options.borderlessWindows,
       centerFocusedColumn: false,
+      centerFocusedColumnOnOverflow: false,
       columnWidthPresets: [],
       columnWidthStepPercent: 1,
       defaultColumnPresentation: options.defaultColumnPresentation,
@@ -187,6 +189,12 @@ class RuntimeControllerDouble {
   setCenterFocusedColumn(value: boolean): boolean {
     this.calls.push("centerFocusedColumn");
     this.state = { ...this.state, centerFocusedColumn: value };
+    return true;
+  }
+
+  setCenterFocusedColumnOnOverflow(value: boolean): boolean {
+    this.calls.push("centerFocusedColumnOnOverflow");
+    this.state = { ...this.state, centerFocusedColumnOnOverflow: value };
     return true;
   }
 
@@ -310,6 +318,7 @@ describe("runtime settings delivery", () => {
       applicationTilingExclusions: "org.example.NewlyExcluded",
       borderlessWindows: false,
       centerFocusedColumn: true,
+      centerFocusedColumnOnOverflow: true,
       columnWidthPresets: "20,50,80",
       columnWidthStepPercent: 13,
       defaultColumnPresentation: "tabbed",
@@ -331,6 +340,7 @@ describe("runtime settings delivery", () => {
       applicationTilingExclusions: ["org.example.NewlyExcluded"],
       borderlessWindows: false,
       centerFocusedColumn: true,
+      centerFocusedColumnOnOverflow: true,
       columnWidthPresets: [20, 50, 80],
       columnWidthStepPercent: 13,
       defaultColumnPresentation: "tabbed",
@@ -354,6 +364,7 @@ describe("runtime settings delivery", () => {
       "applicationInitialFloating",
       "applicationTilingExclusions",
       "centerFocusedColumn",
+      "centerFocusedColumnOnOverflow",
       "defaultColumnPresentation",
       "defaultColumnWidthPercent",
       "columnWidthPresets",
@@ -429,6 +440,7 @@ describe("runtime settings delivery", () => {
       "applicationInitialFloating",
       "applicationTilingExclusions",
       "centerFocusedColumn",
+      "centerFocusedColumnOnOverflow",
       "defaultColumnPresentation",
       "defaultColumnWidthPercent",
       "columnWidthPresets",
@@ -464,6 +476,7 @@ function settings(
     applicationTilingExclusions: "",
     borderlessWindows: true,
     centerFocusedColumn: false,
+    centerFocusedColumnOnOverflow: false,
     columnWidthPresets: "",
     columnWidthStepPercent: 10,
     defaultColumnPresentation: "stacked",

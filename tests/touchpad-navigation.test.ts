@@ -83,6 +83,10 @@ class RuntimeControllerDouble {
     return true;
   }
 
+  setCenterFocusedColumnOnOverflow(): boolean {
+    return true;
+  }
+
   setColumnWidthPresets(): boolean {
     return true;
   }
@@ -240,6 +244,9 @@ describe("touchpad navigation", () => {
     expect(mainQml).toContain(
       'touchpadNaturalScroll: KWin.readConfig("TouchpadNaturalScroll", true)',
     );
+    expect(mainQml).toContain(
+      'centerFocusedColumnOnOverflow: KWin.readConfig("CenterFocusedColumnOnOverflow", false)',
+    );
     expect(mainQml).toMatch(
       /function refreshTouchpadNavigationHandlers\(force\) \{[\s\S]*Runtime\.DriftileRuntime\.getTouchpadWorkspaceNavigation\(\)[\s\S]*gesturePropertiesChanged[\s\S]*touchpadNavigationChanged[\s\S]*touchpadWorkspaceNavigationChanged[\s\S]*root\.rebuildTouchpadNavigationHandler\(\);[\s\S]*root\.rebuildTouchpadWorkspaceNavigationHandler\(\);[\s\S]*\}/u,
     );
@@ -384,6 +391,7 @@ function settings(
     applicationTilingExclusions: "",
     borderlessWindows: true,
     centerFocusedColumn: false,
+    centerFocusedColumnOnOverflow: false,
     columnWidthPresets: "",
     columnWidthStepPercent: 10,
     defaultColumnPresentation: "stacked",

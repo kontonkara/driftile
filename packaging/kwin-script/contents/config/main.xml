@@ -12,6 +12,10 @@
       <label>Center tiled columns after horizontal focus navigation</label>
       <default>false</default>
     </entry>
+    <entry name="CenterFocusedColumnOnOverflow" type="Bool">
+      <label>Center focused columns when old and new columns do not both fit</label>
+      <default>false</default>
+    </entry>
     <entry name="ShowTabIndicator" type="Bool">
       <label>Show a transient OSD for tabbed-window selection</label>
       <default>true</default>

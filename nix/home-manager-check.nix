@@ -59,6 +59,7 @@ let
         ];
         borderlessWindows = false;
         centerFocusedColumn = true;
+        centerFocusedColumnOnOverflow = true;
         columnWidthPresets = [
           20
           50
@@ -397,6 +398,7 @@ assert
         org.example.Editor=tool'';
       BorderlessWindows = false;
       CenterFocusedColumn = true;
+      CenterFocusedColumnOnOverflow = true;
       ColumnWidthPresets = "20,50,80";
       ColumnWidthStepPercent = 13;
       DefaultColumnPresentation = "tabbed";
@@ -414,7 +416,7 @@ assert
 assert
   builtins.length (
     builtins.attrNames standalone.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile"
-  ) == 20;
+  ) == 21;
 assert
   standalone.config.xdg.configFile."driftile/shortcuts.json".text == ''
     {"bindings":{"driftile_focus_column_left":["Meta+A"],"driftile_reset_column_width":[]},"version":1}

@@ -446,6 +446,7 @@ let
           ];
           borderlessWindows = false;
           centerFocusedColumn = true;
+          centerFocusedColumnOnOverflow = true;
           columnWidthPresets = [
             20
             50
@@ -656,6 +657,7 @@ let
     }
     { borderlessWindows = "false"; }
     { centerFocusedColumn = "true"; }
+    { centerFocusedColumnOnOverflow = "true"; }
     { showTabIndicator = "true"; }
     { touchpadNavigation = "true"; }
     { touchpadNavigationFingerCount = 2; }
@@ -868,6 +870,7 @@ let
         org.example.Editor=tool'';
       BorderlessWindows = false;
       CenterFocusedColumn = true;
+      CenterFocusedColumnOnOverflow = true;
       ColumnWidthPresets = "20,50,80";
       ColumnWidthStepPercent = 13;
       DefaultColumnPresentation = "tabbed";
@@ -1032,7 +1035,7 @@ assert homeManagerSettings.config.qt.kde.settings == expectedSettings;
 assert homeManagerDefaultSettings.config.qt.kde.settings == expectedDefaultSettings;
 assert
   builtins.length (builtins.attrNames expectedSettings.kwinrc."Script-io.github.kontonkara.driftile")
-  == 20;
+  == 21;
 assert
   builtins.length (
     builtins.attrNames expectedDefaultSettings.kwinrc."Script-io.github.kontonkara.driftile"

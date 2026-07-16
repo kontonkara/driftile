@@ -1110,6 +1110,7 @@ QtObject {
             applicationTilingExclusions: KWin.readConfig("ApplicationTilingExclusions", ""),
             borderlessWindows: KWin.readConfig("BorderlessWindows", true),
             centerFocusedColumn: KWin.readConfig("CenterFocusedColumn", false),
+            centerFocusedColumnOnOverflow: KWin.readConfig("CenterFocusedColumnOnOverflow", false),
             columnWidthPresets: KWin.readConfig("ColumnWidthPresets", ""),
             columnWidthStepPercent: KWin.readConfig("ColumnWidthStepPercent", 10),
             defaultColumnPresentation: KWin.readConfig("DefaultColumnPresentation", "stacked"),

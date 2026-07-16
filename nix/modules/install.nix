@@ -313,6 +313,12 @@ in
               description = "Whether horizontal tiled focus navigation centers the destination column.";
             };
 
+            centerFocusedColumnOnOverflow = lib.mkOption {
+              type = lib.types.nullOr lib.types.bool;
+              default = null;
+              description = "Whether horizontal focus centers the destination only when the old and new columns do not both fit; null leaves the KConfig value unmanaged.";
+            };
+
             showTabIndicator = lib.mkOption {
               type = lib.types.bool;
               default = true;
@@ -478,6 +484,9 @@ in
           TouchpadWorkspaceNavigation = cfg.settings.touchpadWorkspaceNavigation;
           WindowHeightPresets = renderWindowHeightPresets cfg.settings.windowHeightPresets;
           WindowHeightStepPercent = cfg.settings.windowHeightStepPercent;
+        }
+        // lib.optionalAttrs (cfg.settings.centerFocusedColumnOnOverflow != null) {
+          CenterFocusedColumnOnOverflow = cfg.settings.centerFocusedColumnOnOverflow;
         };
       }
     ))

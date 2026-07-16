@@ -28,6 +28,16 @@
         </widget>
        </item>
        <item>
+        <widget class="QCheckBox" name="kcfg_CenterFocusedColumnOnOverflow">
+         <property name="text">
+          <string>Center focused columns when the old and new columns do not both fit</string>
+         </property>
+         <property name="toolTip">
+          <string>Applies only to newly focused columns. The always-center setting above takes precedence.</string>
+         </property>
+        </widget>
+       </item>
+       <item>
         <widget class="QCheckBox" name="kcfg_ShowTabIndicator">
          <property name="text">
           <string>Show a transient OSD for tabbed-window selection</string>

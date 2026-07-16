@@ -463,6 +463,12 @@ interface ActiveColumnCommand {
   readonly sampledGeometries: ReadonlyMap<string, ContextGeometry>;
 }
 
+interface FocusedColumnView {
+  readonly context: LayoutContextSnapshot;
+  readonly layout: ReturnType<typeof solveStripGeometry>;
+  readonly target: WindowGeometry;
+}
+
 interface PointerMoveParticipant {
   readonly id: WindowId;
   readonly stateRevision: number;
@@ -860,6 +866,7 @@ export interface RuntimeControllerOptions {
   readonly applicationTilingExclusions?: ApplicationTilingExclusions;
   readonly borderlessWindows?: boolean;
   readonly centerFocusedColumn?: boolean;
+  readonly centerFocusedColumnOnOverflow?: boolean;
   readonly clientAreaOption: number;
   readonly columnWidth?: ColumnWidth;
   readonly columnWidthPresets?: readonly ColumnWidth[];
@@ -916,6 +923,7 @@ export class RuntimeController {
   >();
   private readonly capacityParkBackoffs = new Set<string>();
   private centerFocusedColumn: boolean;
+  private centerFocusedColumnOnOverflow: boolean;
   private readonly committedOutputRanks = new Map<OutputId, number>();
   private readonly columnFullWidthRestore = new Map<
     string,
@@ -1117,6 +1125,10 @@ export class RuntimeController {
     this.centerFocusedColumn =
       typeof options.centerFocusedColumn === "boolean"
         ? options.centerFocusedColumn
+        : false;
+    this.centerFocusedColumnOnOverflow =
+      typeof options.centerFocusedColumnOnOverflow === "boolean"
+        ? options.centerFocusedColumnOnOverflow
         : false;
     this.defaultColumnPresentation =
       options.defaultColumnPresentation ?? "stacked";
@@ -1996,6 +2008,18 @@ export class RuntimeController {
     }
 
     this.centerFocusedColumn = enabled;
+    return true;
+  }
+
+  setCenterFocusedColumnOnOverflow(enabled: boolean): boolean {
+    if (
+      typeof enabled !== "boolean" ||
+      enabled === this.centerFocusedColumnOnOverflow
+    ) {
+      return false;
+    }
+
+    this.centerFocusedColumnOnOverflow = enabled;
     return true;
   }
 
@@ -7739,11 +7763,12 @@ export class RuntimeController {
       return false;
     }
 
-    const centerTarget =
+    const alwaysCenterTarget =
       this.centerFocusedColumn || this.applicationCentersOnFocus(target);
     const centered =
-      centerTarget && !this.hasCapacityMutationInFlight(command.context.key)
-        ? this.centeredColumnView(command, targetId)
+      !this.hasCapacityMutationInFlight(command.context.key) &&
+      (alwaysCenterTarget || this.centerFocusedColumnOnOverflow)
+        ? this.centeredColumnView(command, targetId, !alwaysCenterTarget)
         : null;
     const desiredViewportOffset = centered?.desiredViewportOffset ?? null;
 
@@ -7772,10 +7797,50 @@ export class RuntimeController {
   private centeredColumnView(
     command: ActiveColumnCommand,
     targetId: WindowId,
+    onlyOnOverflow = false,
   ): {
     readonly currentViewportOffset: number;
     readonly desiredViewportOffset: number;
   } | null {
+    const view = this.focusedColumnView(command, targetId);
+
+    if (!view) {
+      return null;
+    }
+
+    if (onlyOnOverflow && this.focusedColumnsFitWorkArea(command, view)) {
+      return null;
+    }
+
+    const workArea = command.contextGeometry.workArea;
+    const requestedOffset = roundToPhysicalPixel(
+      view.layout.viewportOffset +
+        view.target.frame.x +
+        view.target.frame.width / 2 -
+        (workArea.x + workArea.width / 2),
+      command.contextGeometry.devicePixelRatio,
+    );
+    let centeredLayout: ReturnType<typeof solveStripGeometry>;
+
+    try {
+      centeredLayout = this.solveContextGeometry(
+        { ...view.context, viewportOffset: requestedOffset },
+        command.contextGeometry,
+      );
+    } catch {
+      return null;
+    }
+
+    return {
+      currentViewportOffset: view.layout.viewportOffset,
+      desiredViewportOffset: centeredLayout.viewportOffset,
+    };
+  }
+
+  private focusedColumnView(
+    command: ActiveColumnCommand,
+    targetId: WindowId,
+  ): FocusedColumnView | null {
     const targetColumn = command.before.columns.find((column) =>
       column.windowIds.includes(targetId),
     );
@@ -7788,10 +7853,10 @@ export class RuntimeController {
       ...command.before,
       activeColumnId: targetColumn.id,
     };
-    let currentLayout: ReturnType<typeof solveStripGeometry>;
+    let layout: ReturnType<typeof solveStripGeometry>;
 
     try {
-      currentLayout = this.solveContextGeometry(
+      layout = this.solveContextGeometry(
         targetContext,
         command.contextGeometry,
       );
@@ -7799,7 +7864,7 @@ export class RuntimeController {
       return null;
     }
 
-    const target = currentLayout.windows.find(
+    const target = layout.windows.find(
       (window) => window.windowId === targetId,
     );
 
@@ -7807,29 +7872,71 @@ export class RuntimeController {
       return null;
     }
 
-    const workArea = command.contextGeometry.workArea;
-    const requestedOffset = roundToPhysicalPixel(
-      currentLayout.viewportOffset +
-        target.frame.x +
-        target.frame.width / 2 -
-        (workArea.x + workArea.width / 2),
-      command.contextGeometry.devicePixelRatio,
-    );
-    let centeredLayout: ReturnType<typeof solveStripGeometry>;
+    return {
+      context: targetContext,
+      layout,
+      target,
+    };
+  }
 
-    try {
-      centeredLayout = this.solveContextGeometry(
-        { ...targetContext, viewportOffset: requestedOffset },
-        command.contextGeometry,
-      );
-    } catch {
-      return null;
+  private focusedColumnsFitWorkArea(
+    command: ActiveColumnCommand,
+    view: FocusedColumnView,
+  ): boolean {
+    const activeColumnIndex = command.before.columns.findIndex(
+      (column) => column.id === command.activeColumn.id,
+    );
+    const targetColumnIndex = command.before.columns.findIndex(
+      (column) => column.id === view.target.columnId,
+    );
+
+    if (
+      activeColumnIndex < 0 ||
+      targetColumnIndex < 0 ||
+      activeColumnIndex === targetColumnIndex
+    ) {
+      return true;
     }
 
-    return {
-      currentViewportOffset: currentLayout.viewportOffset,
-      desiredViewportOffset: centeredLayout.viewportOffset,
-    };
+    const neighborColumn =
+      command.before.columns[
+        targetColumnIndex + (activeColumnIndex < targetColumnIndex ? -1 : 1)
+      ];
+    const neighborId = neighborColumn
+      ? this.firstNonMinimizedColumnMember(neighborColumn)
+      : null;
+    const neighbor = neighborId
+      ? view.layout.windows.find((window) => window.windowId === neighborId)
+      : undefined;
+
+    if (!neighbor || neighbor.columnId !== neighborColumn?.id) {
+      return true;
+    }
+
+    const workArea = command.contextGeometry.workArea;
+    const tolerance =
+      floatingPointTolerance(
+        workArea.x,
+        workArea.width,
+        neighbor.frame.x,
+        neighbor.frame.width,
+        view.target.frame.x,
+        view.target.frame.width,
+      ) +
+      0.5 / command.contextGeometry.devicePixelRatio;
+
+    return (
+      horizontalFrameIsContainedInWorkArea(
+        neighbor.frame,
+        workArea,
+        tolerance,
+      ) &&
+      horizontalFrameIsContainedInWorkArea(
+        view.target.frame,
+        workArea,
+        tolerance,
+      )
+    );
   }
 
   private applicationCentersOnFocus(source: KWinWindow): boolean {
@@ -29194,6 +29301,20 @@ function rectIsContainedInWorkArea(frame: Rect, workArea: Rect): boolean {
     frame.y >= workArea.y - 1e-6 &&
     frame.x + frame.width <= workArea.x + workArea.width + 1e-6 &&
     frame.y + frame.height <= workArea.y + workArea.height + 1e-6
+  );
+}
+
+function horizontalFrameIsContainedInWorkArea(
+  frame: Rect,
+  workArea: Rect,
+  tolerance: number,
+): boolean {
+  return (
+    Number.isFinite(frame.x) &&
+    Number.isFinite(frame.width) &&
+    frame.width > 0 &&
+    frame.x >= workArea.x - tolerance &&
+    frame.x + frame.width <= workArea.x + workArea.width + tolerance
   );
 }
 
