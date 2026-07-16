@@ -31,6 +31,7 @@ import type {
   KWinWorkspace,
 } from "../src/platform/kwin/api";
 import { FALLBACK_ACTIVITY_ID } from "../src/platform/kwin/activity-adapter";
+import { DesktopLifecycle } from "../src/platform/kwin/desktop-lifecycle";
 import { RuntimeController } from "../src/runtime-controller";
 
 const PERFORMANCE_REFERENCE = Object.freeze({
@@ -38200,6 +38201,47 @@ describe("RuntimeController", () => {
     fixture.windowRemoved.emit(tracked.window);
     expect(desktops.map((candidate) => candidate.id)).toEqual(["desktop-1"]);
     expect(removeCount).toBe(2);
+  });
+
+  it("delivers the leading empty desktop policy before lifecycle start and on live updates", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const fixture = createWorkspace(output, desktop, [output], [desktop], []);
+    const policySetter = vi.spyOn(
+      DesktopLifecycle.prototype,
+      "setKeepEmptyDesktopAboveFirst",
+    );
+    const lifecycleStart = vi.spyOn(DesktopLifecycle.prototype, "start");
+    let controller: RuntimeController | null = null;
+
+    try {
+      controller = new RuntimeController(fixture.workspace, {
+        clientAreaOption: 2,
+        emptyDesktopAboveFirst: true,
+      });
+
+      expect(policySetter).toHaveBeenCalledOnce();
+      expect(policySetter).toHaveBeenLastCalledWith(true);
+      expect(lifecycleStart).not.toHaveBeenCalled();
+      expect(controller.start()).toBe(true);
+      expect(policySetter.mock.invocationCallOrder[0]).toBeLessThan(
+        lifecycleStart.mock.invocationCallOrder[0] ?? Number.MAX_SAFE_INTEGER,
+      );
+
+      expect(
+        controller.setEmptyDesktopAboveFirst("false" as unknown as boolean),
+      ).toBe(false);
+      expect(policySetter).toHaveBeenCalledOnce();
+      expect(controller.setEmptyDesktopAboveFirst(false)).toBe(true);
+      expect(controller.setEmptyDesktopAboveFirst(false)).toBe(false);
+      expect(policySetter).toHaveBeenCalledTimes(3);
+      expect(policySetter).toHaveBeenNthCalledWith(2, false);
+      expect(policySetter).toHaveBeenNthCalledWith(3, false);
+    } finally {
+      controller?.stop();
+      policySetter.mockRestore();
+      lifecycleStart.mockRestore();
+    }
   });
 
   it("creates a fresh shared tail after a numbered column transfer", () => {

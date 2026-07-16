@@ -92,6 +92,7 @@ const validSettings: DriftileSettings = {
   columnWidthStepPercent: 25,
   defaultColumnPresentation: "tabbed",
   defaultColumnWidthPercent: 75,
+  emptyDesktopAboveFirst: true,
   gap: 32.5,
   showTabIndicator: false,
   touchpadNavigation: true,
@@ -119,6 +120,7 @@ const validSettingsInput = {
   columnWidthStepPercent: validSettings.columnWidthStepPercent,
   defaultColumnPresentation: validSettings.defaultColumnPresentation,
   defaultColumnWidthPercent: validSettings.defaultColumnWidthPercent,
+  emptyDesktopAboveFirst: validSettings.emptyDesktopAboveFirst,
   gap: validSettings.gap,
   showTabIndicator: validSettings.showTabIndicator,
   touchpadNavigation: validSettings.touchpadNavigation,
@@ -139,6 +141,7 @@ describe("Driftile settings", () => {
       columnWidthStepPercent: 10,
       defaultColumnPresentation: "stacked",
       defaultColumnWidthPercent: 33,
+      emptyDesktopAboveFirst: false,
       gap: 16,
       showTabIndicator: true,
       touchpadNavigation: false,
@@ -195,6 +198,7 @@ describe("Driftile settings", () => {
       columnWidthStepPercent: validSettings.columnWidthStepPercent,
       defaultColumnPresentation: validSettings.defaultColumnPresentation,
       defaultColumnWidthPercent: validSettings.defaultColumnWidthPercent,
+      emptyDesktopAboveFirst: validSettings.emptyDesktopAboveFirst,
       gap: validSettings.gap,
       showTabIndicator: validSettings.showTabIndicator,
       touchpadNavigation: validSettings.touchpadNavigation,
@@ -266,6 +270,7 @@ describe("Driftile settings", () => {
       columnWidthStepPercent: 1,
       defaultColumnPresentation: "stacked",
       defaultColumnWidthPercent: 10,
+      emptyDesktopAboveFirst: false,
       gap: 0,
       showTabIndicator: false,
       touchpadNavigation: false,
@@ -290,6 +295,7 @@ describe("Driftile settings", () => {
       columnWidthStepPercent: 50,
       defaultColumnPresentation: "tabbed",
       defaultColumnWidthPercent: 100,
+      emptyDesktopAboveFirst: true,
       gap: 64,
       showTabIndicator: true,
       touchpadNavigation: true,
@@ -335,6 +341,7 @@ describe("Driftile settings", () => {
       columnWidthStepPercent: settings.columnWidthStepPercent,
       defaultColumnPresentation: settings.defaultColumnPresentation,
       defaultColumnWidthPercent: settings.defaultColumnWidthPercent,
+      emptyDesktopAboveFirst: settings.emptyDesktopAboveFirst,
       gap: settings.gap,
       showTabIndicator: settings.showTabIndicator,
       touchpadNavigation: settings.touchpadNavigation,
@@ -351,6 +358,10 @@ describe("Driftile settings", () => {
       { alwaysCenterSingleColumn: 1 },
     ],
     ["a non-boolean borderless setting", { borderlessWindows: 1 }],
+    [
+      "a non-boolean empty-desktop-above setting",
+      { emptyDesktopAboveFirst: 1 },
+    ],
     ["a non-boolean centering setting", { centerFocusedColumn: 1 }],
     [
       "a non-boolean overflow centering setting",
@@ -460,9 +471,9 @@ describe("Driftile settings", () => {
     },
   );
 
-  it("rejects the previous twenty-one-field snapshot", () => {
+  it("rejects the previous twenty-two-field snapshot", () => {
     const incomplete: Record<string, unknown> = { ...validSettingsInput };
-    delete incomplete["alwaysCenterSingleColumn"];
+    delete incomplete["emptyDesktopAboveFirst"];
 
     expect(decodeDriftileSettings(incomplete)).toBeNull();
   });
@@ -553,6 +564,7 @@ describe("Driftile settings", () => {
       { columnWidthStepPercent: 26 },
       { defaultColumnPresentation: "stacked" as const },
       { defaultColumnWidthPercent: 76 },
+      { emptyDesktopAboveFirst: false },
       { gap: 33 },
       { showTabIndicator: true },
       { touchpadNavigation: false },

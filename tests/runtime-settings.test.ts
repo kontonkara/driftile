@@ -23,6 +23,7 @@ interface DeliveredSettings {
   readonly columnWidthStepPercent: number;
   readonly defaultColumnPresentation: "stacked" | "tabbed";
   readonly defaultColumnWidthPercent: number;
+  readonly emptyDesktopAboveFirst: boolean;
   readonly gap: number;
   readonly windowHeightPresets: readonly number[];
   readonly windowHeightStepPercent: number;
@@ -45,6 +46,7 @@ interface RuntimeControllerOptions {
   readonly applicationTilingExclusions: ApplicationTilingExclusions;
   readonly borderlessWindows: boolean;
   readonly defaultColumnPresentation: "stacked" | "tabbed";
+  readonly emptyDesktopAboveFirst: boolean;
   readonly gap: number;
   readonly schedule: (callback: () => void) => void;
 }
@@ -85,6 +87,7 @@ class RuntimeControllerDouble {
       columnWidthStepPercent: 1,
       defaultColumnPresentation: options.defaultColumnPresentation,
       defaultColumnWidthPercent: 10,
+      emptyDesktopAboveFirst: options.emptyDesktopAboveFirst,
       gap: options.gap,
       windowHeightPresets: [],
       windowHeightStepPercent: 1,
@@ -230,6 +233,12 @@ class RuntimeControllerDouble {
     return true;
   }
 
+  setEmptyDesktopAboveFirst(value: boolean): boolean {
+    this.calls.push("emptyDesktopAboveFirst");
+    this.state = { ...this.state, emptyDesktopAboveFirst: value };
+    return true;
+  }
+
   setGap(value: number): boolean {
     this.calls.push("gap");
     this.state = { ...this.state, gap: value };
@@ -274,6 +283,7 @@ describe("runtime settings delivery", () => {
       applicationInitialFloating: "org.example.InitialFloat",
       applicationTilingExclusions: "org.example.InitiallyExcluded",
       alwaysCenterSingleColumn: true,
+      emptyDesktopAboveFirst: true,
       windowHeightPresets: "30,60,90",
     });
 
@@ -306,6 +316,7 @@ describe("runtime settings delivery", () => {
       30, 60, 90,
     ]);
     expect(controller.deliveredSettings.alwaysCenterSingleColumn).toBe(true);
+    expect(controller.deliveredSettings.emptyDesktopAboveFirst).toBe(true);
     expect(runtime.getTouchpadWorkspaceNavigation()).toBe(false);
 
     expect(
@@ -334,6 +345,7 @@ describe("runtime settings delivery", () => {
       columnWidthStepPercent: 13,
       defaultColumnPresentation: "tabbed",
       defaultColumnWidthPercent: 65,
+      emptyDesktopAboveFirst: false,
       gap: 7.5,
       touchpadNavigation: true,
       touchpadNavigationFingerCount: 3,
@@ -357,6 +369,7 @@ describe("runtime settings delivery", () => {
       columnWidthStepPercent: 13,
       defaultColumnPresentation: "tabbed",
       defaultColumnWidthPercent: 65,
+      emptyDesktopAboveFirst: false,
       gap: 7.5,
       windowHeightPresets: [25, 50, 75],
       windowHeightStepPercent: 17,
@@ -380,6 +393,7 @@ describe("runtime settings delivery", () => {
       "centerFocusedColumnOnOverflow",
       "defaultColumnPresentation",
       "defaultColumnWidthPercent",
+      "emptyDesktopAboveFirst",
       "columnWidthPresets",
       "columnWidthStepPercent",
       "windowHeightPresets",
@@ -457,6 +471,7 @@ describe("runtime settings delivery", () => {
       "centerFocusedColumnOnOverflow",
       "defaultColumnPresentation",
       "defaultColumnWidthPercent",
+      "emptyDesktopAboveFirst",
       "columnWidthPresets",
       "columnWidthStepPercent",
       "windowHeightPresets",
@@ -496,6 +511,7 @@ function settings(
     columnWidthStepPercent: 10,
     defaultColumnPresentation: "stacked",
     defaultColumnWidthPercent: 50,
+    emptyDesktopAboveFirst: false,
     gap: 16,
     showTabIndicator: true,
     touchpadNavigation: false,

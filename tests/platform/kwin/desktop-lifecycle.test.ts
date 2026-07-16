@@ -31,6 +31,7 @@ class Signal<TArguments extends unknown[]> implements KWinSignal<TArguments> {
 
 interface LifecycleFixture {
   readonly createCount: number;
+  readonly createRequests: readonly number[];
   readonly desktops: readonly KWinVirtualDesktop[];
   readonly lifecycle: DesktopLifecycle;
   readonly moveCount: number;
@@ -42,11 +43,17 @@ interface LifecycleFixture {
   readonly removeCount: number;
   emitDesktopsChanged(): void;
   addWindow(window: KWinWindow): void;
+  insertExternalDesktop(
+    position: number,
+    desktopId: string,
+  ): KWinVirtualDesktop;
   reconcile(): void;
   removeWindow(window: KWinWindow): void;
   selectedDesktop(output: KWinOutput): KWinVirtualDesktop | null;
   select(output: KWinOutput, desktop: KWinVirtualDesktop): void;
   setCreateCommits(enabled: boolean): void;
+  setCreatePermutes(enabled: boolean): void;
+  setCreatePositionOverride(position: number | null): void;
   setCreateSignals(enabled: boolean): void;
   setMoveHook(hook: (() => void) | null): void;
   setMoveMode(
@@ -58,6 +65,7 @@ function createLifecycleFixture(
   initialDesktops: readonly KWinVirtualDesktop[],
   initialWindows: readonly KWinWindow[] = [],
   outputCount = 1,
+  keepEmptyDesktopAboveFirst = false,
 ): LifecycleFixture {
   const currentDesktopChanged = new Signal<
     [
@@ -77,8 +85,11 @@ function createLifecycleFixture(
   let desktops = [...initialDesktops];
   let windows = [...initialWindows];
   let createCommits = true;
+  let createPermutes = false;
+  let createPositionOverride: number | null = null;
   let createSignals = true;
   let createCount = 0;
+  const createRequests: number[] = [];
   let moveCount = 0;
   let moveHook: (() => void) | null = null;
   let moveMode: "commit" | "reject" | "throw" | "wrong" = "commit";
@@ -128,14 +139,35 @@ function createLifecycleFixture(
     clientArea: (_option, output) => output.geometry,
     createDesktop: (position) => {
       createCount += 1;
+      createRequests.push(position);
 
       if (!createCommits) {
         return;
       }
 
+      if (createPermutes) {
+        const first = desktops[0];
+        const second = desktops[1];
+
+        if (first && second) {
+          desktops.splice(0, 2, second, first);
+        }
+
+        if (createSignals) {
+          desktopsChanged.emit();
+        }
+
+        return;
+      }
+
       const desktop = { id: `created-${String(nextCreatedId)}` };
       nextCreatedId += 1;
-      desktops.splice(Math.min(position, desktops.length), 0, desktop);
+      const targetPosition = createPositionOverride ?? position;
+      desktops.splice(
+        Math.min(Math.max(targetPosition, 0), desktops.length),
+        0,
+        desktop,
+      );
 
       if (createSignals) {
         desktopsChanged.emit();
@@ -173,9 +205,15 @@ function createLifecycleFixture(
     },
   });
 
-  const lifecycle = new DesktopLifecycle(workspace, {
-    changed: () => undefined,
-  });
+  const lifecycle = new DesktopLifecycle(
+    workspace,
+    {
+      changed: () => undefined,
+    },
+    {
+      keepEmptyDesktopAboveFirst,
+    },
+  );
   lifecycle.start();
 
   return {
@@ -186,11 +224,22 @@ function createLifecycleFixture(
     get createCount() {
       return createCount;
     },
+    createRequests,
     get desktops() {
       return desktops;
     },
     emitDesktopsChanged: () => {
       desktopsChanged.emit();
+    },
+    insertExternalDesktop: (position, desktopId) => {
+      const desktop = { id: desktopId };
+      desktops.splice(
+        Math.min(Math.max(position, 0), desktops.length),
+        0,
+        desktop,
+      );
+      desktopsChanged.emit();
+      return desktop;
     },
     lifecycle,
     get moveCount() {
@@ -216,6 +265,12 @@ function createLifecycleFixture(
     },
     setCreateCommits: (enabled) => {
       createCommits = enabled;
+    },
+    setCreatePermutes: (enabled) => {
+      createPermutes = enabled;
+    },
+    setCreatePositionOverride: (position) => {
+      createPositionOverride = position;
     },
     setCreateSignals: (enabled) => {
       createSignals = enabled;
@@ -331,6 +386,87 @@ describe("planDesktopLifecycle", () => {
       }),
     ).toBeNull();
   });
+
+  it("creates distinct empty leading and trailing boundaries when enabled", () => {
+    expect(
+      planDesktopLifecycle(
+        {
+          desktopIds: ["desktop-1", "desktop-2"],
+          occupiedDesktopIds: new Set(["desktop-1"]),
+          ownedDesktopIds: new Set(),
+          removalSafe: true,
+          selectedDesktopIds: new Set(["desktop-1"]),
+        },
+        true,
+      ),
+    ).toEqual({ kind: "create", position: 0 });
+    expect(
+      planDesktopLifecycle(
+        {
+          desktopIds: ["desktop-1", "desktop-2"],
+          occupiedDesktopIds: new Set(["desktop-2"]),
+          ownedDesktopIds: new Set(),
+          removalSafe: true,
+          selectedDesktopIds: new Set(["desktop-2"]),
+        },
+        true,
+      ),
+    ).toEqual({ kind: "create", position: 2 });
+  });
+
+  it("keeps at least two empty desktops when both boundaries are enabled", () => {
+    const base = {
+      occupiedDesktopIds: new Set<string>(),
+      ownedDesktopIds: new Set<string>(),
+      removalSafe: true,
+      selectedDesktopIds: new Set(["desktop-1"]),
+    };
+
+    expect(
+      planDesktopLifecycle({ ...base, desktopIds: ["desktop-1"] }, true),
+    ).toEqual({ kind: "create", position: 1 });
+    expect(
+      planDesktopLifecycle(
+        { ...base, desktopIds: ["desktop-1", "desktop-2"] },
+        true,
+      ),
+    ).toBeNull();
+  });
+
+  it("removes only owned redundant empty boundary desktops", () => {
+    const base = {
+      desktopIds: ["external-leading", "owned-leading", "desktop-1", "tail"],
+      occupiedDesktopIds: new Set(["desktop-1"]),
+      ownedDesktopIds: new Set(["owned-leading", "tail"]),
+      removalSafe: true,
+      selectedDesktopIds: new Set(["desktop-1"]),
+    };
+
+    expect(planDesktopLifecycle(base, true)).toEqual({
+      desktopId: "owned-leading",
+      kind: "remove",
+    });
+    expect(
+      planDesktopLifecycle(
+        {
+          ...base,
+          desktopIds: ["external-leading", "desktop-1", "owned-tail", "tail"],
+          ownedDesktopIds: new Set(["owned-tail"]),
+        },
+        true,
+      ),
+    ).toEqual({ desktopId: "owned-tail", kind: "remove" });
+    expect(
+      planDesktopLifecycle(
+        {
+          ...base,
+          ownedDesktopIds: new Set(["owned-leading", "tail"]),
+          selectedDesktopIds: new Set(["owned-leading"]),
+        },
+        true,
+      ),
+    ).toBeNull();
+  });
 });
 
 describe("DesktopLifecycle", () => {
@@ -352,6 +488,193 @@ describe("DesktopLifecycle", () => {
       "desktop-1",
     ]);
     expect(fixture.removeCount).toBe(1);
+    expect(fixture.lifecycle.ownedDesktopCount).toBe(0);
+  });
+
+  it("maintains distinct empty leading and trailing desktops when enabled", () => {
+    const desktop = { id: "desktop-1" };
+    const fixture = createLifecycleFixture(
+      [desktop],
+      [createWindow("window-1", [desktop])],
+      1,
+      true,
+    );
+
+    fixture.reconcile();
+    fixture.reconcile();
+
+    expect(fixture.desktops.map((candidate) => candidate.id)).toEqual([
+      "created-1",
+      "desktop-1",
+      "created-2",
+    ]);
+    expect(fixture.createRequests).toEqual([0, 2]);
+    expect(fixture.lifecycle.ownedDesktopCount).toBe(2);
+  });
+
+  it("creates a second boundary for a completely empty topology", () => {
+    const desktop = { id: "desktop-1" };
+    const fixture = createLifecycleFixture([desktop], [], 1, true);
+
+    fixture.reconcile();
+    fixture.reconcile();
+
+    expect(fixture.desktops.map((candidate) => candidate.id)).toEqual([
+      "desktop-1",
+      "created-1",
+    ]);
+    expect(fixture.createRequests).toEqual([1]);
+    expect(fixture.removeCount).toBe(0);
+  });
+
+  it("reconciles a live enable and safely cleans up its leading desktop after disable", () => {
+    const desktop = { id: "desktop-1" };
+    const fixture = createLifecycleFixture(
+      [desktop],
+      [createWindow("window-1", [desktop])],
+    );
+
+    fixture.reconcile();
+    expect(fixture.desktops.map((candidate) => candidate.id)).toEqual([
+      "desktop-1",
+      "created-1",
+    ]);
+
+    expect(fixture.lifecycle.setKeepEmptyDesktopAboveFirst(true)).toBe(true);
+    expect(fixture.lifecycle.setKeepEmptyDesktopAboveFirst(true)).toBe(false);
+    expect(fixture.lifecycle.pendingWork).toBe(true);
+    fixture.reconcile();
+    expect(fixture.desktops.map((candidate) => candidate.id)).toEqual([
+      "created-2",
+      "desktop-1",
+      "created-1",
+    ]);
+
+    expect(fixture.lifecycle.setKeepEmptyDesktopAboveFirst(false)).toBe(true);
+    fixture.reconcile();
+    fixture.reconcile();
+    expect(fixture.desktops.map((candidate) => candidate.id)).toEqual([
+      "desktop-1",
+      "created-1",
+    ]);
+    expect(fixture.createCount).toBe(2);
+    expect(fixture.removeCount).toBe(1);
+    expect(fixture.lifecycle.ownedDesktopCount).toBe(1);
+  });
+
+  it("defers disabled leading cleanup while the owned desktop is selected", () => {
+    const desktop = { id: "desktop-1" };
+    const fixture = createLifecycleFixture(
+      [desktop],
+      [createWindow("window-1", [desktop])],
+      1,
+      true,
+    );
+
+    fixture.reconcile();
+    fixture.reconcile();
+    const output = fixture.outputs[0];
+    const leading = fixture.desktops[0];
+
+    if (!output || !leading) {
+      throw new Error("missing leading cleanup fixture state");
+    }
+
+    fixture.select(output, leading);
+    fixture.reconcile();
+    fixture.lifecycle.setKeepEmptyDesktopAboveFirst(false);
+    fixture.reconcile();
+    expect(fixture.removeCount).toBe(0);
+
+    fixture.select(output, desktop);
+    fixture.reconcile();
+    expect(fixture.desktops.map((candidate) => candidate.id)).toEqual([
+      "desktop-1",
+      "created-2",
+    ]);
+    expect(fixture.removeCount).toBe(1);
+  });
+
+  it("never cleans up an occupied, external, or removal-unsafe leading desktop", () => {
+    const occupiedDesktop = { id: "occupied" };
+    const occupiedFixture = createLifecycleFixture(
+      [occupiedDesktop],
+      [createWindow("window-occupied", [occupiedDesktop])],
+      1,
+      true,
+    );
+    occupiedFixture.reconcile();
+    occupiedFixture.reconcile();
+    const occupiedLeading = occupiedFixture.desktops[0];
+
+    if (!occupiedLeading) {
+      throw new Error("missing occupied leading desktop");
+    }
+
+    occupiedFixture.addWindow(
+      createWindow("window-leading", [occupiedLeading]),
+    );
+    occupiedFixture.lifecycle.setKeepEmptyDesktopAboveFirst(false);
+    occupiedFixture.reconcile();
+    expect(occupiedFixture.removeCount).toBe(0);
+
+    const externalLeading = { id: "external-leading" };
+    const externalDesktop = { id: "external-occupied" };
+    const externalFixture = createLifecycleFixture(
+      [externalLeading, externalDesktop],
+      [createWindow("window-external", [externalDesktop])],
+      1,
+      true,
+    );
+    externalFixture.reconcile();
+    externalFixture.lifecycle.setKeepEmptyDesktopAboveFirst(false);
+    externalFixture.reconcile();
+    expect(externalFixture.desktops[0]).toBe(externalLeading);
+    expect(externalFixture.removeCount).toBe(0);
+
+    const unsafeDesktop = { id: "unsafe" };
+    const unsafeWindow = createWindow("window-unsafe", [unsafeDesktop]);
+    Object.defineProperty(unsafeWindow, "desktopsChanged", {
+      configurable: true,
+      value: undefined,
+    });
+    const unsafeFixture = createLifecycleFixture(
+      [unsafeDesktop],
+      [unsafeWindow],
+      1,
+      true,
+    );
+    unsafeFixture.reconcile();
+    unsafeFixture.reconcile();
+    unsafeFixture.lifecycle.setKeepEmptyDesktopAboveFirst(false);
+    unsafeFixture.reconcile();
+    expect(unsafeFixture.removeCount).toBe(0);
+  });
+
+  it("removes owned boundaries next to external empty boundaries without recreating them", () => {
+    const desktop = { id: "desktop-1" };
+    const fixture = createLifecycleFixture(
+      [desktop],
+      [createWindow("window-1", [desktop])],
+      1,
+      true,
+    );
+
+    fixture.reconcile();
+    fixture.reconcile();
+    fixture.insertExternalDesktop(0, "external-leading");
+    fixture.reconcile();
+    fixture.insertExternalDesktop(fixture.desktops.length, "external-tail");
+    fixture.reconcile();
+    fixture.reconcile();
+
+    expect(fixture.desktops.map((candidate) => candidate.id)).toEqual([
+      "external-leading",
+      "desktop-1",
+      "external-tail",
+    ]);
+    expect(fixture.createCount).toBe(2);
+    expect(fixture.removeCount).toBe(2);
     expect(fixture.lifecycle.ownedDesktopCount).toBe(0);
   });
 
@@ -466,6 +789,54 @@ describe("DesktopLifecycle", () => {
     expect(fixture.selectedDesktop(output)).toBe(trailing);
     expect(fixture.moveCount).toBe(0);
     expect(fixture.lifecycle.ownedDesktopCount).toBe(1);
+  });
+
+  it("protects both empty boundaries while allowing interior reorder", () => {
+    const primary = { id: "desktop-1" };
+    const secondary = { id: "desktop-2" };
+    const fixture = createLifecycleFixture(
+      [primary, secondary],
+      [
+        createWindow("window-1", [primary]),
+        createWindow("window-2", [secondary]),
+      ],
+      1,
+      true,
+    );
+
+    fixture.reconcile();
+    fixture.reconcile();
+    const output = fixture.outputs[0];
+    const leading = fixture.desktops[0];
+    const trailing = fixture.desktops[3];
+
+    if (!output || !leading || !trailing) {
+      throw new Error("missing dual-boundary reorder fixture state");
+    }
+
+    fixture.select(output, leading);
+    fixture.reconcile();
+    expect(fixture.lifecycle.moveSelectedDesktop(output, 1)).toBe(false);
+
+    fixture.select(output, primary);
+    fixture.reconcile();
+    expect(fixture.lifecycle.moveSelectedDesktop(output, -1)).toBe(false);
+
+    fixture.select(output, secondary);
+    fixture.reconcile();
+    expect(fixture.lifecycle.moveSelectedDesktop(output, 1)).toBe(false);
+
+    fixture.select(output, trailing);
+    fixture.reconcile();
+    expect(fixture.lifecycle.moveSelectedDesktop(output, -1)).toBe(false);
+
+    fixture.select(output, primary);
+    fixture.reconcile();
+    expect(fixture.lifecycle.moveSelectedDesktop(output, 1)).toBe(true);
+    expect(fixture.desktops).toEqual([leading, secondary, primary, trailing]);
+    expect(fixture.moveRequests).toEqual([
+      { desktopId: primary.id, position: 2 },
+    ]);
   });
 
   it("does not reorder while the shared trailing desktop is occupied", () => {
@@ -703,6 +1074,90 @@ describe("DesktopLifecycle", () => {
     fixture.removeWindow(window);
     fixture.reconcile();
     expect(fixture.removeCount).toBe(1);
+  });
+
+  it.each([true, false])(
+    "claims an exact leading insertion when synchronous signal delivery is %s",
+    (createSignals) => {
+      const desktop = { id: "desktop-1" };
+      const fixture = createLifecycleFixture(
+        [desktop],
+        [createWindow("window-1", [desktop])],
+        1,
+        true,
+      );
+      fixture.setCreateSignals(createSignals);
+
+      fixture.reconcile();
+
+      expect(fixture.createRequests).toEqual([0]);
+      expect(fixture.desktops.map((candidate) => candidate.id)).toEqual([
+        "created-1",
+        "desktop-1",
+      ]);
+      expect(fixture.lifecycle.ownedDesktopCount).toBe(1);
+    },
+  );
+
+  it("does not claim a created desktop inserted at the wrong boundary", () => {
+    const occupied = { id: "desktop-1" };
+    const trailing = { id: "desktop-2" };
+    const fixture = createLifecycleFixture(
+      [occupied, trailing],
+      [createWindow("window-1", [occupied])],
+      1,
+      true,
+    );
+    fixture.setCreatePositionOverride(2);
+
+    fixture.reconcile();
+
+    expect(fixture.createRequests).toEqual([0]);
+    expect(fixture.desktops.map((candidate) => candidate.id)).toEqual([
+      "desktop-1",
+      "desktop-2",
+      "created-1",
+    ]);
+    expect(fixture.lifecycle.ownedDesktopCount).toBe(0);
+    expect(fixture.lifecycle.pendingWork).toBe(false);
+
+    fixture.reconcile();
+    expect(fixture.createCount).toBe(1);
+  });
+
+  it("does not claim a delayed insertion after an uncommitted create call", () => {
+    const desktop = { id: "desktop-1" };
+    const fixture = createLifecycleFixture(
+      [desktop],
+      [createWindow("window-1", [desktop])],
+      1,
+      true,
+    );
+    fixture.setCreateCommits(false);
+
+    fixture.reconcile();
+    fixture.insertExternalDesktop(0, "delayed-desktop");
+
+    expect(fixture.createRequests).toEqual([0]);
+    expect(fixture.lifecycle.ownedDesktopCount).toBe(0);
+  });
+
+  it("does not claim ownership after a stale same-id permutation", () => {
+    const occupied = { id: "desktop-1" };
+    const trailing = { id: "desktop-2" };
+    const fixture = createLifecycleFixture(
+      [occupied, trailing],
+      [createWindow("window-1", [occupied])],
+      1,
+      true,
+    );
+    fixture.setCreatePermutes(true);
+
+    fixture.reconcile();
+
+    expect(fixture.createRequests).toEqual([0]);
+    expect(fixture.desktops).toEqual([trailing, occupied]);
+    expect(fixture.lifecycle.ownedDesktopCount).toBe(0);
   });
 
   it("fails closed when an application cannot report desktop changes", () => {

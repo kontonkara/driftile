@@ -873,6 +873,7 @@ export interface RuntimeControllerOptions {
   readonly columnWidthPresets?: readonly ColumnWidth[];
   readonly createRect?: KWinRectFactory;
   readonly defaultColumnPresentation?: ColumnPresentation;
+  readonly emptyDesktopAboveFirst?: boolean;
   readonly gap?: number;
   readonly hidePointerDropPreview?: () => void;
   readonly layoutHydrationQuietSamples?: number;
@@ -1180,6 +1181,11 @@ export class RuntimeController {
         this.scheduleWork();
       },
     });
+    this.desktopLifecycle.setKeepEmptyDesktopAboveFirst(
+      typeof options.emptyDesktopAboveFirst === "boolean"
+        ? options.emptyDesktopAboveFirst
+        : false,
+    );
     this.observer = new WindowObserver(workspace, {
       added: this.handleWindowAdded,
       changed: this.handleWindowChanged,
@@ -2048,6 +2054,14 @@ export class RuntimeController {
     }
 
     return true;
+  }
+
+  setEmptyDesktopAboveFirst(enabled: boolean): boolean {
+    if (typeof enabled !== "boolean") {
+      return false;
+    }
+
+    return this.desktopLifecycle.setKeepEmptyDesktopAboveFirst(enabled);
   }
 
   setCenterFocusedColumn(enabled: boolean): boolean {

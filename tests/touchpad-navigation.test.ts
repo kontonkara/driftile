@@ -107,6 +107,10 @@ class RuntimeControllerDouble {
     return true;
   }
 
+  setEmptyDesktopAboveFirst(): boolean {
+    return true;
+  }
+
   setGap(): boolean {
     return true;
   }
@@ -401,6 +405,7 @@ function settings(
     columnWidthStepPercent: 10,
     defaultColumnPresentation: "stacked",
     defaultColumnWidthPercent: 50,
+    emptyDesktopAboveFirst: false,
     gap: 16,
     showTabIndicator: true,
     touchpadNavigation: false,
