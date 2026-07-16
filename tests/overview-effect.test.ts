@@ -264,9 +264,7 @@ describe("overview effect package", () => {
     expect(screenEdgeHandler).toContain(
       "enabled: edge !== KWin.ScreenEdgeHandler.NoEdge",
     );
-    expect(screenEdgeHandler).toContain(
-      "mode: KWin.ScreenEdgeHandler.Pointer",
-    );
+    expect(screenEdgeHandler).toContain("mode: KWin.ScreenEdgeHandler.Pointer");
     expect(screenEdgeHandler).toContain("onActivated: effect.activate()");
     expect(screenEdgeHandler).not.toContain("toggle()");
 
