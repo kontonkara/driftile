@@ -252,9 +252,11 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   performs no forced reflow. Floating windows and contexts with multiple
   columns bypass the invariant.
 - Applies default-width changes before admission without changing existing
-  column policies or floating frames; newly admitted columns, ordinary fresh
-  cross-context retiles, and later contextual resets read the current policy.
-  A pointer gutter extraction instead preserves its source width.
+  column policies or floating frames. A positive fixed logical-pixel value wins;
+  zero selects the percentage fallback. Newly admitted columns, ordinary fresh
+  cross-context retiles, and later contextual resets read that current policy
+  through the normal constraint and output-pixel snapping path. A pointer gutter
+  extraction instead preserves its source width.
 - Parses at most 128 application-width entries into an exact
   `desktopFileName` lookup. A newly created or freshly admitted singleton reads
   that map in constant time, falls back to the global default, and remains
@@ -645,7 +647,11 @@ inspected safely within the codec bound.
 - Coalesce each event burst into at most one reconcile pass per dirty context.
 - Reflow affected visible contexts only; defer hidden desktops until they become visible.
 - Treat a gap change as layout policy, not a model or topology mutation; preserve logical state and defer it until structural and capacity transactions settle.
-- Commit a default-width change only at the same safe runtime boundary and leave existing managed width policies unchanged. Retrying a waiting admission may add a constrained column and update that viewport and its frames.
+- Commit proportional and fixed default-width changes only at the same safe
+  runtime boundary and leave existing managed width policies unchanged. A
+  positive fixed value wins while zero preserves the percentage fallback.
+  Retrying a waiting admission may add a constrained, pixel-snapped column and
+  update that viewport and its frames.
 - Replace the bounded application-width lookup atomically on reconfiguration.
   Do not revisit existing columns; schedule only contexts with waiting windows
   that may create a fresh singleton.

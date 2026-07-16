@@ -197,9 +197,11 @@ Only an exact synchronous or asynchronous acknowledgement commits state.
 
 The existing preset forward/back and reset-width actions use that contextual
 path for one relation-free manually floating window. Presets read
-`ColumnWidthPresets`; reset reads `DefaultColumnWidthPercent`. Each percentage
-resolves as `percentage / 100 * (workArea.width - gap) - gap`, then uses the
-assigned output's pixel grid, live decorated constraints, and established
+`ColumnWidthPresets`; reset reads `DefaultColumnWidthPixels` when it is positive
+and otherwise falls back to `DefaultColumnWidthPercent`. A fixed value is a
+logical-pixel width; a percentage resolves as
+`percentage / 100 * (workArea.width - gap) - gap`. Both use the assigned
+output's pixel grid, live decorated constraints, and established
 partial-visibility clamp. Automatic, related, pending, native-state, or
 otherwise blocked floating targets fail closed without reaching tiled width
 changes. Tiled behavior is unchanged. The geometry path adds no persistence or

@@ -90,8 +90,9 @@ The current runtime already:
 - Applies a global fractional 0–64 logical-pixel tiled-window gap live without
   mutating layout order, sizing policies, focus, floating frames, or minimized
   frames.
-- Configures a 10%–100% default width for newly admitted columns, fresh
-  cross-context retiles, and contextual reset without changing existing widths.
+- Configures a 10%–100% default-width fallback and an optional fixed
+  `1px`–`16384px` logical width for newly admitted columns, fresh cross-context
+  retiles, and contextual reset without changing existing widths.
 - Configures up to 128 exact `desktopFileName` proportional or fixed
   logical-pixel initial singleton widths, with a constant-time admission
   lookup, global-default fallback, live constraints, and output-pixel snapping.
@@ -1561,6 +1562,9 @@ No other feature belongs to 1.34.0.
   explicit percentages and fixed `1px`–`16384px` logical widths. Only fresh
   singleton admission reads a rule; constraints and output-pixel snapping stay
   authoritative.
+- Add an opt-in fixed global default column width. `0` retains the existing
+  percentage fallback; positive logical-pixel values affect later admissions
+  and resets without rewriting existing columns.
 - Keep the geometry behaviors inside the existing solver and physical-pixel
   snapping boundary. Floating windows, multi-column contexts, and logical
   persistence remain unchanged.

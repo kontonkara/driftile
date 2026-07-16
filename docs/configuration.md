@@ -10,9 +10,9 @@ The settings page groups the existing controls into two tabs:
 - **Applications**: initial column widths and presentation, focus centering,
   initial floating rules, tiling exclusions, and decoration exclusions.
 
-Driftile validates all twenty-two settings as one snapshot. Applying an invalid
-value through an external configuration tool rejects the entire update and
-preserves the active settings; valid changes apply without reloading the
+Driftile validates the complete settings snapshot atomically. Applying an
+invalid value through an external configuration tool rejects the entire update
+and preserves the active settings; valid changes apply without reloading the
 extension.
 
 ## Optional overview gesture
@@ -95,8 +95,9 @@ The activation writes only `ApplicationBorderlessExclusions`,
 `ApplicationFocusCentering`,
 `ApplicationInitialFloating`, `ApplicationTilingExclusions`,
 `BorderlessWindows`, `CenterFocusedColumn`, `Gap`,
-`DefaultColumnPresentation`, `DefaultColumnWidthPercent`, `ColumnWidthPresets`,
-`ColumnWidthStepPercent`, `ShowTabIndicator`, `TouchpadNavigation`,
+`DefaultColumnPresentation`, `DefaultColumnWidthPercent`,
+`DefaultColumnWidthPixels`, `ColumnWidthPresets`, `ColumnWidthStepPercent`,
+`ShowTabIndicator`, `TouchpadNavigation`,
 `TouchpadWorkspaceNavigation`, `TouchpadNavigationFingerCount`,
 `TouchpadNaturalScroll`,
 `WindowHeightPresets`, and `WindowHeightStepPercent` in Driftile's `kwinrc`
@@ -143,6 +144,7 @@ programs.driftile.settings.centerFocusedColumnOnOverflow = true;
 programs.driftile.settings.alwaysCenterSingleColumn = true;
 programs.driftile.settings.columnWidthPresets = [ 20 50 80 ];
 programs.driftile.settings.defaultColumnPresentation = "stacked";
+programs.driftile.settings.defaultColumnWidthPixels = 0;
 programs.driftile.settings.gap = 7.5;
 programs.driftile.settings.showTabIndicator = true;
 programs.driftile.settings.touchpadNavigation = true;
@@ -284,20 +286,25 @@ column still adopts that target column's presentation.
 
 ## Default column width
 
-**Default column width** sets the proportional width for newly admitted columns,
-fresh cross-context retiles, and the contextual **Reset column width** action.
-Structural splits and extractions inherit their source width. The default is
-`33%`; the range is `10%`–`100%`.
+**Default column width percentage** sets the proportional fallback for newly
+admitted columns, fresh cross-context retiles, and the contextual **Reset
+column width** action. Its default is `33%`; the range is `10%`–`100%`.
+
+**Fixed default column width** optionally replaces that fallback with a fixed
+logical-pixel policy on the same paths. `0` keeps the percentage above; positive
+values range from `1px` through `16384px`. Structural splits and extractions
+still inherit their source width.
 
 A cross-context pointer drop into an empty column gutter is a structural
 extraction and keeps the source width. Ordinary destination fallback is a fresh
 singleton admission and reads the current application or global width policy.
 
-Changing it does not alter existing width policies or floating frames. The next
-explicit reset applies it to the active tiled column or one relation-free
-manually floating window; application-specific initial widths do not override
-that reset. Newly admitted and reset widths use the gap-adjusted singleton
-resolution, live constraints, and assigned-output physical-pixel grid.
+Changing either value does not alter existing width policies or floating
+frames. The next explicit reset applies the current fixed policy, or the
+percentage fallback when fixed width is `0`, to the active tiled column or one
+relation-free manually floating window; application-specific initial widths do
+not override that reset. Newly admitted and reset widths remain subject to live
+constraints and the assigned output's physical-pixel grid.
 
 ## Application column widths
 
