@@ -41,6 +41,11 @@ class DriftileTransitionsEffect {
         this.onVisibilityContextChanged.bind(this),
       );
     }
+    if (effects.windowActivated) {
+      effects.windowActivated.connect(
+        this.onVisibilityContextChanged.bind(this),
+      );
+    }
     if (effects.currentActivityChanged) {
       effects.currentActivityChanged.connect(
         this.onVisibilityContextChanged.bind(this),

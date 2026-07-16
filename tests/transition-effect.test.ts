@@ -160,6 +160,7 @@ function createHarness(
   const windowDeleted = createSignal<[WindowStub]>();
   const hasActiveFullScreenEffectChanged = createSignal<[]>();
   const desktopChanged = createSignal<[unknown, unknown, unknown, unknown]>();
+  const windowActivated = createSignal<[WindowStub | null]>();
   const currentActivityChanged = createSignal<[string]>();
   const configChanged = createSignal<[]>();
   const animationRequests: AnimationRequest[] = [];
@@ -185,6 +186,7 @@ function createHarness(
     windowDeleted,
     hasActiveFullScreenEffectChanged,
     desktopChanged,
+    windowActivated,
     currentActivityChanged,
   };
 
@@ -722,7 +724,7 @@ describe("transition effect package", () => {
     expect(harness.animationRequests).toHaveLength(0);
 
     harness.window.visible = true;
-    harness.window.windowDesktopsChanged.emit(harness.window);
+    harness.effects.windowActivated.emit(harness.window);
     expect(harness.animationRequests).toHaveLength(1);
     expect(harness.animationRequests[0]).toMatchObject({
       animations: [
@@ -740,6 +742,7 @@ describe("transition effect package", () => {
     });
 
     harness.window.windowHiddenChanged.emit(harness.window);
+    harness.window.windowDesktopsChanged.emit(harness.window);
     harness.effects.desktopChanged.emit(null, null, null, null);
     expect(harness.animationRequests).toHaveLength(1);
   });
