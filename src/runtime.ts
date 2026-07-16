@@ -108,6 +108,7 @@ export function init(
     applicationFocusCentering: settings.applicationFocusCentering,
     applicationFloatingPositions: settings.applicationFloatingPositions,
     applicationInitialDestinations: settings.applicationInitialDestinations,
+    applicationInitialFocused: settings.applicationInitialFocused,
     applicationInitialFloating: settings.applicationInitialFloating,
     applicationInitialFullWidth: settings.applicationInitialFullWidth,
     applicationInitialFullscreen: settings.applicationInitialFullscreen,
@@ -209,6 +210,7 @@ export function applySettings(settingsSnapshot: unknown): boolean {
   controller.setApplicationInitialDestinations(
     settings.applicationInitialDestinations,
   );
+  controller.setApplicationInitialFocused(settings.applicationInitialFocused);
   controller.setApplicationInitialFloating(settings.applicationInitialFloating);
   controller.setApplicationInitialFullWidth(
     settings.applicationInitialFullWidth,

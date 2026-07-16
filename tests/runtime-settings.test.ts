@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ApplicationBorderlessExclusions } from "../src/application-borderless-exclusions";
 import type { ApplicationColumnPresentations } from "../src/application-column-presentations";
 import type { ApplicationInitialDestinations } from "../src/application-initial-destinations";
+import type { ApplicationInitialFocused } from "../src/application-initial-focused";
 import type { ApplicationInitialFloating } from "../src/application-initial-floating";
 import type { ApplicationInitialFullWidth } from "../src/application-initial-full-width";
 import type { ApplicationInitialFullscreen } from "../src/application-initial-fullscreen";
@@ -25,6 +26,7 @@ interface DeliveredSettings {
   readonly applicationFocusCentering: readonly string[];
   readonly applicationFloatingPositions: readonly string[];
   readonly applicationInitialDestinations: readonly string[];
+  readonly applicationInitialFocused: readonly string[];
   readonly applicationInitialFloating: readonly string[];
   readonly applicationInitialFullWidth: readonly string[];
   readonly applicationInitialFullscreen: readonly string[];
@@ -69,6 +71,7 @@ interface RuntimeControllerOptions {
   readonly applicationFocusCentering: ApplicationFocusCentering;
   readonly applicationFloatingPositions: ApplicationFloatingPositions;
   readonly applicationInitialDestinations: ApplicationInitialDestinations;
+  readonly applicationInitialFocused: ApplicationInitialFocused;
   readonly applicationInitialFloating: ApplicationInitialFloating;
   readonly applicationInitialFullWidth: ApplicationInitialFullWidth;
   readonly applicationInitialFullscreen: ApplicationInitialFullscreen;
@@ -114,6 +117,8 @@ class RuntimeControllerDouble {
         options.applicationFloatingPositions.canonicalEntries,
       applicationInitialDestinations:
         options.applicationInitialDestinations.canonicalEntries,
+      applicationInitialFocused:
+        options.applicationInitialFocused.canonicalEntries,
       applicationInitialFloating:
         options.applicationInitialFloating.canonicalEntries,
       applicationInitialFullWidth:
@@ -216,6 +221,17 @@ class RuntimeControllerDouble {
     this.state = {
       ...this.state,
       applicationInitialDestinations: destinations.canonicalEntries,
+    };
+    return true;
+  }
+
+  setApplicationInitialFocused(
+    applications: ApplicationInitialFocused,
+  ): boolean {
+    this.calls.push("applicationInitialFocused");
+    this.state = {
+      ...this.state,
+      applicationInitialFocused: applications.canonicalEntries,
     };
     return true;
   }
@@ -435,6 +451,7 @@ describe("runtime settings delivery", () => {
       applicationBorderlessExclusions: "org.example.InitialBorder",
       applicationInitialDestinations:
         "org.example.InitialChat=desktop:2,output:DP-1",
+      applicationInitialFocused: "org.example.InitialDialog",
       applicationInitialFloating: "org.example.InitialFloat",
       applicationInitialFullWidth: "org.example.InitialWide",
       applicationInitialFullscreen: "org.example.InitialGame",
@@ -473,6 +490,9 @@ describe("runtime settings delivery", () => {
     expect(controller.deliveredSettings.applicationInitialDestinations).toEqual(
       ["org.example.InitialChat=desktop:2,output:DP-1"],
     );
+    expect(controller.deliveredSettings.applicationInitialFocused).toEqual([
+      "org.example.InitialDialog",
+    ]);
     expect(controller.deliveredSettings.applicationInitialFullWidth).toEqual([
       "org.example.InitialWide",
     ]);
@@ -513,6 +533,7 @@ describe("runtime settings delivery", () => {
       applicationFloatingPositions: "org.example.Browser=bottom-right,24,16",
       applicationInitialDestinations:
         "org.example.Chat=output:HDMI-A-1,desktop:4",
+      applicationInitialFocused: "org.example.NewDialog",
       applicationInitialFloating: "org.example.NewFloat",
       applicationInitialFullWidth: "org.example.NewWide",
       applicationInitialFullscreen: "org.example.NewGame",
@@ -550,6 +571,7 @@ describe("runtime settings delivery", () => {
       applicationInitialDestinations: [
         "org.example.Chat=desktop:4,output:HDMI-A-1",
       ],
+      applicationInitialFocused: ["org.example.NewDialog"],
       applicationInitialFloating: ["org.example.NewFloat"],
       applicationInitialFullWidth: ["org.example.NewWide"],
       applicationInitialFullscreen: ["org.example.NewGame"],
@@ -587,6 +609,7 @@ describe("runtime settings delivery", () => {
       "applicationFocusCentering",
       "applicationFloatingPositions",
       "applicationInitialDestinations",
+      "applicationInitialFocused",
       "applicationInitialFloating",
       "applicationInitialFullWidth",
       "applicationInitialFullscreen",
@@ -675,6 +698,7 @@ describe("runtime settings delivery", () => {
       "applicationFocusCentering",
       "applicationFloatingPositions",
       "applicationInitialDestinations",
+      "applicationInitialFocused",
       "applicationInitialFloating",
       "applicationInitialFullWidth",
       "applicationInitialFullscreen",
@@ -722,6 +746,7 @@ function settings(
     applicationFocusCentering: "",
     applicationFloatingPositions: "",
     applicationInitialDestinations: "",
+    applicationInitialFocused: "",
     applicationInitialFloating: "",
     applicationInitialFullWidth: "",
     applicationInitialFullscreen: "",
@@ -771,6 +796,7 @@ function snapshot(settingsValue: DeliveredSettings): DeliveredSettings {
     applicationInitialDestinations: [
       ...settingsValue.applicationInitialDestinations,
     ],
+    applicationInitialFocused: [...settingsValue.applicationInitialFocused],
     applicationInitialFloating: [...settingsValue.applicationInitialFloating],
     applicationInitialFullWidth: [...settingsValue.applicationInitialFullWidth],
     applicationInitialFullscreen: [

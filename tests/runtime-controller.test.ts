@@ -3,6 +3,7 @@ import { decodeApplicationBorderlessExclusions } from "../src/application-border
 import { decodeApplicationColumnPresentations } from "../src/application-column-presentations";
 import { decodeApplicationInitialDestinations } from "../src/application-initial-destinations";
 import { decodeApplicationInitialFloating } from "../src/application-initial-floating";
+import { decodeApplicationInitialFocused } from "../src/application-initial-focused";
 import { decodeApplicationInitialFullWidth } from "../src/application-initial-full-width";
 import { decodeApplicationInitialFullscreen } from "../src/application-initial-fullscreen";
 import { decodeApplicationInitialMaximized } from "../src/application-initial-maximized";
@@ -8679,6 +8680,83 @@ describe("RuntimeController", () => {
         )
         .columns.flatMap((column) => column.windowIds),
     ).toEqual([windowId("existing"), windowId("added")]);
+  });
+
+  it("requests focus once for fresh exact application matches", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const existing = createTrackedWindow("existing", output, desktop, {
+      desktopFileName: "org.example.Editor",
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [existing.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      applicationInitialFocused:
+        requiredApplicationInitialFocused("org.example.Editor"),
+      applicationInitialMaximized:
+        requiredApplicationInitialMaximized("org.example.Editor"),
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(existing.window);
+    expect(fixture.activationCount).toBe(0);
+
+    const added = createTrackedWindow("added", output, desktop, {
+      desktopFileName: "org.example.Editor",
+    });
+    fixture.windowAdded.emit(added.window);
+    flushManualScheduler(scheduler);
+    expect(fixture.workspace.activeWindow).toBe(added.window);
+    expect(fixture.activationCount).toBe(1);
+
+    fixture.workspace.activeWindow = existing.window;
+    const activationsBeforeTopology = fixture.activationCount;
+    const topologyDeferred = createTrackedWindow(
+      "topology-deferred",
+      output,
+      desktop,
+      {
+        desktopFileName: "org.example.Editor",
+      },
+    );
+    const topologyMaximize = controlMaximize(topologyDeferred);
+    (
+      controller as unknown as {
+        topologyWindowOrder: readonly WindowId[] | null;
+      }
+    ).topologyWindowOrder = [];
+    fixture.windowAdded.emit(topologyDeferred.window);
+    expect(fixture.workspace.activeWindow).toBe(existing.window);
+    expect(fixture.activationCount).toBe(activationsBeforeTopology);
+    expect(topologyMaximize.calls).toEqual([]);
+    flushManualScheduler(scheduler);
+    expect(fixture.workspace.activeWindow).toBe(topologyDeferred.window);
+    expect(fixture.activationCount).toBe(activationsBeforeTopology + 1);
+    expect(topologyMaximize.calls).toEqual([[true, true]]);
+
+    fixture.workspace.activeWindow = existing.window;
+    const rejected = createTrackedWindow("rejected", output, desktop, {
+      desktopFileName: "org.example.Editor",
+    });
+    fixture.setActivationBehavior(() => undefined);
+    const activationsBeforeRejected = fixture.activationCount;
+    fixture.windowAdded.emit(rejected.window);
+    flushManualScheduler(scheduler);
+    expect(fixture.workspace.activeWindow).toBe(existing.window);
+    expect(fixture.activationCount).toBe(activationsBeforeRejected + 1);
+
+    controller.reconcile();
+    flushManualScheduler(scheduler);
+    expect(fixture.activationCount).toBe(activationsBeforeRejected + 1);
   });
 
   it("requests native maximize once for fresh exact application matches", () => {
@@ -47300,6 +47378,16 @@ function requiredApplicationInitialFullscreen(value: string) {
 
   if (!applications) {
     throw new Error("application initial fullscreen fixture is invalid");
+  }
+
+  return applications;
+}
+
+function requiredApplicationInitialFocused(value: string) {
+  const applications = decodeApplicationInitialFocused(value);
+
+  if (!applications) {
+    throw new Error("application initial focused fixture is invalid");
   }
 
   return applications;
