@@ -8,8 +8,9 @@ The settings page groups the existing controls into two tabs:
   navigation, window gap, tab feedback, default column presentation and width,
   proportional or fixed column-width steps and presets, and proportional or
   fixed window-height steps and presets.
-- **Applications**: initial column widths and presentation, focus centering,
-  initial floating rules, tiling exclusions, and decoration exclusions.
+- **Applications**: initial column widths, tiled client heights, and
+  presentation, focus centering, initial floating rules, tiling exclusions,
+  and decoration exclusions.
 
 Driftile validates the complete settings snapshot atomically. Applying an
 invalid value through an external configuration tool rejects the entire update
@@ -102,6 +103,7 @@ installed system-wide.
 
 The activation writes only `ApplicationBorderlessExclusions`,
 `ApplicationColumnPresentations`, `ApplicationColumnWidths`,
+`ApplicationWindowHeights`,
 `ApplicationFocusCentering`,
 `ApplicationInitialFloating`, `ApplicationTilingExclusions`,
 `BorderlessWindows`, `CenterFocusedColumn`, `Gap`,
@@ -120,9 +122,9 @@ When non-null, `alwaysCenterSingleColumn` and
 `centerFocusedColumnOnOverflow` additionally write `AlwaysCenterSingleColumn`
 and `CenterFocusedColumnOnOverflow` respectively.
 
-Declare application widths as a typed attribute set and exclusions as lists.
-Home Manager sorts desktop-file IDs before writing newline-delimited KConfig
-values.
+Declare application widths and heights as typed attribute sets and exclusions
+as lists. Home Manager sorts desktop-file IDs before writing newline-delimited
+KConfig values.
 
 ```nix
 programs.driftile.settings.applicationBorderlessExclusions = [
@@ -132,6 +134,11 @@ programs.driftile.settings.applicationBorderlessExclusions = [
 programs.driftile.settings.applicationColumnWidths = {
   "org.kde.konsole" = 60;
   "org.mozilla.firefox" = "960px";
+};
+
+programs.driftile.settings.applicationWindowHeights = {
+  "org.kde.konsole" = 60;
+  "org.mozilla.firefox" = "720px";
 };
 
 programs.driftile.settings.applicationColumnPresentations = {
@@ -167,13 +174,13 @@ programs.driftile.settings.windowHeightPresets = [ 25 50 75 ];
 programs.driftile.settings.windowHeightStepPixels = 0;
 ```
 
-Application widths accept legacy integers from `10` through `100`, explicit
-`"10%"`–`"100%"` percentages, or fixed `"1px"`–`"16384px"` logical widths.
-Presentations are `stacked` or `tabbed`. Attribute set IDs are exact and may
-not contain `=`. List policy IDs may contain `=`. Home Manager accepts at most
-128 unique IDs per list policy, rejects blank, whitespace-padded,
-control-containing, or over-255-byte IDs, and writes each list in canonical
-sorted order.
+Application widths and heights accept legacy integers from `10` through `100`,
+explicit `"10%"`–`"100%"` percentages, or fixed `"1px"`–`"16384px"` logical
+sizes. A fixed application height means client height. Presentations are
+`stacked` or `tabbed`. Attribute set IDs are exact and may not contain `=`.
+List policy IDs may contain `=`. Home Manager accepts at most 128 unique IDs
+per list policy, rejects blank, whitespace-padded, control-containing, or
+over-255-byte IDs, and writes each list in canonical sorted order.
 
 Changing `settings` back to `null` or removing the Home Manager module import
 stops future writes but leaves the last values in `kwinrc`. Change them through
@@ -343,6 +350,30 @@ restored columns and the explicit reset action keep their normal policies.
 Proportional and fixed logical widths are constrained by the admitted window
 and snapped to the assigned output's physical-pixel grid. Updating the rules
 performs no immediate layout or frame write.
+
+## Application window heights
+
+**Application initial tiled client heights** override the initial height of a
+new singleton tiled window by exact, case-sensitive KWin `desktopFileName`.
+Enter one `desktopFileName=height` rule per line. Bare `10`–`100` values and
+explicit `10%`–`100%` values select a percentage of the available tiled height;
+`1px`–`16384px` selects a fixed logical client height. For example:
+
+```text
+org.kde.konsole=60
+org.mozilla.firefox=720px
+```
+
+Blank lines are ignored. Duplicate IDs, malformed rules, more than 128 rules,
+or IDs longer than 255 UTF-8 bytes reject the complete settings update. A
+window without a matching usable ID keeps automatic height.
+
+Only fresh singleton tiled admission consults the rule. Existing or restored
+geometry is not rewritten, and a window joining an existing column or moving
+between layout contexts keeps the geometry selected by that structural path.
+The solver's live client constraints and output-scale physical-pixel snapping
+remain authoritative. Updating the rules performs no immediate layout or frame
+write.
 
 ## Application column presentation
 

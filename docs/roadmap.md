@@ -1594,6 +1594,8 @@ The next bounded sizing slice is intended to:
 
 - Add optional fixed logical-pixel deltas for explicit column-width and
   window-height decrease or increase actions.
+- Add exact per-application initial tiled client heights in proportional or
+  fixed logical-pixel form, limited to fresh singleton admission.
 - Keep the existing percentage-point steps when the corresponding fixed value
   is `0`; a positive value overrides only that action pair.
 - Apply live constraints and physical-pixel snapping without rewriting existing
