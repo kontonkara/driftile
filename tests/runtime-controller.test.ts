@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import { decodeApplicationBorderlessExclusions } from "../src/application-borderless-exclusions";
 import { decodeApplicationColumnPresentations } from "../src/application-column-presentations";
 import { decodeApplicationInitialFloating } from "../src/application-initial-floating";
+import { decodeApplicationInitialFullWidth } from "../src/application-initial-full-width";
+import { decodeApplicationInitialFullscreen } from "../src/application-initial-fullscreen";
 import { decodeApplicationColumnWidthOverrides } from "../src/application-overrides";
 import { decodeApplicationWindowHeightOverrides } from "../src/application-window-heights";
 import { decodeApplicationFocusCentering } from "../src/application-focus-centering";
@@ -8505,6 +8507,213 @@ describe("RuntimeController", () => {
         )
         .columns.flatMap((column) => column.windowIds),
     ).toEqual([windowId("existing"), windowId("added")]);
+  });
+
+  it("captures initial full-width and fullscreen policies for fresh admissions", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const existing = createTrackedWindow("existing", output, desktop, {
+      desktopFileName: "org.example.Browser",
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [existing.window],
+    );
+    let geometryAvailable = true;
+    Object.defineProperty(fixture.workspace, "clientArea", {
+      configurable: true,
+      value: () => {
+        if (!geometryAvailable) {
+          throw new Error("client area unavailable");
+        }
+
+        return { height: 800, width: 1000, x: 0, y: 0 };
+      },
+    });
+    const widths = decodeApplicationColumnWidthOverrides(
+      "org.example.Browser=40\norg.example.FloatingWide=50\norg.example.Other=45",
+    );
+    const initialFloating = decodeApplicationInitialFloating(
+      "org.example.FloatingWide",
+    );
+    const initialFullWidth = decodeApplicationInitialFullWidth(
+      "org.example.Browser",
+    );
+    const initialFullscreen = decodeApplicationInitialFullscreen(
+      "org.example.Browser",
+    );
+
+    if (
+      !widths ||
+      !initialFloating ||
+      !initialFullWidth ||
+      !initialFullscreen
+    ) {
+      throw new Error("initial application state fixture is invalid");
+    }
+
+    const controller = new RuntimeController(fixture.workspace, {
+      applicationColumnWidths: widths,
+      applicationInitialFloating: initialFloating,
+      applicationInitialFullWidth: initialFullWidth,
+      applicationInitialFullscreen: initialFullscreen,
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "proportion",
+      value: 0.4,
+    });
+
+    const delayed = createTrackedWindow("delayed", output, desktop, {
+      desktopFileName: "org.example.Browser",
+    });
+    const delayedFullscreen = controlFullscreen(delayed);
+    geometryAvailable = false;
+    fixture.windowAdded.emit(delayed.window);
+    expect(controller.managedCount).toBe(1);
+    const writesBeforeSetting = existing.writeCount + delayed.writeCount;
+    const nextPolicy = decodeApplicationInitialFullWidth(
+      "org.example.FloatingWide\norg.example.Other",
+    );
+    const nextFullscreenPolicy = decodeApplicationInitialFullscreen(
+      "org.example.Automatic\norg.example.FloatingWide\norg.example.Other\norg.example.Rejected\norg.example.Unsupported",
+    );
+
+    if (!nextPolicy || !nextFullscreenPolicy) {
+      throw new Error("updated initial application state fixture is invalid");
+    }
+
+    expect(controller.setApplicationInitialFullWidth(nextPolicy)).toBe(true);
+    expect(controller.setApplicationInitialFullWidth(nextPolicy)).toBe(false);
+    expect(
+      controller.setApplicationInitialFullscreen(nextFullscreenPolicy),
+    ).toBe(true);
+    expect(
+      controller.setApplicationInitialFullscreen(nextFullscreenPolicy),
+    ).toBe(false);
+    expect(existing.writeCount + delayed.writeCount).toBe(writesBeforeSetting);
+    expect(delayedFullscreen.writeCount).toBe(0);
+
+    geometryAvailable = true;
+    fixture.currentDesktopChanged.emit(desktop, desktop, output);
+    fixture.workspace.activeWindow = delayed.window;
+    expect(delayedFullscreen.fullScreen).toBe(true);
+    expect(delayedFullscreen.writeCount).toBe(1);
+    expect(
+      runtimeLayout(controller)
+        .snapshot(
+          outputId(output.name),
+          desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
+        )
+        .columns.find((column) =>
+          column.windowIds.includes(windowId("delayed")),
+        )?.width,
+    ).toEqual({ kind: "proportion", value: 1 });
+    expect(controller.toggleFullscreen()).toBe(true);
+    expect(delayedFullscreen.fullScreen).toBe(false);
+    expect(controller.maximizeColumn()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "proportion",
+      value: 0.4,
+    });
+
+    expect(controller.toggleFloating()).toBe(true);
+    expect(controller.toggleFloating()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "proportion",
+      value: 0.4,
+    });
+
+    const futureBrowser = createTrackedWindow(
+      "future-browser",
+      output,
+      desktop,
+      {
+        desktopFileName: "org.example.Browser",
+      },
+    );
+    fixture.windowAdded.emit(futureBrowser.window);
+    fixture.workspace.activeWindow = futureBrowser.window;
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "proportion",
+      value: 0.4,
+    });
+
+    const futureOther = createTrackedWindow("future-other", output, desktop, {
+      desktopFileName: "org.example.Other",
+    });
+    const futureOtherFullscreen = controlFullscreen(futureOther);
+    fixture.windowAdded.emit(futureOther.window);
+    fixture.workspace.activeWindow = futureOther.window;
+    expect(futureOtherFullscreen.fullScreen).toBe(true);
+    expect(
+      runtimeLayout(controller)
+        .snapshot(
+          outputId(output.name),
+          desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
+        )
+        .columns.find((column) =>
+          column.windowIds.includes(windowId("future-other")),
+        )?.width,
+    ).toEqual({ kind: "proportion", value: 1 });
+    expect(controller.toggleFullscreen()).toBe(true);
+
+    const floatingWins = createTrackedWindow("floating-wins", output, desktop, {
+      desktopFileName: "org.example.FloatingWide",
+    });
+    const floatingFullscreen = controlFullscreen(floatingWins);
+    fixture.windowAdded.emit(floatingWins.window);
+    expect(controller.floatingCount).toBe(1);
+    expect(floatingFullscreen.fullScreen).toBe(true);
+    expect(
+      runtimeLayout(controller)
+        .snapshot(
+          outputId(output.name),
+          desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
+        )
+        .columns.some((column) =>
+          column.windowIds.includes(windowId("floating-wins")),
+        ),
+    ).toBe(false);
+
+    const automatic = createTrackedWindow("automatic", output, desktop, {
+      desktopFileName: "org.example.Automatic",
+      maxSize: { height: 200, width: 300 },
+      minSize: { height: 200, width: 300 },
+    });
+    const automaticFullscreen = controlFullscreen(automatic);
+    fixture.windowAdded.emit(automatic.window);
+    expect(controller.automaticFloatingCount).toBe(1);
+    expect(automaticFullscreen.fullScreen).toBe(true);
+
+    const unsupported = createTrackedWindow("unsupported", output, desktop, {
+      desktopFileName: "org.example.Unsupported",
+    });
+    const unsupportedFullscreen = controlFullscreen(unsupported, {
+      fullScreenable: false,
+    });
+    fixture.windowAdded.emit(unsupported.window);
+    expect(unsupportedFullscreen.writeCount).toBe(0);
+    fixture.currentDesktopChanged.emit(desktop, desktop, output);
+    expect(unsupportedFullscreen.writeCount).toBe(0);
+
+    const rejected = createTrackedWindow("rejected", output, desktop, {
+      desktopFileName: "org.example.Rejected",
+    });
+    const rejectedFullscreen = controlFullscreen(rejected, { write: "reject" });
+    fixture.windowAdded.emit(rejected.window);
+    expect(rejectedFullscreen.writeCount).toBe(1);
+    fixture.currentDesktopChanged.emit(desktop, desktop, output);
+    expect(rejectedFullscreen.writeCount).toBe(1);
   });
 
   it("bounds column width step changes without scheduling layout work", () => {

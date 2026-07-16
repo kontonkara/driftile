@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { decodeApplicationBorderlessExclusions } from "../src/application-borderless-exclusions";
 import { decodeApplicationInitialFloating } from "../src/application-initial-floating";
+import { decodeApplicationInitialFullWidth } from "../src/application-initial-full-width";
+import { decodeApplicationInitialFullscreen } from "../src/application-initial-fullscreen";
 import { decodeApplicationColumnPresentations } from "../src/application-column-presentations";
 import { decodeApplicationColumnWidthOverrides } from "../src/application-overrides";
 import { decodeApplicationWindowHeightOverrides } from "../src/application-window-heights";
@@ -58,6 +60,22 @@ if (!validApplicationInitialFloating) {
   throw new Error("application initial-floating fixture is invalid");
 }
 
+const validApplicationInitialFullWidth = decodeApplicationInitialFullWidth(
+  "org.example.Browser\norg.example.Browser=tool",
+);
+
+if (!validApplicationInitialFullWidth) {
+  throw new Error("application initial-full-width fixture is invalid");
+}
+
+const validApplicationInitialFullscreen = decodeApplicationInitialFullscreen(
+  "org.example.Game\norg.example.Video",
+);
+
+if (!validApplicationInitialFullscreen) {
+  throw new Error("application initial-fullscreen fixture is invalid");
+}
+
 const validApplicationFocusCentering = decodeApplicationFocusCentering(
   "org.example.Browser\norg.example.Editor",
 );
@@ -100,6 +118,8 @@ const validSettings: DriftileSettings = {
   applicationWindowHeights: validApplicationWindowHeights,
   applicationFocusCentering: validApplicationFocusCentering,
   applicationInitialFloating: validApplicationInitialFloating,
+  applicationInitialFullWidth: validApplicationInitialFullWidth,
+  applicationInitialFullscreen: validApplicationInitialFullscreen,
   applicationTilingExclusions: validApplicationTilingExclusions,
   alwaysCenterSingleColumn: true,
   borderlessWindows: false,
@@ -134,6 +154,8 @@ const validSettingsInput = {
   applicationWindowHeights: "org.example.Editor=75",
   applicationFocusCentering: "org.example.Browser\norg.example.Editor",
   applicationInitialFloating: "org.example.Floating\norg.example.Floating=tool",
+  applicationInitialFullWidth: "org.example.Browser\norg.example.Browser=tool",
+  applicationInitialFullscreen: "org.example.Game\norg.example.Video",
   applicationTilingExclusions: "org.example.Legacy\norg.example.Editor=tool",
   alwaysCenterSingleColumn: validSettings.alwaysCenterSingleColumn,
   borderlessWindows: validSettings.borderlessWindows,
@@ -201,6 +223,12 @@ describe("Driftile settings", () => {
     ).toEqual([]);
     expect(
       DEFAULT_DRIFTILE_SETTINGS.applicationInitialFloating.canonicalEntries,
+    ).toEqual([]);
+    expect(
+      DEFAULT_DRIFTILE_SETTINGS.applicationInitialFullWidth.canonicalEntries,
+    ).toEqual([]);
+    expect(
+      DEFAULT_DRIFTILE_SETTINGS.applicationInitialFullscreen.canonicalEntries,
     ).toEqual([]);
     expect(
       DEFAULT_DRIFTILE_SETTINGS.applicationFocusCentering.canonicalEntries,
@@ -278,6 +306,12 @@ describe("Driftile settings", () => {
     expect(decoded?.applicationInitialFloating.canonicalEntries).toEqual(
       validApplicationInitialFloating.canonicalEntries,
     );
+    expect(decoded?.applicationInitialFullWidth.canonicalEntries).toEqual(
+      validApplicationInitialFullWidth.canonicalEntries,
+    );
+    expect(decoded?.applicationInitialFullscreen.canonicalEntries).toEqual(
+      validApplicationInitialFullscreen.canonicalEntries,
+    );
     expect(decoded?.applicationFocusCentering.canonicalEntries).toEqual(
       validApplicationFocusCentering.canonicalEntries,
     );
@@ -292,6 +326,18 @@ describe("Driftile settings", () => {
     ).toBe(true);
     expect(
       decoded?.applicationInitialFloating.excludes("org.example.floating"),
+    ).toBe(false);
+    expect(
+      decoded?.applicationInitialFullWidth.excludes("org.example.Browser"),
+    ).toBe(true);
+    expect(
+      decoded?.applicationInitialFullWidth.excludes("org.example.browser"),
+    ).toBe(false);
+    expect(
+      decoded?.applicationInitialFullscreen.excludes("org.example.Game"),
+    ).toBe(true);
+    expect(
+      decoded?.applicationInitialFullscreen.excludes("org.example.game"),
     ).toBe(false);
     expect(decoded?.applicationTilingExclusions.canonicalEntries).toEqual(
       validApplicationTilingExclusions.canonicalEntries,
@@ -309,6 +355,8 @@ describe("Driftile settings", () => {
       applicationWindowHeights: "",
       applicationFocusCentering: "",
       applicationInitialFloating: "",
+      applicationInitialFullWidth: "",
+      applicationInitialFullscreen: "",
       applicationTilingExclusions: "",
       alwaysCenterSingleColumn: false,
       borderlessWindows: true,
@@ -340,6 +388,8 @@ describe("Driftile settings", () => {
       applicationWindowHeights: "org.example.Browser=80",
       applicationFocusCentering: "org.example.Browser",
       applicationInitialFloating: "org.example.Floating",
+      applicationInitialFullWidth: "org.example.Browser",
+      applicationInitialFullscreen: "org.example.Game",
       applicationTilingExclusions: "org.example.Legacy",
       alwaysCenterSingleColumn: true,
       borderlessWindows: false,
@@ -389,6 +439,12 @@ describe("Driftile settings", () => {
     expect(
       decoded?.applicationInitialFloating.canonicalEntries.join("\n"),
     ).toBe(settings.applicationInitialFloating);
+    expect(
+      decoded?.applicationInitialFullWidth.canonicalEntries.join("\n"),
+    ).toBe(settings.applicationInitialFullWidth);
+    expect(
+      decoded?.applicationInitialFullscreen.canonicalEntries.join("\n"),
+    ).toBe(settings.applicationInitialFullscreen);
     expect(
       decoded?.applicationTilingExclusions.canonicalEntries.join("\n"),
     ).toBe(settings.applicationTilingExclusions);
@@ -500,6 +556,19 @@ describe("Driftile settings", () => {
       },
     ],
     [
+      "duplicate application initial-full-width entries",
+      {
+        applicationInitialFullWidth: "org.example.Editor\n org.example.Editor ",
+      },
+    ],
+    [
+      "duplicate application initial-fullscreen entries",
+      {
+        applicationInitialFullscreen:
+          "org.example.Editor\n org.example.Editor ",
+      },
+    ],
+    [
       "duplicate application focus-centering entries",
       {
         applicationFocusCentering: "org.example.Editor\n org.example.Editor ",
@@ -569,7 +638,7 @@ describe("Driftile settings", () => {
     },
   );
 
-  it("rejects an incomplete twenty-nine-field snapshot", () => {
+  it("rejects an incomplete thirty-one-field snapshot", () => {
     const incomplete: Record<string, unknown> = { ...validSettingsInput };
     delete incomplete["defaultColumnWidthPixels"];
 
@@ -622,6 +691,20 @@ describe("Driftile settings", () => {
       throw new Error("application initial-floating fixture is invalid");
     }
 
+    const changedApplicationInitialFullWidth =
+      decodeApplicationInitialFullWidth("org.example.Other");
+
+    if (!changedApplicationInitialFullWidth) {
+      throw new Error("application initial-full-width fixture is invalid");
+    }
+
+    const changedApplicationInitialFullscreen =
+      decodeApplicationInitialFullscreen("org.example.Other");
+
+    if (!changedApplicationInitialFullscreen) {
+      throw new Error("application initial-fullscreen fixture is invalid");
+    }
+
     const changedApplicationFocusCentering =
       decodeApplicationFocusCentering("org.example.Other");
 
@@ -667,6 +750,8 @@ describe("Driftile settings", () => {
       { applicationWindowHeights: changedApplicationWindowHeights },
       { applicationFocusCentering: changedApplicationFocusCentering },
       { applicationInitialFloating: changedApplicationInitialFloating },
+      { applicationInitialFullWidth: changedApplicationInitialFullWidth },
+      { applicationInitialFullscreen: changedApplicationInitialFullscreen },
       { applicationTilingExclusions: changedApplicationTilingExclusions },
       { alwaysCenterSingleColumn: false },
       { borderlessWindows: true },

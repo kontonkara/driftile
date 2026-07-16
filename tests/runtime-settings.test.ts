@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ApplicationBorderlessExclusions } from "../src/application-borderless-exclusions";
 import type { ApplicationColumnPresentations } from "../src/application-column-presentations";
 import type { ApplicationInitialFloating } from "../src/application-initial-floating";
+import type { ApplicationInitialFullWidth } from "../src/application-initial-full-width";
+import type { ApplicationInitialFullscreen } from "../src/application-initial-fullscreen";
 import type { ApplicationColumnWidthOverrides } from "../src/application-overrides";
 import type { ApplicationWindowHeightOverrides } from "../src/application-window-heights";
 import type { ApplicationFocusCentering } from "../src/application-focus-centering";
@@ -19,6 +21,8 @@ interface DeliveredSettings {
   readonly applicationWindowHeights: readonly string[];
   readonly applicationFocusCentering: readonly string[];
   readonly applicationInitialFloating: readonly string[];
+  readonly applicationInitialFullWidth: readonly string[];
+  readonly applicationInitialFullscreen: readonly string[];
   readonly applicationTilingExclusions: readonly string[];
   readonly alwaysCenterSingleColumn: boolean;
   readonly borderlessWindows: boolean;
@@ -58,6 +62,8 @@ interface RuntimeControllerOptions {
   readonly applicationWindowHeights: ApplicationWindowHeightOverrides;
   readonly applicationFocusCentering: ApplicationFocusCentering;
   readonly applicationInitialFloating: ApplicationInitialFloating;
+  readonly applicationInitialFullWidth: ApplicationInitialFullWidth;
+  readonly applicationInitialFullscreen: ApplicationInitialFullscreen;
   readonly applicationTilingExclusions: ApplicationTilingExclusions;
   readonly borderlessWindows: boolean;
   readonly columnWidth: ColumnWidth;
@@ -97,6 +103,10 @@ class RuntimeControllerDouble {
         options.applicationFocusCentering.canonicalEntries,
       applicationInitialFloating:
         options.applicationInitialFloating.canonicalEntries,
+      applicationInitialFullWidth:
+        options.applicationInitialFullWidth.canonicalEntries,
+      applicationInitialFullscreen:
+        options.applicationInitialFullscreen.canonicalEntries,
       applicationTilingExclusions:
         options.applicationTilingExclusions.canonicalEntries,
       alwaysCenterSingleColumn: false,
@@ -192,6 +202,28 @@ class RuntimeControllerDouble {
     this.state = {
       ...this.state,
       applicationInitialFloating: applications.canonicalEntries,
+    };
+    return true;
+  }
+
+  setApplicationInitialFullWidth(
+    applications: ApplicationInitialFullWidth,
+  ): boolean {
+    this.calls.push("applicationInitialFullWidth");
+    this.state = {
+      ...this.state,
+      applicationInitialFullWidth: applications.canonicalEntries,
+    };
+    return true;
+  }
+
+  setApplicationInitialFullscreen(
+    applications: ApplicationInitialFullscreen,
+  ): boolean {
+    this.calls.push("applicationInitialFullscreen");
+    this.state = {
+      ...this.state,
+      applicationInitialFullscreen: applications.canonicalEntries,
     };
     return true;
   }
@@ -354,6 +386,8 @@ describe("runtime settings delivery", () => {
     const initial = settings({
       applicationBorderlessExclusions: "org.example.InitialBorder",
       applicationInitialFloating: "org.example.InitialFloat",
+      applicationInitialFullWidth: "org.example.InitialWide",
+      applicationInitialFullscreen: "org.example.InitialGame",
       applicationTilingExclusions: "org.example.InitiallyExcluded",
       alwaysCenterSingleColumn: true,
       emptyDesktopAboveFirst: true,
@@ -385,6 +419,12 @@ describe("runtime settings delivery", () => {
     expect(controller.deliveredSettings.applicationInitialFloating).toEqual([
       "org.example.InitialFloat",
     ]);
+    expect(controller.deliveredSettings.applicationInitialFullWidth).toEqual([
+      "org.example.InitialWide",
+    ]);
+    expect(controller.deliveredSettings.applicationInitialFullscreen).toEqual([
+      "org.example.InitialGame",
+    ]);
     expect(controller.deliveredSettings.windowHeightPresets).toEqual(
       heightPresetCycle([30, "640px", 60, "960px", 90]),
     );
@@ -414,6 +454,8 @@ describe("runtime settings delivery", () => {
       applicationWindowHeights: "org.example.Editor=420px",
       applicationFocusCentering: "org.example.Browser",
       applicationInitialFloating: "org.example.NewFloat",
+      applicationInitialFullWidth: "org.example.NewWide",
+      applicationInitialFullscreen: "org.example.NewGame",
       applicationTilingExclusions: "org.example.NewlyExcluded",
       alwaysCenterSingleColumn: false,
       borderlessWindows: false,
@@ -444,6 +486,8 @@ describe("runtime settings delivery", () => {
       applicationWindowHeights: ["org.example.Editor=420px"],
       applicationFocusCentering: ["org.example.Browser"],
       applicationInitialFloating: ["org.example.NewFloat"],
+      applicationInitialFullWidth: ["org.example.NewWide"],
+      applicationInitialFullscreen: ["org.example.NewGame"],
       applicationTilingExclusions: ["org.example.NewlyExcluded"],
       alwaysCenterSingleColumn: false,
       borderlessWindows: false,
@@ -476,6 +520,8 @@ describe("runtime settings delivery", () => {
       "applicationWindowHeights",
       "applicationFocusCentering",
       "applicationInitialFloating",
+      "applicationInitialFullWidth",
+      "applicationInitialFullscreen",
       "applicationTilingExclusions",
       "alwaysCenterSingleColumn",
       "centerFocusedColumn",
@@ -559,6 +605,8 @@ describe("runtime settings delivery", () => {
       "applicationWindowHeights",
       "applicationFocusCentering",
       "applicationInitialFloating",
+      "applicationInitialFullWidth",
+      "applicationInitialFullscreen",
       "applicationTilingExclusions",
       "alwaysCenterSingleColumn",
       "centerFocusedColumn",
@@ -601,6 +649,8 @@ function settings(
     applicationWindowHeights: "",
     applicationFocusCentering: "",
     applicationInitialFloating: "",
+    applicationInitialFullWidth: "",
+    applicationInitialFullscreen: "",
     applicationTilingExclusions: "",
     alwaysCenterSingleColumn: false,
     borderlessWindows: true,
@@ -641,6 +691,10 @@ function snapshot(settingsValue: DeliveredSettings): DeliveredSettings {
     applicationWindowHeights: [...settingsValue.applicationWindowHeights],
     applicationFocusCentering: [...settingsValue.applicationFocusCentering],
     applicationInitialFloating: [...settingsValue.applicationInitialFloating],
+    applicationInitialFullWidth: [...settingsValue.applicationInitialFullWidth],
+    applicationInitialFullscreen: [
+      ...settingsValue.applicationInitialFullscreen,
+    ],
     applicationTilingExclusions: [...settingsValue.applicationTilingExclusions],
     columnWidthPresets: settingsValue.columnWidthPresets.map((value) => ({
       ...value,

@@ -29,6 +29,18 @@ import {
   type ApplicationInitialFloating,
 } from "./application-initial-floating";
 import {
+  decodeApplicationInitialFullWidth,
+  EMPTY_APPLICATION_INITIAL_FULL_WIDTH,
+  sameApplicationInitialFullWidth,
+  type ApplicationInitialFullWidth,
+} from "./application-initial-full-width";
+import {
+  decodeApplicationInitialFullscreen,
+  EMPTY_APPLICATION_INITIAL_FULLSCREEN,
+  sameApplicationInitialFullscreen,
+  type ApplicationInitialFullscreen,
+} from "./application-initial-fullscreen";
+import {
   decodeApplicationFocusCentering,
   EMPTY_APPLICATION_FOCUS_CENTERING,
   sameApplicationFocusCentering,
@@ -72,7 +84,7 @@ const MIN_RESIZE_STEP_PIXELS = 0;
 const MAX_RESIZE_STEP_PIXELS = 16_384;
 const MIN_TOUCHPAD_NAVIGATION_FINGER_COUNT = 3;
 const MAX_TOUCHPAD_NAVIGATION_FINGER_COUNT = 5;
-const SETTINGS_FIELD_COUNT = 29;
+const SETTINGS_FIELD_COUNT = 31;
 
 export interface DriftileSettings {
   readonly applicationBorderlessExclusions: ApplicationBorderlessExclusions;
@@ -81,6 +93,8 @@ export interface DriftileSettings {
   readonly applicationWindowHeights: ApplicationWindowHeightOverrides;
   readonly applicationFocusCentering: ApplicationFocusCentering;
   readonly applicationInitialFloating: ApplicationInitialFloating;
+  readonly applicationInitialFullWidth: ApplicationInitialFullWidth;
+  readonly applicationInitialFullscreen: ApplicationInitialFullscreen;
   readonly applicationTilingExclusions: ApplicationTilingExclusions;
   readonly alwaysCenterSingleColumn: boolean;
   readonly borderlessWindows: boolean;
@@ -113,6 +127,8 @@ export const DEFAULT_DRIFTILE_SETTINGS: DriftileSettings = Object.freeze({
   applicationWindowHeights: EMPTY_APPLICATION_WINDOW_HEIGHT_OVERRIDES,
   applicationFocusCentering: EMPTY_APPLICATION_FOCUS_CENTERING,
   applicationInitialFloating: EMPTY_APPLICATION_INITIAL_FLOATING,
+  applicationInitialFullWidth: EMPTY_APPLICATION_INITIAL_FULL_WIDTH,
+  applicationInitialFullscreen: EMPTY_APPLICATION_INITIAL_FULLSCREEN,
   applicationTilingExclusions: EMPTY_APPLICATION_TILING_EXCLUSIONS,
   alwaysCenterSingleColumn: false,
   borderlessWindows: true,
@@ -155,6 +171,8 @@ export function decodeDriftileSettings(
     !owns(candidate, "applicationWindowHeights") ||
     !owns(candidate, "applicationFocusCentering") ||
     !owns(candidate, "applicationInitialFloating") ||
+    !owns(candidate, "applicationInitialFullWidth") ||
+    !owns(candidate, "applicationInitialFullscreen") ||
     !owns(candidate, "applicationTilingExclusions") ||
     !owns(candidate, "alwaysCenterSingleColumn") ||
     !owns(candidate, "borderlessWindows") ||
@@ -200,6 +218,12 @@ export function decodeDriftileSettings(
   const applicationInitialFloating = decodeApplicationInitialFloating(
     candidate["applicationInitialFloating"],
   );
+  const applicationInitialFullWidth = decodeApplicationInitialFullWidth(
+    candidate["applicationInitialFullWidth"],
+  );
+  const applicationInitialFullscreen = decodeApplicationInitialFullscreen(
+    candidate["applicationInitialFullscreen"],
+  );
   const applicationTilingExclusions = decodeApplicationTilingExclusions(
     candidate["applicationTilingExclusions"],
   );
@@ -241,6 +265,8 @@ export function decodeDriftileSettings(
     !applicationWindowHeights ||
     !applicationFocusCentering ||
     !applicationInitialFloating ||
+    !applicationInitialFullWidth ||
+    !applicationInitialFullscreen ||
     !applicationTilingExclusions ||
     typeof alwaysCenterSingleColumn !== "boolean" ||
     typeof borderlessWindows !== "boolean" ||
@@ -303,6 +329,8 @@ export function decodeDriftileSettings(
     applicationWindowHeights,
     applicationFocusCentering,
     applicationInitialFloating,
+    applicationInitialFullWidth,
+    applicationInitialFullscreen,
     applicationTilingExclusions,
     alwaysCenterSingleColumn,
     borderlessWindows,
@@ -357,6 +385,14 @@ export function sameDriftileSettings(
     sameApplicationInitialFloating(
       left.applicationInitialFloating,
       right.applicationInitialFloating,
+    ) &&
+    sameApplicationInitialFullWidth(
+      left.applicationInitialFullWidth,
+      right.applicationInitialFullWidth,
+    ) &&
+    sameApplicationInitialFullscreen(
+      left.applicationInitialFullscreen,
+      right.applicationInitialFullscreen,
     ) &&
     sameApplicationTilingExclusions(
       left.applicationTilingExclusions,

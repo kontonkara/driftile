@@ -107,6 +107,8 @@ export function init(
     applicationWindowHeights: settings.applicationWindowHeights,
     applicationFocusCentering: settings.applicationFocusCentering,
     applicationInitialFloating: settings.applicationInitialFloating,
+    applicationInitialFullWidth: settings.applicationInitialFullWidth,
+    applicationInitialFullscreen: settings.applicationInitialFullscreen,
     applicationTilingExclusions: settings.applicationTilingExclusions,
     borderlessWindows: settings.borderlessWindows,
     clientAreaOption,
@@ -199,6 +201,12 @@ export function applySettings(settingsSnapshot: unknown): boolean {
   controller.setApplicationWindowHeights(settings.applicationWindowHeights);
   controller.setApplicationFocusCentering(settings.applicationFocusCentering);
   controller.setApplicationInitialFloating(settings.applicationInitialFloating);
+  controller.setApplicationInitialFullWidth(
+    settings.applicationInitialFullWidth,
+  );
+  controller.setApplicationInitialFullscreen(
+    settings.applicationInitialFullscreen,
+  );
   controller.setApplicationTilingExclusions(
     settings.applicationTilingExclusions,
   );
