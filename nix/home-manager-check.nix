@@ -136,6 +136,11 @@ let
         defaultWindowHeight = "720px";
         emptyDesktopAboveFirst = true;
         gap = 7.5;
+        numberedDesktopTargets = {
+          "9" = "Archive";
+          "1" = "Work";
+          "4" = "Chat";
+        };
         showTabIndicator = false;
         touchpadNavigation = true;
         touchpadNavigationFingerCount = 4;
@@ -310,6 +315,22 @@ let
         builtins.deepSeq
           (evaluateHome {
             programs.driftile.transitions = setting;
+          } { }).config.qt.kde.settings
+          true
+      );
+    in
+    !evaluated.success;
+  maximumNumberedDesktopTargetName = evaluateHome {
+    programs.driftile.settings.numberedDesktopTargets."9" =
+      builtins.concatStringsSep "" (builtins.genList (_: "é") 127) + "a";
+  } { };
+  invalidNumberedDesktopTargetsRejected =
+    targets:
+    let
+      evaluated = builtins.tryEval (
+        builtins.deepSeq
+          (evaluateHome {
+            programs.driftile.settings.numberedDesktopTargets = targets;
           } { }).config.qt.kde.settings
           true
       );
@@ -670,6 +691,28 @@ assert
     windowClassExclusions = builtins.genList (index: "app${toString index} example.App${toString index}") 129;
   };
 assert
+  maximumNumberedDesktopTargetName.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".NumberedDesktopTargets
+  == "9=${builtins.concatStringsSep "" (builtins.genList (_: "é") 127)}a";
+assert
+  lib.all invalidNumberedDesktopTargetsRejected [
+    [ ]
+    { "0" = "Work"; }
+    { "01" = "Work"; }
+    { "10" = "Work"; }
+    { "1" = 1; }
+    { "1" = ""; }
+    { "1" = " Work"; }
+    { "1" = "Work "; }
+    { "1" = "Work=Main"; }
+    { "1" = "Work\nMain"; }
+    { "1" = builtins.fromJSON ''"\u00a0Work"''; }
+    { "1" = builtins.concatStringsSep "" (builtins.genList (_: "é") 128); }
+    {
+      "1" = "Work";
+      "9" = "Work";
+    }
+  ];
+assert
   let
     rendered =
       initialDestinationBounds.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ApplicationInitialDestinations;
@@ -925,6 +968,10 @@ assert
       DefaultWindowHeight = "720px";
       EmptyDesktopAboveFirst = true;
       Gap = 7.5;
+      NumberedDesktopTargets = ''
+        1=Work
+        4=Chat
+        9=Archive'';
       ShowTabIndicator = false;
       TouchpadNavigation = true;
       TouchpadNavigationFingerCount = 4;
@@ -939,7 +986,7 @@ assert
 assert
   builtins.length (
     builtins.attrNames standalone.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile"
-  ) == 39;
+  ) == 40;
 assert
   standalone.config.xdg.configFile."driftile/shortcuts.json".text == ''
     {"bindings":{"driftile_focus_column_left":["Meta+A"],"driftile_reset_column_width":[]},"version":1}
@@ -986,6 +1033,7 @@ assert
       DefaultInitialFocus = "default";
       DefaultWindowHeight = "auto";
       Gap = 1.2;
+      NumberedDesktopTargets = "";
       ShowTabIndicator = true;
       TouchpadNavigation = false;
       TouchpadNavigationFingerCount = 5;

@@ -90,6 +90,28 @@ let
     && !hasEcmaScriptNonAsciiPadding value
     && !hasControlCharacter value;
   validMappedDesktopFileName = value: validDesktopFileName value && !lib.hasInfix "=" value;
+  numberedDesktopSlots = map toString (lib.range 1 9);
+  numberedDesktopTargetsType = lib.types.addCheck (lib.types.attrsOf lib.types.str) (
+    targets:
+    builtins.isAttrs targets
+    && (
+      let
+        slots = builtins.attrNames targets;
+        names = builtins.attrValues targets;
+      in
+      lib.all (slot: lib.elem slot numberedDesktopSlots) slots
+      && lib.all builtins.isString names
+      && lib.all validMappedDesktopFileName names
+      && builtins.length (lib.unique names) == builtins.length names
+    )
+  );
+  renderNumberedDesktopTargets =
+    targets:
+    lib.concatStringsSep "\n" (
+      map (slot: "${slot}=${targets.${slot}}") (
+        lib.filter (slot: builtins.hasAttr slot targets) numberedDesktopSlots
+      )
+    );
   parsePresetToken =
     preset:
     if builtins.isInt preset then
@@ -662,6 +684,12 @@ in
               description = "Whether repeated numbered desktop selection toggles to the output-local last-used desktop.";
             };
 
+            numberedDesktopTargets = lib.mkOption {
+              type = numberedDesktopTargetsType;
+              default = { };
+              description = "Exact virtual desktop names keyed by numbered target slots 1 through 9.";
+            };
+
             showTabIndicator = lib.mkOption {
               type = lib.types.bool;
               default = true;
@@ -871,6 +899,7 @@ in
           DefaultInitialFocus = cfg.settings.defaultInitialFocus;
           DefaultWindowHeight = renderDefaultWindowHeight cfg.settings.defaultWindowHeight;
           Gap = cfg.settings.gap;
+          NumberedDesktopTargets = renderNumberedDesktopTargets cfg.settings.numberedDesktopTargets;
           ShowTabIndicator = cfg.settings.showTabIndicator;
           TouchpadNavigation = cfg.settings.touchpadNavigation;
           TouchpadNavigationFingerCount = cfg.settings.touchpadNavigationFingerCount;

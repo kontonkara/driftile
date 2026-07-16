@@ -588,6 +588,11 @@ let
           defaultWindowHeight = "720px";
           emptyDesktopAboveFirst = true;
           gap = 7.5;
+          numberedDesktopTargets = {
+            "9" = "Archive";
+            "1" = "Work";
+            "4" = "Chat";
+          };
           showTabIndicator = false;
           touchpadNavigation = true;
           touchpadNavigationFingerCount = 4;
@@ -660,6 +665,17 @@ let
       ]
       {
         programs.driftile.settings.defaultFloatingPosition = null;
+      }
+      { };
+  homeManagerMaximumNumberedDesktopTargetName =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.settings.numberedDesktopTargets."9" =
+          builtins.concatStringsSep "" (builtins.genList (_: "é") 127) + "a";
       }
       { };
   homeManagerDefaultWindowHeightValues = map (
@@ -1100,6 +1116,29 @@ let
         programs.driftile.enable = true;
       };
   invalidSettings = [
+    { numberedDesktopTargets = [ ]; }
+    { numberedDesktopTargets."0" = "Work"; }
+    { numberedDesktopTargets."01" = "Work"; }
+    { numberedDesktopTargets."10" = "Work"; }
+    { numberedDesktopTargets."1" = 1; }
+    { numberedDesktopTargets."1" = ""; }
+    { numberedDesktopTargets."1" = " Work"; }
+    { numberedDesktopTargets."1" = "Work "; }
+    { numberedDesktopTargets."1" = "Work=Main"; }
+    { numberedDesktopTargets."1" = "Work\nMain"; }
+    {
+      numberedDesktopTargets."1" = builtins.fromJSON ''"\u00a0Work"'';
+    }
+    {
+      numberedDesktopTargets."1" =
+        builtins.concatStringsSep "" (builtins.genList (_: "é") 128);
+    }
+    {
+      numberedDesktopTargets = {
+        "1" = "Work";
+        "9" = "Work";
+      };
+    }
     { applicationInitialDestinations = [ ]; }
     { applicationInitialDestinations."org.example.Editor" = "desktop:1"; }
     { applicationInitialDestinations."org.example.Editor" = { }; }
@@ -1740,6 +1779,10 @@ let
       DefaultWindowHeight = "720px";
       EmptyDesktopAboveFirst = true;
       Gap = 7.5;
+      NumberedDesktopTargets = ''
+        1=Work
+        4=Chat
+        9=Archive'';
       ShowTabIndicator = false;
       TouchpadNavigation = true;
       TouchpadNavigationFingerCount = 4;
@@ -1780,6 +1823,7 @@ let
       DefaultInitialFocus = "default";
       DefaultWindowHeight = "auto";
       Gap = 16;
+      NumberedDesktopTargets = "";
       ShowTabIndicator = true;
       TouchpadNavigation = false;
       TouchpadNavigationFingerCount = 5;
@@ -1969,11 +2013,11 @@ assert homeManagerSettings.config.qt.kde.settings == expectedSettings;
 assert homeManagerDefaultSettings.config.qt.kde.settings == expectedDefaultSettings;
 assert
   builtins.length (builtins.attrNames expectedSettings.kwinrc."Script-io.github.kontonkara.driftile")
-  == 39;
+  == 40;
 assert
   builtins.length (
     builtins.attrNames expectedDefaultSettings.kwinrc."Script-io.github.kontonkara.driftile"
-  ) == 36;
+  ) == 37;
 assert
   homeManagerMaximumDefaultColumnWidthPixels.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".DefaultColumnWidthPixels
   == 16384;
@@ -1989,6 +2033,9 @@ assert
 assert
   homeManagerDefaultFloatingPositionDisabled.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".DefaultFloatingPosition
   == "";
+assert
+  builtins.stringLength homeManagerMaximumNumberedDesktopTargetName.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".NumberedDesktopTargets
+  == 257;
 assert
   map (
     evaluation:
@@ -2187,6 +2234,7 @@ assert
       DefaultInitialFocus = "default";
       DefaultWindowHeight = "auto";
       Gap = 1.2;
+      NumberedDesktopTargets = "";
       ShowTabIndicator = true;
       TouchpadNavigation = false;
       TouchpadNavigationFingerCount = 5;
