@@ -197,6 +197,56 @@ let
   renderApplicationInitialFullscreen = renderApplicationTilingExclusions;
   applicationInitialFullWidthType = applicationTilingExclusionType;
   renderApplicationInitialFullWidth = renderApplicationTilingExclusions;
+  validOutputName =
+    value:
+    value != ""
+    && builtins.stringLength value <= 255
+    && value == lib.strings.trim value
+    && !hasEcmaScriptNonAsciiPadding value
+    && !hasControlCharacter value
+    && !lib.hasInfix "," value;
+  applicationInitialDestinationType = lib.types.submodule {
+    options = {
+      desktop = lib.mkOption {
+        type = lib.types.nullOr (lib.types.ints.between 1 25);
+        default = null;
+        description = "Optional one-based virtual desktop assigned to a newly admitted window.";
+      };
+
+      output = lib.mkOption {
+        type = lib.types.nullOr (lib.types.addCheck lib.types.str validOutputName);
+        default = null;
+        description = "Optional exact output name assigned to a newly admitted window.";
+      };
+    };
+  };
+  applicationInitialDestinationsType = lib.types.attrsOf applicationInitialDestinationType;
+  validateApplicationInitialDestinations =
+    destinations:
+    if
+      builtins.length (builtins.attrNames destinations) <= 128
+      && lib.all validMappedDesktopFileName (builtins.attrNames destinations)
+      && lib.all (
+        destination: destination.desktop != null || destination.output != null
+      ) (builtins.attrValues destinations)
+    then
+      destinations
+    else
+      throw "programs.driftile.settings.applicationInitialDestinations must use at most 128 valid desktopFileName keys without '=' and assign a desktop, an output, or both.";
+  renderApplicationInitialDestinations =
+    destinations:
+    lib.concatStringsSep "\n" (
+      map (
+        desktopFileName:
+        let
+          destination = destinations.${desktopFileName};
+          fields =
+            lib.optional (destination.desktop != null) "desktop:${toString destination.desktop}"
+            ++ lib.optional (destination.output != null) "output:${destination.output}";
+        in
+        "${desktopFileName}=${lib.concatStringsSep "," fields}"
+      ) (builtins.sort builtins.lessThan (builtins.attrNames destinations))
+    );
   applicationFloatingPositionType = lib.types.submodule {
     options = {
       anchor = lib.mkOption {
@@ -464,6 +514,13 @@ in
               description = "Exact case-sensitive KWin desktopFileName strings whose newly admitted windows start in full-width columns.";
             };
 
+            applicationInitialDestinations = lib.mkOption {
+              type = applicationInitialDestinationsType;
+              default = { };
+              apply = validateApplicationInitialDestinations;
+              description = "Initial virtual desktops and outputs for newly admitted windows, keyed by exact case-sensitive KWin desktopFileName.";
+            };
+
             applicationFloatingPositions = lib.mkOption {
               type = applicationFloatingPositionsType;
               default = { };
@@ -692,6 +749,8 @@ in
             renderApplicationInitialFullscreen cfg.settings.applicationInitialFullscreen;
           ApplicationInitialFullWidth =
             renderApplicationInitialFullWidth cfg.settings.applicationInitialFullWidth;
+          ApplicationInitialDestinations =
+            renderApplicationInitialDestinations cfg.settings.applicationInitialDestinations;
           ApplicationFloatingPositions =
             renderApplicationFloatingPositions cfg.settings.applicationFloatingPositions;
           ApplicationTilingExclusions = renderApplicationTilingExclusions cfg.settings.applicationTilingExclusions;

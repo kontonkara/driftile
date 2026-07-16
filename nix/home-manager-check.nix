@@ -67,6 +67,14 @@ let
           "org.example.Terminal"
           "org.example.Browser"
         ];
+        applicationInitialDestinations = {
+          "org.example.Browser" = {
+            desktop = 2;
+            output = "DP-2";
+          };
+          "org.example.Editor".output = "HDMI-A-1";
+          "org.example.Terminal".desktop = 25;
+        };
         applicationFloatingPositions = {
           "org.example.Browser" = {
             anchor = "bottom-right";
@@ -246,6 +254,39 @@ let
         builtins.deepSeq
           (evaluateHome {
             programs.driftile.transitions = setting;
+          } { }).config.qt.kde.settings
+          true
+      );
+    in
+    !evaluated.success;
+  initialDestinationBounds = evaluateHome {
+    programs.driftile.settings.applicationInitialDestinations = {
+      "org.example.Maximum".desktop = 25;
+      "org.example.Minimum".desktop = 1;
+      "org.example.Output".output =
+        builtins.concatStringsSep "" (builtins.genList (_: "é") 127) + "a";
+    };
+  } { };
+  maximumInitialDestinations = evaluateHome {
+    programs.driftile.settings.applicationInitialDestinations = builtins.listToAttrs (
+      builtins.genList (index: {
+        name = "org.example.App${toString index}";
+        value.desktop = 1;
+      }) 128
+    );
+  } { };
+  maximumInitialDestinationIdentifier = evaluateHome {
+    programs.driftile.settings.applicationInitialDestinations = {
+      ${builtins.concatStringsSep "" (builtins.genList (_: "é") 127) + "a"}.output = "DP-1";
+    };
+  } { };
+  invalidInitialDestinationsRejected =
+    destinations:
+    let
+      evaluated = builtins.tryEval (
+        builtins.deepSeq
+          (evaluateHome {
+            programs.driftile.settings.applicationInitialDestinations = destinations;
           } { }).config.qt.kde.settings
           true
       );
@@ -486,6 +527,52 @@ assert
     windowClassExclusions = builtins.genList (index: "app${toString index} example.App${toString index}") 129;
   };
 assert
+  let
+    rendered =
+      initialDestinationBounds.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ApplicationInitialDestinations;
+    lines = lib.splitString "\n" rendered;
+    outputPrefix = "org.example.Output=output:";
+    outputLine = builtins.elemAt lines 2;
+  in
+  builtins.elem "org.example.Maximum=desktop:25" lines
+  && builtins.elem "org.example.Minimum=desktop:1" lines
+  && lib.hasPrefix outputPrefix outputLine
+  && builtins.stringLength (lib.removePrefix outputPrefix outputLine) == 255;
+assert
+  builtins.length (
+    lib.splitString "\n"
+      maximumInitialDestinations.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ApplicationInitialDestinations
+  ) == 128;
+assert
+  builtins.stringLength (
+    builtins.head (
+      lib.splitString "="
+        maximumInitialDestinationIdentifier.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ApplicationInitialDestinations
+    )
+  ) == 255;
+assert
+  lib.all invalidInitialDestinationsRejected [
+    [ ]
+    { "org.example.Editor" = "desktop:1"; }
+    { "org.example.Editor" = { }; }
+    { "org.example.Editor".desktop = 0; }
+    { "org.example.Editor".desktop = 26; }
+    { "org.example.Editor".output = ""; }
+    { "org.example.Editor".output = " DP-1"; }
+    { "org.example.Editor".output = "DP,1"; }
+    {
+      "org.example.Editor".output =
+        builtins.concatStringsSep "" (builtins.genList (_: "é") 128);
+    }
+    { "org.example=Editor".desktop = 1; }
+    (builtins.listToAttrs (
+      builtins.genList (index: {
+        name = "org.example.App${toString index}";
+        value.desktop = 1;
+      }) 129
+    ))
+  ];
+assert
   floatingPositionBounds.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ApplicationFloatingPositions
   == ''
     org.example.Maximum=bottom-right,16384,16384
@@ -604,6 +691,10 @@ assert
       ApplicationInitialFullWidth = ''
         org.example.Browser
         org.example.Terminal'';
+      ApplicationInitialDestinations = ''
+        org.example.Browser=desktop:2,output:DP-2
+        org.example.Editor=output:HDMI-A-1
+        org.example.Terminal=desktop:25'';
       ApplicationTilingExclusions = ''
         org.example.Browser
         org.example.Editor=tool'';
@@ -634,7 +725,7 @@ assert
 assert
   builtins.length (
     builtins.attrNames standalone.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile"
-  ) == 32;
+  ) == 33;
 assert
   standalone.config.xdg.configFile."driftile/shortcuts.json".text == ''
     {"bindings":{"driftile_focus_column_left":["Meta+A"],"driftile_reset_column_width":[]},"version":1}
@@ -663,6 +754,7 @@ assert
       ApplicationInitialFloating = "";
       ApplicationInitialFullscreen = "";
       ApplicationInitialFullWidth = "";
+      ApplicationInitialDestinations = "";
       ApplicationTilingExclusions = "";
       BorderlessWindows = true;
       CenterFocusedColumn = false;

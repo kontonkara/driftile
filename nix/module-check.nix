@@ -478,6 +478,14 @@ let
             "org.example.Terminal"
             "org.example.Browser"
           ];
+          applicationInitialDestinations = {
+            "org.example.Browser" = {
+              desktop = 2;
+              output = "DP-2";
+            };
+            "org.example.Editor".output = "HDMI-A-1";
+            "org.example.Terminal".desktop = 25;
+          };
           applicationFloatingPositions = {
             "org.example.Browser" = {
               anchor = "bottom-right";
@@ -767,6 +775,48 @@ let
         ) 128;
       }
       { };
+  homeManagerMaximumInitialDestinations =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.settings.applicationInitialDestinations = builtins.listToAttrs (
+          builtins.genList (index: {
+            name = "org.example.App${toString index}";
+            value.desktop = 1;
+          }) 128
+        );
+      }
+      { };
+  homeManagerInitialDestinationBounds =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.settings.applicationInitialDestinations = {
+          "org.example.Maximum".desktop = 25;
+          "org.example.Minimum".desktop = 1;
+          "org.example.Output".output =
+            builtins.concatStringsSep "" (builtins.genList (_: "é") 127) + "a";
+        };
+      }
+      { };
+  homeManagerMaximumInitialDestinationIdentifier =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.settings.applicationInitialDestinations = {
+          ${builtins.concatStringsSep "" (builtins.genList (_: "é") 127) + "a"}.output = "DP-1";
+        };
+      }
+      { };
   homeManagerMaximumFloatingPositions =
     evaluate homeManagerModule
       [
@@ -863,6 +913,37 @@ let
         programs.driftile.enable = true;
       };
   invalidSettings = [
+    { applicationInitialDestinations = [ ]; }
+    { applicationInitialDestinations."org.example.Editor" = "desktop:1"; }
+    { applicationInitialDestinations."org.example.Editor" = { }; }
+    {
+      applicationInitialDestinations."org.example.Editor" = {
+        desktop = null;
+        output = null;
+      };
+    }
+    { applicationInitialDestinations."org.example.Editor".desktop = 0; }
+    { applicationInitialDestinations."org.example.Editor".desktop = 26; }
+    { applicationInitialDestinations."org.example.Editor".desktop = 1.5; }
+    { applicationInitialDestinations."org.example.Editor".output = ""; }
+    { applicationInitialDestinations."org.example.Editor".output = " DP-1"; }
+    { applicationInitialDestinations."org.example.Editor".output = "DP-1 "; }
+    { applicationInitialDestinations."org.example.Editor".output = "DP,1"; }
+    { applicationInitialDestinations."org.example.Editor".output = "DP\n1"; }
+    {
+      applicationInitialDestinations."org.example.Editor".output =
+        builtins.concatStringsSep "" (builtins.genList (_: "é") 128);
+    }
+    { applicationInitialDestinations." org.example.Editor".desktop = 1; }
+    { applicationInitialDestinations."org.example=Editor".desktop = 1; }
+    {
+      applicationInitialDestinations = builtins.listToAttrs (
+        builtins.genList (index: {
+          name = "org.example.App${toString index}";
+          value.desktop = 1;
+        }) 129
+      );
+    }
     { applicationFloatingPositions = [ ]; }
     { applicationFloatingPositions."org.example.Editor" = "top-left,0,0"; }
     {
@@ -1337,6 +1418,10 @@ let
       ApplicationInitialFullWidth = ''
         org.example.Browser
         org.example.Terminal'';
+      ApplicationInitialDestinations = ''
+        org.example.Browser=desktop:2,output:DP-2
+        org.example.Editor=output:HDMI-A-1
+        org.example.Terminal=desktop:25'';
       ApplicationTilingExclusions = ''
         org.example.Browser
         org.example.Editor=tool'';
@@ -1375,6 +1460,7 @@ let
       ApplicationInitialFloating = "";
       ApplicationInitialFullscreen = "";
       ApplicationInitialFullWidth = "";
+      ApplicationInitialDestinations = "";
       ApplicationTilingExclusions = "";
       BorderlessWindows = true;
       CenterFocusedColumn = false;
@@ -1545,11 +1631,11 @@ assert homeManagerSettings.config.qt.kde.settings == expectedSettings;
 assert homeManagerDefaultSettings.config.qt.kde.settings == expectedDefaultSettings;
 assert
   builtins.length (builtins.attrNames expectedSettings.kwinrc."Script-io.github.kontonkara.driftile")
-  == 32;
+  == 33;
 assert
   builtins.length (
     builtins.attrNames expectedDefaultSettings.kwinrc."Script-io.github.kontonkara.driftile"
-  ) == 29;
+  ) == 30;
 assert
   homeManagerMaximumDefaultColumnWidthPixels.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".DefaultColumnWidthPixels
   == 16384;
@@ -1625,6 +1711,30 @@ assert
 assert
   builtins.length (
     lib.splitString "\n"
+      homeManagerMaximumInitialDestinations.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ApplicationInitialDestinations
+  ) == 128;
+assert
+  let
+    rendered =
+      homeManagerInitialDestinationBounds.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ApplicationInitialDestinations;
+    lines = lib.splitString "\n" rendered;
+    outputPrefix = "org.example.Output=output:";
+    outputLine = builtins.elemAt lines 2;
+  in
+  builtins.elem "org.example.Maximum=desktop:25" lines
+  && builtins.elem "org.example.Minimum=desktop:1" lines
+  && lib.hasPrefix outputPrefix outputLine
+  && builtins.stringLength (lib.removePrefix outputPrefix outputLine) == 255;
+assert
+  builtins.stringLength (
+    builtins.head (
+      lib.splitString "="
+        homeManagerMaximumInitialDestinationIdentifier.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ApplicationInitialDestinations
+    )
+  ) == 255;
+assert
+  builtins.length (
+    lib.splitString "\n"
       homeManagerMaximumFloatingPositions.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ApplicationFloatingPositions
   ) == 128;
 assert
@@ -1671,6 +1781,7 @@ assert
       ApplicationInitialFloating = "";
       ApplicationInitialFullscreen = "";
       ApplicationInitialFullWidth = "";
+      ApplicationInitialDestinations = "";
       ApplicationTilingExclusions = "";
       BorderlessWindows = true;
       CenterFocusedColumn = false;
