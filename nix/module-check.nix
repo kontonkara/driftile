@@ -323,6 +323,47 @@ let
       {
         programs.driftile.overview.enable = true;
       };
+  homeManagerOverviewSettings =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.overview = {
+          screenEdge = "bottom-right";
+          backdropColor = "#CC112233";
+        };
+      }
+      { };
+  homeManagerOverviewSettingsUnmanaged =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.overview = {
+          screenEdge = null;
+          backdropColor = null;
+        };
+      }
+      { };
+  homeManagerOverviewSettingsWithSystemInstall =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.overview = {
+          screenEdge = "top-left";
+          backdropColor = "#80aBcD01";
+        };
+      }
+      {
+        programs.driftile.overview.enable = true;
+      };
   homeManagerTransitionDurationMinimum =
     evaluate homeManagerModule
       [
@@ -1578,6 +1619,25 @@ let
       );
     in
     !evaluated.success;
+  invalidOverviewSettingRejected =
+    setting:
+    let
+      evaluated = builtins.tryEval (
+        builtins.deepSeq
+          (evaluate homeManagerModule
+            [
+              "home"
+              "packages"
+            ]
+            {
+              programs.driftile.overview = setting;
+            }
+            { }
+          ).config.qt.kde.settings
+          true
+      );
+    in
+    !evaluated.success;
   invalidTransitionDurationRejected =
     duration:
     let
@@ -1758,6 +1818,8 @@ assert homeManagerProfileWithSystemInstall.config.xdg.configFile ? "driftile/sho
 assert homeManagerWithoutProfile.config.xdg.configFile == { };
 assert homeManagerWithoutSettings.config.qt.kde.settings == { };
 assert homeManagerOptionSurface.options.programs.driftile ? settings;
+assert homeManagerOptionSurface.options.programs.driftile.overview ? screenEdge;
+assert homeManagerOptionSurface.options.programs.driftile.overview ? backdropColor;
 assert homeManagerOptionSurface.options.programs.driftile.overview ? touchpadGesture;
 assert homeManagerOptionSurface.options.programs.driftile ? transitions;
 assert homeManagerOptionSurface.options.programs.driftile.transitions ? duration;
@@ -1767,6 +1829,8 @@ assert homeManagerOptionSurface.options.programs.driftile.transitions ? easingCu
 assert homeManagerOptionSurface.options.programs.driftile.transitions ? resizeAnimationThreshold;
 assert homeManagerOptionSurface.options.programs.driftile.transitions ? windowClassExclusions;
 assert nixosOptionSurface.options.programs.driftile ? transitions;
+assert !(nixosOptionSurface.options.programs.driftile.overview ? screenEdge);
+assert !(nixosOptionSurface.options.programs.driftile.overview ? backdropColor);
 assert !(nixosOptionSurface.options.programs.driftile.overview ? touchpadGesture);
 assert !(nixosOptionSurface.options.programs.driftile.transitions ? duration);
 assert !(nixosOptionSurface.options.programs.driftile.transitions ? animatePosition);
@@ -1806,6 +1870,32 @@ assert invalidOverviewTouchpadGestureRejected { enable = "true"; };
 assert invalidOverviewTouchpadGestureRejected { fingerCount = 2; };
 assert invalidOverviewTouchpadGestureRejected { fingerCount = 6; };
 assert invalidOverviewTouchpadGestureRejected { fingerCount = 4.5; };
+assert packagePaths [ "home" "packages" ] homeManagerOverviewSettings == [ ];
+assert packagePaths [ "home" "packages" ] homeManagerOverviewSettingsUnmanaged == [ ];
+assert packagePaths [ "home" "packages" ] homeManagerOverviewSettingsWithSystemInstall == [ ];
+assert
+  homeManagerOverviewSettings.config.qt.kde.settings == {
+    kwinrc."Effect-io.github.kontonkara.driftile.overview" = {
+      ScreenEdge = "bottom-right";
+      BackdropColor = "#CC112233";
+    };
+  };
+assert homeManagerOverviewSettingsUnmanaged.config.qt.kde.settings == { };
+assert
+  homeManagerOverviewSettingsWithSystemInstall.config.qt.kde.settings == {
+    kwinrc."Effect-io.github.kontonkara.driftile.overview" = {
+      ScreenEdge = "top-left";
+      BackdropColor = "#80aBcD01";
+    };
+  };
+assert homeManagerOverviewSettingsWithSystemInstall.config.assertions == [ ];
+assert invalidOverviewSettingRejected { screenEdge = "upper-left"; };
+assert invalidOverviewSettingRejected { screenEdge = 1; };
+assert invalidOverviewSettingRejected { backdropColor = "80112233"; };
+assert invalidOverviewSettingRejected { backdropColor = "#FF11223"; };
+assert invalidOverviewSettingRejected { backdropColor = "#FF1122334"; };
+assert invalidOverviewSettingRejected { backdropColor = "#GG112233"; };
+assert invalidOverviewSettingRejected { backdropColor = 4279312947; };
 assert packagePaths [ "home" "packages" ] homeManagerTransitionDurationMinimum == [ ];
 assert packagePaths [ "home" "packages" ] homeManagerTransitionDurationMaximum == [ ];
 assert

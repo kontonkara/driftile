@@ -365,6 +365,20 @@ let
   renderColumnWidthPresets = presets: lib.concatStringsSep "," (map toString presets);
   windowHeightPresetType = lib.types.addCheck (lib.types.listOf presetTokenType) validPresetSequence;
   renderWindowHeightPresets = presets: lib.concatStringsSep "," (map toString presets);
+  overviewScreenEdgeType = lib.types.enum [
+    "none"
+    "top-left"
+    "top"
+    "top-right"
+    "right"
+    "bottom-right"
+    "bottom"
+    "bottom-left"
+    "left"
+  ];
+  overviewBackdropColorType = lib.types.addCheck lib.types.str (
+    value: builtins.match "#[0-9A-Fa-f]{8}" value != null
+  );
   systemMainInstallEnabled = lib.attrByPath [
     "programs"
     "driftile"
@@ -406,6 +420,18 @@ in
         };
       }
       // lib.optionalAttrs homeSettings {
+        screenEdge = lib.mkOption {
+          type = lib.types.nullOr overviewScreenEdgeType;
+          default = null;
+          description = "Screen edge that activates the overview; null leaves the KConfig value unmanaged.";
+        };
+
+        backdropColor = lib.mkOption {
+          type = lib.types.nullOr overviewBackdropColorType;
+          default = null;
+          description = "Overview backdrop color in strict #AARRGGBB form; null leaves the KConfig value unmanaged.";
+        };
+
         touchpadGesture = lib.mkOption {
           type = lib.types.nullOr (
             lib.types.submodule {
@@ -867,11 +893,24 @@ in
       }
     ))
     (lib.optionalAttrs homeSettings (
-      lib.mkIf (cfg.overview.touchpadGesture != null) {
-        qt.kde.settings.kwinrc."Effect-${pluginId}.overview" = {
-          TouchpadGesture = cfg.overview.touchpadGesture.enable;
-          TouchpadGestureFingerCount = cfg.overview.touchpadGesture.fingerCount;
-        };
+      lib.mkIf
+        (
+          cfg.overview.screenEdge != null
+          || cfg.overview.backdropColor != null
+          || cfg.overview.touchpadGesture != null
+        )
+        {
+          qt.kde.settings.kwinrc."Effect-${pluginId}.overview" =
+            lib.optionalAttrs (cfg.overview.screenEdge != null) {
+              ScreenEdge = cfg.overview.screenEdge;
+            }
+            // lib.optionalAttrs (cfg.overview.backdropColor != null) {
+              BackdropColor = cfg.overview.backdropColor;
+            }
+            // lib.optionalAttrs (cfg.overview.touchpadGesture != null) {
+              TouchpadGesture = cfg.overview.touchpadGesture.enable;
+              TouchpadGestureFingerCount = cfg.overview.touchpadGesture.fingerCount;
+            };
       }
     ))
     (lib.optionalAttrs homeSettings (

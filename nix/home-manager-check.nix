@@ -204,6 +204,24 @@ let
       fingerCount = 3;
     };
   } systemOverviewConfiguration.config;
+  overviewSettings = evaluateHome {
+    programs.driftile.overview = {
+      screenEdge = "bottom-right";
+      backdropColor = "#CC112233";
+    };
+  } { };
+  overviewSettingsUnmanaged = evaluateHome {
+    programs.driftile.overview = {
+      screenEdge = null;
+      backdropColor = null;
+    };
+  } { };
+  overviewSettingsWithSystemInstall = evaluateHome {
+    programs.driftile.overview = {
+      screenEdge = "top-left";
+      backdropColor = "#80aBcD01";
+    };
+  } systemOverviewConfiguration.config;
   invalidOverviewTouchpadGestureRejected =
     gesture:
     let
@@ -211,6 +229,18 @@ let
         builtins.deepSeq
           (evaluateHome {
             programs.driftile.overview.touchpadGesture = gesture;
+          } { }).config.qt.kde.settings
+          true
+      );
+    in
+    !evaluated.success;
+  invalidOverviewSettingRejected =
+    setting:
+    let
+      evaluated = builtins.tryEval (
+        builtins.deepSeq
+          (evaluateHome {
+            programs.driftile.overview = setting;
           } { }).config.qt.kde.settings
           true
       );
@@ -541,6 +571,42 @@ assert invalidOverviewTouchpadGestureRejected { enable = "true"; };
 assert invalidOverviewTouchpadGestureRejected { fingerCount = 2; };
 assert invalidOverviewTouchpadGestureRejected { fingerCount = 6; };
 assert invalidOverviewTouchpadGestureRejected { fingerCount = 4.5; };
+assert
+  lib.all
+    (
+      configuration:
+      packageCount configuration == 0
+      && overviewPackageCount configuration == 0
+      && transitionsPackageCount configuration == 0
+    )
+    [
+      overviewSettings
+      overviewSettingsUnmanaged
+      overviewSettingsWithSystemInstall
+    ];
+assert
+  overviewSettings.config.qt.kde.settings == {
+    kwinrc."Effect-io.github.kontonkara.driftile.overview" = {
+      ScreenEdge = "bottom-right";
+      BackdropColor = "#CC112233";
+    };
+  };
+assert overviewSettingsUnmanaged.config.qt.kde.settings == { };
+assert
+  overviewSettingsWithSystemInstall.config.qt.kde.settings == {
+    kwinrc."Effect-io.github.kontonkara.driftile.overview" = {
+      ScreenEdge = "top-left";
+      BackdropColor = "#80aBcD01";
+    };
+  };
+assert lib.all (assertion: assertion.assertion) overviewSettingsWithSystemInstall.config.assertions;
+assert invalidOverviewSettingRejected { screenEdge = "upper-left"; };
+assert invalidOverviewSettingRejected { screenEdge = 1; };
+assert invalidOverviewSettingRejected { backdropColor = "80112233"; };
+assert invalidOverviewSettingRejected { backdropColor = "#FF11223"; };
+assert invalidOverviewSettingRejected { backdropColor = "#FF1122334"; };
+assert invalidOverviewSettingRejected { backdropColor = "#GG112233"; };
+assert invalidOverviewSettingRejected { backdropColor = 4279312947; };
 assert packageCount transitionsOverride == 0;
 assert overviewPackageCount transitionsOverride == 0;
 assert transitionsPackageCount transitionsOverride == 0;
