@@ -336,20 +336,22 @@ class DriftileTransitionsEffect {
         });
       }
       if (
-        translationRequired &&
+        (translationRequired || state[TRANSLATION_ANIMATION] !== undefined) &&
         !this.retargetAnimation(
           state,
           TRANSLATION_ANIMATION,
           newPositionComponents.translation,
         )
       ) {
-        animationProperties.push(TRANSLATION_ANIMATION);
-        animations.push({
-          type: Effect.Translation,
-          from: oldPositionComponents.translation,
-          to: newPositionComponents.translation,
-          curve: this.easingCurve,
-        });
+        if (translationRequired) {
+          animationProperties.push(TRANSLATION_ANIMATION);
+          animations.push({
+            type: Effect.Translation,
+            from: oldPositionComponents.translation,
+            to: newPositionComponents.translation,
+            curve: this.easingCurve,
+          });
+        }
       }
     }
 
