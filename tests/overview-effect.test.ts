@@ -1107,6 +1107,48 @@ describe("overview effect package", () => {
     );
   });
 
+  it("closes only the exact selected live window after Delete", () => {
+    const keyHandler = scene.slice(
+      scene.indexOf("Keys.onPressed:"),
+      scene.indexOf("Component.onCompleted:"),
+    );
+    const selection = scene.slice(
+      scene.indexOf("function closeKeyboardSelection("),
+      scene.indexOf("function repairKeyboardSelection("),
+    );
+    const transaction = scene.slice(
+      scene.indexOf("function closeWindow("),
+      scene.indexOf("function windowUsesDesktop("),
+    );
+
+    expect(keyHandler).toContain("event.key === Qt.Key_Delete");
+    expect(keyHandler).toContain("root.closeKeyboardSelection()");
+    expect(selection).toContain(
+      "navigationTargetForId(targets, keyboardSelectionId)",
+    );
+    expect(selection).toMatch(/if \(target\.kind !== "window"\) \{\s*return;/u);
+    expect(selection).toContain(
+      "closeWindow(target.candidate, target.windowId, target.desktop, target.desktopId, target.screen)",
+    );
+
+    expect(transaction.match(/closeWindowContextIsExact\(/gu)).toHaveLength(3);
+    expect(transaction).toContain("desktopContextIsExact(");
+    expect(transaction).toContain("windowContextIsExact(");
+    expect(transaction).toContain("candidate.managed === true");
+    expect(transaction).toContain("candidate.closeable === true");
+    expect(transaction).toContain(
+      'typeof candidate.closeWindow === "function"',
+    );
+    expect(transaction.match(/candidate\.closeWindow\(\)/gu)).toHaveLength(1);
+    expect(transaction).not.toContain("effect.deactivate()");
+    expect(transaction).not.toMatch(
+      /KWin\.(?:SceneView|Workspace)\.[A-Za-z0-9_]+\s*=(?!=)|candidate\.[A-Za-z0-9_]+\s*=(?!=)|\bTimer\s*\{|\.setValue\s*\(/u,
+    );
+    expect(scene).toMatch(
+      /function onWindowRemoved\(\) \{\s*root\.closeStaleOverview\(\);/u,
+    );
+  });
+
   it("selects only an exact live non-current desktop from its number gutter", () => {
     const numberGutter = desktopCard.slice(
       desktopCard.indexOf("id: numberGutter"),

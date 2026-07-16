@@ -74,6 +74,8 @@ Rectangle {
             root.navigateKeyboardSequence("first");
         } else if (unmodified && event.key === Qt.Key_End) {
             root.navigateKeyboardSequence("last");
+        } else if (unmodified && event.key === Qt.Key_Delete) {
+            root.closeKeyboardSelection();
         } else if (unmodified
                    && (event.key === Qt.Key_Enter || event.key === Qt.Key_Return
                        || (event.key === Qt.Key_Space && searchQuery.length === 0))) {
@@ -539,6 +541,20 @@ Rectangle {
         }
     }
 
+    function closeKeyboardSelection() {
+        const targets = collectNavigationTargets();
+        const target = navigationTargetForId(targets, keyboardSelectionId);
+        if (!target) {
+            repairKeyboardSelectionFrom(targets);
+            return;
+        }
+        if (target.kind !== "window") {
+            return;
+        }
+
+        closeWindow(target.candidate, target.windowId, target.desktop, target.desktopId, target.screen);
+    }
+
     function repairKeyboardSelection() {
         repairKeyboardSelectionFrom(collectNavigationTargets());
     }
@@ -784,6 +800,40 @@ Rectangle {
                 && String(KWin.Workspace.currentActivity) === expectedActivityId
                 && windowUsesDesktop(candidate, liveDesktop, expectedDesktopId)
                 && windowUsesActivity(candidate, expectedActivityId);
+    }
+
+    function closeWindow(candidate, expectedWindowId, expectedDesktop, expectedDesktopId, expectedScreen) {
+        const effect = sceneEffect;
+        const model = overviewModel;
+        const liveScreen = liveScreenFor(expectedScreen);
+        const expectedOutput = projectedOutput(model, liveScreen);
+        const expectedOutputId = expectedOutput ? String(expectedOutput.outputId) : "";
+        const liveDesktop = liveDesktopFor(expectedDesktop, expectedDesktopId);
+        const expectedActivityId = String(KWin.Workspace.currentActivity);
+        if (!closeWindowContextIsExact(effect, model, liveScreen, expectedOutput, expectedOutputId, liveDesktop,
+                                       expectedDesktopId, candidate, expectedWindowId, expectedActivityId)) {
+            return;
+        }
+
+        try {
+            if (!closeWindowContextIsExact(effect, model, liveScreen, expectedOutput, expectedOutputId, liveDesktop,
+                                           expectedDesktopId, candidate, expectedWindowId, expectedActivityId)) {
+                return;
+            }
+            candidate.closeWindow();
+        } catch (error) {
+            return;
+        }
+    }
+
+    function closeWindowContextIsExact(effect, model, liveScreen, expectedOutput, expectedOutputId, liveDesktop,
+                                       expectedDesktopId, candidate, expectedWindowId, expectedActivityId) {
+        return desktopContextIsExact(effect, model, liveScreen, expectedOutput, expectedOutputId, liveDesktop,
+                                     expectedDesktopId)
+                && windowContextIsExact(candidate, expectedWindowId, liveScreen, liveDesktop, expectedDesktopId,
+                                        expectedActivityId, false)
+                && candidate.managed === true && candidate.closeable === true
+                && typeof candidate.closeWindow === "function";
     }
 
     function windowUsesDesktop(candidate, expectedDesktop, expectedDesktopId) {
