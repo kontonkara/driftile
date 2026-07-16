@@ -91,6 +91,10 @@ let
             output = "DP-3";
           };
         };
+        defaultInitialDestination = {
+          desktop = 4;
+          output = "DP-4";
+        };
         applicationFloatingPositions = {
           "org.example.Browser" = {
             anchor = "bottom-right";
@@ -310,6 +314,30 @@ let
         builtins.deepSeq
           (evaluateHome {
             programs.driftile.settings.applicationInitialDestinations = destinations;
+          } { }).config.qt.kde.settings
+          true
+      );
+    in
+    !evaluated.success;
+  defaultInitialDestinationDisabled = evaluateHome {
+    programs.driftile.settings.defaultInitialDestination = null;
+  } { };
+  defaultInitialDestinationNamed = evaluateHome {
+    programs.driftile.settings.defaultInitialDestination = {
+      desktopName = "Work";
+      output = "DP-3";
+    };
+  } { };
+  defaultInitialDestinationOutputOnly = evaluateHome {
+    programs.driftile.settings.defaultInitialDestination.output = "HDMI-A-1";
+  } { };
+  invalidDefaultInitialDestinationRejected =
+    destination:
+    let
+      evaluated = builtins.tryEval (
+        builtins.deepSeq
+          (evaluateHome {
+            programs.driftile.settings.defaultInitialDestination = destination;
           } { }).config.qt.kde.settings
           true
       );
@@ -625,6 +653,27 @@ assert
     ))
   ];
 assert
+  defaultInitialDestinationDisabled.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".DefaultInitialDestination
+  == "";
+assert
+  defaultInitialDestinationNamed.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".DefaultInitialDestination
+  == "desktop-name:Work,output:DP-3";
+assert
+  defaultInitialDestinationOutputOnly.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".DefaultInitialDestination
+  == "output:HDMI-A-1";
+assert
+  lib.all invalidDefaultInitialDestinationRejected [
+    { }
+    { desktop = 0; }
+    { desktop = 26; }
+    {
+      desktop = 1;
+      desktopName = "Work";
+    }
+    { desktopName = ""; }
+    { output = "DP,1"; }
+  ];
+assert
   floatingPositionBounds.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ApplicationFloatingPositions
   == ''
     org.example.Maximum=bottom-right,16384,16384
@@ -771,6 +820,7 @@ assert
       DefaultColumnWidthPercent = 65;
       DefaultColumnWidthPixels = 960;
       DefaultFloatingPosition = "right,-36,48";
+      DefaultInitialDestination = "desktop:4,output:DP-4";
       DefaultWindowHeight = "720px";
       EmptyDesktopAboveFirst = true;
       Gap = 7.5;
@@ -788,7 +838,7 @@ assert
 assert
   builtins.length (
     builtins.attrNames standalone.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile"
-  ) == 37;
+  ) == 38;
 assert
   standalone.config.xdg.configFile."driftile/shortcuts.json".text == ''
     {"bindings":{"driftile_focus_column_left":["Meta+A"],"driftile_reset_column_width":[]},"version":1}
@@ -831,6 +881,7 @@ assert
       DefaultColumnWidthPercent = 33;
       DefaultColumnWidthPixels = 0;
       DefaultFloatingPosition = "";
+      DefaultInitialDestination = "";
       DefaultWindowHeight = "auto";
       Gap = 1.2;
       ShowTabIndicator = true;

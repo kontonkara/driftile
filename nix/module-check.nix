@@ -502,6 +502,10 @@ let
               output = "DP-3";
             };
           };
+          defaultInitialDestination = {
+            desktop = 4;
+            output = "DP-4";
+          };
           applicationFloatingPositions = {
             "org.example.Browser" = {
               anchor = "bottom-right";
@@ -909,6 +913,39 @@ let
         };
       }
       { };
+  homeManagerDefaultInitialDestinationDisabled =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.settings.defaultInitialDestination = null;
+      }
+      { };
+  homeManagerDefaultInitialDestinationNamed =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.settings.defaultInitialDestination = {
+          desktopName = "Work";
+          output = "DP-3";
+        };
+      }
+      { };
+  homeManagerDefaultInitialDestinationOutputOnly =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.settings.defaultInitialDestination.output = "HDMI-A-1";
+      }
+      { };
   homeManagerMaximumFloatingPositions =
     evaluate homeManagerModule
       [
@@ -1051,6 +1088,17 @@ let
         }) 129
       );
     }
+    { defaultInitialDestination = { }; }
+    { defaultInitialDestination.desktop = 0; }
+    { defaultInitialDestination.desktop = 26; }
+    {
+      defaultInitialDestination = {
+        desktop = 1;
+        desktopName = "Work";
+      };
+    }
+    { defaultInitialDestination.desktopName = ""; }
+    { defaultInitialDestination.output = "DP,1"; }
     {
       defaultFloatingPosition = {
         anchor = "center";
@@ -1609,6 +1657,7 @@ let
       DefaultColumnWidthPercent = 65;
       DefaultColumnWidthPixels = 960;
       DefaultFloatingPosition = "right,-36,48";
+      DefaultInitialDestination = "desktop:4,output:DP-4";
       DefaultWindowHeight = "720px";
       EmptyDesktopAboveFirst = true;
       Gap = 7.5;
@@ -1648,6 +1697,7 @@ let
       DefaultColumnWidthPercent = 33;
       DefaultColumnWidthPixels = 0;
       DefaultFloatingPosition = "";
+      DefaultInitialDestination = "";
       DefaultWindowHeight = "auto";
       Gap = 16;
       ShowTabIndicator = true;
@@ -1809,11 +1859,11 @@ assert homeManagerSettings.config.qt.kde.settings == expectedSettings;
 assert homeManagerDefaultSettings.config.qt.kde.settings == expectedDefaultSettings;
 assert
   builtins.length (builtins.attrNames expectedSettings.kwinrc."Script-io.github.kontonkara.driftile")
-  == 37;
+  == 38;
 assert
   builtins.length (
     builtins.attrNames expectedDefaultSettings.kwinrc."Script-io.github.kontonkara.driftile"
-  ) == 34;
+  ) == 35;
 assert
   homeManagerMaximumDefaultColumnWidthPixels.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".DefaultColumnWidthPixels
   == 16384;
@@ -1942,6 +1992,15 @@ assert
     )
   ) == 255;
 assert
+  homeManagerDefaultInitialDestinationDisabled.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".DefaultInitialDestination
+  == "";
+assert
+  homeManagerDefaultInitialDestinationNamed.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".DefaultInitialDestination
+  == "desktop-name:Work,output:DP-3";
+assert
+  homeManagerDefaultInitialDestinationOutputOnly.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".DefaultInitialDestination
+  == "output:HDMI-A-1";
+assert
   builtins.length (
     lib.splitString "\n"
       homeManagerMaximumFloatingPositions.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ApplicationFloatingPositions
@@ -2004,6 +2063,7 @@ assert
       DefaultColumnWidthPercent = 33;
       DefaultColumnWidthPixels = 0;
       DefaultFloatingPosition = "";
+      DefaultInitialDestination = "";
       DefaultWindowHeight = "auto";
       Gap = 1.2;
       ShowTabIndicator = true;

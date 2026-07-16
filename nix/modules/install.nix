@@ -212,7 +212,7 @@ let
     && !hasControlCharacter value
     && !lib.hasInfix "," value;
   validDesktopName = validOutputName;
-  applicationInitialDestinationType = lib.types.submodule {
+  initialDestinationType = lib.types.submodule {
     options = {
       desktop = lib.mkOption {
         type = lib.types.nullOr (lib.types.ints.between 1 25);
@@ -233,34 +233,43 @@ let
       };
     };
   };
+  validInitialDestination =
+    destination:
+    (destination.desktop == null || destination.desktopName == null)
+    && (destination.desktop != null || destination.desktopName != null || destination.output != null);
+  applicationInitialDestinationType = initialDestinationType;
   applicationInitialDestinationsType = lib.types.attrsOf applicationInitialDestinationType;
   validateApplicationInitialDestinations =
     destinations:
     if
       builtins.length (builtins.attrNames destinations) <= 128
       && lib.all validMappedDesktopFileName (builtins.attrNames destinations)
-      && lib.all (
-        destination:
-        (destination.desktop == null || destination.desktopName == null)
-        && (destination.desktop != null || destination.desktopName != null || destination.output != null)
-      ) (builtins.attrValues destinations)
+      && lib.all validInitialDestination (builtins.attrValues destinations)
     then
       destinations
     else
       throw "programs.driftile.settings.applicationInitialDestinations must use at most 128 valid application ID keys without '=', assign a desktop number, desktop name, or output, and not combine desktop with desktopName.";
+  validateDefaultInitialDestination =
+    destination:
+    if destination == null || validInitialDestination destination then
+      destination
+    else
+      throw "programs.driftile.settings.defaultInitialDestination must assign a desktop number, desktop name, or output, and not combine desktop with desktopName.";
+  renderInitialDestination =
+    destination:
+    if destination == null then
+      ""
+    else
+      lib.concatStringsSep "," (
+        lib.optional (destination.desktop != null) "desktop:${toString destination.desktop}"
+        ++ lib.optional (destination.desktopName != null) "desktop-name:${destination.desktopName}"
+        ++ lib.optional (destination.output != null) "output:${destination.output}"
+      );
   renderApplicationInitialDestinations =
     destinations:
     lib.concatStringsSep "\n" (
       map (
-        desktopFileName:
-        let
-          destination = destinations.${desktopFileName};
-          fields =
-            lib.optional (destination.desktop != null) "desktop:${toString destination.desktop}"
-            ++ lib.optional (destination.desktopName != null) "desktop-name:${destination.desktopName}"
-            ++ lib.optional (destination.output != null) "output:${destination.output}";
-        in
-        "${desktopFileName}=${lib.concatStringsSep "," fields}"
+        desktopFileName: "${desktopFileName}=${renderInitialDestination destinations.${desktopFileName}}"
       ) (builtins.sort builtins.lessThan (builtins.attrNames destinations))
     );
   floatingPositionAnchorType = lib.types.enum [
@@ -561,6 +570,13 @@ in
               description = "Initial virtual desktops and outputs for newly admitted windows, keyed by exact case-sensitive KWin application ID; desktopFileName is used when available, otherwise resourceClass.";
             };
 
+            defaultInitialDestination = lib.mkOption {
+              type = lib.types.nullOr applicationInitialDestinationType;
+              default = null;
+              apply = validateDefaultInitialDestination;
+              description = "Default initial virtual desktop and output for newly admitted windows; null disables the default, and exact applicationInitialDestinations rules take precedence.";
+            };
+
             applicationFloatingPositions = lib.mkOption {
               type = applicationFloatingPositionsType;
               default = { };
@@ -815,6 +831,7 @@ in
           DefaultColumnWidthPercent = cfg.settings.defaultColumnWidthPercent;
           DefaultColumnWidthPixels = cfg.settings.defaultColumnWidthPixels;
           DefaultFloatingPosition = renderDefaultFloatingPosition cfg.settings.defaultFloatingPosition;
+          DefaultInitialDestination = renderInitialDestination cfg.settings.defaultInitialDestination;
           DefaultWindowHeight = renderDefaultWindowHeight cfg.settings.defaultWindowHeight;
           Gap = cfg.settings.gap;
           ShowTabIndicator = cfg.settings.showTabIndicator;
