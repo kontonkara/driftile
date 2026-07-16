@@ -154,6 +154,9 @@ class DriftileTransitionsEffect {
 
   onFullScreenEffectChanged() {
     if (effects.hasActiveFullScreenEffect) {
+      for (const window of this.managedWindows) {
+        this.cancelWindowAnimation(window);
+      }
       return;
     }
 
@@ -170,6 +173,11 @@ class DriftileTransitionsEffect {
 
   onWindowActivated(window) {
     this.replayDeferredTransition(window);
+    for (const candidate of this.managedWindows) {
+      if (candidate !== window) {
+        this.replayDeferredTransition(candidate);
+      }
+    }
   }
 
   onWindowVisibilityOpportunity(window) {
@@ -186,7 +194,11 @@ class DriftileTransitionsEffect {
   }
 
   replayDeferredTransition(window) {
-    const oldGeometry = window && window[DEFERRED_PROPERTY];
+    if (!window) {
+      return;
+    }
+
+    const oldGeometry = window[DEFERRED_PROPERTY];
     if (oldGeometry === undefined) {
       return;
     }
@@ -359,7 +371,10 @@ class DriftileTransitionsEffect {
   }
 
   isEligible(window) {
-    return window.visible && this.isDeferredTransitionEligible(window);
+    return (
+      this.isDeferredTransitionPresentable(window) &&
+      this.isDeferredTransitionEligible(window)
+    );
   }
 
   isDeferredTransitionEligible(window) {
