@@ -442,7 +442,8 @@ Driftile must integrate with, not duplicate:
 - The built-in Overview, Pager, Task Switcher, desktop OSD, and session
   restoration. The optional companion requests focus or desktop selection only
   through public KWin properties; KWin retains focus, stacking, and desktop
-  switching ownership.
+  switching ownership. The companion silently yields before and during loading
+  when the built-in Overview is active and never controls that Plasma effect.
 
 ## Invariants
 
@@ -625,6 +626,9 @@ Driftile must integrate with, not duplicate:
 - The optional overview keeps one toggle action and adds separate unbound open
   and close actions. Each one is idempotent across inactive, loading, and active
   states and changes no layout or persistence state.
+- The optional overview never opens over Plasma's built-in Overview. It checks
+  public activity before loading and again before committing its model; either
+  coexistence path is silent and performs no Plasma-effect write or activation.
 - A guarded overview drop may move one exact tiled or floating normal window to
   another desktop card on the same output, including the shared empty tail.
   Same-desktop, cross-output, all-desktop, related, stale, or ambiguous drops

@@ -1363,6 +1363,11 @@ or pending activation. The pair is recreated from initial KWin gesture
 properties when its enable state or finger count changes. Home Manager may own
 the complete pair independently of package installation.
 
+The companion also preserves Plasma's built-in Overview as the baseline. It
+silently yields when that effect is already active and cancels a loading
+attempt if it becomes active before the companion model is committed, without
+activating, deactivating, or configuring the Plasma effect.
+
 Fresh shortcut records align the complete preset-width pair: `Meta+R` cycles
 forward and `Meta+Shift+R` cycles backward. Forward window-height cycling moves
 to `Meta+Ctrl+Shift+R`; reverse height stays unbound. Action IDs and existing

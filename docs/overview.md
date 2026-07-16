@@ -4,7 +4,9 @@ The optional overview companion is a separate KWin effect. It presents
 Driftile's current activity, output, desktop, column, stack, viewport, and
 floating-window model. In 1.7.0, a left click on a valid thumbnail in the
 current desktop card focuses that live window through KWin and closes the
-effect. Plasma's built-in Overview remains installed and unchanged.
+effect. Plasma's built-in Overview remains the baseline: the companion never
+opens over it, silently cancels a loading attempt if it becomes active, and
+never activates, deactivates, or configures the Plasma effect.
 
 In 1.8.0, a left click on a non-current desktop card's number gutter selects
 that desktop. The current desktop's gutter remains inert.
