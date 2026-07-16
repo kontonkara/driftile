@@ -6933,7 +6933,7 @@ export class RuntimeController {
       return true;
     }
 
-    if (this.activeWindowResolvesRemovalFocus(id)) {
+    if (this.activeWindowResolvesRemovalFocus(id, focus)) {
       return false;
     }
 
@@ -6949,14 +6949,29 @@ export class RuntimeController {
     focus: WindowRemovalFocus,
   ): void {
     const runGeneration = this.runGeneration;
+    const recover = (scheduleSettlementProbe: boolean): void => {
+      if (!this.started || this.runGeneration !== runGeneration) {
+        return;
+      }
+
+      this.recoverWindowRemovalFocus(id, focus);
+
+      if (!scheduleSettlementProbe) {
+        return;
+      }
+
+      try {
+        this.schedule(() => {
+          recover(false);
+        });
+      } catch {
+        // The first probe already made the best synchronous recovery attempt.
+      }
+    };
 
     try {
       this.schedule(() => {
-        if (!this.started || this.runGeneration !== runGeneration) {
-          return;
-        }
-
-        this.recoverWindowRemovalFocus(id, focus);
+        recover(true);
       });
     } catch {
       this.recoverWindowRemovalFocus(id, focus);
@@ -6973,7 +6988,7 @@ export class RuntimeController {
       this.startupStabilizationToken !== null ||
       this.hasTopologyBarrier() ||
       !this.windowRemovalFocusContextIsVisible(focus) ||
-      this.activeWindowResolvesRemovalFocus(removedId)
+      this.activeWindowResolvesRemovalFocus(removedId, focus)
     ) {
       return;
     }
@@ -6999,7 +7014,10 @@ export class RuntimeController {
     }
   }
 
-  private activeWindowResolvesRemovalFocus(removedId: WindowId): boolean {
+  private activeWindowResolvesRemovalFocus(
+    removedId: WindowId,
+    focus: WindowRemovalFocus,
+  ): boolean {
     const active = this.workspace.activeWindow;
 
     if (!active || String(active.internalId) === String(removedId)) {
@@ -7007,14 +7025,18 @@ export class RuntimeController {
     }
 
     const activeId = windowId(String(active.internalId));
+    const context = this.resolveLayerFocusContext(active);
 
-    return (
+    return Boolean(
       this.observer.source(activeId) === active &&
       active.managed &&
       !active.deleted &&
       !active.minimized &&
       !active.desktopWindow &&
-      !active.dock
+      !active.dock &&
+      context &&
+      contextKey(context) === focus.contextKey &&
+      this.isContextVisible(context),
     );
   }
 

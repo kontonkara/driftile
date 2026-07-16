@@ -2225,18 +2225,59 @@ describe("RuntimeController", () => {
     controller.stop();
   });
 
-  it("keeps a live replacement focused after the previous active window closes", () => {
+  it.each(["desktop", "output"] as const)(
+    "restores previous focus past an active managed window on another %s",
+    (differentContextPart) => {
+      const output = createOutput("DP-1", 0);
+      const otherOutput = createOutput("HDMI-A-1", 1000);
+      const desktop = { id: "desktop-1" };
+      const otherDesktop = { id: "desktop-2" };
+      const previous = createTrackedWindow("previous", output, desktop);
+      const removed = createTrackedWindow("removed", output, desktop);
+      const wrongContext = createTrackedWindow(
+        "wrong-context",
+        differentContextPart === "output" ? otherOutput : output,
+        differentContextPart === "desktop" ? otherDesktop : desktop,
+      );
+      const fixture = createWorkspace(
+        output,
+        desktop,
+        [output, otherOutput],
+        [desktop, otherDesktop],
+        [previous.window, removed.window, wrongContext.window],
+      );
+      const scheduler = new ManualScheduler();
+      const controller = new RuntimeController(fixture.workspace, {
+        clientAreaOption: 2,
+        schedule: scheduler.schedule,
+      });
+
+      expect(controller.start()).toBe(true);
+      fixture.workspace.activeWindow = previous.window;
+      fixture.workspace.activeWindow = removed.window;
+      fixture.workspace.activeWindow = wrongContext.window;
+      const activationCount = fixture.activationCount;
+
+      fixture.windowRemoved.emit(removed.window);
+      flushManualScheduler(scheduler);
+
+      expect(fixture.workspace.activeWindow).toBe(previous.window);
+      expect(fixture.activationCount).toBe(activationCount + 1);
+      controller.stop();
+    },
+  );
+
+  it("recovers previous focus after late removal settlement clears the first request", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
     const previous = createTrackedWindow("previous", output, desktop);
     const removed = createTrackedWindow("removed", output, desktop);
-    const replacement = createTrackedWindow("replacement", output, desktop);
     const fixture = createWorkspace(
       output,
       desktop,
       [output],
       [desktop],
-      [previous.window, removed.window, replacement.window],
+      [previous.window, removed.window],
     );
     const scheduler = new ManualScheduler();
     const controller = new RuntimeController(fixture.workspace, {
@@ -2247,16 +2288,71 @@ describe("RuntimeController", () => {
     expect(controller.start()).toBe(true);
     fixture.workspace.activeWindow = previous.window;
     fixture.workspace.activeWindow = removed.window;
-    fixture.workspace.activeWindow = replacement.window;
+    fixture.workspace.activeWindow = null;
+    flushManualScheduler(scheduler);
+    let clearFirstRecovery = true;
+    fixture.setActivationBehavior((window, commit) => {
+      commit();
+
+      if (window === previous.window && clearFirstRecovery) {
+        clearFirstRecovery = false;
+        scheduler.schedule(() => {
+          fixture.workspace.activeWindow = null;
+        });
+      }
+    });
     const activationCount = fixture.activationCount;
 
     fixture.windowRemoved.emit(removed.window);
     flushManualScheduler(scheduler);
 
-    expect(fixture.workspace.activeWindow).toBe(replacement.window);
-    expect(fixture.activationCount).toBe(activationCount);
+    expect(fixture.workspace.activeWindow).toBe(previous.window);
+    expect(fixture.activationCount).toBe(activationCount + 3);
     controller.stop();
   });
+
+  it.each(["tiled", "dialog"] as const)(
+    "keeps a live same-context %s replacement focused after the previous active window closes",
+    (replacementKind) => {
+      const output = createOutput("DP-1", 0);
+      const desktop = { id: "desktop-1" };
+      const previous = createTrackedWindow("previous", output, desktop);
+      const removed = createTrackedWindow("removed", output, desktop);
+      const replacement = createTrackedWindow(
+        "replacement",
+        output,
+        desktop,
+        replacementKind === "dialog"
+          ? { dialog: true, normalWindow: false }
+          : {},
+      );
+      const fixture = createWorkspace(
+        output,
+        desktop,
+        [output],
+        [desktop],
+        [previous.window, removed.window, replacement.window],
+      );
+      const scheduler = new ManualScheduler();
+      const controller = new RuntimeController(fixture.workspace, {
+        clientAreaOption: 2,
+        schedule: scheduler.schedule,
+      });
+
+      expect(controller.start()).toBe(true);
+      fixture.workspace.activeWindow = previous.window;
+      fixture.workspace.activeWindow = removed.window;
+      fixture.workspace.activeWindow = replacement.window;
+      const activationCount = fixture.activationCount;
+
+      fixture.windowRemoved.emit(removed.window);
+      flushManualScheduler(scheduler);
+
+      expect(fixture.workspace.activeWindow).toBe(replacement.window);
+      expect(fixture.activationCount).toBe(activationCount);
+      controller.stop();
+    },
+  );
 
   it("focuses the next stack member after removing the selected window", () => {
     const output = createOutput("DP-1", 0);
