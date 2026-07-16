@@ -10,10 +10,87 @@ import {
 type OverviewSequentialNavigationDirection =
   "first" | "last" | "next" | "previous";
 
+export interface OverviewWheelNavigationPlan {
+  readonly direction: "next" | "previous" | null;
+  readonly remainder: number;
+  readonly steps: number;
+}
+
 const MAXIMUM_NAVIGATION_TARGETS =
   LAYOUT_PERSISTENCE_LIMITS.windows + LAYOUT_PERSISTENCE_LIMITS.contexts;
 const MAXIMUM_NAVIGATION_TARGET_ID_CHARACTERS =
   LAYOUT_PERSISTENCE_LIMITS.identifierCharacters * 2 + 32;
+const OVERVIEW_WHEEL_ANGLE_DELTA_PER_STEP = 120;
+const MAXIMUM_OVERVIEW_WHEEL_STEPS_PER_EVENT = 4;
+const MAXIMUM_OVERVIEW_WHEEL_ANGLE_DELTA_PER_EVENT =
+  OVERVIEW_WHEEL_ANGLE_DELTA_PER_STEP * MAXIMUM_OVERVIEW_WHEEL_STEPS_PER_EVENT;
+
+export function planOverviewWheelNavigation(
+  remainder: unknown,
+  verticalAngleDelta: unknown,
+): OverviewWheelNavigationPlan | null {
+  try {
+    if (
+      !isWheelRemainder(remainder) ||
+      !isWheelAngleDelta(verticalAngleDelta)
+    ) {
+      return null;
+    }
+
+    if (verticalAngleDelta === 0) {
+      return { direction: null, remainder: normalizeZero(remainder), steps: 0 };
+    }
+
+    const accumulated =
+      remainder !== 0 && Math.sign(remainder) !== Math.sign(verticalAngleDelta)
+        ? verticalAngleDelta
+        : remainder + verticalAngleDelta;
+    const steps = Math.min(
+      Math.floor(Math.abs(accumulated) / OVERVIEW_WHEEL_ANGLE_DELTA_PER_STEP),
+      MAXIMUM_OVERVIEW_WHEEL_STEPS_PER_EVENT,
+    );
+    const nextRemainder =
+      accumulated -
+      Math.sign(accumulated) * steps * OVERVIEW_WHEEL_ANGLE_DELTA_PER_STEP;
+
+    return {
+      direction: steps === 0 ? null : accumulated > 0 ? "previous" : "next",
+      remainder: normalizeZero(nextRemainder),
+      steps,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function countOverviewWindowNavigationTargets(
+  targets: unknown,
+): number | null {
+  try {
+    if (
+      !Array.isArray(targets) ||
+      targets.length > MAXIMUM_NAVIGATION_TARGETS
+    ) {
+      return null;
+    }
+
+    const windowIds = new Set<string>();
+    for (const target of targets) {
+      if (!isRecord(target) || target["kind"] !== "window") {
+        continue;
+      }
+
+      const windowId = target["windowId"];
+      if (validIdentifier(windowId)) {
+        windowIds.add(windowId);
+      }
+    }
+
+    return windowIds.size;
+  } catch {
+    return null;
+  }
+}
 
 export function findOverviewNavigationTarget(
   sourceId: unknown,
@@ -187,6 +264,26 @@ function isSequentialDirection(
     value === "next" ||
     value === "previous"
   );
+}
+
+function isWheelRemainder(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    Math.abs(value) < OVERVIEW_WHEEL_ANGLE_DELTA_PER_STEP
+  );
+}
+
+function isWheelAngleDelta(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    Math.abs(value) <= MAXIMUM_OVERVIEW_WHEEL_ANGLE_DELTA_PER_EVENT
+  );
+}
+
+function normalizeZero(value: number): number {
+  return Object.is(value, -0) ? 0 : value;
 }
 
 function validIdentifier(value: unknown): value is string {

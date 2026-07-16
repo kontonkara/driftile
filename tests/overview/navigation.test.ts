@@ -1,9 +1,84 @@
 import { describe, expect, it } from "vitest";
 import { LAYOUT_PERSISTENCE_LIMITS } from "../../src/core/layout-persistence";
 import {
+  countOverviewWindowNavigationTargets,
   findOverviewNavigationTarget,
   findOverviewSequentialNavigationTarget,
+  planOverviewWheelNavigation,
 } from "../../src/overview/runtime";
+
+describe("planOverviewWheelNavigation", () => {
+  it("accumulates a partial delta into one step", () => {
+    const partial = planOverviewWheelNavigation(0, 60);
+    expect(partial).toEqual({
+      direction: null,
+      remainder: 60,
+      steps: 0,
+    });
+    expect(planOverviewWheelNavigation(partial?.remainder, 60)).toEqual({
+      direction: "previous",
+      remainder: 0,
+      steps: 1,
+    });
+  });
+
+  it("caps multi-step events and resets on reversal", () => {
+    expect(planOverviewWheelNavigation(119, 480)).toEqual({
+      direction: "previous",
+      remainder: 119,
+      steps: 4,
+    });
+    expect(planOverviewWheelNavigation(90, -120)).toEqual({
+      direction: "next",
+      remainder: 0,
+      steps: 1,
+    });
+  });
+
+  it.each([
+    [120, 0],
+    [0, 481],
+    [0.5, 120],
+    [0, 120.5],
+    [0, null],
+  ])("fails closed for invalid input (%o, %o)", (remainder, delta) => {
+    expect(planOverviewWheelNavigation(remainder, delta)).toBeNull();
+  });
+});
+
+describe("countOverviewWindowNavigationTargets", () => {
+  it("counts only unique valid window targets", () => {
+    expect(
+      countOverviewWindowNavigationTargets([
+        { kind: "window", windowId: "window-a" },
+        { kind: "desktop", windowId: "desktop-a" },
+        { kind: "window", windowId: "window-b" },
+        { kind: "window", windowId: "window-a" },
+        { kind: "window", windowId: "" },
+      ]),
+    ).toBe(2);
+  });
+
+  it("fails closed for oversized or hostile input", () => {
+    const limit =
+      LAYOUT_PERSISTENCE_LIMITS.windows + LAYOUT_PERSISTENCE_LIMITS.contexts;
+    const hostile = Object.defineProperty({ kind: "window" }, "windowId", {
+      get(): never {
+        throw new Error("unavailable");
+      },
+    });
+
+    expect(
+      countOverviewWindowNavigationTargets(Array.from({ length: limit + 1 })),
+    ).toBeNull();
+    expect(
+      countOverviewWindowNavigationTargets([
+        { kind: "window", windowId: "window-a" },
+        hostile,
+      ]),
+    ).toBeNull();
+  });
+});
 
 describe("findOverviewNavigationTarget", () => {
   it.each([

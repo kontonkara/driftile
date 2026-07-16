@@ -989,6 +989,35 @@ describe("overview effect package", () => {
     );
   });
 
+  it("cycles the current target set from bounded vertical mouse wheel input", () => {
+    const wheelHandlerStart = scene.indexOf("WheelHandler {");
+    const wheelHandler = scene.slice(
+      wheelHandlerStart,
+      scene.indexOf("Repeater {", wheelHandlerStart),
+    );
+    const wheelNavigation = scene.slice(
+      scene.indexOf("function handleOverviewWheel("),
+      scene.indexOf("function activateKeyboardSelection("),
+    );
+
+    expect(scene).toContain("property int overviewWheelRemainder: 0");
+    expect(wheelHandler).toMatch(
+      /target: null[\s\S]*acceptedDevices: PointerDevice\.Mouse[\s\S]*acceptedModifiers: Qt\.NoModifier[\s\S]*orientation: Qt\.Vertical[\s\S]*onWheel: event => root\.handleOverviewWheel\(event\)/u,
+    );
+    expect(wheelNavigation).toContain(
+      "runtime.planOverviewWheelNavigation(overviewWheelRemainder,",
+    );
+    expect(wheelNavigation).toMatch(
+      /Math\.abs\(plan\.remainder\) >= 120[\s\S]*plan\.steps > 4[\s\S]*for \(let step = 0; step < plan\.steps; step \+= 1\)[\s\S]*navigateKeyboardSequence\(plan\.direction\)/u,
+    );
+    expect(scene).toMatch(
+      /function onActiveChanged\(\)[\s\S]*sceneEffect\.active !== true[\s\S]*root\.overviewWheelRemainder = 0;/u,
+    );
+    expect(`${wheelHandler}\n${wheelNavigation}`).not.toMatch(
+      /KWin\.|candidate\.[A-Za-z0-9_]+\s*=(?!=)|overviewModel\.[A-Za-z0-9_]+\s*=(?!=)|\bTimer\s*\{|\.setValue\s*\(/u,
+    );
+  });
+
   it("navigates to non-current desktop gutters including an empty tail", () => {
     const cardTargets = desktopCard.slice(
       desktopCard.indexOf("function collectNavigationTargets("),
@@ -1057,6 +1086,10 @@ describe("overview effect package", () => {
       desktopCard.indexOf("function windowMatchesSearch("),
       desktopCard.indexOf("function clippedNavigationRect("),
     );
+    const searchFeedback = scene.slice(
+      scene.indexOf("function repairKeyboardSelectionFrom("),
+      scene.indexOf("function preferredInitialNavigationTarget("),
+    );
 
     expect(scene).toContain('property string searchQuery: ""');
     expect(scene).toContain("searchQuery: root.searchQuery");
@@ -1080,8 +1113,14 @@ describe("overview effect package", () => {
     );
     expect(scene).toContain("function onActiveChanged()");
     expect(scene).toContain('root.searchQuery = ""');
+    expect(scene).toContain("No matching windows: ${root.searchQuery}");
     expect(scene).toContain("textFormat: Text.PlainText");
     expect(scene).not.toContain("TextInput");
+    expect(searchFeedback).toContain(
+      "runtime.countOverviewWindowNavigationTargets(targets)",
+    );
+    expect(searchFeedback).toContain("searchResultCount = resultCount");
+    expect(searchFeedback).not.toContain("collectNavigationTargets()");
 
     expect(desktopCard).toContain("required property string searchQuery");
     expect(desktopCard).toContain(

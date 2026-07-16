@@ -5,9 +5,12 @@ import {
 } from "./layout-view";
 
 export {
+  countOverviewWindowNavigationTargets,
   findOverviewNavigationTarget,
   findOverviewSequentialNavigationTarget,
+  planOverviewWheelNavigation,
 } from "./navigation";
+export type { OverviewWheelNavigationPlan } from "./navigation";
 export { planOverviewDesktopDrop } from "./desktop-drop";
 export { planOverviewWindowDesktopDrop } from "./window-drop";
 export {

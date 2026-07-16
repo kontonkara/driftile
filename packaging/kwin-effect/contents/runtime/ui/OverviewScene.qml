@@ -23,7 +23,9 @@ Rectangle {
                                                                         / desktopIds.length) : 0
     property bool desktopReorderAvailable: false
     property string keyboardSelectionId: ""
+    property int overviewWheelRemainder: 0
     property string searchQuery: ""
+    property int searchResultCount: 0
     property bool desktopReorderActive: false
     property real desktopReorderCardGap: 0
     property real desktopReorderCardHeight: 0
@@ -109,6 +111,7 @@ Rectangle {
 
         function onActiveChanged() {
             if (!root.sceneEffect || root.sceneEffect.active !== true) {
+                root.overviewWheelRemainder = 0;
                 root.searchQuery = "";
             }
         }
@@ -141,6 +144,15 @@ Rectangle {
         function onWindowRemoved() {
             root.closeStaleOverview();
         }
+    }
+
+    WheelHandler {
+        target: null
+        acceptedDevices: PointerDevice.Mouse
+        acceptedModifiers: Qt.NoModifier
+        orientation: Qt.Vertical
+
+        onWheel: event => root.handleOverviewWheel(event)
     }
 
     Repeater {
@@ -216,7 +228,9 @@ Rectangle {
             anchors.fill: parent
             anchors.leftMargin: 14
             anchors.rightMargin: 14
-            text: `Search: ${root.searchQuery}`
+            text: root.searchResultCount === 0
+                ? `No matching windows: ${root.searchQuery}`
+                : `${root.searchResultCount} matching window${root.searchResultCount === 1 ? "" : "s"}: ${root.searchQuery}`
             textFormat: Text.PlainText
             color: "#f3f7ff"
             font.pixelSize: 14
@@ -528,6 +542,43 @@ Rectangle {
         }
     }
 
+    function handleOverviewWheel(event) {
+        if (!event) {
+            return;
+        }
+        event.accepted = false;
+        if (!sceneEffect || sceneEffect.active !== true || event.modifiers !== Qt.NoModifier
+                || !event.angleDelta || !Number.isFinite(event.angleDelta.y) || event.angleDelta.y === 0) {
+            return;
+        }
+
+        const runtime = OverviewRuntime.DriftileOverview;
+        if (!runtime || typeof runtime.planOverviewWheelNavigation !== "function") {
+            return;
+        }
+
+        let plan = null;
+        try {
+            plan = runtime.planOverviewWheelNavigation(overviewWheelRemainder,
+                                                       event.angleDelta.y);
+        } catch (error) {
+            return;
+        }
+        if (!plan || !Number.isInteger(plan.remainder) || Math.abs(plan.remainder) >= 120
+                || !Number.isInteger(plan.steps) || plan.steps < 0
+                || plan.steps > 4
+                || (plan.steps === 0 ? plan.direction !== null
+                                     : plan.direction !== "next" && plan.direction !== "previous")) {
+            return;
+        }
+
+        overviewWheelRemainder = plan.remainder;
+        for (let step = 0; step < plan.steps; step += 1) {
+            navigateKeyboardSequence(plan.direction);
+        }
+        event.accepted = true;
+    }
+
     function activateKeyboardSelection() {
         const targets = collectNavigationTargets();
         const target = navigationTargetForId(targets, keyboardSelectionId);
@@ -564,6 +615,21 @@ Rectangle {
     }
 
     function repairKeyboardSelectionFrom(targets) {
+        searchResultCount = 0;
+        if (searchQuery.length > 0) {
+            const runtime = OverviewRuntime.DriftileOverview;
+            if (runtime && typeof runtime.countOverviewWindowNavigationTargets === "function") {
+                try {
+                    const resultCount = runtime.countOverviewWindowNavigationTargets(targets);
+                    if (Number.isInteger(resultCount) && resultCount >= 0 && resultCount <= targets.length) {
+                        searchResultCount = resultCount;
+                    }
+                } catch (error) {
+                    searchResultCount = 0;
+                }
+            }
+        }
+
         if (navigationTargetForId(targets, keyboardSelectionId)) {
             return;
         }
