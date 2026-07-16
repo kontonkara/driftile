@@ -171,6 +171,10 @@ class RuntimeControllerDouble {
     return true;
   }
 
+  setNumberedDesktopTargets(): boolean {
+    return true;
+  }
+
   setWindowHeightPresets(): boolean {
     return true;
   }
@@ -500,6 +504,7 @@ function settings(
     defaultWindowHeight: "auto",
     emptyDesktopAboveFirst: false,
     gap: 16,
+    numberedDesktopTargets: "",
     showTabIndicator: true,
     touchpadNavigation: false,
     touchpadWorkspaceNavigation: false,
