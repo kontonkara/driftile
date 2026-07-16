@@ -13,7 +13,7 @@
     "Id": "io.github.kontonkara.driftile.transitions",
     "License": "GPL-3.0-or-later",
     "Name": "Driftile Transitions",
-    "Version": "1.46.0-dev.0",
+    "Version": "1.46.0",
     "Website": "https://github.com/kontonkara/driftile"
   },
   "X-KDE-ConfigModule": "kcm_kwin4_genericscripted",
