@@ -8306,8 +8306,9 @@ export class RuntimeController {
       return -1;
     }
 
-    const configuredName =
-      this.numberedDesktopTargets.desktopNameFor(target.slot);
+    const configuredName = this.numberedDesktopTargets.desktopNameFor(
+      target.slot,
+    );
 
     if (configuredName === undefined) {
       return Math.min(target.slot - 1, this.workspace.desktops.length - 1);
