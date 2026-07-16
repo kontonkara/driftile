@@ -60,7 +60,9 @@ of `0` disables animation.
 defaults to `out-cubic`. `ResizeAnimationThreshold` accepts `0`–`64` logical
 pixels and defaults to `10`. A resize whose maximum width or height delta is at
 or below that threshold snaps to its final size without size interpolation;
-window movement may still animate.
+window movement may still animate. When a larger size interpolation is already
+active, a later sub-threshold settling correction retargets that interpolation
+instead of cancelling it.
 
 The effect animates automatic position and size changes without writing window
 geometry. Manual move or resize and fullscreen remain ineligible. Geometry

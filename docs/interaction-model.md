@@ -222,11 +222,14 @@ floating windows across layout contexts. It skips minimized windows and
 automatic popups. Committing the current entry before activation makes
 repeated use toggle between the latest pair.
 
-Closing the active managed window restores the latest eligible MRU entry from
-the same visible output, desktop, and activity after KWin settles removal. Two
-scheduled probes cover ordinary settlement; a later null or shell activation
-allows one final event-driven retry. Any legitimate replacement in a visible
-context cancels the pending recovery, preventing a stale focus steal.
+Closing the active tiled, manually floating, or automatic-floating window
+restores the latest eligible MRU entry from the same visible output, desktop,
+and activity after KWin settles removal. Automatic dialogs, transients, and
+application exclusions remain outside layout ownership. Two scheduled probes
+cover ordinary settlement; a later null or shell activation allows one final
+event-driven retry. A close with no eligible target schedules no work, and any
+legitimate replacement in a visible context cancels the pending recovery,
+preventing a stale focus steal.
 
 The existing center-column action is contextual. With an active manually
 floating window, it centers each non-oversized dimension at the exact logical
