@@ -90,16 +90,6 @@ interface RetargetCall {
   readonly duration: number;
 }
 
-type AnimationOperation =
-  | {
-      readonly kind: "animate";
-      readonly animationIds: readonly number[];
-    }
-  | {
-      readonly kind: "cancel";
-      readonly animationId: unknown;
-    };
-
 function createSignal<Arguments extends unknown[]>(): Signal<Arguments> {
   const handlers: Array<(...arguments_: Arguments) => void> = [];
   return {
@@ -170,7 +160,6 @@ function createHarness(
   const currentActivityChanged = createSignal<[string]>();
   const configChanged = createSignal<[]>();
   const animationRequests: AnimationRequest[] = [];
-  const animationOperations: AnimationOperation[] = [];
   const cancelledAnimations: unknown[] = [];
   const retargetCalls: RetargetCall[] = [];
   const failedRetargets = new Set<number>();
@@ -220,9 +209,7 @@ function createHarness(
     },
     animate(request: AnimationRequest) {
       animationRequests.push(request);
-      const animationIds = request.animations.map(() => nextAnimationId++);
-      animationOperations.push({ kind: "animate", animationIds });
-      return animationIds;
+      return request.animations.map(() => nextAnimationId++);
     },
     animationTime(duration: number) {
       animationTimeCalls.push(duration);
@@ -230,7 +217,6 @@ function createHarness(
     },
     cancel(animation: unknown) {
       cancelledAnimations.push(animation);
-      animationOperations.push({ kind: "cancel", animationId: animation });
       return true;
     },
     retarget(animationId: number, target: unknown, duration: number) {
@@ -249,7 +235,6 @@ function createHarness(
   });
 
   return {
-    animationOperations,
     animationRequests,
     animationTimeCalls,
     cancelledAnimations,
@@ -531,7 +516,7 @@ describe("transition effect package", () => {
     ]);
   });
 
-  it("uses translation for negative centers and resumes absolute retargeting", () => {
+  it("retargets decomposed position across negative global coordinates", () => {
     const window = createWindow({
       geometry: { x: -400, y: 30, width: 300, height: 200 },
     });
@@ -546,9 +531,14 @@ describe("transition effect package", () => {
 
     expect(harness.animationRequests[0]?.animations).toMatchObject([
       {
+        type: "position",
+        from: { value1: 0, value2: 130 },
+        to: { value1: 0, value2: 150 },
+      },
+      {
         type: "translation",
-        from: { value1: -100, value2: -20 },
-        to: { value1: 0, value2: 0 },
+        from: { value1: -250, value2: 0 },
+        to: { value1: -150, value2: 0 },
       },
     ]);
     changeGeometry(window, {
@@ -557,15 +547,6 @@ describe("transition effect package", () => {
       width: 300,
       height: 200,
     });
-    expect(harness.animationRequests).toHaveLength(2);
-    expect(harness.animationRequests[1]?.animations).toMatchObject([
-      {
-        type: "translation",
-        from: { value1: -50, value2: -20 },
-        to: { value1: 0, value2: 0 },
-      },
-    ]);
-    expect(harness.cancelledAnimations).toHaveLength(0);
     changeGeometry(window, {
       x: 100,
       y: 70,
@@ -579,33 +560,49 @@ describe("transition effect package", () => {
       height: 200,
     });
 
-    expect(harness.animationRequests).toHaveLength(4);
-    expect(harness.animationRequests[3]?.animations).toMatchObject([
-      {
-        type: "position",
-        from: { value1: 250, value2: 170 },
-        to: { value1: 350, value2: 170 },
-      },
-    ]);
-    expect(harness.cancelledAnimations).toEqual([1, 2, 3]);
-
     changeGeometry(window, {
       x: 300,
       y: 70,
       width: 300,
       height: 200,
     });
-    expect(harness.animationRequests).toHaveLength(4);
+    expect(harness.animationRequests).toHaveLength(1);
     expect(harness.retargetCalls).toEqual([
       {
-        animationId: 4,
+        animationId: 1,
+        target: { value1: 0, value2: 170 },
+        duration: 180,
+      },
+      {
+        animationId: 2,
+        target: { value1: -100, value2: 0 },
+        duration: 180,
+      },
+      {
+        animationId: 1,
+        target: { value1: 250, value2: 170 },
+        duration: 180,
+      },
+      {
+        animationId: 2,
+        target: { value1: 0, value2: 0 },
+        duration: 180,
+      },
+      {
+        animationId: 1,
+        target: { value1: 350, value2: 170 },
+        duration: 180,
+      },
+      {
+        animationId: 1,
         target: { value1: 450, value2: 170 },
         duration: 180,
       },
     ]);
+    expect(harness.cancelledAnimations).toHaveLength(0);
   });
 
-  it("starts cross-mode compensation before cancelling the previous mode", () => {
+  it("keeps cross-edge retargeting on one position pair", () => {
     const harness = createHarness();
     changeGeometry(harness.window, {
       x: 40,
@@ -638,29 +635,24 @@ describe("transition effect package", () => {
       height: 200,
     });
 
-    expect(
-      harness.animationRequests.map((request) => request.animations[0]?.type),
-    ).toEqual([
-      "position",
-      "translation",
-      "translation",
-      "translation",
-      "position",
+    expect(harness.animationRequests).toHaveLength(2);
+    expect(harness.animationRequests[0]?.animations).toMatchObject([
+      { type: "position" },
     ]);
-    expect(harness.animationOperations).toEqual([
-      { kind: "animate", animationIds: [1] },
-      { kind: "animate", animationIds: [2] },
-      { kind: "cancel", animationId: 1 },
-      { kind: "animate", animationIds: [3] },
-      { kind: "animate", animationIds: [4] },
-      { kind: "animate", animationIds: [5] },
-      { kind: "cancel", animationId: 2 },
-      { kind: "cancel", animationId: 3 },
-      { kind: "cancel", animationId: 4 },
+    expect(harness.animationRequests[1]?.animations).toMatchObject([
+      {
+        type: "translation",
+        from: { value1: 0, value2: 0 },
+        to: { value1: -250, value2: 0 },
+      },
     ]);
+    expect(harness.retargetCalls.map(({ animationId }) => animationId)).toEqual(
+      [1, 1, 2, 1, 2, 1],
+    );
+    expect(harness.cancelledAnimations).toHaveLength(0);
   });
 
-  it("bounds tracked translations and cancels every retained animation", () => {
+  it("bounds rapid off-output motion to one retargetable position pair", () => {
     const window = createWindow({
       geometry: { x: -1000, y: 30, width: 300, height: 200 },
     });
@@ -675,16 +667,10 @@ describe("transition effect package", () => {
       });
     }
 
-    expect(harness.animationRequests).toHaveLength(35);
-    expect(harness.cancelledAnimations).toEqual([1, 2, 3]);
-    expect(harness.animationOperations.slice(-6)).toEqual([
-      { kind: "animate", animationIds: [33] },
-      { kind: "cancel", animationId: 1 },
-      { kind: "animate", animationIds: [34] },
-      { kind: "cancel", animationId: 2 },
-      { kind: "animate", animationIds: [35] },
-      { kind: "cancel", animationId: 3 },
-    ]);
+    expect(harness.animationRequests).toHaveLength(1);
+    expect(harness.animationRequests[0]?.animations).toHaveLength(2);
+    expect(harness.retargetCalls).toHaveLength(68);
+    expect(harness.cancelledAnimations).toHaveLength(0);
 
     window.move = true;
     changeGeometry(window, {
@@ -693,9 +679,7 @@ describe("transition effect package", () => {
       width: 300,
       height: 200,
     });
-    expect(harness.cancelledAnimations).toEqual(
-      Array.from({ length: 35 }, (_, index) => index + 1),
-    );
+    expect(harness.cancelledAnimations).toEqual([1, 2]);
   });
 
   it("suppresses live user move and resize geometry signals", () => {
@@ -868,9 +852,14 @@ describe("transition effect package", () => {
           to: { value1: 520, value2: 320 },
         },
         {
+          type: "position",
+          from: { value1: 0, value2: 130 },
+          to: { value1: 0, value2: 240 },
+        },
+        {
           type: "translation",
-          from: { value1: -230, value2: -110 },
-          to: { value1: 0, value2: 0 },
+          from: { value1: -350, value2: 0 },
+          to: { value1: -120, value2: 0 },
         },
       ],
     });
