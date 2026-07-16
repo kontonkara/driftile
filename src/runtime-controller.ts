@@ -6878,14 +6878,21 @@ export class RuntimeController {
     id: WindowId,
     focus: WindowRemovalFocus,
   ): boolean {
-    if (this.focusRequestDepth > 0) {
+    if (
+      this.focusRequestDepth > 0 ||
+      !this.windowRemovalFocusContextIsVisible(focus)
+    ) {
       return false;
     }
 
     const active = this.workspace.activeWindow;
 
-    if (active) {
-      return String(active.internalId) === String(id);
+    if (active && String(active.internalId) === String(id)) {
+      return true;
+    }
+
+    if (this.activeWindowResolvesRemovalFocus(id)) {
+      return false;
     }
 
     const remembered =
@@ -6918,14 +6925,13 @@ export class RuntimeController {
     removedId: WindowId,
     focus: WindowRemovalFocus,
   ): void {
-    const active = this.workspace.activeWindow;
-
     if (
       this.stackEditOperation ||
       this.windowTransferOperation ||
       this.startupStabilizationToken !== null ||
       this.hasTopologyBarrier() ||
-      (active && String(active.internalId) !== String(removedId))
+      !this.windowRemovalFocusContextIsVisible(focus) ||
+      this.activeWindowResolvesRemovalFocus(removedId)
     ) {
       return;
     }
@@ -6949,6 +6955,32 @@ export class RuntimeController {
     ) {
       this.rememberLayerFocus(targetId, target);
     }
+  }
+
+  private activeWindowResolvesRemovalFocus(removedId: WindowId): boolean {
+    const active = this.workspace.activeWindow;
+
+    if (!active || String(active.internalId) === String(removedId)) {
+      return false;
+    }
+
+    const activeId = windowId(String(active.internalId));
+
+    return (
+      this.observer.source(activeId) === active &&
+      active.managed &&
+      !active.deleted &&
+      !active.minimized &&
+      !active.desktopWindow &&
+      !active.dock
+    );
+  }
+
+  private windowRemovalFocusContextIsVisible(
+    focus: WindowRemovalFocus,
+  ): boolean {
+    const context = managedContextFromKey(focus.contextKey);
+    return Boolean(context && this.isContextVisible(context));
   }
 
   private windowRemovalFocusTarget(
