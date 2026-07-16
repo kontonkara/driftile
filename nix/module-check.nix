@@ -507,6 +507,7 @@ let
           ];
           windowHeightStepPercent = 17;
           windowHeightStepPixels = 96;
+          workspaceAutoBackAndForth = true;
         };
       }
       { };
@@ -818,6 +819,7 @@ let
     { touchpadNavigationFingerCount = 4.5; }
     { touchpadNaturalScroll = "true"; }
     { touchpadWorkspaceNavigation = "true"; }
+    { workspaceAutoBackAndForth = "true"; }
     { defaultColumnPresentation = "columns"; }
     { gap = -1; }
     { gap = 65; }
@@ -1150,6 +1152,7 @@ let
       WindowHeightPresets = "30,480px,60%,720px,90";
       WindowHeightStepPercent = 17;
       WindowHeightStepPixels = 96;
+      WorkspaceAutoBackAndForth = true;
     };
   };
   expectedDefaultSettings = {
@@ -1179,6 +1182,7 @@ let
       WindowHeightPresets = "";
       WindowHeightStepPercent = 10;
       WindowHeightStepPixels = 0;
+      WorkspaceAutoBackAndForth = false;
     };
   };
   homeManagerValid = verifyModule homeManagerModule [
@@ -1329,11 +1333,11 @@ assert homeManagerSettings.config.qt.kde.settings == expectedSettings;
 assert homeManagerDefaultSettings.config.qt.kde.settings == expectedDefaultSettings;
 assert
   builtins.length (builtins.attrNames expectedSettings.kwinrc."Script-io.github.kontonkara.driftile")
-  == 28;
+  == 29;
 assert
   builtins.length (
     builtins.attrNames expectedDefaultSettings.kwinrc."Script-io.github.kontonkara.driftile"
-  ) == 25;
+  ) == 26;
 assert
   homeManagerMaximumDefaultColumnWidthPixels.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".DefaultColumnWidthPixels
   == 16384;
@@ -1444,6 +1448,7 @@ assert
       WindowHeightPresets = "";
       WindowHeightStepPercent = 10;
       WindowHeightStepPixels = 0;
+      WorkspaceAutoBackAndForth = false;
     };
   };
 assert lib.all invalidSettingsRejected invalidSettings;

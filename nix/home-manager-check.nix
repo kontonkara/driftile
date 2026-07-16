@@ -96,6 +96,7 @@ let
         ];
         windowHeightStepPercent = 17;
         windowHeightStepPixels = 96;
+        workspaceAutoBackAndForth = true;
       };
       shortcuts = {
         driftile_focus_column_left = [ "Meta+A" ];
@@ -464,12 +465,13 @@ assert
       WindowHeightPresets = "30,480px,60%,720px,90";
       WindowHeightStepPercent = 17;
       WindowHeightStepPixels = 96;
+      WorkspaceAutoBackAndForth = true;
     };
   };
 assert
   builtins.length (
     builtins.attrNames standalone.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile"
-  ) == 28;
+  ) == 29;
 assert
   standalone.config.xdg.configFile."driftile/shortcuts.json".text == ''
     {"bindings":{"driftile_focus_column_left":["Meta+A"],"driftile_reset_column_width":[]},"version":1}
@@ -514,6 +516,7 @@ assert
       WindowHeightPresets = "";
       WindowHeightStepPercent = 10;
       WindowHeightStepPixels = 0;
+      WorkspaceAutoBackAndForth = false;
     };
   };
 assert

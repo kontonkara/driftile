@@ -436,6 +436,12 @@ in
               description = "Whether one empty virtual desktop is maintained before the first occupied desktop; null leaves the KConfig value unmanaged.";
             };
 
+            workspaceAutoBackAndForth = lib.mkOption {
+              type = lib.types.bool;
+              default = false;
+              description = "Whether repeated numbered desktop selection toggles to the output-local last-used desktop.";
+            };
+
             showTabIndicator = lib.mkOption {
               type = lib.types.bool;
               default = true;
@@ -630,6 +636,7 @@ in
           WindowHeightPresets = renderWindowHeightPresets cfg.settings.windowHeightPresets;
           WindowHeightStepPercent = cfg.settings.windowHeightStepPercent;
           WindowHeightStepPixels = cfg.settings.windowHeightStepPixels;
+          WorkspaceAutoBackAndForth = cfg.settings.workspaceAutoBackAndForth;
         }
         // lib.optionalAttrs (cfg.settings.alwaysCenterSingleColumn != null) {
           AlwaysCenterSingleColumn = cfg.settings.alwaysCenterSingleColumn;
