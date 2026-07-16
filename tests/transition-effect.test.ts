@@ -1604,7 +1604,18 @@ describe("transition effect package", () => {
   });
 
   it("matches bounded window class exclusions exactly and reloads them", () => {
+    let observedWindowClass = "konsole org.kde.konsole";
+    let windowClassReads = 0;
+    const window = createWindow();
+    Object.defineProperty(window, "windowClass", {
+      configurable: true,
+      get() {
+        windowClassReads += 1;
+        return observedWindowClass;
+      },
+    });
     const harness = createHarness({
+      window,
       windowClassExclusions:
         "  konsole org.kde.konsole  \r\n\nfirefox firefox\n",
     });
@@ -1615,8 +1626,9 @@ describe("transition effect package", () => {
       height: 250,
     });
     expect(harness.animationRequests).toHaveLength(0);
+    expect(windowClassReads).toBe(1);
 
-    harness.window.windowClass = "Konsole org.kde.konsole";
+    observedWindowClass = "Konsole org.kde.konsole";
     changeGeometry(harness.window, {
       x: 60,
       y: 70,
@@ -1624,13 +1636,14 @@ describe("transition effect package", () => {
       height: 300,
     });
     expect(harness.animationRequests).toHaveLength(1);
+    expect(windowClassReads).toBe(2);
 
     harness.setConfiguredValue(
       "WindowClassExclusions",
       "firefox firefox\u0000",
     );
     harness.configChanged.emit();
-    harness.window.windowClass = "unlisted application";
+    observedWindowClass = "unlisted application";
     changeGeometry(harness.window, {
       x: 80,
       y: 90,
@@ -1638,6 +1651,7 @@ describe("transition effect package", () => {
       height: 350,
     });
     expect(harness.animationRequests).toHaveLength(1);
+    expect(windowClassReads).toBe(3);
 
     harness.setConfiguredValue("WindowClassExclusions", "");
     harness.configChanged.emit();
@@ -1648,7 +1662,13 @@ describe("transition effect package", () => {
       height: 400,
     });
     expect(harness.animationRequests).toHaveLength(2);
+    expect(windowClassReads).toBe(4);
     expect(script).toContain("this.windowClassExclusions.has(windowClass)");
+    expect(script).toContain("this.windowClassClassifications.get(window)");
+    expect(script).toContain(
+      "cachedClassification.windowClass === windowClass",
+    );
+    expect(script).toContain("this.windowClassClassifications.delete(window)");
   });
 
   it("rejects malformed or oversized exclusion input as a whole", () => {
@@ -1726,6 +1746,21 @@ describe("transition effect package", () => {
       height: 250,
     });
     expect(harness.animationRequests).toHaveLength(1);
+
+    const malformedWindow = createWindow({
+      windowClass: 42 as unknown as string,
+    });
+    const malformedHarness = createHarness({
+      window: malformedWindow,
+      windowClassExclusions: "org.kde.konsole",
+    });
+    changeGeometry(malformedWindow, {
+      x: 40,
+      y: 50,
+      width: 400,
+      height: 250,
+    });
+    expect(malformedHarness.animationRequests).toHaveLength(1);
   });
 
   it("keeps the shell launcher at its native compact geometry", () => {
@@ -1758,6 +1793,54 @@ describe("transition effect package", () => {
       height: 250,
     });
     expect(ordinaryHarness.animationRequests).toHaveLength(1);
+
+    let observedWindowClass = "krunner org.kde.krunner";
+    let windowClassReads = 0;
+    const cachedWindow = createWindow();
+    Object.defineProperty(cachedWindow, "windowClass", {
+      configurable: true,
+      get() {
+        windowClassReads += 1;
+        return observedWindowClass;
+      },
+    });
+    const cachedHarness = createHarness({
+      window: cachedWindow,
+      windowClassExclusions: "org.example.blocked",
+    });
+    changeGeometry(cachedWindow, {
+      x: 640,
+      y: 24,
+      width: 640,
+      height: 84,
+    });
+    changeGeometry(cachedWindow, {
+      x: 620,
+      y: 24,
+      width: 660,
+      height: 84,
+    });
+    expect(cachedHarness.animationRequests).toHaveLength(0);
+    expect(windowClassReads).toBe(2);
+
+    observedWindowClass = "krunner-helper org.example.krunner-helper";
+    changeGeometry(cachedWindow, {
+      x: 40,
+      y: 50,
+      width: 400,
+      height: 250,
+    });
+    expect(cachedHarness.animationRequests).toHaveLength(1);
+    expect(windowClassReads).toBe(3);
+
+    changeGeometry(cachedWindow, {
+      x: 60,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+    expect(cachedHarness.animationRequests).toHaveLength(1);
+    expect(windowClassReads).toBe(4);
   });
 
   it("retargets consecutive geometry changes without restarting active attributes", () => {

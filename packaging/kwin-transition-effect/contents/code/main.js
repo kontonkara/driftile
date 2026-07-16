@@ -35,6 +35,8 @@ class DriftileTransitionsEffect {
     this.resizeAnimationThreshold = DEFAULT_RESIZE_ANIMATION_THRESHOLD;
     this.windowClassExclusionsValid = true;
     this.windowClassExclusions = new Set();
+    this.windowClassClassificationGeneration = 0;
+    this.windowClassClassifications = new Map();
     this.managedWindows = [];
     this.activeAnimationWindows = new Set();
     this.deferredWindows = new Set();
@@ -104,6 +106,8 @@ class DriftileTransitionsEffect {
     );
     this.windowClassExclusionsValid = exclusionConfig.valid;
     this.windowClassExclusions = exclusionConfig.exclusions;
+    this.windowClassClassificationGeneration += 1;
+    this.windowClassClassifications.clear();
     for (const window of this.managedWindows) {
       this.clearWindowTransitions(window);
     }
@@ -137,6 +141,7 @@ class DriftileTransitionsEffect {
     }
 
     this.clearWindowTransitions(window);
+    this.windowClassClassifications.delete(window);
     delete window[MANAGED_PROPERTY];
     const index = this.managedWindows.indexOf(window);
     if (index >= 0) {
@@ -180,7 +185,7 @@ class DriftileTransitionsEffect {
       return;
     }
 
-    if (!this.isEligible(window)) {
+    if (!this.isTransitionPresentable(window)) {
       if (this.shouldDeferVisibilityHandoff(window)) {
         this.deferWindowTransition(window, oldGeometry);
       } else {
@@ -577,13 +582,6 @@ class DriftileTransitionsEffect {
     this.storeWindowAnimationState(window, state);
   }
 
-  isEligible(window) {
-    return (
-      this.isTransitionPresentable(window) &&
-      this.isDeferredTransitionEligible(window)
-    );
-  }
-
   isDeferredTransitionEligible(window) {
     return (
       !window.deleted &&
@@ -604,8 +602,7 @@ class DriftileTransitionsEffect {
       window.managed &&
       window.moveable &&
       (window.hasDecoration || !window.keepAbove) &&
-      !this.isShellWindow(window) &&
-      !this.isConfiguredWindowExcluded(window) &&
+      this.isWindowClassEligible(window) &&
       !window.move &&
       !window.resize
     );
@@ -729,31 +726,41 @@ class DriftileTransitionsEffect {
     return bytes;
   }
 
-  isConfiguredWindowExcluded(window) {
-    if (!this.windowClassExclusionsValid) {
-      return true;
-    }
-    if (this.windowClassExclusions.size === 0) {
-      return false;
+  classifyWindowClass(window) {
+    const windowClass = window.windowClass;
+    const cachedClassification = this.windowClassClassifications.get(window);
+    if (
+      cachedClassification !== undefined &&
+      cachedClassification.generation ===
+        this.windowClassClassificationGeneration &&
+      cachedClassification.windowClass === windowClass
+    ) {
+      return cachedClassification;
     }
 
-    const windowClass = window.windowClass;
-    return (
-      typeof windowClass === "string" &&
-      this.windowClassExclusions.has(windowClass)
-    );
+    const stringWindowClass = typeof windowClass === "string";
+    const classification = {
+      excluded:
+        !this.windowClassExclusionsValid ||
+        (stringWindowClass &&
+          this.windowClassExclusions.size > 0 &&
+          this.windowClassExclusions.has(windowClass)),
+      generation: this.windowClassClassificationGeneration,
+      shell:
+        stringWindowClass &&
+        windowClass
+          .trim()
+          .split(/\s+/u)
+          .some((component) => SHELL_WINDOW_CLASSES.has(component)),
+      windowClass,
+    };
+    this.windowClassClassifications.set(window, classification);
+    return classification;
   }
 
-  isShellWindow(window) {
-    const windowClass = window.windowClass;
-    if (typeof windowClass !== "string") {
-      return false;
-    }
-
-    return windowClass
-      .trim()
-      .split(/\s+/u)
-      .some((component) => SHELL_WINDOW_CLASSES.has(component));
+  isWindowClassEligible(window) {
+    const classification = this.classifyWindowClass(window);
+    return !classification.shell && !classification.excluded;
   }
 
   geometryChanged(oldGeometry, newGeometry) {
