@@ -7627,7 +7627,7 @@ describe("RuntimeController", () => {
     expect(decorated.window.noBorder).toBe(false);
   });
 
-  it("retries borderless state while a new window decoration settles", () => {
+  it("bounds borderless retries while a new window decoration settles", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
     const decorated = createTrackedWindow("decorated", output, desktop, {
@@ -7637,12 +7637,15 @@ describe("RuntimeController", () => {
     const scheduler = new ManualScheduler();
     let acceptsBorderless = false;
     let acceptsDecorated = true;
+    let borderWrites = 0;
     let noBorder = false;
 
     Object.defineProperty(decorated.window, "noBorder", {
       configurable: true,
       get: () => noBorder,
       set: (value: boolean) => {
+        borderWrites += 1;
+
         if (value && !acceptsBorderless) {
           return;
         }
@@ -7669,19 +7672,71 @@ describe("RuntimeController", () => {
       scheduleResume: scheduler.schedule,
     });
     const borderState = controller as unknown as {
+      readonly borderlessClaimBackoffs: ReadonlySet<WindowId>;
+      synchronizeWindowBorder(
+        id: WindowId,
+        source: KWinWindow | undefined,
+      ): void;
       readonly windowBorderRestore: ReadonlyMap<WindowId, unknown>;
     };
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const rejectionWarningCount = (): number =>
+      warning.mock.calls.filter(([message]) =>
+        String(message).includes("borderless window request was rejected"),
+      ).length;
 
     expect(controller.start()).toBe(true);
     expect(decorated.window.noBorder).toBe(false);
+    expect(borderWrites).toBe(1);
+    expect(rejectionWarningCount()).toBe(1);
     expect(scheduler.pendingCount).toBe(1);
+    scheduler.flush();
+    expect(decorated.window.noBorder).toBe(false);
+    expect(borderWrites).toBe(2);
+    expect(rejectionWarningCount()).toBe(1);
+    expect(scheduler.pendingCount).toBe(0);
+    expect(borderState.borderlessClaimBackoffs.has(windowId("decorated"))).toBe(
+      true,
+    );
+
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      borderState.synchronizeWindowBorder(
+        windowId("decorated"),
+        decorated.window,
+      );
+    }
+
+    expect(borderWrites).toBe(2);
+    expect(rejectionWarningCount()).toBe(1);
+    expect(scheduler.pendingCount).toBe(0);
+
+    decorated.decorationPolicyChanged.emit();
+    expect(borderWrites).toBe(2);
+    expect(rejectionWarningCount()).toBe(1);
+    expect(scheduler.pendingCount).toBe(0);
+
+    noBorder = true;
+    decorated.decorationPolicyChanged.emit();
+    expect(borderState.borderlessClaimBackoffs.has(windowId("decorated"))).toBe(
+      false,
+    );
+    expect(borderWrites).toBe(2);
+
+    noBorder = false;
+    decorated.decorationPolicyChanged.emit();
+    expect(borderWrites).toBe(3);
+    expect(rejectionWarningCount()).toBe(2);
+    expect(scheduler.pendingCount).toBe(1);
+    scheduler.flush();
+    expect(borderWrites).toBe(4);
+    expect(rejectionWarningCount()).toBe(2);
+    expect(scheduler.pendingCount).toBe(0);
 
     expect(
       controller.setApplicationBorderlessExclusions(
         requiredApplicationBorderlessExclusions("org.example.Decorated"),
       ),
     ).toBe(true);
-    scheduler.flush();
     expect(decorated.window.noBorder).toBe(false);
     expect(scheduler.pendingCount).toBe(0);
 
@@ -7714,6 +7769,7 @@ describe("RuntimeController", () => {
 
     controller.stop();
     expect(decorated.window.noBorder).toBe(false);
+    warning.mockRestore();
   });
 
   it("does not retain a border claim superseded by an exclusion update", () => {

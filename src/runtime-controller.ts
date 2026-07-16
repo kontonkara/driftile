@@ -241,7 +241,6 @@ const FLOATING_WINDOW_MOVE_STEP = 50;
 const MAXIMUM_FLOATING_WINDOW_VISIBLE_EXTENT = 75;
 const MINIMUM_FLOATING_WINDOW_VISIBLE_EXTENT = 10;
 const MAX_CAPACITY_PARK_ATTEMPTS = 20;
-const MAX_BORDERLESS_SETTLEMENT_PROBES = 20;
 const MAX_EXTERNAL_FULLSCREEN_EXTRACTION_ATTEMPTS = 20;
 const MAX_FULLSCREEN_REQUEST_PROBES = 20;
 const MAX_LAYOUT_HYDRATION_PROBES = 1_000;
@@ -981,6 +980,7 @@ export class RuntimeController {
   private applicationInitialMaximized: ApplicationInitialMaximized;
   private applicationTilingExclusions: ApplicationTilingExclusions;
   private readonly automaticFloatingWindows = new Set<WindowId>();
+  private readonly borderlessClaimBackoffs = new Set<WindowId>();
   private readonly borderlessSettlementEnabled: boolean;
   private readonly borderlessSettlementTokens = new Map<WindowId, object>();
   private borderlessContextReconciliationPending = false;
@@ -1658,6 +1658,8 @@ export class RuntimeController {
     }
 
     this.borderlessWindows = enabled;
+    this.borderlessClaimBackoffs.clear();
+    this.borderlessSettlementTokens.clear();
 
     if (!this.started) {
       return;
@@ -1689,6 +1691,8 @@ export class RuntimeController {
     }
 
     this.applicationBorderlessExclusions = exclusions;
+    this.borderlessClaimBackoffs.clear();
+    this.borderlessSettlementTokens.clear();
 
     if (!this.started || !this.borderlessWindows) {
       return true;
@@ -4010,6 +4014,8 @@ export class RuntimeController {
       this.preservedFallbackLayoutState = null;
       this.borderlessContextReconciliationPending = false;
       this.borderlessReconciliationPending = false;
+      this.borderlessClaimBackoffs.clear();
+      this.borderlessSettlementTokens.clear();
       this.interactiveResizeSource = null;
       this.clearPointerMoveIntent();
       this.pointerColumnDropSettlement = null;
@@ -4167,6 +4173,7 @@ export class RuntimeController {
       this.unconfirmedFullscreenTargets.clear();
       this.dirtyContexts.clear();
       this.automaticFloatingWindows.clear();
+      this.borderlessClaimBackoffs.clear();
       this.borderSynchronizationIds.clear();
       this.borderlessSettlementTokens.clear();
       this.floatingWindows.clear();
@@ -4644,6 +4651,8 @@ export class RuntimeController {
   private readonly handleWindowTracked = (id: string): void => {
     const trackedId = windowId(id);
     const source = this.observer.source(id);
+
+    this.resetBorderlessClaimBackoff(trackedId);
 
     if (
       !this.initialWindowDiscoveryComplete ||
@@ -6376,6 +6385,10 @@ export class RuntimeController {
         ? this.trackWindowDesktopFileNameChange(changedId, source)
         : null;
 
+    if (desktopFileNameChange) {
+      this.resetBorderlessClaimBackoff(changedId);
+    }
+
     if (
       source &&
       desktopFileNameChange &&
@@ -6778,6 +6791,7 @@ export class RuntimeController {
     this.initialDestinationPolicyByWindow.delete(managedId);
     this.toggleGeometryTransitions.delete(managedId);
     this.topologyColumnByWindow.delete(managedId);
+    this.borderlessClaimBackoffs.delete(managedId);
     this.borderlessSettlementTokens.delete(managedId);
     this.initialFloatingPolicyByWindow.delete(managedId);
     this.initialFullWidthPolicyByWindow.delete(managedId);
@@ -28080,7 +28094,22 @@ export class RuntimeController {
 
     try {
       if (!source || !this.windowUsesBorderlessMode(source, desktopFileName)) {
+        this.resetBorderlessClaimBackoff(id);
         this.restoreWindowBorder(id);
+        return;
+      }
+
+      let observedBorderless = false;
+
+      try {
+        observedBorderless = source.noBorder === true;
+      } catch {
+        // An unreadable state cannot prove that a rejected request settled.
+      }
+
+      if (observedBorderless) {
+        this.resetBorderlessClaimBackoff(id);
+      } else if (this.borderlessClaimBackoffs.has(id)) {
         return;
       }
 
@@ -28108,7 +28137,6 @@ export class RuntimeController {
 
     const runGeneration = this.runGeneration;
     const token = {};
-    let attempts = 0;
     this.borderlessSettlementTokens.set(id, token);
 
     const probe = (): void => {
@@ -28119,28 +28147,28 @@ export class RuntimeController {
         return;
       }
 
+      this.borderlessSettlementTokens.delete(id);
+
       const source = this.observer.source(id);
 
       if (!source || !this.windowUsesBorderlessMode(source)) {
-        this.borderlessSettlementTokens.delete(id);
+        this.borderlessClaimBackoffs.delete(id);
         return;
       }
 
       if (source.noBorder !== true) {
-        this.claimWindowBorder(id, source);
+        this.claimWindowBorder(id, source, false, true);
+      } else {
+        this.borderlessClaimBackoffs.delete(id);
       }
-
-      attempts += 1;
-
-      if (attempts >= MAX_BORDERLESS_SETTLEMENT_PROBES) {
-        this.borderlessSettlementTokens.delete(id);
-        return;
-      }
-
-      this.scheduleResume(probe);
     };
 
     this.scheduleResume(probe);
+  }
+
+  private resetBorderlessClaimBackoff(id: WindowId): void {
+    this.borderlessClaimBackoffs.delete(id);
+    this.borderlessSettlementTokens.delete(id);
   }
 
   private captureRestoreBaseline(
@@ -28268,7 +28296,16 @@ export class RuntimeController {
     );
   }
 
-  private claimWindowBorder(id: WindowId, source: KWinWindow): boolean {
+  private claimWindowBorder(
+    id: WindowId,
+    source: KWinWindow,
+    scheduleSettlement = true,
+    bypassBackoff = false,
+  ): boolean {
+    if (!bypassBackoff && this.borderlessClaimBackoffs.has(id)) {
+      return false;
+    }
+
     let alreadyOwned: boolean;
     let restore: WindowBorderRestore;
 
@@ -28329,11 +28366,15 @@ export class RuntimeController {
     }
 
     if (applied && remainsEligible) {
+      this.borderlessClaimBackoffs.delete(id);
+
       if (!this.windowBorderRestore.has(id)) {
         this.windowBorderRestore.set(id, restore);
       }
 
-      this.scheduleBorderlessSettlementSafely(id);
+      if (scheduleSettlement) {
+        this.scheduleBorderlessSettlementSafely(id);
+      }
 
       return true;
     }
@@ -28344,7 +28385,7 @@ export class RuntimeController {
       }
 
       this.restoreWindowBorder(id);
-      this.borderlessSettlementTokens.delete(id);
+      this.resetBorderlessClaimBackoff(id);
       return false;
     }
 
@@ -28356,17 +28397,21 @@ export class RuntimeController {
       this.windowBorderRestore.delete(id);
     }
 
-    if (failure !== undefined) {
-      console.warn(
-        `[driftile] borderless window request failed window=${String(id)} error=${failure}`,
-      );
-    } else {
-      console.warn(
-        `[driftile] borderless window request was rejected window=${String(id)}`,
-      );
-    }
+    this.borderlessClaimBackoffs.add(id);
 
-    this.scheduleBorderlessSettlementSafely(id);
+    if (scheduleSettlement) {
+      if (failure !== undefined) {
+        console.warn(
+          `[driftile] borderless window request failed window=${String(id)} error=${failure}`,
+        );
+      } else {
+        console.warn(
+          `[driftile] borderless window request was rejected window=${String(id)}`,
+        );
+      }
+
+      this.scheduleBorderlessSettlementSafely(id);
+    }
 
     return false;
   }
