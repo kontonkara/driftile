@@ -241,6 +241,20 @@ finger count, or natural direction recreates only the enabled gesture handlers
 without restarting KWin. Native X11 treats both enabled options as safe no-ops,
 and neither option adds a shortcut action or default key binding.
 
+## Dynamic virtual desktops
+
+Driftile always maintains one shared empty desktop after the last occupied
+desktop. **Keep an empty virtual desktop before the first occupied desktop**
+adds a separate empty desktop at the beginning and is disabled by default.
+Occupying either boundary creates a replacement at that boundary.
+
+Enabling the option applies live. Disabling it removes only an empty,
+unselected leading desktop created by the current Driftile run; external,
+occupied, and selected desktops remain untouched. While enabled, desktop
+reordering keeps both boundary desktops pinned. Home Manager exposes the option
+as `emptyDesktopAboveFirst`; its default `null` leaves the existing KConfig
+value unmanaged.
+
 ## Window gap
 
 **Window gap** controls spacing between tiled windows and work-area edges in

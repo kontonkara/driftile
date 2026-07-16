@@ -348,9 +348,10 @@ KWin mechanism or geometry write leaves both contexts unchanged.
 Desktop reordering asks KWin to move the currently selected desktop by exactly
 one position in its global list. It does not wrap. Desktop IDs, per-output
 selections, and window memberships remain unchanged. The shared empty tail is
-pinned at the end, so neither it nor another desktop can cross it. On KWin X11
-builds without the reorder method, these actions leave the desktop list and all
-window state unchanged.
+pinned at the end. When the optional leading empty desktop is enabled, it is
+pinned at the beginning. Neither boundary nor another desktop can cross a
+pinned boundary. On KWin X11 builds without the reorder method, these actions
+leave the desktop list and all window state unchanged.
 
 When the floating layer is active, desktop transfer shortcuts move only the
 active floating window and preserve its frame. Modal and transient families

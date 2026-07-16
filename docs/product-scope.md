@@ -69,8 +69,7 @@ The ownership rule is strict:
 - Configurable 1–50 percentage-point step for contextual height decrease and
   increase actions: the active stack member when tiled, or the active manually
   floating window when detached.
-- One settings page groups twenty-one controls into fifteen General and six
-  Applications controls.
+- One settings page groups layout, navigation, and application controls.
 - Output-local commands unless a transfer is explicit.
 - Work-area, size-constraint, fullscreen, minimized-window compatibility, dialog handling, and settled virtual-output recovery.
 - Hard client minimum and maximum bounds with cached detection of silent visible-window changes; unexposed increment and aspect hints do not alter Driftile's tiled model, while applied frames remain subject to KWin.
@@ -78,7 +77,9 @@ The ownership rule is strict:
 - Native maximize-to-edges control through KWin with stack-aware extraction.
 - Settled recovery for output-list, geometry, scale, and work-area changes.
 - Deterministic multi-output capacity eviction with reachable waiting windows and automatic retry.
-- One shared trailing empty virtual desktop, with output-local selection where supported and conservative creation and removal.
+- One shared trailing empty virtual desktop, plus an optional separate leading
+  empty desktop, with output-local selection where supported and conservative
+  creation and removal.
 - Guarded one-step reordering of the currently selected desktop when the KWin scripting backend exposes it.
 - Single-window floating desktop transfer with exact frame and tiled-layout preservation.
 - Single-window floating output transfer with KWin-owned placement and
@@ -537,9 +538,14 @@ Driftile must integrate with, not duplicate:
 - Desktop switching follows KWin's global or per-output virtual-desktop mode while layout ownership remains output-local.
 - Desktop reordering asks KWin to move the currently selected desktop by exactly one global position without wrapping. Desktop IDs, every output's selection, and every window's desktop memberships remain unchanged.
 - If the KWin scripting backend does not expose desktop reordering, the command is a no-op.
-- The shared trailing empty desktop is pinned at the end; it cannot move or be crossed by another desktop.
+- The shared trailing empty desktop is pinned at the end. When the optional
+  leading empty desktop is enabled, it is pinned at the beginning. Neither can
+  move or be crossed by another desktop.
 - If the shared trailing desktop becomes occupied, Driftile appends another through KWin.
-- Driftile removes only a redundant, empty, unselected tail created by its current run; externally created desktops are never removed.
+- If the configured leading desktop becomes occupied, Driftile inserts another
+  through KWin's public desktop API.
+- Driftile removes only redundant, empty, unselected boundary desktops created
+  by its current run; externally created desktops are never removed.
 - A manually floating window remains outside continuous layout geometry
   ownership until toggle-back or guarded direct insertion commits. Its
   directional move and work-area centering shortcuts each perform one guarded

@@ -203,7 +203,9 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Consumes the immediate right column's top member or expels the active column's bottom member through rollback-safe stack edits while retaining focus in the active column.
 - Resolves directional output neighbors from logical output geometry and transfers the active column atomically between contexts; secondary actions transfer one tiled window.
 - Applies desktop and output mechanisms member-by-member with the active member last, keeps it visible through cross-desktop output moves, commits both core contexts together, and compensates every owned field and frame on failure.
-- Maintains one shared trailing empty desktop and performs guarded one-step global reorder requests through a KWin lifecycle adapter.
+- Maintains one shared trailing empty desktop, optionally maintains a separate
+  leading empty desktop, and performs guarded one-step global reorder requests
+  through a KWin lifecycle adapter.
 - Resolves numbered desktop targets against KWin's global list, clamps to the shared empty tail, and reuses either the transactional whole-column or single-window transfer path.
 - Focuses adjacent desktops on the active output, with a global fallback and no wrapping.
 - Accepts a desktop reorder only when KWin produces the exact expected same-ID permutation. The operation leaves selections and window memberships unchanged, and the shared empty tail remains pinned.
@@ -627,9 +629,11 @@ inspected safely within the codec bound.
 - Permanently clear a context's original-frame restore baselines for the current run when its geometry fingerprint changes or its output object is replaced. Returning to the old geometry does not revive them.
 - Treat external focus and window output or desktop changes as authoritative events.
 - Reorder only the desktop selected on the active output, by one global position without wrapping, and reject unavailable, failed, or unexpected KWin results.
-- Never move the shared trailing empty desktop or allow another desktop to cross it.
-- Create a desktop only after two matching occupancy snapshots show the shared tail is occupied.
-- Remove only a current-run-owned tail after two matching snapshots show it and its predecessor are empty and no output selects it.
+- Never move a configured boundary desktop or allow another desktop to cross it.
+- Create a desktop only after two matching occupancy snapshots show a required
+  boundary is occupied.
+- Remove only redundant, current-run-owned boundary desktops after two matching
+  snapshots show they are empty and no output selects them.
 
 ## Engineering constraints
 
@@ -778,6 +782,8 @@ inspected safely within the codec bound.
 - Verify window-height preset bounds, canonical ordering, exact blank defaults,
   custom proportional targets, pixel-grid snapping, and no-write live changes.
 - Verify one-step desktop reordering in both directions, all four default shortcut handlers, boundary and tail no-ops, unavailable or rejected mechanisms, wrong permutations, and the pinned tail. Unit and multi-output integration coverage preserve every output selection; integration and visible-VM coverage preserve live IDs, memberships, focus, and frames.
-- Verify shared trailing-desktop creation, guarded removal, silent mutation rejection, and preservation of external desktops.
+- Verify shared trailing and optional leading desktop creation, guarded
+  removal, exact insertion confirmation, silent mutation rejection, and
+  preservation of external desktops.
 - Exercise live output reconfiguration against an isolated real KWin session.
 - Run integration smoke tests in an isolated KWin session or NixOS VM.

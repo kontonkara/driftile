@@ -11,7 +11,7 @@ virtual desktops; Driftile provides the layout and interaction policy.
 
 - Horizontal scrollable columns with stacked and tabbed window layouts.
 - Independent retained layouts for each output, virtual desktop, and activity,
-  with one shared trailing empty desktop.
+  with a shared trailing empty desktop and an optional leading empty desktop.
 - Keyboard and pointer control for focus, movement, reordering, resizing,
   drag-and-drop, centering, and transfers between outputs or desktops.
 - Full-width columns, manual floating, native fullscreen and maximize support,

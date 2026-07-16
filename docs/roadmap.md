@@ -1551,7 +1551,10 @@ No other feature belongs to 1.34.0.
   stack, with live enable and no forced movement when disabled.
 - Accept fractional `0`–`64` logical-pixel gaps through KConfig and Home
   Manager; the UI uses a `0.5` step without rejecting other in-range values.
-- Keep both behaviors inside the existing geometry solver and physical-pixel
+- Add an opt-in empty virtual desktop before the first occupied desktop while
+  preserving the shared trailing empty desktop, safe ownership, and pinned
+  reorder boundaries.
+- Keep the geometry behaviors inside the existing solver and physical-pixel
   snapping boundary. Floating windows, multi-column contexts, and logical
   persistence remain unchanged.
 
