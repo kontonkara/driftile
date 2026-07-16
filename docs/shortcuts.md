@@ -43,6 +43,17 @@ existing stack, one-way tiled/floating layer focus, contextual width reset, and
 reverse height preset cycling are registered without default keys.
 Assign them in **System Settings > Keyboard > Shortcuts** if needed.
 
+Explicit state actions are also unbound. `driftile_move_window_to_floating`
+and `driftile_move_window_to_tiling` move only when the active window is in the
+other managed layer. Repeating either action is a no-op. Automatically excluded
+windows remain outside both paths.
+
+`driftile_center_window` uses the same contextual centering as `Meta+C`.
+`driftile_switch_preset_window_width` and
+`driftile_switch_preset_window_width_back` cycle the same configured width
+presets; for a tiled member, Driftile's one-width-per-column model resizes its
+containing column.
+
 **Focus last-used desktop** (`driftile_focus_last_used_desktop`) is also
 unbound. It toggles between the current desktop and the most recently selected
 distinct desktop on the active output. Histories stay isolated per output when

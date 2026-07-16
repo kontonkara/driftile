@@ -59,6 +59,10 @@ across upgrades, including an explicitly unbound action, so review it in
 screen edge and requires the main Driftile KWin script because that script
 publishes the authoritative layout snapshot.
 
+`driftile_open_overview` and `driftile_close_overview` are separate unbound
+actions for one-way automation. Opening an active or pending overview and
+closing an inactive overview are no-ops; `Meta+O` keeps its toggle behavior.
+
 ## Touchpad gesture
 
 The overview effect registers one up/down touchpad pair while its gesture

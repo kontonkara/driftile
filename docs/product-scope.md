@@ -546,6 +546,10 @@ Driftile must integrate with, not duplicate:
   ownership until toggle-back or guarded direct insertion commits. Its
   directional move and work-area centering shortcuts each perform one guarded
   frame transaction.
+- Explicit floating and tiling actions reuse the toggle transaction only when
+  the active managed window belongs to the opposite layer. Repeating the
+  requested state, targeting an automatically excluded window, or failing a
+  guard performs no write or ownership change.
 - Toggle-back restores a surviving anchored slot when possible. Guarded direct
   insertion attaches to the selected target stack. Both capture the latest
   floating frame as the next safe restore baseline.
@@ -622,3 +626,6 @@ Driftile must integrate with, not duplicate:
   layout or persistence write.
 - A width-step change performs no layout, frame, viewport, or focus write. It affects only later explicit decrease and increase actions; reset, presets, full width, and available-width expansion remain independent.
 - A height-step change performs no layout, frame, viewport, or focus write. It affects only later explicit decrease and increase actions; reset and height presets remain independent.
+- The optional overview keeps one toggle action and adds separate unbound open
+  and close actions. Each one is idempotent across inactive, loading, and active
+  states and changes no layout or persistence state.

@@ -1419,6 +1419,13 @@ left-to-right, wraps at both ends, and rejects missing or invalid targets.
 Transfers reuse the atomic tiled and floating paths; bundled bindings remain
 unchanged.
 
+Seven explicit state actions remain unbound: direct floating or tiling
+placement, active-window centering, forward or reverse active-window width
+presets, and one-way overview open or close. Layer placement is idempotent and
+reuses the existing guarded ownership transactions. Tiled window-width actions
+follow the one-width-per-column model, while the overview actions preserve the
+existing `Meta+O` toggle and optional package boundary.
+
 ## Post-v1
 
 Add interaction and presentation features outside the frozen v1 scope without
