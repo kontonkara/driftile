@@ -7911,6 +7911,16 @@ describe("RuntimeController", () => {
     ]) {
       expect(controller.setDefaultColumnWidthPercent(invalid)).toBe(false);
     }
+    for (const invalid of [
+      { kind: "fixed" as const, value: 0 },
+      { kind: "fixed" as const, value: 320.5 },
+      { kind: "fixed" as const, value: 16_385 },
+      { kind: "proportion" as const, value: 0.09 },
+      { kind: "proportion" as const, value: 1.01 },
+      { kind: "proportion" as const, value: Number.NaN },
+    ]) {
+      expect(controller.setDefaultColumnWidth(invalid)).toBe(false);
+    }
 
     expect(controller.setDefaultColumnWidthPercent(70)).toBe(true);
     expect(controller.setDefaultColumnWidthPercent(80)).toBe(true);
@@ -7944,15 +7954,23 @@ describe("RuntimeController", () => {
       value: 0.4,
     });
 
+    expect(
+      controller.setDefaultColumnWidth({ kind: "fixed", value: 320 }),
+    ).toBe(true);
+    expect(
+      controller.setDefaultColumnWidth({ kind: "fixed", value: 320 }),
+    ).toBe(false);
+    scheduler.flush();
+    expect(state.defaultColumnWidth).toEqual({ kind: "fixed", value: 320 });
+    expect(window.window.frameGeometry).toEqual(settledFrame);
+    expect(window.writeCount).toBe(settledWrites);
+
     expect(controller.setDefaultColumnWidthPercent(30)).toBe(true);
     expect(scheduler.pendingCount).toBe(1);
     controller.stop();
     expect(state.pendingDefaultColumnWidth).toBeNull();
     scheduler.flush();
-    expect(state.defaultColumnWidth).toEqual({
-      kind: "proportion",
-      value: 0.1,
-    });
+    expect(state.defaultColumnWidth).toEqual({ kind: "fixed", value: 320 });
   });
 
   it("applies exact application width overrides only to new columns", () => {
@@ -7971,7 +7989,11 @@ describe("RuntimeController", () => {
     const browser = createTrackedWindow("browser", output, desktop, {
       desktopFileName: "org.example.Browser",
     });
-    const targetPeer = createTrackedWindow("target-peer", targetOutput, desktop);
+    const targetPeer = createTrackedWindow(
+      "target-peer",
+      targetOutput,
+      desktop,
+    );
     const fixture = createWorkspace(
       output,
       desktop,
@@ -8508,7 +8530,9 @@ describe("RuntimeController", () => {
     const writes = windows.map(({ writeCount }) => writeCount);
     const activationCount = fixture.activationCount;
 
-    expect(controller.setDefaultColumnWidthPercent(40)).toBe(true);
+    expect(
+      controller.setDefaultColumnWidth({ kind: "fixed", value: 360 }),
+    ).toBe(true);
     expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
     flushManualScheduler(scheduler);
 
@@ -8571,7 +8595,9 @@ describe("RuntimeController", () => {
     );
     fixture.workspace.activeWindow = active.window;
     flushManualScheduler(scheduler);
-    expect(controller.setDefaultColumnWidthPercent(40)).toBe(true);
+    expect(
+      controller.setDefaultColumnWidth({ kind: "fixed", value: 321 }),
+    ).toBe(true);
     flushManualScheduler(scheduler);
     const before = layout.snapshot(
       outputId(output.name),
@@ -8615,12 +8641,12 @@ describe("RuntimeController", () => {
 
     expect(controller.resetColumnWidth()).toBe(true);
     expect(activeColumnWidth(controller, output, desktop)).toEqual({
-      kind: "proportion",
-      value: 0.4,
+      kind: "fixed",
+      value: 321,
     });
     expect([first, active].map(({ window }) => window.frameGeometry)).toEqual([
-      { height: 385, width: 386, x: 10, y: 10 },
-      { height: 385, width: 386, x: 10, y: 405 },
+      { height: 385, width: 321, x: 10, y: 10 },
+      { height: 385, width: 321, x: 10, y: 405 },
     ]);
     expect(controller.resetColumnWidth()).toBe(false);
     expect(fixture.workspace.activeWindow).toBe(active.window);
@@ -8648,7 +8674,9 @@ describe("RuntimeController", () => {
 
     expect(controller.start()).toBe(true);
     const existingWrites = existing.writeCount;
-    expect(controller.setDefaultColumnWidthPercent(40)).toBe(true);
+    expect(
+      controller.setDefaultColumnWidth({ kind: "fixed", value: 320 }),
+    ).toBe(true);
     flushManualScheduler(scheduler);
     fixture.windowAdded.emit(added.window);
     flushManualScheduler(scheduler);
@@ -8660,7 +8688,7 @@ describe("RuntimeController", () => {
     );
     expect(snapshot.columns.map((column) => column.width)).toEqual([
       { kind: "proportion", value: 0.5 },
-      { kind: "proportion", value: 0.4 },
+      { kind: "fixed", value: 320 },
     ]);
     expect(existing.window.frameGeometry).toEqual({
       height: 780,
@@ -8671,7 +8699,7 @@ describe("RuntimeController", () => {
     expect(existing.writeCount).toBe(existingWrites);
     expect(added.window.frameGeometry).toEqual({
       height: 780,
-      width: 386,
+      width: 320,
       x: 505,
       y: 10,
     });
@@ -8717,7 +8745,9 @@ describe("RuntimeController", () => {
     expect(waiting.writeCount).toBe(0);
     const existingWrites = existing.writeCount;
 
-    expect(controller.setDefaultColumnWidthPercent(40)).toBe(true);
+    expect(
+      controller.setDefaultColumnWidth({ kind: "fixed", value: 321 }),
+    ).toBe(true);
     flushManualScheduler(scheduler);
 
     const snapshot = runtimeLayout(controller).snapshot(
@@ -8729,7 +8759,7 @@ describe("RuntimeController", () => {
     expect(state.waitingWindowContexts.has(waitingId)).toBe(false);
     expect(snapshot.columns.map((column) => column.width)).toEqual([
       { kind: "proportion", value: 0.6 },
-      { kind: "proportion", value: 0.4 },
+      { kind: "fixed", value: 321 },
     ]);
     expect(existing.window.frameGeometry).toEqual({
       height: 780,
@@ -8740,7 +8770,7 @@ describe("RuntimeController", () => {
     expect(existing.writeCount).toBe(existingWrites);
     expect(waiting.window.frameGeometry).toEqual({
       height: 780,
-      width: 386,
+      width: 321,
       x: 604,
       y: 10,
     });
@@ -8789,7 +8819,9 @@ describe("RuntimeController", () => {
     const writes = window.writeCount;
     output.geometryChanged.emit();
     expect(state.topologyStabilizing).toBe(true);
-    expect(controller.setDefaultColumnWidthPercent(40)).toBe(true);
+    expect(
+      controller.setDefaultColumnWidth({ kind: "fixed", value: 321 }),
+    ).toBe(true);
     expect(workScheduler.pendingCount).toBe(1);
 
     workScheduler.flush();
@@ -8798,8 +8830,8 @@ describe("RuntimeController", () => {
       value: 0.5,
     });
     expect(state.pendingDefaultColumnWidth).toEqual({
-      kind: "proportion",
-      value: 0.4,
+      kind: "fixed",
+      value: 321,
     });
     expect(window.window.frameGeometry).toEqual(settledFrame);
     expect(window.writeCount).toBe(writes);
@@ -8807,8 +8839,8 @@ describe("RuntimeController", () => {
     flushTopologyRecovery(resumeScheduler, workScheduler);
     expect(state.topologyStabilizing).toBe(false);
     expect(state.defaultColumnWidth).toEqual({
-      kind: "proportion",
-      value: 0.4,
+      kind: "fixed",
+      value: 321,
     });
     expect(state.pendingDefaultColumnWidth).toBeNull();
     expect(window.window.frameGeometry).toEqual(settledFrame);
@@ -40075,7 +40107,12 @@ describe("RuntimeController desktop transfers", () => {
     expect(transfer.moved.desktopWriteCount).toBe(desktopWrites);
     expect(transfer.moved.window.frameGeometry).toEqual(floatingFrame);
 
-    expect(transfer.controller.setDefaultColumnWidthPercent(70)).toBe(true);
+    expect(
+      transfer.controller.setDefaultColumnWidth({
+        kind: "fixed",
+        value: 321,
+      }),
+    ).toBe(true);
     expect(transfer.controller.toggleFloating()).toBe(true);
     expect(transfer.controller.floatingCount).toBe(0);
     expect(
@@ -40105,7 +40142,7 @@ describe("RuntimeController desktop transfers", () => {
         .columns.map((column) => column.width),
     ).toEqual([
       { kind: "proportion", value: 0.5 },
-      { kind: "proportion", value: 0.7 },
+      { kind: "fixed", value: 321 },
     ]);
   });
 

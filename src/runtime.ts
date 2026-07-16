@@ -1,4 +1,5 @@
 import type { Rect } from "./core/geometry";
+import type { ColumnWidth } from "./core/layout-engine";
 import type { KWinWorkspace } from "./platform/kwin/api";
 import type { KWinRectFactory } from "./platform/kwin/geometry-adapter";
 import { RuntimeController } from "./runtime-controller";
@@ -108,6 +109,7 @@ export function init(
     applicationTilingExclusions: settings.applicationTilingExclusions,
     borderlessWindows: settings.borderlessWindows,
     clientAreaOption,
+    columnWidth: defaultColumnWidthForSettings(settings),
     createRect,
     defaultColumnPresentation: settings.defaultColumnPresentation,
     emptyDesktopAboveFirst: settings.emptyDesktopAboveFirst,
@@ -126,9 +128,6 @@ export function init(
       ? {}
       : { onLayoutStateChanged: layoutPersistence.onStateChanged }),
   });
-  nextController.setDefaultColumnWidthPercent(
-    settings.defaultColumnWidthPercent,
-  );
   nextController.setAlwaysCenterSingleColumn(settings.alwaysCenterSingleColumn);
   nextController.setCenterFocusedColumn(settings.centerFocusedColumn);
   nextController.setCenterFocusedColumnOnOverflow(
@@ -203,7 +202,7 @@ export function applySettings(settingsSnapshot: unknown): boolean {
     settings.centerFocusedColumnOnOverflow,
   );
   controller.setDefaultColumnPresentation(settings.defaultColumnPresentation);
-  controller.setDefaultColumnWidthPercent(settings.defaultColumnWidthPercent);
+  controller.setDefaultColumnWidth(defaultColumnWidthForSettings(settings));
   controller.setEmptyDesktopAboveFirst(settings.emptyDesktopAboveFirst);
   controller.setColumnWidthPresets(settings.columnWidthPresets.presets);
   controller.setColumnWidthStepPercent(settings.columnWidthStepPercent);
@@ -243,6 +242,14 @@ function decodeSettings(value: unknown): DriftileSettings | null {
   }
 
   return settings;
+}
+
+function defaultColumnWidthForSettings(
+  settings: DriftileSettings,
+): ColumnWidth {
+  return settings.defaultColumnWidthPixels > 0
+    ? { kind: "fixed", value: settings.defaultColumnWidthPixels }
+    : { kind: "proportion", value: settings.defaultColumnWidthPercent / 100 };
 }
 
 function writableLayoutStateSink(

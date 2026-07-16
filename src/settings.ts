@@ -50,13 +50,15 @@ import {
 
 const MIN_GAP = 0;
 const MAX_GAP = 64;
+const MIN_DEFAULT_COLUMN_WIDTH_PIXELS = 0;
+const MAX_DEFAULT_COLUMN_WIDTH_PIXELS = 16_384;
 const MIN_DEFAULT_COLUMN_WIDTH_PERCENT = 10;
 const MAX_DEFAULT_COLUMN_WIDTH_PERCENT = 100;
 const MIN_RESIZE_STEP_PERCENT = 1;
 const MAX_RESIZE_STEP_PERCENT = 50;
 const MIN_TOUCHPAD_NAVIGATION_FINGER_COUNT = 3;
 const MAX_TOUCHPAD_NAVIGATION_FINGER_COUNT = 5;
-const SETTINGS_FIELD_COUNT = 23;
+const SETTINGS_FIELD_COUNT = 24;
 
 export interface DriftileSettings {
   readonly applicationBorderlessExclusions: ApplicationBorderlessExclusions;
@@ -73,6 +75,7 @@ export interface DriftileSettings {
   readonly columnWidthStepPercent: number;
   readonly defaultColumnPresentation: ColumnPresentation;
   readonly defaultColumnWidthPercent: number;
+  readonly defaultColumnWidthPixels: number;
   readonly emptyDesktopAboveFirst: boolean;
   readonly gap: number;
   readonly showTabIndicator: boolean;
@@ -99,6 +102,7 @@ export const DEFAULT_DRIFTILE_SETTINGS: DriftileSettings = Object.freeze({
   columnWidthStepPercent: 10,
   defaultColumnPresentation: "stacked",
   defaultColumnWidthPercent: 33,
+  defaultColumnWidthPixels: 0,
   emptyDesktopAboveFirst: false,
   gap: 16,
   showTabIndicator: true,
@@ -135,6 +139,7 @@ export function decodeDriftileSettings(
     !owns(candidate, "columnWidthStepPercent") ||
     !owns(candidate, "defaultColumnPresentation") ||
     !owns(candidate, "defaultColumnWidthPercent") ||
+    !owns(candidate, "defaultColumnWidthPixels") ||
     !owns(candidate, "emptyDesktopAboveFirst") ||
     !owns(candidate, "gap") ||
     !owns(candidate, "showTabIndicator") ||
@@ -177,6 +182,7 @@ export function decodeDriftileSettings(
   const columnWidthStepPercent = candidate["columnWidthStepPercent"];
   const defaultColumnPresentation = candidate["defaultColumnPresentation"];
   const defaultColumnWidthPercent = candidate["defaultColumnWidthPercent"];
+  const defaultColumnWidthPixels = candidate["defaultColumnWidthPixels"];
   const emptyDesktopAboveFirst = candidate["emptyDesktopAboveFirst"];
   const gap = candidate["gap"];
   const showTabIndicator = candidate["showTabIndicator"];
@@ -212,6 +218,11 @@ export function decodeDriftileSettings(
       defaultColumnWidthPercent,
       MIN_DEFAULT_COLUMN_WIDTH_PERCENT,
       MAX_DEFAULT_COLUMN_WIDTH_PERCENT,
+    ) ||
+    !isBoundedInteger(
+      defaultColumnWidthPixels,
+      MIN_DEFAULT_COLUMN_WIDTH_PIXELS,
+      MAX_DEFAULT_COLUMN_WIDTH_PIXELS,
     ) ||
     typeof emptyDesktopAboveFirst !== "boolean" ||
     !isBoundedNumber(gap, MIN_GAP, MAX_GAP) ||
@@ -249,6 +260,7 @@ export function decodeDriftileSettings(
     columnWidthStepPercent,
     defaultColumnPresentation,
     defaultColumnWidthPercent,
+    defaultColumnWidthPixels,
     emptyDesktopAboveFirst,
     gap,
     showTabIndicator,
@@ -302,6 +314,7 @@ export function sameDriftileSettings(
     left.columnWidthStepPercent === right.columnWidthStepPercent &&
     left.defaultColumnPresentation === right.defaultColumnPresentation &&
     left.defaultColumnWidthPercent === right.defaultColumnWidthPercent &&
+    left.defaultColumnWidthPixels === right.defaultColumnWidthPixels &&
     left.emptyDesktopAboveFirst === right.emptyDesktopAboveFirst &&
     left.gap === right.gap &&
     left.showTabIndicator === right.showTabIndicator &&

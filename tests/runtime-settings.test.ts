@@ -23,15 +23,20 @@ interface DeliveredSettings {
   readonly centerFocusedColumnOnOverflow: boolean;
   readonly columnWidthPresets: readonly ColumnWidth[];
   readonly columnWidthStepPercent: number;
+  readonly defaultColumnWidth: ColumnWidth;
   readonly defaultColumnPresentation: "stacked" | "tabbed";
-  readonly defaultColumnWidthPercent: number;
   readonly emptyDesktopAboveFirst: boolean;
   readonly gap: number;
   readonly windowHeightPresets: readonly WindowHeightPresetCycleEntry[];
   readonly windowHeightStepPercent: number;
 }
 
-type RuntimeSettingsInput = Record<keyof DeliveredSettings, unknown> & {
+type RuntimeSettingsInput = Record<
+  Exclude<keyof DeliveredSettings, "defaultColumnWidth">,
+  unknown
+> & {
+  readonly defaultColumnWidthPercent: unknown;
+  readonly defaultColumnWidthPixels: unknown;
   readonly showTabIndicator: unknown;
   readonly touchpadNaturalScroll: unknown;
   readonly touchpadNavigation: unknown;
@@ -47,6 +52,7 @@ interface RuntimeControllerOptions {
   readonly applicationInitialFloating: ApplicationInitialFloating;
   readonly applicationTilingExclusions: ApplicationTilingExclusions;
   readonly borderlessWindows: boolean;
+  readonly columnWidth: ColumnWidth;
   readonly defaultColumnPresentation: "stacked" | "tabbed";
   readonly emptyDesktopAboveFirst: boolean;
   readonly gap: number;
@@ -87,8 +93,8 @@ class RuntimeControllerDouble {
       centerFocusedColumnOnOverflow: false,
       columnWidthPresets: [],
       columnWidthStepPercent: 1,
+      defaultColumnWidth: { ...options.columnWidth },
       defaultColumnPresentation: options.defaultColumnPresentation,
-      defaultColumnWidthPercent: 10,
       emptyDesktopAboveFirst: options.emptyDesktopAboveFirst,
       gap: options.gap,
       windowHeightPresets: [],
@@ -226,9 +232,9 @@ class RuntimeControllerDouble {
     return true;
   }
 
-  setDefaultColumnWidthPercent(value: number): boolean {
-    this.calls.push("defaultColumnWidthPercent");
-    this.state = { ...this.state, defaultColumnWidthPercent: value };
+  setDefaultColumnWidth(value: ColumnWidth): boolean {
+    this.calls.push("defaultColumnWidth");
+    this.state = { ...this.state, defaultColumnWidth: { ...value } };
     return true;
   }
 
@@ -328,6 +334,10 @@ describe("runtime settings delivery", () => {
     expect(controller.deliveredSettings.windowHeightPresets).toEqual(
       heightPresetCycle([30, "640px", 60, "960px", 90]),
     );
+    expect(controller.deliveredSettings.defaultColumnWidth).toEqual({
+      kind: "proportion",
+      value: 0.5,
+    });
     expect(controller.deliveredSettings.alwaysCenterSingleColumn).toBe(true);
     expect(controller.deliveredSettings.emptyDesktopAboveFirst).toBe(true);
     expect(runtime.getTouchpadWorkspaceNavigation()).toBe(false);
@@ -358,6 +368,7 @@ describe("runtime settings delivery", () => {
       columnWidthStepPercent: 13,
       defaultColumnPresentation: "tabbed",
       defaultColumnWidthPercent: 65,
+      defaultColumnWidthPixels: 720,
       emptyDesktopAboveFirst: false,
       gap: 7.5,
       touchpadNavigation: true,
@@ -380,8 +391,8 @@ describe("runtime settings delivery", () => {
       centerFocusedColumnOnOverflow: true,
       columnWidthPresets: columnWidthPolicies([20, "640px", 50, "1280px", 80]),
       columnWidthStepPercent: 13,
+      defaultColumnWidth: { kind: "fixed", value: 720 },
       defaultColumnPresentation: "tabbed",
-      defaultColumnWidthPercent: 65,
       emptyDesktopAboveFirst: false,
       gap: 7.5,
       windowHeightPresets: heightPresetCycle([25, "480px", 50, "960px", 75]),
@@ -405,7 +416,7 @@ describe("runtime settings delivery", () => {
       "centerFocusedColumn",
       "centerFocusedColumnOnOverflow",
       "defaultColumnPresentation",
-      "defaultColumnWidthPercent",
+      "defaultColumnWidth",
       "emptyDesktopAboveFirst",
       "columnWidthPresets",
       "columnWidthStepPercent",
@@ -483,7 +494,7 @@ describe("runtime settings delivery", () => {
       "centerFocusedColumn",
       "centerFocusedColumnOnOverflow",
       "defaultColumnPresentation",
-      "defaultColumnWidthPercent",
+      "defaultColumnWidth",
       "emptyDesktopAboveFirst",
       "columnWidthPresets",
       "columnWidthStepPercent",
@@ -524,6 +535,7 @@ function settings(
     columnWidthStepPercent: 10,
     defaultColumnPresentation: "stacked",
     defaultColumnWidthPercent: 50,
+    defaultColumnWidthPixels: 0,
     emptyDesktopAboveFirst: false,
     gap: 16,
     showTabIndicator: true,
@@ -553,6 +565,7 @@ function snapshot(settingsValue: DeliveredSettings): DeliveredSettings {
     columnWidthPresets: settingsValue.columnWidthPresets.map((value) => ({
       ...value,
     })),
+    defaultColumnWidth: { ...settingsValue.defaultColumnWidth },
     windowHeightPresets: settingsValue.windowHeightPresets.map((value) => ({
       policy: { ...value.policy },
       stateIndex: value.stateIndex,

@@ -103,6 +103,10 @@ class RuntimeControllerDouble {
     return true;
   }
 
+  setDefaultColumnWidth(): boolean {
+    return true;
+  }
+
   setDefaultColumnPresentation(): boolean {
     return true;
   }
@@ -405,6 +409,7 @@ function settings(
     columnWidthStepPercent: 10,
     defaultColumnPresentation: "stacked",
     defaultColumnWidthPercent: 50,
+    defaultColumnWidthPixels: 0,
     emptyDesktopAboveFirst: false,
     gap: 16,
     showTabIndicator: true,

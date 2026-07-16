@@ -162,8 +162,10 @@ const DEFAULT_COLUMN_WIDTH_PERCENT = 50;
 const DEFAULT_COLUMN_WIDTH_STEP_PERCENT = 10;
 const DEFAULT_WINDOW_HEIGHT_STEP_PERCENT = 10;
 const MAX_DEFAULT_COLUMN_WIDTH_PERCENT = 100;
+const MAX_DEFAULT_COLUMN_WIDTH_PIXELS = 16_384;
 const MAX_RESIZE_STEP_PERCENT = 50;
 const MIN_DEFAULT_COLUMN_WIDTH_PERCENT = 10;
+const MIN_DEFAULT_COLUMN_WIDTH_PIXELS = 1;
 const MIN_RESIZE_STEP_PERCENT = 1;
 const MAX_POINTER_EXTERNAL_CONTEXT_PROBES = 20;
 const MAX_POINTER_COLUMN_DROP_SETTLEMENT_PROBES = 20;
@@ -1741,31 +1743,39 @@ export class RuntimeController {
       return false;
     }
 
-    const width: ColumnWidth = {
+    return this.setDefaultColumnWidth({
       kind: "proportion",
       value: percent / 100,
-    };
+    });
+  }
+
+  setDefaultColumnWidth(width: ColumnWidth): boolean {
+    const normalized = normalizeDefaultColumnWidth(width);
+
+    if (!normalized) {
+      return false;
+    }
 
     if (
       sameColumnWidth(
         this.pendingDefaultColumnWidth ?? this.defaultColumnWidth,
-        width,
+        normalized,
       )
     ) {
       return false;
     }
 
-    if (sameColumnWidth(this.defaultColumnWidth, width)) {
+    if (sameColumnWidth(this.defaultColumnWidth, normalized)) {
       this.pendingDefaultColumnWidth = null;
       return true;
     }
 
     if (!this.started) {
-      this.defaultColumnWidth = width;
+      this.defaultColumnWidth = normalized;
       return true;
     }
 
-    this.pendingDefaultColumnWidth = width;
+    this.pendingDefaultColumnWidth = normalized;
     this.scheduleDeferredRuntimeWork();
     return true;
   }
@@ -29097,6 +29107,27 @@ function layoutContextSnapshotsEqual(
 
 function validDesktopIndex(index: number): boolean {
   return Number.isInteger(index) && index > 0;
+}
+
+function normalizeDefaultColumnWidth(
+  value: ColumnWidth | undefined,
+): ColumnWidth | null {
+  if (!value || !Number.isFinite(value.value)) {
+    return null;
+  }
+
+  if (value.kind === "fixed") {
+    return Number.isInteger(value.value) &&
+      value.value >= MIN_DEFAULT_COLUMN_WIDTH_PIXELS &&
+      value.value <= MAX_DEFAULT_COLUMN_WIDTH_PIXELS
+      ? { kind: "fixed", value: value.value }
+      : null;
+  }
+
+  return value.value >= MIN_DEFAULT_COLUMN_WIDTH_PERCENT / 100 &&
+    value.value <= MAX_DEFAULT_COLUMN_WIDTH_PERCENT / 100
+    ? { kind: "proportion", value: value.value }
+    : null;
 }
 
 function normalizeDefaultColumnWidthPercent(value: number): number | null {

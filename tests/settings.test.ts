@@ -92,6 +92,7 @@ const validSettings: DriftileSettings = {
   columnWidthStepPercent: 25,
   defaultColumnPresentation: "tabbed",
   defaultColumnWidthPercent: 75,
+  defaultColumnWidthPixels: 960,
   emptyDesktopAboveFirst: true,
   gap: 32.5,
   showTabIndicator: false,
@@ -120,6 +121,7 @@ const validSettingsInput = {
   columnWidthStepPercent: validSettings.columnWidthStepPercent,
   defaultColumnPresentation: validSettings.defaultColumnPresentation,
   defaultColumnWidthPercent: validSettings.defaultColumnWidthPercent,
+  defaultColumnWidthPixels: validSettings.defaultColumnWidthPixels,
   emptyDesktopAboveFirst: validSettings.emptyDesktopAboveFirst,
   gap: validSettings.gap,
   showTabIndicator: validSettings.showTabIndicator,
@@ -141,6 +143,7 @@ describe("Driftile settings", () => {
       columnWidthStepPercent: 10,
       defaultColumnPresentation: "stacked",
       defaultColumnWidthPercent: 33,
+      defaultColumnWidthPixels: 0,
       emptyDesktopAboveFirst: false,
       gap: 16,
       showTabIndicator: true,
@@ -198,6 +201,7 @@ describe("Driftile settings", () => {
       columnWidthStepPercent: validSettings.columnWidthStepPercent,
       defaultColumnPresentation: validSettings.defaultColumnPresentation,
       defaultColumnWidthPercent: validSettings.defaultColumnWidthPercent,
+      defaultColumnWidthPixels: validSettings.defaultColumnWidthPixels,
       emptyDesktopAboveFirst: validSettings.emptyDesktopAboveFirst,
       gap: validSettings.gap,
       showTabIndicator: validSettings.showTabIndicator,
@@ -270,6 +274,7 @@ describe("Driftile settings", () => {
       columnWidthStepPercent: 1,
       defaultColumnPresentation: "stacked",
       defaultColumnWidthPercent: 10,
+      defaultColumnWidthPixels: 0,
       emptyDesktopAboveFirst: false,
       gap: 0,
       showTabIndicator: false,
@@ -295,6 +300,7 @@ describe("Driftile settings", () => {
       columnWidthStepPercent: 50,
       defaultColumnPresentation: "tabbed",
       defaultColumnWidthPercent: 100,
+      defaultColumnWidthPixels: 16_384,
       emptyDesktopAboveFirst: true,
       gap: 64,
       showTabIndicator: true,
@@ -341,6 +347,7 @@ describe("Driftile settings", () => {
       columnWidthStepPercent: settings.columnWidthStepPercent,
       defaultColumnPresentation: settings.defaultColumnPresentation,
       defaultColumnWidthPercent: settings.defaultColumnWidthPercent,
+      defaultColumnWidthPixels: settings.defaultColumnWidthPixels,
       emptyDesktopAboveFirst: settings.emptyDesktopAboveFirst,
       gap: settings.gap,
       showTabIndicator: settings.showTabIndicator,
@@ -445,6 +452,15 @@ describe("Driftile settings", () => {
     ["a fractional default width", { defaultColumnWidthPercent: 50.5 }],
     ["a default width below its range", { defaultColumnWidthPercent: 9 }],
     ["a default width above its range", { defaultColumnWidthPercent: 101 }],
+    ["a non-numeric fixed default width", { defaultColumnWidthPixels: "0" }],
+    ["a non-finite fixed default width", { defaultColumnWidthPixels: NaN }],
+    ["an infinite fixed default width", { defaultColumnWidthPixels: Infinity }],
+    ["a fractional fixed default width", { defaultColumnWidthPixels: 0.5 }],
+    ["a fixed default width below its range", { defaultColumnWidthPixels: -1 }],
+    [
+      "a fixed default width above its range",
+      { defaultColumnWidthPixels: 16_385 },
+    ],
     ["a non-numeric width step", { columnWidthStepPercent: "10" }],
     ["a non-finite width step", { columnWidthStepPercent: Number.NaN }],
     ["an infinite width step", { columnWidthStepPercent: Infinity }],
@@ -471,9 +487,9 @@ describe("Driftile settings", () => {
     },
   );
 
-  it("rejects the previous twenty-two-field snapshot", () => {
+  it("rejects the previous twenty-three-field snapshot", () => {
     const incomplete: Record<string, unknown> = { ...validSettingsInput };
-    delete incomplete["emptyDesktopAboveFirst"];
+    delete incomplete["defaultColumnWidthPixels"];
 
     expect(decodeDriftileSettings(incomplete)).toBeNull();
   });
@@ -564,6 +580,7 @@ describe("Driftile settings", () => {
       { columnWidthStepPercent: 26 },
       { defaultColumnPresentation: "stacked" as const },
       { defaultColumnWidthPercent: 76 },
+      { defaultColumnWidthPixels: 961 },
       { emptyDesktopAboveFirst: false },
       { gap: 33 },
       { showTabIndicator: true },
