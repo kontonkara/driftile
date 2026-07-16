@@ -155,6 +155,8 @@ let
         desktopFileName: "${desktopFileName}=${renderApplicationColumnWidth widths.${desktopFileName}}"
       ) (builtins.sort builtins.lessThan (builtins.attrNames widths))
     );
+  applicationWindowHeightType = applicationColumnWidthType;
+  renderApplicationWindowHeights = renderApplicationColumnWidths;
   applicationColumnPresentationType =
     lib.types.addCheck (lib.types.attrsOf (lib.types.enum [
       "stacked"
@@ -375,6 +377,12 @@ in
               description = "Initial column widths keyed by exact desktop-file ID. Integers are percentages from 10 to 100; strings must use canonical 10% to 100% or 1px to 16384px forms.";
             };
 
+            applicationWindowHeights = lib.mkOption {
+              type = applicationWindowHeightType;
+              default = { };
+              description = "Initial tiled client heights keyed by exact desktop-file ID. Integers are percentages from 10 to 100; strings must use canonical 10% to 100% or 1px to 16384px client-height forms.";
+            };
+
             applicationFocusCentering = lib.mkOption {
               type = applicationFocusCenteringType;
               default = [ ];
@@ -587,6 +595,7 @@ in
           ApplicationColumnPresentations =
             renderApplicationColumnPresentations cfg.settings.applicationColumnPresentations;
           ApplicationColumnWidths = renderApplicationColumnWidths cfg.settings.applicationColumnWidths;
+          ApplicationWindowHeights = renderApplicationWindowHeights cfg.settings.applicationWindowHeights;
           ApplicationFocusCentering =
             renderApplicationFocusCentering cfg.settings.applicationFocusCentering;
           ApplicationInitialFloating =

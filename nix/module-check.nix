@@ -457,6 +457,11 @@ let
             "org.example.Editor" = "960px";
             "org.example.Terminal" = 60;
           };
+          applicationWindowHeights = {
+            "org.example.Browser" = "75%";
+            "org.example.Editor" = "720px";
+            "org.example.Terminal" = 45;
+          };
           applicationFocusCentering = [
             "org.example.Terminal"
             "org.example.Browser"
@@ -563,6 +568,36 @@ let
       ]
       {
         programs.driftile.settings.applicationColumnWidths = {
+          "org.example.A" = "10%";
+          "org.example.B" = "100%";
+          "org.example.C" = "1px";
+          "org.example.D" = "16384px";
+        };
+      }
+      { };
+  homeManagerMaximumWindowHeights =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.settings.applicationWindowHeights = builtins.listToAttrs (
+          builtins.genList (index: {
+            name = "org.example.App${toString index}";
+            value = 50;
+          }) 128
+        );
+      }
+      { };
+  homeManagerWindowHeightBounds =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.settings.applicationWindowHeights = {
           "org.example.A" = "10%";
           "org.example.B" = "100%";
           "org.example.C" = "1px";
@@ -888,6 +923,39 @@ let
         }) 129
       );
     }
+    { applicationWindowHeights."org.example.Editor" = 9; }
+    { applicationWindowHeights."org.example.Editor" = 101; }
+    { applicationWindowHeights."org.example.Editor" = "9%"; }
+    { applicationWindowHeights."org.example.Editor" = "101%"; }
+    { applicationWindowHeights."org.example.Editor" = "0px"; }
+    { applicationWindowHeights."org.example.Editor" = "16385px"; }
+    { applicationWindowHeights."org.example.Editor" = "80"; }
+    { applicationWindowHeights."org.example.Editor" = "080%"; }
+    { applicationWindowHeights."org.example.Editor" = "080px"; }
+    { applicationWindowHeights."org.example.Editor" = "10PX"; }
+    { applicationWindowHeights."" = 50; }
+    { applicationWindowHeights." org.example.Editor" = 50; }
+    { applicationWindowHeights."org.example.Editor=" = 50; }
+    { applicationWindowHeights."org.example\nEditor" = 50; }
+    {
+      applicationWindowHeights = builtins.listToAttrs [
+        {
+          name = builtins.fromJSON ''"org.example.\u0080Editor"'';
+          value = 50;
+        }
+      ];
+    }
+    {
+      applicationWindowHeights.${builtins.concatStringsSep "" (builtins.genList (_: "a") 256)} = 50;
+    }
+    {
+      applicationWindowHeights = builtins.listToAttrs (
+        builtins.genList (index: {
+          name = "org.example.App${toString index}";
+          value = 50;
+        }) 129
+      );
+    }
     { applicationColumnPresentations."org.example.Editor" = "split"; }
     { applicationColumnPresentations."" = "tabbed"; }
     { applicationColumnPresentations." org.example.Editor" = "tabbed"; }
@@ -1015,6 +1083,10 @@ let
         org.example.Browser=80
         org.example.Editor=960px
         org.example.Terminal=60'';
+      ApplicationWindowHeights = ''
+        org.example.Browser=75
+        org.example.Editor=720px
+        org.example.Terminal=45'';
       ApplicationFocusCentering = ''
         org.example.Browser
         org.example.Terminal'';
@@ -1051,6 +1123,7 @@ let
       ApplicationBorderlessExclusions = "";
       ApplicationColumnPresentations = "";
       ApplicationColumnWidths = "";
+      ApplicationWindowHeights = "";
       ApplicationFocusCentering = "";
       ApplicationInitialFloating = "";
       ApplicationTilingExclusions = "";
@@ -1221,11 +1294,11 @@ assert homeManagerSettings.config.qt.kde.settings == expectedSettings;
 assert homeManagerDefaultSettings.config.qt.kde.settings == expectedDefaultSettings;
 assert
   builtins.length (builtins.attrNames expectedSettings.kwinrc."Script-io.github.kontonkara.driftile")
-  == 26;
+  == 27;
 assert
   builtins.length (
     builtins.attrNames expectedDefaultSettings.kwinrc."Script-io.github.kontonkara.driftile"
-  ) == 23;
+  ) == 24;
 assert
   homeManagerMaximumDefaultColumnWidthPixels.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".DefaultColumnWidthPixels
   == 16384;
@@ -1247,6 +1320,18 @@ assert
   ) == 128;
 assert
   homeManagerColumnWidthBounds.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ApplicationColumnWidths
+  == ''
+    org.example.A=10
+    org.example.B=100
+    org.example.C=1px
+    org.example.D=16384px'';
+assert
+  builtins.length (
+    lib.splitString "\n"
+      homeManagerMaximumWindowHeights.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ApplicationWindowHeights
+  ) == 128;
+assert
+  homeManagerWindowHeightBounds.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ApplicationWindowHeights
   == ''
     org.example.A=10
     org.example.B=100
@@ -1288,6 +1373,7 @@ assert
       ApplicationBorderlessExclusions = "";
       ApplicationColumnPresentations = "";
       ApplicationColumnWidths = "";
+      ApplicationWindowHeights = "";
       ApplicationFocusCentering = "";
       ApplicationInitialFloating = "";
       ApplicationTilingExclusions = "";
