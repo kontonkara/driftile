@@ -247,7 +247,7 @@ let
     then
       destinations
     else
-      throw "programs.driftile.settings.applicationInitialDestinations must use at most 128 valid desktopFileName keys without '=', assign a desktop number, desktop name, or output, and not combine desktop with desktopName.";
+      throw "programs.driftile.settings.applicationInitialDestinations must use at most 128 valid application ID keys without '=', assign a desktop number, desktop name, or output, and not combine desktop with desktopName.";
   renderApplicationInitialDestinations =
     destinations:
     lib.concatStringsSep "\n" (
@@ -301,7 +301,7 @@ let
     then
       positions
     else
-      throw "programs.driftile.settings.applicationFloatingPositions must use at most 128 valid desktopFileName keys without '='.";
+      throw "programs.driftile.settings.applicationFloatingPositions must use at most 128 valid application ID keys without '='.";
   renderFloatingPosition =
     position: "${position.anchor},${toString position.x},${toString position.y}";
   renderDefaultFloatingPosition =
@@ -491,87 +491,87 @@ in
             applicationBorderlessExclusions = lib.mkOption {
               type = applicationBorderlessExclusionType;
               default = [ ];
-              description = "Exact desktop-file IDs keeping KWin borders and title bars.";
+              description = "Exact KWin application IDs keeping borders and title bars; desktopFileName is used when available, otherwise resourceClass.";
             };
 
             applicationColumnPresentations = lib.mkOption {
               type = applicationColumnPresentationType;
               default = { };
-              description = "Default stacked or tabbed column presentations keyed by exact desktop-file ID.";
+              description = "Default stacked or tabbed column presentations keyed by exact KWin application ID; desktopFileName is used when available, otherwise resourceClass.";
             };
 
             applicationColumnWidths = lib.mkOption {
               type = applicationColumnWidthType;
               default = { };
-              description = "Initial column widths keyed by exact desktop-file ID. Integers are percentages from 10 to 100; strings must use canonical 10% to 100% or 1px to 16384px forms.";
+              description = "Initial column widths keyed by exact KWin application ID; desktopFileName is used when available, otherwise resourceClass. Integers are percentages from 10 to 100; strings must use canonical 10% to 100% or 1px to 16384px forms.";
             };
 
             applicationWindowHeights = lib.mkOption {
               type = applicationWindowHeightType;
               default = { };
-              description = "Initial tiled client heights keyed by exact desktop-file ID. Integers are percentages from 10 to 100; strings must use canonical 10% to 100% or 1px to 16384px client-height forms.";
+              description = "Initial tiled client heights keyed by exact KWin application ID; desktopFileName is used when available, otherwise resourceClass. Integers are percentages from 10 to 100; strings must use canonical 10% to 100% or 1px to 16384px client-height forms.";
             };
 
             applicationFocusCentering = lib.mkOption {
               type = applicationFocusCenteringType;
               default = [ ];
-              description = "Exact KWin desktopFileNames centered after horizontal focus navigation.";
+              description = "Exact KWin application IDs centered after horizontal focus navigation; desktopFileName is used when available, otherwise resourceClass.";
             };
 
             applicationInitialFloating = lib.mkOption {
               type = applicationInitialFloatingType;
               default = [ ];
-              description = "Exact desktop-file IDs whose newly admitted windows start manually floating.";
+              description = "Exact KWin application IDs whose newly admitted windows start manually floating; desktopFileName is used when available, otherwise resourceClass.";
             };
 
             applicationInitialFocused = lib.mkOption {
               type = applicationInitialFocusedType;
               default = [ ];
-              description = "Exact case-sensitive KWin desktopFileName strings whose newly admitted windows request focus once in an already visible context.";
+              description = "Exact case-sensitive KWin application IDs whose newly admitted windows request focus once in an already visible context; desktopFileName is used when available, otherwise resourceClass.";
             };
 
             applicationInitialUnfocused = lib.mkOption {
               type = applicationInitialUnfocusedType;
               default = [ ];
-              description = "Exact case-sensitive KWin desktopFileName strings whose newly admitted windows suppress or undo initial focus once after admission in an already visible context. This rule takes precedence over applicationInitialFocused, never selects a desktop or output, and affects only future windows.";
+              description = "Exact case-sensitive KWin application IDs whose newly admitted windows suppress or undo initial focus once after admission in an already visible context; desktopFileName is used when available, otherwise resourceClass. This rule takes precedence over applicationInitialFocused, never selects a desktop or output, and affects only future windows.";
             };
 
             applicationInitialFullscreen = lib.mkOption {
               type = applicationInitialFullscreenType;
               default = [ ];
-              description = "Exact case-sensitive KWin desktopFileName strings whose newly admitted windows start fullscreen.";
+              description = "Exact case-sensitive KWin application IDs whose newly admitted windows start fullscreen; desktopFileName is used when available, otherwise resourceClass.";
             };
 
             applicationInitialMaximized = lib.mkOption {
               type = applicationInitialMaximizedType;
               default = [ ];
-              description = "Exact case-sensitive KWin desktopFileName strings whose newly admitted windows start maximized within the work area.";
+              description = "Exact case-sensitive KWin application IDs whose newly admitted windows start maximized within the work area; desktopFileName is used when available, otherwise resourceClass.";
             };
 
             applicationInitialFullWidth = lib.mkOption {
               type = applicationInitialFullWidthType;
               default = [ ];
-              description = "Exact case-sensitive KWin desktopFileName strings whose newly admitted windows start in full-width columns.";
+              description = "Exact case-sensitive KWin application IDs whose newly admitted windows start in full-width columns; desktopFileName is used when available, otherwise resourceClass.";
             };
 
             applicationInitialDestinations = lib.mkOption {
               type = applicationInitialDestinationsType;
               default = { };
               apply = validateApplicationInitialDestinations;
-              description = "Initial virtual desktops and outputs for newly admitted windows, keyed by exact case-sensitive KWin desktopFileName.";
+              description = "Initial virtual desktops and outputs for newly admitted windows, keyed by exact case-sensitive KWin application ID; desktopFileName is used when available, otherwise resourceClass.";
             };
 
             applicationFloatingPositions = lib.mkOption {
               type = applicationFloatingPositionsType;
               default = { };
               apply = validateApplicationFloatingPositions;
-              description = "Initial work-area anchors and signed logical-pixel offsets for newly floating windows, keyed by exact case-sensitive KWin desktopFileName.";
+              description = "Initial work-area anchors and signed logical-pixel offsets for newly floating windows, keyed by exact case-sensitive KWin application ID; desktopFileName is used when available, otherwise resourceClass.";
             };
 
             applicationTilingExclusions = lib.mkOption {
               type = applicationTilingExclusionType;
               default = [ ];
-              description = "Exact desktop-file IDs excluded from tiling.";
+              description = "Exact KWin application IDs excluded from tiling; desktopFileName is used when available, otherwise resourceClass.";
             };
 
             alwaysCenterSingleColumn = lib.mkOption {
