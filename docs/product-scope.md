@@ -634,3 +634,6 @@ Driftile must integrate with, not duplicate:
   Same-desktop, cross-output, all-desktop, related, stale, or ambiguous drops
   perform no write. Successful KWin membership confirmation closes the effect;
   the main script remains the layout owner.
+- Typing in the optional overview filters its live window presentations by
+  title and application identity. The bounded session-only query changes no
+  KWin, layout, persistence, or configuration state.

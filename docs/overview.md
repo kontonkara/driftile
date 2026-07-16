@@ -95,6 +95,12 @@ tab. Minimized, invalid, and fully clipped items are excluded. A partially
 clipped target remains actionable, and spatial navigation uses only its visible
 intersection. Desktop gutters remain pointer-only and are not keyboard targets.
 
+Typing filters visible windows by title and application identity. Matching is
+case-insensitive and every typed term must match. Arrow navigation immediately
+repairs its selection within the filtered results; `Backspace` removes one
+Unicode code point and `Escape` clears a non-empty query before it can close the
+effect. The query is session-only and is discarded when the effect closes.
+
 The interaction adds no layout or persistent state, KConfig value, shortcut,
 schema, or private API. Pointer behavior remains unchanged.
 

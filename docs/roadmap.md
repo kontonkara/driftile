@@ -1433,6 +1433,12 @@ desktop-membership assignment. The empty tail is valid; same-card,
 cross-output, all-desktop, related, stale, rejected, or unconfirmed drops leave
 the effect open and perform no layout write.
 
+Keyboard typing in the optional overview applies a bounded, case-insensitive
+window-title and application search. Every query term must match; Backspace
+edits one Unicode code point, Escape clears before closing, and spatial
+selection repairs within the remaining visible targets. Search remains
+session-only and read-only toward KWin and layout state.
+
 ## Post-v1
 
 Add interaction and presentation features outside the frozen v1 scope without
