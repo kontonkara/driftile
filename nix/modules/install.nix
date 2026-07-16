@@ -577,6 +577,16 @@ in
               description = "Default initial virtual desktop and output for newly admitted windows; null disables the default, and exact applicationInitialDestinations rules take precedence.";
             };
 
+            defaultInitialFocus = lib.mkOption {
+              type = lib.types.enum [
+                "default"
+                "focused"
+                "unfocused"
+              ];
+              default = "default";
+              description = "Default initial focus policy for genuinely new normal windows; exact applicationInitialFocused and applicationInitialUnfocused rules take precedence, with applicationInitialUnfocused winning when both match.";
+            };
+
             applicationFloatingPositions = lib.mkOption {
               type = applicationFloatingPositionsType;
               default = { };
@@ -832,6 +842,7 @@ in
           DefaultColumnWidthPixels = cfg.settings.defaultColumnWidthPixels;
           DefaultFloatingPosition = renderDefaultFloatingPosition cfg.settings.defaultFloatingPosition;
           DefaultInitialDestination = renderInitialDestination cfg.settings.defaultInitialDestination;
+          DefaultInitialFocus = cfg.settings.defaultInitialFocus;
           DefaultWindowHeight = renderDefaultWindowHeight cfg.settings.defaultWindowHeight;
           Gap = cfg.settings.gap;
           ShowTabIndicator = cfg.settings.showTabIndicator;

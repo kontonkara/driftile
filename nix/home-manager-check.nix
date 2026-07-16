@@ -95,6 +95,7 @@ let
           desktop = 4;
           output = "DP-4";
         };
+        defaultInitialFocus = "unfocused";
         applicationFloatingPositions = {
           "org.example.Browser" = {
             anchor = "bottom-right";
@@ -331,6 +332,28 @@ let
   defaultInitialDestinationOutputOnly = evaluateHome {
     programs.driftile.settings.defaultInitialDestination.output = "HDMI-A-1";
   } { };
+  defaultInitialFocusValues = map (
+    value:
+    evaluateHome {
+      programs.driftile.settings.defaultInitialFocus = value;
+    } { }
+  ) [
+    "default"
+    "focused"
+    "unfocused"
+  ];
+  invalidDefaultInitialFocusRejected =
+    value:
+    let
+      evaluated = builtins.tryEval (
+        builtins.deepSeq
+          (evaluateHome {
+            programs.driftile.settings.defaultInitialFocus = value;
+          } { }).config.qt.kde.settings
+          true
+      );
+    in
+    !evaluated.success;
   invalidDefaultInitialDestinationRejected =
     destination:
     let
@@ -662,6 +685,17 @@ assert
   defaultInitialDestinationOutputOnly.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".DefaultInitialDestination
   == "output:HDMI-A-1";
 assert
+  map (
+    evaluation:
+    evaluation.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".DefaultInitialFocus
+  ) defaultInitialFocusValues
+  == [
+    "default"
+    "focused"
+    "unfocused"
+  ];
+assert invalidDefaultInitialFocusRejected "invalid";
+assert
   lib.all invalidDefaultInitialDestinationRejected [
     { }
     { desktop = 0; }
@@ -821,6 +855,7 @@ assert
       DefaultColumnWidthPixels = 960;
       DefaultFloatingPosition = "right,-36,48";
       DefaultInitialDestination = "desktop:4,output:DP-4";
+      DefaultInitialFocus = "unfocused";
       DefaultWindowHeight = "720px";
       EmptyDesktopAboveFirst = true;
       Gap = 7.5;
@@ -838,7 +873,7 @@ assert
 assert
   builtins.length (
     builtins.attrNames standalone.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile"
-  ) == 38;
+  ) == 39;
 assert
   standalone.config.xdg.configFile."driftile/shortcuts.json".text == ''
     {"bindings":{"driftile_focus_column_left":["Meta+A"],"driftile_reset_column_width":[]},"version":1}
@@ -882,6 +917,7 @@ assert
       DefaultColumnWidthPixels = 0;
       DefaultFloatingPosition = "";
       DefaultInitialDestination = "";
+      DefaultInitialFocus = "default";
       DefaultWindowHeight = "auto";
       Gap = 1.2;
       ShowTabIndicator = true;

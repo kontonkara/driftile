@@ -506,6 +506,7 @@ let
             desktop = 4;
             output = "DP-4";
           };
+          defaultInitialFocus = "unfocused";
           applicationFloatingPositions = {
             "org.example.Browser" = {
               anchor = "bottom-right";
@@ -946,6 +947,22 @@ let
         programs.driftile.settings.defaultInitialDestination.output = "HDMI-A-1";
       }
       { };
+  homeManagerDefaultInitialFocusValues = map (
+    value:
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.settings.defaultInitialFocus = value;
+      }
+      { }
+  ) [
+    "default"
+    "focused"
+    "unfocused"
+  ];
   homeManagerMaximumFloatingPositions =
     evaluate homeManagerModule
       [
@@ -1099,6 +1116,7 @@ let
     }
     { defaultInitialDestination.desktopName = ""; }
     { defaultInitialDestination.output = "DP,1"; }
+    { defaultInitialFocus = "invalid"; }
     {
       defaultFloatingPosition = {
         anchor = "center";
@@ -1658,6 +1676,7 @@ let
       DefaultColumnWidthPixels = 960;
       DefaultFloatingPosition = "right,-36,48";
       DefaultInitialDestination = "desktop:4,output:DP-4";
+      DefaultInitialFocus = "unfocused";
       DefaultWindowHeight = "720px";
       EmptyDesktopAboveFirst = true;
       Gap = 7.5;
@@ -1698,6 +1717,7 @@ let
       DefaultColumnWidthPixels = 0;
       DefaultFloatingPosition = "";
       DefaultInitialDestination = "";
+      DefaultInitialFocus = "default";
       DefaultWindowHeight = "auto";
       Gap = 16;
       ShowTabIndicator = true;
@@ -1859,11 +1879,11 @@ assert homeManagerSettings.config.qt.kde.settings == expectedSettings;
 assert homeManagerDefaultSettings.config.qt.kde.settings == expectedDefaultSettings;
 assert
   builtins.length (builtins.attrNames expectedSettings.kwinrc."Script-io.github.kontonkara.driftile")
-  == 38;
+  == 39;
 assert
   builtins.length (
     builtins.attrNames expectedDefaultSettings.kwinrc."Script-io.github.kontonkara.driftile"
-  ) == 35;
+  ) == 36;
 assert
   homeManagerMaximumDefaultColumnWidthPixels.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".DefaultColumnWidthPixels
   == 16384;
@@ -2001,6 +2021,16 @@ assert
   homeManagerDefaultInitialDestinationOutputOnly.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".DefaultInitialDestination
   == "output:HDMI-A-1";
 assert
+  map (
+    evaluation:
+    evaluation.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".DefaultInitialFocus
+  ) homeManagerDefaultInitialFocusValues
+  == [
+    "default"
+    "focused"
+    "unfocused"
+  ];
+assert
   builtins.length (
     lib.splitString "\n"
       homeManagerMaximumFloatingPositions.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ApplicationFloatingPositions
@@ -2064,6 +2094,7 @@ assert
       DefaultColumnWidthPixels = 0;
       DefaultFloatingPosition = "";
       DefaultInitialDestination = "";
+      DefaultInitialFocus = "default";
       DefaultWindowHeight = "auto";
       Gap = 1.2;
       ShowTabIndicator = true;
