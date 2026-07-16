@@ -229,6 +229,7 @@ const MIN_DEFAULT_COLUMN_WIDTH_PERCENT = 10;
 const MIN_DEFAULT_COLUMN_WIDTH_PIXELS = 1;
 const MIN_RESIZE_STEP_PERCENT = 1;
 const MIN_RESIZE_STEP_PIXELS = 0;
+const MAX_BORDERLESS_HELPER_CLAIM_BACKOFFS = 128;
 const MAX_POINTER_EXTERNAL_CONTEXT_PROBES = 20;
 const MAX_POINTER_COLUMN_DROP_SETTLEMENT_PROBES = 20;
 const MAX_POINTER_RESIZE_COMPENSATION_PROBES = 40;
@@ -895,6 +896,10 @@ interface WindowBorderRestore {
   readonly noBorder: boolean;
 }
 
+interface BorderlessSettlementToken {
+  readonly rejectedHelperKey: string | null;
+}
+
 type AdmissionDecision =
   | { readonly fingerprint: string; readonly kind: "accepted" }
   | { readonly fingerprint?: string; readonly kind: "deferred" }
@@ -1018,8 +1023,12 @@ export class RuntimeController {
   private applicationTilingExclusions: ApplicationTilingExclusions;
   private readonly automaticFloatingWindows = new Set<WindowId>();
   private readonly borderlessClaimBackoffs = new Set<WindowId>();
+  private readonly borderlessHelperClaimBackoffs = new Map<string, string>();
   private readonly borderlessSettlementEnabled: boolean;
-  private readonly borderlessSettlementTokens = new Map<WindowId, object>();
+  private readonly borderlessSettlementTokens = new Map<
+    WindowId,
+    BorderlessSettlementToken
+  >();
   private borderlessContextReconciliationPending = false;
   private borderlessReconciliationPending = false;
   private borderlessWindows: boolean;
@@ -1708,6 +1717,7 @@ export class RuntimeController {
 
     this.borderlessWindows = enabled;
     this.borderlessClaimBackoffs.clear();
+    this.borderlessHelperClaimBackoffs.clear();
     this.borderlessSettlementTokens.clear();
 
     if (!this.started) {
@@ -1741,6 +1751,7 @@ export class RuntimeController {
 
     this.applicationBorderlessExclusions = exclusions;
     this.borderlessClaimBackoffs.clear();
+    this.borderlessHelperClaimBackoffs.clear();
     this.borderlessSettlementTokens.clear();
 
     if (!this.started || !this.borderlessWindows) {
@@ -4135,6 +4146,7 @@ export class RuntimeController {
       this.borderlessContextReconciliationPending = false;
       this.borderlessReconciliationPending = false;
       this.borderlessClaimBackoffs.clear();
+      this.borderlessHelperClaimBackoffs.clear();
       this.borderlessSettlementTokens.clear();
       this.interactiveResizeSource = null;
       this.clearPointerMoveIntent();
@@ -4296,6 +4308,7 @@ export class RuntimeController {
       this.dirtyContexts.clear();
       this.automaticFloatingWindows.clear();
       this.borderlessClaimBackoffs.clear();
+      this.borderlessHelperClaimBackoffs.clear();
       this.borderSynchronizationIds.clear();
       this.borderlessSettlementTokens.clear();
       this.floatingWindows.clear();
@@ -6508,6 +6521,10 @@ export class RuntimeController {
         : null;
 
     if (applicationRuleIdentityChange) {
+      this.clearBorderlessHelperClaimBackoffsForApplications(
+        applicationRuleIdentityChange.previous,
+        applicationRuleIdentityChange.current,
+      );
       this.resetBorderlessClaimBackoff(changedId);
     }
 
@@ -6636,6 +6653,7 @@ export class RuntimeController {
     }
 
     const source = this.observer.source(changedId);
+    this.clearBorderlessHelperClaimBackoff(source);
     this.borderlessClaimBackoffs.delete(changedId);
     this.synchronizeWindowBorder(changedId, source);
   };
@@ -28536,6 +28554,125 @@ export class RuntimeController {
     return owner.contextKey;
   }
 
+  private borderlessHelperClaimBackoff(
+    source: KWinWindow,
+    knownApplicationId?: string | null,
+  ): { readonly applicationId: string; readonly key: string } | null {
+    try {
+      if (source.normalWindow) {
+        return null;
+      }
+
+      const applicationId =
+        knownApplicationId === undefined
+          ? applicationRuleIdentity(source)
+          : knownApplicationId;
+
+      if (applicationId === null) {
+        return null;
+      }
+
+      const resourceName = source.resourceName;
+      const windowRole = source.windowRole;
+
+      if (
+        (resourceName !== undefined && typeof resourceName !== "string") ||
+        (windowRole !== undefined && typeof windowRole !== "string") ||
+        ((resourceName === undefined || resourceName.length === 0) &&
+          (windowRole === undefined || windowRole.length === 0)) ||
+        typeof source.dialog !== "boolean" ||
+        typeof source.modal !== "boolean" ||
+        typeof source.specialWindow !== "boolean" ||
+        typeof source.transient !== "boolean" ||
+        (source.transientFor !== null &&
+          typeof source.transientFor !== "object")
+      ) {
+        return null;
+      }
+
+      return {
+        applicationId,
+        key: JSON.stringify({
+          applicationId,
+          dialog: source.dialog,
+          modal: source.modal,
+          resourceName: resourceName ?? null,
+          specialWindow: source.specialWindow,
+          transient: source.transient,
+          transientFor: source.transientFor !== null,
+          windowRole: windowRole ?? null,
+        }),
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  private clearBorderlessHelperClaimBackoff(
+    source: KWinWindow | undefined,
+    knownApplicationId?: string | null,
+  ): void {
+    if (!source) {
+      return;
+    }
+
+    const backoff = this.borderlessHelperClaimBackoff(
+      source,
+      knownApplicationId,
+    );
+
+    if (backoff) {
+      this.borderlessHelperClaimBackoffs.delete(backoff.key);
+    }
+  }
+
+  private clearBorderlessHelperClaimBackoffsForApplications(
+    ...applicationIds: readonly (string | null)[]
+  ): void {
+    const identities = new Set(
+      applicationIds.filter(
+        (identity): identity is string => identity !== null,
+      ),
+    );
+
+    if (identities.size === 0) {
+      return;
+    }
+
+    for (const [key, applicationId] of this.borderlessHelperClaimBackoffs) {
+      if (identities.has(applicationId)) {
+        this.borderlessHelperClaimBackoffs.delete(key);
+      }
+    }
+  }
+
+  private rememberBorderlessHelperClaimBackoff(
+    source: KWinWindow,
+    rejectedHelperKey: string,
+  ): void {
+    const backoff = this.borderlessHelperClaimBackoff(source);
+
+    if (!backoff || backoff.key !== rejectedHelperKey) {
+      return;
+    }
+
+    this.borderlessHelperClaimBackoffs.delete(backoff.key);
+    this.borderlessHelperClaimBackoffs.set(backoff.key, backoff.applicationId);
+
+    if (
+      this.borderlessHelperClaimBackoffs.size <=
+      MAX_BORDERLESS_HELPER_CLAIM_BACKOFFS
+    ) {
+      return;
+    }
+
+    const oldest = this.borderlessHelperClaimBackoffs.keys().next();
+
+    if (!oldest.done) {
+      this.borderlessHelperClaimBackoffs.delete(oldest.value);
+    }
+  }
+
   private synchronizeWindowBorder(
     id: WindowId,
     source: KWinWindow | undefined,
@@ -28578,8 +28715,22 @@ export class RuntimeController {
 
       if (observedBorderless) {
         this.resetBorderlessClaimBackoff(id);
+        this.clearBorderlessHelperClaimBackoff(source, applicationId);
       } else if (this.borderlessClaimBackoffs.has(id)) {
         return;
+      } else {
+        const helperBackoff = this.borderlessHelperClaimBackoff(
+          source,
+          applicationId,
+        );
+
+        if (
+          helperBackoff &&
+          this.borderlessHelperClaimBackoffs.has(helperBackoff.key)
+        ) {
+          this.borderlessClaimBackoffs.add(id);
+          return;
+        }
       }
 
       this.claimWindowBorder(id, source);
@@ -28596,7 +28747,10 @@ export class RuntimeController {
     }
   }
 
-  private scheduleBorderlessSettlement(id: WindowId): void {
+  private scheduleBorderlessSettlement(
+    id: WindowId,
+    rejectedHelperKey: string | null,
+  ): void {
     if (
       !this.borderlessSettlementEnabled ||
       this.borderlessSettlementTokens.has(id)
@@ -28605,7 +28759,7 @@ export class RuntimeController {
     }
 
     const runGeneration = this.runGeneration;
-    const token = {};
+    const token: BorderlessSettlementToken = { rejectedHelperKey };
     this.borderlessSettlementTokens.set(id, token);
 
     const probe = (): void => {
@@ -28626,9 +28780,16 @@ export class RuntimeController {
       }
 
       if (source.noBorder !== true) {
-        this.claimWindowBorder(id, source, false, true);
+        this.claimWindowBorder(
+          id,
+          source,
+          false,
+          true,
+          token.rejectedHelperKey,
+        );
       } else {
         this.borderlessClaimBackoffs.delete(id);
+        this.clearBorderlessHelperClaimBackoff(source);
       }
     };
 
@@ -28769,6 +28930,7 @@ export class RuntimeController {
     source: KWinWindow,
     scheduleSettlement = true,
     bypassBackoff = false,
+    rejectedHelperKey: string | null = null,
   ): boolean {
     if (!bypassBackoff && this.borderlessClaimBackoffs.has(id)) {
       return false;
@@ -28835,13 +28997,14 @@ export class RuntimeController {
 
     if (applied && remainsEligible) {
       this.borderlessClaimBackoffs.delete(id);
+      this.clearBorderlessHelperClaimBackoff(source);
 
       if (!this.windowBorderRestore.has(id)) {
         this.windowBorderRestore.set(id, restore);
       }
 
       if (scheduleSettlement) {
-        this.scheduleBorderlessSettlementSafely(id);
+        this.scheduleBorderlessSettlementSafely(id, null);
       }
 
       return true;
@@ -28867,6 +29030,10 @@ export class RuntimeController {
 
     this.borderlessClaimBackoffs.add(id);
 
+    if (rejectedHelperKey !== null && failure === undefined) {
+      this.rememberBorderlessHelperClaimBackoff(source, rejectedHelperKey);
+    }
+
     if (scheduleSettlement) {
       if (failure !== undefined) {
         console.warn(
@@ -28878,15 +29045,23 @@ export class RuntimeController {
         );
       }
 
-      this.scheduleBorderlessSettlementSafely(id);
+      this.scheduleBorderlessSettlementSafely(
+        id,
+        failure === undefined
+          ? (this.borderlessHelperClaimBackoff(source)?.key ?? null)
+          : null,
+      );
     }
 
     return false;
   }
 
-  private scheduleBorderlessSettlementSafely(id: WindowId): void {
+  private scheduleBorderlessSettlementSafely(
+    id: WindowId,
+    rejectedHelperKey: string | null,
+  ): void {
     try {
-      this.scheduleBorderlessSettlement(id);
+      this.scheduleBorderlessSettlement(id, rejectedHelperKey);
     } catch (error) {
       this.borderlessSettlementTokens.delete(id);
       console.warn(

@@ -8121,12 +8121,49 @@ describe("RuntimeController", () => {
     const decorated = createTrackedWindow("decorated", output, desktop, {
       desktopFileName: "org.example.Decorated",
       noBorder: false,
+      resourceName: "shared-helper",
+      windowRole: "shared-helper",
+    });
+    const firstHelper = createTrackedWindow("first-helper", output, desktop, {
+      desktopFileName: "org.example.Decorated",
+      noBorder: false,
+      normalWindow: false,
+      resourceName: "shared-helper",
+      specialWindow: true,
+      windowRole: "shared-helper",
+    });
+    const secondHelper = createTrackedWindow("second-helper", output, desktop, {
+      desktopFileName: "org.example.Decorated",
+      noBorder: false,
+      normalWindow: false,
+      resourceName: "shared-helper",
+      specialWindow: true,
+      windowRole: "shared-helper",
     });
     const scheduler = new ManualScheduler();
     let acceptsBorderless = false;
     let acceptsDecorated = true;
     let borderWrites = 0;
     let noBorder = false;
+    const helperBorderWrites = new Map<string, number>();
+
+    for (const helper of [firstHelper, secondHelper]) {
+      let helperNoBorder = false;
+      helperBorderWrites.set(String(helper.window.internalId), 0);
+
+      Object.defineProperty(helper.window, "noBorder", {
+        configurable: true,
+        get: () => helperNoBorder,
+        set: (value: boolean) => {
+          const id = String(helper.window.internalId);
+          helperBorderWrites.set(id, (helperBorderWrites.get(id) ?? 0) + 1);
+
+          if (!value) {
+            helperNoBorder = false;
+          }
+        },
+      });
+    }
 
     Object.defineProperty(decorated.window, "noBorder", {
       configurable: true,
@@ -8161,6 +8198,7 @@ describe("RuntimeController", () => {
     });
     const borderState = controller as unknown as {
       readonly borderlessClaimBackoffs: ReadonlySet<WindowId>;
+      readonly borderlessHelperClaimBackoffs: ReadonlyMap<string, string>;
       synchronizeWindowBorder(
         id: WindowId,
         source: KWinWindow | undefined,
@@ -8228,12 +8266,47 @@ describe("RuntimeController", () => {
     expect(rejectionWarningCount()).toBe(2);
     expect(scheduler.pendingCount).toBe(0);
 
+    fixture.windowAdded.emit(firstHelper.window);
+    expect(helperBorderWrites.get("first-helper")).toBe(1);
+    expect(rejectionWarningCount()).toBe(3);
+    expect(scheduler.pendingCount).toBe(1);
+    scheduler.flush();
+    expect(helperBorderWrites.get("first-helper")).toBe(2);
+    expect(borderState.borderlessHelperClaimBackoffs.size).toBe(1);
+
+    fixture.windowAdded.emit(secondHelper.window);
+    expect(helperBorderWrites.get("second-helper")).toBe(0);
+    expect(rejectionWarningCount()).toBe(3);
+    expect(scheduler.pendingCount).toBe(0);
+    expect(
+      borderState.borderlessClaimBackoffs.has(windowId("second-helper")),
+    ).toBe(true);
+    expect(borderState.windowBorderRestore.has(windowId("second-helper"))).toBe(
+      false,
+    );
+
+    secondHelper.decorationPolicyChanged.emit();
+    expect(helperBorderWrites.get("second-helper")).toBe(1);
+    expect(rejectionWarningCount()).toBe(4);
+    expect(scheduler.pendingCount).toBe(1);
+    scheduler.flush();
+    expect(helperBorderWrites.get("second-helper")).toBe(2);
+    expect(borderState.borderlessHelperClaimBackoffs.size).toBe(1);
+
+    noBorder = false;
+    decorated.decorationPolicyChanged.emit();
+    expect(decorated.window.noBorder).toBe(true);
+    expect(borderWrites).toBe(7);
+    expect(borderState.borderlessHelperClaimBackoffs.size).toBe(1);
+    scheduler.flush();
+
     expect(
       controller.setApplicationBorderlessExclusions(
         requiredApplicationBorderlessExclusions("org.example.Decorated"),
       ),
     ).toBe(true);
     expect(decorated.window.noBorder).toBe(false);
+    expect(borderState.borderlessHelperClaimBackoffs.size).toBe(0);
     expect(scheduler.pendingCount).toBe(0);
 
     expect(
@@ -8264,6 +8337,7 @@ describe("RuntimeController", () => {
 
     controller.stop();
     expect(decorated.window.noBorder).toBe(false);
+    expect(borderState.borderlessHelperClaimBackoffs.size).toBe(0);
     warning.mockRestore();
   });
 
