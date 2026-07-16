@@ -1724,3 +1724,5 @@ No other feature belongs to 1.40.0.
   context when the name is missing or ambiguous.
 - Expose the same bounded rule through KConfig, NixOS, and Home Manager without
   changing shortcuts or persisted layout state.
+- Add an optional global first-manual-floating position beneath exact
+  application rules, reusing the same anchor, clamp, and pixel-snap behavior.

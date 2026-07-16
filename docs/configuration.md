@@ -115,7 +115,8 @@ The activation writes only `ApplicationBorderlessExclusions`,
 `ApplicationTilingExclusions`,
 `BorderlessWindows`, `CenterFocusedColumn`, `Gap`,
 `DefaultColumnPresentation`, `DefaultColumnWidthPercent`,
-`DefaultColumnWidthPixels`, `DefaultWindowHeight`, `ColumnWidthPresets`,
+`DefaultColumnWidthPixels`, `DefaultFloatingPosition`, `DefaultWindowHeight`,
+`ColumnWidthPresets`,
 `ColumnWidthStepPercent`, `ColumnWidthStepPixels`,
 `ShowTabIndicator`, `TouchpadNavigation`,
 `TouchpadWorkspaceNavigation`, `TouchpadNavigationFingerCount`,
@@ -208,6 +209,11 @@ programs.driftile.settings.columnWidthPresets = [ 20 50 80 ];
 programs.driftile.settings.columnWidthStepPixels = 0;
 programs.driftile.settings.defaultColumnPresentation = "stacked";
 programs.driftile.settings.defaultColumnWidthPixels = 0;
+programs.driftile.settings.defaultFloatingPosition = {
+  anchor = "bottom-right";
+  x = 24;
+  y = 24;
+};
 programs.driftile.settings.defaultWindowHeight = "auto";
 programs.driftile.settings.gap = 7.5;
 programs.driftile.settings.showTabIndicator = true;
@@ -525,6 +531,18 @@ The normal **Toggle floating** action can tile a window that started manually
 floating. Its application-specific initial column width applies at that point.
 The policy uses existing floating and layout persistence and adds no persistence
 schema field.
+
+## Default floating position
+
+**Default initial floating position** accepts the same `anchor,x,y` value as an
+application floating-position rule. Blank disables it. It places a genuinely
+new normal window when the window starts manually floating or first uses
+**Toggle floating**; an exact application rule takes precedence.
+
+The existing fresh-only guards, work-area clamping, output-pixel snapping, and
+remembered manual frame remain authoritative. Changing the default does not
+move an existing, restored, transferred, automatic, dialog, or already
+positioned window.
 
 ## Application floating positions
 

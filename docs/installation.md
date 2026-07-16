@@ -332,6 +332,11 @@ programs.driftile.settings = {
   centerFocusedColumn = false;
   columnWidthPresets = [ 20 50 80 ];
   defaultColumnPresentation = "stacked";
+  defaultFloatingPosition = {
+    anchor = "bottom-right";
+    x = 24;
+    y = 24;
+  };
   gap = 16;
   showTabIndicator = true;
   defaultColumnWidthPercent = 33;
@@ -354,6 +359,7 @@ keeps the exact built-in `1/3`, `1/2`, and `2/3` cycle. See
 [Applications initially focused](configuration.md#applications-initially-focused),
 [Applications initially unfocused](configuration.md#applications-initially-unfocused),
 [Applications initially floating](configuration.md#applications-initially-floating),
+[Default floating position](configuration.md#default-floating-position),
 [Application floating positions](configuration.md#application-floating-positions),
 [Applications initially maximized to edges](configuration.md#applications-initially-maximized-to-edges),
 [Window height presets](configuration.md#window-height-presets),
