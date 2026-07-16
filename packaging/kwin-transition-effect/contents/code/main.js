@@ -73,7 +73,7 @@ class DriftileTransitionsEffect {
   onWindowFrameGeometryChanged(window, oldGeometry) {
     if (
       this.duration <= 0 ||
-      !this.isEligible(window) ||
+      !this.isDeferredTransitionEligible(window) ||
       !this.isValidGeometry(oldGeometry)
     ) {
       this.clearWindowTransitions(window);
@@ -92,6 +92,11 @@ class DriftileTransitionsEffect {
 
     if (effects.hasActiveFullScreenEffect) {
       this.deferWindowTransition(window, oldGeometry);
+      return;
+    }
+
+    if (!this.isEligible(window)) {
+      this.clearWindowTransitions(window);
       return;
     }
 
@@ -128,19 +133,22 @@ class DriftileTransitionsEffect {
       return;
     }
 
-    delete window[DEFERRED_PROPERTY];
+    if (effects.hasActiveFullScreenEffect) {
+      return;
+    }
+
     const newGeometry = window.geometry;
     if (
-      effects.hasActiveFullScreenEffect ||
       this.duration <= 0 ||
       !this.isEligible(window) ||
       !this.isValidGeometry(oldGeometry) ||
       !this.isValidGeometry(newGeometry)
     ) {
-      this.cancelWindowAnimation(window);
+      this.clearWindowTransitions(window);
       return;
     }
 
+    delete window[DEFERRED_PROPERTY];
     this.animateWindowTransition(window, oldGeometry, newGeometry);
   }
 
@@ -220,8 +228,11 @@ class DriftileTransitionsEffect {
   }
 
   isEligible(window) {
+    return window.visible && this.isDeferredTransitionEligible(window);
+  }
+
+  isDeferredTransitionEligible(window) {
     return (
-      window.visible &&
       !window.deleted &&
       !window.minimized &&
       !window.fullScreen &&

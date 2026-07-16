@@ -416,6 +416,46 @@ describe("transition effect package", () => {
     ]);
   });
 
+  it("captures deferred geometry while a transition hides the window", () => {
+    const harness = createHarness();
+    harness.setFullScreenEffectActive(true);
+    harness.window.visible = false;
+
+    changeGeometry(harness.window, {
+      x: 40,
+      y: 50,
+      width: 400,
+      height: 250,
+    });
+    changeGeometry(harness.window, {
+      x: 70,
+      y: 80,
+      width: 520,
+      height: 320,
+    });
+
+    expect(harness.animationRequests).toHaveLength(0);
+
+    harness.window.visible = true;
+    harness.setFullScreenEffectActive(false);
+
+    expect(harness.animationRequests).toHaveLength(1);
+    expect(harness.animationRequests[0]).toMatchObject({
+      animations: [
+        {
+          type: "size",
+          from: { value1: 300, value2: 200 },
+          to: { value1: 520, value2: 320 },
+        },
+        {
+          type: "position",
+          from: { value1: 170, value2: 130 },
+          to: { value1: 330, value2: 240 },
+        },
+      ],
+    });
+  });
+
   it("respects zero global duration and reloads bounded configuration", () => {
     const disabledHarness = createHarness({ scaledDuration: 0 });
     changeGeometry(disabledHarness.window, {
