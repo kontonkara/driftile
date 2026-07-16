@@ -355,7 +355,7 @@
        <item>
         <widget class="QLabel" name="applicationColumnWidthsLabel">
          <property name="text">
-          <string>Application column widths:</string>
+          <string>Application initial column widths (% or px):</string>
          </property>
          <property name="buddy">
           <cstring>kcfg_ApplicationColumnWidths</cstring>
@@ -365,10 +365,10 @@
        <item>
         <widget class="QPlainTextEdit" name="kcfg_ApplicationColumnWidths">
          <property name="toolTip">
-          <string>Enter one exact desktop-file ID and percentage per line, for example org.kde.konsole=60.</string>
+          <string>Enter up to 128 exact desktop-file ID and width pairs, one per line, for example org.kde.konsole=60 or org.mozilla.firefox=960px.</string>
          </property>
          <property name="whatsThis">
-          <string>Each nonempty line sets the initial width of new columns for one application. Use desktop-file-id=percent with a percentage from 10 to 100.</string>
+          <string>Each nonempty line affects only fresh singleton admission. After the equals sign, use a bare 10 to 100 percentage, an explicit 10% to 100% percentage, or a fixed 1px to 16384px logical width. Fixed widths are constrained by the admitted window and snapped to the assigned output pixel grid. Existing columns and reset behavior are unchanged.</string>
          </property>
          <property name="minimumSize">
           <size>

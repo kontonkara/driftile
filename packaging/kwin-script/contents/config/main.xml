@@ -87,7 +87,7 @@
       <default></default>
     </entry>
     <entry name="ApplicationColumnWidths" type="String">
-      <label>Initial column widths by desktop-file ID</label>
+      <label>Initial column widths in percent or pixels by desktop-file ID</label>
       <default></default>
     </entry>
     <entry name="ApplicationFocusCentering" type="String">

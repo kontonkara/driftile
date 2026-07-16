@@ -90,53 +90,6 @@ let
     && !hasEcmaScriptNonAsciiPadding value
     && !hasControlCharacter value;
   validMappedDesktopFileName = value: validDesktopFileName value && !lib.hasInfix "=" value;
-  applicationColumnWidthType =
-    lib.types.addCheck (lib.types.attrsOf (lib.types.ints.between 10 100))
-      (
-        widths:
-        builtins.length (builtins.attrNames widths) <= 128
-        && lib.all validMappedDesktopFileName (builtins.attrNames widths)
-      );
-  renderApplicationColumnWidths =
-    widths:
-    lib.concatStringsSep "\n" (
-      map (desktopFileName: "${desktopFileName}=${toString widths.${desktopFileName}}") (
-        builtins.sort builtins.lessThan (builtins.attrNames widths)
-      )
-    );
-  applicationColumnPresentationType =
-    lib.types.addCheck (lib.types.attrsOf (lib.types.enum [
-      "stacked"
-      "tabbed"
-    ]))
-      (
-        presentations:
-        builtins.length (builtins.attrNames presentations) <= 128
-        && lib.all validMappedDesktopFileName (builtins.attrNames presentations)
-      );
-  renderApplicationColumnPresentations =
-    presentations:
-    lib.concatStringsSep "\n" (
-      map (desktopFileName: "${desktopFileName}=${presentations.${desktopFileName}}") (
-        builtins.sort builtins.lessThan (builtins.attrNames presentations)
-      )
-    );
-  applicationTilingExclusionType = lib.types.addCheck (lib.types.listOf lib.types.str) (
-    exclusions:
-    builtins.length exclusions <= 128
-    && builtins.length (lib.unique exclusions) == builtins.length exclusions
-    && lib.all (exclusion: builtins.isString exclusion && validDesktopFileName exclusion) exclusions
-  );
-  renderApplicationTilingExclusions =
-    exclusions: lib.concatStringsSep "\n" (builtins.sort builtins.lessThan exclusions);
-  applicationBorderlessExclusionType = applicationTilingExclusionType;
-  renderApplicationBorderlessExclusions = renderApplicationTilingExclusions;
-  applicationFocusCenteringType = applicationTilingExclusionType;
-  renderApplicationFocusCentering = renderApplicationTilingExclusions;
-  applicationInitialFloatingType = applicationTilingExclusionType;
-  renderApplicationInitialFloating = renderApplicationTilingExclusions;
-  transitionWindowClassExclusionType = applicationTilingExclusionType;
-  renderTransitionWindowClassExclusions = renderApplicationTilingExclusions;
   parsePresetToken =
     preset:
     if builtins.isInt preset then
@@ -177,39 +130,97 @@ let
           null
       else
         null;
+  presetTokenType = lib.types.either (lib.types.ints.between 10 100) lib.types.str;
+  applicationColumnWidthType = lib.types.addCheck (lib.types.attrsOf presetTokenType) (
+    widths:
+    builtins.length (builtins.attrNames widths) <= 128
+    && lib.all validMappedDesktopFileName (builtins.attrNames widths)
+    && lib.all (width: parsePresetToken width != null) (builtins.attrValues widths)
+  );
+  renderApplicationColumnWidth =
+    width:
+    let
+      parsed = parsePresetToken width;
+    in
+    if parsed == null then
+      ""
+    else if parsed.unit == "percent" then
+      toString parsed.value
+    else
+      "${toString parsed.value}px";
+  renderApplicationColumnWidths =
+    widths:
+    lib.concatStringsSep "\n" (
+      map (
+        desktopFileName: "${desktopFileName}=${renderApplicationColumnWidth widths.${desktopFileName}}"
+      ) (builtins.sort builtins.lessThan (builtins.attrNames widths))
+    );
+  applicationColumnPresentationType =
+    lib.types.addCheck (lib.types.attrsOf (lib.types.enum [
+      "stacked"
+      "tabbed"
+    ]))
+      (
+        presentations:
+        builtins.length (builtins.attrNames presentations) <= 128
+        && lib.all validMappedDesktopFileName (builtins.attrNames presentations)
+      );
+  renderApplicationColumnPresentations =
+    presentations:
+    lib.concatStringsSep "\n" (
+      map (desktopFileName: "${desktopFileName}=${presentations.${desktopFileName}}") (
+        builtins.sort builtins.lessThan (builtins.attrNames presentations)
+      )
+    );
+  applicationTilingExclusionType = lib.types.addCheck (lib.types.listOf lib.types.str) (
+    exclusions:
+    builtins.length exclusions <= 128
+    && builtins.length (lib.unique exclusions) == builtins.length exclusions
+    && lib.all (exclusion: builtins.isString exclusion && validDesktopFileName exclusion) exclusions
+  );
+  renderApplicationTilingExclusions =
+    exclusions: lib.concatStringsSep "\n" (builtins.sort builtins.lessThan exclusions);
+  applicationBorderlessExclusionType = applicationTilingExclusionType;
+  renderApplicationBorderlessExclusions = renderApplicationTilingExclusions;
+  applicationFocusCenteringType = applicationTilingExclusionType;
+  renderApplicationFocusCentering = renderApplicationTilingExclusions;
+  applicationInitialFloatingType = applicationTilingExclusionType;
+  renderApplicationInitialFloating = renderApplicationTilingExclusions;
+  transitionWindowClassExclusionType = applicationTilingExclusionType;
+  renderTransitionWindowClassExclusions = renderApplicationTilingExclusions;
   validPresetSequence =
     presets:
     let
-      result = lib.foldl'
-        (
-          state: preset:
-          let
-            parsed = parsePresetToken preset;
-          in
-          if !state.valid || parsed == null then
-            state // { valid = false; }
-          else if parsed.unit == "percent" then
-            {
-              inherit (state) pixels;
-              percent = parsed.value;
-              valid = parsed.value > state.percent;
-            }
-          else
-            {
-              inherit (state) percent;
-              pixels = parsed.value;
-              valid = parsed.value > state.pixels;
-            }
-        )
-        {
-          percent = 9;
-          pixels = 0;
-          valid = true;
-        }
-        presets;
+      result =
+        lib.foldl'
+          (
+            state: preset:
+            let
+              parsed = parsePresetToken preset;
+            in
+            if !state.valid || parsed == null then
+              state // { valid = false; }
+            else if parsed.unit == "percent" then
+              {
+                inherit (state) pixels;
+                percent = parsed.value;
+                valid = parsed.value > state.percent;
+              }
+            else
+              {
+                inherit (state) percent;
+                pixels = parsed.value;
+                valid = parsed.value > state.pixels;
+              }
+          )
+          {
+            percent = 9;
+            pixels = 0;
+            valid = true;
+          }
+          presets;
     in
     builtins.length presets <= 16 && result.valid;
-  presetTokenType = lib.types.either (lib.types.ints.between 10 100) lib.types.str;
   columnWidthPresetType = lib.types.addCheck (lib.types.listOf presetTokenType) validPresetSequence;
   renderColumnWidthPresets = presets: lib.concatStringsSep "," (map toString presets);
   windowHeightPresetType = lib.types.addCheck (lib.types.listOf presetTokenType) validPresetSequence;
@@ -342,7 +353,7 @@ in
             applicationColumnWidths = lib.mkOption {
               type = applicationColumnWidthType;
               default = { };
-              description = "Initial column widths keyed by exact desktop-file ID.";
+              description = "Initial column widths keyed by exact desktop-file ID. Integers are percentages from 10 to 100; strings must use canonical 10% to 100% or 1px to 16384px forms.";
             };
 
             applicationFocusCentering = lib.mkOption {

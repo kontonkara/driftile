@@ -38,8 +38,9 @@ let
           "org.example.Browser"
         ];
         applicationColumnWidths = {
-          "org.example.Browser" = 80;
-          "org.example.Editor" = 60;
+          "org.example.Browser" = "80%";
+          "org.example.Editor" = "960px";
+          "org.example.Terminal" = 60;
         };
         applicationColumnPresentations = {
           "org.example.Browser" = "tabbed";
@@ -392,7 +393,8 @@ assert
         org.example.Editor=stacked'';
       ApplicationColumnWidths = ''
         org.example.Browser=80
-        org.example.Editor=60'';
+        org.example.Editor=960px
+        org.example.Terminal=60'';
       ApplicationFocusCentering = ''
         org.example.Browser
         org.example.Terminal'';

@@ -1243,7 +1243,7 @@ describe("KWin shortcut handlers", () => {
     );
   });
 
-  it("exposes exact application width overrides as a bounded list", () => {
+  it("exposes exact mixed application width overrides as a bounded list", () => {
     const overridesEntry = configuration.match(
       /<entry name="ApplicationColumnWidths" type="String">([\s\S]*?)<\/entry>/,
     )?.[1];
@@ -1252,13 +1252,25 @@ describe("KWin shortcut handlers", () => {
     )?.[1];
 
     expect(overridesEntry).toContain(
-      "<label>Initial column widths by desktop-file ID</label>",
+      "<label>Initial column widths in percent or pixels by desktop-file ID</label>",
     );
     expect(overridesEntry).toContain("<default></default>");
     expect(configurationUi).toContain(
-      "<string>Application column widths:</string>",
+      "<string>Application initial column widths (% or px):</string>",
     );
     expect(overridesWidget).toContain("org.kde.konsole=60");
+    expect(overridesWidget).toContain("org.mozilla.firefox=960px");
+    expect(overridesWidget).toContain("bare 10 to 100 percentage");
+    expect(overridesWidget).toContain("explicit 10% to 100% percentage");
+    expect(overridesWidget).toContain("fixed 1px to 16384px logical width");
+    expect(overridesWidget).toContain("only fresh singleton admission");
+    expect(overridesWidget).toContain("constrained by the admitted window");
+    expect(overridesWidget).toContain(
+      "snapped to the assigned output pixel grid",
+    );
+    expect(overridesWidget).toContain(
+      "Existing columns and reset behavior are unchanged.",
+    );
     expect(qml).toContain(
       'applicationColumnWidths: KWin.readConfig("ApplicationColumnWidths", "")',
     );

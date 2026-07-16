@@ -429,8 +429,9 @@ let
             "org.example.Editor" = "stacked";
           };
           applicationColumnWidths = {
-            "org.example.Browser" = 80;
-            "org.example.Editor" = 60;
+            "org.example.Browser" = "80%";
+            "org.example.Editor" = "960px";
+            "org.example.Terminal" = 60;
           };
           applicationFocusCentering = [
             "org.example.Terminal"
@@ -502,6 +503,21 @@ let
             value = 50;
           }) 128
         );
+      }
+      { };
+  homeManagerColumnWidthBounds =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.settings.applicationColumnWidths = {
+          "org.example.A" = "10%";
+          "org.example.B" = "100%";
+          "org.example.C" = "1px";
+          "org.example.D" = "16384px";
+        };
       }
       { };
   homeManagerMaximumPresentations =
@@ -779,6 +795,14 @@ let
     { windowHeightStepPercent = 51; }
     { applicationColumnWidths."org.example.Editor" = 9; }
     { applicationColumnWidths."org.example.Editor" = 101; }
+    { applicationColumnWidths."org.example.Editor" = "9%"; }
+    { applicationColumnWidths."org.example.Editor" = "101%"; }
+    { applicationColumnWidths."org.example.Editor" = "0px"; }
+    { applicationColumnWidths."org.example.Editor" = "16385px"; }
+    { applicationColumnWidths."org.example.Editor" = "80"; }
+    { applicationColumnWidths."org.example.Editor" = "080%"; }
+    { applicationColumnWidths."org.example.Editor" = "080px"; }
+    { applicationColumnWidths."org.example.Editor" = "10PX"; }
     { applicationColumnWidths."" = 50; }
     { applicationColumnWidths." org.example.Editor" = 50; }
     { applicationColumnWidths."org.example.Editor=" = 50; }
@@ -927,7 +951,8 @@ let
         org.example.Editor=stacked'';
       ApplicationColumnWidths = ''
         org.example.Browser=80
-        org.example.Editor=60'';
+        org.example.Editor=960px
+        org.example.Terminal=60'';
       ApplicationFocusCentering = ''
         org.example.Browser
         org.example.Terminal'';
@@ -1121,6 +1146,13 @@ assert
     lib.splitString "\n"
       homeManagerMaximumOverrides.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ApplicationColumnWidths
   ) == 128;
+assert
+  homeManagerColumnWidthBounds.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ApplicationColumnWidths
+  == ''
+    org.example.A=10
+    org.example.B=100
+    org.example.C=1px
+    org.example.D=16384px'';
 assert
   builtins.length (
     lib.splitString "\n"
