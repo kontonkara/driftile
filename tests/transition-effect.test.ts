@@ -482,7 +482,7 @@ describe("transition effect package", () => {
       {
         animationId: 2,
         target: { value1: 264, value2: 197.5 },
-        duration: 180,
+        duration: 100,
       },
     ]);
     expect(harness.animationRequests).toHaveLength(1);
@@ -571,42 +571,32 @@ describe("transition effect package", () => {
       {
         animationId: 1,
         target: { value1: 0, value2: 170 },
-        duration: 180,
+        duration: 100,
       },
       {
         animationId: 2,
         target: { value1: -100, value2: 0 },
-        duration: 180,
+        duration: 100,
       },
       {
         animationId: 1,
         target: { value1: 250, value2: 170 },
-        duration: 180,
+        duration: 100,
       },
       {
         animationId: 2,
         target: { value1: 0, value2: 0 },
-        duration: 180,
+        duration: 100,
       },
       {
         animationId: 1,
         target: { value1: 350, value2: 170 },
-        duration: 180,
-      },
-      {
-        animationId: 2,
-        target: { value1: 0, value2: 0 },
-        duration: 180,
+        duration: 100,
       },
       {
         animationId: 1,
         target: { value1: 450, value2: 170 },
-        duration: 180,
-      },
-      {
-        animationId: 2,
-        target: { value1: 0, value2: 0 },
-        duration: 180,
+        duration: 100,
       },
     ]);
     expect(harness.cancelledAnimations).toHaveLength(0);
@@ -657,7 +647,7 @@ describe("transition effect package", () => {
       },
     ]);
     expect(harness.retargetCalls.map(({ animationId }) => animationId)).toEqual(
-      [1, 1, 2, 1, 2, 1, 2],
+      [1, 2, 1, 2, 1],
     );
     expect(harness.cancelledAnimations).toHaveLength(0);
   });
@@ -679,7 +669,12 @@ describe("transition effect package", () => {
 
     expect(harness.animationRequests).toHaveLength(1);
     expect(harness.animationRequests[0]?.animations).toHaveLength(2);
-    expect(harness.retargetCalls).toHaveLength(68);
+    expect(harness.retargetCalls).toHaveLength(34);
+    expect(
+      harness.retargetCalls.every(
+        ({ animationId, duration }) => animationId === 2 && duration === 100,
+      ),
+    ).toBe(true);
     expect(harness.cancelledAnimations).toHaveLength(0);
 
     window.move = true;
@@ -819,12 +814,12 @@ describe("transition effect package", () => {
       {
         animationId: 1,
         target: { value1: 600, value2: 350 },
-        duration: 180,
+        duration: 100,
       },
       {
         animationId: 2,
         target: { value1: 400, value2: 285 },
-        duration: 180,
+        duration: 100,
       },
     ]);
   });
@@ -1070,12 +1065,12 @@ describe("transition effect package", () => {
       {
         animationId: 1,
         target: { value1: 600, value2: 350 },
-        duration: 180,
+        duration: 100,
       },
       {
         animationId: 2,
         target: { value1: 380, value2: 265 },
-        duration: 180,
+        duration: 100,
       },
     ]);
   });
@@ -1158,6 +1153,7 @@ describe("transition effect package", () => {
     });
     expect(disabledHarness.animationTimeCalls).toEqual([180]);
     expect(disabledHarness.animationRequests).toHaveLength(0);
+    expect(disabledHarness.retargetCalls).toHaveLength(0);
 
     const configuredHarness = createHarness();
     configuredHarness.setConfiguredDuration(5000);
@@ -1170,6 +1166,53 @@ describe("transition effect package", () => {
       height: 250,
     });
     expect(configuredHarness.animationRequests[0]?.duration).toBe(1000);
+  });
+
+  it("scales the retarget cap without extending short durations", () => {
+    const cases = [
+      {
+        label: "short custom duration",
+        options: { configuredDuration: 60 },
+        initialDuration: 60,
+        retargetDuration: 60,
+      },
+      {
+        label: "faster system animation scale",
+        options: { scaledDuration: 90 },
+        initialDuration: 90,
+        retargetDuration: 50,
+      },
+      {
+        label: "slower system animation scale",
+        options: { scaledDuration: 360 },
+        initialDuration: 360,
+        retargetDuration: 200,
+      },
+    ] as const;
+
+    for (const testCase of cases) {
+      const harness = createHarness(testCase.options);
+      changeGeometry(harness.window, {
+        x: 40,
+        y: 50,
+        width: 400,
+        height: 250,
+      });
+      changeGeometry(harness.window, {
+        x: 60,
+        y: 70,
+        width: 500,
+        height: 300,
+      });
+
+      expect(harness.animationRequests[0]?.duration, testCase.label).toBe(
+        testCase.initialDuration,
+      );
+      expect(
+        harness.retargetCalls.map(({ duration }) => duration),
+        testCase.label,
+      ).toEqual([testCase.retargetDuration, testCase.retargetDuration]);
+    }
   });
 
   it("configures position and size animation independently", () => {
@@ -1388,17 +1431,17 @@ describe("transition effect package", () => {
       {
         animationId: 1,
         target: { value1: 500, value2: 300 },
-        duration: 180,
+        duration: 100,
       },
       {
         animationId: 2,
         target: { value1: 310, value2: 220 },
-        duration: 180,
+        duration: 100,
       },
       {
         animationId: 2,
         target: { value1: 330, value2: 240 },
-        duration: 180,
+        duration: 100,
       },
     ]);
     expect(harness.cancelledAnimations).toHaveLength(0);

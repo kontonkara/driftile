@@ -5,6 +5,7 @@
 
 const DEFAULT_DURATION = 180;
 const MAXIMUM_DURATION = 1000;
+const MAXIMUM_RETARGET_DURATION = 100;
 const DEFAULT_RESIZE_ANIMATION_THRESHOLD = 10;
 const MAXIMUM_RESIZE_ANIMATION_THRESHOLD = 64;
 const MAXIMUM_EXCLUSION_COUNT = 128;
@@ -16,10 +17,16 @@ const DEFERRED_PROPERTY = "driftileDeferredTransition";
 const POSITION_ANIMATION = "position";
 const TRANSLATION_ANIMATION = "translation";
 const SIZE_ANIMATION = "size";
+const ANIMATION_TARGET_PROPERTIES = {
+  [POSITION_ANIMATION]: "positionTarget",
+  [TRANSLATION_ANIMATION]: "translationTarget",
+  [SIZE_ANIMATION]: "sizeTarget",
+};
 
 class DriftileTransitionsEffect {
   constructor() {
     this.duration = 0;
+    this.retargetDuration = 0;
     this.animatePosition = true;
     this.animateSize = true;
     this.easingCurve = QEasingCurve.OutCubic;
@@ -66,6 +73,17 @@ class DriftileTransitionsEffect {
       : DEFAULT_DURATION;
 
     this.duration = animationTime(baseDuration);
+    this.retargetDuration =
+      baseDuration === 0
+        ? 0
+        : Math.min(
+            this.duration,
+            Math.round(
+              (this.duration *
+                Math.min(baseDuration, MAXIMUM_RETARGET_DURATION)) /
+                baseDuration,
+            ),
+          );
     this.animatePosition = this.readBooleanConfig("AnimatePosition", true);
     this.animateSize = this.readBooleanConfig("AnimateSize", true);
     this.easingCurve = this.readEasingCurveConfig();
@@ -296,6 +314,7 @@ class DriftileTransitionsEffect {
     }
     const animations = [];
     const animationProperties = [];
+    const animationTargets = [];
     const newSize = {
       value1: newGeometry.width,
       value2: newGeometry.height,
@@ -306,6 +325,7 @@ class DriftileTransitionsEffect {
       !this.retargetAnimation(state, SIZE_ANIMATION, newSize)
     ) {
       animationProperties.push(SIZE_ANIMATION);
+      animationTargets.push(newSize);
       animations.push({
         type: Effect.Size,
         from: {
@@ -333,6 +353,7 @@ class DriftileTransitionsEffect {
         )
       ) {
         animationProperties.push(POSITION_ANIMATION);
+        animationTargets.push(newPositionComponents.absolute);
         animations.push({
           type: Effect.Position,
           from: oldPositionComponents.absolute,
@@ -350,6 +371,7 @@ class DriftileTransitionsEffect {
       ) {
         if (translationRequired) {
           animationProperties.push(TRANSLATION_ANIMATION);
+          animationTargets.push(newPositionComponents.translation);
           animations.push({
             type: Effect.Translation,
             from: oldPositionComponents.translation,
@@ -371,6 +393,9 @@ class DriftileTransitionsEffect {
         const property = animationProperties[index];
         const animationId = animationIds[index];
         state[property] = animationId;
+        state[ANIMATION_TARGET_PROPERTIES[property]] = this.copyAnimationTarget(
+          animationTargets[index],
+        );
       }
     }
 
@@ -579,12 +604,34 @@ class DriftileTransitionsEffect {
       return false;
     }
 
-    if (retarget(animationId, target, this.duration)) {
+    const targetProperty = ANIMATION_TARGET_PROPERTIES[property];
+    if (this.animationTargetsEqual(state[targetProperty], target)) {
+      return true;
+    }
+
+    if (retarget(animationId, target, this.retargetDuration)) {
+      state[targetProperty] = this.copyAnimationTarget(target);
       return true;
     }
 
     delete state[property];
+    delete state[targetProperty];
     return false;
+  }
+
+  animationTargetsEqual(first, second) {
+    return (
+      first !== undefined &&
+      first.value1 === second.value1 &&
+      first.value2 === second.value2
+    );
+  }
+
+  copyAnimationTarget(target) {
+    return {
+      value1: target.value1,
+      value2: target.value2,
+    };
   }
 
   cancelPositionAnimations(state) {
@@ -597,6 +644,7 @@ class DriftileTransitionsEffect {
       cancel(state[property]);
       delete state[property];
     }
+    delete state[ANIMATION_TARGET_PROPERTIES[property]];
   }
 
   positionComponents(position) {
