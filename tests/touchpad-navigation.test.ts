@@ -267,10 +267,10 @@ describe("touchpad navigation", () => {
       /function onFocusRightRequested\(\) \{\s*Runtime\.DriftileRuntime\.focusRight\(\)\s*\}/u,
     );
     expect(mainQml).toMatch(
-      /function onFocusPreviousDesktopRequested\(\) \{\s*Runtime\.DriftileRuntime\.focusPreviousDesktop\(\)\s*\}/u,
+      /function onFocusPreviousDesktopRequested\(\) \{\s*Runtime\.DriftileRuntime\.focusPreviousDesktopUnderPointer\(\)\s*\}/u,
     );
     expect(mainQml).toMatch(
-      /function onFocusNextDesktopRequested\(\) \{\s*Runtime\.DriftileRuntime\.focusNextDesktop\(\)\s*\}/u,
+      /function onFocusNextDesktopRequested\(\) \{\s*Runtime\.DriftileRuntime\.focusNextDesktopUnderPointer\(\)\s*\}/u,
     );
   });
 
@@ -360,6 +360,12 @@ describe("touchpad navigation", () => {
     );
     expect(runtimeSource).toMatch(
       /export function getTouchpadNaturalScroll\(\): boolean \{\s*return appliedSettings\?\.touchpadNaturalScroll \?\? true;\s*\}/u,
+    );
+    expect(runtimeSource).toMatch(
+      /export function focusPreviousDesktopUnderPointer\(\): void \{\s*runCommand\(\(activeController\) =>\s*activeController\.focusPreviousDesktopUnderPointer\(\),\s*\);\s*\}/u,
+    );
+    expect(runtimeSource).toMatch(
+      /export function focusNextDesktopUnderPointer\(\): void \{\s*runCommand\(\(activeController\) =>\s*activeController\.focusNextDesktopUnderPointer\(\),\s*\);\s*\}/u,
     );
     expect(packageCheck).toContain('"ui/TouchpadNavigation.qml"');
     expect(packageCheck).toContain('"ui/TouchpadWorkspaceNavigation.qml"');

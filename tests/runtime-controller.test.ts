@@ -37091,6 +37091,120 @@ describe("RuntimeController", () => {
     );
   });
 
+  it("focuses adjacent desktops on the output under the pointer", () => {
+    const activeOutput = createOutput("DP-1", 0);
+    const pointerOutput = createOutput("HDMI-A-1", 1000);
+    const desktops = [
+      { id: "desktop-1" },
+      { id: "desktop-2" },
+      { id: "desktop-3" },
+    ] as const;
+    const fixture = createWorkspace(
+      activeOutput,
+      desktops[1],
+      [activeOutput, pointerOutput],
+      desktops,
+      [],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+    });
+
+    fixture.setCursorPosition(1250, 200);
+    expect(controller.start()).toBe(true);
+    expect(controller.focusPreviousDesktopUnderPointer()).toBe(true);
+    expect(fixture.workspace.currentDesktopForScreen?.(activeOutput)).toBe(
+      desktops[1],
+    );
+    expect(fixture.workspace.currentDesktopForScreen?.(pointerOutput)).toBe(
+      desktops[0],
+    );
+
+    expect(controller.focusNextDesktop()).toBe(true);
+    expect(fixture.workspace.currentDesktopForScreen?.(activeOutput)).toBe(
+      desktops[2],
+    );
+    expect(fixture.workspace.currentDesktopForScreen?.(pointerOutput)).toBe(
+      desktops[0],
+    );
+
+    fixture.setCursorPosition(1000, 0);
+    expect(controller.focusNextDesktopUnderPointer()).toBe(true);
+    expect(fixture.workspace.currentDesktopForScreen?.(pointerOutput)).toBe(
+      desktops[1],
+    );
+  });
+
+  it("rejects ambiguous, missing, and invalid pointer output targets", () => {
+    const desktop = { id: "desktop-1" };
+    const targetDesktop = { id: "desktop-2" };
+    const gapLeft = createOutput("gap-left", 0);
+    const gapRight = createOutput("gap-right", 1200);
+    const gapFixture = createWorkspace(
+      gapLeft,
+      desktop,
+      [gapLeft, gapRight],
+      [desktop, targetDesktop],
+      [],
+    );
+    const gapController = new RuntimeController(gapFixture.workspace, {
+      clientAreaOption: 2,
+    });
+
+    gapFixture.setCursorPosition(1100, 100);
+    expect(gapController.start()).toBe(true);
+    expect(gapController.focusNextDesktopUnderPointer()).toBe(false);
+    gapFixture.setCursorPosition(Number.NaN, 100);
+    expect(gapController.focusNextDesktopUnderPointer()).toBe(false);
+    Object.defineProperty(gapFixture.workspace, "cursorPos", {
+      configurable: true,
+      value: undefined,
+    });
+    expect(gapController.focusNextDesktopUnderPointer()).toBe(false);
+    expect(gapFixture.desktopSwitchCount).toBe(0);
+
+    const overlapLeft = createOutput("overlap-left", 0);
+    const overlapRight = createOutput("overlap-right", 500);
+    const overlapFixture = createWorkspace(
+      overlapLeft,
+      desktop,
+      [overlapLeft, overlapRight],
+      [desktop, targetDesktop],
+      [],
+    );
+    const overlapController = new RuntimeController(overlapFixture.workspace, {
+      clientAreaOption: 2,
+    });
+
+    overlapFixture.setCursorPosition(750, 100);
+    expect(overlapController.start()).toBe(true);
+    expect(overlapController.focusNextDesktopUnderPointer()).toBe(false);
+    expect(overlapFixture.desktopSwitchCount).toBe(0);
+  });
+
+  it("uses the global desktop fallback for pointer-targeted navigation", () => {
+    const activeOutput = createOutput("DP-1", 0);
+    const pointerOutput = createOutput("HDMI-A-1", 1000);
+    const desktops = [{ id: "desktop-1" }, { id: "desktop-2" }] as const;
+    const fixture = createWorkspace(
+      activeOutput,
+      desktops[1],
+      [activeOutput, pointerOutput],
+      desktops,
+      [],
+      false,
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+    });
+
+    fixture.setCursorPosition(1250, 200);
+    expect(controller.start()).toBe(true);
+    expect(controller.focusPreviousDesktopUnderPointer()).toBe(true);
+    expect(fixture.workspace.currentDesktop).toBe(desktops[0]);
+    expect(fixture.desktopSwitchCount).toBe(1);
+  });
+
   it("focuses numbered desktops on the active output and clamps to the tail", () => {
     const activeOutput = createOutput("DP-1", 0);
     const otherOutput = createOutput("HDMI-A-1", 1000);

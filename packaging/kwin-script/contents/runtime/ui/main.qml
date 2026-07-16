@@ -90,11 +90,11 @@ QtObject {
         target: touchpadWorkspaceNavigationLoader.item
 
         function onFocusPreviousDesktopRequested() {
-            Runtime.DriftileRuntime.focusPreviousDesktop()
+            Runtime.DriftileRuntime.focusPreviousDesktopUnderPointer()
         }
 
         function onFocusNextDesktopRequested() {
-            Runtime.DriftileRuntime.focusNextDesktop()
+            Runtime.DriftileRuntime.focusNextDesktopUnderPointer()
         }
     }
 

@@ -307,6 +307,18 @@ export function focusNextDesktop(): void {
   runCommand((activeController) => activeController.focusNextDesktop());
 }
 
+export function focusPreviousDesktopUnderPointer(): void {
+  runCommand((activeController) =>
+    activeController.focusPreviousDesktopUnderPointer(),
+  );
+}
+
+export function focusNextDesktopUnderPointer(): void {
+  runCommand((activeController) =>
+    activeController.focusNextDesktopUnderPointer(),
+  );
+}
+
 export function focusLastUsedDesktop(): void {
   runCommand((activeController) => activeController.focusLastUsedDesktop());
 }

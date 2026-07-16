@@ -2255,6 +2255,22 @@ export class RuntimeController {
     return this.focusDesktopTarget({ direction: 1, kind: "adjacent" });
   }
 
+  focusPreviousDesktopUnderPointer(): boolean {
+    const output = this.outputUnderPointer();
+
+    return output
+      ? this.focusDesktopTarget({ direction: -1, kind: "adjacent" }, output)
+      : false;
+  }
+
+  focusNextDesktopUnderPointer(): boolean {
+    const output = this.outputUnderPointer();
+
+    return output
+      ? this.focusDesktopTarget({ direction: 1, kind: "adjacent" }, output)
+      : false;
+  }
+
   focusDesktop(index: number): boolean {
     if (!validDesktopIndex(index)) {
       return false;
@@ -7146,7 +7162,10 @@ export class RuntimeController {
     }
   }
 
-  private focusDesktopTarget(target: DesktopTransferTarget): boolean {
+  private focusDesktopTarget(
+    target: DesktopTransferTarget,
+    requestedOutput?: KWinOutput,
+  ): boolean {
     if (
       !this.started ||
       this.stackEditOperation ||
@@ -7156,7 +7175,7 @@ export class RuntimeController {
       return false;
     }
 
-    const output = this.workspace.activeScreen;
+    const output = requestedOutput ?? this.workspace.activeScreen;
 
     if (!output || !this.workspace.screens.includes(output)) {
       return false;
@@ -7206,6 +7225,52 @@ export class RuntimeController {
 
     this.recordDesktopSelection(current, targetDesktop, output);
     return true;
+  }
+
+  private outputUnderPointer(): KWinOutput | null {
+    const cursor = this.workspace.cursorPos;
+
+    if (!cursor || !Number.isFinite(cursor.x) || !Number.isFinite(cursor.y)) {
+      return null;
+    }
+
+    let target: KWinOutput | null = null;
+
+    for (const output of this.workspace.screens) {
+      const geometry = output.geometry;
+      const right = geometry.x + geometry.width;
+      const bottom = geometry.y + geometry.height;
+
+      if (
+        !Number.isFinite(geometry.x) ||
+        !Number.isFinite(geometry.y) ||
+        !Number.isFinite(geometry.width) ||
+        !Number.isFinite(geometry.height) ||
+        !Number.isFinite(right) ||
+        !Number.isFinite(bottom) ||
+        geometry.width <= 0 ||
+        geometry.height <= 0
+      ) {
+        return null;
+      }
+
+      if (
+        cursor.x < geometry.x ||
+        cursor.x >= right ||
+        cursor.y < geometry.y ||
+        cursor.y >= bottom
+      ) {
+        continue;
+      }
+
+      if (target) {
+        return null;
+      }
+
+      target = output;
+    }
+
+    return target;
   }
 
   private desktopSelectionTransitionIsConfirmed(
