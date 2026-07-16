@@ -26,6 +26,8 @@ Rectangle {
     signal windowDropped(var candidate, string expectedWindowId, var expectedSourceDesktop,
                          string expectedSourceDesktopId, var expectedTargetDesktop,
                          string expectedTargetDesktopId, var expectedScreen)
+    signal windowCloseRequested(var candidate, string expectedWindowId, var expectedDesktop,
+                                string expectedDesktopId, var expectedScreen)
     signal windowTapped(var candidate, string expectedWindowId, var expectedDesktop, string expectedDesktopId,
                         var expectedScreen)
 
@@ -312,6 +314,17 @@ Rectangle {
                                                     card.desktopId, card.screen)
                     }
 
+                    TapHandler {
+                        acceptedButtons: Qt.MiddleButton
+                        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                        enabled: card.windowCanRequestClose(windowPresentation, thumbnailShell)
+                        onTapped: card.windowCloseRequested(windowPresentation.candidate,
+                                                           windowPresentation.windowId,
+                                                           windowPresentation.sourceDesktop,
+                                                           windowPresentation.sourceDesktopId,
+                                                           windowPresentation.sourceScreen)
+                    }
+
                     DragHandler {
                         id: thumbnailDragHandler
 
@@ -408,6 +421,17 @@ Rectangle {
                                  && !windowPresentation.minimizedWindow && card.desktop && card.screen
                         onTapped: card.windowTapped(model.window, windowPresentation.windowId, card.desktop,
                                                     card.desktopId, card.screen)
+                    }
+
+                    TapHandler {
+                        acceptedButtons: Qt.MiddleButton
+                        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                        enabled: card.windowCanRequestClose(windowPresentation, tabShell)
+                        onTapped: card.windowCloseRequested(windowPresentation.candidate,
+                                                           windowPresentation.windowId,
+                                                           windowPresentation.sourceDesktop,
+                                                           windowPresentation.sourceDesktopId,
+                                                           windowPresentation.sourceScreen)
                     }
 
                     DragHandler {
@@ -598,6 +622,46 @@ Rectangle {
             const desktops = candidate.desktops;
             return desktops && desktops.length === 1 && desktops[0] === sourceDesktop
                     && String(desktops[0].id) === sourceDesktopId;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function windowCanRequestClose(presentation, visual) {
+        try {
+            const candidate = presentation ? presentation.candidate : null;
+            const windowId = presentation ? presentation.windowId : "";
+            const expectedDesktop = presentation ? presentation.sourceDesktop : null;
+            const expectedDesktopId = presentation ? presentation.sourceDesktopId : "";
+            const expectedScreen = presentation ? presentation.sourceScreen : null;
+            if (!visual || !visual.visible || !candidate || presentation.matchesSearch !== true
+                    || candidate.deleted || candidate.minimized || presentation.minimizedWindow
+                    || candidate.managed !== true || candidate.closeable !== true
+                    || typeof candidate.closeWindow !== "function" || candidate.internalId === undefined
+                    || candidate.internalId === null || typeof windowId !== "string" || windowId.length === 0
+                    || String(candidate.internalId) !== windowId || !expectedDesktop
+                    || expectedDesktop.id === undefined || expectedDesktop.id === null
+                    || typeof expectedDesktopId !== "string" || expectedDesktopId.length === 0
+                    || String(expectedDesktop.id) !== expectedDesktopId || !expectedScreen
+                    || candidate.output !== expectedScreen) {
+                return false;
+            }
+
+            const desktops = candidate.desktops;
+            if (!desktops) {
+                return false;
+            }
+            if (desktops.length === 0) {
+                return true;
+            }
+
+            for (const candidateDesktop of desktops) {
+                if (candidateDesktop === expectedDesktop && String(candidateDesktop.id) === expectedDesktopId) {
+                    return true;
+                }
+            }
+
+            return false;
         } catch (error) {
             return false;
         }

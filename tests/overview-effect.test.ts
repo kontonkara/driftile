@@ -431,10 +431,10 @@ describe("overview effect package", () => {
       desktopCard.indexOf("function indexOfDesktop("),
     );
 
-    expect(desktopCard.match(/\bTapHandler\s*\{/gu)).toHaveLength(3);
+    expect(desktopCard.match(/\bTapHandler\s*\{/gu)).toHaveLength(5);
     expect(numberGutter.match(/\bTapHandler\s*\{/gu)).toHaveLength(1);
-    expect(thumbnail.match(/\bTapHandler\s*\{/gu)).toHaveLength(1);
-    expect(tab.match(/\bTapHandler\s*\{/gu)).toHaveLength(1);
+    expect(thumbnail.match(/\bTapHandler\s*\{/gu)).toHaveLength(2);
+    expect(tab.match(/\bTapHandler\s*\{/gu)).toHaveLength(2);
     expect(windowPresentation).toContain("width: viewport.width");
     expect(windowPresentation).toContain("height: viewport.height");
     expect(thumbnail).toContain("acceptedButtons: Qt.LeftButton");
@@ -1146,6 +1146,73 @@ describe("overview effect package", () => {
     );
     expect(scene).toMatch(
       /function onWindowRemoved\(\) \{\s*root\.closeStaleOverview\(\);/u,
+    );
+  });
+
+  it("routes guarded middle-click closes through the live window transaction", () => {
+    const thumbnail = desktopCard.slice(
+      desktopCard.indexOf("id: thumbnailShell"),
+      desktopCard.indexOf("id: tabShell"),
+    );
+    const tab = desktopCard.slice(
+      desktopCard.indexOf("id: tabShell"),
+      desktopCard.indexOf("function indexOfDesktop("),
+    );
+    const eligibility = desktopCard.slice(
+      desktopCard.indexOf("function windowCanRequestClose("),
+      desktopCard.indexOf("function windowDropIsValid("),
+    );
+    const desktopDelegate = scene.slice(
+      scene.indexOf("DesktopCard {"),
+      scene.indexOf("Rectangle {", scene.indexOf("DesktopCard {")),
+    );
+
+    expect(desktopCard).toContain(
+      "signal windowCloseRequested(var candidate, string expectedWindowId, var expectedDesktop,",
+    );
+    expect(
+      desktopCard.match(/acceptedButtons: Qt\.MiddleButton/gu),
+    ).toHaveLength(2);
+    for (const visual of [
+      { source: thumbnail, id: "thumbnailShell" },
+      { source: tab, id: "tabShell" },
+    ]) {
+      expect(visual.source).toContain(
+        `enabled: card.windowCanRequestClose(windowPresentation, ${visual.id})`,
+      );
+      expect(visual.source).toContain(
+        "onTapped: card.windowCloseRequested(windowPresentation.candidate,",
+      );
+      expect(visual.source).toContain("windowPresentation.windowId,");
+      expect(visual.source).toContain("windowPresentation.sourceDesktop,");
+      expect(visual.source).toContain("windowPresentation.sourceDesktopId,");
+      expect(visual.source).toContain("windowPresentation.sourceScreen)");
+    }
+
+    expect(eligibility).toContain("!visual || !visual.visible");
+    expect(eligibility).toContain("presentation.matchesSearch !== true");
+    expect(eligibility).toContain("candidate.deleted");
+    expect(eligibility).toContain("candidate.minimized");
+    expect(eligibility).toContain("presentation.minimizedWindow");
+    expect(eligibility).toContain("candidate.managed !== true");
+    expect(eligibility).toContain("candidate.closeable !== true");
+    expect(eligibility).toContain(
+      'typeof candidate.closeWindow !== "function"',
+    );
+    expect(eligibility).toContain("String(candidate.internalId) !== windowId");
+    expect(eligibility).toContain(
+      "String(expectedDesktop.id) !== expectedDesktopId",
+    );
+    expect(eligibility).toContain("candidate.output !== expectedScreen");
+    expect(eligibility).toContain("candidateDesktop === expectedDesktop");
+    expect(eligibility).toContain(
+      "String(candidateDesktop.id) === expectedDesktopId",
+    );
+    expect(desktopCard).not.toContain("candidate.closeWindow()");
+
+    expect(desktopDelegate).toContain("onWindowCloseRequested:");
+    expect(desktopDelegate).toMatch(
+      /onWindowCloseRequested:[\s\S]*=> root\.closeWindow\(candidate, expectedWindowId,[\s\S]*expectedDesktop, expectedDesktopId,[\s\S]*expectedScreen\)/u,
     );
   });
 

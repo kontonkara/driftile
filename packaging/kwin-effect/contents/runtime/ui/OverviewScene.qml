@@ -184,6 +184,10 @@ Rectangle {
             onWindowTapped: (candidate, expectedWindowId, expectedDesktop, expectedDesktopId, expectedScreen) =>
                                 root.focusWindow(candidate, expectedWindowId, expectedDesktop, expectedDesktopId,
                                                  expectedScreen)
+            onWindowCloseRequested: (candidate, expectedWindowId, expectedDesktop, expectedDesktopId,
+                                     expectedScreen) => root.closeWindow(candidate, expectedWindowId,
+                                                                          expectedDesktop, expectedDesktopId,
+                                                                          expectedScreen)
             onWindowDropped: (candidate, expectedWindowId, expectedSourceDesktop, expectedSourceDesktopId,
                               expectedTargetDesktop, expectedTargetDesktopId, expectedScreen) =>
                                  root.moveWindowToDesktop(candidate, expectedWindowId, expectedSourceDesktop,
