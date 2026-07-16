@@ -305,6 +305,16 @@ type PointerResize = PointerHorizontalResize | PointerVerticalResize;
 interface WindowRemovalFocus {
   readonly contextKey: string;
   readonly layer: WindowLayer;
+  readonly previousWindowId: WindowId | null;
+}
+
+interface PendingWindowRemovalFocusRecovery {
+  readonly focus: WindowRemovalFocus;
+  readonly generation: number;
+  phase: "retry-scheduled" | "settling" | "waiting";
+  requestedWindowId: WindowId | null;
+  readonly removedId: WindowId;
+  readonly topologyRevision: number;
 }
 
 interface DesktopSelectionHistory {
@@ -1119,6 +1129,8 @@ export class RuntimeController {
   private lastActivatedWindow: KWinWindow | null = null;
   private previousActivatedWindow: KWinWindow | null = null;
   private readonly windowFocusHistory = new Set<WindowId>();
+  private pendingWindowRemovalFocusRecovery: PendingWindowRemovalFocusRecovery | null =
+    null;
   private focusRequestDepth = 0;
   private ownershipFollowUpRequired = false;
   private ownershipRefreshInProgress = false;
@@ -4094,6 +4106,7 @@ export class RuntimeController {
       this.pointerResizeIntent = null;
       this.pointerResizeSettlement = null;
       this.startupCompleted = false;
+      this.pendingWindowRemovalFocusRecovery = null;
       this.runGeneration += 1;
       this.started = true;
       this.lastOutputCount = this.workspace.screens.length;
@@ -4175,6 +4188,7 @@ export class RuntimeController {
     this.preservedFallbackLayoutState = null;
     this.workScheduled = false;
     this.runGeneration += 1;
+    this.pendingWindowRemovalFocusRecovery = null;
     this.pendingExpelFocusHandoff = null;
     this.borderlessContextReconciliationPending = false;
     this.borderlessReconciliationPending = false;
@@ -4261,6 +4275,7 @@ export class RuntimeController {
       this.lastActivatedWindow = null;
       this.previousActivatedWindow = null;
       this.windowFocusHistory.clear();
+      this.pendingWindowRemovalFocusRecovery = null;
       this.managedWindows.clear();
       this.pendingAdmissionContexts.clear();
       this.pendingDefaultColumnWidth = null;
@@ -4550,6 +4565,7 @@ export class RuntimeController {
     output?: KWinOutput,
   ): void => {
     this.pointerResizeIntent = null;
+    this.cancelInvalidWindowRemovalFocusRecovery();
 
     if (this.windowTransferOperation) {
       if (
@@ -4622,6 +4638,7 @@ export class RuntimeController {
 
     this.clearPointerMoveIntent();
     this.pointerResizeIntent = null;
+    this.cancelInvalidWindowRemovalFocusRecovery();
 
     if (this.windowTransferOperation) {
       this.windowTransferOperation.memberStateInvalidated = true;
@@ -4644,6 +4661,7 @@ export class RuntimeController {
 
   private readonly handleDesktopsChanged = (): void => {
     this.reconcileDesktopSelectionHistory();
+    this.cancelInvalidWindowRemovalFocusRecovery();
   };
 
   private readonly handleWindowAdded = (window: ObservedWindow): void => {
@@ -6904,13 +6922,22 @@ export class RuntimeController {
       return {
         contextKey: floating.currentContextKey,
         layer: "floating",
+        previousWindowId: this.previousWindowRemovalFocusTargetId(
+          floating.currentContextKey,
+        ),
       };
     }
 
     const owner = this.managedWindows.get(id);
 
     if (owner) {
-      return { contextKey: owner.contextKey, layer: "tiling" };
+      return {
+        contextKey: owner.contextKey,
+        layer: "tiling",
+        previousWindowId: this.previousWindowRemovalFocusTargetId(
+          owner.contextKey,
+        ),
+      };
     }
 
     return null;
@@ -6948,39 +6975,155 @@ export class RuntimeController {
     id: WindowId,
     focus: WindowRemovalFocus,
   ): void {
-    const runGeneration = this.runGeneration;
-    const recover = (scheduleSettlementProbe: boolean): void => {
-      if (!this.started || this.runGeneration !== runGeneration) {
+    const recovery: PendingWindowRemovalFocusRecovery = {
+      focus,
+      generation: this.runGeneration,
+      phase: "settling",
+      requestedWindowId: null,
+      removedId: id,
+      topologyRevision: this.topologyRevision,
+    };
+    this.pendingWindowRemovalFocusRecovery = recovery;
+    const finishSettlement = (): void => {
+      if (!this.pendingWindowRemovalFocusRecoveryIsCurrent(recovery)) {
         return;
       }
 
-      this.recoverWindowRemovalFocus(id, focus);
+      this.recoverWindowRemovalFocus(id, focus, recovery);
 
-      if (!scheduleSettlementProbe) {
+      if (this.pendingWindowRemovalFocusRecovery === recovery) {
+        recovery.phase = "waiting";
+      }
+    };
+    const recover = (): void => {
+      if (!this.pendingWindowRemovalFocusRecoveryIsCurrent(recovery)) {
         return;
       }
+
+      this.recoverWindowRemovalFocus(id, focus, recovery);
 
       try {
-        this.schedule(() => {
-          recover(false);
-        });
+        this.schedule(finishSettlement);
       } catch {
-        // The first probe already made the best synchronous recovery attempt.
+        if (this.pendingWindowRemovalFocusRecovery === recovery) {
+          recovery.phase = "waiting";
+        }
       }
     };
 
     try {
-      this.schedule(() => {
-        recover(true);
-      });
+      this.schedule(recover);
     } catch {
-      this.recoverWindowRemovalFocus(id, focus);
+      this.recoverWindowRemovalFocus(id, focus, recovery);
+
+      if (this.pendingWindowRemovalFocusRecovery === recovery) {
+        recovery.phase = "waiting";
+      }
+    }
+  }
+
+  private pendingWindowRemovalFocusRecoveryIsCurrent(
+    recovery: PendingWindowRemovalFocusRecovery,
+  ): boolean {
+    if (
+      this.pendingWindowRemovalFocusRecovery !== recovery ||
+      !this.started ||
+      this.runGeneration !== recovery.generation ||
+      this.topologyRevision !== recovery.topologyRevision ||
+      !this.windowRemovalFocusContextIsVisible(recovery.focus)
+    ) {
+      if (this.pendingWindowRemovalFocusRecovery === recovery) {
+        this.pendingWindowRemovalFocusRecovery = null;
+      }
+
+      return false;
+    }
+
+    return true;
+  }
+
+  private cancelInvalidWindowRemovalFocusRecovery(): void {
+    const recovery = this.pendingWindowRemovalFocusRecovery;
+
+    if (recovery) {
+      this.pendingWindowRemovalFocusRecoveryIsCurrent(recovery);
+    }
+  }
+
+  private handlePendingWindowRemovalFocusActivation(): void {
+    const recovery = this.pendingWindowRemovalFocusRecovery;
+
+    if (
+      !recovery ||
+      !this.pendingWindowRemovalFocusRecoveryIsCurrent(recovery) ||
+      this.focusRequestDepth > 0
+    ) {
+      return;
+    }
+
+    if (
+      this.activeWindowResolvesRemovalFocus(recovery.removedId, recovery.focus)
+    ) {
+      const active = this.workspace.activeWindow;
+
+      if (
+        active &&
+        recovery.requestedWindowId !== null &&
+        windowId(String(active.internalId)) === recovery.requestedWindowId
+      ) {
+        return;
+      }
+
+      this.pendingWindowRemovalFocusRecovery = null;
+      return;
+    }
+
+    if (
+      this.activeWindowIsLegitimateRemovalFocusCandidate(recovery.removedId)
+    ) {
+      this.pendingWindowRemovalFocusRecovery = null;
+      return;
+    }
+
+    if (recovery.phase !== "waiting") {
+      return;
+    }
+
+    recovery.phase = "retry-scheduled";
+    const retry = (): void => {
+      if (!this.pendingWindowRemovalFocusRecoveryIsCurrent(recovery)) {
+        return;
+      }
+
+      if (
+        !this.activeWindowResolvesRemovalFocus(
+          recovery.removedId,
+          recovery.focus,
+        )
+      ) {
+        this.recoverWindowRemovalFocus(
+          recovery.removedId,
+          recovery.focus,
+          recovery,
+        );
+      }
+
+      if (this.pendingWindowRemovalFocusRecovery === recovery) {
+        this.pendingWindowRemovalFocusRecovery = null;
+      }
+    };
+
+    try {
+      this.schedule(retry);
+    } catch {
+      retry();
     }
   }
 
   private recoverWindowRemovalFocus(
     removedId: WindowId,
     focus: WindowRemovalFocus,
+    recovery: PendingWindowRemovalFocusRecovery,
   ): void {
     if (
       this.stackEditOperation ||
@@ -7006,10 +7149,13 @@ export class RuntimeController {
       focus.contextKey,
     );
 
-    if (
-      layer &&
-      this.requestWindowFocus(targetId, target, focus.contextKey, layer)
-    ) {
+    if (!layer) {
+      return;
+    }
+
+    recovery.requestedWindowId = targetId;
+
+    if (this.requestWindowFocus(targetId, target, focus.contextKey, layer)) {
       this.rememberLayerFocus(targetId, target);
     }
   }
@@ -7018,26 +7164,50 @@ export class RuntimeController {
     removedId: WindowId,
     focus: WindowRemovalFocus,
   ): boolean {
+    const context =
+      this.activeWindowLegitimateRemovalFocusCandidateContext(removedId);
+
+    return Boolean(context && contextKey(context) === focus.contextKey);
+  }
+
+  private activeWindowIsLegitimateRemovalFocusCandidate(
+    removedId: WindowId,
+  ): boolean {
+    return (
+      this.activeWindowLegitimateRemovalFocusCandidateContext(removedId) !==
+      null
+    );
+  }
+
+  private activeWindowLegitimateRemovalFocusCandidateContext(
+    removedId: WindowId,
+  ): ManagedContext | null {
     const active = this.workspace.activeWindow;
 
     if (!active || String(active.internalId) === String(removedId)) {
-      return false;
+      return null;
     }
 
     const activeId = windowId(String(active.internalId));
     const context = this.resolveLayerFocusContext(active);
 
-    return Boolean(
-      this.observer.source(activeId) === active &&
-      active.managed &&
-      !active.deleted &&
-      !active.minimized &&
-      !active.desktopWindow &&
-      !active.dock &&
-      context &&
-      contextKey(context) === focus.contextKey &&
-      this.isContextVisible(context),
-    );
+    if (
+      this.observer.source(activeId) !== active ||
+      !active.managed ||
+      active.deleted ||
+      active.minimized ||
+      active.desktopWindow ||
+      active.dock ||
+      active.specialWindow ||
+      active.onAllDesktops ||
+      (!active.normalWindow && !active.dialog) ||
+      !context ||
+      !this.isContextVisible(context)
+    ) {
+      return null;
+    }
+
+    return context;
   }
 
   private windowRemovalFocusContextIsVisible(
@@ -7050,9 +7220,14 @@ export class RuntimeController {
   private windowRemovalFocusTarget(
     focus: WindowRemovalFocus,
   ): KWinWindow | null {
-    const previous = this.previousWindowRemovalFocusTarget(focus.contextKey);
+    const previousId = focus.previousWindowId;
+    const previous = previousId ? this.observer.source(previousId) : undefined;
 
-    if (previous) {
+    if (
+      previousId &&
+      previous &&
+      this.focusAvailableWindowLayer(previousId, previous, focus.contextKey)
+    ) {
       return previous;
     }
 
@@ -7069,8 +7244,8 @@ export class RuntimeController {
     );
   }
 
-  private previousWindowRemovalFocusTarget(key: string): KWinWindow | null {
-    let previous: KWinWindow | null = null;
+  private previousWindowRemovalFocusTargetId(key: string): WindowId | null {
+    let previous: WindowId | null = null;
 
     for (const candidateId of this.windowFocusHistory) {
       const candidate = this.observer.source(candidateId);
@@ -7079,7 +7254,7 @@ export class RuntimeController {
         candidate &&
         this.focusAvailableWindowLayer(candidateId, candidate, key)
       ) {
-        previous = candidate;
+        previous = candidateId;
       }
     }
 
@@ -7112,6 +7287,8 @@ export class RuntimeController {
     window: KWinWindow | null,
     allowSuspended = false,
   ): void => {
+    this.handlePendingWindowRemovalFocusActivation();
+
     if (this.pointerMoveIntent && window !== this.pointerMoveIntent.source) {
       this.clearPointerMoveIntent();
     }
@@ -23426,6 +23603,7 @@ export class RuntimeController {
 
     this.clearPointerMoveIntent();
     this.pointerResizeIntent = null;
+    this.pendingWindowRemovalFocusRecovery = null;
     this.topologyKnownOutputRestorations.clear();
     this.reconcileDesktopSelectionHistory();
 

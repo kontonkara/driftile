@@ -2311,6 +2311,173 @@ describe("RuntimeController", () => {
     controller.stop();
   });
 
+  it.each(["null", "interim"] as const)(
+    "recovers previous focus after a delayed %s activation outlives removal settlement",
+    (activationKind) => {
+      const output = createOutput("DP-1", 0);
+      const desktop = { id: "desktop-1" };
+      const previous = createTrackedWindow("previous", output, desktop);
+      const removed = createTrackedWindow("removed", output, desktop);
+      const interim = createTrackedWindow("interim", output, desktop, {
+        desktopWindow: true,
+        normalWindow: false,
+      });
+      const fixture = createWorkspace(
+        output,
+        desktop,
+        [output],
+        [desktop],
+        [previous.window, removed.window, interim.window],
+      );
+      const scheduler = new ManualScheduler();
+      const controller = new RuntimeController(fixture.workspace, {
+        clientAreaOption: 2,
+        schedule: scheduler.schedule,
+      });
+
+      expect(controller.start()).toBe(true);
+      fixture.workspace.activeWindow = previous.window;
+      fixture.workspace.activeWindow = removed.window;
+      fixture.workspace.activeWindow = null;
+      flushManualScheduler(scheduler);
+      fixture.windowRemoved.emit(removed.window);
+      flushManualScheduler(scheduler);
+
+      expect(fixture.workspace.activeWindow).toBe(previous.window);
+      fixture.workspace.activeWindow =
+        activationKind === "null" ? null : interim.window;
+      const activationCount = fixture.activationCount;
+      flushManualScheduler(scheduler);
+
+      expect(fixture.workspace.activeWindow).toBe(previous.window);
+      expect(fixture.activationCount).toBe(activationCount + 1);
+      controller.stop();
+    },
+  );
+
+  it("cancels delayed close-focus recovery when its desktop is no longer visible", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const otherDesktop = { id: "desktop-2" };
+    const previous = createTrackedWindow("previous", output, desktop);
+    const removed = createTrackedWindow("removed", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop, otherDesktop],
+      [previous.window, removed.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      schedule: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    fixture.workspace.activeWindow = previous.window;
+    fixture.workspace.activeWindow = removed.window;
+    fixture.workspace.activeWindow = null;
+    flushManualScheduler(scheduler);
+    fixture.windowRemoved.emit(removed.window);
+    flushManualScheduler(scheduler);
+    fixture.setCurrentDesktop(output, otherDesktop);
+    flushManualScheduler(scheduler);
+    const activationCount = fixture.activationCount;
+
+    fixture.workspace.activeWindow = null;
+    flushManualScheduler(scheduler);
+
+    expect(fixture.workspace.activeWindow).toBeNull();
+    expect(fixture.activationCount).toBe(activationCount + 1);
+    controller.stop();
+  });
+
+  it("accepts a delayed same-context replacement without a stale focus steal", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const previous = createTrackedWindow("previous", output, desktop);
+    const removed = createTrackedWindow("removed", output, desktop);
+    const replacement = createTrackedWindow("replacement", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [previous.window, removed.window, replacement.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      schedule: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    fixture.workspace.activeWindow = previous.window;
+    fixture.workspace.activeWindow = removed.window;
+    fixture.workspace.activeWindow = null;
+    flushManualScheduler(scheduler);
+    fixture.windowRemoved.emit(removed.window);
+    flushManualScheduler(scheduler);
+
+    fixture.workspace.activeWindow = replacement.window;
+    flushManualScheduler(scheduler);
+    expect(fixture.workspace.activeWindow).toBe(replacement.window);
+    const activationCount = fixture.activationCount;
+
+    fixture.workspace.activeWindow = null;
+    flushManualScheduler(scheduler);
+
+    expect(fixture.workspace.activeWindow).toBeNull();
+    expect(fixture.activationCount).toBe(activationCount + 1);
+    controller.stop();
+  });
+
+  it("accepts a delayed real-window activation on another visible output", () => {
+    const output = createOutput("DP-1", 0);
+    const otherOutput = createOutput("HDMI-A-1", 1000);
+    const desktop = { id: "desktop-1" };
+    const previous = createTrackedWindow("previous", output, desktop);
+    const removed = createTrackedWindow("removed", output, desktop);
+    const crossOutput = createTrackedWindow(
+      "cross-output",
+      otherOutput,
+      desktop,
+    );
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output, otherOutput],
+      [desktop],
+      [previous.window, removed.window, crossOutput.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      schedule: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    fixture.workspace.activeWindow = previous.window;
+    fixture.workspace.activeWindow = removed.window;
+    fixture.workspace.activeWindow = null;
+    flushManualScheduler(scheduler);
+    fixture.windowRemoved.emit(removed.window);
+    flushManualScheduler(scheduler);
+
+    fixture.workspace.activeWindow = crossOutput.window;
+    flushManualScheduler(scheduler);
+    expect(fixture.workspace.activeWindow).toBe(crossOutput.window);
+    const activationCount = fixture.activationCount;
+
+    fixture.workspace.activeWindow = null;
+    flushManualScheduler(scheduler);
+
+    expect(fixture.workspace.activeWindow).toBeNull();
+    expect(fixture.activationCount).toBe(activationCount + 1);
+    controller.stop();
+  });
+
   it.each(["tiled", "dialog"] as const)(
     "keeps a live same-context %s replacement focused after the previous active window closes",
     (replacementKind) => {
