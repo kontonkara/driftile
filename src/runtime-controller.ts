@@ -6890,6 +6890,7 @@ export class RuntimeController {
     this.cancelInvalidPendingExpelFocusHandoff();
     const affectedContextKeys = new Set<string>();
     const floating = this.floatingWindows.get(managedId);
+    const automaticFloating = this.automaticFloatingWindows.has(managedId);
     const transition = this.toggleGeometryTransitions.get(managedId);
     const removalFocus = this.windowRemovalFocus(managedId, floating);
     const recoverFocus =
@@ -6952,7 +6953,12 @@ export class RuntimeController {
       this.finishCanceledToggleTransition(key);
     }
 
-    if (removalFocus && recoverFocus) {
+    if (
+      removalFocus &&
+      recoverFocus &&
+      (!automaticFloating ||
+        this.windowRemovalFocusTarget(removalFocus, managedId))
+    ) {
       this.scheduleWindowRemovalFocusRecovery(managedId, removalFocus);
     }
 
@@ -6982,6 +6988,18 @@ export class RuntimeController {
       };
     }
 
+    const automaticContextKey =
+      this.automaticFloatingRemovalFocusContextKey(id);
+
+    if (automaticContextKey) {
+      return {
+        contextKey: automaticContextKey,
+        layer: "floating",
+        previousWindowId:
+          this.previousWindowRemovalFocusTargetId(automaticContextKey),
+      };
+    }
+
     const owner = this.managedWindows.get(id);
 
     if (owner) {
@@ -6992,6 +7010,36 @@ export class RuntimeController {
           owner.contextKey,
         ),
       };
+    }
+
+    return null;
+  }
+
+  private automaticFloatingRemovalFocusContextKey(id: WindowId): string | null {
+    if (!this.automaticFloatingWindows.has(id)) {
+      return null;
+    }
+
+    const active = this.workspace.activeWindow;
+
+    if (active && String(active.internalId) === String(id)) {
+      const context = this.resolveLayerFocusContext(active);
+
+      if (context && this.isContextVisible(context)) {
+        return contextKey(context);
+      }
+    }
+
+    for (const [key, rememberedId] of this.lastFloatingFocus) {
+      if (rememberedId !== id) {
+        continue;
+      }
+
+      const context = managedContextFromKey(key);
+
+      if (context && this.isContextVisible(context)) {
+        return key;
+      }
     }
 
     return null;
@@ -7190,7 +7238,7 @@ export class RuntimeController {
       return;
     }
 
-    const target = this.windowRemovalFocusTarget(focus);
+    const target = this.windowRemovalFocusTarget(focus, removedId);
 
     if (!target) {
       return;
@@ -7273,12 +7321,14 @@ export class RuntimeController {
 
   private windowRemovalFocusTarget(
     focus: WindowRemovalFocus,
+    removedId: WindowId,
   ): KWinWindow | null {
     const previousId = focus.previousWindowId;
     const previous = previousId ? this.observer.source(previousId) : undefined;
 
     if (
       previousId &&
+      previousId !== removedId &&
       previous &&
       this.focusAvailableWindowLayer(previousId, previous, focus.contextKey)
     ) {
@@ -7287,14 +7337,14 @@ export class RuntimeController {
 
     if (focus.layer === "floating") {
       return (
-        this.floatingFocusTarget(focus.contextKey) ??
+        this.floatingFocusTarget(focus.contextKey, removedId) ??
         this.selectedTiledFocusTarget(focus.contextKey)
       );
     }
 
     return (
       this.selectedTiledFocusTarget(focus.contextKey) ??
-      this.floatingFocusTarget(focus.contextKey)
+      this.floatingFocusTarget(focus.contextKey, removedId)
     );
   }
 
@@ -7729,10 +7779,13 @@ export class RuntimeController {
     };
   }
 
-  private floatingFocusTarget(key: string): KWinWindow | null {
+  private floatingFocusTarget(
+    key: string,
+    excludedId?: WindowId,
+  ): KWinWindow | null {
     const rememberedId = this.lastFloatingFocus.get(key);
 
-    if (rememberedId) {
+    if (rememberedId && rememberedId !== excludedId) {
       const remembered = this.observer.source(rememberedId);
 
       if (
@@ -7755,6 +7808,10 @@ export class RuntimeController {
       }
 
       const id = windowId(String(candidate.internalId));
+
+      if (id === excludedId) {
+        continue;
+      }
 
       if (this.windowLayer(id, candidate, key) === "floating") {
         return candidate;
