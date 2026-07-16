@@ -27,6 +27,13 @@ workspace scan, stacking-order scan, or persistent presentation surface.
 Proportional small-and-large fixtures guard these bounds without expanding the
 application matrix.
 
+## Transition-effect budget
+
+Workspace-effect entry cancels only windows with tracked active animations;
+idle managed windows are not scanned. Deferred replay is indexed by pending
+windows, discards net-zero motion, and releases per-window state after the last
+public animation completion signal.
+
 Run only these budgets with:
 
 ```bash

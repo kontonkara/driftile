@@ -216,9 +216,10 @@ automatic popups. Committing the current entry before activation makes
 repeated use toggle between the latest pair.
 
 Closing the active managed window restores the latest eligible MRU entry from
-the same visible output, desktop, and activity after KWin settles removal. A
-live replacement in that context remains authoritative; an interim or active
-window in another context does not suppress the bounded recovery.
+the same visible output, desktop, and activity after KWin settles removal. Two
+scheduled probes cover ordinary settlement; a later null or shell activation
+allows one final event-driven retry. Any legitimate replacement in a visible
+context cancels the pending recovery, preventing a stale focus steal.
 
 The existing center-column action is contextual. With an active manually
 floating window, it centers each non-oversized dimension at the exact logical

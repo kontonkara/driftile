@@ -65,11 +65,13 @@ captured frame until a public visibility, desktop, activity, or later geometry
 signal makes replay safe.
 Deletion, configuration reload, or true ineligibility discards the pending
 change. Replay uses no timer or private API and writes neither geometry nor
-persistence.
+persistence. Net-zero deferred movement is discarded, completed animation
+state is retired, and workspace-effect handoff visits only windows with an
+active animation.
 
-Launchers, switcher-hidden windows, OSDs, outlines, lock-screen and internal
-windows, popups, transient dialogs, frameless shell overlays, and other
-non-movable windows are outside the effect. Consecutive geometry updates
+The Plasma shell launcher, switcher-hidden windows, OSDs, outlines, lock-screen
+and internal windows, popups, transient dialogs, frameless shell overlays, and
+other non-movable windows are outside the effect. Consecutive geometry updates
 retarget the active position and size transitions in place. The first transition
 uses the configured duration; later retargets use at most a `100` millisecond
 base interval, follow Plasma's animation-speed setting, and never outlast the
@@ -813,3 +815,7 @@ the list or a window's resolved application ID reconcile live without issuing
 Driftile geometry writes or changing focus, layout state, or layout
 persistence. Global disable and extension unload restore owned state, while
 pre-existing borderless state remains untouched.
+
+If KWin rejects the first borderless request while a new decoration is still
+initializing, Driftile retries once after the next decoration-policy settlement
+signal instead of leaving that window decorated.

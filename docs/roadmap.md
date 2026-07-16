@@ -1780,3 +1780,21 @@ Release criteria (met):
   active-animation leases, with no timer or private API.
 
 No other feature belongs to 1.42.0.
+
+### 1.43.0 (in development)
+
+- Keep close-focus recovery alive for one delayed activation settlement while
+  accepting any legitimate replacement without stealing focus back.
+- Retry an initially rejected borderless claim after KWin reports decoration
+  policy settlement.
+- Retire completed transition state, restrict workspace-effect cancellation to
+  active participants, and discard net-zero deferred movement.
+- Keep the Plasma shell launcher outside geometry interpolation.
+
+Release criteria:
+
+- Focused close, decoration, and transition checks pass.
+- One grouped unit, package, Nix, X11, and Wayland gate passes on the batch
+  head before publication.
+
+No unrelated feature belongs to 1.43.0.

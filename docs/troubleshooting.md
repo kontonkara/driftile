@@ -115,7 +115,9 @@ An exclusion preserves the window's existing KWin decoration state; it does not
 force a border onto a window already made borderless by KWin, a Window Rule, or
 the application. Client-side decorations and application toolbars are part of
 the application surface and are not controlled by this setting. List and
-resolved-identity changes apply live.
+resolved-identity changes apply live. A newly created window whose first
+borderless request is rejected gets one more attempt when KWin reports that its
+decoration policy has settled.
 
 ## A layout does not restore
 
