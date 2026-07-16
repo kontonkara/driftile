@@ -7,6 +7,11 @@ import {
 export { findOverviewNavigationTarget } from "./navigation";
 export { planOverviewDesktopDrop } from "./desktop-drop";
 export { planOverviewWindowDesktopDrop } from "./window-drop";
+export {
+  appendOverviewSearchText,
+  matchesOverviewWindowSearch,
+  removeLastOverviewSearchCharacter,
+} from "./window-search";
 
 export type OverviewModelLoadResult =
   | OverviewLayoutProjectionResult
