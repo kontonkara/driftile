@@ -1851,3 +1851,26 @@ Release criteria (met):
   head before publication.
 
 No unrelated feature belongs to 1.45.0.
+
+### 1.46.0 (in development)
+
+- Recover the most recent eligible same-context focus after an active dialog,
+  transient, or application-excluded automatic-floating window closes.
+- Preserve a legitimate replacement selected by KWin and cancel recovery when
+  the removed window's context is no longer visible.
+- Retarget an active large size animation when KWin follows it with a small
+  settling correction instead of snapping to the final size.
+- Keep threshold suppression for isolated small resizes and retire empty
+  transition state after a failed or unnecessary retarget.
+
+Release criteria:
+
+- Automatic-floating close recovery reuses the bounded existing focus
+  settlement path without taking layout ownership of the removed window.
+- Manual-floating and tiled close recovery, replacement acceptance, and layer
+  fallback order remain unchanged.
+- Small settling corrections retain the active visual interpolation and capped
+  retarget duration without restarting position motion.
+- Focused runtime and transition checks pass before one grouped package gate.
+
+No unrelated feature belongs to 1.46.0.
