@@ -16,7 +16,10 @@ adjacent-desktop selection. Horizontal and vertical gesture pairs can be
 enabled independently. With natural direction, completed left and up swipes
 focus right and select the next desktop; right and down select the previous
 column and desktop. The gestures add no shortcut actions, and partial or
-cancelled gestures perform no command.
+cancelled gestures perform no command. Vertical gestures use the single output
+under the pointer; output gaps, overlapping output geometry, and invalid pointer
+coordinates are no-ops. Keyboard desktop navigation still uses the active
+output.
 
 The optional overview's current-card path accepts left clicks only on valid
 thumbnails. It revalidates the direct live window against that output, desktop,
@@ -77,6 +80,12 @@ High-resolution deltas use bounded accumulation and a bounded step count. The
 search overlay reports the unique window-result count or an explicit no-match
 message as plain text. These interactions change only overview selection and
 perform no KWin, layout, configuration, or persistence write.
+
+A thumbnail or non-minimized tab can be dropped on an exact desktop card on the
+same or another output. Cross-output completion confirms the public output move
+and desktop membership separately. A partial result is compensated only while
+the captured source remains exact; stale or ambiguous state closes the overview
+without another write.
 
 ## Delivery contract
 

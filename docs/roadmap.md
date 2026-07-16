@@ -1478,6 +1478,27 @@ Release criteria (met):
 
 No other feature belongs to 1.32.0.
 
+## 1.33.0 (in development)
+
+The current interaction slice restores optional geometry transitions for
+off-screen columns and outputs with negative global coordinates. Non-negative
+absolute endpoints retain position retargeting; other moves use relative
+translation. Deferred replay after a workspace effect uses the same rule.
+
+Completed vertical touchpad desktop gestures now target the single output under
+the pointer. Output gaps, overlaps, and invalid pointer geometry are no-ops;
+keyboard desktop actions keep targeting the active output and the existing
+global-desktop fallback remains unchanged.
+
+The optional overview accepts an exact desktop-card drop on another output.
+The effect confirms the public output move and desktop membership independently,
+compensates a partial result only while the captured source remains exact, and
+otherwise closes stale state without another write. Same-output transfer keeps
+its existing path.
+
+No setting, shortcut, persistence field, compositor fork, or private API is
+added by this slice.
+
 ## Post-v1
 
 Add interaction and presentation features outside the frozen v1 scope without

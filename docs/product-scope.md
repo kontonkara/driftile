@@ -630,10 +630,11 @@ Driftile must integrate with, not duplicate:
   public activity before loading and again before committing its model; either
   coexistence path is silent and performs no Plasma-effect write or activation.
 - A guarded overview drop may move one exact tiled or floating normal window to
-  another desktop card on the same output, including the shared empty tail.
-  Same-desktop, cross-output, all-desktop, related, stale, or ambiguous drops
-  perform no write. Successful KWin membership confirmation closes the effect;
-  the main script remains the layout owner.
+  another desktop card, including a card on another output and the shared empty
+  tail. Same-card, all-desktop, related, stale, or ambiguous drops perform no
+  write. Cross-output moves confirm both public output and desktop assignments
+  and compensate a partial result only while the captured source remains exact.
+  The main script remains the layout owner.
 - Typing in the optional overview filters its live window presentations by
   title and application identity. The bounded session-only query changes no
   KWin, layout, persistence, or configuration state. Plain-text feedback shows

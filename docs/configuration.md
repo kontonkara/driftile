@@ -53,10 +53,11 @@ pending change. Replay uses no timer or private API and writes neither geometry
 nor persistence.
 
 Launchers, popups, transient dialogs, frameless shell overlays, and other
-non-movable windows are outside the effect. Consecutive KWin geometry updates
-retarget the active position and size transitions from their current visual
-state, so viewport movement does not restart an animation at an intermediate
-frame.
+non-movable windows are outside the effect. Consecutive geometry updates at
+non-negative global positions retarget the active position and size
+transitions. Moves involving a negative global position use a relative
+translation, keeping off-screen columns and outputs with negative coordinates
+animated without writing geometry.
 
 Home Manager can own the same bounded duration independently of package
 installation. A null value leaves the existing KConfig value untouched:
@@ -193,6 +194,10 @@ enabled, preserving content-following mappings: left and right swipes focus the
 next and previous tiled columns, while up and down swipes select the next and
 previous desktop. Disabling it reverses every enabled direction. The normal
 horizontal focus reveal and optional centering policies still apply.
+
+Vertical desktop swipes target the single output under the pointer. A pointer
+in an output gap or overlapping output geometry produces no desktop change.
+Keyboard desktop actions continue to target the active output.
 
 Partial and cancelled gestures do nothing. Changing either enable option, the
 finger count, or natural direction recreates only the enabled gesture handlers

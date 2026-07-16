@@ -27,6 +27,8 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Keeps both optional touchpad gesture Loaders inactive by default. An accepted
   complete settings snapshot creates only enabled horizontal or vertical pairs
   and recreates them when their registered finger count or direction changes.
+  Vertical completion resolves exactly one live output beneath the pointer
+  before reusing the guarded desktop-selection transaction.
 - Provides event-loop and minimum-delay schedulers for batched work and transition stabilization.
 - Runs a two-second watchdog for visible-context geometry and non-minimized tracked-window hard constraints.
 - Contains no layout policy; its state store handles only opaque canonical strings.
@@ -119,15 +121,18 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 
 - Ships as a separate, disabled-by-default JavaScript `KWin/Effect` package.
 - Observes public frame-geometry signals and animates only presentation through
-  `Effect.Size` and `Effect.Translation`; it never writes window geometry.
+  `Effect.Size`, `Effect.Position`, and `Effect.Translation`; it never writes
+  window geometry. Absolute position retargeting is used only when both
+  endpoints are non-negative; other moves use relative translation.
 - Skips manual move or resize, hidden, minimized, fullscreen, special, and
   non-normal windows. Geometry changes received while another fullscreen or
   workspace transition owns presentation are coalesced per window and replayed
   once when ownership ends. Temporary desktop-transition visibility preserves
   the first captured frame; true ineligibility, configuration reload, or
   deletion discards pending work.
-- Cancels superseded per-window animations in constant time, follows Plasma's
-  global animation-speed factor, and exposes one bounded duration setting.
+- Retargets eligible absolute position and size animations and replaces a
+  superseded relative translation in constant time. It follows Plasma's global
+  animation-speed factor and exposes one bounded duration setting.
 - Scans the stacking order only once when loaded and tracks later windows by
   signal. It has no timer, persistence, shortcut, layout state, or private API.
 

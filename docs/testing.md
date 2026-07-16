@@ -337,6 +337,14 @@ Firefox and XWayland xterm. It assigns exact memberships, changes width and
 column order only in the secondary activity, verifies primary isolation and
 secondary restoration, then removes the temporary activity.
 
+The 1.33 interaction package adds focused coverage for negative-coordinate
+transition fallback, independent position and size retargeting, output-under-
+pointer desktop gestures, and guarded overview transfers between outputs.
+Cross-output cases require exact source and target ownership, ordered public
+output and desktop writes, confirmation after each write, bounded compensation,
+and write-free rejection of malformed or ambiguous state. Existing same-output
+transfer and keyboard desktop-navigation cases remain unchanged.
+
 Cross-desktop unit cases cover the 2x2 matrix of output-local or global desktop
 resolution and membership-before-finish or finish-before-membership event
 order. They verify bounded pending-destination settlement, fallback when the

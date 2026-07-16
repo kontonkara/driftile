@@ -59,6 +59,9 @@ dragged onto another desktop card on the same output. A successful drop moves
 that one window and closes the companion; invalid or stale drops leave both the
 window and companion unchanged.
 
+Version 1.33.0 extends the same gesture to another output. The destination card
+selects both the output and desktop; the existing same-output path is unchanged.
+
 The companion is disabled by default. When enabled with a fresh shortcut
 record, `Meta+O` toggles it. KGlobalAccel preserves an existing assignment
 across upgrades, including an explicitly unbound action, so review it in
@@ -143,16 +146,19 @@ validation scans only the bounded desktop and output lists at grab and release.
 ## Window transfer
 
 Drag a selected thumbnail or a non-minimized tab onto another desktop card.
-The final empty desktop is a valid target. The window remains on its current
-output and activity; cross-output drops, same-card drops, all-desktop windows,
-transients, modal windows, and ambiguous model ownership are rejected.
+The final empty desktop is a valid target. A card on another output moves the
+window to that output and desktop while preserving its activity. Same-card
+drops, all-desktop windows, transients, modal windows, and ambiguous model
+ownership are rejected.
 
 Release revalidates the active effect, immutable overview model, output,
 source and target desktop objects, current activity, and exact live window.
-Only then does the effect assign the target through KWin's public desktop
-property. It closes after KWin reports exactly that target and no source
-membership. Driftile's main script observes the external move and remains the
-sole layout owner.
+Same-output transfers assign the target through KWin's public desktop property.
+Cross-output transfers use the public screen move first and then the desktop
+membership when needed. The effect confirms both results; a partial result is
+compensated only while the captured source state remains exact, otherwise the
+stale overview closes without another write. Driftile's main script observes
+the external move and remains the sole layout owner.
 
 ## Active-column layout badge
 
