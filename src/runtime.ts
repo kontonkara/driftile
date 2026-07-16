@@ -59,22 +59,32 @@ export function init(
           y: number,
           width: number,
           height: number,
+          destinationKey?: string,
+          ownerToken?: string,
         ) => void)
       : null;
   const hideDropPreviewCallback =
     typeof hideDropPreview === "function"
-      ? (hideDropPreview as () => void)
+      ? (hideDropPreview as (ownerToken?: string) => void)
       : null;
   const previewCallbacks =
     showDropPreviewCallback && hideDropPreviewCallback
       ? {
-          hidePointerDropPreview: hideDropPreviewCallback,
-          showPointerDropPreview: (frame: Rect) => {
+          hidePointerDropPreview: (ownerToken?: string) => {
+            hideDropPreviewCallback(ownerToken);
+          },
+          showPointerDropPreview: (
+            frame: Rect,
+            destinationKey?: string,
+            ownerToken?: string,
+          ) => {
             showDropPreviewCallback(
               frame.x,
               frame.y,
               frame.width,
               frame.height,
+              destinationKey,
+              ownerToken,
             );
           },
         }

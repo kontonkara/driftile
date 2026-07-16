@@ -13,6 +13,13 @@ QtObject {
     property bool appliedTouchpadWorkspaceNavigation: false
     property int appliedTouchpadNavigationFingerCount: 5
     property bool appliedTouchpadNaturalScroll: true
+    property bool dropPreviewVisible: false
+    property real dropPreviewX: 0
+    property real dropPreviewY: 0
+    property real dropPreviewWidth: 0
+    property real dropPreviewHeight: 0
+    property string dropPreviewDestinationKey: ""
+    property string dropPreviewOwnerToken: ""
 
     readonly property LayoutStateStore layoutStateStore: LayoutStateStore {
         category: "Layout"
@@ -1256,12 +1263,46 @@ QtObject {
         return Qt.rect(x, y, width, height);
     }
 
-    function showDropPreview(x, y, width, height) {
-        Workspace.showOutline(x, y, width, height);
+    function normalizedDropPreviewKey(value) {
+        return value === undefined || value === null ? "" : String(value);
     }
 
-    function hideDropPreview() {
+    function showDropPreview(x, y, width, height, destinationKey, ownerToken) {
+        const nextDestinationKey = root.normalizedDropPreviewKey(destinationKey);
+        const nextOwnerToken = root.normalizedDropPreviewKey(ownerToken);
+
+        if (root.dropPreviewVisible
+                && root.dropPreviewX === x
+                && root.dropPreviewY === y
+                && root.dropPreviewWidth === width
+                && root.dropPreviewHeight === height
+                && root.dropPreviewDestinationKey === nextDestinationKey
+                && root.dropPreviewOwnerToken === nextOwnerToken) {
+            return;
+        }
+
+        Workspace.showOutline(x, y, width, height);
+        root.dropPreviewVisible = true;
+        root.dropPreviewX = x;
+        root.dropPreviewY = y;
+        root.dropPreviewWidth = width;
+        root.dropPreviewHeight = height;
+        root.dropPreviewDestinationKey = nextDestinationKey;
+        root.dropPreviewOwnerToken = nextOwnerToken;
+    }
+
+    function hideDropPreview(ownerToken) {
+        const nextOwnerToken = root.normalizedDropPreviewKey(ownerToken);
+
+        if (!root.dropPreviewVisible
+                || root.dropPreviewOwnerToken !== nextOwnerToken) {
+            return;
+        }
+
         Workspace.hideOutline();
+        root.dropPreviewVisible = false;
+        root.dropPreviewDestinationKey = "";
+        root.dropPreviewOwnerToken = "";
     }
 
     function showTabIndicator(index, count, caption) {

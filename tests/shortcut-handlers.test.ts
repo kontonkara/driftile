@@ -2297,11 +2297,9 @@ describe("KWin shortcut handlers", () => {
       /Runtime\.DriftileRuntime\.init\([\s\S]*root\.readSettings\(\), loadedLayoutState,[\s\S]*root\.queueLayoutState,\s*root\.showDropPreview,\s*root\.hideDropPreview,\s*root\.showTabIndicator\)/,
     );
     expect(qml).toMatch(
-      /function showDropPreview\(x, y, width, height\) \{\s*Workspace\.showOutline\(x, y, width, height\);\s*\}/,
+      /function showDropPreview\(x, y, width, height, destinationKey, ownerToken\)/,
     );
-    expect(qml).toMatch(
-      /function hideDropPreview\(\) \{\s*Workspace\.hideOutline\(\);\s*\}/,
-    );
+    expect(qml).toMatch(/function hideDropPreview\(ownerToken\)/);
     expect(runtime).toContain(
       "const settings = decodeSettings(settingsSnapshot)",
     );
@@ -2313,6 +2311,24 @@ describe("KWin shortcut handlers", () => {
     );
     expect(runtime).not.toMatch(
       /export function set(?:Borderless|Gap|Default)/,
+    );
+  });
+
+  it("keeps pointer drop previews destination and owner scoped", () => {
+    expect(qml).toContain("property bool dropPreviewVisible: false");
+    expect(qml).toContain('property string dropPreviewDestinationKey: ""');
+    expect(qml).toContain('property string dropPreviewOwnerToken: ""');
+    expect(qml).toMatch(
+      /root\.dropPreviewX === x[\s\S]*root\.dropPreviewHeight === height[\s\S]*root\.dropPreviewDestinationKey === nextDestinationKey[\s\S]*root\.dropPreviewOwnerToken === nextOwnerToken/,
+    );
+    expect(qml).toMatch(
+      /function hideDropPreview\(ownerToken\)[\s\S]*root\.dropPreviewOwnerToken !== nextOwnerToken[\s\S]*Workspace\.hideOutline\(\)/,
+    );
+    expect(runtime).toMatch(
+      /showPointerDropPreview: \([\s\S]*destinationKey\?: string,[\s\S]*ownerToken\?: string,[\s\S]*showDropPreviewCallback\([\s\S]*destinationKey,[\s\S]*ownerToken/,
+    );
+    expect(runtime).toMatch(
+      /hidePointerDropPreview: \(ownerToken\?: string\)[\s\S]*hideDropPreviewCallback\(ownerToken\)/,
     );
   });
 
