@@ -490,6 +490,7 @@ let
           defaultColumnPresentation = "tabbed";
           defaultColumnWidthPercent = 65;
           defaultColumnWidthPixels = 960;
+          defaultWindowHeight = "720px";
           emptyDesktopAboveFirst = true;
           gap = 7.5;
           showTabIndicator = false;
@@ -532,6 +533,26 @@ let
         programs.driftile.settings.defaultColumnWidthPixels = 16384;
       }
       { };
+  homeManagerDefaultWindowHeightValues = map (
+    value:
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.settings.defaultWindowHeight = value;
+      }
+      { }
+  ) [
+    "auto"
+    10
+    "10%"
+    100
+    "100%"
+    "1px"
+    "16384px"
+  ];
   homeManagerMaximumStepPixels =
     evaluate homeManagerModule
       [
@@ -806,6 +827,18 @@ let
     { defaultColumnWidthPixels = 16385; }
     { defaultColumnWidthPixels = 1.5; }
     { defaultColumnWidthPixels = "960"; }
+    { defaultWindowHeight = 9; }
+    { defaultWindowHeight = 101; }
+    { defaultWindowHeight = 10.5; }
+    { defaultWindowHeight = "10"; }
+    { defaultWindowHeight = "9%"; }
+    { defaultWindowHeight = "101%"; }
+    { defaultWindowHeight = "0px"; }
+    { defaultWindowHeight = "16385px"; }
+    { defaultWindowHeight = "010%"; }
+    { defaultWindowHeight = "01px"; }
+    { defaultWindowHeight = "AUTO"; }
+    { defaultWindowHeight = true; }
     { columnWidthStepPercent = 0; }
     { columnWidthStepPercent = 51; }
     { columnWidthStepPixels = -1; }
@@ -1106,6 +1139,7 @@ let
       DefaultColumnPresentation = "tabbed";
       DefaultColumnWidthPercent = 65;
       DefaultColumnWidthPixels = 960;
+      DefaultWindowHeight = "720px";
       EmptyDesktopAboveFirst = true;
       Gap = 7.5;
       ShowTabIndicator = false;
@@ -1135,6 +1169,7 @@ let
       DefaultColumnPresentation = "stacked";
       DefaultColumnWidthPercent = 33;
       DefaultColumnWidthPixels = 0;
+      DefaultWindowHeight = "auto";
       Gap = 16;
       ShowTabIndicator = true;
       TouchpadNavigation = false;
@@ -1294,14 +1329,28 @@ assert homeManagerSettings.config.qt.kde.settings == expectedSettings;
 assert homeManagerDefaultSettings.config.qt.kde.settings == expectedDefaultSettings;
 assert
   builtins.length (builtins.attrNames expectedSettings.kwinrc."Script-io.github.kontonkara.driftile")
-  == 27;
+  == 28;
 assert
   builtins.length (
     builtins.attrNames expectedDefaultSettings.kwinrc."Script-io.github.kontonkara.driftile"
-  ) == 24;
+  ) == 25;
 assert
   homeManagerMaximumDefaultColumnWidthPixels.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".DefaultColumnWidthPixels
   == 16384;
+assert
+  map (
+    evaluation:
+    evaluation.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".DefaultWindowHeight
+  ) homeManagerDefaultWindowHeightValues
+  == [
+    "auto"
+    "10"
+    "10"
+    "100"
+    "100"
+    "1px"
+    "16384px"
+  ];
 assert
   homeManagerMaximumStepPixels.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ColumnWidthStepPixels
   == 16384;
@@ -1385,6 +1434,7 @@ assert
       DefaultColumnPresentation = "stacked";
       DefaultColumnWidthPercent = 33;
       DefaultColumnWidthPixels = 0;
+      DefaultWindowHeight = "auto";
       Gap = 1.2;
       ShowTabIndicator = true;
       TouchpadNavigation = false;

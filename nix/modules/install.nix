@@ -157,6 +157,11 @@ let
     );
   applicationWindowHeightType = applicationColumnWidthType;
   renderApplicationWindowHeights = renderApplicationColumnWidths;
+  defaultWindowHeightType = lib.types.addCheck presetTokenType (
+    height: height == "auto" || parsePresetToken height != null
+  );
+  renderDefaultWindowHeight =
+    height: if height == "auto" then "auto" else renderApplicationColumnWidth height;
   applicationColumnPresentationType =
     lib.types.addCheck (lib.types.attrsOf (lib.types.enum [
       "stacked"
@@ -485,6 +490,12 @@ in
               description = "Fixed default column width in logical pixels; zero uses defaultColumnWidthPercent.";
             };
 
+            defaultWindowHeight = lib.mkOption {
+              type = defaultWindowHeightType;
+              default = "auto";
+              description = "Initial tiled client height. Use auto, an integer percentage from 10 to 100, or a canonical 10% to 100% or 1px to 16384px client-height string.";
+            };
+
             defaultColumnPresentation = lib.mkOption {
               type = lib.types.enum [
                 "stacked"
@@ -609,6 +620,7 @@ in
           DefaultColumnPresentation = cfg.settings.defaultColumnPresentation;
           DefaultColumnWidthPercent = cfg.settings.defaultColumnWidthPercent;
           DefaultColumnWidthPixels = cfg.settings.defaultColumnWidthPixels;
+          DefaultWindowHeight = renderDefaultWindowHeight cfg.settings.defaultWindowHeight;
           Gap = cfg.settings.gap;
           ShowTabIndicator = cfg.settings.showTabIndicator;
           TouchpadNavigation = cfg.settings.touchpadNavigation;
