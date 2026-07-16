@@ -1448,6 +1448,10 @@ The same target set supports bounded sequential keyboard traversal. Tab and
 Shift+Tab wrap in deterministic visual order, Home and End select its
 boundaries, and a selected desktop gutter receives an explicit focus outline.
 
+Delete requests closure only for the exact selected live window. Desktop
+targets, stale state, and non-closeable windows are no-ops; the effect remains
+open until KWin reports actual removal and performs no layout write.
+
 ## Post-v1
 
 Add interaction and presentation features outside the frozen v1 scope without

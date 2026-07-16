@@ -633,3 +633,6 @@ Driftile must integrate with, not duplicate:
 - Typing in the optional overview filters its live window presentations by
   title and application identity. The bounded session-only query changes no
   KWin, layout, persistence, or configuration state.
+- Delete in the optional overview requests closure only for the exact selected
+  closeable window. The effect waits for KWin's removal signal and performs no
+  layout, desktop, focus, or persistence write.
