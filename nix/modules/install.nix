@@ -319,6 +319,25 @@ in
           description = "Whether to animate window size changes; null leaves the KConfig value unmanaged.";
         };
 
+        easingCurve = lib.mkOption {
+          type = lib.types.nullOr (lib.types.enum [
+            "linear"
+            "out-quad"
+            "out-cubic"
+            "out-quart"
+            "out-quint"
+            "out-expo"
+          ]);
+          default = null;
+          description = "Transition easing curve; null leaves the KConfig value unmanaged.";
+        };
+
+        resizeAnimationThreshold = lib.mkOption {
+          type = lib.types.nullOr (lib.types.ints.between 0 64);
+          default = null;
+          description = "Maximum logical-pixel size delta to suppress; null leaves the KConfig value unmanaged.";
+        };
+
         windowClassExclusions = lib.mkOption {
           type = lib.types.nullOr transitionWindowClassExclusionType;
           default = null;
@@ -626,6 +645,18 @@ in
       lib.mkIf (cfg.transitions.animateSize != null) {
         qt.kde.settings.kwinrc."Effect-${pluginId}.transitions".AnimateSize =
           cfg.transitions.animateSize;
+      }
+    ))
+    (lib.optionalAttrs homeSettings (
+      lib.mkIf (cfg.transitions.easingCurve != null) {
+        qt.kde.settings.kwinrc."Effect-${pluginId}.transitions".EasingCurve =
+          cfg.transitions.easingCurve;
+      }
+    ))
+    (lib.optionalAttrs homeSettings (
+      lib.mkIf (cfg.transitions.resizeAnimationThreshold != null) {
+        qt.kde.settings.kwinrc."Effect-${pluginId}.transitions".ResizeAnimationThreshold =
+          cfg.transitions.resizeAnimationThreshold;
       }
     ))
     (lib.optionalAttrs homeSettings (

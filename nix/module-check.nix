@@ -343,6 +343,26 @@ let
         programs.driftile.transitions.duration = 1000;
       }
       { };
+  homeManagerTransitionResizeAnimationThresholdMinimum =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.transitions.resizeAnimationThreshold = 0;
+      }
+      { };
+  homeManagerTransitionResizeAnimationThresholdMaximum =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.transitions.resizeAnimationThreshold = 64;
+      }
+      { };
   homeManagerTransitionDurationUnmanaged =
     evaluate homeManagerModule
       [
@@ -375,6 +395,8 @@ let
         programs.driftile.transitions = {
           animatePosition = false;
           animateSize = true;
+          easingCurve = "out-quart";
+          resizeAnimationThreshold = 12;
           windowClassExclusions = [
             "konsole org.kde.konsole"
             "firefox firefox"
@@ -392,6 +414,8 @@ let
         programs.driftile.transitions = {
           animatePosition = null;
           animateSize = null;
+          easingCurve = null;
+          resizeAnimationThreshold = null;
           windowClassExclusions = null;
         };
       }
@@ -1081,12 +1105,16 @@ assert homeManagerOptionSurface.options.programs.driftile ? transitions;
 assert homeManagerOptionSurface.options.programs.driftile.transitions ? duration;
 assert homeManagerOptionSurface.options.programs.driftile.transitions ? animatePosition;
 assert homeManagerOptionSurface.options.programs.driftile.transitions ? animateSize;
+assert homeManagerOptionSurface.options.programs.driftile.transitions ? easingCurve;
+assert homeManagerOptionSurface.options.programs.driftile.transitions ? resizeAnimationThreshold;
 assert homeManagerOptionSurface.options.programs.driftile.transitions ? windowClassExclusions;
 assert nixosOptionSurface.options.programs.driftile ? transitions;
 assert !(nixosOptionSurface.options.programs.driftile.overview ? touchpadGesture);
 assert !(nixosOptionSurface.options.programs.driftile.transitions ? duration);
 assert !(nixosOptionSurface.options.programs.driftile.transitions ? animatePosition);
 assert !(nixosOptionSurface.options.programs.driftile.transitions ? animateSize);
+assert !(nixosOptionSurface.options.programs.driftile.transitions ? easingCurve);
+assert !(nixosOptionSurface.options.programs.driftile.transitions ? resizeAnimationThreshold);
 assert !(nixosOptionSurface.options.programs.driftile.transitions ? windowClassExclusions);
 assert !(nixosOptionSurface.options.programs.driftile ? settings);
 assert packagePaths [ "home" "packages" ] homeManagerOverviewTouchpadGesture == [ ];
@@ -1122,6 +1150,10 @@ assert invalidOverviewTouchpadGestureRejected { fingerCount = 6; };
 assert invalidOverviewTouchpadGestureRejected { fingerCount = 4.5; };
 assert packagePaths [ "home" "packages" ] homeManagerTransitionDurationMinimum == [ ];
 assert packagePaths [ "home" "packages" ] homeManagerTransitionDurationMaximum == [ ];
+assert
+  packagePaths [ "home" "packages" ] homeManagerTransitionResizeAnimationThresholdMinimum == [ ];
+assert
+  packagePaths [ "home" "packages" ] homeManagerTransitionResizeAnimationThresholdMaximum == [ ];
 assert packagePaths [ "home" "packages" ] homeManagerTransitionDurationWithSystemInstall == [ ];
 assert packagePaths [ "home" "packages" ] homeManagerTransitionSettings == [ ];
 assert
@@ -1132,12 +1164,22 @@ assert
   homeManagerTransitionDurationMaximum.config.qt.kde.settings == {
     kwinrc."Effect-io.github.kontonkara.driftile.transitions".Duration = 1000;
   };
+assert
+  homeManagerTransitionResizeAnimationThresholdMinimum.config.qt.kde.settings == {
+    kwinrc."Effect-io.github.kontonkara.driftile.transitions".ResizeAnimationThreshold = 0;
+  };
+assert
+  homeManagerTransitionResizeAnimationThresholdMaximum.config.qt.kde.settings == {
+    kwinrc."Effect-io.github.kontonkara.driftile.transitions".ResizeAnimationThreshold = 64;
+  };
 assert homeManagerTransitionDurationUnmanaged.config.qt.kde.settings == { };
 assert
   homeManagerTransitionSettings.config.qt.kde.settings == {
     kwinrc."Effect-io.github.kontonkara.driftile.transitions" = {
       AnimatePosition = false;
       AnimateSize = true;
+      EasingCurve = "out-quart";
+      ResizeAnimationThreshold = 12;
       WindowClassExclusions = ''
         firefox firefox
         konsole org.kde.konsole'';
@@ -1153,6 +1195,10 @@ assert invalidTransitionDurationRejected 1001;
 assert invalidTransitionDurationRejected 1.5;
 assert invalidTransitionSettingRejected { animatePosition = "false"; };
 assert invalidTransitionSettingRejected { animateSize = "true"; };
+assert invalidTransitionSettingRejected { easingCurve = "in-cubic"; };
+assert invalidTransitionSettingRejected { resizeAnimationThreshold = -1; };
+assert invalidTransitionSettingRejected { resizeAnimationThreshold = 65; };
+assert invalidTransitionSettingRejected { resizeAnimationThreshold = 1.5; };
 assert invalidTransitionSettingRejected { windowClassExclusions = "editor example.Editor"; };
 assert invalidTransitionSettingRejected { windowClassExclusions = [ " konsole org.kde.konsole" ]; };
 assert

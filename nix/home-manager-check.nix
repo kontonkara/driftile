@@ -170,6 +170,12 @@ let
   transitionDurationMaximum = evaluateHome {
     programs.driftile.transitions.duration = 1000;
   } { };
+  transitionResizeAnimationThresholdMinimum = evaluateHome {
+    programs.driftile.transitions.resizeAnimationThreshold = 0;
+  } { };
+  transitionResizeAnimationThresholdMaximum = evaluateHome {
+    programs.driftile.transitions.resizeAnimationThreshold = 64;
+  } { };
   transitionDurationUnmanaged = evaluateHome {
     programs.driftile.transitions.duration = null;
   } { };
@@ -177,6 +183,8 @@ let
     programs.driftile.transitions = {
       animatePosition = false;
       animateSize = true;
+      easingCurve = "out-expo";
+      resizeAnimationThreshold = 16;
       windowClassExclusions = [
         "konsole org.kde.konsole"
         "firefox firefox"
@@ -187,6 +195,8 @@ let
     programs.driftile.transitions = {
       animatePosition = null;
       animateSize = null;
+      easingCurve = null;
+      resizeAnimationThreshold = null;
       windowClassExclusions = null;
     };
   } { };
@@ -347,6 +357,8 @@ assert transitionsPackageCount transitionsDisabled == 0;
 assert !lib.elem (toString pkgs.hello) (homePackagePaths transitionsDisabled);
 assert transitionsPackageCount transitionDurationMinimum == 0;
 assert transitionsPackageCount transitionDurationMaximum == 0;
+assert transitionsPackageCount transitionResizeAnimationThresholdMinimum == 0;
+assert transitionsPackageCount transitionResizeAnimationThresholdMaximum == 0;
 assert transitionsPackageCount transitionSettings == 0;
 assert
   transitionDurationMinimum.config.qt.kde.settings == {
@@ -356,12 +368,22 @@ assert
   transitionDurationMaximum.config.qt.kde.settings == {
     kwinrc."Effect-io.github.kontonkara.driftile.transitions".Duration = 1000;
   };
+assert
+  transitionResizeAnimationThresholdMinimum.config.qt.kde.settings == {
+    kwinrc."Effect-io.github.kontonkara.driftile.transitions".ResizeAnimationThreshold = 0;
+  };
+assert
+  transitionResizeAnimationThresholdMaximum.config.qt.kde.settings == {
+    kwinrc."Effect-io.github.kontonkara.driftile.transitions".ResizeAnimationThreshold = 64;
+  };
 assert transitionDurationUnmanaged.config.qt.kde.settings == { };
 assert
   transitionSettings.config.qt.kde.settings == {
     kwinrc."Effect-io.github.kontonkara.driftile.transitions" = {
       AnimatePosition = false;
       AnimateSize = true;
+      EasingCurve = "out-expo";
+      ResizeAnimationThreshold = 16;
       WindowClassExclusions = ''
         firefox firefox
         konsole org.kde.konsole'';
@@ -373,6 +395,10 @@ assert invalidTransitionDurationRejected 1001;
 assert invalidTransitionDurationRejected 1.5;
 assert invalidTransitionSettingRejected { animatePosition = "false"; };
 assert invalidTransitionSettingRejected { animateSize = "true"; };
+assert invalidTransitionSettingRejected { easingCurve = "in-cubic"; };
+assert invalidTransitionSettingRejected { resizeAnimationThreshold = -1; };
+assert invalidTransitionSettingRejected { resizeAnimationThreshold = 65; };
+assert invalidTransitionSettingRejected { resizeAnimationThreshold = 1.5; };
 assert invalidTransitionSettingRejected { windowClassExclusions = "editor example.Editor"; };
 assert invalidTransitionSettingRejected { windowClassExclusions = [ "konsole org.kde.konsole " ]; };
 assert
