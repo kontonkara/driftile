@@ -68,7 +68,7 @@ The ownership rule is strict:
 - Configurable 1–50 percentage-point step for contextual height decrease and
   increase actions: the active stack member when tiled, or the active manually
   floating window when detached.
-- One settings page groups seventeen controls into eleven General and six
+- One settings page groups twenty controls into fourteen General and six
   Applications controls.
 - Output-local commands unless a transfer is explicit.
 - Work-area, size-constraint, fullscreen, minimized-window compatibility, dialog handling, and settled virtual-output recovery.
@@ -404,7 +404,7 @@ The ownership rule is strict:
   backend, or application matrix. The existing VM contract changes without a
   current VM validation claim.
 
-## 1.31.0 (in development)
+## 1.31 activity slice
 
 - Context identity includes output, virtual desktop, and activity.
 - Exact single-activity windows keep independent tiled or floating ownership
@@ -417,10 +417,6 @@ The ownership rule is strict:
   topology catalog remains v2.
 - The optional companion projects the current activity only and closes when the
   activity selection or activity set changes.
-
-## Beyond v1
-
-- Optional visual transitions.
 
 ## Compatibility
 

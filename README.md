@@ -7,7 +7,7 @@ Driftile is a KWin extension that adds scrollable tiling and dynamic workspaces
 to KDE Plasma. KWin remains responsible for compositing, windows, outputs, and
 virtual desktops; Driftile provides the layout and interaction policy.
 
-## Capabilities
+## Features
 
 - Horizontal scrollable columns with stacked and tabbed window layouts.
 - Independent retained layouts for each output, virtual desktop, and activity,
@@ -86,20 +86,11 @@ for regular installation; `main` may include unreleased behavior.
 For problems, follow the [troubleshooting guide](docs/troubleshooting.md) and
 [open an issue](https://github.com/kontonkara/driftile/issues/new).
 
-## More documentation
+## Documentation
 
-- [Installation](docs/installation.md)
-- [Configuration](docs/configuration.md)
-- [Shortcuts](docs/shortcuts.md)
-- [Troubleshooting](docs/troubleshooting.md)
-- [Interaction model](docs/interaction-model.md)
-- [Optional overview](docs/overview.md)
-- [Documentation index](docs/README.md)
-
-## Development
-
-See [Testing](docs/testing.md) for the development environment and checks, and
-[Architecture](docs/architecture.md) for the extension boundary.
+The [documentation index](docs/README.md) links the installation,
+configuration, shortcut, interaction, overview, compatibility, migration, and
+troubleshooting guides.
 
 ## License
 
@@ -108,4 +99,4 @@ Driftile is licensed under GPL-3.0-or-later. See [LICENSE](LICENSE).
 ## Acknowledgements
 
 The window-management model was inspired by the
-[niri compositor](https://github.com/YaLTeR/niri).
+[niri compositor](https://github.com/niri-wm/niri).

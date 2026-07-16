@@ -93,13 +93,15 @@ without an action. In a tabbed column, the selected member is represented only
 by its large thumbnail; each other actionable member is represented by its
 tab. Minimized, invalid, and fully clipped items are excluded. A partially
 clipped target remains actionable, and spatial navigation uses only its visible
-intersection. Desktop gutters remain pointer-only and are not keyboard targets.
+intersection. The number gutter of every non-current live desktop, including
+the shared empty tail, is also a target; the current desktop's gutter is not.
 
 Typing filters visible windows by title and application identity. Matching is
 case-insensitive and every typed term must match. Arrow navigation immediately
 repairs its selection within the filtered results; `Backspace` removes one
 Unicode code point and `Escape` clears a non-empty query before it can close the
-effect. The query is session-only and is discarded when the effect closes.
+effect. Desktop-gutter targets stay hidden while a search query is active. The
+query is session-only and is discarded when the effect closes.
 
 The interaction adds no layout or persistent state, KConfig value, shortcut,
 schema, or private API. Pointer behavior remains unchanged.
