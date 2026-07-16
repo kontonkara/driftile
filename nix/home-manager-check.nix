@@ -67,6 +67,18 @@ let
           "org.example.Terminal"
           "org.example.Browser"
         ];
+        applicationFloatingPositions = {
+          "org.example.Browser" = {
+            anchor = "bottom-right";
+            x = -24;
+            y = 32;
+          };
+          "org.example.Terminal" = {
+            anchor = "top-left";
+            x = 12;
+            y = -8;
+          };
+        };
         applicationTilingExclusions = [
           "org.example.Editor=tool"
           "org.example.Browser"
@@ -234,6 +246,53 @@ let
         builtins.deepSeq
           (evaluateHome {
             programs.driftile.transitions = setting;
+          } { }).config.qt.kde.settings
+          true
+      );
+    in
+    !evaluated.success;
+  floatingPositionBounds = evaluateHome {
+    programs.driftile.settings.applicationFloatingPositions = {
+      "org.example.Maximum" = {
+        anchor = "bottom-right";
+        x = 16384;
+        y = 16384;
+      };
+      "org.example.Minimum" = {
+        anchor = "top-left";
+        x = -16384;
+        y = -16384;
+      };
+    };
+  } { };
+  maximumFloatingPositions = evaluateHome {
+    programs.driftile.settings.applicationFloatingPositions = builtins.listToAttrs (
+      builtins.genList (index: {
+        name = "org.example.App${toString index}";
+        value = {
+          anchor = "top";
+          x = 0;
+          y = 0;
+        };
+      }) 128
+    );
+  } { };
+  maximumFloatingPositionIdentifier = evaluateHome {
+    programs.driftile.settings.applicationFloatingPositions = {
+      ${builtins.concatStringsSep "" (builtins.genList (_: "é") 127) + "a"} = {
+        anchor = "left";
+        x = 0;
+        y = 0;
+      };
+    };
+  } { };
+  invalidFloatingPositionsRejected =
+    positions:
+    let
+      evaluated = builtins.tryEval (
+        builtins.deepSeq
+          (evaluateHome {
+            programs.driftile.settings.applicationFloatingPositions = positions;
           } { }).config.qt.kde.settings
           true
       );
@@ -427,6 +486,93 @@ assert
     windowClassExclusions = builtins.genList (index: "app${toString index} example.App${toString index}") 129;
   };
 assert
+  floatingPositionBounds.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ApplicationFloatingPositions
+  == ''
+    org.example.Maximum=bottom-right,16384,16384
+    org.example.Minimum=top-left,-16384,-16384'';
+assert
+  builtins.length (
+    lib.splitString "\n"
+      maximumFloatingPositions.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ApplicationFloatingPositions
+  ) == 128;
+assert
+  builtins.stringLength (
+    builtins.head (
+      lib.splitString "="
+        maximumFloatingPositionIdentifier.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ApplicationFloatingPositions
+    )
+  ) == 255;
+assert
+  lib.all invalidFloatingPositionsRejected [
+    [ ]
+    { "org.example.Editor" = "top-left,0,0"; }
+    {
+      "org.example.Editor" = {
+        anchor = "center";
+        x = 0;
+        y = 0;
+      };
+    }
+    {
+      "org.example.Editor" = {
+        anchor = "top-left";
+        x = -16385;
+        y = 0;
+      };
+    }
+    {
+      "org.example.Editor" = {
+        anchor = "top-left";
+        x = 0;
+        y = 16385;
+      };
+    }
+    {
+      "org.example.Editor" = {
+        anchor = "top-left";
+        x = 0;
+      };
+    }
+    {
+      " org.example.Editor" = {
+        anchor = "top-left";
+        x = 0;
+        y = 0;
+      };
+    }
+    {
+      "org.example=Editor" = {
+        anchor = "top-left";
+        x = 0;
+        y = 0;
+      };
+    }
+    {
+      "org.example\nEditor" = {
+        anchor = "top-left";
+        x = 0;
+        y = 0;
+      };
+    }
+    {
+      ${builtins.concatStringsSep "" (builtins.genList (_: "é") 128)} = {
+        anchor = "top-left";
+        x = 0;
+        y = 0;
+      };
+    }
+    (builtins.listToAttrs (
+      builtins.genList (index: {
+        name = "org.example.App${toString index}";
+        value = {
+          anchor = "top-left";
+          x = 0;
+          y = 0;
+        };
+      }) 129
+    ))
+  ];
+assert
   standalone.config.qt.kde.settings == {
     kwinrc."Script-io.github.kontonkara.driftile" = {
       ApplicationBorderlessExclusions = ''
@@ -439,6 +585,9 @@ assert
         org.example.Browser=80
         org.example.Editor=960px
         org.example.Terminal=60'';
+      ApplicationFloatingPositions = ''
+        org.example.Browser=bottom-right,-24,32
+        org.example.Terminal=top-left,12,-8'';
       ApplicationWindowHeights = ''
         org.example.Browser=75
         org.example.Editor=720px
@@ -485,7 +634,7 @@ assert
 assert
   builtins.length (
     builtins.attrNames standalone.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile"
-  ) == 31;
+  ) == 32;
 assert
   standalone.config.xdg.configFile."driftile/shortcuts.json".text == ''
     {"bindings":{"driftile_focus_column_left":["Meta+A"],"driftile_reset_column_width":[]},"version":1}
@@ -508,6 +657,7 @@ assert
       ApplicationBorderlessExclusions = "";
       ApplicationColumnPresentations = "";
       ApplicationColumnWidths = "";
+      ApplicationFloatingPositions = "";
       ApplicationWindowHeights = "";
       ApplicationFocusCentering = "";
       ApplicationInitialFloating = "";

@@ -197,6 +197,54 @@ let
   renderApplicationInitialFullscreen = renderApplicationTilingExclusions;
   applicationInitialFullWidthType = applicationTilingExclusionType;
   renderApplicationInitialFullWidth = renderApplicationTilingExclusions;
+  applicationFloatingPositionType = lib.types.submodule {
+    options = {
+      anchor = lib.mkOption {
+        type = lib.types.enum [
+          "top-left"
+          "top"
+          "top-right"
+          "right"
+          "bottom-right"
+          "bottom"
+          "bottom-left"
+          "left"
+        ];
+        description = "Work-area anchor used to place a newly floating window.";
+      };
+
+      x = lib.mkOption {
+        type = lib.types.ints.between (-16384) 16384;
+        description = "Signed horizontal offset from the selected anchor in logical pixels.";
+      };
+
+      y = lib.mkOption {
+        type = lib.types.ints.between (-16384) 16384;
+        description = "Signed vertical offset from the selected anchor in logical pixels.";
+      };
+    };
+  };
+  applicationFloatingPositionsType = lib.types.attrsOf applicationFloatingPositionType;
+  validateApplicationFloatingPositions =
+    positions:
+    if
+      builtins.length (builtins.attrNames positions) <= 128
+      && lib.all validMappedDesktopFileName (builtins.attrNames positions)
+    then
+      positions
+    else
+      throw "programs.driftile.settings.applicationFloatingPositions must use at most 128 valid desktopFileName keys without '='.";
+  renderApplicationFloatingPositions =
+    positions:
+    lib.concatStringsSep "\n" (
+      map (
+        desktopFileName:
+        let
+          position = positions.${desktopFileName};
+        in
+        "${desktopFileName}=${position.anchor},${toString position.x},${toString position.y}"
+      ) (builtins.sort builtins.lessThan (builtins.attrNames positions))
+    );
   transitionWindowClassExclusionType = applicationTilingExclusionType;
   renderTransitionWindowClassExclusions = renderApplicationTilingExclusions;
   validPresetSequence =
@@ -414,6 +462,13 @@ in
               type = applicationInitialFullWidthType;
               default = [ ];
               description = "Exact case-sensitive KWin desktopFileName strings whose newly admitted windows start in full-width columns.";
+            };
+
+            applicationFloatingPositions = lib.mkOption {
+              type = applicationFloatingPositionsType;
+              default = { };
+              apply = validateApplicationFloatingPositions;
+              description = "Initial work-area anchors and signed logical-pixel offsets for newly floating windows, keyed by exact case-sensitive KWin desktopFileName.";
             };
 
             applicationTilingExclusions = lib.mkOption {
@@ -637,6 +692,8 @@ in
             renderApplicationInitialFullscreen cfg.settings.applicationInitialFullscreen;
           ApplicationInitialFullWidth =
             renderApplicationInitialFullWidth cfg.settings.applicationInitialFullWidth;
+          ApplicationFloatingPositions =
+            renderApplicationFloatingPositions cfg.settings.applicationFloatingPositions;
           ApplicationTilingExclusions = renderApplicationTilingExclusions cfg.settings.applicationTilingExclusions;
           BorderlessWindows = cfg.settings.borderlessWindows;
           CenterFocusedColumn = cfg.settings.centerFocusedColumn;

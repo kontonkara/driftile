@@ -478,6 +478,18 @@ let
             "org.example.Terminal"
             "org.example.Browser"
           ];
+          applicationFloatingPositions = {
+            "org.example.Browser" = {
+              anchor = "bottom-right";
+              x = -24;
+              y = 32;
+            };
+            "org.example.Terminal" = {
+              anchor = "top-left";
+              x = 12;
+              y = -8;
+            };
+          };
           applicationTilingExclusions = [
             "org.example.Editor=tool"
             "org.example.Browser"
@@ -755,6 +767,62 @@ let
         ) 128;
       }
       { };
+  homeManagerMaximumFloatingPositions =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.settings.applicationFloatingPositions = builtins.listToAttrs (
+          builtins.genList (index: {
+            name = "org.example.App${toString index}";
+            value = {
+              anchor = "top";
+              x = 0;
+              y = 0;
+            };
+          }) 128
+        );
+      }
+      { };
+  homeManagerFloatingPositionBounds =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.settings.applicationFloatingPositions = {
+          "org.example.Maximum" = {
+            anchor = "bottom-right";
+            x = 16384;
+            y = 16384;
+          };
+          "org.example.Minimum" = {
+            anchor = "top-left";
+            x = -16384;
+            y = -16384;
+          };
+        };
+      }
+      { };
+  homeManagerMaximumFloatingPositionIdentifier =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.settings.applicationFloatingPositions = {
+          ${builtins.concatStringsSep "" (builtins.genList (_: "é") 127) + "a"} = {
+            anchor = "left";
+            x = 0;
+            y = 0;
+          };
+        };
+      }
+      { };
   homeManagerMaximumBorderlessExclusions =
     evaluate homeManagerModule
       [
@@ -795,6 +863,82 @@ let
         programs.driftile.enable = true;
       };
   invalidSettings = [
+    { applicationFloatingPositions = [ ]; }
+    { applicationFloatingPositions."org.example.Editor" = "top-left,0,0"; }
+    {
+      applicationFloatingPositions."org.example.Editor" = {
+        anchor = "center";
+        x = 0;
+        y = 0;
+      };
+    }
+    {
+      applicationFloatingPositions."org.example.Editor" = {
+        anchor = "top-left";
+        x = -16385;
+        y = 0;
+      };
+    }
+    {
+      applicationFloatingPositions."org.example.Editor" = {
+        anchor = "top-left";
+        x = 0;
+        y = 16385;
+      };
+    }
+    {
+      applicationFloatingPositions."org.example.Editor" = {
+        anchor = "top-left";
+        x = 0.5;
+        y = 0;
+      };
+    }
+    {
+      applicationFloatingPositions."org.example.Editor" = {
+        anchor = "top-left";
+        x = 0;
+      };
+    }
+    {
+      applicationFloatingPositions." org.example.Editor" = {
+        anchor = "top-left";
+        x = 0;
+        y = 0;
+      };
+    }
+    {
+      applicationFloatingPositions."org.example=Editor" = {
+        anchor = "top-left";
+        x = 0;
+        y = 0;
+      };
+    }
+    {
+      applicationFloatingPositions."org.example\nEditor" = {
+        anchor = "top-left";
+        x = 0;
+        y = 0;
+      };
+    }
+    {
+      applicationFloatingPositions.${builtins.concatStringsSep "" (builtins.genList (_: "é") 128)} = {
+        anchor = "top-left";
+        x = 0;
+        y = 0;
+      };
+    }
+    {
+      applicationFloatingPositions = builtins.listToAttrs (
+        builtins.genList (index: {
+          name = "org.example.App${toString index}";
+          value = {
+            anchor = "top-left";
+            x = 0;
+            y = 0;
+          };
+        }) 129
+      );
+    }
     { applicationInitialFullscreen = "org.example.Editor"; }
     {
       applicationInitialFullscreen = [
@@ -1174,6 +1318,9 @@ let
         org.example.Browser=80
         org.example.Editor=960px
         org.example.Terminal=60'';
+      ApplicationFloatingPositions = ''
+        org.example.Browser=bottom-right,-24,32
+        org.example.Terminal=top-left,12,-8'';
       ApplicationWindowHeights = ''
         org.example.Browser=75
         org.example.Editor=720px
@@ -1222,6 +1369,7 @@ let
       ApplicationBorderlessExclusions = "";
       ApplicationColumnPresentations = "";
       ApplicationColumnWidths = "";
+      ApplicationFloatingPositions = "";
       ApplicationWindowHeights = "";
       ApplicationFocusCentering = "";
       ApplicationInitialFloating = "";
@@ -1397,11 +1545,11 @@ assert homeManagerSettings.config.qt.kde.settings == expectedSettings;
 assert homeManagerDefaultSettings.config.qt.kde.settings == expectedDefaultSettings;
 assert
   builtins.length (builtins.attrNames expectedSettings.kwinrc."Script-io.github.kontonkara.driftile")
-  == 31;
+  == 32;
 assert
   builtins.length (
     builtins.attrNames expectedDefaultSettings.kwinrc."Script-io.github.kontonkara.driftile"
-  ) == 28;
+  ) == 29;
 assert
   homeManagerMaximumDefaultColumnWidthPixels.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".DefaultColumnWidthPixels
   == 16384;
@@ -1477,6 +1625,23 @@ assert
 assert
   builtins.length (
     lib.splitString "\n"
+      homeManagerMaximumFloatingPositions.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ApplicationFloatingPositions
+  ) == 128;
+assert
+  homeManagerFloatingPositionBounds.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ApplicationFloatingPositions
+  == ''
+    org.example.Maximum=bottom-right,16384,16384
+    org.example.Minimum=top-left,-16384,-16384'';
+assert
+  builtins.stringLength (
+    builtins.head (
+      lib.splitString "="
+        homeManagerMaximumFloatingPositionIdentifier.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ApplicationFloatingPositions
+    )
+  ) == 255;
+assert
+  builtins.length (
+    lib.splitString "\n"
       homeManagerMaximumBorderlessExclusions.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ApplicationBorderlessExclusions
   ) == 128;
 assert
@@ -1500,6 +1665,7 @@ assert
       ApplicationBorderlessExclusions = "";
       ApplicationColumnPresentations = "";
       ApplicationColumnWidths = "";
+      ApplicationFloatingPositions = "";
       ApplicationWindowHeights = "";
       ApplicationFocusCentering = "";
       ApplicationInitialFloating = "";
