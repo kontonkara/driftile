@@ -12,9 +12,11 @@ const MANAGED_PROPERTY = "driftileTransitionsManaged";
 const ANIMATION_PROPERTY = "driftileTransitionAnimation";
 const DEFERRED_PROPERTY = "driftileDeferredTransition";
 const POSITION_ANIMATION = "position";
+const TRANSLATION_ANIMATIONS = "translations";
 const POSITION_MODE_PROPERTY = "positionMode";
 const ABSOLUTE_POSITION_MODE = "absolute";
 const TRANSLATION_POSITION_MODE = "translation";
+const MAXIMUM_TRANSLATION_ANIMATIONS = 32;
 const SIZE_ANIMATION = "size";
 
 class DriftileTransitionsEffect {
@@ -239,6 +241,7 @@ class DriftileTransitionsEffect {
     }
 
     const state = this.windowAnimationState(window);
+    const previousPositionMode = state[POSITION_MODE_PROPERTY];
     const animations = [];
     const animationProperties = [];
     const newSize = {
@@ -272,7 +275,6 @@ class DriftileTransitionsEffect {
         });
       }
     } else if (positionChanged) {
-      this.cancelPositionAnimation(state);
       animationProperties.push(POSITION_ANIMATION);
       animations.push({
         type: Effect.Translation,
@@ -294,11 +296,21 @@ class DriftileTransitionsEffect {
 
       for (let index = 0; index < animationProperties.length; index += 1) {
         const property = animationProperties[index];
-        state[property] = animationIds[index];
-        if (property === POSITION_ANIMATION) {
-          state[POSITION_MODE_PROPERTY] = usesAbsolutePosition
-            ? ABSOLUTE_POSITION_MODE
-            : TRANSLATION_POSITION_MODE;
+        const animationId = animationIds[index];
+        if (property === SIZE_ANIMATION) {
+          state[property] = animationId;
+        } else if (usesAbsolutePosition) {
+          if (previousPositionMode === TRANSLATION_POSITION_MODE) {
+            this.cancelTranslationAnimations(state);
+          }
+          state[POSITION_ANIMATION] = animationId;
+          state[POSITION_MODE_PROPERTY] = ABSOLUTE_POSITION_MODE;
+        } else {
+          if (previousPositionMode === ABSOLUTE_POSITION_MODE) {
+            this.cancelAbsolutePositionAnimation(state);
+          }
+          this.trackTranslationAnimation(state, animationId);
+          state[POSITION_MODE_PROPERTY] = TRANSLATION_POSITION_MODE;
         }
       }
     }
@@ -474,7 +486,6 @@ class DriftileTransitionsEffect {
 
   retargetAbsolutePosition(state, target) {
     if (state[POSITION_MODE_PROPERTY] !== ABSOLUTE_POSITION_MODE) {
-      this.cancelPositionAnimation(state);
       return false;
     }
 
@@ -486,11 +497,44 @@ class DriftileTransitionsEffect {
     return false;
   }
 
-  cancelPositionAnimation(state) {
+  trackTranslationAnimation(state, animationId) {
+    let animationIds = state[TRANSLATION_ANIMATIONS];
+    if (!Array.isArray(animationIds)) {
+      if (animationIds !== undefined) {
+        cancel(animationIds);
+      }
+      animationIds = [];
+      state[TRANSLATION_ANIMATIONS] = animationIds;
+    }
+
+    animationIds.push(animationId);
+    while (animationIds.length > MAXIMUM_TRANSLATION_ANIMATIONS) {
+      cancel(animationIds.shift());
+    }
+  }
+
+  cancelAbsolutePositionAnimation(state) {
     if (state[POSITION_ANIMATION] !== undefined) {
       cancel(state[POSITION_ANIMATION]);
       delete state[POSITION_ANIMATION];
     }
+  }
+
+  cancelTranslationAnimations(state) {
+    const animationIds = state[TRANSLATION_ANIMATIONS];
+    if (Array.isArray(animationIds)) {
+      for (const animationId of animationIds) {
+        cancel(animationId);
+      }
+    } else if (animationIds !== undefined) {
+      cancel(animationIds);
+    }
+    delete state[TRANSLATION_ANIMATIONS];
+  }
+
+  cancelPositionAnimations(state) {
+    this.cancelAbsolutePositionAnimation(state);
+    this.cancelTranslationAnimations(state);
     delete state[POSITION_MODE_PROPERTY];
   }
 
@@ -530,9 +574,7 @@ class DriftileTransitionsEffect {
     if (state[SIZE_ANIMATION] !== undefined) {
       cancel(state[SIZE_ANIMATION]);
     }
-    if (state[POSITION_ANIMATION] !== undefined) {
-      cancel(state[POSITION_ANIMATION]);
-    }
+    this.cancelPositionAnimations(state);
     delete window[ANIMATION_PROPERTY];
   }
 
