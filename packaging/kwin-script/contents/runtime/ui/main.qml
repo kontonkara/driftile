@@ -1125,6 +1125,7 @@ QtObject {
             showTabIndicator: KWin.readConfig("ShowTabIndicator", true),
             touchpadNavigation: KWin.readConfig("TouchpadNavigation", false),
             touchpadWorkspaceNavigation: KWin.readConfig("TouchpadWorkspaceNavigation", false),
+            workspaceAutoBackAndForth: KWin.readConfig("WorkspaceAutoBackAndForth", false),
             touchpadNavigationFingerCount: KWin.readConfig("TouchpadNavigationFingerCount", 5),
             touchpadNaturalScroll: KWin.readConfig("TouchpadNaturalScroll", true),
             windowHeightPresets: KWin.readConfig("WindowHeightPresets", ""),

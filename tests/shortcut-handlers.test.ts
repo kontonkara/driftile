@@ -920,6 +920,7 @@ describe("KWin shortcut handlers", () => {
       "kcfg_ShowTabIndicator",
       "kcfg_TouchpadNavigation",
       "kcfg_TouchpadWorkspaceNavigation",
+      "kcfg_WorkspaceAutoBackAndForth",
       "kcfg_EmptyDesktopAboveFirst",
       "kcfg_TouchpadNavigationFingerCount",
       "kcfg_TouchpadNaturalScroll",
@@ -1099,12 +1100,18 @@ describe("KWin shortcut handlers", () => {
     );
   });
 
-  it("exposes opt-in vertical touchpad desktop navigation", () => {
+  it("exposes opt-in desktop navigation settings", () => {
     const workspaceNavigationEntry = configuration.match(
       /<entry name="TouchpadWorkspaceNavigation" type="Bool">([\s\S]*?)<\/entry>/,
     )?.[1];
     const workspaceNavigationWidget = configurationUi.match(
       /<widget class="QCheckBox" name="kcfg_TouchpadWorkspaceNavigation">([\s\S]*?)<\/widget>/,
+    )?.[1];
+    const autoBackAndForthEntry = configuration.match(
+      /<entry name="WorkspaceAutoBackAndForth" type="Bool">([\s\S]*?)<\/entry>/,
+    )?.[1];
+    const autoBackAndForthWidget = configurationUi.match(
+      /<widget class="QCheckBox" name="kcfg_WorkspaceAutoBackAndForth">([\s\S]*?)<\/widget>/,
     )?.[1];
     const leadingDesktopEntry = configuration.match(
       /<entry name="EmptyDesktopAboveFirst" type="Bool">([\s\S]*?)<\/entry>/,
@@ -1123,6 +1130,28 @@ describe("KWin shortcut handlers", () => {
     expect(workspaceNavigationWidget).toContain(
       "<string>Swipe vertically to focus the adjacent virtual desktop.</string>",
     );
+    expect(autoBackAndForthEntry).toContain(
+      "<label>Repeat the current desktop number to return to the last-used desktop</label>",
+    );
+    expect(autoBackAndForthEntry).toContain("<default>false</default>");
+    expect(autoBackAndForthWidget).toContain(
+      "<string>Repeat the current desktop number to return to the last-used desktop</string>",
+    );
+    expect(autoBackAndForthWidget).toContain(
+      "numbered direct desktop selection resolves and clamps to the desktop already current on the active output",
+    );
+    expect(autoBackAndForthWidget).toContain(
+      "valid distinct last-used desktop on that output",
+    );
+    expect(autoBackAndForthWidget).toContain(
+      "Missing history, stale targets, and rejected requests do nothing.",
+    );
+    expect(autoBackAndForthWidget).toContain(
+      "Adjacent navigation and the explicit last-used action are unchanged.",
+    );
+    expect(autoBackAndForthWidget).toContain(
+      "Changing this setting does not switch desktops or alter selection history.",
+    );
     expect(leadingDesktopEntry).toContain(
       "<label>Keep an empty virtual desktop before the first occupied desktop</label>",
     );
@@ -1135,6 +1164,15 @@ describe("KWin shortcut handlers", () => {
     );
     expect(qml).toContain(
       'emptyDesktopAboveFirst: KWin.readConfig("EmptyDesktopAboveFirst", false)',
+    );
+    expect(qml).toContain(
+      'workspaceAutoBackAndForth: KWin.readConfig("WorkspaceAutoBackAndForth", false)',
+    );
+    expect(runtime).toContain(
+      "workspaceAutoBackAndForth: settings.workspaceAutoBackAndForth",
+    );
+    expect(runtime).toContain(
+      "controller.setWorkspaceAutoBackAndForth(settings.workspaceAutoBackAndForth)",
     );
     expect(runtime).toContain(
       "export function getTouchpadWorkspaceNavigation(): boolean",

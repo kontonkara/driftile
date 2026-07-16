@@ -72,6 +72,16 @@
         </widget>
        </item>
        <item>
+        <widget class="QCheckBox" name="kcfg_WorkspaceAutoBackAndForth">
+         <property name="text">
+          <string>Repeat the current desktop number to return to the last-used desktop</string>
+         </property>
+         <property name="toolTip">
+          <string>Applies only when a numbered direct desktop selection resolves and clamps to the desktop already current on the active output. A valid distinct last-used desktop on that output is selected instead. Missing history, stale targets, and rejected requests do nothing. Adjacent navigation and the explicit last-used action are unchanged. Changing this setting does not switch desktops or alter selection history.</string>
+         </property>
+        </widget>
+       </item>
+       <item>
         <widget class="QCheckBox" name="kcfg_EmptyDesktopAboveFirst">
          <property name="text">
           <string>Keep an empty virtual desktop before the first occupied desktop</string>

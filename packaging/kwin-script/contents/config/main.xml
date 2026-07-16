@@ -32,6 +32,10 @@
       <label>Enable vertical touchpad desktop navigation</label>
       <default>false</default>
     </entry>
+    <entry name="WorkspaceAutoBackAndForth" type="Bool">
+      <label>Repeat the current desktop number to return to the last-used desktop</label>
+      <default>false</default>
+    </entry>
     <entry name="EmptyDesktopAboveFirst" type="Bool">
       <label>Keep an empty virtual desktop before the first occupied desktop</label>
       <default>false</default>
