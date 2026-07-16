@@ -4,10 +4,11 @@ Open **System Settings > Window Management > KWin Scripts** and configure Drifti
 
 The settings page groups the existing controls into two tabs:
 
-- **General**: window decorations, focus and single-column centering, touchpad
-  navigation, window gap, tab feedback, default column presentation and width,
-  default initial tiled client height, proportional or fixed column-width
-  steps and presets, and proportional or fixed window-height steps and presets.
+- **General**: window decorations, focus and single-column centering, desktop
+  and touchpad navigation, window gap, tab feedback, default column
+  presentation and width, default initial tiled client height, proportional or
+  fixed column-width steps and presets, and proportional or fixed window-height
+  steps and presets.
 - **Applications**: initial column widths, tiled client heights, and
   presentation, focus centering, initial floating rules, tiling exclusions,
   and decoration exclusions.
@@ -112,7 +113,7 @@ The activation writes only `ApplicationBorderlessExclusions`,
 `ColumnWidthStepPercent`, `ColumnWidthStepPixels`,
 `ShowTabIndicator`, `TouchpadNavigation`,
 `TouchpadWorkspaceNavigation`, `TouchpadNavigationFingerCount`,
-`TouchpadNaturalScroll`,
+`TouchpadNaturalScroll`, `WorkspaceAutoBackAndForth`,
 `WindowHeightPresets`, `WindowHeightStepPercent`, and
 `WindowHeightStepPixels` in Driftile's `kwinrc` group. It does not replace the
 file or manage shortcuts. A running KWin session is asked to reconfigure on a
@@ -171,6 +172,7 @@ programs.driftile.settings.touchpadNavigation = true;
 programs.driftile.settings.touchpadWorkspaceNavigation = true;
 programs.driftile.settings.touchpadNavigationFingerCount = 4;
 programs.driftile.settings.touchpadNaturalScroll = true;
+programs.driftile.settings.workspaceAutoBackAndForth = false;
 programs.driftile.settings.windowHeightPresets = [ 25 50 75 ];
 programs.driftile.settings.windowHeightStepPixels = 0;
 ```
@@ -268,6 +270,19 @@ Partial and cancelled gestures do nothing. Changing either enable option, the
 finger count, or natural direction recreates only the enabled gesture handlers
 without restarting KWin. Native X11 treats both enabled options as safe no-ops,
 and neither option adds a shortcut action or default key binding.
+
+## Numbered desktop back-and-forth
+
+**Repeat the current desktop number to return to the last-used desktop** is
+disabled by default. When enabled, repeating a numbered direct desktop action
+whose resolved and clamped target is already current selects the valid,
+distinct last-used desktop on the active output instead.
+
+Missing history, a removed or stale historical target, and a rejected desktop
+selection are no-ops. The adjacent desktop actions and the explicit **Focus
+last-used desktop** action keep their existing behavior. Applying the setting
+live does not select a desktop, alter selection history or layout, or write
+geometry.
 
 ## Dynamic virtual desktops
 

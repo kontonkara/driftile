@@ -1625,3 +1625,6 @@ taking over compositor mechanisms.
   existing, restored, and transferred geometry.
 - Retain live solver constraints and physical-pixel snapping without adding a
   shortcut, persistence field, or private KWin API.
+- Add opt-in output-local back-and-forth when a numbered direct desktop action
+  resolves and clamps to the already current desktop, without changing
+  adjacent or explicit last-used actions.

@@ -11,6 +11,14 @@ Driftile uses one keyboard grammar and does not wrap at layout boundaries:
 - `1..9` address a virtual desktop directly; adding `Ctrl` moves the active column there.
 - `W` toggles the active tiled column between stacked and tabbed presentation.
 
+Optional numbered back-and-forth changes only a repeated direct `1..9`
+selection whose resolved and clamped target is already current. With a valid,
+distinct output-local last-used desktop, the repeated action selects that
+desktop instead. Missing history, stale targets, and rejected selection are
+no-ops. Adjacent navigation and the explicit **Focus last-used desktop** action
+are unchanged. Toggling the setting does not switch desktops, mutate selection
+history, or alter layout.
+
 Optional `3`–`5`-finger touchpad navigation reuses horizontal column focus and
 adjacent-desktop selection. Horizontal and vertical gesture pairs can be
 enabled independently. With natural direction, completed left and up swipes

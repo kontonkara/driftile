@@ -81,6 +81,9 @@ The ownership rule is strict:
 - One shared trailing empty virtual desktop, plus an optional separate leading
   empty desktop, with output-local selection where supported and conservative
   creation and removal.
+- Optional numbered direct-selection back-and-forth to one valid, distinct
+  output-local last-used desktop when the resolved and clamped target is
+  already current; missing or stale history and rejected selection are no-ops.
 - Guarded one-step reordering of the currently selected desktop when the KWin scripting backend exposes it.
 - Single-window floating desktop transfer with exact frame and tiled-layout preservation.
 - Single-window floating output transfer with KWin-owned placement and
