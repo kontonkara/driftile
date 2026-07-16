@@ -1,13 +1,13 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.41.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.42.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.41.0 adds named initial desktop destinations, a default first-floating
-position, application-rule fallback identities, more reliable close-focus
-handoff, and lower-latency transition retargeting. Logical persistence remains
-v4.
+Stable 1.42.0 adds global fresh-window destination and focus defaults, settles
+close-focus recovery inside the original visible context, and preserves rapid
+focus-handoff animations across delayed desktop visibility. Logical persistence
+remains v4.
 
 ## Foundation (delivered)
 
@@ -1749,7 +1749,7 @@ Release criteria (met):
 
 No other feature belongs to 1.41.0.
 
-### 1.42.0 (in development)
+### 1.42.0 (released)
 
 - Add an optional global initial virtual desktop and output destination for
   genuinely new normal windows beneath exact application rules.
@@ -1764,7 +1764,7 @@ No other feature belongs to 1.41.0.
 - Preserve transition continuity when focus changes before a workspace
   transition's visibility flags settle.
 
-Release criteria:
+Release criteria (met):
 
 - Exact application destinations always take precedence over the global
   default.
@@ -1779,4 +1779,4 @@ Release criteria:
 - Rapid desktop handoffs retain only one-shot, context-guarded visibility and
   active-animation leases, with no timer or private API.
 
-No other feature currently belongs to 1.42.0.
+No other feature belongs to 1.42.0.
