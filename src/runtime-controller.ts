@@ -858,6 +858,7 @@ interface LayoutHydrationCandidate {
 }
 
 export interface RuntimeControllerOptions {
+  readonly alwaysCenterSingleColumn?: boolean;
   readonly applicationBorderlessExclusions?: ApplicationBorderlessExclusions;
   readonly applicationColumnPresentations?: ApplicationColumnPresentations;
   readonly applicationColumnWidths?: ApplicationColumnWidthOverrides;
@@ -891,6 +892,7 @@ export interface RuntimeControllerOptions {
 }
 
 export class RuntimeController {
+  private alwaysCenterSingleColumn: boolean;
   private applicationBorderlessExclusions: ApplicationBorderlessExclusions;
   private applicationColumnPresentations: ApplicationColumnPresentations;
   private applicationColumnWidths: ApplicationColumnWidthOverrides;
@@ -1104,6 +1106,10 @@ export class RuntimeController {
   private readonly workspace: KWinWorkspace;
 
   constructor(workspace: KWinWorkspace, options: RuntimeControllerOptions) {
+    this.alwaysCenterSingleColumn =
+      typeof options.alwaysCenterSingleColumn === "boolean"
+        ? options.alwaysCenterSingleColumn
+        : false;
     this.applicationBorderlessExclusions =
       options.applicationBorderlessExclusions ??
       EMPTY_APPLICATION_BORDERLESS_EXCLUSIONS;
@@ -1999,6 +2005,48 @@ export class RuntimeController {
 
     this.pendingGap = gap;
     this.scheduleDeferredRuntimeWork();
+    return true;
+  }
+
+  setAlwaysCenterSingleColumn(enabled: boolean): boolean {
+    if (
+      typeof enabled !== "boolean" ||
+      enabled === this.alwaysCenterSingleColumn
+    ) {
+      return false;
+    }
+
+    this.alwaysCenterSingleColumn = enabled;
+
+    if (!this.started || !enabled) {
+      return true;
+    }
+
+    let reflowRequired = false;
+
+    for (const context of this.contexts.values()) {
+      if (!this.isContextVisible(context)) {
+        continue;
+      }
+
+      const snapshot = this.layout.snapshot(
+        context.outputId,
+        context.desktopId,
+        context.activityId,
+      );
+
+      if (snapshot.columns.length !== 1) {
+        continue;
+      }
+
+      this.markContextDirty(context);
+      reflowRequired = true;
+    }
+
+    if (reflowRequired) {
+      this.scheduleDeferredRuntimeWork();
+    }
+
     return true;
   }
 
@@ -16344,6 +16392,7 @@ export class RuntimeController {
     geometry: ContextGeometry,
   ): ReturnType<typeof solveStripGeometry> {
     const input = {
+      centerSingleColumn: this.alwaysCenterSingleColumn,
       context,
       devicePixelRatio: geometry.devicePixelRatio,
       gap: this.gap,
@@ -29091,10 +29140,7 @@ function columnWidthPresetsFromPercentages(
 }
 
 function normalizeGap(value: number): number | null {
-  return Number.isFinite(value) &&
-    Number.isInteger(value) &&
-    value >= MIN_GAP &&
-    value <= MAX_GAP
+  return Number.isFinite(value) && value >= MIN_GAP && value <= MAX_GAP
     ? value
     : null;
 }

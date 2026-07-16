@@ -16,6 +16,10 @@
       <label>Center focused columns when old and new columns do not both fit</label>
       <default>false</default>
     </entry>
+    <entry name="AlwaysCenterSingleColumn" type="Bool">
+      <label>Keep a single tiled column centered</label>
+      <default>false</default>
+    </entry>
     <entry name="ShowTabIndicator" type="Bool">
       <label>Show a transient OSD for tabbed-window selection</label>
       <default>true</default>
@@ -38,11 +42,11 @@
       <label>Use natural swipe direction</label>
       <default>true</default>
     </entry>
-    <entry name="Gap" type="Int">
+    <entry name="Gap" type="Double">
       <label>Window gap in logical pixels</label>
-      <default>16</default>
-      <min>0</min>
-      <max>64</max>
+      <default>16.0</default>
+      <min>0.0</min>
+      <max>64.0</max>
     </entry>
     <entry name="DefaultColumnWidthPercent" type="Int">
       <label>Default column width in percent</label>

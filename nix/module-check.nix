@@ -444,6 +444,7 @@ let
             "org.example.Editor=tool"
             "org.example.Browser"
           ];
+          alwaysCenterSingleColumn = true;
           borderlessWindows = false;
           centerFocusedColumn = true;
           centerFocusedColumnOnOverflow = true;
@@ -455,7 +456,7 @@ let
           columnWidthStepPercent = 13;
           defaultColumnPresentation = "tabbed";
           defaultColumnWidthPercent = 65;
-          gap = 7;
+          gap = 7.5;
           showTabIndicator = false;
           touchpadNavigation = true;
           touchpadNavigationFingerCount = 4;
@@ -541,7 +542,7 @@ let
       ]
       {
         programs.driftile.settings = {
-          gap = 8;
+          gap = 1.2;
         };
       }
       {
@@ -656,6 +657,7 @@ let
       ) 129;
     }
     { borderlessWindows = "false"; }
+    { alwaysCenterSingleColumn = "true"; }
     { centerFocusedColumn = "true"; }
     { centerFocusedColumnOnOverflow = "true"; }
     { showTabIndicator = "true"; }
@@ -868,6 +870,7 @@ let
       ApplicationTilingExclusions = ''
         org.example.Browser
         org.example.Editor=tool'';
+      AlwaysCenterSingleColumn = true;
       BorderlessWindows = false;
       CenterFocusedColumn = true;
       CenterFocusedColumnOnOverflow = true;
@@ -875,7 +878,7 @@ let
       ColumnWidthStepPercent = 13;
       DefaultColumnPresentation = "tabbed";
       DefaultColumnWidthPercent = 65;
-      Gap = 7;
+      Gap = 7.5;
       ShowTabIndicator = false;
       TouchpadNavigation = true;
       TouchpadNavigationFingerCount = 4;
@@ -1035,7 +1038,7 @@ assert homeManagerSettings.config.qt.kde.settings == expectedSettings;
 assert homeManagerDefaultSettings.config.qt.kde.settings == expectedDefaultSettings;
 assert
   builtins.length (builtins.attrNames expectedSettings.kwinrc."Script-io.github.kontonkara.driftile")
-  == 21;
+  == 22;
 assert
   builtins.length (
     builtins.attrNames expectedDefaultSettings.kwinrc."Script-io.github.kontonkara.driftile"
@@ -1089,7 +1092,7 @@ assert
       ColumnWidthStepPercent = 10;
       DefaultColumnPresentation = "stacked";
       DefaultColumnWidthPercent = 33;
-      Gap = 8;
+      Gap = 1.2;
       ShowTabIndicator = true;
       TouchpadNavigation = false;
       TouchpadNavigationFingerCount = 5;

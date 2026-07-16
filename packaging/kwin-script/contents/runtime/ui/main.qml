@@ -1108,6 +1108,7 @@ QtObject {
             applicationFocusCentering: KWin.readConfig("ApplicationFocusCentering", ""),
             applicationInitialFloating: KWin.readConfig("ApplicationInitialFloating", ""),
             applicationTilingExclusions: KWin.readConfig("ApplicationTilingExclusions", ""),
+            alwaysCenterSingleColumn: KWin.readConfig("AlwaysCenterSingleColumn", false),
             borderlessWindows: KWin.readConfig("BorderlessWindows", true),
             centerFocusedColumn: KWin.readConfig("CenterFocusedColumn", false),
             centerFocusedColumnOnOverflow: KWin.readConfig("CenterFocusedColumnOnOverflow", false),

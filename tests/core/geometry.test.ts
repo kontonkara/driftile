@@ -48,6 +48,136 @@ describe("solveStripGeometry", () => {
     });
   });
 
+  it("centers a narrow single column when requested", () => {
+    const result = solve([{ kind: "fixed", value: 600 }], {
+      centerSingleColumn: true,
+    });
+
+    expect(result.viewportOffset).toBe(-644);
+    expect(result.windows[0]?.frame).toMatchObject({ width: 600, x: 760 });
+    expect(
+      (result.windows[0]?.frame.x ?? 0) +
+        (result.windows[0]?.frame.width ?? 0) / 2,
+    ).toBe(1060);
+  });
+
+  it.each([-4_000, 4_000])(
+    "overrides a signed prior offset of %s for a centered single column",
+    (viewportOffset) => {
+      const result = solve([{ kind: "fixed", value: 600 }], {
+        centerSingleColumn: true,
+        viewportOffset,
+      });
+
+      expect(result.viewportOffset).toBe(-644);
+      expect(result.windows[0]?.frame.x).toBe(760);
+    },
+  );
+
+  it("keeps full-width outer gaps while centering a single column", () => {
+    const result = solve([{ kind: "proportion", value: 1 }], {
+      centerSingleColumn: true,
+    });
+    const frame = result.windows[0]?.frame;
+
+    expect(result.viewportOffset).toBe(0);
+    expect(frame).toMatchObject({ width: 1888, x: 116 });
+    expect((frame?.x ?? 0) - 100).toBe(16);
+    expect(2020 - ((frame?.x ?? 0) + (frame?.width ?? 0))).toBe(16);
+  });
+
+  it("centers an oversized fixed single column symmetrically", () => {
+    const result = solve([{ kind: "fixed", value: 2200 }], {
+      centerSingleColumn: true,
+    });
+    const frame = result.windows[0]?.frame;
+
+    expect(result.viewportOffset).toBe(156);
+    expect(frame).toMatchObject({ width: 2200, x: -40 });
+    expect((frame?.x ?? 0) + (frame?.width ?? 0) / 2).toBe(1060);
+  });
+
+  it.each(["stacked", "tabbed"] as const)(
+    "treats a %s stack as one centered column",
+    (presentation) => {
+      const context = createContext([{ kind: "fixed", value: 600 }]);
+      const column = context.columns[0];
+
+      if (!column) {
+        throw new Error("expected a column fixture");
+      }
+
+      const result = solveStripGeometry({
+        centerSingleColumn: true,
+        context: {
+          ...context,
+          columns: [
+            {
+              ...column,
+              presentation,
+              windowIds: [windowId("window-1"), windowId("window-2")],
+            },
+          ],
+        },
+        devicePixelRatio: 1,
+        gap: 16,
+        pixelGridOrigin: { x: 100, y: 50 },
+        workArea: { height: 1080, width: 1920, x: 100, y: 50 },
+      });
+
+      expect(result.viewportOffset).toBe(-644);
+      expect(result.windows).toHaveLength(2);
+      expect(
+        result.windows.map(({ frame }) => ({ width: frame.width, x: frame.x })),
+      ).toEqual([
+        { width: 600, x: 760 },
+        { width: 600, x: 760 },
+      ]);
+    },
+  );
+
+  it.each([1.25, 1.5, 1.75, 2.5])(
+    "centers a single column on the physical grid at %s DPR",
+    (devicePixelRatio) => {
+      const result = solve([{ kind: "fixed", value: 333.3 }], {
+        centerSingleColumn: true,
+        devicePixelRatio,
+      });
+      const frame = result.windows[0]?.frame;
+
+      if (!frame) {
+        throw new Error("expected a centered frame");
+      }
+
+      const physicalLeft = (frame.x - 100) * devicePixelRatio;
+      const physicalRight = (frame.x + frame.width - 100) * devicePixelRatio;
+      const frameCenter = frame.x + frame.width / 2;
+
+      expect(result.viewportOffset * devicePixelRatio).toBeCloseTo(
+        Math.round(result.viewportOffset * devicePixelRatio),
+        10,
+      );
+      expect(physicalLeft).toBeCloseTo(Math.round(physicalLeft), 10);
+      expect(physicalRight).toBeCloseTo(Math.round(physicalRight), 10);
+      expect(Math.abs(frameCenter - 1060)).toBeLessThanOrEqual(
+        0.5 / devicePixelRatio + floatingPointTolerance,
+      );
+    },
+  );
+
+  it("does not change explicit false or multi-column geometry", () => {
+    const single = [{ kind: "fixed", value: 600 }] as const;
+    const multiple = [
+      { kind: "fixed", value: 600 },
+      { kind: "fixed", value: 600 },
+    ] as const;
+
+    expect(solve(single, { centerSingleColumn: false })).toEqual(solve(single));
+    expect(solve(multiple, { centerSingleColumn: true })).toEqual(
+      solve(multiple),
+    );
+  });
+
   it("preserves a signed offset that centers a visible column", () => {
     const result = solve([{ kind: "fixed", value: 600 }], {
       viewportOffset: -644,
@@ -251,6 +381,68 @@ describe("solveStripGeometry", () => {
         Math.round(result.viewportOffset * devicePixelRatio),
         10,
       );
+    },
+  );
+
+  it.each([1, 1.25, 1.5, 2, 2.5])(
+    "quantizes fractional logical gaps onto the physical grid at %s DPR",
+    (devicePixelRatio) => {
+      const gap = 7.5;
+      const pixelGridOrigin = { x: 0, y: 0 };
+      const workArea = { height: 900, width: 1001, x: 14, y: 10 };
+      const context = createContext([
+        { kind: "fixed", value: 333.3 },
+        { kind: "fixed", value: 333.3 },
+        { kind: "fixed", value: 333.3 },
+      ]);
+      const result = solveStripGeometry({
+        context: {
+          ...context,
+          activeColumnId: columnId("column-1"),
+          viewportOffset: 0,
+        },
+        devicePixelRatio,
+        gap,
+        pixelGridOrigin,
+        workArea,
+      });
+
+      for (const { frame } of result.windows) {
+        for (const edge of [
+          frame.x - pixelGridOrigin.x,
+          frame.y - pixelGridOrigin.y,
+          frame.x + frame.width - pixelGridOrigin.x,
+          frame.y + frame.height - pixelGridOrigin.y,
+        ]) {
+          const physicalEdge = edge * devicePixelRatio;
+          expect(physicalEdge).toBeCloseTo(Math.round(physicalEdge), 10);
+        }
+      }
+
+      for (let index = 1; index < result.windows.length; index += 1) {
+        const previous = result.windows[index - 1];
+        const current = result.windows[index];
+
+        if (!previous || !current) {
+          throw new Error("fractional gap fixture is incomplete");
+        }
+
+        const physicalGap =
+          (current.frame.x - (previous.frame.x + previous.frame.width)) *
+          devicePixelRatio;
+        const requestedPhysicalGap = gap * devicePixelRatio;
+
+        expect(physicalGap).toBeCloseTo(Math.round(physicalGap), 10);
+        expect(
+          Math.abs(physicalGap - requestedPhysicalGap),
+        ).toBeLessThanOrEqual(1 + 1e-10);
+
+        if (Number.isInteger(requestedPhysicalGap)) {
+          expect(physicalGap).toBeCloseTo(requestedPhysicalGap, 10);
+        } else {
+          expect(physicalGap).not.toBeCloseTo(requestedPhysicalGap, 10);
+        }
+      }
     },
   );
 
@@ -1360,6 +1552,7 @@ describe("solveStripGeometry", () => {
 });
 
 interface SolveOverrides {
+  readonly centerSingleColumn?: boolean;
   readonly devicePixelRatio?: number;
   readonly gap?: number;
   readonly viewportOffset?: number;
@@ -1375,6 +1568,9 @@ function solve(widths: readonly ColumnWidth[], overrides: SolveOverrides = {}) {
   const context = createContext(widths);
 
   return solveStripGeometry({
+    ...(overrides.centerSingleColumn === undefined
+      ? {}
+      : { centerSingleColumn: overrides.centerSingleColumn }),
     context: {
       ...context,
       viewportOffset: overrides.viewportOffset ?? context.viewportOffset,

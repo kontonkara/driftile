@@ -301,6 +301,12 @@ in
               description = "Exact desktop-file IDs excluded from tiling.";
             };
 
+            alwaysCenterSingleColumn = lib.mkOption {
+              type = lib.types.nullOr lib.types.bool;
+              default = null;
+              description = "Whether a lone tiled column stays centered; null leaves the KConfig value unmanaged.";
+            };
+
             borderlessWindows = lib.mkOption {
               type = lib.types.bool;
               default = true;
@@ -356,7 +362,7 @@ in
             };
 
             gap = lib.mkOption {
-              type = lib.types.ints.between 0 64;
+              type = lib.types.numbers.between 0 64;
               default = 16;
               description = "Window gap in logical pixels.";
             };
@@ -484,6 +490,9 @@ in
           TouchpadWorkspaceNavigation = cfg.settings.touchpadWorkspaceNavigation;
           WindowHeightPresets = renderWindowHeightPresets cfg.settings.windowHeightPresets;
           WindowHeightStepPercent = cfg.settings.windowHeightStepPercent;
+        }
+        // lib.optionalAttrs (cfg.settings.alwaysCenterSingleColumn != null) {
+          AlwaysCenterSingleColumn = cfg.settings.alwaysCenterSingleColumn;
         }
         // lib.optionalAttrs (cfg.settings.centerFocusedColumnOnOverflow != null) {
           CenterFocusedColumnOnOverflow = cfg.settings.centerFocusedColumnOnOverflow;

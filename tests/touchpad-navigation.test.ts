@@ -75,6 +75,10 @@ class RuntimeControllerDouble {
     return true;
   }
 
+  setAlwaysCenterSingleColumn(): boolean {
+    return true;
+  }
+
   setBorderlessWindows(): boolean {
     return true;
   }
@@ -389,6 +393,7 @@ function settings(
     applicationFocusCentering: "",
     applicationInitialFloating: "",
     applicationTilingExclusions: "",
+    alwaysCenterSingleColumn: false,
     borderlessWindows: true,
     centerFocusedColumn: false,
     centerFocusedColumnOnOverflow: false,

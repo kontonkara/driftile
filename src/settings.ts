@@ -56,7 +56,7 @@ const MIN_RESIZE_STEP_PERCENT = 1;
 const MAX_RESIZE_STEP_PERCENT = 50;
 const MIN_TOUCHPAD_NAVIGATION_FINGER_COUNT = 3;
 const MAX_TOUCHPAD_NAVIGATION_FINGER_COUNT = 5;
-const SETTINGS_FIELD_COUNT = 21;
+const SETTINGS_FIELD_COUNT = 22;
 
 export interface DriftileSettings {
   readonly applicationBorderlessExclusions: ApplicationBorderlessExclusions;
@@ -65,6 +65,7 @@ export interface DriftileSettings {
   readonly applicationFocusCentering: ApplicationFocusCentering;
   readonly applicationInitialFloating: ApplicationInitialFloating;
   readonly applicationTilingExclusions: ApplicationTilingExclusions;
+  readonly alwaysCenterSingleColumn: boolean;
   readonly borderlessWindows: boolean;
   readonly centerFocusedColumn: boolean;
   readonly centerFocusedColumnOnOverflow: boolean;
@@ -89,6 +90,7 @@ export const DEFAULT_DRIFTILE_SETTINGS: DriftileSettings = Object.freeze({
   applicationFocusCentering: EMPTY_APPLICATION_FOCUS_CENTERING,
   applicationInitialFloating: EMPTY_APPLICATION_INITIAL_FLOATING,
   applicationTilingExclusions: EMPTY_APPLICATION_TILING_EXCLUSIONS,
+  alwaysCenterSingleColumn: false,
   borderlessWindows: true,
   centerFocusedColumn: false,
   centerFocusedColumnOnOverflow: false,
@@ -123,6 +125,7 @@ export function decodeDriftileSettings(
     !owns(candidate, "applicationFocusCentering") ||
     !owns(candidate, "applicationInitialFloating") ||
     !owns(candidate, "applicationTilingExclusions") ||
+    !owns(candidate, "alwaysCenterSingleColumn") ||
     !owns(candidate, "borderlessWindows") ||
     !owns(candidate, "centerFocusedColumn") ||
     !owns(candidate, "centerFocusedColumnOnOverflow") ||
@@ -160,6 +163,7 @@ export function decodeDriftileSettings(
   const applicationTilingExclusions = decodeApplicationTilingExclusions(
     candidate["applicationTilingExclusions"],
   );
+  const alwaysCenterSingleColumn = candidate["alwaysCenterSingleColumn"];
   const borderlessWindows = candidate["borderlessWindows"];
   const centerFocusedColumn = candidate["centerFocusedColumn"];
   const centerFocusedColumnOnOverflow =
@@ -189,6 +193,7 @@ export function decodeDriftileSettings(
     !applicationFocusCentering ||
     !applicationInitialFloating ||
     !applicationTilingExclusions ||
+    typeof alwaysCenterSingleColumn !== "boolean" ||
     typeof borderlessWindows !== "boolean" ||
     typeof centerFocusedColumn !== "boolean" ||
     typeof centerFocusedColumnOnOverflow !== "boolean" ||
@@ -204,7 +209,7 @@ export function decodeDriftileSettings(
       MIN_DEFAULT_COLUMN_WIDTH_PERCENT,
       MAX_DEFAULT_COLUMN_WIDTH_PERCENT,
     ) ||
-    !isBoundedInteger(gap, MIN_GAP, MAX_GAP) ||
+    !isBoundedNumber(gap, MIN_GAP, MAX_GAP) ||
     typeof showTabIndicator !== "boolean" ||
     typeof touchpadNavigation !== "boolean" ||
     !isBoundedInteger(
@@ -231,6 +236,7 @@ export function decodeDriftileSettings(
     applicationFocusCentering,
     applicationInitialFloating,
     applicationTilingExclusions,
+    alwaysCenterSingleColumn,
     borderlessWindows,
     centerFocusedColumn,
     centerFocusedColumnOnOverflow,
@@ -278,6 +284,7 @@ export function sameDriftileSettings(
       left.applicationTilingExclusions,
       right.applicationTilingExclusions,
     ) &&
+    left.alwaysCenterSingleColumn === right.alwaysCenterSingleColumn &&
     left.borderlessWindows === right.borderlessWindows &&
     left.centerFocusedColumn === right.centerFocusedColumn &&
     left.centerFocusedColumnOnOverflow ===
@@ -310,6 +317,19 @@ function owns(value: object, key: string): boolean {
 
 function isColumnPresentation(value: unknown): value is ColumnPresentation {
   return value === "stacked" || value === "tabbed";
+}
+
+function isBoundedNumber(
+  value: unknown,
+  minimum: number,
+  maximum: number,
+): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    value >= minimum &&
+    value <= maximum
+  );
 }
 
 function isBoundedInteger(

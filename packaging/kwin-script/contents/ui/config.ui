@@ -38,6 +38,16 @@
         </widget>
        </item>
        <item>
+        <widget class="QCheckBox" name="kcfg_AlwaysCenterSingleColumn">
+         <property name="text">
+          <string>Keep a single tiled column centered</string>
+         </property>
+         <property name="toolTip">
+          <string>Centers the column while it is the only tiled column on the current output, desktop, and activity.</string>
+         </property>
+        </widget>
+       </item>
+       <item>
         <widget class="QCheckBox" name="kcfg_ShowTabIndicator">
          <property name="text">
           <string>Show a transient OSD for tabbed-window selection</string>
@@ -108,15 +118,24 @@
           </widget>
          </item>
          <item row="0" column="1">
-          <widget class="QSpinBox" name="kcfg_Gap">
+          <widget class="QDoubleSpinBox" name="kcfg_Gap">
            <property name="suffix">
             <string> px</string>
            </property>
+           <property name="decimals">
+            <number>1</number>
+           </property>
+           <property name="minimum">
+            <double>0.000000000000000</double>
+           </property>
            <property name="maximum">
-            <number>64</number>
+            <double>64.000000000000000</double>
+           </property>
+           <property name="singleStep">
+            <double>0.500000000000000</double>
            </property>
            <property name="value">
-            <number>16</number>
+            <double>16.000000000000000</double>
            </property>
           </widget>
          </item>

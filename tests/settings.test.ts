@@ -84,6 +84,7 @@ const validSettings: DriftileSettings = {
   applicationFocusCentering: validApplicationFocusCentering,
   applicationInitialFloating: validApplicationInitialFloating,
   applicationTilingExclusions: validApplicationTilingExclusions,
+  alwaysCenterSingleColumn: true,
   borderlessWindows: false,
   centerFocusedColumn: true,
   centerFocusedColumnOnOverflow: true,
@@ -91,7 +92,7 @@ const validSettings: DriftileSettings = {
   columnWidthStepPercent: 25,
   defaultColumnPresentation: "tabbed",
   defaultColumnWidthPercent: 75,
-  gap: 32,
+  gap: 32.5,
   showTabIndicator: false,
   touchpadNavigation: true,
   touchpadNavigationFingerCount: 4,
@@ -110,6 +111,7 @@ const validSettingsInput = {
   applicationFocusCentering: "org.example.Browser\norg.example.Editor",
   applicationInitialFloating: "org.example.Floating\norg.example.Floating=tool",
   applicationTilingExclusions: "org.example.Legacy\norg.example.Editor=tool",
+  alwaysCenterSingleColumn: validSettings.alwaysCenterSingleColumn,
   borderlessWindows: validSettings.borderlessWindows,
   centerFocusedColumn: validSettings.centerFocusedColumn,
   centerFocusedColumnOnOverflow: validSettings.centerFocusedColumnOnOverflow,
@@ -130,6 +132,7 @@ const validSettingsInput = {
 describe("Driftile settings", () => {
   it("exposes the current immutable defaults", () => {
     expect(DEFAULT_DRIFTILE_SETTINGS).toMatchObject({
+      alwaysCenterSingleColumn: false,
       borderlessWindows: true,
       centerFocusedColumn: false,
       centerFocusedColumnOnOverflow: false,
@@ -183,6 +186,7 @@ describe("Driftile settings", () => {
     const decoded = decodeDriftileSettings(input);
 
     expect(decoded).toMatchObject({
+      alwaysCenterSingleColumn: validSettings.alwaysCenterSingleColumn,
       borderlessWindows: validSettings.borderlessWindows,
       centerFocusedColumn: validSettings.centerFocusedColumn,
       centerFocusedColumnOnOverflow:
@@ -254,6 +258,7 @@ describe("Driftile settings", () => {
       applicationFocusCentering: "",
       applicationInitialFloating: "",
       applicationTilingExclusions: "",
+      alwaysCenterSingleColumn: false,
       borderlessWindows: true,
       centerFocusedColumn: false,
       centerFocusedColumnOnOverflow: false,
@@ -277,6 +282,7 @@ describe("Driftile settings", () => {
       applicationFocusCentering: "org.example.Browser",
       applicationInitialFloating: "org.example.Floating",
       applicationTilingExclusions: "org.example.Legacy",
+      alwaysCenterSingleColumn: true,
       borderlessWindows: false,
       centerFocusedColumn: true,
       centerFocusedColumnOnOverflow: true,
@@ -322,6 +328,7 @@ describe("Driftile settings", () => {
       settings.windowHeightPresets,
     );
     expect(decoded).toMatchObject({
+      alwaysCenterSingleColumn: settings.alwaysCenterSingleColumn,
       borderlessWindows: settings.borderlessWindows,
       centerFocusedColumn: settings.centerFocusedColumn,
       centerFocusedColumnOnOverflow: settings.centerFocusedColumnOnOverflow,
@@ -339,6 +346,10 @@ describe("Driftile settings", () => {
   });
 
   it.each([
+    [
+      "a non-boolean single-column centering setting",
+      { alwaysCenterSingleColumn: 1 },
+    ],
     ["a non-boolean borderless setting", { borderlessWindows: 1 }],
     ["a non-boolean centering setting", { centerFocusedColumn: 1 }],
     [
@@ -415,7 +426,6 @@ describe("Driftile settings", () => {
     ["a non-numeric gap", { gap: "16" }],
     ["a non-finite gap", { gap: Number.NaN }],
     ["an infinite gap", { gap: Number.POSITIVE_INFINITY }],
-    ["a fractional gap", { gap: 1.5 }],
     ["a gap below its range", { gap: -1 }],
     ["a gap above its range", { gap: 65 }],
     ["a non-numeric default width", { defaultColumnWidthPercent: "50" }],
@@ -450,9 +460,9 @@ describe("Driftile settings", () => {
     },
   );
 
-  it("rejects the previous twenty-field snapshot", () => {
+  it("rejects the previous twenty-one-field snapshot", () => {
     const incomplete: Record<string, unknown> = { ...validSettingsInput };
-    delete incomplete["centerFocusedColumnOnOverflow"];
+    delete incomplete["alwaysCenterSingleColumn"];
 
     expect(decodeDriftileSettings(incomplete)).toBeNull();
   });
@@ -535,6 +545,7 @@ describe("Driftile settings", () => {
       { applicationFocusCentering: changedApplicationFocusCentering },
       { applicationInitialFloating: changedApplicationInitialFloating },
       { applicationTilingExclusions: changedApplicationTilingExclusions },
+      { alwaysCenterSingleColumn: false },
       { borderlessWindows: true },
       { centerFocusedColumn: false },
       { centerFocusedColumnOnOverflow: false },

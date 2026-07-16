@@ -8846,7 +8846,7 @@ describe("RuntimeController", () => {
     });
   });
 
-  it("reconfigures visible gaps without changing layout state or focus", () => {
+  it("reconfigures visible gaps without changing layout columns or focus", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
     const first = createTrackedWindow("first", output, desktop);
@@ -8938,7 +8938,6 @@ describe("RuntimeController", () => {
       Number.NaN,
       Number.NEGATIVE_INFINITY,
       Number.POSITIVE_INFINITY,
-      1.5,
       65,
     ]) {
       expect(controller.setGap(invalid)).toBe(false);
@@ -8995,6 +8994,23 @@ describe("RuntimeController", () => {
       { height: 300, width: 485, x: 10, y: 490 },
       { height: 780, width: 485, x: 505, y: 10 },
     ]);
+
+    expect(controller.setGap(7.5)).toBe(true);
+    flushManualScheduler(scheduler);
+    expect(windows.map(({ window }) => window.frameGeometry)).toEqual([
+      { height: 477, width: 488, x: 7, y: 8 },
+      { height: 300, width: 488, x: 7, y: 493 },
+      { height: 785, width: 489, x: 503, y: 8 },
+    ]);
+    expect(
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
+    ).toEqual({ ...before, viewportOffset: 1 });
+    expect(fixture.workspace.activeWindow).toBe(active.window);
+    expect(fixture.activationCount).toBe(activationCount);
   });
 
   it("keeps manual floating and minimized frames stable across a gap change", () => {
@@ -12245,6 +12261,14 @@ describe("RuntimeController", () => {
     expect(controller.setCenterFocusedColumnOnOverflow(true)).toBe(false);
     expect(controller.setCenterFocusedColumnOnOverflow(false)).toBe(true);
     expect(controller.setCenterFocusedColumnOnOverflow(false)).toBe(false);
+    expect(
+      controller.setAlwaysCenterSingleColumn("true" as unknown as boolean),
+    ).toBe(false);
+    expect(controller.setAlwaysCenterSingleColumn(false)).toBe(false);
+    expect(controller.setAlwaysCenterSingleColumn(true)).toBe(true);
+    expect(controller.setAlwaysCenterSingleColumn(true)).toBe(false);
+    expect(controller.setAlwaysCenterSingleColumn(false)).toBe(true);
+    expect(controller.setAlwaysCenterSingleColumn(false)).toBe(false);
 
     expect(
       layout.snapshot(
@@ -12256,6 +12280,238 @@ describe("RuntimeController", () => {
     expect(windows.map(({ window }) => window.frameGeometry)).toEqual(frames);
     expect(windows.map(({ writeCount }) => writeCount)).toEqual(writes);
     expect(fixture.activationCount).toBe(activationCount);
+  });
+
+  it("centers the first admitted singleton when configured", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const window = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [window.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      alwaysCenterSingleColumn: true,
+      clientAreaOption: 2,
+      columnWidth: { kind: "fixed", value: 300 },
+      gap: 10,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(window.window.frameGeometry).toEqual({
+      height: 780,
+      width: 300,
+      x: 350,
+      y: 10,
+    });
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ).viewportOffset,
+    ).toBe(-340);
+  });
+
+  it("coalesces live singleton centering and stops enforcing it when disabled", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const window = createTrackedWindow("window-1", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [window.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+    const layout = runtimeLayout(controller);
+    const centered = (): boolean => {
+      const frame = window.window.frameGeometry;
+      return Math.abs(frame.x + frame.width / 2 - 500) <= 0.5;
+    };
+
+    expect(controller.start()).toBe(true);
+    expect(centered()).toBe(false);
+    expect(controller.setAlwaysCenterSingleColumn(true)).toBe(true);
+    expect(controller.setAlwaysCenterSingleColumn(true)).toBe(false);
+    expect(scheduler.pendingCount).toBe(1);
+    expect(centered()).toBe(false);
+    flushManualScheduler(scheduler);
+    expect(centered()).toBe(true);
+
+    expect(controller.increaseColumnWidth()).toBe(true);
+    expect(centered()).toBe(true);
+    expect(controller.setGap(20)).toBe(true);
+    flushManualScheduler(scheduler);
+    expect(centered()).toBe(true);
+
+    const centeredFrame = { ...window.window.frameGeometry };
+    const centeredOffset = layout.snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
+    ).viewportOffset;
+    expect(controller.setAlwaysCenterSingleColumn(false)).toBe(true);
+    expect(scheduler.pendingCount).toBe(0);
+    expect(window.window.frameGeometry).toEqual(centeredFrame);
+    expect(
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ).viewportOffset,
+    ).toBe(centeredOffset);
+
+    expect(
+      layout.setViewportOffset(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+        0,
+      ),
+    ).toBe(true);
+    controller.reconcile();
+    expect(centered()).toBe(false);
+  });
+
+  it("centers a stacked singleton after a multi-column layout becomes one", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const first = createTrackedWindow("first", output, desktop);
+    const second = createTrackedWindow("second", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [first.window, second.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      alwaysCenterSingleColumn: true,
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(first.window.frameGeometry.x).toBe(10);
+    expect(second.window.frameGeometry.x).toBe(505);
+
+    installTestLayout(controller, output, desktop, "column:stack", [
+      {
+        id: "column:stack",
+        width: { kind: "fixed", value: 300 },
+        windowIds: ["first", "second"],
+      },
+    ]);
+    expect(
+      [first.window, second.window].map(({ frameGeometry }) => ({
+        width: frameGeometry.width,
+        x: frameGeometry.x,
+      })),
+    ).toEqual([
+      { width: 300, x: 350 },
+      { width: 300, x: 350 },
+    ]);
+  });
+
+  it("centers the tiled remainder without moving a floating window", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const tiled = createTrackedWindow("tiled", output, desktop);
+    const floating = createTrackedWindow("floating", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [tiled.window, floating.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      alwaysCenterSingleColumn: true,
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(controller.toggleFloating()).toBe(true);
+    expect(
+      Math.abs(
+        tiled.window.frameGeometry.x +
+          tiled.window.frameGeometry.width / 2 -
+          500,
+      ),
+    ).toBeLessThanOrEqual(0.5);
+    const floatingFrame = { ...floating.window.frameGeometry };
+    const floatingWrites = floating.writeCount;
+
+    expect(controller.setGap(20)).toBe(true);
+    expect(
+      Math.abs(
+        tiled.window.frameGeometry.x +
+          tiled.window.frameGeometry.width / 2 -
+          500,
+      ),
+    ).toBeLessThanOrEqual(0.5);
+    expect(floating.window.frameGeometry).toEqual(floatingFrame);
+    expect(floating.writeCount).toBe(floatingWrites);
+  });
+
+  it("applies live singleton centering to hidden contexts when they become visible", () => {
+    const output = createOutput("DP-1", 0);
+    const visibleDesktop = { id: "desktop-1" };
+    const hiddenDesktop = { id: "desktop-2" };
+    const visible = createTrackedWindow("visible", output, visibleDesktop);
+    const hidden = createTrackedWindow("hidden", output, hiddenDesktop);
+    const fixture = createWorkspace(
+      output,
+      visibleDesktop,
+      [output],
+      [visibleDesktop, hiddenDesktop],
+      [hidden.window, visible.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+    const hiddenFrame = { ...hidden.window.frameGeometry };
+    const hiddenWrites = hidden.writeCount;
+
+    expect(controller.start()).toBe(true);
+    expect(controller.setAlwaysCenterSingleColumn(true)).toBe(true);
+    expect(scheduler.pendingCount).toBe(1);
+    flushManualScheduler(scheduler);
+    expect(
+      Math.abs(
+        visible.window.frameGeometry.x +
+          visible.window.frameGeometry.width / 2 -
+          500,
+      ),
+    ).toBeLessThanOrEqual(0.5);
+    expect(hidden.window.frameGeometry).toEqual(hiddenFrame);
+    expect(hidden.writeCount).toBe(hiddenWrites);
+
+    fixture.setCurrentDesktop(output, hiddenDesktop);
+    expect(scheduler.pendingCount).toBe(1);
+    flushManualScheduler(scheduler);
+    expect(
+      Math.abs(
+        hidden.window.frameGeometry.x +
+          hidden.window.frameGeometry.width / 2 -
+          500,
+      ),
+    ).toBeLessThanOrEqual(0.5);
+    expect(hidden.writeCount).toBe(hiddenWrites + 1);
   });
 
   it("skips minimized stack members vertically without changing their slots", () => {

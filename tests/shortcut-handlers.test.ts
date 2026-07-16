@@ -916,6 +916,7 @@ describe("KWin shortcut handlers", () => {
       "kcfg_BorderlessWindows",
       "kcfg_CenterFocusedColumn",
       "kcfg_CenterFocusedColumnOnOverflow",
+      "kcfg_AlwaysCenterSingleColumn",
       "kcfg_ShowTabIndicator",
       "kcfg_TouchpadNavigation",
       "kcfg_TouchpadWorkspaceNavigation",
@@ -990,6 +991,12 @@ describe("KWin shortcut handlers", () => {
     const overflowCenteringWidget = configurationUi.match(
       /<widget class="QCheckBox" name="kcfg_CenterFocusedColumnOnOverflow">([\s\S]*?)<\/widget>/,
     )?.[1];
+    const singleColumnCenteringEntry = configuration.match(
+      /<entry name="AlwaysCenterSingleColumn" type="Bool">([\s\S]*?)<\/entry>/,
+    )?.[1];
+    const singleColumnCenteringWidget = configurationUi.match(
+      /<widget class="QCheckBox" name="kcfg_AlwaysCenterSingleColumn">([\s\S]*?)<\/widget>/,
+    )?.[1];
     const applicationCenteringEntry = configuration.match(
       /<entry name="ApplicationFocusCentering" type="String">([\s\S]*?)<\/entry>/,
     )?.[1];
@@ -1022,6 +1029,19 @@ describe("KWin shortcut handlers", () => {
     );
     expect(qml).toContain(
       'centerFocusedColumnOnOverflow: KWin.readConfig("CenterFocusedColumnOnOverflow", false)',
+    );
+    expect(singleColumnCenteringEntry).toContain(
+      "<label>Keep a single tiled column centered</label>",
+    );
+    expect(singleColumnCenteringEntry).toContain("<default>false</default>");
+    expect(singleColumnCenteringWidget).toContain(
+      "<string>Keep a single tiled column centered</string>",
+    );
+    expect(singleColumnCenteringWidget).toContain(
+      "Centers the column while it is the only tiled column on the current output, desktop, and activity.",
+    );
+    expect(qml).toContain(
+      'alwaysCenterSingleColumn: KWin.readConfig("AlwaysCenterSingleColumn", false)',
     );
     expect(applicationCenteringEntry).toContain(
       "<label>Applications centered after horizontal focus navigation by KWin desktopFileName</label>",
@@ -1098,22 +1118,33 @@ describe("KWin shortcut handlers", () => {
 
   it("exposes the window gap as a live bounded user setting", () => {
     const gapEntry = configuration.match(
-      /<entry name="Gap" type="Int">([\s\S]*?)<\/entry>/,
+      /<entry name="Gap" type="Double">([\s\S]*?)<\/entry>/,
     )?.[1];
     const gapWidget = configurationUi.match(
-      /<widget class="QSpinBox" name="kcfg_Gap">([\s\S]*?)<\/widget>/,
+      /<widget class="QDoubleSpinBox" name="kcfg_Gap">([\s\S]*?)<\/widget>/,
     )?.[1];
 
     expect(gapEntry).toContain("<label>Window gap in logical pixels</label>");
-    expect(gapEntry).toContain("<default>16</default>");
-    expect(gapEntry).toContain("<min>0</min>");
-    expect(gapEntry).toContain("<max>64</max>");
+    expect(gapEntry).toContain("<default>16.0</default>");
+    expect(gapEntry).toContain("<min>0.0</min>");
+    expect(gapEntry).toContain("<max>64.0</max>");
     expect(configurationUi).toContain("<string>Window gap:</string>");
     expect(gapWidget).toContain("<string> px</string>");
     expect(gapWidget).toMatch(
-      /<property name="maximum">\s*<number>64<\/number>/,
+      /<property name="decimals">\s*<number>1<\/number>/,
     );
-    expect(gapWidget).toMatch(/<property name="value">\s*<number>16<\/number>/);
+    expect(gapWidget).toMatch(
+      /<property name="minimum">\s*<double>0\.0+<\/double>/,
+    );
+    expect(gapWidget).toMatch(
+      /<property name="maximum">\s*<double>64\.0+<\/double>/,
+    );
+    expect(gapWidget).toMatch(
+      /<property name="singleStep">\s*<double>0\.5(?:0)*<\/double>/,
+    );
+    expect(gapWidget).toMatch(
+      /<property name="value">\s*<double>16\.0+<\/double>/,
+    );
     expect(qml).toContain(
       `gap: KWin.readConfig("Gap", ${String(DEFAULT_DRIFTILE_SETTINGS.gap)})`,
     );

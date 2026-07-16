@@ -57,6 +57,7 @@ let
           "org.example.Editor=tool"
           "org.example.Browser"
         ];
+        alwaysCenterSingleColumn = true;
         borderlessWindows = false;
         centerFocusedColumn = true;
         centerFocusedColumnOnOverflow = true;
@@ -68,7 +69,7 @@ let
         columnWidthStepPercent = 13;
         defaultColumnPresentation = "tabbed";
         defaultColumnWidthPercent = 65;
-        gap = 7;
+        gap = 7.5;
         showTabIndicator = false;
         touchpadNavigation = true;
         touchpadNavigationFingerCount = 4;
@@ -236,7 +237,7 @@ let
   };
   settingsOnly = evaluateHome {
     programs.driftile = {
-      settings.gap = 8;
+      settings.gap = 1.2;
       shortcuts.driftile_focus_column_left = [ "Meta+A" ];
     };
   } systemConfiguration.config;
@@ -396,6 +397,7 @@ assert
       ApplicationTilingExclusions = ''
         org.example.Browser
         org.example.Editor=tool'';
+      AlwaysCenterSingleColumn = true;
       BorderlessWindows = false;
       CenterFocusedColumn = true;
       CenterFocusedColumnOnOverflow = true;
@@ -403,7 +405,7 @@ assert
       ColumnWidthStepPercent = 13;
       DefaultColumnPresentation = "tabbed";
       DefaultColumnWidthPercent = 65;
-      Gap = 7;
+      Gap = 7.5;
       ShowTabIndicator = false;
       TouchpadNavigation = true;
       TouchpadNavigationFingerCount = 4;
@@ -416,7 +418,7 @@ assert
 assert
   builtins.length (
     builtins.attrNames standalone.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile"
-  ) == 21;
+  ) == 22;
 assert
   standalone.config.xdg.configFile."driftile/shortcuts.json".text == ''
     {"bindings":{"driftile_focus_column_left":["Meta+A"],"driftile_reset_column_width":[]},"version":1}
@@ -448,7 +450,7 @@ assert
       ColumnWidthStepPercent = 10;
       DefaultColumnPresentation = "stacked";
       DefaultColumnWidthPercent = 33;
-      Gap = 8;
+      Gap = 1.2;
       ShowTabIndicator = true;
       TouchpadNavigation = false;
       TouchpadNavigationFingerCount = 5;

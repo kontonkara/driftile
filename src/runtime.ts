@@ -128,6 +128,7 @@ export function init(
   nextController.setDefaultColumnWidthPercent(
     settings.defaultColumnWidthPercent,
   );
+  nextController.setAlwaysCenterSingleColumn(settings.alwaysCenterSingleColumn);
   nextController.setCenterFocusedColumn(settings.centerFocusedColumn);
   nextController.setCenterFocusedColumnOnOverflow(
     settings.centerFocusedColumnOnOverflow,
@@ -197,6 +198,7 @@ export function applySettings(settingsSnapshot: unknown): boolean {
   controller.setApplicationTilingExclusions(
     settings.applicationTilingExclusions,
   );
+  controller.setAlwaysCenterSingleColumn(settings.alwaysCenterSingleColumn);
   controller.setCenterFocusedColumn(settings.centerFocusedColumn);
   controller.setCenterFocusedColumnOnOverflow(
     settings.centerFocusedColumnOnOverflow,

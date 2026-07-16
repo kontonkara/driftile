@@ -14,6 +14,7 @@ export interface Rect {
 }
 
 export interface StripGeometryInput {
+  readonly centerSingleColumn?: boolean;
   readonly context: LayoutContextSnapshot;
   readonly devicePixelRatio: number;
   readonly gap: number;
@@ -126,18 +127,20 @@ export function solveStripGeometry(input: StripGeometryInput): StripGeometry {
     input.devicePixelRatio,
   );
   const revealedViewportOffset =
-    fullWidthSuccessorAnchor === null
-      ? revealActiveColumn(
-          input.context,
-          columnWidths,
-          viewportOffset,
-          maxViewportOffset,
-          input.workArea,
-          input.pixelGridOrigin.x,
-          input.gap,
-          input.devicePixelRatio,
-        )
-      : clamp(fullWidthSuccessorAnchor, 0, maxViewportOffset);
+    input.centerSingleColumn === true && columnWidths.length === 1
+      ? centerSingleColumnViewportOffset(columnWidths[0], input)
+      : fullWidthSuccessorAnchor === null
+        ? revealActiveColumn(
+            input.context,
+            columnWidths,
+            viewportOffset,
+            maxViewportOffset,
+            input.workArea,
+            input.pixelGridOrigin.x,
+            input.gap,
+            input.devicePixelRatio,
+          )
+        : clamp(fullWidthSuccessorAnchor, 0, maxViewportOffset);
   let fullWidthLeftNeighborShift = 0;
   let fullWidthRightNeighborShift = 0;
   const clearance = snapUpToPixelGrid(input.gap, input.devicePixelRatio);
@@ -229,6 +232,20 @@ export function solveStripGeometry(input: StripGeometryInput): StripGeometry {
     viewportOffset: revealedViewportOffset,
     windows,
   };
+}
+
+function centerSingleColumnViewportOffset(
+  width: number | undefined,
+  input: StripGeometryInput,
+): number {
+  if (width === undefined) {
+    throw new Error("single-column width resolution failed");
+  }
+
+  return snapToPixelGrid(
+    input.gap + width / 2 - input.workArea.width / 2,
+    input.devicePixelRatio,
+  );
 }
 
 function immediateFullWidthSuccessorAnchor(

@@ -15,6 +15,7 @@ interface DeliveredSettings {
   readonly applicationFocusCentering: readonly string[];
   readonly applicationInitialFloating: readonly string[];
   readonly applicationTilingExclusions: readonly string[];
+  readonly alwaysCenterSingleColumn: boolean;
   readonly borderlessWindows: boolean;
   readonly centerFocusedColumn: boolean;
   readonly centerFocusedColumnOnOverflow: boolean;
@@ -76,6 +77,7 @@ class RuntimeControllerDouble {
         options.applicationInitialFloating.canonicalEntries,
       applicationTilingExclusions:
         options.applicationTilingExclusions.canonicalEntries,
+      alwaysCenterSingleColumn: false,
       borderlessWindows: options.borderlessWindows,
       centerFocusedColumn: false,
       centerFocusedColumnOnOverflow: false,
@@ -177,6 +179,12 @@ class RuntimeControllerDouble {
     return true;
   }
 
+  setAlwaysCenterSingleColumn(value: boolean): boolean {
+    this.calls.push("alwaysCenterSingleColumn");
+    this.state = { ...this.state, alwaysCenterSingleColumn: value };
+    return true;
+  }
+
   private captureBorderDelivery(): void {
     this.borderDeliverySnapshots.push({
       applicationBorderlessExclusions: [
@@ -265,6 +273,7 @@ describe("runtime settings delivery", () => {
       applicationBorderlessExclusions: "org.example.InitialBorder",
       applicationInitialFloating: "org.example.InitialFloat",
       applicationTilingExclusions: "org.example.InitiallyExcluded",
+      alwaysCenterSingleColumn: true,
       windowHeightPresets: "30,60,90",
     });
 
@@ -296,6 +305,7 @@ describe("runtime settings delivery", () => {
     expect(controller.deliveredSettings.windowHeightPresets).toEqual([
       30, 60, 90,
     ]);
+    expect(controller.deliveredSettings.alwaysCenterSingleColumn).toBe(true);
     expect(runtime.getTouchpadWorkspaceNavigation()).toBe(false);
 
     expect(
@@ -316,6 +326,7 @@ describe("runtime settings delivery", () => {
       applicationFocusCentering: "org.example.Browser",
       applicationInitialFloating: "org.example.NewFloat",
       applicationTilingExclusions: "org.example.NewlyExcluded",
+      alwaysCenterSingleColumn: false,
       borderlessWindows: false,
       centerFocusedColumn: true,
       centerFocusedColumnOnOverflow: true,
@@ -323,7 +334,7 @@ describe("runtime settings delivery", () => {
       columnWidthStepPercent: 13,
       defaultColumnPresentation: "tabbed",
       defaultColumnWidthPercent: 65,
-      gap: 7,
+      gap: 7.5,
       touchpadNavigation: true,
       touchpadNavigationFingerCount: 3,
       touchpadNaturalScroll: false,
@@ -338,6 +349,7 @@ describe("runtime settings delivery", () => {
       applicationFocusCentering: ["org.example.Browser"],
       applicationInitialFloating: ["org.example.NewFloat"],
       applicationTilingExclusions: ["org.example.NewlyExcluded"],
+      alwaysCenterSingleColumn: false,
       borderlessWindows: false,
       centerFocusedColumn: true,
       centerFocusedColumnOnOverflow: true,
@@ -345,7 +357,7 @@ describe("runtime settings delivery", () => {
       columnWidthStepPercent: 13,
       defaultColumnPresentation: "tabbed",
       defaultColumnWidthPercent: 65,
-      gap: 7,
+      gap: 7.5,
       windowHeightPresets: [25, 50, 75],
       windowHeightStepPercent: 17,
     };
@@ -363,6 +375,7 @@ describe("runtime settings delivery", () => {
       "applicationFocusCentering",
       "applicationInitialFloating",
       "applicationTilingExclusions",
+      "alwaysCenterSingleColumn",
       "centerFocusedColumn",
       "centerFocusedColumnOnOverflow",
       "defaultColumnPresentation",
@@ -439,6 +452,7 @@ describe("runtime settings delivery", () => {
       "applicationFocusCentering",
       "applicationInitialFloating",
       "applicationTilingExclusions",
+      "alwaysCenterSingleColumn",
       "centerFocusedColumn",
       "centerFocusedColumnOnOverflow",
       "defaultColumnPresentation",
@@ -474,6 +488,7 @@ function settings(
     applicationFocusCentering: "",
     applicationInitialFloating: "",
     applicationTilingExclusions: "",
+    alwaysCenterSingleColumn: false,
     borderlessWindows: true,
     centerFocusedColumn: false,
     centerFocusedColumnOnOverflow: false,
