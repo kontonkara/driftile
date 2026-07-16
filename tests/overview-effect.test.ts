@@ -857,10 +857,11 @@ describe("overview effect package", () => {
     expect(transaction).toContain("candidate.output !== targetWorkspaceOutput");
     expect(transaction).toContain("candidate.desktops = [liveTargetDesktop]");
     expect(
-      transaction.match(/crossOutputDropSceneIsExact\(state\)/gu).length,
+      (transaction.match(/crossOutputDropSceneIsExact\(state\)/gu) ?? [])
+        .length,
     ).toBeGreaterThanOrEqual(3);
     expect(
-      transaction.match(/windowDesktopDropCandidateIsExact\(/gu).length,
+      (transaction.match(/windowDesktopDropCandidateIsExact\(/gu) ?? []).length,
     ).toBeGreaterThanOrEqual(4);
     expect(transaction).toContain(
       "windowUsesDesktop(candidate, liveSourceDesktop, expectedSourceDesktopId)",
