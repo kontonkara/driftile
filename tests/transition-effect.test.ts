@@ -152,6 +152,7 @@ function createHarness(
     Effect: {
       Position: "position",
       Size: "size",
+      Translation: "translation",
     },
     QEasingCurve: {
       OutCubic: "out-cubic",
@@ -288,6 +289,71 @@ describe("transition effect package", () => {
     ]);
   });
 
+  it("uses translation for negative centers and resumes absolute retargeting", () => {
+    const window = createWindow({
+      geometry: { x: -400, y: 30, width: 300, height: 200 },
+    });
+    const harness = createHarness({ window });
+
+    changeGeometry(window, {
+      x: -300,
+      y: 50,
+      width: 300,
+      height: 200,
+    });
+
+    expect(harness.animationRequests[0]?.animations).toMatchObject([
+      {
+        type: "translation",
+        from: { value1: -100, value2: -20 },
+        to: { value1: 0, value2: 0 },
+      },
+    ]);
+    changeGeometry(window, {
+      x: -250,
+      y: 70,
+      width: 300,
+      height: 200,
+    });
+    changeGeometry(window, {
+      x: 100,
+      y: 70,
+      width: 300,
+      height: 200,
+    });
+    changeGeometry(window, {
+      x: 200,
+      y: 70,
+      width: 300,
+      height: 200,
+    });
+
+    expect(harness.animationRequests).toHaveLength(4);
+    expect(harness.animationRequests[3]?.animations).toMatchObject([
+      {
+        type: "position",
+        from: { value1: 250, value2: 170 },
+        to: { value1: 350, value2: 170 },
+      },
+    ]);
+    expect(harness.cancelledAnimations).toEqual([1, 2, 3]);
+
+    changeGeometry(window, {
+      x: 300,
+      y: 70,
+      width: 300,
+      height: 200,
+    });
+    expect(harness.animationRequests).toHaveLength(4);
+    expect(harness.retargetCalls).toEqual([
+      {
+        animationId: 4,
+        target: { value1: 450, value2: 170 },
+        duration: 180,
+      },
+    ]);
+  });
+
   it("suppresses live user move and resize geometry signals", () => {
     for (const operation of ["move", "resize"] as const) {
       const window = createWindow({ [operation]: true });
@@ -417,18 +483,22 @@ describe("transition effect package", () => {
   });
 
   it("captures deferred geometry while a transition hides the window", () => {
-    const harness = createHarness();
+    const harness = createHarness({
+      window: createWindow({
+        geometry: { x: -500, y: 30, width: 300, height: 200 },
+      }),
+    });
     harness.setFullScreenEffectActive(true);
     harness.window.visible = false;
 
     changeGeometry(harness.window, {
-      x: 40,
+      x: -440,
       y: 50,
       width: 400,
       height: 250,
     });
     changeGeometry(harness.window, {
-      x: 70,
+      x: -380,
       y: 80,
       width: 520,
       height: 320,
@@ -448,9 +518,9 @@ describe("transition effect package", () => {
           to: { value1: 520, value2: 320 },
         },
         {
-          type: "position",
-          from: { value1: 170, value2: 130 },
-          to: { value1: 330, value2: 240 },
+          type: "translation",
+          from: { value1: -230, value2: -110 },
+          to: { value1: 0, value2: 0 },
         },
       ],
     });
@@ -547,6 +617,36 @@ describe("transition effect package", () => {
         type: "position",
         from: { value1: 240, value2: 175 },
         to: { value1: 310, value2: 220 },
+      },
+    ]);
+    expect(harness.cancelledAnimations).toHaveLength(0);
+  });
+
+  it("keeps a position retarget when only the size retarget fails", () => {
+    const harness = createHarness();
+    changeGeometry(harness.window, {
+      x: 40,
+      y: 50,
+      width: 400,
+      height: 250,
+    });
+    harness.failedRetargets.add(1);
+    changeGeometry(harness.window, {
+      x: 60,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+
+    expect(harness.retargetCalls.map(({ animationId }) => animationId)).toEqual(
+      [1, 2],
+    );
+    expect(harness.animationRequests).toHaveLength(2);
+    expect(harness.animationRequests[1]?.animations).toMatchObject([
+      {
+        type: "size",
+        from: { value1: 400, value2: 250 },
+        to: { value1: 500, value2: 300 },
       },
     ]);
     expect(harness.cancelledAnimations).toHaveLength(0);

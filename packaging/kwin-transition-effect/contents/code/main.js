@@ -9,6 +9,9 @@ const MANAGED_PROPERTY = "driftileTransitionsManaged";
 const ANIMATION_PROPERTY = "driftileTransitionAnimation";
 const DEFERRED_PROPERTY = "driftileDeferredTransition";
 const POSITION_ANIMATION = "position";
+const POSITION_MODE_PROPERTY = "positionMode";
+const ABSOLUTE_POSITION_MODE = "absolute";
+const TRANSLATION_POSITION_MODE = "translation";
 const SIZE_ANIMATION = "size";
 
 class DriftileTransitionsEffect {
@@ -171,6 +174,9 @@ class DriftileTransitionsEffect {
     const positionChanged =
       oldPosition.value1 !== newPosition.value1 ||
       oldPosition.value2 !== newPosition.value2;
+    const usesAbsolutePosition =
+      positionChanged &&
+      this.canAnimateAbsolutePosition(oldPosition, newPosition);
 
     if (!sizeChanged && !positionChanged) {
       return;
@@ -199,15 +205,26 @@ class DriftileTransitionsEffect {
         curve: QEasingCurve.OutCubic,
       });
     }
-    if (
-      positionChanged &&
-      !this.retargetAnimation(state, POSITION_ANIMATION, newPosition)
-    ) {
+    if (usesAbsolutePosition) {
+      if (!this.retargetAbsolutePosition(state, newPosition)) {
+        animationProperties.push(POSITION_ANIMATION);
+        animations.push({
+          type: Effect.Position,
+          from: oldPosition,
+          to: newPosition,
+          curve: QEasingCurve.OutCubic,
+        });
+      }
+    } else if (positionChanged) {
+      this.cancelPositionAnimation(state);
       animationProperties.push(POSITION_ANIMATION);
       animations.push({
-        type: Effect.Position,
-        from: oldPosition,
-        to: newPosition,
+        type: Effect.Translation,
+        from: {
+          value1: oldPosition.value1 - newPosition.value1,
+          value2: oldPosition.value2 - newPosition.value2,
+        },
+        to: { value1: 0, value2: 0 },
         curve: QEasingCurve.OutCubic,
       });
     }
@@ -220,7 +237,13 @@ class DriftileTransitionsEffect {
       });
 
       for (let index = 0; index < animationProperties.length; index += 1) {
-        state[animationProperties[index]] = animationIds[index];
+        const property = animationProperties[index];
+        state[property] = animationIds[index];
+        if (property === POSITION_ANIMATION) {
+          state[POSITION_MODE_PROPERTY] = usesAbsolutePosition
+            ? ABSOLUTE_POSITION_MODE
+            : TRANSLATION_POSITION_MODE;
+        }
       }
     }
 
@@ -293,6 +316,37 @@ class DriftileTransitionsEffect {
 
     delete state[property];
     return false;
+  }
+
+  retargetAbsolutePosition(state, target) {
+    if (state[POSITION_MODE_PROPERTY] !== ABSOLUTE_POSITION_MODE) {
+      this.cancelPositionAnimation(state);
+      return false;
+    }
+
+    if (this.retargetAnimation(state, POSITION_ANIMATION, target)) {
+      return true;
+    }
+
+    delete state[POSITION_MODE_PROPERTY];
+    return false;
+  }
+
+  cancelPositionAnimation(state) {
+    if (state[POSITION_ANIMATION] !== undefined) {
+      cancel(state[POSITION_ANIMATION]);
+      delete state[POSITION_ANIMATION];
+    }
+    delete state[POSITION_MODE_PROPERTY];
+  }
+
+  canAnimateAbsolutePosition(oldPosition, newPosition) {
+    return (
+      oldPosition.value1 >= 0 &&
+      oldPosition.value2 >= 0 &&
+      newPosition.value1 >= 0 &&
+      newPosition.value2 >= 0
+    );
   }
 
   isValidGeometry(geometry) {
