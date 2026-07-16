@@ -24,6 +24,7 @@ export interface WindowObserverEvents {
     windowId: string,
     cause: ObservedWindowChangeCause,
   ) => void;
+  readonly decorationPolicyChanged?: (windowId: string) => void;
   readonly fullScreenChanged?: (windowId: string, fullScreen: boolean) => void;
   readonly interactiveMoveFinished?: (windowId: string) => void;
   readonly interactiveMoveStarted?: (windowId: string) => void;
@@ -54,6 +55,7 @@ interface WindowEntry {
   readonly handleClassificationChanged: () => void;
   readonly handleClientGeometryChanged: (oldGeometry: KWinRect) => void;
   readonly handleConstraintChanged: () => void;
+  readonly handleDecorationChanged: () => void;
   readonly handleDecorationPolicyChanged: () => void;
   readonly handleDesktopsChanged: () => void;
   readonly handleFullScreenChanged: () => void;
@@ -232,6 +234,10 @@ export class WindowObserver {
       refreshConstraint();
       refreshState();
     };
+    const refreshDecorationPolicySignal = (): void => {
+      this.events.decorationPolicyChanged?.(id);
+      refreshDecorationPolicy();
+    };
     const refreshClassification = (): void => {
       this.refresh(id, window, "classification", true);
     };
@@ -315,7 +321,8 @@ export class WindowObserver {
       handleClassificationChanged: refreshClassification,
       handleClientGeometryChanged: refreshClientGeometry,
       handleConstraintChanged: refreshConstraint,
-      handleDecorationPolicyChanged: refreshDecorationPolicy,
+      handleDecorationChanged: refreshDecorationPolicy,
+      handleDecorationPolicyChanged: refreshDecorationPolicySignal,
       handleDesktopsChanged: refreshContext,
       handleFullScreenChanged: () => {
         this.events.fullScreenChanged?.(id, window.fullScreen);
@@ -445,11 +452,11 @@ export class WindowObserver {
     window.tileChanged?.connect(entry.handleTileChanged);
     window.transientChanged?.connect(entry.handleClassificationChanged);
     this.events.tracked?.(id);
-    window.decorationChanged?.connect(entry.handleDecorationPolicyChanged);
+    window.decorationChanged?.connect(entry.handleDecorationChanged);
     window.decorationPolicyChanged?.connect(
       entry.handleDecorationPolicyChanged,
     );
-    window.noBorderChanged?.connect(entry.handleDecorationPolicyChanged);
+    window.noBorderChanged?.connect(entry.handleDecorationChanged);
 
     if (observedWindow) {
       this.events.added?.(observedWindow);
@@ -592,13 +599,11 @@ function windowId(window: KWinWindow): string {
 
 function disconnectWindowSignals(entry: WindowEntry): void {
   entry.source.activitiesChanged?.disconnect(entry.handleActivitiesChanged);
-  entry.source.decorationChanged?.disconnect(
-    entry.handleDecorationPolicyChanged,
-  );
+  entry.source.decorationChanged?.disconnect(entry.handleDecorationChanged);
   entry.source.decorationPolicyChanged?.disconnect(
     entry.handleDecorationPolicyChanged,
   );
-  entry.source.noBorderChanged?.disconnect(entry.handleDecorationPolicyChanged);
+  entry.source.noBorderChanged?.disconnect(entry.handleDecorationChanged);
   entry.source.clientGeometryChanged?.disconnect(
     entry.handleClientGeometryChanged,
   );

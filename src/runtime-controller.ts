@@ -1380,6 +1380,7 @@ export class RuntimeController {
     this.observer = new WindowObserver(workspace, {
       added: this.handleWindowAdded,
       changed: this.handleWindowChanged,
+      decorationPolicyChanged: this.handleWindowDecorationPolicyChanged,
       fullScreenChanged: this.handleFullScreenChanged,
       interactiveMoveFinished: this.handleInteractiveMoveFinished,
       interactiveMoveStarted: this.handleInteractiveMoveStarted,
@@ -6583,6 +6584,23 @@ export class RuntimeController {
     this.clearCapacityParkBackoffForWindow(changedId);
     this.pendingWindowSyncs.add(changedId);
     this.scheduleWork();
+  };
+
+  private readonly handleWindowDecorationPolicyChanged = (id: string): void => {
+    const changedId = windowId(id);
+
+    if (
+      !this.started ||
+      this.borderSynchronizationIds.has(changedId) ||
+      !this.borderlessClaimBackoffs.has(changedId) ||
+      this.borderlessSettlementTokens.has(changedId)
+    ) {
+      return;
+    }
+
+    const source = this.observer.source(changedId);
+    this.borderlessClaimBackoffs.delete(changedId);
+    this.synchronizeWindowBorder(changedId, source);
   };
 
   private readonly handleWindowStateChanged = (id: string): void => {

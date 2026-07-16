@@ -8060,24 +8060,32 @@ describe("RuntimeController", () => {
     expect(scheduler.pendingCount).toBe(0);
 
     decorated.decorationPolicyChanged.emit();
-    expect(borderWrites).toBe(2);
-    expect(rejectionWarningCount()).toBe(1);
-    expect(scheduler.pendingCount).toBe(0);
-
-    noBorder = true;
-    decorated.decorationPolicyChanged.emit();
-    expect(borderState.borderlessClaimBackoffs.has(windowId("decorated"))).toBe(
-      false,
-    );
-    expect(borderWrites).toBe(2);
-
-    noBorder = false;
-    decorated.decorationPolicyChanged.emit();
     expect(borderWrites).toBe(3);
     expect(rejectionWarningCount()).toBe(2);
     expect(scheduler.pendingCount).toBe(1);
     scheduler.flush();
     expect(borderWrites).toBe(4);
+    expect(rejectionWarningCount()).toBe(2);
+    expect(scheduler.pendingCount).toBe(0);
+
+    acceptsBorderless = true;
+    decorated.decorationPolicyChanged.emit();
+    expect(decorated.window.noBorder).toBe(true);
+    expect(borderState.borderlessClaimBackoffs.has(windowId("decorated"))).toBe(
+      false,
+    );
+    expect(borderWrites).toBe(5);
+    scheduler.flush();
+    expect(scheduler.pendingCount).toBe(0);
+
+    noBorder = false;
+    decorated.decorationPolicyChanged.emit();
+    expect(decorated.window.noBorder).toBe(true);
+    expect(borderWrites).toBe(6);
+    expect(rejectionWarningCount()).toBe(2);
+    expect(scheduler.pendingCount).toBe(1);
+    scheduler.flush();
+    expect(borderWrites).toBe(6);
     expect(rejectionWarningCount()).toBe(2);
     expect(scheduler.pendingCount).toBe(0);
 
@@ -8089,7 +8097,6 @@ describe("RuntimeController", () => {
     expect(decorated.window.noBorder).toBe(false);
     expect(scheduler.pendingCount).toBe(0);
 
-    acceptsBorderless = true;
     expect(
       controller.setApplicationBorderlessExclusions(
         requiredApplicationBorderlessExclusions(""),

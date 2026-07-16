@@ -490,6 +490,9 @@ describe("WindowObserver", () => {
       [oldGeometry: KWinRect]
     >;
     const decorationChanged = source.decorationChanged as Signal<[]>;
+    const decorationPolicyChanged = source.decorationPolicyChanged as Signal<
+      []
+    >;
     const finished = source.interactiveMoveResizeFinished as Signal<[]>;
     const frameGeometryChanged = source.frameGeometryChanged as Signal<
       [oldGeometry: KWinRect]
@@ -498,10 +501,13 @@ describe("WindowObserver", () => {
       [maximizeable: boolean]
     >;
     const moveResizedChanged = source.moveResizedChanged as Signal<[]>;
+    const noBorderChanged = source.noBorderChanged as Signal<[]>;
     const changed: string[] = [];
+    const policyChanged: string[] = [];
     const stateChanged: string[] = [];
     const observer = new WindowObserver(createWorkspace([source]), {
       changed: (windowId) => changed.push(windowId),
+      decorationPolicyChanged: (windowId) => policyChanged.push(windowId),
       stateChanged: (windowId) => stateChanged.push(windowId),
     });
 
@@ -536,11 +542,19 @@ describe("WindowObserver", () => {
     frameGeometryChanged.emit(movedFrame);
     clientGeometryChanged.emit(movedClient);
     decorationChanged.emit();
+    decorationPolicyChanged.emit();
+    noBorderChanged.emit();
     moveResizedChanged.emit();
     finished.emit();
 
     expect(changed).toEqual(["window-1", "window-1"]);
-    expect(stateChanged).toEqual(["window-1", "window-1", "window-1"]);
+    expect(policyChanged).toEqual(["window-1"]);
+    expect(stateChanged).toEqual(Array.from({ length: 5 }, () => "window-1"));
+
+    observer.stop();
+    expect(decorationPolicyChanged.size).toBe(0);
+    decorationPolicyChanged.emit();
+    expect(policyChanged).toEqual(["window-1"]);
   });
 
   it("probes only observed windows visible on their selected output desktop", () => {
