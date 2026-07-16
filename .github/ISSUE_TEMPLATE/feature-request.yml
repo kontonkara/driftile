@@ -22,11 +22,9 @@ body:
     attributes:
       label: Alternatives considered
   - type: checkboxes
-    id: scope
+    id: checks
     attributes:
-      label: Scope
+      label: Checks
       options:
-        - label: This can remain a KWin extension using public Plasma APIs.
-          required: true
         - label: I checked existing issues for the same request.
           required: true

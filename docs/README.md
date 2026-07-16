@@ -26,6 +26,3 @@ do.
   reports.
 - [Report a problem](https://github.com/kontonkara/driftile/issues/new/choose):
   open a structured bug report or feature request.
-
-Version-specific upgrade and rollback notes remain available from the
-[installation guide](installation.md#compatibility-and-migration) when needed.

@@ -1,5 +1,8 @@
-blank_issues_enabled: true
+blank_issues_enabled: false
 contact_links:
+  - name: Documentation
+    url: https://github.com/kontonkara/driftile/blob/main/docs/README.md
+    about: Find installation, configuration, shortcuts, and compatibility guides.
   - name: Troubleshooting guide
     url: https://github.com/kontonkara/driftile/blob/main/docs/troubleshooting.md
     about: Check common recovery steps and diagnostics before filing a bug.
