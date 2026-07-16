@@ -123,6 +123,11 @@ let
         defaultColumnPresentation = "tabbed";
         defaultColumnWidthPercent = 65;
         defaultColumnWidthPixels = 960;
+        defaultFloatingPosition = {
+          anchor = "right";
+          x = -36;
+          y = 48;
+        };
         defaultWindowHeight = "720px";
         emptyDesktopAboveFirst = true;
         gap = 7.5;
@@ -389,7 +394,10 @@ let
   };
   settingsOnly = evaluateHome {
     programs.driftile = {
-      settings.gap = 1.2;
+      settings = {
+        defaultFloatingPosition = null;
+        gap = 1.2;
+      };
       shortcuts.driftile_focus_column_left = [ "Meta+A" ];
     };
   } systemConfiguration.config;
@@ -762,6 +770,7 @@ assert
       DefaultColumnPresentation = "tabbed";
       DefaultColumnWidthPercent = 65;
       DefaultColumnWidthPixels = 960;
+      DefaultFloatingPosition = "right,-36,48";
       DefaultWindowHeight = "720px";
       EmptyDesktopAboveFirst = true;
       Gap = 7.5;
@@ -779,7 +788,7 @@ assert
 assert
   builtins.length (
     builtins.attrNames standalone.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile"
-  ) == 36;
+  ) == 37;
 assert
   standalone.config.xdg.configFile."driftile/shortcuts.json".text == ''
     {"bindings":{"driftile_focus_column_left":["Meta+A"],"driftile_reset_column_width":[]},"version":1}
@@ -821,6 +830,7 @@ assert
       DefaultColumnPresentation = "stacked";
       DefaultColumnWidthPercent = 33;
       DefaultColumnWidthPixels = 0;
+      DefaultFloatingPosition = "";
       DefaultWindowHeight = "auto";
       Gap = 1.2;
       ShowTabIndicator = true;

@@ -534,6 +534,11 @@ let
           defaultColumnPresentation = "tabbed";
           defaultColumnWidthPercent = 65;
           defaultColumnWidthPixels = 960;
+          defaultFloatingPosition = {
+            anchor = "right";
+            x = -36;
+            y = 48;
+          };
           defaultWindowHeight = "720px";
           emptyDesktopAboveFirst = true;
           gap = 7.5;
@@ -576,6 +581,39 @@ let
       ]
       {
         programs.driftile.settings.defaultColumnWidthPixels = 16384;
+      }
+      { };
+  homeManagerDefaultFloatingPositionBounds = map (
+    position:
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.settings.defaultFloatingPosition = position;
+      }
+      { }
+  ) [
+    {
+      anchor = "top-left";
+      x = -16384;
+      y = -16384;
+    }
+    {
+      anchor = "bottom-right";
+      x = 16384;
+      y = 16384;
+    }
+  ];
+  homeManagerDefaultFloatingPositionDisabled =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.settings.defaultFloatingPosition = null;
       }
       { };
   homeManagerDefaultWindowHeightValues = map (
@@ -1012,6 +1050,26 @@ let
           value.desktop = 1;
         }) 129
       );
+    }
+    {
+      defaultFloatingPosition = {
+        anchor = "center";
+        x = 0;
+        y = 0;
+      };
+    }
+    {
+      defaultFloatingPosition = {
+        anchor = "top-left";
+        x = -16385;
+        y = 0;
+      };
+    }
+    {
+      defaultFloatingPosition = {
+        anchor = "top-left";
+        x = 0;
+      };
     }
     { applicationFloatingPositions = [ ]; }
     { applicationFloatingPositions."org.example.Editor" = "top-left,0,0"; }
@@ -1550,6 +1608,7 @@ let
       DefaultColumnPresentation = "tabbed";
       DefaultColumnWidthPercent = 65;
       DefaultColumnWidthPixels = 960;
+      DefaultFloatingPosition = "right,-36,48";
       DefaultWindowHeight = "720px";
       EmptyDesktopAboveFirst = true;
       Gap = 7.5;
@@ -1588,6 +1647,7 @@ let
       DefaultColumnPresentation = "stacked";
       DefaultColumnWidthPercent = 33;
       DefaultColumnWidthPixels = 0;
+      DefaultFloatingPosition = "";
       DefaultWindowHeight = "auto";
       Gap = 16;
       ShowTabIndicator = true;
@@ -1749,14 +1809,26 @@ assert homeManagerSettings.config.qt.kde.settings == expectedSettings;
 assert homeManagerDefaultSettings.config.qt.kde.settings == expectedDefaultSettings;
 assert
   builtins.length (builtins.attrNames expectedSettings.kwinrc."Script-io.github.kontonkara.driftile")
-  == 36;
+  == 37;
 assert
   builtins.length (
     builtins.attrNames expectedDefaultSettings.kwinrc."Script-io.github.kontonkara.driftile"
-  ) == 33;
+  ) == 34;
 assert
   homeManagerMaximumDefaultColumnWidthPixels.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".DefaultColumnWidthPixels
   == 16384;
+assert
+  map (
+    evaluation:
+    evaluation.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".DefaultFloatingPosition
+  ) homeManagerDefaultFloatingPositionBounds
+  == [
+    "top-left,-16384,-16384"
+    "bottom-right,16384,16384"
+  ];
+assert
+  homeManagerDefaultFloatingPositionDisabled.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".DefaultFloatingPosition
+  == "";
 assert
   map (
     evaluation:
@@ -1931,6 +2003,7 @@ assert
       DefaultColumnPresentation = "stacked";
       DefaultColumnWidthPercent = 33;
       DefaultColumnWidthPixels = 0;
+      DefaultFloatingPosition = "";
       DefaultWindowHeight = "auto";
       Gap = 1.2;
       ShowTabIndicator = true;

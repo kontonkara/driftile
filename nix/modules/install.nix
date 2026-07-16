@@ -263,19 +263,20 @@ let
         "${desktopFileName}=${lib.concatStringsSep "," fields}"
       ) (builtins.sort builtins.lessThan (builtins.attrNames destinations))
     );
-  applicationFloatingPositionType = lib.types.submodule {
+  floatingPositionAnchorType = lib.types.enum [
+    "top-left"
+    "top"
+    "top-right"
+    "right"
+    "bottom-right"
+    "bottom"
+    "bottom-left"
+    "left"
+  ];
+  floatingPositionType = lib.types.submodule {
     options = {
       anchor = lib.mkOption {
-        type = lib.types.enum [
-          "top-left"
-          "top"
-          "top-right"
-          "right"
-          "bottom-right"
-          "bottom"
-          "bottom-left"
-          "left"
-        ];
+        type = floatingPositionAnchorType;
         description = "Work-area anchor used to place a newly floating window.";
       };
 
@@ -290,6 +291,7 @@ let
       };
     };
   };
+  applicationFloatingPositionType = floatingPositionType;
   applicationFloatingPositionsType = lib.types.attrsOf applicationFloatingPositionType;
   validateApplicationFloatingPositions =
     positions:
@@ -300,6 +302,10 @@ let
       positions
     else
       throw "programs.driftile.settings.applicationFloatingPositions must use at most 128 valid desktopFileName keys without '='.";
+  renderFloatingPosition =
+    position: "${position.anchor},${toString position.x},${toString position.y}";
+  renderDefaultFloatingPosition =
+    position: if position == null then "" else renderFloatingPosition position;
   renderApplicationFloatingPositions =
     positions:
     lib.concatStringsSep "\n" (
@@ -308,7 +314,7 @@ let
         let
           position = positions.${desktopFileName};
         in
-        "${desktopFileName}=${position.anchor},${toString position.x},${toString position.y}"
+        "${desktopFileName}=${renderFloatingPosition position}"
       ) (builtins.sort builtins.lessThan (builtins.attrNames positions))
     );
   transitionWindowClassExclusionType = applicationTilingExclusionType;
@@ -658,6 +664,12 @@ in
               description = "Fixed default column width in logical pixels; zero uses defaultColumnWidthPercent.";
             };
 
+            defaultFloatingPosition = lib.mkOption {
+              type = lib.types.nullOr floatingPositionType;
+              default = null;
+              description = "Default work-area anchor and signed logical-pixel offsets for newly floating windows; null disables the default while settings are managed.";
+            };
+
             defaultWindowHeight = lib.mkOption {
               type = defaultWindowHeightType;
               default = "auto";
@@ -802,6 +814,7 @@ in
           DefaultColumnPresentation = cfg.settings.defaultColumnPresentation;
           DefaultColumnWidthPercent = cfg.settings.defaultColumnWidthPercent;
           DefaultColumnWidthPixels = cfg.settings.defaultColumnWidthPixels;
+          DefaultFloatingPosition = renderDefaultFloatingPosition cfg.settings.defaultFloatingPosition;
           DefaultWindowHeight = renderDefaultWindowHeight cfg.settings.defaultWindowHeight;
           Gap = cfg.settings.gap;
           ShowTabIndicator = cfg.settings.showTabIndicator;
