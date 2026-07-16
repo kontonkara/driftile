@@ -331,8 +331,19 @@ or the selected horizontal gutter. Cursor events are coalesced and the
 immutable layout snapshot is not rewritten. KWin exposes one shared outline
 without an ownership token, so Driftile checks it before target changes and
 cleanup, then disables feedback for the drag if another outline conflicts. The
-coexistence check is necessarily best-effort. Empty-gutter drops across outputs
-or desktops remain finish-only without a preview.
+coexistence check is necessarily best-effort.
+
+Cross-output and same-output cross-desktop drags also preview a settled
+destination before release. One planner inspects the destination windows once:
+an exact window half wins, otherwise an empty gutter may be selected. Repeated
+motion inside the same target reuses its immutable destination snapshot without
+changing layout state.
+
+Release revalidates preview ownership, destination layout identity, participant
+state, and the target under the final pointer position before committing. A
+stale capture is discarded instead of becoming layout authority. The
+presentation bridge scopes each preview to its drag owner, so delayed cleanup
+from an earlier drag cannot hide newer feedback.
 
 KWin owns desktop selection and window membership. After KWin moves the active
 window to a selected visible desktop on the same output, Driftile first checks

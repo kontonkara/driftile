@@ -1885,3 +1885,18 @@ Release criteria (met):
 - Focused runtime and transition checks pass before one grouped package gate.
 
 No unrelated feature belongs to 1.46.0.
+
+### 1.47.0 (in development)
+
+- Preview settled cross-output and same-output cross-desktop pointer targets
+  before release.
+- Prefer an exact destination window half, then an empty horizontal gutter,
+  through one shared single-pass planner for preview and commit.
+- Reuse an immutable destination snapshot while the pointer remains inside the
+  same target, then revalidate ownership, layout identity, participants, and
+  the final target before commit.
+- Scope presentation callbacks to the current drag owner so stale cleanup
+  cannot hide a newer preview.
+
+The batch adds no action, binding, setting, persistence field, compositor fork,
+or private API.
