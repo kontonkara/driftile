@@ -181,7 +181,8 @@ kwriteconfig6 --file kwinrc --group Plugins \
 for key in ApplicationBorderlessExclusions ApplicationColumnPresentations \
   ApplicationColumnWidths ApplicationFloatingPositions \
   ApplicationFocusCentering ApplicationInitialDestinations \
-  ApplicationInitialFloating ApplicationInitialFullscreen \
+  ApplicationInitialFocused ApplicationInitialFloating \
+  ApplicationInitialFullscreen \
   ApplicationInitialFullWidth ApplicationInitialMaximized \
   ApplicationTilingExclusions ApplicationWindowHeights \
   AlwaysCenterSingleColumn BorderlessWindows CenterFocusedColumn \
@@ -311,6 +312,7 @@ programs.driftile.settings = {
       output = "DP-2";
     };
   };
+  applicationInitialFocused = [ ];
   applicationInitialFloating = [ ];
   applicationFloatingPositions = {
     "org.kde.kcalc" = {
@@ -346,6 +348,7 @@ keeps the exact built-in `1/3`, `1/2`, and `2/3` cycle. See
 [Application column presentation](configuration.md#application-column-presentation),
 [Horizontal focus centering](configuration.md#horizontal-focus-centering),
 [Application initial destinations](configuration.md#application-initial-destinations),
+[Applications initially focused](configuration.md#applications-initially-focused),
 [Applications initially floating](configuration.md#applications-initially-floating),
 [Application floating positions](configuration.md#application-floating-positions),
 [Applications initially maximized to edges](configuration.md#applications-initially-maximized-to-edges),

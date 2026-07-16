@@ -1690,3 +1690,24 @@ Release criteria (met):
   tiled or floating state beneath it without retrying unsupported requests.
 
 No other feature belongs to 1.39.0.
+
+### 1.40.0 (in development)
+
+- Add an exact fresh-window application rule that requests focus once after
+  tiled or floating admission when the destination context is already visible.
+- Apply confirmed destination and underlay rules before focus, then request
+  native maximize and fullscreen states afterward.
+- Keep startup-existing, restored, transferred, re-admitted, and already
+  tracked windows unchanged; never select a desktop or output to reveal a
+  match.
+- Expose the bounded exact application list through KConfig, NixOS, and Home
+  Manager without a shortcut or persistence-schema change.
+
+Release criteria:
+
+- Unlisted applications retain KWin's ordinary focus behavior.
+- Unavailable and rejected focus requests are consumed without retry.
+- Live settings affect only windows first tracked afterward.
+- The implementation remains within public Plasma 6.7+ APIs.
+
+No other feature currently belongs to 1.40.0.

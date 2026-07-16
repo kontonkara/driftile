@@ -108,6 +108,7 @@ The activation writes only `ApplicationBorderlessExclusions`,
 `ApplicationWindowHeights`,
 `ApplicationFocusCentering`, `ApplicationFloatingPositions`,
 `ApplicationInitialDestinations`,
+`ApplicationInitialFocused`,
 `ApplicationInitialFloating`, `ApplicationInitialFullWidth`,
 `ApplicationInitialFullscreen`, `ApplicationInitialMaximized`,
 `ApplicationTilingExclusions`,
@@ -161,6 +162,10 @@ programs.driftile.settings.applicationInitialDestinations = {
   };
   "org.telegram.desktop".output = "HDMI-A-1";
 };
+
+programs.driftile.settings.applicationInitialFocused = [
+  "org.mozilla.firefox"
+];
 
 programs.driftile.settings.applicationInitialFloating = [
   "org.kde.kcalc"
@@ -479,17 +484,17 @@ Use KWin's debug console to inspect both identifiers.
 
 The assignment is fresh-only and one-shot. Startup-existing, restored,
 already admitted, dialog, transient, and other non-normal windows are not
-moved. Driftile neither changes focus nor selects a desktop. A missing output
-or desktop, unavailable public transfer API, or rejected assignment leaves the
-window in its accepted KWin context and is not retried. Live edits affect only
-windows first tracked afterward.
+moved. The destination policy itself neither changes focus nor selects a
+desktop. A missing output or desktop, unavailable public transfer API, or
+rejected assignment leaves the window in its accepted KWin context and is not
+retried. Live edits affect only windows first tracked afterward.
 
 After a confirmed assignment, initial floating and floating-position rules use
 the destination work area, initial tiled sizing and presentation use the
-destination layout context, native maximize runs after admission, and an
-initial fullscreen request runs last. The policy adds no shortcut or
-persistence field. At most 128 rules are accepted; application IDs and output
-names are each limited to 255 UTF-8 bytes.
+destination layout context, an initial focus request runs after admission,
+native maximize follows, and an initial fullscreen request runs last. The
+policy adds no shortcut or persistence field. At most 128 rules are accepted;
+application IDs and output names are each limited to 255 UTF-8 bytes.
 
 ## Applications initially floating
 
@@ -537,6 +542,24 @@ Startup-existing, restored, already manually floating, automatic, dialog, and
 transient windows are not repositioned. Desktop and output transfers preserve
 the current frame. Live edits affect only future first manual-floating
 placements and add no persistence field.
+
+## Applications initially focused
+
+**Applications initially focused** requests focus once after Driftile admits a
+genuinely new matching normal window to its tiled or floating layer. Enter
+exact, case-sensitive KWin `desktopFileName` values, one per line, under the
+application-list limits.
+
+The request is made only when the destination desktop and output are already
+visible. Driftile does not select a desktop or output to reveal the window.
+When the request is unavailable or rejected, it is consumed without retry.
+Unlisted applications keep KWin's ordinary focus behavior; this setting does
+not suppress focus.
+
+Startup-existing, restored, transferred, re-admitted, and already tracked
+windows are unchanged. Initial destination and underlay admission settle
+first; native maximize and fullscreen requests follow. Live edits affect only
+windows first tracked afterward and add no shortcut or persistence field.
 
 ## Applications initially full-width
 

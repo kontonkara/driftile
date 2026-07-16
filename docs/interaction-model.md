@@ -124,10 +124,16 @@ window only.
 
 Fresh application destination rules run before ordinary admission. An exact
 rule may assign the new normal window to a one-based virtual desktop, a named
-output, or both, while leaving the selected desktops and active window intact.
+output, or both, while leaving the selected desktops intact. The destination
+policy itself leaves the active window intact.
 Initial floating, sizing, presentation, and native-state rules then resolve in
 the confirmed destination context. Missing, stale, related, or rejected
 targets fall back once to the window's existing KWin context.
+
+An exact fresh-window focus rule requests activation after tiled or floating
+admission only when that context is already visible. It never selects a
+desktop or output, and a rejected request is not retried. Native maximize and
+fullscreen requests run afterward.
 
 An exact fresh-window maximize rule requests KWin's native work-area-edge
 state after the tiled or floating underlay is admitted. Initial
