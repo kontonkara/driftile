@@ -51,6 +51,20 @@ export interface PointerExternalColumnDropPreview {
   readonly target: PointerExternalColumnDropTarget;
 }
 
+export type PointerExternalDropInput = PointerExternalWindowDropInput;
+
+export type PointerExternalDropPreview =
+  | Readonly<{
+      frame: Rect;
+      kind: "window";
+      target: PointerExternalWindowDropTarget;
+    }>
+  | Readonly<{
+      frame: Rect;
+      kind: "column";
+      target: PointerExternalColumnDropTarget;
+    }>;
+
 export interface PointerColumnDropInput {
   readonly context: LayoutContextSnapshot;
   readonly cursor: Point;
@@ -101,6 +115,13 @@ interface ColumnSpanGeometrySnapshot {
   readonly bottom: number;
   readonly spans: readonly ColumnGeometrySpan[];
   readonly top: number;
+}
+
+interface WindowGeometryStripSnapshot {
+  readonly bottom: number;
+  readonly geometries: ReadonlyMap<WindowId, WindowGeometrySnapshot>;
+  readonly top: number;
+  readonly windowMatch: PointerWindowDropMatch | null;
 }
 
 interface PointerColumnDropMatch {
@@ -216,6 +237,80 @@ export function planPointerExternalWindowDropPreview(
     frame,
     target: match.target,
   });
+}
+
+export function planPointerExternalDropPreview(
+  input: PointerExternalDropInput,
+): PointerExternalDropPreview | null {
+  if (
+    !isRecord(input) ||
+    typeof input.draggedWindowId !== "string" ||
+    !isFinitePoint(input.cursor) ||
+    !isUsableRect(input.visibleArea) ||
+    !Array.isArray(input.windows) ||
+    !containsPoint(input.visibleArea, input.cursor)
+  ) {
+    return null;
+  }
+
+  const placements = contextWindowPlacements(input.context);
+
+  if (!placements || placements.has(input.draggedWindowId)) {
+    return null;
+  }
+
+  const strip = snapshotWindowGeometryStrip(placements, input.windows, {
+    cursor: input.cursor,
+    draggedWindowId: input.draggedWindowId,
+  });
+
+  if (!strip) {
+    return null;
+  }
+
+  if (strip.windowMatch) {
+    const frame = pointerWindowDropPreviewFrame(
+      strip.windowMatch.frame,
+      strip.windowMatch.target.position,
+    );
+
+    return frame
+      ? Object.freeze({
+          frame,
+          kind: "window",
+          target: strip.windowMatch.target,
+        })
+      : null;
+  }
+
+  const geometry = columnSpanGeometryFromStrip(input.context, strip);
+
+  if (!geometry) {
+    return null;
+  }
+
+  const gap = pointerColumnGapMatch(
+    geometry.spans,
+    input.cursor.x,
+    input.visibleArea,
+  );
+
+  if (!gap) {
+    return null;
+  }
+
+  const match = {
+    bottom: geometry.bottom,
+    gapLeft: gap.left,
+    gapRight: gap.right,
+    target: gap.target,
+    top: geometry.top,
+  };
+  const frame = pointerColumnDropPreviewFrame(match, input.visibleArea);
+
+  return frame
+    ? Object.freeze({ frame, kind: "column", target: match.target })
+    : null;
 }
 
 function planPointerExternalWindowDropMatch(
@@ -438,9 +533,22 @@ function snapshotColumnSpanGeometry(
   placements: ReadonlyMap<WindowId, ContextWindowPlacement>,
   windows: readonly WindowGeometry[],
 ): ColumnSpanGeometrySnapshot | null {
+  const strip = snapshotWindowGeometryStrip(placements, windows);
+  return strip ? columnSpanGeometryFromStrip(context, strip) : null;
+}
+
+function snapshotWindowGeometryStrip(
+  placements: ReadonlyMap<WindowId, ContextWindowPlacement>,
+  windows: readonly WindowGeometry[],
+  hitTest?: Readonly<{
+    cursor: Point;
+    draggedWindowId: WindowId;
+  }>,
+): WindowGeometryStripSnapshot | null {
   const geometries = new Map<WindowId, WindowGeometrySnapshot>();
   let top = Number.POSITIVE_INFINITY;
   let bottom = Number.NEGATIVE_INFINITY;
+  let windowMatch: PointerWindowDropMatch | null = null;
 
   for (const geometry of windows) {
     const snapshot = snapshotWindowGeometry(geometry);
@@ -458,9 +566,44 @@ function snapshotColumnSpanGeometry(
     geometries.set(snapshot.windowId, snapshot);
     top = Math.min(top, snapshot.frame.y);
     bottom = Math.max(bottom, snapshot.frame.y + snapshot.frame.height);
+
+    if (
+      !hitTest ||
+      snapshot.windowId === hitTest.draggedWindowId ||
+      !placement.dropTarget ||
+      !containsPoint(snapshot.frame, hitTest.cursor)
+    ) {
+      continue;
+    }
+
+    if (windowMatch) {
+      return null;
+    }
+
+    windowMatch = {
+      frame: snapshot.frame,
+      target: Object.freeze({
+        position:
+          hitTest.cursor.y < snapshot.frame.y + snapshot.frame.height / 2
+            ? "before"
+            : "after",
+        targetWindowId: snapshot.windowId,
+      }),
+    };
   }
 
-  if (geometries.size !== placements.size || context.columns.length === 0) {
+  if (geometries.size !== placements.size) {
+    return null;
+  }
+
+  return { bottom, geometries, top, windowMatch };
+}
+
+function columnSpanGeometryFromStrip(
+  context: LayoutContextSnapshot,
+  strip: WindowGeometryStripSnapshot,
+): ColumnSpanGeometrySnapshot | null {
+  if (context.columns.length === 0) {
     return null;
   }
 
@@ -470,7 +613,9 @@ function snapshotColumnSpanGeometry(
   for (const column of context.columns) {
     const firstWindowId = column.windowIds[0];
     const firstGeometry =
-      firstWindowId === undefined ? undefined : geometries.get(firstWindowId);
+      firstWindowId === undefined
+        ? undefined
+        : strip.geometries.get(firstWindowId);
 
     if (!firstGeometry) {
       return null;
@@ -484,7 +629,7 @@ function snapshotColumnSpanGeometry(
     }
 
     for (const memberId of column.windowIds) {
-      const memberGeometry = geometries.get(memberId);
+      const memberGeometry = strip.geometries.get(memberId);
 
       if (
         !memberGeometry ||
@@ -499,14 +644,18 @@ function snapshotColumnSpanGeometry(
     previousRight = right;
   }
 
-  if (!Number.isFinite(top) || !Number.isFinite(bottom) || !(bottom > top)) {
+  if (
+    !Number.isFinite(strip.top) ||
+    !Number.isFinite(strip.bottom) ||
+    !(strip.bottom > strip.top)
+  ) {
     return null;
   }
 
   return {
-    bottom,
+    bottom: strip.bottom,
     spans,
-    top,
+    top: strip.top,
   };
 }
 

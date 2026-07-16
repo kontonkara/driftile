@@ -13,6 +13,7 @@ import {
   planPointerColumnDropPreview,
   planPointerExternalColumnDrop,
   planPointerExternalColumnDropPreview,
+  planPointerExternalDropPreview,
   planPointerExternalWindowDrop,
   planPointerExternalWindowDropPreview,
   planPointerWindowDrop,
@@ -694,6 +695,83 @@ describe("planPointerExternalWindowDrop", () => {
         null as unknown as Parameters<
           typeof planPointerExternalWindowDropPreview
         >[0],
+      ),
+    ).toBeNull();
+  });
+});
+
+describe("planPointerExternalDropPreview", () => {
+  it("resolves an exact destination window before considering gutters", () => {
+    const input = externalFixture(fractionalPreviewFixture());
+    const snapshot = structuredClone(input);
+    const preview = planPointerExternalDropPreview(input);
+
+    expect(preview).toEqual({
+      frame: { height: 51, width: 99, x: 201, y: 0 },
+      kind: "window",
+      target: { position: "before", targetWindowId: "target-a" },
+    });
+    expect(preview?.target).toEqual(planPointerExternalWindowDrop(input));
+    expect(Object.isFrozen(preview)).toBe(true);
+    expect(Object.isFrozen(preview?.frame)).toBe(true);
+    expect(Object.isFrozen(preview?.target)).toBe(true);
+    expect(input).toEqual(snapshot);
+  });
+
+  it("falls back to a destination gutter with its complete column span", () => {
+    const input = {
+      ...externalColumnDropFixture(),
+      cursor: { x: 175, y: 100 },
+    };
+    const preview = planPointerExternalDropPreview(input);
+
+    expect(preview).toEqual({
+      frame: { height: 220, width: 50, x: 150, y: 10 },
+      kind: "column",
+      target: { position: "after", targetColumnId: "left-column" },
+    });
+    expect(preview?.target).toEqual(planPointerExternalColumnDrop(input));
+    expect(Object.isFrozen(preview)).toBe(true);
+    expect(Object.isFrozen(preview?.frame)).toBe(true);
+    expect(Object.isFrozen(preview?.target)).toBe(true);
+  });
+
+  it("scans destination window geometry once when resolving a gutter", () => {
+    const input = externalColumnDropFixture();
+    let stripReads = 0;
+    const windows = new Proxy([...input.windows], {
+      get(target, property, receiver) {
+        if (
+          typeof property === "string" &&
+          /^(?:0|[1-9]\d*)$/u.test(property)
+        ) {
+          stripReads += 1;
+        }
+
+        return Reflect.get(target, property, receiver) as unknown;
+      },
+    });
+
+    expect(planPointerExternalDropPreview({ ...input, windows })).toEqual({
+      frame: { height: 220, width: 50, x: 300, y: 10 },
+      kind: "column",
+      target: { position: "after", targetColumnId: "middle-column" },
+    });
+    expect(stripReads).toBe(input.windows.length);
+  });
+
+  it("fails closed for incomplete or malformed destination state", () => {
+    const input = externalFixture();
+
+    expect(
+      planPointerExternalDropPreview({
+        ...input,
+        windows: input.windows.slice(1),
+      }),
+    ).toBeNull();
+    expect(
+      planPointerExternalDropPreview(
+        null as unknown as Parameters<typeof planPointerExternalDropPreview>[0],
       ),
     ).toBeNull();
   });
