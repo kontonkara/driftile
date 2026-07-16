@@ -159,6 +159,7 @@ function createHarness(
   const windowActivated = createSignal<[WindowStub | null]>();
   const currentActivityChanged = createSignal<[string]>();
   const configChanged = createSignal<[]>();
+  const animationEnded = createSignal<[WindowStub, number]>();
   const animationRequests: AnimationRequest[] = [];
   const cancelledAnimations: unknown[] = [];
   const retargetCalls: RetargetCall[] = [];
@@ -224,6 +225,7 @@ function createHarness(
       return !failedRetargets.has(animationId);
     },
     effect: {
+      animationEnded,
       configChanged,
       readConfig(name: string, fallback: unknown) {
         return configuredValues[name] === undefined
@@ -241,6 +243,9 @@ function createHarness(
     configChanged,
     effects,
     failedRetargets,
+    finishAnimation(window: WindowStub) {
+      animationEnded.emit(window, 0);
+    },
     retargetCalls,
     setConfiguredDuration(duration: number) {
       configuredValues.Duration = duration;
@@ -1104,6 +1109,132 @@ describe("transition effect package", () => {
     expect(harness.retargetCalls.map(({ animationId }) => animationId)).toEqual(
       [1, 2],
     );
+  });
+
+  it("replays a rapid focus handoff before desktop visibility settles", () => {
+    const harness = createHarness({
+      window: createWindow({ visible: false }),
+    });
+    const nextWindow = createWindow({
+      geometry: { x: 340, y: 30, width: 300, height: 200 },
+      visible: false,
+    });
+    harness.effects.windowAdded.emit(nextWindow);
+    harness.effects.activeWindow = harness.window;
+    harness.setFullScreenEffectActive(true);
+
+    changeGeometry(harness.window, {
+      x: 60,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+    changeGeometry(nextWindow, {
+      x: 460,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+    changeGeometry(harness.window, {
+      x: 80,
+      y: 90,
+      width: 520,
+      height: 320,
+    });
+    changeGeometry(nextWindow, {
+      x: 480,
+      y: 90,
+      width: 520,
+      height: 320,
+    });
+
+    harness.effects.activeWindow = nextWindow;
+    harness.effects.windowActivated.emit(nextWindow);
+    harness.setFullScreenEffectActive(false);
+
+    expect(harness.animationRequests.map(({ window }) => window)).toEqual([
+      harness.window,
+      nextWindow,
+    ]);
+    expect(harness.animationRequests[0]).toMatchObject({
+      animations: [
+        {
+          type: "size",
+          from: { value1: 300, value2: 200 },
+          to: { value1: 520, value2: 320 },
+        },
+        {
+          type: "position",
+          from: { value1: 170, value2: 130 },
+          to: { value1: 340, value2: 250 },
+        },
+      ],
+    });
+
+    changeGeometry(harness.window, {
+      x: 100,
+      y: 110,
+      width: 540,
+      height: 340,
+    });
+    changeGeometry(nextWindow, {
+      x: 500,
+      y: 110,
+      width: 540,
+      height: 340,
+    });
+
+    expect(harness.animationRequests).toHaveLength(2);
+    expect(harness.retargetCalls.map(({ animationId }) => animationId)).toEqual(
+      [1, 2, 3, 4],
+    );
+    expect(harness.cancelledAnimations).toHaveLength(0);
+
+    nextWindow.onCurrentDesktop = false;
+    harness.effects.desktopChanged.emit(null, null, null, null);
+    changeGeometry(nextWindow, {
+      x: 520,
+      y: 130,
+      width: 560,
+      height: 360,
+    });
+    expect(harness.animationRequests).toHaveLength(2);
+    expect(harness.retargetCalls).toHaveLength(4);
+    expect(harness.cancelledAnimations).toEqual([3, 4]);
+
+    harness.finishAnimation(harness.window);
+    changeGeometry(harness.window, {
+      x: 120,
+      y: 130,
+      width: 560,
+      height: 360,
+    });
+    expect(harness.animationRequests).toHaveLength(2);
+    expect(harness.retargetCalls).toHaveLength(4);
+
+    const afterReleaseHarness = createHarness({
+      window: createWindow({ visible: false }),
+    });
+    afterReleaseHarness.effects.activeWindow = afterReleaseHarness.window;
+    afterReleaseHarness.setFullScreenEffectActive(true);
+    afterReleaseHarness.setFullScreenEffectActive(false);
+    changeGeometry(afterReleaseHarness.window, {
+      x: 60,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+    expect(afterReleaseHarness.animationRequests).toHaveLength(1);
+    afterReleaseHarness.finishAnimation(afterReleaseHarness.window);
+    afterReleaseHarness.effects.activeWindow = null;
+    changeGeometry(afterReleaseHarness.window, {
+      x: 80,
+      y: 90,
+      width: 520,
+      height: 320,
+    });
+    expect(afterReleaseHarness.animationRequests).toHaveLength(1);
+    expect(afterReleaseHarness.retargetCalls).toHaveLength(0);
   });
 
   it("replays deferred geometry on a later visible geometry opportunity", () => {

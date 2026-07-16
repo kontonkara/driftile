@@ -35,8 +35,13 @@ class DriftileTransitionsEffect {
     this.windowClassExclusions = new Set();
     this.managedWindows = [];
     this.deferredWindows = new Set();
+    this.visibilityLeasedWindows = new Set();
+    this.continuityLeasedWindows = new Set();
 
     effect.configChanged.connect(this.loadConfig.bind(this));
+    if (effect.animationEnded) {
+      effect.animationEnded.connect(this.onAnimationEnded.bind(this));
+    }
     effects.windowAdded.connect(this.manage.bind(this));
     effects.windowDeleted.connect(this.unmanage.bind(this));
     if (effects.hasActiveFullScreenEffectChanged) {
@@ -134,6 +139,11 @@ class DriftileTransitionsEffect {
   }
 
   onWindowFrameGeometryChanged(window, oldGeometry) {
+    if (window && window.visible) {
+      this.visibilityLeasedWindows.delete(window);
+      this.continuityLeasedWindows.delete(window);
+    }
+
     if (
       this.duration <= 0 ||
       !this.isDeferredTransitionEligible(window) ||
@@ -168,11 +178,16 @@ class DriftileTransitionsEffect {
       return;
     }
 
+    const visibilityLeaseUsed = this.visibilityLeasedWindows.has(window);
     this.animateWindowTransition(window, oldGeometry, newGeometry);
+    this.consumeVisibilityLease(window, visibilityLeaseUsed);
   }
 
   onFullScreenEffectChanged() {
     if (effects.hasActiveFullScreenEffect) {
+      this.visibilityLeasedWindows.clear();
+      this.continuityLeasedWindows.clear();
+      this.rememberVisibilityLease(effects.activeWindow);
       for (const window of this.managedWindows) {
         this.cancelWindowAnimation(window);
       }
@@ -183,27 +198,36 @@ class DriftileTransitionsEffect {
   }
 
   onVisibilityContextChanged() {
+    this.pruneVisibilityLeases();
     this.replayDeferredTransitions();
   }
 
   onWindowActivated(window) {
+    this.rememberVisibilityLease(window);
     this.replayDeferredTransition(window);
     this.replayDeferredTransitions(window);
   }
 
   onWindowVisibilityOpportunity(window) {
+    if (window) {
+      this.visibilityLeasedWindows.delete(window);
+      this.continuityLeasedWindows.delete(window);
+    }
+    this.rememberVisibilityLease(window);
     this.replayDeferredTransition(window);
   }
 
   deferWindowTransition(window, oldGeometry) {
     if (window[DEFERRED_PROPERTY] !== undefined) {
       this.deferredWindows.add(window);
+      this.rememberVisibilityLease(window);
       return;
     }
 
     this.cancelWindowAnimation(window);
     window[DEFERRED_PROPERTY] = this.copyGeometry(oldGeometry);
     this.deferredWindows.add(window);
+    this.rememberVisibilityLease(window);
   }
 
   replayDeferredTransitions(excludedWindow) {
@@ -240,23 +264,87 @@ class DriftileTransitionsEffect {
       return;
     }
 
-    if (!this.isDeferredTransitionPresentable(window)) {
+    if (!this.isTransitionPresentable(window)) {
       return;
     }
 
+    const visibilityLeaseUsed = this.visibilityLeasedWindows.has(window);
     delete window[DEFERRED_PROPERTY];
     this.deferredWindows.delete(window);
     this.animateWindowTransition(window, oldGeometry, newGeometry);
+    this.consumeVisibilityLease(window, visibilityLeaseUsed);
   }
 
   isDeferredTransitionPresentable(window) {
     return (
       window.visible ||
-      (effects.activeWindow === window &&
-        window.onCurrentDesktop &&
-        (effects.currentActivity.length === 0 ||
-          window.isOnActivity(effects.currentActivity)))
+      ((effects.activeWindow === window ||
+        this.visibilityLeasedWindows.has(window)) &&
+        this.isWindowInCurrentVisibilityContext(window))
     );
+  }
+
+  isTransitionPresentable(window) {
+    return (
+      this.isDeferredTransitionPresentable(window) ||
+      (this.continuityLeasedWindows.has(window) &&
+        this.hasActiveWindowAnimation(window) &&
+        this.isWindowInCurrentVisibilityContext(window))
+    );
+  }
+
+  isWindowInCurrentVisibilityContext(window) {
+    return (
+      window.onCurrentDesktop &&
+      (effects.currentActivity.length === 0 ||
+        window.isOnActivity(effects.currentActivity))
+    );
+  }
+
+  rememberVisibilityLease(window) {
+    if (
+      !window ||
+      (!effects.hasActiveFullScreenEffect &&
+        window[DEFERRED_PROPERTY] === undefined)
+    ) {
+      return;
+    }
+
+    if (
+      effects.activeWindow === window &&
+      this.isWindowInCurrentVisibilityContext(window)
+    ) {
+      this.visibilityLeasedWindows.add(window);
+    }
+  }
+
+  consumeVisibilityLease(window, leaseUsed) {
+    this.visibilityLeasedWindows.delete(window);
+    if (
+      leaseUsed &&
+      !window.visible &&
+      this.hasActiveWindowAnimation(window) &&
+      this.isWindowInCurrentVisibilityContext(window)
+    ) {
+      this.continuityLeasedWindows.add(window);
+    }
+  }
+
+  pruneVisibilityLeases() {
+    for (const window of this.visibilityLeasedWindows) {
+      if (!this.isWindowInCurrentVisibilityContext(window)) {
+        this.visibilityLeasedWindows.delete(window);
+      }
+    }
+    for (const window of this.continuityLeasedWindows) {
+      if (!this.isWindowInCurrentVisibilityContext(window)) {
+        this.continuityLeasedWindows.delete(window);
+      }
+    }
+  }
+
+  onAnimationEnded(window) {
+    this.continuityLeasedWindows.delete(window);
   }
 
   animateWindowTransition(window, oldGeometry, newGeometry) {
@@ -404,7 +492,7 @@ class DriftileTransitionsEffect {
 
   isEligible(window) {
     return (
-      this.isDeferredTransitionPresentable(window) &&
+      this.isTransitionPresentable(window) &&
       this.isDeferredTransitionEligible(window)
     );
   }
@@ -598,6 +686,24 @@ class DriftileTransitionsEffect {
     return {};
   }
 
+  hasActiveWindowAnimation(window) {
+    const state = window && window[ANIMATION_PROPERTY];
+    return (
+      state &&
+      typeof state === "object" &&
+      !Array.isArray(state) &&
+      this.hasActiveAnimationState(state)
+    );
+  }
+
+  hasActiveAnimationState(state) {
+    return (
+      state[SIZE_ANIMATION] !== undefined ||
+      state[POSITION_ANIMATION] !== undefined ||
+      state[TRANSLATION_ANIMATION] !== undefined
+    );
+  }
+
   retargetAnimation(state, property, target) {
     const animationId = state[property];
     if (animationId === undefined) {
@@ -702,6 +808,8 @@ class DriftileTransitionsEffect {
     this.cancelWindowAnimation(window);
     delete window[DEFERRED_PROPERTY];
     this.deferredWindows.delete(window);
+    this.visibilityLeasedWindows.delete(window);
+    this.continuityLeasedWindows.delete(window);
   }
 }
 
