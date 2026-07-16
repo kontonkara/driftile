@@ -1,12 +1,12 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.43.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.44.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.43.0 retains delayed close-focus recovery, retries decoration policy
-claims after KWin settlement, bounds transition bookkeeping, and keeps the
-Plasma launcher outside geometry interpolation. Logical persistence remains v4.
+Stable 1.44.0 adds optional pointer-edge overview activation, a configurable
+alpha backdrop, empty-card desktop selection, and matching Home Manager
+settings. Logical persistence remains v4.
 
 ## Foundation (delivered)
 
@@ -1798,7 +1798,7 @@ Release criteria (met):
 
 No unrelated feature belongs to 1.43.0.
 
-### 1.44.0 (in development)
+### 1.44.0 (released)
 
 - Add optional pointer screen-edge activation to the overview across all eight
   edges and corners, with `none` as the no-reservation default.
@@ -1809,7 +1809,7 @@ No unrelated feature belongs to 1.43.0.
 - Let Home Manager manage the edge and strict `#AARRGGBB` backdrop independently
   of package installation.
 
-Release criteria:
+Release criteria (met):
 
 - Live edge changes release the previous public KWin reservation, malformed
   external values fail safely, and edge activation never closes the overview.

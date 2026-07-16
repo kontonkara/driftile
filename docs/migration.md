@@ -1,7 +1,31 @@
 # Migration
 
-The latest stable release is 1.43.0. Use the steps below when changing release
+The latest stable release is 1.44.0. Use the steps below when changing release
 generations, and never combine files from different releases.
+
+## Upgrade from 1.43.0 to 1.44.0
+
+1. Release a helper-owned shortcut profile with the installed helper.
+2. Disable Driftile and both optional effects in System Settings.
+3. Install matching 1.44.0 artifacts, or pin the Nix input to `v1.44.0` and
+   rebuild.
+4. Re-enable Driftile and only the optional effects you use, then reclaim the
+   unchanged helper profile if needed.
+
+Logical layout state remains v4, and shortcut IDs and default bindings are
+unchanged. Upgrade the optional overview to receive pointer-edge activation,
+the configurable backdrop, and empty-card desktop selection. Screen-edge
+activation remains disabled unless configured. Home Manager can own the new
+nullable overview settings without taking package ownership.
+
+## Roll back from 1.44.0 to 1.43.0
+
+Release a helper-owned profile, disable Driftile and both optional effects,
+then restore matching verified 1.43.0 artifacts. NixOS and Home Manager users
+should remove `overview.screenEdge` and `overview.backdropColor` before
+restoring the input to `v1.43.0` and rebuilding. Both versions use logical
+layout state v4; the older overview ignores retained KConfig values for the
+new controls.
 
 ## Upgrade from 1.42.0 to 1.43.0
 
