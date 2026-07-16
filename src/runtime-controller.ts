@@ -2733,6 +2733,47 @@ export class RuntimeController {
     return this.floatActiveWindow(command);
   }
 
+  moveWindowToFloating(): boolean {
+    const activeWindow = this.workspace.activeWindow;
+
+    if (
+      !activeWindow ||
+      this.floatingWindows.has(windowId(String(activeWindow.internalId)))
+    ) {
+      return false;
+    }
+
+    const command = this.prepareActiveWindowCommand();
+
+    if (!command || this.floatingWindows.has(command.activeId)) {
+      return false;
+    }
+
+    return this.floatActiveWindow(command);
+  }
+
+  moveWindowToTiling(): boolean {
+    const activeWindow = this.workspace.activeWindow;
+
+    if (
+      !activeWindow ||
+      !this.floatingWindows.has(windowId(String(activeWindow.internalId)))
+    ) {
+      return false;
+    }
+
+    const command = this.prepareActiveWindowCommand();
+    const floating = command
+      ? this.floatingWindows.get(command.activeId)
+      : undefined;
+
+    if (!command || !floating) {
+      return false;
+    }
+
+    return this.tileActiveWindow(command, floating);
+  }
+
   switchFocusBetweenFloatingAndTiling(): boolean {
     return this.focusWindowLayer();
   }

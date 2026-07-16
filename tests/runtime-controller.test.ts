@@ -9756,6 +9756,8 @@ describe("RuntimeController", () => {
       () => controller.insertWindowIntoStackLeft(),
       () => controller.insertWindowIntoStackRight(),
       () => controller.toggleFloating(),
+      () => controller.moveWindowToFloating(),
+      () => controller.moveWindowToTiling(),
       () => controller.moveWindowToPreviousDesktop(),
       () => controller.moveWindowToNextDesktop(),
       () => controller.moveColumnToPreviousDesktop(),
@@ -9830,6 +9832,8 @@ describe("RuntimeController", () => {
     const tiledFrame = { ...tiled.window.frameGeometry };
     const tiledWrites = tiled.writeCount;
     expect(controller.centerColumn()).toBe(false);
+    expect(controller.moveWindowToFloating()).toBe(false);
+    expect(controller.moveWindowToTiling()).toBe(false);
     expect(excluded.window.frameGeometry).toEqual(excludedFrame);
     expect(excluded.writeCount).toBe(0);
     expect(tiled.window.frameGeometry).toEqual(tiledFrame);
@@ -18328,7 +18332,7 @@ describe("RuntimeController", () => {
     expect(fixture.activationCount).toBe(1);
   });
 
-  it("floats a singleton to its exact baseline and retiles it at its anchor", () => {
+  it("places a singleton explicitly in floating and tiling layers", () => {
     const output = createOutput("DP-1", 0);
     const otherOutput = createOutput("HDMI-A-1", 1000);
     const desktop = { id: "desktop-1" };
@@ -18370,7 +18374,7 @@ describe("RuntimeController", () => {
     const unrelatedFrame = { ...unrelated.window.frameGeometry };
     const unrelatedWrites = unrelated.writeCount;
 
-    expect(controller.toggleFloating()).toBe(true);
+    expect(controller.moveWindowToFloating()).toBe(true);
     expect(controller.floatingCount).toBe(1);
     expect(controller.managedCount).toBe(3);
     expect(active.window.frameGeometry).toEqual(baseline);
@@ -18379,8 +18383,26 @@ describe("RuntimeController", () => {
       { id: "column:window-3", windowIds: ["window-3"] },
     ]);
     expect(fixture.workspace.activeWindow).toBe(active.window);
+    const floatingLayout = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
+    );
+    const floatingWrites = active.writeCount;
+    expect(controller.moveWindowToFloating()).toBe(false);
+    expect(controller.floatingCount).toBe(1);
+    expect(controller.managedCount).toBe(3);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
+    ).toEqual(floatingLayout);
+    expect(active.window.frameGeometry).toEqual(baseline);
+    expect(active.writeCount).toBe(floatingWrites);
 
-    expect(controller.toggleFloating()).toBe(true);
+    expect(controller.moveWindowToTiling()).toBe(true);
     expect(controller.floatingCount).toBe(0);
     expect(controller.managedCount).toBe(4);
     expect(active.window.frameGeometry).toEqual(tiledFrame);
@@ -18391,6 +18413,24 @@ describe("RuntimeController", () => {
     ]);
     expect(fixture.workspace.activeWindow).toBe(active.window);
     expect(fixture.activationCount).toBe(activationCount);
+    const tiledLayout = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
+    );
+    const tiledWrites = active.writeCount;
+    expect(controller.moveWindowToTiling()).toBe(false);
+    expect(controller.floatingCount).toBe(0);
+    expect(controller.managedCount).toBe(4);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
+    ).toEqual(tiledLayout);
+    expect(active.window.frameGeometry).toEqual(tiledFrame);
+    expect(active.writeCount).toBe(tiledWrites);
     expect(
       runtimeLayout(controller).snapshot(
         outputId(otherOutput.name),
