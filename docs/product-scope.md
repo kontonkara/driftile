@@ -561,6 +561,9 @@ Driftile must integrate with, not duplicate:
 - A whole-column transfer commits only after every KWin mechanism and both context layouts succeed; partial work is compensated exactly.
 - Desktop switching follows KWin's global or per-output virtual-desktop mode while layout ownership remains output-local.
 - Desktop reordering asks KWin to move the currently selected desktop by exactly one global position without wrapping. Desktop IDs, every output's selection, and every window's desktop memberships remain unchanged.
+- Nine unbound direct reorder actions move the selected desktop to a one-based
+  movable position. Oversized positions clamp to the last movable desktop;
+  selecting its current position is a no-op.
 - If the KWin scripting backend does not expose desktop reordering, the command is a no-op.
 - The shared trailing empty desktop is pinned at the end. When the optional
   leading empty desktop is enabled, it is pinned at the beginning. Neither can

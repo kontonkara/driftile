@@ -2,6 +2,12 @@ import type { KWinOutput, KWinWindow, KWinWorkspace } from "./api";
 
 export type DesktopReorderDirection = -1 | 1;
 
+export const NUMBERED_DESKTOP_REORDER_LIMIT = 9;
+
+type DesktopReorderTarget =
+  | { readonly direction: DesktopReorderDirection; readonly kind: "adjacent" }
+  | { readonly index: number; readonly kind: "numbered" };
+
 export interface DesktopLifecycleSnapshot {
   readonly desktopIds: readonly string[];
   readonly occupiedDesktopIds: ReadonlySet<string>;
@@ -314,6 +320,28 @@ export class DesktopLifecycle {
     output: KWinOutput,
     direction: DesktopReorderDirection,
   ): boolean {
+    return this.reorderSelectedDesktop(output, {
+      direction,
+      kind: "adjacent",
+    });
+  }
+
+  moveSelectedDesktopToIndex(output: KWinOutput, index: number): boolean {
+    if (
+      !Number.isInteger(index) ||
+      index < 1 ||
+      index > NUMBERED_DESKTOP_REORDER_LIMIT
+    ) {
+      return false;
+    }
+
+    return this.reorderSelectedDesktop(output, { index, kind: "numbered" });
+  }
+
+  private reorderSelectedDesktop(
+    output: KWinOutput,
+    target: DesktopReorderTarget,
+  ): boolean {
     if (
       !this.started ||
       this.dirty ||
@@ -332,17 +360,21 @@ export class DesktopLifecycle {
     }
 
     const sourceIndex = before.desktopIds.indexOf(before.selectedDesktopId);
-    const targetIndex = sourceIndex + direction;
+    const firstMovableIndex = this.keepEmptyDesktopAboveFirst ? 1 : 0;
+    const lastMovableIndex = before.desktopIds.length - 2;
+    const targetIndex =
+      target.kind === "adjacent"
+        ? sourceIndex + target.direction
+        : Math.min(firstMovableIndex + target.index - 1, lastMovableIndex);
     const leadingDesktopId = before.desktopIds[0];
-    const trailingIndex = before.desktopIds.length - 1;
-    const trailingDesktopId = before.desktopIds[trailingIndex];
+    const trailingDesktopId = before.desktopIds[lastMovableIndex + 1];
 
     if (
-      sourceIndex < 0 ||
-      sourceIndex === trailingIndex ||
-      (this.keepEmptyDesktopAboveFirst && sourceIndex === 0) ||
-      targetIndex < (this.keepEmptyDesktopAboveFirst ? 1 : 0) ||
-      targetIndex >= trailingIndex ||
+      sourceIndex < firstMovableIndex ||
+      sourceIndex > lastMovableIndex ||
+      targetIndex < firstMovableIndex ||
+      targetIndex > lastMovableIndex ||
+      targetIndex === sourceIndex ||
       !leadingDesktopId ||
       !trailingDesktopId ||
       (this.keepEmptyDesktopAboveFirst &&

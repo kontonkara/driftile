@@ -192,6 +192,7 @@ import { KWinActivityAdapter } from "./platform/kwin/activity-adapter";
 import { applicationRuleIdentity } from "./platform/kwin/application-identity";
 import {
   DesktopLifecycle,
+  NUMBERED_DESKTOP_REORDER_LIMIT,
   type DesktopReorderDirection,
 } from "./platform/kwin/desktop-lifecycle";
 import {
@@ -2989,6 +2990,18 @@ export class RuntimeController {
 
   moveDesktopUp(): boolean {
     return this.moveSelectedDesktop(-1);
+  }
+
+  moveDesktopToIndex(index: number): boolean {
+    if (
+      !Number.isInteger(index) ||
+      index < 1 ||
+      index > NUMBERED_DESKTOP_REORDER_LIMIT
+    ) {
+      return false;
+    }
+
+    return this.moveSelectedDesktopToIndex(index);
   }
 
   moveColumnLeft(): boolean {
@@ -8282,6 +8295,26 @@ export class RuntimeController {
 
     this.lastWrites = 0;
     return this.desktopLifecycle.moveSelectedDesktop(output, direction);
+  }
+
+  private moveSelectedDesktopToIndex(index: number): boolean {
+    if (
+      !this.desktopLifecycleCanMutate() ||
+      this.stackEditOperation ||
+      this.stackedNativeStateOperation ||
+      this.startupStabilizationToken !== null
+    ) {
+      return false;
+    }
+
+    const output = this.workspace.activeScreen;
+
+    if (!output || !this.workspace.screens.includes(output)) {
+      return false;
+    }
+
+    this.lastWrites = 0;
+    return this.desktopLifecycle.moveSelectedDesktopToIndex(output, index);
   }
 
   private desktopTargetIndex(

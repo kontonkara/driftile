@@ -710,7 +710,7 @@ describe("DesktopLifecycle", () => {
     expect(fixture.removeCount).toBe(1);
   });
 
-  it("moves the selected desktop forward and back without changing identities or selections", () => {
+  it("moves the selected desktop adjacently and directly without changing identities or selections", () => {
     const primary = { id: "desktop-1" };
     const secondary = { id: "desktop-2" };
     const primaryWindow = createWindow("window-1", [primary]);
@@ -748,7 +748,28 @@ describe("DesktopLifecycle", () => {
     expect(fixture.selectedDesktop(otherOutput)).toBe(secondary);
     expect(primaryWindow.desktops).toEqual([primary]);
     expect(secondaryWindow.desktops).toEqual([secondary]);
+
+    fixture.reconcile();
+    expect(fixture.lifecycle.moveSelectedDesktopToIndex(activeOutput, 9)).toBe(
+      true,
+    );
+    expect(fixture.desktops).toEqual([secondary, primary, trailing]);
+    expect(fixture.selectedDesktop(activeOutput)).toBe(primary);
+    expect(fixture.selectedDesktop(otherOutput)).toBe(secondary);
+    expect(primaryWindow.desktops).toEqual([primary]);
+    expect(secondaryWindow.desktops).toEqual([secondary]);
+
+    fixture.reconcile();
+    expect(fixture.lifecycle.moveSelectedDesktopToIndex(activeOutput, 1)).toBe(
+      true,
+    );
+    expect(fixture.desktops).toEqual([primary, secondary, trailing]);
+    expect(fixture.lifecycle.moveSelectedDesktopToIndex(activeOutput, 1)).toBe(
+      false,
+    );
     expect(fixture.moveRequests).toEqual([
+      { desktopId: primary.id, position: 1 },
+      { desktopId: primary.id, position: 0 },
       { desktopId: primary.id, position: 1 },
       { desktopId: primary.id, position: 0 },
     ]);
@@ -817,6 +838,7 @@ describe("DesktopLifecycle", () => {
     fixture.select(output, leading);
     fixture.reconcile();
     expect(fixture.lifecycle.moveSelectedDesktop(output, 1)).toBe(false);
+    expect(fixture.lifecycle.moveSelectedDesktopToIndex(output, 1)).toBe(false);
 
     fixture.select(output, primary);
     fixture.reconcile();
@@ -829,12 +851,23 @@ describe("DesktopLifecycle", () => {
     fixture.select(output, trailing);
     fixture.reconcile();
     expect(fixture.lifecycle.moveSelectedDesktop(output, -1)).toBe(false);
+    expect(fixture.lifecycle.moveSelectedDesktopToIndex(output, 1)).toBe(false);
 
     fixture.select(output, primary);
     fixture.reconcile();
     expect(fixture.lifecycle.moveSelectedDesktop(output, 1)).toBe(true);
     expect(fixture.desktops).toEqual([leading, secondary, primary, trailing]);
+
+    fixture.reconcile();
+    expect(fixture.lifecycle.moveSelectedDesktopToIndex(output, 1)).toBe(true);
+    expect(fixture.desktops).toEqual([leading, primary, secondary, trailing]);
+
+    fixture.reconcile();
+    expect(fixture.lifecycle.moveSelectedDesktopToIndex(output, 9)).toBe(true);
+    expect(fixture.desktops).toEqual([leading, secondary, primary, trailing]);
     expect(fixture.moveRequests).toEqual([
+      { desktopId: primary.id, position: 2 },
+      { desktopId: primary.id, position: 1 },
       { desktopId: primary.id, position: 2 },
     ]);
   });

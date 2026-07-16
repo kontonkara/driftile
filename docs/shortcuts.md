@@ -356,6 +356,12 @@ pinned at the beginning. Neither boundary nor another desktop can cross a
 pinned boundary. On KWin X11 builds without the reorder method, these actions
 leave the desktop list and all window state unchanged.
 
+`driftile_move_desktop_to_index_1` through
+`driftile_move_desktop_to_index_9` are unbound direct reorder actions. Their
+one-based positions count only movable desktops, an oversized position clamps
+to the last movable desktop, and the protected empty boundaries remain pinned.
+The current position and an unavailable or rejected KWin reorder are no-ops.
+
 When the floating layer is active, desktop transfer shortcuts move only the
 active floating window and preserve its frame. Modal and transient families
 are left in place because KWin moves those relationships as a group.

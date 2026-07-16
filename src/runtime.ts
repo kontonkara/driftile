@@ -394,6 +394,10 @@ export function moveDesktopUp(): void {
   runCommand((activeController) => activeController.moveDesktopUp());
 }
 
+export function moveDesktopToIndex(index: number): void {
+  runCommand((activeController) => activeController.moveDesktopToIndex(index));
+}
+
 export function moveColumnLeft(): void {
   runCommand((activeController) => activeController.moveColumnLeft());
 }

@@ -39931,7 +39931,7 @@ describe("RuntimeController", () => {
     expect(controller.focusLastUsedDesktop()).toBe(false);
   });
 
-  it("preserves runtime state while desktop reorder moves down and exactly back up", () => {
+  it("preserves runtime state across adjacent and direct desktop reorder", () => {
     const setup = createDesktopReorderRuntimeFixture();
     const contexts = [setup.activeOutput, setup.otherOutput].flatMap((output) =>
       [setup.primary, setup.secondary, setup.trailing].map((desktop) => ({
@@ -40007,7 +40007,26 @@ describe("RuntimeController", () => {
       setup.trailing,
     ]);
     expectRuntimeStatePreserved();
+
+    expect(setup.controller.moveDesktopToIndex(9)).toBe(true);
+    expect(setup.desktopOrder).toEqual([
+      setup.secondary,
+      setup.primary,
+      setup.trailing,
+    ]);
+    expectRuntimeStatePreserved();
+
+    expect(setup.controller.moveDesktopToIndex(1)).toBe(true);
+    expect(setup.desktopOrder).toEqual([
+      setup.primary,
+      setup.secondary,
+      setup.trailing,
+    ]);
+    expectRuntimeStatePreserved();
+    expect(setup.controller.moveDesktopToIndex(1)).toBe(false);
     expect(setup.moveRequests).toEqual([
+      { desktopId: setup.primary.id, position: 1 },
+      { desktopId: setup.primary.id, position: 0 },
       { desktopId: setup.primary.id, position: 1 },
       { desktopId: setup.primary.id, position: 0 },
     ]);
@@ -40025,6 +40044,7 @@ describe("RuntimeController", () => {
     );
 
     expect(unavailable.controller.moveDesktopDown()).toBe(false);
+    expect(unavailable.controller.moveDesktopToIndex(2)).toBe(false);
     expect(unavailable.desktopOrder).toEqual([
       unavailable.primary,
       unavailable.secondary,
@@ -40041,6 +40061,9 @@ describe("RuntimeController", () => {
     const boundary = createDesktopReorderRuntimeFixture();
 
     expect(boundary.controller.moveDesktopUp()).toBe(false);
+    expect(boundary.controller.moveDesktopToIndex(0)).toBe(false);
+    expect(boundary.controller.moveDesktopToIndex(10)).toBe(false);
+    expect(boundary.controller.moveDesktopToIndex(1)).toBe(false);
     expect(boundary.moveRequests).toEqual([]);
 
     boundary.fixture.setCurrentDesktop(

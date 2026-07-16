@@ -1830,6 +1830,8 @@ No unrelated feature belongs to 1.44.0.
   names without positional fallback.
 - Expose the bounded mapping through KConfig and Home Manager without adding an
   action, default binding, or persistence field.
+- Add nine unbound actions that move the selected desktop directly to a
+  one-based movable position while preserving protected empty boundaries.
 
 Release criteria:
 
@@ -1837,6 +1839,8 @@ Release criteria:
   back-and-forth compares the resolved desktop identity.
 - Live edits and desktop renames apply without restarting KWin or caching stale
   names.
+- Direct reorder clamps oversized positions, treats the current position as a
+  no-op, and retains the existing exact one-call verification.
 - One grouped unit, package, Nix, X11, and Wayland gate passes on the batch
   head before publication.
 

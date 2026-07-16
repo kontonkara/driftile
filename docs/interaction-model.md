@@ -104,25 +104,25 @@ without another write.
 
 ## Delivery contract
 
-| Area                 | Required behavior                                                                               | Target    |
-| -------------------- | ----------------------------------------------------------------------------------------------- | --------- |
-| Horizontal strip     | Focus and reorder columns; focus or move to first and last; reveal with minimal scrolling       | Available |
-| Vertical column      | Focus and reorder members; consume or expel active, top, or bottom members                      | Available |
-| Column view          | Cycle configured widths in both directions; adjust by 10%; toggle full width; center            | Available |
-| Advanced column view | Fill available width and center all fully visible columns                                       | Available |
-| Window height        | Adjust one window by 10%; reset to automatic; cycle configured presets                          | Available |
-| Virtual desktops     | Focus adjacent or numbered desktops; reorder when KWin supports it; transfer a column or window | Available |
-| Outputs              | Focus an adjacent output and transfer the active column or floating window                      | Available |
-| Fullscreen           | Extract a regular stack member, then toggle native fullscreen through KWin                      | Available |
-| Native maximize      | Extract a regular stack member, then toggle it to work-area edges through KWin                  | Available |
-| Minimize focus       | Preserve tiled slots and floating frames; skip minimized windows without wrapping               | Available |
-| Hidden-member edits  | Preserve documented passive peers; reject every other minimized-member structural edit          | Available |
-| Floating layer       | Toggle state, switch layers, navigate geometrically, nudge, center, and resize contextually     | Available |
-| Pointer drop         | Reinsert a tiled window or tile a manual floating window at an exact window or empty gutter     | Available |
-| Pointer resize       | Adopt one completed horizontal column resize or vertical stacked-window resize                  | Available |
-| Overview companion   | Filter or activate windows; select or reorder desktops; move windows between desktop cards      | Available |
-| Tabbed columns       | Toggle presentation; select or reorder members with the existing vertical grammar               | 1.19.0    |
-| Pointer navigation   | Cycle the overview's shared actionable target model with vertical mouse wheel input             | Available |
+| Area                 | Required behavior                                                                                   | Target    |
+| -------------------- | --------------------------------------------------------------------------------------------------- | --------- |
+| Horizontal strip     | Focus and reorder columns; focus or move to first and last; reveal with minimal scrolling           | Available |
+| Vertical column      | Focus and reorder members; consume or expel active, top, or bottom members                          | Available |
+| Column view          | Cycle configured widths in both directions; adjust by 10%; toggle full width; center                | Available |
+| Advanced column view | Fill available width and center all fully visible columns                                           | Available |
+| Window height        | Adjust one window by 10%; reset to automatic; cycle configured presets                              | Available |
+| Virtual desktops     | Focus adjacent or numbered desktops; reorder adjacently or by position; transfer a column or window | Available |
+| Outputs              | Focus an adjacent output and transfer the active column or floating window                          | Available |
+| Fullscreen           | Extract a regular stack member, then toggle native fullscreen through KWin                          | Available |
+| Native maximize      | Extract a regular stack member, then toggle it to work-area edges through KWin                      | Available |
+| Minimize focus       | Preserve tiled slots and floating frames; skip minimized windows without wrapping                   | Available |
+| Hidden-member edits  | Preserve documented passive peers; reject every other minimized-member structural edit              | Available |
+| Floating layer       | Toggle state, switch layers, navigate geometrically, nudge, center, and resize contextually         | Available |
+| Pointer drop         | Reinsert a tiled window or tile a manual floating window at an exact window or empty gutter         | Available |
+| Pointer resize       | Adopt one completed horizontal column resize or vertical stacked-window resize                      | Available |
+| Overview companion   | Filter or activate windows; select or reorder desktops; move windows between desktop cards          | Available |
+| Tabbed columns       | Toggle presentation; select or reorder members with the existing vertical grammar                   | 1.19.0    |
+| Pointer navigation   | Cycle the overview's shared actionable target model with vertical mouse wheel input                 | Available |
 
 Adjacent and numbered single-window transfers remain secondary, unbound
 actions. Default desktop and output transfer shortcuts must move the whole

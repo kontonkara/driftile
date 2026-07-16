@@ -616,6 +616,51 @@ QtObject {
         sequence: "Meta+Shift+PgUp"
         onActivated: Runtime.DriftileRuntime.moveDesktopUp()
     }
+    readonly property ShortcutHandler moveDesktopToIndex1Shortcut: ShortcutHandler {
+        name: "driftile_move_desktop_to_index_1"
+        text: "Driftile: Move desktop to position 1"
+        onActivated: Runtime.DriftileRuntime.moveDesktopToIndex(1)
+    }
+    readonly property ShortcutHandler moveDesktopToIndex2Shortcut: ShortcutHandler {
+        name: "driftile_move_desktop_to_index_2"
+        text: "Driftile: Move desktop to position 2"
+        onActivated: Runtime.DriftileRuntime.moveDesktopToIndex(2)
+    }
+    readonly property ShortcutHandler moveDesktopToIndex3Shortcut: ShortcutHandler {
+        name: "driftile_move_desktop_to_index_3"
+        text: "Driftile: Move desktop to position 3"
+        onActivated: Runtime.DriftileRuntime.moveDesktopToIndex(3)
+    }
+    readonly property ShortcutHandler moveDesktopToIndex4Shortcut: ShortcutHandler {
+        name: "driftile_move_desktop_to_index_4"
+        text: "Driftile: Move desktop to position 4"
+        onActivated: Runtime.DriftileRuntime.moveDesktopToIndex(4)
+    }
+    readonly property ShortcutHandler moveDesktopToIndex5Shortcut: ShortcutHandler {
+        name: "driftile_move_desktop_to_index_5"
+        text: "Driftile: Move desktop to position 5"
+        onActivated: Runtime.DriftileRuntime.moveDesktopToIndex(5)
+    }
+    readonly property ShortcutHandler moveDesktopToIndex6Shortcut: ShortcutHandler {
+        name: "driftile_move_desktop_to_index_6"
+        text: "Driftile: Move desktop to position 6"
+        onActivated: Runtime.DriftileRuntime.moveDesktopToIndex(6)
+    }
+    readonly property ShortcutHandler moveDesktopToIndex7Shortcut: ShortcutHandler {
+        name: "driftile_move_desktop_to_index_7"
+        text: "Driftile: Move desktop to position 7"
+        onActivated: Runtime.DriftileRuntime.moveDesktopToIndex(7)
+    }
+    readonly property ShortcutHandler moveDesktopToIndex8Shortcut: ShortcutHandler {
+        name: "driftile_move_desktop_to_index_8"
+        text: "Driftile: Move desktop to position 8"
+        onActivated: Runtime.DriftileRuntime.moveDesktopToIndex(8)
+    }
+    readonly property ShortcutHandler moveDesktopToIndex9Shortcut: ShortcutHandler {
+        name: "driftile_move_desktop_to_index_9"
+        text: "Driftile: Move desktop to position 9"
+        onActivated: Runtime.DriftileRuntime.moveDesktopToIndex(9)
+    }
     readonly property ShortcutHandler focusDesktop1Shortcut: ShortcutHandler {
         name: "driftile_focus_desktop_1"
         text: "Driftile: Focus desktop 1"
