@@ -1439,6 +1439,11 @@ edits one Unicode code point, Escape clears before closing, and spatial
 selection repairs within the remaining visible targets. Search remains
 session-only and read-only toward KWin and layout state.
 
+Keyboard navigation also includes the number gutter of every non-current live
+desktop, including the shared empty tail. Enter reuses the guarded desktop
+selection path, while the current gutter remains inert and all gutter targets
+stay outside an active window search.
+
 ## Post-v1
 
 Add interaction and presentation features outside the frozen v1 scope without
