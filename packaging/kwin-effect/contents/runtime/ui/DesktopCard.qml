@@ -178,6 +178,25 @@ Rectangle {
             }
         }
 
+        Item {
+            id: emptyContentInput
+
+            anchors.fill: parent
+            z: 1
+
+            TapHandler {
+                acceptedButtons: Qt.LeftButton
+                acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                enabled: !card.current && card.desktop && card.screen
+                         && card.searchQuery.trim().length === 0
+                onTapped: point => {
+                    if (!card.viewportPointHitsWindow(point.position)) {
+                        card.desktopTapped(card.desktop, card.desktopId, card.screen);
+                    }
+                }
+            }
+        }
+
         Repeater {
             id: windowRepeater
 
@@ -641,6 +660,29 @@ Rectangle {
         }
 
         return targets;
+    }
+
+    function viewportPointHitsWindow(point) {
+        for (let index = 0; index < windowRepeater.count; index += 1) {
+            const presentation = windowRepeater.itemAt(index);
+            if (!presentation) {
+                continue;
+            }
+            if (visualContainsViewportPoint(presentation.thumbnailTarget, point)
+                    || visualContainsViewportPoint(presentation.tabTarget, point)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function visualContainsViewportPoint(visual, point) {
+        if (!visual || !visual.visible || visual.width <= 0 || visual.height <= 0) {
+            return false;
+        }
+        const localPoint = visual.mapFromItem(emptyContentInput, point.x, point.y);
+        return localPoint.x >= 0 && localPoint.y >= 0
+            && localPoint.x < visual.width && localPoint.y < visual.height;
     }
 
     function desktopNavigationTargetId() {
