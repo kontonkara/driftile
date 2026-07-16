@@ -53,10 +53,10 @@ The ownership rule is strict:
 - Up to 128 exact KWin `desktopFileName` exclusions that keep matching
   application windows outside tiling and apply live without taking geometry
   ownership.
-- Up to 16 configurable, strictly increasing 10%–100% column-width presets for
-  contextual tiled or manual-floating actions; an empty configuration retains
-  the built-in exact thirds.
-- Up to 16 configurable, strictly increasing integer 10%–100% window-height
+- Up to 16 configurable mixed proportional or fixed logical-pixel column-width
+  presets for contextual tiled or manual-floating actions; an empty
+  configuration retains the built-in exact thirds.
+- Up to 16 configurable mixed proportional or fixed logical-pixel window-height
   presets for tiled or contextual manual-floating actions; an empty
   configuration retains the exact `1/3`, `1/2`, and `2/3` proportions.
 - Optional best-effort centering for successful horizontal tiled focus,

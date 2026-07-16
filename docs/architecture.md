@@ -276,13 +276,13 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   duplicates, controls, invalid UTF-16, and oversized input fail the complete
   settings snapshot. Valid entries are held in canonical sorted order with
   constant-time membership lookup.
-- Replaces at most 16 column-width presets atomically without layout work;
-  existing columns and floating frames retain their widths, and later
-  contextual preset actions read the new cycle.
-- Replaces at most 16 strictly increasing integer window-height presets from
-  10% through 100% atomically without geometry or layout work. A blank cycle
-  retains the exact `1/3`, `1/2`, and `2/3` proportions; later tiled or
-  contextual floating preset actions read the current cycle.
+- Replaces at most 16 mixed proportional or fixed logical-pixel column-width
+  presets atomically without layout work; existing columns and floating frames
+  retain their widths, and later contextual preset actions read the new cycle.
+- Replaces at most 16 mixed proportional or fixed logical-pixel window-height
+  presets atomically without geometry or layout work. Stable bounded state
+  indices keep an existing selection meaningful after live profile changes. A
+  blank cycle retains the exact `1/3`, `1/2`, and `2/3` proportions.
 - Optionally centers the destination of successful horizontal tiled focus
   navigation inside the existing focus transaction. A separate overflow mode
   centers only when the destination and its nearest directional neighbor do not
@@ -441,8 +441,10 @@ pixel grid before subtraction. Preset and reset width targets and preset-height
 targets additionally require a relation-free manual-floating window. The
 requested dimension snaps to the physical-pixel grid using the assigned
 output's device-pixel ratio and clamps to its live decorated minimum and maximum
-plus a positive client extent. The other dimension and top-left remain
-unchanged unless the partial-visibility bounds require a minimal origin clamp.
+plus a positive client extent. Fixed width presets resolve directly in logical
+pixels; fixed height presets store client height and add the current decoration
+extent. The other dimension and top-left remain unchanged unless the
+partial-visibility bounds require a minimal origin clamp.
 
 The per-window `frameGeometryChanged` handler is connected before exactly one
 forward frame request. An exact synchronous X11 or XWayland result settles

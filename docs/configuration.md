@@ -373,8 +373,10 @@ The value is a percentage-point step of the gap-adjusted work-area span, not a p
 
 **Column width presets** controls the contextual forward and backward preset
 actions for the active tiled column or one relation-free manually floating
-window. Enter up to 16 comma-separated, strictly increasing integer percentages
-from `10` to `100`. A blank value keeps the built-in exact thirds.
+window. Enter up to 16 comma-separated values. Bare `10`–`100` values and
+explicit `10%`–`100%` values are proportional; `1px`–`16384px` values are fixed
+logical-pixel widths. Values must increase within each unit, while mixed values
+retain their written cycle order. A blank value keeps the built-in exact thirds.
 
 Changing the list performs no layout work and preserves existing column widths
 and floating frames. The next preset action reads the new list and applies the
@@ -400,8 +402,9 @@ separately, and window-height reset remains tiled-only.
 **Window height presets** controls the forward and reverse preset actions for
 the active tiled window or one eligible relation-free manually floating window.
 A blank KConfig value or an empty Home Manager list preserves the built-in exact
-`1/3`, `1/2`, and `2/3` proportions. A custom value contains 1–16 strictly
-increasing integer percentages from `10` to `100`.
+`1/3`, `1/2`, and `2/3` proportions. A custom value accepts the same mixed
+percentage and `1px`–`16384px` syntax as column-width presets. Fixed height is
+the client height; KWin decorations remain outside that value.
 
 Changing the list performs no immediate layout, frame, focus, or persistence
 work. Later explicit height-preset actions read the new cycle. Window-height

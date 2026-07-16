@@ -205,6 +205,9 @@ otherwise blocked floating targets fail closed without reaching tiled width
 changes. Tiled behavior is unchanged. The geometry path adds no persistence or
 helper behavior and requires no additional KWin API.
 
+A width preset ending in `px` resolves directly in logical pixels. Mixed fixed
+and proportional presets retain their configured cycle order.
+
 The existing decrease/increase window-height actions are contextual in the
 same way. With an active manually floating window, they change the decorated
 frame height by `WindowHeightStepPercent` of the assigned work-area height;
@@ -218,14 +221,15 @@ stack resizing. Tiled semantics are otherwise unchanged.
 The existing forward and reverse window-height preset actions are contextual
 for one active relation-free manually floating window. Blank
 `WindowHeightPresets` uses the exact `1/3`, `1/2`, and `2/3` proportions. A
-custom value contains 1–16 strictly increasing integer percentages from 10
-through 100; each raw frame height is
+custom value contains up to 16 mixed proportional or fixed logical-pixel
+entries. Each proportional raw frame height is
 `percentage / 100 * (workArea.height - gap) - gap`. Driftile snaps the
 canonical start at `workArea.y + gap` and the end at `start + rawHeight` to the
 assigned output's pixel grid before subtracting them. Forward selects the first
 resolved height more than one logical pixel above the current frame and wraps
 to the first preset; reverse selects the last resolved height more than one
-logical pixel below the current frame and wraps to the last.
+logical pixel below the current frame and wraps to the last. A fixed `px` entry
+sets client height, with the live decoration extent added to the frame target.
 
 The shared manual-floating size transaction applies live decorated constraints
 and the established partial-reachability clamp. It preserves width, focus,

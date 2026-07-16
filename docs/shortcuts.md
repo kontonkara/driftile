@@ -262,6 +262,9 @@ Automatic, related, pending, or otherwise blocked floating targets are no-ops
 without tiled fallback. The geometry path adds no persistence or helper
 behavior.
 
+Fixed `px` width presets resolve directly in logical pixels; mixed fixed and
+proportional presets retain their configured cycle order.
+
 `Meta+Shift+-` and `Meta+Shift+=` are also contextual. On an active manually
 floating window, they change the decorated frame height by
 `WindowHeightStepPercent` of the assigned work-area height, excluding the gap.
@@ -273,9 +276,9 @@ and a blocked or pending floating target never falls through to stack resizing.
 
 `Meta+Ctrl+Shift+R` and the unbound reverse window-height preset action are
 also contextual for one active relation-free manually floating window.
-`WindowHeightPresets` accepts 1–16 strictly increasing integer percentages from
-10 through 100; a blank value uses the exact `1/3`, `1/2`, and `2/3`
-proportions. Custom targets resolve as
+`WindowHeightPresets` accepts up to 16 mixed percentages and fixed `px` client
+heights; a blank value uses the exact `1/3`, `1/2`, and `2/3` proportions.
+Proportional targets resolve as
 `percentage / 100 * (workArea.height - gap) - gap`. The canonical start at
 `workArea.y + gap` and the end at `start + rawHeight` are snapped to the
 assigned output's pixel grid for both cycles.

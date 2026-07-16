@@ -97,10 +97,10 @@ The current runtime already:
   constraint clamping. Existing columns remain unchanged.
 - Excludes up to 128 exact, case-sensitive `desktopFileName` values from layout
   ownership, with live release and fresh readmission when the policy changes.
-- Configures up to 16 strictly increasing column-width presets for later tiled
-  or manual-floating actions without changing existing widths; a blank
-  configuration retains the built-in exact thirds.
-- Configures up to 16 strictly increasing integer 10%–100% window-height
+- Configures up to 16 mixed proportional or fixed logical-pixel column-width
+  presets for later tiled or manual-floating actions without changing existing
+  widths; a blank configuration retains the built-in exact thirds.
+- Configures up to 16 mixed proportional or fixed logical-pixel window-height
   presets for later explicit tiled or eligible manual-floating actions without
   changing layouts, frames, viewports, focus, persistence, or the semantic
   selection of an existing tiled preset. A blank configuration retains the
@@ -1554,6 +1554,8 @@ No other feature belongs to 1.34.0.
 - Add an opt-in empty virtual desktop before the first occupied desktop while
   preserving the shared trailing empty desktop, safe ownership, and pinned
   reorder boundaries.
+- Accept mixed proportional and fixed logical-pixel column-width and
+  window-height preset cycles through KConfig, NixOS, and Home Manager.
 - Keep the geometry behaviors inside the existing solver and physical-pixel
   snapping boundary. Floating windows, multi-column contexts, and logical
   persistence remain unchanged.
