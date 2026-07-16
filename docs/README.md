@@ -24,4 +24,6 @@ do.
 
 - [Troubleshooting](troubleshooting.md): recovery steps, diagnostics, and issue
   reports.
-- [Migration](migration.md): version-specific upgrade and rollback steps.
+
+Version-specific upgrade and rollback notes remain available from the
+[installation guide](installation.md#compatibility-and-migration) when needed.

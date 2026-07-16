@@ -89,8 +89,7 @@ For problems, follow the [troubleshooting guide](docs/troubleshooting.md) and
 ## Documentation
 
 The [documentation index](docs/README.md) links the installation,
-configuration, shortcut, interaction, overview, compatibility, migration, and
-troubleshooting guides.
+configuration, usage, compatibility, and troubleshooting guides.
 
 ## License
 
