@@ -942,6 +942,7 @@ export interface RuntimeControllerOptions {
   readonly columnWidthPresets?: readonly ColumnWidth[];
   readonly createRect?: KWinRectFactory;
   readonly defaultColumnPresentation?: ColumnPresentation;
+  readonly defaultFloatingPosition?: ApplicationFloatingPosition | null;
   readonly defaultWindowHeight?: DefaultWindowHeight;
   readonly emptyDesktopAboveFirst?: boolean;
   readonly gap?: number;
@@ -1164,6 +1165,7 @@ export class RuntimeController {
   private startupCompleted = false;
   private defaultColumnPresentation: ColumnPresentation;
   private defaultColumnWidth: ColumnWidth;
+  private defaultFloatingPosition: ApplicationFloatingPosition | null;
   private defaultWindowHeight: DefaultWindowHeight;
   private windowHeightStep = DEFAULT_WINDOW_HEIGHT_STEP_PERCENT / 100;
   private windowHeightStepPixels = 0;
@@ -1288,6 +1290,7 @@ export class RuntimeController {
         : false;
     this.defaultColumnPresentation =
       options.defaultColumnPresentation ?? "stacked";
+    this.defaultFloatingPosition = options.defaultFloatingPosition ?? null;
     this.defaultWindowHeight =
       decodeDefaultWindowHeight(
         options.defaultWindowHeight?.canonicalValue ?? "auto",
@@ -2099,6 +2102,26 @@ export class RuntimeController {
     }
 
     this.applicationFloatingPositions = positions;
+    return true;
+  }
+
+  setDefaultFloatingPosition(
+    position: ApplicationFloatingPosition | null | undefined,
+  ): boolean {
+    const normalized = position ?? null;
+
+    if (
+      this.defaultFloatingPosition === normalized ||
+      (this.defaultFloatingPosition !== null &&
+        normalized !== null &&
+        this.defaultFloatingPosition.anchor === normalized.anchor &&
+        this.defaultFloatingPosition.x === normalized.x &&
+        this.defaultFloatingPosition.y === normalized.y)
+    ) {
+      return false;
+    }
+
+    this.defaultFloatingPosition = normalized;
     return true;
   }
 
@@ -26999,14 +27022,16 @@ export class RuntimeController {
   private applicationFloatingPosition(
     source: KWinWindow,
   ): ApplicationFloatingPosition | undefined {
-    if (this.applicationFloatingPositions.canonicalEntries.length === 0) {
-      return undefined;
-    }
-
     const desktopFileName = this.applicationDesktopFileName(source);
-    return desktopFileName === null
-      ? undefined
-      : this.applicationFloatingPositions.floatingPositionFor(desktopFileName);
+    const applicationPosition =
+      desktopFileName === null ||
+      this.applicationFloatingPositions.canonicalEntries.length === 0
+        ? undefined
+        : this.applicationFloatingPositions.floatingPositionFor(
+            desktopFileName,
+          );
+
+    return applicationPosition ?? this.defaultFloatingPosition ?? undefined;
   }
 
   private applyInitialFloatingPosition(

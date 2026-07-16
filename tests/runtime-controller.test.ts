@@ -44571,6 +44571,126 @@ describe("RuntimeController application floating positions", () => {
     },
   );
 
+  it("uses the global default for a fresh first manual floating admission", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const peer = createTrackedWindow("peer", output, desktop);
+    const target = createTrackedWindow("target", output, desktop, {
+      frameGeometry: { height: 200, width: 300, x: 40, y: 30 },
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [peer.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      defaultFloatingPosition: {
+        anchor: "bottom-right",
+        x: 24,
+        y: 16,
+      },
+      schedule: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    fixture.windowAdded.emit(target.window);
+    flushManualScheduler(scheduler);
+    fixture.workspace.activeWindow = target.window;
+    flushManualScheduler(scheduler);
+
+    expect(controller.toggleFloating()).toBe(true);
+    expect(target.window.frameGeometry).toEqual({
+      height: 200,
+      width: 300,
+      x: 676,
+      y: 584,
+    });
+  });
+
+  it("prefers an exact application position over the global default", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const peer = createTrackedWindow("peer", output, desktop);
+    const target = createTrackedWindow("target", output, desktop, {
+      desktopFileName: "org.example.Target",
+      frameGeometry: { height: 200, width: 300, x: 40, y: 30 },
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [peer.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      applicationFloatingPositions: requiredApplicationFloatingPositions(
+        "org.example.Target=bottom-right,24,16",
+      ),
+      clientAreaOption: 2,
+      defaultFloatingPosition: { anchor: "top-left", x: 15, y: 10 },
+      schedule: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    fixture.windowAdded.emit(target.window);
+    flushManualScheduler(scheduler);
+    fixture.workspace.activeWindow = target.window;
+    flushManualScheduler(scheduler);
+
+    expect(controller.toggleFloating()).toBe(true);
+    expect(target.window.frameGeometry).toEqual({
+      height: 200,
+      width: 300,
+      x: 676,
+      y: 584,
+    });
+  });
+
+  it("leaves a disabled default consumed after the first manual floating admission", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const peer = createTrackedWindow("peer", output, desktop);
+    const originalFrame = { height: 200, width: 300, x: 40, y: 30 };
+    const target = createTrackedWindow("target", output, desktop, {
+      frameGeometry: originalFrame,
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [peer.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      defaultFloatingPosition: null,
+      schedule: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    fixture.windowAdded.emit(target.window);
+    flushManualScheduler(scheduler);
+    fixture.workspace.activeWindow = target.window;
+    flushManualScheduler(scheduler);
+
+    expect(controller.setDefaultFloatingPosition(undefined)).toBe(false);
+    expect(controller.toggleFloating()).toBe(true);
+    expect(target.window.frameGeometry).toEqual(originalFrame);
+
+    const enabled = { anchor: "bottom-right", x: 24, y: 16 } as const;
+    expect(controller.setDefaultFloatingPosition(enabled)).toBe(true);
+    expect(controller.setDefaultFloatingPosition({ ...enabled })).toBe(false);
+    expect(controller.moveWindowToTiling()).toBe(true);
+    expect(controller.toggleFloating()).toBe(true);
+    expect(target.window.frameGeometry).toEqual(originalFrame);
+  });
+
   it("positions a fresh initial-floating fullscreen underlay once", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
@@ -44589,14 +44709,16 @@ describe("RuntimeController application floating positions", () => {
     );
     const scheduler = new ManualScheduler();
     const controller = new RuntimeController(fixture.workspace, {
-      applicationFloatingPositions: requiredApplicationFloatingPositions(
-        "org.example.Target=bottom-right,20,30",
-      ),
       applicationInitialFloating:
         requiredApplicationInitialFloating("org.example.Target"),
       applicationInitialFullscreen:
         requiredApplicationInitialFullscreen("org.example.Target"),
       clientAreaOption: 2,
+      defaultFloatingPosition: {
+        anchor: "bottom-right",
+        x: 20,
+        y: 30,
+      },
       schedule: scheduler.schedule,
       scheduleResume: scheduler.schedule,
     });
@@ -44717,13 +44839,15 @@ describe("RuntimeController application floating positions", () => {
     const hydratedController = new RuntimeController(
       hydratedFixture.workspace,
       {
-        applicationFloatingPositions: requiredApplicationFloatingPositions(
-          "org.example.Dialog=top-left,200,100\norg.example.Excluded=right,40,20\norg.example.Startup=bottom-right,20,30\norg.example.Transient=bottom,10,10",
-        ),
         applicationTilingExclusions: requiredApplicationTilingExclusions(
           "org.example.Excluded",
         ),
         clientAreaOption: 2,
+        defaultFloatingPosition: {
+          anchor: "bottom-right",
+          x: 20,
+          y: 30,
+        },
       },
     );
 
@@ -44815,10 +44939,12 @@ describe("RuntimeController application floating positions", () => {
     );
     const scheduler = new ManualScheduler();
     const controller = new RuntimeController(fixture.workspace, {
-      applicationFloatingPositions: requiredApplicationFloatingPositions(
-        "org.example.Moved=bottom-right,24,16",
-      ),
       clientAreaOption: 2,
+      defaultFloatingPosition: {
+        anchor: "bottom-right",
+        x: 24,
+        y: 16,
+      },
       schedule: scheduler.schedule,
     });
 
