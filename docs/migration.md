@@ -1,7 +1,42 @@
 # Migration
 
-The latest stable release is 1.34.0. Use the steps below when changing release
+The latest stable release is 1.35.0. Use the steps below when changing release
 generations, and never combine files from different releases.
+
+## Upgrade from 1.34.0 to 1.35.0
+
+1. Release a helper-owned shortcut profile with the installed helper.
+2. Disable Driftile and both optional effects in System Settings.
+3. Install matching 1.35.0 artifacts, or pin the Nix input to `v1.35.0` and
+   rebuild.
+4. Re-enable Driftile and only the optional effects you use, then reclaim the
+   unchanged helper profile if needed.
+
+Logical layout state remains v4, and shortcut action IDs and default bindings
+are unchanged. Existing settings retain their behavior. Fixed logical-pixel
+widths and heights, fractional gaps, singleton centering, and the leading empty
+desktop are opt-in.
+
+## Roll back from 1.35.0 to 1.34.0
+
+Before disabling 1.35.0:
+
+1. Convert fixed `px` and explicit `%` entries in `ColumnWidthPresets`,
+   `WindowHeightPresets`, and `ApplicationColumnWidths` to legacy bare
+   percentages, or clear those settings. The 1.34.0 parser rejects the new
+   forms.
+2. If fixed window-height presets were used, reset affected windows to an
+   automatic or percentage height and allow the state to flush. Alternatively,
+   back up and remove
+   `${XDG_CONFIG_HOME:-$HOME/.config}/driftile-layout-state.ini` before
+   starting 1.34.0; fixed presets can store indices outside its decoder range.
+3. Disable `emptyDesktopAboveFirst` so Driftile can remove an empty leading
+   desktop it owns, and set `DefaultColumnWidthPixels` to `0`.
+
+Then release a helper-owned profile, disable Driftile and both optional
+effects, and restore matching verified 1.34.0 artifacts. NixOS and Home Manager
+users should restore the input to `v1.34.0` and rebuild. The persistence format
+remains v4; no schema conversion is otherwise required.
 
 ## Upgrade from 1.33.0 to 1.34.0
 

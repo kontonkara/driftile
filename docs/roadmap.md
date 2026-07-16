@@ -1,13 +1,13 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.34.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.35.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.34.0 makes optional transitions reliable across rapid off-output and
-workspace changes, adds precise presentation and window-class controls, and
-adds opt-in horizontal focus centering only when neighboring columns overflow.
-Logical persistence remains v4.
+Stable 1.35.0 adds opt-in singleton centering, fractional gaps, an optional
+leading empty desktop, and mixed proportional or fixed logical-pixel sizing
+for presets, application rules, and the default column width. Logical
+persistence remains v4.
 
 ## Foundation (delivered)
 
@@ -1547,7 +1547,7 @@ Release criteria (met):
 
 No other feature belongs to 1.34.0.
 
-## 1.35.0 (in development)
+## 1.35.0 (released)
 
 - Add opt-in centering for a context containing exactly one tiled column or
   stack, with live enable and no forced movement when disabled.
@@ -1559,15 +1559,27 @@ No other feature belongs to 1.34.0.
 - Accept mixed proportional and fixed logical-pixel column-width and
   window-height preset cycles through KConfig, NixOS, and Home Manager.
 - Extend exact application initial-width rules from legacy bare percentages to
-  explicit percentages and fixed `1px`–`16384px` logical widths. Only fresh
-  singleton admission reads a rule; constraints and output-pixel snapping stay
-  authoritative.
+  explicit percentages and fixed `1px`–`16384px` logical widths. Tiled
+  admission, retiling, and context transfer use the same constrained and
+  output-pixel-snapped path.
 - Add an opt-in fixed global default column width. `0` retains the existing
-  percentage fallback; positive logical-pixel values affect later admissions
-  and resets without rewriting existing columns.
+  percentage fallback; positive logical-pixel values affect later admissions,
+  fresh retiles, and explicit resets without rewriting existing columns.
 - Keep the geometry behaviors inside the existing solver and physical-pixel
   snapping boundary. Floating windows, multi-column contexts, and logical
   persistence remain unchanged.
+
+Release criteria (met):
+
+- Singleton centering and fractional gaps update live while preserving the
+  existing physical-pixel snapping boundary.
+- Leading and trailing empty desktops keep distinct ownership, and overview
+  reordering cannot cross their protected boundaries.
+- Fixed and proportional presets, application rules, and the default width use
+  existing constraints across admission, retiling, transfer, and reset paths.
+- No shortcut, private KWin API, or layout-structure version is added.
+
+No other feature belongs to 1.35.0.
 
 ## Post-v1
 
