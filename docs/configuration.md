@@ -161,6 +161,7 @@ programs.driftile.settings.applicationInitialDestinations = {
     desktop = 2;
     output = "DP-2";
   };
+  "org.kde.konsole".desktopName = "Development";
   "org.telegram.desktop".output = "HDMI-A-1";
 };
 
@@ -477,29 +478,34 @@ Enter one exact, case-sensitive rule per line:
 
 ```text
 org.mozilla.firefox=desktop:2,output:DP-2
+org.kde.konsole=desktop-name:Development
 org.telegram.desktop=output:HDMI-A-1
-org.kde.konsole=desktop:3
 ```
 
 Desktop numbers are one-based positions in KWin's current desktop order and
-range from `1` to `25`. Output names are exact KWin names. A desktop-only rule
-keeps the window's output. An output-only rule uses the selected desktop of the
-target output; moving to the same output keeps the window's current desktop.
-Use KWin's debug console to inspect both identifiers.
+range from `1` to `25`. `desktop-name` instead selects the one virtual desktop
+whose current name matches exactly and case-sensitively. Do not combine
+`desktop` and `desktop-name` in one rule. Missing or duplicate desktop names
+reject the destination safely. Output names are exact KWin names. A
+desktop-only rule keeps the window's output. An output-only rule uses the
+selected desktop of the target output; moving to the same output keeps the
+window's current desktop. Use KWin's debug console to inspect identifiers.
 
 The assignment is fresh-only and one-shot. Startup-existing, restored,
 already admitted, dialog, transient, and other non-normal windows are not
 moved. The destination policy itself neither changes focus nor selects a
 desktop. A missing output or desktop, unavailable public transfer API, or
 rejected assignment leaves the window in its accepted KWin context and is not
-retried. Live edits affect only windows first tracked afterward.
+retried. Renaming a virtual desktop affects future windows only; live rule
+edits likewise affect only windows first tracked afterward.
 
 After a confirmed assignment, initial floating and floating-position rules use
 the destination work area, initial tiled sizing and presentation use the
 destination layout context, an initial focus request runs after admission,
 native maximize follows, and an initial fullscreen request runs last. The
 policy adds no shortcut or persistence field. At most 128 rules are accepted;
-application IDs and output names are each limited to 255 UTF-8 bytes.
+application IDs, virtual desktop names, and output names are each limited to
+255 UTF-8 bytes.
 
 ## Applications initially floating
 

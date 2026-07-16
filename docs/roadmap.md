@@ -1715,3 +1715,12 @@ Release criteria (met):
 - The implementation remains within public Plasma 6.7+ APIs.
 
 No other feature belongs to 1.40.0.
+
+### 1.41.0 (in development)
+
+- Allow a fresh-window destination to select a virtual desktop by its exact,
+  case-sensitive name instead of its current numeric position.
+- Require one unique live name match and leave the window in its accepted
+  context when the name is missing or ambiguous.
+- Expose the same bounded rule through KConfig, NixOS, and Home Manager without
+  changing shortcuts or persisted layout state.
